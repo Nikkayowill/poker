@@ -43,7 +43,6 @@ import {
   mowStroke,
   zoneAt,
   zoneFrame,
-  zoneGroundTiles,
   zoneHerd,
   zoneScenery,
   type ZoneId,
@@ -315,13 +314,14 @@ const BARN_Y = STACKACRES_MARGIN - 30;
 // Ground art sits just above the grass and well below anything with feet:
 // the paths at -1e8, the pond one above them so its sand paints over the
 // spur's end cap, and the water's surface (glints, ripples) one above that.
-/** The districts' own ground sits under the paths: a road is laid ON a
- *  field, so the field has to be beneath it, and both are above the lawn. */
+/** The always-behind-everything floor depth: a locked sector's haze sits
+ *  here, under the paths, so a road still reads as laid ON the lawn above
+ *  it. */
 const ZONE_GROUND_DEPTH = -1e8 - 10;
 /** A district's grow-area floor (see `paintDistrictBoundary`) sits one step
- *  above the district's own base ground, so a Hen Coop's straw reads as laid
- *  ON the Farmstead rather than floating over it -- still far below every
- *  real object in the scene, by the same always-behind-everything logic
+ *  above the haze depth, so a Hen Coop's straw reads as laid ON the
+ *  Farmstead rather than floating over it -- still far below every real
+ *  object in the scene, by the same always-behind-everything logic
  *  `ZONE_GROUND_DEPTH` itself uses. */
 const GROW_AREA_GROUND_DEPTH = ZONE_GROUND_DEPTH + 1;
 const PATH_DEPTH = -1e8;
@@ -817,52 +817,6 @@ export class StackAcresScene extends Phaser.Scene {
   /* ---------------------------------------------------------------- */
   /* The districts                                                      */
   /* ---------------------------------------------------------------- */
-
-  /**
-   * Each outer district's ground, as one Graphics object of projected
-   * diamonds (lib/stackacres/zones.ts's `zoneGroundTiles`).
-   *
-   * Graphics rather than a baked texture, deliberately. A district is
-   * hundreds of units across, and a baked rectangle laid on a diamond grid
-   * is the exact thing that still reads wrong about the path and pond bakes
-   * -- at a plot's size it passes, at a district's it would be the most
-   * obvious object on the map. Diamonds cost three draw calls in total and
-   * are correct under the tilt by construction.
-   *
-   * Painted per district, and repainted only when that district's lock state
-   * changes: the districts do not move, and the whole set is a few hundred
-   * fills. Returns null for a district that paints no ground of its own (the
-   * Farmstead, whose `cover` is 0 -- see `ZoneGround`).
-   */
-  private paintZoneGround(id: ZoneId): Phaser.GameObjects.Graphics | null {
-    const tiles = zoneGroundTiles(id);
-    if (tiles.length === 0) return null;
-    const g = this.add.graphics().setDepth(ZONE_GROUND_DEPTH);
-    for (const tile of tiles) {
-      // Exactly the tile's own size, NOT a hair over. Overlapping these was
-      // the first cut and it was visibly wrong: they are translucent, so
-      // every overlap composited twice and the district ended up drawn with
-      // a lighter lattice over it -- the tile grid made visible by the very
-      // thing meant to hide its seams. Abutting diamonds share an edge
-      // exactly, and the anti-aliased seam that leaves is invisible next to
-      // the doubled alpha it replaces.
-      const c = projectedCorners({
-        x: tile.x,
-        y: tile.y,
-        width: tile.size,
-        height: tile.size,
-      });
-      g.fillStyle(tile.colour, tile.alpha);
-      g.beginPath();
-      g.moveTo(c.n.x, c.n.y);
-      g.lineTo(c.e.x, c.e.y);
-      g.lineTo(c.s.x, c.s.y);
-      g.lineTo(c.w.x, c.w.y);
-      g.closePath();
-      g.fillPath();
-    }
-    return g;
-  }
 
   /**
    * The districts' animals, placed once at boot rather than grown with the
@@ -1453,16 +1407,20 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * One district's whole layer, drawn as one thing or the other.
    *
-   * CLEARED: the district's own ground wash, its grow-area floor and (for a
-   * livestock district) its fence -- the farm, exactly as it was before this
-   * feature existed.
+   * CLEARED: its grow-area floor and (for a livestock district) its fence --
+   * the farm, exactly as it was before this feature existed. There used to
+   * be a district-wide tiled ground wash painted first (`paintZoneGround`,
+   * `zones.ts`'s `zoneGroundTiles`) -- deleted outright, not tuned further:
+   * even smoothed, a translucent diamond grid over grass read as a patch of
+   * ugly brown squares, and the fenced grow area already gives the district
+   * a real floor where it actually matters.
    *
    * LOCKED: wild growth and a pale haze, and NOTHING ELSE. No fence, no
-   * furrowed floor, no ground wash, no ghosted outline of what could be here
-   * -- the farm is not built yet, so there is nothing to grey out. That is
-   * the whole visual argument: a locked sector reads as somewhere the player
-   * has not been rather than as a control they are not allowed to press, and
-   * the only way to find out it is for sale is to tap the trees.
+   * furrowed floor, no ghosted outline of what could be here -- the farm is
+   * not built yet, so there is nothing to grey out. That is the whole visual
+   * argument: a locked sector reads as somewhere the player has not been
+   * rather than as a control they are not allowed to press, and the only way
+   * to find out it is for sale is to tap the trees.
    */
   private paintSector(zone: ZoneId): void {
     this.clearSectorArt(zone);
@@ -1470,8 +1428,6 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.locked.has(zone)) {
       built.push(...this.paintOvergrowth(zone));
     } else {
-      const ground = this.paintZoneGround(zone);
-      if (ground) built.push(ground);
       built.push(...this.paintDistrictBoundary(zone));
     }
     this.sectorArt.set(zone, built);
@@ -1602,14 +1558,14 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * A district's grow-area floor, as one diamond fill rather than the flat
-   * baked rectangle painters (`straw`/`soil`/`muck`) those colours come
-   * from -- see `paintZoneGround`'s own note on why a district-sized flat
-   * texture on a diamond grid reads as a bug. Drawn far below everything
-   * else (`GROW_AREA_GROUND_DEPTH`, the same always-behind-everything
-   * scheme `ZONE_GROUND_DEPTH` uses) rather than at the area's own varying
-   * isometric depth, because ground never needs to sort against anything
-   * standing on it -- it is always furthest back, by construction.
+   * A district's grow-area floor, as one diamond fill -- the flat baked
+   * rectangle painters (`straw`/`soil`/`muck`) those colours come from stay
+   * at plot size, where a district-sized copy of one would read as a bug.
+   * Drawn far below everything else (`GROW_AREA_GROUND_DEPTH`, the same
+   * always-behind-everything scheme `ZONE_GROUND_DEPTH` uses) rather than at
+   * the area's own varying isometric depth, because ground never needs to
+   * sort against anything standing on it -- it is always furthest back, by
+   * construction.
    *
    * Material follows the zone, the same call the plot-grid era's
    * `paintPenGround` made and worth keeping now the ground is one district-

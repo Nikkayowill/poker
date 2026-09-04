@@ -69,13 +69,20 @@
  * scrolls under a map that also scrolls is two things fighting for one finger.
  *
  * THERE IS NO PLOT GRID any more (see 2026-09-03's CLAUDE.md entry --
- * "districts hold stock, not plots"). What used to be a grid of tappable plot
- * buttons is the .sa-district-panel drawer now: real DOM rows, one per owned
- * unit, with the one action button that applies. The canvas still draws a
- * state ring per unit (gold for ripe, amber for hungry, brown for
- * weather-worn -- see stackacres-scene.ts) but there is no affordance ring any
- * more, because there is no held tool that acts on a unit -- only the scythe,
- * which targets ground, not a unit.
+ * "districts hold stock, not plots"), and the farm is tapped directly: a tap
+ * on a unit's own picture collects, feeds or clears it, and a tap on a
+ * district's bare ground drops .sa-radial beside the finger to seed something
+ * there. Both are resolved inside the canvas (stackacres-scene.ts) -- there
+ * are no per-unit DOM hit boxes over the map to keep in sync with it. The
+ * canvas still draws a state ring per unit (gold for ripe, amber for hungry,
+ * brown for weather-worn) but no affordance ring: nothing is ever "selected"
+ * and no held tool acts on a unit -- only the scythe, which targets ground.
+ *
+ * The .sa-district-panel drawer is deep management now (Gold spends, the
+ * standing list) rather than the way the game is played, so it no longer opens
+ * itself on arrival -- the peg is how it comes back. Its unit rows stay
+ * because they are the keyboard and screen-reader path to everything a canvas
+ * tap does.
  *
  * The world is vector art, not a tile sheet: every sprite is a Canvas2D painter
  * (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser texture
@@ -522,6 +529,8 @@
 .sa-unit-link,
 .sa-buy-btn,
 .sa-amount,
+.sa-radial-btn,
+.sa-radial-more,
 .sa-cta,
 .sa-theme .sa-sheet-close {
   font-family: var(--sa-font);
@@ -545,6 +554,8 @@
 .sa-unit-action:not(:disabled):active,
 .sa-buy-btn:not(:disabled):active,
 .sa-amount:active,
+.sa-radial-btn:not(:disabled):active,
+.sa-radial-more:active,
 .sa-cta:not(:disabled):active,
 .sa-theme .sa-sheet-close:active {
   transform: translateY(var(--sa-lift)) scale(.98);
@@ -567,6 +578,8 @@
 .sa-unit-link:focus-visible,
 .sa-buy-btn:focus-visible,
 .sa-amount:focus-visible,
+.sa-radial-btn:focus-visible,
+.sa-radial-more:focus-visible,
 .sa-cta:focus-visible,
 .sa-theme .sa-sheet-close:focus-visible {
   outline: 3px solid var(--sa-corn);
@@ -581,6 +594,7 @@
    (see district-panel.ts's `seedReason`). */
 .sa-unit-action:disabled,
 .sa-buy-btn:disabled,
+.sa-radial-btn:disabled,
 .sa-cta:disabled {
   filter: saturate(.35) brightness(.94);
   cursor: not-allowed;
@@ -938,6 +952,160 @@
   text-wrap: pretty;
 }
 
+/* ---- the seed ring, on the canvas ------------------------------------ */
+
+/* Dropped where a finger tapped a district's bare ground, in .sa-field's own
+   pixel space -- which is what stackacres-scene.ts reports a tap in, so
+   `left`/`top` are the tap coordinates verbatim, with no second transform to
+   keep in sync. z-index sits it over the signpost and the toolbelt it may
+   overlap; it is a transient answer to a press and it wins while it is up.
+
+   Real <button>s, not canvas hit boxes, so a thumb and a keyboard reach the
+   same thing -- and they are the same pressable block as everything else on
+   this screen. Their press, focus and unlit states come from "the pressable
+   block" above, which lists .sa-radial-btn and .sa-radial-more alongside every
+   other key rather than restating the grammar down here.
+
+   Centring is `translate`, not `transform`: `left`/`top` put a button on its
+   arc point and `translate: -50% -50%` centres it there, which leaves
+   `transform` free for the shared press travel. Doing the centring in
+   `transform` would have the press rule replace it and jump every button half
+   its own size on the way down. */
+.sa-radial {
+  position: absolute;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-radial > * { pointer-events: auto; }
+
+/* The next tap on the map closes the ring instead of doing whatever it would
+   otherwise have done -- there is no close button to hunt for. Transparent,
+   and covering .sa-field exactly: it is rendered BEFORE the signpost, the
+   toolbelt, the zoom keys and the drawer peg (see stackacres-farm.tsx), which
+   are positioned siblings with no z-index of their own and so stack above it.
+   That is what keeps the chrome live while the ring is up -- and a camera move
+   from one of those keys is the other thing that closes it. */
+.sa-radial-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+/* The spot that was tapped: corn inside the same chocolate outline every
+   block on this screen carries, so it reads as the ring's own anchor rather
+   than as a stray dot on the grass. */
+.sa-radial-pin {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-corn);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-radial-ring {
+  position: absolute;
+  inset: 0;
+}
+
+.sa-radial-btn {
+  position: absolute;
+  translate: -50% -50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 82px;
+  min-height: var(--sa-tap);
+  padding: 7px 5px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  cursor: pointer;
+  /* `backwards`, not `both`: a filled-forwards animation keeps owning
+     `transform` after it ends, which would beat the press rule and leave the
+     button unable to travel. */
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    background var(--duration-fast, .12s) ease;
+}
+
+.sa-radial-btn:hover:not(:disabled) { filter: brightness(1.04); }
+
+.sa-radial-btn .sa-ico { width: 26px; height: 26px; }
+
+.sa-radial-name {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* The price, carrying the same Bushels badge the HUD purse and the buy rows
+   use, so a number on this screen is never a bare number. */
+.sa-radial-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sa-choc);
+}
+
+.sa-radial-cost .sa-ico { width: 13px; height: 13px; }
+
+/* The way through to the drawer, under the ring rather than on it: it is not
+   another thing to plant, it is the way out of planting. Wood, because it
+   opens the same door the peg on the right edge does. */
+.sa-radial-more {
+  position: absolute;
+  left: 0;
+  top: 26px;
+  translate: -50% 0;
+  min-height: 34px;
+  padding: 4px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-wood);
+  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink-light);
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+.sa-radial-more:hover { filter: brightness(1.05); }
+
+/* The mirrored ring (a tap with no room overhead) has taken the space below
+   the pin, so the handoff drops clear of it -- and never upward, since "no
+   room overhead" is exactly the case that put the ring down there. */
+.sa-radial-more.is-under-ring { top: 138px; }
+
+/* Springs out of the tap on the same overshoot curve the drawer opens with.
+   Scale only: the centring lives in `translate` and the press in `transform`,
+   so this is the one thing left for the animation to carry. */
+@keyframes sa-radial-in {
+  from { opacity: 0; transform: scale(.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ---- the district drawer ---------------------------------------------
  * Travelling to a district (the signpost) IS the selection -- there is no plot
  * to tap any more -- so this is a drawer on the right edge rather than
@@ -1097,6 +1265,17 @@
   margin: 0 14px 12px;
   color: var(--sa-ink-soft);
   font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+/* One line of orientation under a section heading -- quieter than the rows it
+   introduces, and the same brown-on-cream the district's own blurb uses. */
+.sa-panel-note {
+  margin: 2px 0 10px;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
   font-weight: 600;
   line-height: 1.35;
   text-wrap: pretty;
@@ -2063,6 +2242,9 @@
   .sa-district-panel,
   .sa-district-panel.is-open,
   .sa-panel-tab { transition-duration: 1ms; }
+  /* The ring still appears at once; it just does not spring in. Keeping the
+     transform means the buttons stay centred on their own arc points. */
+  .sa-radial-btn { animation: none; }
 }
 
 /* ---- landscape phones (MUST STAY LAST) -------------------------------
@@ -2111,4 +2293,11 @@
 
   .sa-sheet { max-height: 92dvh; }
   .sa-sheet-head h2 { font-size: 19px; }
+
+  /* The ring is dropped under a thumb on the shortest screen there is, so it
+     tightens rather than sprawling off the top of the map. It keeps its
+     travel and its outline, same rule as every other block in this block. */
+  .sa-radial-btn { width: 72px; min-height: 60px; padding: 5px 4px; }
+  .sa-radial-name { font-size: 11px; }
+  .sa-radial-cost { font-size: 11px; }
 }

@@ -147,6 +147,31 @@ export function growAreaInterior(zone: ZoneId): WorldRect {
   return { x: area.x + 12, y: area.y + 30, width: area.width - 24, height: area.height - 42 };
 }
 
+/**
+ * Which district's grow area a world point falls in, or null anywhere else.
+ *
+ * Narrower than ./zones.ts's `zoneAt` on purpose, and that difference is the
+ * whole point: `zoneAt` answers "which district am I standing in", a generous
+ * box hundreds of units across, while this answers "am I on the fenced ground
+ * where this district's stock actually stands". A tap on empty ground offers
+ * to seed there (see the radial menu in stackacres-farm.tsx), and offering
+ * that from halfway across the woods would put a Cattle Pen wherever the
+ * finger happened to land.
+ *
+ * The four boxes do not overlap (world.test.ts holds that), so the first
+ * match is the only match and no farmstead-last tie-break is needed here the
+ * way `zoneAt` needs one.
+ */
+export function growAreaAt(x: number, y: number): ZoneId | null {
+  for (const id of Object.keys(GROW_AREA) as ZoneId[]) {
+    const area = GROW_AREA[id];
+    if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {
+      return id;
+    }
+  }
+  return null;
+}
+
 /** The bounding box of every district that currently has anything to show:
  *  the camera frame for "home", when there is no single owned plot list to
  *  fit any more. Kept for parity with the old `ownedBounds`/`openingZoom`

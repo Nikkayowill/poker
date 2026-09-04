@@ -5,7 +5,7 @@ import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
-import type { StackAcresScene, StackAcresSceneUnit } from "./stackacres-scene";
+import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 
 /**
  * The Phaser mount, and the bundle boundary.
@@ -16,20 +16,24 @@ import type { StackAcresScene, StackAcresSceneUnit } from "./stackacres-scene";
  *
  * Rendering is driven from props: `units` plus the held tool become the
  * scene's own units. THERE IS NO PLOT GRID (see 2026-09-03's CLAUDE.md entry
- * -- "districts hold stock, not plots"), so unlike the old grid this
- * component has no action callbacks at all -- buying and tending a unit is
- * entirely the district sidebar's job (stackacres-district-panel.tsx), a DOM
- * surface that talks to the server directly and never touches this bridge.
- * The only thing that still comes back OUT of the canvas is `onReady`
- * (the first frame is drawn) and, through `api`, a way for the shell to move
- * the camera around -- `zoomBy` for the zoom buttons mouse users need
- * (nobody has a pinch gesture with a mouse), `recenter` for "home", and
- * `focusZone` for the destination signpost.
+ * -- "districts hold stock, not plots"), but the farm is directly tappable:
+ * `onUnitTap` fires when a finger lands on a unit's own picture and
+ * `onGroundTap` when it lands on a district's empty fenced ground, both
+ * carrying the tap point in CSS pixels relative to this host -- which is the
+ * same box every DOM overlay on the screen is positioned in, so the shell can
+ * drop a radial menu straight onto those numbers. `onViewMoved` says the
+ * camera has shifted under anything so pinned. The rest of the contract is
+ * unchanged: `onReady` when the first frame is drawn, and, through `api`,
+ * a way for the shell to move the camera (`zoomBy` for the zoom buttons mouse
+ * users need, since nobody has a pinch gesture with a mouse; `recenter` for
+ * "home"; `focusZone` for the destination signpost) and to answer a tap in
+ * the world it landed in (`popUnit`, `floatAt`).
  *
  * The canvas is decorative to assistive tech -- `aria-hidden`. The
  * keyboard/screen-reader surface is the district sidebar's own real DOM
- * buttons, not a second hidden copy of the map kept in sync with it; there
- * is nothing left on the canvas a sidebar row doesn't already say.
+ * buttons, not a second hidden copy of the map kept in sync with it: tapping
+ * the map is the fast path, and every one of those taps has a sidebar row
+ * that does the same thing.
  */
 
 export interface StackAcresWorldApi {
@@ -37,15 +41,29 @@ export interface StackAcresWorldApi {
   recenter: () => void;
   /** Travel to a district's gate (lib/stackacres/zones.ts). */
   focusZone: (zone: ZoneId) => void;
+  /** The squash-and-stretch a tapped unit answers with, before the network
+   *  has said anything at all. */
+  popUnit: (unitId: string) => void;
+  /** A line of text that lifts off the tap and fades -- the reward, or the
+   *  reason there wasn't one. */
+  floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
 }
 
 export interface StackAcresWorldProps {
   units: StackAcresUnitSnapshot[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
-   *  the client-side twin of a collect action the sidebar just confirmed. */
+   *  the client-side twin of a confirmed collect. */
   celebrate: { unitId: string; nonce: number } | null;
   onReady: () => void;
+  /** A finger landed on this unit's own picture. */
+  onUnitTap: (unitId: string, at: TapPoint) => void;
+  /** A finger landed on this district's fenced ground, on nothing in
+   *  particular -- an offer to seed something there. */
+  onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  /** The camera moved, so anything the shell pinned to a screen position is
+   *  now pointing at the wrong part of the world. */
+  onViewMoved: () => void;
   api: Ref<StackAcresWorldApi | null>;
 }
 
@@ -59,7 +77,16 @@ function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
   }));
 }
 
-export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackAcresWorldProps) {
+export function StackAcresWorld({
+  units,
+  tool,
+  celebrate,
+  onReady,
+  onUnitTap,
+  onGroundTap,
+  onViewMoved,
+  api,
+}: StackAcresWorldProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<StackAcresScene | null>(null);
   const gameRef = useRef<{ destroy: (removeCanvas: boolean) => void } | null>(null);
@@ -67,6 +94,9 @@ export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackA
   // The scene calls back into whatever the shell currently is, not whatever
   // it was when the game booted.
   const readyRef = useRef(onReady);
+  const unitTapRef = useRef(onUnitTap);
+  const groundTapRef = useRef(onGroundTap);
+  const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
   const toolIconRef = useRef<PainterName>(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
@@ -76,6 +106,9 @@ export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackA
   const toolRef = useRef<StackAcresTool>(tool);
   useEffect(() => {
     readyRef.current = onReady;
+    unitTapRef.current = onUnitTap;
+    groundTapRef.current = onGroundTap;
+    viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
     toolRef.current = tool;
   });
@@ -108,6 +141,9 @@ export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackA
       const scene = new SceneClass(
         {
           onReady: () => readyRef.current(),
+          onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
+          onGroundTap: (zone, at) => groundTapRef.current(zone, at),
+          onViewMoved: () => viewMovedRef.current(),
         },
         { reducedMotion, host },
       );
@@ -198,6 +234,8 @@ export function StackAcresWorld({ units, tool, celebrate, onReady, api }: StackA
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
+      popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
+      floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
     }),
     [],
   );

@@ -46,6 +46,43 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres is tapped on the map itself; the sidebar became deep management (2026-09-04)
+Removes the loop the district sidebar had become (tap a district -> panel opens -> find the row ->
+press Collect). A tap that lands on a unit's own picture now collects, feeds or clears it where it
+stands, and a tap on a district's bare fenced ground drops a small radial seed menu beside the
+finger. `place` follows the finger instead of gating it, and **the drawer no longer opens on
+travel** — the chrome pass above landed `sa-panel-tab`, a named peg on the right edge, and that
+(plus the ring's own handoff) is the way back in; a `Manage` key in the zoom group was built for
+this first and then deleted on the rebase rather than left beside the peg as a second door to the
+same room. The drawer now leads with the Gold decisions (buy outright, expand capacity) rather than
+the unit list. **The unit rows were deliberately NOT deleted** despite the drawer being reframed as
+deep management: the canvas is `aria-hidden` and they are the only keyboard/screen-reader path to
+what a tap does, plus they carry the one action a tap must never reach (retiring, which refunds
+nothing). Five things worth keeping: (1) the hit test is **hand-resolved at pointer RELEASE inside
+the scene's existing gesture pipeline, not `GAMEOBJECT_POINTER_DOWN`** — Phaser input is off
+entirely here and a second input layer would double-handle every press, and a press-time hit would
+collect a unit the moment a pan that happened to start on a hen began. Two regions per unit (its
+sprite bounds, since a cow's body is drawn well above its feet; and its ground diamond, which makes
+the ready-ring a target), padded by a fingertip in CSS pixels so the pad does not shrink with zoom,
+topmost depth wins. (2) The squash-and-stretch is on the unit's **container**, not its sprite —
+`update()` rewrites a walking animal's sprite scale every frame for gait and breathing and would
+overwrite a tween there. (3) The floating "+4 Eggs" is authored in device pixels and scaled by
+`1/(zoomL * DPR)`, which is what keeps it a constant CSS size and crisp at 5x; a local refusal
+("Ready in 15m", "No feed left in the barn") floats immediately and never reaches the network,
+while a reward floats from the remembered tap point once the server confirms. (4) The dismissal
+scrim is rendered in `stackacres-farm.tsx` **before** the toolbelt/signpost/zoom keys rather than
+inside the menu component — those are positioned siblings with no z-index, so DOM order is what
+keeps the chrome live while the ring is up; a scrim inside the menu's own stacking context would
+swallow them. (5) The ring is styled inside the `.sa-theme` carve-out the chrome pass established,
+so it reaches for no `--brand-*`/`--neon-*` token and joins the four shared block lists (font,
+press, focus, unlit) rather than restating that grammar — and its centring is `translate`, not
+`transform`, because the shared press rule sets `transform` outright and would otherwise jump every
+button half its own size on the way down. `lib/stackacres/tap-action.ts` (new) decides what a tap is
+worth off the same `unitRowAction` the sidebar rows use, so the two surfaces cannot disagree;
+`growAreaAt` (new, in world.ts) is deliberately narrower than `zoneAt` — seeding is offered on
+fenced ground, not anywhere inside a district's generous box. Live-verified against a real
+`next dev` in memory mode, before and again after the rebase onto the new chrome.
+
 ### The woodland became forest: a world-space field, bigger trees, lanes through it (2026-09-04)
 Kayo, in two passes. First: the map read as empty "because trees aren't bundled together" and the
 tree art was "complete dog shit" (grass too), all on the 4050. Then, on seeing the result: still

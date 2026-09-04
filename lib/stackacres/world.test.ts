@@ -10,6 +10,7 @@ import {
   forestDensityAt,
   clampZoom,
   cropSpot,
+  growAreaAt,
   growAreaBounds,
   growAreaInterior,
   inFarmZone,
@@ -77,6 +78,43 @@ describe("grow areas", () => {
       expect(interior.x + interior.width).toBeLessThan(bounds.x + bounds.width);
       expect(interior.y + interior.height).toBeLessThan(bounds.y + bounds.height);
     }
+  });
+
+  // `growAreaAt` returns the first match with no tie-break, which is only
+  // honest while the four boxes are disjoint. A district nudged on top of
+  // another would silently start offering the wrong stock to a tap.
+  it("keeps the four grow areas from overlapping each other", () => {
+    for (const a of ZONE_IDS) {
+      for (const b of ZONE_IDS) {
+        if (a === b) continue;
+        const one = growAreaBounds(a);
+        const two = growAreaBounds(b);
+        const apart =
+          one.x + one.width < two.x ||
+          two.x + two.width < one.x ||
+          one.y + one.height < two.y ||
+          two.y + two.height < one.y;
+        expect(apart).toBe(true);
+      }
+    }
+  });
+
+  it("finds a district from a point inside its grow area, and only there", () => {
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      expect(growAreaAt(mid.x, mid.y)).toBe(zone);
+      // Corners are inside: the fence is part of the ground you can seed.
+      expect(growAreaAt(bounds.x, bounds.y)).toBe(zone);
+      expect(growAreaAt(bounds.x + bounds.width, bounds.y + bounds.height)).toBe(zone);
+      // A step outside is not. A tap in the woods must offer nothing.
+      expect(growAreaAt(bounds.x - 1, bounds.y - 1)).not.toBe(zone);
+    }
+  });
+
+  it("is narrower than the district itself -- the woods answer nothing", () => {
+    // Far outside every district, in the open world the camera can roam.
+    expect(growAreaAt(5_000, 5_000)).toBeNull();
   });
 });
 

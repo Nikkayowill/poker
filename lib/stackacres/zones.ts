@@ -493,7 +493,23 @@ function inPenBlock(id: ZoneId, x: number, y: number): boolean {
   return x >= block.x && x <= block.x + block.width && y >= block.y && y <= block.y + block.height;
 }
 
-export function zoneScenery(cx: number, cy: number): ZoneSceneryItem[] {
+/**
+ * `locked` names districts whose land the player has not cleared yet (see
+ * ./sectors.ts). Everything this function deals is FARM GEAR -- a plough, a
+ * hitching post, an ox trough, a furrow somebody cut -- so none of it may
+ * stand on ground nobody has taken on: a trough in a wood is a story about a
+ * farm that is already there, which is the exact impression a locked sector
+ * must not give. What grows there instead is `sectorOvergrowth`, dealt by
+ * that module and painted by the scene in place of all of this.
+ *
+ * Optional, and defaulting to "nothing is locked", so every existing caller
+ * and test keeps the behaviour it had.
+ */
+export function zoneScenery(
+  cx: number,
+  cy: number,
+  locked: ReadonlySet<ZoneId> = new Set(),
+): ZoneSceneryItem[] {
   const random = seeded((cx * 0x2545f491) ^ (cy * 0x9e3779b1) ^ 0x1b873593);
   const x0 = cx * ZONE_CHUNK;
   const y0 = cy * ZONE_CHUNK;
@@ -509,6 +525,7 @@ export function zoneScenery(cx: number, cy: number): ZoneSceneryItem[] {
     const roll = random();
     const id = zoneAt(x, y);
     if (id === null || id === "farmstead") continue;
+    if (locked.has(id)) continue;
     if (i >= ZONE_SCATTER_COUNT[id]) continue;
     // The connectors run right through two of the districts, so the same
     // exclusion the woodland respects applies here: a hay bale in the middle

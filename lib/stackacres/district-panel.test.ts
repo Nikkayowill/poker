@@ -13,6 +13,8 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
     readyAt: "2026-09-04T00:15:00.000Z",
     progress: 0.2,
     hungryAt: null,
+    thirstyAt: null,
+    isWatered: true,
     muckFee: null,
     permanent: false,
     ...overrides,
@@ -20,6 +22,17 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
 }
 
 describe("unitRowAction", () => {
+  it("a dry crop offers water, and can never be refused for want of a resource", () => {
+    // Nothing in context can turn this into a disabled button: watering is
+    // free, which is the one way it differs from feeding.
+    expect(unitRowAction(unit({ state: "dry", stock: "sprout" }), { feed: 0, gold: 0 })).toEqual({
+      kind: "water",
+    });
+    expect(unitRowAction(unit({ state: "dry", stock: "sprout" }), { feed: 99, gold: 99_999 })).toEqual({
+      kind: "water",
+    });
+  });
+
   it("a ready unit offers collect", () => {
     expect(unitRowAction(unit({ state: "ready" }), { feed: 0, gold: 0 })).toEqual({ kind: "collect" });
   });

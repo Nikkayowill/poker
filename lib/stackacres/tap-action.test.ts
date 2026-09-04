@@ -20,6 +20,8 @@ function unit(
     readyAt: new Date(NOW + 15 * 60_000).toISOString(),
     progress: state === "mucked" ? null : 0.5,
     hungryAt: null,
+    thirstyAt: null,
+    isWatered: true,
     muckFee: state === "mucked" ? 22 : null,
     permanent: false,
     ...overrides,
@@ -27,6 +29,12 @@ function unit(
 }
 
 describe("tapActionFor", () => {
+  it("waters a dry crop, with no barn stock to check first", () => {
+    expect(
+      tapActionFor(unit("dry", { stock: "sprout" }), { feed: 0, gold: 0, nowMs: NOW }),
+    ).toEqual({ kind: "water", unitId: "u1" });
+  });
+
   it("collects a ready unit", () => {
     expect(tapActionFor(unit("ready"), { feed: 0, gold: 0, nowMs: NOW })).toEqual({
       kind: "collect",

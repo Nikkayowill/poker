@@ -160,7 +160,7 @@ describe("animals", () => {
     expect(walked).toBeGreaterThan(100);
   });
 
-  it("faces the way it is walking and arrives exactly on its target", () => {
+  it("arrives exactly on its target", () => {
     const pen = { x: 0, y: 0, width: 100, height: 100 };
     const critter = {
       x: 10,
@@ -176,12 +176,44 @@ describe("animals", () => {
     const walking = stepCritter(critter, pen, 10, 16, toCorner);
     expect(walking.mode).toBe("walk");
     expect(walking.targetX).toBe(90);
-    expect(walking.facing).toBe(-1);
     let c = walking;
     for (let i = 0; i < 2_000 && c.mode === "walk"; i += 1) c = stepCritter(c, pen, 10, 16, toCorner);
     expect(c.mode).toBe("idle");
     expect(c.x).toBe(90);
     expect(c.y).toBe(90);
+  });
+
+  it("faces the way its target lies ON SCREEN, not in world space", () => {
+    const pen = { x: 0, y: 0, width: 100, height: 100 };
+    const standing = (facing: 1 | -1) => ({
+      x: 50,
+      y: 50,
+      targetX: 50,
+      targetY: 50,
+      mode: "idle" as const,
+      waitMs: 1,
+      facing,
+    });
+    // `pointWithin` draws x then y, so a two-value source aims the walk.
+    const at = (...values: number[]) => {
+      let i = 0;
+      return () => values[Math.min(i++, values.length - 1)];
+    };
+    // `isoProject` puts screen x at (x - y), so straight +y is screen-LEFT
+    // even though it is a positive world coordinate. The old world-x-only
+    // rule read this as no turn at all and left the animal walking backwards
+    // for the whole trip.
+    expect(stepCritter(standing(1), pen, 10, 16, at(0.5, 0.9)).facing).toBe(-1);
+    expect(stepCritter(standing(-1), pen, 10, 16, at(0.5, 0.1)).facing).toBe(1);
+    // And a diagonal is decided by which of the two dominates.
+    expect(stepCritter(standing(1), pen, 10, 16, at(0.1, 0.9)).facing).toBe(-1);
+    expect(stepCritter(standing(-1), pen, 10, 16, at(0.9, 0.1)).facing).toBe(1);
+
+    // Straight up the screen is not a turn either way, so an animal keeps
+    // whichever way it was already facing rather than flipping on the spot.
+    const upScreen = () => 0.9; // the (90, 90) corner: dx === dy.
+    expect(stepCritter(standing(1), pen, 10, 16, upScreen).facing).toBe(1);
+    expect(stepCritter(standing(-1), pen, 10, 16, upScreen).facing).toBe(-1);
   });
 
   it("caps a long frame so a background tab does not teleport the herd", () => {

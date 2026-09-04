@@ -12,8 +12,10 @@ import {
 } from "@/lib/stackacres/catalogue";
 import {
   hungryAtFor,
+  isStackAcresUnitDry,
   isStackAcresUnitHungry,
   isStackAcresUnitReady,
+  thirstyAtFor,
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
@@ -38,6 +40,17 @@ import {
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import {
+  STACKACRES_SECTORS,
+  isSectorUnlocked,
+  sectorClearCheck,
+  sectorLabel,
+  unlockedPlotCount,
+  unlockedSectors,
+  type SectorId,
+} from "@/lib/stackacres/sectors";
+import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
+import { stockZone } from "@/lib/stackacres/world";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -53,14 +66,22 @@ import {
   readStackAcresCapacity,
   readStackAcresExchanged,
   readStackAcresFeed,
+  raiseStackAcresUpkeep,
+  readStackAcresSectors,
   readStackAcresUpkeep,
   recordStackAcresHarvest,
-  recordStackAcresUpkeep,
+  recordStackAcresSectorCleared,
   releaseStackAcresExchange,
   reserveStackAcresExchange,
   retireStackAcresUnit,
+  waterStackAcresUnit,
   type StoredStackAcresUnit,
 } from "./stackacres-store";
+import {
+  claimStackAcresIntent,
+  completeStackAcresIntent,
+  releaseStackAcresIntent,
+} from "./stackacres-intent-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 
 /**
@@ -97,6 +118,13 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  * ("there is one payout") instead of counting call sites that grow with every
  * new refund. A new direct `creditGoldByProfile` is a new faucet and is the
  * change to stop over.
+ *
+ * LAND. Three of the four districts start under wild growth and are cleared
+ * once, with Gold, for good (`clearStackAcresSector`). Keeping cleared land
+ * then costs a daily fee that compounds with the number of slots the player
+ * keeps -- taken out of what a harvest pays and clamped at it, so it can
+ * leave a harvest worth nothing and can never reach a balance. Curve and
+ * reasoning in lib/stackacres/upkeep.ts.
  *
  * A StackAcres unit is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
@@ -152,7 +180,15 @@ export interface StackAcresView {
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Today's allowance: the flat ceiling, and what is left of it. */
   exchange: StackAcresExchangeState;
-  /** Today's Land Maintenance: what the estate costs, and what it has paid. */
+  /**
+   * Land the player may work. DERIVED, not just the stored clear list -- see
+   * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
+   * district they already keep stock in. The client draws everything else as
+   * wild ground.
+   */
+  sectors: SectorId[];
+  /** Today's Land Maintenance: what it is charged on, what is owed, and what
+   *  the next harvest will be docked. */
   upkeep: StackAcresUpkeepState;
 }
 
@@ -168,23 +204,28 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
 }
 
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
-  const [rows, feed, capacity, exchanged, upkeepPaid] = await Promise.all([
+  const day = stackacresExchangeDay(now);
+  const [rows, feed, capacity, exchanged, cleared, upkeepPaid] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
-    readStackAcresExchanged(profile.id, stackacresExchangeDay(now)),
-    readStackAcresUpkeep(profile.id, stackacresUpkeepDay(now)),
+    readStackAcresExchanged(profile.id, day),
+    readStackAcresSectors(profile.id),
+    readStackAcresUpkeep(profile.id, day),
   ]);
 
+  const units = toStackAcresUnitSnapshots(rows, now);
+  const sectors = unlockedSectors(cleared, units);
   return {
-    units: toStackAcresUnitSnapshots(rows, now),
+    units,
     profile,
     feed,
     capacity,
     exchange: exchangeState(exchanged, now),
-    // Assessed on every field and pen standing, mucked ones included: a unit
-    // waiting to be cleared is still land being held.
-    upkeep: upkeepState(rows.length, upkeepPaid),
+    sectors,
+    // Reported, never charged, from here: a read must not move a purse. The
+    // charge happens inside a harvest, netted out of what it pays.
+    upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
   };
 }
 
@@ -204,6 +245,83 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
 async function refundGold(profileId: string, gold: number): Promise<void> {
   if (gold <= 0) return;
   await creditGoldByProfile(profileId, gold).catch(() => null);
+}
+
+/**
+ * Everything any action can add to the view. Exactly ONE action returns
+ * anything beyond the farm itself now -- a harvest, which has to say what it
+ * brought in and what it paid -- which is why a replayed intent only has to
+ * remember this much (see `replayDelta`).
+ */
+export type StackAcresActionResult = StackAcresView & {
+  harvest?: unknown;
+};
+
+/**
+ * The part of a result a duplicate has to be told a second time.
+ *
+ * Never the view: a replay is answered with a freshly read one, so a duplicate
+ * can only ever hand back numbers at least as current as the original did.
+ * Storing the view instead would mean a request replayed ten minutes later
+ * repainted the farm as it looked ten minutes ago.
+ */
+function replayDelta(result: StackAcresActionResult): Record<string, unknown> | null {
+  const delta: Record<string, unknown> = {};
+  if (result.harvest !== undefined) delta.harvest = result.harvest;
+  return Object.keys(delta).length > 0 ? delta : null;
+}
+
+/**
+ * Runs one action at most once per intent.
+ *
+ * `key` is the client's own name for what it is trying to do, and this is the
+ * only thing standing between a duplicated request and a double spend for the
+ * four actions that CREATE something -- `stock`, `buy-stock`, `buy-feed` and
+ * `expand-capacity` have no row to version-guard, so nothing else can tell a
+ * duplicate from a second deliberate purchase. See
+ * ./stackacres-intent-store.ts for why the other six were already safe.
+ *
+ * `key` is optional, and a request without one runs exactly as it always did.
+ * That is deliberate: the guard belongs to callers who can name their intent,
+ * and an older client (or a phone that reloaded mid-deploy) must not start
+ * failing because it does not send one.
+ *
+ * Three outcomes, and NONE of them is a refusal -- a duplicate that sounds
+ * like a denial is the bug this exists to avoid:
+ *
+ *   * **fresh** -- nobody has claimed this intent. Run it, then record the
+ *     small delta a twin would need. A throw releases the claim, because a
+ *     refusal did not happen and the player's next press must be a real
+ *     attempt.
+ *   * **replay** -- the twin already finished. Answer with a fresh view plus
+ *     the delta it recorded, so the duplicate reads exactly like the original
+ *     succeeding.
+ *   * **in-flight** -- the twin is still running. Answer with the farm as it
+ *     stands; the client's own clock re-reads a second later and picks up
+ *     whatever the twin lands.
+ */
+export async function runStackAcresAction(
+  token: string,
+  key: string | null,
+  action: string,
+  run: () => Promise<StackAcresActionResult>,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!key) return run();
+
+  const profile = await ensureProfile(token);
+  const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
+  if (claim.kind === "replay") return { ...(await view(profile, now)), ...(claim.result ?? {}) };
+  if (claim.kind === "in-flight") return view(profile, now);
+
+  try {
+    const result = await run();
+    await completeStackAcresIntent(profile.id, key, replayDelta(result));
+    return result;
+  } catch (error) {
+    await releaseStackAcresIntent(profile.id, key);
+    throw error;
+  }
 }
 
 /**
@@ -229,6 +347,131 @@ async function capacityFor(profileId: string, stock: StackAcresStock): Promise<n
   return capFor(capacity[stock] ?? 0);
 }
 
+/* ------------------------------------------------------------------ */
+/* Land: what is cleared, and what keeping it costs                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reads the land a player may work and what they own on it. A PURE READ:
+ * nothing here moves a purse.
+ *
+ * IT USED TO CHARGE. The Bushel version settled the day's fee here, off every
+ * mutating action, and `landGate` then refused to let an unpaid farm grow.
+ * Both are gone with the second currency, and the reason is worth writing
+ * down rather than rediscovering:
+ *
+ *   * **The fee is netted out of a harvest now** (see lib/stackacres/harvest.ts
+ *     and lib/stackacres/upkeep.ts), clamped at what that harvest is worth. It
+ *     cannot reach a balance, so there is nothing for a gate to protect
+ *     against and no arrears to chase.
+ *   * **Gating growth on an unpaid bill achieved nothing once that was true.**
+ *     The gate existed because a Bushel debit could go unpaid while the farm
+ *     kept earning through other paths. A farm nobody is harvesting produces
+ *     no Gold at all, so there is nothing to sink and nobody to press -- and
+ *     dropping it removes the one shape this fee must never have, a debt a
+ *     player cannot work their way out of.
+ *
+ * The sectors and units are handed back together rather than read separately,
+ * and that is not premature tidiness: every caller needs both a line later
+ * (which land is open, how much stock is going), and re-reading them made the
+ * hot stocking path do four queries where two will do.
+ */
+async function readLand(
+  profileId: string,
+): Promise<{ sectors: SectorId[]; units: StoredStackAcresUnit[] }> {
+  const [cleared, units] = await Promise.all([
+    readStackAcresSectors(profileId),
+    listStackAcresUnits(profileId),
+  ]);
+  return { sectors: unlockedSectors(cleared, units), units };
+}
+
+/** Refuses an action aimed at land nobody has cleared yet. The client hides
+ *  these controls entirely (a locked sector paints no pens to tap), so this
+ *  is the guard against a hand-rolled request rather than a UI state. */
+function requireOpenSector(sectors: readonly SectorId[], zone: ZoneId, what: string): void {
+  if (isSectorUnlocked(zone, sectors)) return;
+  throw new StackAcresRequestError(
+    `${sectorLabel(zone)} is still under wild growth. Clear the land before you keep ${what} there.`,
+    409,
+  );
+}
+
+/**
+ * Clears a sector: the one-off Gold price of turning wild ground into land
+ * you can farm.
+ *
+ * A pure Gold SINK, permanent, and never refunded once the row lands -- the
+ * same category as `expandStackAcresCapacity`, and the reason the asymmetry
+ * note at the top of this file is untouched by it.
+ *
+ * Rule 1 the whole way down: the requirements are checked before a piece of
+ * Gold moves, the Gold leaves before the land is recorded, and every failure
+ * after the debit refunds. The permanent thing here is a single row with the
+ * (profile, sector) primary key as its idempotency guard, so two tabs
+ * clearing the same land together pay for it once and the loser is refunded.
+ */
+export async function clearStackAcresSector(
+  token: string,
+  sectorInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!(ZONE_IDS as readonly string[]).includes(sectorInput)) {
+    throw new StackAcresRequestError("There is no such place.", 400);
+  }
+  const sector = sectorInput as SectorId;
+  const def = STACKACRES_SECTORS[sector];
+  const profile = await ensureProfile(token);
+
+  // Owing rent on the land you have is a reason not to be sold more of it,
+  // and this settles the bill on the way past -- and hands over the two
+  // answers the requirement check is about to ask for.
+  const { sectors, units } = await readLand(profile.id);
+  const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length });
+  if (check.alreadyOpen) {
+    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (!check.ok) {
+    // The first thing still missing, worded exactly as the modal's own
+    // checklist words it -- both read the same `sectorClearCheck`.
+    const missing = check.requirements.find((requirement) => !requirement.met);
+    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = await spendGoldByProfile(profile.id, def.clearCost);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `Clearing ${sectorLabel(sector)} costs ${def.clearCost.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresSectorCleared(profile.id, sector, now);
+  } catch (error) {
+    await refundGold(profile.id, def.clearCost);
+    throw error;
+  }
+  if (!recorded) {
+    // Another tab cleared it between the check above and now. The land is
+    // theirs either way; this request must not have been charged for it.
+    await refundGold(profile.id, def.clearCost);
+    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(debited, now);
+}
+
 /**
  * Buys one extra capacity slot for a kind, at the flat per-kind price, IN ANY
  * ORDER -- there is nothing to unlock first, the same reasoning that
@@ -243,6 +486,11 @@ export async function expandStackAcresCapacity(
   const stock: StackAcresStock = stockInput;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
+
+  // Buying room is taking on more land, so both land rules apply: the ground
+  // has to be cleared, and the fee on what is already kept has to be settled.
+  const land = await readLand(profile.id);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
   const capacity = await readStackAcresCapacity(profile.id);
   const extraSlots = capacity[stock] ?? 0;
@@ -303,6 +551,9 @@ export async function buyStackAcresStock(
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
 
+  const land = await readLand(profile.id);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
+
   const [occupied, cap] = await Promise.all([
     countOccupiedStackAcresUnits(profile.id, stock),
     capacityFor(profile.id, stock),
@@ -340,6 +591,8 @@ export async function buyStackAcresStock(
       startedAt: now,
       readyAt: new Date(now.getTime() + def.durationMs),
       lastFedAt: def.hungerMs === null ? null : now,
+      // Sowing waters the ground; an animal never runs dry.
+      lastWateredAt: def.thirstMs === null ? null : now,
       permanent: true,
     });
   } catch (error) {
@@ -372,6 +625,9 @@ export async function stockStackAcres(
   const stock: StackAcresStock = input.stock;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
+
+  const land = await readLand(profile.id);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
   // The caps are what bound this faucet; see lib/stackacres/catalogue.ts.
   // Checked here for a clean 409, enforced for real by the advisory-locked
@@ -409,6 +665,8 @@ export async function stockStackAcres(
       readyAt: new Date(now.getTime() + def.durationMs),
       // An animal counts as fed the moment it arrives; a crop never eats.
       lastFedAt: def.hungerMs === null ? null : now,
+      // And a crop goes into watered ground; an animal has no soil to dry out.
+      lastWateredAt: def.thirstMs === null ? null : now,
       permanent: false,
     });
   } catch (error) {
@@ -536,6 +794,72 @@ export async function feedStackAcres(
   }
   if (!fed) {
     await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
+}
+
+/**
+ * Waters a dry crop, spending nothing.
+ *
+ * The mirror of `feedStackAcres` on the crop track, and the same guarantee:
+ * ready_at moves forward by however long the soil stood dry, so neglected
+ * time is never credited as work, and the yield is untouched.
+ *
+ * It is deliberately FREE. Every money-ordering rule at the top of this file
+ * is about a debit and the thing it pays for, and watering has neither -- it
+ * costs attention, which is the resource this loop is actually asking for.
+ * That is why there is no spend to reverse when the guarded write loses its
+ * race: a lost race here is just a 409, not a refund.
+ *
+ * Watering a crop that is not dry is refused rather than treated as a
+ * top-up. Allowing it would let a player push ready_at forward by zero all
+ * day, which does nothing, and reset the thirst clock for free, which is the
+ * whole tending loop -- so a drink only counts once the ground actually
+ * needs it.
+ */
+export async function waterStackAcres(
+  token: string,
+  unitIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const unitId = parseUnitId(unitIdInput);
+  const profile = await ensureProfile(token);
+
+  const unit = await getStackAcresUnit(profile.id, unitId);
+  if (!unit || unit.status !== "working") {
+    throw new StackAcresRequestError("Nothing here to water.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const thirstyAt = thirstyAtFor(unit);
+  if (!thirstyAt) {
+    throw new StackAcresRequestError("That does not grow in soil.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  // Wet ground is a NO-OP, not a refusal, and the distinction matters on a
+  // phone. `withLocalClock` decides dryness from the device's own clock, so a
+  // handset running a few minutes fast paints a faded crop with a Water button
+  // over ground the server still calls wet -- and an error banner for pressing
+  // the button the app just drew is a bug the player cannot act on.
+  //
+  // Returning early rather than watering is what keeps the guard: nothing is
+  // written, so the thirst clock is not reset and there is no free top-up to
+  // farm. It costs nothing to allow because watering costs nothing.
+  if (!isStackAcresUnitDry(unit, now)) return view(profile, now);
+
+  const driedAt = Date.parse(thirstyAt);
+  const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+  const readyAt = Date.parse(unit.readyAt);
+  const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
+
+  const watered = await waterStackAcresUnit(unit, now, pushed);
+  if (!watered) {
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -698,10 +1022,19 @@ export async function harvestStackAcres(
   }
 
   const day = stackacresExchangeDay(now);
-  const upkeepPaid = await readStackAcresUpkeep(profile.id, day);
-  // Assessed on everything standing, mucked units included: a unit waiting to
-  // be cleared is still land being held.
-  const upkeepDue = stackacresUpkeepDue(rows.length, upkeepPaid);
+  const [upkeepPaid, cleared, capacity] = await Promise.all([
+    readStackAcresUpkeep(profile.id, day),
+    readStackAcresSectors(profile.id),
+    readStackAcresCapacity(profile.id),
+  ]);
+  // Charged on SLOTS ON CLEARED GROUND, not on what is standing in them.
+  // Billing what is planted would let a player clear every district, leave it
+  // empty and pay nothing for the room -- which is the one-way ratchet the fee
+  // exists to prevent. See lib/stackacres/upkeep.ts.
+  const upkeepDue = stackacresUpkeepDue(
+    unlockedPlotCount(unlockedSectors(cleared, toStackAcresUnitSnapshots(rows, now)), capacity),
+    upkeepPaid,
+  );
 
   const candidateOf = (row: StoredStackAcresUnit): HarvestCandidate => ({
     unitId: row.id,
@@ -795,8 +1128,18 @@ export async function harvestStackAcres(
   // already durable and already paid NET of this fee, so failing here must not
   // turn it into an error response -- and leaving the day looking unpaid would
   // bill the player for the same day twice.
+  // RAISE-TO, not add. The day's bill is not fixed when the day starts -- buy
+  // a capacity slot at noon and it goes up -- so the ledger holds what has
+  // been paid TOWARD today and each charge settles to a new total. Adding
+  // would double-charge the morning every afternoon. False is "another tab
+  // already got there", which is not an error: it settled the same day.
   if (actual.upkeepCharged > 0) {
-    await recordStackAcresUpkeep(profile.id, day, actual.upkeepCharged);
+    await raiseStackAcresUpkeep(profile.id, day, upkeepPaid + actual.upkeepCharged).catch(
+      (error) => {
+        console.error("stackacres.upkeep_record_failed", { profileId: profile.id, day, error });
+        return false;
+      },
+    );
   }
 
   for (const line of actual.lines) {

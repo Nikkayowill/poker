@@ -69,15 +69,16 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     const view = (await opened.json()) as {
       units: unknown[];
       exchange: { ceiling: number; remaining: number };
-      upkeep: { units: number; fee: number; due: number };
+      upkeep: { plots: number; fee: number; due: number };
       bushels?: unknown;
       inventory?: unknown;
     };
     expect(view.units).toEqual([]);
     expect(view.exchange.ceiling).toBe(15_000);
     expect(view.exchange.remaining).toBe(15_000);
-    // Nothing owned, so nothing to maintain.
-    expect(view.upkeep).toMatchObject({ units: 0, fee: 0, due: 0 });
+    // The Farmstead's own three slots are exactly the free base, so a farm
+    // that has cleared nothing never sees a bill.
+    expect(view.upkeep).toMatchObject({ plots: 3, fee: 0, due: 0 });
     // And the second currency is not merely unused -- it is not in the payload.
     expect(view.bushels).toBeUndefined();
     expect(view.inventory).toBeUndefined();
@@ -93,14 +94,24 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     const after = (await seeded.json()) as {
       units: { stock: string; state: string }[];
       profile: { goldBalance: number };
-      upkeep: { units: number; fee: number };
+      upkeep: { plots: number; fee: number };
     };
     expect(after.units).toHaveLength(1);
     expect(after.units[0]).toMatchObject({ stock: "hen", state: "working" });
     expect(after.profile.goldBalance).toBe(before.profile.goldBalance - 50);
-    // One field held is one field maintained, and the fee turns up immediately.
-    expect(after.upkeep.units).toBe(1);
-    expect(after.upkeep.fee).toBeGreaterThan(0);
+    // Still inside the free base: a Hen Coop at the Farmstead is one of the
+    // three slots a new farm never pays for. The fee arrives with cleared land,
+    // which is its own describe block in the service tests.
+    expect(after.upkeep.plots).toBe(3);
+    expect(after.upkeep.fee).toBe(0);
+
+    // Three of the four districts start under wild growth, so the only kind a
+    // new farm can keep is the Hen Coop at the Farmstead -- which is why every
+    // stocking in this file is a hen.
+    const walled = await api.post("/api/stackacres/actions", {
+      data: { action: "stock", stock: "cattle" },
+    });
+    expect(walled.status()).toBe(409);
 
     // The two actions the rewrite removed are rejected by the schema, not
     // quietly accepted and ignored.
@@ -139,7 +150,7 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     expect(unlocked.ok()).toBe(true);
     await admitFarmer(farmerContext, adminContext.request, 100_000);
     await farmerContext.request.post("/api/stackacres/actions", {
-      data: { action: "stock", stock: "cattle" },
+      data: { action: "stock", stock: "hen" },
     });
 
     const page = await farmerContext.newPage();
@@ -172,7 +183,7 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     await expect(sheet.getByText(/Today.s allowance/i)).toBeVisible();
     await expect(sheet.getByText(/15,000 Gold left today/)).toBeVisible();
     await expect(sheet.getByText(/Land maintenance/i)).toBeVisible();
-    await expect(sheet.getByText(/a day across/i)).toBeVisible();
+    await expect(sheet.getByText(/Holding cleared land costs/i)).toBeVisible();
 
     // Feed is priced in Gold now, and the exchange window it used to sit above
     // is gone entirely.

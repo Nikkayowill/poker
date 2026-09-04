@@ -66,10 +66,27 @@ export interface StackAcresStockDef {
   /**
    * How long after its last feed an animal goes hungry. Null for crops, which
    * do not eat -- that is the whole difference between the two tracks. A crop
-   * is set-and-forget and yields little; an animal yields more and wants
-   * tending.
+   * yields little and an animal yields more, and each is tended its own way:
+   * an animal is fed, a crop is watered (see `thirstMs`).
    */
   hungerMs: number | null;
+  /**
+   * How long after its last watering a crop's soil dries out. Null for
+   * livestock, which drink from their own trough and are tended by feeding
+   * instead -- exactly the mirror of `hungerMs`, and deliberately the same
+   * shape so the two freeze-the-clock paths read alike.
+   *
+   * A dry crop stops growing outright: `isStackAcresUnitReady` refuses it,
+   * and watering pushes `readyAt` forward by however long it stood dry, so
+   * the neglected time is never silently credited as work. Same rule feeding
+   * already follows -- neglect costs time, never yield.
+   *
+   * Both numbers sit UNDER their kind's own `durationMs` on purpose, unlike
+   * the Hen Coop's deliberately-unreachable hunger window: watering is the
+   * crop track's whole tending loop, so a crop that could finish a cycle
+   * without ever needing a drink would have no loop at all.
+   */
+  thirstMs: number | null;
   /**
    * What clearing this plot costs after a muck, in Gold. Scaled to the tier
    * on purpose: a single flat fee across tiers an order of magnitude apart
@@ -91,6 +108,9 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     seedCost: 20,
     durationMs: 15 * 60 * 1000,
     hungerMs: null,
+    // Half its own 15m cycle: one drink mid-row, so the cheapest crop teaches
+    // the watering loop without being a chore.
+    thirstMs: 8 * 60 * 1000,
     muckFee: 32,
   },
   cash_crop: {
@@ -98,6 +118,9 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     seedCost: 120,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: null,
+    // Roughly two drinks across a 4h cycle, the same tending weight a Sheep
+    // Pen carries on the livestock track at the same duration.
+    thirstMs: 90 * 60 * 1000,
     muckFee: 200,
   },
   hen: {
@@ -108,6 +131,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     // animal is deliberately fire-and-forget; tending is what you take on when
     // you move up to the tiers that yield.
     hungerMs: 45 * 60 * 1000,
+    thirstMs: null,
     muckFee: 44,
   },
   pig: {
@@ -120,6 +144,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     seedCost: 300,
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: 2 * 60 * 60 * 1000,
+    thirstMs: null,
     muckFee: 312,
   },
   cattle: {
@@ -127,6 +152,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     seedCost: 1_200,
     durationMs: 24 * 60 * 60 * 1000,
     hungerMs: 8 * 60 * 60 * 1000,
+    thirstMs: null,
     muckFee: 1_120,
   },
 };

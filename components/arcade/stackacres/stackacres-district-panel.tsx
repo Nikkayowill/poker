@@ -44,6 +44,8 @@ function stateLine(unit: StackAcresUnitSnapshot, nowMs: number): string {
       return "Ready to collect";
     case "hungry":
       return "Hungry -- feed to keep it going";
+    case "dry":
+      return "Thirsty -- water to keep it growing";
     case "mucked":
       return `Weather-worn -- clear for ${(unit.muckFee ?? 0).toLocaleString()} Gold`;
     case "working":
@@ -63,6 +65,7 @@ export interface StackAcresUnitRowsProps {
   armedUnitId: string | null;
   onCollect: (unit: StackAcresUnitSnapshot) => void;
   onFeed: (unit: StackAcresUnitSnapshot) => void;
+  onWater: (unit: StackAcresUnitSnapshot) => void;
   onClear: (unit: StackAcresUnitSnapshot) => void;
   /** First tap on a permanent unit's row. */
   onArmRetire: (unit: StackAcresUnitSnapshot) => void;
@@ -81,6 +84,7 @@ export function StackAcresUnitRows({
   armedUnitId,
   onCollect,
   onFeed,
+  onWater,
   onClear,
   onArmRetire,
   onConfirmRetire,
@@ -133,6 +137,16 @@ export function StackAcresUnitRows({
                 onClick={() => onFeed(unit)}
               >
                 Feed
+              </button>
+            )}
+            {action.kind === "water" && (
+              <button
+                type="button"
+                className="sa-unit-action is-water"
+                disabled={busy}
+                onClick={() => onWater(unit)}
+              >
+                Water
               </button>
             )}
             {action.kind === "clear" && (

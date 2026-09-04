@@ -21,6 +21,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Realtime: `lib/game/table-channel.ts`
 - DB/env: `supabase/migrations/`, `supabase/config.toml`, `.env.example`
 - Product constraints: `docs/game-loop.md`, `docs/launch-checklist.md`, `docs/security-audit.md`
+- Farm (StackAcres, formerly "Homestead" — DB objects still say `homestead_*` on purpose):
+  `lib/stackacres/`, `components/arcade/stackacres/`, `app/api/stackacres/`
 
 Subsystem-specific gotchas moved out of this always-loaded file into where they load on demand:
 `lib/scene/CLAUDE.md` (2D table), `lib/scene/chips/CLAUDE.md` (chip system), `app/styles/CLAUDE.md`
@@ -41,12 +43,193 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
   because those land under whoever else is mid-task rather than staying local. Reads are always fine;
   `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
+- Commit messages and PR descriptions: short and plain, like a person telling a coworker what
+  changed. No em-dashes, no comma-chained "did X, Y, and Z" example lists. Say what changed and why
+  in a sentence or two, not an essay. New code comments get the same treatment: a short "why" where
+  it's non-obvious, not a paragraph. (Any attribution footer the harness itself appends is separate
+  from this and not something to strip — this rule is about the words, not the footer. This history
+  log below is the one deliberate exception on length — it's a dense project changelog by design, see
+  its own note partway down — but PRs, commits, and code comments are not.)
 
 ## Active milestone
 
-- Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+- No single tracked milestone or "current feature branch" — this repo runs many parallel sessions on
+  many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
+  recent dated entries below for what's actually in flight; don't trust this line to name it.
 
-### StackAcres went single-currency: harvest pays Gold in one step, plus synergies and land upkeep (2026-09-04)
+### StackAcres crops are watered, and drawn far bigger than the rest of the world (2026-09-04)
+Two changes to the crop track, one loop and one visual. **Watering** is the deliberate mirror of the
+livestock hunger mechanic that has existed since the first migration, built by copying its shape
+rather than inventing a second one: `thirstMs` on the catalogue (crops only, `null` for livestock,
+exactly as `hungerMs` is the reverse), `last_watered_at` on `homestead_units`, an
+`isStackAcresUnitDry` guard checked beside `isStackAcresUnitHungry` inside
+`isStackAcresUnitReady`, and a version-guarded `waterStackAcresUnit` write that pushes `ready_at`
+forward by however long the soil stood dry. **The one deliberate divergence from hunger is the
+load-bearing line: a crop that finished growing BEFORE its ground dried is never dry.** Mirroring
+hunger exactly here was a real bug, caught by probing the case rather than by any test asking for it
+-- a ripe, uncollected row went dry, stopped being collectable, and watering it then pushed `ready_at`
+forward by the drought, UN-RIPENING finished produce and charging the player again for time already
+waited. Hunger genuinely does behave that way (a ready cow that goes hungry must be fed before it is
+milked) and it is defensible there, because a neglected animal stopping is the point; it is not
+defensible for produce already grown. The test is `readyAt <= thirstyAt`, compared against
+`thirstyAt` rather than `now` so it is a fact about the row settled once rather than something that
+flips as the clock moves -- and so it cannot recurse into `isStackAcresUnitReady`, which calls it.
+`withLocalClock` in the component carries the same carve-out or a ripe row flickers to dry between
+refetches.
+
+A `/code-review` pass caught three more, all real and all fixed. (1) **`collectStackAcresUnit`'s
+permanent-restart branch never reset `last_watered_at`**, so a Gold-bought crop re-sowed itself dry at
+progress 0 carrying the previous cycle's watering, and the only available fix -- one Water tap -- then
+added the entire stale gap to `ready_at`, turning a 15-minute cycle into however long the unit had sat
+ripe. It now re-waters on restart, keyed off the row's own value so the store needs no catalogue
+import; `last_fed_at` deliberately still does NOT, and the asymmetry is the point (an animal can be
+fed any time, a crop cannot be watered until it is actually dry). (2) **The migration backfill used
+`started_at` and had to become `now()`.** Since `thirstMs` is under `durationMs` for both crop kinds,
+`started_at + thirst` always precedes `ready_at`, so the ripened-before-the-drought carve-out could not
+protect a single legacy row -- every already-ripe crop would have flipped to `dry` at deploy and
+un-ripened itself on the first Water tap. Checked against the live table: all seven working crop rows
+were already ripe, so that was 100% of the real data. The cost of `now()` is one free thirst window per
+in-flight crop, once, which is the cheaper side by a wide margin -- the original comment arguing the
+other way was wrong. (3) **`unitAt` now ranks an art hit above a ground-diamond hit**, because a ripe
+crop's diamond doubled to 48 units in a 136x118 interior holding up to six of each kind; on depth alone
+the front crop swallowed the tap target of everything behind it. Depth still settles hits of the same
+kind, which is the case that rule was written for. Also: watering wet ground is a NO-OP rather than a
+400 (a phone whose clock runs fast paints the Water button itself, and erroring on it is unactionable
+-- nothing is written, so nothing can be farmed), and `FOOT_INSET` now measures to the bottom of the
+INK rather than the path, since a stroke is centred on its own line and measuring to the path
+over-corrected and buried the stem. Three things worth keeping: (1) **watering is free** --
+it costs attention, not Bushels and not Gold -- so it touches none of the money-ordering rules and
+has nothing to refund when its guarded write loses a race, which is the one way it differs from
+feeding; the currency-wall test's route-action list was extended to say so out loud. (2) **A dry
+crop's progress bar is read at the moment the soil dried, not at `now`** -- `progressOf` takes an
+explicit `atMs` for this. Without it a frozen crop's bar creeps to full and then sits there looking
+finished while readiness refuses it, which is exactly the "trains people to tap a unit that cannot
+pay yet" failure `growthStage`'s own comment in `world.ts` warns about. Hunger does NOT do this and
+was deliberately left alone (out of scope, and its bar is a smaller lie on a longer cycle). (3)
+**`lastWateredAt: null` on a crop means "row predates the column", not "bone dry"** -- it falls back
+to `startedAt`, since sowing waters the ground; reading it as dry would have frozen every crop in the
+field the moment this shipped. Watering wet ground is refused (`400`) rather than treated as a
+top-up, or the thirst clock could be reset for free all day.
+
+**Crop sprites are now drawn well off the world's own scale**, and this is a deliberate break with
+everything else on the map (which all draws at `1 / ART_SCALE`): a ripe carrot is a 12x16 unit box of
+mostly leaf, and at the opening shot's zoom on a phone in landscape it is a few pixels of green
+indistinguishable from a row sown a minute ago. Sprout 2.5x, mature 4x, seedling 1.6x (the third
+number was not specified and is an interpolation -- leaving it at 1x next to a 2.5x sprout makes the
+first frame invisible and the second look teleported in). The arithmetic lives in a new
+`lib/stackacres/crop-visuals.ts` rather than in the scene, for the reason `units.ts`'s header already
+states: vitest only reaches `lib/` and `app/`. Two non-obvious pieces there: a painter anchors at
+(0.5, 1) and Phaser scales about that origin, so a frame whose ink starts above its own box's bottom
+edge (carrot0/carrot1, whose leaves spring from y 15 in a 16-tall box) FLOATS once scaled --
+`cropGroundOffset` pushes it back down by the growth in that gap, and is 0 for every frame already
+drawn to its baseline; and the tap footprint (`unitFootprintHalf`, previously a flat 12 for crops)
+now tracks the sprite but keeps 12 as a FLOOR, since 1.6x of a 6-unit half is 9.6 and shrinking the
+target of the hardest crop to see would be exactly backwards. Verified live in memory-mode `next dev`
+against a real browser, not just in tests.
+
+**Migration applied 2026-09-04** (`stackacres_soil_watering`, remote version 20260904123755) --
+verified by querying `information_schema` before and after, with a clean `get_advisors` security pass
+(everything it reports is pre-existing: this app's deliberate service-role-only
+`rls_enabled_no_policy` posture, and the known leaked-password warning). Applied BEFORE the code
+merged, which is the safe direction *here and only here*: the column is additive and nullable, and
+the deployed `UNIT_COLUMNS` names every column explicitly rather than selecting `*`, so a running
+production build could not see it. Both column lists -- the old deployed one and this branch's -- were
+run against the live table to prove it.
+
+**It was closer than it should have been, and the lesson is worth keeping.** PR #303 was merged at
+12:36:35Z while the migration was still being applied at 12:37:55Z -- an 80-second window in which
+`main` held code selecting a column that did not exist. No outage happened only because Vercel's
+production deployment for that merge was not created until 12:38:35Z, 40s after the column landed
+(confirmed: zero ERROR/FATAL rows in `postgres_logs` across the window, live site 200, and
+`/api/stackacres` returning its 401 access lock rather than a 500). The deploy-checklist rule "a
+migration and the code that calls it are one change" means APPLY FIRST, THEN MERGE, and the gap was
+luck rather than sequencing -- the merge was not this session's to time.
+
+**Live schema drift found while applying this**: the remote carries a migration
+`stackacres_units_fix_extra_slots_ambiguous` (version 20260904023339) with NO file in
+`supabase/migrations/`. Someone applied a fix directly without committing it, so a database rebuilt
+from this repo alone would not have it. Unrelated to this pass and deliberately left alone -- but it
+wants its own file. See `[[reference_stackchips_migrations_not_auto_applied]]`.
+### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
+Kayo: "better sound effects and music... animal noises and just ambient noise around the farm thats
+more ASMR like. not beats." The farm had **three music tracks and nothing else** -- every action on
+the map, from collecting eggs to paying 60,000 Gold for a cow, answered with the app's one generic
+chrome click, and there was no ambience at all.
+
+**The ambience is SYNTHESISED at runtime, not looped from files, and that is the load-bearing
+decision.** A ten-second ambience loop under a quiet game is heard inside a minute, and once a player
+has found the seam they cannot unhear it -- which is the end of the calm the layer exists for. Five
+continuous beds (`air`/`wind`/`grass`/`water`/`insects`) are filtered noise whose filter frequency and
+level are driven by a **random walk, never an LFO**: an LFO at 0.05Hz repeats every twenty seconds,
+which is well inside the time a player stands still on this map. Sparse cues fire on a **rolled gap
+inside a range** rather than a period, which is the other half of "not beats" -- a cricket every 4.0s
+is a metronome, one every 2.5-7s is a field. Same call as the art: this farm paints its pictures at
+boot rather than downloading sprites, and now it makes its noises the same way. `lib/stackacres/
+ambience-plan.ts` is pure and tested (16 tests) and holds every level and timing; `lib/audio/
+stackacres-ambience.ts` owns only the graph and the clock; `lib/audio/synth-voices.ts` is the
+instrument (23 voices). The mix follows **time of day AND district** -- the Ox Fields are the windiest
+place on the map and the Wallow the wettest, asserted by test so the districts stay tellable apart by
+ear -- and follows **the animals you actually own**: standing in Ox Fields with no cattle sounds like
+empty ground, with three it sounds like you keep cattle (`livestockCue`, damped on a square root, so
+a herd is one herd and not three soloists).
+
+**Only six sounds are recordings, and the reason is the rule for adding more.** Higgsfield's free plan
+had 10 credits and its CLI cost estimate is **wrong by ~10x** (quotes 0.1 credits, actually charges
+~1), which was found the expensive way: a 32-prompt batch spent 6.5 credits, returned 6 usable files,
+and the rest failed at submission. So the credits went where synthesis genuinely fails -- a throat, and
+resonant timber under load: `cow-moo-near`, `hen-cluck`, `hen-fuss`, `sheep-bleat`, `gate-creak`,
+`windmill-creak` (224KB total, denoised/trimmed/normalised, in `public/audio/stackacres/sfx/`). A
+generated `rooster-crow` came back as flat noise and was **dropped rather than shipped**. Everything
+made of tone and noise -- chirps, crickets, a struck bell, water drops, and every action sound -- is
+synthesised, which is also better than a file for a cue heard two hundred times a session, because
+every firing differs. **`pig` is a SHEEP** (`label: "Sheep Pen"`, yields Fleece) -- checked before
+generating, or the middle livestock tier would have got an oink.
+
+**Action sounds now say what happened.** `lib/audio/stackacres-sfx.ts` names them by intent the way
+`ui-sounds.ts` does: sowing patters, collecting is the animal answering and then grain pouring, muck
+is a wet scrape, the exchange window is the only place coins are heard, the scythe swishes (throttled
+to one per sweep -- `mowSegment` runs on every pointer-move and unthrottled it was a machine gun).
+**A refusal is a dull knock on wood, deliberately not a buzzer**: most refusals here are "you cannot
+afford that yet", and a harsh tone on an ordinary event teaches a player to dread their own farm.
+
+**Levels were measured, not guessed.** Rendered through a real Chromium `OfflineAudioContext`, the 23
+voices spanned **22dB** at a nominal gain of 1 (`post-hammer` -11dBFS, `panel-slide` -32.7) -- so a
+call site asking for "gain: 0.9" got whatever the recipe happened to produce. `VOICE_TRIM` brings
+actions to ~-14dBFS and cues to ~-18, **spread now 8dB**, with cues sitting under actions by design.
+Re-measure if a recipe changes.
+
+Two bugs fixed in passing, both in code this pass touched: the HUD speaker **negated the toggle's
+return value twice**, so it painted the state it had just left, and it never read the stored
+preference, so a player who muted the farm came back to a speaker icon over silence -- now
+`useStoredPreference`, the app's own idiom for a stored value driving a module outside React. And the
+farm was calling `useArcadeSound({gameSounds: true})`, eagerly fetching the **poker table's ~450KB cue
+set** on a route that plays none of it; the two calls needing it now have farm sounds of their own.
+
+Mute is one switch (music + ambience together -- both are "the noise this place makes", and two
+sliders is a settings screen); action sounds follow the app-wide SFX mute instead. The graph suspends
+on tab-hide.
+
+**The wind bed was mixed too loud and was caught by ear, not by a meter.** Kayo reviewed the whole set
+from a click-to-hear bench (https://claude.ai/code/artifact/3d4922d5-7623-4ed7-8702-248d8c02521f,
+which runs this branch's own compiled `synth-voices.ts`, so it is the real sounds rather than a
+mock-up) and flagged wind alone. He was right and the cause was structural: wind's gust walk peaked at
+**1.0 where every other bed tops out near 0.5**, so on the Ox Fields (wind x0.92) it sat ~5dB over the
+rest of the mix. Now 0.09..0.55 -- **both ends scaled by the same 0.55**, since cutting only the
+ceiling would have narrowed the gust from a 6x swing to a 3x one and cost the bed the variation that
+makes it read as weather instead of a fan. Worth keeping as a rule: the per-voice trims were measured,
+but the BED levels never were -- they are relative gains against each other, so the only instrument
+for them is somebody listening.
+
+Verified live, not just built: `next dev` in memory mode with a minted session and a real access
+grant, driven in Chromium at 1280x720. AudioContext running, **zero console errors**, and the
+soundscape provably changes with the clock -- at night 1 oscillator / 37 noise sources (crickets), at
+a pinned midday 13 / 6 (birds), the exact inversion the plan describes. Full `npx vitest run`
+2828/2829 (the one red is the pre-existing PR #163 `table-anchors` regression), `npm run lint` and
+`npm run build` clean. Branch `feat/stackacres-audio`. **Still open:** the music itself is untouched
+(the three tracks are ~3min each and regenerating one costs more than the whole credit balance), and
+there is no duck, goose or rooster -- the pond has ducks on it that make no sound.
+
+### StackAcres went single-currency: harvest pays Gold in one step, plus synergies (2026-09-04)
 Bushels are gone. Collecting used to fill a barn, the barn was sold at Ray's for Bushels, and Bushels
 were queued at a daily exchange window for Gold; a harvest now values and pays itself in Gold in one
 act. **The exchange window went; the ceiling behind it did not** -- `STACKACRES_GOLD_CEILING` (15,000
@@ -58,38 +241,49 @@ internal balance (seed against yield, muck at 40% of a tier's net, feed under a 
 and the ceiling's calibration both survive untouched, and no price on the shelf moved
 (`STACKACRES_GOLD_PER_SEED_BUSHEL` 100 -> `STACKACRES_SEED_MULTIPLE_TO_OWN` 50; a Cattle Pen is still
 60,000). Deleted rather than converted: the 150-Bushel starting grant (every player already has Gold),
-`homestead_inventory`'s use (table left in place, inert, like `homestead_plots`), `sellStackAcresProduce`
-and `exchangeStackAcresBushels`.
+`homestead_inventory`'s use (table left inert, like `homestead_plots`), `sellStackAcresProduce` and
+`exchangeStackAcresBushels`.
 
-**Two new mechanics.** *Bountiful Harvest* (`lib/stackacres/bounty.ts`): collecting is a SWEEP now, and
-a synergy is a property of the set -- Mono-cropping (3+ of one kind, 1.05 rising to a 1.30 cap) or Crop
-Rotation (both tracks present, minority share >= 1/3, up to 1.25). They cannot stack, structurally: one
-kind cannot also be two tracks. A unit tapped on its own is a one-unit sweep and earns nothing, which is
-what the new bottom-centre Harvest key is for. *Land Maintenance* (`lib/stackacres/upkeep.ts`):
-`25 * units^1.5` per UTC day, assessed lazily on that day's harvests and **netted out of the payout,
-clamped at it** -- so it can zero a harvest but can never debit the wallet, and adds no sixth Gold path.
+**Bountiful Harvest** (`lib/stackacres/bounty.ts`) is the one new mechanic: collecting is a SWEEP now,
+and a synergy is a property of the set -- Mono-cropping (3+ of one kind, 1.05 rising to a 1.30 cap) or
+Crop Rotation (both tracks present, minority share >= 1/3, up to 1.25). They cannot stack,
+structurally: one kind cannot also be two tracks. A unit tapped on its own is a one-unit sweep and
+earns nothing, which is what the new bottom-centre Harvest key is for.
 
-**Five things worth keeping.** (1) A harvest **reserves against the ceiling BEFORE settling any unit** --
-the reverse of rule 2 -- because a full day discovered after the crops are gone would consume a harvest
-and pay nothing; the cost is `release_homestead_exchange`, which only ever subtracts and is floored at 0.
-(2) **A smaller sweep can be worth MORE than the sweep containing it**: 3 cattle + 1 carrot earns nothing
-(one crop in four is below the rotation floor), while the same 3 cattle alone are a Mono-crop worth 228
-more. That is why the re-price after a lost race is capped at what was reserved; `harvest.test.ts` pins
-the counter-example. (3) `creditGoldByProfile` is held to **exactly two call sites** -- one `refundGold`
-helper and the harvest payout -- because counting credits stopped meaning anything once every spend path
-gained a refund. (4) **`collect` lost its ban carve-out.** It was exempt while it moved no money;
-it pays Gold now, so leaving it was the one way a suspended account could earn. (5) The 12-racing-harvests
-test caught nothing, but the mock that restored a spy with `mockImplementation(theSpy)` recursed
-infinitely and broke every later test in the file -- capture originals once, at module scope.
+**LAND MAINTENANCE WAS ALREADY HERE, in Bushels, from the sectors pass earlier the same day** -- this
+merged with it rather than replacing it. What survived from that version is what it got right: the
+charge base is **slots on cleared ground** (`unlockedPlotCount`), not units standing, or a player
+could clear every district and pay nothing for the empty room; and the **first three plots are free**,
+so a farm that has cleared nothing never sees a bill. What changed is the denomination and, more
+importantly, the SHAPE: the fee is `25 * (plots - 3)^1.5` Gold, **netted out of what a harvest pays
+and clamped at it**, so it can leave a harvest worth nothing and can never reach a balance. That is
+the answer to `sectors.ts`'s own original objection that a Gold upkeep would "take real value out of a
+player's balance on a timer" -- nothing is taken on a timer, and nothing is taken from a farm nobody
+is harvesting. `landGate` went with it: gating growth on arrears existed because a Bushel debit could
+go unpaid while the farm still earned elsewhere, and a farm producing no Gold has nothing to sink.
+The ledger is main's own `homestead_upkeep` + `raise_homestead_upkeep`, reused as-is (raise-to-target,
+because a day's bill rises when a slot is bought at noon); only the currency changed, and the
+`bushels` column keeps its name as a legacy compatibility id like every other `homestead_*` object.
 
-Migration `20260904140000_stackacres_land_upkeep.sql` is **written and UNAPPLIED** (`stackacres_upkeep`
-+ `record_stackacres_upkeep` + `release_homestead_exchange`, all EXECUTE-revoked from `public` too);
-see `[[reference_stackchips_migrations_not_auto_applied]]`. Branch `feat/stackacres-harvest-gold-upkeep`,
-uncommitted. Verified: isolated StackAcres suite 19/19 green, `tsc` clean, lint 0 errors, `npm run build`
-clean, and `tests/e2e/stackacres-harvest.spec.ts` 2/2. **Requirement 1 of the brief (2.5x/4.0x mobile
-crop scaling and the `isWatered` growth freeze) is NOT here** -- a concurrent session owns it on
-`feat/stackacres-watering-mobile-crops`, and duplicating it would have meant two migrations adding the
-same column.
+**Five things worth keeping.** (1) A harvest **reserves against the ceiling BEFORE settling any unit**
+-- the reverse of rule 2 -- because a full day discovered after the crops are gone would consume a
+harvest and pay nothing; the cost is `release_homestead_exchange`, which only ever subtracts and is
+floored at 0. (2) **A smaller sweep can be worth MORE than the sweep containing it**: 3 cattle + 1
+carrot earns nothing (one crop in four is below the rotation floor), while the same 3 cattle alone are
+a Mono-crop worth 228 more. That is why the re-price after a lost race is capped at what was reserved;
+`harvest.test.ts` pins the counter-example. (3) `creditGoldByProfile` is held to **exactly two call
+sites** -- one `refundGold` helper and the harvest payout -- because counting credits stopped meaning
+anything once every spend path gained a refund. (4) **`collect` lost its ban carve-out.** It was
+exempt while it moved no money; it pays Gold now, so leaving it was the one way a suspended account
+could earn. (5) **A crop left alone never ripens** now that watering shipped, which makes crops
+useless as a passive test fixture -- the Hen Coop is the only tier whose hunger window is longer than
+its own cycle, so it is the fixture for anything not about tending.
+
+Migration `20260904150000_stackacres_release_allowance.sql` is **written and UNAPPLIED** (just the one
+function; Land Maintenance needed no new schema). See
+`[[reference_stackchips_migrations_not_auto_applied]]`. Branch `feat/stackacres-harvest-gold-upkeep`.
+Verified after merging origin/main: isolated StackAcres suite 23/23 green, `tsc` clean, lint 0 errors,
+`npm run build` clean, `tests/e2e/stackacres-harvest.spec.ts` green.
 
 ### StackAcres is tapped on the map itself; the sidebar became deep management (2026-09-04)
 Removes the loop the district sidebar had become (tap a district -> panel opens -> find the row ->
@@ -1197,6 +1391,39 @@ end to end (4,000 Gold across two players before and after). Migration
 `20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
 **unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### StackAcres districts became unlockable sectors; land has a price and an upkeep again (2026-09-04)
+Three of the four districts now start under wild growth, and the ground itself is back on the Gold
+ladder for the first time since the 2026-09-03 pass deleted the 16-tile plot grid. That deletion left
+the map with four districts that were simply all there from the first minute, three of them full of
+pens nobody could afford, so the east half of the world read as content that had failed to load. New
+`lib/stackacres/sectors.ts` holds the whole layer, pure: the ladder (`SECTOR_LADDER`, Long Meadow ->
+the Fold -> Ox Fields at 15k/45k/100k Gold, ordered by STOCK TIER rather than by
+`zonesByDistance`'s walk), the requirement checklist, the upkeep curve, and `sectorOvergrowth`.
+`SectorId` is `ZoneId` itself, not a parallel id space. Four things worth keeping: (1) **unlocks are
+DERIVED, not just stored** -- `unlockedSectors(cleared, units)` counts any district the player
+already keeps stock in, so every live farm mid-cattle-cycle keeps Ox Fields with no backfill to get
+right and a lost row cannot cost somebody land they visibly own; the migration deliberately has no
+backfill for exactly this reason. (2) **Nothing is greyed out.** A locked district paints no ground
+wash, no grow-area floor, no fence and no ghost outline -- there is no farm there yet to grey out, so
+what stands there is wild growth (`sectorOvergrowth`, dealt per district rather than per chunk since
+a sector is bounded and has to be destroyed in one go when cleared) plus a barely-there haze;
+`zoneScenery` gained a `locked` set so a plough or an ox trough can never stand on unclaimed ground.
+Discovery is therefore entirely on the tap, which is why `onLockedSectorTap` fires anywhere in
+`zoneAt` rather than in the narrow `growAreaAt` box a cleared district uses. (3) **The upkeep ledger
+is raise-to, not insert-once**: a day's bill is not fixed when the day starts (buy a capacity slot at
+noon and it rises), so `raise_homestead_upkeep` raises today's paid total to a target and settling
+charges the DIFFERENCE -- insert-once would miss the rise, add-to would charge the whole new bill on
+top of the old. Curve is `8 * 1.2^(plots - 3)` Bushels/day, ~59 at all four sectors cleared and ~916
+at every slot bought, against a few thousand Bushels a day of gross. (4) It is a **soft** gate: an
+unpaid farm can still collect, feed, sell and exchange -- only GROWING is blocked -- and yesterday's
+unpaid bill lapses rather than compounding, so the fee can never be a debt trap. Charged off mutating
+actions, never a read (reads stay write-free) and never a background job (this subsystem has none).
+Gold asymmetry untouched: `clear-sector` is a third SINK, nothing new pays Gold out, and the
+currency-wall test's call counts moved 2->3 / 3->5 deliberately. Verified live end to end against a
+memory-mode `next dev` (wild -> modal -> clear -> crop field appears, Gold 402k->387k, the day's
+20-Bushel fee showing in the HUD). Migration `20260904130000_stackacres_sectors_and_upkeep.sql` is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
 payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can
@@ -1558,9 +1785,14 @@ settle once).
 ### Known open items / gaps
 - M17 (chip cosmetics) was parked until the 3D sim was finished — the 3D table is now deleted (see
   above), so this needs Kayo's own re-decision rather than staying silently parked.
-- Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
-  invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
-  challenge.
+- M16 (table invites) already shipped — private room-code tables only (`table_invites`,
+  `/api/invites/*`, the Friends drawer's Invite button). Kayo declined extending it to public tables
+  when asked directly; don't re-propose that as open work.
+- `lib/server/game-store.test.ts`'s "does not prefer a populated table whose only human seat has gone
+  quiet" is FLAKY, not red: it failed once in five runs at a pristine `origin/main` worktree, in
+  isolation as well as in the full suite (measured 2026-09-04). Re-run it before treating a single
+  red as a regression. `lib/scene/table-anchors.test.ts`'s dealer elbow-room test is separately and
+  reliably red on main -- see `[[project_stackchips_headsup_geometry_regression]]`.
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).

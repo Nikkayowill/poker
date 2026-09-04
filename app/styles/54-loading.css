@@ -114,8 +114,13 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: min(46vw, 220px);
-  padding-top: 6vh;
+  /* Bounded on both axes -- 46vw/220px had no height cap, so on a short or
+     landscape viewport the dealer (native 306x478, ~1.56 tall-per-wide) grew
+     tall enough to crowd out the mark and flavor text below her. The 18vh
+     term keeps her under ~28vh tall on any viewport shape, not just narrow
+     ones; she's a quiet background beat here, not the hero. */
+  width: min(28vw, 18vh, 140px);
+  padding-top: 3vh;
 }
 .app-loading-dealer::before {
   content: "";

@@ -1568,11 +1568,11 @@ export class StackAcresScene extends Phaser.Scene {
     if (!livestock) {
       // No livestock kind here at all -- the Long Meadow's Crop Fields,
       // tilled and furrowed, no fence.
-      built.push(this.paintAreaGround(area, "soil", true));
+      built.push(...this.paintAreaGround(area, "soil", true));
       return built;
     }
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
-    built.push(this.paintAreaGround(area, ground));
+    built.push(...this.paintAreaGround(area, ground));
 
     // Bays sit on the boundary itself now. The old 9-unit inset was headroom
     // for a flat sprite's footprint; a standing bay anchors on the foot of
@@ -1630,27 +1630,79 @@ export class StackAcresScene extends Phaser.Scene {
    * Fields are actually ploughed into rows. Reusing one colour for two
    * different textures is deliberate -- a Cattle Pen is not a second crop
    * field wearing the same dye.
+   *
+   * A furrowed area draws the generated `soilTile` once it has loaded,
+   * masked to the diamond's own polygon (a `TileSprite` clipped by a
+   * `GeometryMask` traced from the same corners the flat fill used) instead
+   * of the flat colour + drawn furrow lines -- the same "generated art
+   * REPLACES the procedural pass, does not sit under it" bargain `bakeGrass`
+   * makes for the lawn. Rotated by `ISO_EDGE_ANGLE.alongX` so the texture's
+   * own furrow stripes run along the diamond's grain rather than square to
+   * the screen, the same correction `ISO_EDGE_ANGLE` already gives a
+   * "furrow" prop's sprite elsewhere. Unfurrowed areas, and a furrowed one
+   * before the tile has loaded, keep the exact old flat-fill behaviour --
+   * nothing here is allowed to leave a district undrawn.
    */
   private paintAreaGround(
     area: WorldRect,
     kind: "straw" | "soil" | "muck",
     furrowed = false,
-  ): Phaser.GameObjects.Graphics {
+  ): Phaser.GameObjects.GameObject[] {
     const corners = projectedCorners(area);
     const ramp = rampHex(kind);
+    const built: Phaser.GameObjects.GameObject[] = [];
     const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
-    g.fillStyle(ramp.top, 1);
+    built.push(g);
+
+    const tileKey = spriteLoadKey("soilTile");
+    const useTexture = furrowed && this.textures.exists(tileKey);
+    if (!useTexture) g.fillStyle(ramp.top, 1);
     g.beginPath();
     g.moveTo(corners.n.x, corners.n.y);
     g.lineTo(corners.e.x, corners.e.y);
     g.lineTo(corners.s.x, corners.s.y);
     g.lineTo(corners.w.x, corners.w.y);
     g.closePath();
-    g.fillPath();
+    if (!useTexture) g.fillPath();
     g.lineStyle(1, ramp.rim, 0.55);
     g.strokePath();
-    if (furrowed) this.paintFurrows(g, area);
-    return g;
+
+    if (useTexture) {
+      // The mask's own shape never needs to be seen -- only its path -- so
+      // it is built from a second Graphics rather than reusing `g`, which
+      // still needs to draw the visible rim stroke traced above.
+      const maskShape = this.add.graphics().setVisible(false);
+      maskShape.fillStyle(0xffffff, 1);
+      maskShape.beginPath();
+      maskShape.moveTo(corners.n.x, corners.n.y);
+      maskShape.lineTo(corners.e.x, corners.e.y);
+      maskShape.lineTo(corners.s.x, corners.s.y);
+      maskShape.lineTo(corners.w.x, corners.w.y);
+      maskShape.closePath();
+      maskShape.fillPath();
+      built.push(maskShape);
+
+      const bounds = projectedBounds(area);
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      // Oversized (the bounding box's own diagonal) so the rotated square
+      // still fully covers the diamond's screen-space box before the mask
+      // clips it back down to the diamond itself.
+      const side = Math.hypot(bounds.width, bounds.height);
+      const tile = this.add
+        .tileSprite(cx, cy, side, side, tileKey)
+        .setDepth(GROW_AREA_GROUND_DEPTH)
+        .setRotation(ISO_EDGE_ANGLE.alongX)
+        // Shrinks each repeat of the 512px source so its furrow spacing
+        // lands close to the ~23-unit spacing the six drawn rows this
+        // replaces used on the Long Meadow's own 160-unit box (160 / 7).
+        .setTileScale(0.4, 0.4)
+        .setMask(maskShape.createGeometryMask());
+      built.push(tile);
+    } else if (furrowed) {
+      this.paintFurrows(g, area);
+    }
+    return built;
   }
 
   /** Furrow lines across a tilled grow area, drawn along the diamond's own

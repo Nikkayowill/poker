@@ -6,51 +6,146 @@
  * all come from those, so what is here is the world, the chrome pinned over
  * it, and the store sheet.
  *
- * Two layers. The world is a Phaser canvas (stackacres-world.tsx) that fills
- * .sa-field and moves when the player drags it. Everything else on the screen
- * -- the .floor-bar header (back link, How to play, Bushels/Gold), the title
- * pill, the toolbelt, the district sidebar, the zoom buttons, the hint -- is
- * DOM absolutely positioned over that canvas and never moves. Each overlay
- * wrapper is pointer-events: none with its controls set back to auto, so a
- * drag that starts in the gap between two buttons reaches the map
- * underneath. The whole page is a fixed-height column for the same reason
- * the table is: the map needs a definite height to fill, and a page that
- * scrolls under a map that also scrolls is two things fighting for one
- * finger.
+ * ======================================================================
+ * THIS SHEET IS ITS OWN VISUAL WORLD, THE SAME WAY THE FELT IS
+ * ======================================================================
+ *
+ * app/styles/CLAUDE.md's styling contract describes the chrome: borderless,
+ * separation by raised fill and shadow, violet-black ground, purple as a line
+ * and a glow, one gold fill per screen. That contract holds everywhere it says
+ * it does, and it explicitly carves the poker felt out of itself. This sheet is
+ * the second carve-out, for the same reason: what is behind this chrome is not
+ * a violet-black room, it is a lit cartoon farm at midday, and Neon Marquee
+ * panels laid over it read as a settings page someone left open on top of a
+ * game. That is the literal brief this pass answers.
+ *
+ * So, inside `.sa-theme` only:
+ *   - Surfaces DO carry a thick outline. Three pixels of `--sa-outline`, not a
+ *     1px hairline. It is the same decision the sprites make (see
+ *     art-palette.ts's OUTLINE RULE), not a hairline sneaking back in.
+ *   - Radii are the farm's own two (`--sa-r-panel` 24px, `--sa-r-block` 16px),
+ *     not `--radius-card`/`--radius-control`.
+ *   - Nothing reaches for `--brand-*`, `--neon-*` or `--accent-*`. A violet
+ *     glow on a wooden sign is the same mistake as felt green in the lobby.
+ * Outside `.sa-theme` this sheet changes nothing, and every shared class it
+ * restyles (.floor-bar, .htp-trigger, .gold-balance, .duel-error,
+ * .profile-modal) is qualified by `.sa-theme` for exactly that reason.
+ *
+ * ---- where the colours come from ------------------------------------
+ *
+ * Not invented here. components/arcade/stackacres/art-palette.ts holds every
+ * material in the game as a three-tone ramp -- `top` (the lit plane), `side`
+ * (the plane turned away) and `rim` (the darkest tone, which is also the
+ * shape's own outline) -- and this chrome is built out of the same ramps the
+ * world is painted with: wood, cream, muck, corn, leaf, roof, carrot. That is
+ * what makes a button feel like it belongs to the farm rather than to a UI kit
+ * that was pointed at one.
+ *
+ * It also decides what a "chunky" button IS here, which is the part worth
+ * reading before changing any of it. A block's thick bottom edge is not a
+ * drop shadow in a brown that looked about right: it is the material's own
+ * `rim` face, the near-vertical plane you would see if the block were lifted
+ * off the page, drawn by exactly the same logic the sprites use for the front
+ * face of a crate. Pressing it moves the block DOWN onto that face by the same
+ * number of pixels the face is tall (`--sa-lift`), which is why the press
+ * reads as a real key travelling rather than as an element shrinking. Every
+ * pressable thing on this screen therefore has three states, all of them
+ * physical: raised, pressed, and disabled (raised but unlit).
+ *
+ * A hard-edged bottom face on its own would be a costume. Each block also
+ * carries a real ambient shadow with an offset and a blur (`--sa-drop`), so
+ * the block sits on the grass rather than being stamped onto it.
+ *
+ * ---- the two layers --------------------------------------------------
+ *
+ * The world is a Phaser canvas (stackacres-world.tsx) that fills .sa-field and
+ * moves when the player drags it. Everything else on the screen -- the
+ * .floor-bar header, the signpost, the toolbelt, the district drawer, the zoom
+ * buttons, the hint -- is DOM absolutely positioned over that canvas and never
+ * moves. Each overlay wrapper is pointer-events: none with its controls set
+ * back to auto, so a drag that starts in the gap between two buttons reaches
+ * the map underneath. The whole page is a fixed-height column for the same
+ * reason the table is: the map needs a definite height to fill, and a page that
+ * scrolls under a map that also scrolls is two things fighting for one finger.
  *
  * THERE IS NO PLOT GRID any more (see 2026-09-03's CLAUDE.md entry --
- * "districts hold stock, not plots"). What used to be a grid of tappable
- * plot buttons, each carrying a state ring and a held-tool affordance ring,
- * is the .sa-district-panel sidebar now: real DOM rows, one per owned unit,
- * with the one action button that applies. The canvas still draws a state
- * ring per unit (gold for ripe, amber for hungry, brown for weather-worn --
- * see stackacres-scene.ts) but there is no affordance ring any more, because
- * there is no held tool that acts on a unit -- only the scythe, which targets
- * ground, not a unit.
+ * "districts hold stock, not plots"). What used to be a grid of tappable plot
+ * buttons is the .sa-district-panel drawer now: real DOM rows, one per owned
+ * unit, with the one action button that applies. The canvas still draws a
+ * state ring per unit (gold for ripe, amber for hungry, brown for
+ * weather-worn -- see stackacres-scene.ts) but there is no affordance ring any
+ * more, because there is no held tool that acts on a unit -- only the scythe,
+ * which targets ground, not a unit.
  *
- * The world is vector art, not a tile sheet: every sprite is a Canvas2D
- * painter (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser
- * texture at boot and drawn at the browser's own device pixel ratio, so it is
- * smooth at every zoom rather than a grid of fixed-size squares. Nothing is
- * downloaded for it. `--sa-grass` matches the grass painter's own fill colour
- * so the DOM frame and the canvas background read as one continuous lawn.
- * --sa-hungry and --sa-muck are the same state colours the scene draws with,
- * kept here for the district sidebar's unit rows. The chrome's own icons
- * (`.sa-ico`, below) are the same painters, drawn into a small DOM canvas by
- * `<StackAcresIcon>` rather than loaded as PNGs.
+ * The world is vector art, not a tile sheet: every sprite is a Canvas2D painter
+ * (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser texture
+ * at boot and drawn at the browser's own device pixel ratio, so it is smooth at
+ * every zoom rather than a grid of fixed-size squares. Nothing is downloaded
+ * for it. The chrome's own icons (`.sa-ico`, below) are the same painters,
+ * drawn into a small DOM canvas by `<StackAcresIcon>` rather than loaded as
+ * PNGs.
+ *
+ * ---- the height budget -----------------------------------------------
+ *
+ * This screen is landscape-only and the phones it runs on are ~390px tall, so
+ * every band of chrome comes straight out of the map. Chunky chrome only pays
+ * for itself if it gets out of the way: the district drawer is parked off the
+ * right edge behind a peg, the toolbelt is a two-key dock in the bottom-left
+ * corner rather than a column down the right, and the whole scale steps down
+ * once in the landscape block at the end of this file. The map is the product;
+ * this is the box it comes in.
  *
  * The landscape @media block MUST stay last in this file. It overrides base
  * rules at equal specificity, so source order is the only thing deciding the
  * winner.
  */
 
-.sa-shell {
+.sa-theme {
+  /* Adds no box of its own -- it exists to carry the tokens below and the
+     Baloo 2 variable, both of which inherit straight through it. See
+     app/(lobby)/games/stackacres/page.tsx for why the theme has to sit above
+     .sa-shell rather than on it. */
+  display: contents;
+
+  /* ---- materials, straight off art-palette.ts's ramps ---------------- */
+
+  --sa-wood: #dd9a4a;
+  --sa-wood-side: #b8762c;
+  --sa-wood-rim: #79491b;
+
+  --sa-cream: #f8f1dc;
+  --sa-cream-side: #e0d4b2;
+  --sa-cream-rim: #b9a87e;
+
+  /* `muck` in the palette. The darkest brown in the world and therefore the
+     colour every outline, every piece of body text and every deep shadow on
+     this screen is made of. */
+  --sa-choc: #7a5636;
+  --sa-choc-side: #5c3f26;
+  --sa-choc-rim: #3c2817;
+
+  --sa-corn: #ffd24d;
+  --sa-corn-side: #e0ae28;
+  --sa-corn-rim: #a87d14;
+
+  --sa-leaf: #6bd041;
+  --sa-leaf-side: #429322;
+  --sa-leaf-rim: #235411;
+
+  --sa-roof: #f05c42;
+  --sa-roof-side: #ce3f2c;
+  --sa-roof-rim: #9c2b1c;
+
+  --sa-carrot: #ff9a3c;
+  --sa-carrot-side: #e1741f;
+  --sa-carrot-rim: #ae5312;
+
   /* Sprite colours, not chrome: they exist to agree with artwork the palette
-     knows nothing about, and none of them is used outside the field.
-     --sa-grass matches the grass painter's own fill. */
+     knows nothing about. --sa-grass matches the grass painter's own fill, so
+     the DOM frame and the canvas background read as one continuous lawn. */
   --sa-grass: #86c96e;
-  --sa-hungry: #ff8a3d;
-  --sa-muck: #785830;
+  --sa-hungry: var(--sa-carrot-side);
+  --sa-muck: var(--sa-choc);
 
   /* The districts' ground, one token each, matching the `ground.base` values
      in lib/stackacres/zones.ts. Same rule as --sa-grass and the same reason
@@ -58,21 +153,107 @@
      and grass in a drawing, not a decision the design system gets to make.
      They are hand-copied from that module and nothing enforces the two
      agreeing, so recolour a district in both places -- the signpost's swatch
-     is what a reader would notice going wrong. */
+     and the drawer's header band are what a reader would notice going
+     wrong. */
   --sa-zone-farmstead: var(--sa-grass);
   --sa-zone-meadow: #8fce66;
   --sa-zone-oxfields: #7a5a34;
   --sa-zone-wallow: #54402c;
 
-  /* The title pill, the toolbelt and the district nav below all anchor a
-     `top` offset to this rather than to 0 -- .floor-bar is chrome pinned
-     over the same top-left corner now, and without it they'd sit under the
-     header instead of below it. 44px is .floor-bar's own min-height
-     (22-arcade.css), which -- border-box, and content that never exceeds
-     it -- is also its real height at every breakpoint this file has, safe
-     area aside. */
-  --sa-header-h: 44px;
+  /* ---- semantics ----------------------------------------------------- */
 
+  /* Text. Never a grey: a neutral grey on a warm cream board is the one thing
+     that gives away a UI kit dropped onto a game. Both of these are the
+     world's own brown at two depths. */
+  --sa-ink: var(--sa-choc-rim);
+  --sa-ink-soft: var(--sa-choc);
+  /* For text sitting ON a dark material (a wood rim, a pressed key). */
+  --sa-ink-light: var(--sa-cream);
+
+  --sa-paper: var(--sa-cream);
+  --sa-paper-2: #eee0bd;
+  --sa-frame: var(--sa-wood-side);
+  --sa-outline: var(--sa-choc-rim);
+  --sa-outline-w: 3px;
+
+  /* Two radii, the same discipline the chrome has, at a size that reads as
+     moulded rather than cut: a panel and a block. Anything round is a chip. */
+  --sa-r-panel: 24px;
+  --sa-r-block: 16px;
+  --sa-r-chip: 999px;
+
+  /* How tall a block's own bottom face is, and therefore exactly how far it
+     travels when pressed. Two steps: a key, and a full-width primary. */
+  --sa-lift: 5px;
+  --sa-lift-lg: 7px;
+
+  /* The ambient shadow every raised thing casts on the grass. Offset and
+     blurred, so the hard bottom face reads as a lit plane and not as a
+     sticker. */
+  --sa-drop: 0 5px 12px rgba(52, 34, 18, .28);
+  --sa-drop-lg: 0 14px 30px rgba(52, 34, 18, .38);
+
+  /* The touch floor. Mobile-first is the whole point of the surface: nothing
+     interactive on this screen is allowed under it. */
+  --sa-tap: 48px;
+
+  /* Overshoot on the way in, none on the way out. A drawer that bounces shut
+     is a drawer that argues with you. */
+  --sa-bounce: cubic-bezier(.175, .885, .32, 1.275);
+  --sa-ease-out: cubic-bezier(.33, 1, .68, 1);
+
+  /* The display voice. --font-sa-display is set by next/font (see
+     stackacres-font.ts); the stack after it is what paints if that request is
+     still in flight or has failed outright. */
+  --sa-font: var(--font-sa-display), ui-rounded, "SF Pro Rounded",
+    "Segoe UI Variable Display", Nunito, system-ui, sans-serif;
+
+  /* A chocolate ring drawn behind light text, so a label stays readable over
+     whatever the map happens to be showing under it. Four offsets rather than
+     -webkit-text-stroke: the stroke property thins the glyph from the inside,
+     which at 800 weight eats the counters out of an `a` at 13px. */
+  --sa-text-ring:
+    -1.5px -1.5px 0 var(--sa-outline), 1.5px -1.5px 0 var(--sa-outline),
+    -1.5px 1.5px 0 var(--sa-outline), 1.5px 1.5px 0 var(--sa-outline),
+    0 2px 0 var(--sa-outline), 0 3px 6px rgba(52, 34, 18, .5);
+}
+
+/* Every glyph on this surface, including the ones inside shared components
+   the farm borrows (the how-to-play modal, the error line, Ray's welcome).
+   The lobby's Inter/Georgia pairing stops at the edge of this route. */
+.sa-theme,
+.sa-theme .sa-sheet,
+.sa-theme .profile-modal,
+.sa-theme .htp-modal {
+  font-family: var(--sa-font);
+}
+
+/* Browser surfaces the design would otherwise leave to the platform: the
+   caret, the selection, and the scrollbars inside the drawer and the store
+   sheet. All three ship in colours that belong to no design system, and on a
+   cream board they are the tell. */
+.sa-theme {
+  accent-color: var(--sa-corn-side);
+  caret-color: var(--sa-choc);
+  scrollbar-width: thin;
+  scrollbar-color: var(--sa-cream-rim) transparent;
+}
+
+.sa-theme ::selection {
+  background: var(--sa-corn);
+  color: var(--sa-ink);
+}
+
+.sa-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
+.sa-theme ::-webkit-scrollbar-track { background: transparent; }
+.sa-theme ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream-rim);
+  background-clip: content-box;
+}
+
+.sa-shell {
   /* A fixed viewport, not a page. .duel-shell gives min-height and a gap
      sized for a scrolling lobby; the map needs a hard height to fill.
      .duel-shell's own width cap and padding are sized for a card of lobby
@@ -89,31 +270,163 @@
   width: 100%;
   margin: 0;
   padding: calc(6px + var(--safe-top)) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  /* The safe-area padding above leaves a band the field cannot reach, and the
+     app's own violet-black `body` was showing through it -- a 6px bruise along
+     the top of a farm. The shell takes the lawn's own colour so the band reads
+     as more grass rather than as the room the game is sitting in. */
+  background: var(--sa-grass);
+  color: var(--sa-ink);
+
+  /* The title pill, the toolbelt and the district nav below all anchor a
+     `top` offset to this rather than to 0 -- .floor-bar is chrome pinned
+     over the same top-left corner now, and without it they'd sit under the
+     header instead of below it. 52px is .floor-bar's own min-height in this
+     theme (the HUD pills are chunkier than the shared 44px bar), which --
+     border-box, and content that never exceeds it -- is also its real height
+     at every breakpoint this file has, safe area aside. */
+  --sa-header-h: 52px;
 }
 
-/* The header row used to be a flex sibling above .sa-main, taking a real row
-   of its own out of the map -- the back link, "How to play", Bushels and
-   Gold sat in a band the game could never draw under. It is chrome pinned
-   over the canvas now, the same overlay treatment as .sa-destinations and
-   .sa-controls below: .sa-main goes back to being the shell's only flex
-   child and stretches to fill the space this bar used to reserve. The scrim
-   is what keeps light text readable now that grass, not --brand-room, is
-   what's behind it; z-index is explicit because .sa-main is also a
-   `position: relative` sibling with z-index: auto -- without this the two
-   would stack in DOM order and the map would paint over the header, not
-   under it. */
-.sa-shell .floor-bar {
+/* ---- the header ------------------------------------------------------ */
+
+/* Chrome pinned over the canvas, the same overlay treatment as
+   .sa-destinations and .sa-controls below: .sa-main is the shell's only flex
+   child and stretches to fill the space this bar used to reserve. z-index is
+   explicit because .sa-main is also a `position: relative` sibling with
+   z-index: auto -- without this the two would stack in DOM order and the map
+   would paint over the header, not under it.
+
+   The scrim that used to sit behind it was a violet-black wash, which over
+   grass reads as a bruise. Each thing in the bar carries its own board now,
+   so the sky between them stays sky. */
+.sa-theme .floor-bar {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 2;
+  align-items: flex-start;
+  min-height: var(--sa-header-h);
   margin-bottom: 0;
-  padding: max(8px, var(--safe-top)) max(10px, var(--safe-right)) 16px max(10px, var(--safe-left));
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--brand-ink) 60%, transparent), transparent);
+  padding: max(8px, var(--safe-top)) max(10px, var(--safe-right)) 10px max(10px, var(--safe-left));
+  background: none;
   pointer-events: none;
 }
-.sa-shell .floor-bar > * { pointer-events: auto; }
+.sa-theme .floor-bar > * { pointer-events: auto; }
+
+.sa-theme .floor-bar-left {
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* The back link and How-to-play are the two quietest things on the screen and
+   were plain slate-blue text over grass, which is unreadable at a glance and
+   unhittable with a thumb. They are small wooden keys now, at the touch
+   floor, and they are the only two blocks on the surface that are wood rather
+   than cream -- they lead OFF the farm, so they read as the fence rather than
+   as something growing on it. */
+.sa-theme .floor-back,
+.sa-theme .htp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-wood);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    filter var(--duration-fast, .12s) ease;
+}
+
+.sa-theme .floor-back:hover,
+.sa-theme .htp-trigger:hover { color: var(--sa-ink); filter: brightness(1.05); }
+
+/* ---- the HUD --------------------------------------------------------- */
+
+.sa-hud {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Bushels, Feed and Gold. One cream board each, outlined, so a number stays
+   readable whether it is sitting over a bright meadow or over dark ploughed
+   soil -- which the old translucent pills could not do, because their contrast
+   depended on whatever the camera happened to be over. Bushels first and Gold
+   last, in the order they matter here: everything on this screen is bought
+   with Bushels, and Gold buys capacity and stock outright. */
+.sa-purse,
+.sa-feed,
+.sa-theme .gold-balance.floor-wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gold is the one balance that is not the farm's own money, so it is the one
+   that gets the corn fill rather than paper. */
+.sa-theme .gold-balance.floor-wallet {
+  background: var(--sa-corn);
+  box-shadow: 0 3px 0 var(--sa-corn-rim), var(--sa-drop);
+  color: var(--sa-ink);
+}
+
+.sa-purse .sa-ico,
+.sa-feed .sa-ico {
+  width: 20px;
+  height: 20px;
+}
+
+.sa-music-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+/* Screen-reader-only. There is no shared utility for this in the codebase --
+   every component inlines the pattern -- so it is inlined here too. */
+.sa-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .sa-main {
   position: relative;
@@ -157,12 +470,10 @@
 
 .sa-shell.is-placing .sa-world { cursor: copy; }
 
-/* ---- the icon painters ------------------------------------------------ */
-
-/* Every icon on this screen -- tool, seed chip, HUD purse/feed, barn row --
-   is a <StackAcresIcon>: a vector painter drawn into a small DOM canvas
-   rather than a pixel-art PNG. This is the fallback size; every context
-   below sets its own, the same contract the old <img> icons had. */
+/* Every icon on this screen -- tool, HUD purse/feed, unit row, barn row -- is
+   a <StackAcresIcon>: a vector painter drawn into a small DOM canvas rather
+   than a pixel-art PNG. This is the fallback size; every context below sets
+   its own, the same contract the old <img> icons had. */
 .sa-ico {
   display: inline-block;
   width: 24px;
@@ -170,6 +481,10 @@
   flex: none;
 }
 
+/* The one line of text on this surface with nothing behind it -- it is painted
+   straight onto the lawn while the scene boots, so it is the one place the
+   chocolate ring earns its keep. Everything else here reads off a board, and a
+   ring on text that already has a board under it is noise. */
 .sa-loading {
   position: absolute;
   inset: 0;
@@ -178,197 +493,291 @@
   justify-content: center;
   margin: 0;
   background: var(--sa-grass);
-  color: var(--brand-ink);
-  font-size: 14px;
+  color: var(--sa-cream);
+  font-size: 19px;
+  font-weight: 800;
+  text-shadow: var(--sa-text-ring);
   pointer-events: none;
+}
+
+/* ---- the pressable block ---------------------------------------------
+ * The one primitive this surface is built out of. Everything here that can be
+ * pressed is a block of some material: a flat top face, a thick outline, a
+ * bottom face in that material's own rim tone, and a soft shadow underneath it
+ * on the grass. Pressing travels the block down onto its bottom face.
+ *
+ * Grouped rather than repeated so the travel distance and the outline can
+ * never drift between two buttons that are meant to be the same object.
+ */
+
+.sa-theme .floor-back,
+.sa-theme .htp-trigger,
+.sa-music-toggle,
+.sa-tool,
+.sa-dest,
+.sa-camera-btn,
+.sa-panel-tab,
+.sa-panel-close,
+.sa-unit-action,
+.sa-unit-link,
+.sa-buy-btn,
+.sa-amount,
+.sa-cta,
+.sa-theme .sa-sheet-close {
+  font-family: var(--sa-font);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* The squish. Instant (no transition on the way down -- a spring-loaded key
+   has no easing into the bottom of its travel), and the bottom face collapses
+   to nothing as the block lands on it. The scale is small on purpose: at
+   .95 a 48px key visibly changes size, which reads as the button shrinking
+   rather than as the button being pushed. */
+.sa-theme .floor-back:active,
+.sa-theme .htp-trigger:active,
+.sa-music-toggle:active,
+.sa-tool:active,
+.sa-dest:active,
+.sa-camera-btn:active,
+.sa-panel-tab:active,
+.sa-panel-close:active,
+.sa-unit-action:not(:disabled):active,
+.sa-buy-btn:not(:disabled):active,
+.sa-amount:active,
+.sa-cta:not(:disabled):active,
+.sa-theme .sa-sheet-close:active {
+  transform: translateY(var(--sa-lift)) scale(.98);
+  box-shadow: 0 0 0 var(--sa-outline), 0 1px 3px rgba(52, 34, 18, .35);
+  transition: none;
+}
+
+/* Keyboard focus is a corn ring outside the outline, not the browser's own
+   blue -- and never `outline: none`. Offset past the 3px border so it reads as
+   a light around the block rather than as a second border on it. */
+.sa-theme .floor-back:focus-visible,
+.sa-theme .htp-trigger:focus-visible,
+.sa-music-toggle:focus-visible,
+.sa-tool:focus-visible,
+.sa-dest:focus-visible,
+.sa-camera-btn:focus-visible,
+.sa-panel-tab:focus-visible,
+.sa-panel-close:focus-visible,
+.sa-unit-action:focus-visible,
+.sa-unit-link:focus-visible,
+.sa-buy-btn:focus-visible,
+.sa-amount:focus-visible,
+.sa-cta:focus-visible,
+.sa-theme .sa-sheet-close:focus-visible {
+  outline: 3px solid var(--sa-corn);
+  outline-offset: 3px;
+}
+
+/* Unlit, not faded out. `opacity` on a block dims its outline and its bottom
+   face together, which turns a solid object into a ghost of one; this keeps
+   the object and takes the light off it, so a disabled Seed button still
+   reads as a button you cannot afford rather than as a rendering artefact.
+   Every disabled button on this surface still carries a `title` saying why
+   (see district-panel.ts's `seedReason`). */
+.sa-unit-action:disabled,
+.sa-buy-btn:disabled,
+.sa-cta:disabled {
+  filter: saturate(.35) brightness(.94);
+  cursor: not-allowed;
 }
 
 /* ---- the toolbelt ---------------------------------------------------- */
 
-/* Pinned to the top of the right edge, where a thumb wrapped around a phone
-   held sideways already is -- and sized to its own content now, not
-   stretched the height of the screen, since there is only the one tool
-   column left (Look/Scythe; see ./stackacres-toolbelt.tsx) and nothing
-   beside it any more. .sa-district-panel docks to the same edge below it. */
+/* Two keys -- Look, and hold the Scythe to mow the Long Meadow. It used to be
+   a column pinned to the top of the right edge, which is exactly where the
+   district drawer now needs to open from; it is a horizontal dock in the
+   bottom-left corner instead, under the left thumb of two hands wrapped
+   around a phone held sideways, and the whole right edge belongs to the
+   drawer. */
 .sa-controls {
   position: absolute;
-  top: calc(var(--sa-header-h) + 8px);
-  right: 8px;
+  left: 10px;
+  bottom: 10px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   pointer-events: none;
 }
 
 .sa-toolbelt {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 100%;
-  padding: 6px;
+  gap: 8px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
-  box-shadow: var(--elevation-2);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
+  background: none;
   pointer-events: auto;
 }
 
 .sa-tool {
   position: relative;
   flex: none;
-  width: 62px;
-  /* 44px is the touch-target floor; the dock is the one thing on this screen
-     that is always in use, so it does not get to dip under it. */
-  min-height: 46px;
+  min-width: 60px;
+  min-height: var(--sa-tap);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 5px 2px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: none;
-  color: var(--neon-muted);
+  gap: 1px;
+  padding: 5px 8px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
   cursor: pointer;
-  transition: background var(--duration-fast, .12s) ease, color var(--duration-fast, .12s) ease;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    background var(--duration-fast, .12s) ease;
 }
 
 .sa-tool .sa-ico {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
 }
 
 .sa-tool-label {
-  font-size: 11px;
-  letter-spacing: .02em;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .01em;
   white-space: nowrap;
 }
 
-.sa-tool:hover { background: var(--brand-surface-2); }
+.sa-tool:hover { filter: brightness(1.04); }
 
-/* Inset ring plus glow rather than a border, so holding a tool adds no layout
-   box and the dock does not reflow by a pixel as you move across it. */
+/* Held. The key stays down: it is latched, not being pressed, so it keeps the
+   travelled position rather than animating back up. Corn fill, because this is
+   the only toggle on the screen whose state changes what a drag does. */
 .sa-tool.is-held {
-  background: var(--brand-surface-2);
-  box-shadow: var(--accent-edge), var(--accent-glow);
-  color: var(--neon-chalk);
-}
-
-.sa-tool:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
+  transform: translateY(var(--sa-lift));
+  background: var(--sa-corn);
+  box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(255, 255, 255, .4), 0 1px 3px rgba(52, 34, 18, .35);
 }
 
 /* ---- zoom buttons ---------------------------------------------------- */
 
-/* For a mouse, which has no pinch. Bottom-right, under the toolbelt's
-   column, which stops 48px short of the bottom to leave this room. */
+/* For a mouse, which has no pinch. Bottom-right, and deliberately BELOW the
+   drawer's own bottom edge (see .sa-district-panel) so zoom and recentre stay
+   reachable while the drawer is open -- a player comparing what is on the map
+   with what the drawer says they own should not have to close one to move the
+   other. */
 .sa-camera {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
-  box-shadow: var(--elevation-2);
+  gap: 6px;
 }
 
 .sa-camera-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--neon-muted);
+  width: var(--sa-tap);
+  height: var(--sa-tap);
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
   cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
 }
 
-.sa-camera-btn:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
-.sa-camera-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+.sa-camera-btn:hover { filter: brightness(1.04); }
 
 /* ---- the signpost ---------------------------------------------------- */
-/* Top-left, right under the header -- where the masthead pill (logo +
-   pen/field counts) used to sit. That pill didn't earn its keep -- a player
-   already knows what game this is, and an empty pen is visible on the map
-   itself -- so the rail moved up into the space it left rather than leaving
-   the band empty. Bottom-left was tried first and was wrong: `.sa-tool-hint`
-   is centred on the bottom edge and long enough at most tool hints to run
-   straight through the rail, so the last entry sat behind the hint text.
+/* Top-left, right under the header. Five painted boards on the fence: four
+   districts ordered outward from the farm, then Ray, who is not a place but
+   is who you see once you have something to spend.
 
    Wraps rather than scrolls: this is the one piece of chrome that exists
    purely to answer "where else?", and an entry hidden past a scroll fold
    fails at that job -- every district plus Ray has to be on screen at once.
-   Ordered outward from the farm (still left-to-right, top-to-bottom if it
-   wraps), so it reads as a road rather than a menu -- four districts, then
-   Ray's own entry (the old header Store button, folded in here). The detail
-   card is a popover that may be hung over this corner -- it has its own
-   elevation and is meant to sit on top, so the rail deliberately does not
-   fight it for the space. */
+
+   The rail itself has no board of its own any more. A container around five
+   boards is a shelf holding a shelf; each sign carries its own outline and
+   its own shadow, and the sky between them stays sky. */
 
 .sa-destinations {
   position: absolute;
-  left: 8px;
-  top: calc(var(--sa-header-h) + 8px);
+  left: 10px;
+  top: calc(var(--sa-header-h) + 10px);
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  /* Stops short of the toolbelt dock up the right (see .sa-controls) --
-     that's the only thing sharing this band now that the toolbelt is one
-     narrow Look/Scythe column instead of a tool column plus a seed strip.
-     .sa-district-panel also anchors right, but starts ~130px lower, well
-     under where this rail sits. */
-  max-width: calc(100% - 110px);
-  padding: 4px;
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
-  box-shadow: var(--elevation-2);
+  gap: 8px;
+  /* Stops short of the right edge, which belongs to the drawer's peg. */
+  max-width: calc(100% - 96px);
+  padding: 0;
+  border: 0;
+  background: none;
+  /* Deliberately not transitioned. What the rule below changes is the point
+     this rail WRAPS at, so easing it animates a reflow of five buttons between
+     two rows -- signs sliding through each other mid-tween, which looks worse
+     than the instant re-wrap and costs layout on every drawer toggle. */
+}
+
+/* With the drawer open, the rail gives up the drawer's whole column and wraps
+   instead. It has to: on an 844px-wide phone the five signs are wider than the
+   space left beside a 320px drawer, and the sign that fell off the end was
+   Ray's -- the only way into the store. A wrapped rail costs a second row of
+   map; a sign parked under an opaque drawer costs the player the shop. */
+.sa-field[data-drawer="open"] .sa-destinations {
+  max-width: calc(100% - min(320px, 46%) - 28px);
 }
 
 .sa-dest {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex: none;
-  padding: 4px 10px 4px 7px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--neon-muted);
+  min-height: var(--sa-tap);
+  padding: 5px 13px 5px 9px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-wood);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink);
   cursor: pointer;
   text-align: left;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    background var(--duration-fast, .12s) ease;
 }
 
-.sa-dest:hover { background: var(--brand-surface-2); color: var(--neon-chalk); }
-.sa-dest:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+.sa-dest:hover { filter: brightness(1.05); }
 
-/* Where you last chose to go. Gold, the one saturated fill in the system,
-   spent here because this is the map's "you are here". */
+/* Where you last chose to go. The board is stained darker and the lettering
+   goes cream, the way a sign you are standing right in front of is the one in
+   shadow -- rather than by adding a fifth colour to a rail that already has
+   four district swatches on it. */
 .sa-dest.is-there {
-  background: var(--brand-surface-2);
-  color: var(--brand-gold-light);
-  box-shadow: inset 0 0 0 1px var(--brand-gold);
+  background: var(--sa-wood-rim);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-choc-rim), var(--sa-drop);
+  color: var(--sa-ink-light);
 }
 
 /* Each district's own ground colour, so the rail is colour-keyed to what the
    player is looking at. These are the same values lib/stackacres/zones.ts
    paints the ground with -- a district that gets recoloured has to be
    recoloured in both places, and the swatch is the reason anyone would
-   notice. */
+   notice. Round and outlined: a painted spot on a board, not a legend key. */
 .sa-dest-swatch {
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
   flex: none;
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  box-shadow: inset 0 -2px 0 rgba(52, 34, 18, .25);
 }
 
 .sa-dest-farmstead .sa-dest-swatch { background: var(--sa-zone-farmstead); }
@@ -376,209 +785,328 @@
 .sa-dest-oxfields  .sa-dest-swatch { background: var(--sa-zone-oxfields); }
 .sa-dest-wallow    .sa-dest-swatch { background: var(--sa-zone-wallow); }
 
-/* Ray's entry, last in the rail. His face stands in for a swatch -- he is
-   not a district, so there is no ground colour to key it to -- and the rail
-   gets a divider in front of him so he reads as set apart from the four
-   places rather than as a fifth one. */
+/* Ray's entry, last in the rail. His face stands in for a swatch -- he is not
+   a district, so there is no ground colour to key it to -- and his board is
+   cream rather than wood so he reads as set apart from the four places rather
+   than as a fifth one. The divider rule the old rail used is gone with the
+   shelf it was drawn on. */
 .sa-dest-ray {
   position: relative;
-  margin-left: 3px;
-  padding-left: 8px;
-  border-left: 1px solid color-mix(in srgb, var(--neon-muted) 30%, transparent);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
 }
 
 .sa-dest-ray-portrait {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   flex: none;
-  border-radius: 50%;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
   object-fit: cover;
   object-position: top center;
-  background: var(--brand-ink);
+  background: var(--sa-wood);
 }
 
-/* Produce sitting in the barn, unsold -- the same badge the header's own
-   Store button used to carry, now pinned to the corner of Ray's face
-   instead of trailing his label. */
+/* Produce sitting in the barn, unsold. Pinned to the corner of Ray's face, in
+   the roof red -- the one place on this surface that colour is used to say
+   "there is something here for you" rather than "this destroys something". */
 .sa-dest-badge {
   position: absolute;
-  top: 1px;
-  right: 3px;
-  min-width: 15px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-gold);
-  color: var(--brand-ink);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  padding: 0 5px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-roof);
+  color: var(--sa-cream);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 2px var(--brand-ink-lift);
 }
 
 .sa-dest-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .sa-dest-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 800;
   white-space: nowrap;
 }
 
 /* The compass reading. Small, quiet and lower-case: it is the thing you need
    once (to know which way to drag) and never again. */
 .sa-dest-way {
-  color: var(--neon-muted);
-  font-size: 10px;
-  letter-spacing: .04em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
   white-space: nowrap;
+  opacity: .72;
 }
 
-.sa-dest.is-there .sa-dest-way { color: color-mix(in srgb, var(--brand-gold-light) 70%, transparent); }
+/* ---- the hint and the toast ------------------------------------------ */
 
-/* ---- the hint -------------------------------------------------------- */
-
+/* Bottom centre, between the toolbelt dock and the zoom keys. A carved strip
+   rather than a board: it is a caption on the world, and it changes on every
+   tool pick, so it must not read as something to press. */
 .sa-tool-hint {
   position: absolute;
   left: 50%;
-  bottom: 10px;
+  bottom: 14px;
   transform: translateX(-50%);
-  max-width: min(60%, 520px);
+  max-width: min(46%, 460px);
   margin: 0;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
+  padding: 6px 16px;
+  border-radius: var(--sa-r-chip);
+  background: rgba(52, 34, 18, .62);
   backdrop-filter: blur(6px);
-  color: var(--neon-muted);
+  color: var(--sa-cream);
   font-size: 14px;
+  font-weight: 700;
   text-align: center;
+  text-wrap: balance;
   pointer-events: none;
 }
 
-.sa-tool-hint.is-busy { color: var(--brand-gold-light); }
+.sa-tool-hint.is-busy { color: var(--sa-corn); }
 
+/* What you just collected, thrown up over the middle of the map. Corn on
+   chocolate, the loudest pairing on the surface, spent on the one moment the
+   farm actually pays you. */
 .sa-toast {
   position: absolute;
-  top: 12px;
+  top: calc(var(--sa-header-h) + 14px);
   left: 50%;
+  z-index: 4;
   transform: translateX(-50%);
   margin: 0;
-  padding: 5px 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-ink);
-  box-shadow: inset 0 0 0 1px var(--brand-gold), var(--accent-glow-gold);
-  color: var(--brand-gold-light);
-  font-size: 14px;
-  font-weight: 600;
+  padding: 8px 20px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-corn);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-corn-rim), var(--sa-drop-lg);
+  color: var(--sa-ink);
+  font-size: 19px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  animation: sa-toast 1.8s ease-out forwards;
+  animation: sa-toast 1.9s var(--sa-ease-out) forwards;
 }
 
 @keyframes sa-toast {
-  0% { opacity: 0; transform: translate(-50%, 8px); }
-  18% { opacity: 1; transform: translate(-50%, 0); }
-  75% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -12px); }
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(.8); }
+  16% { opacity: 1; transform: translate(-50%, 0) scale(1.08); }
+  26% { transform: translate(-50%, 0) scale(1); }
+  74% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -20px) scale(.96); }
 }
 
-/* ---- the error line and the detail card ------------------------------ */
+/* ---- the error line -------------------------------------------------- */
 
-/* The error line floats over the map's bottom-left, above the hint pill. */
+/* Floats over the map's bottom-left, above the toolbelt dock rather than
+   beside it -- the dock is the one thing on this screen a thumb is resting on,
+   and a banner that lands under it is a banner nobody reads. */
 .sa-side {
   position: absolute;
-  left: 8px;
-  bottom: 44px;
-  width: min(320px, 52%);
+  left: 10px;
+  bottom: calc(var(--sa-tap) + 22px);
+  width: min(330px, 52%);
   pointer-events: none;
 }
 
 .sa-side > * { pointer-events: auto; }
 
-/* The district panel: no plot to select any more, travelling to a district
-   (the signpost) IS the selection, so this is a fixed dock rather than
-   something that tracks a canvas position the way .sa-detail used to.
-   Docked to the same right edge the toolbelt and zoom buttons already
-   anchor to, below the toolbelt's own column, and independently scrollable
-   -- a district with several units plus its buy section can outgrow a
-   390px-tall phone.
+/* The shared error line is a translucent violet wash, tuned for a dark page.
+   Over bright grass it turns to mud and the words go with it; here it is a
+   board like everything else, in the roof red the world already uses for a
+   painted barn. */
+.sa-theme .duel-error {
+  margin: 0;
+  padding: 9px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-roof);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-roof-rim), var(--sa-drop);
+  color: var(--sa-cream);
+  font-size: 14px;
+  font-weight: 700;
+  text-wrap: pretty;
+}
 
-   It does NOT sit open over the map at all times -- it's parked off the
-   right edge until `.is-open` (a real travel, not just camera panning)
-   slides it in, and slides back out on close. `visibility` (not just the
-   transform) keeps it out of the tab order and off-screen readers while
-   shut, on top of the `inert` the component already sets. */
+/* ---- the district drawer ---------------------------------------------
+ * Travelling to a district (the signpost) IS the selection -- there is no plot
+ * to tap any more -- so this is a drawer on the right edge rather than
+ * something that tracks a position on the canvas.
+ *
+ * It is closed by default and it stays closed. On a 390px-tall landscape phone
+ * a permanently docked 300px sidebar is a third of the world gone, which is
+ * the whole reason the peg exists: shut, the map is whole and one small handle
+ * on the right edge says where the drawer went.
+ *
+ * `visibility` (not just the transform) keeps it out of the tab order and off
+ * screen readers while shut, on top of the `inert` the component already sets.
+ */
+
 .sa-district-panel {
   position: absolute;
-  /* Clears .sa-controls' own toolbelt above it (two 46px-min-height tools,
-     stacked, plus its own top offset and padding -- roughly 130px). */
-  top: calc(var(--sa-header-h) + 130px);
-  right: 8px;
-  bottom: 48px;
-  width: min(300px, 46%);
-  padding: 12px 14px;
-  border: 0;
-  border-radius: var(--radius-card);
-  background: var(--brand-ink-lift);
-  box-shadow: var(--accent-edge), var(--elevation-4);
+  top: calc(var(--sa-header-h) + 10px);
+  right: 10px;
+  /* Clears the zoom keys in the corner below, so both stay usable at once. */
+  bottom: calc(var(--sa-tap) + 22px);
+  z-index: 3;
+  width: min(320px, 46%);
+  padding: 0 0 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
   overflow-y: auto;
   overscroll-behavior: contain;
   pointer-events: auto;
-  transform: translateX(calc(100% + 16px));
+  transform: translateX(calc(100% + 24px));
   visibility: hidden;
-  transition: transform 200ms ease, visibility 200ms;
+  transition:
+    transform var(--duration-slower, .25s) var(--sa-ease-out),
+    visibility var(--duration-slower, .25s);
 }
 
+/* The overshoot is spent on the way in only. */
 .sa-district-panel.is-open {
   transform: translateX(0);
   visibility: visible;
+  transition:
+    transform 340ms var(--sa-bounce),
+    visibility 340ms;
 }
 
+/* The peg the drawer hangs off when it is shut. Half a block: it is bolted to
+   the right edge, so only its left half is drawn and only that half is
+   rounded. It carries the district's name because "open the drawer" is not
+   what a player wants, "look at the Long Meadow again" is.
+
+   Centred on the edge rather than hung under the header, which is where it
+   started: the signpost rail wraps as far right as it needs to, and at the top
+   of the edge the peg and the rail's last sign collided on a phone. Halfway
+   down is the one band of that edge nothing else claims. */
+.sa-panel-tab {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--sa-tap);
+  padding: 0 10px 0 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-right: 0;
+  border-radius: var(--sa-r-block) 0 0 var(--sa-r-block);
+  background: var(--sa-wood);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    transform var(--duration-slower, .25s) var(--sa-bounce),
+    opacity var(--duration-fast, .12s) ease;
+}
+
+/* Its own press has to keep the centring transform, so it travels down its
+   own lift rather than snapping back to the top of the screen. */
+.sa-panel-tab:active {
+  transform: translate(0, calc(-50% + var(--sa-lift))) scale(.98);
+}
+
+.sa-panel-tab-label {
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Slides out through the right edge as the drawer slides in over it, so the
+   two read as one object rather than as a handle the drawer covers up. */
+.sa-panel-tab.is-stowed {
+  transform: translate(110%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The drawer's own header band, in the ground colour of the district it is
+   describing -- the same four values the signpost swatches use, so the board
+   you tapped and the drawer that opened are visibly the same place. Sticky,
+   because the drawer scrolls and the close button has to stay reachable at the
+   bottom of a long buy list. */
 .sa-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
+  background: var(--sa-wood);
 }
+
+.sa-district-panel[data-zone="farmstead"] .sa-panel-head { background: var(--sa-zone-farmstead); }
+.sa-district-panel[data-zone="meadow"] .sa-panel-head { background: var(--sa-zone-meadow); }
+.sa-district-panel[data-zone="oxfields"] .sa-panel-head { background: var(--sa-zone-oxfields); }
+.sa-district-panel[data-zone="wallow"] .sa-panel-head { background: var(--sa-zone-wallow); }
+
+/* Ox Fields and the Wallow are dark ploughed ground; their band needs cream
+   lettering where the two green districts need chocolate. */
+.sa-district-panel[data-zone="oxfields"] .sa-ray-name,
+.sa-district-panel[data-zone="wallow"] .sa-ray-name { color: var(--sa-cream); }
 
 .sa-panel-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--sa-tap);
+  height: var(--sa-tap);
   min-height: 0;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  color: var(--neon-chalk);
-  cursor: pointer;
   flex: none;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
 }
 
-.sa-panel-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
-
 .sa-district-title {
-  margin: 0 0 2px;
-  font-size: 16px;
-  color: var(--neon-chalk);
+  margin: 12px 14px 2px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  line-height: 1.1;
+  color: var(--sa-ink);
 }
 
 .sa-district-blurb {
-  margin: 0 0 10px;
-  color: var(--neon-muted);
-  font-size: 13px;
-  opacity: .85;
+  margin: 0 14px 12px;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
 }
 
 .sa-panel-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
+  margin: 12px 14px 0;
+  padding-top: 12px;
+  /* A divider between two shelves, drawn in the board's own darker tone. */
+  border-top: 2px solid var(--sa-cream-rim);
 }
 
 .sa-panel-section:first-of-type {
@@ -588,10 +1116,11 @@
 }
 
 .sa-district-empty {
-  margin: 4px 0 0;
-  color: var(--neon-muted);
-  font-size: 13px;
-  opacity: .8;
+  margin: 6px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-wrap: pretty;
 }
 
 /* ---- what's here: owned units ----------------------------------------- */
@@ -602,21 +1131,32 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* Not a block: a row is a slat in the board, not something to press. It is
+   recessed rather than raised (inset shadow, no bottom face) so the one thing
+   in it that IS pressable -- its action -- is the only thing standing up. */
 .sa-unit-row {
   display: grid;
-  grid-template-columns: 30px 1fr auto;
+  grid-template-columns: 34px 1fr auto;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-control);
-  background: var(--brand-surface-2);
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
+}
+
+/* Ripe. The row itself lights up, so a district with something to collect
+   reads from the doorway rather than needing the state line to be read. */
+.sa-unit-row[data-state="ready"] {
+  background: color-mix(in srgb, var(--sa-corn) 42%, var(--sa-paper));
+  box-shadow: inset 0 0 0 2px var(--sa-corn-side);
 }
 
 .sa-unit-icon { display: flex; }
-.sa-unit-icon .sa-ico { width: 24px; height: 24px; }
+.sa-unit-icon .sa-ico { width: 30px; height: 30px; }
 
 .sa-unit-info {
   display: flex;
@@ -625,98 +1165,111 @@
 }
 
 .sa-unit-name {
-  color: var(--neon-chalk);
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--sa-ink);
+  font-size: 14px;
+  font-weight: 800;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sa-unit-state {
-  font-size: 12px;
-  color: var(--neon-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sa-ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
-.sa-unit-state[data-state="ready"] { color: var(--brand-gold-light); }
-.sa-unit-state[data-state="hungry"] { color: var(--sa-hungry); }
-.sa-unit-state[data-state="mucked"] { color: var(--sa-muck); }
+/* State colours are the world's own, darkened to the `rim` step where they
+   have to carry small text on a cream board -- the carrot and corn `top`
+   tones are the right hue for a sprite in sunlight and nowhere near
+   readable at 12.5px on paper. */
+.sa-unit-state[data-state="ready"] { color: var(--sa-corn-rim); }
+.sa-unit-state[data-state="hungry"] { color: var(--sa-carrot-rim); }
+.sa-unit-state[data-state="mucked"] { color: var(--sa-choc); }
 
 .sa-unit-action {
-  min-height: 32px;
-  padding: 5px 11px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 700;
+  min-height: 38px;
+  padding: 6px 13px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
 }
 
-.sa-unit-action:disabled { opacity: .45; cursor: not-allowed; }
-
 .sa-unit-action.is-primary {
-  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
-  color: #1c1305;
+  background: var(--sa-corn);
+  box-shadow: 0 4px 0 var(--sa-corn-rim), var(--sa-drop);
+  color: var(--sa-ink);
 }
 
 .sa-unit-action.is-warn {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--sa-hungry);
-  color: var(--sa-hungry);
+  background: var(--sa-carrot);
+  box-shadow: 0 4px 0 var(--sa-carrot-rim), var(--sa-drop);
+  color: var(--sa-ink);
 }
 
 /* Destructive-adjacent (clear a mucked unit, confirm a retire): one warning
-   colour in the system, the same red the retire confirmation always used. */
+   colour in the system, the roof red the barn is painted in. */
 .sa-unit-action.is-bad {
-  background: linear-gradient(152deg, #ff8a86 0%, #ff6f6b 55%, #b3312d 100%);
-  color: #2a0d0c;
+  background: var(--sa-roof);
+  box-shadow: 0 4px 0 var(--sa-roof-rim), var(--sa-drop);
+  color: var(--sa-cream);
 }
 
+/* Retiring is not an action anyone came here to take, so its key is unpainted
+   board rather than a colour competing with Collect two rows above. */
 .sa-unit-action.is-ghost {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--sa-panel-rule, rgba(182, 166, 219, .18));
-  color: var(--neon-muted);
-}
-
-.sa-unit-action:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
+  background: var(--sa-cream-side);
+  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink-soft);
 }
 
 .sa-unit-confirm {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
+  gap: 4px;
 }
 
+/* "Keep them" -- the way out of the retire confirmation. A link rather than a
+   second block, because two blocks side by side is two equal choices and this
+   pair is deliberately not equal. Padded to the touch floor all the same. */
 .sa-unit-link {
+  min-height: 32px;
+  padding: 4px 8px;
   border: 0;
+  border-radius: var(--sa-r-block);
   background: transparent;
-  padding: 0;
-  color: var(--neon-muted);
-  font-size: 11px;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
   text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
 /* ---- buy ---------------------------------------------------------------
- * One block per stock kind this district sells. The rule is separation,
- * not decoration: seeding with Bushels and buying outright with Gold are
- * genuinely different purchases (one cycle versus the animal), so each
- * kind reads as its own small counter rather than a row of buttons.
+ * One block per stock kind this district sells. The rule is separation, not
+ * decoration: seeding with Bushels and buying outright with Gold are genuinely
+ * different purchases (one cycle versus the animal), so each kind reads as its
+ * own small counter rather than a row of buttons.
  */
 
 .sa-buy-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .sa-buy-kind + .sa-buy-kind {
-  padding-top: 10px;
-  border-top: 1px solid var(--sa-panel-rule, rgba(182, 166, 219, .18));
+  padding-top: 12px;
+  border-top: 2px solid var(--sa-cream-rim);
 }
 
 .sa-buy-head {
@@ -724,30 +1277,36 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .sa-buy-kind-name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--neon-chalk);
-  font-size: 13px;
-  font-weight: 700;
+  gap: 7px;
+  color: var(--sa-ink);
+  font-size: 15px;
+  font-weight: 800;
 }
 
-.sa-buy-kind-name .sa-ico { width: 18px; height: 18px; }
+.sa-buy-kind-name .sa-ico { width: 22px; height: 22px; }
 
+/* How many of this kind are standing, out of how many can be. A tally on the
+   board, not a sentence. */
 .sa-buy-cap {
-  color: var(--neon-muted);
-  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .sa-buy-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .sa-buy-btn {
@@ -756,235 +1315,241 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  min-width: 120px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--brand-surface);
+  min-width: 132px;
+  min-height: var(--sa-tap);
+  padding: 7px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-cream-side);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
   cursor: pointer;
   text-align: left;
-}
-
-.sa-buy-btn:disabled { opacity: .45; cursor: not-allowed; }
-
-.sa-buy-btn:focus-visible {
-  outline: 2px solid var(--neon-purple-bright);
-  outline-offset: 2px;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
 }
 
 .sa-buy-label {
-  color: var(--neon-chalk);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--sa-ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
 }
 
 .sa-buy-price {
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--sa-ink-soft);
 }
 
-.sa-buy-btn.is-bushels .sa-buy-price { color: var(--neon-muted); }
-.sa-buy-btn.is-gold .sa-buy-price { color: var(--brand-gold-light); }
-
+/* Gold leaves the wallet; Bushels are the farm's own money going round. The
+   two purchases are told apart by material, not by a label -- corn for the one
+   that costs real Gold, plain board for the one that does not. */
+.sa-buy-btn.is-gold,
 .sa-buy-btn.is-expand {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--brand-gold);
+  background: var(--sa-corn);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-corn-rim), var(--sa-drop);
 }
-.sa-buy-btn.is-expand .sa-buy-price { color: var(--brand-gold-light); }
 
-/* The shared error line is a translucent wash, tuned for a dark page. Over
-   bright grass it turns to mud and the words go with it; give it the panel's
-   own solid ground here. */
-.sa-side .duel-error {
-  background: color-mix(in srgb, var(--brand-red) 22%, var(--brand-ink-lift));
-  box-shadow: var(--elevation-4);
+.sa-buy-btn.is-gold .sa-buy-price,
+.sa-buy-btn.is-expand .sa-buy-price { color: var(--sa-corn-rim); }
+
+/* Expanding is buying room rather than buying an animal, so it is the same
+   corn material with the leaf stripe of a thing that grows. */
+.sa-buy-btn.is-expand {
+  background: var(--sa-leaf);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-leaf-rim), var(--sa-drop);
 }
+
+.sa-buy-btn.is-expand .sa-buy-label { color: var(--sa-ink); }
+.sa-buy-btn.is-expand .sa-buy-price { color: var(--sa-leaf-rim); }
+
+/* ---- the store sheet -------------------------------------------------- */
+
+.sa-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 10px;
+  background: rgba(52, 34, 18, .55);
+  animation: sa-scrim var(--duration-base, .15s) ease-out both;
+}
+
+@keyframes sa-scrim {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Ray's counter, slid up from the bottom edge with the same overshoot the
+   drawer opens on. */
+.sa-sheet {
+  width: min(100%, 560px);
+  max-height: 84dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(18px + env(safe-area-inset-bottom));
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
+  animation: sa-sheet-up 380ms var(--sa-bounce) both;
+}
+
+@keyframes sa-sheet-up {
+  from { transform: translateY(28px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Sticky and wooden: the shopfront sign stays put while the shelves scroll
+   under it, which is also what keeps Done reachable from the bottom of a long
+   barn list. */
+.sa-sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 -16px 4px;
+  padding: 10px 16px;
+  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
+  background: var(--sa-wood);
+}
+
+.sa-sheet-head h2 {
+  margin: 2px 0 0;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  color: var(--sa-ink);
+}
+
+.sa-theme .sa-sheet-close {
+  min-height: var(--sa-tap);
+  padding: 6px 18px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+/* Shelf and section headings. A carved kicker rather than a heading: it labels
+   a shelf, it is not a title. */
+.sa-group-label {
+  margin: 18px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* A shelf in the store carries the painted badge of what is on it (see
+   `StoreShelf` in stackacres-farm.tsx). The badge is what a thumb finds while
+   scrolling; the lettering is what confirms it. */
+.sa-shelf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.sa-shelf-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-wood);
+  box-shadow: 0 3px 0 var(--sa-wood-rim);
+}
+
+.sa-shelf-badge .sa-ico { width: 22px; height: 22px; }
+
+.sa-sheet-note {
+  margin: 8px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.sa-sheet-note strong { color: var(--sa-ink); font-weight: 800; }
 
 .sa-hint {
   margin: 0;
-  color: var(--neon-muted);
+  color: var(--sa-ink-soft);
   font-size: 14px;
+  font-weight: 700;
 }
 
-.sa-panel {
-  padding: 12px 14px;
-  border: 0;
-  border-radius: var(--radius-card);
-  background: var(--brand-ink-lift);
-  box-shadow: var(--accent-edge), var(--elevation-4);
-}
+/* ---- the primary key -------------------------------------------------- */
 
-.sa-panel h2 {
-  margin: 0 0 6px;
-  font-size: 16px;
-  color: var(--neon-chalk);
-}
-
-/* Grandfather Ray's byline: his portrait plus his name, wherever a panel is
-   his -- buying land and the supply store, both his in the fiction. A plain
-   row, not a speech-bubble affordance; he doesn't have dialogue everywhere,
-   just a face on the two things he actually does. */
-.sa-ray-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.sa-ray-portrait {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: top center;
-  background: var(--brand-ink);
-  box-shadow: var(--accent-edge);
-}
-
-.sa-ray-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--neon-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* The one-time welcome (stackacres-ray-welcome.tsx): his portrait, centred
-   and a good deal bigger than the panel byline above, since this is the one
-   place he's the whole point of the screen rather than a small attribution. */
-.sa-ray-welcome-portrait {
-  width: 96px;
-  height: 96px;
-  margin: 0 auto;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: top center;
-  background: var(--brand-ink);
-  box-shadow: var(--accent-edge), var(--elevation-4);
-}
-
-.sa-panel > p { margin: 6px 0; color: var(--neon-muted); font-size: 14px; }
-
-.sa-note { font-size: 14px !important; opacity: .85; }
-
-.sa-stock-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.sa-stock-card {
-  padding: 10px 12px;
-  border: 0;
-  border-radius: var(--radius-card);
-  background: var(--brand-surface-2);
-}
-
-.sa-stock-card h3 { margin: 0; font-size: 15px; }
-
-.sa-stock-terms {
-  margin: 3px 0 0;
-  color: var(--neon-muted);
-  font-size: 14px;
-}
-
-.sa-stock-yield {
-  margin: 3px 0 0;
-  color: var(--neon-chalk);
-  font-size: 14px;
-}
-
-.sa-stock-yield span { color: var(--brand-gold-light); }
-
+/* The one full-width action a screen or a sheet section is actually for:
+   Buy this feed, Exchange these Bushels, Thanks Ray. Corn, the loudest
+   material, on the tallest travel in the system. */
 .sa-cta {
-  margin-top: 8px;
-  min-height: 44px;
-  padding: 8px 18px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
-  box-shadow: var(--button-primary-glow, 0 16px 38px rgba(255, 210, 63, .3), inset 0 1px rgba(255, 255, 255, .45));
-  color: #1c1305;
-  font-size: 15px;
-  font-weight: 750;
+  margin-top: 10px;
+  min-height: 52px;
+  padding: 10px 22px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-corn);
+  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.005em;
   cursor: pointer;
-  transition: filter var(--duration-fast, .12s) ease, transform var(--duration-fast, .12s) ease;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    filter var(--duration-fast, .12s) ease;
 }
 
-.sa-cta:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
-
-.sa-cta:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
-
-.sa-cta:focus-visible {
-  outline: 0;
-  box-shadow: var(--brand-focus);
-}
-
-/* ---- HUD and store --------------------------------------------------- */
-
-.sa-hud {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Screen-reader-only. There is no shared utility for this in the codebase --
-   every component inlines the pattern -- so it is inlined here too. */
-.sa-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* The farm's own purse, and the first thing in the HUD: everything on this
-   screen is bought with Bushels, and Gold only ever buys acreage. */
-.sa-purse {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--neon-chalk);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-purse .sa-ico,
-.sa-feed .sa-ico {
-  width: 16px;
-  height: 16px;
-}
+.sa-cta:hover:not(:disabled) { filter: brightness(1.05); }
 
 /* ---- the barn -------------------------------------------------------- */
 
 .sa-barn {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .sa-barn-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-radius: var(--radius-card);
-  background: var(--brand-surface-2);
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
 }
 
 .sa-barn-row > .sa-ico {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
 }
 
 .sa-barn-name {
@@ -995,110 +1560,257 @@
 }
 
 .sa-barn-name strong {
-  color: var(--neon-chalk);
-  font-size: 14px;
+  color: var(--sa-ink);
+  font-size: 15px;
+  font-weight: 800;
 }
 
 /* Never wraps. A second line here pushes the sell buttons out of alignment
    with the rows above, and the barn stops reading as a list. */
 .sa-barn-name > span {
-  color: var(--neon-muted);
-  font-size: 14px;
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .sa-barn-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex: none;
 }
 
-/* The sell buttons are the one place a screen gets more than one gold fill.
+/* The sell buttons are the one place a sheet gets more than one corn key.
    They are the same action repeated at two quantities rather than competing
    choices, so they read as a pair, not as two primaries. */
 .sa-cta-small {
   margin-top: 0;
-  min-height: 36px;
-  padding: 5px 11px;
-  font-size: 14px;
-  box-shadow: none;
+  min-height: 42px;
+  padding: 6px 13px;
+  font-size: 13.5px;
+  box-shadow: 0 4px 0 var(--sa-corn-rim), var(--sa-drop);
 }
 
-.sa-feed {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--neon-muted);
+/* ---- feed ------------------------------------------------------------- */
+
+.sa-stock-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.sa-stock-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-stock-card h3 { margin: 0; font-size: 17px; font-weight: 800; color: var(--sa-ink); }
+
+.sa-stock-terms {
+  margin: 3px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.sa-stock-yield {
+  margin: 3px 0 0;
+  color: var(--sa-ink);
   font-size: 14px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
-.sa-sheet-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
+.sa-stock-yield span { color: var(--sa-ink-soft); font-weight: 600; }
+
+.sa-stock-card .sa-cta { margin-top: auto; }
+
+/* ---- the exchange window --------------------------------------------- */
+
+/* The only place on this screen where the farm touches real money, so it is
+   the only block with its own surface and a corn edge. That edge is marking a
+   boundary, not decorating a card -- everything above it is the farm's own
+   currency going round in a circle. */
+.sa-exchange {
+  margin-top: 8px;
+  padding: 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-exchange > .sa-sheet-note:first-child { margin-top: 0; }
+.sa-exchange .sa-cta { width: 100%; }
+
+.sa-exchange-meter {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0, 0, 0, .7);
-  padding: 12px;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.sa-sheet {
-  width: min(100%, 520px);
-  max-height: 80dvh;
-  overflow-y: auto;
-  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
-  border: 0;
-  border-radius: var(--radius-card);
-  background: var(--brand-ink-lift);
-  box-shadow: var(--elevation-4);
+.sa-exchange-meter strong { color: var(--sa-ink); font-weight: 800; }
+
+/* Drains rather than fills: the bar is what is LEFT of the day, matching the
+   number under it. Filled-as-spent shipped for one screenshot and put a full
+   gold bar directly above the words "0 of 5,000 Gold left today". */
+.sa-exchange-bar {
+  height: 14px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream-rim);
+  overflow: hidden;
 }
 
-.sa-sheet-head {
+/* Scaled, not resized: the fill is full-width and squashed by a transform, so
+   the tween stays off the layout path. */
+.sa-exchange-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: var(--sa-corn);
+  box-shadow: inset 0 -3px 0 var(--sa-corn-side);
+  transition: transform var(--duration-slow, .22s) var(--sa-ease-out);
+}
+
+.sa-exchange-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Plain board, not corn: the chips choose an amount, and the corn fill in this
+   block belongs to the one key that actually moves money. */
+.sa-amount {
+  min-height: var(--sa-tap);
+  padding: 6px 16px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink-soft);
+  font-size: 14.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+/* Chosen. Latched down like a held tool, same physical grammar. */
+.sa-amount.is-on {
+  transform: translateY(4px);
+  background: var(--sa-choc);
+  box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(0, 0, 0, .2);
+  color: var(--sa-cream);
+}
+
+.sa-exchange-done { color: var(--sa-leaf-rim) !important; font-weight: 800; }
+
+/* ---- Ray ------------------------------------------------------------- */
+
+/* Grandfather Ray's byline: his portrait plus his name, wherever a panel is
+   his -- the district drawer and the supply store, both his in the fiction. A
+   plain row, not a speech-bubble affordance; he doesn't have dialogue
+   everywhere, just a face on the two things he actually does. */
+.sa-ray-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 7px;
 }
 
-.sa-sheet-head h2 { margin: 0; font-size: 16px; }
-
-.sa-sheet-close {
-  min-height: 44px;
-  padding: 5px 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  color: var(--neon-chalk);
-  font-size: 14px;
-  cursor: pointer;
+.sa-ray-portrait {
+  width: 34px;
+  height: 34px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  object-fit: cover;
+  object-position: top center;
+  background: var(--sa-paper);
 }
 
-.sa-sheet-close:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
-
-.sa-sheet-note {
-  margin: 8px 0 0;
-  color: var(--neon-muted);
-  font-size: 14px;
+.sa-ray-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sa-ink);
+  text-transform: uppercase;
+  letter-spacing: .06em;
 }
 
-.sa-sheet-note strong { color: var(--neon-chalk); }
-
-.sa-link-btn {
-  display: block;
-  margin-top: 8px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--neon-purple-bright);
-  font-size: 14px;
-  text-decoration: underline;
-  cursor: pointer;
+/* The one-time welcome (stackacres-ray-welcome.tsx): his portrait, centred and
+   a good deal bigger than the byline above, since this is the one place he is
+   the whole point of the screen rather than a small attribution. */
+.sa-ray-welcome-portrait {
+  width: 104px;
+  height: 104px;
+  margin: 0 auto;
+  border: 4px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  object-fit: cover;
+  object-position: top center;
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
 }
 
-.sa-link-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
+/* His welcome and the how-to-play modal are the shared .profile-modal chrome
+   (a violet-black card), which is right everywhere else in the app and wrong
+   sitting on a farm. Re-boarded here only -- qualified by .sa-theme, so the
+   same component keeps its chrome dressing on every other screen that
+   opens it. */
+.sa-theme .profile-overlay { background: rgba(52, 34, 18, .6); }
+
+.sa-theme .profile-modal {
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
+  color: var(--sa-ink);
+}
+
+.sa-theme .profile-modal-header {
+  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
+  background: var(--sa-wood);
+  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
+}
+
+.sa-theme .profile-modal-header span { color: var(--sa-ink-soft); font-weight: 800; }
+.sa-theme .profile-modal-header h2 { color: var(--sa-ink); font-weight: 800; }
+
+.sa-theme .modal-close {
+  width: var(--sa-tap);
+  height: var(--sa-tap);
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 4px 0 var(--sa-cream-rim);
+  color: var(--sa-ink);
+}
+
+.sa-theme .modal-close:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--sa-outline);
+}
+
+.sa-theme .htp-body { color: var(--sa-ink-soft); }
+.sa-theme .htp-body p,
+.sa-theme .htp-body li { font-weight: 600; text-wrap: pretty; }
+.sa-theme .htp-body strong { color: var(--sa-ink); font-weight: 800; }
 
 /* ---- the gate --------------------------------------------------------- */
 
@@ -1111,39 +1823,50 @@
 }
 
 .sa-gate-card {
-  width: min(100%, 380px);
-  padding: 22px 20px;
-  border-radius: var(--radius-card);
-  background: var(--brand-ink-lift);
-  box-shadow: var(--accent-edge), var(--elevation-4);
+  width: min(100%, 400px);
+  padding: 24px 22px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
   text-align: center;
 }
 
-/* The real logo (components/brand/stackacres-logo.tsx). Used to be shared
-   with the live farm's own masthead too; that pill is gone now (the
-   signpost took its place, see .sa-destinations), so this is the gate
-   screen's own rule. The gate card is centered text (see .sa-gate-card
-   above); the logo is a grid item with a fixed width, so it needs its own
-   centering rather than inheriting text-align. */
-.sa-heading-logo { width: 210px; height: auto; }
+/* The real logo (components/brand/stackacres-logo.tsx). The mark's own STACK
+   is chalk-white, which was drawn for a violet-black room and disappears on a
+   cream board -- the gate is the one place it is shown large on paper, so it
+   gets the world's own chocolate behind it rather than a recolour of the
+   mark. */
+.sa-heading-logo { width: 220px; height: auto; }
 .sa-gate-card .sa-heading-logo { margin: 0 auto; }
+
+.sa-gate-card .ante-lobby-heading {
+  padding: 12px 16px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-choc-rim);
+}
 
 .sa-gate-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 10px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface-2);
-  color: var(--brand-gold-light);
+  width: 52px;
+  height: 52px;
+  margin-bottom: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-corn);
+  box-shadow: 0 4px 0 var(--sa-corn-rim);
+  color: var(--sa-ink);
 }
 
 .sa-gate-card p {
-  margin: 8px 0 0;
-  color: var(--neon-muted);
-  font-size: 14px;
+  margin: 10px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-wrap: pretty;
 }
 
 /* The player id, for someone who has to go and ask to be let in. Selectable
@@ -1155,148 +1878,63 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 16px;
-  color: var(--neon-muted-2);
+  margin-top: 18px;
+  color: var(--sa-ink-soft);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 
 .sa-gate-id code {
-  padding: 8px 10px;
-  border-radius: var(--radius-control);
-  background: var(--brand-surface);
-  color: var(--neon-chalk);
+  padding: 9px 11px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
+  color: var(--sa-ink);
   font-size: 13px;
+  font-weight: 700;
   letter-spacing: .02em;
   text-transform: none;
   overflow-wrap: anywhere;
   user-select: all;
 }
 
-/* ---- the exchange window --------------------------------------------- */
+/* ---- the orientation gate -------------------------------------------- */
 
-/* The store sheet's shelf headings. These shipped with no rule at all in phase
-   2, so all three groups read as one wall of body copy. A kicker rather than a
-   heading: it labels a shelf, it is not a title. */
-.sa-group-label {
-  margin: 16px 0 0;
-  color: var(--neon-muted-2);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+/* Shared with the poker table (42-racetrack-table.css), which owns its layout
+   and its copy shape; only its dressing is re-boarded here. A player who turns
+   their phone the wrong way should still be looking at the farm, not at a
+   violet-black card that has clearly come from somewhere else. */
+.sa-theme .orientation-gate-shell {
+  background: var(--sa-choc-rim);
+  color: var(--sa-cream);
 }
 
-/* The only place on this screen where the farm touches real money, so it is
-   the only block with its own surface and a gold edge. That edge is marking a
-   boundary, not decorating a card -- everything above it is the farm's own
-   currency going round in a circle. */
-.sa-exchange {
-  margin-top: 6px;
-  padding: 12px;
-  border-radius: var(--radius-card);
-  background: var(--brand-surface-2);
-  box-shadow: inset 0 0 0 1px rgba(255, 210, 63, .18);
+.sa-theme .orientation-gate {
+  padding: 24px 22px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
+  color: var(--sa-ink);
+  text-align: center;
 }
 
-.sa-exchange > .sa-sheet-note:first-child { margin-top: 0; }
-.sa-exchange .sa-cta { width: 100%; }
+.sa-theme .orientation-gate-mark { color: var(--sa-corn-rim); }
 
-.sa-exchange-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 10px 0 0;
-  color: var(--neon-muted);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
+.sa-theme .orientation-gate h1 {
+  font: 800 24px/1.15 var(--sa-font);
+  color: var(--sa-ink);
 }
 
-.sa-exchange-meter strong { color: var(--brand-gold-light); }
-
-/* Drains rather than fills: the bar is what is LEFT of the day, matching the
-   number under it. Filled-as-spent shipped for one screenshot and put a full
-   gold bar directly above the words "0 of 5,000 Gold left today". */
-.sa-exchange-bar {
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  overflow: hidden;
+.sa-theme .orientation-gate p,
+.sa-theme .orientation-gate small {
+  color: var(--sa-ink-soft);
+  font-weight: 600;
 }
 
-/* Scaled, not resized: the fill is full-width and squashed by a transform, so
-   the tween stays off the layout path. The gradient scales with it, which on a
-   6px bar is the same picture. */
-.sa-exchange-bar > span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  transform-origin: left center;
-  background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-light) 100%);
-  transition: transform var(--duration-slow, .22s) ease;
-}
-
-.sa-exchange-amounts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-/* Violet, not gold: the chips choose an amount, and the gold fill on this
-   screen belongs to the one button that actually moves money. */
-.sa-amount {
-  min-height: 44px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  color: var(--neon-muted);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.sa-amount.is-on {
-  background: var(--neon-purple-deep);
-  box-shadow: var(--accent-edge), var(--accent-glow);
-  color: var(--neon-chalk);
-}
-
-.sa-amount:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
-
-.sa-exchange-done { color: var(--brand-gold-light) !important; }
-
-/* ---- Music toggle button in HUD -------- */
-
-.sa-music-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--neon-border);
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--neon-text);
-  cursor: pointer;
-  transition: all 200ms;
-}
-
-.sa-music-toggle:hover {
-  background: var(--neon-surface-hover);
-  color: var(--neon-accent);
-}
-
-.sa-music-toggle:active {
-  transform: scale(0.95);
-}
-
-/* ---- Tap-to-play screen (covers whole viewport) ------ */
+/* ---- the tap-to-play splash ------------------------------------------ */
 
 .sa-play-screen {
   position: fixed;
@@ -1304,7 +1942,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--brand-ink);
+  background: var(--sa-choc-rim);
   cursor: pointer;
   user-select: none;
   transition: opacity 300ms ease-out;
@@ -1334,110 +1972,143 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
-  padding: 40px 20px;
+  gap: 20px;
+  padding: 32px 20px;
   text-align: center;
 }
 
 .sa-play-logo {
-  width: 260px;
+  width: 280px;
   height: auto;
-  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 5px 0 rgba(52, 34, 18, .55)) drop-shadow(0 12px 22px rgba(0, 0, 0, .5));
 }
 
 .sa-play-subtitle {
-  font-size: 16px;
-  color: var(--neon-muted);
+  max-width: 34ch;
   margin: 0;
-  font-weight: 400;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  color: var(--sa-cream);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-wrap: balance;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .65);
 }
 
+/* The one authored moment on this surface: the splash's prompt breathes, and
+   nothing else on the screen animates on a loop. It is a key waiting to be
+   pressed, drawn as one -- the same block, the same travel -- so the first
+   thing a player ever touches here teaches the grammar every other button
+   uses. */
 .sa-play-prompt {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px 26px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-corn);
+  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop-lg);
+  animation: sa-breathe 2.4s var(--sa-ease-out) infinite;
+}
+
+.sa-play-screen:active .sa-play-prompt {
+  transform: translateY(var(--sa-lift-lg));
+  box-shadow: 0 0 0 var(--sa-outline), 0 2px 4px rgba(52, 34, 18, .4);
+  animation: none;
+}
+
+@keyframes sa-breathe {
+  0%, 62%, 100% { transform: translateY(0); }
+  78% { transform: translateY(-4px); }
+  90% { transform: translateY(0); }
 }
 
 .sa-play-text {
-  font-size: 18px;
-  /* --neon-text doesn't exist anywhere in the token set (was probably meant
-     as --neon-chalk); color is inherited, so the undefined var was silently
-     falling back to whatever ancestor color applied rather than erroring. */
-  color: var(--neon-chalk);
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  color: var(--sa-ink);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: .01em;
 }
 
 .sa-play-pulse {
-  position: relative;
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  /* Same bug as above, but louder: --neon-accent doesn't exist either, and
-     background isn't inherited, so this reset to transparent -- the dot has
-     been invisible. --neon-yellow is the mark's own accent (see
-     stackacres-logo.tsx: "ACRES in marquee yellow"). */
-  background: var(--neon-yellow);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--sa-outline);
   border-radius: 50%;
-  animation: sa-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* --neon-accent never existed in the token set and background is not
+     inherited, so this dot was transparent for its whole life. */
+  background: var(--sa-roof);
+  animation: sa-pulse 1.5s cubic-bezier(.4, 0, .6, 1) infinite;
 }
 
 @keyframes sa-pulse {
-  0%, 100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.2);
-  }
+  0%, 100% { opacity: .55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
 }
 
+/* Motion in the DOM layer is the toast, the drawer, the sheet and the splash
+   prompt; the map's own motion (animals, the ripe bob) is switched off inside
+   the scene from the same media query. The press states stay: a button that
+   does not move when pressed is a button a player taps twice. */
 @media (prefers-reduced-motion: reduce) {
-  .sa-play-pulse { animation: none; opacity: 1; }
-}
-
-/* Motion in the DOM layer is the toast only; the map's own motion (animals,
-   the ripe bob, the affordance pulse) is switched off inside the scene from
-   the same media query. */
-@media (prefers-reduced-motion: reduce) {
+  .sa-play-pulse,
+  .sa-play-prompt { animation: none; }
   .sa-toast { animation: none; opacity: 1; }
-  .sa-cta { transition: none; }
+  .sa-sheet { animation: none; }
+  .sa-sheet-scrim { animation: none; }
+  .sa-cta,
   .sa-exchange-bar > span { transition: none; }
+  .sa-district-panel,
+  .sa-district-panel.is-open,
+  .sa-panel-tab { transition-duration: 1ms; }
 }
 
 /* ---- landscape phones (MUST STAY LAST) -------------------------------
    Height is the scarce axis here: at 844x390 every band of chrome above the
    map comes straight out of the map. The layout is the same fixed column as
-   everywhere else; this block only shrinks what sits over and above it. */
+   everywhere else; this block only shrinks what sits over and above it.
+
+   The blocks keep their travel and their outline -- a thinner outline or a
+   1px travel is where chunky quietly turns back into flat -- so what gives
+   here is padding, type size and the drawer's own generosity. */
 @media (orientation: landscape) and (max-height: 520px) {
-  /* Every band above the field gives back what it can: the chrome is worth
-     less here than the picture it is sitting on top of. The header is
-     already an overlay pinned over the map (above) -- this block only
-     shrinks its own scrim padding and the icons inside it. */
-  .sa-shell .floor-bar {
-    padding-bottom: 8px;
-  }
-  .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
-  .sa-shell .sa-heading-logo { width: 150px; }
+  .sa-shell { --sa-header-h: 46px; }
+  .sa-theme { --sa-tap: 44px; }
 
-  .sa-tool { width: 56px; min-height: 42px; }
-  .sa-tool .sa-ico { width: 20px; height: 20px; }
+  .sa-theme .floor-bar { padding-bottom: 6px; }
+  .sa-purse,
+  .sa-feed,
+  .sa-theme .gold-balance.floor-wallet,
+  .sa-music-toggle,
+  .sa-theme .floor-back,
+  .sa-theme .htp-trigger { min-height: 34px; font-size: 13.5px; }
+  .sa-music-toggle { width: 34px; }
+  .sa-shell .sa-heading-logo { width: 170px; }
 
-  .sa-panel { padding: 10px 12px; }
-  .sa-panel h2 { font-size: 15px; margin-bottom: 4px; }
-  .sa-panel > p { font-size: 14px; margin: 4px 0; }
+  .sa-dest { min-height: 42px; padding: 4px 11px 4px 7px; }
+  .sa-dest-name { font-size: 14px; }
+  .sa-dest-way { font-size: 10px; }
 
-  /* The district panel is the tallest thing on a short landscape phone --
-     it competes with the map for the same scarce height the rest of this
-     block is already giving back. */
-  .sa-district-panel { top: calc(var(--sa-header-h) + 110px); padding: 10px 12px; }
-  .sa-district-title { font-size: 15px; }
-  .sa-district-blurb { font-size: 12px; margin-bottom: 8px; }
+  .sa-tool { min-width: 54px; min-height: 44px; padding: 4px 7px; }
+  .sa-tool .sa-ico { width: 22px; height: 22px; }
+  .sa-tool-label { font-size: 11px; }
 
-  .sa-tool-hint { font-size: 12px; max-width: 50%; }
+  .sa-camera-btn { width: 44px; height: 44px; }
+
+  /* The drawer is the tallest thing on a short landscape phone. It gives back
+     padding rather than width: a narrower drawer wraps every buy button onto
+     two lines, which costs more height than the padding saved. */
+  .sa-district-panel { top: calc(var(--sa-header-h) + 8px); }
+  .sa-district-title { margin: 10px 12px 2px; font-size: 19px; }
+  .sa-district-blurb { margin: 0 12px 10px; font-size: 12.5px; }
+  .sa-panel-section { margin: 10px 12px 0; padding-top: 10px; }
+  .sa-panel-tab { top: calc(var(--sa-header-h) + 16px); }
+
+  .sa-tool-hint { font-size: 12.5px; max-width: 40%; padding: 5px 13px; }
+  .sa-toast { font-size: 17px; padding: 7px 17px; }
+
+  .sa-sheet { max-height: 92dvh; }
+  .sa-sheet-head h2 { font-size: 19px; }
 }

@@ -46,6 +46,31 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres' chrome is its own visual world now, not Neon Marquee over grass (2026-09-04)
+Kayo's brief: the farm's GUI "looks too much like a flat, generic web app sidebar" and wants the
+chunky, tactile feel of a casual mobile farm game. It was literally that -- every panel, pill and
+button on the map came from the app's violet-black chrome tokens, laid over a lit cartoon farm.
+`52-stackacres.css` is now **the second documented carve-out from the styling contract, alongside the
+felt**, and its header says so: inside `.sa-theme` surfaces carry a 3px outline (a hairline ban the
+rest of the app keeps), radii are the farm's own two, and nothing reaches for `--brand-*`/`--neon-*`.
+The materials are not invented -- they are `art-palette.ts`'s own three-tone ramps (wood, cream,
+muck, corn, leaf, roof, carrot), which is what decides what "chunky" MEANS here: a button's thick
+bottom edge is the material's own `rim` face, and a press travels the block down onto it by exactly
+`--sa-lift`, the same height that face is drawn at. One primitive, one grammar, three physical states
+(raised / pressed / unlit-disabled). Also: **Baloo 2 is self-hosted** (`app/fonts/`, ~33KB latin
+variable, next/font/local via `stackacres-font.ts`, applied on the `.sa-theme` wrapper in the route's
+own page) -- the first webfont in the app, deliberately route-scoped; the outlined-SVG rule for brand
+marks is untouched. Layout moved with it: the toolbelt is a two-key dock bottom-left (the right edge
+now belongs to the district drawer), the drawer is closed by default behind a named wooden peg on the
+right edge, and the signpost rail gives up the drawer's column via `.sa-field[data-drawer]` -- without
+that, five signs do not fit beside a 320px drawer on a phone and the one that fell off the end was
+Ray's, the only way into the store. Two live-verified fixes worth keeping: the shell now paints
+`--sa-grass` (the safe-area padding was showing the app's violet-black `body` as a 6px bruise along
+the top of a farm), and `ico-look` was repainted out of Neon Marquee lilac into brass-and-sky. Copy:
+the orientation gate said "The StackAcres is available in landscape mode", a leftover reading straight
+through the old "The Homestead". The detector's bounce-easing warning is knowingly overridden -- the
+elastic open curve is the brief's own pin, and it is spent on the way in only.
+
 ### StackAcres drops the plot grid: districts hold stock, not plots (2026-09-03)
 Kayo didn't want visible plot patches at all -- "I select an area and the sidebar reflects what I can
 do within that area. So if I wanna buy more cattle they'll appear within that area." Confirmed over

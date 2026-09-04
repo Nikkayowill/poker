@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -96,6 +96,31 @@ type Action =
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
   | { action: "exchange"; bushels: number };
+
+/**
+ * A shelf in Ray's store, named and given the painted badge of what is on it.
+ *
+ * The three shelves shipped as three uppercase kickers with nothing to tell
+ * them apart, so the whole sheet read as one wall of body copy and a player
+ * scrolling for the exchange window had to read their way to it. The badge is
+ * the same vector painter the icon beside a barn row uses, at a size a thumb
+ * can find while moving -- the shelves are now told apart by picture first and
+ * by wording second.
+ *
+ * The district drawer's own headings ("What's here", "Buy") deliberately do
+ * NOT take one: there are two of them, they are the whole content of a narrow
+ * panel, and a badge on each is decoration on something nobody was lost in.
+ */
+function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode }) {
+  return (
+    <p className="sa-group-label sa-shelf">
+      <span className="sa-shelf-badge" aria-hidden="true">
+        <StackAcresIcon name={icon} size={22} />
+      </span>
+      {children}
+    </p>
+  );
+}
 
 function countdownLabel(msLeft: number): string {
   const total = Math.max(0, Math.ceil(msLeft / 1000));
@@ -472,7 +497,10 @@ export function StackAcresFarm() {
         <div className="orientation-gate" role="status" aria-live="polite">
           <span className="orientation-gate-mark"><StackChipsMark size={44} /></span>
           <h1>Turn your phone sideways</h1>
-          <p>The StackAcres is available in landscape mode.</p>
+          {/* Was "The StackAcres is available in landscape mode", a leftover
+              from the homestead -> StackAcres rename reading straight through
+              the old "The Homestead". */}
+          <p>StackAcres only opens in landscape.</p>
           <small>Rotate your device to keep farming.</small>
         </div>
       </main>
@@ -527,7 +555,11 @@ export function StackAcresFarm() {
         {/* The world. Everything after it inside .sa-field is chrome pinned
             over the canvas; the canvas itself is the only thing that moves
             when the player drags. */}
-        <div className="sa-field">
+        {/* `data-drawer` is read by 52-stackacres.css so the signpost rail can
+            give up the drawer's column while it is open -- five signs do not
+            fit beside a 320px drawer on a phone, and the one that fell off the
+            end was Ray's, which is the only way into the store. */}
+        <div className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
           {loaded && (
             <StackAcresWorld
               units={liveUnits}
@@ -585,12 +617,36 @@ export function StackAcresFarm() {
             {error && <p className="duel-error" role="alert">{error}</p>}
           </div>
 
+          {/* The handle the panel hangs off when it is shut. Before this,
+              the only way back into a district you had closed was to find
+              its name in the signpost and travel there again -- which also
+              flies the camera, so "let me look at that list again" cost you
+              your view. It is a peg on the right edge, always there, always
+              naming the district it will open, and it is the one piece of
+              chrome that is deliberately louder than it needs to be: it is
+              how a player learns the panel is a drawer rather than something
+              that happens to them. */}
+          <button
+            type="button"
+            className={clsx("sa-panel-tab", { "is-stowed": panelOpen })}
+            aria-expanded={panelOpen}
+            aria-controls="sa-district-panel"
+            onClick={() => { tapSound(); setPanelOpen(true); }}
+            tabIndex={panelOpen ? -1 : undefined}
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+            <span className="sa-panel-tab-label">{district.label.replace(/^The /, "")}</span>
+          </button>
+
           {/* The district panel: no plot to select any more, travelling here
               (the signpost above) IS the selection. It only slides out once
               a player has actually travelled somewhere, and stays shut
-              otherwise until the close button below dismisses it. */}
+              otherwise until the close button below -- or the peg above --
+              says otherwise. */}
           <aside
+            id="sa-district-panel"
             className={clsx("sa-district-panel", { "is-open": panelOpen })}
+            data-zone={place}
             aria-label={`${district.label} panel`}
             inert={!panelOpen}
           >
@@ -603,9 +659,9 @@ export function StackAcresFarm() {
                 type="button"
                 className="sa-panel-close"
                 aria-label="Close panel"
-                onClick={() => setPanelOpen(false)}
+                onClick={() => { tapSound(); setPanelOpen(false); }}
               >
-                <X size={16} aria-hidden="true" />
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             <h2 className="sa-district-title">{district.label}</h2>
@@ -657,7 +713,7 @@ export function StackAcresFarm() {
               <button
                 type="button"
                 className="sa-sheet-close"
-                onClick={() => { setShowStore(false); setExchangeNote(null); }}
+                onClick={() => { tapSound(); setShowStore(false); setExchangeNote(null); }}
               >
                 Done
               </button>
@@ -670,7 +726,7 @@ export function StackAcresFarm() {
             {/* Selling comes first: it is what you came in to do after a
                 harvest, and it is where the Bushels for everything below it
                 come from. */}
-            <p className="sa-group-label">Sell your produce</p>
+            <StoreShelf icon="ico-harvest">Sell your produce</StoreShelf>
             {carried.length === 0 ? (
               <p className="sa-sheet-note">
                 The barn is empty. Collect from a ready unit and its produce turns up here.
@@ -710,7 +766,7 @@ export function StackAcresFarm() {
               </ul>
             )}
 
-            <p className="sa-group-label">Feed</p>
+            <StoreShelf icon="ico-feed">Feed</StoreShelf>
             <p className="sa-sheet-note">
               Animals eat. A hungry pen stops working until you feed it, so keep a shipment in the
               barn before you leave a Cattle Pen overnight.
@@ -743,7 +799,7 @@ export function StackAcresFarm() {
                 money going round; this is the one place it leaves, and it
                 should be a thing you go and do rather than the first button
                 under your thumb. */}
-            <p className="sa-group-label">Exchange window</p>
+            <StoreShelf icon="ico-gold">Exchange window</StoreShelf>
             <div className="sa-exchange">
               <p className="sa-sheet-note">
                 Bushels leave the farm here, at <strong>{exchange.rate} Gold</strong> each. Every
@@ -814,8 +870,9 @@ export function StackAcresFarm() {
           <p>
             The farm is a map of four districts. Drag to look around, pinch or scroll to zoom, or
             tap a district&apos;s name to travel straight to it — that also opens a panel showing
-            what you own there and what you can buy. Close it or re-tap the district to bring it
-            back; there is nothing to tap on the map itself except the scythe.
+            what you own there and what you can buy. Close it and it folds away to a handle on the
+            right edge; tap that to bring it back without moving the camera. There is nothing to
+            tap on the map itself except the scythe.
           </p>
           <p>
             The farm runs on <strong>Bushels</strong>, its own currency. Collecting from a ready

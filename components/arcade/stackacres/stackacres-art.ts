@@ -771,15 +771,34 @@ const DRAWN: Record<PainterName, Painter> = {
 
   /* ---- the DOM chrome's icons ---- */
 
+  // Repainted 2026-09-04 out of Neon Marquee lilac (an rgba(192,123,255,.18)
+  // lens behind a #e6d6ff frame) and into the world's own materials. Those
+  // colours were picked when the toolbelt was a violet chrome panel, and it has
+  // not been one since the dock became a cream-and-corn key -- on it the lens
+  // read as a bruise and the pale frame all but vanished. Brass frame over a
+  // `wood`-rim outline, `water` glass: the same three-tone materials and the
+  // same outline rule (a shape's outline is its own rim, never black) as every
+  // sprite in art-palette.ts.
   "ico-look": painter(24, 24, (c) => {
     ell(c, 10, 10, 6.5, 6.5);
-    F(c, "rgba(192,123,255,.18)");
-    ell(c, 10, 10, 6.5, 6.5);
-    stroke(c, "#e6d6ff", 2.2);
+    F(c, "rgba(99,200,232,.45)");
     c.beginPath();
     c.moveTo(15, 15);
-    c.lineTo(21, 21);
-    stroke(c, "#e6d6ff", 3);
+    c.lineTo(20.5, 20.5);
+    stroke(c, "#79491b", 4.6);
+    c.beginPath();
+    c.moveTo(15, 15);
+    c.lineTo(20.5, 20.5);
+    stroke(c, "#dd9a4a", 2.6);
+    ell(c, 10, 10, 6.5, 6.5);
+    stroke(c, "#79491b", 3.6);
+    ell(c, 10, 10, 6.5, 6.5);
+    stroke(c, "#e5b02c", 2);
+    // The one lit highlight, up and to the left, where the sun is in every
+    // other sprite here.
+    c.beginPath();
+    c.arc(10, 10, 3.9, Math.PI * 1.06, Math.PI * 1.5);
+    stroke(c, "rgba(255,255,255,.8)", 1.3);
   }),
 
   "ico-plant": painter(24, 24, (c) => {

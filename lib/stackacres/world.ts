@@ -399,32 +399,29 @@ export interface SceneryItem {
   /** World units, absolute. */
   x: number;
   y: number;
+  /** Size against the painter's own drawn size. Trees are grown at their own
+   *  height rather than all at one, so a stand has a skyline; the scene
+   *  applies this to the sprite AND to its ground shadow, or a big tree sits
+   *  on a small pool. Ground decoration is always 1. */
+  scale: number;
 }
 
-// The woodland floor's own litter -- a fallen log, a clutch of mushrooms,
-// a boulder -- is in the pool once each, so a chunk grows one of them now
-// and then rather than a forest of them.
-const CHUNK_WOOD_KINDS: readonly SceneryKind[] = [
-  "tree1",
-  "tree2",
-  "tree3",
-  "pine",
-  "pine",
-  "bush",
-  "bush",
-  "rock",
-  "log",
-  "mushroom",
-  "boulder",
-];
+// What grows inside a wood, by role. Broadleaf and conifer are kept apart so a
+// stand can be one or the other rather than a salad of both -- a real wood is
+// mostly one species at a time, and mixing them evenly is a large part of what
+// made the old scatter read as decoration rather than as forest.
+const BROADLEAF_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3"];
+const CONIFER_KINDS: readonly SceneryKind[] = ["pine", "pine", "pine", "tree3"];
+// The woodland floor's own litter -- a fallen log, a clutch of mushrooms, a
+// boulder -- is in the pool once each and drawn rarely, so a wood grows one of
+// them now and then rather than a forest of them.
+const FOREST_FLOOR_KINDS: readonly SceneryKind[] = ["rock", "log", "mushroom", "boulder"];
 const GROUND_KINDS: readonly SceneryKind[] = ["flower1", "flower2", "flower3"];
 
 /**
  * One chunk of the open world's scenery, deterministic by chunk coordinate
  * so the same chunk regrows the same trees every time the camera returns to
- * it. Denser near the farm (it reads as the woodland the farm was cut out
- * of) and thinner far out, where it exists only so the horizon is never
- * bare. Anything `blocked` refuses -- the farm zone, a path, the pond's
+ * it. Anything `blocked` refuses -- the farm zone, a path, the pond's
  * clearing, or one of ./zones.ts's districts -- is dropped rather than
  * shifted, so the farm's own edge stays exactly where it is, the road out
  * stays a road, no tree stands in the water, and the districts keep the
@@ -434,32 +431,191 @@ function blocked(x: number, y: number): boolean {
   return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y);
 }
 
+/** Keeps a jittered planting point inside its own chunk. Every piece of
+ *  scenery belongs to exactly one chunk and is grown and pruned with it, so a
+ *  point that wandered over the line would be drawn twice where two chunks
+ *  overlap and vanish when only one of them is loaded. */
+function clampToChunk(v: number, lo: number): number {
+  return Math.min(Math.max(v, lo), lo + STACKACRES_CHUNK - 0.01);
+}
+
+/* ---- the forest field ------------------------------------------------ */
+//
+// Where the woods are is decided in WORLD space, not per chunk, and that is
+// the whole point of this pass. Two earlier versions grew trees from each
+// chunk's own seeded RNG -- first as independent uniform points (confetti),
+// then as per-chunk groves and treelines (clumps, but still clumps, and every
+// one of them stopped at its own chunk). Neither could ever produce what a
+// wood actually looks like from the air: open grass for a long way, then an
+// edge, then forest running unbroken for as far as you can see. A field
+// sampled in world units has no chunk boundary in it at all, so a stand runs
+// across as many chunks as it likes and the seams are invisible.
+
+const FOREST_SEED = 0x5f3a91;
+const CORRIDOR_SEED = 0x2c7d11;
+const STAND_SEED = 0x71b5c3;
+
+/** Deterministic hash of a lattice point, to [0, 1). */
+function latticeNoise(ix: number, iy: number, seed: number): number {
+  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + seed) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Smooth value noise in world units: hashed lattice, smoothstepped across
+ *  each cell so the field has no grid in it. */
+function valueNoise(x: number, y: number, cell: number, seed: number): number {
+  const gx = Math.floor(x / cell);
+  const gy = Math.floor(y / cell);
+  const fx = x / cell - gx;
+  const fy = y / cell - gy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n00 = latticeNoise(gx, gy, seed);
+  const n10 = latticeNoise(gx + 1, gy, seed);
+  const n01 = latticeNoise(gx, gy + 1, seed);
+  const n11 = latticeNoise(gx + 1, gy + 1, seed);
+  const top = n00 + (n10 - n00) * sx;
+  const bottom = n01 + (n11 - n01) * sx;
+  return top + (bottom - top) * sy;
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/**
+ * How much wood stands at a world point: 0 is open grass, 1 is deep forest,
+ * and the band between is the forest's own edge, where trees thin out instead
+ * of stopping on a line.
+ *
+ * Three things are layered here:
+ *
+ * 1. WHERE THE WOOD IS. A broad, slow field (cells hundreds of units across,
+ *    so one stand spans several chunks) roughened by a finer one, thresholded
+ *    into a mass. Everything under the threshold is grass, and there is a lot
+ *    of it -- that is deliberate, "a ton of grass and then miles of forest"
+ *    rather than trees sprinkled evenly everywhere.
+ * 2. ROOM AROUND THE FARM. The threshold is highest near the farm and falls
+ *    with distance, so the home districts keep their air and the deep world
+ *    closes in. Interpolated rather than stepped, so there is no ring.
+ * 3. THE GAPS. Two families of winding lanes are cut back out of the mass,
+ *    where a second and third field cross their own mid-line. They run for
+ *    hundreds of units, they cross each other, and they are what stops a wood
+ *    being one solid blob -- you walk into the trees and find ways through.
+ */
+export function forestDensityAt(x: number, y: number): number {
+  const broad = valueNoise(x, y, 520, FOREST_SEED);
+  const detail = valueNoise(x, y, 170, FOREST_SEED + 1);
+  const field = broad * 0.74 + detail * 0.26;
+
+  const farmCenterX = FARM_ZONE.x + FARM_ZONE.width / 2;
+  const farmCenterY = FARM_ZONE.y + FARM_ZONE.height / 2;
+  const dist = Math.hypot(x - farmCenterX, y - farmCenterY);
+  const threshold = 0.6 - 0.19 * clamp01((dist - 340) / 900);
+
+  // A soft edge rather than a hard one: over this much field above the
+  // threshold the wood goes from its first outlying trees to full density.
+  const mass = clamp01((field - threshold) / 0.1);
+  if (mass <= 0) return 0;
+
+  // Lanes. `off` is how far this point sits from a lane's centre line; inside
+  // `half` it is open ground, and it feathers back to full wood over `soft`.
+  const lane = (cell: number, seed: number, half: number, soft: number): number => {
+    const off = Math.abs(valueNoise(x, y, cell, seed) - 0.5);
+    return clamp01((off - half) / soft);
+  };
+  const gaps = Math.min(
+    lane(430, CORRIDOR_SEED, 0.028, 0.03),
+    lane(310, CORRIDOR_SEED + 1, 0.022, 0.026),
+  );
+
+  return mass * gaps;
+}
+
+/** Whether the conifers or the broadleaves have this ground. Its own slow
+ *  field, so a pine stand is a place on the map rather than a per-tree coin
+ *  flip. */
+function coniferStand(x: number, y: number): boolean {
+  return valueNoise(x, y, 380, STAND_SEED) > 0.52;
+}
+
+/** How far apart the forest's planting points sit, in world units. Close
+ *  enough that canopies overlap at full density -- a tree is about 64 units
+ *  wide -- which is what makes a stand read as one canopy rather than as
+ *  separate trees standing near each other.
+ *
+ *  Grown with the trees (34 -> 44), but deliberately by LESS than they grew:
+ *  the trees went up about 1.5x and this went up 1.3x, so the canopy closes
+ *  up rather than merely keeping pace. Fewer planting points per chunk (4x4
+ *  rather than 5x5) but far more cover, since each tree covers better than
+ *  twice the ground it used to. */
+const FOREST_SPACING = 44;
+
 export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   const random = seededRandom((cx * 73856093) ^ (cy * 19349663) ^ 0x5bd1e995);
   const x0 = cx * STACKACRES_CHUNK;
   const y0 = cy * STACKACRES_CHUNK;
-  const farmCenterX = FARM_ZONE.x + FARM_ZONE.width / 2;
-  const farmCenterY = FARM_ZONE.y + FARM_ZONE.height / 2;
-  const dist = Math.hypot(
-    x0 + STACKACRES_CHUNK / 2 - farmCenterX,
-    y0 + STACKACRES_CHUNK / 2 - farmCenterY,
-  );
-  const woods = dist < 420 ? 9 : dist < 900 ? 5 : 3;
-
   const items: SceneryItem[] = [];
-  for (let i = 0; i < woods; i += 1) {
+
+  // A jittered lattice rather than random points: at forest density, uniform
+  // random points clump and leave holes, and a wood wants its trees spread
+  // about evenly with the gaps coming from the FIELD, not from the sampling.
+  const steps = Math.ceil(STACKACRES_CHUNK / FOREST_SPACING);
+  for (let gy = 0; gy < steps; gy += 1) {
+    for (let gx = 0; gx < steps; gx += 1) {
+      const x = clampToChunk(
+        x0 + (gx + 0.5) * FOREST_SPACING + (random() - 0.5) * FOREST_SPACING * 0.85,
+        x0,
+      );
+      const y = clampToChunk(
+        y0 + (gy + 0.5) * FOREST_SPACING + (random() - 0.5) * FOREST_SPACING * 0.85,
+        y0,
+      );
+      const density = forestDensityAt(x, y);
+      // Thinning by density is what feathers a forest edge: deep in, every
+      // point takes; out at the margin, most do not.
+      if (density <= 0 || random() > density) continue;
+      if (blocked(x, y)) continue;
+
+      const roll = random();
+      let kind: SceneryKind;
+      if (roll < 0.05) {
+        kind = FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
+      } else if (roll < 0.16) {
+        kind = "bush";
+      } else if (coniferStand(x, y)) {
+        kind = CONIFER_KINDS[Math.floor(random() * CONIFER_KINDS.length)];
+      } else {
+        kind = BROADLEAF_KINDS[Math.floor(random() * BROADLEAF_KINDS.length)];
+      }
+      // Every tree its own height. A stand of one size reads as wallpaper --
+      // the range is wide enough (0.78x to 1.36x) to give a canopy a skyline.
+      // Litter on the floor stays near its drawn size; a 1.4x mushroom is a
+      // different object, not a bigger one.
+      const litter = kind === "rock" || kind === "log" || kind === "mushroom" || kind === "boulder";
+      const scale = litter ? 0.9 + random() * 0.3 : 0.78 + random() * 0.58;
+      items.push({ kind, x, y, scale });
+    }
+  }
+
+  // The open ground is not bare, just sparse: the odd lone bush or boulder
+  // out in the grass, well away from the wood's own edge.
+  for (let i = 0; i < 3; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
-    if (blocked(x, y)) continue;
-    items.push({ kind: CHUNK_WOOD_KINDS[Math.floor(random() * CHUNK_WOOD_KINDS.length)], x, y });
+    if (forestDensityAt(x, y) > 0.15 || random() < 0.55 || blocked(x, y)) continue;
+    const kind = random() < 0.5 ? "bush" : FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
+    items.push({ kind, x, y, scale: 0.85 + random() * 0.35 });
   }
+
   for (let i = 0; i < 10; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (blocked(x, y)) continue;
     const kind: SceneryKind =
       random() < 0.55 ? "tuft" : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)];
-    items.push({ kind, x, y });
+    items.push({ kind, x, y, scale: 1 });
   }
   return items.sort((a, b) => a.y - b.y);
 }

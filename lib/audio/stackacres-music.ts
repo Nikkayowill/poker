@@ -118,19 +118,21 @@ export function stopStackAcresMusic(): void {
 }
 
 /**
- * Toggle music mute. Persists the preference and stops/resumes playback.
+ * Mute or unmute the music, and stop or resume playback to match.
  *
  * Muting fades out rather than cutting instantly -- this is a deliberate tap,
  * not the page going away, so an abrupt stop reads as broken rather than
  * intentional. `stopStackAcresMusic` (a hard stop) is for unmount instead.
+ *
+ * It does NOT persist: the preference is owned by the component's
+ * `useStoredPreference`, which is the app's one idiom for a stored value that
+ * also drives a module outside React. This used to be a toggle that wrote
+ * storage itself, which meant the stored value and the module flag could be
+ * set from two places and the HUD icon was derived from a return value the
+ * caller then negated twice -- it painted the state it had just left.
  */
-export function toggleStackAcresMusicMute(): boolean {
-  musicEnabled = !musicEnabled;
-  try {
-    localStorage.setItem("stackacresMusicMuted", String(!musicEnabled));
-  } catch {
-    // localStorage might be blocked
-  }
+export function setStackAcresMusicMuted(muted: boolean): void {
+  musicEnabled = !muted;
 
   if (musicEnabled) {
     void playStackAcresMusic();
@@ -139,8 +141,6 @@ export function toggleStackAcresMusicMute(): boolean {
     currentTrack = null;
     void fadeOut(fading, 400);
   }
-
-  return musicEnabled;
 }
 
 /**

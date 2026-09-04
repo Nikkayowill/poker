@@ -55,29 +55,6 @@ export const ZONE_IDS = ["farmstead", "meadow", "oxfields", "wallow"] as const;
 
 export type ZoneId = (typeof ZONE_IDS)[number];
 
-/** The ground a district is made of. Drawn as projected diamond tiles over
- *  the lawn (see `zoneGroundTiles`), never as one baked rectangle: a big
- *  axis-aligned texture laid on a diamond grid reads as a bug, which is the
- *  known open gap the path and pond bakes still carry. */
-export interface ZoneGround {
-  /** The district's own colour, over the lawn. */
-  base: number;
-  /**
-   * A second colour dealt to about a third of the tiles, so the ground is
-   * never one flat wash.
-   *
-   * It has to sit CLOSE to `base`. The first cut of this used a strongly
-   * contrasting second brown, and at a tile's size on screen that does not
-   * read as mottling -- it reads as a chessboard, which was the single most
-   * obviously wrong thing on the map. Mottling is a shade, not a colour.
-   */
-  alt: number;
-  /** How strongly the ground covers the lawn at the district's heart, 0..1.
-   *  Worked ground is opaque; a meadow is a tint over grass that is still
-   *  grass. */
-  cover: number;
-}
-
 export interface ZoneDef {
   id: ZoneId;
   /** What the player calls it. */
@@ -85,11 +62,21 @@ export interface ZoneDef {
   /** One line, for the destination strip and the arrival banner. */
   blurb: string;
   /** The district's extent in world units. This is a soft edge, not a fence:
-   *  `zoneGroundTiles` feathers the outer `ZONE_FEATHER` units and jitters
-   *  the border so the rectangle never reads as a rectangle. Nothing stops
-   *  the camera crossing it. */
+   *  nothing stops the camera crossing it, and it is never drawn as a
+   *  rectangle on the ground -- the fenced grow area inside it (see
+   *  world.ts's `GROW_AREA`) is the only ground art a district paints. */
   bounds: WorldRect;
-  ground: ZoneGround;
+  /** The district's own colour. Used for exactly one thing: the little
+   *  swatch dot beside its name on the signpost (`stackacres-destinations.tsx`),
+   *  kept honest against `52-stackacres.css`'s own `--sa-zone-*` tokens by
+   *  zones.test.ts. There used to be a whole tiled ground wash painted in
+   *  this colour too (`zoneGroundTiles`/`paintZoneGround`) -- deleted
+   *  outright, not tuned further: even after replacing its per-tile
+   *  randomness with smoothed noise (see git history), a translucent tile
+   *  grid over grass still read as a patch of ugly brown squares, and the
+   *  fenced grow area already gives each district a real, solid-coloured
+   *  floor where it actually matters. */
+  swatchColor: number;
   /**
    * Where the road arrives, in world units -- the point the camera aims at
    * when the player picks this destination, and the end of the path that
@@ -101,13 +88,16 @@ export interface ZoneDef {
 }
 
 /**
- * How far in from a district's edge its ground fades out completely.
+ * How far in from a district's edge counts as genuinely INSIDE it, for
+ * scenery placement (`deepInZone`): a furrow or a mud pool right at the
+ * fence line, half in the neighbouring woodland, reads as misplaced set
+ * dressing rather than as part of the district.
  *
- * Every district's short side has to be more than twice this, or the fade
- * from both edges meets in the middle and the district never reaches full
- * cover anywhere -- the Fold at 200 units is the one that binds, and
- * zones.test.ts holds the relationship rather than leaving it to be
- * rediscovered the next time a district is resized.
+ * Every district's short side has to clear twice this (well, twice
+ * `ZONE_FEATHER * 0.7`, `deepInZone`'s actual cutoff) or there is no point
+ * anywhere in it that counts as "deep in" -- the Fold at 200 units is the
+ * one that binds, and zones.test.ts holds the relationship rather than
+ * leaving it to be rediscovered the next time a district is resized.
  */
 export const ZONE_FEATHER = 88;
 
@@ -129,10 +119,10 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     label: "The Farmstead",
     blurb: "Home base -- your Hen Coops, the barn and the pond.",
     bounds: { x: 28, y: -60, width: 412, height: 470 },
-    // Cover 0: the farmstead paints no ground of its own. The lawn, the plot
-    // diamonds, the paths and the pond are already the whole picture there,
-    // and a wash over the top of them would only mute art that works.
-    ground: { base: 0x86c96e, alt: 0x86c96e, cover: 0 },
+    // Matches --sa-grass: the farmstead's swatch defers to the grass
+    // painter's own fill rather than naming a colour of its own, since it
+    // paints no ground wash to have a colour for any more.
+    swatchColor: 0x86c96e,
     approach: { x: 224, y: 174 },
   },
 
@@ -144,7 +134,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     label: "The Long Meadow",
     blurb: "Waist-high grass, clover, buttercups, and your Crop Fields.",
     bounds: { x: 24, y: 448, width: 380, height: 320 },
-    ground: { base: 0x8fce66, alt: 0x9ed473, cover: 0.42 },
+    swatchColor: 0x8fce66,
     // The lane's own end, carried a little into the field.
     approach: { x: 150, y: 520 },
   },
@@ -156,7 +146,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     label: "The Ox Fields",
     blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
     bounds: { x: 500, y: 20, width: 360, height: 280 },
-    ground: { base: 0x7a5a34, alt: 0x6f5230, cover: 0.86 },
+    swatchColor: 0x7a5a34,
     // Framed on the Cattle Pen block itself (world.ts's PEN_GROUP_ORIGIN.cattle,
     // x 680..840, y 70..230) rather than on the road's own end -- the arrival
     // shot exists to show what you came here to do, and a gate framed on the
@@ -175,10 +165,10 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
     // The smallest district, and its short side is what sets the floor on
-    // `ZONE_FEATHER`: a district narrower than two feather-widths has no
-    // full-strength ground left in the middle of it at all.
+    // `ZONE_FEATHER`: a district too narrow has no point in it `deepInZone`
+    // ever calls deep enough in for scenery furniture to place.
     bounds: { x: -340, y: -410, width: 240, height: 200 },
-    ground: { base: 0x54402c, alt: 0x4c3927, cover: 0.9 },
+    swatchColor: 0x54402c,
     // The track's own last vertex is (-140, -260), just inside the eastern
     // corner: the camera lands at the gate looking in.
     approach: { x: -160, y: -275 },
@@ -188,7 +178,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
 export const ZONE_LIST: readonly ZoneDef[] = ZONE_IDS.map((id) => STACKACRES_ZONES[id]);
 
 /** Districts other than the farmstead: the three this pass adds, the ones
- *  that paint their own ground and grow their own scenery. */
+ *  that grow their own scenery and fence their own grow area. */
 export const OUTER_ZONE_IDS: readonly ZoneId[] = ZONE_IDS.filter((id) => id !== "farmstead");
 
 function within(rect: WorldRect, x: number, y: number): boolean {
@@ -212,9 +202,9 @@ export function zoneAt(x: number, y: number): ZoneId | null {
   return within(STACKACRES_ZONES.farmstead.bounds, x, y) ? "farmstead" : null;
 }
 
-/** True anywhere inside a district that paints its own ground. What
- *  `chunkScenery` asks so a forest never grows in the middle of a meadow --
- *  the districts grow their own scenery instead (`zoneScenery`). */
+/** True anywhere inside an outer district. What `chunkScenery` asks so a
+ *  forest never grows in the middle of a meadow -- the districts grow their
+ *  own scenery instead (`zoneScenery`). */
 export function inOuterZone(x: number, y: number): boolean {
   for (const id of OUTER_ZONE_IDS) {
     if (within(STACKACRES_ZONES[id].bounds, x, y)) return true;
@@ -258,29 +248,10 @@ export function isActionValidInZone(x: number, y: number, tool: StackAcresTool):
   return { ok: false, zone, reason: `That only works in ${where}.` };
 }
 
-/* ------------------------------------------------------------------ */
-/* Ground                                                              */
-/* ------------------------------------------------------------------ */
-
-/** A district's ground is dealt as squares this many world units a side,
- *  each drawn as its projected diamond. Big enough that a whole district is
- *  a few dozen fills rather than a few thousand; small enough that the
- *  feathered border is a soft ragged edge rather than a staircase. */
-export const ZONE_TILE = 24;
-
-export interface ZoneGroundTile {
-  /** Top-left corner of the tile's world square. */
-  x: number;
-  y: number;
-  size: number;
-  colour: number;
-  alpha: number;
-}
-
 /**
  * A deterministic random source. Mulberry32, the same one ./world.ts uses,
  * restated here rather than imported for the module-cycle reason in the file
- * header. A district's border is the same ragged border on every visit.
+ * header.
  */
 function seeded(seed: number): () => number {
   let state = seed >>> 0;
@@ -291,101 +262,6 @@ function seeded(seed: number): () => number {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/**
- * A 0xRRGGBB colour with its channels scaled by `factor`, clamped to a valid
- * byte each. A continuous per-tile brightness jitter rather than a third
- * hard colour: `ZoneGround.alt`'s own comment already found out the hard way
- * that a second colour with real contrast reads as a chessboard at a tile's
- * size on screen, so grain has to come from shading the colour that was
- * already picked, not from adding another one to pick between.
- */
-function shade(colour: number, factor: number): number {
-  const clamp = (channel: number) => Math.max(0, Math.min(255, Math.round(channel * factor)));
-  const r = clamp((colour >> 16) & 255);
-  const g = clamp((colour >> 8) & 255);
-  const b = clamp(colour & 255);
-  return (r << 16) | (g << 8) | b;
-}
-
-/**
- * How strongly a point is inside a rect, 0 on the edge and 1 once it is a
- * full `ZONE_FEATHER` in.
- *
- * Squared rather than linear, and that is what makes the corners actually
- * disappear rather than merely dim. A corner tile is only a half-tile in
- * from BOTH edges, so on a linear ramp it still lands around a tenth of full
- * cover -- faint, but a visible right angle, which is the exact thing the
- * feather exists to destroy. Squaring drops it under the threshold
- * `zoneGroundTiles` discards at, on every district's cover value, so the
- * corner tile is not drawn at all.
- */
-function insetFraction(rect: WorldRect, x: number, y: number): number {
-  const dx = Math.min(x - rect.x, rect.x + rect.width - x);
-  const dy = Math.min(y - rect.y, rect.y + rect.height - y);
-  const linear = Math.max(0, Math.min(1, Math.min(dx, dy) / ZONE_FEATHER));
-  return linear * linear;
-}
-
-/**
- * A district's ground, as tiles to fill.
- *
- * Two things stop the bounding box from looking like a bounding box, and
- * both matter more than they sound: the alpha fades over the outer
- * `ZONE_FEATHER` units so the ground dissolves into the lawn instead of
- * ending, and each tile's own alpha is jittered by a seeded roll so the
- * fade is ragged rather than a clean gradient. Tiles that come out nearly
- * invisible are dropped entirely, which is what eats the corners and leaves
- * an irregular blob -- a rectangle you cannot see the corners of is not
- * read as a rectangle.
- */
-export function zoneGroundTiles(id: ZoneId): ZoneGroundTile[] {
-  const zone = STACKACRES_ZONES[id];
-  if (zone.ground.cover <= 0) return [];
-  const random = seeded(id.length * 2654435761 + Math.round(zone.bounds.x) * 40503 + 17);
-  const tiles: ZoneGroundTile[] = [];
-  const cols = Math.ceil(zone.bounds.width / ZONE_TILE);
-  const rows = Math.ceil(zone.bounds.height / ZONE_TILE);
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const x = zone.bounds.x + col * ZONE_TILE;
-      const y = zone.bounds.y + row * ZONE_TILE;
-      const inset = insetFraction(zone.bounds, x + ZONE_TILE / 2, y + ZONE_TILE / 2);
-      // Two separate rolls, doing two different jobs. The fray is strongest
-      // at the edge and gone in the middle, so the border breaks up without
-      // the district's heart looking moth-eaten. The mottle is small and
-      // everywhere, so the interior has grain rather than being one flat
-      // plane of identical diamonds -- the same job the faint sweeps in the
-      // grass tile do. Both only ever reduce alpha, so the invariant that a
-      // tile never exceeds its district's cover holds by construction.
-      const fray = 1 - random() * 0.55 * (1 - inset);
-      const mottle = 1 - random() * 0.1;
-      const alpha = zone.ground.cover * inset * fray * mottle;
-      if (alpha < 0.05) continue;
-      // Near the edge, DROP tiles outright as well as dimming them. Alpha
-      // alone gives a smooth ramp, and a smooth ramp around a rectangle
-      // reads as a vignetted stage -- concentric bands with square corners.
-      // Punching holes in the outer band instead leaves a broken, organic
-      // boundary, which is what ground actually does where a field peters
-      // out into grass.
-      if (inset < 0.75 && random() > 0.35 + inset * 0.65) continue;
-      // A third, continuous roll on top of the base/alt pick: +-7% per-tile
-      // brightness, so two tiles that land the same colour still are not
-      // identical. This is grain, the same job the lawn tile's own mottle
-      // patches do underneath everything -- see `shade`'s own comment for
-      // why it is a shade and not a third colour.
-      const tone = shade(random() < 0.34 ? zone.ground.alt : zone.ground.base, 0.93 + random() * 0.14);
-      tiles.push({
-        x,
-        y,
-        size: ZONE_TILE,
-        colour: tone,
-        alpha,
-      });
-    }
-  }
-  return tiles;
 }
 
 /* ------------------------------------------------------------------ */
@@ -462,7 +338,7 @@ const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
 /** The kinds that lie flat on the ground rather than standing on it. */
 const FLAT_KINDS: ReadonlySet<ZoneSceneryKind> = new Set<ZoneSceneryKind>(["furrow", "mudPool"]);
 
-/** Well inside a district, past the band where its ground has faded out. */
+/** Well inside a district, clear of the fence line into the woodland. */
 function deepInZone(id: ZoneId, x: number, y: number): boolean {
   const b = STACKACRES_ZONES[id].bounds;
   const dx = Math.min(x - b.x, b.x + b.width - x);

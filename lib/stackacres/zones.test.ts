@@ -12,7 +12,6 @@ import {
   STACKACRES_ZONES,
   ZONE_FEATHER,
   ZONE_IDS,
-  ZONE_TILE,
   inOuterZone,
   isActionValidInZone,
   meadowBaseDensity,
@@ -21,7 +20,6 @@ import {
   mowStroke,
   zoneAt,
   zoneFrame,
-  zoneGroundTiles,
   zoneHerd,
   zoneToolPolicy,
   zonesByDistance,
@@ -187,90 +185,19 @@ describe("zone tool policy", () => {
   });
 });
 
-describe("district ground", () => {
-  it("paints nothing for the farmstead, which already has its own art", () => {
-    expect(zoneGroundTiles("farmstead")).toEqual([]);
-  });
-
-  it("covers each outer district and stays inside its bounds", () => {
-    for (const id of OUTER_ZONE_IDS) {
-      const zone = STACKACRES_ZONES[id];
-      const tiles = zoneGroundTiles(id);
-      expect(tiles.length).toBeGreaterThan(8);
-      for (const t of tiles) {
-        expect(t.size).toBe(ZONE_TILE);
-        expect(t.x).toBeGreaterThanOrEqual(zone.bounds.x);
-        expect(t.y).toBeGreaterThanOrEqual(zone.bounds.y);
-        // A tile may hang one tile past the far edge (the grid is ceil'd);
-        // it may never start outside.
-        expect(t.x).toBeLessThan(zone.bounds.x + zone.bounds.width);
-        expect(t.y).toBeLessThan(zone.bounds.y + zone.bounds.height);
-        expect(t.alpha).toBeGreaterThan(0);
-        expect(t.alpha).toBeLessThanOrEqual(zone.ground.cover);
-      }
-    }
-  });
-
-  it("is deterministic, so a district looks the same every time you come back", () => {
-    for (const id of OUTER_ZONE_IDS) {
-      expect(zoneGroundTiles(id)).toEqual(zoneGroundTiles(id));
-    }
-  });
-
-  it("shades each tile's colour a little, so same-colour tiles are not identical", () => {
-    for (const id of OUTER_ZONE_IDS) {
-      const zone = STACKACRES_ZONES[id];
-      const tiles = zoneGroundTiles(id);
-      const distinctColours = new Set(tiles.map((t) => t.colour));
-      // More distinct shades than the two colours `ground.base`/`alt` alone
-      // would produce -- the jitter is doing something.
-      expect(distinctColours.size).toBeGreaterThan(2);
-      // But every shade stays close to the colour it was dealt from, per
-      // `shade`'s own comment: this is grain, not a third hard colour.
-      for (const colour of distinctColours) {
-        const dist = (a: number, b: number) =>
-          Math.max(
-            Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)),
-            Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)),
-            Math.abs((a & 255) - (b & 255)),
-          );
-        expect(Math.min(dist(colour, zone.ground.base), dist(colour, zone.ground.alt))).toBeLessThan(20);
-      }
-    }
-  });
-
-  it("fades out at the edge and eats the corners, so the box is not a box", () => {
-    for (const id of OUTER_ZONE_IDS) {
-      const zone = STACKACRES_ZONES[id];
-      const tiles = zoneGroundTiles(id);
-      const at = (x: number, y: number) =>
-        tiles.find((t) => x >= t.x && x < t.x + t.size && y >= t.y && y < t.y + t.size);
-
-      // The corner tile is dropped entirely -- its inset is 0, so its alpha
-      // is 0 whatever the jitter rolls. That is what stops the rectangle
-      // reading as a rectangle.
-      for (const c of corners(zone.bounds)) {
-        const nudged = {
-          x: Math.min(Math.max(c.x + 1, zone.bounds.x + 1), zone.bounds.x + zone.bounds.width - 1),
-          y: Math.min(Math.max(c.y + 1, zone.bounds.y + 1), zone.bounds.y + zone.bounds.height - 1),
-        };
-        expect(at(nudged.x, nudged.y), `${id} kept a corner tile`).toBeUndefined();
-      }
-
-      // The heart is at full cover, give or take the jitter (which is zero
-      // once a tile is a full feather-width in).
-      // At full cover give or take the mottle, which only ever subtracts.
-      const mid = at(zone.bounds.x + zone.bounds.width / 2, zone.bounds.y + zone.bounds.height / 2);
-      expect(mid).toBeDefined();
-      expect(mid!.alpha).toBeLessThanOrEqual(zone.ground.cover);
-      expect(mid!.alpha).toBeGreaterThan(zone.ground.cover * 0.88);
-    }
-  });
-
-  it("sizes the feather so it never swallows the whole district", () => {
+describe("district scenery clearance", () => {
+  // There used to be a "district ground" describe block here testing
+  // zoneGroundTiles -- deleted along with the function itself (a tiled wash
+  // painted over the grass, replaced outright by the fenced grow area's own
+  // solid floor). ZONE_FEATHER still gates something real, though:
+  // `deepInZone` (private) keeps flat scenery like furrows off the fence
+  // line, and this is the invariant that guards its own constant, restated
+  // from `ZONE_FEATHER`'s own comment rather than left to be rediscovered
+  // the next time a district is resized.
+  it("sizes the feather so every district has a point deepInZone calls deep enough in", () => {
     for (const id of OUTER_ZONE_IDS) {
       const b = STACKACRES_ZONES[id].bounds;
-      expect(Math.min(b.width, b.height)).toBeGreaterThan(ZONE_FEATHER * 2);
+      expect(Math.min(b.width, b.height)).toBeGreaterThan(ZONE_FEATHER * 0.7 * 2);
     }
   });
 });
@@ -453,7 +380,7 @@ describe("the signpost's swatches match the ground they name", () => {
   // copies of one number with nothing holding them together is the drift this
   // codebase has already been bitten by (STAKES_TIERS, the wager ladders).
   // The CSS cannot import the module, so the test reads the CSS.
-  it("keeps 52-stackacres.css's --sa-zone-* tokens equal to each district's ground.base", () => {
+  it("keeps 52-stackacres.css's --sa-zone-* tokens equal to each district's swatchColor", () => {
     const css = readFileSync(join(process.cwd(), "app/styles/52-stackacres.css"), "utf8");
     for (const id of ZONE_IDS) {
       const zone = STACKACRES_ZONES[id];
@@ -466,7 +393,7 @@ describe("the signpost's swatches match the ground they name", () => {
         ? (/--sa-grass:\s*(#[0-9a-f]{6})/i.exec(css) ?? [])[1]
         : value;
       expect(hex?.toLowerCase(), `--sa-zone-${id} drifted from zones.ts`).toBe(
-        `#${zone.ground.base.toString(16).padStart(6, "0")}`,
+        `#${zone.swatchColor.toString(16).padStart(6, "0")}`,
       );
     }
   });

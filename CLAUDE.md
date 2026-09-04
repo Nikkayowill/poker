@@ -46,6 +46,85 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
+Kayo: "better sound effects and music... animal noises and just ambient noise around the farm thats
+more ASMR like. not beats." The farm had **three music tracks and nothing else** -- every action on
+the map, from collecting eggs to paying 60,000 Gold for a cow, answered with the app's one generic
+chrome click, and there was no ambience at all.
+
+**The ambience is SYNTHESISED at runtime, not looped from files, and that is the load-bearing
+decision.** A ten-second ambience loop under a quiet game is heard inside a minute, and once a player
+has found the seam they cannot unhear it -- which is the end of the calm the layer exists for. Five
+continuous beds (`air`/`wind`/`grass`/`water`/`insects`) are filtered noise whose filter frequency and
+level are driven by a **random walk, never an LFO**: an LFO at 0.05Hz repeats every twenty seconds,
+which is well inside the time a player stands still on this map. Sparse cues fire on a **rolled gap
+inside a range** rather than a period, which is the other half of "not beats" -- a cricket every 4.0s
+is a metronome, one every 2.5-7s is a field. Same call as the art: this farm paints its pictures at
+boot rather than downloading sprites, and now it makes its noises the same way. `lib/stackacres/
+ambience-plan.ts` is pure and tested (16 tests) and holds every level and timing; `lib/audio/
+stackacres-ambience.ts` owns only the graph and the clock; `lib/audio/synth-voices.ts` is the
+instrument (23 voices). The mix follows **time of day AND district** -- the Ox Fields are the windiest
+place on the map and the Wallow the wettest, asserted by test so the districts stay tellable apart by
+ear -- and follows **the animals you actually own**: standing in Ox Fields with no cattle sounds like
+empty ground, with three it sounds like you keep cattle (`livestockCue`, damped on a square root, so
+a herd is one herd and not three soloists).
+
+**Only six sounds are recordings, and the reason is the rule for adding more.** Higgsfield's free plan
+had 10 credits and its CLI cost estimate is **wrong by ~10x** (quotes 0.1 credits, actually charges
+~1), which was found the expensive way: a 32-prompt batch spent 6.5 credits, returned 6 usable files,
+and the rest failed at submission. So the credits went where synthesis genuinely fails -- a throat, and
+resonant timber under load: `cow-moo-near`, `hen-cluck`, `hen-fuss`, `sheep-bleat`, `gate-creak`,
+`windmill-creak` (224KB total, denoised/trimmed/normalised, in `public/audio/stackacres/sfx/`). A
+generated `rooster-crow` came back as flat noise and was **dropped rather than shipped**. Everything
+made of tone and noise -- chirps, crickets, a struck bell, water drops, and every action sound -- is
+synthesised, which is also better than a file for a cue heard two hundred times a session, because
+every firing differs. **`pig` is a SHEEP** (`label: "Sheep Pen"`, yields Fleece) -- checked before
+generating, or the middle livestock tier would have got an oink.
+
+**Action sounds now say what happened.** `lib/audio/stackacres-sfx.ts` names them by intent the way
+`ui-sounds.ts` does: sowing patters, collecting is the animal answering and then grain pouring, muck
+is a wet scrape, the exchange window is the only place coins are heard, the scythe swishes (throttled
+to one per sweep -- `mowSegment` runs on every pointer-move and unthrottled it was a machine gun).
+**A refusal is a dull knock on wood, deliberately not a buzzer**: most refusals here are "you cannot
+afford that yet", and a harsh tone on an ordinary event teaches a player to dread their own farm.
+
+**Levels were measured, not guessed.** Rendered through a real Chromium `OfflineAudioContext`, the 23
+voices spanned **22dB** at a nominal gain of 1 (`post-hammer` -11dBFS, `panel-slide` -32.7) -- so a
+call site asking for "gain: 0.9" got whatever the recipe happened to produce. `VOICE_TRIM` brings
+actions to ~-14dBFS and cues to ~-18, **spread now 8dB**, with cues sitting under actions by design.
+Re-measure if a recipe changes.
+
+Two bugs fixed in passing, both in code this pass touched: the HUD speaker **negated the toggle's
+return value twice**, so it painted the state it had just left, and it never read the stored
+preference, so a player who muted the farm came back to a speaker icon over silence -- now
+`useStoredPreference`, the app's own idiom for a stored value driving a module outside React. And the
+farm was calling `useArcadeSound({gameSounds: true})`, eagerly fetching the **poker table's ~450KB cue
+set** on a route that plays none of it; the two calls needing it now have farm sounds of their own.
+
+Mute is one switch (music + ambience together -- both are "the noise this place makes", and two
+sliders is a settings screen); action sounds follow the app-wide SFX mute instead. The graph suspends
+on tab-hide.
+
+**The wind bed was mixed too loud and was caught by ear, not by a meter.** Kayo reviewed the whole set
+from a click-to-hear bench (https://claude.ai/code/artifact/3d4922d5-7623-4ed7-8702-248d8c02521f,
+which runs this branch's own compiled `synth-voices.ts`, so it is the real sounds rather than a
+mock-up) and flagged wind alone. He was right and the cause was structural: wind's gust walk peaked at
+**1.0 where every other bed tops out near 0.5**, so on the Ox Fields (wind x0.92) it sat ~5dB over the
+rest of the mix. Now 0.09..0.55 -- **both ends scaled by the same 0.55**, since cutting only the
+ceiling would have narrowed the gust from a 6x swing to a 3x one and cost the bed the variation that
+makes it read as weather instead of a fan. Worth keeping as a rule: the per-voice trims were measured,
+but the BED levels never were -- they are relative gains against each other, so the only instrument
+for them is somebody listening.
+
+Verified live, not just built: `next dev` in memory mode with a minted session and a real access
+grant, driven in Chromium at 1280x720. AudioContext running, **zero console errors**, and the
+soundscape provably changes with the clock -- at night 1 oscillator / 37 noise sources (crickets), at
+a pinned midday 13 / 6 (birds), the exact inversion the plan describes. Full `npx vitest run`
+2828/2829 (the one red is the pre-existing PR #163 `table-anchors` regression), `npm run lint` and
+`npm run build` clean. Branch `feat/stackacres-audio`. **Still open:** the music itself is untouched
+(the three tracks are ~3min each and regenerating one costs more than the whole credit balance), and
+there is no duck, goose or rooster -- the pond has ducks on it that make no sound.
+
 ### StackAcres' chrome is its own visual world now, not Neon Marquee over grass (2026-09-04)
 Kayo's brief: the farm's GUI "looks too much like a flat, generic web app sidebar" and wants the
 chunky, tactile feel of a casual mobile farm game. It was literally that -- every panel, pill and

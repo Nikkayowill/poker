@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
 import { ZONE_IDS } from "@/lib/stackacres/zones";
+import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import {
   buyStackAcresFeed,
   buyStackAcresStock,
@@ -16,6 +17,11 @@ import {
   toStackAcresErrorResponse,
   upgradeStackAcresTool,
   waterStackAcres,
+  sowStackAcresWheat,
+  placeStackAcresMachine,
+  workStackAcres,
+  requestStackAcresContract,
+  fulfillStackAcresTownContract,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -34,15 +40,20 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * SEVEN ACTIONS SPEND GOLD and exactly ONE PAYS IT OUT, and that asymmetry is
+ * NINE ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
- * `buy-stock`, `buy-feed`, `clear` and `upgrade-tool` all spend; `collect`
- * pays, under a flat per-player daily ceiling and net of Land Maintenance.
- * There is no second currency any more, so "which direction does this action
- * move Gold" is the only question a new action has to answer, and a new one
- * that PAYS is the change to stop over.
+ * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat` and
+ * `place-machine` all spend; `collect` and `fulfill-contract` pay, both under
+ * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
+ * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
+ * is no second currency any more, so "which direction does this action move
+ * Gold, and if it pays, does it reserve against the ceiling first" is the
+ * question a new action has to answer, and a new payer that does not reserve
+ * first is the change to stop over.
  *
- * The equipment ladder's CRITICAL HARVEST is not a second payer: it is paid
+ * `work` and `request-contract` move no Gold at all -- inventory only.
+ *
+ * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
  * by `collect` itself, inside the same reservation, so it is bounded by the
  * same daily ceiling as the harvest it rides on. See `harvestStackAcres`.
  *
@@ -102,6 +113,21 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("buy-feed"),
     itemId: z.enum(STACKACRES_FEED_IDS as unknown as [string, ...string[]]),
   }),
+  // Processing: wheat, machines, Town Contracts. See
+  // lib/server/stackacres-service.ts's own header for the two actions here
+  // that move Gold -- `collect` above, and `fulfill-contract`.
+  z.object({ action: z.literal("sow-wheat") }),
+  z.object({
+    action: z.literal("place-machine"),
+    kind: z.enum(MACHINE_KINDS as unknown as [string, ...string[]]),
+  }),
+  // The idle-worker pass: settles every ripe wheat plot and every machine
+  // that has become startable or finished since the last call. Spends no
+  // Gold; the client calls this on a short interval the same way the PvP
+  // duel and cribbage shells run their own Realtime backup poll.
+  z.object({ action: z.literal("work") }),
+  z.object({ action: z.literal("request-contract") }),
+  z.object({ action: z.literal("fulfill-contract") }),
 ]);
 
 /**
@@ -144,6 +170,16 @@ function run(token: string, action: StackAcresAction) {
       return clearStackAcresUnit(token, action.unitId);
     case "buy-feed":
       return buyStackAcresFeed(token, action.itemId);
+    case "sow-wheat":
+      return sowStackAcresWheat(token);
+    case "place-machine":
+      return placeStackAcresMachine(token, action.kind);
+    case "work":
+      return workStackAcres(token);
+    case "request-contract":
+      return requestStackAcresContract(token);
+    case "fulfill-contract":
+      return fulfillStackAcresTownContract(token);
   }
 }
 

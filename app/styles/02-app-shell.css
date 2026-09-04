@@ -1,6 +1,9 @@
 /* The two headers and the shells the app hangs in. */
 
-.app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
+/* The height grows by --vp-short so the room's paint reaches the real bottom
+   edge on an installed phone whose layout viewport launched short; 0 and
+   therefore unchanged everywhere else. See components/shell/viewport-fit.tsx. */
+.app-root { min-height: 100vh; min-height: calc(100svh + var(--vp-short)); overflow: hidden; }
 
 /* Keep the room's paint continuous beneath the transparent lobby chrome. The
    signed-out room uses the same base as its fixed ceiling so the header does

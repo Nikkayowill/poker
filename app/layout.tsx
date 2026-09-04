@@ -3,6 +3,7 @@ import "./globals.css";
 // TEMPORARY -- see the mount at the bottom of this file.
 import { ViewportProbe } from "@/components/debug/viewport-probe";
 import { AppShell } from "@/components/shell/app-shell";
+import { ViewportFit } from "@/components/shell/viewport-fit";
 
 const TITLE = "StackChips - Play Free Texas Hold’em";
 const DESCRIPTION =
@@ -127,6 +128,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             resolved. Renders nothing; records the launch viewport timeline so
             /debug/safe-area can read it back after the fact. */}
         <ViewportProbe />
+        {/* Cancels the short layout viewport an installed iOS PWA reports
+            at cold launch, so the app fills the screen without waiting for
+            a rotation. See the file for why this is not the reflow-forcing
+            that was tried and reverted three times. */}
+        <ViewportFit />
       </body>
     </html>
   );

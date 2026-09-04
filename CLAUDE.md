@@ -619,6 +619,37 @@ Gold sink; nothing new pays Gold out. Verified live end to end against memory-mo
 `20260904130000_stackacres_sectors_and_upkeep.sql` is **unapplied**; see
 `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### The app now fills the whole phone screen (2026-09-04)
+**The fix is `components/shell/viewport-fit.tsx`; read it before touching any bottom-edge rule.** On an
+installed iOS PWA's cold launch WebKit reports a layout viewport shorter than the screen it is actually
+filling, so everything anchored to the bottom -- the lobby tab pill, the sign-in footer's legal row --
+lands partway up the glass with a strip of dead colour beneath it, and rotating to landscape and back
+fixes it for the session. Seven passes hunted the cause in the stylesheets; it is not there. The fix
+stops asking why: it measures `screen.height - innerHeight` (standalone only, guarded against Split
+View and against corrections over 200px), publishes it as `--vp-short`, and five rules subtract it --
+`.app-root`/`.account-entry-page` heights, `.lobby.lobby-shell`'s height, `.entry-footer`'s and
+`.mshell-nav`'s `bottom`. **Self-cancelling**: in a browser, on a healthy device, and on the same
+device after a rotation the measurement is 0 and every `calc()` is a no-op. **This is NOT the
+reflow-forcing that was tried and reverted three times** (b694082, 1372ea2, one on 2026-08-29) -- that
+asked WebKit for a better number and a reflow re-runs layout against the same short viewport. This
+takes WebKit's number and cancels the difference. Verified by simulating the bug (viewport 802 on a
+852 screen): footer, pane and app-root all reach 852, pill rests 34px up, and the healthy case is
+byte-identical. **The strip is ours to paint** because in standalone with `viewport-fit: cover` the web
+view is the whole screen -- visibly so, the room gradient paints behind the status bar -- so only the
+layout viewport is short and an element pushed past its bottom still renders.
+
+### Superseded same day: the `--safe-bottom` cap was the wrong diagnosis (2026-09-04)
+Kept because the cap is still in the tree and still defensible. It read the bug as
+`env(safe-area-inset-bottom)` reporting ~86px against a 34px home indicator, reproduced by rendering
+at 393x852 with the inset forced to 86px. That reproduction was real but not decisive -- an oversized
+inset and a short layout viewport are **geometrically indistinguishable at a pinned element**, both
+predicting the same pill position. Shipping the cap did not fix the device, and the rotation clue is
+what rules it out: a capped 34px is 34px before and after a rotation, so the inset value was never the
+thing that changes. The cap and the absorb-don't-stack change below stay (they tighten the resting
+look on every device and cost nothing), but **`--vp-short` is the actual fix**. Lesson worth keeping:
+when two causes predict identical pixels, a reproduction confirms nothing -- find the observation that
+separates them, which here was the user's own "rotating fixes it".
+
 ### The bottom-chrome "everything sits too high" bug: `--safe-bottom` is now capped (2026-09-04)
 Six earlier passes read this as a gap opening *under* the phone tab bar and hunted a short layout
 viewport (a stale WKWebView frame, a hijacked containing block, three separate `useEffect`

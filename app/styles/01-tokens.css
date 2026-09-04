@@ -228,6 +228,14 @@
      its own 34px case is unaffected either way. */
   --safe-bottom: min(env(safe-area-inset-bottom, 0px), 34px);
 
+  /* How far short of the real screen the layout viewport is, written by
+     components/shell/viewport-fit.tsx and 0 everywhere except an installed
+     iOS PWA that has launched with the bug. Declared here so every calc()
+     that reads it resolves before the script runs, and so the whole app is
+     one subtraction away from filling the screen instead of each surface
+     inventing its own correction. */
+  --vp-short: 0px;
+
   /* The lobby chrome's height, stated once because three other rules have to
      agree with it: .lobby-header is this tall, and .lobby and
      .account-entry-page are each `100svh` minus it. They used to be three

@@ -270,13 +270,16 @@ function castsShadow(kind: SceneryKind): boolean {
 function sceneryShadowScale(kind: SceneryKind): readonly [number, number] {
   switch (kind) {
     case "bush":
-      return [0.6, 0.9];
+      return [0.95, 1.25];
     case "log":
       return [0.7, 0.5];
     case "boulder":
       return [0.85, 0.7];
     default:
-      return [0.9, 0.9];
+      // Trees and pines, tracking the painters themselves (24 units wide
+      // originally, then 42, now 64). A pool sized to a tree that no longer
+      // exists leaves a big canopy standing on a saucer.
+      return [2.05, 1.75];
   }
 }
 
@@ -1947,11 +1950,11 @@ export class StackAcresScene extends Phaser.Scene {
         const [wide, tall] = sceneryShadowScale(item.kind);
         items.push(
           this.put("shadow", item.x, item.y + 1, item.y - 0.5)
-            .setScale(wide / S, tall / S)
+            .setScale((wide * item.scale) / S, (tall * item.scale) / S)
             .setAlpha(0.8),
         );
       }
-      items.push(this.put(item.kind, item.x, item.y, item.y));
+      items.push(this.put(item.kind, item.x, item.y, item.y).setScale(item.scale / S));
     }
 
     for (const item of zoneScenery(cx, cy)) {

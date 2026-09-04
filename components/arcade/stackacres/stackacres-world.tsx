@@ -22,8 +22,11 @@ import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacre
  * `onGroundTap` when it lands on a district's empty fenced ground, both
  * carrying the tap point in CSS pixels relative to this host -- which is the
  * same box every DOM overlay on the screen is positioned in, so the shell can
- * drop a radial menu straight onto those numbers. `onViewMoved` says the
- * camera has shifted under anything so pinned. The rest of the contract is
+ * drop a radial menu straight onto those numbers. `onBarnTap` fires when a
+ * finger lands on the barn itself -- Ray's Museum's entryway -- and carries
+ * no tap point, since it opens a modal rather than anchoring anything to the
+ * screen. `onViewMoved` says the camera has shifted under anything so
+ * pinned. The rest of the contract is
  * unchanged: `onReady` when the first frame is drawn, and, through `api`,
  * a way for the shell to move the camera (`zoomBy` for the zoom buttons mouse
  * users need, since nobody has a pinch gesture with a mouse; `recenter` for
@@ -62,6 +65,8 @@ export interface StackAcresWorldProps {
   /** A finger landed on this district's fenced ground, on nothing in
    *  particular -- an offer to seed something there. */
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  /** A finger landed on the barn -- Ray's Museum's own entryway. */
+  onBarnTap: () => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
@@ -91,6 +96,7 @@ export function StackAcresWorld({
   onReady,
   onUnitTap,
   onGroundTap,
+  onBarnTap,
   sectors,
   onLockedSectorTap,
   onViewMoved,
@@ -105,6 +111,7 @@ export function StackAcresWorld({
   const readyRef = useRef(onReady);
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
+  const barnTapRef = useRef(onBarnTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
@@ -118,6 +125,7 @@ export function StackAcresWorld({
     readyRef.current = onReady;
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
+    barnTapRef.current = onBarnTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
@@ -156,6 +164,7 @@ export function StackAcresWorld({
           onReady: () => readyRef.current(),
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at) => groundTapRef.current(zone, at),
+          onBarnTap: () => barnTapRef.current(),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
@@ -213,7 +222,11 @@ export function StackAcresWorld({
       // A handle for the gesture harness to read the camera through. Dev only:
       // production never gets a global.
       if (process.env.NODE_ENV !== "production") {
-        (window as unknown as { __stackacres?: { scene: unknown } }).__stackacres = { scene };
+        (
+          window as unknown as {
+            __stackacres?: { scene: unknown; screenPointFor: (x: number, y: number) => TapPoint };
+          }
+        ).__stackacres = { scene, screenPointFor: (x, y) => scene.screenPointFor(x, y) };
       }
 
       // The scale manager only has a canvas to size once the game has booted,

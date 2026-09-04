@@ -44,6 +44,7 @@ import {
 
   type StackAcresItem,
 } from "@/lib/stackacres/items";
+import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
   HOME_SECTOR,
   STACKACRES_SECTORS,
@@ -61,6 +62,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
+import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -117,6 +119,7 @@ interface StackAcresResponse {
   feed: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   exchange: StackAcresExchangeState;
+  museum: MuseumRegistry;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -130,6 +133,9 @@ interface StackAcresResponse {
     upkeep: number;
     gold: number;
     mucked: number;
+    /** Items donated to Ray's Museum for the very first time in this sweep,
+     *  and what each paid -- already folded into `gold` above. */
+    discoveries: { item: StackAcresItem; bonus: number }[];
   };
   error?: string;
   round?: StackAcresUnitSnapshot[];
@@ -282,8 +288,10 @@ export function StackAcresFarm() {
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
+  const [showMuseum, setShowMuseum] = useState(false);
   const [celebrate, setCelebrate] = useState<{ unitId: string; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
   // Gates a tap-to-play splash: nothing plays until the player has made a
@@ -472,6 +480,7 @@ export function StackAcresFarm() {
     if (typeof data.feed === "number") setFeed(data.feed);
     if (data.capacity) setCapacity(data.capacity);
     if (data.exchange) setExchange(data.exchange);
+    if (data.museum) setMuseum(data.museum);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
   }, []);
@@ -614,14 +623,22 @@ export function StackAcresFarm() {
           if (single) setCelebrate({ unitId: single, nonce: Date.now() });
           // The toast leads with the money, because that is what a harvest is
           // now -- the produce is the reason, not the reward. The synergy and
-          // the fee each get a clause only when they actually applied.
+          // the fee each get a clause only when they actually applied. Ray's
+          // Museum rides on the same toast rather than a second one stacked
+          // on top of it -- its bonus is already folded into `harvest.gold`,
+          // so this clause is purely what it was FOR, not a separate figure.
           const bonusPart = harvest.bounty.label
             ? ` · ${harvest.bounty.label} +${harvest.bonus.toLocaleString()}`
             : "";
           const upkeepPart =
             harvest.upkeep > 0 ? ` · upkeep -${harvest.upkeep.toLocaleString()}` : "";
+          const discoveryTotal = harvest.discoveries.reduce((sum, d) => sum + d.bonus, 0);
+          const discoveryPart =
+            harvest.discoveries.length > 0
+              ? ` · ${harvest.discoveries.length === 1 ? "New Discovery!" : "New Discoveries!"} +${discoveryTotal.toLocaleString()}`
+              : "";
           setLastCollect({
-            text: `+${harvest.gold.toLocaleString()} Gold${bonusPart}${upkeepPart}`,
+            text: `+${harvest.gold.toLocaleString()} Gold${bonusPart}${upkeepPart}${discoveryPart}`,
             nonce: Date.now(),
           });
           if (anchor) {
@@ -844,6 +861,16 @@ export function StackAcresFarm() {
     setRadial({ zone, at });
   }, []);
 
+  /** A finger landed on the barn -- Ray's Museum's own entryway. Opens the
+   *  same way tapping "Buy from Ray" on the signpost opens the supply store:
+   *  a sound on the press, a sheet over the map, nothing sent to the server
+   *  (the museum registry already lives in this component's own state). */
+  const onWorldBarnTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowMuseum(true);
+  }, []);
+
   /**
    * A finger landed on land nobody has cleared. There is nothing standing
    * there to act on, so this is a question rather than an action: what is
@@ -1043,6 +1070,7 @@ export function StackAcresFarm() {
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
+              onBarnTap={onWorldBarnTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={closeRadial}
@@ -1457,6 +1485,9 @@ export function StackAcresFarm() {
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
+      {showMuseum && (
+        <StackAcresMuseum museum={museum} onClose={() => { panelSound(); setShowMuseum(false); }} />
+      )}
     </main>
   );
 }

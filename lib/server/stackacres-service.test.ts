@@ -27,9 +27,11 @@ import {
   createStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
+  markStackAcresDonated,
   raiseStackAcresUpkeep,
   readStackAcresExchanged,
   readStackAcresFeed,
+  readStackAcresMuseum,
   readStackAcresSectors,
   readStackAcresUpkeep,
   recordStackAcresSectorCleared,
@@ -57,6 +59,7 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import {
+  STACKACRES_ITEMS,
   STACKACRES_STOCK,
   STACKACRES_YIELDS,
   itemGoldValue,
@@ -64,6 +67,7 @@ import {
   yieldValue,
 } from "@/lib/stackacres/items";
 import { STACKACRES_UPKEEP_FREE_PLOTS, stackacresUpkeepFee } from "@/lib/stackacres/upkeep";
+import { emptyMuseumRegistry, museumDiscoveryBonus } from "@/lib/stackacres/museum";
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -81,6 +85,9 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // It is THIS one the harvest reads -- a sweep lists rows rather than
     // fetching them one at a time.
     listStackAcresUnits: vi.fn(actual.listStackAcresUnits),
+    // Passthrough spy, so one test can stand in for a museum write failing --
+    // the memory branch has no DB to fail for real.
+    markStackAcresDonated: vi.fn(actual.markStackAcresDonated),
   };
 });
 
@@ -125,17 +132,23 @@ const MAX_PLOTS = STACKACRES_STOCK.length * (STACKACRES_BASE_CAP + STACKACRES_MA
  * A profile with Gold, which is now the only thing a farm needs -- there is no
  * starting grant to trigger any more.
  *
- * EVERY SECTOR IS CLEARED AND THE DAY'S LAND FEE IS PRE-PAID by default, and
- * that is a deliberate seam rather than a shortcut. Almost every test in this
- * file is about stock, money ordering or the settlement guards, and none of
- * them are about land -- so the land is handed over and the bill settled, and
- * those tests keep asserting exactly the arithmetic they were written for.
- * Land Maintenance has its own describe block, which passes `settled: false`
- * and starts where a real farm starts.
+ * EVERY SECTOR IS CLEARED, THE DAY'S LAND FEE IS PRE-PAID, AND EVERY ITEM IS
+ * ALREADY DONATED TO RAY'S MUSEUM by default, and that is a deliberate seam
+ * rather than a shortcut. Almost every test in this file is about stock,
+ * money ordering or the settlement guards, and none of them are about land or
+ * about a first-ever discovery -- so both are pre-cleared and those tests
+ * keep asserting exactly the arithmetic they were written for, undisturbed by
+ * a bonus nobody there is testing for. Land Maintenance passes `settled:
+ * false`; the "Ray's Museum" block passes `museum: false`; both start where a
+ * real farm starts.
  */
 async function funded(
   gold = 500_000,
-  { land = [...SECTOR_LADDER], settled = true }: { land?: SectorId[]; settled?: boolean } = {},
+  {
+    land = [...SECTOR_LADDER],
+    settled = true,
+    museum = true,
+  }: { land?: SectorId[]; settled?: boolean; museum?: boolean } = {},
 ) {
   const token = randomUUID();
   const profile = await ensureProfile(token);
@@ -148,6 +161,9 @@ async function funded(
       stackacresExchangeDay(T0),
       stackacresUpkeepFee(MAX_PLOTS),
     );
+  }
+  if (museum) {
+    for (const item of STACKACRES_ITEMS) await markStackAcresDonated(profile.id, item);
   }
   return { token, id: profile.id };
 }
@@ -219,6 +235,7 @@ const REAL = {
   createStackAcresUnit: vi.mocked(createStackAcresUnit).getMockImplementation()!,
   getStackAcresUnit: vi.mocked(getStackAcresUnit).getMockImplementation()!,
   listStackAcresUnits: vi.mocked(listStackAcresUnits).getMockImplementation()!,
+  markStackAcresDonated: vi.mocked(markStackAcresDonated).getMockImplementation()!,
 };
 
 beforeEach(() => {
@@ -226,6 +243,7 @@ beforeEach(() => {
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
+  vi.mocked(markStackAcresDonated).mockImplementation(REAL.markStackAcresDonated);
 });
 
 describe("stocking", () => {
@@ -747,6 +765,120 @@ describe("Bountiful Harvest", () => {
     expect(await balance(token)).toBeLessThan(
       before + Math.floor(yieldValue("hen") * 3 * 1.05),
     );
+  });
+});
+
+/**
+ * Ray's Museum. There is no second payout to test for -- a first-ever
+ * discovery bonus folds straight into the harvest's own `gold`, exactly like
+ * a Bountiful Harvest synergy does, so what matters here is that it lands in
+ * that same figure exactly once per item ever, and that it behaves under the
+ * same daily ceiling as everything else the farm pays.
+ *
+ * `funded()` pre-donates every item by default (see its own doc) so that
+ * describe blocks with no interest in a first-ever discovery are never
+ * perturbed by one; every test below starts from `museum: false` instead.
+ */
+describe("Ray's Museum", () => {
+  it("folds the first-ever discovery bonus into the harvest's own Gold credit", async () => {
+    const { token, id } = await funded(500_000, { museum: false });
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const before = await balance(token);
+
+    const result = await collectOne(token, unitId, HEN_READY);
+
+    const bonus = museumDiscoveryBonus(HEN_YIELD.item, HEN_YIELD.quantity);
+    expect(result.harvest.discoveries).toEqual([{ item: HEN_YIELD.item, bonus }]);
+    expect(result.harvest.gold).toBe(yieldValue("hen") + bonus);
+    expect(await balance(token)).toBe(before + result.harvest.gold);
+    expect(await readStackAcresMuseum(id)).toContain(HEN_YIELD.item);
+    expect(result.museum[HEN_YIELD.item]).toBe(true);
+  });
+
+  it("never pays the bonus twice -- a duplicate harvest of the same item earns nothing extra", async () => {
+    const { token, id } = await funded(500_000, { museum: false });
+    await markStackAcresDonated(id, HEN_YIELD.item);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const before = await balance(token);
+
+    const result = await collectOne(token, unitId, HEN_READY);
+
+    expect(result.harvest.discoveries).toEqual([]);
+    expect(result.harvest.gold).toBe(yieldValue("hen"));
+    expect(await balance(token)).toBe(before + yieldValue("hen"));
+  });
+
+  it("counts each item separately within one sweep -- an already-donated item earns no repeat bonus while a new one still does", async () => {
+    const { token, id } = await funded(500_000, { museum: false });
+    await markStackAcresDonated(id, HEN_YIELD.item);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await sowWatered(token, "sprout");
+    const before = await balance(token);
+
+    // A Sprout Row and a Hen Coop share a 15-minute cycle, so both ripen
+    // together -- the only way to bring a donated and an undonated item home
+    // in the same sweep.
+    const result = await harvestStackAcres(token, {}, HEN_READY);
+
+    const sproutYield = STACKACRES_YIELDS.sprout;
+    expect(result.harvest.discoveries).toEqual([
+      { item: sproutYield.item, bonus: museumDiscoveryBonus(sproutYield.item, sproutYield.quantity) },
+    ]);
+    expect(await balance(token)).toBe(before + result.harvest.gold);
+  });
+
+  it("tracks each item independently -- donating one never flags another", async () => {
+    const { token } = await funded(500_000, { museum: false });
+    const hen = await stockStackAcres(token, { stock: "hen" }, T0);
+    await collectOne(token, unitOf(hen, "hen").id, HEN_READY);
+
+    const registry = (await readStackAcres(token, HEN_READY)).museum;
+    expect(registry[HEN_YIELD.item]).toBe(true);
+    for (const item of Object.keys(registry) as (keyof typeof registry)[]) {
+      if (item !== HEN_YIELD.item) expect(registry[item]).toBe(false);
+    }
+  });
+
+  it("starts a fresh farm with nothing donated", async () => {
+    const { token } = await funded(500_000, { museum: false });
+    expect((await readStackAcres(token, T0)).museum).toEqual(emptyMuseumRegistry());
+  });
+
+  it("still pays the harvest in full when a museum write throws", async () => {
+    // The produce credit is already durable by the time the museum write
+    // runs -- same posture as harvest_credit_failed just above it in the
+    // service. A throw here must be swallowed, not surfaced, and must not
+    // cost the player the produce Gold they already earned.
+    const { token } = await funded(500_000, { museum: false });
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const before = await balance(token);
+    vi.mocked(markStackAcresDonated).mockRejectedValueOnce(new Error("boom"));
+
+    const result = await collectOne(token, unitId, HEN_READY);
+
+    expect(result.harvest.discoveries).toEqual([]);
+    expect(result.harvest.gold).toBe(yieldValue("hen"));
+    expect(await balance(token)).toBe(before + yieldValue("hen"));
+  });
+
+  it("drops the bonus but still registers the discovery when the daily ceiling has no room left for it", async () => {
+    const { token, id } = await funded(500_000, { museum: false });
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    const bonus = museumDiscoveryBonus(HEN_YIELD.item, HEN_YIELD.quantity);
+    // Leaves room for the produce itself but not for the bonus on top of it.
+    await burnAllowance(id, STACKACRES_GOLD_CEILING - yieldValue("hen") - bonus + 1);
+    const before = await balance(token);
+
+    const result = await collectOne(token, unitId, HEN_READY);
+
+    expect(result.harvest.discoveries).toEqual([]);
+    expect(result.harvest.gold).toBe(yieldValue("hen"));
+    expect(await balance(token)).toBe(before + yieldValue("hen"));
+    expect(await readStackAcresMuseum(id)).toContain(HEN_YIELD.item);
   });
 });
 

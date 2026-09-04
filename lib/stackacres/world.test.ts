@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { STACKACRES_STOCK } from "./catalogue";
 import { nearPath } from "./paths";
 import {
+  BARN_FOOTPRINT,
   FARM_ZONE,
   STACKACRES_CHUNK,
   STACKACRES_ZOOM_MAX,
   STACKACRES_ZOOM_MIN,
+  barnHitAt,
   chunkScenery,
   forestDensityAt,
   clampZoom,
@@ -115,6 +117,32 @@ describe("grow areas", () => {
   it("is narrower than the district itself -- the woods answer nothing", () => {
     // Far outside every district, in the open world the camera can roam.
     expect(growAreaAt(5_000, 5_000)).toBeNull();
+  });
+});
+
+describe("the barn's tap target", () => {
+  it("hits dead centre and at the box's own edges", () => {
+    const mid = {
+      x: BARN_FOOTPRINT.x + BARN_FOOTPRINT.width / 2,
+      y: BARN_FOOTPRINT.y + BARN_FOOTPRINT.height / 2,
+    };
+    expect(barnHitAt(mid.x, mid.y)).toBe(true);
+    expect(barnHitAt(BARN_FOOTPRINT.x, BARN_FOOTPRINT.y)).toBe(true);
+    expect(
+      barnHitAt(BARN_FOOTPRINT.x + BARN_FOOTPRINT.width, BARN_FOOTPRINT.y + BARN_FOOTPRINT.height),
+    ).toBe(true);
+  });
+
+  it("misses a step outside the box, and misses every district's own ground", () => {
+    expect(barnHitAt(BARN_FOOTPRINT.x - 1, BARN_FOOTPRINT.y - 1)).toBe(false);
+    expect(
+      barnHitAt(BARN_FOOTPRINT.x + BARN_FOOTPRINT.width + 1, BARN_FOOTPRINT.y + BARN_FOOTPRINT.height + 1),
+    ).toBe(false);
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      expect(barnHitAt(mid.x, mid.y)).toBe(false);
+    }
   });
 });
 

@@ -40,6 +40,7 @@ import {
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import { emptyMuseumRegistry, museumDiscoveryBonus, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
   STACKACRES_SECTORS,
   isSectorUnlocked,
@@ -63,9 +64,11 @@ import {
   feedStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
+  markStackAcresDonated,
   readStackAcresCapacity,
   readStackAcresExchanged,
   readStackAcresFeed,
+  readStackAcresMuseum,
   raiseStackAcresUpkeep,
   readStackAcresSectors,
   readStackAcresUpkeep,
@@ -118,6 +121,14 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  * ("there is one payout") instead of counting call sites that grow with every
  * new refund. A new direct `creditGoldByProfile` is a new faucet and is the
  * change to stop over.
+ *
+ * RAY'S MUSEUM rides inside that one payout rather than beside it. The first
+ * time this player ever harvests a given item, `harvestStackAcres` folds a
+ * one-time "New Discovery!" bonus into the SAME Gold figure the sweep already
+ * pays -- see the museum section down there. It is bigger, not a second
+ * payout, and it is reserved against the same daily ceiling as everything
+ * else, so it does not reopen the "ONE PAYS" invariant this file is built
+ * around.
  *
  * LAND. Three of the four districts start under wild growth and are cleared
  * once, with Gold, for good (`clearStackAcresSector`). Keeping cleared land
@@ -180,6 +191,9 @@ export interface StackAcresView {
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Today's allowance: the flat ceiling, and what is left of it. */
   exchange: StackAcresExchangeState;
+  /** Ray's Museum: which produce items this player has ever donated. Total
+   *  over every item, never partial -- see emptyMuseumRegistry. */
+  museum: MuseumRegistry;
   /**
    * Land the player may work. DERIVED, not just the stored clear list -- see
    * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
@@ -203,15 +217,27 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
   return toStackAcresUnitSnapshots(await listStackAcresUnits(profileId), now);
 }
 
+/** Every donation flag for a player, overlaid onto a fresh registry so a
+ *  legacy or partial row never leaves an item undefined. */
+async function museumView(profileId: string): Promise<MuseumRegistry> {
+  const donated = await readStackAcresMuseum(profileId);
+  const registry = { ...emptyMuseumRegistry() } as Record<string, boolean>;
+  for (const itemId of donated) {
+    if (itemId in registry) registry[itemId] = true;
+  }
+  return registry as MuseumRegistry;
+}
+
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
   const day = stackacresExchangeDay(now);
-  const [rows, feed, capacity, exchanged, cleared, upkeepPaid] = await Promise.all([
+  const [rows, feed, capacity, exchanged, cleared, upkeepPaid, museum] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresExchanged(profile.id, day),
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
+    museumView(profile.id),
   ]);
 
   const units = toStackAcresUnitSnapshots(rows, now);
@@ -222,6 +248,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     feed,
     capacity,
     exchange: exchangeState(exchanged, now),
+    museum,
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
@@ -935,10 +962,14 @@ export interface StackAcresHarvestResult {
   bonus: number;
   /** Land Maintenance taken out of this harvest. */
   upkeep: number;
-  /** What actually landed in the player's balance. */
+  /** What actually landed in the player's balance. Includes any Ray's Museum
+   *  discovery bonus below -- there is no separate figure for it. */
   gold: number;
   /** How many of the settled units came up weather-worn. */
   mucked: number;
+  /** Items donated to Ray's Museum for the very first time in this sweep,
+   *  and what each paid. Empty when nothing here was new -- most harvests. */
+  discoveries: { item: StackAcresItem; bonus: number }[];
 }
 
 /**
@@ -974,7 +1005,9 @@ export interface StackAcresHarvestResult {
  *   4. Re-price against what actually settled, hand back the over-reservation,
  *      and cap the payout at what was reserved so the ceiling cannot be
  *      exceeded from the other direction either.
- *   5. Credit once, record the maintenance, write the ledger.
+ *   5. Ray's Museum: fold in any first-ever discovery bonus, reserved against
+ *      the same ceiling and dropped (never queued) if there is no room left.
+ *   6. Credit once, record the maintenance, write the ledger.
  */
 export async function harvestStackAcres(
   token: string,
@@ -1102,10 +1135,43 @@ export async function harvestStackAcres(
   // and the ceiling must hold whichever way that lands.
   const actual: HarvestSettlement =
     settled.length === ready.length ? planned : settleHarvest(settled.map(candidateOf), upkeepDue);
-  const gold = Math.min(actual.net, reserved);
-  await releaseReservation(profile.id, day, reserved - gold);
+  const produceGold = Math.min(actual.net, reserved);
+  await releaseReservation(profile.id, day, reserved - produceGold);
 
-  // Step 5. The credit lands only after every guarded write above is durable,
+  // Step 5. Ray's Museum: a first-ever donation is automatic, not a player
+  // action, and folds its "New Discovery!" bonus straight into this same
+  // Gold credit -- there is no second payout path here, only a bigger one,
+  // so ONE PAYS (see the module doc) still holds. markStackAcresDonated is
+  // the idempotency guard (the (profile, item) pair is a primary key), and
+  // only the call that actually donates an item for the first time ever pays
+  // for it; a later harvest of that same item, by this player or a replayed
+  // request, reports false and adds nothing. `quantity` is the item's total
+  // across the WHOLE sweep, since a sweep can bring several units of a
+  // freshly-discovered item home together. Reserved against today's ceiling
+  // exactly like the rest of the sweep, and simply dropped -- not queued,
+  // not partially paid -- when there is no room left: the discovery itself
+  // still registers, since that costs nothing, but the bonus is not owed to
+  // tomorrow. Best-effort like the ledger write below: the harvest itself is
+  // already settled and paid, and a museum hiccup must not turn that into an
+  // error response.
+  let museumBonus = 0;
+  const discoveries: { item: StackAcresItem; bonus: number }[] = [];
+  for (const { item, quantity } of harvestTally(actual)) {
+    try {
+      const firstDiscovery = await markStackAcresDonated(profile.id, item);
+      if (!firstDiscovery) continue;
+      const bonus = museumDiscoveryBonus(item, quantity);
+      const afterBonus = await reserveStackAcresExchange(profile.id, day, bonus, STACKACRES_GOLD_CEILING);
+      if (afterBonus === null) continue;
+      museumBonus += bonus;
+      discoveries.push({ item, bonus });
+    } catch (error) {
+      console.error("stackacres.museum_donation_failed", { profileId: profile.id, item, quantity, error });
+    }
+  }
+  const gold = produceGold + museumBonus;
+
+  // Step 6. The credit lands only after every guarded write above is durable,
   // so this one never refunds -- a retry could pay twice, which is the one
   // outcome worth avoiding more than a missing credit. Logged loudly, same
   // reasoning as ante-up-service.ts's payOutWin.
@@ -1174,6 +1240,7 @@ export async function harvestStackAcres(
       upkeep: actual.upkeepCharged,
       gold,
       mucked,
+      discoveries,
     },
   };
 }

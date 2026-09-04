@@ -295,15 +295,16 @@ class Ambience {
         sources: [source],
         walks: [
           new RandomWalk(filter.frequency, 180, 900, 2600, ctx),
-          // 0.05..0.3, not 0.09..0.55, not 0.16..1.0. The first cut (ceiling
-          // 0.55) still read as too loud by ear on 2026-09-04, a second pass
-          // the same day: wind's 400Hz bandpass sits right on top of `air`'s
-          // own 420Hz lowpass floor, so the two reinforce each other in a way
-          // a same-bed-vs-other-beds ceiling comparison never accounted for.
-          // Both ends are still scaled together, same reason as the first
-          // cut: narrowing only the ceiling costs the gust the swing that
-          // makes it read as weather rather than as a fan.
-          new RandomWalk(gust.gain, 0.05, 0.3, 1900, ctx),
+          // 0.09..0.55, not 0.16..1.0. Wind shipped as the loudest thing on
+          // the farm by a wide margin: its gust walk peaked at 1.0 where every
+          // other bed tops out around 0.5 (grass) or lower (insects at 0.3),
+          // so on the Ox Fields -- which multiply wind by 0.92 -- it sat about
+          // 5dB over the whole rest of the mix and Kayo flagged it by ear.
+          // Both ends are scaled by the same 0.55, deliberately: cutting only
+          // the ceiling would have narrowed the gust from a 6x swing to a 3x
+          // one and quietly cost the bed the thing that makes it read as
+          // weather rather than as a fan.
+          new RandomWalk(gust.gain, 0.09, 0.55, 1900, ctx),
         ],
       };
     }));

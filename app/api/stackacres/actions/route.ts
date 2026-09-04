@@ -14,6 +14,7 @@ import {
   runStackAcresAction,
   stockStackAcres,
   toStackAcresErrorResponse,
+  upgradeStackAcresTool,
   waterStackAcres,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
@@ -33,13 +34,17 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * SIX ACTIONS SPEND GOLD and exactly ONE PAYS IT OUT, and that asymmetry is
+ * SEVEN ACTIONS SPEND GOLD and exactly ONE PAYS IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
- * `buy-stock`, `buy-feed` and `clear` all spend; `collect` pays, under a flat
- * per-player daily ceiling and net of Land Maintenance. There is no second
- * currency any more, so "which direction does this action move Gold" is the
- * only question a new action has to answer, and a new one that PAYS is the
- * change to stop over.
+ * `buy-stock`, `buy-feed`, `clear` and `upgrade-tool` all spend; `collect`
+ * pays, under a flat per-player daily ceiling and net of Land Maintenance.
+ * There is no second currency any more, so "which direction does this action
+ * move Gold" is the only question a new action has to answer, and a new one
+ * that PAYS is the change to stop over.
+ *
+ * The equipment ladder's CRITICAL HARVEST is not a second payer: it is paid
+ * by `collect` itself, inside the same reservation, so it is bounded by the
+ * same daily ceiling as the harvest it rides on. See `harvestStackAcres`.
  *
  * `clear-sector` is the one piece of land buying that came back: three of the
  * four districts start under wild growth, and clearing one is a permanent,
@@ -76,6 +81,9 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("clear-sector"),
     sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
   }),
+  // No field: the ladder is walked one rung at a time from whatever the
+  // SERVER says is held, so a request cannot name a rung and skip one.
+  z.object({ action: z.literal("upgrade-tool") }),
   z.object({ action: z.literal("stock"), stock: stockSchema }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
@@ -118,6 +126,8 @@ function run(token: string, action: StackAcresAction) {
       return expandStackAcresCapacity(token, action.stock);
     case "clear-sector":
       return clearStackAcresSector(token, action.sector);
+    case "upgrade-tool":
+      return upgradeStackAcresTool(token);
     case "stock":
       return stockStackAcres(token, { stock: action.stock });
     case "buy-stock":

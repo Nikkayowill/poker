@@ -3,6 +3,11 @@ import { randomUUID } from "crypto";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { SectorId } from "@/lib/stackacres/sectors";
+import {
+  STACKACRES_STARTING_TIER,
+  toStackAcresToolTier,
+  type StackAcresToolTier,
+} from "@/lib/stackacres/equipment";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -50,6 +55,7 @@ declare global {
   var __riverRoomStackAcresUnits: Map<string, StoredStackAcresUnit> | undefined;
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
+  var __riverRoomStackAcresTool: Map<string, StackAcresToolTier> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
@@ -67,6 +73,12 @@ globalThis.__riverRoomStackAcresCapacity = memoryCapacity;
 
 const memoryFeed = globalThis.__riverRoomStackAcresFeed ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresFeed = memoryFeed;
+
+/** The equipment rung each player has bought up to, keyed by profile id. A
+ *  missing entry is the free starting Trowel, exactly as a missing capacity
+ *  entry is zero extra slots. */
+const memoryTool = globalThis.__riverRoomStackAcresTool ?? new Map<string, StackAcresToolTier>();
+globalThis.__riverRoomStackAcresTool = memoryTool;
 
 /** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
 const memoryExchanges = globalThis.__riverRoomStackAcresExchanges ?? new Map<string, number>();
@@ -98,6 +110,7 @@ export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
   memoryCapacity.clear();
   memoryFeed.clear();
+  memoryTool.clear();
   memoryExchanges.clear();
   memoryUpkeep.clear();
   memoryHarvests.length = 0;
@@ -787,6 +800,62 @@ export async function raiseStackAcresUpkeep(
   });
   if (error) throw new Error(`Could not settle today's land fee: ${error.message}`);
   return data === true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Equipment                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Which rung of the ladder this player holds. No stored row is the free
+ *  starting Trowel, so this never returns null and never throws on a player
+ *  who has bought nothing. */
+export async function readStackAcresToolTier(profileId: string): Promise<StackAcresToolTier> {
+  const supabase = adminClient();
+  if (!supabase) return memoryTool.get(profileId) ?? STACKACRES_STARTING_TIER;
+
+  const { data, error } = await supabase
+    .from("homestead_tool")
+    .select("tier")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your equipment: ${error.message}`);
+  // Through toStackAcresToolTier rather than a cast: a row written by a build
+  // that knows a rung this one does not must degrade to something playable
+  // rather than throw on the farm's own load.
+  return toStackAcresToolTier(data?.tier);
+}
+
+/**
+ * Advances a player one rung, GUARDED on the rung they were last seen
+ * holding. Returns the tier now held, or null on a lost race or a stale
+ * `from` -- and null must never be treated as a purchase, the same rule
+ * collectStackAcresUnit's own null carries.
+ *
+ * The guard is what makes a double-tapped upgrade charge once: the caller has
+ * already debited Gold by the time it reaches here, so two racing requests
+ * both debit, exactly one matches `from`, and the loser's refund is the
+ * caller's job.
+ */
+export async function upgradeStackAcresToolTier(
+  profileId: string,
+  from: StackAcresToolTier,
+  to: StackAcresToolTier,
+): Promise<StackAcresToolTier | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryTool.get(profileId) ?? STACKACRES_STARTING_TIER;
+    if (current !== from) return null;
+    memoryTool.set(profileId, to);
+    return to;
+  }
+
+  const { data, error } = await supabase.rpc("upgrade_homestead_tool", {
+    p_profile_id: profileId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw new Error(`Could not update your equipment: ${error.message}`);
+  return data === null ? null : toStackAcresToolTier(data);
 }
 
 /* ------------------------------------------------------------------ */

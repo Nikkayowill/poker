@@ -14,6 +14,7 @@ import {
   FENCE_RAIL_T,
 } from "@/lib/stackacres/fence";
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
+import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -1153,6 +1154,117 @@ export function bakeVignette(scene: Phaser.Scene): string {
   sun.addColorStop(1, "rgba(255,238,170,0)");
   c.fillStyle = sun;
   c.fillRect(0, 0, px, px);
+  texture.refresh();
+  return key;
+}
+
+/**
+ * The sunbeam layer, baked ONCE into one texture at boot.
+ *
+ * Baked rather than drawn per frame, and one texture rather than one per
+ * beam, because this layer covers the entire viewport: a per-frame Graphics
+ * redraw of five soft-edged tilted bars is the most expensive thing that
+ * could plausibly be added to this scene, and it would cost that on every
+ * frame forever for an effect the player is not meant to consciously see.
+ * Baked, the whole thing is one screen-pinned sprite whose only per-frame
+ * work is an alpha assignment.
+ *
+ * The texture carries NO opacity of its own beyond the soft edges -- every
+ * beam is painted at its `weight` against white, and the layer's real
+ * opacity is the sprite's alpha, which `godRayAlpha` clamps to
+ * GOD_RAY_MAX_ALPHA. Keeping the budget in one place is the point: a beam
+ * table that could brighten the layer on its own would put the ceiling in two
+ * files.
+ *
+ * Square and stretched to the viewport by the scene rather than sized to it,
+ * so a resize or an orientation change never re-bakes.
+ */
+export function bakeGodRays(scene: Phaser.Scene): string {
+  const key = "godRays";
+  if (scene.textures.exists(key)) return key;
+  const px = 512;
+  const texture = scene.textures.createCanvas(key, px, px);
+  if (!texture) return key;
+  const c = texture.context;
+
+  // Overdrawn well past the canvas on both axes: the beams are tilted, so a
+  // bar exactly as tall as the texture would leave the corners empty.
+  const over = px;
+  c.save();
+  c.translate(px / 2, px / 2);
+  c.rotate(GOD_RAY_TILT);
+  c.translate(-px / 2, -px / 2);
+  for (const beam of GOD_RAY_BEAMS) {
+    const cx = beam.centre * px;
+    const half = (beam.width * px) / 2;
+    // A soft-edged bar, not a hard one: the gradient runs from nothing at
+    // each edge to the beam's own weight down the middle, which is what makes
+    // five bars read as light rather than as stripes.
+    const grad = c.createLinearGradient(cx - half, 0, cx + half, 0);
+    grad.addColorStop(0, "rgba(255,246,206,0)");
+    grad.addColorStop(0.5, `rgba(255,246,206,${beam.weight})`);
+    grad.addColorStop(1, "rgba(255,246,206,0)");
+    c.fillStyle = grad;
+    c.fillRect(cx - half, -over, half * 2, px + over * 2);
+  }
+  c.restore();
+
+  // Fade the beams out toward the bottom of the frame. Light comes from above
+  // this farm (the same upper-left key every painter is shaded against), so a
+  // shaft that stayed at full strength all the way down the screen would read
+  // as fog rather than as sun.
+  const fall = c.createLinearGradient(0, 0, 0, px);
+  fall.addColorStop(0, "rgba(0,0,0,0)");
+  fall.addColorStop(0.55, "rgba(0,0,0,.45)");
+  fall.addColorStop(1, "rgba(0,0,0,1)");
+  c.globalCompositeOperation = "destination-out";
+  c.fillStyle = fall;
+  c.fillRect(0, 0, px, px);
+  c.globalCompositeOperation = "source-over";
+
+  texture.refresh();
+  return key;
+}
+
+/**
+ * One ground sparkle: a small four-pointed star, baked once and tinted by
+ * nothing -- the gold is in the texture.
+ *
+ * Drawn as two crossed tapers plus a core rather than as a dot, because a dot
+ * at this size is a pixel of noise and reads as a dead subpixel. The points
+ * are what make it read as a catch of light.
+ */
+export function bakeSparkle(scene: Phaser.Scene): string {
+  const key = "sparkle";
+  if (scene.textures.exists(key)) return key;
+  const px = 32;
+  const texture = scene.textures.createCanvas(key, px, px);
+  if (!texture) return key;
+  const c = texture.context;
+  const mid = px / 2;
+
+  const halo = c.createRadialGradient(mid, mid, 0, mid, mid, mid);
+  halo.addColorStop(0, "rgba(255,240,180,.9)");
+  halo.addColorStop(0.35, "rgba(255,214,94,.35)");
+  halo.addColorStop(1, "rgba(255,214,94,0)");
+  c.fillStyle = halo;
+  c.fillRect(0, 0, px, px);
+
+  c.fillStyle = "rgba(255,252,232,.95)";
+  for (const rotation of [0, Math.PI / 2]) {
+    c.save();
+    c.translate(mid, mid);
+    c.rotate(rotation);
+    c.beginPath();
+    c.moveTo(0, -mid);
+    c.lineTo(mid * 0.16, 0);
+    c.lineTo(0, mid);
+    c.lineTo(-mid * 0.16, 0);
+    c.closePath();
+    c.fill();
+    c.restore();
+  }
+
   texture.refresh();
   return key;
 }

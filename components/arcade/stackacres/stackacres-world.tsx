@@ -4,6 +4,7 @@ import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
+import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
@@ -76,6 +77,8 @@ export interface StackAcresWorldProps {
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
+  /** The equipment rung held, which sets the scythe's swathe. */
+  toolTier: StackAcresToolTier;
   api: Ref<StackAcresWorldApi | null>;
 }
 
@@ -92,6 +95,7 @@ function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 export function StackAcresWorld({
   units,
   tool,
+  toolTier,
   celebrate,
   onReady,
   onUnitTap,
@@ -121,6 +125,9 @@ export function StackAcresWorld({
   // rather than a unit, so the scene has to know which tool is held to read a
   // drag correctly. See `setTool` in stackacres-scene.ts.
   const toolRef = useRef<StackAcresTool>(tool);
+  // Read at mount for the same reason `toolRef` is: the scene does not exist
+  // yet to be told, and it needs the right swathe on its very first stroke.
+  const toolTierRef = useRef<StackAcresToolTier>(toolTier);
   useEffect(() => {
     readyRef.current = onReady;
     unitTapRef.current = onUnitTap;
@@ -130,6 +137,7 @@ export function StackAcresWorld({
     viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
     toolRef.current = tool;
+    toolTierRef.current = toolTier;
   });
 
   const sceneUnits = useMemo(() => toUnits(units), [units]);
@@ -168,7 +176,7 @@ export function StackAcresWorld({
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
-        { reducedMotion, host },
+        { reducedMotion, host, toolTier: toolTierRef.current },
       );
 
       const size = () => ({
@@ -289,6 +297,12 @@ export function StackAcresWorld({
     sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
     sceneRef.current?.setTool(tool);
   }, [tool]);
+
+  // Pushed rather than rebuilt: see `setToolTier` in stackacres-scene.ts for
+  // why buying an upgrade must not tear the scene down.
+  useEffect(() => {
+    sceneRef.current?.setToolTier(toolTier);
+  }, [toolTier]);
 
   useEffect(() => {
     if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.unitId);

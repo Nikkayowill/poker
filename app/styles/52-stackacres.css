@@ -1811,6 +1811,42 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
+/* ---- the equipment rack ---------------------------------------------- */
+
+/* What is currently in hand, above the shelf's one buyable rung. A row rather
+   than a card on purpose: it is a statement of fact, not an offer, and giving
+   it the same card frame as the thing below it made the two read as a choice
+   between two tools. */
+.sa-tool-rack {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-tool-copy { min-width: 0; }
+.sa-tool-copy h3 { margin: 0; font-size: 17px; font-weight: 800; color: var(--sa-ink); }
+
+/* The sprites are square cut-outs with their own transparent margin, so they
+   need no frame of their own -- and no background, or the cut-out stops being
+   one. Sized in CSS rather than trusting the intrinsic 192px, which is twice
+   what either slot wants. */
+.sa-tool-art {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.sa-stock-card .sa-tool-art { align-self: center; width: 84px; height: 84px; }
+
+/* ---- the exchange window --------------------------------------------- */
 /* ---- today's allowance ------------------------------------------------ */
 
 /* The one block in the sheet with its own surface and a corn edge. It used to

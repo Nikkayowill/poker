@@ -113,6 +113,44 @@ could earn. (5) **A crop left alone never ripens** now that watering shipped, wh
 useless as a passive test fixture -- the Hen Coop is the only tier whose hunger window is longer than
 its own cycle, so it is the fixture for anything not about tending.
 
+Two bugs fixed in passing, both in code this pass touched: the HUD speaker **negated the toggle's
+return value twice**, so it painted the state it had just left, and it never read the stored
+preference, so a player who muted the farm came back to a speaker icon over silence -- now
+`useStoredPreference`, the app's own idiom for a stored value driving a module outside React. And the
+farm was calling `useArcadeSound({gameSounds: true})`, eagerly fetching the **poker table's ~450KB cue
+set** on a route that plays none of it; the two calls needing it now have farm sounds of their own.
+
+Mute is one switch (music + ambience together -- both are "the noise this place makes", and two
+sliders is a settings screen); action sounds follow the app-wide SFX mute instead. The graph suspends
+on tab-hide.
+
+**The wind bed was mixed too loud and was caught by ear, not by a meter.** Kayo reviewed the whole set
+from a click-to-hear bench (https://claude.ai/code/artifact/3d4922d5-7623-4ed7-8702-248d8c02521f,
+which runs this branch's own compiled `synth-voices.ts`, so it is the real sounds rather than a
+mock-up) and flagged wind alone. He was right and the cause was structural: wind's gust walk peaked at
+**1.0 where every other bed tops out near 0.5**, so on the Ox Fields (wind x0.92) it sat ~5dB over the
+rest of the mix. Now 0.09..0.55 -- **both ends scaled by the same 0.55**, since cutting only the
+ceiling would have narrowed the gust from a 6x swing to a 3x one and cost the bed the variation that
+makes it read as weather instead of a fan. Worth keeping as a rule: the per-voice trims were measured,
+but the BED levels never were -- they are relative gains against each other, so the only instrument
+for them is somebody listening.
+
+**Same day, second pass: still too loud.** Kayo flagged wind again by ear against the running `next
+dev` instance after the 0.55-ceiling cut above had already shipped. Cut again to 0.05..0.3 -- the
+likely reason the first cut wasn't enough is that wind's 400Hz bandpass sits directly on top of
+`air`'s own 420Hz lowpass floor, reinforcing it in a way a same-bed-vs-other-beds ceiling comparison
+doesn't catch. Confirms the rule above rather than replacing it: bed levels are ear-tuned, not derived,
+and a fix that looks right on paper (ceiling now matches grass/insects) can still be wrong against the
+whole mix playing at once.
+
+Verified live, not just built: `next dev` in memory mode with a minted session and a real access
+grant, driven in Chromium at 1280x720. AudioContext running, **zero console errors**, and the
+soundscape provably changes with the clock -- at night 1 oscillator / 37 noise sources (crickets), at
+a pinned midday 13 / 6 (birds), the exact inversion the plan describes. Full `npx vitest run`
+2828/2829 (the one red is the pre-existing PR #163 `table-anchors` regression), `npm run lint` and
+`npm run build` clean. Branch `feat/stackacres-audio`. **Still open:** the music itself is untouched
+(the three tracks are ~3min each and regenerating one costs more than the whole credit balance), and
+there is no duck, goose or rooster -- the pond has ducks on it that make no sound.
 Migration `20260904150000_stackacres_release_allowance.sql` is **written and UNAPPLIED** (just the one
 function; Land Maintenance needed no new schema). See
 `[[reference_stackchips_migrations_not_auto_applied]]`. Branch `feat/stackacres-harvest-gold-upkeep`.
@@ -417,6 +455,68 @@ live end to end (4,000 Gold across two players, before and after). Migration
 `20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
 **unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### StackAcres: sunlight layers, and an equipment ladder bought with Gold (2026-09-04)
+Two features on one branch. **Sunlight** (`lib/stackacres/sunlight.ts`, pure and tested, painted by
+`bakeGodRays`/`bakeSparkle` + `animateSunlight`): five soft tilted shafts over the viewport and a
+field of gold flecks on the ground. Both are budget-first, and the budgets are the reason the module
+is data rather than numbers inside the scene. `GOD_RAY_MAX_ALPHA` is a **ceiling of 0.08 that
+`godRayAlpha` clamps to** rather than a value it happens to return — the layer is ADD-blended over
+the whole screen and the art is flat three-tone vector work whose legibility rests on those tones
+staying apart, so above ~0.1 the lit and turned planes of every material start converging.
+`SPARKLE_MAX` is a **hard pool size of 15**: the scene allocates exactly that many sprites once, in
+`create`, and recycles them forever, so a frame never makes a game object and the effect costs the
+same in hour two as in minute one. The rays are one baked texture (a per-frame Graphics redraw of
+five soft bars over the full viewport would be the most expensive thing on this map), screen-pinned;
+the sparkles are world-pinned and sort at their own y, because light comes from the sky but a glint
+sits on a specific piece of grass. Both are skipped entirely under reduced motion rather than frozen
+— a static ray layer is a permanent wash and a static sparkle field is fifteen dots. Verified live,
+not just by test: diffing the canvas against a reduced-motion capture shows the five beams and the
+flecks at 12x amplification, and a mean luminance lift of **0.95/255 (~0.4%)**, warm-tinted and
+falling off downward exactly as the texture intends.
+
+**The equipment ladder** (`lib/stackacres/equipment.ts`): Trowel (free) -> Iron Shovel (45,000 Gold)
+-> Golden Spade (250,000), bought one rung at a time, permanently. Two effects. `reach` widens the
+scythe's swathe — written as multiples (1x / 1.5x / 2x) because the shelf copy quotes them, with
+`strokesToClearWidth` stating the same thing as TAPS and equipment.test.ts holding the copy to the
+arithmetic. **The Trowel's reach is `SCYTHE_REACH` imported, not retyped**, so shipping the ladder
+cannot nerf a player who buys nothing. `critChance`/`critBonus` make a harvest come up rich, and the free rung's chance is **zero** for the
+same reason its reach is `SCYTHE_REACH`: a player who buys nothing must see no behaviour change at
+all. That is not only principle -- a non-zero Trowel crit made every existing harvest assertion in
+stackacres-service.test.ts non-deterministic, which is how the rule got tested.
+
+**The crit pays Gold, and stays inside the one-faucet rule by construction.** It is paid BY
+`harvestStackAcres`, out of the SAME reservation the sweep already took against the flat daily
+ceiling: the reservation is taken optimistically (the sweep's net plus the most the held rung could
+add) and the unused part handed straight back, exactly as step 4 already does for a unit that lost
+its race. So there is still exactly one faucet and one ceiling — a lucky player reaches the same
+daily wall as an unlucky one, just sooner. The roll happens ONCE PER SWEEP in step 3, beside the muck
+roll and for the identical reason: after the guarded writes, so a refetch cannot re-roll it. A
+sweep-level roll is also the only shape that fits, since Bountiful Harvest is already a property of
+what was gathered together. **This branch was first written against the two-currency farm and paid
+the crit in Bushels** to avoid a second faucet; the same-day single-currency pass (PR #311) made that
+obsolete, and riding inside the harvest's own reservation solves it better. Refunds in the new action
+go through `refundGold`, never `creditGoldByProfile` directly, so the currency wall's "credits Gold in
+exactly two places" assertion still holds at 2. **The optimistic reservation falls back to the bare
+net when it does not fit**, which is the difference between the ladder being a bonus and a penalty:
+asking for crit headroom and giving up would refuse a harvest the farm can pay for, telling a player
+with exactly one harvest's allowance left to come back tomorrow BECAUSE they own a better tool. That
+sweep then simply cannot crit, since step 4 caps the payout at what was reserved.
+
+The upgrade write is **guarded on the rung last seen held** (`upgrade_homestead_tool`), which is what
+makes a double-tapped upgrade charge once: Gold is debited before the write, two racers both debit,
+one matches, the loser is refunded. A first draft of that RPC had a real hole — the no-row path
+inserted regardless of `p_from` — fixed to an explicit lock-and-branch. Migration **applied
+2026-09-04**, `proacl` verified (service_role only; anon/authenticated cannot execute), guard
+behaviour proved against the live DB with a self-rolling-back DO block, clean security advisor.
+
+Tool sprites are FLUX-generated (`~/.local/share/flux-sprite-test/task-tools`), same pipeline as the
+animals. Two traps worth keeping: the first trowel roll came back with a **near-white blade**, which
+is the exact colour the silhouette pass keys the page out on (the `hen.png` ghosting bug) — re-rolled
+in copper. Then the copper blade got eaten by the mud mask, because a blade is legitimately brown and
+legitimately low in frame, and it TOUCHES its baked dirt pedestal so the two are one connected
+component that no blob-level rule can split. Fixed with a **per-pixel** test gated to that sprite
+(pad sat~98 vs blade sat 205-230), which is what `[[reference_stackchips_flux_texture_and_cutout_prep]]`
+already says a touching ground pad needs. Checked on green, never on white.
 ### StackAcres districts became unlockable sectors; land has a price and an upkeep again (2026-09-04)
 Three of the four districts now start under wild growth, and land itself is back on the Gold ladder for
 the first time since the 2026-09-03 pass deleted the old 16-tile plot grid, which had left every

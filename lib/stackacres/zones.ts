@@ -628,7 +628,12 @@ export function meadowDensityAt(tx: number, ty: number, cutAtMs: number | null, 
 
 /** How wide a swing of the scythe cuts, in world units, either side of the
  *  line the finger drew. A little over a tile, so a single straight drag
- *  leaves an unbroken swathe rather than a dotted line. */
+ *  leaves an unbroken swathe rather than a dotted line.
+ *
+ *  The BASE reach, and what a player holding the starting Trowel cuts. The
+ *  equipment ladder widens it -- see `scytheReachFor` in ./equipment.ts,
+ *  whose own starting rung is defined as exactly this value so that shipping
+ *  the ladder cannot nerf a player who buys nothing. */
 export const SCYTHE_REACH = 20;
 
 /**
@@ -644,8 +649,16 @@ export const SCYTHE_REACH = 20;
  * Returns tile coordinates, de-duplicated, in the order they were reached:
  * the scene animates the cut in that order so the swathe falls the way the
  * hand moved.
+ *
+ * `reach` defaults to the base swathe, so every existing caller and test is
+ * unchanged; the scene passes the reach of whatever tool the player is
+ * holding. It is only ever widened, never narrowed -- see ./equipment.ts.
  */
-export function mowStroke(from: WorldPoint, to: WorldPoint): { tx: number; ty: number }[] {
+export function mowStroke(
+  from: WorldPoint,
+  to: WorldPoint,
+  reach: number = SCYTHE_REACH,
+): { tx: number; ty: number }[] {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const length = Math.hypot(dx, dy);
@@ -660,10 +673,10 @@ export function mowStroke(from: WorldPoint, to: WorldPoint): { tx: number; ty: n
     const py = from.y + dy * t;
     // The reach is a square rather than a disc: it is a tile test, and the
     // difference between the two at this radius is under half a tile.
-    const reach = Math.ceil(SCYTHE_REACH / MEADOW_TILE);
+    const tileReach = Math.ceil(reach / MEADOW_TILE);
     const centre = meadowTileAt(px, py);
-    for (let oy = -reach; oy <= reach; oy += 1) {
-      for (let ox = -reach; ox <= reach; ox += 1) {
+    for (let oy = -tileReach; oy <= tileReach; oy += 1) {
+      for (let ox = -tileReach; ox <= tileReach; ox += 1) {
         const tx = centre.tx + ox;
         const ty = centre.ty + oy;
         if (meadowBaseDensity(tx, ty) === 0) continue;
@@ -673,7 +686,7 @@ export function mowStroke(from: WorldPoint, to: WorldPoint): { tx: number; ty: n
         // grass visibly is rather than where its cell happens to start.
         const cx = tx * MEADOW_TILE + MEADOW_TILE / 2;
         const cy = ty * MEADOW_TILE + MEADOW_TILE / 2;
-        if (Math.hypot(cx - px, cy - py) > SCYTHE_REACH) continue;
+        if (Math.hypot(cx - px, cy - py) > reach) continue;
         seen.add(key);
         out.push({ tx, ty });
       }

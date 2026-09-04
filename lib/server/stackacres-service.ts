@@ -58,6 +58,8 @@ import {
   adjustStackAcresCapacity,
   adjustStackAcresFeed,
   clearStackAcresMuck,
+  readStackAcresToolTier,
+  upgradeStackAcresToolTier,
   collectStackAcresUnit,
   countOccupiedStackAcresUnits,
   createStackAcresUnit,
@@ -86,6 +88,14 @@ import {
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import {
+  critGoldFor,
+  nextToolTier,
+  rollHarvestCrit,
+  stackacresToolTierDef,
+  toolUpgradePrice,
+  type StackAcresToolTier,
+} from "@/lib/stackacres/equipment";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -107,12 +117,22 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  *
  * THE GOLD PATHS, and the asymmetry that is the whole safety story:
  *
- *   * FIVE SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
+ *   * SIX SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
  *     buys stock outright, `stockStackAcres` buys a cycle's seed,
  *     `buyStackAcresFeed` buys a shipment, `clearStackAcresUnit` pays a muck
- *     fee. All sinks.
+ *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder. All
+ *     sinks.
  *   * ONE PAYS. `harvestStackAcres`, under the flat daily ceiling, net of
  *     Land Maintenance. Nothing else here may credit Gold.
+ *
+ * THE CRITICAL HARVEST does not break that count, and the way it avoids
+ * doing so is the point. The equipment ladder makes a sweep sometimes come up
+ * rich, and that bonus is Gold -- but it is paid BY `harvestStackAcres`, from
+ * inside the same reservation as the harvest carrying it, so it is bounded by
+ * the same flat daily ceiling and adds no second faucet. The reservation is
+ * taken optimistically (gross plus the most the held rung could add) and the
+ * unused part handed straight back, which is the pattern step 4 already uses
+ * for a unit that loses its race.
  *
  * Every refund goes through `refundGold` rather than calling
  * `creditGoldByProfile` directly, so that the credit function has exactly TWO
@@ -204,6 +224,9 @@ export interface StackAcresView {
   /** Today's Land Maintenance: what it is charged on, what is owed, and what
    *  the next harvest will be docked. */
   upkeep: StackAcresUpkeepState;
+  /** The equipment rung this player holds. Never null -- a player who has
+   *  bought nothing holds the free starting Trowel. */
+  tool: StackAcresToolTier;
 }
 
 function parseUnitId(value: unknown): string {
@@ -230,7 +253,7 @@ async function museumView(profileId: string): Promise<MuseumRegistry> {
 
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
   const day = stackacresExchangeDay(now);
-  const [rows, feed, capacity, exchanged, cleared, upkeepPaid, museum] = await Promise.all([
+  const [rows, feed, capacity, exchanged, cleared, upkeepPaid, museum, tool] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
@@ -238,6 +261,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
     museumView(profile.id),
+    readStackAcresToolTier(profile.id),
   ]);
 
   const units = toStackAcresUnitSnapshots(rows, now);
@@ -253,6 +277,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
     upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
+    tool,
   };
 }
 
@@ -546,6 +571,71 @@ export async function expandStackAcresCapacity(
   }
 
   return view(debited, now);
+}
+
+/**
+ * Buys the next rung of the equipment ladder, with Gold.
+ *
+ * A SINK, like every other Gold path in this file bar the exchange window --
+ * see the header. Nothing is refunded, nothing is sold back, and a rung once
+ * bought is a permanent fact about the account.
+ *
+ * Rule 1 throughout: the Gold is debited before the rung is written, and a
+ * write that loses its race refunds. The store's write is guarded on the rung
+ * the caller was last seen holding, which is what makes a double-tapped
+ * upgrade charge exactly once -- two racing requests both debit, exactly one
+ * matches, and the loser is refunded here.
+ *
+ * Takes no argument beyond the token on purpose. The client does not name the
+ * rung it wants: the ladder is walked one step at a time from whatever the
+ * SERVER says is currently held, so a stale or hand-edited request cannot
+ * skip a rung or re-buy one.
+ */
+export async function upgradeStackAcresTool(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { upgraded: { from: StackAcresToolTier; to: StackAcresToolTier } }> {
+  const profile = await ensureProfile(token);
+
+  const current = await readStackAcresToolTier(profile.id);
+  const next = nextToolTier(current);
+  const price = toolUpgradePrice(current);
+  if (!next || price === null) {
+    throw new StackAcresRequestError("You already hold the finest tool on the farm.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = await spendGoldByProfile(profile.id, price);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `A ${stackacresToolTierDef(next).label} costs ${price.toLocaleString()} Gold.`,
+      400,
+    );
+  }
+
+  let settled: StackAcresToolTier | null;
+  try {
+    settled = await upgradeStackAcresToolTier(profile.id, current, next);
+  } catch (error) {
+    // Through refundGold, never creditGoldByProfile directly: that is what
+    // keeps the credit function down to two call sites and lets the currency
+    // wall assert "there is one payout" rather than count refunds.
+    await refundGold(profile.id, price);
+    throw error;
+  }
+  if (!settled) {
+    // Lost the race against another tab buying the same rung. A lost race did
+    // not happen, so it must not be paid for.
+    await refundGold(profile.id, price);
+    throw new StackAcresRequestError("That was already bought.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return { ...(await view(debited, now)), upgraded: { from: current, to: settled } };
 }
 
 /**
@@ -962,8 +1052,12 @@ export interface StackAcresHarvestResult {
   bonus: number;
   /** Land Maintenance taken out of this harvest. */
   upkeep: number;
+  /** Gold a critical harvest added. Zero when the roll missed. Paid out of the
+   *  same reservation as the rest, so it is inside the daily ceiling. */
+  crit: number;
   /** What actually landed in the player's balance. Includes any Ray's Museum
-   *  discovery bonus below -- there is no separate figure for it. */
+   *  discovery bonus below, and any crit above -- there is no separate figure
+   *  for either. */
   gold: number;
   /** How many of the settled units came up weather-worn. */
   mucked: number;
@@ -1008,6 +1102,24 @@ export interface StackAcresHarvestResult {
  *   5. Ray's Museum: fold in any first-ever discovery bonus, reserved against
  *      the same ceiling and dropped (never queued) if there is no room left.
  *   6. Credit once, record the maintenance, write the ledger.
+ *
+ * THE CRITICAL HARVEST rides inside that order rather than beside it. It is
+ * rolled ONCE PER SWEEP, in step 3 alongside the muck roll and for the same
+ * reason -- after the guarded writes, so a refetch cannot re-roll it -- and it
+ * is paid out of the STEP-2 reservation, which is taken optimistically at the
+ * most the held rung could add. So a crit can never push a player past the
+ * daily ceiling, and the un-crit part of the reservation is handed back in
+ * step 4 exactly as an unsettled unit's is.
+ *
+ * It differs from the museum bonus in step 5 on purpose: a discovery is
+ * reserved separately and simply dropped when the day has no room, because it
+ * is a one-time event that would otherwise be lost forever. A crit is a
+ * multiplier on a harvest that is already being paid, so it rides that
+ * harvest's own reservation and is capped with it.
+ *
+ * A sweep-level roll (not a per-unit one) is also the only shape that matches
+ * this function: Bountiful Harvest is already a property of what was gathered
+ * together.
  */
 export async function harvestStackAcres(
   token: string,
@@ -1078,17 +1190,46 @@ export async function harvestStackAcres(
 
   const planned = settleHarvest(ready.map(candidateOf), upkeepDue);
 
+  // The rung is read here, but the crit is not rolled here -- see step 3. All
+  // this decides is how much headroom to reserve, since a crit paid out of an
+  // under-reservation would be silently clipped by step 4's cap.
+  const tool = await readStackAcresToolTier(profile.id);
+  const critCeiling = critGoldFor(planned.net, tool);
+
   // Step 2. A sweep whose whole value is eaten by maintenance reserves
   // nothing, and must not: the RPC raises on a non-positive amount on purpose,
   // and there is genuinely no Gold leaving the farm to account for.
   let reserved = 0;
-  if (planned.net > 0) {
-    const taken = await reserveStackAcresExchange(
+  // Optimistic: the sweep's net plus the most this rung's crit could add.
+  // Whatever the roll turns out to be, step 4 hands the remainder straight
+  // back, exactly as it does for a unit that lost its race.
+  //
+  // FALLING BACK TO THE BARE NET IS NOT AN OPTIMISATION, it is the difference
+  // between this being a bonus and being a penalty. Asking for the crit
+  // headroom and giving up when it does not fit would refuse a harvest the
+  // farm can perfectly well pay for -- a player with exactly one harvest's
+  // worth of allowance left would be told to come back tomorrow BECAUSE they
+  // own a better tool. So a refused optimistic reservation retries at the
+  // amount the harvest is actually worth, and that sweep simply cannot crit:
+  // step 4 caps the payout at what was reserved, and nothing was reserved for
+  // a crit. The ceiling is what bounds the day either way.
+  let wanted = planned.net > 0 ? planned.net + critCeiling : 0;
+  if (wanted > 0) {
+    let taken = await reserveStackAcresExchange(
       profile.id,
       day,
-      planned.net,
+      wanted,
       STACKACRES_GOLD_CEILING,
     );
+    if (taken === null && critCeiling > 0) {
+      wanted = planned.net;
+      taken = await reserveStackAcresExchange(
+        profile.id,
+        day,
+        wanted,
+        STACKACRES_GOLD_CEILING,
+      );
+    }
     if (taken === null) {
       // Hitting the ceiling is the feature working, not a fault, so it reads
       // as a closing time rather than an error -- and nothing was settled, so
@@ -1102,7 +1243,7 @@ export async function harvestStackAcres(
         { round: toStackAcresUnitSnapshots(rows, now) },
       );
     }
-    reserved = planned.net;
+    reserved = wanted;
   }
 
   // Step 3. Bought stock never mucks and never leaves: the animal stays and
@@ -1130,12 +1271,21 @@ export async function harvestStackAcres(
     });
   }
 
+  // Step 3b. The crit, rolled ONCE for the sweep and only now -- after the
+  // guarded writes, beside the muck roll, for the identical reason: anything
+  // reachable from a read can be re-rolled by pulling to refresh.
+  const critical = rollHarvestCrit(tool, Math.random);
+
   // Step 4. Re-price against what actually settled. Capped at what was
   // reserved: removing a unit can in principle change which synergy applies,
   // and the ceiling must hold whichever way that lands.
   const actual: HarvestSettlement =
     settled.length === ready.length ? planned : settleHarvest(settled.map(candidateOf), upkeepDue);
-  const produceGold = Math.min(actual.net, reserved);
+  // Valued off what actually settled, so a unit that lost its race pays no
+  // crit either. A missed roll releases the whole optimistic reservation on
+  // the next line, so the headroom is never held past this point.
+  const crit = critical ? critGoldFor(actual.net, tool) : 0;
+  const produceGold = Math.min(actual.net + crit, reserved);
   await releaseReservation(profile.id, day, reserved - produceGold);
 
   // Step 5. Ray's Museum: a first-ever donation is automatic, not a player
@@ -1238,12 +1388,14 @@ export async function harvestStackAcres(
       bounty: actual.bounty,
       bonus: actual.bonus,
       upkeep: actual.upkeepCharged,
+      crit,
       gold,
       mucked,
       discoveries,
     },
   };
 }
+
 
 /**
  * Hands back allowance a sweep reserved and then did not use. Best-effort by

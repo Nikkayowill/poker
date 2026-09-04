@@ -72,6 +72,14 @@ import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
+import {
+  STACKACRES_STARTING_TIER,
+  nextToolTier,
+  stackacresToolTierDef,
+  toStackAcresToolTier,
+  toolUpgradePrice,
+  type StackAcresToolTier,
+} from "@/lib/stackacres/equipment";
 import type { TapPoint } from "./stackacres-scene";
 
 /**
@@ -123,6 +131,9 @@ interface StackAcresResponse {
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
+  /** The equipment rung held. Absent only from a response old enough to
+   *  predate the ladder, which `toStackAcresToolTier` reads as the Trowel. */
+  tool?: StackAcresToolTier;
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   harvest?: {
     units: number;
@@ -131,12 +142,15 @@ interface StackAcresResponse {
     bounty: BountifulHarvest;
     bonus: number;
     upkeep: number;
+    /** Gold a critical harvest added, inside the same daily ceiling. */
+    crit: number;
     gold: number;
     mucked: number;
     /** Items donated to Ray's Museum for the very first time in this sweep,
      *  and what each paid -- already folded into `gold` above. */
     discoveries: { item: StackAcresItem; bonus: number }[];
   };
+  upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -155,7 +169,7 @@ type Action =
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
-  ;
+  | { action: "upgrade-tool" };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -263,7 +277,7 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
-
+  const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -483,6 +497,9 @@ export function StackAcresFarm() {
     if (data.museum) setMuseum(data.museum);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
+    // Through toStackAcresToolTier rather than a cast, for the same reason the
+    // store reads it that way: an unknown rung must degrade to a playable one.
+    if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -651,6 +668,17 @@ export function StackAcresFarm() {
                 : { text: `+${harvest.gold.toLocaleString()} Gold`, icon: "ico-gold" };
             world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
           }
+          // A critical harvest gets its own line rather than being folded
+          // into the payout float: the Gold total already moved, and a
+          // player who cannot see WHY it was bigger than usual has not
+          // really been told the ladder is working.
+          if (harvest.crit > 0) {
+            goldSound();
+            setLastCollect({
+              text: `Rich pickings! +${harvest.crit.toLocaleString()} Gold`,
+              nonce: Date.now(),
+            });
+          }
           if (harvest.mucked > 0) {
             setError(
               harvest.mucked === 1
@@ -672,6 +700,13 @@ export function StackAcresFarm() {
                   ? "Seeded"
                   : null;
         if (anchor && done) world.current?.floatAt(anchor, done, "gain");
+        if (body.action === "upgrade-tool" && data.upgraded) {
+          goldSound();
+          setLastCollect({
+            text: `${stackacresToolTierDef(data.upgraded.to).label} in hand`,
+            nonce: Date.now(),
+          });
+        }
       } catch {
         if (mounted.current) setError("Could not reach the farm. Check your connection.");
       } finally {
@@ -1066,6 +1101,7 @@ export function StackAcresFarm() {
             <StackAcresWorld
               units={liveUnits}
               tool={tool}
+              toolTier={toolTier}
               celebrate={celebrate}
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
@@ -1364,6 +1400,70 @@ export function StackAcresFarm() {
               ) : (
                 <>Today is paid up.</>
               )}
+            </p>
+
+            {/* Between feed and the exchange window on purpose. A tool is
+                bought with GOLD, like the exchange below it, but it is a
+                thing you own rather than money leaving the farm -- so it sits
+                on the near side of that line. */}
+            <StoreShelf icon="ico-scythe">Equipment</StoreShelf>
+            <div className="sa-tool-rack">
+              <img
+                src={stackacresToolTierDef(toolTier).sprite}
+                alt=""
+                className="sa-tool-art"
+                width={96}
+                height={96}
+              />
+              <div className="sa-tool-copy">
+                <h3>{stackacresToolTierDef(toolTier).label}</h3>
+                <p className="sa-stock-terms">{stackacresToolTierDef(toolTier).blurb}</p>
+              </div>
+            </div>
+            {(() => {
+              // The ladder is walked one rung at a time and the SERVER decides
+              // from what -- this only renders the next rung's price, so there
+              // is no list of rungs here to get out of step with the server's
+              // own idea of which one is next.
+              const next = nextToolTier(toolTier);
+              const price = toolUpgradePrice(toolTier);
+              if (!next || price === null) {
+                return (
+                  <p className="sa-sheet-note">
+                    You hold the finest tool on the farm. Nothing left to buy here.
+                  </p>
+                );
+              }
+              const def = stackacresToolTierDef(next);
+              // `unlimitedGold` makes spendGold a no-op server-side, so a
+              // profile carrying it can always afford this -- disabling the
+              // button on their balance would be the client refusing a
+              // purchase the server would have allowed.
+              const affordable =
+                (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+              return (
+                <div className="sa-stock-cards">
+                  <div className="sa-stock-card">
+                    <img src={def.sprite} alt="" className="sa-tool-art" width={72} height={72} />
+                    <h3>{def.label}</h3>
+                    <p className="sa-stock-terms">{def.blurb}</p>
+                    <p className="sa-stock-yield">{price.toLocaleString()} Gold</p>
+                    <button
+                      type="button"
+                      className="sa-cta"
+                      disabled={busy || !affordable}
+                      onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
+                    >
+                      {affordable ? "Buy" : "Not enough Gold"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            <p className="sa-sheet-note">
+              A better tool cuts a wider swathe through the Long Meadow, and makes a harvest more
+              likely to come up rich — a critical harvest pays Bushels straight into your hand on
+              top of the produce.
             </p>
 
             <StoreShelf icon="ico-feed">Feed</StoreShelf>

@@ -21,6 +21,15 @@ import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
 import { FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
+import { scytheReachFor, type StackAcresToolTier } from "@/lib/stackacres/equipment";
+import {
+  SPARKLE_MAX,
+  godRayAlpha,
+  sparkleAlpha,
+  sparkleField,
+  sparkleScale,
+  type Sparkle,
+} from "@/lib/stackacres/sunlight";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import {
   MEADOW_TILE,
@@ -79,7 +88,9 @@ import {
   GRASS_PX,
   PAINTERS,
   bakeArt,
+  bakeGodRays,
   bakeGrass,
+  bakeSparkle,
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
@@ -231,6 +242,10 @@ export interface StackAcresSceneCallbacks {
 
 export interface StackAcresSceneOptions {
   reducedMotion: boolean;
+  /** The equipment rung the player holds, which is what sets the scythe's
+   *  swathe. Mutable through `setToolTier` -- buying an upgrade must widen
+   *  the swathe without tearing the scene down and losing the mown map. */
+  toolTier: StackAcresToolTier;
   /**
    * The element the canvas is mounted into. Gestures are read off this rather
    * than off the window or the canvas, so the map only ever hears a press that
@@ -552,6 +567,20 @@ export class StackAcresScene extends Phaser.Scene {
   private grass: Phaser.GameObjects.TileSprite | null = null;
   /** The screen-pinned wash over everything: darker corners, warm sun corner. */
   private vignette: Phaser.GameObjects.Image | null = null;
+
+  /** The sunbeam layer: one screen-pinned sprite whose only per-frame work is
+   *  an alpha assignment. See `bakeGodRays` for why it is one baked texture
+   *  rather than a Graphics redraw. */
+  private godRays: Phaser.GameObjects.Image | null = null;
+
+  /** The ground-sparkle pool. Exactly SPARKLE_MAX sprites, allocated once in
+   *  `create` and recycled forever -- a frame never makes a game object, so
+   *  the effect costs the same in the last minute of a session as the first.
+   *  Empty under reduced motion: the pool is never built at all. */
+  private sparkleSprites: Phaser.GameObjects.Image[] = [];
+
+  /** The live flecks, one per pool slot, driven by lib/stackacres/sunlight.ts. */
+  private sparkles: Sparkle[] = [];
   /** The world's own hard edge, in the same projected screen space as
    *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
    *  every frame by `fitEdgeGuides()` to know how close the view is to it. */
@@ -731,6 +760,8 @@ export class StackAcresScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(1e9);
+
+    this.buildSunlight();
 
     // The "you've gone far enough" nudges -- same screen-pinned treatment as
     // the vignette, one above it (a higher depth) so they read against its
@@ -2209,6 +2240,19 @@ export class StackAcresScene extends Phaser.Scene {
     this.tool = tool;
   }
 
+  /**
+   * Which rung of the equipment ladder is held, which is what sets the
+   * swathe one scythe stroke cuts.
+   *
+   * A setter rather than a constructor-only option because buying an upgrade
+   * has to widen the swathe NOW: rebuilding the scene to pick it up would
+   * throw away `mown`, so the meadow the player just cleared would stand back
+   * up the instant they paid for a better tool.
+   */
+  setToolTier(tier: StackAcresToolTier): void {
+    this.options.toolTier = tier;
+  }
+
   /** Floats the held tool's own picture above a finger that just turned a
    *  press into a mow drag -- offset up so the thumb dragging it never
    *  covers the swathe it is cutting. */
@@ -2810,7 +2854,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.locked.has("meadow")) return;
     const wall = Date.now();
     let cut = false;
-    for (const tile of mowStroke(from, to)) {
+    for (const tile of mowStroke(from, to, scytheReachFor(this.options.toolTier))) {
       const key = meadowTileKey(tile.tx, tile.ty);
       const cutAt = this.mown.get(key) ?? null;
       if (meadowDensityAt(tile.tx, tile.ty, cutAt, wall) === 0) continue;
@@ -2894,6 +2938,97 @@ export class StackAcresScene extends Phaser.Scene {
    * object about its own centre -- so it is centred there and sized to the
    * view divided by the zoom.
    */
+  /**
+   * The sunny-day layers: shafts of light over everything, and gold flecks
+   * catching on the ground under them.
+   *
+   * Both are skipped entirely under reduced motion rather than built and held
+   * still. A static god-ray layer would be a permanent wash over the art for
+   * no gain, and a static sparkle field is fifteen dots sitting on the grass;
+   * neither is the quiet version of the effect, so the quiet version is none.
+   *
+   * The rays are pinned to the SCREEN and the sparkles to the WORLD, which is
+   * the whole reason they are two different things rather than one layer:
+   * light comes from the sky and does not slide when the camera pans, while a
+   * fleck is a glint on a specific piece of grass and has to stay on it.
+   */
+  private buildSunlight(): void {
+    if (this.options.reducedMotion) return;
+
+    // Under the vignette (1e9) so the corners still darken over it, and above
+    // every world object. ADD rather than NORMAL: sunlight adds light, and a
+    // normal-blended cream wash over dark art reads as haze.
+    this.godRays = this.add
+      .image(0, 0, bakeGodRays(this))
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1e9 - 1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0);
+
+    const sparkleKey = bakeSparkle(this);
+    for (let i = 0; i < SPARKLE_MAX; i += 1) {
+      this.sparkleSprites.push(
+        this.add
+          .image(0, 0, sparkleKey)
+          .setOrigin(0.5)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setVisible(false),
+      );
+    }
+  }
+
+  /**
+   * One frame of both sunlight layers.
+   *
+   * The sparkle field is spawned across the CAMERA'S CURRENT VIEW rather than
+   * across the world, which is what keeps fifteen flecks feeling like enough:
+   * spread over the whole farm they would be invisible, and the player only
+   * ever sees one screenful. It also means the budget is a budget on what is
+   * drawn, not on what exists.
+   */
+  private animateSunlight(time: number, delta: number): void {
+    const rays = this.godRays;
+    if (rays) {
+      const cam = this.cameras.main;
+      // Same zoom correction the vignette needs: a scrollFactor(0) object is
+      // still scaled about the camera's centre, so holding a constant
+      // apparent size means dividing the display size by zoom.
+      rays.setPosition(cam.width / 2, cam.height / 2);
+      rays.setDisplaySize(cam.width / cam.zoom + 2, cam.height / cam.zoom + 2);
+      // The ONE place the layer's opacity is set, and it is clamped inside
+      // godRayAlpha rather than here -- see lib/stackacres/sunlight.ts.
+      rays.setAlpha(godRayAlpha(time));
+    }
+
+    if (this.sparkleSprites.length === 0) return;
+    const view = this.cameras.main.worldView;
+    this.sparkles = sparkleField(
+      this.sparkles,
+      { x: view.x, y: view.y, width: view.width, height: view.height },
+      delta,
+      this.random,
+    );
+    for (let i = 0; i < this.sparkleSprites.length; i += 1) {
+      const sprite = this.sparkleSprites[i];
+      const sparkle = this.sparkles[i];
+      if (!sparkle) {
+        sprite.setVisible(false);
+        continue;
+      }
+      const size = sparkleScale(sparkle);
+      sprite.setVisible(true);
+      sprite.setPosition(sparkle.x, sparkle.y);
+      // Depth is the world y of a thing's feet everywhere in this scene, and a
+      // fleck of light lies ON the ground -- so it sorts at its own y and
+      // passes behind anything standing in front of it.
+      sprite.setDepth(sparkle.y);
+      sprite.setAlpha(sparkleAlpha(sparkle));
+      sprite.setDisplaySize(size, size);
+      sprite.setRotation(sparkle.spin + time / 2200);
+    }
+  }
+
   private fitVignette(): void {
     const vignette = this.vignette;
     if (!vignette) return;
@@ -2953,6 +3088,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.notifyViewMoved();
     if (this.options.reducedMotion) return;
 
+    this.animateSunlight(time, delta);
     this.animatePond(time);
     this.walkHerds(delta);
     this.regrowMeadow();

@@ -15,6 +15,7 @@ import {
   retireStackAcresStock,
   runStackAcresAction,
   stockStackAcres,
+  upgradeStackAcresTool,
   waterStackAcres,
   type StackAcresActionResult,
   type StackAcresView,
@@ -33,6 +34,7 @@ import {
   readStackAcresFeed,
   readStackAcresMuseum,
   readStackAcresSectors,
+  readStackAcresToolTier,
   readStackAcresUpkeep,
   recordStackAcresSectorCleared,
   reserveStackAcresExchange,
@@ -47,6 +49,12 @@ import {
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import {
+  STACKACRES_STARTING_TIER,
+  STACKACRES_TOOL_TIER_DEFS,
+  nextToolTier,
+  toolUpgradePrice,
+} from "@/lib/stackacres/equipment";
 import {
   STACKACRES_GOLD_CEILING,
   stackacresExchangeDay,
@@ -665,8 +673,9 @@ describe("harvesting", () => {
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
-    // Force the roll. It is the one piece of randomness in the feature and it
-    // lives behind Math.random in exactly one function.
+    // Force the roll. It is the one piece of randomness a free-rung farm has
+    // and it lives behind Math.random in exactly one function -- the equipment
+    // ladder's crit shares the source but cannot fire on the Trowel.
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     let result;
     try {
@@ -1345,6 +1354,182 @@ describe("the daily allowance", () => {
  * Spends are deliberately NOT pinned to a count. A new sink is a sink; the
  * direction is the invariant, not the arity.
  */
+describe("the equipment ladder", () => {
+  it("starts every farm on the free rung", async () => {
+    const { token } = await funded();
+    expect((await readStackAcres(token, T0)).tool).toBe(STACKACRES_STARTING_TIER);
+  });
+
+  it("walks one rung at a time and charges that rung's own price", async () => {
+    const { token, id } = await funded(1_000_000);
+    const price = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
+    const before = await balance(token);
+
+    const view = await upgradeStackAcresTool(token, T0);
+
+    expect(view.upgraded).toEqual({
+      from: STACKACRES_STARTING_TIER,
+      to: nextToolTier(STACKACRES_STARTING_TIER),
+    });
+    expect(await balance(token)).toBe(before - price);
+    expect(await readStackAcresToolTier(id)).toBe(nextToolTier(STACKACRES_STARTING_TIER));
+  });
+
+  it("is a pure sink -- buying a rung hands nothing back", async () => {
+    const { token } = await funded(1_000_000);
+    const price = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
+    const before = await balance(token);
+    await upgradeStackAcresTool(token, T0);
+    expect(await balance(token)).toBe(before - price);
+  });
+
+  it("refuses a rung the player cannot afford, and takes nothing", async () => {
+    const price = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
+    const { token, id } = await funded(price - 1);
+
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(price - 1);
+    expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
+  });
+
+  it("charges each rung once, and cannot be made to re-buy one", async () => {
+    // The double-tap case, and the reason the store's write is guarded on the
+    // rung last seen held. Sequential rather than raced -- the memory branch
+    // is single-threaded, so this asserts the guard, not the scheduler.
+    const { token, id } = await funded(1_000_000);
+    const first = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
+    const second = toolUpgradePrice(nextToolTier(STACKACRES_STARTING_TIER)!)!;
+    const before = await balance(token);
+
+    await upgradeStackAcresTool(token, T0);
+    await upgradeStackAcresTool(token, T0);
+
+    expect(await balance(token)).toBe(before - first - second);
+    expect(await readStackAcresToolTier(id)).toBe("golden-spade");
+  });
+
+  it("has nothing left to sell at the top of the ladder", async () => {
+    const { token } = await funded(5_000_000);
+    await upgradeStackAcresTool(token, T0);
+    await upgradeStackAcresTool(token, T0);
+    const before = await balance(token);
+
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("pays a critical harvest on top of what the sweep was worth", async () => {
+    // Forced to crit by pinning the roll, so this asserts the arithmetic
+    // rather than waiting on 25% odds. 0 also makes the muck roll fire, which
+    // is fine -- bought stock never mucks.
+    const { token } = await funded(5_000_000);
+    await upgradeStackAcresTool(token, T0);
+    await upgradeStackAcresTool(token, T0);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    const before = await balance(token);
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    let result;
+    try {
+      result = await collectOne(token, unitId, HEN_READY);
+    } finally {
+      roll.mockRestore();
+    }
+
+    expect(result.harvest.crit).toBeGreaterThan(0);
+    // The crit is inside the payout, not beside it: one credit, one number.
+    expect(await balance(token)).toBe(before + result.harvest.gold);
+    expect(result.harvest.gold).toBeGreaterThan(result.harvest.gross - result.harvest.upkeep);
+  });
+
+  it("pays no crit when the roll misses", async () => {
+    const { token } = await funded(5_000_000);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    let result;
+    try {
+      result = await collectOne(token, unitId, HEN_READY);
+    } finally {
+      roll.mockRestore();
+    }
+
+    expect(result.harvest.crit).toBe(0);
+  });
+
+  it("never crits on the free rung, however the dice fall", async () => {
+    // The load-bearing one: a player who buys nothing sees exactly the farm
+    // they had before this feature. Pinned at the luckiest possible roll, so
+    // this fails the moment the Trowel is given a non-zero chance.
+    const { token } = await funded(5_000_000);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const result = await collectOne(token, unitId, HEN_READY);
+      expect(result.harvest.crit).toBe(0);
+    } finally {
+      roll.mockRestore();
+    }
+  });
+
+  it("NEVER pays a crit past the daily ceiling", async () => {
+    // THE invariant the whole design turns on: the crit rides inside the
+    // harvest's own reservation, so a lucky sweep reaches the same wall as an
+    // unlucky one -- sooner, never further. Burn the day down to a sliver,
+    // then force a crit and check the payout is still bounded by what was
+    // left rather than by what the crit wanted.
+    const { token, id } = await funded(5_000_000);
+    await upgradeStackAcresTool(token, T0);
+    await upgradeStackAcresTool(token, T0);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    const room = 5;
+    await burnAllowance(id, STACKACRES_GOLD_CEILING - room, HEN_READY);
+    const before = await balance(token);
+
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      await expect(collectOne(token, unitId, HEN_READY)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    } finally {
+      roll.mockRestore();
+    }
+    // Refused while the crops were still standing: nothing paid, nothing lost.
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("hands back the crit headroom it reserved and did not use", async () => {
+    // The optimistic reservation must not quietly eat the day's allowance on
+    // a miss, or an unlucky player would hit the ceiling faster than a lucky
+    // one -- the exact opposite of the intent.
+    const { token, id } = await funded(5_000_000);
+    await upgradeStackAcresTool(token, T0);
+    await upgradeStackAcresTool(token, T0);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    let result;
+    try {
+      result = await collectOne(token, unitId, HEN_READY);
+    } finally {
+      roll.mockRestore();
+    }
+
+    expect(result.harvest.crit).toBe(0);
+    // Only what was actually paid may have come off today's allowance.
+    const spent = await readStackAcresExchanged(id, stackacresExchangeDay(HEN_READY));
+    expect(spent).toBe(result.harvest.gold);
+  });
+});
+
 describe("the currency wall", () => {
   const SERVICE = readFileSync(join(process.cwd(), "lib/server/stackacres-service.ts"), "utf8");
   const ROUTE = readFileSync(join(process.cwd(), "app/api/stackacres/actions/route.ts"), "utf8");
@@ -1391,13 +1576,16 @@ describe("the currency wall", () => {
       "feed",
       "retire",
       "stock",
+      "upgrade-tool",
       "water",
     ]);
 
     // The claim that actually matters, held separately from the list so it
     // cannot be lost in a rename: `collect` is the only action that pays a
     // player Gold. Everything else on that list either spends it or moves no
-    // money at all.
+    // money at all -- `upgrade-tool` included, which is a pure sink, and the
+    // critical harvest it buys is paid BY `collect` out of the same
+    // reservation rather than being a second payer.
     const paysGold = ["collect"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");

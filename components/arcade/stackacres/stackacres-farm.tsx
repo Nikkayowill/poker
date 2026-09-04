@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Coins, HelpCircle, LocateFixed, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
-import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -537,12 +536,12 @@ export function StackAcresFarm() {
             <p className="sa-hint sa-loading">Walking the fences…</p>
           )}
 
-          <div className="duel-scoreline ante-scoreline sa-scoreline">
-            <div className="ante-lobby-heading">
-              <h1 className="sr-only">StackAcres</h1>
-              <StackAcresLogo className="sa-heading-logo" aria-hidden="true" />
-            </div>
-          </div>
+          {/* The masthead pill (logo, and before that the pen/field counts) that
+              used to sit here is gone -- the signpost below is what a player
+              actually reads on this screen, and it now takes the band this
+              freed up. The page still needs its own heading for the a11y
+              tree, just with no visual footprint to reclaim the space for. */}
+          <h1 className="sr-only">StackAcres</h1>
 
           {lastCollect && (
             <p key={lastCollect.nonce} className="sa-toast" role="status">

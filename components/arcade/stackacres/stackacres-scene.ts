@@ -1240,11 +1240,10 @@ export class StackAcresScene extends Phaser.Scene {
    * (genuinely barnyard bedding), and tilled soil (with furrows) for the
    * Long Meadow's Crop Fields.
    *
-   * On top of the base fill, a scatter of small worn patches -- heaviest
-   * toward the middle of the area, where a district's animals actually
-   * spend their time -- breaks up what would otherwise be one flat-coloured
-   * diamond. Seeded by zone id so the wear pattern is fixed rather than
-   * reshuffling every render.
+   * There used to be a scatter of small worn patches over the base fill,
+   * meant to break up the flat colour -- Kayo's call, cut outright: at
+   * district scale the patches just read as a spatter of stray brown
+   * blotches over the field, not texture.
    *
    * `furrowed` is separate from `kind`, not implied by `kind === "soil"`:
    * the Cattle Pens use the same worked-dirt colour Ox Fields already paints
@@ -1268,31 +1267,6 @@ export class StackAcresScene extends Phaser.Scene {
     g.lineStyle(1, ramp.rim, 0.55);
     g.strokePath();
     if (furrowed) this.paintFurrows(g, area);
-    this.paintAreaWear(g, area, kind);
-  }
-
-  /** The worn-patch scatter `paintAreaGround` lays over its base fill --
-   *  ported from the old per-plot `paintPenGround`'s own wear texture,
-   *  spread across a whole district's area instead of one CELL and centred
-   *  rather than hotspot-anchored, since there is no single trough/gate
-   *  position left to anchor toward once a district holds several units. */
-  private paintAreaWear(g: Phaser.GameObjects.Graphics, area: WorldRect, kind: "straw" | "soil" | "muck"): void {
-    const random = seededRandom((area.x * 5039 + area.y * 131) | 0);
-    const wear = kind === "straw" ? rampHex("straw").rim : rampHex("muck").rim;
-    const dry = rampHex("straw").top;
-    const spots: [number, number][] = [];
-    const cx = area.width / 2;
-    const cy = area.height / 2;
-    for (let i = 0; i < 10; i += 1) {
-      spots.push([cx + (random() - 0.5) * area.width * 0.7, cy + (random() - 0.5) * area.height * 0.7]);
-    }
-    for (const [sx, sy] of spots) {
-      const p = isoProject(area.x + sx, area.y + sy);
-      const r = 4 + random() * 4;
-      const dryFleck = kind === "straw" && random() < 0.28;
-      g.fillStyle(dryFleck ? dry : wear, dryFleck ? 0.35 : 0.22);
-      g.fillEllipse(p.x, p.y, r * 2, r);
-    }
   }
 
   /** Furrow lines across a tilled grow area, drawn along the diamond's own

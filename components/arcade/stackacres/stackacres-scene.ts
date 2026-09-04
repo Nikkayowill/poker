@@ -1369,10 +1369,29 @@ export class StackAcresScene extends Phaser.Scene {
     this.nodes.set(unit.id, node);
   }
 
+  /**
+   * Cancels a live pop bounce.
+   *
+   * `stop()`, and NOT the `remove()` every other tween in this file is taken
+   * off with. `pop` is a TweenChain, and TweenChain OVERRIDES `remove` with a
+   * different meaning: on a plain Tween it is "take me off the manager", on a
+   * chain it is "take this CHILD tween off me". So the no-argument call ran
+   * `TweenChain.remove(undefined)` and threw on `undefined.setRemovedState()`,
+   * which reached the player as the whole page dying with "a client-side
+   * exception has occurred" -- every time a bounce was still running when its
+   * unit was tapped again or rebuilt, which is exactly what repeatedly tapping
+   * a ready unit to harvest it does. `stop` is on BaseTween, unshadowed: it
+   * flags the chain for removal, and a flagged chain writes to its targets no
+   * more and never fires `onComplete`.
+   */
+  private cancelPop(node: UnitNode): void {
+    node.pop?.stop();
+    node.pop = null;
+  }
+
   private destroyNode(node: UnitNode): void {
     for (const tween of node.tweens) tween.remove();
-    node.pop?.remove();
-    node.pop = null;
+    this.cancelPop(node);
     node.container.destroy(true);
   }
 
@@ -2315,8 +2334,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (!node) return;
     // A second tap mid-bounce restarts the bounce rather than stacking a
     // second one on the same scale.
-    node.pop?.remove();
-    node.pop = null;
+    this.cancelPop(node);
     node.container.setScale(1, 1);
     if (this.options.reducedMotion) return;
     node.pop = this.tweens.chain({
@@ -2327,9 +2345,10 @@ export class StackAcresScene extends Phaser.Scene {
         { scaleX: 1, scaleY: 1, duration: 150, ease: "Back.easeOut" },
       ],
       // A unit whose picture is rebuilt mid-bounce (a clock tick crossing a
-      // growth stage) leaves this chain pointed at a destroyed container;
-      // `destroyNode` removes it. Resting the scale here means a bounce that
-      // ran to the end never leaves a unit fractionally squashed.
+      // growth stage, or a harvest taking the unit away) leaves this chain
+      // pointed at a destroyed container; `destroyNode` cancels it through
+      // `cancelPop`. Resting the scale here means a bounce that ran to the
+      // end never leaves a unit fractionally squashed.
       onComplete: () => {
         node.container.setScale(1, 1);
         node.pop = null;

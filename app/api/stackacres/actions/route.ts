@@ -14,6 +14,7 @@ import {
   expandStackAcresCapacity,
   feedStackAcres,
   retireStackAcresStock,
+  runStackAcresAction,
   sellStackAcresProduce,
   stockStackAcres,
   toStackAcresErrorResponse,
@@ -59,6 +60,17 @@ export const runtime = "nodejs";
 const unitIdSchema = z.string().min(1);
 const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
 
+/**
+ * The client's own name for one intent, and the only thing that can tell a
+ * duplicated request from a second deliberate one. Optional: a client that
+ * sends none is served exactly as before (see `runStackAcresAction`), so a
+ * phone holding an older bundle keeps working across a deploy.
+ *
+ * Opaque, bounded, and never trusted as identity -- every lookup behind it is
+ * scoped to the caller's own profile as well.
+ */
+const intentKeySchema = z.string().min(8).max(100).optional();
+
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
   // Buying a district's wild ground outright. Gold, once, permanent.
@@ -92,6 +104,15 @@ const bodySchema = z.discriminatedUnion("action", [
     bushels: z.number().int().min(1).max(STACKACRES_MAX_EXCHANGE_BUSHELS),
   }),
 ]);
+
+/**
+ * The body as it arrives: an action, plus the optional intent key.
+ *
+ * Kept as an intersection rather than folded into all ten members so the
+ * discriminated union above stays exactly what `run` switches on -- the key is
+ * transport-level plumbing, not part of any action's own shape.
+ */
+const requestSchema = z.intersection(bodySchema, z.object({ key: intentKeySchema }));
 
 type StackAcresAction = z.infer<typeof bodySchema>;
 
@@ -146,7 +167,7 @@ export async function POST(request: NextRequest) {
   if (!token || !(await tokenHasStackAcresAccess(token))) return stackacresLocked();
 
   try {
-    const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+    const parsed = requestSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return withRequestSessionCookie(
         request,
@@ -167,7 +188,11 @@ export async function POST(request: NextRequest) {
     }
 
     const action = parsed.data;
-    const result = await run(token, action);
+    // At most once per intent. The key is the client's; `runStackAcresAction`
+    // decides whether this request is the one that gets to act.
+    const result = await runStackAcresAction(token, action.key ?? null, action.action, () =>
+      run(token, action),
+    );
     return withRequestSessionCookie(request, NextResponse.json(result), token);
   } catch (error) {
     return withRequestSessionCookie(request, toStackAcresErrorResponse(error), token);

@@ -147,6 +147,39 @@ type Action =
   | { action: "exchange"; bushels: number };
 
 /**
+ * What the player asked for, as one string. Two presses that mean the same
+ * thing share it; collecting two different hens does not.
+ *
+ * This is the identity both duplicate guards are keyed on -- the in-flight set
+ * that drops a second press, and the idempotency key held across a request
+ * whose answer never arrived.
+ */
+function intentOf(body: Action): string {
+  if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  if ("stock" in body) return `${body.action}:${body.stock}`;
+  if ("sector" in body) return `${body.action}:${body.sector}`;
+  if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
+  if ("itemId" in body) return `${body.action}:${body.itemId}`;
+  return body.action;
+}
+
+/**
+ * A fresh idempotency key.
+ *
+ * `crypto.randomUUID` is only defined in a secure context, which the deployed
+ * site always is and a phone pointed at a dev box over the LAN is not -- and a
+ * throw here would silently swallow the action rather than perform it. The
+ * fallback does not have to be a UUID, only unlikely to collide with this same
+ * player's other keys inside the server's own ten-minute window.
+ */
+function newIntentKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
  * A shelf in Ray's store, named and given the painted badge of what is on it.
  *
  * The three shelves shipped as three uppercase kickers with nothing to tell
@@ -370,6 +403,33 @@ export function StackAcresFarm() {
    * a frame behind the response that reads it.
    */
   const tapAnchor = useRef<TapPoint | null>(null);
+  /**
+   * The idempotency key for each action whose fate this browser does not know.
+   *
+   * Keyed by what the player asked for (`collect:<unitId>`, `stock:hen`), and
+   * held ONLY while an attempt at it ended without an answer -- a dropped
+   * connection, a request that never came back. That is the one case where
+   * pressing again is a retry rather than a second request, and reusing the
+   * key is what stops the retry buying a second animal when the first one
+   * actually landed.
+   *
+   * Cleared the moment the server answers at all, success or refusal, because
+   * from then on the player pressing again means it: two taps on Seed really
+   * are two Sprout Rows, and a key held across them would silently swallow
+   * the second.
+   */
+  const pendingKeys = useRef(new Map<string, string>());
+  /**
+   * Intents with a request already out for them.
+   *
+   * The one place every entry point funnels through, so a duplicate press is
+   * dropped whether it came from the map, the sidebar or the seed menu -- all
+   * three used to lean on the `busy` STATE, which only turns true a render
+   * after the request starts and so lets two presses in the same frame both
+   * through. Per intent rather than global: two presses at the same hen are
+   * one intent pressed twice, feeding one hen and collecting another are not.
+   */
+  const inFlight = useRef(new Set<string>());
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -456,28 +516,49 @@ export function StackAcresFarm() {
 
   const act = useCallback(
     async (body: Action) => {
+      // A second press at something already being asked about is a duplicate,
+      // not a second request. Dropped here rather than sent and deduplicated
+      // server-side: the cheapest duplicate is the one that never leaves.
+      const intent = intentOf(body);
+      if (inFlight.current.has(intent)) return;
+      inFlight.current.add(intent);
       sending.current = true;
       setBusy(true);
       if ("unitId" in body) setBusyUnitId(body.unitId);
       setError(null);
+      // A key held over from an attempt that never came back makes this press
+      // a retry of that one; otherwise it names a new intent.
+      const key = pendingKeys.current.get(intent) ?? newIntentKey();
+      pendingKeys.current.set(intent, key);
+      // Set the moment this browser knows what became of the request. While it
+      // is false the key survives, so the next press at the same thing is a
+      // retry; once it is true the key is dropped and the next press is a new
+      // intent. Deliberately NOT set merely because `fetch` resolved: a body
+      // that fails to parse leaves the outcome just as unknown as a dropped
+      // connection does.
+      let answered = false;
       try {
         const response = await fetch("/api/stackacres/actions", {
           method: "POST",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, key }),
         });
         if (response.status === 429) {
+          // Rejected before it reached the farm, so nothing was applied.
+          answered = true;
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
           if (mounted.current) setError(`Too many taps. Give it ${seconds}s.`);
           return;
         }
         if (response.status === 401) {
+          answered = true;
           window.location.reload();
           return;
         }
         const data = (await response.json()) as Partial<StackAcresResponse>;
+        answered = true;
         if (!mounted.current) return;
         if (!response.ok) {
           // A dull knock on wood, never a buzzer: most refusals here are "you
@@ -550,6 +631,8 @@ export function StackAcresFarm() {
       } catch {
         if (mounted.current) setError("Could not reach the farm. Check your connection.");
       } finally {
+        inFlight.current.delete(intent);
+        if (answered) pendingKeys.current.delete(intent);
         sending.current = false;
         // One request, one anchor. Leaving it set would float the NEXT
         // action's reward out of the last place a finger happened to be.
@@ -694,12 +777,19 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, action.reason, "deny");
         return;
       }
-      if (busy) return;
+      // `sending`, not the `busy` STATE beside it. `busy` only becomes true a
+      // render after the request starts, so two taps landing in the same frame
+      // both read it as false and both fire -- which is what mashing a ready
+      // unit does. The ref flips synchronously inside `act`, so the second tap
+      // never leaves the browser. The intent key behind it is the backstop for
+      // the duplicates this cannot see (a retry after a dropped connection,
+      // another tab).
+      if (sending.current) return;
       tapSound();
       tapAnchor.current = at;
       void act({ action: action.kind, unitId });
     },
-    [act, bushels, busy, feed, liveUnits, nowMs],
+    [act, bushels, feed, liveUnits, nowMs],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is

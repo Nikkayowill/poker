@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 // TEMPORARY -- see the mount at the bottom of this file.
 import { ViewportProbe } from "@/components/debug/viewport-probe";
+import { ViewportRuler } from "@/components/debug/viewport-ruler";
 import { AppShell } from "@/components/shell/app-shell";
 
 const TITLE = "StackChips - Play Free Texas Hold’em";
@@ -127,6 +128,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             resolved. Renders nothing; records the launch viewport timeline so
             /debug/safe-area can read it back after the fact. */}
         <ViewportProbe />
+        {/* TEMPORARY, AND IT PAINTS OVER THE APP -- remove with
+            components/debug/viewport-ruler.tsx the moment the bottom-chrome
+            bug is settled. Standalone only. Unlike ViewportProbe above, this
+            one is readable without navigating anywhere, which is the whole
+            reason the numbers have never been read off a real device in six
+            passes at this bug. */}
+        <ViewportRuler />
       </body>
     </html>
   );

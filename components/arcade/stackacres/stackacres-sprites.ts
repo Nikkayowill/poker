@@ -55,6 +55,20 @@ export const SPRITE_ART = {
   barn: "/stackacres/sprites/barn.png",
   windmill: "/stackacres/sprites/windmill.png",
   grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
+  // The farmhand, coming and going. Two renders of one character rather than
+  // one render and a flip: a mirror only ever reaches screen left and right,
+  // so walking toward the camera and walking away from it are two different
+  // pictures, not two flips of one.
+  //
+  // TORSOS, not whole men. These are the render cut off at the crotch, and
+  // the legs below are drawn by the scene as a two-bone rig so they actually
+  // walk (lib/stackacres/farmhand-walk.ts). A generated sprite is one frozen
+  // pose, a sheet of them would be a different man per frame, and a frozen
+  // pose with a bounce on it is worse than a still one -- it puts motion
+  // everywhere except the legs. So the half that does not deform in a walk
+  // stays as art and the half that does is rigged.
+  farmhand: "/stackacres/sprites/farmhand-torso.png",
+  farmhandBack: "/stackacres/sprites/farmhand-back-torso.png",
   tree1: "/stackacres/sprites/tree1.png",
   tree2: "/stackacres/sprites/tree2.png",
   tree3: "/stackacres/sprites/tree3.png",

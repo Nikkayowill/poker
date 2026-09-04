@@ -80,6 +80,25 @@ import {
   cropSpriteScale,
 } from "@/lib/stackacres/crop-visuals";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
+import {
+  FARMHAND_SPEED,
+  enqueueFarmhandTask,
+  farmhandStandoff,
+  farmhandWalking,
+  pruneFarmhandTasks,
+  spawnFarmhand,
+  stepFarmhand,
+  type Farmhand,
+  type FarmhandTask,
+} from "@/lib/stackacres/farmhand";
+import {
+  FARMHAND_BOOT,
+  FARMHAND_HIP_Y,
+  legJoints,
+  spawnWalk,
+  stepWalk,
+  type WalkPose,
+} from "@/lib/stackacres/farmhand-walk";
 import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
 import { SECTOR_FOG, sectorOvergrowth, type SectorId } from "@/lib/stackacres/sectors";
 import {
@@ -490,6 +509,52 @@ interface HerdSprite {
   gait: Gait;
 }
 
+/**
+ * The farmhand: one man, always present, and the only thing on this map drawn
+ * as a RIG rather than as a picture.
+ *
+ * `sprite` is his upper body and nothing else -- the generated art cut off at
+ * the crotch (see the painters in art-props.ts). `legs` is a Graphics redrawn
+ * every frame from the angles in lib/stackacres/farmhand-walk.ts, which is
+ * what makes him actually walk instead of sliding about as a frozen pose with
+ * a bounce on it. Six shapes a frame for one character is not worth caching.
+ *
+ * The container/sprite split is the same one `UnitNode` uses and for the same
+ * reason: `update` rewrites the sprite's scale every frame for the facing
+ * mirror, so anything scaling the SPRITE from outside that line is overwritten
+ * within a frame (the trap `popUnit` documents). Position and depth go on the
+ * container; the shadow is a fixed local child so it stays on the grass.
+ */
+interface FarmhandNode {
+  container: Phaser.GameObjects.Container;
+  /** Retextured in place when he turns toward or away from the camera: the
+   *  two painters are different pictures, not two flips of one. */
+  sprite: Phaser.GameObjects.Image;
+  /** Both legs, redrawn per frame. Added to the container BEFORE the torso so
+   *  the hip joint is covered by the overalls rather than by a visible cap. */
+  legs: Phaser.GameObjects.Graphics;
+  shadow: Phaser.GameObjects.Image;
+  /** Which of the two painters `sprite` is currently showing. */
+  art: PainterName;
+  state: Farmhand;
+  walk: WalkPose;
+}
+
+/**
+ * The denim and the leather, sampled off the generated art by
+ * `rig_farmhand.py` so a drawn leg is the render's own colour and the cut at
+ * the hip has no seam to see. One pair per view because the two renders are
+ * lit differently: the back's denim is a shade cooler.
+ *
+ * If the PNG ever fails to load, the drawn fallback torso uses `RAMPS.water`
+ * and these are a little off it -- an acceptable mismatch in the case where
+ * the art is missing entirely.
+ */
+const FARMHAND_LIMBS: Readonly<Record<string, { denim: number; boot: number }>> = {
+  farmhand: { denim: 0x436f8d, boot: 0x512a14 },
+  farmhandBack: { denim: 0x435e80, boot: 0x4c2912 },
+};
+
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
 interface PinchGesture {
   kind: "pinch";
@@ -621,6 +686,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  Driven by the same `stepCritter` the owned units use. */
   private herds: HerdSprite[] = [];
 
+  /** The farmhand, and the jobs waiting for him. Null until `create` has run.
+   *  `farmhandTask` is the one he has claimed, held out of the queue so a
+   *  prune cannot forget the unit he is walking to right now. */
+  private farmhand: FarmhandNode | null = null;
+  private farmhandQueue: readonly FarmhandTask[] = [];
+  private farmhandTask: FarmhandTask | null = null;
+
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
    *
@@ -741,6 +813,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintBarn();
     this.paintProps();
     this.spawnHerds();
+    this.spawnFarmhandNode();
     // Each district's own layer, which is either its farm (ground, fence,
     // grow area) or the wild growth standing where that farm is not built
     // yet. Rebuilt per district by `setSectors` when land is cleared.
@@ -887,6 +960,184 @@ export class StackAcresScene extends Phaser.Scene {
         this.herds.push({ sprite, shadow, art, state, gait: spawnGait(random() * Math.PI * 2) });
       }
     }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* The farmhand                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * The one man on the map, standing at his post from boot.
+   *
+   * Built like a `UnitNode` and not like a herd animal, for one reason: his
+   * sprite's scale is rewritten every frame by `walkFarmhand` for the facing
+   * mirror, so position, depth and the shadow have to live somewhere that line
+   * cannot reach. That is the container. The shadow is a fixed local child at
+   * world (0, 1), set once here and never moved, exactly as `buildUnit` does
+   * it -- which keeps it planted on the grass under him.
+   *
+   * Child order is load-bearing: shadow, then legs, then torso. The torso has
+   * to be painted OVER the tops of the legs so the hip joints disappear under
+   * the overalls instead of showing as two rotating stubs.
+   */
+  private spawnFarmhandNode(): void {
+    const state = spawnFarmhand();
+    const container = this.add.container(0, 0);
+    // The same pool Ray casts. He is the same build, and a second set of
+    // numbers here would be a second set of numbers to drift.
+    const pool = PROP_SHADOW.grandfatherRay;
+    const shadow = this.addLocal("shadow", 0, 1, container)
+      .setScale(pool.w / 33 / S, pool.h / 13 / S)
+      .setAlpha(0.8);
+    const legs = this.add.graphics();
+    container.add(legs);
+    const art: PainterName = "farmhand";
+    const sprite = this.addLocal(art, 0, 0, container);
+    // The painter's anchor is the hip midpoint (its x) on the cut line (its
+    // y), so this one offset is the whole placement: put the pelvis where the
+    // pelvis goes. Straight up the SCREEN, never through the projection -- a
+    // vertical offset has no ground-plane direction to be sheared along, same
+    // reasoning as `WINDMILL_HUB`.
+    sprite.setY(-FARMHAND_HIP_Y);
+    const screen = isoProject(state.x, state.y);
+    container.setPosition(screen.x, screen.y);
+    container.setDepth(this.depthAt(state.x, state.y));
+    this.farmhand = { container, sprite, legs, shadow, art, state, walk: spawnWalk() };
+  }
+
+  /**
+   * Both legs, from the hip down, for one frame.
+   *
+   * Drawn rather than tweened, and drawn from scratch each frame rather than
+   * rotated as pieces: two bones plus a boot is four strokes a leg, and a
+   * Graphics redraw of eight short capsules costs less than the bookkeeping
+   * of eight game objects whose rotations have to compose. `mirror` flips the
+   * whole rig in x so the legs turn with the torso above them, since the
+   * sprite's own mirror is a scale on the image and cannot reach a sibling.
+   */
+  private drawFarmhandLegs(node: FarmhandNode, mirror: 1 | -1): void {
+    const g = node.legs;
+    const limbs = FARMHAND_LIMBS[node.art] ?? FARMHAND_LIMBS.farmhand;
+    const hipY = -(FARMHAND_HIP_Y + node.walk.rise);
+    g.clear();
+
+    // Far leg first and a shade darker, so the near one reads as nearer -- the
+    // same trick the painters use for the far arm.
+    for (const i of [1, 0] as const) {
+      const far = i === 1;
+      const hipX = mirror * (far ? -1.25 : 1.25);
+      const leg = legJoints(hipX, mirror * node.walk.hips[i], node.walk.knees[i]);
+      const denim = far ? Phaser.Display.Color.ValueToColor(limbs.denim).darken(14).color : limbs.denim;
+      const boot = far ? Phaser.Display.Color.ValueToColor(limbs.boot).darken(14).color : limbs.boot;
+
+      g.lineStyle(4.1, denim, 1);
+      g.beginPath();
+      g.moveTo(leg.hip.x, hipY + leg.hip.y);
+      g.lineTo(leg.knee.x, hipY + leg.knee.y);
+      g.strokePath();
+
+      g.lineStyle(3.5, denim, 1);
+      g.beginPath();
+      g.moveTo(leg.knee.x, hipY + leg.knee.y);
+      g.lineTo(leg.ankle.x, hipY + leg.ankle.y);
+      g.strokePath();
+
+      // The boot: down the shin's own line to the sole, then a toe stub in the
+      // direction he is facing, which is what stops a bare stroke end reading
+      // as an amputation at this size.
+      const sole = {
+        x: leg.ankle.x + leg.toe.x * FARMHAND_BOOT,
+        y: hipY + leg.ankle.y + leg.toe.y * FARMHAND_BOOT,
+      };
+      g.lineStyle(4.2, boot, 1);
+      g.beginPath();
+      g.moveTo(leg.ankle.x, hipY + leg.ankle.y);
+      g.lineTo(sole.x, sole.y);
+      g.strokePath();
+      g.fillStyle(boot, 1);
+      g.fillCircle(sole.x + mirror * 1.25, sole.y, 2.05);
+    }
+  }
+
+  /**
+   * Send the farmhand to a unit, if he is the right man for it.
+   *
+   * Called on a tap that was ACCEPTED, after the request has already left the
+   * browser -- see `onWorldUnitTap` in stackacres-farm.tsx. He is decoration
+   * on a write that has already happened, so everything here is allowed to
+   * refuse silently: a full queue, a unit in another district, a unit that
+   * has since gone. None of those can cost the player anything.
+   *
+   * FARMSTEAD ONLY. The four districts are hundreds of units apart, so a job
+   * out at Ox Fields or the Wallow would be most of a minute of watching a
+   * man cross a field -- and the camera is usually not even pointed at him
+   * while he does it.
+   */
+  sendFarmhand(unitId: string): void {
+    const node = this.nodes.get(unitId);
+    if (!node || stockZone(node.unit.stock) !== "farmstead") return;
+    // Already on it, or already holding it: `enqueueFarmhandTask` dedupes the
+    // queue, and this covers the one it cannot see.
+    if (this.farmhandTask?.unitId === unitId) return;
+    const at = farmhandStandoff(this.unitWorldSpot(node));
+    this.farmhandQueue = enqueueFarmhandTask(this.farmhandQueue, { unitId, x: at.x, y: at.y });
+  }
+
+  /** A job's target, re-read this frame: livestock keeps wandering while he
+   *  crosses the yard, so he chases where the hen IS rather than where it was
+   *  standing when the finger landed. Null once the unit has gone. */
+  private freshenFarmhandTask(task: FarmhandTask): FarmhandTask | null {
+    const node = this.nodes.get(task.unitId);
+    if (!node) return null;
+    const at = farmhandStandoff(this.unitWorldSpot(node));
+    return { unitId: task.unitId, x: at.x, y: at.y };
+  }
+
+  /** One frame of the farmhand's day. Stepped from `update` alongside the
+   *  herds, which puts it inside the reduced-motion gate: with motion off he
+   *  simply stands at his post. */
+  private walkFarmhand(delta: number): void {
+    const node = this.farmhand;
+    if (!node) return;
+
+    // Jobs whose unit has gone -- collected, cleared, or refetched away.
+    this.farmhandQueue = pruneFarmhandTasks(this.farmhandQueue, (id) => this.nodes.has(id));
+    const claimed = this.farmhandTask ? this.freshenFarmhandTask(this.farmhandTask) : null;
+    if (this.farmhandTask && !claimed) this.farmhandTask = null;
+
+    const head = this.farmhandQueue[0];
+    const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
+    const step = stepFarmhand(node.state, next, delta);
+    if (step.claimed) {
+      this.farmhandTask = head ?? null;
+      this.farmhandQueue = this.farmhandQueue.slice(1);
+    }
+    if (step.finished) this.farmhandTask = null;
+    node.state = step.hand;
+
+    const walking = farmhandWalking(node.state);
+    node.walk = stepWalk(node.walk, walking, FARMHAND_SPEED, delta);
+
+    // Toward the camera or away from it is a different PICTURE, not a flip:
+    // see the pair of painters in art-props.ts.
+    const art: PainterName = node.state.towards === 1 ? "farmhand" : "farmhandBack";
+    if (art !== node.art) {
+      const p = PAINTERS[art];
+      node.sprite.setTexture(art, ART_FRAME).setOrigin(p.ax, p.ay);
+      node.art = art;
+    }
+
+    const at = isoProject(node.state.x, node.state.y);
+    node.container.setPosition(at.x, at.y);
+    node.container.setDepth(this.depthAt(node.state.x, node.state.y));
+    const mirror = mirrorFor(art, node.state.facing);
+    node.sprite.setScale(mirror / S, 1 / S);
+    // The torso rides the hips, so the walk's own rise lifts it -- and the
+    // legs are solved from the same point, which is what keeps the stance
+    // foot on the grass while it happens. Straight up the SCREEN, never
+    // through the projection (see `spawnFarmhandNode`).
+    node.sprite.setY(-(FARMHAND_HIP_Y + node.walk.rise));
+    this.drawFarmhandLegs(node, mirror);
   }
 
   /**
@@ -3143,6 +3394,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.animateSunlight(time, delta);
     this.animatePond(time);
     this.walkHerds(delta);
+    this.walkFarmhand(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
 

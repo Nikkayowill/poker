@@ -745,14 +745,39 @@ export function StackAcresFarm() {
    * broken however fast it eventually answers. A press that turns out to be
    * refused gets the wooden knock on top of it, from `act`.
    */
+  /**
+   * The farmhand answers a sidebar press the same way he answers a tap on the
+   * map: he walks over and plays the job out. Every one of these has already
+   * sent its request by the time he takes a step, so this is decoration and
+   * nothing more -- see lib/stackacres/farmhand.ts.
+   *
+   * `retire` deliberately does not send him. It refunds nothing and is two
+   * deliberate presses behind a confirmation for that reason; sending a man
+   * out to do it cheerfully is the wrong note.
+   */
+  /**
+   * Send the farmhand over to a unit that has just been acted on. Decoration
+   * on a request that has already left the browser -- see
+   * lib/stackacres/farmhand.ts.
+   *
+   * NOT for clearing. `tendLocally` drops a mucked unit from the list under
+   * the same press, so by the time he has taken a step there is nothing
+   * standing there to walk to and he turns straight back round; setting off
+   * and immediately giving up looks worse than never setting off.
+   */
+  const sendFarmhand = useCallback((unitId: string) => {
+    world.current?.sendFarmhand(unitId);
+  }, []);
+
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       // The collection itself is announced when it lands (in `act`), where
       // the produce is actually known -- this is only the press.
       tapSound();
+      sendFarmhand(unit.id);
       void act({ action: "collect", unitIds: [unit.id] });
     },
-    [act],
+    [act, sendFarmhand],
   );
   /**
    * Bring in everything that is ready, in one act. This is the only control
@@ -792,17 +817,19 @@ export function StackAcresFarm() {
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
       tendLocally(unit.id, "feed");
+      sendFarmhand(unit.id);
       void act({ action: "feed", unitId: unit.id });
     },
-    [act, tendLocally],
+    [act, sendFarmhand, tendLocally],
   );
   const onWater = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       waterSound();
       tendLocally(unit.id, "water");
+      sendFarmhand(unit.id);
       void act({ action: "water", unitId: unit.id });
     },
-    [act, tendLocally],
+    [act, sendFarmhand, tendLocally],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -907,6 +934,9 @@ export function StackAcresFarm() {
       if (sending.current) return;
       tapSound();
       tapAnchor.current = at;
+      // Only for a tap that actually became a request: he answers the write,
+      // not the finger. Clearing is excluded -- see `sendFarmhand`.
+      if (action.kind !== "clear") sendFarmhand(unitId);
       if (action.kind === "feed" || action.kind === "water" || action.kind === "clear") {
         tendLocally(unitId, action.kind);
       }
@@ -919,7 +949,7 @@ export function StackAcresFarm() {
           : { action: action.kind, unitId },
       );
     },
-    [act, feed, gold, liveUnits, nowMs, tendLocally],
+    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is

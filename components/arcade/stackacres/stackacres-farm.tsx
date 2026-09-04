@@ -54,7 +54,11 @@ import {
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
 import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
-import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
+import {
+  optimisticallyFedUnit,
+  optimisticallyWateredUnit,
+  type StackAcresUnitSnapshot,
+} from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
@@ -760,26 +764,53 @@ export function StackAcresFarm() {
     void act({ action: "collect" });
   }, [act]);
 
+  /**
+   * Tends a unit in the LOCAL list the instant a feed/water/clear is sent,
+   * ahead of the network entirely -- a hungry hen goes back to work, a dry
+   * row starts growing again, a mucked plot is simply gone, all under the
+   * same press that asked for it. `optimisticallyFedUnit`/
+   * `optimisticallyWateredUnit` predict the row the same way the server's own
+   * feedStackAcres/waterStackAcres compute it; `withLocalClock` then reads
+   * `working` straight off the timestamps they write with no further help.
+   *
+   * A guess, not a promise: `act`'s own refusal handling already repaints
+   * `units` from the server's `round` the moment it disagrees, which corrects
+   * this the same way it always corrected a stale local clock.
+   */
+  const tendLocally = useCallback((unitId: string, kind: "feed" | "water" | "clear") => {
+    const at = Date.now();
+    setUnits((prev) => {
+      if (kind === "clear") return prev.filter((u) => u.id !== unitId);
+      return prev.map((u) => {
+        if (u.id !== unitId) return u;
+        return kind === "feed" ? optimisticallyFedUnit(u, at) : optimisticallyWateredUnit(u, at);
+      });
+    });
+  }, []);
+
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
+      tendLocally(unit.id, "feed");
       void act({ action: "feed", unitId: unit.id });
     },
-    [act],
+    [act, tendLocally],
   );
   const onWater = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       waterSound();
+      tendLocally(unit.id, "water");
       void act({ action: "water", unitId: unit.id });
     },
-    [act],
+    [act, tendLocally],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       muckSound();
+      tendLocally(unit.id, "clear");
       void act({ action: "clear", unitId: unit.id });
     },
-    [act],
+    [act, tendLocally],
   );
   const onArmRetire = useCallback((unit: StackAcresUnitSnapshot) => {
     tapSound();
@@ -876,6 +907,9 @@ export function StackAcresFarm() {
       if (sending.current) return;
       tapSound();
       tapAnchor.current = at;
+      if (action.kind === "feed" || action.kind === "water" || action.kind === "clear") {
+        tendLocally(unitId, action.kind);
+      }
       // A tap is a one-unit sweep. It earns no synergy by construction --
       // three is the fewest a Bountiful Harvest considers -- which is exactly
       // what the Harvest key beside it is for.
@@ -885,7 +919,7 @@ export function StackAcresFarm() {
           : { action: action.kind, unitId },
       );
     },
-    [act, feed, gold, liveUnits, nowMs],
+    [act, feed, gold, liveUnits, nowMs, tendLocally],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -1045,7 +1079,13 @@ export function StackAcresFarm() {
     return <StackAcresPlayScreen onStart={() => setHasStarted(true)} />;
   }
 
-  const hint = busy ? "Working…" : toolHint;
+  // Was `busy ? "Working…" : toolHint` -- feed/water/clear/collect all pop
+  // and tend the unit LOCALLY the instant a finger lands (see `tendLocally`
+  // above and `popUnit` in stackacres-world.tsx), so a caption that says the
+  // farm is still thinking about a tap it already answered would be a lie.
+  // `busy` still guards the buttons below it against a double financial
+  // spend; it just no longer has anything to say about it here.
+  const hint = toolHint;
   const district = STACKACRES_ZONES[place];
   const placeLocked = !isSectorUnlocked(place, sectors);
 

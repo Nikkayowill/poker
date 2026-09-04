@@ -280,3 +280,57 @@ export function toStackAcresUnitSnapshots(
     };
   });
 }
+
+/**
+ * The row this browser expects once a feed it just sent actually lands,
+ * computed the same way `feedStackAcres` computes it server-side (see
+ * lib/server/stackacres-service.ts): `readyAt` moves forward by however long
+ * the animal was starving, and the feed window restarts from `nowMs`. The
+ * caller applies this to its own unit list the instant the tap is sent, so a
+ * fed hen goes back to work under the same finger that touched it rather than
+ * a network round trip later -- withLocalClock-style local derivation then
+ * reads `working` straight off these timestamps with no further help.
+ *
+ * Only ever called on a unit already `hungry` (`unitRowAction` never offers
+ * `feed` otherwise), so `hungryAt` is guaranteed set; the `NaN` fallbacks
+ * below only guard a malformed timestamp, not that case.
+ *
+ * A guess, not a promise: the real response, or a refusal's own `round`,
+ * always overwrites whatever this predicted.
+ */
+export function optimisticallyFedUnit(
+  unit: StackAcresUnitSnapshot,
+  nowMs: number,
+): StackAcresUnitSnapshot {
+  const hungrySince = unit.hungryAt ? Date.parse(unit.hungryAt) : NaN;
+  const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, nowMs - hungrySince) : 0;
+  const readyAt = Date.parse(unit.readyAt);
+  const pushed = (Number.isFinite(readyAt) ? readyAt : nowMs) + starvedMs;
+  const hungerMs = STACKACRES_CATALOGUE[unit.stock].hungerMs;
+  return {
+    ...unit,
+    readyAt: new Date(pushed).toISOString(),
+    hungryAt: hungerMs === null ? null : new Date(nowMs + hungerMs).toISOString(),
+  };
+}
+
+/**
+ * `optimisticallyFedUnit`'s mirror on the crop track -- see `waterStackAcres`.
+ * Only ever called on a unit already `dry` (`unitRowAction` never offers
+ * `water` otherwise), so `thirstyAt` is guaranteed set.
+ */
+export function optimisticallyWateredUnit(
+  unit: StackAcresUnitSnapshot,
+  nowMs: number,
+): StackAcresUnitSnapshot {
+  const driedAt = unit.thirstyAt ? Date.parse(unit.thirstyAt) : NaN;
+  const dryMs = Number.isFinite(driedAt) ? Math.max(0, nowMs - driedAt) : 0;
+  const readyAt = Date.parse(unit.readyAt);
+  const pushed = (Number.isFinite(readyAt) ? readyAt : nowMs) + dryMs;
+  const thirstMs = STACKACRES_CATALOGUE[unit.stock].thirstMs;
+  return {
+    ...unit,
+    readyAt: new Date(pushed).toISOString(),
+    thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
+  };
+}

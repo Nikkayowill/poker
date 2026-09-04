@@ -24,10 +24,11 @@
  * genuinely different renders now rather than three ramps, BECAUSE a PNG
  * cannot be recoloured -- the variety had to move into the art itself.
  *
- * `grassTile` is in here but is not one of these: it is not a painter, has no
- * box or anchor, and is never wrapped by `spriteBacked`. It rides this module
- * only because this list is what the scene's `preload` walks, and `bakeGrass`
- * wants it in hand before it bakes the lawn rather than a frame later.
+ * `grassTile` and `soilTile` are in here but are not one of these: neither is
+ * a painter, has no box or anchor, and neither is ever wrapped by
+ * `spriteBacked`. They ride this module only because this list is what the
+ * scene's `preload` walks, and `bakeGrass`/`paintAreaGround` want them in
+ * hand before drawing rather than a frame later.
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
  * carry gradients where the rest of the farm is flat, and they cannot be
@@ -64,15 +65,21 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
+  // Same deal as `grassTile`, for the Long Meadow's Crop Fields: a repeating
+  // tilled-furrow texture masked to the district's own diamond in
+  // `paintAreaGround`, replacing that fill's flat colour + drawn furrow
+  // lines when it has loaded (falls back to the old flat fill otherwise).
+  soilTile: "/stackacres/sprites/soil-tile.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
 
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the ground tile -- `grassTile` has no painter behind it (the lawn is
- *  a texture, not a thing with a box and an anchor), so it is the one name
- *  here that `spriteBacked` and `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile">;
+ *  except the two ground tiles -- `grassTile`/`soilTile` have no painter
+ *  behind them (a ground tile is a texture, not a thing with a box and an
+ *  anchor), so they are the names here that `spriteBacked` and
+ *  `bakeSpriteTexture` must never be handed. */
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

@@ -94,7 +94,7 @@
 /* The header row used to be a flex sibling above .sa-main, taking a real row
    of its own out of the map -- the back link, "How to play", Bushels and
    Gold sat in a band the game could never draw under. It is chrome pinned
-   over the canvas now, the same overlay treatment as .sa-scoreline and
+   over the canvas now, the same overlay treatment as .sa-destinations and
    .sa-controls below: .sa-main goes back to being the shell's only flex
    child and stretches to fill the space this bar used to reserve. The scrim
    is what keeps light text readable now that grass, not --brand-room, is
@@ -183,32 +183,6 @@
   pointer-events: none;
 }
 
-/* ---- the title pill -------------------------------------------------- */
-
-/* The heading sits over the map's top-left corner rather than in a band
-   above it: on a phone that band was a fifth of the height the map now has. */
-.sa-scoreline {
-  position: absolute;
-  top: calc(var(--sa-header-h) + 8px);
-  left: 8px;
-  width: auto;
-  align-items: baseline;
-  gap: 10px;
-  margin: 0;
-  padding: 5px 12px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--brand-ink) 78%, transparent);
-  backdrop-filter: blur(6px);
-  pointer-events: none;
-}
-
-.sa-scoreline .ante-lobby-heading h1 { font-size: 16px; }
-
-/* The heading's real name is the logo (components/brand/stackacres-logo.tsx);
-   the <h1> beside it is sr-only, kept for the a11y tree only. This has room
-   to be the widest the mark ships anywhere -- it's the game's own masthead,
-   not a tile competing with a chevron and a blurb. */
-.sa-heading-logo { width: 210px; height: auto; }
 /* ---- the toolbelt ---------------------------------------------------- */
 
 /* Pinned to the top of the right edge, where a thumb wrapped around a phone
@@ -322,37 +296,42 @@
 .sa-camera-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
 /* ---- the signpost ---------------------------------------------------- */
-/* Under the masthead, top-left. Bottom-left was the first choice and it was
-   wrong: `.sa-tool-hint` is centred on the bottom edge and long enough at
-   most tool hints to run straight through the rail, so the last entry sat
-   behind the hint text. Nothing else claims the band under the scoreline,
-   and a signpost beside the name of the place reads better than one tucked
-   at the floor anyway.
+/* Top-left, right under the header -- where the masthead pill (logo +
+   pen/field counts) used to sit. That pill didn't earn its keep -- a player
+   already knows what game this is, and an empty pen is visible on the map
+   itself -- so the rail moved up into the space it left rather than leaving
+   the band empty. Bottom-left was tried first and was wrong: `.sa-tool-hint`
+   is centred on the bottom edge and long enough at most tool hints to run
+   straight through the rail, so the last entry sat behind the hint text.
 
-   Horizontal, ordered outward from the farm, so it scans as a road rather
-   than a menu -- four districts, then Ray's own entry (the old header Store
-   button, folded in here). The detail card is a popover that may be hung
-   over this corner -- it has its own elevation and is meant to sit on top,
-   so the rail deliberately does not fight it for the space. */
+   Wraps rather than scrolls: this is the one piece of chrome that exists
+   purely to answer "where else?", and an entry hidden past a scroll fold
+   fails at that job -- every district plus Ray has to be on screen at once.
+   Ordered outward from the farm (still left-to-right, top-to-bottom if it
+   wraps), so it reads as a road rather than a menu -- four districts, then
+   Ray's own entry (the old header Store button, folded in here). The detail
+   card is a popover that may be hung over this corner -- it has its own
+   elevation and is meant to sit on top, so the rail deliberately does not
+   fight it for the space. */
 
 .sa-destinations {
   position: absolute;
   left: 8px;
-  top: calc(var(--sa-header-h) + 52px);
+  top: calc(var(--sa-header-h) + 8px);
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  /* Stops short of the seed strip and the toolbelt down the right. */
-  max-width: calc(100% - 300px);
+  /* Stops short of the toolbelt dock up the right (see .sa-controls) --
+     that's the only thing sharing this band now that the toolbelt is one
+     narrow Look/Scythe column instead of a tool column plus a seed strip.
+     .sa-district-panel also anchors right, but starts ~130px lower, well
+     under where this rail sits. */
+  max-width: calc(100% - 110px);
   padding: 4px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--brand-ink-lift) 90%, transparent);
   box-shadow: var(--elevation-2);
-  overflow-x: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
 }
-
-.sa-destinations::-webkit-scrollbar { display: none; }
 
 .sa-dest {
   display: inline-flex;
@@ -1102,9 +1081,13 @@
   text-align: center;
 }
 
-/* The gate card is centered text (see .sa-gate-card above); the logo is a
-   grid item with a fixed width, so it needs its own centering rather than
-   inheriting text-align. */
+/* The real logo (components/brand/stackacres-logo.tsx). Used to be shared
+   with the live farm's own masthead too; that pill is gone now (the
+   signpost took its place, see .sa-destinations), so this is the gate
+   screen's own rule. The gate card is centered text (see .sa-gate-card
+   above); the logo is a grid item with a fixed width, so it needs its own
+   centering rather than inheriting text-align. */
+.sa-heading-logo { width: 210px; height: auto; }
 .sa-gate-card .sa-heading-logo { margin: 0 auto; }
 
 .sa-gate-icon {
@@ -1403,9 +1386,6 @@
   }
   .sa-shell .ante-lobby-heading h1 { font-size: 16px; }
   .sa-shell .sa-heading-logo { width: 150px; }
-
-  .sa-scoreline { padding: 3px 10px; }
-  .sa-scoreline .ante-lobby-heading h1 { font-size: 14px; }
 
   .sa-tool { width: 56px; min-height: 42px; }
   .sa-tool .sa-ico { width: 20px; height: 20px; }

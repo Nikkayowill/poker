@@ -1181,17 +1181,26 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * A district's own grow-area floor and (livestock only) its fence,
    * painted ONCE at boot -- see the "Units" section's own note on why there
-   * is no more per-plot fence-merge. Crops (the Long Meadow) get tilled soil
-   * and no rails, the same as an old field-zoned plot never had a pen fence
-   * either; every livestock district gets a straw bed and a full boundary,
+   * is no more per-plot fence-merge. Crops (the Long Meadow) get tilled,
+   * furrowed soil and no rails, the same as an old field-zoned plot never
+   * had a pen fence either; every livestock district gets a full boundary,
    * traced unconditionally on all four sides since a whole-area boundary has
-   * no interior seam left to merge away the way four separate 2x2 plots did.
+   * no interior seam left to merge away the way four separate 2x2 plots did
+   * -- its ground material follows which animal actually lives there
+   * (churned dirt for Cattle, trodden mud for Sheep, straw for Hens), the
+   * same distinction the plot-grid era's `paintPenGround` drew.
    */
   private paintDistrictBoundary(zone: ZoneId): void {
     const area = growAreaBounds(zone);
-    const fenced = stocksInZone(zone).some((stock) => isLivestock(stock));
-    this.paintAreaGround(area, fenced ? "straw" : "soil");
-    if (!fenced) return;
+    const livestock = stocksInZone(zone).find((stock) => isLivestock(stock));
+    if (!livestock) {
+      // No livestock kind here at all -- the Long Meadow's Crop Fields,
+      // tilled and furrowed, no fence.
+      this.paintAreaGround(area, "soil", true);
+      return;
+    }
+    const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
+    this.paintAreaGround(area, ground);
 
     // Every rail gets its own true world position and the ordinary
     // `put()` depth (feet-based), so a wandering animal sorts correctly
@@ -1215,15 +1224,36 @@ export class StackAcresScene extends Phaser.Scene {
 
   /**
    * A district's grow-area floor, as one diamond fill rather than the flat
-   * baked rectangle painters (`straw`/`soil`) those colours come from --
-   * see `paintZoneGround`'s own note on why a district-sized flat texture on
-   * a diamond grid reads as a bug. Drawn far below everything else
-   * (`GROW_AREA_GROUND_DEPTH`, the same always-behind-everything scheme
-   * `ZONE_GROUND_DEPTH` uses) rather than at the area's own varying
+   * baked rectangle painters (`straw`/`soil`/`muck`) those colours come
+   * from -- see `paintZoneGround`'s own note on why a district-sized flat
+   * texture on a diamond grid reads as a bug. Drawn far below everything
+   * else (`GROW_AREA_GROUND_DEPTH`, the same always-behind-everything
+   * scheme `ZONE_GROUND_DEPTH` uses) rather than at the area's own varying
    * isometric depth, because ground never needs to sort against anything
    * standing on it -- it is always furthest back, by construction.
+   *
+   * Material follows the zone, the same call the plot-grid era's
+   * `paintPenGround` made and worth keeping now the ground is one district-
+   * sized fill instead of sixteen plot-sized ones: churned dirt for the
+   * Cattle Pens (Ox Fields is worked soil, not a barn floor), trodden mud
+   * for the Sheep Pens (the Fold is wet ground), straw for the Hen Coops
+   * (genuinely barnyard bedding), and tilled soil (with furrows) for the
+   * Long Meadow's Crop Fields.
+   *
+   * On top of the base fill, a scatter of small worn patches -- heaviest
+   * toward the middle of the area, where a district's animals actually
+   * spend their time -- breaks up what would otherwise be one flat-coloured
+   * diamond. Seeded by zone id so the wear pattern is fixed rather than
+   * reshuffling every render.
+   *
+   * `furrowed` is separate from `kind`, not implied by `kind === "soil"`:
+   * the Cattle Pens use the same worked-dirt colour Ox Fields already paints
+   * with (churned, not row-tilled), where only the Long Meadow's Crop
+   * Fields are actually ploughed into rows. Reusing one colour for two
+   * different textures is deliberate -- a Cattle Pen is not a second crop
+   * field wearing the same dye.
    */
-  private paintAreaGround(area: WorldRect, kind: "straw" | "soil"): void {
+  private paintAreaGround(area: WorldRect, kind: "straw" | "soil" | "muck", furrowed = false): void {
     const corners = projectedCorners(area);
     const ramp = rampHex(kind);
     const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
@@ -1237,7 +1267,32 @@ export class StackAcresScene extends Phaser.Scene {
     g.fillPath();
     g.lineStyle(1, ramp.rim, 0.55);
     g.strokePath();
-    if (kind === "soil") this.paintFurrows(g, area);
+    if (furrowed) this.paintFurrows(g, area);
+    this.paintAreaWear(g, area, kind);
+  }
+
+  /** The worn-patch scatter `paintAreaGround` lays over its base fill --
+   *  ported from the old per-plot `paintPenGround`'s own wear texture,
+   *  spread across a whole district's area instead of one CELL and centred
+   *  rather than hotspot-anchored, since there is no single trough/gate
+   *  position left to anchor toward once a district holds several units. */
+  private paintAreaWear(g: Phaser.GameObjects.Graphics, area: WorldRect, kind: "straw" | "soil" | "muck"): void {
+    const random = seededRandom((area.x * 5039 + area.y * 131) | 0);
+    const wear = kind === "straw" ? rampHex("straw").rim : rampHex("muck").rim;
+    const dry = rampHex("straw").top;
+    const spots: [number, number][] = [];
+    const cx = area.width / 2;
+    const cy = area.height / 2;
+    for (let i = 0; i < 10; i += 1) {
+      spots.push([cx + (random() - 0.5) * area.width * 0.7, cy + (random() - 0.5) * area.height * 0.7]);
+    }
+    for (const [sx, sy] of spots) {
+      const p = isoProject(area.x + sx, area.y + sy);
+      const r = 4 + random() * 4;
+      const dryFleck = kind === "straw" && random() < 0.28;
+      g.fillStyle(dryFleck ? dry : wear, dryFleck ? 0.35 : 0.22);
+      g.fillEllipse(p.x, p.y, r * 2, r);
+    }
   }
 
   /** Furrow lines across a tilled grow area, drawn along the diamond's own

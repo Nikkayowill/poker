@@ -129,7 +129,9 @@ describe("districts", () => {
   it("keep cattle at the Ox Fields and pigs at the Wallow", () => {
     // The districts were built with their own scenery and blurbs before the
     // pens moved in; a mapping that ignores that would read as arbitrary.
-    // Held so a future reshuffle has to be deliberate.
+    // Held so a future reshuffle has to be deliberate. The internal zone id
+    // stays "wallow" even though the player-facing label is "The Fold" --
+    // see zones.ts.
     expect(stockZone("cattle")).toBe("oxfields");
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("cash_crop")).toBe("meadow");

@@ -398,7 +398,7 @@ describe("the scythe's stroke", () => {
 
 describe("the herds", () => {
   it("has no ambient herd anywhere -- the player's own pens replaced them", () => {
-    // Ox Fields and the Wallow each had a wild, unownable herd before real
+    // Ox Fields and the Fold each had a wild, unownable herd before real
     // Cattle Pens and Sheep Pens moved in; Kayo's call was to replace it, not
     // keep both. HERDS staying an empty record (rather than deleted outright)
     // is what leaves room for a future district to get ambient life of its

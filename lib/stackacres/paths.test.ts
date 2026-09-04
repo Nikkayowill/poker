@@ -179,7 +179,7 @@ describe("farm paths", () => {
     // it exists to reach, not merely pointing at it.
     expect(zoneAt(meadowLane.points[meadowLane.points.length - 1].x, meadowLane.points[meadowLane.points.length - 1].y)).toBe("meadow");
     expect(zoneAt(oxRoad.points[oxRoad.points.length - 1].x, oxRoad.points[oxRoad.points.length - 1].y)).toBe("oxfields");
-    // The Wallow needs no connector -- the track already ends inside it.
+    // The Fold needs no connector -- the track already ends inside it.
     const track = byKey("track");
     expect(zoneAt(track.points[track.points.length - 1].x, track.points[track.points.length - 1].y)).toBe("wallow");
   });

@@ -324,15 +324,16 @@
 /* ---- the signpost ---------------------------------------------------- */
 /* Under the masthead, top-left. Bottom-left was the first choice and it was
    wrong: `.sa-tool-hint` is centred on the bottom edge and long enough at
-   most tool hints to run straight through a four-entry rail, so the last
-   destination sat behind the hint text. Nothing else claims the band under
-   the scoreline, and a signpost beside the name of the place reads better
-   than one tucked at the floor anyway.
+   most tool hints to run straight through the rail, so the last entry sat
+   behind the hint text. Nothing else claims the band under the scoreline,
+   and a signpost beside the name of the place reads better than one tucked
+   at the floor anyway.
 
    Horizontal, ordered outward from the farm, so it scans as a road rather
-   than a menu. The detail card is a popover that may be hung over this
-   corner -- it has its own elevation and is meant to sit on top, so the rail
-   deliberately does not fight it for the space. */
+   than a menu -- four districts, then Ray's own entry (the old header Store
+   button, folded in here). The detail card is a popover that may be hung
+   over this corner -- it has its own elevation and is meant to sit on top,
+   so the rail deliberately does not fight it for the space. */
 
 .sa-destinations {
   position: absolute;
@@ -395,6 +396,46 @@
 .sa-dest-meadow    .sa-dest-swatch { background: var(--sa-zone-meadow); }
 .sa-dest-oxfields  .sa-dest-swatch { background: var(--sa-zone-oxfields); }
 .sa-dest-wallow    .sa-dest-swatch { background: var(--sa-zone-wallow); }
+
+/* Ray's entry, last in the rail. His face stands in for a swatch -- he is
+   not a district, so there is no ground colour to key it to -- and the rail
+   gets a divider in front of him so he reads as set apart from the four
+   places rather than as a fifth one. */
+.sa-dest-ray {
+  position: relative;
+  margin-left: 3px;
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--neon-muted) 30%, transparent);
+}
+
+.sa-dest-ray-portrait {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  background: var(--brand-ink);
+}
+
+/* Produce sitting in the barn, unsold -- the same badge the header's own
+   Store button used to carry, now pinned to the corner of Ray's face
+   instead of trailing his label. */
+.sa-dest-badge {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gold);
+  color: var(--brand-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--brand-ink-lift);
+}
 
 .sa-dest-text {
   display: flex;
@@ -904,18 +945,6 @@
   height: 16px;
 }
 
-.sa-store-badge {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-gold);
-  color: var(--brand-ink);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ---- the barn -------------------------------------------------------- */
 
 .sa-barn {
@@ -987,22 +1016,6 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
-
-.sa-store-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--brand-surface);
-  color: var(--neon-muted);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.sa-store-btn:hover { background: var(--brand-surface-2); }
-.sa-store-btn:focus-visible { outline: 2px solid var(--neon-purple-bright); outline-offset: 2px; }
 
 .sa-sheet-scrim {
   position: fixed;

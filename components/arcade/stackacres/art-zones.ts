@@ -35,7 +35,7 @@ export type ZonePainterName =
   | "plough"
   | "oxTrough"
   | "ox"
-  // The Wallow.
+  // The Fold.
   | "mudPool"
   | "wallowPost"
   | "shadeCanopy"
@@ -281,7 +281,7 @@ export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
     F(c, "rgba(140,116,92,.55)");
   }),
 
-  /* ---- The Wallow ----------------------------------------------------- */
+  /* ---- The Fold --------------------------------------------------------- */
 
   // Wet mud, flat on the ground, centre-anchored. The sheen is the point:
   // it is what makes the district read as WET mud rather than as the ox
@@ -320,7 +320,7 @@ export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
     F(c, "#a8835a");
   }),
 
-  // A lean-to on two legs: the only thing in the Wallow with any height, so
+  // A lean-to on two legs: the only thing in the Fold with any height, so
   // it is what the eye lands on when the camera arrives.
   shadeCanopy: painter(42, 30, (c) => {
     for (const x of [4, 37] as const) {

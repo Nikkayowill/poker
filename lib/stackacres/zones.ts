@@ -18,7 +18,7 @@
  *
  *   the lane  runs south past the mailbox  ->  the Long Meadow
  *   the road  runs east past the windmill  ->  the Ox Fields
- *   the track runs north-west into the woods -> the Wallow
+ *   the track runs north-west into the woods -> the Fold
  *
  * That is the whole trick, and it is why no road had to be invented: the
  * map already promised three journeys and delivered none of them.
@@ -105,7 +105,7 @@ export interface ZoneDef {
  *
  * Every district's short side has to be more than twice this, or the fade
  * from both edges meets in the middle and the district never reaches full
- * cover anywhere -- the Wallow at 200 units is the one that binds, and
+ * cover anywhere -- the Fold at 200 units is the one that binds, and
  * zones.test.ts holds the relationship rather than leaving it to be
  * rediscovered the next time a district is resized.
  */
@@ -166,9 +166,13 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
 
   // North-west, at the end of the track. Wet, low and shaded: the mud
   // wallow, a shade canopy, and now the real Sheep Pens standing in it.
+  // The district keeps its internal id "wallow" (a data migration to fix a
+  // caption is not worth doing), but the label players see is "The Fold" --
+  // a real term for a sheep enclosure, and a better fit for what actually
+  // stands here than the mud it was originally named for.
   wallow: {
     id: "wallow",
-    label: "The Wallow",
+    label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
     // The smallest district, and its short side is what sets the floor on
     // `ZONE_FEATHER`: a district narrower than two feather-widths has no
@@ -384,7 +388,7 @@ export type ZoneSceneryKind =
   | "hayBale"
   | "plough"
   | "oxTrough"
-  // The Wallow: wet ground, a fence and somewhere to stand out of the sun.
+  // The Fold: wet ground, a fence and somewhere to stand out of the sun.
   | "mudPool"
   | "wallowPost"
   | "shadeCanopy"
@@ -649,7 +653,7 @@ export function mowStroke(from: WorldPoint, to: WorldPoint): { tx: number; ty: n
  * scenery. They exist so an unclaimed district reads as inhabited rather
  * than an empty coloured rectangle.
  *
- * Ox Fields and the Wallow HAD one of these each (wild oxen, wild hogs) until
+ * Ox Fields and the Fold HAD one of these each (wild oxen, wild hogs) until
  * the pens moved in. Kayo: those pens should REPLACE the ambient herd, not
  * sit beside it -- the player's own Cattle Pens and Sheep Pens are that
  * district's life now, the same way the Hen Coops are the Farmstead's. So

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { StackAcresFarm } from "@/components/arcade/stackacres/stackacres-farm";
+import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { findProfileBySessionToken } from "@/lib/server/profile-store";
@@ -34,8 +35,25 @@ export default async function StackAcresPage() {
   const store = await cookies();
   const token = readSessionTokenFromCookies((name) => store.get(name)?.value);
   const allowed = await tokenHasStackAcresAccess(token);
-  if (allowed) return <StackAcresFarm />;
 
-  const profile = token ? await findProfileBySessionToken(token) : null;
-  return <StackAcresLock playerId={profile?.id ?? null} />;
+  const profile = allowed ? null : token ? await findProfileBySessionToken(token) : null;
+
+  /**
+   * `.sa-theme` is where the farm's whole visual world is declared (the
+   * material tokens, the radii, the lift depths -- see
+   * app/styles/52-stackacres.css) and `stackAcresDisplay.variable` is what
+   * puts Baloo 2 behind `--font-sa-display` for everything inside it.
+   *
+   * It wraps the page rather than living on `.sa-shell` because two of the
+   * farm's own screens are not inside `.sa-shell`: the tap-to-play splash
+   * replaces it outright, and the store sheet and Ray's welcome are
+   * `position: fixed`. Custom properties and `font-family` both inherit
+   * through `display: contents`, so this wrapper themes all of them while
+   * adding no box of its own to a layout that is measured in dvh.
+   */
+  return (
+    <div className={`sa-theme ${stackAcresDisplay.variable}`}>
+      {allowed ? <StackAcresFarm /> : <StackAcresLock playerId={profile?.id ?? null} />}
+    </div>
+  );
 }

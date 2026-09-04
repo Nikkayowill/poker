@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import { BUSHELS } from "@/lib/stackacres/items";
+import type { SectorId } from "@/lib/stackacres/sectors";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -45,6 +46,8 @@ declare global {
   var __riverRoomStackAcresInventory: Map<string, StackAcresInventory> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
+  var __riverRoomStackAcresSectors: Map<string, string> | undefined;
+  var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -68,6 +71,18 @@ globalThis.__riverRoomStackAcresExchanges = memoryExchanges;
 const memoryHarvests = globalThis.__riverRoomStackAcresHarvests ?? [];
 globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
 
+/** Land cleared, keyed `${profileId}:${sector}` and holding the ISO moment it
+ *  was cleared. A missing key is land still under growth. */
+const memorySectors = globalThis.__riverRoomStackAcresSectors ?? new Map<string, string>();
+globalThis.__riverRoomStackAcresSectors = memorySectors;
+
+/** Bushels paid TOWARD land maintenance so far today, keyed
+ *  `${profileId}:${YYYY-MM-DD}`. A running total rather than a one-shot flag,
+ *  because the day's bill can rise under a player who buys more room at noon
+ *  -- see `raiseStackAcresUpkeep`. */
+const memoryUpkeep = globalThis.__riverRoomStackAcresUpkeep ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresUpkeep = memoryUpkeep;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -76,6 +91,8 @@ export function __resetStackAcresForTest(): void {
   memoryInventory.clear();
   memoryExchanges.clear();
   memoryHarvests.length = 0;
+  memorySectors.clear();
+  memoryUpkeep.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -620,6 +637,140 @@ export async function adjustStackAcresCapacity(
     throw new Error(`Could not update your capacity: ${error.message}`);
   }
   return data === null ? null : Number(data);
+}
+
+/* ------------------------------------------------------------------ */
+/* Cleared land                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Every sector this player has paid to clear. NOT the whole answer to "what
+ *  may they work" -- lib/stackacres/sectors.ts's `unlockedSectors` also
+ *  counts any district they already keep stock in, which is what carries
+ *  farms that predate this feature. */
+export async function readStackAcresSectors(profileId: string): Promise<SectorId[]> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const out: SectorId[] = [];
+    for (const key of memorySectors.keys()) {
+      const [id, sector] = key.split(":");
+      if (id === profileId) out.push(sector as SectorId);
+    }
+    return out;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_sectors")
+    .select("sector")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read your land: ${error.message}`);
+  return ((data ?? []) as { sector: string }[]).map((row) => row.sector as SectorId);
+}
+
+/**
+ * Records a sector as cleared, exactly once.
+ *
+ * Returns false when this player had already cleared it, which the caller
+ * must treat as a lost race and REFUND on -- the same posture every other
+ * write here takes, and it matters more than usual because the thing being
+ * bought is permanent and the Gold has already left. Two tabs clearing the
+ * Long Meadow together must pay for it once.
+ *
+ * The primary key is what makes that true; there is no read-then-write here
+ * to race against.
+ */
+export async function recordStackAcresSectorCleared(
+  profileId: string,
+  sector: SectorId,
+  clearedAt: Date,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${sector}`;
+    if (memorySectors.has(key)) return false;
+    memorySectors.set(key, clearedAt.toISOString());
+    return true;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_sectors")
+    .upsert(
+      { profile_id: profileId, sector, cleared_at: clearedAt.toISOString() },
+      { onConflict: "profile_id,sector", ignoreDuplicates: true },
+    )
+    .select("sector");
+  if (error) throw new Error(`Could not clear that land: ${error.message}`);
+  // `ignoreDuplicates` returns no row for a conflict, which is exactly the
+  // "somebody else got here first" signal the caller needs.
+  return (data ?? []).length > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Land maintenance                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Bushels already taken for land maintenance on this UTC day. Read-only and
+ * advisory, the same caveat `readStackAcresExchanged` carries: it is what the
+ * HUD shows, never what a charge is decided on. The decision is made inside
+ * `reserveStackAcresUpkeep`, atomically, because anything read first can be
+ * raced by a second tab.
+ */
+export async function readStackAcresUpkeep(profileId: string, day: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryUpkeep.get(`${profileId}:${day}`) ?? 0;
+
+  const { data, error } = await supabase
+    .from("homestead_upkeep")
+    .select("bushels")
+    .eq("profile_id", profileId)
+    .eq("day", day)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read today's land fee: ${error.message}`);
+  return data ? Number((data as { bushels: number | string }).bushels) : 0;
+}
+
+/**
+ * Raises today's paid total to `target`, and says whether this call is the
+ * one that moved it.
+ *
+ * RAISE-TO, NOT ADD, and that is the whole reason this is not shaped like
+ * `reserveStackAcresExchange`. A day's bill is not fixed when the day starts:
+ * a player who buys a capacity slot at noon owes more for the afternoon than
+ * they did for the morning, so the ledger has to hold "what has been paid
+ * toward today" and the caller has to settle the DIFFERENCE. A plain
+ * insert-once would charge the morning's bill and never the rise; a plain add
+ * would charge the whole afternoon bill on top of the morning's.
+ *
+ * The conditional update is what makes it safe to race: two requests that
+ * both find today unpaid will both debit, one will raise the total and the
+ * other gets false and refunds. Two racing on DIFFERENT targets (a capacity
+ * purchase landed between them) settle at the higher, and the lower's refund
+ * leaves the day slightly under-collected until the next action re-reads it
+ * -- a rounding error in the player's favour, not a double charge.
+ *
+ * The caller debits BEFORE calling this (rule 1) and refunds on false,
+ * exactly like `reserveStackAcresExchange`'s null.
+ */
+export async function raiseStackAcresUpkeep(
+  profileId: string,
+  day: string,
+  target: number,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    if ((memoryUpkeep.get(key) ?? 0) >= target) return false;
+    memoryUpkeep.set(key, target);
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("raise_homestead_upkeep", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_target: target,
+  });
+  if (error) throw new Error(`Could not settle today's land fee: ${error.message}`);
+  return data === true;
 }
 
 /* ------------------------------------------------------------------ */

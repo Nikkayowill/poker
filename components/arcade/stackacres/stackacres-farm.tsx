@@ -47,6 +47,14 @@ import {
   itemLabel,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
+import {
+  HOME_SECTOR,
+  STACKACRES_SECTORS,
+  isSectorUnlocked,
+  upkeepState,
+  type SectorId,
+  type StackAcresUpkeepState,
+} from "@/lib/stackacres/sectors";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
@@ -60,6 +68,7 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
+import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -113,6 +122,9 @@ interface StackAcresResponse {
   inventory: Record<string, number>;
   bushels: number;
   exchange: StackAcresExchangeState;
+  /** Land the player may work. Everything else is drawn as wild growth. */
+  sectors: SectorId[];
+  upkeep: StackAcresUpkeepState;
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   sold?: { item: StackAcresItem; quantity: number; bushels: number };
   exchanged?: { bushels: number; gold: number };
@@ -122,6 +134,7 @@ interface StackAcresResponse {
 
 type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
+  | { action: "clear-sector"; sector: SectorId }
   | { action: "stock"; stock: StackAcresStock }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
@@ -213,6 +226,17 @@ export function StackAcresFarm() {
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
     exchangeState(0, new Date()),
   );
+  /**
+   * Land the player may work, and what keeping it costs today.
+   *
+   * Seeded to home-only rather than to everything, the same posture the scene
+   * takes with its own `locked` default: until the first read lands, drawing
+   * a farm on land that might not be cleared is the wrong way to be wrong.
+   */
+  const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
+  const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
+  /** The wild district a finger just landed on, if the clearing modal is up. */
+  const [clearing, setClearing] = useState<SectorId | null>(null);
   const [exchangeChoice, setExchangeChoice] = useState<number | null>(null);
   const [exchangeNote, setExchangeNote] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -374,6 +398,8 @@ export function StackAcresFarm() {
     if (data.inventory) setInventory(data.inventory);
     if (typeof data.bushels === "number") setBushels(data.bushels);
     if (data.exchange) setExchange(data.exchange);
+    if (data.sectors) setSectors(data.sectors);
+    if (data.upkeep) setUpkeep(data.upkeep);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -628,11 +654,18 @@ export function StackAcresFarm() {
     setError(null);
   }, []);
 
-  const travel = useCallback((zone: ZoneId) => {
-    travelSound();
-    setPlace(zone);
-    world.current?.focusZone(zone);
-  }, []);
+  const travel = useCallback(
+    (zone: ZoneId) => {
+      travelSound();
+      setPlace(zone);
+      world.current?.focusZone(zone);
+      // Picking wild land off the signpost flies you there AND makes the
+      // offer. Landing at a wood with no explanation would be the one place
+      // on this screen where going somewhere tells you nothing.
+      setClearing(isSectorUnlocked(zone, sectors) ? null : zone);
+    },
+    [sectors],
+  );
 
   const closeRadial = useCallback(() => setRadial(null), []);
 
@@ -676,6 +709,32 @@ export function StackAcresFarm() {
     setPlace(zone);
     setRadial({ zone, at });
   }, []);
+
+  /**
+   * A finger landed on land nobody has cleared. There is nothing standing
+   * there to act on, so this is a question rather than an action: what is
+   * under the growth, what it costs, and what is still in the way.
+   *
+   * A full modal rather than the radial menu the fenced ground gets, and
+   * deliberately: the seed menu is a fast, repeatable choice between things
+   * you already understand, and this is a permanent purchase with conditions
+   * on it. It is worth stopping for.
+   */
+  const onWorldLockedTap = useCallback((zone: ZoneId) => {
+    panelSound();
+    setRadial(null);
+    setPlace(zone);
+    setClearing(zone);
+  }, []);
+
+  const onClearSector = useCallback(
+    (sector: SectorId) => {
+      buySound();
+      setClearing(null);
+      void act({ action: "clear-sector", sector });
+    },
+    [act],
+  );
 
   /** Seeding straight out of the radial menu. Closes first: the menu's
    *  prices are about to move under it, and a second tap on a stale one
@@ -809,6 +868,7 @@ export function StackAcresFarm() {
 
   const hint = busy ? "Working…" : toolHint;
   const district = STACKACRES_ZONES[place];
+  const placeLocked = !isSectorUnlocked(place, sectors);
 
   return (
     <main className="duel-shell ante-shell sa-shell">
@@ -833,6 +893,19 @@ export function StackAcresFarm() {
             <strong>{feed}</strong>
             <span className="sa-sr">feed servings</span>
           </span>
+          {/* Only when something is actually owed. A land fee of zero is the
+              normal state for a small farm, and a permanent "0" in the HUD
+              would be a bill where there is no bill. */}
+          {upkeep.outstanding > 0 && (
+            <span
+              className="sa-upkeep"
+              title={`Land maintenance on ${upkeep.plots} plots. Taken automatically the next time you collect.`}
+            >
+              <StackAcresIcon name="ico-bushels" size={16} />
+              <strong>-{upkeep.outstanding.toLocaleString()}</strong>
+              <span className="sa-sr">Bushels of land maintenance due</span>
+            </span>
+          )}
           <span className="gold-balance floor-wallet" title="Gold">
             <Coins size={13} aria-hidden="true" />
             <strong>{profile?.unlimitedGold ? "∞" : (profile?.goldBalance ?? 0).toLocaleString()}</strong>
@@ -858,6 +931,8 @@ export function StackAcresFarm() {
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
+              sectors={sectors}
+              onLockedSectorTap={onWorldLockedTap}
               onViewMoved={closeRadial}
               api={world}
             />
@@ -901,6 +976,7 @@ export function StackAcresFarm() {
           <StackAcresDestinations
             active={place}
             onTravel={travel}
+            unlocked={sectors}
             onOpenStore={() => { panelSound(); setShowStore(true); }}
             carrying={carrying}
           />
@@ -994,44 +1070,65 @@ export function StackAcresFarm() {
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
 
-            {/* Buy comes first now. Seeding with Bushels is the one thing on
-                this panel a tap on the map also does; buying outright and
-                expanding capacity are Gold, are permanent, and are the reason
-                to open this at all -- so they lead, rather than sitting under
-                a list of things you could have collected by touching them. */}
-            <div className="sa-panel-section">
-              <h3 className="sa-group-label">Buy &amp; expand</h3>
-              <StackAcresBuySection
-                options={buyOptions}
-                busy={busy}
-                onSeed={onSeed}
-                onBuyOutright={onBuyOutright}
-                onExpand={onExpand}
-              />
-            </div>
+            {/* Wild land has no farm on it to manage, so the drawer offers
+                the one thing that IS available there rather than a buy list
+                for pens that do not exist and a standing list that is always
+                empty. It is the same modal a tap on the trees opens -- there
+                is exactly one way to buy land, reached from two places. */}
+            {placeLocked ? (
+              <div className="sa-panel-section">
+                <h3 className="sa-group-label">Uncleared land</h3>
+                <p className="sa-panel-note">{STACKACRES_SECTORS[place].promise}</p>
+                <button
+                  type="button"
+                  className="sa-cta"
+                  onClick={() => { panelSound(); setClearing(place); }}
+                >
+                  What would clearing it cost?
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Buy comes first now. Seeding with Bushels is the one thing on
+                    this panel a tap on the map also does; buying outright and
+                    expanding capacity are Gold, are permanent, and are the reason
+                    to open this at all -- so they lead, rather than sitting under
+                    a list of things you could have collected by touching them. */}
+                <div className="sa-panel-section">
+                  <h3 className="sa-group-label">Buy &amp; expand</h3>
+                  <StackAcresBuySection
+                    options={buyOptions}
+                    busy={busy}
+                    onSeed={onSeed}
+                    onBuyOutright={onBuyOutright}
+                    onExpand={onExpand}
+                  />
+                </div>
 
-            <div className="sa-panel-section">
-              <h3 className="sa-group-label">What&apos;s here</h3>
-              <p className="sa-panel-note">
-                Tap anything on the map to collect, feed, water or clear it. These rows do the
-                same, and are how you retire something you own outright.
-              </p>
-              <StackAcresUnitRows
-                units={districtUnits}
-                nowMs={nowMs}
-                feed={feed}
-                bushels={bushels}
-                busyUnitId={busyUnitId}
-                armedUnitId={retiringUnitId}
-                onCollect={onCollect}
-                onFeed={onFeed}
-                onWater={onWater}
-                onClear={onClear}
-                onArmRetire={onArmRetire}
-                onConfirmRetire={onConfirmRetire}
-                onCancelRetire={onCancelRetire}
-              />
-            </div>
+                <div className="sa-panel-section">
+                  <h3 className="sa-group-label">What&apos;s here</h3>
+                  <p className="sa-panel-note">
+                    Tap anything on the map to collect, feed, water or clear it. These rows do the
+                    same, and are how you retire something you own outright.
+                  </p>
+                  <StackAcresUnitRows
+                    units={districtUnits}
+                    nowMs={nowMs}
+                    feed={feed}
+                    bushels={bushels}
+                    busyUnitId={busyUnitId}
+                    armedUnitId={retiringUnitId}
+                    onCollect={onCollect}
+                    onFeed={onFeed}
+                    onWater={onWater}
+                    onClear={onClear}
+                    onArmRetire={onArmRetire}
+                    onConfirmRetire={onConfirmRetire}
+                    onCancelRetire={onCancelRetire}
+                  />
+                </div>
+              </>
+            )}
           </aside>
         </div>
       </div>
@@ -1209,6 +1306,12 @@ export function StackAcresFarm() {
             tap a district&apos;s name to travel straight to it.
           </p>
           <p>
+            <strong>Only the Farmstead is yours to begin with.</strong> The other three are wild
+            ground — trees, scrub and long grass, with nothing built on them. Tap anywhere on one
+            and it tells you what is under the growth, what clearing it costs in Gold, and what you
+            still need before it is offered. Clearing is permanent.
+          </p>
+          <p>
             <strong>Everything is tapped on the map itself.</strong> Tap a crop or an animal to
             collect it when it is ready, feed it when it is hungry, water it when its soil has gone
             dry, or clear it when it comes up weather-worn. Tap the bare ground inside a district and a small menu opens right there
@@ -1247,12 +1350,32 @@ export function StackAcresFarm() {
               before it frees its room again.
             </li>
             <li>
+              Land you have cleared costs a small daily maintenance fee in Bushels, and it grows
+              steeply the more room you keep. It comes off automatically when you collect. Fall
+              behind and you simply cannot take on more land until it is paid — nothing you own is
+              ever taken away.
+            </li>
+            <li>
               Buying outright with Gold is permanent: it starts its next run the moment you collect,
               never needs seeding again, and can be sent away if you want the room back — for
               nothing, that is not a refund.
             </li>
           </ul>
         </HowToPlayModal>
+      )}
+
+      {clearing && (
+        <StackAcresSectorModal
+          sector={clearing}
+          unlocked={sectors}
+          unitCount={units.length}
+          goldBalance={profile?.goldBalance ?? null}
+          unlimitedGold={profile?.unlimitedGold === true}
+          upkeepOutstanding={upkeep.outstanding}
+          busy={busy}
+          onClear={onClearSector}
+          onClose={() => { panelSound(); setClearing(null); }}
+        />
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}

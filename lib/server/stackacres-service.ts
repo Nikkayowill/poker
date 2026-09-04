@@ -37,6 +37,20 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import {
+  STACKACRES_SECTORS,
+  isSectorUnlocked,
+  landUpkeepDue,
+  sectorClearCheck,
+  sectorLabel,
+  unlockedPlotCount,
+  unlockedSectors,
+  upkeepState,
+  type SectorId,
+  type StackAcresUpkeepState,
+} from "@/lib/stackacres/sectors";
+import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
+import { stockZone } from "@/lib/stackacres/world";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -55,7 +69,11 @@ import {
   readStackAcresExchanged,
   readStackAcresFeed,
   readStackAcresInventory,
+  readStackAcresSectors,
+  readStackAcresUpkeep,
+  raiseStackAcresUpkeep,
   recordStackAcresHarvest,
+  recordStackAcresSectorCleared,
   reserveStackAcresExchange,
   retireStackAcresUnit,
   waterStackAcresUnit,
@@ -74,7 +92,8 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  *   * **Gold** moves in exactly FOUR places, and the asymmetry between them
  *     is the whole safety story. THREE SPEND: `expandStackAcresCapacity` buys
  *     an extra slot for one kind, `buyStackAcresStock` buys an animal or a
- *     crop outright. ONE PAYS: `exchangeStackAcresBushels`, at the daily
+ *     crop outright, and `clearStackAcresSector` buys a district's wild
+ *     ground outright. ONE PAYS: `exchangeStackAcresBushels`, at the daily
  *     window, under a flat per-player ceiling. Nothing else here may move
  *     Gold.
  *
@@ -88,6 +107,15 @@ import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profil
  *     untouched. What genuinely must never change is the direction of the
  *     asymmetry: adding a path that PAYS Gold is the thing to stop over.
  *     Adding one that spends it is a sink.
+ *
+ * LAND. Three of the four districts start under wild growth and are cleared
+ * once, with Gold, for good (`clearStackAcresSector`). Keeping cleared land
+ * costs a daily fee in BUSHELS that compounds with the number of slots the
+ * player keeps (`settleLandUpkeep`, curve in lib/stackacres/sectors.ts) --
+ * charged off a mutating action rather than a background job, since nothing
+ * in this subsystem has one. It is a soft gate: an unpaid farm can still be
+ * harvested, fed, sold from and exchanged, and only GROWING is blocked, so
+ * the fee can never be a debt a player cannot work their way out of.
  *
  * A StackAcres unit is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
@@ -135,6 +163,16 @@ export interface StackAcresView {
   bushels: number;
   /** Today's exchange window: the rate, the flat ceiling, what is left of it. */
   exchange: StackAcresExchangeState;
+  /**
+   * Land the player may work. DERIVED, not just the stored clear list -- see
+   * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
+   * district they already keep stock in. The client draws everything else as
+   * wild ground.
+   */
+  sectors: SectorId[];
+  /** Today's land maintenance: what it is charged on, what is owed, whether
+   *  it is settled. The gate on taking on more land. */
+  upkeep: StackAcresUpkeepState;
 }
 
 function parseUnitId(value: unknown): string {
@@ -149,16 +187,32 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
 }
 
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
-  const [units, feed, capacity, held, exchanged] = await Promise.all([
+  const day = stackacresExchangeDay(now);
+  const [units, feed, capacity, held, exchanged, cleared, upkeepPaid] = await Promise.all([
     snapshots(profile.id, now),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresInventory(profile.id),
-    readStackAcresExchanged(profile.id, stackacresExchangeDay(now)),
+    readStackAcresExchanged(profile.id, day),
+    readStackAcresSectors(profile.id),
+    readStackAcresUpkeep(profile.id, day),
   ]);
 
   const { [BUSHELS]: bushels = 0, ...inventory } = held;
-  return { units, profile, feed, capacity, inventory, bushels, exchange: exchangeState(exchanged, now) };
+  const sectors = unlockedSectors(cleared, units);
+  return {
+    units,
+    profile,
+    feed,
+    capacity,
+    inventory,
+    bushels,
+    exchange: exchangeState(exchanged, now),
+    sectors,
+    // Reported, never charged, from here: a read must not move a purse. The
+    // charge happens in `settleLandUpkeep`, off a mutating action.
+    upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
+  };
 }
 
 /**
@@ -184,6 +238,185 @@ async function capacityFor(profileId: string, stock: StackAcresStock): Promise<n
   return capFor(capacity[stock] ?? 0);
 }
 
+/* ------------------------------------------------------------------ */
+/* Land: what is cleared, and what keeping it costs                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Takes today's land maintenance, at most once per UTC day.
+ *
+ * ROUTINE, not a button. Called at the top of the actions that touch the land
+ * itself -- collecting off it, putting something new on it, buying more room
+ * on it, clearing more of it, and taking Gold out through the window -- so a
+ * played farm settles its bill within a tap or two of midnight without
+ * anybody having to go and pay it. Feeding, watering, selling and clearing
+ * muck deliberately do NOT charge: they are tending what is already standing
+ * there, and a player has to be able to sell what is in the bag to afford the
+ * bill.
+ *
+ * THE ORDERING IS RULE 1, in Bushels:
+ *
+ *   1. Only the DIFFERENCE between today's bill and what has already been
+ *      paid toward it leaves the barn. The bill is not fixed when the day
+ *      starts -- buying a capacity slot at noon raises it -- so this settles
+ *      up rather than charging a flat daily amount, and a farm that grows
+ *      twice in a day pays the rise twice, never the whole bill twice.
+ *   2. Null on that debit is an empty barn, and an empty barn is ARREARS
+ *      rather than an error -- the farm keeps running, the day stays part
+ *      paid, and `landGate` is what stops the player taking on MORE land
+ *      until it is settled. Nothing is ever seized and nothing is ever
+ *      destroyed for non-payment; the worst it does is stop you growing.
+ *   3. Then the day's total is raised, atomically. False is "somebody else
+ *      already got there" -- another tab, or this same request retried -- and
+ *      the Bushels go straight back.
+ *
+ * Only the CURRENT day is ever owed. Yesterday's unpaid bill lapses rather
+ * than compounding into a debt a returning player cannot dig out of, which is
+ * a deliberate softening: this fee exists to make owning everything a
+ * commitment, not to punish somebody for going on holiday.
+ */
+async function settleLandUpkeep(
+  profileId: string,
+  now: Date,
+): Promise<{ upkeep: StackAcresUpkeepState; sectors: SectorId[]; units: StoredStackAcresUnit[] }> {
+  const day = stackacresExchangeDay(now);
+  // The sectors and units are handed back rather than kept private, and that
+  // is not premature tidiness: every caller that GATES on this then needs the
+  // same two answers a line later (which land is open, how much stock is
+  // going), and re-reading them made the hot stocking path do four queries
+  // where two will do.
+  const [cleared, units, capacity, paid] = await Promise.all([
+    readStackAcresSectors(profileId),
+    listStackAcresUnits(profileId),
+    readStackAcresCapacity(profileId),
+    readStackAcresUpkeep(profileId, day),
+  ]);
+  const sectors = unlockedSectors(cleared, units);
+  const plots = unlockedPlotCount(sectors, capacity);
+  const due = landUpkeepDue(plots);
+  // Nothing owed, or today is already settled. The read above can be raced,
+  // which is why it only ever short-circuits work -- the raise below is the
+  // authority on whether this request is the one that pays.
+  const outstanding = due - paid;
+  if (outstanding <= 0) return { upkeep: upkeepState(plots, paid), sectors, units };
+
+  const left = await adjustStackAcresInventory(profileId, BUSHELS, -outstanding);
+  if (left === null) return { upkeep: upkeepState(plots, paid), sectors, units };
+
+  const claimed = await raiseStackAcresUpkeep(profileId, day, due);
+  if (!claimed) {
+    await adjustStackAcresInventory(profileId, BUSHELS, outstanding).catch(() => null);
+  }
+  return { upkeep: upkeepState(plots, due), sectors, units };
+}
+
+/**
+ * Settles the day's land fee, refuses if it could not be paid, and hands back
+ * what the caller is about to need anyway.
+ *
+ * The gate on GROWING, and only on growing. An unpaid farm can still be
+ * harvested, fed, sold from and exchanged -- those are how the Bushels to pay
+ * come in, and locking them would be a debt trap rather than a fee.
+ */
+async function landGate(
+  profileId: string,
+  now: Date,
+): Promise<{ sectors: SectorId[]; units: StoredStackAcresUnit[] }> {
+  const { upkeep, sectors, units } = await settleLandUpkeep(profileId, now);
+  if (upkeep.settled) return { sectors, units };
+  throw new StackAcresRequestError(
+    `Land maintenance is due: ${upkeep.outstanding.toLocaleString()} Bushels for the ${upkeep.plots} plots you keep. Sell some produce and it comes off automatically.`,
+    409,
+    { round: await snapshots(profileId, now) },
+  );
+}
+
+/** Refuses an action aimed at land nobody has cleared yet. The client hides
+ *  these controls entirely (a locked sector paints no pens to tap), so this
+ *  is the guard against a hand-rolled request rather than a UI state. */
+function requireOpenSector(sectors: readonly SectorId[], zone: ZoneId, what: string): void {
+  if (isSectorUnlocked(zone, sectors)) return;
+  throw new StackAcresRequestError(
+    `${sectorLabel(zone)} is still under wild growth. Clear the land before you keep ${what} there.`,
+    409,
+  );
+}
+
+/**
+ * Clears a sector: the one-off Gold price of turning wild ground into land
+ * you can farm.
+ *
+ * A pure Gold SINK, permanent, and never refunded once the row lands -- the
+ * same category as `expandStackAcresCapacity`, and the reason the asymmetry
+ * note at the top of this file is untouched by it.
+ *
+ * Rule 1 the whole way down: the requirements are checked before a piece of
+ * Gold moves, the Gold leaves before the land is recorded, and every failure
+ * after the debit refunds. The permanent thing here is a single row with the
+ * (profile, sector) primary key as its idempotency guard, so two tabs
+ * clearing the same land together pay for it once and the loser is refunded.
+ */
+export async function clearStackAcresSector(
+  token: string,
+  sectorInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!(ZONE_IDS as readonly string[]).includes(sectorInput)) {
+    throw new StackAcresRequestError("There is no such place.", 400);
+  }
+  const sector = sectorInput as SectorId;
+  const def = STACKACRES_SECTORS[sector];
+  const profile = await ensureProfile(token);
+
+  // Owing rent on the land you have is a reason not to be sold more of it,
+  // and this settles the bill on the way past -- and hands over the two
+  // answers the requirement check is about to ask for.
+  const { sectors, units } = await landGate(profile.id, now);
+  const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length });
+  if (check.alreadyOpen) {
+    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (!check.ok) {
+    // The first thing still missing, worded exactly as the modal's own
+    // checklist words it -- both read the same `sectorClearCheck`.
+    const missing = check.requirements.find((requirement) => !requirement.met);
+    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = await spendGoldByProfile(profile.id, def.clearCost);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `Clearing ${sectorLabel(sector)} costs ${def.clearCost.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresSectorCleared(profile.id, sector, now);
+  } catch (error) {
+    await creditGoldByProfile(profile.id, def.clearCost).catch(() => null);
+    throw error;
+  }
+  if (!recorded) {
+    // Another tab cleared it between the check above and now. The land is
+    // theirs either way; this request must not have been charged for it.
+    await creditGoldByProfile(profile.id, def.clearCost).catch(() => null);
+    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(debited, now);
+}
+
 /**
  * Buys one extra capacity slot for a kind, at the flat per-kind price, IN ANY
  * ORDER -- there is nothing to unlock first, the same reasoning that
@@ -198,6 +431,11 @@ export async function expandStackAcresCapacity(
   const stock: StackAcresStock = stockInput;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
+
+  // Buying room is taking on more land, so both land rules apply: the ground
+  // has to be cleared, and the fee on what is already kept has to be settled.
+  const land = await landGate(profile.id, now);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
   const capacity = await readStackAcresCapacity(profile.id);
   const extraSlots = capacity[stock] ?? 0;
@@ -256,6 +494,9 @@ export async function buyStackAcresStock(
   const def = STACKACRES_CATALOGUE[stock];
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
+
+  const land = await landGate(profile.id, now);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
   const [occupied, cap] = await Promise.all([
     countOccupiedStackAcresUnits(profile.id, stock),
@@ -323,6 +564,9 @@ export async function stockStackAcres(
   const stock: StackAcresStock = input.stock;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
+
+  const land = await landGate(profile.id, now);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
   // The caps are what bound this faucet; see lib/stackacres/catalogue.ts.
   // Checked here for a clean 409, enforced for real by the advisory-locked
@@ -530,6 +774,12 @@ export async function exchangeStackAcresBushels(
   const profile = await ensureProfile(token);
   const day = stackacresExchangeDay(now);
   const gold = goldForBushels(bushelsInput);
+
+  // Step 0: the land fee has first claim on the barn, before any of it is
+  // allowed to leave the farm as Gold. Best-effort and never blocking -- an
+  // unpayable bill is arrears (see `settleLandUpkeep`), and refusing the
+  // exchange would be the debt trap this fee is deliberately not.
+  await settleLandUpkeep(profile.id, now).catch(() => null);
 
   // Step 1: the Bushels leave. Null is an empty barn or a racing second tab,
   // and both mean nothing was exchanged.
@@ -796,6 +1046,12 @@ export async function collectStackAcres(
 > {
   const unitId = parseUnitId(unitIdInput);
   const profile = await ensureProfile(token);
+
+  // Harvesting is the routine touch on the land, so it is where the day's
+  // maintenance is taken from a farm that is actually being played. Never
+  // gated and never fatal: a collection returns produce already grown, and a
+  // bill that cannot be paid must not turn into a lost harvest.
+  await settleLandUpkeep(profile.id, now).catch(() => null);
 
   const unit = await getStackAcresUnit(profile.id, unitId);
   if (!unit || unit.status !== "working") {

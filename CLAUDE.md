@@ -1324,6 +1324,39 @@ end to end (4,000 Gold across two players before and after). Migration
 `20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
 **unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### StackAcres districts became unlockable sectors; land has a price and an upkeep again (2026-09-04)
+Three of the four districts now start under wild growth, and the ground itself is back on the Gold
+ladder for the first time since the 2026-09-03 pass deleted the 16-tile plot grid. That deletion left
+the map with four districts that were simply all there from the first minute, three of them full of
+pens nobody could afford, so the east half of the world read as content that had failed to load. New
+`lib/stackacres/sectors.ts` holds the whole layer, pure: the ladder (`SECTOR_LADDER`, Long Meadow ->
+the Fold -> Ox Fields at 15k/45k/100k Gold, ordered by STOCK TIER rather than by
+`zonesByDistance`'s walk), the requirement checklist, the upkeep curve, and `sectorOvergrowth`.
+`SectorId` is `ZoneId` itself, not a parallel id space. Four things worth keeping: (1) **unlocks are
+DERIVED, not just stored** -- `unlockedSectors(cleared, units)` counts any district the player
+already keeps stock in, so every live farm mid-cattle-cycle keeps Ox Fields with no backfill to get
+right and a lost row cannot cost somebody land they visibly own; the migration deliberately has no
+backfill for exactly this reason. (2) **Nothing is greyed out.** A locked district paints no ground
+wash, no grow-area floor, no fence and no ghost outline -- there is no farm there yet to grey out, so
+what stands there is wild growth (`sectorOvergrowth`, dealt per district rather than per chunk since
+a sector is bounded and has to be destroyed in one go when cleared) plus a barely-there haze;
+`zoneScenery` gained a `locked` set so a plough or an ox trough can never stand on unclaimed ground.
+Discovery is therefore entirely on the tap, which is why `onLockedSectorTap` fires anywhere in
+`zoneAt` rather than in the narrow `growAreaAt` box a cleared district uses. (3) **The upkeep ledger
+is raise-to, not insert-once**: a day's bill is not fixed when the day starts (buy a capacity slot at
+noon and it rises), so `raise_homestead_upkeep` raises today's paid total to a target and settling
+charges the DIFFERENCE -- insert-once would miss the rise, add-to would charge the whole new bill on
+top of the old. Curve is `8 * 1.2^(plots - 3)` Bushels/day, ~59 at all four sectors cleared and ~916
+at every slot bought, against a few thousand Bushels a day of gross. (4) It is a **soft** gate: an
+unpaid farm can still collect, feed, sell and exchange -- only GROWING is blocked -- and yesterday's
+unpaid bill lapses rather than compounding, so the fee can never be a debt trap. Charged off mutating
+actions, never a read (reads stay write-free) and never a background job (this subsystem has none).
+Gold asymmetry untouched: `clear-sector` is a third SINK, nothing new pays Gold out, and the
+currency-wall test's call counts moved 2->3 / 3->5 deliberately. Verified live end to end against a
+memory-mode `next dev` (wild -> modal -> clear -> crop field appears, Gold 402k->387k, the day's
+20-Bushel fee showing in the HUD). Migration `20260904130000_stackacres_sectors_and_upkeep.sql` is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
 payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can

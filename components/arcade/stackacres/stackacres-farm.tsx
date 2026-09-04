@@ -5,11 +5,34 @@ import clsx from "clsx";
 import { ChevronLeft, Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
-import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useLandscape } from "@/components/use-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
 import { tapSound } from "@/lib/audio/ui-sounds";
+import {
+  setAmbienceAwake,
+  setAmbienceHerd,
+  setAmbiencePlace,
+  setFarmSfxMuted,
+  startAmbience,
+  stopAmbience,
+} from "@/lib/audio/stackacres-ambience";
+import { timeOfDay } from "@/lib/audio/stackacres-music";
+import {
+  buySound,
+  collectSound,
+  expandSound,
+  feedSound,
+  goldSound,
+  muckSound,
+  panelSound,
+  refusedSound,
+  retireSound,
+  sellSound,
+  sowSound,
+  toolSound,
+  travelSound,
+} from "@/lib/audio/stackacres-sfx";
 import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
@@ -221,15 +244,61 @@ export function StackAcresFarm() {
 
   useStackAcresMusic(hasStarted);
 
-  const { setImmersive } = useAppShell();
+  /**
+   * The ambient soundscape, started by the same gesture the music is.
+   *
+   * It cannot start any earlier: an AudioContext built before a user gesture
+   * comes back suspended, and every cue scheduled against it would queue up
+   * and then fire at once the moment it resumed. The tap-to-play splash is
+   * that gesture -- it exists for the music for exactly this reason, and the
+   * ambience rides on the same one rather than inventing a second prompt.
+   */
+  useEffect(() => {
+    if (!hasStarted) return;
+    startAmbience();
+    return () => stopAmbience();
+  }, [hasStarted]);
+
+  // A farm making wind noise in a background tab is a battery bug, not
+  // atmosphere. Suspends the whole graph rather than muting it, so the
+  // scheduler stops doing work too.
+  useEffect(() => {
+    if (!hasStarted) return;
+    const onVisible = () => setAmbienceAwake(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [hasStarted]);
+
+  const { setImmersive, soundEnabled } = useAppShell();
   useEffect(() => {
     setImmersive(hasStarted);
   }, [hasStarted, setImmersive]);
 
+  /**
+   * The farm's action sounds follow the APP-wide mute, not the farm's own
+   * background-sound toggle. Two different promises: the HUD speaker means
+   * "stop the noise this place makes", the app mute means "stop telling me my
+   * taps landed", and silencing button feedback because someone wanted the
+   * birds off would be the wrong reading of either.
+   */
+  useEffect(() => {
+    setFarmSfxMuted(!soundEnabled);
+  }, [soundEnabled]);
+
   // Landscape-only, same posture and same hook as the poker table (see
   // poker-table.tsx) rather than a second orientation check invented here.
   const landscape = useLandscape();
-  const play = useArcadeSound({ gameSounds: true });
+  /**
+   * No `useArcadeSound` here any more.
+   *
+   * It was called with `gameSounds: true`, which eagerly fetches the POKER
+   * table's cue set (deal, chips, win) -- around 450KB -- on a route that
+   * never plays any of them. It was there because two actions used to answer
+   * with `play("ui")`; both now have farm sounds of their own, and the chrome
+   * cues `tapSound` still uses prime themselves on import (CHROME_EFFECTS in
+   * lib/audio/manifest.ts). The app-wide mute is applied by the shell, which
+   * is always mounted, so nothing is left for the hook to do.
+   */
   const sending = useRef(false);
   const mounted = useRef(true);
   const world = useRef<StackAcresWorldApi | null>(null);
@@ -265,6 +334,21 @@ export function StackAcresFarm() {
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
+
+  /**
+   * The unit list as of right now, for `act` to read when a response lands.
+   *
+   * A ref rather than a dependency: `act` is depended on by every handler on
+   * the page, so putting `units` in its dependency array would rebuild all of
+   * them on every clock tick of every growing unit. The one thing `act` needs
+   * from the list is which stock a collected unit was, and that unit is
+   * usually DELETED by the time the response arrives (a clean collect removes
+   * the row), so the response itself cannot answer it.
+   */
+  const unitsRef = useRef(units);
+  useEffect(() => {
+    unitsRef.current = units;
+  }, [units]);
 
   const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
     if (data.profile) setProfile(data.profile);
@@ -350,6 +434,11 @@ export function StackAcresFarm() {
         const data = (await response.json()) as Partial<StackAcresResponse>;
         if (!mounted.current) return;
         if (!response.ok) {
+          // A dull knock on wood, never a buzzer: most refusals here are "you
+          // cannot afford that yet", which is ordinary and frequent, and a
+          // harsh error tone on an ordinary event teaches a player to dread
+          // their own farm.
+          refusedSound();
           // A refusal carries the true round; paint it, and only raise a
           // banner when there is no round to speak for itself.
           if (data.round) setUnits(data.round);
@@ -370,7 +459,12 @@ export function StackAcresFarm() {
         // below is the whole answer, same as it always was.
         const anchor = tapAnchor.current;
         if (body.action === "collect" && data.collected) {
-          play("ui");
+          // Fired here rather than on the press because the ANIMAL is what
+          // makes this sound worth having, and only the response knows which
+          // unit actually paid out: a hen clucking as the eggs go in the
+          // basket is the moment the farm most needs to feel alive.
+          const unit = unitsRef.current.find((candidate) => candidate.id === body.unitId);
+          if (unit) collectSound(unit.stock);
           setCelebrate({ unitId: body.unitId, nonce: Date.now() });
           setLastCollect({
             text: `+${itemLabel(data.collected.item, data.collected.quantity)}`,
@@ -396,7 +490,10 @@ export function StackAcresFarm() {
                 : null;
         if (anchor && done) world.current?.floatAt(anchor, done, "gain");
         if (body.action === "exchange" && data.exchanged) {
-          play("ui");
+          // The one place on the farm where coins are heard: this is Gold
+          // actually leaving for the player's balance, and it is the only
+          // action here that touches the wider economy.
+          goldSound();
           setExchangeChoice(null);
           setExchangeNote(
             `${data.exchanged.gold.toLocaleString()} Gold is in your balance, for ${data.exchanged.bushels.toLocaleString()} Bushels.`,
@@ -415,15 +512,29 @@ export function StackAcresFarm() {
         }
       }
     },
-    [applyResponse, play, refresh],
+    [applyResponse, refresh],
   );
 
   // No effect needed to disarm the retire confirmation on district change:
   // StackAcresUnitRows only ever renders the current district's own units
   // (districtUnits, below), so a unit armed elsewhere simply has no row left
   // to show the confirmation on until the player travels back to it.
+  /**
+   * Every handler below answers its own press with its own sound rather than
+   * the app's generic chrome click. Sowing, harvesting and paying to expand a
+   * pen used to be audibly the same event, which made the one surface in
+   * StackChips where the press IS the game feel like a form. See
+   * lib/audio/stackacres-sfx.ts.
+   *
+   * The sound fires on the PRESS, not on the response: the server round trip
+   * is real, and a farm that stays silent for 200ms after every tap feels
+   * broken however fast it eventually answers. A press that turns out to be
+   * refused gets the wooden knock on top of it, from `act`.
+   */
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
+      // The collection itself is announced when it lands (in `act`), where
+      // the produce is actually known -- this is only the press.
       tapSound();
       void act({ action: "collect", unitId: unit.id });
     },
@@ -431,14 +542,14 @@ export function StackAcresFarm() {
   );
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
-      tapSound();
+      feedSound(unit.stock);
       void act({ action: "feed", unitId: unit.id });
     },
     [act],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
-      tapSound();
+      muckSound();
       void act({ action: "clear", unitId: unit.id });
     },
     [act],
@@ -453,6 +564,7 @@ export function StackAcresFarm() {
   }, []);
   const onConfirmRetire = useCallback(
     (unit: StackAcresUnitSnapshot) => {
+      retireSound();
       setRetiringUnitId(null);
       void act({ action: "retire", unitId: unit.id });
     },
@@ -461,34 +573,34 @@ export function StackAcresFarm() {
 
   const onSeed = useCallback(
     (stock: StackAcresStock) => {
-      tapSound();
+      sowSound();
       void act({ action: "stock", stock });
     },
     [act],
   );
   const onBuyOutright = useCallback(
     (stock: StackAcresStock) => {
-      tapSound();
+      buySound();
       void act({ action: "buy-stock", stock });
     },
     [act],
   );
   const onExpand = useCallback(
     (stock: StackAcresStock) => {
-      tapSound();
+      expandSound();
       void act({ action: "expand-capacity", stock });
     },
     [act],
   );
 
   const pickTool = useCallback((next: StackAcresTool) => {
-    tapSound();
+    toolSound();
     setTool(next);
     setError(null);
   }, []);
 
   const travel = useCallback((zone: ZoneId) => {
-    tapSound();
+    travelSound();
     setPlace(zone);
     world.current?.focusZone(zone);
   }, []);
@@ -562,6 +674,42 @@ export function StackAcresFarm() {
     () => liveUnits.filter((unit) => stockZone(unit.stock) === place),
     [liveUnits, place],
   );
+
+  /**
+   * The soundscape follows the player: which district they travelled to, and
+   * what hour it is. `timeOfDay` is the music's own, so the two layers can
+   * never disagree about whether it is night.
+   *
+   * Re-read on a slow interval rather than derived from `nowMs`: that clock
+   * only ticks while something is growing, so a farm sitting idle across 6pm
+   * would keep its daylight birds until the player did something.
+   */
+  const [tod, setTod] = useState(() => timeOfDay());
+  useEffect(() => {
+    const timer = window.setInterval(() => setTod(timeOfDay()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    setAmbiencePlace(place, tod);
+  }, [place, tod]);
+
+  /**
+   * Standing in Ox Fields with no cattle should sound like empty ground;
+   * standing there with three should sound like you keep cattle. Only the
+   * animals in the district being listened to count -- a cow four districts
+   * away is not audible from here.
+   */
+  useEffect(() => {
+    const herd = { hen: 0, pig: 0, cattle: 0 };
+    for (const unit of districtUnits) {
+      // A mucked unit has nothing standing on it to make a noise.
+      if (unit.state === "mucked") continue;
+      if (unit.stock === "hen" || unit.stock === "pig" || unit.stock === "cattle") {
+        herd[unit.stock] += 1;
+      }
+    }
+    setAmbienceHerd(herd);
+  }, [districtUnits]);
   const buyOptions: BuyOption[] = useMemo(
     () => buyOptionsForZone(place, { units: liveUnits, bushels, capacity }),
     [place, liveUnits, bushels, capacity],
@@ -724,7 +872,7 @@ export function StackAcresFarm() {
           <StackAcresDestinations
             active={place}
             onTravel={travel}
-            onOpenStore={() => { tapSound(); setShowStore(true); }}
+            onOpenStore={() => { panelSound(); setShowStore(true); }}
             carrying={carrying}
           />
 
@@ -778,7 +926,7 @@ export function StackAcresFarm() {
             className={clsx("sa-panel-tab", { "is-stowed": panelOpen })}
             aria-expanded={panelOpen}
             aria-controls="sa-district-panel"
-            onClick={() => { tapSound(); setPanelOpen(true); }}
+            onClick={() => { panelSound(); setPanelOpen(true); }}
             tabIndex={panelOpen ? -1 : undefined}
           >
             <ChevronLeft size={18} aria-hidden="true" />
@@ -809,7 +957,7 @@ export function StackAcresFarm() {
                 type="button"
                 className="sa-panel-close"
                 aria-label="Close panel"
-                onClick={() => { tapSound(); setPanelOpen(false); }}
+                onClick={() => { panelSound(); setPanelOpen(false); }}
               >
                 <X size={20} aria-hidden="true" />
               </button>
@@ -872,7 +1020,7 @@ export function StackAcresFarm() {
               <button
                 type="button"
                 className="sa-sheet-close"
-                onClick={() => { tapSound(); setShowStore(false); setExchangeNote(null); }}
+                onClick={() => { panelSound(); setShowStore(false); setExchangeNote(null); }}
               >
                 Done
               </button>
@@ -906,7 +1054,7 @@ export function StackAcresFarm() {
                           type="button"
                           className="sa-cta sa-cta-small"
                           disabled={busy}
-                          onClick={() => void act({ action: "sell", item, quantity: 1 })}
+                          onClick={() => { sellSound(); void act({ action: "sell", item, quantity: 1 }); }}
                         >
                           Sell 1
                         </button>
@@ -914,7 +1062,7 @@ export function StackAcresFarm() {
                           type="button"
                           className="sa-cta sa-cta-small"
                           disabled={busy}
-                          onClick={() => void act({ action: "sell", item, quantity })}
+                          onClick={() => { sellSound(); void act({ action: "sell", item, quantity }); }}
                         >
                           Sell all · {(def.price * quantity).toLocaleString()}
                         </button>
@@ -943,7 +1091,7 @@ export function StackAcresFarm() {
                     type="button"
                     className="sa-cta"
                     disabled={busy || bushels < item.cost}
-                    onClick={() => void act({ action: "buy-feed", itemId: id })}
+                    onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
                   >
                     Buy
                   </button>

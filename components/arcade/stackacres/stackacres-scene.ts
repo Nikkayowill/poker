@@ -2,6 +2,7 @@
 // bundler picks for the browser) has only named exports, and `import Phaser
 // from "phaser"` fails at build time with "export default doesn't exist".
 import * as Phaser from "phaser";
+import { scytheSound } from "@/lib/audio/stackacres-sfx";
 import {
   isLivestock,
   type StackAcresLivestock,
@@ -230,6 +231,12 @@ const MUCK = 0x785830;
 /** How far a finger may wander before a press stops counting as a tap. In CSS
  *  pixels, because pointer events are. */
 const TAP_SLOP = 8;
+/**
+ * Shortest gap between two scythe swishes. A little under the cue's own
+ * length, so a continuous sweep overlaps into one sustained cut rather than
+ * sounding like separate chops.
+ */
+const SWISH_GAP_MS = 190;
 
 /** How far outside its own art a unit still answers a tap, in CSS pixels. A
  *  hen at the zoomed-out end of the range is a thumbnail; without this the
@@ -478,6 +485,8 @@ export class StackAcresScene extends Phaser.Scene {
   /** The host's top-left, re-measured at the start of every gesture. */
   private hostOrigin = { left: 0, top: 0 };
   private unbindInput: (() => void) | null = null;
+  /** Wall-clock time of the last scythe swish, throttling the cue. See `mowSegment`. */
+  private lastSwishAt = 0;
 
   private grass: Phaser.GameObjects.TileSprite | null = null;
   /** The screen-pinned wash over everything: darker corners, warm sun corner. */
@@ -2478,13 +2487,25 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private mowSegment(from: WorldPoint, to: WorldPoint): void {
     const wall = Date.now();
+    let cut = false;
     for (const tile of mowStroke(from, to)) {
       const key = meadowTileKey(tile.tx, tile.ty);
       const cutAt = this.mown.get(key) ?? null;
       if (meadowDensityAt(tile.tx, tile.ty, cutAt, wall) === 0) continue;
       this.mown.set(key, wall);
+      cut = true;
       this.refreshGrass(tile.tx, tile.ty);
       if (!this.options.reducedMotion) this.cutBurst(tile.tx, tile.ty);
+    }
+
+    // One swish per SWEEP, not per pointer-move: this runs on every move
+    // event, so an unthrottled cue would fire dozens of times a second and
+    // turn the nicest gesture on the map into a machine gun. Gated on
+    // something actually having been cut too -- dragging the scythe over
+    // ground that is already bald should be silent, because nothing happened.
+    if (cut && wall - this.lastSwishAt > SWISH_GAP_MS) {
+      this.lastSwishAt = wall;
+      scytheSound();
     }
   }
 

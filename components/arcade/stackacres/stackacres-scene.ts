@@ -59,6 +59,7 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/stackacres/world";
+import { FENCE_BAY } from "@/lib/stackacres/fence";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -1233,23 +1234,29 @@ export class StackAcresScene extends Phaser.Scene {
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
     this.paintAreaGround(area, ground);
 
-    // Every rail gets its own true world position and the ordinary
-    // `put()` depth (feet-based), so a wandering animal sorts correctly
-    // against it on its own -- in front of the near rail, behind the far
-    // one -- with no back/front split needed the way the old per-plot fence
-    // required to keep its own animals from drawing over their own gate.
-    const step = 16;
-    const midX = Math.round(area.width / 2 / step) * step;
-    for (let x = 0; x < area.width; x += step) {
-      this.put("railH", area.x + x, area.y).setRotation(ISO_EDGE_ANGLE.alongX);
-      const isGate = Math.abs(x - midX) < step / 2;
-      this.put(isGate ? "gate" : "railH", area.x + x, area.y + area.height - 9).setRotation(
-        ISO_EDGE_ANGLE.alongX,
-      );
+    // Bays sit on the boundary itself now. The old 9-unit inset was headroom
+    // for a flat sprite's footprint; a standing bay anchors on the foot of
+    // its first post, and `growAreaInterior` already keeps animals 12 units
+    // clear of the rail.
+    //
+    // Each bay takes the ordinary feet-based `put()` depth, so a wandering
+    // animal sorts against it on its own -- in front of the near rail,
+    // behind the far one. Depth is measured at the bay's midpoint, not its
+    // anchor post: a bay spans half a tile of screen depth, and sorting it
+    // by one end tips every animal beside it the same way.
+    const step = FENCE_BAY;
+    const east = area.x + area.width;
+    const south = area.y + area.height;
+    const half = step / 2;
+    // The one gate, in the middle of the near (south) run, snapped to a bay.
+    const gateX = area.x + Math.round(area.width / 2 / step) * step;
+    for (let x = area.x; x < east; x += step) {
+      this.put("railX", x, area.y, this.depthAt(x + half, area.y));
+      this.put(x === gateX ? "gateX" : "railX", x, south, this.depthAt(x + half, south));
     }
-    for (let y = 12; y < area.height - 10; y += step) {
-      this.put("railV", area.x, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
-      this.put("railV", area.x + area.width - 9, area.y + y).setRotation(ISO_EDGE_ANGLE.alongY);
+    for (let y = area.y; y < south; y += step) {
+      this.put("railY", area.x, y, this.depthAt(area.x, y + half));
+      this.put("railY", east, y, this.depthAt(east, y + half));
     }
   }
 

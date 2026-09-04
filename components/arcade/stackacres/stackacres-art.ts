@@ -3,6 +3,16 @@
 // download the engine for a toolbelt icon; Phaser enters only through
 // stackacres-world.tsx's dynamic import of the scene.
 import type * as Phaser from "phaser";
+import {
+  FENCE_BAY,
+  FENCE_BAY_DROP,
+  FENCE_BOX,
+  FENCE_CAP_H,
+  FENCE_POST_H,
+  FENCE_POST_W,
+  FENCE_RAIL_AT,
+  FENCE_RAIL_T,
+} from "@/lib/stackacres/fence";
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import {
   ART_FRAME,
@@ -93,9 +103,9 @@ type CorePainterName =
   | "straw"
   | "muckbed"
   | "wild"
-  | "railH"
-  | "railV"
-  | "gate"
+  | "railX"
+  | "railY"
+  | "gateX"
   | "troughFull"
   | "troughEmpty"
   | "carrot0"
@@ -231,6 +241,60 @@ function glass(c: Ctx, x: number, y: number, w: number, h: number): void {
 }
 
 const CELL = STACKACRES_CELL;
+
+/** One post, standing straight up from `footY` at `cx`. Vertical is exact,
+ *  not an approximation: `isoProject` shears x and y only, so the world's up
+ *  axis and the screen's are the same line. */
+function fencePost(c: Ctx, cx: number, footY: number, ramp: Ramp = RAMPS.cream): void {
+  const topY = footY - FENCE_POST_H;
+  // Contact shade, or the post reads as pasted onto the field. Inline rather
+  // than the `shadow` painter because a bay is boot-time art with no node.
+  ell(c, cx, footY, FENCE_POST_W * 0.7, FENCE_POST_W * 0.28);
+  F(c, "rgba(38,54,18,.24)");
+  // Lit left face, turned right face -- the same sun as everything else here.
+  rr(c, cx - FENCE_POST_W / 2, topY, FENCE_POST_W, FENCE_POST_H, 0.9);
+  F(c, ramp.top);
+  rr(c, cx + FENCE_POST_W * 0.06, topY, FENCE_POST_W * 0.44, FENCE_POST_H, 0.9);
+  F(c, ramp.side);
+  rr(c, cx - FENCE_POST_W / 2, topY, FENCE_POST_W, FENCE_POST_H, 0.9);
+  stroke(c, ramp.rim, 0.5);
+  ell(c, cx, topY, FENCE_POST_W / 2, FENCE_CAP_H);
+  F(c, ramp.top);
+  ell(c, cx, topY, FENCE_POST_W / 2, FENCE_CAP_H);
+  stroke(c, ramp.rim, 0.45);
+}
+
+/** One rail, leaning along the bay's run. A parallelogram, not a rotated
+ *  rectangle: the ends stay vertical, so consecutive bays butt together
+ *  without a sawtooth seam. */
+function fenceRail(
+  c: Ctx,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  ramp: Ramp = RAMPS.cream,
+): void {
+  const t = FENCE_RAIL_T / 2;
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 + t], [x0, y0 + t]]);
+  F(c, ramp.side);
+  // The sliver of the rail's own top face the camera can see from up here.
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 - t * 0.15], [x0, y0 - t * 0.15]]);
+  F(c, ramp.top);
+  poly(c, [[x0, y0 - t], [x1, y1 - t], [x1, y1 + t], [x0, y0 + t]]);
+  stroke(c, ramp.rim, 0.45);
+}
+
+/** A whole bay: rails first, posts over them, so the rails run behind the
+ *  posts and their cut ends never show. `xa` is the near post, `xb` the far
+ *  one -- which of the two sits on the left is what tells railX from railY. */
+function fenceBay(c: Ctx, xa: number, xb: number): void {
+  const ya = FENCE_BOX.footY;
+  const yb = ya + FENCE_BAY_DROP;
+  for (const at of FENCE_RAIL_AT) fenceRail(c, xa, ya - at, xb, yb - at);
+  fencePost(c, xa, ya);
+  fencePost(c, xb, yb);
+}
 
 /** Every painter, by name, as drawn code. A record literal rather than a
  *  table built by mutation, so a name added to `PainterName` without a
@@ -466,69 +530,59 @@ const DRAWN: Record<PainterName, Painter> = {
     0,
   ),
 
-  /* ---- the pen ---- */
+  /* ---- the pen fence ---- */
+  // These stand up. The old ones were plan-view rails rotated by
+  // ISO_EDGE_ANGLE into the ground plane, which is what a fence lying flat in
+  // the grass looks like. Nothing else here is rotated -- world "up" projects
+  // to screen "up" exactly, so a post is a plain vertical box and only the
+  // rails lean. One painter per edge direction rather than one mirrored at
+  // draw time, since flipping a baked texture flips its lighting too.
+  //
+  // A bay carries a post at both ends, so bays laid end to end share their
+  // interior posts and a corner gets one from each run -- a little overdraw
+  // instead of separate cap and corner art.
 
-  railH: painter(
-    16,
-    9,
+  railX: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const y of [2.2, 5.4]) {
-        rr(c, 0, y, 16, 1.6, 0.8);
-        F(c, RAMPS.cream.side);
-      }
-      for (const x of [1.4, 8, 14.6]) {
-        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
-        F(c, RAMPS.cream.top);
-        rr(c, x + 0.1, 0.6, 1.4, 8, 0.6);
-        F(c, RAMPS.cream.side);
-        rr(c, x - 1.5, 0.6, 3, 8, 1.2);
-        stroke(c, RAMPS.cream.rim, 0.5);
-      }
+      fenceBay(c, FENCE_BOX.footX, FENCE_BOX.footX + FENCE_BAY);
     },
-    0,
-    0,
+    FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
-  railV: painter(
-    9,
-    16,
+  railY: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const x of [2.2, 5.4]) {
-        rr(c, x, 0, 1.6, 16, 0.8);
-        F(c, RAMPS.cream.side);
-      }
-      for (const y of [1.4, 8, 14.6]) {
-        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
-        F(c, RAMPS.cream.top);
-        rr(c, 0.6, y + 0.1, 8, 1.4, 0.6);
-        F(c, RAMPS.cream.side);
-        rr(c, 0.6, y - 1.5, 8, 3, 1.2);
-        stroke(c, RAMPS.cream.rim, 0.5);
-      }
+      fenceBay(c, FENCE_BOX.w - FENCE_BOX.footX, FENCE_BOX.footX);
     },
-    0,
-    0,
+    1 - FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
-  gate: painter(
-    16,
-    9,
+  // The one way in. Wood posts rather than cream, so it still reads as a gate
+  // from across the district where the brace is two pixels of nothing.
+  gateX: painter(
+    FENCE_BOX.w,
+    FENCE_BOX.h,
     (c) => {
-      for (const y of [2.2, 5.4]) {
-        rr(c, 0, y, 16, 1.6, 0.8);
-        F(c, RAMPS.cream.top);
-      }
+      const x0 = FENCE_BOX.footX;
+      const x1 = x0 + FENCE_BAY;
+      const y0 = FENCE_BOX.footY;
+      const y1 = y0 + FENCE_BAY_DROP;
+      // Brace first, so the rails read as nailed over it.
       c.beginPath();
-      c.moveTo(1, 6.6);
-      c.lineTo(15, 2.2);
-      stroke(c, RAMPS.cream.side, 1.4);
-      for (const x of [0.4, 14.2]) {
-        rr(c, x, 0, 1.8, 9, 0.8);
-        F(c, RAMPS.wood.side);
-      }
+      c.moveTo(x0 + 1.6, y0 - 1.4);
+      c.lineTo(x1 - 1.6, y1 - FENCE_RAIL_AT[1] - 0.6);
+      stroke(c, RAMPS.wood.side, 1.5);
+      for (const at of FENCE_RAIL_AT) fenceRail(c, x0, y0 - at, x1, y1 - at, RAMPS.wood);
+      fencePost(c, x0, y0, RAMPS.wood);
+      fencePost(c, x1, y1, RAMPS.wood);
     },
-    0,
-    0,
+    FENCE_BOX.ax,
+    FENCE_BOX.ay,
   ),
 
   troughFull: painter(

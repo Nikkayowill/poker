@@ -89,7 +89,7 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "scarecrow", x: 402, y: 110 },
 
   // Grandfather Ray, at his post beside the barn door -- the front desk.
-  { kind: "grandfatherRay", x: 175, y: 20 },
+  { kind: "grandfatherRay", x: 178, y: 20 },
 ];
 
 /**
@@ -120,7 +120,7 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBed: { w: 28, h: 12 },
   stoneWall: { w: 32, h: 10 },
   scarecrow: { w: 20, h: 36 },
-  grandfatherRay: { w: 20, h: 40 },
+  grandfatherRay: { w: 25.125, h: 40 },
 };
 
 /**
@@ -140,7 +140,7 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBed: { w: 30, h: 6 },
   stoneWall: { w: 34, h: 5 },
   scarecrow: { w: 24, h: 7 },
-  grandfatherRay: { w: 22, h: 7 },
+  grandfatherRay: { w: 27, h: 8 },
 };
 
 /**

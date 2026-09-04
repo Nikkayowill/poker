@@ -60,84 +60,34 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 ### The farm sound set reached the map itself, and the wind bed is deleted (2026-09-04)
 Two things Kayo caught by ear. First, tapping a hen on the map made the lobby's chrome click: the sound pass (`feat/stackacres-audio`) wired the SIDEBAR row handlers to `lib/audio/stackacres-sfx.ts` but not the in-world tap handlers, which had landed one PR earlier in `feat/stackacres-direct-tap` and were never revisited. Direct tapping is the primary way the farm is played, so in practice most of the sound set was unreachable. `onWorldUnitTap` now picks the voice off the same `action` it is about to send (feed/water/clear speak on the press, since `tendLocally` has already applied them locally; collect stays silent there and answers in `act`, where the response says which animal paid out); the radial menu's seed uses `sowSound` like the sidebar's; ground/barn/locked-land/drawer/help all use `panelSound`. There is no `tapSound` import left in `stackacres-farm.tsx` at all, deliberately: the only chrome click still on this route is the tap-to-play splash, which fires before `startAmbience()` has an AudioContext to speak through. Two smaller gaps closed with it: closing Ray's Museum played the chrome click AND `panelSound` stacked on top of each other, while Escape and the backdrop (both `useModalDismiss`, both routed straight to `onClose`) played nothing, so the sound moved to the caller's `onClose` where all three paths meet; and a client-side refusal never played `refusedSound` at all. That last one needed `StackAcresTapAction`'s `refused` shape to gain a `why: "blocked" | "waiting"`, because it carries two unlike things: a real no (empty barn, unaffordable clearing fee) knocks on wood, and a unit that is merely still growing stays silent, since tapping a growing crop is the commonest tap on the map and an error noise every few seconds is how a farm turns nagging. Second, THE `wind` BED IS GONE, not turned down again. It had already been attenuated once for being about 5dB over the rest of the mix; Kayo wanted ASMR and it kept arriving as weather. A moving band of noise is the layer an ear locks onto and follows, which is the opposite of what this layer is for. `AMBIENCE_BEDS` is now four, the recipe is deleted from the engine, and the doc over the const says not to reinstate it as a quieter gust walk (that was already the failed attempt). Nothing else was rebalanced to compensate: `air` plus `grass` is the weather now, and the Ox Fields go from the loudest district to the quietest, which is right for bare open ground. Branch `fix/stackacres-farm-sfx-and-wind`. No migration.
 
-### StackAcres has a farmhand: an NPC who walks out and does the job you just tapped (2026-09-04)
-Kayo's ask was a FarmVille 3-style worker loop: an FSM, a global task queue, isometric movement, and a
-code-driven squash-and-stretch instead of sprite sheets. Three premises in the ask no longer match the
-code and are worth restating: there is **no farm grid array or tile data structure** (deleted 2026-09-03,
-"districts hold stock, not plots" — a unit row has no position at all), the **sidebar is not the action
-loop** any more (tapping the unit on the map is, since the direct-tap pass), and the actions are
-collect/feed/water/clear/stock rather than Plant/Harvest/Feed/Clear. The isometric maths, the
-delta-time loop and a distance-driven walk cycle all already existed (`iso.ts`, `depthAt`, `gait.ts`).
-**He is presentation, and that is the load-bearing decision.** The tap has already reached the server
-by the time he takes a step; he can never send, delay or cancel a write, so a closed tab mid-walk
-loses nothing and the instant tap loop the direct-tap pass built stays instant. Two facts made
-gating him the wrong call rather than merely a bigger one: the districts sit hundreds of units apart
-(a trip to Ox Fields is most of a minute), and **`collect` is a SWEEP** — `settleHarvest` prices the
-whole set and Bountiful Harvest is a property of that set, so a worker collecting one unit at a time
-would silently forfeit the synergy on every harvest. He is therefore **Farmstead-only** and does not
-auto-collect anything; both were Kayo's calls, and both are the conservative end of what was offered.
-Brain in `lib/stackacres/farmhand.ts` (four states, plus the queue) and `farmhand-hop.ts`, pure and
-tested, because vitest only reaches lib/ and app/. Three things worth keeping: (1) the hop is folded
-into the same `setScale` call as the facing mirror rather than tweened, which sidesteps rather than
-works around the trap `popUnit` documents (update rewrites a sprite's scale every frame, so a tween
-there is overwritten mid-bounce); (2) **a mirror only ever buys two of the four diagonals**, so the
-four iso directions need a second painter, not a second flip — `farmhand` and `farmhandBack`, each
-mirrored, picked by the sign of (x + y) where the mirror is the sign of (x − y); (3) the standoff is
-authored in SCREEN terms and is BESIDE the unit, not in front of it — the first cut put him a few
-units toward the camera, which sorts correctly and hides the hen completely behind a man four times
-its height, and only a screenshot showed it. Verified headed on the real GPU: headless Playwright
-runs this scene at ~20fps and Phaser's smoothed delta then makes everything crawl, which looks
-exactly like a movement bug and is not one. Branch `feat/stackacres-worker-npc`, no migration, no
-server change.
+### The farmhand NPC is scrapped outright; Grandfather Ray is chibi (2026-09-04)
+**The walking farmhand added earlier the same day is deleted** -- Kayo's call, after three passes at
+fixing him: "this is shit. update him", then "his legs look fucked", then "the arms are literally
+detached lmao", then "scrap the character completely." Gone: `lib/stackacres/farmhand.ts` and
+`farmhand-walk.ts` with their tests, both torso renders and the four limb cut-outs, the `farmhand`
+and `farmhandBack` painters, `FarmhandNode` and the whole farmhand section of stackacres-scene.ts,
+and `sendFarmhand` all the way out through stackacres-world.tsx to every call site in
+stackacres-farm.tsx. He was PRESENTATION from the first line -- every tap had already reached the
+server before he took a step -- so nothing about the game loop changed when he went. Recover any of
+it from this file's own history if it is ever wanted back; the whole feature landed and was deleted
+inside one day.
 
-**He is RIGGED, not a sprite, and that was Kayo's second call on this.** The first art pass shipped
-one FLUX render per direction with a squash-and-stretch hop on it, and he called it immediately:
-"the legs on the character arent moving like he a still png just bouncing around... stardew valley is
-a pixel art and can pull this off." He is right twice over, and the second part is the useful bit:
-**the bounce made it worse, not better**, because it put motion everywhere except the legs and so
-pointed straight at the thing that was not moving. There is no vertical hop left anywhere.
-`lib/stackacres/farmhand-hop.ts` is deleted; `farmhand-walk.ts` replaces it with a two-bone cycle
-(hip swing, knee fold, and a small mid-stance rise), and the scene draws both legs into one Graphics
-every frame from those angles. **A sprite sheet was not available and that is why this is a rig**:
-the art is generated, and schnell has no identity control between generations, so N generated frames
-are N different men in the same clothes. What is stable is ONE render — so the render is cut at the
-crotch (`rig_farmhand.py`), the upper body stays as art because it does not deform in a walk, and
-everything below the hip is drawn. The seam is invisible because the overalls are one continuous
-denim from bib to ankle and the leg colours are sampled out of the render itself. Four things worth
-keeping: (1) the torso painters' ANCHOR is the hip midpoint on the cut line, so placing one is just
-"put the pelvis here" and the two views can carry their pelvis in different places inside their own
-box (they do — the front's sits left of centre, the back's right of it); (2) **the hip stands
-deliberately LOWER than a straight leg is long** — this is forward kinematics, so a rise on a fully
-extended leg would lift the stance foot off the ground, and the slack is what pays for it; (3) the
-rise peaks at MID-STANCE (`cos`, not `sin`) — half a cycle out is the difference between a walk and
-a limp; (4) child order is shadow, legs, torso, so the hip joints vanish under the overalls instead
-of showing as two rotating stubs. Judged on a cropped ten-frame filmstrip of one stride, which is
-the only way to see a walk — a single screenshot cannot tell a walk cycle from a static pose.
+**Grandfather Ray keeps the chibi re-roll**, which is the one part of that work that outlives the
+farmhand: one head in three rather than one in six, an earth-toned costume pinned in the prompt (the
+first roll came back in blue denim, which is what `RAY_SUBJECT` has always literally said and what the
+shipped render quietly ignored), and a hard dark rim. Looking DOWN at a figure on an isometric grid
+foreshortens its body away to almost nothing, so the head is most of what survives and a small head
+leaves nothing to read at the thirteen pixels tall the opening shot draws him. His painter box grew
+20 -> 25.125 units wide, which pushed his post three units east off the silo (`PROP_SIZE` is
+drift-guarded against the painter box in props.test.ts).
 
-**The art is FLUX-generated, same pipeline as Grandfather Ray.** Kayo saw the hand-drawn painter and
-called it, so both views were regenerated through `~/.local/share/flux-sprite-test` (`task-farmhand/`,
-byte-identical `STYLE` string to the animals so a new character lands in the same accidental look as
-the shipped cast rather than drifting to its own). Runtime 3D was considered and not taken: the WebGL
-room was deleted outright on 2026-08-26 and one NPC does not justify putting `three` back into a 2D
-Phaser scene. Pre-rendering a Blender turnaround to sprites is the version of "3D" that would fit
-here, and is worth it only if this ever wants a real 8-direction cast — every other thing on the map
-is FLUX flat art, so a lone 3D render would be the one object not matching. **The seed pair was
-chosen on COSTUME, not on the best single render:** schnell has no identity control across
-generations, so what has to survive between two views is the outfit, and seed42 is the only pair
-where it does. That is cheap here only because the back view has no face to disagree about. Three
-prep findings worth keeping: (1) **`prep_new_assets.py`'s brown "mud" strip mask eats brown leather
-boots** — it is `r-g>25 and r-b>40`, and since the boots are the lowest thing in frame, the
-low-in-frame gate that protects a red shirt actively selects FOR them; the first run cut 24-34% of
-the red-brown pixels and produced two men whose legs end at the ankle, invisible on the white page it
-was cut against and obvious on grass (check art on GREEN, again). (2) **Facing is normalised in the
-ASSET, not with an `ART_FACES` entry** — that constant is keyed by painter name and would flip the
-drawn fallback underneath too, which already faces right. (3) Assets are fitted to CONTAIN the box
-rather than to match its height, because `spriteBacked` stretches whatever it is handed to the
-painter's own 20x40 box; a standing figure survives that squash, a walking one mirrored every time he
-turns does not.
-
-**Still open:** he walks through the pen fence rather than round to its gate, and there is one worker
-at one district — a per-district base is the small follow-up if Kayo wants him elsewhere.
+**Two things in `prep_chibi.py` worth keeping for the next generated character**, both of which
+silently wreck a cutout: the plate is NOT white (every chibi render came back on a flat but tinted
+page -- grey, beige -- and prep_farmhand.py's `lum > 244` test keeps none of it, shipping the figure
+as a rectangle, so the plate colour is measured off a border ring and keyed by distance to it); and
+**the page also shows THROUGH the figure** in enclosed pockets -- between the boots, between an arm
+and the body, under a hat brim -- which no flood-fill from the frame edge can reach, and which are
+keyed out by colour instead.
 
 ### StackAcres crops are watered, and drawn far bigger than the rest of the world (2026-09-04)
 Crops now mirror the livestock hunger mechanic: a `thirstMs`/`last_watered_at` pair, and a free `waterStackAcresUnit` write that pushes `ready_at` forward by however long the soil sat dry. One deliberate divergence from hunger: a crop that finished growing *before* its ground dried is never marked dry — mirroring hunger exactly there was a real bug that un-ripened finished produce and re-charged the player for time already waited. A `/code-review` pass caught three more real bugs: the Gold-bought "restart" path didn't reset watering state, the migration backfill had to use `now()` instead of `started_at` or every already-ripe legacy crop would flip to dry on deploy, and a doubled hit-radius on ripe crops was swallowing taps on units behind them. Crop sprites now draw 1.6x-4x their nominal box size, since at world scale a carrot was a few indistinguishable green pixels. Watering itself is free and touches none of the money-ordering rules. Migration `stackacres_soil_watering` applied 2026-09-04 — applied about 80 seconds before the code merged, closer to violating "apply migration before merge" than intended, worth remembering as a near-miss. Live schema drift found in the process: a remote migration (`stackacres_units_fix_extra_slots_ambiguous`) has no matching file in the repo, flagged but not fixed here.

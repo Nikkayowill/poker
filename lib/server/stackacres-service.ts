@@ -1610,11 +1610,11 @@ export async function placeStackAcresMachine(
  * become possible since the last one, all at once, all idempotent. A second
  * call a moment later simply finds nothing left to do.
  *
- * `farmhand.ts`'s own FSM (in flight on a sibling branch as this was
- * written) is PRESENTATION for exactly this: once it lands, the client can
- * read what this call actually settled and play a walk-and-carry animation
- * for it, without this function's own authority changing at all -- the same
- * relationship it already has with a harvest.
+ * A walking NPC once answered this call on the client, as pure presentation
+ * over an already-settled write; he was scrapped 2026-09-04. The property he
+ * relied on still holds and is worth stating for whatever replaces him: this
+ * function settles the work and says what it settled, so anything animating
+ * the result reads that afterwards and never gates it.
  *
  * Every step here is its own guarded, at-most-once settlement, and a step
  * failing (a lost race to a second tab, most likely) never blocks the steps

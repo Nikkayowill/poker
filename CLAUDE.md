@@ -21,6 +21,8 @@ Realtime carries only versioned invalidations; `components/poker-app.tsx` refetc
 - Realtime: `lib/game/table-channel.ts`
 - DB/env: `supabase/migrations/`, `supabase/config.toml`, `.env.example`
 - Product constraints: `docs/game-loop.md`, `docs/launch-checklist.md`, `docs/security-audit.md`
+- Farm (StackAcres, formerly "Homestead" — DB objects still say `homestead_*` on purpose):
+  `lib/stackacres/`, `components/arcade/stackacres/`, `app/api/stackacres/`
 
 Subsystem-specific gotchas moved out of this always-loaded file into where they load on demand:
 `lib/scene/CLAUDE.md` (2D table), `lib/scene/chips/CLAUDE.md` (chip system), `app/styles/CLAUDE.md`
@@ -41,10 +43,19 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
   because those land under whoever else is mid-task rather than staying local. Reads are always fine;
   `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
+- Commit messages and PR descriptions: short and plain, like a person telling a coworker what
+  changed. No em-dashes, no comma-chained "did X, Y, and Z" example lists. Say what changed and why
+  in a sentence or two, not an essay. New code comments get the same treatment: a short "why" where
+  it's non-obvious, not a paragraph. (Any attribution footer the harness itself appends is separate
+  from this and not something to strip — this rule is about the words, not the footer. This history
+  log below is the one deliberate exception on length — it's a dense project changelog by design, see
+  its own note partway down — but PRs, commits, and code comments are not.)
 
 ## Active milestone
 
-- Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
+- No single tracked milestone or "current feature branch" — this repo runs many parallel sessions on
+  many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
+  recent dated entries below for what's actually in flight; don't trust this line to name it.
 
 ### StackAcres crops are watered, and drawn far bigger than the rest of the world (2026-09-04)
 Two changes to the crop track, one loop and one visual. **Watering** is the deliberate mirror of the
@@ -1718,9 +1729,9 @@ settle once).
 ### Known open items / gaps
 - M17 (chip cosmetics) was parked until the 3D sim was finished — the 3D table is now deleted (see
   above), so this needs Kayo's own re-decision rather than staying silently parked.
-- Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
-  invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
-  challenge.
+- M16 (table invites) already shipped — private room-code tables only (`table_invites`,
+  `/api/invites/*`, the Friends drawer's Invite button). Kayo declined extending it to public tables
+  when asked directly; don't re-propose that as open work.
 - `lib/server/game-store.test.ts`'s "does not prefer a populated table whose only human seat has gone
   quiet" is FLAKY, not red: it failed once in five runs at a pristine `origin/main` worktree, in
   isolation as well as in the full suite (measured 2026-09-04). Re-run it before treating a single

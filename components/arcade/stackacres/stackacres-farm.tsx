@@ -12,17 +12,10 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
-import {
-  exchangeState,
-  goldForBushels,
-  type StackAcresExchangeState,
-} from "@/lib/stackacres/exchange";
-import {
-  STACKACRES_ITEM_CATALOGUE,
-  STACKACRES_ITEMS,
-  itemLabel,
-  type StackAcresItem,
-} from "@/lib/stackacres/items";
+import { exchangeState, type StackAcresExchangeState } from "@/lib/stackacres/exchange";
+import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
+import type { BountifulHarvest } from "@/lib/stackacres/bounty";
+import type { StackAcresItem } from "@/lib/stackacres/items";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
@@ -64,9 +57,16 @@ import type { TapPoint } from "./stackacres-scene";
  * they remain the only keyboard and screen-reader path to everything a tap
  * on the canvas does, and the canvas is `aria-hidden` by design.
  *
- * The DATABASE is the one thing that did not move: `homestead_plots` (left
- * in place, inert), `homestead_units`, `homestead_capacity`,
- * `homestead_inventory`, `homestead_harvests`, `homestead_feed`,
+ * ONE CURRENCY. Harvesting used to fill a barn, the barn was sold at Ray's
+ * for Bushels, and Bushels were queued at an exchange window for Gold. All
+ * three collapsed into one act: bringing in a harvest pays Gold, once, right
+ * there. What survived is the thing that mattered -- the flat daily ceiling on
+ * how much Gold a farm may send out -- which now sits behind the harvest
+ * itself. Ray still sells feed and still shows what is left of the day.
+ *
+ * The DATABASE is the one thing that did not move: `homestead_plots` and
+ * `homestead_inventory` (both left in place, inert), `homestead_units`,
+ * `homestead_capacity`, `homestead_harvests`, `homestead_feed`,
  * `homestead_exchanges`, `profiles.homestead_access` keep their names --
  * live objects in a production schema, renaming them is a data migration to
  * fix a caption.
@@ -86,12 +86,18 @@ interface StackAcresResponse {
   profile: PlayerProfile | null;
   feed: number;
   capacity: Partial<Record<StackAcresStock, number>>;
-  inventory: Record<string, number>;
-  bushels: number;
   exchange: StackAcresExchangeState;
-  collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
-  sold?: { item: StackAcresItem; quantity: number; bushels: number };
-  exchanged?: { bushels: number; gold: number };
+  upkeep: StackAcresUpkeepState;
+  harvest?: {
+    units: number;
+    tally: { item: StackAcresItem; quantity: number }[];
+    gross: number;
+    bounty: BountifulHarvest;
+    bonus: number;
+    upkeep: number;
+    gold: number;
+    mucked: number;
+  };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -101,12 +107,12 @@ type Action =
   | { action: "stock"; stock: StackAcresStock }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
-  | { action: "collect"; unitId: string }
+  // No `unitIds` means "bring in everything that is ready" -- what the
+  // Harvest button sends. A single id is what tapping one unit sends.
+  | { action: "collect"; unitIds?: string[] }
   | { action: "feed"; unitId: string }
   | { action: "clear"; unitId: string }
-  | { action: "buy-feed"; itemId: string }
-  | { action: "sell"; item: StackAcresItem; quantity: number }
-  | { action: "exchange"; bushels: number };
+  | { action: "buy-feed"; itemId: string };
 
 /**
  * A shelf in Ray's store, named and given the painted badge of what is on it.
@@ -167,15 +173,12 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
-  const [inventory, setInventory] = useState<Record<string, number>>({});
-  const [bushels, setBushels] = useState(0);
-  // Seeded from the same pure helper the server uses, so the window's terms are
+  // Seeded from the same pure helpers the server uses, so the day's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
     exchangeState(0, new Date()),
   );
-  const [exchangeChoice, setExchangeChoice] = useState<number | null>(null);
-  const [exchangeNote, setExchangeNote] = useState<string | null>(null);
+  const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -266,14 +269,26 @@ export function StackAcresFarm() {
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
 
+  /**
+   * The purse every price on this screen is read against. One currency now, so
+   * this is simply the player's Gold -- the same balance the poker tables and
+   * the Collection spend.
+   *
+   * An admin account with unlimited Gold is treated as able to afford
+   * anything: the server is the authority on the spend either way, and a
+   * button greyed out against a balance that is not real would be a lie.
+   */
+  const gold = profile?.unlimitedGold
+    ? Number.MAX_SAFE_INTEGER
+    : (profile?.goldBalance ?? 0);
+
   const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.units) setUnits(data.units);
     if (typeof data.feed === "number") setFeed(data.feed);
     if (data.capacity) setCapacity(data.capacity);
-    if (data.inventory) setInventory(data.inventory);
-    if (typeof data.bushels === "number") setBushels(data.bushels);
     if (data.exchange) setExchange(data.exchange);
+    if (data.upkeep) setUpkeep(data.upkeep);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -355,12 +370,11 @@ export function StackAcresFarm() {
           if (data.round) setUnits(data.round);
           if (data.profile) setProfile(data.profile);
           if (!data.round) setError(data.error ?? "That did not go through.");
-          // A refused exchange is the one refusal that carries no round, and
-          // the thing it disagrees with the client about is how much of
-          // today's allowance is left. Re-read it once this request has let
-          // go of the send lock, so the window shows the truth rather than
-          // the amount this browser thought it could still send.
-          if (body.action === "exchange") window.setTimeout(() => void refresh(), 0);
+          // A harvest refused by the daily ceiling disagrees with the client
+          // about how much of today's allowance is left. Re-read it once this
+          // request has let go of the send lock, so the meter shows the truth
+          // rather than the amount this browser thought it could still send.
+          if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
           return;
         }
         applyResponse(data);
@@ -369,19 +383,40 @@ export function StackAcresFarm() {
         // that was tapped. A sidebar press leaves this null and the toast
         // below is the whole answer, same as it always was.
         const anchor = tapAnchor.current;
-        if (body.action === "collect" && data.collected) {
+        if (body.action === "collect" && data.harvest) {
+          const { harvest } = data;
           play("ui");
-          setCelebrate({ unitId: body.unitId, nonce: Date.now() });
+          const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
+          if (single) setCelebrate({ unitId: single, nonce: Date.now() });
+          // The toast leads with the money, because that is what a harvest is
+          // now -- the produce is the reason, not the reward. The synergy gets
+          // its own clause only when one actually applied.
+          const bonusPart = harvest.bounty.label
+            ? ` · ${harvest.bounty.label} +${harvest.bonus.toLocaleString()}`
+            : "";
+          const upkeepPart = harvest.upkeep > 0
+            ? ` · upkeep -${harvest.upkeep.toLocaleString()}`
+            : "";
           setLastCollect({
-            text: `+${itemLabel(data.collected.item, data.collected.quantity)}`,
+            text: `+${harvest.gold.toLocaleString()} Gold${bonusPart}${upkeepPart}`,
             nonce: Date.now(),
           });
           if (anchor) {
-            const float = collectFloat(data.collected.item, data.collected.quantity);
+            // A one-unit sweep floats its produce, which is what a tap on that
+            // animal was asking about. A whole-farm sweep floats the money:
+            // naming five kinds of produce over one thumb is unreadable.
+            const float =
+              single && harvest.tally.length === 1
+                ? collectFloat(harvest.tally[0].item, harvest.tally[0].quantity)
+                : { text: `+${harvest.gold.toLocaleString()} Gold`, icon: "ico-gold" };
             world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
           }
-          if (data.collected.mucked) {
-            setError("That came up weather-worn. Clear it before it earns again.");
+          if (harvest.mucked > 0) {
+            setError(
+              harvest.mucked === 1
+                ? "That came up weather-worn. Clear it before it earns again."
+                : `${harvest.mucked} came up weather-worn. Clear them before they earn again.`,
+            );
           }
         }
         // The other three a finger can start from the map. No produce to
@@ -395,13 +430,6 @@ export function StackAcresFarm() {
                 ? "Seeded"
                 : null;
         if (anchor && done) world.current?.floatAt(anchor, done, "gain");
-        if (body.action === "exchange" && data.exchanged) {
-          play("ui");
-          setExchangeChoice(null);
-          setExchangeNote(
-            `${data.exchanged.gold.toLocaleString()} Gold is in your balance, for ${data.exchanged.bushels.toLocaleString()} Bushels.`,
-          );
-        }
       } catch {
         if (mounted.current) setError("Could not reach the farm. Check your connection.");
       } finally {
@@ -425,10 +453,20 @@ export function StackAcresFarm() {
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       tapSound();
-      void act({ action: "collect", unitId: unit.id });
+      void act({ action: "collect", unitIds: [unit.id] });
     },
     [act],
   );
+
+  /**
+   * Bring in everything that is ready, in one act. This is the only button
+   * that can earn a Bountiful Harvest: the synergy is a property of what was
+   * gathered TOGETHER, so a unit tapped on its own can never qualify.
+   */
+  const onHarvestAll = useCallback(() => {
+    tapSound();
+    void act({ action: "collect" });
+  }, [act]);
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       tapSound();
@@ -515,7 +553,7 @@ export function StackAcresFarm() {
       // The sidebar follows the finger rather than gating it: whatever the
       // player is touching is what "here" means now.
       setPlace(stockZone(unit.stock));
-      const action = tapActionFor(unit, { feed, bushels, nowMs });
+      const action = tapActionFor(unit, { feed, gold, nowMs });
       if (action.kind === "refused") {
         world.current?.floatAt(at, action.reason, "deny");
         return;
@@ -523,9 +561,14 @@ export function StackAcresFarm() {
       if (busy) return;
       tapSound();
       tapAnchor.current = at;
-      void act({ action: action.kind, unitId });
+      // A tap is a one-unit sweep. It earns no synergy by construction --
+      // three is the fewest a Bountiful Harvest considers -- which is exactly
+      // what the Harvest button beside it is for.
+      void act(
+        action.kind === "collect" ? { action: "collect", unitIds: [unitId] } : { action: action.kind, unitId },
+      );
     },
-    [act, bushels, busy, feed, liveUnits, nowMs],
+    [act, busy, feed, gold, liveUnits, nowMs],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -563,34 +606,19 @@ export function StackAcresFarm() {
     [liveUnits, place],
   );
   const buyOptions: BuyOption[] = useMemo(
-    () => buyOptionsForZone(place, { units: liveUnits, bushels, capacity }),
-    [place, liveUnits, bushels, capacity],
+    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
+    [place, liveUnits, gold, capacity],
   );
 
   const toolHint = STACKACRES_TOOL_DEFS[tool].hint;
 
-  /** Produce in the barn, in catalogue order so the list never reshuffles. */
-  const carried = useMemo(
-    () =>
-      STACKACRES_ITEMS.map((item) => ({ item, quantity: inventory[item] ?? 0 })).filter(
-        (line) => line.quantity > 0,
-      ),
-    [inventory],
+  /** Everything standing ready right now. The Harvest button's whole subject. */
+  const readyUnits = useMemo(
+    () => liveUnits.filter((unit) => unit.state === "ready"),
+    [liveUnits],
   );
-  const carrying = carried.reduce((total, line) => total + line.quantity, 0);
+  const carrying = readyUnits.length;
 
-  /**
-   * The most this player can send out right now: the smaller of what is in the
-   * barn and what is left of today's flat allowance. The allowance is the same
-   * number for every farm, which is the whole point of the window -- more
-   * stock fills the bucket faster, it never makes the bucket bigger.
-   */
-  const exchangeMax = Math.min(bushels, exchange.maxBushels);
-  const exchangeAmount = Math.min(exchangeChoice ?? exchangeMax, exchangeMax);
-  const exchangePresets = useMemo(
-    () => [100, 500, 1_000].filter((amount) => amount < exchangeMax),
-    [exchangeMax],
-  );
   // The bar shows what is LEFT, not what has been spent. Filling it as the day
   // was spent put a full gold bar directly above the words "0 of 5,000 Gold
   // left today", which is the opposite of what it meant. It drains now.
@@ -642,15 +670,10 @@ export function StackAcresFarm() {
             <HelpCircle size={13} aria-hidden="true" /> How to play
           </button>
         </div>
-        {/* Bushels sit first and Gold last, in the order they matter here:
-            everything on this screen is bought with Bushels, and Gold buys
-            capacity and stock outright. */}
+        {/* One purse now. The farm's own currency is gone, so the Gold pill
+            the rest of the app already shows is the whole story here, and it
+            keeps its usual place at the end of the row. */}
         <div className="sa-hud">
-          <span className="sa-purse" title="Bushels">
-            <StackAcresIcon name="ico-bushels" size={16} />
-            <strong>{bushels.toLocaleString()}</strong>
-            <span className="sa-sr">Bushels</span>
-          </span>
           <span className="sa-feed" title="Feed servings">
             <StackAcresIcon name="ico-feed" size={16} />
             <strong>{feed}</strong>
@@ -747,7 +770,7 @@ export function StackAcresFarm() {
           {radial && (
             <StackAcresRadialMenu
               at={radial.at}
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, bushels, capacity })}
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
               busy={busy}
               onSeed={onRadialSeed}
@@ -763,6 +786,28 @@ export function StackAcresFarm() {
           <div className="sa-side">
             {error && <p className="duel-error" role="alert">{error}</p>}
           </div>
+
+          {/* Bring the whole farm in at once.
+              THIS IS THE ONLY BUTTON THAT CAN EARN A SYNERGY, and that is why
+              it exists as its own affordance rather than being implied by
+              tapping units one at a time: Bountiful Harvest is a property of
+              what was gathered TOGETHER, so a farm collected a tap at a time
+              earns nothing. It only appears when there is something to bring
+              in -- a permanently-visible disabled button on a canvas is chrome
+              a player learns to stop reading. */}
+          {carrying > 0 && (
+            <button
+              type="button"
+              className="sa-harvest-all"
+              disabled={busy}
+              onClick={onHarvestAll}
+            >
+              <StackAcresIcon name="ico-harvest" size={18} />
+              <span>
+                Harvest {carrying} {carrying === 1 ? "field" : "fields"}
+              </span>
+            </button>
+          )}
 
           {/* The handle the panel hangs off when it is shut. Before this,
               the only way back into a district you had closed was to find
@@ -817,7 +862,7 @@ export function StackAcresFarm() {
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
 
-            {/* Buy comes first now. Seeding with Bushels is the one thing on
+            {/* Buy comes first now. Seeding one cycle is the one thing on
                 this panel a tap on the map also does; buying outright and
                 expanding capacity are Gold, are permanent, and are the reason
                 to open this at all -- so they lead, rather than sitting under
@@ -843,7 +888,7 @@ export function StackAcresFarm() {
                 units={districtUnits}
                 nowMs={nowMs}
                 feed={feed}
-                bushels={bushels}
+                gold={gold}
                 busyUnitId={busyUnitId}
                 armedUnitId={retiringUnitId}
                 onCollect={onCollect}
@@ -872,7 +917,7 @@ export function StackAcresFarm() {
               <button
                 type="button"
                 className="sa-sheet-close"
-                onClick={() => { tapSound(); setShowStore(false); setExchangeNote(null); }}
+                onClick={() => { tapSound(); setShowStore(false); }}
               >
                 Done
               </button>
@@ -882,48 +927,51 @@ export function StackAcresFarm() {
                 by a button in here has to be answered in here. */}
             {error && <p className="duel-error" role="alert">{error}</p>}
 
-            {/* Selling comes first: it is what you came in to do after a
-                harvest, and it is where the Bushels for everything below it
-                come from. */}
-            <StoreShelf icon="ico-harvest">Sell your produce</StoreShelf>
-            {carried.length === 0 ? (
+            {/* What the day has left comes first. It is the only number in
+                here a player has to plan around: the farm can send out the
+                same Gold whatever it owns, so a full bar is the reason to go
+                and harvest and an empty one is the reason to stop. */}
+            <StoreShelf icon="ico-gold">Today&apos;s allowance</StoreShelf>
+            <div className="sa-exchange">
               <p className="sa-sheet-note">
-                The barn is empty. Collect from a ready unit and its produce turns up here.
+                Bringing in a harvest pays Gold on the spot. Every farm can send out the same{" "}
+                {exchange.ceiling.toLocaleString()} Gold a day, whatever it owns — more stock fills
+                the day faster, it never makes the day bigger.
               </p>
-            ) : (
-              <ul className="sa-barn">
-                {carried.map(({ item, quantity }) => {
-                  const def = STACKACRES_ITEM_CATALOGUE[item];
-                  return (
-                    <li key={item} className="sa-barn-row">
-                      <StackAcresIcon name={def.icon as PainterName} size={28} />
-                      <span className="sa-barn-name">
-                        <strong>{itemLabel(item, quantity)}</strong>
-                        <span>{def.price.toLocaleString()} each</span>
-                      </span>
-                      <span className="sa-barn-actions">
-                        <button
-                          type="button"
-                          className="sa-cta sa-cta-small"
-                          disabled={busy}
-                          onClick={() => void act({ action: "sell", item, quantity: 1 })}
-                        >
-                          Sell 1
-                        </button>
-                        <button
-                          type="button"
-                          className="sa-cta sa-cta-small"
-                          disabled={busy}
-                          onClick={() => void act({ action: "sell", item, quantity })}
-                        >
-                          Sell all · {(def.price * quantity).toLocaleString()}
-                        </button>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+              <p className="sa-exchange-meter">
+                <span className="sa-exchange-bar" aria-hidden="true">
+                  <span style={{ transform: `scaleX(${exchangeLeft})` }} />
+                </span>
+                <span aria-live="polite">
+                  <strong>{exchange.remaining.toLocaleString()}</strong> of{" "}
+                  {exchange.ceiling.toLocaleString()} Gold left today
+                </span>
+              </p>
+              {exchange.remaining < 1 && (
+                <p className="sa-sheet-note">
+                  That is everything this farm can send out today. Anything still standing keeps
+                  until the day turns over, in {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}.
+                </p>
+              )}
+            </div>
+
+            <StoreShelf icon="ico-harvest">Land maintenance</StoreShelf>
+            <p className="sa-sheet-note">
+              Holding land costs <strong>{upkeep.fee.toLocaleString()} Gold</strong> a day across{" "}
+              {upkeep.units} {upkeep.units === 1 ? "field or pen" : "fields and pens"}. It is taken
+              out of what you harvest, never out of your balance, and it climbs faster than the land
+              earns — a big estate keeps less of every extra field than a small one does.
+            </p>
+            <p className="sa-sheet-note">
+              {upkeep.due > 0 ? (
+                <>
+                  Today has <strong>{upkeep.due.toLocaleString()} Gold</strong> still to pay. Your
+                  next harvest covers what it can.
+                </>
+              ) : (
+                <>Today is paid up.</>
+              )}
+            </p>
 
             <StoreShelf icon="ico-feed">Feed</StoreShelf>
             <p className="sa-sheet-note">
@@ -936,13 +984,13 @@ export function StackAcresFarm() {
                   <h3>{item.label}</h3>
                   <p className="sa-stock-terms">{item.servings} servings</p>
                   <p className="sa-stock-yield">
-                    {item.cost.toLocaleString()} Bushels{" "}
+                    {item.cost.toLocaleString()} Gold{" "}
                     <span>({Math.round(item.cost / item.servings)} each)</span>
                   </p>
                   <button
                     type="button"
                     className="sa-cta"
-                    disabled={busy || bushels < item.cost}
+                    disabled={busy || gold < item.cost}
                     onClick={() => void act({ action: "buy-feed", itemId: id })}
                   >
                     Buy
@@ -954,72 +1002,6 @@ export function StackAcresFarm() {
               You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.
             </p>
 
-            {/* Last, and deliberately so. Everything above is the farm's own
-                money going round; this is the one place it leaves, and it
-                should be a thing you go and do rather than the first button
-                under your thumb. */}
-            <StoreShelf icon="ico-gold">Exchange window</StoreShelf>
-            <div className="sa-exchange">
-              <p className="sa-sheet-note">
-                Bushels leave the farm here, at <strong>{exchange.rate} Gold</strong> each. Every
-                farm can send out the same {exchange.ceiling.toLocaleString()} Gold a day, whatever
-                it owns — stock fills the day faster, it never makes the day bigger.
-              </p>
-              <p className="sa-exchange-meter">
-                <span className="sa-exchange-bar" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${exchangeLeft})` }} />
-                </span>
-                <span aria-live="polite">
-                  <strong>{exchange.remaining.toLocaleString()}</strong> of{" "}
-                  {exchange.ceiling.toLocaleString()} Gold left today
-                </span>
-              </p>
-
-              {exchange.maxBushels < 1 ? (
-                <p className="sa-sheet-note">
-                  That is everything this farm can send out today. The window opens again in{" "}
-                  {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}, and your Bushels keep
-                  until then.
-                </p>
-              ) : bushels === 0 ? (
-                <p className="sa-sheet-note">
-                  Nothing to send. Sell some produce above and the Bushels turn up here.
-                </p>
-              ) : (
-                <>
-                  <div className="sa-exchange-amounts" role="group" aria-label="How many Bushels">
-                    {[...exchangePresets, exchangeMax].map((amount) => (
-                      <button
-                        key={amount}
-                        type="button"
-                        className={clsx("sa-amount", { "is-on": amount === exchangeAmount })}
-                        aria-pressed={amount === exchangeAmount}
-                        onClick={() => { tapSound(); setExchangeChoice(amount); }}
-                      >
-                        {amount === exchangeMax && exchangePresets.length > 0
-                          ? `Max · ${amount.toLocaleString()}`
-                          : amount.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={busy || exchangeAmount < 1}
-                    onClick={() => void act({ action: "exchange", bushels: exchangeAmount })}
-                  >
-                    Exchange {exchangeAmount.toLocaleString()} Bushels for{" "}
-                    {goldForBushels(exchangeAmount).toLocaleString()} Gold
-                  </button>
-                </>
-              )}
-
-              {exchangeNote && (
-                <p className="sa-sheet-note sa-exchange-done" role="status">
-                  {exchangeNote}
-                </p>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -1042,19 +1024,30 @@ export function StackAcresFarm() {
             handle without moving the camera.
           </p>
           <p>
-            The farm runs on <strong>Bushels</strong>, its own currency. Collecting from a ready
-            unit puts produce in the barn; selling it at the supply store is what earns Bushels, and
-            Bushels buy your seed and feed. Gold buys stock outright, and buys more room to keep at
-            once.
+            <strong>Everything is paid in Gold, in one step.</strong> Bringing in a harvest works
+            out what the produce is worth and puts the Gold straight in your balance — there is no
+            second currency, no barn to empty and nothing to queue for. Gold also buys your seed,
+            your feed, stock outright, and more room to keep at once.
           </p>
           <p>
-            Bushels come back out as Gold at the supply store&apos;s exchange window, at{" "}
-            {exchange.rate} Gold each. Every farm can send out the same{" "}
-            {exchange.ceiling.toLocaleString()} Gold a day — owning more reaches that sooner, it
-            never gets more than that. Whatever you do not exchange keeps until tomorrow.
+            Bringing several fields in <em>together</em> can earn a <strong>Bountiful Harvest</strong>.
+            Three or more of the same kind is <strong>Mono-cropping</strong>; a balanced mix of
+            things grown and things an animal made is <strong>Crop Rotation</strong>. Either
+            multiplies what the whole harvest pays, so the Harvest button is worth more than
+            tapping each field on its own.
+          </p>
+          <p>
+            Holding land costs a daily <strong>Land Maintenance</strong> fee, taken out of what you
+            harvest rather than out of your balance. It climbs faster than the land earns, so a
+            sprawling estate keeps less of each extra field than a small one does.
+          </p>
+          <p>
+            Every farm can send out the same {exchange.ceiling.toLocaleString()} Gold a day, whatever
+            it owns — owning more reaches that sooner, it never gets more than that. Anything still
+            standing keeps until tomorrow.
           </p>
           <ul>
-            <li>Seed a crop or stock a pen with Bushels, then come back when it turns gold.</li>
+            <li>Seed a crop or stock a pen with Gold, then come back when it turns gold.</li>
             <li>Crops look after themselves. Animals need feeding, and stop working when hungry.</li>
             <li>Nothing here can die and nothing can be lost. Neglect costs you time, not produce.</li>
             <li>
@@ -1062,7 +1055,7 @@ export function StackAcresFarm() {
               expand it — one kind&apos;s room has nothing to do with any other&apos;s.
             </li>
             <li>
-              Something finished sometimes comes up weather-worn and needs clearing, in Bushels,
+              Something finished sometimes comes up weather-worn and needs clearing, in Gold,
               before it frees its room again.
             </li>
             <li>

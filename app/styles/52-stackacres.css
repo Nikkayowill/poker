@@ -365,13 +365,13 @@
   gap: 6px;
 }
 
-/* Bushels, Feed and Gold. One cream board each, outlined, so a number stays
-   readable whether it is sitting over a bright meadow or over dark ploughed
-   soil -- which the old translucent pills could not do, because their contrast
-   depended on whatever the camera happened to be over. Bushels first and Gold
-   last, in the order they matter here: everything on this screen is bought
-   with Bushels, and Gold buys capacity and stock outright. */
-.sa-purse,
+/* Feed and Gold. One cream board each, outlined, so a number stays readable
+   whether it is sitting over a bright meadow or over dark ploughed soil --
+   which the old translucent pills could not do, because their contrast
+   depended on whatever the camera happened to be over. There used to be a
+   third, Bushels, when the farm had a currency of its own; a harvest pays Gold
+   directly now, so the wallet the rest of the app already shows is the whole
+   story. */
 .sa-feed,
 .sa-theme .gold-balance.floor-wallet {
   display: inline-flex;
@@ -390,15 +390,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Gold is the one balance that is not the farm's own money, so it is the one
-   that gets the corn fill rather than paper. */
+/* Gold is the money, so it is the one that gets the corn fill rather than
+   paper -- the same material as the buttons that spend it. */
 .sa-theme .gold-balance.floor-wallet {
   background: var(--sa-corn);
   box-shadow: 0 3px 0 var(--sa-corn-rim), var(--sa-drop);
   color: var(--sa-ink);
 }
 
-.sa-purse .sa-ico,
 .sa-feed .sa-ico {
   width: 20px;
   height: 20px;
@@ -528,7 +527,7 @@
 .sa-unit-action,
 .sa-unit-link,
 .sa-buy-btn,
-.sa-amount,
+.sa-harvest-all,
 .sa-radial-btn,
 .sa-radial-more,
 .sa-cta,
@@ -553,7 +552,7 @@
 .sa-panel-close:active,
 .sa-unit-action:not(:disabled):active,
 .sa-buy-btn:not(:disabled):active,
-.sa-amount:active,
+.sa-harvest-all:not(:disabled):active,
 .sa-radial-btn:not(:disabled):active,
 .sa-radial-more:active,
 .sa-cta:not(:disabled):active,
@@ -577,7 +576,7 @@
 .sa-unit-action:focus-visible,
 .sa-unit-link:focus-visible,
 .sa-buy-btn:focus-visible,
-.sa-amount:focus-visible,
+.sa-harvest-all:focus-visible,
 .sa-radial-btn:focus-visible,
 .sa-radial-more:focus-visible,
 .sa-cta:focus-visible,
@@ -594,6 +593,7 @@
    (see district-panel.ts's `seedReason`). */
 .sa-unit-action:disabled,
 .sa-buy-btn:disabled,
+.sa-harvest-all:disabled,
 .sa-radial-btn:disabled,
 .sa-cta:disabled {
   filter: saturate(.35) brightness(.94);
@@ -1161,6 +1161,53 @@
    started: the signpost rail wraps as far right as it needs to, and at the top
    of the edge the peg and the rail's last sign collided on a phone. Halfway
    down is the one band of that edge nothing else claims. */
+/* ---- the harvest key -------------------------------------------------- */
+
+/* Bring the whole farm in at once. It is the only button on the canvas that
+   is corn rather than paper, because it is the only one that PAYS -- the
+   toolbelt, the signpost and the camera keys all just move you around, and a
+   surface where the money key looks like the camera key is a surface where
+   nobody finds the money key.
+   It sits bottom-centre, above the toolbelt rather than beside it: a thumb
+   arriving at "I want my Gold" should not have to pick it out of a row of
+   tools, and it is absent entirely when nothing is ready, so the spot is
+   either the answer or empty. */
+.sa-harvest-all {
+  position: absolute;
+  left: 50%;
+  /* Clear of the toolbelt rather than beside it: .sa-controls is anchored
+     bottom-left at 10px and one tool tall, so a key on the centre line one
+     tool-height above it never collides with the belt at any width. */
+  bottom: calc(10px + var(--sa-tap) + 12px);
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--sa-tap);
+  padding: 9px 20px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-corn);
+  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: -.005em;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+/* The squish above sets its own transform, which would drop the -50% centring
+   and throw the key to the right. Restated with the translate kept. */
+.sa-harvest-all:not(:disabled):active {
+  transform: translateX(-50%) translateY(var(--sa-lift)) scale(.98);
+}
+
+.sa-harvest-all .sa-ico { width: 22px; height: 22px; }
+
 .sa-panel-tab {
   position: absolute;
   top: 50%;
@@ -1522,9 +1569,10 @@
   color: var(--sa-ink-soft);
 }
 
-/* Gold leaves the wallet; Bushels are the farm's own money going round. The
-   two purchases are told apart by material, not by a label -- corn for the one
-   that costs real Gold, plain board for the one that does not. */
+/* Both prices are Gold now, so material tells apart what you GET rather than
+   what you pay with: corn and leaf for the permanent purchases -- the animal
+   itself, and the room to keep it -- against plain board for seeding a single
+   cycle, which is spent and gone with its own harvest. */
 .sa-buy-btn.is-gold,
 .sa-buy-btn.is-expand {
   background: var(--sa-corn);
@@ -1705,72 +1753,6 @@
 
 .sa-cta:hover:not(:disabled) { filter: brightness(1.05); }
 
-/* ---- the barn -------------------------------------------------------- */
-
-.sa-barn {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sa-barn-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
-}
-
-.sa-barn-row > .sa-ico {
-  width: 34px;
-  height: 34px;
-}
-
-.sa-barn-name {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.sa-barn-name strong {
-  color: var(--sa-ink);
-  font-size: 15px;
-  font-weight: 800;
-}
-
-/* Never wraps. A second line here pushes the sell buttons out of alignment
-   with the rows above, and the barn stops reading as a list. */
-.sa-barn-name > span {
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.sa-barn-actions {
-  display: flex;
-  gap: 8px;
-  flex: none;
-}
-
-/* The sell buttons are the one place a sheet gets more than one corn key.
-   They are the same action repeated at two quantities rather than competing
-   choices, so they read as a pair, not as two primaries. */
-.sa-cta-small {
-  margin-top: 0;
-  min-height: 42px;
-  padding: 6px 13px;
-  font-size: 13.5px;
-  box-shadow: 0 4px 0 var(--sa-corn-rim), var(--sa-drop);
-}
-
 /* ---- feed ------------------------------------------------------------- */
 
 .sa-stock-cards {
@@ -1811,12 +1793,13 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
-/* ---- the exchange window --------------------------------------------- */
+/* ---- today's allowance ------------------------------------------------ */
 
-/* The only place on this screen where the farm touches real money, so it is
-   the only block with its own surface and a corn edge. That edge is marking a
-   boundary, not decorating a card -- everything above it is the farm's own
-   currency going round in a circle. */
+/* The one block in the sheet with its own surface and a corn edge. It used to
+   be an exchange window -- a place Bushels were traded for Gold -- and it is
+   now just the meter that was behind it: what is left of the flat daily
+   allowance every farm shares. The edge is marking the boundary the farm's
+   money crosses, which is still exactly where it was. */
 .sa-exchange {
   margin-top: 8px;
   padding: 14px;
@@ -1827,7 +1810,6 @@
 }
 
 .sa-exchange > .sa-sheet-note:first-child { margin-top: 0; }
-.sa-exchange .sa-cta { width: 100%; }
 
 .sa-exchange-meter {
   display: flex;
@@ -1865,42 +1847,6 @@
   box-shadow: inset 0 -3px 0 var(--sa-corn-side);
   transition: transform var(--duration-slow, .22s) var(--sa-ease-out);
 }
-
-.sa-exchange-amounts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-/* Plain board, not corn: the chips choose an amount, and the corn fill in this
-   block belongs to the one key that actually moves money. */
-.sa-amount {
-  min-height: var(--sa-tap);
-  padding: 6px 16px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
-  color: var(--sa-ink-soft);
-  font-size: 14.5px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
-}
-
-/* Chosen. Latched down like a held tool, same physical grammar. */
-.sa-amount.is-on {
-  transform: translateY(4px);
-  background: var(--sa-choc);
-  box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(0, 0, 0, .2);
-  color: var(--sa-cream);
-}
-
-.sa-exchange-done { color: var(--sa-leaf-rim) !important; font-weight: 800; }
 
 /* ---- Ray ------------------------------------------------------------- */
 
@@ -2260,7 +2206,6 @@
   .sa-theme { --sa-tap: 44px; }
 
   .sa-theme .floor-bar { padding-bottom: 6px; }
-  .sa-purse,
   .sa-feed,
   .sa-theme .gold-balance.floor-wallet,
   .sa-music-toggle,

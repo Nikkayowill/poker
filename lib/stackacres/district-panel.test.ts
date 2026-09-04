@@ -21,31 +21,31 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
 
 describe("unitRowAction", () => {
   it("a ready unit offers collect", () => {
-    expect(unitRowAction(unit({ state: "ready" }), { feed: 0, bushels: 0 })).toEqual({ kind: "collect" });
+    expect(unitRowAction(unit({ state: "ready" }), { feed: 0, gold: 0 })).toEqual({ kind: "collect" });
   });
 
   it("a hungry unit offers feed, blocked without feed on hand", () => {
-    expect(unitRowAction(unit({ state: "hungry" }), { feed: 0, bushels: 0 })).toEqual({
+    expect(unitRowAction(unit({ state: "hungry" }), { feed: 0, gold: 0 })).toEqual({
       kind: "feed",
       disabled: true,
       reason: "No feed left in the barn.",
     });
-    expect(unitRowAction(unit({ state: "hungry" }), { feed: 2, bushels: 0 })).toEqual({
+    expect(unitRowAction(unit({ state: "hungry" }), { feed: 2, gold: 0 })).toEqual({
       kind: "feed",
       disabled: false,
       reason: null,
     });
   });
 
-  it("a mucked unit offers clear, blocked without enough Bushels", () => {
+  it("a mucked unit offers clear, blocked without enough Gold", () => {
     const mucked = unit({ state: "mucked", muckFee: 22 });
-    expect(unitRowAction(mucked, { feed: 0, bushels: 10 })).toEqual({
+    expect(unitRowAction(mucked, { feed: 0, gold: 10 })).toEqual({
       kind: "clear",
       fee: 22,
       disabled: true,
-      reason: "Clearing costs 22 Bushels.",
+      reason: "Clearing costs 22 Gold.",
     });
-    expect(unitRowAction(mucked, { feed: 0, bushels: 22 })).toEqual({
+    expect(unitRowAction(mucked, { feed: 0, gold: 22 })).toEqual({
       kind: "clear",
       fee: 22,
       disabled: false,
@@ -54,10 +54,10 @@ describe("unitRowAction", () => {
   });
 
   it("a permanent working unit offers retire; a growing seeded one offers nothing", () => {
-    expect(unitRowAction(unit({ state: "working", permanent: true }), { feed: 0, bushels: 0 })).toEqual({
+    expect(unitRowAction(unit({ state: "working", permanent: true }), { feed: 0, gold: 0 })).toEqual({
       kind: "retire",
     });
-    expect(unitRowAction(unit({ state: "working", permanent: false }), { feed: 0, bushels: 0 })).toEqual({
+    expect(unitRowAction(unit({ state: "working", permanent: false }), { feed: 0, gold: 0 })).toEqual({
       kind: "none",
     });
   });
@@ -78,13 +78,13 @@ describe("occupiedCountFor", () => {
 
 describe("buyOptionsForZone", () => {
   it("lists only the stock kinds that live in this district", () => {
-    const options = buyOptionsForZone("farmstead", { units: [], bushels: 1000, capacity: {} });
+    const options = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} });
     expect(options.map((o) => o.stock)).toEqual(["hen"]);
   });
 
   it("caps at 3 by default and offers an expand option once full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, bushels: 1000, capacity: {} });
+    const [hen] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} });
     expect(hen.owned).toBe(3);
     expect(hen.cap).toBe(3);
     expect(hen.atCap).toBe(true);
@@ -95,19 +95,19 @@ describe("buyOptionsForZone", () => {
     // Caught by an actual browser run, not by a test: this used to check only
     // whether extra slots were maxed, so a brand-new farm with nothing owned
     // at all offered "Expand capacity" before the free cap was ever reached.
-    const [emptyHen] = buyOptionsForZone("farmstead", { units: [], bushels: 1000, capacity: {} });
+    const [emptyHen] = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} });
     expect(emptyHen.atCap).toBe(false);
     expect(emptyHen.expand).toBeNull();
 
     const twoOwned = [unit({ id: "a" }), unit({ id: "b" })];
-    const [almostFull] = buyOptionsForZone("farmstead", { units: twoOwned, bushels: 1000, capacity: {} });
+    const [almostFull] = buyOptionsForZone("farmstead", { units: twoOwned, gold: 1000, capacity: {} });
     expect(almostFull.atCap).toBe(false);
     expect(almostFull.expand).toBeNull();
   });
 
   it("a purchased extra slot raises the cap and clears atCap", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, bushels: 1000, capacity: { hen: 1 } });
+    const [hen] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: { hen: 1 } });
     expect(hen.cap).toBe(4);
     expect(hen.atCap).toBe(false);
     // Not offered again either -- the fourth slot the player just bought has
@@ -117,17 +117,17 @@ describe("buyOptionsForZone", () => {
 
   it("expand disappears once the extra-slot ceiling is reached, even while genuinely full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" }), unit({ id: "d" }), unit({ id: "e" }), unit({ id: "f" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, bushels: 0, capacity: { hen: 3 } });
+    const [hen] = buyOptionsForZone("farmstead", { units, gold: 0, capacity: { hen: 3 } });
     expect(hen.cap).toBe(6);
     expect(hen.atCap).toBe(true);
     expect(hen.expand).toBeNull();
   });
 
-  it("seedReason names the Bushel cost when short, and the cap when full", () => {
-    const [short] = buyOptionsForZone("farmstead", { units: [], bushels: 0, capacity: {} });
-    expect(short.seedReason).toMatch(/Bushels/);
+  it("seedReason names the Gold cost when short, and the cap when full", () => {
+    const [short] = buyOptionsForZone("farmstead", { units: [], gold: 0, capacity: {} });
+    expect(short.seedReason).toMatch(/Gold/);
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [full] = buyOptionsForZone("farmstead", { units, bushels: 1000, capacity: {} });
+    const [full] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} });
     expect(full.seedReason).toMatch(/full/);
   });
 });

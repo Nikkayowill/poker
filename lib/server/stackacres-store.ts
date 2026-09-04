@@ -2,13 +2,20 @@ import "server-only";
 import { randomUUID } from "crypto";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
-import { BUSHELS } from "@/lib/stackacres/items";
 import { adminClient } from "./supabase-admin";
 
 /**
  * Persistence for StackAcres: one row per owned unit (an animal or a crop,
- * no plot underneath it), plus the player's feed balance, purchased capacity
- * and Bushels.
+ * no plot underneath it), plus the player's feed balance, purchased capacity,
+ * the Gold the farm has paid out today and the Land Maintenance that day has
+ * collected.
+ *
+ * THE BARN IS GONE. There used to be a `homestead_inventory` layer here
+ * holding produce and Bushels between a harvest and a sale. A harvest is
+ * valued and paid in one step now, so there is nothing to hold: the table is
+ * left in place and simply unread, the same posture `homestead_plots` has had
+ * since units replaced plots. Migrations here are append-only and a dropped
+ * table takes its history with it.
  *
  * Same twin-branch shape as ante-up-store.ts (Supabase when configured, an
  * in-process Map otherwise), and the same core invariant: a version that only
@@ -42,8 +49,8 @@ declare global {
   var __riverRoomStackAcresUnits: Map<string, StoredStackAcresUnit> | undefined;
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
-  var __riverRoomStackAcresInventory: Map<string, StackAcresInventory> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
+  var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
 }
 
@@ -57,13 +64,13 @@ globalThis.__riverRoomStackAcresCapacity = memoryCapacity;
 const memoryFeed = globalThis.__riverRoomStackAcresFeed ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresFeed = memoryFeed;
 
-const memoryInventory =
-  globalThis.__riverRoomStackAcresInventory ?? new Map<string, StackAcresInventory>();
-globalThis.__riverRoomStackAcresInventory = memoryInventory;
-
 /** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
 const memoryExchanges = globalThis.__riverRoomStackAcresExchanges ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresExchanges = memoryExchanges;
+
+/** Land Maintenance collected, keyed `${profileId}:${YYYY-MM-DD}`. */
+const memoryUpkeep = globalThis.__riverRoomStackAcresUpkeep ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresUpkeep = memoryUpkeep;
 
 const memoryHarvests = globalThis.__riverRoomStackAcresHarvests ?? [];
 globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
@@ -73,8 +80,8 @@ export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
   memoryCapacity.clear();
   memoryFeed.clear();
-  memoryInventory.clear();
   memoryExchanges.clear();
+  memoryUpkeep.clear();
   memoryHarvests.length = 0;
 }
 
@@ -597,87 +604,7 @@ export async function adjustStackAcresFeed(profileId: string, delta: number): Pr
 }
 
 /* ------------------------------------------------------------------ */
-/* Inventory and Bushels                                               */
-/* ------------------------------------------------------------------ */
-
-/** Every held line for one player, keyed by item id. Bushels are one of them. */
-export type StackAcresInventory = Record<string, number>;
-
-export async function readStackAcresInventory(profileId: string): Promise<StackAcresInventory> {
-  const supabase = adminClient();
-  if (!supabase) return { ...(memoryInventory.get(profileId) ?? {}) };
-
-  const { data, error } = await supabase
-    .from("homestead_inventory")
-    .select("item_id, quantity")
-    .eq("profile_id", profileId);
-  if (error) throw new Error(`Could not read your barn: ${error.message}`);
-
-  const inventory: StackAcresInventory = {};
-  for (const row of (data ?? []) as { item_id: string; quantity: number | string }[]) {
-    inventory[row.item_id] = Number(row.quantity);
-  }
-  return inventory;
-}
-
-/**
- * Moves one inventory line by `delta`, refusing to go negative. Returns the new
- * quantity, or null when there was not enough to spend -- which the caller must
- * treat exactly like a lost race, because it is one. Same posture as
- * adjustStackAcresFeed and, above it, credit_gold.
- */
-export async function adjustStackAcresInventory(
-  profileId: string,
-  itemId: string,
-  delta: number,
-): Promise<number | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const held = memoryInventory.get(profileId) ?? {};
-    const next = (held[itemId] ?? 0) + delta;
-    if (next < 0) return null;
-    memoryInventory.set(profileId, { ...held, [itemId]: next });
-    return next;
-  }
-
-  const { data, error } = await supabase.rpc("adjust_homestead_inventory", {
-    p_profile_id: profileId,
-    p_item_id: itemId,
-    p_delta: delta,
-  });
-  if (error) {
-    if (error.code === "23514") return null;
-    throw new Error(`Could not update your barn: ${error.message}`);
-  }
-  return data === null ? null : Number(data);
-}
-
-/**
- * Seeds a new farm's Bushels exactly once. Returns true only on the write that
- * actually created the row -- a profile whose bushels row already exists is
- * never topped up, even sitting at zero, because the primary key is the
- * idempotency guard rather than a balance check. A player who spends the grant
- * does not get another by clearing their farm.
- */
-export async function grantStartingBushels(profileId: string, amount: number): Promise<boolean> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const held = memoryInventory.get(profileId);
-    if (held && BUSHELS in held) return false;
-    memoryInventory.set(profileId, { ...(held ?? {}), [BUSHELS]: Math.max(amount, 0) });
-    return true;
-  }
-
-  const { data, error } = await supabase.rpc("grant_homestead_starting_bushels", {
-    p_profile_id: profileId,
-    p_amount: amount,
-  });
-  if (error) throw new Error(`Could not open your barn: ${error.message}`);
-  return data === true;
-}
-
-/* ------------------------------------------------------------------ */
-/* The exchange window                                                  */
+/* The daily Gold allowance, and Land Maintenance                       */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -703,6 +630,11 @@ export async function readStackAcresExchanged(profileId: string, day: string): P
 /**
  * Reserves `gold` against today's ceiling, atomically, and returns the day's
  * new total -- or null when the reservation would break the ceiling.
+ *
+ * Called by the harvest now rather than by an exchange window, and called
+ * BEFORE any unit is settled, so that a full day refuses while the crops are
+ * still standing. `releaseStackAcresExchange` below is the other half of that
+ * order.
  *
  * Null is the whole point of this function. It is the same posture every other
  * write here takes: a null is a refusal or a lost race, the two are
@@ -737,6 +669,119 @@ export async function reserveStackAcresExchange(
     p_ceiling: ceiling,
   });
   if (error) throw new Error(`Could not reach the exchange window: ${error.message}`);
+  return data === null ? null : Number(data);
+}
+
+/**
+ * Hands part of a reservation back, when a sweep settled fewer units than it
+ * reserved for.
+ *
+ * WHY THIS EXISTS AT ALL. A harvest reserves against the day's allowance
+ * BEFORE it settles any unit, because the reservation is the thing that can
+ * refuse -- refusing after the crops are gone would consume a harvest and pay
+ * nothing for it. The cost of that order is this function: if a second tab won
+ * the race for some of the units, the sweep must give back the part of the
+ * allowance it did not use, or a double-tap would quietly burn a day's Gold.
+ *
+ * Deliberately NOT the same call as `reserveStackAcresExchange` with a
+ * negative amount. That RPC raises on a non-positive amount on purpose -- a
+ * zero would hand back a non-null total and authorise a payout that reserved
+ * nothing -- and the release has the opposite failure mode to guard: it
+ * clamps at zero rather than refusing, because a release that cannot find
+ * what to release must not throw on top of a harvest that already settled.
+ *
+ * Best-effort by construction. It returns the day's new total, or null if the
+ * release could not be recorded; the caller logs and carries on, because the
+ * player has already been paid correctly either way and the only casualty is
+ * that they may reach today's ceiling sooner than they should.
+ */
+export async function releaseStackAcresExchange(
+  profileId: string,
+  day: string,
+  gold: number,
+): Promise<number | null> {
+  if (!Number.isFinite(gold) || gold <= 0) return null;
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    const next = Math.max(0, (memoryExchanges.get(key) ?? 0) - gold);
+    memoryExchanges.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("release_homestead_exchange", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_gold: gold,
+  });
+  if (error) {
+    console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
+    return null;
+  }
+  return data === null ? null : Number(data);
+}
+
+/**
+ * Land Maintenance already collected from this player today. Read-only and
+ * advisory in exactly the way `readStackAcresExchanged` is: it is what the
+ * farm screen shows, never what a charge is decided on. The decision is made
+ * inside recordStackAcresUpkeep, atomically, because anything read first can
+ * be raced.
+ */
+export async function readStackAcresUpkeep(profileId: string, day: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryUpkeep.get(`${profileId}:${day}`) ?? 0;
+
+  const { data, error } = await supabase
+    .from("stackacres_upkeep")
+    .select("gold")
+    .eq("profile_id", profileId)
+    .eq("day", day)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read today's maintenance: ${error.message}`);
+  return data ? Number((data as { gold: number | string }).gold) : 0;
+}
+
+/**
+ * Records `gold` of Land Maintenance taken today and returns the day's new
+ * total.
+ *
+ * NO CEILING AND NO REFUSAL, which is the difference between this and the
+ * allowance beside it. The allowance exists to stop Gold leaving; upkeep only
+ * ever reduces what leaves, so there is nothing here that a player could gain
+ * by racing. Two concurrent harvests each charging what they saw as due is the
+ * worst case, and the primary key serializes the totals so neither is lost --
+ * a player over-charged by a race would have paid the same amount across two
+ * days anyway.
+ *
+ * Best-effort: a failure here is logged rather than thrown. The harvest it
+ * belongs to is already durable and already paid net of this fee, so throwing
+ * would turn a completed collection into an error response and leave the day
+ * looking unpaid, which bills the player twice.
+ */
+export async function recordStackAcresUpkeep(
+  profileId: string,
+  day: string,
+  gold: number,
+): Promise<number | null> {
+  if (!Number.isFinite(gold) || gold <= 0) return null;
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${day}`;
+    const next = (memoryUpkeep.get(key) ?? 0) + gold;
+    memoryUpkeep.set(key, next);
+    return next;
+  }
+
+  const { data, error } = await supabase.rpc("record_stackacres_upkeep", {
+    p_profile_id: profileId,
+    p_day: day,
+    p_gold: gold,
+  });
+  if (error) {
+    console.error("stackacres.upkeep_record_failed", { profileId, day, gold, error });
+    return null;
+  }
   return data === null ? null : Number(data);
 }
 

@@ -46,6 +46,51 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres went single-currency: harvest pays Gold in one step, plus synergies and land upkeep (2026-09-04)
+Bushels are gone. Collecting used to fill a barn, the barn was sold at Ray's for Bushels, and Bushels
+were queued at a daily exchange window for Gold; a harvest now values and pays itself in Gold in one
+act. **The exchange window went; the ceiling behind it did not** -- `STACKACRES_GOLD_CEILING` (15,000
+flat, per player, per UTC day, hard-mirrored in `reserve_homestead_exchange`) is now applied to the
+harvest itself. That distinction is the whole safety story: the Bushel firewall only ever made the
+farm's internal numbers cheap to get wrong, and it was always the flat ceiling that stopped the farm
+printing money. **Every Bushel price was multiplied by 2** -- the exact rate the window paid -- so the
+internal balance (seed against yield, muck at 40% of a tier's net, feed under a tenth of what eats it)
+and the ceiling's calibration both survive untouched, and no price on the shelf moved
+(`STACKACRES_GOLD_PER_SEED_BUSHEL` 100 -> `STACKACRES_SEED_MULTIPLE_TO_OWN` 50; a Cattle Pen is still
+60,000). Deleted rather than converted: the 150-Bushel starting grant (every player already has Gold),
+`homestead_inventory`'s use (table left in place, inert, like `homestead_plots`), `sellStackAcresProduce`
+and `exchangeStackAcresBushels`.
+
+**Two new mechanics.** *Bountiful Harvest* (`lib/stackacres/bounty.ts`): collecting is a SWEEP now, and
+a synergy is a property of the set -- Mono-cropping (3+ of one kind, 1.05 rising to a 1.30 cap) or Crop
+Rotation (both tracks present, minority share >= 1/3, up to 1.25). They cannot stack, structurally: one
+kind cannot also be two tracks. A unit tapped on its own is a one-unit sweep and earns nothing, which is
+what the new bottom-centre Harvest key is for. *Land Maintenance* (`lib/stackacres/upkeep.ts`):
+`25 * units^1.5` per UTC day, assessed lazily on that day's harvests and **netted out of the payout,
+clamped at it** -- so it can zero a harvest but can never debit the wallet, and adds no sixth Gold path.
+
+**Five things worth keeping.** (1) A harvest **reserves against the ceiling BEFORE settling any unit** --
+the reverse of rule 2 -- because a full day discovered after the crops are gone would consume a harvest
+and pay nothing; the cost is `release_homestead_exchange`, which only ever subtracts and is floored at 0.
+(2) **A smaller sweep can be worth MORE than the sweep containing it**: 3 cattle + 1 carrot earns nothing
+(one crop in four is below the rotation floor), while the same 3 cattle alone are a Mono-crop worth 228
+more. That is why the re-price after a lost race is capped at what was reserved; `harvest.test.ts` pins
+the counter-example. (3) `creditGoldByProfile` is held to **exactly two call sites** -- one `refundGold`
+helper and the harvest payout -- because counting credits stopped meaning anything once every spend path
+gained a refund. (4) **`collect` lost its ban carve-out.** It was exempt while it moved no money;
+it pays Gold now, so leaving it was the one way a suspended account could earn. (5) The 12-racing-harvests
+test caught nothing, but the mock that restored a spy with `mockImplementation(theSpy)` recursed
+infinitely and broke every later test in the file -- capture originals once, at module scope.
+
+Migration `20260904140000_stackacres_land_upkeep.sql` is **written and UNAPPLIED** (`stackacres_upkeep`
++ `record_stackacres_upkeep` + `release_homestead_exchange`, all EXECUTE-revoked from `public` too);
+see `[[reference_stackchips_migrations_not_auto_applied]]`. Branch `feat/stackacres-harvest-gold-upkeep`,
+uncommitted. Verified: isolated StackAcres suite 19/19 green, `tsc` clean, lint 0 errors, `npm run build`
+clean, and `tests/e2e/stackacres-harvest.spec.ts` 2/2. **Requirement 1 of the brief (2.5x/4.0x mobile
+crop scaling and the `isWatered` growth freeze) is NOT here** -- a concurrent session owns it on
+`feat/stackacres-watering-mobile-crops`, and duplicating it would have meant two migrations adding the
+same column.
+
 ### StackAcres is tapped on the map itself; the sidebar became deep management (2026-09-04)
 Removes the loop the district sidebar had become (tap a district -> panel opens -> find the row ->
 press Collect). A tap that lands on a unit's own picture now collects, feeds or clears it where it

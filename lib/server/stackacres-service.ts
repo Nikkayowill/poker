@@ -17,43 +17,46 @@ import {
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
-import {
-  BUSHELS,
-  STACKACRES_ITEM_CATALOGUE,
-  STACKACRES_STARTING_BUSHELS,
-  STACKACRES_YIELDS,
-  isStackAcresItem,
-  itemLabel,
-  type StackAcresItem,
-} from "@/lib/stackacres/items";
+import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
 import {
   STACKACRES_GOLD_CEILING,
-  STACKACRES_MAX_EXCHANGE_BUSHELS,
   exchangeState,
-  goldForBushels,
   stackacresExchangeDay,
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
+import {
+  harvestTally,
+  settleHarvest,
+  type HarvestCandidate,
+  type HarvestSettlement,
+} from "@/lib/stackacres/harvest";
+import type { BountifulHarvest } from "@/lib/stackacres/bounty";
+import {
+  stackacresUpkeepDay,
+  stackacresUpkeepDue,
+  upkeepState,
+  type StackAcresUpkeepState,
+} from "@/lib/stackacres/upkeep";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
   adjustStackAcresCapacity,
   adjustStackAcresFeed,
-  adjustStackAcresInventory,
   clearStackAcresMuck,
   collectStackAcresUnit,
   countOccupiedStackAcresUnits,
   createStackAcresUnit,
   feedStackAcresUnit,
   getStackAcresUnit,
-  grantStartingBushels,
   listStackAcresUnits,
   readStackAcresCapacity,
   readStackAcresExchanged,
   readStackAcresFeed,
-  readStackAcresInventory,
+  readStackAcresUpkeep,
   recordStackAcresHarvest,
+  recordStackAcresUpkeep,
+  releaseStackAcresExchange,
   reserveStackAcresExchange,
   retireStackAcresUnit,
   type StoredStackAcresUnit,
@@ -61,54 +64,74 @@ import {
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 
 /**
- * Everything between a StackAcres request and the player's purses.
+ * Everything between a StackAcres request and the player's purse.
  *
- * TWO CURRENCIES, and which is which is the whole safety story:
+ * ONE CURRENCY NOW. This used to run on two: Bushels inside the farm, Gold
+ * outside it, joined by a daily exchange window. A harvest is valued and paid
+ * in Gold in one step, so Bushels had nothing left to denominate and are gone,
+ * along with the barn and the store shelf that stood between a crop and its
+ * money.
  *
- *   * **Bushels** are the farm's own money. Seed, feed and muck are priced in
- *     them, produce sells for them, and they never leave the StackAcres. A bug
- *     in any of it costs a save state, not money.
- *   * **Gold** moves in exactly FOUR places, and the asymmetry between them
- *     is the whole safety story. THREE SPEND: `expandStackAcresCapacity` buys
- *     an extra slot for one kind, `buyStackAcresStock` buys an animal or a
- *     crop outright. ONE PAYS: `exchangeStackAcresBushels`, at the daily
- *     window, under a flat per-player ceiling. Nothing else here may move
- *     Gold.
+ * WHAT THE SECOND CURRENCY WAS ACTUALLY PROTECTING, and what still protects
+ * it. The Bushel firewall let the farm's internal numbers be wrong cheaply. It
+ * was never the thing that stopped the farm printing money -- that was, and
+ * still is, **the flat daily ceiling on how much Gold one player may take out
+ * of the farm**, mirrored as a hard limit inside `reserve_homestead_exchange`
+ * and applied here to the harvest itself. Not a percentage, not scaled by
+ * stock owned, not scaled by a Bountiful Harvest multiplier. See
+ * lib/stackacres/exchange.ts.
  *
- *     An earlier version of this comment said there must never be a third
- *     Gold path at all, on the grounds that Gold -> Bushels would let a
- *     player launder Gold through the capped window and back. That reasoning
- *     only holds when the inbound rate is at least as good as the outbound
- *     one. STACKACRES_GOLD_PER_SEED_BUSHEL is 100 against an exchange that
- *     pays 2, so a round trip returns a fraction of what it cost on every
- *     tier -- market.test.ts holds that -- and the outbound ceiling is
- *     untouched. What genuinely must never change is the direction of the
- *     asymmetry: adding a path that PAYS Gold is the thing to stop over.
- *     Adding one that spends it is a sink.
+ * THE GOLD PATHS, and the asymmetry that is the whole safety story:
+ *
+ *   * FIVE SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
+ *     buys stock outright, `stockStackAcres` buys a cycle's seed,
+ *     `buyStackAcresFeed` buys a shipment, `clearStackAcresUnit` pays a muck
+ *     fee. All sinks.
+ *   * ONE PAYS. `harvestStackAcres`, under the flat daily ceiling, net of
+ *     Land Maintenance. Nothing else here may credit Gold.
+ *
+ * Every refund goes through `refundGold` rather than calling
+ * `creditGoldByProfile` directly, so that the credit function has exactly TWO
+ * call sites in this file: the refund helper, and the harvest payout. That is
+ * not a style preference -- it is what lets a test state the real invariant
+ * ("there is one payout") instead of counting call sites that grow with every
+ * new refund. A new direct `creditGoldByProfile` is a new faucet and is the
+ * change to stop over.
  *
  * A StackAcres unit is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
- * service restates still applies, now mostly to Bushels:
+ * service restates still applies:
  *
  *   1. **The money leaves the purse before the thing it pays for exists.**
- *      Buying capacity or stock debits Gold before the write lands; a sowing
- *      debits Bushels before the guarded write; feed debits before the
- *      servings land. Either write failing refunds.
- *   2. **Produce is credited only after the version-guarded harvest write is
- *      confirmed.** collectStackAcresUnit returns null on a lost race, a
- *      stale version, or a not-actually-ready row, and null must never pay:
- *      the writer that wins the race is the one that is paid.
+ *      Buying capacity, stock, seed or feed debits Gold before the write
+ *      lands. Either write failing refunds.
+ *   2. **Payment lands only after the version-guarded harvest write is
+ *      confirmed.** collectStackAcresUnit returns null on a lost race, a stale
+ *      version, or a not-actually-ready row, and null must never pay: the
+ *      writer that wins the race is the one that is paid.
  *   3. **Settlement credits the yield snapshotted at stocking, never a
  *      re-read of the catalogue.** A retune between stocking and harvest
- *      gives the player what they agreed to.
+ *      gives the player what they agreed to. The per-item VALUE is read live,
+ *      because that is the price of produce at the moment it is sold and no
+ *      agreement was made about it.
  *
  * There is no rule 4 (escrow released exactly once): no second party.
  *
+ * ONE ORDERING HERE IS DELIBERATELY THE OTHER WAY ROUND, and it is worth
+ * naming because it looks like a rule-2 violation. A harvest RESERVES against
+ * the day's ceiling before it settles any unit, not after. Settling first
+ * would mean a full day is discovered only once the crops are already gone,
+ * consuming a harvest and paying nothing for it. The cost of reserving first
+ * is that a sweep which then loses a race has over-reserved, so it hands the
+ * difference back through `releaseStackAcresExchange`, and the payout is
+ * capped at what was actually reserved so the ceiling can never be exceeded
+ * in the other direction either.
+ *
  * THE MUCK ROLL is the one thing here that is not a pure function of
- * timestamps, and it lives in exactly one place: rollMuck, called once inside
- * collect, after the guarded write has confirmed which row settled. Rolling it
- * anywhere a read can reach would let a player reroll it by pulling to
- * refresh. Bought stock is not rolled at all -- see collectStackAcres.
+ * timestamps, and it lives in exactly one place: rollMuck, called once per
+ * unit inside the harvest, after the guarded write has confirmed which rows
+ * settled. Rolling it anywhere a read can reach would let a player reroll it
+ * by pulling to refresh. Bought stock is not rolled at all.
  *
  * THERE IS NO PLOT ANY MORE (see 2026-09-03's CLAUDE.md entry -- "districts
  * hold stock, not plots"). Every action here takes a `unitId` instead of a
@@ -127,11 +150,10 @@ export interface StackAcresView {
   feed: number;
   /** Purchased extra capacity slots, by stock kind. */
   capacity: Partial<Record<StackAcresStock, number>>;
-  /** Produce held, by item id. Excludes Bushels, which get their own field. */
-  inventory: Record<string, number>;
-  bushels: number;
-  /** Today's exchange window: the rate, the flat ceiling, what is left of it. */
+  /** Today's allowance: the flat ceiling, and what is left of it. */
   exchange: StackAcresExchangeState;
+  /** Today's Land Maintenance: what the estate costs, and what it has paid. */
+  upkeep: StackAcresUpkeepState;
 }
 
 function parseUnitId(value: unknown): string {
@@ -146,31 +168,57 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
 }
 
 async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
-  const [units, feed, capacity, held, exchanged] = await Promise.all([
-    snapshots(profile.id, now),
+  const [rows, feed, capacity, exchanged, upkeepPaid] = await Promise.all([
+    listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
     readStackAcresCapacity(profile.id),
-    readStackAcresInventory(profile.id),
     readStackAcresExchanged(profile.id, stackacresExchangeDay(now)),
+    readStackAcresUpkeep(profile.id, stackacresUpkeepDay(now)),
   ]);
 
-  const { [BUSHELS]: bushels = 0, ...inventory } = held;
-  return { units, profile, feed, capacity, inventory, bushels, exchange: exchangeState(exchanged, now) };
+  return {
+    units: toStackAcresUnitSnapshots(rows, now),
+    profile,
+    feed,
+    capacity,
+    exchange: exchangeState(exchanged, now),
+    // Assessed on every field and pen standing, mucked ones included: a unit
+    // waiting to be cleared is still land being held.
+    upkeep: upkeepState(rows.length, upkeepPaid),
+  };
+}
+
+/**
+ * Hands back Gold that was just taken for something that then did not happen.
+ *
+ * THE ONLY REASON THIS EXISTS as a function rather than five inline calls: it
+ * keeps `creditGoldByProfile` down to two call sites in this file -- this one
+ * and the harvest payout -- so "there is exactly one way Gold is paid out of
+ * StackAcres" is a claim a test can hold by reading the source, instead of a
+ * count that has to be edited every time a refund is added. See the header.
+ *
+ * Never throws. A refund is already the failure path; turning it into a
+ * second failure would leave the player short AND looking at a different
+ * error than the one that actually happened.
+ */
+async function refundGold(profileId: string, gold: number): Promise<void> {
+  if (gold <= 0) return;
+  await creditGoldByProfile(profileId, gold).catch(() => null);
 }
 
 /**
  * The whole farm, as the client renders it.
  *
- * The starting grant happens here, on the first read, because a farm with no
- * Bushels cannot stock anything and so cannot begin. It is safe to attempt on
- * every read: the store's INSERT ... ON CONFLICT DO NOTHING means a profile
- * that already has a bushels row is never topped up, even sitting at zero, so
- * a player who spends the grant does not get another by refreshing.
+ * THERE IS NO STARTING GRANT ANY MORE. There used to be one -- 150 Bushels,
+ * handed over on the first read -- because a farm with no Bushels could not
+ * stock anything and so could not begin. Seed is bought with Gold now, and
+ * every player already has Gold from the daily grant, the streak and the
+ * backstop, so the farm needs no faucet of its own to get started. Deleting it
+ * removes a credit path rather than converting one, which is the direction
+ * this file's header says to prefer.
  */
 export async function readStackAcres(token: string, now = new Date()): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  await grantStartingBushels(profile.id, STACKACRES_STARTING_BUSHELS);
-  return view(profile, now);
+  return view(await ensureProfile(token), now);
 }
 
 /** How many of `stock` this player may OCCUPY a slot with at once right now
@@ -216,7 +264,7 @@ export async function expandStackAcresCapacity(
   if (next === null) {
     // Lost the race against the DB's own 0..3 bound (another tab expanded
     // this same kind between the read above and now): refund.
-    await creditGoldByProfile(profile.id, price).catch(() => null);
+    await refundGold(profile.id, price);
     throw new StackAcresRequestError(`Every ${def.label} slot is already expanded.`, 409, {
       round: await snapshots(profile.id, now),
     });
@@ -229,11 +277,12 @@ export async function expandStackAcresCapacity(
  * Buys an animal or a crop OUTRIGHT, with Gold.
  *
  * The difference from stockStackAcres, and the reason both exist: a sowing
- * costs Bushels and is CONSUMED by its own harvest, so it is gone once
- * collected and you buy another. Bought stock costs Gold, is permanent, and
- * re-sows itself forever -- you own the cow, you do not own one cow-cycle.
- * That is what makes 60,000 Gold and 600 Bushels honest prices for the same
- * animal: they are not the same thing.
+ * buys ONE CYCLE and is consumed by its own harvest, so it is gone once
+ * collected and you buy another. Bought stock is permanent and re-sows itself
+ * forever -- you own the cow, you do not own one cow-cycle. That is what makes
+ * 60,000 Gold and 1,200 Gold honest prices for the same animal: they are not
+ * the same thing. With one currency the gap between them is finally legible on
+ * the shelf, which it never was while one price was in Bushels.
  *
  * Cash on the counter. Nothing here is financed, there is no balance and no
  * credit -- the Gold either leaves the purse now or the sale does not happen.
@@ -279,12 +328,13 @@ export async function buyStackAcresStock(
   try {
     await createStackAcresUnit(profile.id, {
       stock,
-      // The Bushel seed cost is still what lands in `stake`. Nothing reads it
-      // as money any more (payout went inert two migrations ago) and the
-      // column is required for a working row, so writing the catalogue's own
-      // figure keeps the ledger describing what is standing there. The Gold
-      // price is deliberately NOT stored: it is spent, gone, and re-derivable
-      // from the stock whenever it is needed.
+      // The one-cycle seed cost is what lands in `stake`, notionally: nothing
+      // was paid at that price here. The column is required for a working row
+      // and carries `check (stake > 0)`, so writing the catalogue's own figure
+      // keeps the ledger describing what is standing there, and `permanent`
+      // below is what tells a dashboard the difference. The outright price is
+      // deliberately NOT stored: it is spent, gone, and re-derivable from the
+      // stock whenever it is needed.
       stake: def.seedCost,
       yieldQuantity: produce.quantity,
       startedAt: now,
@@ -296,7 +346,7 @@ export async function buyStackAcresStock(
     // The database refused (the trigger's own cap/ceiling race) or threw for
     // any other reason, and nothing came into existence, so the player must
     // not have paid for it.
-    await creditGoldByProfile(profile.id, price).catch(() => null);
+    await refundGold(profile.id, price);
     throw error;
   }
 
@@ -304,7 +354,11 @@ export async function buyStackAcresStock(
 }
 
 /**
- * Sows a crop or an animal with Bushels.
+ * Sows one cycle of a crop or an animal, with Gold.
+ *
+ * A SINK, and the cheapest way into the farm: the seed price is a fiftieth of
+ * what the same tier costs outright (see STACKACRES_SEED_MULTIPLE_TO_OWN),
+ * and it buys exactly one harvest rather than an animal that keeps going.
  *
  * The yield and readiness written here are snapshots (rule 3): the catalogue
  * is read exactly once, now, and never again for this unit.
@@ -334,13 +388,13 @@ export async function stockStackAcres(
     );
   }
 
-  // Rule 1: the seed is paid for first. Bushels, not Gold -- a null here is a
-  // lost race or an empty purse, and both mean nothing was sown.
+  // Rule 1: the seed is paid for first. A null here is an empty purse or a
+  // lost race, and both mean nothing was sown.
   const produce = STACKACRES_YIELDS[stock];
-  const paid = await adjustStackAcresInventory(profile.id, BUSHELS, -def.seedCost);
-  if (paid === null) {
+  const debited = await spendGoldByProfile(profile.id, def.seedCost);
+  if (!debited) {
     throw new StackAcresRequestError(
-      `${def.label} seed costs ${def.seedCost.toLocaleString()} Bushels.`,
+      `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
       400,
       { round: await snapshots(profile.id, now) },
     );
@@ -361,11 +415,11 @@ export async function stockStackAcres(
     // The database refused outright -- the trigger raising on a cap race or a
     // ceiling desync arrives HERE as a throw -- and nothing came into
     // existence, so the player must not have paid for it.
-    await adjustStackAcresInventory(profile.id, BUSHELS, def.seedCost).catch(() => null);
+    await refundGold(profile.id, def.seedCost);
     throw error;
   }
 
-  return view(profile, now);
+  return view(debited, now);
 }
 
 /**
@@ -404,7 +458,7 @@ export async function retireStackAcresStock(
   return view(profile, now);
 }
 
-/** Buys a shipment of feed. Pure sink: Bushels out, servings in. */
+/** Buys a shipment of feed. Pure sink: Gold out, servings in. */
 export async function buyStackAcresFeed(
   token: string,
   itemId: string,
@@ -414,11 +468,11 @@ export async function buyStackAcresFeed(
   if (!item) throw new StackAcresRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
 
-  // Rule 1: the Bushels leave before the servings land.
-  const paid = await adjustStackAcresInventory(profile.id, BUSHELS, -item.cost);
-  if (paid === null) {
+  // Rule 1: the Gold leaves before the servings land.
+  const debited = await spendGoldByProfile(profile.id, item.cost);
+  if (!debited) {
     throw new StackAcresRequestError(
-      `A ${item.label} costs ${item.cost.toLocaleString()} Bushels.`,
+      `A ${item.label} costs ${item.cost.toLocaleString()} Gold.`,
       400,
     );
   }
@@ -426,164 +480,11 @@ export async function buyStackAcresFeed(
   try {
     await adjustStackAcresFeed(profile.id, item.servings);
   } catch (error) {
-    await adjustStackAcresInventory(profile.id, BUSHELS, item.cost).catch(() => null);
+    await refundGold(profile.id, item.cost);
     throw error;
   }
 
-  return view(profile, now);
-}
-
-/**
- * Sells produce at the supply store. This is where a harvest finally becomes
- * money, and it is deliberately a separate act from harvesting: a market can
- * only swing a price if there is something you are holding while it swings,
- * which is what phase 4 needs.
- *
- * Priced from the catalogue at the moment of sale rather than snapshotted --
- * unlike a stocked unit, nothing was agreed in advance here. When phase 4
- * makes prices move, THIS is the call that reads the moving price.
- */
-export async function sellStackAcresProduce(
-  token: string,
-  input: { item: string; quantity: number },
-  now = new Date(),
-): Promise<StackAcresView & { sold: { item: StackAcresItem; quantity: number; bushels: number } }> {
-  if (!isStackAcresItem(input.item)) throw new StackAcresRequestError("No such produce.", 400);
-  const item: StackAcresItem = input.item;
-  if (!Number.isInteger(input.quantity) || input.quantity < 1) {
-    throw new StackAcresRequestError("Sell at least one.", 400);
-  }
-  const profile = await ensureProfile(token);
-
-  // Rule 1 in the other direction: the produce leaves before the money lands,
-  // so a failure here cannot pay for goods the player still holds. A null is
-  // "you do not have that many", which is also what a racing second tab looks
-  // like from here.
-  const remaining = await adjustStackAcresInventory(profile.id, item, -input.quantity);
-  if (remaining === null) {
-    throw new StackAcresRequestError(
-      `You do not have ${itemLabel(item, input.quantity)} to sell.`,
-      400,
-    );
-  }
-
-  const bushels = STACKACRES_ITEM_CATALOGUE[item].price * input.quantity;
-  try {
-    await adjustStackAcresInventory(profile.id, BUSHELS, bushels);
-  } catch (error) {
-    // The produce is already gone from the bag; put it back rather than leave
-    // the player short of both.
-    await adjustStackAcresInventory(profile.id, item, input.quantity).catch(() => null);
-    throw error;
-  }
-
-  return { ...(await view(profile, now)), sold: { item, quantity: input.quantity, bushels } };
-}
-
-/**
- * The exchange window: Bushels out of the farm, Gold in to the player. THE
- * ONLY PLACE GOLD LEAVES THE STACKACRES, and the only one there may ever be.
- *
- * What makes it safe is not the rate, it is the ceiling, and the ceiling is a
- * flat daily constant that does not vary with anything -- not stock owned, not
- * Bushels held, not Gold balance, not how well the player traded. Skill decides
- * how quickly the day's bucket fills; nothing decides how big it is. See
- * lib/stackacres/exchange.ts.
- *
- * The ordering is rule 1 with the currencies swapped, and the order is the
- * whole correctness argument:
- *
- *   1. **The Bushels leave first.** Nothing can be paid for produce the player
- *      still holds.
- *   2. **Then the day's allowance is reserved**, atomically, in the same write
- *      that checks it. A null is a refusal or a lost race and the two are
- *      indistinguishable here on purpose -- either way nothing was reserved, so
- *      the Bushels go straight back.
- *   3. **Only then is Gold credited.** By that point the debit and the
- *      reservation are both durable, so a failure at the last step cannot pay
- *      twice; it is logged loudly and the response carries the player's real
- *      balance, re-read, rather than an optimistic one.
- *
- * The rate is read now rather than snapshotted (unlike a sown unit's yield):
- * an exchange is instantaneous, so there is no in-flight agreement a retune
- * could break.
- */
-export async function exchangeStackAcresBushels(
-  token: string,
-  bushelsInput: number,
-  now = new Date(),
-): Promise<StackAcresView & { exchanged: { bushels: number; gold: number } }> {
-  if (
-    !Number.isInteger(bushelsInput) ||
-    bushelsInput < 1 ||
-    bushelsInput > STACKACRES_MAX_EXCHANGE_BUSHELS
-  ) {
-    throw new StackAcresRequestError("Choose how many Bushels to exchange.", 400);
-  }
-  const profile = await ensureProfile(token);
-  const day = stackacresExchangeDay(now);
-  const gold = goldForBushels(bushelsInput);
-
-  // Step 1: the Bushels leave. Null is an empty barn or a racing second tab,
-  // and both mean nothing was exchanged.
-  const left = await adjustStackAcresInventory(profile.id, BUSHELS, -bushelsInput);
-  if (left === null) {
-    throw new StackAcresRequestError(
-      `You only have ${(await bushelBalance(profile.id)).toLocaleString()} Bushels.`,
-      400,
-    );
-  }
-
-  // Step 2: reserve the day's allowance. This is the valve, and it is one
-  // atomic write rather than a read followed by a write, so two requests
-  // racing for the last of the day cannot both take it.
-  let reserved: number | null;
-  try {
-    reserved = await reserveStackAcresExchange(profile.id, day, gold, STACKACRES_GOLD_CEILING);
-  } catch (error) {
-    await adjustStackAcresInventory(profile.id, BUSHELS, bushelsInput).catch(() => null);
-    throw error;
-  }
-  if (reserved === null) {
-    await adjustStackAcresInventory(profile.id, BUSHELS, bushelsInput).catch(() => null);
-    // Hitting the ceiling is the feature working, not a fault, so it reads as
-    // a closing time rather than an error -- and the caller gets the true
-    // remaining allowance in the view attached to the refusal.
-    const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
-    throw new StackAcresRequestError(
-      state.remaining > 0
-        ? `The window has ${state.remaining.toLocaleString()} Gold left today. Exchange ${state.maxBushels.toLocaleString()} Bushels or fewer.`
-        : "You have exchanged all the Gold this farm can send out today. The window opens again at midnight UTC.",
-      409,
-    );
-  }
-
-  // Step 3: the Gold lands. Both writes above are already durable, so this one
-  // never refunds -- a retry could pay twice, which is the one outcome worth
-  // avoiding more than a missing credit. Logged loudly, same reasoning as
-  // ante-up-service.ts's payOutWin.
-  let credited: PlayerProfile | null = null;
-  try {
-    credited = await creditGoldByProfile(profile.id, gold);
-  } catch (error) {
-    console.error("stackacres.exchange_credit_failed", {
-      profileId: profile.id,
-      day,
-      bushels: bushelsInput,
-      gold,
-      error,
-    });
-  }
-
-  return {
-    ...(await view(credited ?? (await ensureProfile(token)), now)),
-    exchanged: { bushels: bushelsInput, gold },
-  };
-}
-
-/** What is actually in the barn, for a refusal message that names a number. */
-async function bushelBalance(profileId: string): Promise<number> {
-  return (await readStackAcresInventory(profileId))[BUSHELS] ?? 0;
+  return view(debited, now);
 }
 
 /**
@@ -661,10 +562,10 @@ export async function clearStackAcresUnit(
   }
 
   const fee = unit.muckFee;
-  const paid = await adjustStackAcresInventory(profile.id, BUSHELS, -fee);
-  if (paid === null) {
+  const debited = await spendGoldByProfile(profile.id, fee);
+  if (!debited) {
     throw new StackAcresRequestError(
-      `Clearing this costs ${fee.toLocaleString()} Bushels.`,
+      `Clearing this costs ${fee.toLocaleString()} Gold.`,
       400,
       { round: await snapshots(profile.id, now) },
     );
@@ -674,17 +575,17 @@ export async function clearStackAcresUnit(
   try {
     cleared = await clearStackAcresMuck(unit);
   } catch (error) {
-    await adjustStackAcresInventory(profile.id, BUSHELS, fee).catch(() => null);
+    await refundGold(profile.id, fee);
     throw error;
   }
   if (!cleared) {
-    await adjustStackAcresInventory(profile.id, BUSHELS, fee).catch(() => null);
+    await refundGold(profile.id, fee);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  return view(profile, now);
+  return view(debited, now);
 }
 
 /**
@@ -696,112 +597,256 @@ function rollMuck(stock: StackAcresStock): number | null {
   return Math.random() < STACKACRES_MUCK_CHANCE ? STACKACRES_CATALOGUE[stock].muckFee : null;
 }
 
+/** What one harvest brought in, as the client renders the toast. */
+export interface StackAcresHarvestResult {
+  /** How many fields and pens were brought in together. */
+  units: number;
+  /** Produce gathered, summed per item. */
+  tally: { item: StackAcresItem; quantity: number }[];
+  /** Every unit's yield at today's value, before any synergy. */
+  gross: number;
+  /** Which Bountiful Harvest applied, if any, and what it multiplied by. */
+  bounty: BountifulHarvest;
+  /** Gold the synergy added. Zero when none applied. */
+  bonus: number;
+  /** Land Maintenance taken out of this harvest. */
+  upkeep: number;
+  /** What actually landed in the player's balance. */
+  gold: number;
+  /** How many of the settled units came up weather-worn. */
+  mucked: number;
+}
+
 /**
- * Harvests a ready unit into the bag. Allowed while banned, same posture as
- * resigning a duel: it only returns produce already grown, and stranding a
- * crop inside a suspended account's farm forever is a punishment nobody
- * designed.
+ * Brings in every ready field and pen at once, values the lot in Gold and pays
+ * it in a single step.
  *
- * NOTE this no longer pays anything. It moves produce into the inventory and
- * that is all; turning produce into Bushels is sellStackAcresProduce, and
- * turning Bushels into Gold is the exchange. No Gold moves in this function,
- * and none should ever be added to it.
+ * THIS IS THE WHOLE HARVEST LOOP NOW. It used to be three acts -- collect
+ * produce into a barn, sell produce for Bushels at the store, queue at an
+ * exchange window to turn Bushels into Gold -- and it is one. What a sweep is
+ * worth is decided by `settleHarvest` in lib/stackacres/harvest.ts, which is
+ * pure and where the arithmetic is tested.
+ *
+ * IT IS A SWEEP RATHER THAN A UNIT, and that is what makes a synergy possible
+ * at all: Bountiful Harvest is a property of what was gathered TOGETHER, so it
+ * cannot be expressed one row at a time. Tapping a single unit still works --
+ * the client passes that one id -- and gets a one-unit sweep, which by
+ * construction earns no synergy, because three is the fewest a bonus considers.
+ *
+ * ALLOWED WHILE BANNED, same posture as resigning a duel: it only returns
+ * produce already grown, and stranding a crop inside a suspended account's
+ * farm forever is a punishment nobody designed.
+ *
+ * THE ORDER, which is deliberately not rule 2's:
+ *
+ *   1. Price the sweep, net of the day's remaining Land Maintenance.
+ *   2. **Reserve the net against today's flat ceiling, BEFORE settling
+ *      anything.** A full day has to refuse while the crops are still
+ *      standing; discovering it afterwards would consume a harvest and pay
+ *      nothing for it. Nothing has been touched at this point, so a refusal
+ *      costs the player only the tap.
+ *   3. Settle each unit under its own version guard. A unit that loses its
+ *      race is simply not in the sweep -- null never pays.
+ *   4. Re-price against what actually settled, hand back the over-reservation,
+ *      and cap the payout at what was reserved so the ceiling cannot be
+ *      exceeded from the other direction either.
+ *   5. Credit once, record the maintenance, write the ledger.
  */
-export async function collectStackAcres(
+export async function harvestStackAcres(
   token: string,
-  unitIdInput: string,
+  input: { unitIds?: readonly string[] } = {},
   now = new Date(),
-): Promise<
-  StackAcresView & {
-    collected: {
-      stock: StackAcresStock;
-      item: StackAcresItem;
-      quantity: number;
-      mucked: boolean;
-    };
-  }
-> {
-  const unitId = parseUnitId(unitIdInput);
+): Promise<StackAcresView & { harvest: StackAcresHarvestResult }> {
   const profile = await ensureProfile(token);
+  const rows = await listStackAcresUnits(profile.id);
 
-  const unit = await getStackAcresUnit(profile.id, unitId);
-  if (!unit || unit.status !== "working") {
-    throw new StackAcresRequestError("Nothing to collect here.", 404, {
-      round: await snapshots(profile.id, now),
-    });
+  // A named set is the single-tap path; no set at all is "bring in everything
+  // that is ready". Naming a unit that is not ready is answered with the
+  // specific reason, because that tap was aimed at that unit and "nothing is
+  // ready" would be a lie about it.
+  const named = input.unitIds && input.unitIds.length > 0 ? new Set(input.unitIds) : null;
+  if (named) {
+    for (const unitId of named) {
+      const row = rows.find((candidate) => candidate.id === unitId);
+      if (!row || row.status !== "working") {
+        throw new StackAcresRequestError("Nothing to collect here.", 404, {
+          round: toStackAcresUnitSnapshots(rows, now),
+        });
+      }
+      if (isStackAcresUnitHungry(row, now)) {
+        throw new StackAcresRequestError("Feed them first.", 409, {
+          round: toStackAcresUnitSnapshots(rows, now),
+        });
+      }
+      // The client's clock is decoration; this is the answer that counts, and
+      // the store's own ready_at guard backs it even if this check is raced.
+      if (!isStackAcresUnitReady(row, now)) {
+        throw new StackAcresRequestError("Not ready yet.", 409, {
+          round: toStackAcresUnitSnapshots(rows, now),
+        });
+      }
+    }
   }
-  if (isStackAcresUnitHungry(unit, now)) {
-    throw new StackAcresRequestError("Feed them first.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  if (!isStackAcresUnitReady(unit, now)) {
-    // The client's clock is decoration; this is the answer that counts, and
-    // the store's own ready_at guard backs it even if this check is raced.
-    throw new StackAcresRequestError("Not ready yet.", 409, {
-      round: await snapshots(profile.id, now),
+
+  const ready = rows.filter(
+    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now),
+  );
+  if (ready.length === 0) {
+    throw new StackAcresRequestError("Nothing is ready yet.", 409, {
+      round: toStackAcresUnitSnapshots(rows, now),
     });
   }
 
-  const stock = unit.stock;
-  // Bought stock never mucks and never leaves: the animal stays and starts
-  // its next cycle the moment you take what it made. Muck is the cost of
-  // turning ground over between sowings, and there is no gap between
+  const day = stackacresExchangeDay(now);
+  const upkeepPaid = await readStackAcresUpkeep(profile.id, day);
+  // Assessed on everything standing, mucked units included: a unit waiting to
+  // be cleared is still land being held.
+  const upkeepDue = stackacresUpkeepDue(rows.length, upkeepPaid);
+
+  const candidateOf = (row: StoredStackAcresUnit): HarvestCandidate => ({
+    unitId: row.id,
+    stock: row.stock,
+    // Rule 3: the snapshot taken at stocking, never a re-read of the catalogue.
+    yieldQuantity: row.yieldQuantity,
+  });
+
+  const planned = settleHarvest(ready.map(candidateOf), upkeepDue);
+
+  // Step 2. A sweep whose whole value is eaten by maintenance reserves
+  // nothing, and must not: the RPC raises on a non-positive amount on purpose,
+  // and there is genuinely no Gold leaving the farm to account for.
+  let reserved = 0;
+  if (planned.net > 0) {
+    const taken = await reserveStackAcresExchange(
+      profile.id,
+      day,
+      planned.net,
+      STACKACRES_GOLD_CEILING,
+    );
+    if (taken === null) {
+      // Hitting the ceiling is the feature working, not a fault, so it reads
+      // as a closing time rather than an error -- and nothing was settled, so
+      // every crop is still standing and still ready tomorrow.
+      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
+      throw new StackAcresRequestError(
+        state.remaining > 0
+          ? `This farm can send out ${state.remaining.toLocaleString()} more Gold today, and that harvest is worth ${planned.net.toLocaleString()}. Bring in less, or come back after midnight UTC.`
+          : "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC.",
+        409,
+        { round: toStackAcresUnitSnapshots(rows, now) },
+      );
+    }
+    reserved = planned.net;
+  }
+
+  // Step 3. Bought stock never mucks and never leaves: the animal stays and
+  // starts its next cycle the moment you take what it made. Muck is the cost
+  // of turning ground over between sowings, and there is no gap between
   // sowings here to charge for.
-  const muckFee = unit.permanent ? null : rollMuck(stock);
-  const restartReadyAt = unit.permanent
-    ? new Date(now.getTime() + STACKACRES_CATALOGUE[stock].durationMs)
-    : null;
+  const settled: StoredStackAcresUnit[] = [];
+  let mucked = 0;
+  for (const row of ready) {
+    const muckFee = row.permanent ? null : rollMuck(row.stock);
+    const restartReadyAt = row.permanent
+      ? new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs)
+      : null;
+    const done = await collectStackAcresUnit(row, now, muckFee, restartReadyAt);
+    // Rule 2: a lost race did not happen here; whoever won it was paid instead.
+    if (!done) continue;
+    settled.push(row);
+    if (muckFee !== null) mucked += 1;
+  }
 
-  const settled = await collectStackAcresUnit(unit, now, muckFee, restartReadyAt);
-  if (!settled) {
-    // Rule 2: a lost race did not happen; whoever won it was paid instead.
+  if (settled.length === 0) {
+    await releaseReservation(profile.id, day, reserved);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  // The guarded write above confirmed `unit` was exactly the row settled, so
-  // its snapshotted yield is the truth about what it grew. Rule 3: the
-  // snapshot, never a re-read of the catalogue -- a retune while it grew does
-  // not change what the player agreed to stock.
-  const item = STACKACRES_YIELDS[stock].item;
-  const quantity = unit.yieldQuantity;
-  const collected = { stock, item, quantity, mucked: muckFee !== null };
+  // Step 4. Re-price against what actually settled. Capped at what was
+  // reserved: removing a unit can in principle change which synergy applies,
+  // and the ceiling must hold whichever way that lands.
+  const actual: HarvestSettlement =
+    settled.length === ready.length ? planned : settleHarvest(settled.map(candidateOf), upkeepDue);
+  const gold = Math.min(actual.net, reserved);
+  await releaseReservation(profile.id, day, reserved - gold);
 
-  // Rule 2 satisfied: the produce lands only after the guarded write. Never
-  // throws -- the unit is already durably settled, and a failure here must
-  // not turn a finished harvest into an error response on top of the missing
-  // produce. Logged loudly, same reasoning as ante-up-service.ts's payOutWin.
-  try {
-    await adjustStackAcresInventory(profile.id, item, quantity);
-  } catch (error) {
-    console.error("stackacres.yield_credit_failed", {
+  // Step 5. The credit lands only after every guarded write above is durable,
+  // so this one never refunds -- a retry could pay twice, which is the one
+  // outcome worth avoiding more than a missing credit. Logged loudly, same
+  // reasoning as ante-up-service.ts's payOutWin.
+  let paid: PlayerProfile | null = null;
+  if (gold > 0) {
+    try {
+      paid = await creditGoldByProfile(profile.id, gold);
+    } catch (error) {
+      console.error("stackacres.harvest_credit_failed", {
+        profileId: profile.id,
+        day,
+        units: settled.length,
+        gold,
+        error,
+      });
+    }
+  }
+
+  // Recorded after the credit, and never allowed to throw: the harvest is
+  // already durable and already paid NET of this fee, so failing here must not
+  // turn it into an error response -- and leaving the day looking unpaid would
+  // bill the player for the same day twice.
+  if (actual.upkeepCharged > 0) {
+    await recordStackAcresUpkeep(profile.id, day, actual.upkeepCharged);
+  }
+
+  for (const line of actual.lines) {
+    const row = settled.find((candidate) => candidate.id === line.unitId);
+    if (!row) continue;
+    await recordStackAcresHarvest({
       profileId: profile.id,
-      unitId,
-      item,
-      quantity,
-      error,
+      unitId: line.unitId,
+      stock: line.stock,
+      stake: row.stake,
+      // The line's own gross, before the sweep's synergy and before
+      // maintenance: what this unit grew, which is the question a per-unit
+      // ledger row is asked. The sweep's totals are in the response.
+      payout: line.gold,
+      startedAt: row.startedAt,
+      collectedAt: now.toISOString(),
+      // Bought stock spends nothing per cycle, so `stake` above is notional
+      // for these rows. The flag is what lets a dashboard tell the difference
+      // rather than counting a seed price nobody paid.
+      permanent: row.permanent,
     });
   }
 
-  await recordStackAcresHarvest({
-    profileId: profile.id,
-    unitId,
-    stock,
-    // Both in Bushels, so the economy dashboard sees one currency: what the
-    // seed cost, and what the produce was worth at today's price.
-    stake: unit.stake,
-    payout: STACKACRES_ITEM_CATALOGUE[item].price * quantity,
-    startedAt: unit.startedAt,
-    collectedAt: now.toISOString(),
-    // Bought stock spends no Bushels per cycle, so `stake` above is notional
-    // for these rows. The flag is what lets a dashboard tell the difference
-    // rather than counting a seed price nobody paid.
-    permanent: unit.permanent,
-  });
+  return {
+    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    harvest: {
+      units: settled.length,
+      tally: harvestTally(actual),
+      gross: actual.gross,
+      bounty: actual.bounty,
+      bonus: actual.bonus,
+      upkeep: actual.upkeepCharged,
+      gold,
+      mucked,
+    },
+  };
+}
 
-  return { ...(await view(profile, now)), collected };
+/**
+ * Hands back allowance a sweep reserved and then did not use. Best-effort by
+ * construction -- the player has already been paid correctly either way, and
+ * the only casualty of a failure is reaching today's ceiling sooner than they
+ * should have.
+ */
+async function releaseReservation(profileId: string, day: string, gold: number): Promise<void> {
+  if (gold <= 0) return;
+  await releaseStackAcresExchange(profileId, day, gold).catch((error) => {
+    console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
+    return null;
+  });
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

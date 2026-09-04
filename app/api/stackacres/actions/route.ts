@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
-import { STACKACRES_MAX_EXCHANGE_BUSHELS } from "@/lib/stackacres/exchange";
-import { STACKACRES_ITEMS } from "@/lib/stackacres/items";
 import {
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresUnit,
-  collectStackAcres,
-  exchangeStackAcresBushels,
   expandStackAcresCapacity,
   feedStackAcres,
+  harvestStackAcres,
   retireStackAcresStock,
-  sellStackAcresProduce,
   stockStackAcres,
   toStackAcresErrorResponse,
 } from "@/lib/server/stackacres-service";
@@ -25,18 +21,22 @@ export const runtime = "nodejs";
 
 /**
  * Acts on the caller's own farm. `stock`, `buy-stock`, `expand-capacity`,
- * `buy-feed`, `sell` and `clear` all DEBIT the caller -- see the ordering
- * rules in lib/server/stackacres-service.ts -- and `collect` yields a settled
- * unit's produce exactly once, guarded by version.
+ * `buy-feed` and `clear` all DEBIT the caller -- see the ordering rules in
+ * lib/server/stackacres-service.ts -- and `collect` settles every named (or
+ * every ready) unit exactly once, guarded by version, and pays for the lot in
+ * one credit.
  *
  * THERE IS NO PLOT ANY MORE. Every unit-scoped action takes a `unitId`
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * Three actions move GOLD, and the asymmetry between them is what keeps this
- * safe: `expand-capacity` and `buy-stock` SPEND it, `exchange` PAYS it out at
- * the daily window under a flat per-player ceiling. Everything else is
- * denominated in Bushels or produce, both of which stay inside the farm.
+ * SIX ACTIONS MOVE GOLD, and the asymmetry between them is what keeps this
+ * safe: five SPEND it (`expand-capacity`, `buy-stock`, `stock`, `buy-feed`,
+ * `clear`) and exactly one PAYS it out (`collect`), under a flat per-player
+ * daily ceiling and net of Land Maintenance. There is no second currency any
+ * more, so "which direction does this action move Gold" is the only question
+ * a new action has to answer -- and a new one that pays is the change to stop
+ * over.
  *
  * No `version` field in any action: each handler reads the live row itself
  * and the guarded write settles at most once, so a stale client gets a 409
@@ -54,26 +54,19 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("stock"), stock: stockSchema }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
-  z.object({ action: z.literal("collect"), unitId: unitIdSchema }),
+  // No `unitIds` at all means "bring in everything that is ready", which is
+  // what the Harvest button sends; a single id is what tapping one unit sends.
+  // Bounded well above a maxed estate (five kinds at six slots each) so a
+  // fabricated list cannot make the server do unbounded work.
+  z.object({
+    action: z.literal("collect"),
+    unitIds: z.array(unitIdSchema).min(1).max(64).optional(),
+  }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
     itemId: z.enum(STACKACRES_FEED_IDS as unknown as [string, ...string[]]),
-  }),
-  z.object({
-    action: z.literal("sell"),
-    // The enum is what keeps `bushels` -- which shares the inventory table
-    // with produce -- from being sellable into itself.
-    item: z.enum(STACKACRES_ITEMS as unknown as [string, ...string[]]),
-    quantity: z.number().int().min(1).max(9_999),
-  }),
-  z.object({
-    action: z.literal("exchange"),
-    // Bounded by what a whole day's ceiling could ever be worth at the current
-    // rate, derived rather than written down, so a retune moves this with it.
-    // The real ceiling is enforced twice more, in the service and in the RPC.
-    bushels: z.number().int().min(1).max(STACKACRES_MAX_EXCHANGE_BUSHELS),
   }),
 ]);
 
@@ -95,15 +88,11 @@ function run(token: string, action: StackAcresAction) {
     case "retire":
       return retireStackAcresStock(token, action.unitId);
     case "collect":
-      return collectStackAcres(token, action.unitId);
+      return harvestStackAcres(token, { unitIds: action.unitIds });
     case "feed":
       return feedStackAcres(token, action.unitId);
     case "clear":
       return clearStackAcresUnit(token, action.unitId);
-    case "sell":
-      return sellStackAcresProduce(token, { item: action.item, quantity: action.quantity });
-    case "exchange":
-      return exchangeStackAcresBushels(token, action.bushels);
     case "buy-feed":
       return buyStackAcresFeed(token, action.itemId);
   }
@@ -135,10 +124,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Collecting stays open to a suspended account: it only returns produce
-    // already grown, same posture as resigning while banned. Spending more is
-    // what's gated.
-    if (parsed.data.action !== "collect" && (await isBanned(token))) {
+    // EVERY action is gated on the ban now, `collect` included, and that is a
+    // deliberate change from "collecting stays open to a suspended account".
+    // That carve-out was written when collecting moved no money at all -- it
+    // put produce in a barn, and stranding a grown crop inside a suspended
+    // account forever was a punishment nobody designed. A harvest pays Gold
+    // directly now, so the carve-out had become the one way a suspended
+    // account could still earn. Nothing is lost by closing it: a ready unit
+    // stays ready indefinitely and is still there if the ban is lifted.
+    if (await isBanned(token)) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),

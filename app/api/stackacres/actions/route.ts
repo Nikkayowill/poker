@@ -3,9 +3,11 @@ import { z } from "zod";
 import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
 import { STACKACRES_MAX_EXCHANGE_BUSHELS } from "@/lib/stackacres/exchange";
 import { STACKACRES_ITEMS } from "@/lib/stackacres/items";
+import { ZONE_IDS } from "@/lib/stackacres/zones";
 import {
   buyStackAcresFeed,
   buyStackAcresStock,
+  clearStackAcresSector,
   clearStackAcresUnit,
   collectStackAcres,
   exchangeStackAcresBushels,
@@ -15,6 +17,7 @@ import {
   sellStackAcresProduce,
   stockStackAcres,
   toStackAcresErrorResponse,
+  waterStackAcres,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -33,10 +36,17 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * Three actions move GOLD, and the asymmetry between them is what keeps this
- * safe: `expand-capacity` and `buy-stock` SPEND it, `exchange` PAYS it out at
- * the daily window under a flat per-player ceiling. Everything else is
- * denominated in Bushels or produce, both of which stay inside the farm.
+ * Four actions move GOLD, and the asymmetry between them is what keeps this
+ * safe: `expand-capacity`, `buy-stock` and `clear-sector` SPEND it,
+ * `exchange` PAYS it out at the daily window under a flat per-player ceiling.
+ * Everything else is denominated in Bushels or produce, both of which stay
+ * inside the farm.
+ *
+ * `clear-sector` is the one piece of land buying that came back: three of the
+ * four districts start under wild growth, and clearing one is a permanent,
+ * unrefunded Gold spend. Keeping cleared land then costs a daily Bushel fee,
+ * which no action here asks for -- it is taken automatically off the ones
+ * that touch the land (see `settleLandUpkeep` in the service).
  *
  * No `version` field in any action: each handler reads the live row itself
  * and the guarded write settles at most once, so a stale client gets a 409
@@ -51,11 +61,17 @@ const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]])
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
+  // Buying a district's wild ground outright. Gold, once, permanent.
+  z.object({
+    action: z.literal("clear-sector"),
+    sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
+  }),
   z.object({ action: z.literal("stock"), stock: stockSchema }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
   z.object({ action: z.literal("collect"), unitId: unitIdSchema }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
+  z.object({ action: z.literal("water"), unitId: unitIdSchema }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -88,6 +104,8 @@ function run(token: string, action: StackAcresAction) {
   switch (action.action) {
     case "expand-capacity":
       return expandStackAcresCapacity(token, action.stock);
+    case "clear-sector":
+      return clearStackAcresSector(token, action.sector);
     case "stock":
       return stockStackAcres(token, { stock: action.stock });
     case "buy-stock":
@@ -98,6 +116,8 @@ function run(token: string, action: StackAcresAction) {
       return collectStackAcres(token, action.unitId);
     case "feed":
       return feedStackAcres(token, action.unitId);
+    case "water":
+      return waterStackAcres(token, action.unitId);
     case "clear":
       return clearStackAcresUnit(token, action.unitId);
     case "sell":

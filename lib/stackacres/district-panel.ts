@@ -38,6 +38,9 @@ import type { ZoneId } from "./zones";
 export type UnitRowAction =
   | { kind: "collect" }
   | { kind: "feed"; disabled: boolean; reason: string | null }
+  /** Watering costs nothing but attention, so unlike feeding it can never be
+   *  refused for want of a resource -- there is no `disabled` here. */
+  | { kind: "water" }
   | { kind: "clear"; fee: number; disabled: boolean; reason: string | null }
   | { kind: "retire" }
   | { kind: "none" };
@@ -54,6 +57,8 @@ export function unitRowAction(
       return context.feed < 1
         ? { kind: "feed", disabled: true, reason: "No feed left in the barn." }
         : { kind: "feed", disabled: false, reason: null };
+    case "dry":
+      return { kind: "water" };
     case "mucked": {
       const fee = unit.muckFee ?? 0;
       return context.bushels < fee

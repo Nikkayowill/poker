@@ -32,6 +32,7 @@ import {
   meadowTileAt,
   meadowTileKey,
   mowStroke,
+  zoneAt,
   zoneFrame,
   zoneGroundTiles,
   zoneHerd,
@@ -61,8 +62,16 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/stackacres/world";
+import {
+  cropArtFor,
+  cropFootprintHalf,
+  cropGroundOffset,
+  cropSpriteAlpha,
+  cropSpriteScale,
+} from "@/lib/stackacres/crop-visuals";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
 import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
+import { SECTOR_FOG, sectorOvergrowth, type SectorId } from "@/lib/stackacres/sectors";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -162,7 +171,7 @@ import { bakePondTexture } from "./art-water";
 export interface StackAcresSceneUnit {
   id: string;
   stock: StackAcresStock;
-  state: "working" | "hungry" | "ready" | "mucked";
+  state: "working" | "hungry" | "dry" | "ready" | "mucked";
   /** 0..1 while working, 1 once ready, null while mucked. */
   progress: number | null;
   /** True once bought outright with Gold -- drawn no differently, kept only
@@ -193,6 +202,17 @@ export interface StackAcresSceneCallbacks {
    * seed something there, answered by the radial menu in stackacres-farm.tsx.
    */
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  /**
+   * A tap ANYWHERE on a district the player has not cleared yet.
+   *
+   * Deliberately the whole district rather than the narrow fenced box
+   * `onGroundTap` uses, and that difference is the entire discovery story for
+   * this feature. There is nothing drawn on locked land to aim at -- no pen,
+   * no plot, no padlock, just trees -- so the target has to be the trees, and
+   * every one of them has to answer. A player who taps a wood and gets
+   * nothing has learned that the wood is scenery, and will not tap it again.
+   */
+  onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   /**
    * The view moved under whatever the shell has pinned to it. A menu dropped
    * at a finger is anchored to the screen, not to the world, so it has to go
@@ -228,6 +248,9 @@ const S = ART_SCALE;
 const GOLD = 0xffd23f;
 const AMBER = 0xff8a3d;
 const MUCK = 0x785830;
+/** The dry-soil ring, off RAMPS.water.side -- a crop waiting for a drink is
+ *  marked in the colour of the thing it is waiting for. */
+const WATER = 0x3fa6cc;
 
 /** How far a finger may wander before a press stops counting as a tap. In CSS
  *  pixels, because pointer events are. */
@@ -561,6 +584,25 @@ export class StackAcresScene extends Phaser.Scene {
    *  Driven by the same `stepCritter` the owned units use. */
   private herds: HerdSprite[] = [];
 
+  /**
+   * Land the player has not cleared (lib/stackacres/sectors.ts).
+   *
+   * Starts as ALL THREE outer districts, and that default is deliberate. The
+   * shell pushes the real answer with `setSectors` as soon as its first read
+   * lands, and until then the safe thing to draw is wild ground: painting a
+   * pen and then taking it away a frame later is worse than painting a wood
+   * and then clearing it, because only one of those two looks like a bug.
+   */
+  private locked = new Set<ZoneId>(OUTER_ZONE_IDS);
+
+  /**
+   * Everything currently standing on one district because of its lock state:
+   * either its own ground, fence and furrow work (cleared) or the wild growth
+   * and haze over it (locked). Held per district so `setSectors` can tear one
+   * down and rebuild it without touching the other three.
+   */
+  private sectorArt = new Map<ZoneId, Phaser.GameObjects.GameObject[]>();
+
   /** The pond's surface, built once in paintPond and walked by index in
    *  update() so a frame allocates nothing: the drifting glints, the lily
    *  pads with their resting y beside them, the flowers with the index of
@@ -657,16 +699,15 @@ export class StackAcresScene extends Phaser.Scene {
 
     // Districts before paths: a road is laid on a field, and the ground the
     // road runs over has to exist underneath it.
-    this.paintZoneGround();
     this.paintPaths();
     this.paintPond();
     this.paintBarn();
     this.paintProps();
     this.spawnHerds();
-    // Every district's grow-area floor and (for livestock) fence, painted
-    // once each here -- see the "Units" section below for why this replaces
-    // the old per-plot fence-merge rather than adapting it.
-    for (const id of ZONE_IDS) this.paintDistrictBoundary(id);
+    // Each district's own layer, which is either its farm (ground, fence,
+    // grow area) or the wild growth standing where that farm is not built
+    // yet. Rebuilt per district by `setSectors` when land is cleared.
+    for (const id of ZONE_IDS) this.paintSector(id);
 
     this.toolGhost = this.add
       .image(0, 0, this.toolIconName, ART_FRAME)
@@ -749,38 +790,39 @@ export class StackAcresScene extends Phaser.Scene {
    * obvious object on the map. Diamonds cost three draw calls in total and
    * are correct under the tilt by construction.
    *
-   * Painted once at boot and never again: the districts do not move, and the
-   * whole set is a few hundred fills.
+   * Painted per district, and repainted only when that district's lock state
+   * changes: the districts do not move, and the whole set is a few hundred
+   * fills. Returns null for a district that paints no ground of its own (the
+   * Farmstead, whose `cover` is 0 -- see `ZoneGround`).
    */
-  private paintZoneGround(): void {
-    for (const id of OUTER_ZONE_IDS) {
-      const tiles = zoneGroundTiles(id);
-      if (tiles.length === 0) continue;
-      const g = this.add.graphics().setDepth(ZONE_GROUND_DEPTH);
-      for (const tile of tiles) {
-        // Exactly the tile's own size, NOT a hair over. Overlapping these was
-        // the first cut and it was visibly wrong: they are translucent, so
-        // every overlap composited twice and the district ended up drawn with
-        // a lighter lattice over it -- the tile grid made visible by the very
-        // thing meant to hide its seams. Abutting diamonds share an edge
-        // exactly, and the anti-aliased seam that leaves is invisible next to
-        // the doubled alpha it replaces.
-        const c = projectedCorners({
-          x: tile.x,
-          y: tile.y,
-          width: tile.size,
-          height: tile.size,
-        });
-        g.fillStyle(tile.colour, tile.alpha);
-        g.beginPath();
-        g.moveTo(c.n.x, c.n.y);
-        g.lineTo(c.e.x, c.e.y);
-        g.lineTo(c.s.x, c.s.y);
-        g.lineTo(c.w.x, c.w.y);
-        g.closePath();
-        g.fillPath();
-      }
+  private paintZoneGround(id: ZoneId): Phaser.GameObjects.Graphics | null {
+    const tiles = zoneGroundTiles(id);
+    if (tiles.length === 0) return null;
+    const g = this.add.graphics().setDepth(ZONE_GROUND_DEPTH);
+    for (const tile of tiles) {
+      // Exactly the tile's own size, NOT a hair over. Overlapping these was
+      // the first cut and it was visibly wrong: they are translucent, so
+      // every overlap composited twice and the district ended up drawn with
+      // a lighter lattice over it -- the tile grid made visible by the very
+      // thing meant to hide its seams. Abutting diamonds share an edge
+      // exactly, and the anti-aliased seam that leaves is invisible next to
+      // the doubled alpha it replaces.
+      const c = projectedCorners({
+        x: tile.x,
+        y: tile.y,
+        width: tile.size,
+        height: tile.size,
+      });
+      g.fillStyle(tile.colour, tile.alpha);
+      g.beginPath();
+      g.moveTo(c.n.x, c.n.y);
+      g.lineTo(c.e.x, c.e.y);
+      g.lineTo(c.s.x, c.s.y);
+      g.lineTo(c.w.x, c.w.y);
+      g.closePath();
+      g.fillPath();
     }
+    return g;
   }
 
   /**
@@ -1285,8 +1327,22 @@ export class StackAcresScene extends Phaser.Scene {
     } else {
       const at = this.staticSpotFor(unit);
       const stage = growthStage(unit.progress, unit.state === "ready");
-      const crop = unit.stock === "cash_crop" ? "corn" : "carrot";
+      // Non-null for every non-livestock kind, which is the branch we are in.
+      const crop = cropArtFor(unit.stock) ?? "carrot";
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
+      // Crops -- and only crops -- are drawn well off the world's own scale,
+      // so a ripe row is findable on a phone. `addLocal` has already set the
+      // painter's natural 1 / S; this replaces it, and pushes the sprite back
+      // down by however much scaling lifted its feet off the soil. Both
+      // numbers come from lib/stackacres/crop-visuals.ts, which is where the
+      // reasoning and the tests for them live.
+      const grown = cropSpriteScale(stage);
+      sprite.setScale(grown / S);
+      sprite.y += cropGroundOffset(crop, stage);
+      // Dry soil reads as a faded plant. The ring says it too, but a ring is
+      // a thin outline on a small target and the fill is what carries at a
+      // glance.
+      sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
       const screen = isoProject(at.x, at.y);
       container.setPosition(screen.x, screen.y);
       container.setDepth(this.depthAt(at.x, at.y));
@@ -1332,17 +1388,133 @@ export class StackAcresScene extends Phaser.Scene {
    * (churned dirt for Cattle, trodden mud for Sheep, straw for Hens), the
    * same distinction the plot-grid era's `paintPenGround` drew.
    */
-  private paintDistrictBoundary(zone: ZoneId): void {
+  /* ---------------------------------------------------------------- */
+  /* Land, cleared and not                                              */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * One district's whole layer, drawn as one thing or the other.
+   *
+   * CLEARED: the district's own ground wash, its grow-area floor and (for a
+   * livestock district) its fence -- the farm, exactly as it was before this
+   * feature existed.
+   *
+   * LOCKED: wild growth and a pale haze, and NOTHING ELSE. No fence, no
+   * furrowed floor, no ground wash, no ghosted outline of what could be here
+   * -- the farm is not built yet, so there is nothing to grey out. That is
+   * the whole visual argument: a locked sector reads as somewhere the player
+   * has not been rather than as a control they are not allowed to press, and
+   * the only way to find out it is for sale is to tap the trees.
+   */
+  private paintSector(zone: ZoneId): void {
+    this.clearSectorArt(zone);
+    const built: Phaser.GameObjects.GameObject[] = [];
+    if (this.locked.has(zone)) {
+      built.push(...this.paintOvergrowth(zone));
+    } else {
+      const ground = this.paintZoneGround(zone);
+      if (ground) built.push(ground);
+      built.push(...this.paintDistrictBoundary(zone));
+    }
+    this.sectorArt.set(zone, built);
+  }
+
+  /** Tears down whatever a district was last drawn as. */
+  private clearSectorArt(zone: ZoneId): void {
+    const built = this.sectorArt.get(zone);
+    if (!built) return;
+    for (const object of built) object.destroy();
+    this.sectorArt.delete(zone);
+  }
+
+  /**
+   * What stands on land nobody has cleared: trees, scrub, ground cover, and a
+   * haze over the lot.
+   *
+   * Grown from `sectorOvergrowth`, which deals the whole district in one go
+   * rather than per chunk -- see its own note on why. Every piece takes the
+   * ordinary feet-based depth, so an animal in a neighbouring cleared
+   * district sorts against this growth correctly with nothing special done
+   * for it, and the haze sits at the district ground depth underneath
+   * everything standing in it.
+   */
+  private paintOvergrowth(zone: ZoneId): Phaser.GameObjects.GameObject[] {
+    const built: Phaser.GameObjects.GameObject[] = [];
+    const haze = this.add.graphics().setDepth(ZONE_GROUND_DEPTH);
+    const corners = projectedCorners(STACKACRES_ZONES[zone].bounds);
+    haze.fillStyle(SECTOR_FOG.colour, SECTOR_FOG.alpha);
+    haze.beginPath();
+    haze.moveTo(corners.n.x, corners.n.y);
+    haze.lineTo(corners.e.x, corners.e.y);
+    haze.lineTo(corners.s.x, corners.s.y);
+    haze.lineTo(corners.w.x, corners.w.y);
+    haze.closePath();
+    haze.fillPath();
+    built.push(haze);
+
+    for (const item of sectorOvergrowth(zone)) {
+      if (castsShadow(item.kind)) {
+        const [wide, tall] = sceneryShadowScale(item.kind);
+        built.push(
+          this.put("shadow", item.x, item.y + 1, this.depthAt(item.x, item.y, -0.5))
+            .setScale((wide * item.scale) / S, (tall * item.scale) / S)
+            .setAlpha(0.8),
+        );
+      }
+      built.push(
+        this.put(item.kind, item.x, item.y, this.depthAt(item.x, item.y)).setScale(item.scale / S),
+      );
+    }
+    return built;
+  }
+
+  /**
+   * Which land the player may work now.
+   *
+   * Called by the shell every time a read or an action lands, so it has to be
+   * cheap when nothing moved -- and it is: it diffs against what is currently
+   * drawn and repaints only the districts whose answer actually changed.
+   * Clearing the Long Meadow must not silently rebuild the other three.
+   *
+   * The grown chunks are thrown away when anything changes, because
+   * `growChunk` deals a district's farm furniture (a plough, a trough, a
+   * furrow) and that furniture is exactly what must not stand on land nobody
+   * has taken on. `tendWorld` regrows what is on screen on the very next
+   * frame, so the cost is one frame of empty ground at the moment of a
+   * purchase -- which is under the clearing animation anyway.
+   */
+  setSectors(unlocked: readonly SectorId[]): void {
+    // Home is never wild, whatever arrives. Belt and braces against a
+    // malformed payload: the one failure this cannot be allowed to have is
+    // growing a wood over the player's own barn, which they would have no way
+    // to buy back because the Farmstead is not for sale.
+    const next = new Set<ZoneId>(
+      OUTER_ZONE_IDS.filter((id) => !unlocked.includes(id)),
+    );
+    const changed = ZONE_IDS.filter((id) => next.has(id) !== this.locked.has(id));
+    if (changed.length === 0) return;
+    this.locked = next;
+    if (!this.created) return;
+    for (const id of changed) this.paintSector(id);
+    for (const content of this.chunks.values()) {
+      for (const item of content.items) item.destroy();
+      for (const tile of content.grassKeys) this.grassTiles.delete(tile);
+    }
+    this.chunks.clear();
+  }
+
+  private paintDistrictBoundary(zone: ZoneId): Phaser.GameObjects.GameObject[] {
+    const built: Phaser.GameObjects.GameObject[] = [];
     const area = growAreaBounds(zone);
     const livestock = stocksInZone(zone).find((stock) => isLivestock(stock));
     if (!livestock) {
       // No livestock kind here at all -- the Long Meadow's Crop Fields,
       // tilled and furrowed, no fence.
-      this.paintAreaGround(area, "soil", true);
-      return;
+      built.push(this.paintAreaGround(area, "soil", true));
+      return built;
     }
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
-    this.paintAreaGround(area, ground);
+    built.push(this.paintAreaGround(area, ground));
 
     // Bays sit on the boundary itself now. The old 9-unit inset was headroom
     // for a flat sprite's footprint; a standing bay anchors on the foot of
@@ -1361,13 +1533,14 @@ export class StackAcresScene extends Phaser.Scene {
     // The one gate, in the middle of the near (south) run, snapped to a bay.
     const gateX = area.x + Math.round(area.width / 2 / step) * step;
     for (let x = area.x; x < east; x += step) {
-      this.put("railX", x, area.y, this.depthAt(x + half, area.y));
-      this.put(x === gateX ? "gateX" : "railX", x, south, this.depthAt(x + half, south));
+      built.push(this.put("railX", x, area.y, this.depthAt(x + half, area.y)));
+      built.push(this.put(x === gateX ? "gateX" : "railX", x, south, this.depthAt(x + half, south)));
     }
     for (let y = area.y; y < south; y += step) {
-      this.put("railY", area.x, y, this.depthAt(area.x, y + half));
-      this.put("railY", east, y, this.depthAt(east, y + half));
+      built.push(this.put("railY", area.x, y, this.depthAt(area.x, y + half)));
+      built.push(this.put("railY", east, y, this.depthAt(east, y + half)));
     }
+    return built;
   }
 
   /**
@@ -1400,7 +1573,11 @@ export class StackAcresScene extends Phaser.Scene {
    * different textures is deliberate -- a Cattle Pen is not a second crop
    * field wearing the same dye.
    */
-  private paintAreaGround(area: WorldRect, kind: "straw" | "soil" | "muck", furrowed = false): void {
+  private paintAreaGround(
+    area: WorldRect,
+    kind: "straw" | "soil" | "muck",
+    furrowed = false,
+  ): Phaser.GameObjects.Graphics {
     const corners = projectedCorners(area);
     const ramp = rampHex(kind);
     const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
@@ -1415,6 +1592,7 @@ export class StackAcresScene extends Phaser.Scene {
     g.lineStyle(1, ramp.rim, 0.55);
     g.strokePath();
     if (furrowed) this.paintFurrows(g, area);
+    return g;
   }
 
   /** Furrow lines across a tilled grow area, drawn along the diamond's own
@@ -1449,7 +1627,11 @@ export class StackAcresScene extends Phaser.Scene {
       const box = PAINTERS[STOCK_ART[unit.stock]];
       return Math.max(box.w, box.h) / 2 + 6;
     }
-    return 12;
+    // A crop's ground diamond grows with the crop, so the thing a thumb is
+    // aiming at on a phone is the thing it lands on -- and so the gold ready
+    // ring frames the ripe sprite rather than sitting inside it. Never
+    // narrower than the flat half every crop used before they were grown.
+    return cropFootprintHalf(growthStage(unit.progress, unit.state === "ready"));
   }
 
   /** Traces a diamond of the given half-size, centred on a unit's own
@@ -1480,7 +1662,15 @@ export class StackAcresScene extends Phaser.Scene {
     const ring = node.ring;
     ring.clear();
     const colour =
-      unit.state === "ready" ? GOLD : unit.state === "hungry" ? AMBER : unit.state === "mucked" ? MUCK : null;
+      unit.state === "ready"
+        ? GOLD
+        : unit.state === "hungry"
+          ? AMBER
+          : unit.state === "dry"
+            ? WATER
+            : unit.state === "mucked"
+              ? MUCK
+              : null;
     if (colour === null) return;
     const half = this.unitFootprintHalf(unit);
     if (unit.state === "ready") {
@@ -1857,6 +2047,18 @@ export class StackAcresScene extends Phaser.Scene {
         return;
       }
       const ground = resolveWorld(event.clientX, event.clientY);
+      // Land nobody has cleared answers ANYWHERE inside its district, not
+      // just on a fenced box it does not have one of yet -- there is nothing
+      // drawn on it to aim at but trees. Checked before the grow area for the
+      // same reason: a locked district paints no grow area, so there is
+      // nothing there for the seed menu to open on, and a tap that resolved
+      // to neither would be the silent target the whole approach depends on
+      // avoiding.
+      const wild = zoneAt(ground.x, ground.y);
+      if (wild !== null && this.locked.has(wild)) {
+        this.callbacks.onLockedSectorTap(wild, local);
+        return;
+      }
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local);
     };
@@ -2045,14 +2247,28 @@ export class StackAcresScene extends Phaser.Scene {
     // A CSS pixel is this many scene units at the current zoom, which is what
     // keeps the pad a constant size under the thumb rather than under the map.
     const pad = TAP_PAD / this.zoomL();
-    let best: { id: string; depth: number } | null = null;
+    // Which of the two regions caught the finger, because that now has to
+    // outrank depth. Growing the crops (lib/stackacres/crop-visuals.ts) took a
+    // ripe crop's ground diamond from a 24-unit box to a 48-unit one, and the
+    // Long Meadow's interior is only 136x118 with up to six of each crop kind
+    // in it -- so several of those diamonds overlapping is the normal case,
+    // not a corner one. On depth alone the front crop then swallows the tap
+    // target of every crop behind it, and the one behind becomes untappable on
+    // the map however squarely the finger lands on its actual picture.
+    //
+    // Touching a unit's own ART therefore beats merely clipping another's
+    // ground, and depth only decides between hits of the same kind -- which is
+    // still what settles two overlapping sprites, the case the depth rule was
+    // written for.
+    let best: { id: string; onArt: boolean; depth: number } | null = null;
     for (const [id, node] of this.nodes) {
       const art = node.sprite.getBounds();
-      let hit =
+      const onArt =
         at.x >= art.x - pad &&
         at.x <= art.right + pad &&
         at.y >= art.y - pad &&
         at.y <= art.bottom + pad;
+      let hit = onArt;
       if (!hit) {
         const spot = this.unitWorldSpot(node);
         const half = this.unitFootprintHalf(node.unit);
@@ -2070,7 +2286,9 @@ export class StackAcresScene extends Phaser.Scene {
       }
       if (!hit) continue;
       const depth = node.container.depth;
-      if (!best || depth > best.depth) best = { id, depth };
+      if (!best || (onArt !== best.onArt ? onArt : depth > best.depth)) {
+        best = { id, onArt, depth };
+      }
     }
     return best ? best.id : null;
   }
@@ -2290,7 +2508,10 @@ export class StackAcresScene extends Phaser.Scene {
       items.push(this.put(item.kind, item.x, item.y, item.y).setScale(item.scale / S));
     }
 
-    for (const item of zoneScenery(cx, cy)) {
+    // Land nobody has cleared grows no farm gear -- see `zoneScenery`'s own
+    // note. What stands there instead is `paintOvergrowth`'s wild growth,
+    // built per district rather than per chunk.
+    for (const item of zoneScenery(cx, cy, this.locked)) {
       const flat = item.kind === "furrow" || item.kind === "mudPool";
       const depth = this.depthAt(item.x, item.y, flat ? -0.5 : 0);
       if (ZONE_SHADOW[item.kind]) {
@@ -2521,6 +2742,11 @@ export class StackAcresScene extends Phaser.Scene {
    * clock over and over and leave one square permanently bald.
    */
   private mowSegment(from: WorldPoint, to: WorldPoint): void {
+    // Nobody mows a field they have not bought. The Long Meadow's grass field
+    // is untouched while the land is locked -- waist-high uncut grass is
+    // exactly the right picture of unworked ground, so there is nothing to
+    // hide, only a gesture to refuse.
+    if (this.locked.has("meadow")) return;
     const wall = Date.now();
     let cut = false;
     for (const tile of mowStroke(from, to)) {

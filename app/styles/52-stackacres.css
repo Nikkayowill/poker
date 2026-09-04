@@ -147,6 +147,13 @@
   --sa-carrot-side: #e1741f;
   --sa-carrot-rim: #ae5312;
 
+  /* The pond's own ramp (RAMPS.water in components/arcade/stackacres/
+     art-palette.ts), reused for the watering loop: a dry field is marked in
+     the colour of what it is short of. */
+  --sa-water: #63c8e8;
+  --sa-water-side: #3fa6cc;
+  --sa-water-rim: #2a7e9e;
+
   /* Sprite colours, not chrome: they exist to agree with artwork the palette
      knows nothing about. --sa-grass matches the grass painter's own fill, so
      the DOM frame and the canvas background read as one continuous lawn. */
@@ -1365,6 +1372,7 @@
    readable at 12.5px on paper. */
 .sa-unit-state[data-state="ready"] { color: var(--sa-corn-rim); }
 .sa-unit-state[data-state="hungry"] { color: var(--sa-carrot-rim); }
+.sa-unit-state[data-state="dry"] { color: var(--sa-water-rim); }
 .sa-unit-state[data-state="mucked"] { color: var(--sa-choc); }
 
 .sa-unit-action {
@@ -1390,6 +1398,16 @@
 .sa-unit-action.is-warn {
   background: var(--sa-carrot);
   box-shadow: 0 4px 0 var(--sa-carrot-rim), var(--sa-drop);
+  color: var(--sa-ink);
+}
+
+/* Watering: the same shape as Feed, in the pond's blue rather than the
+   carrot's orange, because the two are the same kind of tending on two tracks
+   and a player should be able to tell at a glance which one a row is asking
+   for. */
+.sa-unit-action.is-water {
+  background: var(--sa-water);
+  box-shadow: 0 4px 0 var(--sa-water-rim), var(--sa-drop);
   color: var(--sa-ink);
 }
 
@@ -2231,6 +2249,176 @@
    prompt; the map's own motion (animals, the ripe bob) is switched off inside
    the scene from the same media query. The press states stay: a button that
    does not move when pressed is a button a player taps twice. */
+/* ---- uncleared land --------------------------------------------------- */
+
+/* Three of the four districts start under wild growth (lib/stackacres/
+   sectors.ts). Everything below is chrome for that state, and all of it obeys
+   one rule the map itself obeys: NOTHING IS GREYED OUT. A locked district is
+   not a control the player is forbidden to press, it is a place they have not
+   been -- so it keeps the full wooden treatment every other sign gets and
+   says its state in words and a small lock, rather than by going flat and
+   dead the way a disabled button does. Greying it out was the first cut and
+   it read as broken art, which is exactly the impression the whole approach
+   exists to avoid. */
+
+/* Bushels owed on land already held. Only rendered when something is actually
+   owed, so the roof red here is genuinely "deal with this" rather than a
+   permanent alarm colour in the HUD. */
+.sa-upkeep {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-roof);
+  box-shadow: 0 3px 0 var(--sa-roof-rim), var(--sa-drop);
+  color: var(--sa-cream);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-upkeep .sa-ico { width: 20px; height: 20px; }
+
+/* A signpost entry for land that is not cleared. Still a full wooden board --
+   see the note above -- stained to the district's own ground colour the way
+   every other entry is, with the lock doing the telling. */
+.sa-dest.is-wild .sa-dest-swatch {
+  /* The swatch stops being the district's ground and becomes the growth over
+     it: the same leaf the rest of this surface uses for growing things. */
+  background: var(--sa-leaf-side);
+}
+
+.sa-dest-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin-left: 2px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream);
+  color: var(--sa-ink);
+}
+
+/* The clearing offer. Ray's counter re-used wholesale -- it is the same
+   surface, and a second sheet shape for the one purchase that is not made at
+   the store would be a new thing to learn for no reason. */
+.sa-clear-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.sa-clear-blurb {
+  margin: 12px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+/* What is under the growth. The one line on this sheet that is selling
+   something, so it gets the ink and the weight the blurb above it does not. */
+.sa-clear-promise {
+  margin: 8px 0 0;
+  color: var(--sa-ink);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+/* Corn, like every other Gold price on this surface. */
+.sa-clear-price {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 0 0;
+  padding: 11px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-corn);
+  box-shadow: 0 3px 0 var(--sa-corn-rim);
+  color: var(--sa-ink);
+}
+
+.sa-clear-price strong {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-clear-price span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* The checklist. Every line comes from `sectorClearCheck`, which the server
+   calls too -- see the modal's own header on why the wording lives there. */
+.sa-clear-reqs {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sa-clear-req {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+/* Met lines go leaf, unmet lines stay paper. Colour is carried by the MARK
+   rather than by the row's own text, so an unmet requirement never reads as
+   an error -- it is a thing still to do, and most of them are met in the
+   ordinary course of playing. */
+.sa-clear-req.is-met { background: var(--sa-paper); }
+
+.sa-clear-req-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream-side);
+  color: var(--sa-ink);
+}
+
+.sa-clear-req.is-met .sa-clear-req-mark {
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -2px 0 var(--sa-leaf-rim);
+}
+
+.sa-clear-cta { margin-top: 16px; }
+
+
 @media (prefers-reduced-motion: reduce) {
   .sa-play-pulse,
   .sa-play-prompt { animation: none; }

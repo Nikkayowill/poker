@@ -46,6 +46,99 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 
 - Track: `ui-redesign-foundation`. Current feature branch: `feat/pvp-duels-ui-sounds-3d-avatars`.
 
+### StackAcres crops are watered, and drawn far bigger than the rest of the world (2026-09-04)
+Two changes to the crop track, one loop and one visual. **Watering** is the deliberate mirror of the
+livestock hunger mechanic that has existed since the first migration, built by copying its shape
+rather than inventing a second one: `thirstMs` on the catalogue (crops only, `null` for livestock,
+exactly as `hungerMs` is the reverse), `last_watered_at` on `homestead_units`, an
+`isStackAcresUnitDry` guard checked beside `isStackAcresUnitHungry` inside
+`isStackAcresUnitReady`, and a version-guarded `waterStackAcresUnit` write that pushes `ready_at`
+forward by however long the soil stood dry. **The one deliberate divergence from hunger is the
+load-bearing line: a crop that finished growing BEFORE its ground dried is never dry.** Mirroring
+hunger exactly here was a real bug, caught by probing the case rather than by any test asking for it
+-- a ripe, uncollected row went dry, stopped being collectable, and watering it then pushed `ready_at`
+forward by the drought, UN-RIPENING finished produce and charging the player again for time already
+waited. Hunger genuinely does behave that way (a ready cow that goes hungry must be fed before it is
+milked) and it is defensible there, because a neglected animal stopping is the point; it is not
+defensible for produce already grown. The test is `readyAt <= thirstyAt`, compared against
+`thirstyAt` rather than `now` so it is a fact about the row settled once rather than something that
+flips as the clock moves -- and so it cannot recurse into `isStackAcresUnitReady`, which calls it.
+`withLocalClock` in the component carries the same carve-out or a ripe row flickers to dry between
+refetches.
+
+A `/code-review` pass caught three more, all real and all fixed. (1) **`collectStackAcresUnit`'s
+permanent-restart branch never reset `last_watered_at`**, so a Gold-bought crop re-sowed itself dry at
+progress 0 carrying the previous cycle's watering, and the only available fix -- one Water tap -- then
+added the entire stale gap to `ready_at`, turning a 15-minute cycle into however long the unit had sat
+ripe. It now re-waters on restart, keyed off the row's own value so the store needs no catalogue
+import; `last_fed_at` deliberately still does NOT, and the asymmetry is the point (an animal can be
+fed any time, a crop cannot be watered until it is actually dry). (2) **The migration backfill used
+`started_at` and had to become `now()`.** Since `thirstMs` is under `durationMs` for both crop kinds,
+`started_at + thirst` always precedes `ready_at`, so the ripened-before-the-drought carve-out could not
+protect a single legacy row -- every already-ripe crop would have flipped to `dry` at deploy and
+un-ripened itself on the first Water tap. Checked against the live table: all seven working crop rows
+were already ripe, so that was 100% of the real data. The cost of `now()` is one free thirst window per
+in-flight crop, once, which is the cheaper side by a wide margin -- the original comment arguing the
+other way was wrong. (3) **`unitAt` now ranks an art hit above a ground-diamond hit**, because a ripe
+crop's diamond doubled to 48 units in a 136x118 interior holding up to six of each kind; on depth alone
+the front crop swallowed the tap target of everything behind it. Depth still settles hits of the same
+kind, which is the case that rule was written for. Also: watering wet ground is a NO-OP rather than a
+400 (a phone whose clock runs fast paints the Water button itself, and erroring on it is unactionable
+-- nothing is written, so nothing can be farmed), and `FOOT_INSET` now measures to the bottom of the
+INK rather than the path, since a stroke is centred on its own line and measuring to the path
+over-corrected and buried the stem. Three things worth keeping: (1) **watering is free** --
+it costs attention, not Bushels and not Gold -- so it touches none of the money-ordering rules and
+has nothing to refund when its guarded write loses a race, which is the one way it differs from
+feeding; the currency-wall test's route-action list was extended to say so out loud. (2) **A dry
+crop's progress bar is read at the moment the soil dried, not at `now`** -- `progressOf` takes an
+explicit `atMs` for this. Without it a frozen crop's bar creeps to full and then sits there looking
+finished while readiness refuses it, which is exactly the "trains people to tap a unit that cannot
+pay yet" failure `growthStage`'s own comment in `world.ts` warns about. Hunger does NOT do this and
+was deliberately left alone (out of scope, and its bar is a smaller lie on a longer cycle). (3)
+**`lastWateredAt: null` on a crop means "row predates the column", not "bone dry"** -- it falls back
+to `startedAt`, since sowing waters the ground; reading it as dry would have frozen every crop in the
+field the moment this shipped. Watering wet ground is refused (`400`) rather than treated as a
+top-up, or the thirst clock could be reset for free all day.
+
+**Crop sprites are now drawn well off the world's own scale**, and this is a deliberate break with
+everything else on the map (which all draws at `1 / ART_SCALE`): a ripe carrot is a 12x16 unit box of
+mostly leaf, and at the opening shot's zoom on a phone in landscape it is a few pixels of green
+indistinguishable from a row sown a minute ago. Sprout 2.5x, mature 4x, seedling 1.6x (the third
+number was not specified and is an interpolation -- leaving it at 1x next to a 2.5x sprout makes the
+first frame invisible and the second look teleported in). The arithmetic lives in a new
+`lib/stackacres/crop-visuals.ts` rather than in the scene, for the reason `units.ts`'s header already
+states: vitest only reaches `lib/` and `app/`. Two non-obvious pieces there: a painter anchors at
+(0.5, 1) and Phaser scales about that origin, so a frame whose ink starts above its own box's bottom
+edge (carrot0/carrot1, whose leaves spring from y 15 in a 16-tall box) FLOATS once scaled --
+`cropGroundOffset` pushes it back down by the growth in that gap, and is 0 for every frame already
+drawn to its baseline; and the tap footprint (`unitFootprintHalf`, previously a flat 12 for crops)
+now tracks the sprite but keeps 12 as a FLOOR, since 1.6x of a 6-unit half is 9.6 and shrinking the
+target of the hardest crop to see would be exactly backwards. Verified live in memory-mode `next dev`
+against a real browser, not just in tests.
+
+**Migration applied 2026-09-04** (`stackacres_soil_watering`, remote version 20260904123755) --
+verified by querying `information_schema` before and after, with a clean `get_advisors` security pass
+(everything it reports is pre-existing: this app's deliberate service-role-only
+`rls_enabled_no_policy` posture, and the known leaked-password warning). Applied BEFORE the code
+merged, which is the safe direction *here and only here*: the column is additive and nullable, and
+the deployed `UNIT_COLUMNS` names every column explicitly rather than selecting `*`, so a running
+production build could not see it. Both column lists -- the old deployed one and this branch's -- were
+run against the live table to prove it.
+
+**It was closer than it should have been, and the lesson is worth keeping.** PR #303 was merged at
+12:36:35Z while the migration was still being applied at 12:37:55Z -- an 80-second window in which
+`main` held code selecting a column that did not exist. No outage happened only because Vercel's
+production deployment for that merge was not created until 12:38:35Z, 40s after the column landed
+(confirmed: zero ERROR/FATAL rows in `postgres_logs` across the window, live site 200, and
+`/api/stackacres` returning its 401 access lock rather than a 500). The deploy-checklist rule "a
+migration and the code that calls it are one change" means APPLY FIRST, THEN MERGE, and the gap was
+luck rather than sequencing -- the merge was not this session's to time.
+
+**Live schema drift found while applying this**: the remote carries a migration
+`stackacres_units_fix_extra_slots_ambiguous` (version 20260904023339) with NO file in
+`supabase/migrations/`. Someone applied a fix directly without committing it, so a database rebuilt
+from this repo alone would not have it. Unrelated to this pass and deliberately left alone -- but it
+wants its own file. See `[[reference_stackchips_migrations_not_auto_applied]]`.
 ### StackAcres got a soundscape: a synthesised ASMR bed, farm SFX, real animals (2026-09-04)
 Kayo: "better sound effects and music... animal noises and just ambient noise around the farm thats
 more ASMR like. not beats." The farm had **three music tracks and nothing else** -- every action on
@@ -1231,6 +1324,39 @@ end to end (4,000 Gold across two players before and after). Migration
 `20260831140000_othello_leaderboard.sql` adds 'othello' to `global_leaderboard_entries()` and is
 **unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
 
+### StackAcres districts became unlockable sectors; land has a price and an upkeep again (2026-09-04)
+Three of the four districts now start under wild growth, and the ground itself is back on the Gold
+ladder for the first time since the 2026-09-03 pass deleted the 16-tile plot grid. That deletion left
+the map with four districts that were simply all there from the first minute, three of them full of
+pens nobody could afford, so the east half of the world read as content that had failed to load. New
+`lib/stackacres/sectors.ts` holds the whole layer, pure: the ladder (`SECTOR_LADDER`, Long Meadow ->
+the Fold -> Ox Fields at 15k/45k/100k Gold, ordered by STOCK TIER rather than by
+`zonesByDistance`'s walk), the requirement checklist, the upkeep curve, and `sectorOvergrowth`.
+`SectorId` is `ZoneId` itself, not a parallel id space. Four things worth keeping: (1) **unlocks are
+DERIVED, not just stored** -- `unlockedSectors(cleared, units)` counts any district the player
+already keeps stock in, so every live farm mid-cattle-cycle keeps Ox Fields with no backfill to get
+right and a lost row cannot cost somebody land they visibly own; the migration deliberately has no
+backfill for exactly this reason. (2) **Nothing is greyed out.** A locked district paints no ground
+wash, no grow-area floor, no fence and no ghost outline -- there is no farm there yet to grey out, so
+what stands there is wild growth (`sectorOvergrowth`, dealt per district rather than per chunk since
+a sector is bounded and has to be destroyed in one go when cleared) plus a barely-there haze;
+`zoneScenery` gained a `locked` set so a plough or an ox trough can never stand on unclaimed ground.
+Discovery is therefore entirely on the tap, which is why `onLockedSectorTap` fires anywhere in
+`zoneAt` rather than in the narrow `growAreaAt` box a cleared district uses. (3) **The upkeep ledger
+is raise-to, not insert-once**: a day's bill is not fixed when the day starts (buy a capacity slot at
+noon and it rises), so `raise_homestead_upkeep` raises today's paid total to a target and settling
+charges the DIFFERENCE -- insert-once would miss the rise, add-to would charge the whole new bill on
+top of the old. Curve is `8 * 1.2^(plots - 3)` Bushels/day, ~59 at all four sectors cleared and ~916
+at every slot bought, against a few thousand Bushels a day of gross. (4) It is a **soft** gate: an
+unpaid farm can still collect, feed, sell and exchange -- only GROWING is blocked -- and yesterday's
+unpaid bill lapses rather than compounding, so the fee can never be a debt trap. Charged off mutating
+actions, never a read (reads stay write-free) and never a background job (this subsystem has none).
+Gold asymmetry untouched: `clear-sector` is a third SINK, nothing new pays Gold out, and the
+currency-wall test's call counts moved 2->3 / 3->5 deliberately. Verified live end to end against a
+memory-mode `next dev` (wild -> modal -> clear -> crop field appears, Gold 402k->387k, the day's
+20-Bushel fee showing in the HUD). Migration `20260904130000_stackacres_sectors_and_upkeep.sql` is
+**unapplied**; see `[[reference_stackchips_migrations_not_auto_applied]]`.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes the gap left open by the Ante Up economy fix earlier the same day. Both games computed their
 payout from a module-level multiplier table *at settlement*, and both are once-a-day boards that can
@@ -1595,6 +1721,11 @@ settle once).
 - Challenging a specific opponent shipped for table seats (PR #111, 2026-08-19). Picking a friend to
   invite to an empty seat (M16 table invites) is still open — a different flow, no seated opponent to
   challenge.
+- `lib/server/game-store.test.ts`'s "does not prefer a populated table whose only human seat has gone
+  quiet" is FLAKY, not red: it failed once in five runs at a pristine `origin/main` worktree, in
+  isolation as well as in the full suite (measured 2026-09-04). Re-run it before treating a single
+  red as a regression. `lib/scene/table-anchors.test.ts`'s dealer elbow-room test is separately and
+  reliably red on main -- see `[[project_stackchips_headsup_geometry_regression]]`.
 - `multiplayer.spec.ts`'s six-player test and two `safe-area.spec.ts` table tests fail identically at
   a pristine HEAD worktree, unrelated to recent work — reconfirm against a fresh worktree before
   treating a red run here as a regression (see `[[reference_stackchips_e2e_traps]]`).

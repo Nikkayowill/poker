@@ -46,12 +46,18 @@ export function GoldStore({ gameId }: { gameId?: string }) {
         fetch("/api/stripe/gold-tiers", { cache: "no-store" }),
         fetch("/api/profile", { cache: "no-store" }),
       ]);
+      // Read the profile before the tiers response can throw. A player's Gold
+      // balance is real regardless of whether the store's own tiers loaded --
+      // this used to sit behind the tiers check and a Stripe-side hiccup
+      // there discarded an already-successful profile read, showing "0 Gold"
+      // for a fully funded account.
+      const profileData = await profileResponse.json().catch(() => null);
+      if (profileResponse.ok && profileData?.profile) setProfile(profileData.profile);
+
       const tiersData = await tiersResponse.json();
       if (!tiersResponse.ok) throw new Error(tiersData.error ?? "Could not load the Gold store.");
       setTiers(tiersData.tiers);
       setPendingDocuments(tiersData.pendingDocuments);
-      const profileData = await profileResponse.json();
-      if (profileResponse.ok) setProfile(profileData.profile);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the Gold store.");
     } finally {
@@ -153,7 +159,9 @@ export function GoldStore({ gameId }: { gameId?: string }) {
         <div className="gold-store-header-actions">
           <span className="gold-store-balance">
             <Coins size={15} />
-            <strong>{unlimited ? "Unlimited" : balance.toLocaleString()}</strong>
+            {/* A profile that never arrived is "we don't know yet," not "zero" --
+                showing 0 here once meant a fully funded account read as broke. */}
+            <strong>{unlimited ? "Unlimited" : profile ? balance.toLocaleString() : "—"}</strong>
           </span>
           <Link className="support-panel-back" href={backHref}>← Back</Link>
         </div>

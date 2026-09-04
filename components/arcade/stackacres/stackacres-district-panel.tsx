@@ -2,27 +2,29 @@
 
 import { STACKACRES_CATALOGUE, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { unitRowAction, type BuyOption } from "@/lib/stackacres/district-panel";
+import { timeLeftLabel } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /**
- * The sidebar Kayo asked for: no more plot grid to tap into, just travel to a
- * district (the signpost, unchanged) and this panel shows what's standing
- * there and what you can buy. Successor to stackacres-grid.tsx's
- * `StackAcresPlotList` + `StackAcresSeedStrip`.
+ * The district sidebar: the deep end of one district. Successor to
+ * stackacres-grid.tsx's `StackAcresPlotList` + `StackAcresSeedStrip`.
  *
- * This IS the accessible surface, not a second one bolted on. The old plot
- * list existed only because the map was a canvas a screen reader and a Tab
- * key could not reach; every row and button here is a real DOM button
- * already, so there is nothing left for a hidden duplicate list to do.
+ * It is no longer how the game is played. Collecting, feeding, clearing and
+ * seeding all happen with a tap on the map itself now (see
+ * lib/stackacres/tap-action.ts and the radial menu), and this panel does not
+ * open on its own any more -- it is what you go to for the Gold decisions
+ * (`StackAcresBuySection`: buy outright, expand capacity) and for the full
+ * standing list.
  *
- * Two sections. `StackAcresUnitRows` lists what's already owned in this
- * district -- one row per unit, one button carrying the single action that
- * applies (Collect/Feed/Clear/Retire), same posture the old grid's
- * afford/blocked distinction had: a disabled button still SAYS why. `StackAcresBuySection`
- * lists what can be bought here -- seed with Bushels, buy outright with
- * Gold, or expand capacity once the cap is full.
+ * `StackAcresUnitRows` therefore does two jobs, and the second is why it did
+ * not go away with the loop it used to be. It is the ONLY keyboard and
+ * screen-reader path to what a tap on the canvas does -- the canvas is
+ * `aria-hidden` and always has been -- and it carries the one action a tap
+ * deliberately cannot reach: retiring, which refunds nothing and stays behind
+ * two presses. Same posture as before on refusals: a disabled button still
+ * SAYS why, which a floating label on a canvas has no room to.
  */
 
 /** Which painter stands for a stock. Livestock draws the animal; crops draw
@@ -36,16 +38,6 @@ const STOCK_ICON: Readonly<Record<StackAcresStock, PainterName>> = {
   cattle: "cow",
 };
 
-function timeLeft(readyAtIso: string, nowMs: number): string {
-  const ms = Date.parse(readyAtIso) - nowMs;
-  if (ms <= 0) return "any moment";
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
-}
-
 function stateLine(unit: StackAcresUnitSnapshot, nowMs: number): string {
   switch (unit.state) {
     case "ready":
@@ -55,7 +47,7 @@ function stateLine(unit: StackAcresUnitSnapshot, nowMs: number): string {
     case "mucked":
       return `Weather-worn -- clear for ${(unit.muckFee ?? 0).toLocaleString()} Bushels`;
     case "working":
-      return unit.permanent ? `Working -- ready in ${timeLeft(unit.readyAt, nowMs)}` : `Ready in ${timeLeft(unit.readyAt, nowMs)}`;
+      return unit.permanent ? `Working -- ready in ${timeLeftLabel(unit.readyAt, nowMs)}` : `Ready in ${timeLeftLabel(unit.readyAt, nowMs)}`;
   }
 }
 
@@ -94,7 +86,11 @@ export function StackAcresUnitRows({
   onCancelRetire,
 }: StackAcresUnitRowsProps) {
   if (units.length === 0) {
-    return <p className="sa-district-empty">Nothing here yet -- buy the first one below.</p>;
+    return (
+      <p className="sa-district-empty">
+        Nothing here yet -- seed the first one above, or tap the bare ground on the map.
+      </p>
+    );
   }
 
   return (

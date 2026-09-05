@@ -62,6 +62,15 @@ export interface StackAcresWorldApi {
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
+  /** Critical Harvest Cascade: the same gold-burst `celebrate` triggers for a
+   *  solo unit, fanned out across several units with a stagger between each
+   *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
+  celebrateCascade: (unitIds: string[]) => void;
+  /** The Frenzy Heat Combo Engine's own tap registration: one hit toward the
+   *  heat ladder, plus its cosmetic feedback at the unit's own screen spot.
+   *  Only for a tap that became a real action, never a refused one -- see
+   *  stackacres-scene.ts's own method for why. */
+  registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
   /** Send the farmhand over to a unit that has just been acted on.
    *  Decoration on a request that has already left the browser: he refuses
    *  silently outside the Farmstead, and can never delay or cancel a write.
@@ -332,6 +341,8 @@ export function StackAcresWorld({
       recenter: () => sceneRef.current?.recenter(),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
+      celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
+      registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),

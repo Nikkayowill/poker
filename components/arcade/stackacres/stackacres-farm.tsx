@@ -40,7 +40,7 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
-
+  yieldValue,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
@@ -75,6 +75,7 @@ import {
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import { stockZone } from "@/lib/stackacres/world";
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
@@ -540,6 +541,25 @@ export function StackAcresFarm() {
    */
   const tapAnchor = useRef<TapPoint | null>(null);
   /**
+   * Critical Harvest Cascade: what the most recent SOLO collect's response
+   * said, for `triggerCascade` to read once `act`'s own promise -- and its
+   * `finally`'s `inFlight` cleanup -- has actually resolved.
+   *
+   * A ref, not a return value threaded through `act`: `act`'s declared return
+   * type is `ContractActionResult`, owned by TownContractsModal.tsx and about
+   * contract settlement, not harvests -- widening it to carry this feature's
+   * own payload would be a layering violation for every other caller that
+   * already ignores what `act` returns. This is also NOT read from inside
+   * `act` itself: every `collect` action collapses to the same intent string
+   * (`intentOf` has no `unitIds` case), so a second `collect` fired while the
+   * first is still inside its own try block would be rejected by the very
+   * `inFlight` guard the cascade is trying to reuse. Set only for a one-unit
+   * sweep (a tap, never the Harvest-All button) and read/cleared exactly once
+   * by `triggerCascade`, which is the only thing that ever calls it -- see
+   * that function's own header for the rest of the contract.
+   */
+  const lastHarvestRef = useRef<{ crit: number; units: StackAcresUnitSnapshot[] } | null>(null);
+  /**
    * The idempotency key for each action whose fate this browser does not know.
    *
    * Keyed by what the player asked for (`collect:<unitId>`, `stock:hen`), and
@@ -850,6 +870,10 @@ export function StackAcresFarm() {
         if (body.action === "collect" && data.harvest) {
           const { harvest } = data;
           const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
+          // Critical Harvest Cascade: stash it for `triggerCascade` to pick
+          // up once this call has fully returned -- see lastHarvestRef's own
+          // header for why that has to happen outside this function.
+          if (single) lastHarvestRef.current = { crit: harvest.crit, units: data.units ?? [] };
           // Fired here rather than on the press because the ANIMAL is what
           // makes this sound worth having, and only the response knows which
           // unit actually paid out: a hen clucking as the eggs go in the
@@ -1227,6 +1251,46 @@ export function StackAcresFarm() {
   const closeRadial = useCallback(() => setRadial(null), []);
 
   /**
+   * Critical Harvest Cascade: a solo tap that just crit chains into other
+   * ready units standing in the same district, each collected through the
+   * exact same `collect` action a second tap would have sent -- see
+   * lib/stackacres/harvest-cascade.ts's own header for why that is the
+   * entire write path (no new RPC, no separate Gold or inventory call at
+   * all) and why this goes exactly one generation deep.
+   *
+   * Called ONLY from onWorldUnitTap's own collect branch, and only after
+   * that branch's own `act(...)` call has fully settled -- reading
+   * `lastHarvestRef` any earlier would race `act`'s `inFlight` guard, since
+   * every `collect` action collapses to the same intent string regardless of
+   * which units it names. `originUnitId`/`originStock` are the just-tapped
+   * unit as it stood BEFORE the harvest, handed in by the caller's own
+   * closure rather than re-read here: a consumed, non-permanent crop is gone
+   * from `units` the instant it settles, so there would be nothing left in
+   * state to look its stock up from afterward.
+   */
+  const triggerCascade = useCallback(
+    async (originUnitId: string, originStock: StackAcresStock) => {
+      const result = lastHarvestRef.current;
+      lastHarvestRef.current = null;
+      if (!result || result.crit <= 0) return;
+      const targets = findCascadeTargets(
+        result.units,
+        stockZone(originStock),
+        new Set([originUnitId]),
+      );
+      if (targets.length === 0) return;
+      // Local-optimistic: pop every chained unit immediately, before the
+      // follow-up request is even sent -- the same "answer the touch, let
+      // the network answer later" contract onWorldUnitTap's own popUnit
+      // already keeps for the tap that started this chain.
+      for (const id of targets) world.current?.popUnit(id);
+      const chained = await act({ action: "collect", unitIds: targets });
+      if (chained.ok) world.current?.celebrateCascade(targets);
+    },
+    [act],
+  );
+
+  /**
    * A finger landed on a unit's own picture. It pops immediately -- before
    * anything has been sent, which is the whole point: the farm answers the
    * touch, and the network answers a moment later. What happens next is
@@ -1263,6 +1327,16 @@ export function StackAcresFarm() {
       // the duplicates this cannot see (a retry after a dropped connection,
       // another tab).
       if (sending.current) return;
+      // The Frenzy Heat Combo Engine's own hit registration -- a tap that
+      // became a real action, never a refused or mashed-away one (both
+      // branches above have already returned). `baseYieldGold` is only
+      // meaningful for a collect; see registerFrenzyTap's own doc comment
+      // in stackacres-scene.ts for why it's a display estimate, never a
+      // real payout.
+      world.current?.registerFrenzyTap(
+        unitId,
+        action.kind === "collect" ? yieldValue(unit.stock) : undefined,
+      );
       // The farm's own voice for the gesture, chosen off the same `action`
       // that is about to be sent. This is the press the whole sound set was
       // written for and it was the last thing still answering with the app's
@@ -1291,14 +1365,18 @@ export function StackAcresFarm() {
       }
       // A tap is a one-unit sweep. It earns no synergy by construction --
       // three is the fewest a Bountiful Harvest considers -- which is exactly
-      // what the Harvest key beside it is for.
-      void act(
-        action.kind === "collect"
-          ? { action: "collect", unitIds: [unitId] }
-          : { action: action.kind, unitId },
-      );
+      // what the Harvest key beside it is for. A collect is chained onto
+      // `triggerCascade` once it settles, in case it crit -- every other verb
+      // has nothing to chain.
+      if (action.kind === "collect") {
+        void act({ action: "collect", unitIds: [unitId] }).then((result) => {
+          if (result.ok) void triggerCascade(unitId, unit.stock);
+        });
+      } else {
+        void act({ action: action.kind, unitId });
+      }
     },
-    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally],
+    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally, triggerCascade],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is

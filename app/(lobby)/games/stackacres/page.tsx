@@ -3,9 +3,21 @@ import { cookies } from "next/headers";
 import { StackAcresFarm } from "@/components/arcade/stackacres/stackacres-farm";
 import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
+import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
+
+/**
+ * Mirrors ChronoDevPanel's own client-side gate exactly. Checked HERE, on the
+ * server, so a production build never puts the panel's component output --
+ * or an import of its module -- in the RSC payload for this page at all, on
+ * top of ChronoDevPanel.tsx's own belt-and-suspenders check of the same two
+ * variables client-side. See lib/server/chrono-delorean.ts's header for why
+ * the harness always gates on both NODE_ENV and an explicit opt-in.
+ */
+const CHRONO_DELOREAN_PANEL_ENABLED =
+  process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_CHRONO_DELOREAN_ENABLED === "1";
 
 export const metadata: Metadata = {
   // Route, modules and name now all read StackAcres -- see
@@ -54,6 +66,14 @@ export default async function StackAcresPage() {
   return (
     <div className={`sa-theme ${stackAcresDisplay.variable}`}>
       {allowed ? <StackAcresFarm /> : <StackAcresLock playerId={profile?.id ?? null} />}
+      {/* `.sa-theme` above is `display: contents` (see its own comment) and
+          generates no box of its own, so ChronoDevPanel is a SIBLING of
+          StackAcresFarm here, not nested inside a box this wrapper could
+          anchor "position: absolute" to -- it anchors to the nearest actual
+          positioned ancestor further up the app shell, or the initial
+          containing block absent one, which is fine for a dev-only overlay
+          that only needs to sit in a corner of the screen. */}
+      {allowed && CHRONO_DELOREAN_PANEL_ENABLED && <ChronoDevPanel />}
     </div>
   );
 }

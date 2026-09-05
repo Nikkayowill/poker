@@ -2711,7 +2711,127 @@
 
 .sa-contracts-ask { margin-top: 12px; }
 
+/* ---- the Sunlight Forge sheet ----------------------------------------
+   Mirrors .sa-contracts-*'s own structure (a status readout, a scrollable
+   list of cards, one note banner answering the sheet's own last action) --
+   kept as its own prefix rather than folded into .sa-contract-* because the
+   two are unrelated features that only happen to look alike, the same
+   reasoning that already keeps .sa-buy-* and .sa-contract-* separate. */
 
+.sa-forge-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+}
+
+.sa-forge-stat { display: flex; flex-direction: column; gap: 2px; text-align: center; }
+
+.sa-forge-stat dt {
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-forge-stat dd {
+  margin: 0;
+  color: var(--sa-ink);
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-forge-note {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sa-forge-note.is-paid {
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+  color: var(--sa-ink);
+}
+
+.sa-forge-note.is-refused {
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  color: var(--sa-ink);
+}
+
+.sa-forge-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-forge-slot {
+  padding: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+}
+
+/* A forged slot gets the same corn-ring treatment .sa-contract.is-posted
+   uses for "this is the number to plan around" -- here it marks "this is
+   already yours" instead. */
+.sa-forge-slot.is-owned {
+  background: var(--sa-paper);
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-forge-slot-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sa-forge-slot-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--sa-ink);
+}
+
+.sa-forge-slot-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--sa-ink-soft);
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-forge-slot-tag.is-owned { color: var(--sa-leaf-rim); }
+
+.sa-forge-slot-desc {
+  margin: 6px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sa-forge-slot .sa-contract-req { margin-top: 10px; }
+.sa-forge-slot .sa-cta { margin-top: 12px; width: 100%; justify-content: center; }
 
 @media (prefers-reduced-motion: reduce) {
   .sa-play-pulse,

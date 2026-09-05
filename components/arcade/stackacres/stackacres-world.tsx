@@ -350,14 +350,22 @@ export function StackAcresWorld({
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
-      // A handle for the gesture harness to read the camera through. Dev only:
+      // A handle for the gesture harness to read the camera through, and for
+      // Chrono-DeLorean Mode's timescale engine to reach the live Phaser
+      // instance (lib/dev/chrono-simulation-engine.ts) -- `game` rides on
+      // this same handle rather than a second global so there is exactly one
+      // dev-only door onto this scene, not two to keep in sync. Dev only:
       // production never gets a global.
       if (process.env.NODE_ENV !== "production") {
         (
           window as unknown as {
-            __stackacres?: { scene: unknown; screenPointFor: (x: number, y: number) => TapPoint };
+            __stackacres?: {
+              scene: unknown;
+              game: unknown;
+              screenPointFor: (x: number, y: number) => TapPoint;
+            };
           }
-        ).__stackacres = { scene, screenPointFor: (x, y) => scene.screenPointFor(x, y) };
+        ).__stackacres = { scene, game, screenPointFor: (x, y) => scene.screenPointFor(x, y) };
       }
 
       // The scale manager only has a canvas to size once the game has booted,

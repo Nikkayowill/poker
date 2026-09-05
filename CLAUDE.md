@@ -58,6 +58,34 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### Chrono-DeLorean Mode: a sandboxed dev harness for simulating StackAcres time (2026-09-05)
+Built from an autonomous engineering directive, not a direct Kayo ask -- worth flagging since every
+other entry here starts from one. A dev-only time-shift for one player's OWN farm, so a multi-day
+crop/hunger/Land-Maintenance cycle can be watched resolve in minutes. **Nothing new was invented**:
+every StackAcres service function already took an optional `now: Date` defaulting to `new Date()`
+(`lib/server/stackacres-service.ts`), because growth is a pure function of that argument
+(`lib/stackacres/units.ts`: "There is no clock here") -- the harness is a per-profile millisecond
+offset (`chrono_delorean_offsets`) added to a real `Date.now()` read (`lib/server/chrono-delorean.ts`'s
+`resolveChronoNow`) and threaded through that same existing parameter from the two real routes, never a
+second clock or a `Date` override. Gated on BOTH `NODE_ENV !== "production"` AND an explicit
+`CHRONO_DELOREAN_MODE=1` (server) / `NEXT_PUBLIC_CHRONO_DELOREAN_ENABLED=1` (client) -- the same "unset
+means no default-open door" posture `CRON_SECRET` takes -- plus the existing admin-session cookie
+(`app/api/dev/chrono-delorean/route.ts`), and scoped to the caller's OWN session token only, never an
+arbitrary `profileId` the way `/api/admin/gold/adjust` takes one. `components/dev/ChronoDevPanel.tsx`
+is the on-screen control; `lib/dev/chrono-simulation-engine.ts` is a second, purely cosmetic half that
+speeds up Phaser's own clock (`game.loop.timeScale`/`scene.time.timeScale`/`scene.tweens.timeScale`)
+while the panel's auto-advance loop runs, so a growth tween that finished server-side several
+simulated days ago visibly catches up rather than sitting mid-animation. Two wrong assumptions caught
+by actually running the coverage-log tests rather than hand-deriving them (`lib/server/chrono-
+delorean-simulation.test.ts`'s own header keeps both): a hen's `hungerMs` is LONGER than its
+`durationMs` ("a Hen never goes hungry", so the hunger-freeze demo uses `pig` instead), and
+`clearStackAcresSector` refuses Meadow/Wallow until the player already holds enough units elsewhere
+(`requiresUnits`). Scope, stated once and worth restating: this shifts the `now` threaded through
+TypeScript calls only -- a SQL `now()` inside a security-definer RPC's own audit column is untouched,
+since every growth-relevant timestamp is written by the store layer from the passed-in `now`, never a
+SQL default. Migration `20260905130000_chrono_delorean_offsets.sql` applied and verified (revoked from
+`public`/`anon`/`authenticated`, clean advisor pass). Branch `feat/chrono-delorean-mode`.
+
 ### The Greenhouse: a built-once structure, six crop slots, weather-sealed and faster (2026-09-05)
 New `lib/stackacres/greenhouse.ts`. Built from a task brief that assumed a `homestead_plots`-era
 architecture (a tile grid in `iso.ts`, plot flags in `homestead_plots`) that no longer exists -- both

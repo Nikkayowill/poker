@@ -46,6 +46,7 @@ import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { stackacresLocked, tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { resolveChronoNow } from "@/lib/server/chrono-delorean";
 
 export const runtime = "nodejs";
 
@@ -286,67 +287,73 @@ type StackAcresAction = z.infer<typeof bodySchema>;
  * One action to one service call. A switch rather than a ternary chain so that
  * adding a case is a one-line diff a reviewer can read -- and so the exhaustive
  * return type tells the compiler when one is missing.
+ *
+ * `now` is threaded through every case rather than left to each function's
+ * own `new Date()` default -- this is Chrono-DeLorean Mode's whole seam (see
+ * lib/server/chrono-delorean.ts): outside a dev build with it explicitly
+ * enabled, `now` IS `new Date()` (resolved once in POST below), so this
+ * changes nothing about what a real request does.
  */
-function run(token: string, action: StackAcresAction) {
+function run(token: string, action: StackAcresAction, now: Date) {
   switch (action.action) {
     case "expand-capacity":
-      return expandStackAcresCapacity(token, action.stock);
+      return expandStackAcresCapacity(token, action.stock, now);
     case "clear-sector":
-      return clearStackAcresSector(token, action.sector);
+      return clearStackAcresSector(token, action.sector, now);
     case "upgrade-tool":
-      return upgradeStackAcresTool(token);
+      return upgradeStackAcresTool(token, now);
     case "build-greenhouse":
-      return buildStackAcresGreenhouse(token);
+      return buildStackAcresGreenhouse(token, now);
     case "stock":
-      return stockStackAcres(token, { stock: action.stock, inGreenhouse: action.inGreenhouse });
+      return stockStackAcres(token, { stock: action.stock, inGreenhouse: action.inGreenhouse }, now);
     case "buy-stock":
-      return buyStackAcresStock(token, { stock: action.stock });
+      return buyStackAcresStock(token, { stock: action.stock }, now);
     case "retire":
-      return retireStackAcresStock(token, action.unitId);
+      return retireStackAcresStock(token, action.unitId, now);
     case "collect":
-      return harvestStackAcres(token, { unitIds: action.unitIds });
+      return harvestStackAcres(token, { unitIds: action.unitIds }, now);
     case "feed":
-      return feedStackAcres(token, action.unitId);
+      return feedStackAcres(token, action.unitId, now);
     case "water":
-      return waterStackAcres(token, action.unitId);
+      return waterStackAcres(token, action.unitId, now);
     case "clear":
-      return clearStackAcresUnit(token, action.unitId);
+      return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":
-      return buyStackAcresFeed(token, action.itemId);
+      return buyStackAcresFeed(token, action.itemId, now);
     case "sow-wheat":
-      return sowStackAcresWheat(token);
+      return sowStackAcresWheat(token, now);
     case "place-machine":
-      return placeStackAcresMachine(token, action.kind);
+      return placeStackAcresMachine(token, action.kind, now);
     case "work":
-      return workStackAcres(token);
+      return workStackAcres(token, now);
     case "divert":
-      return divertStackAcresUnit(token, action.unitId);
+      return divertStackAcresUnit(token, action.unitId, now);
     case "process":
-      return processStackAcresRecipeAction(token, action.recipe);
+      return processStackAcresRecipeAction(token, action.recipe, now);
     case "request-contract":
-      return requestStackAcresContract(token);
+      return requestStackAcresContract(token, now);
     case "fulfill-contract":
-      return fulfillStackAcresTownContract(token);
+      return fulfillStackAcresTownContract(token, now);
     case "tap-secret-zone":
-      return tapStackAcresSecretZone(token, action.zoneId);
+      return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":
-      return donateStackAcresSecretItem(token, action.itemId);
+      return donateStackAcresSecretItem(token, action.itemId, now);
     case "consume-secret-item":
-      return consumeStackAcresSecretItem(token, action.itemId);
+      return consumeStackAcresSecretItem(token, action.itemId, now);
     case "trade-secret-item":
-      return tradeStackAcresSecretItemToRay(token, action.itemId);
+      return tradeStackAcresSecretItemToRay(token, action.itemId, now);
     case "unlock-synergy-perk":
-      return unlockStackAcresSynergyPerk(token, action.archetype);
+      return unlockStackAcresSynergyPerk(token, action.archetype, now);
     case "activate-synergy-perk":
-      return activateStackAcresSynergyPerk(token, action.archetype, action.slot);
+      return activateStackAcresSynergyPerk(token, action.archetype, action.slot, now);
     case "start-blueprint":
-      return startStackAcresMythicBlueprint(token, action.structureId);
+      return startStackAcresMythicBlueprint(token, action.structureId, now);
     case "contribute-blueprint":
-      return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount);
+      return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount, now);
     case "midnight-merchant-buy":
-      return buyFromMidnightMerchant(token, action.itemId);
+      return buyFromMidnightMerchant(token, action.itemId, now);
     case "prestige-reset":
-      return prestigeResetStackAcres(token);
+      return prestigeResetStackAcres(token, now);
   }
 }
 
@@ -393,10 +400,18 @@ export async function POST(request: NextRequest) {
     }
 
     const action = parsed.data;
+    const now = await resolveChronoNow(token);
     // At most once per intent. The key is the client's; `runStackAcresAction`
-    // decides whether this request is the one that gets to act.
-    const result = await runStackAcresAction(token, action.key ?? null, action.action, () =>
-      run(token, action),
+    // decides whether this request is the one that gets to act. `now` is
+    // also passed to `runStackAcresAction` itself (its own default is
+    // `new Date()`), so a replay/in-flight answer's view is read at the same
+    // simulated moment as the action that triggered it.
+    const result = await runStackAcresAction(
+      token,
+      action.key ?? null,
+      action.action,
+      () => run(token, action, now),
+      now,
     );
     return withRequestSessionCookie(request, NextResponse.json(result), token);
   } catch (error) {

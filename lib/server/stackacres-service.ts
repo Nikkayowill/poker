@@ -1434,7 +1434,9 @@ export async function donateStackAcresSecretItem(
     // actually land, which is what earns a refund.
     await markStackAcresDonated(profile.id, itemId);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the donation's own
+    // error, not get replaced by a second failure from the refund attempt.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
 
@@ -1488,11 +1490,13 @@ export async function consumeStackAcresSecretItem(
   try {
     armed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, 1);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the arming attempt's
+    // own error, not get replaced by a second failure from the refund.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
   if (armed === null) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw new StackAcresRequestError("Could not arm that boost.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1556,14 +1560,16 @@ export async function tradeStackAcresSecretItemToRay(
   try {
     raised = await raiseStackAcresUpkeep(profile.id, day, target);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the upkeep write's
+    // own error, not get replaced by a second failure from the refund.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
   if (!raised) {
     // Another tab settled today's bill (or raised it further) between the
     // read above and now -- the trade did not happen, so it must not be
     // spent for.
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1866,7 +1872,11 @@ export async function harvestStackAcres(
     // Best-effort: the sweep is already durable by this point in the
     // function, and a failure here must not turn a settled, paid harvest
     // into an error response.
-    const disarmed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1);
+    const disarmed = await adjustStackAcresSecretLedger(
+      profile.id,
+      STACKACRES_DICE_BOOST_ARMED_KEY,
+      -1,
+    ).catch(() => null);
     if (disarmed === null) {
       console.error("stackacres.dice_boost_disarm_failed", { profileId: profile.id });
     }

@@ -228,12 +228,18 @@
      its own 34px case is unaffected either way. */
   --safe-bottom: min(env(safe-area-inset-bottom, 0px), 34px);
 
-  /* How far short of the real screen the layout viewport is, written by
-     components/shell/viewport-fit.tsx and 0 everywhere except an installed
-     iOS PWA that has launched with the bug. Declared here so every calc()
-     that reads it resolves before the script runs, and so the whole app is
-     one subtraction away from filling the screen instead of each surface
-     inventing its own correction. */
+  /* How far short of the real screen the INITIAL CONTAINING BLOCK is, written
+     by components/shell/viewport-fit.tsx and 0 everywhere except an installed
+     iOS PWA that has launched with the bug. Declared here so every calc() that
+     reads it resolves before the script runs.
+
+     Only ever subtract this from `bottom` on a `position: fixed` element.
+     It does NOT belong in a height: in a standalone iOS app the viewport units
+     already resolve to the whole screen (06-table.css says the same of
+     100dvh), so `100svh` is right as it stands and adding the shortfall makes
+     the box taller than the display -- which broke the sign-in page, a scroll
+     container, the first time this shipped. The ICB is the one thing that
+     launches short, and `bottom` is the one thing that resolves against it. */
   --vp-short: 0px;
 
   /* The lobby chrome's height, stated once because three other rules have to

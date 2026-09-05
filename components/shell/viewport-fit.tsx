@@ -15,6 +15,16 @@
  * because it is not there. It does not matter what WebKit's reason is: the
  * shortfall is measurable, so it can simply be cancelled.
  *
+ * WHAT IT MAY AND MAY NOT BE APPLIED TO. Only to `bottom` on a
+ * `position: fixed` element. `bottom` resolves against the initial containing
+ * block, and the ICB is the one thing that launches short. The viewport UNITS
+ * do not: in a standalone iOS app `100svh`/`100dvh` already measure the whole
+ * screen (06-table.css records the same about 100dvh), so a height written in
+ * them is already correct and adding the shortfall to it makes the box taller
+ * than the display. That mistake shipped once and broke the sign-in page,
+ * which scrolls, while the tab pill it was meant to help was already fixed by
+ * the `bottom` half alone.
+ *
  * WHY THE MISSING STRIP IS OURS TO PAINT. In standalone with
  * `viewport-fit: cover` and a translucent status bar, the web view is the
  * whole screen -- visibly so, since the lobby's room gradient paints behind

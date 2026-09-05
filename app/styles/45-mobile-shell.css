@@ -112,7 +112,7 @@
        it (a bar that jumps while the page scrolls) needs a scrolling root, and
        nothing scrolls at this level -- each pane scrolls on its own. Browsers
        without `dvh` drop this line and keep the `svh` height above. */
-    height: calc(100dvh + var(--vp-short) - var(--lobby-header-h) - var(--safe-top));
+    height: calc(100dvh - var(--lobby-header-h) - var(--safe-top));
   }
 
   .lobby.lobby-shell .hub {

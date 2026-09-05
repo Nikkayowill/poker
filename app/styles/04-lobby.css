@@ -192,7 +192,9 @@ button:disabled { cursor: wait; opacity: .62; }
      `100vh - header` arithmetic .lobby still needs. --safe-top used to be
      cleared by the header's own padding; this page clears it itself now. */
   height: 100vh;
-  height: calc(100svh + var(--vp-short));
+  /* Not --vp-short corrected; see .app-root in 02-app-shell.css for why a
+     viewport-unit height is already right and adding the shortfall broke it. */
+  height: 100svh;
   overflow-y: auto;
   /* Same guard as .lobby: the backstop that keeps the next wide child from
      panning the page sideways on a phone. */

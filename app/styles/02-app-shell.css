@@ -1,9 +1,13 @@
 /* The two headers and the shells the app hangs in. */
 
-/* The height grows by --vp-short so the room's paint reaches the real bottom
-   edge on an installed phone whose layout viewport launched short; 0 and
-   therefore unchanged everywhere else. See components/shell/viewport-fit.tsx. */
-.app-root { min-height: 100vh; min-height: calc(100svh + var(--vp-short)); overflow: hidden; }
+/* Deliberately NOT corrected by --vp-short, unlike the two `bottom` rules
+   that are. In a standalone iOS app the viewport UNITS already resolve to the
+   whole screen (06-table.css says the same about 100dvh) -- it is only the
+   initial containing block, which is what `position: fixed` resolves `bottom`
+   against, that launches short. So this already reaches the real bottom edge,
+   and adding the shortfall to it made the box taller than the screen. On the
+   sign-in page, which scrolls, that was immediately visible. */
+.app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
 
 /* Keep the room's paint continuous beneath the transparent lobby chrome. The
    signed-out room uses the same base as its fixed ceiling so the header does

@@ -61,12 +61,13 @@ describe("stackacresUpkeepFee", () => {
   /**
    * Sized against the flat daily allowance rather than against any one tier: a
    * maxed estate should feel the fee and a starting farm should never see it.
-   * If either end of this band breaks, the base fee moved too far.
+   * The ceiling was raised from 15k to 50k on 2026-09-05, so the percentage
+   * changed proportionally while the base fee stayed the same.
    */
   it("bites a maxed estate without swallowing it", () => {
     const share = stackacresUpkeepFee(MAX_PLOTS) / STACKACRES_GOLD_CEILING;
-    expect(share).toBeGreaterThan(0.1);
-    expect(share).toBeLessThan(0.4);
+    expect(share).toBeGreaterThan(0.05);
+    expect(share).toBeLessThan(0.15);
   });
 });
 

@@ -161,6 +161,50 @@ export function barnHitAt(x: number, y: number): boolean {
   );
 }
 
+/**
+ * Where the Midnight Merchant stands when a visit is live -- a fixed spot in
+ * the yard, off to the barn's east side, clear of both the barn footprint
+ * (x 71..145) and Grandfather Ray's own spot (props.ts's `{ x: 178, y: 20 }`,
+ * whose 25.125-wide box spans roughly x 165..191). The Merchant is a
+ * TEMPORARY visitor and has no `PropPlacement` entry in props.ts's
+ * `YARD_PROPS` -- that array is for permanent scenery only, painted once at
+ * boot; the scene's own `setMerchant` (stackacres-scene.ts) adds and removes
+ * this one picture at runtime, the same reconciled-node mechanism `setUnits`
+ * already uses for livestock, rather than the "paint every YARD_PROPS entry
+ * once at create()" mechanism the barn and Ray use. See that method's own
+ * header for why a temporary NPC needed a node it could destroy, not a
+ * static array entry it never could.
+ */
+export const MIDNIGHT_MERCHANT_SPOT: WorldPoint = { x: 230, y: 20 };
+
+/** Same box `PROP_SIZE.grandfatherRay` uses (25.125 wide, 40 tall) --
+ *  restated here rather than imported from props.ts, since that module's
+ *  `PROP_SIZE` is keyed by `PropKind` and the Merchant, being temporary, is
+ *  deliberately not a member of that closed set (see the doc comment
+ *  above). */
+const MIDNIGHT_MERCHANT_FOOTPRINT: WorldRect = {
+  x: MIDNIGHT_MERCHANT_SPOT.x - 25.125 / 2,
+  y: MIDNIGHT_MERCHANT_SPOT.y - 40,
+  width: 25.125,
+  height: 40,
+};
+
+/** Whether a tapped ground point lands on the Midnight Merchant's spot.
+ *  Checked by the scene ONLY while a visit is actually live (see
+ *  `StackAcresScene`'s pointer-up handler) -- when no visit is on, this
+ *  function is simply never called, rather than being called and refused,
+ *  so a tap on empty ground where the Merchant sometimes stands falls
+ *  through to `growAreaAt` exactly as it would if this feature did not
+ *  exist. */
+export function midnightMerchantHitAt(x: number, y: number): boolean {
+  return (
+    x >= MIDNIGHT_MERCHANT_FOOTPRINT.x &&
+    x <= MIDNIGHT_MERCHANT_FOOTPRINT.x + MIDNIGHT_MERCHANT_FOOTPRINT.width &&
+    y >= MIDNIGHT_MERCHANT_FOOTPRINT.y &&
+    y <= MIDNIGHT_MERCHANT_FOOTPRINT.y + MIDNIGHT_MERCHANT_FOOTPRINT.height
+  );
+}
+
 /** Where a district's units stand: the fenced boundary the scene draws once
  *  per district, and the box every one of that district's animals wanders
  *  inside (crops sit at a fixed spot within the same box). */
@@ -326,6 +370,24 @@ export function spawnCritter(bounds: WorldRect, random: Random): Critter {
 }
 
 /**
+ * The longest frame anything on this map will integrate in one step. A phone
+ * coming back from a background tab hands the scene one enormous delta, and
+ * nothing it drives -- an animal, the farmhand, the weather clock -- moved
+ * for that whole time either. Shared here (rather than as a private copy per
+ * file) since a retune of the safety margin should only ever touch one place;
+ * see `clampFrameMs`.
+ */
+export const MAX_FRAME_MS = 250;
+
+/** A raw frame delta, clamped to `MAX_FRAME_MS` and floored at zero. Still in
+ *  milliseconds -- a caller stepping a value that integrates in seconds
+ *  divides by 1000 itself (see farmhand-path.ts's `frameSeconds`); one that
+ *  accumulates a held-ms clock, like `stepWeather`, uses it as-is. */
+export function clampFrameMs(dtMs: number): number {
+  return Math.max(0, Math.min(dtMs, MAX_FRAME_MS));
+}
+
+/**
  * One tick of an animal's day: stand about, pick somewhere in the pen, walk
  * there, stand about again. Position is clamped to the pen every step, so a
  * pen that shrinks under an animal (it cannot, but) or a rounding wobble can
@@ -338,7 +400,7 @@ export function stepCritter(
   dtMs: number,
   random: Random,
 ): Critter {
-  const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
+  const dt = clampFrameMs(dtMs) / 1000;
   let next: Critter = { ...critter };
 
   if (next.mode === "idle") {
@@ -583,7 +645,15 @@ function valueNoise(x: number, y: number, cell: number, seed: number): number {
   return top + (bottom - top) * sy;
 }
 
-function clamp01(v: number): number {
+/**
+ * Clamped to 0..1, and NaN-safe: a non-finite input (a stray 0/0 upstream)
+ * returns 0 rather than propagating NaN through everything that reads this,
+ * which is the whole reason this lives here once now rather than as one of
+ * four private near-duplicates across lib/stackacres/ -- this file's own
+ * previous copy was the one that quietly let NaN through both comparisons.
+ */
+export function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 

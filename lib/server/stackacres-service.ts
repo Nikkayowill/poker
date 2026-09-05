@@ -124,6 +124,18 @@ import {
 } from "./stackacres-intent-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import {
+  readMidnightMerchantVisit,
+  redeemMidnightMerchantItem,
+  spawnMidnightMerchantVisit,
+} from "./midnight-merchant-store";
+import {
+  MIDNIGHT_MERCHANT_WINDOW_MS,
+  isMidnightMerchantItemId,
+  shouldSpawnMidnightMerchantOnCriticalHarvest,
+  type MidnightMerchantItemId,
+  type MidnightMerchantSnapshot,
+} from "@/lib/stackacres/midnight-merchant";
+import {
   critGoldFor,
   nextToolTier,
   rollHarvestCrit,
@@ -337,6 +349,11 @@ export interface StackAcresView {
    *  `StackAcresItem`, and a secret item is deliberately not a member of that
    *  enum; see lib/stackacres/secrets.ts's own header). */
   secretDonations: Record<SecretItemId, boolean>;
+  /** The Midnight Merchant's current visit, or null when the NPC is not on
+   *  the lot right now. See lib/stackacres/midnight-merchant.ts -- this is
+   *  the ENTIRE surface the client's own render manager is allowed to trust;
+   *  a snapshot here is server-confirmed, never a local guess. */
+  midnightMerchant: MidnightMerchantSnapshot | null;
 }
 
 function parseUnitId(value: unknown): string {
@@ -414,6 +431,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     boostArmedQty,
     heldQtys,
+    midnightMerchant,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -436,6 +454,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // tuple overload needs a fixed-length literal to keep each position's own
     // type. Nesting keeps this array exactly 15 elements long.
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
+    readMidnightMerchantVisit(profile.id, now),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -469,6 +488,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
+    midnightMerchant,
   };
 }
 
@@ -501,6 +521,14 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
+  /** Set by `buyFromMidnightMerchant` on a successful purchase; every other
+   *  action leaves this undefined. */
+  midnightMerchantPurchase?: {
+    itemId: string;
+    pricePaid: number;
+    purchaseStreak: number;
+    remaining: number;
+  };
 };
 
 /**
@@ -515,6 +543,9 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   const delta: Record<string, unknown> = {};
   if (result.harvest !== undefined) delta.harvest = result.harvest;
   if (result.discovery !== undefined) delta.discovery = result.discovery;
+  if (result.midnightMerchantPurchase !== undefined) {
+    delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
+  }
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -1058,6 +1089,68 @@ export async function buyStackAcresFeed(
 }
 
 /**
+ * Buys one unit of `itemId` from the caller's currently-active Midnight
+ * Merchant visit, at whatever price the visit's own purchase streak dictates
+ * (see lib/stackacres/midnight-merchant.ts's `priceForNextPurchase`).
+ *
+ * UNLIKE `buyStackAcresFeed` just above, this is not a debit-then-create pair
+ * needing its own refund-on-failure: `redeemMidnightMerchantItem` reaches a
+ * SINGLE RPC (`redeem_midnight_merchant_item`) that locks the visit, prices
+ * the purchase, spends the Gold, and decrements stock all inside one Postgres
+ * transaction. There is nothing here for a thrown error between two writes to
+ * leave half-applied, so this function has no `refundGold` call to make --
+ * that is a property of the RPC's own design, not a shortcut being taken.
+ *
+ * Every refusal reason the RPC can return becomes a distinct, specific
+ * message rather than one generic "could not buy that" -- a player who reads
+ * "sold out" and one who reads "too expensive" need different next actions,
+ * and folding them into one string would cost the storefront the ability to
+ * tell them apart.
+ */
+export async function buyFromMidnightMerchant(
+  token: string,
+  itemId: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isMidnightMerchantItemId(itemId)) {
+    throw new StackAcresRequestError("The Midnight Merchant doesn't carry that.", 400);
+  }
+  const profile = await ensureProfile(token);
+
+  const result = await redeemMidnightMerchantItem(
+    profile.id,
+    itemId as MidnightMerchantItemId,
+    spendGoldByProfile,
+    now,
+  );
+
+  if (!result.success) {
+    const round = await snapshots(profile.id, now);
+    if (result.reason === "no_merchant") {
+      throw new StackAcresRequestError("The Midnight Merchant has already moved on.", 409, { round });
+    }
+    if (result.reason === "sold_out") {
+      throw new StackAcresRequestError("That's the last one -- already sold.", 409, { round });
+    }
+    throw new StackAcresRequestError(
+      `That costs ${(result.pricePaid ?? 0).toLocaleString()} Gold.`,
+      400,
+      { round },
+    );
+  }
+
+  return {
+    ...(await view(await ensureProfile(token), now)),
+    midnightMerchantPurchase: {
+      itemId,
+      pricePaid: result.pricePaid ?? 0,
+      purchaseStreak: result.purchaseStreak,
+      remaining: result.remaining,
+    },
+  };
+}
+
+/**
  * Feeds a hungry animal, spending one serving.
  *
  * A hungry unit's clock is frozen, and this is where that is actually made
@@ -1341,7 +1434,9 @@ export async function donateStackAcresSecretItem(
     // actually land, which is what earns a refund.
     await markStackAcresDonated(profile.id, itemId);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the donation's own
+    // error, not get replaced by a second failure from the refund attempt.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
 
@@ -1395,11 +1490,13 @@ export async function consumeStackAcresSecretItem(
   try {
     armed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, 1);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the arming attempt's
+    // own error, not get replaced by a second failure from the refund.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
   if (armed === null) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw new StackAcresRequestError("Could not arm that boost.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1463,14 +1560,16 @@ export async function tradeStackAcresSecretItemToRay(
   try {
     raised = await raiseStackAcresUpkeep(profile.id, day, target);
   } catch (error) {
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    // Best-effort: a real failure here must surface as the upkeep write's
+    // own error, not get replaced by a second failure from the refund.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw error;
   }
   if (!raised) {
     // Another tab settled today's bill (or raised it further) between the
     // read above and now -- the trade did not happen, so it must not be
     // spent for.
-    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1).catch(() => null);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1746,6 +1845,25 @@ export async function harvestStackAcres(
   // actually applies.
   const critical = rollHarvestCrit(tool, Math.random, critChance);
 
+  // Step 3c. The Midnight Merchant: a second, independent roll riding the
+  // SAME critical the secret-find roll (step 5b, below) piggybacks on --
+  // never a second guarded write, and never gold- or streak-affecting on its
+  // own (`spawnMidnightMerchantVisit` only ever seeds a fresh stock list at
+  // zero purchases; it cannot pay out or spend anything by itself). Best-
+  // effort and swallowed on failure for the same reason the dice-boost
+  // disarm above is: the harvest itself is already settled and paid, and an
+  // NPC failing to show up must not turn that into an error response.
+  // Idempotent against a visit already in progress (`spawnMidnightMerchantVisit`
+  // returns false rather than resetting one), so a player who is mid-visit
+  // when a second critical lands simply keeps the visit they have.
+  if (critical && shouldSpawnMidnightMerchantOnCriticalHarvest(Math.random)) {
+    try {
+      await spawnMidnightMerchantVisit(profile.id, "critical_harvest", MIDNIGHT_MERCHANT_WINDOW_MS, now);
+    } catch (error) {
+      console.error("stackacres.midnight_merchant_spawn_failed", { profileId: profile.id, error });
+    }
+  }
+
   if (diceBoostArmed) {
     // Disarmed unconditionally, whether or not the roll above actually
     // crit -- the boost is spent by being LIVE for this harvest, not
@@ -1754,7 +1872,11 @@ export async function harvestStackAcres(
     // Best-effort: the sweep is already durable by this point in the
     // function, and a failure here must not turn a settled, paid harvest
     // into an error response.
-    const disarmed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1);
+    const disarmed = await adjustStackAcresSecretLedger(
+      profile.id,
+      STACKACRES_DICE_BOOST_ARMED_KEY,
+      -1,
+    ).catch(() => null);
     if (disarmed === null) {
       console.error("stackacres.dice_boost_disarm_failed", { profileId: profile.id });
     }

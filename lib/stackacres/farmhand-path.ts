@@ -22,7 +22,12 @@
  * Pure, and in lib/ for the usual reason: vitest only reaches lib/ and app/.
  */
 
-import { STACKACRES_TILE, type WorldPoint } from "./world";
+import { STACKACRES_TILE, MAX_FRAME_MS, clampFrameMs, type WorldPoint } from "./world";
+
+// Re-exported so every existing importer of this module's own `MAX_FRAME_MS`
+// (this file used to declare it) keeps working unchanged -- ./world.ts is now
+// the one place the constant and its clamp are defined.
+export { MAX_FRAME_MS };
 
 /* ------------------------------------------------------------------ */
 /* The tile grid                                                       */
@@ -78,16 +83,12 @@ export const FARMHAND_SPEED = 20;
  *  what stops a walk ending in a permanent sub-pixel shuffle. */
 export const ARRIVE_WITHIN = 0.75;
 
-/** The longest frame this will integrate, matching `stepCritter` and
- *  `stepGait`. A phone returning from a background tab hands the scene one
- *  enormous delta, and he did not walk for that whole time either. */
-export const MAX_FRAME_MS = 250;
-
 /** A raw Phaser delta as clamped seconds. The clamp is the whole content:
- *  every caller wants the same ceiling, and one that forgot it would fling
- *  a walker across the map on the first frame back from a sleeping tab. */
+ *  every caller wants the same ceiling (`MAX_FRAME_MS`, ./world.ts's
+ *  `clampFrameMs`) -- one that forgot it would fling a walker across the map
+ *  on the first frame back from a sleeping tab. */
 export function frameSeconds(dtMs: number): number {
-  return Math.max(0, Math.min(dtMs, MAX_FRAME_MS)) / 1000;
+  return clampFrameMs(dtMs) / 1000;
 }
 
 /**

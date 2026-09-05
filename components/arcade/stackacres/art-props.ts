@@ -29,6 +29,7 @@ export type PropPainterName =
   | "wheelbarrow"
   | "crate"
   | "logPile"
+  | "toolBarrel"
   | "mailbox"
   | "signpost"
   | "lampPost"
@@ -36,6 +37,7 @@ export type PropPainterName =
   | "stoneWall"
   | "scarecrow"
   | "grandfatherRay"
+  | "midnightMerchant"
   | "log"
   | "mushroom"
   | "boulder";
@@ -375,6 +377,50 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     log(19.5, 4.8, 4.4);
   }),
 
+  // An empty tool barrel: two iron hoops round a stave wall, its mouth a
+  // plain dark ellipse with nothing poking out of it -- a still-life shape
+  // for "there is nothing in here", not a portrait of tools that aren't
+  // drawn. Farmstead clutter (lib/stackacres/props.ts's `farmsteadClutter`),
+  // not part of the hand-placed yard cluster.
+  toolBarrel: painter(18, 20, (c) => {
+    const body = () => rr(c, 1.5, 4, 15, 15, 4);
+    body();
+    F(c, RAMPS.wood.top);
+    body();
+    c.save();
+    c.clip();
+    // The two hoops, dark iron bands top and bottom of the visible wall.
+    for (const y of [6.4, 15.2]) {
+      c.fillStyle = "rgba(45,40,35,.55)";
+      c.fillRect(1.5, y, 15, 2.1);
+    }
+    // Faint vertical staves.
+    for (let x = 3.4; x < 17; x += 3.2) {
+      c.beginPath();
+      c.moveTo(x, 4);
+      c.lineTo(x, 19);
+      stroke(c, "rgba(90,55,20,.22)", 0.5, "butt");
+    }
+    // One sun, upper-left: a bright strip fading through the middle into
+    // shade on the right.
+    c.fillStyle = lin(c, 1.5, 0, 16.5, 0, [
+      [0, "rgba(255,235,200,.28)"],
+      [0.5, "rgba(255,235,200,0)"],
+      [1, "rgba(40,20,5,.28)"],
+    ]);
+    c.fillRect(1.5, 4, 15, 15);
+    c.restore();
+    body();
+    stroke(c, "rgba(70,40,15,.45)", 0.6);
+    // The open, empty mouth, rimmed by the top hoop.
+    ell(c, 9, 4.2, 7.4, 2.6);
+    F(c, "#241a12");
+    ell(c, 9, 4.2, 7.4, 2.6);
+    stroke(c, "rgba(45,40,35,.6)", 1);
+    ell(c, 6.6, 3.4, 1.8, 0.7, -0.5);
+    F(c, "rgba(255,255,255,.18)");
+  }),
+
   // A domed box on a post, seen side-on, its flag up.
   mailbox: painter(12, 24, (c) => {
     timber(c, 5, 9.5, 2.4, 14.5, 1);
@@ -645,6 +691,77 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, RIM);
     rr(c, 7.9, 1.3, 9.2, 6, 2.6);
     F(c, "#e6c878");
+  }),
+
+  // The Midnight Merchant: a temporary second person on the map, drawn to
+  // the SAME box and proportions as Grandfather Ray (one head in three --
+  // see his own header just above for why) so the two read as the same kind
+  // of thing at the same zoom, never as a person standing next to a prop.
+  // Where Ray is warm daylight tan and straw, this is a cloaked traveler in
+  // cool indigo, carrying the one warm note on the whole map: a lit lantern,
+  // the same glow `lampPost` already throws, so a player's eye finds the
+  // light before it finds the figure.
+  midnightMerchant: painter(25.125, 40, (c) => {
+    // Boots, in shadow under the cloak's hem -- barely more than a hint,
+    // since a full-length cloak leaves almost nothing of them showing.
+    for (const x of [8.2, 14.6]) {
+      rr(c, x, 33.8, 5.4, 5.6, 2);
+      F(c, "#1c1428");
+    }
+    // The cloak: one long triangle from shoulder to hem, wider at the feet
+    // than grandfatherRay's overalls are, since there is no waist to
+    // silhouette under it at all.
+    poly(c, [[12.5, 14.6], [3.4, 36.8], [21.6, 36.8]]);
+    F(c, "#161022");
+    poly(c, [[12.5, 15.6], [4.6, 35.6], [20.4, 35.6]]);
+    F(c, "#2c2148");
+    // A fold line either side, so the triangle reads as cloth and not as a
+    // flat sign board.
+    for (const x of [9, 16]) {
+      c.beginPath();
+      c.moveTo(12.5, 17);
+      c.lineTo(x, 35);
+      stroke(c, "rgba(10,6,20,.4)", 0.6);
+    }
+    // The lantern arm: a short sleeve ending in a raised hand, held out and
+    // up rather than at the side, so the light it carries clears the cloak.
+    rr(c, 16.6, 20.6, 4, 8.6, 1.8);
+    F(c, "#161022");
+    rr(c, 17.1, 21.1, 3, 6.2, 1.5);
+    F(c, "#3a2c5c");
+    ell(c, 18.8, 19.4, 1.7, 1.7);
+    F(c, "#caa66e");
+    // The lantern's halo, the same construction lampPost's own daylight glow
+    // uses -- a circle painted with a radial gradient rather than a solid
+    // fill.
+    ell(c, 21.4, 17.4, 4.2, 4.2);
+    F(c, rad(c, 21.4, 17.4, 0, 4.2, [
+      [0, "rgba(255,214,120,.85)"],
+      [0.6, "rgba(255,178,64,.4)"],
+      [1, "rgba(255,178,64,0)"],
+    ]));
+    // The lantern body sits on top of its own halo.
+    rr(c, 20.4, 16.2, 2.4, 3, 0.8);
+    F(c, RIM);
+    rr(c, 20.8, 16.6, 1.6, 2.2, 0.6);
+    F(c, "#ffd678");
+    // The head, hooded rather than hatted: same size sphere as Ray's, so the
+    // "how big is a face at this zoom" rule stays identical, but the hood's
+    // point breaks the silhouette upward instead of a hat brim breaking it
+    // outward.
+    ell(c, 11.4, 12.8, 7.6, 7.4);
+    F(c, "#161022");
+    ell(c, 11.2, 13.2, 6.4, 6.2);
+    F(c, "#3a2c5c");
+    // A hood casts a face into shadow rather than showing one -- this is a
+    // stranger, not a neighbor, and the empty dark oval says that at a
+    // glance the way Ray's warm tan face says the opposite.
+    ell(c, 11.6, 14.4, 3.6, 3.2);
+    F(c, "#0c0816");
+    poly(c, [[11.2, 4.2], [5.6, 15.8], [17.2, 15.8]]);
+    F(c, "#161022");
+    poly(c, [[11.2, 5.4], [6.8, 15], [16, 15]]);
+    F(c, "#241a3c");
   }),
 
   /* ---- the woodland floor's litter, scattered by chunkScenery ---- */

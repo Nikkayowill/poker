@@ -1617,6 +1617,7 @@ describe("the currency wall", () => {
       "expand-capacity",
       "feed",
       "fulfill-contract",
+      "midnight-merchant-buy",
       "place-machine",
       "process",
       "request-contract",
@@ -1643,7 +1644,12 @@ describe("the currency wall", () => {
     // reduces what the farm pays out today rather than adding a way in. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own.
+    // against -- never a Gold credit of their own. `midnight-merchant-buy`
+    // spends too, via `redeemMidnightMerchantItem`, which reaches
+    // `spend_gold_by_profile` inside its own row-locked RPC (see
+    // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
+    // -- never against STACKACRES_GOLD_CEILING, because spending is not a
+    // payout and the ceiling only ever bounds Gold leaving the farm.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");

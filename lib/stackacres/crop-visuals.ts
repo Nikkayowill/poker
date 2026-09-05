@@ -127,3 +127,29 @@ export const CROP_DRY_ALPHA = 0.55;
 export function cropSpriteAlpha(isWatered: boolean): number {
   return isWatered ? 1 : CROP_DRY_ALPHA;
 }
+
+/**
+ * How big to draw the grounding shadow under a crop, as a Phaser scale
+ * factor against `cropShadow`'s own painted size -- the same kind of number
+ * `cropSpriteScale` is for the plant itself, and used the same way at the
+ * call site (`.setScale(cropShadowScale(stage) / S)`).
+ *
+ * Every other standee on the map (`isLivestock` branch, stackacres-scene.ts)
+ * plants a fixed-size shadow under itself because livestock don't change
+ * size. A crop does -- 1.6x to 4x across its three frames -- and a shadow
+ * sized for the seedling would read as a puddle under the mature stalk,
+ * while one sized for the mature stalk would swallow the seedling. So this
+ * tracks `cropFootprintHalf`, the one number that already answers "how big
+ * does this stage's plant actually read as", rather than a second hand-tuned
+ * ladder that could drift from it.
+ */
+const CROP_SHADOW_BOX_WIDTH = 16;
+
+/** A shadow pool reads as grounding the plant only while it stays smaller
+ *  than the canopy casting it -- a shadow the same size as the plant above
+ *  it looks like a second, flatter plant instead. */
+const CROP_SHADOW_FRACTION = 0.8;
+
+export function cropShadowScale(stage: CropStage): number {
+  return (CROP_SHADOW_FRACTION * cropFootprintHalf(stage) * 2) / CROP_SHADOW_BOX_WIDTH;
+}

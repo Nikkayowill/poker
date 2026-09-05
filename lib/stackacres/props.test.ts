@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { PROP_SHADOW, PROP_SIZE, VERGE_PROPS, WINDMILL_HUB, YARD_PROPS, propRect, type PropKind } from "./props";
+import {
+  CLUTTER_KINDS,
+  FARMSTEAD_CLUTTER_BAND,
+  PROP_SHADOW,
+  PROP_SIZE,
+  VERGE_PROPS,
+  WINDMILL_HUB,
+  YARD_PROPS,
+  farmsteadClutter,
+  propRect,
+  type PropKind,
+} from "./props";
 // Test-only: pulls in the (Phaser-free) painter module so PROP_SIZE's
 // hand-restated boxes can be checked against the shapes they claim to
 // describe. Production code in this file never makes this import -- only
@@ -7,8 +18,8 @@ import { PROP_SHADOW, PROP_SIZE, VERGE_PROPS, WINDMILL_HUB, YARD_PROPS, propRect
 // connections-puzzles.ts -- this is purely a drift guard.
 import { PROP_PAINTERS } from "@/components/arcade/stackacres/art-props";
 import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
-import { POND, POND_SAND, pondRadial } from "./water";
-import { FARM_ZONE, growAreaBounds, inFarmZone } from "./world";
+import { POND, POND_SAND, inPondZone, pondRadial } from "./water";
+import { BARN_FOOTPRINT, FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
 
 /** The Farmstead's own grow area now: the Hen Coop block, x 170..330,
  *  y 200..360 -- not the old 4x4 square, which is what "the plot square"
@@ -206,5 +217,77 @@ describe("PROP_SIZE matches each painter's own w/h", () => {
 
   it.each(kinds)("%s", (kind) => {
     expect(PROP_SIZE[kind]).toEqual({ w: PROP_PAINTERS[kind].w, h: PROP_PAINTERS[kind].h });
+  });
+});
+
+function propBox(x: number, y: number, kind: PropKind): { x: number; y: number; width: number; height: number } {
+  return propRect({ x, y, kind });
+}
+
+function boxesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+describe("farmsteadClutter", () => {
+  const items = farmsteadClutter();
+
+  it("places at least a few things, and never so many the band reads as gridded", () => {
+    // "About a dozen in the yard... twenty-two read as a junk shop" is
+    // YARD_PROPS's own rule (see this file's header); the same restraint
+    // applies to a second scatter over a much larger, mostly-empty band.
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThan(20);
+  });
+
+  it("only ever places a kind from CLUTTER_KINDS", () => {
+    for (const item of items) expect(CLUTTER_KINDS).toContain(item.kind);
+  });
+
+  it("stays inside its own band", () => {
+    for (const item of items) {
+      expect(item.x).toBeGreaterThanOrEqual(FARMSTEAD_CLUTTER_BAND.x);
+      expect(item.x).toBeLessThanOrEqual(FARMSTEAD_CLUTTER_BAND.x + FARMSTEAD_CLUTTER_BAND.width);
+      expect(item.y).toBeGreaterThanOrEqual(FARMSTEAD_CLUTTER_BAND.y);
+      expect(item.y).toBeLessThanOrEqual(FARMSTEAD_CLUTTER_BAND.y + FARMSTEAD_CLUTTER_BAND.height);
+    }
+  });
+
+  it("never lands on a path, the barn, the Hen Coop, the wheat field, or the pond", () => {
+    const henCoop = growAreaBounds("farmstead");
+    for (const item of items) {
+      expect(nearPath(item.x, item.y), `${item.kind} at ${item.x},${item.y} on a path`).toBe(false);
+      expect(inPondZone(item.x, item.y), `${item.kind} at ${item.x},${item.y} in the pond`).toBe(false);
+      for (const [name, rect] of [
+        ["barn", BARN_FOOTPRINT],
+        ["Hen Coop", henCoop],
+        ["wheat field", WHEAT_FIELD],
+      ] as const) {
+        const inside = item.x >= rect.x && item.x <= rect.x + rect.width && item.y >= rect.y && item.y <= rect.y + rect.height;
+        expect(inside, `${item.kind} at ${item.x},${item.y} inside ${name}`).toBe(false);
+      }
+    }
+  });
+
+  it("never overlaps a hand-placed yard prop or another clutter item", () => {
+    for (let i = 0; i < items.length; i += 1) {
+      const box = propBox(items[i].x, items[i].y, items[i].kind);
+      for (const yard of YARD_PROPS) {
+        expect(boxesOverlap(box, propBox(yard.x, yard.y, yard.kind)), `${items[i].kind} over ${yard.kind}`).toBe(
+          false,
+        );
+      }
+      for (let j = i + 1; j < items.length; j += 1) {
+        const other = propBox(items[j].x, items[j].y, items[j].kind);
+        expect(boxesOverlap(box, other), `${items[i].kind} over ${items[j].kind}`).toBe(false);
+      }
+    }
+  });
+
+  it("is a pure function of its seed", () => {
+    expect(farmsteadClutter()).toEqual(farmsteadClutter());
+    expect(farmsteadClutter(1)).not.toEqual(farmsteadClutter(2));
   });
 });

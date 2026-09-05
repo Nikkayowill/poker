@@ -32,7 +32,8 @@
  * are standing. That is deliberate: this is weather.
  */
 
-import type { WorldRect } from "./world";
+import { stepParticlePool } from "./particle-pool";
+import { clamp01, type WorldRect } from "./world";
 
 /* ------------------------------------------------------------------ */
 /* God rays                                                            */
@@ -203,17 +204,11 @@ export function sparkleField(
   deltaMs: number,
   random: () => number,
 ): Sparkle[] {
-  const next: Sparkle[] = [];
-  for (const sparkle of live) {
-    if (next.length >= SPARKLE_MAX) break;
-    const stepped = stepSparkle(sparkle, deltaMs);
-    if (stepped) next.push(stepped);
-  }
-  while (next.length < SPARKLE_MAX) next.push(spawnSparkle(area, random));
-  return next;
+  return stepParticlePool(
+    live,
+    SPARKLE_MAX,
+    (sparkle) => stepSparkle(sparkle, deltaMs),
+    () => spawnSparkle(area, random),
+  );
 }
 
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}

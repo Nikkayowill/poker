@@ -326,6 +326,24 @@ export function spawnCritter(bounds: WorldRect, random: Random): Critter {
 }
 
 /**
+ * The longest frame anything on this map will integrate in one step. A phone
+ * coming back from a background tab hands the scene one enormous delta, and
+ * nothing it drives -- an animal, the farmhand, the weather clock -- moved
+ * for that whole time either. Shared here (rather than as a private copy per
+ * file) since a retune of the safety margin should only ever touch one place;
+ * see `clampFrameMs`.
+ */
+export const MAX_FRAME_MS = 250;
+
+/** A raw frame delta, clamped to `MAX_FRAME_MS` and floored at zero. Still in
+ *  milliseconds -- a caller stepping a value that integrates in seconds
+ *  divides by 1000 itself (see farmhand-path.ts's `frameSeconds`); one that
+ *  accumulates a held-ms clock, like `stepWeather`, uses it as-is. */
+export function clampFrameMs(dtMs: number): number {
+  return Math.max(0, Math.min(dtMs, MAX_FRAME_MS));
+}
+
+/**
  * One tick of an animal's day: stand about, pick somewhere in the pen, walk
  * there, stand about again. Position is clamped to the pen every step, so a
  * pen that shrinks under an animal (it cannot, but) or a rounding wobble can
@@ -338,7 +356,7 @@ export function stepCritter(
   dtMs: number,
   random: Random,
 ): Critter {
-  const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
+  const dt = clampFrameMs(dtMs) / 1000;
   let next: Critter = { ...critter };
 
   if (next.mode === "idle") {
@@ -583,7 +601,15 @@ function valueNoise(x: number, y: number, cell: number, seed: number): number {
   return top + (bottom - top) * sy;
 }
 
-function clamp01(v: number): number {
+/**
+ * Clamped to 0..1, and NaN-safe: a non-finite input (a stray 0/0 upstream)
+ * returns 0 rather than propagating NaN through everything that reads this,
+ * which is the whole reason this lives here once now rather than as one of
+ * four private near-duplicates across lib/stackacres/ -- this file's own
+ * previous copy was the one that quietly let NaN through both comparisons.
+ */
+export function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 

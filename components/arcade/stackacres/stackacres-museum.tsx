@@ -10,6 +10,7 @@ import {
   secretsFoundCount,
   type SecretMuseumRegistry,
 } from "@/lib/stackacres/museum-secrets";
+import { SECRET_ITEM_CATALOGUE, SECRET_ITEM_IDS, type SecretItemId } from "@/lib/stackacres/secrets";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -26,6 +27,7 @@ import type { PainterName } from "./stackacres-art";
 export function StackAcresMuseum({
   museum,
   secrets,
+  secretDonations,
   onClose,
 }: {
   museum: MuseumRegistry;
@@ -33,6 +35,13 @@ export function StackAcresMuseum({
    *  Optional only so a caller mid-migration to this prop doesn't break;
    *  every real render of this modal passes it. */
   secrets?: SecretMuseumRegistry;
+  /** Hidden secrets' own donation flags -- a wholly separate registry from
+   *  both `museum` and `secrets` above (a secret item is deliberately not a
+   *  `StackAcresItem`, and lives in its own id space from the museum-secrets
+   *  wing too; see lib/stackacres/secrets.ts's own header). Optional and
+   *  defaulted to "nothing donated yet" so an older caller need not be
+   *  updated. */
+  secretDonations?: Record<SecretItemId, boolean>;
   onClose: () => void;
 }) {
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
@@ -154,6 +163,41 @@ export function StackAcresMuseum({
               ? "Collect from every kind of crop and animal at least once to fill every shelf."
               : "Every shelf is full. Ray thanks you for it."}
           </p>
+
+          {/* A small, clearly-secondary wing -- a bonus, not a redesign of
+              the museum. Only shown if at least one secret exists to name, so
+              a museum from before this feature reads exactly as it always
+              did. Named apart from Ray's Secret Wing above (a different
+              collectible, found by tapping the map rather than a critical
+              harvest) so the two don't read as the same box twice. */}
+          {SECRET_ITEM_IDS.length > 0 && (
+            <section className="sa-museum-exhibit sa-museum-secret-wing" aria-labelledby="sa-museum-lucky-wing-title">
+              <h3 id="sa-museum-lucky-wing-title" className="sa-group-label">
+                A Lucky Find
+              </h3>
+              <p className="sa-museum-exhibit-blurb">Turned up somewhere on the farm, if you know where to look.</p>
+              <ul className="sa-museum-items">
+                {SECRET_ITEM_IDS.map((itemId) => {
+                  const item = SECRET_ITEM_CATALOGUE[itemId];
+                  const donated = secretDonations?.[itemId] === true;
+                  return (
+                    <li
+                      key={itemId}
+                      className={donated ? "sa-museum-item is-found" : "sa-museum-item is-unfound"}
+                    >
+                      <span className="sa-museum-item-badge" aria-hidden="true">
+                        {donated ? item.icon : "?"}
+                      </span>
+                      <span className="sa-museum-item-name">{donated ? item.label : "???"}</span>
+                      <span className="sa-museum-item-status">
+                        {donated ? "Found" : "Not yet found"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
         </div>
       </section>
     </div>

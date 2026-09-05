@@ -8,6 +8,8 @@ import {
   buyStackAcresStock,
   clearStackAcresSector,
   clearStackAcresUnit,
+  consumeStackAcresSecretItem,
+  donateStackAcresSecretItem,
   expandStackAcresCapacity,
   feedStackAcres,
   harvestStackAcres,
@@ -15,6 +17,8 @@ import {
   retireStackAcresStock,
   runStackAcresAction,
   stockStackAcres,
+  tapStackAcresSecretZone,
+  tradeStackAcresSecretItemToRay,
   upgradeStackAcresTool,
   waterStackAcres,
   sowStackAcresWheat,
@@ -31,12 +35,14 @@ import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
+  adjustStackAcresSecretLedger,
   adjustStackAcresFeed,
   createStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
   markStackAcresDonated,
   raiseStackAcresUpkeep,
+  readStackAcresSecretLedgerQty,
   readStackAcresExchanged,
   readStackAcresFeed,
   readStackAcresMuseum,
@@ -92,6 +98,12 @@ import {
 } from "@/lib/stackacres/wheat-plot";
 import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
+import {
+  HIDDEN_ZONES,
+  STACKACRES_DICE_BOOST_ARMED_KEY,
+  STACKACRES_DICE_CRIT_BONUS,
+  secretZoneAttemptKey,
+} from "@/lib/stackacres/secrets";
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -112,6 +124,10 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // Passthrough spy, so one test can stand in for a museum write failing --
     // the memory branch has no DB to fail for real.
     markStackAcresDonated: vi.fn(actual.markStackAcresDonated),
+    // Passthrough spy, so one test can stand in for a lost race on the
+    // hidden-secrets Land Maintenance trade -- the memory branch's own
+    // raise-to-target check cannot be raced from a single synchronous test.
+    raiseStackAcresUpkeep: vi.fn(actual.raiseStackAcresUpkeep),
   };
 });
 
@@ -260,6 +276,7 @@ const REAL = {
   getStackAcresUnit: vi.mocked(getStackAcresUnit).getMockImplementation()!,
   listStackAcresUnits: vi.mocked(listStackAcresUnits).getMockImplementation()!,
   markStackAcresDonated: vi.mocked(markStackAcresDonated).getMockImplementation()!,
+  raiseStackAcresUpkeep: vi.mocked(raiseStackAcresUpkeep).getMockImplementation()!,
 };
 
 beforeEach(() => {
@@ -268,6 +285,7 @@ beforeEach(() => {
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
   vi.mocked(markStackAcresDonated).mockImplementation(REAL.markStackAcresDonated);
+  vi.mocked(raiseStackAcresUpkeep).mockImplementation(REAL.raiseStackAcresUpkeep);
 });
 
 describe("stocking", () => {
@@ -1593,7 +1611,9 @@ describe("the currency wall", () => {
       "clear",
       "clear-sector",
       "collect",
+      "consume-secret-item",
       "divert",
+      "donate-secret-item",
       "expand-capacity",
       "feed",
       "fulfill-contract",
@@ -1603,6 +1623,8 @@ describe("the currency wall", () => {
       "retire",
       "sow-wheat",
       "stock",
+      "tap-secret-zone",
+      "trade-secret-item",
       "upgrade-tool",
       "water",
       "work",
@@ -1618,7 +1640,10 @@ describe("the currency wall", () => {
     // only. `divert` is the interesting one and it is still not a payer: it
     // takes a ready animal's produce into inventory INSTEAD of into a
     // harvest, through the same version-guarded write `collect` uses, so it
-    // reduces what the farm pays out today rather than adding a way in.
+    // reduces what the farm pays out today rather than adding a way in. The
+    // four hidden-secrets actions are included too, which move an item count
+    // or reshape a probability/target an existing payer already reserves
+    // against -- never a Gold credit of their own.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");
@@ -2619,6 +2644,270 @@ describe("recipes", () => {
       const result = await fulfillStackAcresTownContract(token, T0);
       expect(await balance(token)).toBe(before + contract.goldReward);
       expect(result.contract).toBeNull();
+    });
+  });
+});
+
+/**
+ * Hidden secrets: three small discovery spots, and the one collectible they
+ * can turn up. NONE OF THIS MOVES GOLD -- the currency-wall block above
+ * already holds the call-site count that proves it; these tests hold the
+ * behavioural half.
+ */
+describe("hidden secrets", () => {
+  const ZONE = HIDDEN_ZONES[0];
+  const DICE = "lucky_poker_dice";
+
+  it("moves no Gold at all, whatever it rolls", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      await tapStackAcresSecretZone(token, ZONE.id, T0);
+    } finally {
+      roll.mockRestore();
+    }
+    expect(await balance(token)).toBe(before);
+    await adjustStackAcresSecretLedger(id, DICE, 1);
+    await donateStackAcresSecretItem(token, DICE, T0);
+    expect(await balance(token)).toBe(before);
+  });
+
+  describe("tapStackAcresSecretZone", () => {
+    it("refuses a name that is not a real zone", async () => {
+      const { token } = await funded();
+      await expect(tapStackAcresSecretZone(token, "not-a-zone", T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    });
+
+    it("finds the item on a hit and credits it once", async () => {
+      const { token, id } = await funded();
+      const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+      let result;
+      try {
+        result = await tapStackAcresSecretZone(token, ZONE.id, T0);
+      } finally {
+        roll.mockRestore();
+      }
+      expect(result.discovery).toBe(DICE);
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+
+    it("finds nothing on a miss", async () => {
+      const { token, id } = await funded();
+      const roll = vi.spyOn(Math, "random").mockReturnValue(0.999);
+      let result;
+      try {
+        result = await tapStackAcresSecretZone(token, ZONE.id, T0);
+      } finally {
+        roll.mockRestore();
+      }
+      expect(result.discovery).toBeNull();
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(0);
+    });
+
+    it("marks the attempt before rolling, refusing a second roll the same UTC day even at guaranteed odds", async () => {
+      const { token, id } = await funded();
+      const miss = vi.spyOn(Math, "random").mockReturnValue(0.999);
+      try {
+        await tapStackAcresSecretZone(token, ZONE.id, T0);
+      } finally {
+        miss.mockRestore();
+      }
+      const day = stackacresExchangeDay(T0);
+      expect(await readStackAcresSecretLedgerQty(id, secretZoneAttemptKey(ZONE.id, day))).toBe(1);
+
+      const guaranteed = vi.spyOn(Math, "random").mockReturnValue(0);
+      let second;
+      try {
+        second = await tapStackAcresSecretZone(token, ZONE.id, T0);
+      } finally {
+        guaranteed.mockRestore();
+      }
+      expect(second.discovery).toBeNull();
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(0);
+    });
+
+    it("rolls again on the next UTC day", async () => {
+      const { token, id } = await funded();
+      const miss = vi.spyOn(Math, "random").mockReturnValue(0.999);
+      try {
+        await tapStackAcresSecretZone(token, ZONE.id, T0);
+      } finally {
+        miss.mockRestore();
+      }
+      const tomorrow = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
+      const hit = vi.spyOn(Math, "random").mockReturnValue(0);
+      let result;
+      try {
+        result = await tapStackAcresSecretZone(token, ZONE.id, tomorrow);
+      } finally {
+        hit.mockRestore();
+      }
+      expect(result.discovery).toBe(DICE);
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+  });
+
+  describe("donateStackAcresSecretItem", () => {
+    it("refuses with nothing held", async () => {
+      const { token } = await funded();
+      await expect(donateStackAcresSecretItem(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    });
+
+    it("spends the item and marks it donated", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      await donateStackAcresSecretItem(token, DICE, T0);
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(0);
+      expect(await readStackAcresMuseum(id)).toContain(DICE);
+    });
+
+    it("does not touch StackAcresItem's own museum registry", async () => {
+      const { token, id } = await funded(500_000, { museum: false });
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      await donateStackAcresSecretItem(token, DICE, T0);
+      const view = await readStackAcres(token, T0);
+      expect(view.museum).toEqual(emptyMuseumRegistry());
+      expect(view.secretDonations[DICE]).toBe(true);
+    });
+
+    it("refunds the item if recording the donation throws", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      vi.mocked(markStackAcresDonated).mockRejectedValueOnce(new Error("db down"));
+      await expect(donateStackAcresSecretItem(token, DICE, T0)).rejects.toThrow("db down");
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+  });
+
+  describe("consumeStackAcresSecretItem", () => {
+    it("refuses with nothing held", async () => {
+      const { token } = await funded();
+      await expect(consumeStackAcresSecretItem(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    });
+
+    it("arms a boost and spends the item", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      const result = await consumeStackAcresSecretItem(token, DICE, T0);
+      expect(result.secrets.boostArmed).toBe(true);
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(0);
+    });
+
+    it("refuses a second dice while one is already armed, spending nothing", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresSecretLedger(id, DICE, 2);
+      await consumeStackAcresSecretItem(token, DICE, T0);
+      await expect(consumeStackAcresSecretItem(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+      expect(await readStackAcresSecretLedgerQty(id, STACKACRES_DICE_BOOST_ARMED_KEY)).toBe(1);
+    });
+  });
+
+  describe("tradeStackAcresSecretItemToRay", () => {
+    it("refuses with nothing held", async () => {
+      const { token } = await funded();
+      await expect(tradeStackAcresSecretItemToRay(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    });
+
+    it("refuses when there is nothing owed today (the default fixture pre-pays it), spending nothing", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      await expect(tradeStackAcresSecretItemToRay(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+
+    it("wipes today's owed Land Maintenance and spends the item", async () => {
+      const { token, id } = await funded(500_000, { settled: false });
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      const day = stackacresExchangeDay(T0);
+      const before = await readStackAcres(token, T0);
+      expect(before.upkeep.due).toBeGreaterThan(0);
+
+      await tradeStackAcresSecretItemToRay(token, DICE, T0);
+
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(0);
+      const after = await readStackAcres(token, T0);
+      expect(after.upkeep.due).toBe(0);
+      expect(await readStackAcresUpkeep(id, day)).toBe(before.upkeep.fee);
+    });
+
+    it("refunds the item on a lost race against another tab settling the same bill", async () => {
+      const { token, id } = await funded(500_000, { settled: false });
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      vi.mocked(raiseStackAcresUpkeep).mockResolvedValueOnce(false);
+
+      await expect(tradeStackAcresSecretItemToRay(token, DICE, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+      expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+  });
+
+  describe("the equipment ladder reads the armed dice boost", () => {
+    it("crits at the Trowel's own base chance (0) plus the dice bonus, once armed", async () => {
+      const { token, id } = await funded(5_000_000);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+      const unitId = unitOf(bought, "hen").id;
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      await consumeStackAcresSecretItem(token, DICE, T0);
+
+      const roll = vi.spyOn(Math, "random").mockReturnValue(STACKACRES_DICE_CRIT_BONUS - 0.001);
+      let result;
+      try {
+        result = await collectOne(token, unitId, HEN_READY);
+      } finally {
+        roll.mockRestore();
+      }
+
+      expect(result.harvest.crit).toBeGreaterThan(0);
+    });
+
+    it("never crits at that same roll without an armed boost -- the Trowel alone is unaffected", async () => {
+      const { token } = await funded(5_000_000);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+      const unitId = unitOf(bought, "hen").id;
+
+      const roll = vi.spyOn(Math, "random").mockReturnValue(STACKACRES_DICE_CRIT_BONUS - 0.001);
+      let result;
+      try {
+        result = await collectOne(token, unitId, HEN_READY);
+      } finally {
+        roll.mockRestore();
+      }
+
+      expect(result.harvest.crit).toBe(0);
+    });
+
+    it("disarms after the harvest whether or not it actually crit", async () => {
+      const { token, id } = await funded(5_000_000);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+      const unitId = unitOf(bought, "hen").id;
+      await adjustStackAcresSecretLedger(id, DICE, 1);
+      await consumeStackAcresSecretItem(token, DICE, T0);
+
+      const roll = vi.spyOn(Math, "random").mockReturnValue(0.999);
+      let result;
+      try {
+        result = await collectOne(token, unitId, HEN_READY);
+      } finally {
+        roll.mockRestore();
+      }
+
+      expect(result.harvest.crit).toBe(0);
+      expect(await readStackAcresSecretLedgerQty(id, STACKACRES_DICE_BOOST_ARMED_KEY)).toBe(0);
     });
   });
 });

@@ -4,18 +4,23 @@ import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogu
 import { ZONE_IDS } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
+import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import {
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresSector,
   clearStackAcresUnit,
+  consumeStackAcresSecretItem,
+  donateStackAcresSecretItem,
   expandStackAcresCapacity,
   feedStackAcres,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
   stockStackAcres,
+  tapStackAcresSecretZone,
   toStackAcresErrorResponse,
+  tradeStackAcresSecretItemToRay,
   upgradeStackAcresTool,
   waterStackAcres,
   sowStackAcresWheat,
@@ -58,7 +63,13 @@ export const runtime = "nodejs";
  * inventory only. `divert` is worth reading twice: it takes a ready animal's
  * produce into the processing inventory INSTEAD of paying for it, through the
  * same version-guarded write `collect` uses, so it reduces what the farm pays
- * out today rather than adding to it.
+ * out today rather than adding to it. So do the four hidden-secrets actions
+ * (`tap-secret-zone`, `donate-secret-item`, `consume-secret-item`,
+ * `trade-secret-item`): a discovered Lucky Poker Dice only ever reshapes a
+ * probability (`consume-secret-item`, folded into `collect`'s own crit roll)
+ * or a target `raiseStackAcresUpkeep` already accepts or refuses
+ * (`trade-secret-item`) -- see lib/server/stackacres-service.ts's "Hidden
+ * secrets" section.
  *
  * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
  * by `collect` itself, inside the same reservation, so it is bounded by the
@@ -146,6 +157,27 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // Hidden secrets: three small discovery spots, one collectible. See
+  // lib/server/stackacres-service.ts's own "Hidden secrets" section --
+  // `tap-secret-zone` moves no Gold at all, and neither do the other three;
+  // `donate-secret-item`/`consume-secret-item`/`trade-secret-item` each spend
+  // one held item on a different effect, never a Gold credit.
+  z.object({
+    action: z.literal("tap-secret-zone"),
+    zoneId: z.enum(HIDDEN_ZONE_IDS as unknown as [string, ...string[]]),
+  }),
+  z.object({
+    action: z.literal("donate-secret-item"),
+    itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
+  z.object({
+    action: z.literal("consume-secret-item"),
+    itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
+  z.object({
+    action: z.literal("trade-secret-item"),
+    itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
 ]);
 
 /**
@@ -202,6 +234,14 @@ function run(token: string, action: StackAcresAction) {
       return requestStackAcresContract(token);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token);
+    case "tap-secret-zone":
+      return tapStackAcresSecretZone(token, action.zoneId);
+    case "donate-secret-item":
+      return donateStackAcresSecretItem(token, action.itemId);
+    case "consume-secret-item":
+      return consumeStackAcresSecretItem(token, action.itemId);
+    case "trade-secret-item":
+      return tradeStackAcresSecretItemToRay(token, action.itemId);
   }
 }
 

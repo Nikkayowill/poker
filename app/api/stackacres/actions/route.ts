@@ -41,6 +41,8 @@ import {
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
+  placeStackAcresPipeTile,
+  removeStackAcresPipeTile,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -60,12 +62,12 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * ELEVEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
+ * TWELVE ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
- * `place-machine`, `unlock-synergy-perk` and `midnight-merchant-buy` all
- * spend; `collect` and `fulfill-contract` pay, both under the SAME flat
- * per-player daily ceiling -- see `harvestStackAcres` and
+ * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy` and
+ * `place-pipe` all spend; `collect` and `fulfill-contract` pay, both under
+ * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
  * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
  * is no second currency any more, so "which direction does this action move
  * Gold, and if it pays, does it reserve against the ceiling first" is the
@@ -77,13 +79,15 @@ export const runtime = "nodejs";
  * through the same `spend_gold_by_profile` every other spend in this list
  * already uses.
  *
- * `work`, `divert`, `process`, `request-contract` and `build-greenhouse` move
- * no Gold at all -- inventory only (`build-greenhouse` spends processing-track
- * Flour/Cloth; see buildStackAcresGreenhouse's own header). `divert` is worth
- * reading twice: it takes a ready animal's
- * produce into the processing inventory INSTEAD of paying for it, through the
- * same version-guarded write `collect` uses, so it reduces what the farm pays
- * out today rather than adding to it. So do the four hidden-secrets actions
+ * `work`, `divert`, `process`, `request-contract`, `build-greenhouse` and
+ * `remove-pipe` move no Gold at all -- inventory only (`build-greenhouse`
+ * spends processing-track Flour/Cloth; see buildStackAcresGreenhouse's own
+ * header). `remove-pipe` is not a refund either: a placed irrigation tile is
+ * a spent sink, like a placed Mill. `divert` is worth reading twice: it takes
+ * a ready animal's produce into the processing inventory INSTEAD of paying
+ * for it, through the same version-guarded write `collect` uses, so it
+ * reduces what the farm pays out today rather than adding to it. So do the
+ * four hidden-secrets actions
  * (`tap-secret-zone`, `donate-secret-item`, `consume-secret-item`,
  * `trade-secret-item`): a discovered Lucky Poker Dice only ever reshapes a
  * probability (`consume-secret-item`, folded into `collect`'s own crit roll)
@@ -270,6 +274,24 @@ const bodySchema = z.discriminatedUnion("action", [
   // duplicated request safe for an action with no row of its own to
   // version-guard, exactly the category this one is in.
   z.object({ action: z.literal("prestige-reset"), confirm: z.literal(true) }),
+  // The irrigation pipe network. `place-pipe` spends Gold -- a construction
+  // sink, like `place-machine`, refunded only if the tile cannot land;
+  // `remove-pipe` moves no Gold. Hydration itself is free (a hydrated pipe
+  // watering a crop costs nothing, the same as tapping `water`), so this
+  // adds one spender and no payer. Coordinates are the STACKACRES_TILE
+  // lattice (floor(worldX / 16)); the range is bounded so a fabricated
+  // coordinate cannot push the layout somewhere the camera can never reach.
+  z.object({
+    action: z.literal("place-pipe"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+    kind: z.enum(["well", "pipe"]),
+  }),
+  z.object({
+    action: z.literal("remove-pipe"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+  }),
 ]);
 
 /**
@@ -354,6 +376,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyFromMidnightMerchant(token, action.itemId, now);
     case "prestige-reset":
       return prestigeResetStackAcres(token, now);
+    case "place-pipe":
+      return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
+    case "remove-pipe":
+      return removeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty }, now);
   }
 }
 

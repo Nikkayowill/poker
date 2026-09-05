@@ -334,8 +334,20 @@ import {
  * Gold sink that bounds how much of one kind a player can run at once.
  */
 
+/**
+ * Reasons a StackAcres refusal is ordinary play rather than a fault.
+ *
+ * `day-capped` is the farm hitting its flat daily Gold ceiling: nothing is
+ * wrong, the crops keep, and the client should say so plainly rather than
+ * repaint in silence (see the ceiling throw in `harvestStackAcres`).
+ */
+export type StackAcresRefusalReason = "day-capped";
+
 /** Refuses a StackAcres request in a way the player can act on. */
-export class StackAcresRequestError extends ArcadeRequestError<StackAcresUnitSnapshot[], never> {
+export class StackAcresRequestError extends ArcadeRequestError<
+  StackAcresUnitSnapshot[],
+  StackAcresRefusalReason
+> {
   readonly name = "StackAcresRequestError";
 }
 
@@ -2105,7 +2117,7 @@ export async function harvestStackAcres(
           ? `This farm can send out ${state.remaining.toLocaleString()} more Gold today, and that harvest is worth ${planned.net.toLocaleString()}. Bring in less, or come back after midnight UTC.`
           : "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC.",
         409,
-        { round: toStackAcresUnitSnapshots(rows, now) },
+        { reason: "day-capped", round: toStackAcresUnitSnapshots(rows, now) },
       );
     }
     reserved = wanted;

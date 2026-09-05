@@ -1245,9 +1245,14 @@ describe("the daily allowance", () => {
     await burnAllowance(id, STACKACRES_GOLD_CEILING);
     const before = await balance(token);
 
-    await expect(harvestStackAcres(token, {}, CROP_READY)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
+    // Tagged `day-capped` so the client can tell this apart from a genuine
+    // fault and say "the farm is done for today" rather than repaint in
+    // silence -- see stackacres-farm.tsx's refusal handling.
+    await expect(harvestStackAcres(token, {}, CROP_READY)).rejects.toMatchObject({
+      name: "StackAcresRequestError",
+      status: 409,
+      reason: "day-capped",
+    });
 
     expect(await balance(token)).toBe(before);
     const view = await readStackAcres(token, CROP_READY);

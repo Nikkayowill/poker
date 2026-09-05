@@ -260,6 +260,10 @@ interface StackAcresResponse {
   };
   error?: string;
   round?: StackAcresUnitSnapshot[];
+  /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
+   *  farm having hit its flat daily Gold ceiling -- see the ceiling throw in
+   *  `harvestStackAcres`. Absent on a plain refusal and on every success. */
+  reason?: "day-capped";
 }
 
 type Action =
@@ -997,12 +1001,22 @@ export function StackAcresFarm() {
           // banner when there is no round to speak for itself.
           if (data.round) setUnits(data.round);
           if (data.profile) setProfile(data.profile);
-          if (!data.round) setError(data.error ?? "That did not go through.");
-          // A refused exchange is the one refusal that carries no round, and
-          // the thing it disagrees with the client about is how much of
-          // today's allowance is left. Re-read it once this request has let
-          // go of the send lock, so the window shows the truth rather than
-          // the amount this browser thought it could still send.
+          // The daily Gold ceiling is the feature working, not a fault. It
+          // repaints the round silently like any other refusal, which left a
+          // harvest press looking like it did nothing -- so say it out loud
+          // in the same toast a good harvest answers in, and let the standing
+          // notice by the Harvest key (below) carry the countdown.
+          if (data.reason === "day-capped") {
+            setLastCollect({
+              text: data.error ?? "The farm has sent out all the Gold it can today.",
+              nonce: Date.now(),
+            });
+          } else if (!data.round) {
+            setError(data.error ?? "That did not go through.");
+          }
+          // Re-read the allowance once this request has let go of the send
+          // lock, so the window (and the standing notice) show the server's
+          // truth rather than the amount this browser thought it could send.
           if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
           return { ok: false, message: data.error ?? "That did not go through." };
         }
@@ -1798,6 +1812,12 @@ export function StackAcresFarm() {
   const carrying = readyUnits.length;
 
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
+  // The farm has paid out everything it can today. `< 1`, not `<= 0`, because a
+  // sub-Gold remainder settles no harvest either -- every yield is whole Gold.
+  // Drives the standing notice below, the feedback that was missing: the
+  // allowance meter only lived in the supply-store sheet.
+  const dayCapped = exchange.remaining < 1;
+  const capResetLabel = countdownLabel(Date.parse(exchange.resetsAt) - nowMs);
 
   const onWorldReady = useCallback(() => setWorldReady(true), []);
 
@@ -2015,20 +2035,33 @@ export function StackAcresFarm() {
               what was gathered TOGETHER, so a farm collected a tap at a time
               earns nothing. It only appears when there is something to bring
               in -- a permanently-visible disabled key on a canvas is chrome a
-              player learns to stop reading. */}
-          {carrying > 0 && (
-            <button
-              type="button"
-              className="sa-harvest-all"
-              disabled={busy}
-              onClick={onHarvestAll}
-            >
-              <StackAcresIcon name="ico-harvest" size={18} />
-              <span>
-                Harvest {carrying} {carrying === 1 ? "field" : "fields"}
-              </span>
-            </button>
-          )}
+              player learns to stop reading.
+
+              Once the day is capped the key would only ever refuse, so it is
+              swapped for the reason: the farm has paid out all it can today,
+              the crops keep, and here is when it reopens. */}
+          {carrying > 0 &&
+            (dayCapped ? (
+              <p className="sa-harvest-capped" role="status">
+                <StackAcresIcon name="ico-gold" size={18} />
+                <span>
+                  Today&apos;s Gold is all sent out. {carrying}{" "}
+                  {carrying === 1 ? "field keeps" : "fields keep"} growing — back in {capResetLabel}.
+                </span>
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="sa-harvest-all"
+                disabled={busy}
+                onClick={onHarvestAll}
+              >
+                <StackAcresIcon name="ico-harvest" size={18} />
+                <span>
+                  Harvest {carrying} {carrying === 1 ? "field" : "fields"}
+                </span>
+              </button>
+            ))}
 
           {/* The handle the panel hangs off when it is shut. Before this,
               the only way back into a district you had closed was to find

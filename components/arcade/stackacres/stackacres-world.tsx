@@ -109,6 +109,10 @@ export interface StackAcresWorldProps {
   /** Which of the barn's two glow states should be showing, if either -- see
    *  lib/stackacres/museum-secrets.ts's `museumGlowTier`. */
   museumGlowTier: MuseumGlowTier;
+  /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
+   *  walk speed -- `StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with
+   *  no active perk. */
+  farmhandSpeedMultiplier: number;
   /** True once Ray's Museum's hidden set has ever been completed -- a
    *  persistent fact of the registry, not a one-shot nonce, since the
    *  farmhand's own unlock tint should hold on every load after the first,
@@ -137,6 +141,7 @@ export function StackAcresWorld({
   tool,
   toolTier,
   museumGlowTier,
+  farmhandSpeedMultiplier,
   secretSetComplete,
   celebrate,
   onReady,
@@ -180,6 +185,9 @@ export function StackAcresWorld({
   const toolTierRef = useRef<StackAcresToolTier>(toolTier);
   // Read at mount for the same reason `toolTierRef` is.
   const museumGlowTierRef = useRef<MuseumGlowTier>(museumGlowTier);
+  // Read at mount for the same reason `toolTierRef` is: the boot path needs
+  // the right walk speed on his very first step.
+  const farmhandSpeedMultiplierRef = useRef(farmhandSpeedMultiplier);
   useEffect(() => {
     processingRef.current = processing;
     readyRef.current = onReady;
@@ -193,6 +201,7 @@ export function StackAcresWorld({
     toolRef.current = tool;
     toolTierRef.current = toolTier;
     museumGlowTierRef.current = museumGlowTier;
+    farmhandSpeedMultiplierRef.current = farmhandSpeedMultiplier;
   });
 
   const sceneUnits = useMemo(() => toUnits(units), [units]);
@@ -232,7 +241,13 @@ export function StackAcresWorld({
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
-        { reducedMotion, host, toolTier: toolTierRef.current, museumGlowTier: museumGlowTierRef.current },
+        {
+          reducedMotion,
+          host,
+          toolTier: toolTierRef.current,
+          museumGlowTier: museumGlowTierRef.current,
+          farmhandSpeedMultiplier: farmhandSpeedMultiplierRef.current,
+        },
       );
 
       const size = () => ({
@@ -371,6 +386,12 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setToolTier(toolTier);
   }, [toolTier]);
+
+  // Same "push, never rebuild" reasoning as toolTier above -- see
+  // `setFarmhandSpeedMultiplier` in stackacres-scene.ts.
+  useEffect(() => {
+    sceneRef.current?.setFarmhandSpeedMultiplier(farmhandSpeedMultiplier);
+  }, [farmhandSpeedMultiplier]);
 
   // Same "push, never rebuild" reasoning as toolTier above -- see
   // `setMuseumGlowTier` in stackacres-scene.ts.

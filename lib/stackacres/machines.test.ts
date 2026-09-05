@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canStartMachine, canStartRecipe, isMachineDone, machineProgress } from "./machines";
+import {
+  canStartMachine,
+  canStartRecipe,
+  isMachineDone,
+  machineProgress,
+  rollMillDoubleOutput,
+} from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 
 describe("canStartMachine", () => {
@@ -65,5 +71,16 @@ describe("machineProgress", () => {
     expect(
       machineProgress({ status: "working", startedAt: started, readyAt: ready }, new Date(ready)),
     ).toBe(1);
+  });
+});
+
+describe("rollMillDoubleOutput", () => {
+  it("never hits at chance 0, whatever the roll", () => {
+    expect(rollMillDoubleOutput(0, () => 0)).toBe(false);
+  });
+
+  it("hits below the chance and misses at or above it", () => {
+    expect(rollMillDoubleOutput(0.1, () => 0.099)).toBe(true);
+    expect(rollMillDoubleOutput(0.1, () => 0.1)).toBe(false);
   });
 });

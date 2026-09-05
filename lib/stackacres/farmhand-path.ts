@@ -150,16 +150,25 @@ export interface WalkStep<W extends Walker> {
  * been through `frameSeconds` already; passing a raw millisecond delta here
  * is the one way to misuse this, and it shows up immediately as a walker who
  * finishes every trip on his first frame.
+ *
+ * `speed` defaults to `FARMHAND_SPEED` -- every existing call site is
+ * unaffected. It exists for the Synergy Tree's `automated_logistics` perk
+ * (lib/stackacres/synergy-perks.ts): the server computes the multiplier
+ * (`StackAcresView.synergy.farmhandSpeedMultiplier`, base 1 with no active
+ * perk) and the scene passes `FARMHAND_SPEED * multiplier` straight in here,
+ * rather than this module reaching into a synergy read it has no business
+ * knowing about.
  */
 export function advanceTowards<W extends Walker>(
   walker: W,
   target: WorldPoint,
   dt: number,
+  speed: number = FARMHAND_SPEED,
 ): WalkStep<W> {
   const dx = target.x - walker.x;
   const dy = target.y - walker.y;
   const distance = Math.hypot(dx, dy);
-  const stride = FARMHAND_SPEED * dt;
+  const stride = speed * dt;
   const facing = aim(walker, dx, dy);
 
   if (distance <= Math.max(stride, ARRIVE_WITHIN)) {

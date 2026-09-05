@@ -281,6 +281,11 @@ export interface StackAcresSceneOptions {
    *  find must restart or stop the barn's tween without rebuilding the
    *  scene. */
   museumGlowTier: MuseumGlowTier;
+  /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
+   *  walk speed (`StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with no
+   *  active perk). Mutable through `setFarmhandSpeedMultiplier` for the same
+   *  "push, don't rebuild" reason `toolTier` is. */
+  farmhandSpeedMultiplier: number;
   /**
    * The element the canvas is mounted into. Gestures are read off this rather
    * than off the window or the canvas, so the map only ever hears a press that
@@ -877,6 +882,9 @@ export class StackAcresScene extends Phaser.Scene {
     super({ key: "StackAcresScene" });
     this.callbacks = callbacks;
     this.options = options;
+    // Seeds `this.auto`'s own copy immediately -- see `setFarmhandSpeedMultiplier`
+    // for why the automated farmhand holds one rather than reading through.
+    this.auto.setSpeedMultiplier(options.farmhandSpeedMultiplier);
   }
 
   /** The only files StackAcres fetches: the four generated sprites (see
@@ -1153,7 +1161,7 @@ export class StackAcresScene extends Phaser.Scene {
     const committed = this.auto.hand.workMs > 0;
 
     if (next && !committed) {
-      const step = stepFarmhand(node.state, next, delta);
+      const step = stepFarmhand(node.state, next, delta, this.options.farmhandSpeedMultiplier);
       if (step.claimed) {
         this.farmhandTask = head ?? null;
         this.farmhandQueue = this.farmhandQueue.slice(1);
@@ -1171,7 +1179,7 @@ export class StackAcresScene extends Phaser.Scene {
     // `idle` rather than freezing at whatever it was doing when the queue
     // emptied.
     if (node.state.phase !== "idle") {
-      const step = stepFarmhand(node.state, null, delta);
+      const step = stepFarmhand(node.state, null, delta, this.options.farmhandSpeedMultiplier);
       if (step.finished) this.farmhandTask = null;
       node.state = step.hand;
       this.auto.followErrand(node.state);
@@ -2645,6 +2653,19 @@ export class StackAcresScene extends Phaser.Scene {
    */
   setToolTier(tier: StackAcresToolTier): void {
     this.options.toolTier = tier;
+  }
+
+  /**
+   * The Synergy Tree's `automated_logistics` multiplier, pushed the same way
+   * `setToolTier` is: a fresh loadout has to speed him up NOW, not on the
+   * next scene rebuild. Kept on `this.options` for the tap-driven farmhand
+   * (`walkFarmhand` reads it fresh every frame) and mirrored onto `this.auto`
+   * too, since the automated farmhand holds its own copy rather than reading
+   * through the scene (see `FarmhandStateMachine.setSpeedMultiplier`).
+   */
+  setFarmhandSpeedMultiplier(multiplier: number): void {
+    this.options.farmhandSpeedMultiplier = multiplier;
+    this.auto.setSpeedMultiplier(multiplier);
   }
 
   /**

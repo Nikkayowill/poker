@@ -81,6 +81,7 @@ import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inven
 import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
 import type { FarmhandHooks } from "@/lib/stackacres/farmhand-machine";
+import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
@@ -88,6 +89,7 @@ import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-
 import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import { SynergyOverlay } from "./SynergyOverlay";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -214,6 +216,16 @@ interface StackAcresResponse {
    *  only from a response old enough to predate the feature. */
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
+  /** The Synergy Tree: unlocked/active archetypes, and what
+   *  `automated_logistics` currently does to the farmhand's walk speed.
+   *  Absent only from a response old enough to predate the feature -- the
+   *  farmhand state defaults to speed 1, same as no active perk. */
+  synergy?: { unlocked: SynergyArchetype[]; active: SynergyArchetype[]; farmhandSpeedMultiplier: number };
+  /** Set only by `unlock-synergy-perk`/`activate-synergy-perk`; every other
+   *  action's answer leaves these undefined. `synergy` above already carries
+   *  the resulting state -- these are only the toast's own confirmation. */
+  synergyUnlock?: { archetype: SynergyArchetype; success: boolean };
+  synergyActivate?: { archetype: SynergyArchetype; success: boolean };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -245,7 +257,11 @@ type Action =
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }
-  | { action: "trade-secret-item"; itemId: SecretItemId };
+  | { action: "trade-secret-item"; itemId: SecretItemId }
+  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent;
+  // `activate-synergy-perk` moves no Gold, only the loadout.
+  | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
+  | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -261,6 +277,7 @@ function intentOf(body: Action): string {
   if ("sector" in body) return `${body.action}:${body.sector}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
+  if ("archetype" in body) return `${body.action}:${body.archetype}`;
   return body.action;
 }
 
@@ -354,6 +371,11 @@ export function StackAcresFarm() {
   const [feed, setFeed] = useState(0);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
   const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
+  // The Synergy Tree. Seeded to "nothing unlocked, nothing active, speed 1"
+  // -- the same state a brand-new farm's own first read answers with.
+  const [synergyUnlocked, setSynergyUnlocked] = useState<SynergyArchetype[]>([]);
+  const [synergyActive, setSynergyActive] = useState<SynergyArchetype[]>([]);
+  const [farmhandSpeedMultiplier, setFarmhandSpeedMultiplier] = useState(1);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -613,6 +635,11 @@ export function StackAcresFarm() {
     // Through toStackAcresToolTier rather than a cast, for the same reason the
     // store reads it that way: an unknown rung must degrade to a playable one.
     if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
+    if (data.synergy) {
+      setSynergyUnlocked(data.synergy.unlocked);
+      setSynergyActive(data.synergy.active);
+      setFarmhandSpeedMultiplier(data.synergy.farmhandSpeedMultiplier);
+    }
     // All four move together or not at all: a response either carries the
     // processing track or predates it, and a half-applied one would let the
     // farmhand plan a contract against last minute's stores.
@@ -967,6 +994,13 @@ export function StackAcresFarm() {
           goldSound();
           setLastCollect({ text: `${found.icon} Found the ${found.label}!`, nonce: Date.now() });
           if (anchor) world.current?.floatAt(anchor, `${found.icon} ${found.label}!`, "gain");
+        }
+        if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
+          goldSound();
+          setLastCollect({
+            text: `${SYNERGY_PERKS[body.archetype].label} unlocked!`,
+            nonce: Date.now(),
+          });
         }
         return { ok: true, reward: data.contractReward };
       } catch {
@@ -1373,6 +1407,18 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** The Synergy Tree's two actions, same "hand down as a promise" shape as
+   *  the town board's above. */
+  const onUnlockSynergyPerk = useCallback(
+    (archetype: SynergyArchetype) => act({ action: "unlock-synergy-perk", archetype }),
+    [act],
+  );
+
+  const onActivateSynergyPerk = useCallback(
+    (archetype: SynergyArchetype, slot: number) => act({ action: "activate-synergy-perk", archetype, slot }),
+    [act],
+  );
+
   const onClearSector = useCallback(
     (sector: SectorId) => {
       buySound();
@@ -1546,6 +1592,13 @@ export function StackAcresFarm() {
                 fully funded account. */}
             <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
           </span>
+          <SynergyOverlay
+            unlocked={synergyUnlocked}
+            active={synergyActive}
+            busy={busy}
+            onUnlock={onUnlockSynergyPerk}
+            onActivate={onActivateSynergyPerk}
+          />
           <StackAcresMusicToggle />
         </div>
       </header>
@@ -1565,6 +1618,7 @@ export function StackAcresFarm() {
               tool={tool}
               toolTier={toolTier}
               museumGlowTier={museumGlowTier}
+              farmhandSpeedMultiplier={farmhandSpeedMultiplier}
               secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}

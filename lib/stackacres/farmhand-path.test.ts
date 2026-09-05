@@ -62,6 +62,11 @@ describe("advanceTowards", () => {
     expect(step.walker.travelled).toBeCloseTo(FARMHAND_SPEED);
   });
 
+  it("walks at the given speed instead, when one is passed", () => {
+    const step = advanceTowards(walker(0, 0), { x: 100, y: 0 }, 1, FARMHAND_SPEED * 1.15);
+    expect(step.walker.x).toBeCloseTo(FARMHAND_SPEED * 1.15);
+  });
+
   it("snaps to the target inside the dead-band rather than easing forever", () => {
     const step = advanceTowards(walker(0, 0), { x: ARRIVE_WITHIN / 2, y: 0 }, 0.0001);
     expect(step.arrived).toBe(true);

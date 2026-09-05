@@ -2,7 +2,7 @@ import "server-only";
 import { adminClient } from "./supabase-admin";
 import {
   SYNERGY_SESSION_IDLE_MS,
-  isSynergyArchetype,
+  parseSynergyPerkItemId,
   type SynergyArchetype,
 } from "@/lib/stackacres/synergy-perks";
 
@@ -147,6 +147,13 @@ export async function activateStackAcresSessionPerk(
  * id that isn't a live archetype rather than surfacing it, matching
  * `applySynergyEffects`'s own "ignore, don't throw" posture for the same
  * shape of stale data.
+ *
+ * `perk_id` (both here and off the RPC row below) is the VERSIONED item id
+ * (`perk_<archetype>_v<n>`, same as `stackacres_perk_unlocks.item_id`) --
+ * `parseSynergyPerkItemId` is what actually recovers the bare archetype;
+ * checking a raw `perk_id` against `isSynergyArchetype` directly always
+ * misses, since that function tests the unwrapped name. That was a real bug
+ * here: every activated perk read back empty until this was caught.
  */
 export async function getActiveStackAcresSynergies(
   profileId: string,
@@ -161,8 +168,8 @@ export async function getActiveStackAcresSynergies(
       return [];
     }
     return [...loadout.slots.values()]
-      .map((entry) => entry.perkId)
-      .filter(isSynergyArchetype);
+      .map((entry) => parseSynergyPerkItemId(entry.perkId))
+      .filter((archetype): archetype is SynergyArchetype => archetype !== null);
   }
 
   const { data, error } = await supabase.rpc("get_active_stackacres_synergies", {
@@ -170,7 +177,9 @@ export async function getActiveStackAcresSynergies(
     p_idle_ms: idleMs,
   });
   if (error) throw new Error(`Could not read active synergies: ${error.message}`);
-  return (data ?? []).map((row: { perk_id: string }) => row.perk_id).filter(isSynergyArchetype);
+  return (data ?? [])
+    .map((row: { perk_id: string }) => parseSynergyPerkItemId(row.perk_id))
+    .filter((archetype: SynergyArchetype | null): archetype is SynergyArchetype => archetype !== null);
 }
 
 /** Explicit early clear (sign-out, leaving the table) -- see

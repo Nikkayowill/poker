@@ -3,7 +3,7 @@ import {
   SYNERGY_MAX_ACTIVE_SLOTS,
   SYNERGY_PERKS,
   applySynergyEffects,
-  isSynergyArchetype,
+  parseSynergyPerkItemId,
   synergyPerkItemId,
   type StackAcresBaseStats,
   type StackAcresBuffedStats,
@@ -70,12 +70,12 @@ export async function listUnlockedSynergyArchetypes(profileId: string): Promise<
   const owned = await listOwnedStackAcresPerks(profileId);
   const archetypes: SynergyArchetype[] = [];
   for (const itemId of owned) {
-    // item_id is "perk_<archetype>_v<n>" -- strip both wrappers rather than
-    // assuming v1, so a future rebalance's v2 unlock is still recognized as
-    // the same archetype for display purposes (its buff math still comes
-    // from the current SYNERGY_PERKS entry either way).
-    const match = /^perk_(.+)_v\d+$/.exec(itemId);
-    if (match && isSynergyArchetype(match[1])) archetypes.push(match[1]);
+    // Strips both wrappers rather than assuming v1, so a future rebalance's
+    // v2 unlock is still recognized as the same archetype for display
+    // purposes (its buff math still comes from the current SYNERGY_PERKS
+    // entry either way).
+    const archetype = parseSynergyPerkItemId(itemId);
+    if (archetype) archetypes.push(archetype);
   }
   return archetypes;
 }
@@ -83,6 +83,16 @@ export async function listUnlockedSynergyArchetypes(profileId: string): Promise<
 /** Ends the current session's loadout early (sign-out, leaving the table). */
 export async function clearSynergyLoadout(profileId: string): Promise<void> {
   await clearStackAcresSessionPerks(profileId);
+}
+
+/** Which archetypes are currently slotted (owned AND activated) for this
+ *  profile's session -- what the HUD calls "active", as opposed to
+ *  `listUnlockedSynergyArchetypes`'s "ever bought". A thin pass-through
+ *  rather than a second implementation, kept here so
+ *  lib/server/stackacres-service.ts has one synergy import surface instead
+ *  of reaching past this file into the store directly. */
+export async function listActiveSynergyArchetypes(profileId: string): Promise<SynergyArchetype[]> {
+  return getActiveStackAcresSynergies(profileId);
 }
 
 /**
@@ -101,17 +111,17 @@ export async function clearSynergyLoadout(profileId: string): Promise<void> {
  * them once handed a value. That keeps this the one seam three otherwise
  * unrelated gameplay loops share, without importing any of their modules.
  *
- * Call sites (not wired up by this pass -- see this feature's own notes on
- * why editing those files was left alone):
- *   - lib/stackacres/equipment.ts's `rollHarvestCrit` would roll against
- *     `buffed.harvestCritChance` instead of the tool tier's own bare
- *     `critChance`.
- *   - lib/stackacres/farmhand.ts's tick loop would use
- *     `buffed.farmhandSpeed` in place of the bare `FARMHAND_SPEED` constant
- *     when it computes `stride`.
- *   - A future `collectStackAcresMachine` roll would compare a random draw
- *     against `buffed.millDoubleOutputChance` before crediting
- *     `output.quantity` vs. double it.
+ * WIRED UP, three call sites, all in lib/server/stackacres-service.ts:
+ *   - `harvestStackAcres` folds `harvestCritChance` into `effectiveCritChance`'s
+ *     result before `rollHarvestCrit` rolls it -- additive with both the
+ *     tool's own odds and an armed Lucky Poker Dice boost.
+ *   - `workStackAcres` reads `millDoubleOutputChance` once per pass and feeds
+ *     it to `rollMillDoubleOutput` (lib/stackacres/machines.ts) right after
+ *     each finished Mill batch's guarded collect lands.
+ *   - `view()` derives `farmhandSpeedMultiplier` from `farmhandSpeed` (base
+ *     1) for the client to apply to its own presentation-only
+ *     `FARMHAND_SPEED` constant -- the farmhand himself never calls this
+ *     directly, since he is client-side and this file is server-only.
  */
 export async function applySynergyBuffs(
   baseStats: StackAcresBaseStats,

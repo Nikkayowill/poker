@@ -5,7 +5,9 @@ import { ZONE_IDS } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
+import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import {
+  activateStackAcresSynergyPerk,
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresSector,
@@ -21,6 +23,7 @@ import {
   tapStackAcresSecretZone,
   toStackAcresErrorResponse,
   tradeStackAcresSecretItemToRay,
+  unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   waterStackAcres,
   sowStackAcresWheat,
@@ -48,16 +51,17 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * NINE ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
+ * TEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
- * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat` and
- * `place-machine` all spend; `collect` and `fulfill-contract` pay, both under
- * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
- * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
- * is no second currency any more, so "which direction does this action move
- * Gold, and if it pays, does it reserve against the ceiling first" is the
- * question a new action has to answer, and a new payer that does not reserve
- * first is the change to stop over.
+ * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
+ * `place-machine` and `unlock-synergy-perk` all spend; `collect` and
+ * `fulfill-contract` pay, both under the SAME flat per-player daily ceiling
+ * -- see `harvestStackAcres` and `fulfillStackAcresTownContract` in
+ * lib/server/stackacres-service.ts. There is no second currency any more, so
+ * "which direction does this action move Gold, and if it pays, does it
+ * reserve against the ceiling first" is the question a new action has to
+ * answer, and a new payer that does not reserve first is the change to stop
+ * over. `activate-synergy-perk` moves no Gold at all -- see below.
  *
  * `work`, `divert`, `process` and `request-contract` move no Gold at all --
  * inventory only. `divert` is worth reading twice: it takes a ready animal's
@@ -73,7 +77,12 @@ export const runtime = "nodejs";
  *
  * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
  * by `collect` itself, inside the same reservation, so it is bounded by the
- * same daily ceiling as the harvest it rides on. See `harvestStackAcres`.
+ * same daily ceiling as the harvest it rides on. See `harvestStackAcres`. The
+ * Synergy Tree's `sunlight_harvester` (a crit-chance boost) and
+ * `high_yield_processing` (a Mill double-output chance) are the same
+ * non-payer shape: both only reshape a probability an existing roll already
+ * makes, inside `collect` and `work` respectively, and neither is a fourth
+ * or fifth way Gold can move.
  *
  * `clear-sector` is the one piece of land buying that came back: three of the
  * four districts start under wild growth, and clearing one is a permanent,
@@ -91,6 +100,11 @@ export const runtime = "nodejs";
  */
 const unitIdSchema = z.string().min(1);
 const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
+const synergyArchetypeSchema = z.enum(SYNERGY_ARCHETYPES as unknown as [string, ...string[]]);
+// [0, SYNERGY_MAX_ACTIVE_SLOTS) -- the service layer re-checks this too (see
+// `activateSynergyPerk`'s own comment), but a clean 400 here is cheaper than
+// a round trip for a value no real client would ever send.
+const synergySlotSchema = z.number().int().min(0).max(SYNERGY_MAX_ACTIVE_SLOTS - 1);
 
 /**
  * The client's own name for one intent, and the only thing that can tell a
@@ -178,6 +192,16 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("trade-secret-item"),
     itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
   }),
+  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent --
+  // see lib/server/stackacres-synergy-service.ts's own money-ordering note.
+  // `activate-synergy-perk` moves no Gold; it only changes which already-
+  // owned archetypes are slotted for this session.
+  z.object({ action: z.literal("unlock-synergy-perk"), archetype: synergyArchetypeSchema }),
+  z.object({
+    action: z.literal("activate-synergy-perk"),
+    archetype: synergyArchetypeSchema,
+    slot: synergySlotSchema,
+  }),
 ]);
 
 /**
@@ -242,6 +266,10 @@ function run(token: string, action: StackAcresAction) {
       return consumeStackAcresSecretItem(token, action.itemId);
     case "trade-secret-item":
       return tradeStackAcresSecretItemToRay(token, action.itemId);
+    case "unlock-synergy-perk":
+      return unlockStackAcresSynergyPerk(token, action.archetype);
+    case "activate-synergy-perk":
+      return activateStackAcresSynergyPerk(token, action.archetype, action.slot);
   }
 }
 

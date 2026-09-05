@@ -149,8 +149,8 @@ export function farmhandWalking(hand: Farmhand): boolean {
  *  ./farmhand-path.ts -- `targetX`/`targetY` are this file's own way of
  *  carrying a destination, so they are unpacked into a point here rather
  *  than pushed down into a primitive the automation does not share. */
-function advance(hand: Farmhand, dt: number): { hand: Farmhand; arrived: boolean } {
-  const step = advanceTowards(hand, { x: hand.targetX, y: hand.targetY }, dt);
+function advance(hand: Farmhand, dt: number, speed: number): { hand: Farmhand; arrived: boolean } {
+  const step = advanceTowards(hand, { x: hand.targetX, y: hand.targetY }, dt, speed);
   return { hand: step.walker, arrived: step.arrived };
 }
 
@@ -174,13 +174,23 @@ function headHome(hand: Farmhand): Farmhand {
  * means there is nothing to do -- or, while he is on his way somewhere, that
  * the unit he was walking to has gone, which aborts the trip rather than
  * marching him to a spot where nothing is standing any more.
+ *
+ * `speedMultiplier` defaults to 1 -- every existing call site is unaffected.
+ * It is the Synergy Tree's `automated_logistics` perk
+ * (`StackAcresView.synergy.farmhandSpeedMultiplier`), applied to
+ * `FARMHAND_SPEED` here rather than baked into the constant itself, since
+ * the constant is also this file's public name for "how fast he walks" and
+ * changing its meaning per-caller would be surprising to anything else that
+ * reads it.
  */
 export function stepFarmhand(
   hand: Farmhand,
   next: FarmhandTask | null,
   dtMs: number,
+  speedMultiplier = 1,
 ): FarmhandStep {
   const dt = frameSeconds(dtMs);
+  const speed = FARMHAND_SPEED * speedMultiplier;
 
   // Free to take work: standing at base, or on the way back to it. Claiming
   // mid-walk-home is the interesting one -- he turns around where he stands
@@ -195,7 +205,7 @@ export function stepFarmhand(
     };
     // Move on the same frame he is given the job, so a task arriving on a
     // frame with a long delta does not silently lose it.
-    return { hand: advance(claimed, dt).hand, claimed: true, finished: false };
+    return { hand: advance(claimed, dt, speed).hand, claimed: true, finished: false };
   }
 
   if (hand.phase === "travelling") {
@@ -206,7 +216,7 @@ export function stepFarmhand(
     }
     // Re-aim every frame: livestock keeps wandering while he crosses the yard.
     const chasing: Farmhand = { ...hand, targetX: next.x, targetY: next.y };
-    const moved = advance(chasing, dt);
+    const moved = advance(chasing, dt, speed);
     if (!moved.arrived) return { hand: moved.hand, claimed: false, finished: false };
     return {
       hand: { ...moved.hand, phase: "working", workMs: FARMHAND_WORK_MS },
@@ -226,7 +236,7 @@ export function stepFarmhand(
   }
 
   if (hand.phase === "returning") {
-    const moved = advance(hand, dt);
+    const moved = advance(hand, dt, speed);
     if (!moved.arrived) return { hand: moved.hand, claimed: false, finished: false };
     return { hand: { ...moved.hand, phase: "idle" }, claimed: false, finished: false };
   }

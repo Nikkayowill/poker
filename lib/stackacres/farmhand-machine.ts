@@ -42,7 +42,6 @@
 
 import { CONTRACT_DROP, planFarmhandWork, type FarmhandJob, type FarmhandPlanInput } from "./farmhand-plan";
 import {
-  FARMHAND_SPEED,
   advanceTowards,
   frameSeconds,
   tileOf,
@@ -171,11 +170,13 @@ export interface FarmhandStepResult {
  * effects -- an aborted `HARVESTING` would drop the one frame the effect is
  * emitted on and lose the write.
  *
- * `speedMultiplier` defaults to 1 -- every existing call site is unaffected.
- * Same seam as `stepFarmhand`'s own (lib/stackacres/farmhand.ts): the
- * Synergy Tree's `automated_logistics` perk is a multiplier on
- * `FARMHAND_SPEED`, computed server-side and handed in rather than read
- * here, since this module has no business knowing about a synergy loadout.
+ * `speedMultiplier` defaults to 1 and is the combined Frenzy Heat Combo
+ * Engine / Synergy Tree number -- see `advanceTowards`'s doc comment in
+ * ./farmhand-path.ts for where the two halves come from and why they
+ * multiply rather than pick one. It only ever touches the WALKING states'
+ * stride; a `HARVESTING`/`DELIVERING_TO_CONTRACT` handover's `workMs`
+ * countdown is unaffected, since neither source is a way to make a real
+ * settlement (a harvest cycle's `effectOf`) fire any sooner.
  */
 export function stepFarmhandAutomation(
   hand: FarmhandAutomation,
@@ -184,7 +185,6 @@ export function stepFarmhandAutomation(
   speedMultiplier = 1,
 ): FarmhandStepResult {
   const dt = frameSeconds(dtMs);
-  const speed = FARMHAND_SPEED * speedMultiplier;
   const from = hand.state;
   const nothing = (next: FarmhandAutomation): FarmhandStepResult => ({ hand: next, from, effect: null });
 
@@ -197,23 +197,23 @@ export function stepFarmhandAutomation(
 
   switch (hand.state) {
     case "IDLE": {
-      if (job) return nothing(advance(accept(hand, job), dt, speed));
+      if (job) return nothing(advance(accept(hand, job), dt, speedMultiplier));
       // Amble home. Already there is the common case and costs one hypot.
       if (withinReach(hand, hand.target)) return nothing(hand);
-      return nothing(advance(hand, dt, speed));
+      return nothing(advance(hand, dt, speedMultiplier));
     }
 
     case "WALKING_TO_PLOT": {
       // His plot is gone -- cut by the player's own tap, or refetched away.
       if (!job || job.kind !== "harvest" || job.plotId !== hand.plotId) {
-        return nothing(job ? advance(accept(hand, job), dt, speed) : goIdle(hand));
+        return nothing(job ? advance(accept(hand, job), dt, speedMultiplier) : goIdle(hand));
       }
       // Re-aim at the plot's live spot every frame. It does not move today
       // (a plot is hashed to one point), but re-aiming costs nothing and is
       // what stops this needing a rewrite the day a job's target does move --
       // exactly the bug `stepFarmhand` had to fix for wandering livestock.
       const chasing = retarget(hand, job);
-      const moved = advanceTowards(chasing, chasing.target, dt, speed);
+      const moved = advanceTowards(chasing, chasing.target, dt, speedMultiplier);
       if (!moved.arrived) return nothing(moved.walker);
       return nothing({ ...moved.walker, state: "HARVESTING", workMs: FARMHAND_WORK_MS });
     }
@@ -222,10 +222,10 @@ export function stepFarmhandAutomation(
       // The contract stopped being fulfillable while he walked -- the player
       // fulfilled it themselves, or spent the goods.
       if (!job || job.kind !== "deliver") {
-        return nothing(job ? advance(accept(hand, job), dt, speed) : goIdle(hand));
+        return nothing(job ? advance(accept(hand, job), dt, speedMultiplier) : goIdle(hand));
       }
       const carrying = retarget(hand, job);
-      const moved = advanceTowards(carrying, carrying.target, dt, speed);
+      const moved = advanceTowards(carrying, carrying.target, dt, speedMultiplier);
       if (!moved.arrived) return nothing(moved.walker);
       // Re-stamp the contract id from the live job: the one he set out with
       // may have been fulfilled and replaced while he walked, and paying the
@@ -264,8 +264,8 @@ function retarget(hand: FarmhandAutomation, job: FarmhandJob): FarmhandAutomatio
   return { ...hand, target: job.at, tile: job.tile };
 }
 
-function advance(hand: FarmhandAutomation, dt: number, speed: number): FarmhandAutomation {
-  return advanceTowards(hand, hand.target, dt, speed).walker;
+function advance(hand: FarmhandAutomation, dt: number, speedMultiplier: number): FarmhandAutomation {
+  return advanceTowards(hand, hand.target, dt, speedMultiplier).walker;
 }
 
 /** Drop everything and head for the post. */
@@ -403,9 +403,6 @@ export class FarmhandStateMachine {
   private pending: PendingDelta[] = [];
   private nextPendingId = 1;
   private running = true;
-  /** The Synergy Tree's `automated_logistics` multiplier -- see
-   *  `setSpeedMultiplier`'s own comment. */
-  private speedMultiplier = 1;
 
   constructor(hooks: FarmhandHooks = {}) {
     this.hooks = hooks;
@@ -550,23 +547,23 @@ export class FarmhandStateMachine {
    * One frame. Call from `Phaser.Scene.update(time, delta)` with the raw
    * millisecond delta -- the clamp against a backgrounded tab lives in
    * `frameSeconds`, so passing Phaser's delta straight through is correct.
+   *
+   * `speedMultiplier` defaults to 1 -- the caller's own combined number: the
+   * Frenzy Heat Combo Engine's real-time, never-persisted nudge
+   * (lib/stackacres/frenzy.ts) times the Synergy Tree's slow-changing,
+   * server-known one (`StackAcresView.synergy.farmhandSpeedMultiplier`).
+   * Neither is stored on this class -- the scene multiplies its own two
+   * numbers together fresh every frame and hands the product straight in.
+   * It rides through to `stepFarmhandAutomation`, which restricts it to the
+   * WALKING states; see that function's own doc comment for why a
+   * `HARVESTING`/delivery handover is untouched by it.
    */
-  update(deltaMs: number): void {
+  update(deltaMs: number, speedMultiplier = 1): void {
     if (!this.running) return;
     const job = planFarmhandWork({ ...this.world, claimed: this.claimed });
-    const step = stepFarmhandAutomation(this.automation, job, deltaMs, this.speedMultiplier);
+    const step = stepFarmhandAutomation(this.automation, job, deltaMs, speedMultiplier);
     this.automation = step.hand;
     if (step.effect) this.dispatch(step.effect);
-  }
-
-  /**
-   * Pushed rather than rebuilt, same reasoning as the scene's own
-   * `setToolTier`: a fresh loadout read must speed him up NOW, on his next
-   * `update()`, without losing whatever job he is mid-walk on. Defaults to 1
-   * at construction -- see `StackAcresView.synergy.farmhandSpeedMultiplier`.
-   */
-  setSpeedMultiplier(multiplier: number): void {
-    this.speedMultiplier = multiplier;
   }
 
   /**

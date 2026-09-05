@@ -152,24 +152,29 @@ export interface WalkStep<W extends Walker> {
  * is the one way to misuse this, and it shows up immediately as a walker who
  * finishes every trip on his first frame.
  *
- * `speed` defaults to `FARMHAND_SPEED` -- every existing call site is
- * unaffected. It exists for the Synergy Tree's `automated_logistics` perk
- * (lib/stackacres/synergy-perks.ts): the server computes the multiplier
- * (`StackAcresView.synergy.farmhandSpeedMultiplier`, base 1 with no active
- * perk) and the scene passes `FARMHAND_SPEED * multiplier` straight in here,
- * rather than this module reaching into a synergy read it has no business
- * knowing about.
+ * `speedMultiplier` defaults to 1 (every caller before the Frenzy Heat Combo
+ * Engine and the Synergy Tree gets exactly the speed it always did) and is
+ * ONE COMBINED NUMBER, not a slot for either source alone: the scene
+ * multiplies the Frenzy tier's real-time, never-persisted nudge
+ * (`FrenzyTierDef.speedMultiplier`, lib/stackacres/frenzy.ts) by the
+ * Synergy Tree's slow-changing, server-known one
+ * (`StackAcresView.synergy.farmhandSpeedMultiplier`,
+ * lib/stackacres/synergy-perks.ts) before it ever reaches here -- this
+ * function has no opinion about where either half came from. It scales the
+ * STRIDE only, not `ARRIVE_WITHIN`: a faster errand runner still snaps to a
+ * target from the same distance he always did, he simply covers more ground
+ * to get there each frame.
  */
 export function advanceTowards<W extends Walker>(
   walker: W,
   target: WorldPoint,
   dt: number,
-  speed: number = FARMHAND_SPEED,
+  speedMultiplier = 1,
 ): WalkStep<W> {
   const dx = target.x - walker.x;
   const dy = target.y - walker.y;
   const distance = Math.hypot(dx, dy);
-  const stride = speed * dt;
+  const stride = FARMHAND_SPEED * dt * speedMultiplier;
   const facing = aim(walker, dx, dy);
 
   if (distance <= Math.max(stride, ARRIVE_WITHIN)) {

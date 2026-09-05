@@ -15,6 +15,8 @@ import {
 } from "@/lib/stackacres/fence";
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
+import { ISO_K } from "@/lib/stackacres/iso";
+import type { CropArt, CropStage } from "@/lib/stackacres/crop-visuals";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -115,6 +117,8 @@ type CorePainterName =
   | "corn0"
   | "corn1"
   | "corn2"
+  | "cropShadow"
+  | "cropField"
   | "hen"
   | "sheep"
   | "cow"
@@ -197,7 +201,29 @@ const flower =
   };
 
 /* ---- crops ------------------------------------------------------------- */
-// Hoisted because the seed-strip icons draw the ripe frame directly.
+// Hoisted (rather than defined inline in DRAWN, like every other painter
+// here) because the seed-strip icons draw the ripe frame directly, and the
+// furrow-bed layout below (`paintCropField`) needs all six frames by name to
+// build its own per-cell lookup -- both need a bindable reference, not an
+// object literal's own shorthand.
+
+const carrot0 = painter(12, 16, (c) => {
+  for (const i of [-1, 0, 1]) {
+    c.beginPath();
+    c.moveTo(6, 15);
+    c.quadraticCurveTo(6 + i * 1.2, 13, 6 + i * 1.8, 11);
+    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.2);
+  }
+});
+
+const carrot1 = painter(12, 16, (c) => {
+  for (const i of [-1, 0, 1]) {
+    c.beginPath();
+    c.moveTo(6, 15);
+    c.quadraticCurveTo(6 + i * 2.2, 11, 6 + i * 3.2, 7.6);
+    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.4);
+  }
+});
 
 const carrot2 = painter(12, 16, (c) => {
   for (const i of [-1, 0, 1]) {
@@ -212,6 +238,26 @@ const carrot2 = painter(12, 16, (c) => {
   F(c, RAMPS.carrot.side);
   rr(c, 3.2, 11.4, 5.6, 4.8, 2.6);
   stroke(c, RAMPS.carrot.rim, 0.7);
+});
+
+const corn0 = painter(12, 22, (c) => {
+  c.beginPath();
+  c.moveTo(6, 22);
+  c.lineTo(6, 16);
+  stroke(c, RAMPS.leaf.top, 1.3);
+  ell(c, 4.4, 17.2, 2, 0.9);
+  F(c, RAMPS.leaf.top);
+});
+
+const corn1 = painter(12, 22, (c) => {
+  c.beginPath();
+  c.moveTo(6, 22);
+  c.lineTo(6, 10);
+  stroke(c, RAMPS.leaf.side, 1.5);
+  for (const [x, y, rx] of [[3.4, 15, 2.8], [8.6, 13, 2.8]] as const) {
+    ell(c, x, y, rx, 1.2);
+    F(c, RAMPS.leaf.top);
+  }
 });
 
 const corn2 = painter(12, 22, (c) => {
@@ -246,6 +292,157 @@ function glass(c: Ctx, x: number, y: number, w: number, h: number): void {
 }
 
 const CELL = STACKACRES_CELL;
+
+/* ---- crop field: a furrow-aligned 3x3 bed, baked as one texture --------- */
+
+/** One plant's slot in a bed's local grid. (0, 0) is the back-left cell,
+ *  matching `soil`'s own furrow rows read top-to-bottom -- the row closest
+ *  to the painter's own top edge is farthest from the camera, exactly the
+ *  convention `projectedCorners` documents for the world at large ("S is
+ *  always the corner with the largest x + y -- the one closest to the
+ *  viewer"). A bed need not fill every slot: `plants` can carry fewer than
+ *  nine, for a bed mid-planting. */
+export interface CropFieldPlant {
+  row: 0 | 1 | 2;
+  col: 0 | 1 | 2;
+  art: CropArt;
+  stage: CropStage;
+}
+
+const CROP_FIELD_ROWS = 3;
+const CROP_FIELD_COLS = 3;
+
+/** The exact three furrow bands `soil` tills into this same CELL-sized box
+ *  (see its own painter below) -- reused, not re-derived, so a bed's plants
+ *  land on the real furrow lines rather than a second set of row numbers
+ *  that could drift from them. */
+const CROP_FIELD_FURROW_Y = [22, 40, 58] as const;
+/** `soil`'s own tilled span: an 8-unit inset off each side of the CELL. */
+const CROP_FIELD_FURROW_X0 = 8;
+const CROP_FIELD_FURROW_WIDTH = CELL - 16;
+
+/** How far one grid-column step shears sideways per row of depth, in local
+ *  art units. Chosen so three columns' worth of shear (at the steepest row)
+ *  stays inside `soil`'s own tilled span with room either side for a plant's
+ *  own canopy width -- not tuned to eye, derived from the same span the
+ *  furrows themselves are drawn across. */
+const CROP_FIELD_SHEAR_UNIT = CROP_FIELD_FURROW_WIDTH / (CROP_FIELD_COLS * 4);
+
+/**
+ * The same 2:1 shear `isoProject` (lib/stackacres/iso.ts) projects the whole
+ * scene's world coordinates with, reusing its own `ISO_K` ratio -- applied
+ * here to a bed's local grid-cell offsets instead of world-space plot
+ * coordinates. Calling `isoProject` itself would be a unit mismatch, not a
+ * shortcut: it projects a position in the scene's Cartesian world for
+ * whatever the camera's own scale currently is, and a painter is baked once
+ * at boot with no camera or world position in scope (this file's own header:
+ * "Painters must not read anything outside their arguments"). Reusing `ISO_K`
+ * keeps the bed's own fan-out at the same angle as every diamond tile on the
+ * map instead of a second, unrelated ratio invented for this one texture.
+ */
+function isoLocalShear(gx: number, gy: number): { x: number; y: number } {
+  return { x: (gx - gy) * ISO_K, y: ((gx + gy) * ISO_K) / 2 };
+}
+
+/** Where one grid cell's plant is anchored, in this painter's own local
+ *  units. Y sits exactly on `CROP_FIELD_FURROW_Y[row]` -- a furrow line,
+ *  not an approximation of one -- while X starts at that row's evenly-spaced
+ *  column centre and is nudged sideways by `isoLocalShear`'s own real
+ *  isometric ratio, so columns fan out with depth the way every other
+ *  diamond tile on the map does instead of stacking in three flat, parallel
+ *  rows. */
+function cropFieldAnchor(row: number, col: number): { x: number; y: number } {
+  const columnCentre =
+    CROP_FIELD_FURROW_X0 + ((col + 0.5) / CROP_FIELD_COLS) * CROP_FIELD_FURROW_WIDTH;
+  const gx = col - (CROP_FIELD_COLS - 1) / 2;
+  const gy = row - (CROP_FIELD_ROWS - 1) / 2;
+  const shear = isoLocalShear(gx, gy);
+  return { x: columnCentre + shear.x * CROP_FIELD_SHEAR_UNIT, y: CROP_FIELD_FURROW_Y[row] };
+}
+
+/** Every stage of both crops, keyed the same way `${crop}${stage}` names a
+ *  `PainterName` elsewhere in this file -- what `paintCropField` looks a
+ *  plant's frame up by. */
+const CROP_FIELD_FRAME: Readonly<Record<CropArt, readonly [Painter, Painter, Painter]>> = {
+  carrot: [carrot0, carrot1, carrot2],
+  corn: [corn0, corn1, corn2],
+};
+
+/** Paints one plant frame so its own anchor (`p.ax`, `p.ay` -- (0.5, 1) for
+ *  every crop frame, its own feet) lands exactly at (x, y) in the outer
+ *  canvas, at `scale`. A plain translate-then-scale rather than touching the
+ *  frame's own drawing code, so a bed and a lone crop icon stay pixel-
+ *  identical everywhere except where they stand. */
+function paintPlantAt(c: Ctx, plant: Painter, x: number, y: number, scale: number): void {
+  c.save();
+  c.translate(x - plant.ax * plant.w * scale, y - plant.ay * plant.h * scale);
+  c.scale(scale, scale);
+  plant(c);
+  c.restore();
+}
+
+/** How large one plant draws inside a shared 3x3 bed -- smaller than the
+ *  scene's own scaled-up lone crops (crop-visuals.ts's `cropSpriteScale`),
+ *  since nine of those side by side would blow straight through the bed's
+ *  own furrow span; large enough that a front row's canopy still overlaps
+ *  the row standing behind it, which is the one thing depth-sorting this
+ *  loop exists to get right. */
+const CROP_FIELD_PLANT_SCALE = 1.35;
+
+/**
+ * The complete furrow-bed drawing loop: takes an array of crops (each
+ * already carrying its own row/col slot and growth stage), resolves every
+ * plant's screen anchor through `cropFieldAnchor`'s isometric transform, and
+ * bakes a grounding shadow plus the plant itself into one shared texture --
+ * back row (0) first, front row (2) last, so a nearer row's canopy always
+ * paints over the row standing behind it exactly the way `depthAt` orders
+ * whole units against each other on the live map, just resolved once here
+ * at bake time for the plants sharing one bed.
+ *
+ * Returns a `Paint` (not a `Painter`): the caller still wraps it in
+ * `painter(w, h, ...)` to get a cacheable, anchored texture, the same as
+ * every other picture in this file.
+ */
+export function paintCropField(plants: readonly CropFieldPlant[]): Paint {
+  const byRow: CropFieldPlant[][] = [[], [], []];
+  for (const plant of plants) byRow[plant.row].push(plant);
+  return (c) => {
+    for (let row = 0; row < CROP_FIELD_ROWS; row += 1) {
+      for (const plant of byRow[row]) {
+        const { x, y } = cropFieldAnchor(plant.row, plant.col);
+        // The grounding shadow, painted first so the plant's own canopy
+        // covers it -- same dark, semi-transparent brown a lone crop's own
+        // `cropShadow` painter (above) uses, and for the same reason: a
+        // crop stands on tilled soil, not grass, so it gets tilled soil's
+        // own colour rather than `shadow`'s grass-green tint.
+        ell(c, x, y, 3.6 * CROP_FIELD_PLANT_SCALE, 1.3 * CROP_FIELD_PLANT_SCALE);
+        F(c, "rgba(74, 52, 36, 0.4)");
+        const frame = CROP_FIELD_FRAME[plant.art][plant.stage];
+        paintPlantAt(c, frame, x, y, CROP_FIELD_PLANT_SCALE);
+      }
+    }
+  };
+}
+
+/** One concrete, fully-grown bed -- every cell sown, every plant ripe -- so
+ *  `cropField` bakes into the texture cache like any other named painter
+ *  rather than staying a factory nothing ever calls. `paintCropField` itself
+ *  stays exported: a caller building a bed for a specific unit's own mixed
+ *  stages passes its own `plants` array through the same loop. */
+const CROP_FIELD_SAMPLE: readonly CropFieldPlant[] = (() => {
+  const plants: CropFieldPlant[] = [];
+  for (let row = 0; row < CROP_FIELD_ROWS; row += 1) {
+    for (let col = 0; col < CROP_FIELD_COLS; col += 1) {
+      plants.push({
+        row: row as 0 | 1 | 2,
+        col: col as 0 | 1 | 2,
+        art: (row + col) % 2 === 0 ? "carrot" : "corn",
+        stage: 2,
+      });
+    }
+  }
+  return plants;
+})();
 
 /** One post, standing straight up from `footY` at `cx`. Vertical is exact,
  *  not an approximation: `isoProject` shears x and y only, so the world's up
@@ -632,47 +829,44 @@ const DRAWN: Record<PainterName, Painter> = {
 
   /* ---- crops, three frames each ---- */
 
-  carrot0: painter(12, 16, (c) => {
-    for (const i of [-1, 0, 1]) {
-      c.beginPath();
-      c.moveTo(6, 15);
-      c.quadraticCurveTo(6 + i * 1.2, 13, 6 + i * 1.8, 11);
-      stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.2);
-    }
-  }),
-
-  carrot1: painter(12, 16, (c) => {
-    for (const i of [-1, 0, 1]) {
-      c.beginPath();
-      c.moveTo(6, 15);
-      c.quadraticCurveTo(6 + i * 2.2, 11, 6 + i * 3.2, 7.6);
-      stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.4);
-    }
-  }),
-
+  carrot0,
+  carrot1,
   carrot2,
-
-  corn0: painter(12, 22, (c) => {
-    c.beginPath();
-    c.moveTo(6, 22);
-    c.lineTo(6, 16);
-    stroke(c, RAMPS.leaf.top, 1.3);
-    ell(c, 4.4, 17.2, 2, 0.9);
-    F(c, RAMPS.leaf.top);
-  }),
-
-  corn1: painter(12, 22, (c) => {
-    c.beginPath();
-    c.moveTo(6, 22);
-    c.lineTo(6, 10);
-    stroke(c, RAMPS.leaf.side, 1.5);
-    for (const [x, y, rx] of [[3.4, 15, 2.8], [8.6, 13, 2.8]] as const) {
-      ell(c, x, y, rx, 1.2);
-      F(c, RAMPS.leaf.top);
-    }
-  }),
-
+  corn0,
+  corn1,
   corn2,
+
+  // The grounding pool under a crop's own feet -- every other standee on the
+  // map (the `isLivestock` branch in stackacres-scene.ts) plants a `shadow`
+  // under itself and a crop never did, which is exactly the "ungrounded,
+  // floating" look a crop drawn well off the world's own scale (see
+  // crop-visuals.ts's header) reads as without one. A dedicated painter
+  // rather than a recolour of `shadow`: that one is tinted off `RAMPS.wild`
+  // for grass, and a crop stands on tilled soil, not grass -- flat dark brown
+  // reads against a furrow the way `shadow`'s green tint reads against a
+  // lawn. Anchored dead-centre (0.5, 0.5), same as `shadow`, so the ellipse
+  // straddles the exact point `addLocal` places it at rather than sitting
+  // above or below it -- the crop sprite itself anchors at (0.5, 1), so the
+  // two share that one point: the plant's own base. Scaled per stage by
+  // `cropShadowScale` (crop-visuals.ts), not fixed like a livestock shadow,
+  // because a crop's own sprite scale swings 1.6x-4x across its three
+  // frames and a shadow sized for one would misfit the other two.
+  cropShadow: painter(
+    16,
+    8,
+    (c) => {
+      ell(c, 8, 4, 7, 2.6);
+      F(c, "rgba(74, 52, 36, 0.4)");
+    },
+    0.5,
+    0.5,
+  ),
+
+  // A whole furrow bed, baked in one texture -- `paintCropField`'s own
+  // back-to-front, isometrically-anchored loop, run once here over a fully
+  // grown sample bed. Anchored top-left (0, 0), same as `mown`/`soil`: this
+  // tiles a whole cell rather than standing on a single ground point.
+  cropField: painter(CELL, CELL, paintCropField(CROP_FIELD_SAMPLE), 0, 0),
 
   /* ---- animals ---- */
 

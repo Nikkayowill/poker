@@ -19,8 +19,8 @@ import {
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
 import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
-import { FARM_PATHS } from "@/lib/stackacres/paths";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
+import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { scytheReachFor, type StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
@@ -92,10 +92,13 @@ import {
   type FarmhandHooks,
 } from "@/lib/stackacres/farmhand-machine";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
+import { FarmFrenzyManager, frenzyBonusYield } from "@/lib/stackacres/frenzy";
+import { FrenzyFxManager } from "./frenzy-fx-manager";
 import {
   cropArtFor,
   cropFootprintHalf,
   cropGroundOffset,
+  cropShadowScale,
   cropSpriteAlpha,
   cropSpriteScale,
 } from "@/lib/stackacres/crop-visuals";
@@ -284,7 +287,10 @@ export interface StackAcresSceneOptions {
   /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
    *  walk speed (`StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with no
    *  active perk). Mutable through `setFarmhandSpeedMultiplier` for the same
-   *  "push, don't rebuild" reason `toolTier` is. */
+   *  "push, don't rebuild" reason `toolTier` is. Combined with the Frenzy
+   *  Heat Combo Engine's own real-time multiplier (`this.frenzySpeedMultiplier`)
+   *  fresh every frame in `walkFarmhand` -- neither number alone is the
+   *  speed that actually lands on the walk. */
   farmhandSpeedMultiplier: number;
   /**
    * The element the canvas is mounted into. Gestures are read off this rather
@@ -810,6 +816,25 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private readonly auto = new FarmhandStateMachine();
 
+  /**
+   * The Frenzy Heat Combo Engine's own state: how fast the player has been
+   * tapping, decayed in real time. See lib/stackacres/frenzy.ts's own header
+   * for why this is a plain field rather than anything persisted -- a
+   * reload, or simply a pause long enough to cool down, gets a fresh cold
+   * engine and nothing else about the farm changes.
+   */
+  private readonly frenzy = new FarmFrenzyManager();
+  /** The Phaser side of the engine above: the screen wash, its pulse, and
+   *  the per-tap ember/bonus bursts. Null under reduced motion, the same
+   *  posture `this.weather` already takes -- see `create()`. */
+  private frenzyFx: FrenzyFxManager | null = null;
+  /** This frame's own frenzy tier speed multiplier, read by `walkFarmhand`
+   *  for both drivers of the one man on the map. Refreshed once a frame in
+   *  `update()` (`this.frenzy.sample(time)`), the same "read fresh every
+   *  frame, never cached across one" posture `critterSpeed` already takes
+   *  for an animal's own walk speed -- see lib/stackacres/farmhand-path.ts's
+   *  `advanceTowards` for where this number actually lands. */
+  private frenzySpeedMultiplier = 1;
 
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
@@ -847,6 +872,11 @@ export class StackAcresScene extends Phaser.Scene {
   /** The windmill's sails, turned in update(); still under reduced motion. */
   private blades: Phaser.GameObjects.Image | null = null;
 
+  /** The Farmstead's ambient clutter (wells, log piles, tool barrels; see
+   *  `paintFarmsteadClutter`), grouped so the whole decorative layer can be
+   *  found or torn down as one unit. Set once, in `create`. */
+  private farmsteadClutterGroup: Phaser.GameObjects.Group | null = null;
+
   /** The held tool's own picture, floating over a finger that is mid-mow --
    *  the scythe is the only tool left with a canvas gesture of its own.
    *  Kept the name `toolGhost` (not `mowGhost`): it once also floated over a
@@ -882,9 +912,6 @@ export class StackAcresScene extends Phaser.Scene {
     super({ key: "StackAcresScene" });
     this.callbacks = callbacks;
     this.options = options;
-    // Seeds `this.auto`'s own copy immediately -- see `setFarmhandSpeedMultiplier`
-    // for why the automated farmhand holds one rather than reading through.
-    this.auto.setSpeedMultiplier(options.farmhandSpeedMultiplier);
   }
 
   /** The only files StackAcres fetches: the four generated sprites (see
@@ -935,6 +962,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintPond();
     this.paintBarn();
     this.paintProps();
+    this.paintFarmsteadClutter();
     this.spawnHerds();
     this.spawnFarmhandNode();
     // Each district's own layer, which is either its farm (ground, fence,
@@ -962,6 +990,14 @@ export class StackAcresScene extends Phaser.Scene {
     if (!this.options.reducedMotion) {
       this.weather = new WeatherOverlayManager(this, this.random);
       this.weather.create();
+      // Same lazy read `floatAt` does for `this.displayFont`, just eager:
+      // `this.options.host` is available from the very first frame, so there
+      // is no need to wait for a tap before this manager's one label knows
+      // the farm's own display face.
+      this.frenzyFx = new FrenzyFxManager(this, {
+        fontFamily: window.getComputedStyle(this.options.host).fontFamily || undefined,
+      });
+      this.frenzyFx.create();
     }
 
     // The "you've gone far enough" nudges -- same screen-pinned treatment as
@@ -1159,9 +1195,12 @@ export class StackAcresScene extends Phaser.Scene {
     const head = this.farmhandQueue[0];
     const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
     const committed = this.auto.hand.workMs > 0;
+    // The two sources multiply, never pick one -- see StackAcresSceneOptions'
+    // own comment on `farmhandSpeedMultiplier`.
+    const speedMultiplier = this.options.farmhandSpeedMultiplier * this.frenzySpeedMultiplier;
 
     if (next && !committed) {
-      const step = stepFarmhand(node.state, next, delta, this.options.farmhandSpeedMultiplier);
+      const step = stepFarmhand(node.state, next, delta, speedMultiplier);
       if (step.claimed) {
         this.farmhandTask = head ?? null;
         this.farmhandQueue = this.farmhandQueue.slice(1);
@@ -1179,7 +1218,7 @@ export class StackAcresScene extends Phaser.Scene {
     // `idle` rather than freezing at whatever it was doing when the queue
     // emptied.
     if (node.state.phase !== "idle") {
-      const step = stepFarmhand(node.state, null, delta, this.options.farmhandSpeedMultiplier);
+      const step = stepFarmhand(node.state, null, delta, speedMultiplier);
       if (step.finished) this.farmhandTask = null;
       node.state = step.hand;
       this.auto.followErrand(node.state);
@@ -1187,7 +1226,7 @@ export class StackAcresScene extends Phaser.Scene {
       return;
     }
 
-    this.auto.update(delta);
+    this.auto.update(delta, speedMultiplier);
     const hand = this.auto.hand;
     node.state = { ...node.state, x: hand.x, y: hand.y, facing: hand.facing, towards: hand.towards, travelled: hand.travelled };
     this.paintFarmhand(node, hand.workMs > 0, automationWalking(hand));
@@ -1224,10 +1263,14 @@ export class StackAcresScene extends Phaser.Scene {
 
   /**
    * The dirt paths, as ground art just above the grass: lane, road, track,
-   * in that order. Phaser's depth sort is stable, so three images at one
-   * depth draw in creation order, and each path after the first repaints
-   * the junction it shares with an earlier one (see bakePathTexture), which
-   * only works if the earlier one is underneath.
+   * in that order, then whatever `generatePathwaysBetweenNodes` grew on top
+   * of them (`ALL_FARM_PATHS`, not `FARM_PATHS` alone -- see paths.ts).
+   * Phaser's depth sort is stable, so images at one depth draw in creation
+   * order, and each path after the first repaints the junction it shares
+   * with an earlier one (see bakePathTexture), which only works if the
+   * earlier one is underneath -- true for a generated spur exactly as it is
+   * for a hand-authored path, since `generatePathwaysBetweenNodes` always
+   * appends to the array a spur forks off of.
    */
   // The baked texture is drawn directly in projected (sheared) space now --
   // see bakePathTexture's own header -- so `bake.x`/`bake.y` are already
@@ -1235,8 +1278,8 @@ export class StackAcresScene extends Phaser.Scene {
   // in. No isoProject call here: doing that would project an already-
   // projected point a second time.
   private paintPaths(): void {
-    FARM_PATHS.forEach((spec, i) => {
-      const bake = bakePathTexture(this, spec, FARM_PATHS.slice(0, i));
+    ALL_FARM_PATHS.forEach((spec, i) => {
+      const bake = bakePathTexture(this, spec, ALL_FARM_PATHS.slice(0, i));
       if (!bake) return;
       this.add
         .image(bake.x, bake.y, bake.key, ART_FRAME)
@@ -1558,6 +1601,37 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
+   * Ambient dressing for the dead grass `farmsteadClutter` (lib/stackacres/
+   * props.ts) found between the yard and the Hen Coop/wheat field: a well,
+   * a log pile, an empty tool barrel, each on the identical soft ground
+   * shadow `paintProps` gives every hand-placed prop.
+   *
+   * Collected into one Phaser `Group` -- a plain management collection, not
+   * `physics.add.staticGroup()`, since nothing in this scene runs Arcade
+   * Physics for a static body to buy broadphase collision against. What the
+   * group actually buys: the whole decorative layer can be found, counted
+   * or torn down as one unit without walking every other image the scene
+   * owns. It changes nothing about draw order -- each item still gets its
+   * own `depthAt` call below, the same call every other seated object in
+   * this scene makes, which is what lets a clutter item sort correctly
+   * against the farmhand (or anything else with feet) walking past it.
+   * Group membership plays no part in that sort; Phaser orders its whole
+   * display list by depth regardless of which group a child also belongs to.
+   */
+  private paintFarmsteadClutter(): void {
+    const group = this.add.group();
+    for (const prop of farmsteadClutter()) {
+      const pool = PROP_SHADOW[prop.kind];
+      const shadow = this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
+        .setScale(pool.w / 33 / S, pool.h / 13 / S)
+        .setAlpha(0.8);
+      const sprite = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+      group.addMultiple([shadow, sprite]);
+    }
+    this.farmsteadClutterGroup = group;
+  }
+
+  /**
    * The windmill tower, placed flat like any other prop, plus the existing
    * baked `windmillBlades` sprite pinned to its cap so update()'s per-frame
    * rotation still just works. The pin uses `WINDMILL_HUB` -- an offset from
@@ -1704,6 +1778,18 @@ export class StackAcresScene extends Phaser.Scene {
       const stage = growthStage(unit.progress, unit.state === "ready");
       // Non-null for every non-livestock kind, which is the branch we are in.
       const crop = cropArtFor(unit.stock) ?? "carrot";
+      const grown = cropSpriteScale(stage);
+      // Grounding shadow, added before the plant so it paints underneath --
+      // same order the isLivestock branch above uses for its own `shadow`.
+      // Both anchor (0.5, 0.5) at this same local (0, 0), the crop sprite's
+      // own (0.5, 1) anchor, so the pool sits centred exactly on the plant's
+      // base rather than floating above or sinking below it. Scaled by
+      // `cropShadowScale`, not fixed like a livestock shadow, because a crop
+      // swings 1.6x-4x across its three frames and one fixed size would
+      // misfit two of them.
+      this.addLocal("cropShadow", 0, 0, container)
+        .setScale(cropShadowScale(stage) / S)
+        .setAlpha(0.8);
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
       // Crops -- and only crops -- are drawn well off the world's own scale,
       // so a ripe row is findable on a phone. `addLocal` has already set the
@@ -1711,7 +1797,6 @@ export class StackAcresScene extends Phaser.Scene {
       // down by however much scaling lifted its feet off the soil. Both
       // numbers come from lib/stackacres/crop-visuals.ts, which is where the
       // reasoning and the tests for them live.
-      const grown = cropSpriteScale(stage);
       sprite.setScale(grown / S);
       sprite.y += cropGroundOffset(crop, stage);
       // Dry soil reads as a faded plant. The ring says it too, but a ring is
@@ -2658,14 +2743,12 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * The Synergy Tree's `automated_logistics` multiplier, pushed the same way
    * `setToolTier` is: a fresh loadout has to speed him up NOW, not on the
-   * next scene rebuild. Kept on `this.options` for the tap-driven farmhand
-   * (`walkFarmhand` reads it fresh every frame) and mirrored onto `this.auto`
-   * too, since the automated farmhand holds its own copy rather than reading
-   * through the scene (see `FarmhandStateMachine.setSpeedMultiplier`).
+   * next scene rebuild. `walkFarmhand` reads it fresh every frame and
+   * multiplies it against `this.frenzySpeedMultiplier` -- there is no
+   * combined value to seed eagerly here.
    */
   setFarmhandSpeedMultiplier(multiplier: number): void {
     this.options.farmhandSpeedMultiplier = multiplier;
-    this.auto.setSpeedMultiplier(multiplier);
   }
 
   /**
@@ -2952,6 +3035,28 @@ export class StackAcresScene extends Phaser.Scene {
         node.pop = null;
       },
     });
+  }
+
+  /**
+   * A tap that became a real action -- never a refused one; see
+   * onWorldUnitTap's own call site in stackacres-farm.tsx, which is the only
+   * caller. Registers one hit with the Frenzy Heat Combo Engine and throws
+   * its cosmetic feedback at the unit's own live screen position.
+   *
+   * `baseYieldGold` is a DISPLAY ESTIMATE -- STACKACRES_YIELDS' quantity
+   * times its Gold value, computed by the caller before any crit or synergy
+   * bonus is rolled -- and is only meaningful for a "collect" tap; pass it
+   * as `undefined` (or omit it) for feed/water/clear, which have no yield to
+   * bonus and simply register the hit. This NEVER changes what the server
+   * actually pays: see lib/stackacres/frenzy.ts's own header.
+   */
+  registerFrenzyTap(unitId: string, baseYieldGold?: number): void {
+    const snapshot = this.frenzy.registerHit(this.time.now);
+    if (this.options.reducedMotion) return;
+    const node = this.nodes.get(unitId);
+    if (!node) return;
+    const bonus = baseYieldGold ? frenzyBonusYield(baseYieldGold, snapshot.tier) : 0;
+    this.frenzyFx?.celebrateTap({ x: node.container.x, y: node.container.y }, snapshot, bonus);
   }
 
   /**
@@ -3685,6 +3790,13 @@ export class StackAcresScene extends Phaser.Scene {
 
     this.animateSunlight(time, delta);
     this.weather?.update(time, delta);
+    // A read-only sample, not a hit -- see FarmFrenzyManager's own doc
+    // comment. Runs every frame regardless of whether anything was tapped
+    // this frame, which is what lets heat cool down in real time rather
+    // than only on the next tap.
+    const frenzySnapshot = this.frenzy.sample(time);
+    this.frenzySpeedMultiplier = frenzySnapshot.tier.speedMultiplier;
+    this.frenzyFx?.setHeat(frenzySnapshot, time);
     this.animatePond(time);
     this.walkHerds(delta);
     this.walkFarmhand(delta);

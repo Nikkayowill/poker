@@ -67,6 +67,12 @@ export interface StackAcresWorldApi {
    *  silently outside the Farmstead, and can never delay or cancel a write.
    *  See lib/stackacres/farmhand.ts. */
   sendFarmhand: (unitId: string) => void;
+  /** A tap that became a real action, never a refused one: registers one hit
+   *  with the Frenzy Heat Combo Engine and throws its cosmetic feedback at
+   *  the unit's own live position. `baseYieldGold` is a DISPLAY ESTIMATE,
+   *  meaningful only for a "collect" tap -- see lib/stackacres/frenzy.ts's
+   *  own header for why this never touches a real payout. */
+  registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
   /** What the AUTOMATED farmhand may do when a cycle finishes. Passed through
    *  the handle rather than as a prop because every hook is a request the
    *  shell already knows how to make, and rebuilding the scene's wiring on
@@ -348,6 +354,7 @@ export function StackAcresWorld({
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
+      registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
     }),

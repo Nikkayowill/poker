@@ -118,6 +118,31 @@ describe("advanceTowards", () => {
   });
 });
 
+describe("advanceTowards's speedMultiplier", () => {
+  it("defaults to 1 -- every caller that predates the Frenzy Heat Combo Engine walks unchanged", () => {
+    const plain = advanceTowards(walker(0, 0), { x: 100, y: 0 }, 1);
+    const explicit = advanceTowards(walker(0, 0), { x: 100, y: 0 }, 1, 1);
+    expect(explicit.walker.x).toBe(plain.walker.x);
+  });
+
+  it("scales the stride, not the arrival dead-band", () => {
+    const doubled = advanceTowards(walker(0, 0), { x: 100, y: 0 }, 1, 2);
+    expect(doubled.walker.x).toBeCloseTo(FARMHAND_SPEED * 2);
+
+    // A target inside ARRIVE_WITHIN is still snapped to in one step however
+    // fast he is walking -- the dead-band is a distance, not a stride.
+    const snap = advanceTowards(walker(0, 0), { x: ARRIVE_WITHIN / 2, y: 0 }, 0.0001, 3);
+    expect(snap.arrived).toBe(true);
+    expect(snap.walker.x).toBe(ARRIVE_WITHIN / 2);
+  });
+
+  it("a multiplier of 0 holds him in place", () => {
+    const held = advanceTowards(walker(0, 0), { x: 100, y: 0 }, 1, 0);
+    expect(held.walker.x).toBe(0);
+    expect(held.arrived).toBe(false);
+  });
+});
+
 describe("withinReach", () => {
   it("is true at the dead-band's edge and false past it", () => {
     expect(withinReach(walker(0, 0), { x: ARRIVE_WITHIN, y: 0 })).toBe(true);

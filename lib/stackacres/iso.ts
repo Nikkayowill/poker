@@ -131,6 +131,41 @@ export function isoDepthAt(x: number, y: number, nudge = 0): number {
 }
 
 /**
+ * A sub-grid's own local point, projected as an offset from its world-space
+ * origin -- what a fenced-off interior (a Greenhouse, a building's own floor
+ * plan) uses to place a tile matrix authored in small, zero-based LOCAL
+ * coordinates rather than the farm's absolute ones.
+ *
+ * This is not a second projection: it exists only because `isoProject` is
+ * additive (see the file header -- proven in iso.test.ts). The sub-grid's own
+ * origin projects once, and every one of its tiles' local offsets project
+ * separately and add onto it, landing in exactly the place projecting their
+ * sum directly (`isoProject(origin.x + local.x, origin.y + local.y)`) would.
+ * That equivalence is what makes the sub-grid "inherit the main world's
+ * coordinate math" rather than needing a parallel one: a caller can address a
+ * tile as (row, col) in the sub-grid's own frame, and this seam is what lands
+ * it on screen in the one true projection every other object here goes
+ * through.
+ */
+export function isoProjectLocal(origin: WorldPoint, local: WorldPoint): WorldPoint {
+  const originScreen = isoProject(origin.x, origin.y);
+  const localScreen = isoProject(local.x, local.y);
+  return { x: originScreen.x + localScreen.x, y: originScreen.y + localScreen.y };
+}
+
+/**
+ * Exact inverse of `isoProjectLocal`: given a screen point and the sub-grid's
+ * own world-space origin, the local point that projected there. What a
+ * pointer resolved to world space (post `isoUnproject`) is turned back into
+ * BEFORE it is allowed near a sub-grid's own local hit-testing -- the same
+ * seam role `isoUnproject` itself plays for the open world.
+ */
+export function isoUnprojectLocal(origin: WorldPoint, screen: WorldPoint): WorldPoint {
+  const originScreen = isoProject(origin.x, origin.y);
+  return isoUnproject(screen.x - originScreen.x, screen.y - originScreen.y);
+}
+
+/**
  * The two edge directions every diamond tile has, as rotation angles for a
  * sprite that was drawn lying along a world-space axis (a fence rail, a
  * furrow line) and now needs to lie along the matching screen-space edge

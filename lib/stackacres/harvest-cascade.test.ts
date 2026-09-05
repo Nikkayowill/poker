@@ -18,6 +18,7 @@ function unit(id: string, stock: StackAcresStock, state: StackAcresUnitState): S
     isWatered: true,
     muckFee: null,
     permanent: false,
+    housedIn: null,
   };
 }
 

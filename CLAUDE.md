@@ -58,6 +58,37 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### The Greenhouse: a built-once structure, six crop slots, weather-sealed and faster (2026-09-05)
+New `lib/stackacres/greenhouse.ts`. Built from a task brief that assumed a `homestead_plots`-era
+architecture (a tile grid in `iso.ts`, plot flags in `homestead_plots`) that no longer exists -- both
+were deleted outright on 2026-09-03 (see that day's own entries below: "places, not plots"). Built for
+real instead: `GREENHOUSE_PLOT` is one hand-placed `WorldRect` south of the wheat field, in the same
+convention `WHEAT_FIELD`/`BARN_FOOTPRINT` already use, holding a genuine sub-grid (6 slots) addressed
+in its own small local space via two new, purely-mathematical `iso.ts` exports
+(`isoProjectLocal`/`isoUnprojectLocal`) that lean on `isoProject`'s own proven-additive property rather
+than inventing a second projection. Slots are a capacity visualization, not a plot: `homestead_units`
+stores no row/col, only `housed_in = 'greenhouse'` and a count the database caps at 6 -- the same
+"places, not plots" call the rest of StackAcres already made, restated here on purpose rather than
+quietly reintroducing positional ownership. Two real invariants, not flavour text: growth runs at 0.7x
+`durationMs`, snapshotted onto `ready_at` at stocking like every other snapshotted number here; and the
+weather overlay's screen-wide tint/particle layers (its only currently-wired half -- the crit/cost
+economy hooks in `weather.ts` stay exactly as unwired as its own header says they should) are frozen
+and hidden the instant the camera steps inside (`WeatherOverlayManager.setSuppressed`), not merely
+skipped and left visually stale. Build cost is Flour+Cloth, debited by a new `build_homestead_greenhouse`
+RPC that takes an advisory lock (serializing concurrent builds), then `FOR UPDATE`-locks both cost-line
+rows in `homestead_processing_inventory` before debiting through the existing `adjust_homestead_processing_inventory`
+-- the brief asked for `adjust_homestead_inventory`, which is dead (superseded by the processing table
+in the 2026-09-04 Mill pass); verified live via `execute_sql` before writing the migration, not trusted
+from either name. `homestead_units_enforce_stock_shape` gained one new branch (crop-only, built,
+under-cap) rather than a second trigger. Migration `20260905130000_stackacres_greenhouse.sql` APPLIED
+and verified (grants postgres/service_role only, clean advisor pass, build/cap/stock-kind rules
+exercised against the live DB in rolled-back transactions — including the mixed-kind case where the
+greenhouse's own 6-slot cap trips before either per-kind cap does). Scene wiring
+(`enterGreenhouse`/`exitGreenhouse` swap `camera.setBounds()` between
+the open world and the plot's own interior, mirroring `focusZone`) and a real `stackacres-greenhouse-panel.tsx`
+ship with it; the six-slot ground art itself is a Graphics volume in the palette's own "water" ramp, not
+a new baked painter — there is no supplied art for this structure yet.
+
 ### The Sunlight Forge: permanent tool enchantments on top of the equipment ladder (2026-09-05)
 From a `/goal` architecture brief. Adds a third layer to `homestead_tool`'s crit/reach math
 (`equipment.ts`), alongside the 2026-09-04 Synergy Tree — a permanent, Gold-plus-material purchase

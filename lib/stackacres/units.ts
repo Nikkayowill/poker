@@ -58,6 +58,14 @@ export interface StackAcresUnitRow {
    */
   permanent: boolean;
   version: number;
+  /**
+   * Set to `"greenhouse"` for a crop stocked into the Greenhouse
+   * (./greenhouse.ts); null for everything else. Snapshotted at stocking --
+   * `stockStackAcres` is the only writer, and this never changes for the
+   * life of the row, the same "written once, read forever" contract every
+   * other snapshotted field on this row already follows.
+   */
+  housedIn: "greenhouse" | null;
 }
 
 /**
@@ -102,6 +110,8 @@ export interface StackAcresUnitSnapshot {
   muckFee: number | null;
   /** True when this unit was bought outright and re-sows itself. */
   permanent: boolean;
+  /** See `StackAcresUnitRow.housedIn`. */
+  housedIn: "greenhouse" | null;
 }
 
 /**
@@ -253,6 +263,7 @@ export function toStackAcresUnitSnapshots(
         isWatered: true,
         muckFee: row.muckFee,
         permanent: row.permanent,
+        housedIn: row.housedIn,
       };
     }
 
@@ -277,6 +288,7 @@ export function toStackAcresUnitSnapshots(
       isWatered: !dry,
       muckFee: null,
       permanent: row.permanent,
+      housedIn: row.housedIn,
     };
   });
 }

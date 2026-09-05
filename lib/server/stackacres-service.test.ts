@@ -1621,6 +1621,7 @@ describe("the currency wall", () => {
     // way".
     expect(actions).toEqual([
       "activate-synergy-perk",
+      "build-greenhouse",
       "buy-feed",
       "buy-stock",
       "clear",
@@ -1656,8 +1657,9 @@ describe("the currency wall", () => {
     // either spends it or moves no money at all -- `upgrade-tool` included,
     // which is a pure sink, and the critical harvest it buys is paid BY
     // `collect` out of the same reservation rather than being a third payer;
-    // `work`, `process` and `request-contract` included, which move inventory
-    // only. `divert` is the interesting one and it is still not a payer: it
+    // `work`, `process`, `request-contract` and `build-greenhouse` included,
+    // which move inventory only (`build-greenhouse` spends processing-track
+    // Flour/Cloth, never Gold). `divert` is the interesting one and it is still not a payer: it
     // takes a ready animal's produce into inventory INSTEAD of into a
     // harvest, through the same version-guarded write `collect` uses, so it
     // reduces what the farm pays out today rather than adding a way in. The

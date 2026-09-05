@@ -28,6 +28,7 @@ function row(overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
     muckFee: null,
     permanent: false,
     version: 1,
+    housedIn: null,
     ...overrides,
   };
 }

@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { projectedBounds } from "./iso";
 import {
+  ALL_FARM_PATHS,
   FARM_PATHS,
+  FARMSTEAD_PATH_NODES,
+  FARMSTEAD_PATHWAYS,
   PATH_CLEARANCE,
   distanceToPath,
+  generatePathwaysBetweenNodes,
   nearPath,
   pathBakePadding,
   pathBounds,
 } from "./paths";
-import { FARM_ZONE, growAreaBounds, inFarmZone } from "./world";
+import { FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
 import { ZONE_IDS, zoneAt } from "./zones";
 
 /** Every district's own grow area -- the plots are gone; each district has
@@ -217,5 +221,79 @@ describe("farm paths", () => {
         expect(box.y + box.height - p.y).toBeGreaterThanOrEqual(pad - 1);
       }
     }
+  });
+});
+
+describe("generated Farmstead connectors", () => {
+  it("grows one spur per node, each a straight vector ending exactly on the node", () => {
+    expect(FARMSTEAD_PATHWAYS.length).toBe(FARMSTEAD_PATH_NODES.length);
+    for (const node of FARMSTEAD_PATH_NODES) {
+      const spur = FARMSTEAD_PATHWAYS.find((p) => p.key === `spur-${node.id}`);
+      expect(spur).toBeDefined();
+      expect(spur?.points.length).toBe(2);
+      const last = spur!.points[spur!.points.length - 1];
+      expect(last).toEqual({ x: node.x, y: node.y });
+    }
+  });
+
+  it("anchors each spur on the network it was grown from, not floating free", () => {
+    for (const spur of FARMSTEAD_PATHWAYS) {
+      const anchor = spur.points[0];
+      // The anchor is either on FARM_PATHS itself or on an earlier spur in
+      // this same pass -- either way it must read as already served by
+      // whatever came before it, the same "starts inside the path it forks
+      // off" invariant the hand-authored connectors hold to.
+      const before = ALL_FARM_PATHS.slice(0, ALL_FARM_PATHS.indexOf(spur));
+      const onNetwork = before.some((other) => distanceToPath(anchor.x, anchor.y, other) < other.width / 2 + 0.5);
+      expect(onNetwork, `${spur.key}'s anchor ${anchor.x},${anchor.y}`).toBe(true);
+    }
+  });
+
+  it("stays clear of every zone's grow area, the same clearance every hand-authored path holds to", () => {
+    for (const zone of ZONE_IDS) {
+      const area = growAreaBounds(zone);
+      const points = [
+        { x: area.x, y: area.y },
+        { x: area.x + area.width, y: area.y },
+        { x: area.x, y: area.y + area.height },
+        { x: area.x + area.width, y: area.y + area.height },
+        { x: area.x + area.width / 2, y: area.y + area.height / 2 },
+      ];
+      for (const p of points) expect(nearPath(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
+    }
+    // And the wheat field itself, which is not one of ZONE_IDS' grow areas.
+    const wheatCentre = { x: WHEAT_FIELD.x + WHEAT_FIELD.width / 2, y: WHEAT_FIELD.y + WHEAT_FIELD.height / 2 };
+    expect(nearPath(wheatCentre.x, wheatCentre.y)).toBe(false);
+  });
+
+  it("is folded into nearPath and ALL_FARM_PATHS, so a generated spur excludes scenery exactly like a hand-placed one", () => {
+    expect(ALL_FARM_PATHS.length).toBe(FARM_PATHS.length + FARMSTEAD_PATHWAYS.length);
+    for (const spur of FARMSTEAD_PATHWAYS) {
+      for (const p of spur.points) expect(nearPath(p.x, p.y)).toBe(true);
+    }
+  });
+
+  it("adds nothing for a node the base network already reaches", () => {
+    const onTheLane = [{ id: "already-served", x: 50, y: 200 }];
+    expect(generatePathwaysBetweenNodes(onTheLane, FARM_PATHS)).toEqual([]);
+  });
+
+  it("lets two close nodes share one fork instead of each running back to the base network", () => {
+    const near = [
+      { id: "a", x: 250, y: 300 },
+      { id: "b", x: 290, y: 340 },
+    ];
+    const spurs = generatePathwaysBetweenNodes(near, FARM_PATHS);
+    expect(spurs.length).toBe(2);
+    // The second node's spur is far shorter than a straight run back to the
+    // base network would be, because it forked off the first node's spur
+    // instead.
+    const second = spurs.find((p) => p.key === "spur-b")!;
+    const secondLength = Math.hypot(
+      second.points[1].x - second.points[0].x,
+      second.points[1].y - second.points[0].y,
+    );
+    const straightBackToBase = Math.min(...FARM_PATHS.map((spec) => distanceToPath(260, 305, spec)));
+    expect(secondLength).toBeLessThan(straightBackToBase);
   });
 });

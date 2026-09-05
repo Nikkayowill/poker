@@ -576,9 +576,16 @@ filling, so everything anchored to the bottom -- the lobby tab pill, the sign-in
 lands partway up the glass with a strip of dead colour beneath it, and rotating to landscape and back
 fixes it for the session. Seven passes hunted the cause in the stylesheets; it is not there. The fix
 stops asking why: it measures `screen.height - innerHeight` (standalone only, guarded against Split
-View and against corrections over 200px), publishes it as `--vp-short`, and five rules subtract it --
-`.app-root`/`.account-entry-page` heights, `.lobby.lobby-shell`'s height, `.entry-footer`'s and
-`.mshell-nav`'s `bottom`. **Self-cancelling**: in a browser, on a healthy device, and on the same
+View and against corrections over 200px), publishes it as `--vp-short`, and **exactly two rules
+subtract it -- `.entry-footer`'s and `.mshell-nav`'s `bottom`, and nothing else ever should.**
+`bottom` on a fixed element resolves against the initial containing block, and the ICB is the only
+thing that launches short. The viewport UNITS do not: in a standalone iOS app `100svh`/`100dvh`
+already measure the whole screen (`06-table.css` records the same of `100dvh`). The first version of
+this shipped with the shortfall added to three heights as well (`.app-root`, `.account-entry-page`,
+`.lobby.lobby-shell`) and that made each box taller than the display -- which visibly broke the
+sign-in page, a scroll container, while the tab pill it was meant to help had already been fixed by
+the `bottom` half alone. Corrected within the hour; the constraint is restated on the token in
+`01-tokens.css` and at the top of `viewport-fit.tsx` because it is the one way to get this wrong. **Self-cancelling**: in a browser, on a healthy device, and on the same
 device after a rotation the measurement is 0 and every `calc()` is a no-op. **This is NOT the
 reflow-forcing that was tried and reverted three times** (b694082, 1372ea2, one on 2026-08-29) -- that
 asked WebKit for a better number and a reflow re-runs layout against the same short viewport. This

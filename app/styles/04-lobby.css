@@ -192,7 +192,9 @@ button:disabled { cursor: wait; opacity: .62; }
      `100vh - header` arithmetic .lobby still needs. --safe-top used to be
      cleared by the header's own padding; this page clears it itself now. */
   height: 100vh;
-  height: calc(100svh + var(--vp-short));
+  /* Not --vp-short corrected; see .app-root in 02-app-shell.css for why a
+     viewport-unit height is already right and adding the shortfall broke it. */
+  height: 100svh;
   overflow-y: auto;
   /* Same guard as .lobby: the backstop that keeps the next wide child from
      panning the page sideways on a phone. */
@@ -1109,9 +1111,14 @@ button:disabled { cursor: wait; opacity: .62; }
   position: fixed;
   left: 0;
   right: 0;
-  /* Reaches into the strip below a short layout viewport so the bar rests
-     on the real bottom edge rather than partway up the glass. */
-  bottom: calc(0px - var(--vp-short));
+  bottom: 0;
+  /* Reaches into the strip below a short layout viewport so the bar rests on
+     the real bottom edge rather than partway up the glass. A transform rather
+     than a negative `bottom`: a fixed box hanging below the containing block
+     flickers under WebKit's compositor, and this moves the same pixels with
+     no layout change at all. translateY(0px) when there is nothing to correct,
+     which is everywhere but an installed iOS app that launched short. */
+  transform: translateY(var(--vp-short));
   z-index: 2;
   display: flex;
   justify-content: center;

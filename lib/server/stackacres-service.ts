@@ -198,6 +198,13 @@ import {
   type MachineProcessedItem,
   type MachineRawItem,
 } from "@/lib/stackacres/machine-items";
+import type { BlueprintId } from "@/lib/stackacres/blueprints";
+import {
+  blueprintsView,
+  contributeToBlueprint,
+  startBlueprintForProfile,
+  type BlueprintView,
+} from "./stackacres-blueprint-service";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -385,6 +392,12 @@ export interface StackAcresView {
   /** The Synergy Tree: which archetypes are unlocked/active, and what that
    *  currently does to the farmhand's presentation-only walk speed. */
   synergy: StackAcresSynergyView;
+  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
+   *  present whether or not the player has started it (see
+   *  lib/server/stackacres-blueprint-service.ts's `blueprintsView`) --
+   *  the same "every key present, missing means never started" posture
+   *  `secretDonations` above already takes for a never-donated item. */
+  blueprints: Record<BlueprintId, BlueprintView>;
   /** The Midnight Merchant's current visit, or null when the NPC is not on
    *  the lot right now. See lib/stackacres/midnight-merchant.ts -- this is
    *  the ENTIRE surface the client's own render manager is allowed to trust;
@@ -469,6 +482,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     heldQtys,
     unlockedSynergies,
     activeSynergies,
+    blueprints,
     midnightMerchant,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
@@ -490,10 +504,11 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // into this array literal: a spread of a variable-length array would
     // widen every sibling element's inferred type too, since Promise.all's
     // tuple overload needs a fixed-length literal to keep each position's own
-    // type. Nesting keeps this array exactly 15 elements long.
+    // type. Nesting keeps this array exactly 16 elements long.
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
     listUnlockedSynergyArchetypes(profile.id),
     listActiveSynergyArchetypes(profile.id),
+    blueprintsView(profile.id),
     readMidnightMerchantVisit(profile.id, now),
   ]);
 
@@ -539,6 +554,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
         activeSynergies,
       ).farmhandSpeed,
     },
+    blueprints,
     midnightMerchant,
   };
 }
@@ -2779,6 +2795,41 @@ export async function fulfillStackAcresTownContract(
     ...(await view(paid ?? (await ensureProfile(token)), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
   };
+}
+
+/**
+ * Ray's Mythic Blueprints. MOVES NO GOLD -- see
+ * lib/server/stackacres-blueprint-service.ts's own header for why this
+ * feature carries none of the daily Gold ceiling's risk and needs no
+ * reservation step the way `fulfillStackAcresTownContract` above does.
+ *
+ * Both resolve the profile exactly once and hand the profileId straight to
+ * the profileId-taking core (`startBlueprintForProfile`,
+ * `contributeToBlueprint`) rather than through their own token-resolving
+ * wrappers, so composing the full farm view below never pays a second
+ * profile lookup for one action -- see `startBlueprintForProfile`'s own
+ * comment on why that redundant-resolve shape is worth avoiding on purpose.
+ */
+export async function startStackAcresMythicBlueprint(
+  token: string,
+  structureId: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await startBlueprintForProfile(profile.id, structureId);
+  return view(profile, now);
+}
+
+export async function contributeToStackAcresMythicBlueprint(
+  token: string,
+  structureId: string,
+  itemId: string,
+  amount: number,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await contributeToBlueprint(profile.id, structureId, itemId, amount);
+  return view(profile, now);
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

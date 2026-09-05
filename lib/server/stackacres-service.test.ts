@@ -34,6 +34,7 @@ import {
   type StackAcresView,
 } from "./stackacres-service";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
+import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
@@ -284,6 +285,7 @@ const REAL = {
 
 beforeEach(() => {
   __resetStackAcresForTest();
+  __resetStackAcresBlueprintsForTest();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
@@ -1616,6 +1618,7 @@ describe("the currency wall", () => {
       "clear-sector",
       "collect",
       "consume-secret-item",
+      "contribute-blueprint",
       "divert",
       "donate-secret-item",
       "expand-capacity",
@@ -1627,6 +1630,7 @@ describe("the currency wall", () => {
       "request-contract",
       "retire",
       "sow-wheat",
+      "start-blueprint",
       "stock",
       "tap-secret-zone",
       "trade-secret-item",

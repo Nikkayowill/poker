@@ -6,6 +6,8 @@ import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
+import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
+import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import {
   activateStackAcresSynergyPerk,
@@ -35,6 +37,8 @@ import {
   fulfillStackAcresTownContract,
   divertStackAcresUnit,
   processStackAcresRecipeAction,
+  startStackAcresMythicBlueprint,
+  contributeToStackAcresMythicBlueprint,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -209,6 +213,22 @@ const bodySchema = z.discriminatedUnion("action", [
     archetype: synergyArchetypeSchema,
     slot: synergySlotSchema,
   }),
+  // Ray's Mythic Blueprints: multi-stage structures filled with processing-
+  // track materials. See lib/server/stackacres-blueprint-service.ts's own
+  // header -- neither action moves Gold.
+  z.object({
+    action: z.literal("start-blueprint"),
+    structureId: z.enum(MYTHIC_BLUEPRINT_IDS as unknown as [string, ...string[]]),
+  }),
+  z.object({
+    action: z.literal("contribute-blueprint"),
+    structureId: z.enum(MYTHIC_BLUEPRINT_IDS as unknown as [string, ...string[]]),
+    itemId: z.enum(MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
+    // Bounded well above any single requirement line the shipped ladder
+    // asks for (the largest today is 20), the same "generous but not
+    // unbounded" posture `collect`'s own unitIds cap takes.
+    amount: z.number().int().min(1).max(999),
+  }),
   // The Midnight Merchant: a temporary NPC visit, spawned server-side off a
   // critical harvest (see harvestStackAcres's step 3c), never by a client
   // request. This is the only action the visit exposes -- there is no
@@ -287,6 +307,10 @@ function run(token: string, action: StackAcresAction) {
       return unlockStackAcresSynergyPerk(token, action.archetype);
     case "activate-synergy-perk":
       return activateStackAcresSynergyPerk(token, action.archetype, action.slot);
+    case "start-blueprint":
+      return startStackAcresMythicBlueprint(token, action.structureId);
+    case "contribute-blueprint":
+      return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount);
     case "midnight-merchant-buy":
       return buyFromMidnightMerchant(token, action.itemId);
   }

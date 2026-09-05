@@ -75,6 +75,7 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/stackacres/world";
+import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
   enqueueFarmhandTask,
   farmhandStandoff,
@@ -240,6 +241,15 @@ export interface StackAcresSceneCallbacks {
    * ordering `unitAt` already documents for "the farm itself" taps.
    */
   onBarnTap: () => void;
+  /**
+   * A tap that landed on one of the three hidden discovery spots (see
+   * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
+   * before the locked-sector/ground fallbacks, the same "structures win over
+   * ground" ordering `onBarnTap` already documents. The scene has already
+   * fired its own local, optimistic `secretDiscoveryPuff` by the time this
+   * callback runs; this is only the shell's cue to call the server.
+   */
+  onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   /**
    * A tap ANYWHERE on a district the player has not cleared yet.
    *
@@ -2485,6 +2495,18 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onBarnTap();
         return;
       }
+      // A hidden discovery spot -- checked after the barn (a structure still
+      // wins over the small box beside it) and before the locked-sector/grow
+      // area fallbacks below, so a zone anchored on cleared ground is never
+      // shadowed by the seed menu it sits inside.
+      const secretZone = hiddenZoneAt(ground.x, ground.y);
+      if (secretZone) {
+        // World coordinates, not the CSS-space `local` -- see
+        // `secretDiscoveryPuff`'s own doc comment for why.
+        this.secretDiscoveryPuff(ground.x, ground.y);
+        this.callbacks.onSecretZoneTap(secretZone.id, local);
+        return;
+      }
       // Land nobody has cleared answers ANYWHERE inside its district, not
       // just on a fenced box it does not have one of yet -- there is nothing
       // drawn on it to aim at but trees. Checked before the grow area for the
@@ -3075,6 +3097,63 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * A hidden discovery spot's own tap feedback: a small burst of sparkles and
+   * a brief flash, fired the instant the tap is recognised -- BEFORE the
+   * server has said whether the roll actually hit. This is the "puff" the
+   * brief asks for, and it is deliberately local-optimistic: the attempt
+   * itself is the thing worth celebrating (three of these exist, once a day
+   * each), not the outcome, which arrives later as its own beat -- see
+   * `floatAt`, called from stackacres-farm.tsx once the real result is in.
+   *
+   * Modelled directly on `cutBurst`/`celebrateHarvest`: hand-built Graphics
+   * and tweens, no Phaser `ParticleEmitter` (this codebase deliberately does
+   * not use one). `x`/`y` are WORLD coordinates -- the same space
+   * `hiddenZoneAt` tests against -- projected here exactly as `cutBurst`
+   * projects its own tile coordinates, so the effect lands under the zone
+   * itself whatever the camera's current pan/zoom.
+   */
+  secretDiscoveryPuff(x: number, y: number): void {
+    if (!this.created) return;
+    const at = isoProject(x, y);
+
+    const flash = this.add.graphics().setDepth(8600);
+    flash.fillStyle(0xfff3c4, 0.9);
+    flash.fillCircle(0, 0, 10);
+    flash.setPosition(at.x, at.y);
+
+    if (this.options.reducedMotion) {
+      this.time.delayedCall(260, () => flash.destroy());
+      return;
+    }
+    this.tweens.add({
+      targets: flash,
+      scale: 2.4,
+      alpha: 0,
+      duration: 360,
+      ease: "Cubic.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+
+    const sparkleCount = 4 + Math.floor(this.random() * 3); // 4..6
+    for (let i = 0; i < sparkleCount; i += 1) {
+      const sparkle = this.add.graphics().setDepth(8601);
+      sparkle.fillStyle(0xfff3c4, 1);
+      sparkle.fillCircle(0, 0, 1.6);
+      sparkle.setPosition(at.x, at.y);
+      const angle = (i / sparkleCount) * Math.PI * 2 + this.random() * 0.6;
+      const reach = 16 + this.random() * 14;
+      this.tweens.add({
+        targets: sparkle,
+        x: at.x + Math.cos(angle) * reach,
+        y: at.y + Math.sin(angle) * reach - 6,
+        alpha: 0,
+        duration: 420 + this.random() * 140,
+        ease: "Quad.easeOut",
+        onComplete: () => sparkle.destroy(),
+      });
+    }
+  }
 
   /* ---------------------------------------------------------------- */
   /* The open world                                                    */

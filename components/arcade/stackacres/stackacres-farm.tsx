@@ -55,6 +55,12 @@ import {
   type SecretMuseumRegistry,
 } from "@/lib/stackacres/museum-secrets";
 import {
+  SECRET_ITEM_CATALOGUE,
+  SECRET_ITEM_IDS,
+  type HiddenZoneId,
+  type SecretItemId,
+} from "@/lib/stackacres/secrets";
+import {
   HOME_SECTOR,
   STACKACRES_SECTORS,
   isSectorUnlocked,
@@ -201,6 +207,13 @@ interface StackAcresResponse {
   /** Only on a settled `fulfill-contract`, and only the amounts -- the purse
    *  itself comes back on `profile` like every other payer's does. */
   contractReward?: { gold: number; influence: number };
+  /** Set (to an item id or null) by a `tap-secret-zone` response only --
+   *  absent from every other action's answer. */
+  discovery?: SecretItemId | null;
+  /** Hidden secrets: what is held, and whether a crit boost is armed. Absent
+   *  only from a response old enough to predate the feature. */
+  secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
+  secretDonations?: Record<SecretItemId, boolean>;
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -228,7 +241,11 @@ type Action =
   // below is the one that pays, and it reserves against the same flat daily
   // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
   | { action: "request-contract" }
-  | { action: "fulfill-contract" };
+  | { action: "fulfill-contract" }
+  | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
+  | { action: "donate-secret-item"; itemId: SecretItemId }
+  | { action: "consume-secret-item"; itemId: SecretItemId }
+  | { action: "trade-secret-item"; itemId: SecretItemId };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -379,6 +396,15 @@ export function StackAcresFarm() {
   const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
   const [museumSecrets, setMuseumSecrets] = useState<SecretMuseumRegistry>(() =>
     emptySecretMuseumRegistry(),
+  );
+  /** Hidden secrets: what is held, and whether a crit boost is armed. Empty
+   *  and unarmed until the first read lands, same posture `museum` takes. */
+  const [secrets, setSecrets] = useState<{
+    held: Partial<Record<SecretItemId, number>>;
+    boostArmed: boolean;
+  }>({ held: {}, boostArmed: false });
+  const [secretDonations, setSecretDonations] = useState<Record<SecretItemId, boolean>>(
+    () => Object.fromEntries(SECRET_ITEM_IDS.map((id) => [id, false])) as Record<SecretItemId, boolean>,
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
@@ -598,6 +624,8 @@ export function StackAcresFarm() {
         wheatPlots: data.wheatPlots,
       });
     }
+    if (data.secrets) setSecrets(data.secrets);
+    if (data.secretDonations) setSecretDonations(data.secretDonations);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -927,6 +955,19 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
+        // The zone's own optimistic puff already fired on the press (see
+        // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
+        // dispatch itself). This is the SECOND, more celebratory beat --
+        // fired only once the real answer is in -- for an actual find; a
+        // miss stays exactly as quiet as the puff already made it, matching
+        // the "a growing crop stays silent" refusal posture elsewhere on
+        // this map.
+        if (body.action === "tap-secret-zone" && data.discovery) {
+          const found = SECRET_ITEM_CATALOGUE[data.discovery];
+          goldSound();
+          setLastCollect({ text: `${found.icon} Found the ${found.label}!`, nonce: Date.now() });
+          if (anchor) world.current?.floatAt(anchor, `${found.icon} ${found.label}!`, "gain");
+        }
         return { ok: true, reward: data.contractReward };
       } catch {
         const unreachable = "Could not reach the farm. Check your connection.";
@@ -1140,6 +1181,30 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** The backpack's three uses for a held secret item -- see the "Hidden
+   *  secrets" panel section below. */
+  const onDonateSecretItem = useCallback(
+    (itemId: SecretItemId) => {
+      panelSound();
+      void act({ action: "donate-secret-item", itemId });
+    },
+    [act],
+  );
+  const onConsumeSecretItem = useCallback(
+    (itemId: SecretItemId) => {
+      goldSound();
+      void act({ action: "consume-secret-item", itemId });
+    },
+    [act],
+  );
+  const onTradeSecretItem = useCallback(
+    (itemId: SecretItemId) => {
+      buySound();
+      void act({ action: "trade-secret-item", itemId });
+    },
+    [act],
+  );
+
   const pickTool = useCallback((next: StackAcresTool) => {
     toolSound();
     setTool(next);
@@ -1256,6 +1321,24 @@ export function StackAcresFarm() {
     panelSound();
     setShowMuseum(true);
   }, []);
+
+  /**
+   * A finger landed on one of the three hidden discovery spots. The scene has
+   * already fired its own local, optimistic `secretDiscoveryPuff` by the time
+   * this callback runs (see stackacres-scene.ts's own dispatch) -- all this
+   * does is call the server and, on the response, layer the second,
+   * celebratory beat if it actually found something (see the `discovery`
+   * handling in `act`'s own response branch above).
+   */
+  const onWorldSecretZoneTap = useCallback(
+    (zoneId: HiddenZoneId, at: TapPoint) => {
+      setRadial(null);
+      tapAnchor.current = at;
+      if (sending.current) return;
+      void act({ action: "tap-secret-zone", zoneId });
+    },
+    [act],
+  );
 
   /**
    * A finger landed on land nobody has cleared. There is nothing standing
@@ -1489,6 +1572,7 @@ export function StackAcresFarm() {
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
+              onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={closeRadial}
@@ -1651,6 +1735,52 @@ export function StackAcresFarm() {
             </div>
             <h2 className="sa-district-title">{district.label}</h2>
             <p className="sa-district-blurb">{district.blurb}</p>
+
+            {/* A small, secondary section -- shown on every district, since a
+                held secret item is not tied to any one of them -- for whatever
+                Hidden secrets has turned up. Hidden entirely while nothing is
+                held, so a player who never finds one never sees an empty
+                backpack taking up room on this panel. */}
+            {SECRET_ITEM_IDS.filter((itemId) => (secrets.held[itemId] ?? 0) > 0).map((itemId) => {
+              const item = SECRET_ITEM_CATALOGUE[itemId];
+              const held = secrets.held[itemId] ?? 0;
+              return (
+                <div className="sa-panel-section" key={itemId}>
+                  <h3 className="sa-group-label">Hidden secrets</h3>
+                  <p className="sa-panel-note">
+                    {item.icon} {held} {held === 1 ? item.label : `${item.label}s`} -- {item.blurb}
+                  </p>
+                  <div className="sa-buy-actions">
+                    <button
+                      type="button"
+                      className="sa-buy-btn"
+                      disabled={busy}
+                      onClick={() => onDonateSecretItem(itemId)}
+                    >
+                      <span className="sa-buy-label">Donate to Museum</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="sa-buy-btn is-gold"
+                      disabled={busy || secrets.boostArmed}
+                      onClick={() => onConsumeSecretItem(itemId)}
+                    >
+                      <span className="sa-buy-label">
+                        {secrets.boostArmed ? "A boost is already armed" : "Consume for a crit boost"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="sa-buy-btn is-expand"
+                      disabled={busy}
+                      onClick={() => onTradeSecretItem(itemId)}
+                    >
+                      <span className="sa-buy-label">Trade to Ray for Land Maintenance</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Wild land has no farm on it to manage, so the drawer offers
                 the one thing that IS available there rather than a buy list
@@ -1973,6 +2103,7 @@ export function StackAcresFarm() {
         <StackAcresMuseum
           museum={museum}
           secrets={museumSecrets}
+          secretDonations={secretDonations}
           onClose={() => { panelSound(); setShowMuseum(false); }}
         />
       )}

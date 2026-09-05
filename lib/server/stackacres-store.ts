@@ -78,6 +78,7 @@ declare global {
   var __riverRoomStackAcresMachines: Map<string, StoredMachine> | undefined;
   var __riverRoomStackAcresContracts: Map<string, StoredContract> | undefined;
   var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
+  var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -153,6 +154,21 @@ globalThis.__riverRoomStackAcresContracts = memoryContracts;
 const memoryInfluence = globalThis.__riverRoomStackAcresInfluence ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresInfluence = memoryInfluence;
 
+/**
+ * Hidden secrets' own ledger table, keyed `${profileId}:${itemId}`. A missing
+ * entry is 0, same convention every other memory-mode ledger in this file
+ * uses. See `readStackAcresSecretLedgerQty`/`adjustStackAcresSecretLedger`
+ * below for why this is a wholly different table from `memoryInventory`
+ * (`homestead_processing_inventory`, the Mill's own inventory) and from
+ * `homestead_inventory` (the barn-era table -- dead, and PR #334's own commit
+ * message says explicitly it should stay that way) despite similar names --
+ * reusing either would have silently pointed hidden-secrets ledger rows at
+ * the wrong table, or at one this codebase has decided not to bring back.
+ */
+const memoryStackAcresSecretLedger =
+  globalThis.__riverRoomStackAcresSecretLedger ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresSecretLedger = memoryStackAcresSecretLedger;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -170,6 +186,7 @@ export function __resetStackAcresForTest(): void {
   memoryMachines.clear();
   memoryContracts.clear();
   memoryInfluence.clear();
+  memoryStackAcresSecretLedger.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -1204,6 +1221,83 @@ export async function recordStackAcresHarvest(entry: StackAcresHarvestEntry): Pr
     permanent: entry.permanent,
   });
   if (error) console.error("stackacres.harvest_ledger_failed", { entry, error });
+}
+
+/* ------------------------------------------------------------------ */
+/* Hidden secrets: a generic per-player item-id/quantity ledger         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `homestead_secret_ledger` and its `adjust_homestead_secret_ledger` RPC --
+ * this feature's OWN table, not the barn-era `homestead_inventory`. An
+ * earlier draft of this file did revive that dead table, on the reasoning
+ * that its shape (a free-form item-id/quantity row per player) already fit;
+ * PR #334 landed on main in the meantime and its own commit message says
+ * plainly that table is dead and should not be resurrected, so this feature
+ * gets a fresh one instead. Same shape as the table it replaces: a real
+ * collectible (`lucky_poker_dice`) and two marker/flag keys that are not
+ * collectibles at all (`STACKACRES_DICE_BOOST_ARMED_KEY`, a per-zone daily
+ * attempt marker) all fit `item_id text` with no enum CHECK at the DB level.
+ *
+ * DELIBERATELY NOT `memoryInventory`/`homestead_processing_inventory` above,
+ * despite doing the same job for a different table: that pair is the Mill's
+ * own stores (wheat/flour), a wholly separate table this feature must not
+ * read or write. Same twin-branch shape as everything else in this file:
+ * Supabase when configured, the module-level Map otherwise.
+ */
+
+/** One item's quantity for a player, or 0 if no row exists. */
+export async function readStackAcresSecretLedgerQty(profileId: string, itemId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryStackAcresSecretLedger.get(`${profileId}:${itemId}`) ?? 0;
+
+  const { data, error } = await supabase
+    .from("homestead_secret_ledger")
+    .select("quantity")
+    .eq("profile_id", profileId)
+    .eq("item_id", itemId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read that: ${error.message}`);
+  return data ? Number((data as { quantity: number | string }).quantity) : 0;
+}
+
+/**
+ * Moves one item's quantity by `delta`, refusing to go negative. Returns the
+ * new quantity, or null when there was not enough to spend or the database
+ * threw (the `quantity >= 0` CHECK failing on an over-spend arrives as a
+ * thrown error from the RPC, caught here rather than left to bubble as an
+ * unhandled rejection) -- the caller treats null exactly like every other
+ * guarded-write refusal in this file: a lost race, never a successful spend.
+ * The memory branch floors at 0 and returns null on that same over-spend,
+ * mirroring the DB CHECK constraint's refusal so behaviour does not depend on
+ * which backend is live.
+ */
+export async function adjustStackAcresSecretLedger(
+  profileId: string,
+  itemId: string,
+  delta: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${itemId}`;
+    const current = memoryStackAcresSecretLedger.get(key) ?? 0;
+    const next = current + delta;
+    if (next < 0) return null;
+    memoryStackAcresSecretLedger.set(key, next);
+    return next;
+  }
+
+  try {
+    const { data, error } = await supabase.rpc("adjust_homestead_secret_ledger", {
+      p_profile_id: profileId,
+      p_item_id: itemId,
+      p_delta: delta,
+    });
+    if (error) return null;
+    return data === null ? null : Number(data);
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */

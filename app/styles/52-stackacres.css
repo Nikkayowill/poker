@@ -2042,6 +2042,14 @@
   text-wrap: pretty;
 }
 
+/* A bonus wing, not a redesign: a faint top divider is the whole visual
+   difference from an ordinary exhibit above. */
+.sa-museum-secret-wing {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--sa-outline);
+}
+
 /* His welcome and the how-to-play modal are the shared .profile-modal chrome
    (a violet-black card), which is right everywhere else in the app and wrong
    sitting on a farm. Re-boarded here only -- qualified by .sa-theme, so the

@@ -224,9 +224,22 @@ export function strokesToClearWidth(widthWorld: number, tier: StackAcresToolTier
  * settlement write, and threading the source makes it obvious at that call
  * site that the roll happens exactly once, where it can neither be re-rolled
  * by a refetch nor read before the write it belongs to has landed.
+ *
+ * `chanceOverride` is optional and defaults to the tier's own base chance --
+ * every existing call site is unaffected. It exists for
+ * lib/stackacres/secrets.ts's `effectiveCritChance`, which adds a temporary
+ * boost from a consumed Lucky Poker Dice on top of whatever the held tool
+ * already gives; the caller computes that number and passes it straight in
+ * rather than this module reaching into a hidden-secrets ledger it has no
+ * business knowing about.
  */
-export function rollHarvestCrit(tier: StackAcresToolTier, random: () => number): boolean {
-  return random() < STACKACRES_TOOL_TIER_DEFS[tier].critChance;
+export function rollHarvestCrit(
+  tier: StackAcresToolTier,
+  random: () => number,
+  chanceOverride?: number,
+): boolean {
+  const chance = chanceOverride ?? STACKACRES_TOOL_TIER_DEFS[tier].critChance;
+  return random() < chance;
 }
 
 /**

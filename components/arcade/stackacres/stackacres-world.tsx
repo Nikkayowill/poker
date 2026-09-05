@@ -6,6 +6,7 @@ import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tool
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
+import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
@@ -90,6 +91,10 @@ export interface StackAcresWorldProps {
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on one of the three hidden discovery spots (see
+   *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
+   *  its own local `secretDiscoveryPuff` by the time this callback runs. */
+  onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
@@ -138,6 +143,7 @@ export function StackAcresWorld({
   onUnitTap,
   onGroundTap,
   onBarnTap,
+  onSecretZoneTap,
   sectors,
   onLockedSectorTap,
   onViewMoved,
@@ -159,6 +165,7 @@ export function StackAcresWorld({
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
+  const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
@@ -179,6 +186,7 @@ export function StackAcresWorld({
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
+    secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
@@ -220,6 +228,7 @@ export function StackAcresWorld({
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at) => groundTapRef.current(zone, at),
           onBarnTap: () => barnTapRef.current(),
+          onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },

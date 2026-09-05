@@ -52,9 +52,25 @@ import {
 } from "@/lib/stackacres/sectors";
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { stockZone } from "@/lib/stackacres/world";
+import {
+  HIDDEN_ZONES,
+  SECRET_ITEM_CATALOGUE,
+  SECRET_ITEM_IDS,
+  STACKACRES_DICE_BOOST_ARMED_KEY,
+  effectiveCritChance,
+  isHiddenZoneId,
+  isSecretItemId,
+  nextUpkeepPaidAfterDiceTrade,
+  rollSecretDiscovery,
+  secretZoneAttemptKey,
+  type HiddenZoneId,
+  type SecretItemId,
+} from "@/lib/stackacres/secrets";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
+  adjustStackAcresSecretLedger,
+  readStackAcresSecretLedgerQty,
   adjustStackAcresCapacity,
   adjustStackAcresFeed,
   clearStackAcresMuck,
@@ -311,6 +327,16 @@ export interface StackAcresView {
   contract: StackAcresContractRow | null;
   /** Town Influence earned to date, total. */
   influence: number;
+  /** Hidden secrets: how many of each secret item this player currently
+   *  holds, and whether a Lucky Poker Dice crit boost is armed for their
+   *  very next harvest. A missing key in `held` means 0, same convention
+   *  `capacity` already uses for a stock kind nobody has bought a slot for. */
+  secrets: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
+  /** Whether this player has ever donated each secret item to Ray's Museum --
+   *  a small, separate registry from `museum` above (that one is total over
+   *  `StackAcresItem`, and a secret item is deliberately not a member of that
+   *  enum; see lib/stackacres/secrets.ts's own header). */
+  secretDonations: Record<SecretItemId, boolean>;
 }
 
 function parseUnitId(value: unknown): string {
@@ -324,15 +350,24 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
   return toStackAcresUnitSnapshots(await listStackAcresUnits(profileId), now);
 }
 
-/** Every donation flag for a player, overlaid onto a fresh registry so a
- *  legacy or partial row never leaves an item undefined. */
-async function museumView(profileId: string): Promise<MuseumRegistry> {
-  const donated = await readStackAcresMuseum(profileId);
+/** Every donation flag for a player, split into the two registries that ride
+ *  the same underlying `homestead_museum_donations` rows: `museum`, total
+ *  over `StackAcresItem`, and `secretDonations`, total over `SecretItemId` --
+ *  a secret item is deliberately not a member of the former enum, so one
+ *  donated id can only ever land in exactly one of the two. Both overlaid
+ *  onto a fresh registry so a legacy or partial row never leaves an item
+ *  undefined. */
+function splitMuseumDonations(
+  donated: readonly string[],
+): { museum: MuseumRegistry; secretDonations: Record<SecretItemId, boolean> } {
   const registry = { ...emptyMuseumRegistry() } as Record<string, boolean>;
   for (const itemId of donated) {
     if (itemId in registry) registry[itemId] = true;
   }
-  return registry as MuseumRegistry;
+  const secretDonations = Object.fromEntries(
+    SECRET_ITEM_IDS.map((itemId) => [itemId, donated.includes(itemId)]),
+  ) as Record<SecretItemId, boolean>;
+  return { museum: registry as MuseumRegistry, secretDonations };
 }
 
 /** The secret wing's own version of `museumView`, same overlay contract. */
@@ -369,7 +404,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     exchanged,
     cleared,
     upkeepPaid,
-    museum,
+    donated,
     museumSecrets,
     tool,
     wheatRows,
@@ -377,6 +412,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     inventory,
     contract,
     influence,
+    boostArmedQty,
+    heldQtys,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -384,7 +421,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresExchanged(profile.id, day),
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
-    museumView(profile.id),
+    readStackAcresMuseum(profile.id),
     museumSecretsView(profile.id),
     readStackAcresToolTier(profile.id),
     listStackAcresWheatPlots(profile.id),
@@ -392,7 +429,20 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresInventory(profile.id),
     readStackAcresOpenContract(profile.id),
     readStackAcresInfluence(profile.id),
+    readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY),
+    // One nested Promise.all rather than spreading SECRET_ITEM_IDS.map(...)
+    // into this array literal: a spread of a variable-length array would
+    // widen every sibling element's inferred type too, since Promise.all's
+    // tuple overload needs a fixed-length literal to keep each position's own
+    // type. Nesting keeps this array exactly 15 elements long.
+    Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
   ]);
+
+  const { museum, secretDonations } = splitMuseumDonations(donated);
+  const held: Partial<Record<SecretItemId, number>> = {};
+  SECRET_ITEM_IDS.forEach((itemId, index) => {
+    if (heldQtys[index] > 0) held[itemId] = heldQtys[index];
+  });
 
   const units = toStackAcresUnitSnapshots(rows, now);
   const sectors = unlockedSectors(cleared, units);
@@ -417,6 +467,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     inventory,
     contract: contract ? toContractView(contract) : null,
     influence,
+    secrets: { held, boostArmed: boostArmedQty >= 1 },
+    secretDonations,
   };
 }
 
@@ -446,6 +498,9 @@ async function refundGold(profileId: string, gold: number): Promise<void> {
  */
 export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
+  /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
+   *  action leaves this undefined. */
+  discovery?: unknown;
 };
 
 /**
@@ -459,6 +514,7 @@ export type StackAcresActionResult = StackAcresView & {
 function replayDelta(result: StackAcresActionResult): Record<string, unknown> | null {
   const delta: Record<string, unknown> = {};
   if (result.harvest !== undefined) delta.harvest = result.harvest;
+  if (result.discovery !== undefined) delta.discovery = result.discovery;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -1168,6 +1224,261 @@ export async function clearStackAcresUnit(
   return view(debited, now);
 }
 
+/* ------------------------------------------------------------------ */
+/* Hidden secrets: three small discovery spots, one collectible          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Taps one hidden zone, rolling that zone's own once-a-day chance to turn up
+ * a secret item.
+ *
+ * MOVES NO GOLD AT ALL, and needs no ceiling reservation -- this is a pure
+ * item-ledger mutation, riding this feature's own `homestead_secret_ledger`
+ * table (see lib/server/stackacres-store.ts's `adjustStackAcresSecretLedger`).
+ *
+ * The daily gate, not the odds, is the real throttle (see
+ * lib/stackacres/secrets.ts's own header on `discoveryChance`), and it is
+ * enforced the same way a version guard enforces "settle at most once"
+ * elsewhere in this file: the attempt is MARKED FIRST, before the roll, so a
+ * crash between marking and rolling can never be replayed into a second try
+ * at today's odds -- the worst a crash here costs the player is a wasted tap,
+ * never a free extra roll.
+ *
+ * Already-attempted-today is a NO-OP WITH THE CURRENT STATE, not a refusal --
+ * the same "a growing crop stays silent rather than erroring" posture the
+ * 2026-09-04 sound pass gave client-side refusals. The zone really was
+ * tapped; it simply has nothing more to give until tomorrow.
+ */
+export async function tapStackAcresSecretZone(
+  token: string,
+  zoneIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { discovery: SecretItemId | null }> {
+  if (!isHiddenZoneId(zoneIdInput)) {
+    throw new StackAcresRequestError("There is nothing to find there.", 400);
+  }
+  const zoneId: HiddenZoneId = zoneIdInput;
+  const zone = HIDDEN_ZONES.find((candidate) => candidate.id === zoneId);
+  if (!zone) throw new StackAcresRequestError("There is nothing to find there.", 400);
+  const profile = await ensureProfile(token);
+
+  const day = stackacresExchangeDay(now);
+  const attemptKey = secretZoneAttemptKey(zoneId, day);
+
+  const already = await readStackAcresSecretLedgerQty(profile.id, attemptKey);
+  if (already >= 1) {
+    return { ...(await view(profile, now)), discovery: null };
+  }
+
+  // Marks the attempt BEFORE rolling -- see the header above.
+  const marked = await adjustStackAcresSecretLedger(profile.id, attemptKey, 1);
+  if (marked === null) {
+    // Could not even record the attempt; refuse the roll rather than risk one
+    // that never gets marked and so could be replayed.
+    return { ...(await view(profile, now)), discovery: null };
+  }
+
+  const found = rollSecretDiscovery(zone, Math.random);
+  let discovery: SecretItemId | null = null;
+  if (found) {
+    const credited = await adjustStackAcresSecretLedger(profile.id, found, 1);
+    if (credited !== null) {
+      discovery = found;
+    } else {
+      console.error("stackacres.secret_discovery_credit_failed", {
+        profileId: profile.id,
+        zoneId,
+        item: found,
+      });
+    }
+  }
+
+  return { ...(await view(profile, now)), discovery };
+}
+
+/**
+ * Donates a held secret item to Ray's Museum, exactly once per item -- reuses
+ * `markStackAcresDonated`, the same idempotency-guarded flag a harvest's own
+ * first-time produce discovery already writes to (see the museum section
+ * above), directly rather than duplicating it. `lucky_poker_dice` is not a
+ * `StackAcresItem` and is never added to it (see lib/stackacres/museum.ts's
+ * total-over-the-enum invariant) -- `markStackAcresDonated` takes a bare
+ * string at the storage layer, so this rides it without touching that file.
+ *
+ * Rule 1's shape, applied to an item instead of Gold: the item leaves the
+ * ledger before the donation is recorded, and a failure recording it refunds
+ * the item.
+ */
+export async function donateStackAcresSecretItem(
+  token: string,
+  itemIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isSecretItemId(itemIdInput)) throw new StackAcresRequestError("Not a real secret.", 400);
+  const itemId: SecretItemId = itemIdInput;
+  const profile = await ensureProfile(token);
+
+  const held = await readStackAcresSecretLedgerQty(profile.id, itemId);
+  if (held < 1) {
+    throw new StackAcresRequestError(
+      `You have no ${SECRET_ITEM_CATALOGUE[itemId].label} to donate.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const remaining = await adjustStackAcresSecretLedger(profile.id, itemId, -1);
+  if (remaining === null) {
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  try {
+    // Whether this returns true (a genuine first donation) or false (already
+    // in the register) is not this function's concern -- either way the item
+    // is spent on the ritual. Only a THROW here means the donation did not
+    // actually land, which is what earns a refund.
+    await markStackAcresDonated(profile.id, itemId);
+  } catch (error) {
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    throw error;
+  }
+
+  return view(profile, now);
+}
+
+/**
+ * Consumes a held secret item to arm a one-shot crit-chance boost for the
+ * player's very next harvest -- see lib/stackacres/secrets.ts's
+ * `effectiveCritChance`, which `harvestStackAcres` reads this same ledger key
+ * through.
+ *
+ * REFUSED OUTRIGHT, with no mutation, if a boost is already armed:
+ * `effectiveCritChance` only ever reads a boolean "armed" state, not a count,
+ * so a second armed boost stacked on the first would be invisible -- a player
+ * must not be able to burn a second dice for nothing.
+ */
+export async function consumeStackAcresSecretItem(
+  token: string,
+  itemIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isSecretItemId(itemIdInput)) throw new StackAcresRequestError("Not a real secret.", 400);
+  const itemId: SecretItemId = itemIdInput;
+  const profile = await ensureProfile(token);
+
+  const alreadyArmed = await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY);
+  if (alreadyArmed >= 1) {
+    throw new StackAcresRequestError(
+      "You already have a lucky boost armed for your next harvest.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const held = await readStackAcresSecretLedgerQty(profile.id, itemId);
+  if (held < 1) {
+    throw new StackAcresRequestError(`You have no ${SECRET_ITEM_CATALOGUE[itemId].label} to use.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const remaining = await adjustStackAcresSecretLedger(profile.id, itemId, -1);
+  if (remaining === null) {
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let armed: number | null;
+  try {
+    armed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, 1);
+  } catch (error) {
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    throw error;
+  }
+  if (armed === null) {
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    throw new StackAcresRequestError("Could not arm that boost.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
+}
+
+/**
+ * Trades a held secret item to Grandfather Ray for an instant wipe of today's
+ * remaining Land Maintenance -- see lib/stackacres/secrets.ts's
+ * `nextUpkeepPaidAfterDiceTrade`, which raises today's paid-toward-upkeep
+ * total the exact same raise-to/clamped-at-the-fee way a harvest's own
+ * maintenance charge does.
+ *
+ * NEVER CALLS creditGoldByProfile: this only reshapes a target that
+ * `raiseStackAcresUpkeep` (already reserved against nothing -- it moves no
+ * Gold either, only reduces a future deduction) accepts or refuses. Refused
+ * up front, before the item is even spent, when there is nothing left to
+ * wipe today -- the same "check before the debit" shape every capacity/cap
+ * ceiling in this file already uses.
+ */
+export async function tradeStackAcresSecretItemToRay(
+  token: string,
+  itemIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isSecretItemId(itemIdInput)) throw new StackAcresRequestError("Not a real secret.", 400);
+  const itemId: SecretItemId = itemIdInput;
+  const profile = await ensureProfile(token);
+
+  const held = await readStackAcresSecretLedgerQty(profile.id, itemId);
+  if (held < 1) {
+    throw new StackAcresRequestError(`You have no ${SECRET_ITEM_CATALOGUE[itemId].label} to trade.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const day = stackacresExchangeDay(now);
+  const [land, capacity, upkeepPaid] = await Promise.all([
+    readLand(profile.id),
+    readStackAcresCapacity(profile.id),
+    readStackAcresUpkeep(profile.id, day),
+  ]);
+  const fee = upkeepState(unlockedPlotCount(land.sectors, capacity), upkeepPaid).fee;
+  const target = nextUpkeepPaidAfterDiceTrade(upkeepPaid, fee);
+  if (target <= upkeepPaid) {
+    throw new StackAcresRequestError("There is no Land Maintenance owed today to wipe.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const remaining = await adjustStackAcresSecretLedger(profile.id, itemId, -1);
+  if (remaining === null) {
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let raised: boolean;
+  try {
+    raised = await raiseStackAcresUpkeep(profile.id, day, target);
+  } catch (error) {
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    throw error;
+  }
+  if (!raised) {
+    // Another tab settled today's bill (or raised it further) between the
+    // read above and now -- the trade did not happen, so it must not be
+    // spent for.
+    await adjustStackAcresSecretLedger(profile.id, itemId, 1);
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
+}
+
 /**
  * Decides whether a settled unit needs maintenance. The only randomness in
  * the feature, deliberately reachable from exactly one call site, and only
@@ -1342,6 +1653,15 @@ export async function harvestStackAcres(
   // this decides is how much headroom to reserve, since a crit paid out of an
   // under-reservation would be silently clipped by step 4's cap.
   const tool = await readStackAcresToolTier(profile.id);
+  // A consumed Lucky Poker Dice (lib/stackacres/secrets.ts) arms a one-shot
+  // crit-CHANCE boost for the very next harvest -- it widens the odds, never
+  // the payout, so the reservation ceiling below (sized off critBonus alone)
+  // needs no change for it. This rides the harvest's existing single roll and
+  // reservation: no new Gold path, only a different probability fed into the
+  // one that already exists.
+  const diceBoostArmed =
+    (await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY)) >= 1;
+  const critChance = effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoostArmed);
   const critCeiling = critGoldFor(planned.net, tool);
 
   // Step 2. A sweep whose whole value is eaten by maintenance reserves
@@ -1421,8 +1741,24 @@ export async function harvestStackAcres(
 
   // Step 3b. The crit, rolled ONCE for the sweep and only now -- after the
   // guarded writes, beside the muck roll, for the identical reason: anything
-  // reachable from a read can be re-rolled by pulling to refresh.
-  const critical = rollHarvestCrit(tool, Math.random);
+  // reachable from a read can be re-rolled by pulling to refresh. Rolled at
+  // `critChance`, not the tool's own base chance, so an armed dice boost
+  // actually applies.
+  const critical = rollHarvestCrit(tool, Math.random, critChance);
+
+  if (diceBoostArmed) {
+    // Disarmed unconditionally, whether or not the roll above actually
+    // crit -- the boost is spent by being LIVE for this harvest, not
+    // refunded on a miss, the same "you paid for a chance, not a guarantee"
+    // rule every other crit-chance rung on the tool ladder already lives by.
+    // Best-effort: the sweep is already durable by this point in the
+    // function, and a failure here must not turn a settled, paid harvest
+    // into an error response.
+    const disarmed = await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1);
+    if (disarmed === null) {
+      console.error("stackacres.dice_boost_disarm_failed", { profileId: profile.id });
+    }
+  }
 
   // Step 4. Re-price against what actually settled. Capped at what was
   // reserved: removing a unit can in principle change which synergy applies,

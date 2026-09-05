@@ -80,9 +80,11 @@ rows in `homestead_processing_inventory` before debiting through the existing `a
 -- the brief asked for `adjust_homestead_inventory`, which is dead (superseded by the processing table
 in the 2026-09-04 Mill pass); verified live via `execute_sql` before writing the migration, not trusted
 from either name. `homestead_units_enforce_stock_shape` gained one new branch (crop-only, built,
-under-cap) rather than a second trigger. Migration `20260905130000_stackacres_greenhouse.sql`
-**unapplied** — see `[[reference_stackchips_migrations_not_auto_applied]]`; verified against the live
-schema, not merged. Scene wiring (`enterGreenhouse`/`exitGreenhouse` swap `camera.setBounds()` between
+under-cap) rather than a second trigger. Migration `20260905130000_stackacres_greenhouse.sql` APPLIED
+and verified (grants postgres/service_role only, clean advisor pass, build/cap/stock-kind rules
+exercised against the live DB in rolled-back transactions — including the mixed-kind case where the
+greenhouse's own 6-slot cap trips before either per-kind cap does). Scene wiring
+(`enterGreenhouse`/`exitGreenhouse` swap `camera.setBounds()` between
 the open world and the plot's own interior, mirroring `focusZone`) and a real `stackacres-greenhouse-panel.tsx`
 ship with it; the six-slot ground art itself is a Graphics volume in the palette's own "water" ramp, not
 a new baked painter — there is no supplied art for this structure yet.

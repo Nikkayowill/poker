@@ -71,6 +71,7 @@ import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
+import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -172,6 +173,12 @@ interface StackAcresResponse {
   machines?: (StackAcresMachineSnapshot & { canStart: boolean })[];
   inventory?: StackAcresInventory;
   contract?: StackAcresContractRow | null;
+  /** Standing earned to date, for the town board's own header. Optional on the
+   *  same terms as the four above. */
+  influence?: number;
+  /** Only on a settled `fulfill-contract`, and only the amounts -- the purse
+   *  itself comes back on `profile` like every other payer's does. */
+  contractReward?: { gold: number; influence: number };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -195,6 +202,10 @@ type Action =
   // has become startable or finished. Moves no Gold; the automated farmhand
   // is what asks for it (see `farmhandHooks`).
   | { action: "work" }
+  // Asks the town to post an order. Moves nothing either. `fulfill-contract`
+  // below is the one that pays, and it reserves against the same flat daily
+  // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
+  | { action: "request-contract" }
   | { action: "fulfill-contract" };
 
 /**
@@ -347,6 +358,12 @@ export function StackAcresFarm() {
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
   const [showMuseum, setShowMuseum] = useState(false);
+  const [showContracts, setShowContracts] = useState(false);
+  /** Standing earned to date. Its own state rather than a fifth field on
+   *  `processing`: nothing plans against it, it is a number the town board
+   *  displays, and adding it there would widen an object whose whole point is
+   *  that its four parts move together. */
+  const [influence, setInfluence] = useState(0);
   const [celebrate, setCelebrate] = useState<{ unitId: string; nonce: number } | null>(null);
   const [lastCollect, setLastCollect] = useState<{ text: string; nonce: number } | null>(null);
   // Gates a tap-to-play splash: nothing plays until the player has made a
@@ -540,6 +557,7 @@ export function StackAcresFarm() {
     if (data.museum) setMuseum(data.museum);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
+    if (typeof data.influence === "number") setInfluence(data.influence);
     // Through toStackAcresToolTier rather than a cast, for the same reason the
     // store reads it that way: an unknown rung must degrade to a playable one.
     if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
@@ -671,13 +689,29 @@ export function StackAcresFarm() {
     [applyResponse],
   );
 
+  /**
+   * Answers what became of one action, for the callers that have to undo
+   * something of their own when it did not land -- today that is the town
+   * board, whose optimistic debit has to go back on the shelf on any refusal
+   * (see TownContractsModal's `handleSettleContract`).
+   *
+   * `send` above returns the body and `act` returns the outcome, which is the
+   * difference between the two callers: the farmhand needs what changed, and
+   * the board needs to know whether to put the goods back.
+   *
+   * Every existing caller ignores it and is unaffected: they call `void
+   * act(...)` and let the response repaint the farm, which is still the only
+   * thing that makes a change real here.
+   */
   const act = useCallback(
-    async (body: Action) => {
+    async (body: Action): Promise<ContractActionResult> => {
       // A second press at something already being asked about is a duplicate,
       // not a second request. Dropped here rather than sent and deduplicated
       // server-side: the cheapest duplicate is the one that never leaves.
       const intent = intentOf(body);
-      if (inFlight.current.has(intent)) return;
+      if (inFlight.current.has(intent)) {
+        return { ok: false, message: "That is already on its way." };
+      }
       inFlight.current.add(intent);
       sending.current = true;
       setBusy(true);
@@ -706,17 +740,18 @@ export function StackAcresFarm() {
           answered = true;
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
-          if (mounted.current) setError(`Too many taps. Give it ${seconds}s.`);
-          return;
+          const tooFast = `Too many taps. Give it ${seconds}s.`;
+          if (mounted.current) setError(tooFast);
+          return { ok: false, message: tooFast };
         }
         if (response.status === 401) {
           answered = true;
           window.location.reload();
-          return;
+          return { ok: false, message: "Your pass expired. Reloading." };
         }
         const data = (await response.json()) as Partial<StackAcresResponse>;
         answered = true;
-        if (!mounted.current) return;
+        if (!mounted.current) return { ok: false, message: "Left the farm." };
         if (!response.ok) {
           // A dull knock on wood, never a buzzer: most refusals here are "you
           // cannot afford that yet", which is ordinary and frequent, and a
@@ -734,7 +769,7 @@ export function StackAcresFarm() {
           // go of the send lock, so the window shows the truth rather than
           // the amount this browser thought it could still send.
           if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
-          return;
+          return { ok: false, message: data.error ?? "That did not go through." };
         }
         applyResponse(data);
         // Where the finger that asked for this landed, if it was a tap on the
@@ -824,8 +859,21 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
+        // A delivered contract sounds and toasts like the other Gold payer
+        // does, so the two ways money arrives on this farm feel like the same
+        // event rather than two features.
+        if (body.action === "fulfill-contract" && data.contractReward) {
+          goldSound();
+          setLastCollect({
+            text: `Order filled · +${data.contractReward.gold.toLocaleString()} Gold`,
+            nonce: Date.now(),
+          });
+        }
+        return { ok: true, reward: data.contractReward };
       } catch {
-        if (mounted.current) setError("Could not reach the farm. Check your connection.");
+        const unreachable = "Could not reach the farm. Check your connection.";
+        if (mounted.current) setError(unreachable);
+        return { ok: false, message: unreachable };
       } finally {
         inFlight.current.delete(intent);
         if (answered) pendingKeys.current.delete(intent);
@@ -1168,6 +1216,22 @@ export function StackAcresFarm() {
     setClearing(zone);
   }, []);
 
+  /**
+   * The town board's two actions, handed down as promises rather than as
+   * fire-and-forget calls: the sheet debits its own shelf before either goes
+   * out and has to know whether to put it back. See `act`'s own doc for why
+   * it answers at all.
+   */
+  const onSettleContract = useCallback(
+    () => act({ action: "fulfill-contract" }),
+    [act],
+  );
+
+  const onRequestContract = useCallback(
+    () => act({ action: "request-contract" }),
+    [act],
+  );
+
   const onClearSector = useCallback(
     (sector: SectorId) => {
       buySound();
@@ -1412,6 +1476,8 @@ export function StackAcresFarm() {
             onTravel={travel}
             unlocked={sectors}
             onOpenStore={() => { panelSound(); setShowStore(true); }}
+            onOpenContracts={() => { panelSound(); setShowContracts(true); }}
+            contractPosted={processing.contract !== null}
             carrying={carrying}
           />
 
@@ -1845,6 +1911,17 @@ export function StackAcresFarm() {
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
       {showMuseum && (
         <StackAcresMuseum museum={museum} onClose={() => { panelSound(); setShowMuseum(false); }} />
+      )}
+      {showContracts && (
+        <TownContractsModal
+          inventory={processing.inventory}
+          contract={processing.contract}
+          influence={influence}
+          busy={busy}
+          onSettle={onSettleContract}
+          onRequest={onRequestContract}
+          onClose={() => { panelSound(); setShowContracts(false); }}
+        />
       )}
     </main>
   );

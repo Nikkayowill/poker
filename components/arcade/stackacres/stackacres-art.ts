@@ -134,7 +134,9 @@ type CorePainterName =
   | "ico-fleece"
   | "ico-milk"
   | "ico-carrot"
-  | "ico-corn";
+  | "ico-corn"
+  | "ico-wheat"
+  | "ico-flour";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -1010,6 +1012,57 @@ const DRAWN: Record<PainterName, Painter> = {
     c.translate(6, 1);
     corn2(c);
     c.restore();
+  }),
+
+  // The processing track's two items. Named by MACHINE_ITEM_CATALOGUE in
+  // lib/stackacres/machine-items.ts since it was written; these are the
+  // painters that finally make that name resolve. Not spriteBacked and not
+  // shared with a field crop, because wheat is deliberately not a
+  // StackAcresStock -- it grows on its own row (lib/stackacres/wheat-plot.ts)
+  // and has no ripe world sprite of its own to reuse the way carrot and corn
+  // do.
+  "ico-wheat": painter(24, 24, (c) => {
+    c.beginPath();
+    c.moveTo(12, 22);
+    c.lineTo(12, 7);
+    stroke(c, "#b8862f", 1.6);
+    // Grains up both sides of the stalk, tightening toward the tip so the
+    // head reads as an ear rather than a ladder.
+    for (let k = 0; k < 5; k += 1) {
+      const y = 17 - k * 2.5;
+      const spread = 3.4 - k * 0.45;
+      for (const side of [-1, 1] as const) {
+        ell(c, 12 + side * spread, y, 2.1, 1.2, side * 0.75);
+        F(c, lin(c, 8, 4, 16, 20, [[0, "#f2c94c"], [1, "#d9a83a"]]));
+      }
+    }
+    ell(c, 12, 5.5, 1.5, 2.4);
+    F(c, "#f2c94c");
+  }),
+
+  "ico-flour": painter(24, 24, (c) => {
+    // A tied sack, the shape a Mill's output is stored and carried in.
+    c.beginPath();
+    c.moveTo(6.5, 21);
+    c.quadraticCurveTo(5.2, 11, 9, 8);
+    c.lineTo(15, 8);
+    c.quadraticCurveTo(18.8, 11, 17.5, 21);
+    c.closePath();
+    F(c, lin(c, 5, 8, 19, 21, [[0, "#fdf6e6"], [1, "#ddcda9"]]));
+    // The rim, not a black outline -- but a real rim: the first pass used a
+    // tone barely off the sack's own, which vanished against the cream sheet
+    // this icon is actually drawn on.
+    stroke(c, "#9c8557", 1.6);
+    // The gathered neck, above the tie.
+    rr(c, 9, 4.5, 6, 4, 1.4);
+    F(c, "#efe4c9");
+    rr(c, 8.4, 7.4, 7.2, 1.8, 0.9);
+    F(c, "#b8862f");
+    // A dusting of what is inside, so it is flour and not a bag of anything.
+    for (const [x, y, r] of [[10, 15, 1.5], [13.5, 17, 1.2], [12, 12.5, 1]] as const) {
+      ell(c, x, y, r, r * 0.75);
+      F(c, "rgba(255,255,255,.75)");
+    }
   }),
 };
 

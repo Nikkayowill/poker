@@ -14,7 +14,13 @@
  *   2. **The synergy multiplies the gross**, not the net. A bonus is a reward
  *      for how the sweep was composed; letting upkeep land first would make
  *      the same three cattle worth different bonuses on different days.
- *   3. **Upkeep comes out last**, clamped at what the harvest is worth, so a
+ *   3. **The Prestige Reset Valve's permanent multiplier rides alongside the
+ *      synergy**, applied to the ALREADY-synergized amount, still before
+ *      upkeep. See lib/stackacres/prestige.ts's own header for why this
+ *      ordering is load-bearing rather than cosmetic: applying it after
+ *      upkeep would let a permanent, ever-growing account-wide multiplier
+ *      bypass the one sink every other Gold path here is subject to.
+ *   4. **Upkeep comes out last**, clamped at what the harvest is worth, so a
  *      collection is never negative. See ./upkeep.ts for why it is netted out
  *      rather than debited.
  *
@@ -25,11 +31,20 @@
  * the price of produce at the moment it is sold and there was never an
  * agreement about it. That split is exactly what the three-step loop did
  * before this, and it is preserved rather than reinvented.
+ *
+ * `lines`/`gross` are DELIBERATELY left unmultiplied by either the synergy or
+ * the prestige multiplier -- see the doc comment on `HarvestLine.gold` --
+ * because `homestead_harvests.payout` is written from exactly those numbers,
+ * and lib/stackacres/prestige.ts's own eligibility math reads that ledger
+ * back as the input to ITS multiplier. Multiplying the ledger by the
+ * multiplier that ledger feeds would compound the prestige curve against
+ * itself instead of measuring genuine farm activity.
  */
 
 import { STACKACRES_YIELDS, itemGoldValue, type StackAcresItem } from "./items";
 import { applyBountifulHarvest, bountifulHarvest, type BountifulHarvest } from "./bounty";
 import { stackacresUpkeepCharge } from "./upkeep";
+import { STACKACRES_PRESTIGE_BASE_MULTIPLIER } from "./prestige";
 import type { StackAcresStock } from "./catalogue";
 
 /** A ready unit, as much of it as pricing needs. */
@@ -58,6 +73,10 @@ export interface HarvestSettlement {
   bounty: BountifulHarvest;
   /** Gold the synergy added. Zero when none applied. */
   bonus: number;
+  /** The prestige multiplier this sweep was priced under. 1 for a profile that has never reset. */
+  prestigeMultiplier: number;
+  /** Gold the Prestige Reset Valve's multiplier added, on top of the synergy. Zero at the base multiplier. */
+  prestigeBonus: number;
   /** Land Maintenance actually taken, never more than the harvest is worth. */
   upkeepCharged: number;
   /** What the player is paid, before the flat daily allowance is applied. */
@@ -70,10 +89,19 @@ export interface HarvestSettlement {
  * `upkeepDue` is what today still owes -- computed by the caller from the
  * estate's size and what previous harvests today already paid, so that this
  * function stays free of a clock and of the store.
+ *
+ * `prestigeMultiplier` is the caller's own already-loaded value (see
+ * `getPrestigeMultiplier` in lib/server/stackacres-service.ts) -- this
+ * function stays synchronous and free of the store for the same reason
+ * `upkeepDue` is a parameter rather than a profile id: it is what keeps the
+ * arithmetic testable without a database. Defaults to
+ * STACKACRES_PRESTIGE_BASE_MULTIPLIER (1), i.e. no effect, for every existing
+ * call site and test that predates the valve.
  */
 export function settleHarvest(
   units: readonly HarvestCandidate[],
   upkeepDue = 0,
+  prestigeMultiplier: number = STACKACRES_PRESTIGE_BASE_MULTIPLIER,
 ): HarvestSettlement {
   const lines: HarvestLine[] = units.map((unit) => {
     const item = STACKACRES_YIELDS[unit.stock].item;
@@ -89,15 +117,25 @@ export function settleHarvest(
   const gross = lines.reduce((total, line) => total + line.gold, 0);
   const bounty = bountifulHarvest(units.map((unit) => unit.stock));
   const bonused = applyBountifulHarvest(gross, bounty);
-  const upkeepCharged = stackacresUpkeepCharge(bonused, upkeepDue);
+  // FLOORED, same posture applyBountifulHarvest already takes: a multiplier
+  // may not invent a Gold piece out of a rounding rule. Guarded at the base
+  // multiplier rather than trusting the caller: a multiplier below 1 would
+  // be a nerf wearing a reward's name, and settleHarvest has no way to know
+  // whether a caller passed a corrupt read, so it refuses to ever pay out
+  // less than the unboosted amount.
+  const effectiveMultiplier = Math.max(STACKACRES_PRESTIGE_BASE_MULTIPLIER, prestigeMultiplier);
+  const boosted = Math.floor(bonused * effectiveMultiplier);
+  const upkeepCharged = stackacresUpkeepCharge(boosted, upkeepDue);
 
   return {
     lines,
     gross,
     bounty,
     bonus: bonused - gross,
+    prestigeMultiplier: effectiveMultiplier,
+    prestigeBonus: boosted - bonused,
     upkeepCharged,
-    net: bonused - upkeepCharged,
+    net: boosted - upkeepCharged,
   };
 }
 

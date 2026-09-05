@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { harvestTally, settleHarvest, type HarvestCandidate } from "./harvest";
 import { STACKACRES_YIELDS, itemGoldValue, yieldValue } from "./items";
 import { stackacresUpkeepFee } from "./upkeep";
+import { STACKACRES_PRESTIGE_BASE_MULTIPLIER } from "./prestige";
 import type { StackAcresStock } from "./catalogue";
 
 let seq = 0;
@@ -116,6 +117,59 @@ describe("settleHarvest", () => {
     expect(settleHarvest(full).bounty.kind).toBeNull();
     expect(settleHarvest(withoutCarrot).bounty.kind).toBe("mono_crop");
     expect(settleHarvest(withoutCarrot).net).toBeGreaterThan(settleHarvest(full).net);
+  });
+});
+
+/**
+ * The Prestige Reset Valve's permanent multiplier. Applied alongside the
+ * synergy, before upkeep -- see harvest.ts's own header for why that
+ * ordering, not any other, is the one that keeps the daily ceiling and the
+ * upkeep sink meaningful for a boosted profile too.
+ */
+describe("settleHarvest with a prestige multiplier", () => {
+  it("defaults to the base multiplier (no effect) when none is passed, matching every pre-valve call site", () => {
+    const sweep = [unit("cattle")];
+    expect(settleHarvest(sweep).prestigeMultiplier).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
+    expect(settleHarvest(sweep).prestigeBonus).toBe(0);
+    expect(settleHarvest(sweep, 0, STACKACRES_PRESTIGE_BASE_MULTIPLIER)).toEqual(settleHarvest(sweep));
+  });
+
+  it("multiplies the already-synergized gross, not the raw gross", () => {
+    const sweep = [unit("hen"), unit("hen"), unit("hen")]; // mono-crop, 1.05x
+    const base = settleHarvest(sweep); // upkeepDue 0, so base.net === floor(gross * 1.05)
+    const boosted = settleHarvest(sweep, 0, 2);
+    expect(boosted.gross).toBe(base.gross);
+    expect(boosted.net).toBe(Math.floor(base.net * 2));
+    expect(boosted.prestigeBonus).toBe(Math.floor(base.net * 2) - base.net);
+  });
+
+  it("still lets Land Maintenance net out of the boosted amount, never bypassing the sink", () => {
+    const sweep = [unit("cattle"), unit("cattle"), unit("cattle")];
+    const bonused = settleHarvest(sweep).net; // upkeepDue 0, so net === the synergized amount
+    const boosted = settleHarvest(sweep, 500, 2);
+    expect(boosted.upkeepCharged).toBe(500);
+    expect(boosted.net).toBe(Math.floor(bonused * 2) - 500);
+  });
+
+  it("never records the multiplier onto the per-line ledger gross, so the prestige feed cannot compound itself", () => {
+    const sweep = [unit("cattle")];
+    const boosted = settleHarvest(sweep, 0, 3);
+    expect(boosted.gross).toBe(yieldValue("cattle"));
+    expect(boosted.lines[0].gold).toBe(yieldValue("cattle"));
+  });
+
+  it("refuses to ever pay out less than the unboosted amount, even given a corrupt sub-1 multiplier", () => {
+    const sweep = [unit("cattle")];
+    const base = settleHarvest(sweep);
+    const corrupted = settleHarvest(sweep, 0, 0.1);
+    expect(corrupted.net).toBe(base.net);
+    expect(corrupted.prestigeMultiplier).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
+  });
+
+  it("floors the boosted amount rather than inventing a fractional Gold piece", () => {
+    const sweep = [unit("sprout")];
+    const boosted = settleHarvest(sweep, 0, 1.3333);
+    expect(Number.isInteger(boosted.net)).toBe(true);
   });
 });
 

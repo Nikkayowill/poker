@@ -96,6 +96,7 @@ import {
   cropArtFor,
   cropFootprintHalf,
   cropGroundOffset,
+  cropShadowScale,
   cropSpriteAlpha,
   cropSpriteScale,
 } from "@/lib/stackacres/crop-visuals";
@@ -1737,6 +1738,18 @@ export class StackAcresScene extends Phaser.Scene {
       const stage = growthStage(unit.progress, unit.state === "ready");
       // Non-null for every non-livestock kind, which is the branch we are in.
       const crop = cropArtFor(unit.stock) ?? "carrot";
+      const grown = cropSpriteScale(stage);
+      // Grounding shadow, added before the plant so it paints underneath --
+      // same order the isLivestock branch above uses for its own `shadow`.
+      // Both anchor (0.5, 0.5) at this same local (0, 0), the crop sprite's
+      // own (0.5, 1) anchor, so the pool sits centred exactly on the plant's
+      // base rather than floating above or sinking below it. Scaled by
+      // `cropShadowScale`, not fixed like a livestock shadow, because a crop
+      // swings 1.6x-4x across its three frames and one fixed size would
+      // misfit two of them.
+      this.addLocal("cropShadow", 0, 0, container)
+        .setScale(cropShadowScale(stage) / S)
+        .setAlpha(0.8);
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
       // Crops -- and only crops -- are drawn well off the world's own scale,
       // so a ripe row is findable on a phone. `addLocal` has already set the
@@ -1744,7 +1757,6 @@ export class StackAcresScene extends Phaser.Scene {
       // down by however much scaling lifted its feet off the soil. Both
       // numbers come from lib/stackacres/crop-visuals.ts, which is where the
       // reasoning and the tests for them live.
-      const grown = cropSpriteScale(stage);
       sprite.setScale(grown / S);
       sprite.y += cropGroundOffset(crop, stage);
       // Dry soil reads as a faded plant. The ring says it too, but a ring is

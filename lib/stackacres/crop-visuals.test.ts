@@ -6,6 +6,7 @@ import {
   cropArtFor,
   cropFootprintHalf,
   cropGroundOffset,
+  cropShadowScale,
   cropSpriteAlpha,
   cropSpriteScale,
   type CropStage,
@@ -103,6 +104,27 @@ describe("cropSpriteAlpha", () => {
     expect(cropSpriteAlpha(false)).toBe(0.55);
     expect(cropSpriteAlpha(false)).toBe(CROP_DRY_ALPHA);
     expect(cropSpriteAlpha(true)).toBe(1);
+  });
+});
+
+describe("cropShadowScale", () => {
+  it("tracks the footprint, not a second hand-tuned ladder", () => {
+    for (const stage of STAGES) {
+      expect(cropShadowScale(stage)).toBeCloseTo((0.8 * cropFootprintHalf(stage) * 2) / 16);
+    }
+  });
+
+  it("grows monotonically with the plant, same as the footprint it tracks", () => {
+    expect(cropShadowScale(0)).toBeLessThanOrEqual(cropShadowScale(1));
+    expect(cropShadowScale(1)).toBeLessThanOrEqual(cropShadowScale(2));
+  });
+
+  it("stays smaller than the plant's own footprint diamond -- a pool under the canopy, not level with it", () => {
+    for (const stage of STAGES) {
+      // cropShadowScale is a Phaser scale factor against a 16-wide painter;
+      // its rendered diameter must stay under the footprint's own diamond.
+      expect(cropShadowScale(stage) * 16).toBeLessThan(cropFootprintHalf(stage) * 2);
+    }
   });
 });
 

@@ -29,6 +29,7 @@ export type PropPainterName =
   | "wheelbarrow"
   | "crate"
   | "logPile"
+  | "toolBarrel"
   | "mailbox"
   | "signpost"
   | "lampPost"
@@ -373,6 +374,50 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     log(24, 11.2, 4.6);
     log(10.5, 4.8, 4.4);
     log(19.5, 4.8, 4.4);
+  }),
+
+  // An empty tool barrel: two iron hoops round a stave wall, its mouth a
+  // plain dark ellipse with nothing poking out of it -- a still-life shape
+  // for "there is nothing in here", not a portrait of tools that aren't
+  // drawn. Farmstead clutter (lib/stackacres/props.ts's `farmsteadClutter`),
+  // not part of the hand-placed yard cluster.
+  toolBarrel: painter(18, 20, (c) => {
+    const body = () => rr(c, 1.5, 4, 15, 15, 4);
+    body();
+    F(c, RAMPS.wood.top);
+    body();
+    c.save();
+    c.clip();
+    // The two hoops, dark iron bands top and bottom of the visible wall.
+    for (const y of [6.4, 15.2]) {
+      c.fillStyle = "rgba(45,40,35,.55)";
+      c.fillRect(1.5, y, 15, 2.1);
+    }
+    // Faint vertical staves.
+    for (let x = 3.4; x < 17; x += 3.2) {
+      c.beginPath();
+      c.moveTo(x, 4);
+      c.lineTo(x, 19);
+      stroke(c, "rgba(90,55,20,.22)", 0.5, "butt");
+    }
+    // One sun, upper-left: a bright strip fading through the middle into
+    // shade on the right.
+    c.fillStyle = lin(c, 1.5, 0, 16.5, 0, [
+      [0, "rgba(255,235,200,.28)"],
+      [0.5, "rgba(255,235,200,0)"],
+      [1, "rgba(40,20,5,.28)"],
+    ]);
+    c.fillRect(1.5, 4, 15, 15);
+    c.restore();
+    body();
+    stroke(c, "rgba(70,40,15,.45)", 0.6);
+    // The open, empty mouth, rimmed by the top hoop.
+    ell(c, 9, 4.2, 7.4, 2.6);
+    F(c, "#241a12");
+    ell(c, 9, 4.2, 7.4, 2.6);
+    stroke(c, "rgba(45,40,35,.6)", 1);
+    ell(c, 6.6, 3.4, 1.8, 0.7, -0.5);
+    F(c, "rgba(255,255,255,.18)");
   }),
 
   // A domed box on a post, seen side-on, its flag up.

@@ -19,8 +19,8 @@ import {
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
 import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
-import { FARM_PATHS } from "@/lib/stackacres/paths";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
+import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { scytheReachFor, type StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
@@ -842,6 +842,11 @@ export class StackAcresScene extends Phaser.Scene {
   /** The windmill's sails, turned in update(); still under reduced motion. */
   private blades: Phaser.GameObjects.Image | null = null;
 
+  /** The Farmstead's ambient clutter (wells, log piles, tool barrels; see
+   *  `paintFarmsteadClutter`), grouped so the whole decorative layer can be
+   *  found or torn down as one unit. Set once, in `create`. */
+  private farmsteadClutterGroup: Phaser.GameObjects.Group | null = null;
+
   /** The held tool's own picture, floating over a finger that is mid-mow --
    *  the scythe is the only tool left with a canvas gesture of its own.
    *  Kept the name `toolGhost` (not `mowGhost`): it once also floated over a
@@ -927,6 +932,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintPond();
     this.paintBarn();
     this.paintProps();
+    this.paintFarmsteadClutter();
     this.spawnHerds();
     this.spawnFarmhandNode();
     // Each district's own layer, which is either its farm (ground, fence,
@@ -1216,10 +1222,14 @@ export class StackAcresScene extends Phaser.Scene {
 
   /**
    * The dirt paths, as ground art just above the grass: lane, road, track,
-   * in that order. Phaser's depth sort is stable, so three images at one
-   * depth draw in creation order, and each path after the first repaints
-   * the junction it shares with an earlier one (see bakePathTexture), which
-   * only works if the earlier one is underneath.
+   * in that order, then whatever `generatePathwaysBetweenNodes` grew on top
+   * of them (`ALL_FARM_PATHS`, not `FARM_PATHS` alone -- see paths.ts).
+   * Phaser's depth sort is stable, so images at one depth draw in creation
+   * order, and each path after the first repaints the junction it shares
+   * with an earlier one (see bakePathTexture), which only works if the
+   * earlier one is underneath -- true for a generated spur exactly as it is
+   * for a hand-authored path, since `generatePathwaysBetweenNodes` always
+   * appends to the array a spur forks off of.
    */
   // The baked texture is drawn directly in projected (sheared) space now --
   // see bakePathTexture's own header -- so `bake.x`/`bake.y` are already
@@ -1227,8 +1237,8 @@ export class StackAcresScene extends Phaser.Scene {
   // in. No isoProject call here: doing that would project an already-
   // projected point a second time.
   private paintPaths(): void {
-    FARM_PATHS.forEach((spec, i) => {
-      const bake = bakePathTexture(this, spec, FARM_PATHS.slice(0, i));
+    ALL_FARM_PATHS.forEach((spec, i) => {
+      const bake = bakePathTexture(this, spec, ALL_FARM_PATHS.slice(0, i));
       if (!bake) return;
       this.add
         .image(bake.x, bake.y, bake.key, ART_FRAME)
@@ -1547,6 +1557,37 @@ export class StackAcresScene extends Phaser.Scene {
       }
       this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
     }
+  }
+
+  /**
+   * Ambient dressing for the dead grass `farmsteadClutter` (lib/stackacres/
+   * props.ts) found between the yard and the Hen Coop/wheat field: a well,
+   * a log pile, an empty tool barrel, each on the identical soft ground
+   * shadow `paintProps` gives every hand-placed prop.
+   *
+   * Collected into one Phaser `Group` -- a plain management collection, not
+   * `physics.add.staticGroup()`, since nothing in this scene runs Arcade
+   * Physics for a static body to buy broadphase collision against. What the
+   * group actually buys: the whole decorative layer can be found, counted
+   * or torn down as one unit without walking every other image the scene
+   * owns. It changes nothing about draw order -- each item still gets its
+   * own `depthAt` call below, the same call every other seated object in
+   * this scene makes, which is what lets a clutter item sort correctly
+   * against the farmhand (or anything else with feet) walking past it.
+   * Group membership plays no part in that sort; Phaser orders its whole
+   * display list by depth regardless of which group a child also belongs to.
+   */
+  private paintFarmsteadClutter(): void {
+    const group = this.add.group();
+    for (const prop of farmsteadClutter()) {
+      const pool = PROP_SHADOW[prop.kind];
+      const shadow = this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
+        .setScale(pool.w / 33 / S, pool.h / 13 / S)
+        .setAlpha(0.8);
+      const sprite = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+      group.addMultiple([shadow, sprite]);
+    }
+    this.farmsteadClutterGroup = group;
   }
 
   /**

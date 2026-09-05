@@ -151,16 +151,25 @@ export interface WalkStep<W extends Walker> {
  * been through `frameSeconds` already; passing a raw millisecond delta here
  * is the one way to misuse this, and it shows up immediately as a walker who
  * finishes every trip on his first frame.
+ *
+ * `speedMultiplier` defaults to 1 (every existing caller before the Frenzy
+ * Heat Combo Engine gets exactly the speed it always did) and is expected to
+ * come from `FrenzyTierDef.speedMultiplier` (lib/stackacres/frenzy.ts) when
+ * it is not 1 -- a short-lived, real-time-only nudge, never a stored or
+ * server-known value. It scales the STRIDE only, not `ARRIVE_WITHIN`: a
+ * faster errand runner still snaps to a target from the same distance he
+ * always did, he simply covers more ground to get there each frame.
  */
 export function advanceTowards<W extends Walker>(
   walker: W,
   target: WorldPoint,
   dt: number,
+  speedMultiplier = 1,
 ): WalkStep<W> {
   const dx = target.x - walker.x;
   const dy = target.y - walker.y;
   const distance = Math.hypot(dx, dy);
-  const stride = FARMHAND_SPEED * dt;
+  const stride = FARMHAND_SPEED * dt * speedMultiplier;
   const facing = aim(walker, dx, dy);
 
   if (distance <= Math.max(stride, ARRIVE_WITHIN)) {

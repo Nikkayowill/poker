@@ -73,6 +73,8 @@ export class WeatherOverlayManager {
   private dust: SolarDustMote[] = [];
   private rainSprites: Phaser.GameObjects.Image[] = [];
   private rain: RainStreak[] = [];
+  /** See `setSuppressed`. */
+  private suppressed = false;
 
   constructor(scene: Phaser.Scene, random: () => number = Math.random) {
     this.scene = scene;
@@ -114,10 +116,35 @@ export class WeatherOverlayManager {
     }
   }
 
+  /**
+   * Ambient-weather isolation for a place that ignores it (see
+   * lib/stackacres/greenhouse.ts's `EnvironmentModifier.ignoresAmbientWeather`
+   * -- the Greenhouse today, and this manager's real, wired half of that
+   * invariant). Freezes the weather clock -- nothing outdoors should keep
+   * shifting while the player cannot see it, so the state is exactly as they
+   * left it on stepping back out -- and hides every layer immediately rather
+   * than merely skipping `update()` and leaving whatever was last drawn
+   * frozen on screen: a rain streak paused mid-fall over an indoor scene
+   * would read as a bug, not as "the glass keeps the weather out".
+   *
+   * Idempotent -- a caller may call this every frame with the same value
+   * (see stackacres-scene.ts's own `update()`) at no cost beyond the guard.
+   */
+  setSuppressed(suppressed: boolean): void {
+    if (this.suppressed === suppressed) return;
+    this.suppressed = suppressed;
+    if (!suppressed) return;
+    this.tintOverlay?.setAlpha(0);
+    for (const sprite of this.dustSprites) sprite.setVisible(false);
+    for (const sprite of this.rainSprites) sprite.setVisible(false);
+  }
+
   /** One frame. Advances the weather clock, cross-fades the tint, and steps
    *  both particle fields -- in that order, so a shift this frame is what
-   *  the particle fields render against. */
+   *  the particle fields render against. A no-op entirely while
+   *  `setSuppressed(true)` is in effect -- see that method's own header. */
   update(time: number, delta: number): void {
+    if (this.suppressed) return;
     const before = this.state.active;
     this.state = stepWeather(this.state, delta, this.random);
     if (this.state.active !== before) {

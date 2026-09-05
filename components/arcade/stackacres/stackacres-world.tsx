@@ -71,6 +71,14 @@ export interface StackAcresWorldApi {
    *  silently outside the Farmstead, and can never delay or cancel a write.
    *  See lib/stackacres/farmhand.ts. */
   sendFarmhand: (unitId: string) => void;
+  /** Steps the camera inside the Greenhouse (lib/stackacres/greenhouse.ts),
+   *  narrowing its bounds to the interior -- the shell's own cue, once it
+   *  has decided the Greenhouse is built (an unbuilt one opens a build panel
+   *  instead; see `onGreenhouseTap`). */
+  enterGreenhouse: () => void;
+  /** Steps back out to the open world. Also what a tap outside the
+   *  sub-grid's own six slots does on its own, from inside the scene. */
+  exitGreenhouse: () => void;
   /** A tap that became a real action, never a refused one: registers one hit
    *  with the Frenzy Heat Combo Engine and throws its cosmetic feedback at
    *  the unit's own live position. `baseYieldGold` is a DISPLAY ESTIMATE,
@@ -111,6 +119,14 @@ export interface StackAcresWorldProps {
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
+   *  the shell's cue to decide whether to open a build panel or call
+   *  `enterGreenhouse` (see the api handle above). */
+  onGreenhouseTap: () => void;
+  /** A finger landed on one of the Greenhouse's own six slots, and ONLY while
+   *  the scene is stepped inside it (`enterGreenhouse`). Row 0 is nearest the
+   *  door -- see lib/stackacres/greenhouse.ts's `greenhouseSlotLocal`. */
+  onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
   /** A finger landed on the Midnight Merchant, while he is actually
    *  standing on the lot (see `setMerchant` on the imperative handle). */
   onMerchantTap: () => void;
@@ -166,6 +182,8 @@ export function StackAcresWorld({
   onUnitTap,
   onGroundTap,
   onBarnTap,
+  onGreenhouseTap,
+  onGreenhouseSlotTap,
   onMerchantTap,
   onSecretZoneTap,
   sectors,
@@ -189,6 +207,8 @@ export function StackAcresWorld({
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
+  const greenhouseTapRef = useRef(onGreenhouseTap);
+  const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
@@ -211,6 +231,8 @@ export function StackAcresWorld({
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
+    greenhouseTapRef.current = onGreenhouseTap;
+    greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
     secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
@@ -254,6 +276,8 @@ export function StackAcresWorld({
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at) => groundTapRef.current(zone, at),
           onBarnTap: () => barnTapRef.current(),
+          onGreenhouseTap: () => greenhouseTapRef.current(),
+          onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
@@ -362,6 +386,8 @@ export function StackAcresWorld({
       celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
       registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
+      enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
+      exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
       setMerchant: (present) => sceneRef.current?.setMerchant(present),

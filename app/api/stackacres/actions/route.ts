@@ -9,6 +9,7 @@ import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import {
+  buildStackAcresGreenhouse,
   buyFromMidnightMerchant,
   buyStackAcresFeed,
   buyStackAcresStock,
@@ -70,8 +71,10 @@ export const runtime = "nodejs";
  * payout at all -- Gold only ever leaves the caller here, through the same
  * `spend_gold_by_profile` every other spend in this list already uses.
  *
- * `work`, `divert`, `process` and `request-contract` move no Gold at all --
- * inventory only. `divert` is worth reading twice: it takes a ready animal's
+ * `work`, `divert`, `process`, `request-contract` and `build-greenhouse` move
+ * no Gold at all -- inventory only (`build-greenhouse` spends processing-track
+ * Flour/Cloth; see buildStackAcresGreenhouse's own header). `divert` is worth
+ * reading twice: it takes a ready animal's
  * produce into the processing inventory INSTEAD of paying for it, through the
  * same version-guarded write `collect` uses, so it reduces what the farm pays
  * out today rather than adding to it. So do the four hidden-secrets actions
@@ -130,7 +133,14 @@ const bodySchema = z.discriminatedUnion("action", [
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
-  z.object({ action: z.literal("stock"), stock: stockSchema }),
+  // Builds the Greenhouse once, spending processing-track goods, not Gold --
+  // see buildStackAcresGreenhouse's own header.
+  z.object({ action: z.literal("build-greenhouse") }),
+  // `inGreenhouse` is optional and defaults to the ordinary open-air path;
+  // sending it true only ever narrows what is accepted (crops only, the
+  // Greenhouse must already stand, a free slot must exist) -- it can never
+  // let a request skip a check the plain `stock` action already enforces.
+  z.object({ action: z.literal("stock"), stock: stockSchema, inGreenhouse: z.boolean().optional() }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
   // No `unitIds` at all means "bring in everything that is ready", which is
@@ -260,8 +270,10 @@ function run(token: string, action: StackAcresAction) {
       return clearStackAcresSector(token, action.sector);
     case "upgrade-tool":
       return upgradeStackAcresTool(token);
+    case "build-greenhouse":
+      return buildStackAcresGreenhouse(token);
     case "stock":
-      return stockStackAcres(token, { stock: action.stock });
+      return stockStackAcres(token, { stock: action.stock, inGreenhouse: action.inGreenhouse });
     case "buy-stock":
       return buyStackAcresStock(token, { stock: action.stock });
     case "retire":

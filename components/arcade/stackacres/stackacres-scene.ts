@@ -19,6 +19,14 @@ import {
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
 import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
+import {
+  GREENHOUSE_PLOT,
+  GREENHOUSE_TILE,
+  greenhouseHitAt,
+  greenhouseInteriorScreenBounds,
+  greenhouseSlotAt,
+  greenhouseSlotLayouts,
+} from "@/lib/stackacres/greenhouse";
 import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -275,6 +283,25 @@ export interface StackAcresSceneCallbacks {
    * nothing has learned that the wood is scenery, and will not tap it again.
    */
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
+  /**
+   * A tap that landed on the Greenhouse's own footprint while the camera is
+   * OUTSIDE it -- the cue to step in. Checked after the barn (both are
+   * structures; ordering between the two never matters since their
+   * footprints do not overlap) and before the hidden-secret-zone/locked-
+   * sector/ground fallbacks, the same "structures win over ground" ordering
+   * `onBarnTap` documents. The scene does not step itself in -- see
+   * `enterGreenhouse` -- this is only the shell's cue to call it once it has
+   * decided whether the Greenhouse is even built yet (an unbuilt one opens a
+   * build panel instead of the interior).
+   */
+  onGreenhouseTap: () => void;
+  /**
+   * A tap that landed on one of the Greenhouse's own six slots, but ONLY
+   * while `enterGreenhouse` has the camera bounded to its interior -- see
+   * that method. Row 0 is the row nearest the door, matching
+   * lib/stackacres/greenhouse.ts's own `greenhouseSlotLocal` convention.
+   */
+  onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
   /**
    * The view moved under whatever the shell has pinned to it. A menu dropped
    * at a finger is anchored to the screen, not to the world, so it has to go
@@ -829,6 +856,16 @@ export class StackAcresScene extends Phaser.Scene {
   private barnGlowTween: Phaser.Tweens.Tween | null = null;
 
   /**
+   * True while the camera is bounded to the Greenhouse's own interior (see
+   * `enterGreenhouse`/`exitGreenhouse`) rather than the open world. Read by
+   * the tap dispatcher to route a ground tap to a slot instead of to
+   * `onGreenhouseTap`, and by `update()`'s edge-guide framing, which has to
+   * measure against whichever bounds are live right now rather than always
+   * the open world's.
+   */
+  private steppedInGreenhouse = false;
+
+  /**
    * What he does when nobody has tapped anything: work the wheat field on his
    * own. See lib/stackacres/farmhand-machine.ts -- this is a SECOND driver
    * for the SAME man, not a second farmhand, and `walkFarmhand` below is
@@ -981,6 +1018,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintPaths();
     this.paintPond();
     this.paintBarn();
+    this.paintGreenhouse();
     this.paintProps();
     this.paintFarmsteadClutter();
     this.spawnHerds();
@@ -1596,6 +1634,71 @@ export class StackAcresScene extends Phaser.Scene {
     this.put("hay", BARN_X + 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
     this.put("hay", BARN_X + 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
     this.put("barrel", BARN_X - 48, BARN_Y - 14, this.depthAt(BARN_X - 48, BARN_Y - 14));
+  }
+
+  /**
+   * The Greenhouse's own footprint (lib/stackacres/greenhouse.ts): a low
+   * glass box built from the same isometric-volume primitives the barn's
+   * silo uses (`isoFootprint`/`drawIsoWalls`/`drawIsoFlatRoof`) rather than a
+   * new baked painter -- there is no supplied art for this structure yet
+   * (new sprites need Kayo's own renders, same rule every other character/
+   * building here has followed), so a Graphics volume in the palette's own
+   * "water" ramp -- the closest existing tone to glass -- is the honest
+   * placeholder: a real, tappable place at a real world position, not a
+   * coloured rectangle standing in for one.
+   *
+   * The six slot outlines are purely a "here is where a crop goes" cue at
+   * this pass -- not yet wired to a housed unit's own growth stage. Wiring
+   * that up wants the interior to have real per-slot content to show first
+   * (a future pass), and is deliberately out of scope here: this method's
+   * job is the structure existing, being tappable (`greenhouseHitAt`), and
+   * being steppable-into (`enterGreenhouse`), not painting its finished
+   * interior life.
+   */
+  private paintGreenhouse(): void {
+    const ramp = rampHex("water");
+    const ground = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    const groundCorners = projectedCorners(GREENHOUSE_PLOT);
+    ground.fillStyle(ramp.top, 0.35);
+    ground.beginPath();
+    ground.moveTo(groundCorners.n.x, groundCorners.n.y);
+    ground.lineTo(groundCorners.e.x, groundCorners.e.y);
+    ground.lineTo(groundCorners.s.x, groundCorners.s.y);
+    ground.lineTo(groundCorners.w.x, groundCorners.w.y);
+    ground.closePath();
+    ground.fillPath();
+    ground.lineStyle(1, ramp.rim, 0.7);
+    ground.strokePath();
+
+    // The six slots, marked at ground level so they read as planting spots
+    // rather than as floating objects.
+    for (const slot of greenhouseSlotLayouts()) {
+      const half = GREENHOUSE_TILE / 2 - 1.5;
+      const corners = projectedCorners({
+        x: slot.at.x - half,
+        y: slot.at.y - half,
+        width: half * 2,
+        height: half * 2,
+      });
+      ground.lineStyle(1, ramp.rim, 0.6);
+      ground.beginPath();
+      ground.moveTo(corners.n.x, corners.n.y);
+      ground.lineTo(corners.e.x, corners.e.y);
+      ground.lineTo(corners.s.x, corners.s.y);
+      ground.lineTo(corners.w.x, corners.w.y);
+      ground.closePath();
+      ground.strokePath();
+    }
+
+    // The glass box itself, standing on the ground plate above -- walls and
+    // a flat roof, sorted by its own footprint's feet like every other
+    // volume here.
+    const cx = GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width / 2;
+    const cy = GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height / 2;
+    const box = this.add.graphics().setDepth(this.depthAt(cx, cy + GREENHOUSE_PLOT.height / 2));
+    const footprint = this.isoFootprint(cx, cy, GREENHOUSE_PLOT.width - 12, GREENHOUSE_PLOT.height - 12);
+    const top = this.drawIsoWalls(box, footprint, 26, ramp.side);
+    this.drawIsoFlatRoof(box, top, ramp.top);
   }
 
   /**
@@ -2646,6 +2749,21 @@ export class StackAcresScene extends Phaser.Scene {
         return;
       }
       const ground = resolveWorld(event.clientX, event.clientY);
+      // While stepped inside the Greenhouse, every tap resolves against its
+      // own six-slot sub-grid instead of the open-world chain below -- see
+      // `enterGreenhouse`. Checked before anything else in this chain, since
+      // it is a modal state, not a structure competing with others for one
+      // tap. A tap that lands outside the matrix steps back out, the same
+      // "tap away to dismiss" gesture already used elsewhere on this map.
+      if (this.steppedInGreenhouse) {
+        const slot = greenhouseSlotAt(ground.x, ground.y);
+        if (slot) {
+          this.callbacks.onGreenhouseSlotTap(slot.row, slot.col, local);
+        } else {
+          this.exitGreenhouse();
+        }
+        return;
+      }
       // The Midnight Merchant -- checked FIRST among the structures, and
       // only tested at all while he is actually standing there
       // (`this.merchantNode !== null`, set by `setMerchant`). A stale visit
@@ -2662,6 +2780,14 @@ export class StackAcresScene extends Phaser.Scene {
       // same tap, but a unit always wins over the structure behind it.
       if (barnHitAt(ground.x, ground.y)) {
         this.callbacks.onBarnTap();
+        return;
+      }
+      // The Greenhouse's own entryway -- checked right after the barn, the
+      // same "a structure wins over the ground behind it" ordering. Its
+      // footprint (lib/stackacres/greenhouse.ts's `GREENHOUSE_PLOT`) never
+      // overlaps the barn's, so the two never compete for one tap.
+      if (greenhouseHitAt(ground.x, ground.y)) {
+        this.callbacks.onGreenhouseTap();
         return;
       }
       // A hidden discovery spot -- checked after the barn (a structure still
@@ -3724,6 +3850,65 @@ export class StackAcresScene extends Phaser.Scene {
     cam.pan(centre.x, centre.y, 700, "Sine.easeInOut");
   }
 
+  /**
+   * Steps the camera INSIDE the Greenhouse (lib/stackacres/greenhouse.ts):
+   * narrows `camera.setBounds()` to its own interior rect
+   * (`greenhouseInteriorScreenBounds`) instead of the open world's, so the
+   * player cannot pan or fling their way back out into the farm -- the only
+   * way out is `exitGreenhouse` (a tap outside the sub-grid, or the shell's
+   * own close control). This is the real "isolated layer" the sub-grid's own
+   * header describes: everything drawn while inside addresses the
+   * Greenhouse's own small local space, never the farm's absolute one.
+   *
+   * A no-op while already stepped in, or before `create()` has run -- the
+   * same guard every other camera method here takes.
+   */
+  enterGreenhouse(): void {
+    if (!this.created || this.steppedInGreenhouse) return;
+    this.glide = null;
+    this.steppedInGreenhouse = true;
+    const bounds = greenhouseInteriorScreenBounds();
+    const cam = this.cameras.main;
+    cam.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.worldBounds = bounds;
+    const centre = isoProject(
+      GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width / 2,
+      GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height / 2,
+    );
+    const zoom = this.fitZoomToBox(bounds, this.viewW(), this.viewH());
+    if (this.options.reducedMotion) {
+      this.setZoomL(zoom);
+      cam.centerOn(centre.x, centre.y);
+      return;
+    }
+    cam.zoomTo(clampZoom(zoom) * DPR, 500, "Sine.easeInOut");
+    cam.pan(centre.x, centre.y, 500, "Sine.easeInOut");
+  }
+
+  /**
+   * Steps back out to the open world: restores `camera.setBounds()` to
+   * `worldBoundsScreenRect()` (the exact rect `create()` set it to) and
+   * eases back to the Farmstead's own gate, the same arrival shot
+   * `recenter()`'s `homeView()` already frames.
+   */
+  exitGreenhouse(): void {
+    if (!this.created || !this.steppedInGreenhouse) return;
+    this.glide = null;
+    this.steppedInGreenhouse = false;
+    const bounds = worldBoundsScreenRect();
+    const cam = this.cameras.main;
+    cam.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.worldBounds = bounds;
+    const view = this.homeView();
+    if (this.options.reducedMotion) {
+      this.setZoomL(view.zoom);
+      cam.centerOn(view.x, view.y);
+      return;
+    }
+    cam.zoomTo(view.zoom * DPR, 500, "Sine.easeInOut");
+    cam.pan(view.x, view.y, 500, "Sine.easeInOut");
+  }
+
 
   /**
    * Keeps the vignette over the whole screen. A scroll factor of zero pins
@@ -3882,6 +4067,14 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.options.reducedMotion) return;
 
     this.animateSunlight(time, delta);
+    // Ambient-weather isolation (lib/stackacres/greenhouse.ts's
+    // `EnvironmentModifier.ignoresAmbientWeather`): the Greenhouse's own
+    // glass keeps the weather layer's tint/particles from drawing while the
+    // camera is stepped inside it. Sunlight itself (animateSunlight, above)
+    // is deliberately NOT gated the same way -- a greenhouse exists to let
+    // sunlight in, and it is not one of the four weather states this
+    // isolates from.
+    this.weather?.setSuppressed(this.steppedInGreenhouse);
     this.weather?.update(time, delta);
     // A read-only sample, not a hit -- see FarmFrenzyManager's own doc
     // comment. Runs every frame regardless of whether anything was tapped

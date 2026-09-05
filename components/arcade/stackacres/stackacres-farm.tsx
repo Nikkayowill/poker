@@ -40,7 +40,8 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
-
+  STACKACRES_YIELDS,
+  itemGoldValue,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
@@ -1289,6 +1290,19 @@ export function StackAcresFarm() {
       if (action.kind === "feed" || action.kind === "water" || action.kind === "clear") {
         tendLocally(unitId, action.kind);
       }
+      // Frenzy Heat Combo Engine: every accepted tap (a refused one already
+      // returned above) counts as a hit for how fast the player is tapping.
+      // Collect is the only action with a yield to bonus off of --
+      // STACKACRES_YIELDS' quantity times its Gold value, an ESTIMATE with
+      // no crit or synergy bonus folded in (both are rolled server-side, and
+      // this fires before the server has answered at all). This is a
+      // DISPLAY-ONLY number: it never changes what `act` below actually
+      // settles for -- see lib/stackacres/frenzy.ts's own header.
+      const baseYieldGold =
+        action.kind === "collect"
+          ? STACKACRES_YIELDS[unit.stock].quantity * itemGoldValue(STACKACRES_YIELDS[unit.stock].item)
+          : undefined;
+      world.current?.registerFrenzyTap(unitId, baseYieldGold);
       // A tap is a one-unit sweep. It earns no synergy by construction --
       // three is the fewest a Bountiful Harvest considers -- which is exactly
       // what the Harvest key beside it is for.

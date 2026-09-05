@@ -92,6 +92,8 @@ import {
   type FarmhandHooks,
 } from "@/lib/stackacres/farmhand-machine";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
+import { FarmFrenzyManager, frenzyBonusYield } from "@/lib/stackacres/frenzy";
+import { FrenzyFxManager } from "./frenzy-fx-manager";
 import {
   cropArtFor,
   cropFootprintHalf,
@@ -806,6 +808,25 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private readonly auto = new FarmhandStateMachine();
 
+  /**
+   * The Frenzy Heat Combo Engine's own state: how fast the player has been
+   * tapping, decayed in real time. See lib/stackacres/frenzy.ts's own header
+   * for why this is a plain field rather than anything persisted -- a
+   * reload, or simply a pause long enough to cool down, gets a fresh cold
+   * engine and nothing else about the farm changes.
+   */
+  private readonly frenzy = new FarmFrenzyManager();
+  /** The Phaser side of the engine above: the screen wash, its pulse, and
+   *  the per-tap ember/bonus bursts. Null under reduced motion, the same
+   *  posture `this.weather` already takes -- see `create()`. */
+  private frenzyFx: FrenzyFxManager | null = null;
+  /** This frame's own frenzy tier speed multiplier, read by `walkFarmhand`
+   *  for both drivers of the one man on the map. Refreshed once a frame in
+   *  `update()` (`this.frenzy.sample(time)`), the same "read fresh every
+   *  frame, never cached across one" posture `critterSpeed` already takes
+   *  for an animal's own walk speed -- see lib/stackacres/farmhand-path.ts's
+   *  `advanceTowards` for where this number actually lands. */
+  private frenzySpeedMultiplier = 1;
 
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
@@ -961,6 +982,14 @@ export class StackAcresScene extends Phaser.Scene {
     if (!this.options.reducedMotion) {
       this.weather = new WeatherOverlayManager(this, this.random);
       this.weather.create();
+      // Same lazy read `floatAt` does for `this.displayFont`, just eager:
+      // `this.options.host` is available from the very first frame, so there
+      // is no need to wait for a tap before this manager's one label knows
+      // the farm's own display face.
+      this.frenzyFx = new FrenzyFxManager(this, {
+        fontFamily: window.getComputedStyle(this.options.host).fontFamily || undefined,
+      });
+      this.frenzyFx.create();
     }
 
     // The "you've gone far enough" nudges -- same screen-pinned treatment as
@@ -1160,7 +1189,7 @@ export class StackAcresScene extends Phaser.Scene {
     const committed = this.auto.hand.workMs > 0;
 
     if (next && !committed) {
-      const step = stepFarmhand(node.state, next, delta);
+      const step = stepFarmhand(node.state, next, delta, this.frenzySpeedMultiplier);
       if (step.claimed) {
         this.farmhandTask = head ?? null;
         this.farmhandQueue = this.farmhandQueue.slice(1);
@@ -1178,7 +1207,7 @@ export class StackAcresScene extends Phaser.Scene {
     // `idle` rather than freezing at whatever it was doing when the queue
     // emptied.
     if (node.state.phase !== "idle") {
-      const step = stepFarmhand(node.state, null, delta);
+      const step = stepFarmhand(node.state, null, delta, this.frenzySpeedMultiplier);
       if (step.finished) this.farmhandTask = null;
       node.state = step.hand;
       this.auto.followErrand(node.state);
@@ -1186,7 +1215,7 @@ export class StackAcresScene extends Phaser.Scene {
       return;
     }
 
-    this.auto.update(delta);
+    this.auto.update(delta, this.frenzySpeedMultiplier);
     const hand = this.auto.hand;
     node.state = { ...node.state, x: hand.x, y: hand.y, facing: hand.facing, towards: hand.towards, travelled: hand.travelled };
     this.paintFarmhand(node, hand.workMs > 0, automationWalking(hand));
@@ -2987,6 +3016,28 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
+   * A tap that became a real action -- never a refused one; see
+   * onWorldUnitTap's own call site in stackacres-farm.tsx, which is the only
+   * caller. Registers one hit with the Frenzy Heat Combo Engine and throws
+   * its cosmetic feedback at the unit's own live screen position.
+   *
+   * `baseYieldGold` is a DISPLAY ESTIMATE -- STACKACRES_YIELDS' quantity
+   * times its Gold value, computed by the caller before any crit or synergy
+   * bonus is rolled -- and is only meaningful for a "collect" tap; pass it
+   * as `undefined` (or omit it) for feed/water/clear, which have no yield to
+   * bonus and simply register the hit. This NEVER changes what the server
+   * actually pays: see lib/stackacres/frenzy.ts's own header.
+   */
+  registerFrenzyTap(unitId: string, baseYieldGold?: number): void {
+    const snapshot = this.frenzy.registerHit(this.time.now);
+    if (this.options.reducedMotion) return;
+    const node = this.nodes.get(unitId);
+    if (!node) return;
+    const bonus = baseYieldGold ? frenzyBonusYield(baseYieldGold, snapshot.tier) : 0;
+    this.frenzyFx?.celebrateTap({ x: node.container.x, y: node.container.y }, snapshot, bonus);
+  }
+
+  /**
    * The exact inverse of `resolveWorld` in `bindInput`: given a true WORLD
    * point, the client (CSS pixel) coordinate a real pointer event would have
    * to land on to hit it right now, under whatever the camera's current
@@ -3717,6 +3768,13 @@ export class StackAcresScene extends Phaser.Scene {
 
     this.animateSunlight(time, delta);
     this.weather?.update(time, delta);
+    // A read-only sample, not a hit -- see FarmFrenzyManager's own doc
+    // comment. Runs every frame regardless of whether anything was tapped
+    // this frame, which is what lets heat cool down in real time rather
+    // than only on the next tap.
+    const frenzySnapshot = this.frenzy.sample(time);
+    this.frenzySpeedMultiplier = frenzySnapshot.tier.speedMultiplier;
+    this.frenzyFx?.setHeat(frenzySnapshot, time);
     this.animatePond(time);
     this.walkHerds(delta);
     this.walkFarmhand(delta);

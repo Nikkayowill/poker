@@ -62,6 +62,10 @@ export interface StackAcresWorldApi {
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
+  /** Critical Harvest Cascade: the same gold-burst `celebrate` triggers for a
+   *  solo unit, fanned out across several units with a stagger between each
+   *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
+  celebrateCascade: (unitIds: string[]) => void;
   /** Send the farmhand over to a unit that has just been acted on.
    *  Decoration on a request that has already left the browser: he refuses
    *  silently outside the Farmstead, and can never delay or cancel a write.
@@ -75,6 +79,12 @@ export interface StackAcresWorldApi {
   /** Steps back out to the open world. Also what a tap outside the
    *  sub-grid's own six slots does on its own, from inside the scene. */
   exitGreenhouse: () => void;
+  /** A tap that became a real action, never a refused one: registers one hit
+   *  with the Frenzy Heat Combo Engine and throws its cosmetic feedback at
+   *  the unit's own live position. `baseYieldGold` is a DISPLAY ESTIMATE,
+   *  meaningful only for a "collect" tap -- see lib/stackacres/frenzy.ts's
+   *  own header for why this never touches a real payout. */
+  registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
   /** What the AUTOMATED farmhand may do when a cycle finishes. Passed through
    *  the handle rather than as a prop because every hook is a request the
    *  shell already knows how to make, and rebuilding the scene's wiring on
@@ -83,6 +93,16 @@ export interface StackAcresWorldApi {
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
+  /** Adds or removes the Midnight Merchant's own picture from the lot.
+   *  PUSHED rather than a prop-driven effect's usual shape because
+   *  stackacres-farm.tsx already owns the render decision itself
+   *  (`MidnightMerchantManager.isRendered()`) and only needs to tell the
+   *  scene when that boolean actually flips -- the same "push, never
+   *  rebuild" contract `setToolTier`/`setMuseumGlowTier` already use for
+   *  their own props, exposed through the imperative handle instead of a
+   *  prop because it is closer in shape to `popUnit`/`floatAt` (a command
+   *  fired from an event) than to a value the scene must always reflect. */
+  setMerchant: (present: boolean) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -107,6 +127,9 @@ export interface StackAcresWorldProps {
    *  the scene is stepped inside it (`enterGreenhouse`). Row 0 is nearest the
    *  door -- see lib/stackacres/greenhouse.ts's `greenhouseSlotLocal`. */
   onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
+  /** A finger landed on the Midnight Merchant, while he is actually
+   *  standing on the lot (see `setMerchant` on the imperative handle). */
+  onMerchantTap: () => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -161,6 +184,7 @@ export function StackAcresWorld({
   onBarnTap,
   onGreenhouseTap,
   onGreenhouseSlotTap,
+  onMerchantTap,
   onSecretZoneTap,
   sectors,
   onLockedSectorTap,
@@ -185,6 +209,7 @@ export function StackAcresWorld({
   const barnTapRef = useRef(onBarnTap);
   const greenhouseTapRef = useRef(onGreenhouseTap);
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
+  const merchantTapRef = useRef(onMerchantTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
@@ -208,6 +233,7 @@ export function StackAcresWorld({
     barnTapRef.current = onBarnTap;
     greenhouseTapRef.current = onGreenhouseTap;
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
+    merchantTapRef.current = onMerchantTap;
     secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
@@ -252,6 +278,7 @@ export function StackAcresWorld({
           onBarnTap: () => barnTapRef.current(),
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
+          onMerchantTap: () => merchantTapRef.current(),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
@@ -356,11 +383,14 @@ export function StackAcresWorld({
       recenter: () => sceneRef.current?.recenter(),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
+      celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
+      registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
       enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
       exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
+      setMerchant: (present) => sceneRef.current?.setMerchant(present),
     }),
     [],
   );

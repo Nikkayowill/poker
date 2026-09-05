@@ -32,6 +32,7 @@ import {
   type StackAcresView,
 } from "./stackacres-service";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
+import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
@@ -281,6 +282,7 @@ const REAL = {
 
 beforeEach(() => {
   __resetStackAcresForTest();
+  __resetStackAcresBlueprintsForTest();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
@@ -1613,16 +1615,19 @@ describe("the currency wall", () => {
       "clear-sector",
       "collect",
       "consume-secret-item",
+      "contribute-blueprint",
       "divert",
       "donate-secret-item",
       "expand-capacity",
       "feed",
       "fulfill-contract",
+      "midnight-merchant-buy",
       "place-machine",
       "process",
       "request-contract",
       "retire",
       "sow-wheat",
+      "start-blueprint",
       "stock",
       "tap-secret-zone",
       "trade-secret-item",
@@ -1645,7 +1650,12 @@ describe("the currency wall", () => {
     // reduces what the farm pays out today rather than adding a way in. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own.
+    // against -- never a Gold credit of their own. `midnight-merchant-buy`
+    // spends too, via `redeemMidnightMerchantItem`, which reaches
+    // `spend_gold_by_profile` inside its own row-locked RPC (see
+    // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
+    // -- never against STACKACRES_GOLD_CEILING, because spending is not a
+    // payout and the ceiling only ever bounds Gold leaving the farm.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");

@@ -2734,6 +2734,104 @@
 
 .sa-contracts-ask { margin-top: 12px; }
 
+/* The Midnight Merchant's own sheet. Reuses .sa-sheet/.sa-sheet-scrim/
+   .sa-cta/.sa-contract-count/.sa-contracts-note wholesale (see
+   midnight-merchant-storefront.tsx's own header on why it overrides Ray's
+   board rather than composing with it) -- everything below is only what
+   the Merchant needed that Ray's board did not already define. */
+.sa-merchant-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 5px 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Corn-edged rather than a foreign red: this palette has no danger color of
+   its own (see 52-stackacres.css's own cozy-farm brief), so urgency is the
+   same "number to plan around" marker .sa-contract.is-posted already uses,
+   not a new hue. */
+.sa-merchant-countdown.is-urgent {
+  background: var(--sa-corn);
+  color: var(--sa-outline);
+  box-shadow: inset 0 -3px 0 var(--sa-outline);
+}
+
+.sa-merchant-stock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-merchant-item {
+  padding: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-merchant-item.is-sold-out { opacity: .6; }
+
+.sa-merchant-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sa-merchant-item-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--sa-ink);
+}
+
+.sa-merchant-price {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 8px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sa-merchant-price strong {
+  color: var(--sa-ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* How much steeper than the visit's very first price this rung is -- shown
+   only once a streak exists (see midnight-merchant-storefront.tsx), so the
+   very first item a player sees never carries a "+0%" that means nothing
+   yet. */
+.sa-merchant-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream-rim);
+  color: var(--sa-ink-soft);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.sa-merchant .sa-cta { margin-top: 10px; }
+
 /* ---- the Sunlight Forge sheet ----------------------------------------
    Mirrors .sa-contracts-*'s own structure (a status readout, a scrollable
    list of cards, one note banner answering the sheet's own last action) --

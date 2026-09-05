@@ -40,7 +40,8 @@ import {
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
-
+  STACKACRES_YIELDS,
+  itemGoldValue,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
@@ -75,6 +76,7 @@ import {
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import { stockZone } from "@/lib/stackacres/world";
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
@@ -89,6 +91,16 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import {
+  MidnightMerchantStorefront,
+  type MidnightMerchantPurchaseResult,
+} from "./midnight-merchant-storefront";
+import {
+  MidnightMerchantManager,
+  type MidnightMerchantItemId,
+  type MidnightMerchantRenderSnapshot,
+  type MidnightMerchantSnapshot,
+} from "@/lib/stackacres/midnight-merchant";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -219,6 +231,21 @@ interface StackAcresResponse {
    *  Absent only from a response old enough to predate the feature, which
    *  `applyResponse` reads as "not yet". */
   greenhouseBuilt?: boolean;
+  /** The Midnight Merchant's current visit, straight through from the
+   *  server every response carries it on. `null` (not merely absent) means
+   *  "confirmed no visit right now" -- see `MidnightMerchantManager.
+   *  applySnapshot`'s own header for why that distinction from a plain
+   *  missing field matters. Absent only from a response old enough to
+   *  predate the feature. */
+  midnightMerchant?: MidnightMerchantSnapshot | null;
+  /** Set only by a successful `midnight-merchant-buy` response; every other
+   *  action's response leaves this undefined. */
+  midnightMerchantPurchase?: {
+    itemId: string;
+    pricePaid: number;
+    purchaseStreak: number;
+    remaining: number;
+  };
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -251,7 +278,8 @@ type Action =
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
   | { action: "consume-secret-item"; itemId: SecretItemId }
-  | { action: "trade-secret-item"; itemId: SecretItemId };
+  | { action: "trade-secret-item"; itemId: SecretItemId }
+  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -423,6 +451,41 @@ export function StackAcresFarm() {
   const [showContracts, setShowContracts] = useState(false);
   const [showGreenhouse, setShowGreenhouse] = useState(false);
   const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
+  const [showMerchant, setShowMerchant] = useState(false);
+  /** Owns this farm's entire Midnight Merchant render state -- see
+   *  lib/stackacres/midnight-merchant.ts's own header. One instance per
+   *  mount, never recreated: `applySnapshot`'s "same visit vs. a new one"
+   *  distinction depends on comparing against whatever the LAST snapshot
+   *  was, and a fresh instance on every render would lose that memory and
+   *  replay the arrival animation on every unrelated re-render. */
+  const merchantManager = useRef(new MidnightMerchantManager());
+  /**
+   * The manager's own derived render state, mirrored into real React state
+   * rather than read from `merchantManager.current` during render.
+   *
+   * `merchantManager` itself stays a plain mutable class instance for the
+   * same reason `FarmhandStateMachine`'s is -- a value ticked every second
+   * has no business being reconstructed through `setState` every second --
+   * but reading a ref's `.current` IN THE RENDER BODY is exactly what the
+   * `react-hooks/refs` rule exists to catch: React does not know a render
+   * depends on it, so a change to it alone would never schedule the
+   * re-render this component needs to show it. `merchantSnapshot` is the
+   * fix: every place that mutates the manager (the tick interval below, and
+   * `applySnapshot` inside `applyResponse`) immediately mirrors its fresh
+   * `.snapshot()` into this state right after, in an effect or a handler,
+   * never during render -- so React always knows exactly when to repaint. */
+  const [merchantSnapshot, setMerchantSnapshot] = useState<MidnightMerchantRenderSnapshot>({
+    state: "absent",
+    msRemaining: 0,
+    urgent: false,
+    visit: null,
+  });
+  /** Sidecar for `act`'s fixed `ContractActionResult` return shape -- see
+   *  `onBuyFromMerchant`, and `tapAnchor` above for the same "extra
+   *  information the generic action layer does not carry" pattern already
+   *  used in this file. Read exactly once, synchronously, right after the
+   *  `act` call that set it -- nothing else in this component writes it. */
+  const lastMerchantPurchase = useRef<{ pricePaid: number } | null>(null);
   /** Standing earned to date. Its own state rather than a fifth field on
    *  `processing`: nothing plans against it, it is a number the town board
    *  displays, and adding it there would widen an object whose whole point is
@@ -553,6 +616,25 @@ export function StackAcresFarm() {
    */
   const tapAnchor = useRef<TapPoint | null>(null);
   /**
+   * Critical Harvest Cascade: what the most recent SOLO collect's response
+   * said, for `triggerCascade` to read once `act`'s own promise -- and its
+   * `finally`'s `inFlight` cleanup -- has actually resolved.
+   *
+   * A ref, not a return value threaded through `act`: `act`'s declared return
+   * type is `ContractActionResult`, owned by TownContractsModal.tsx and about
+   * contract settlement, not harvests -- widening it to carry this feature's
+   * own payload would be a layering violation for every other caller that
+   * already ignores what `act` returns. This is also NOT read from inside
+   * `act` itself: every `collect` action collapses to the same intent string
+   * (`intentOf` has no `unitIds` case), so a second `collect` fired while the
+   * first is still inside its own try block would be rejected by the very
+   * `inFlight` guard the cascade is trying to reuse. Set only for a one-unit
+   * sweep (a tap, never the Harvest-All button) and read/cleared exactly once
+   * by `triggerCascade`, which is the only thing that ever calls it -- see
+   * that function's own header for the rest of the contract.
+   */
+  const lastHarvestRef = useRef<{ crit: number; units: StackAcresUnitSnapshot[] } | null>(null);
+  /**
    * The idempotency key for each action whose fate this browser does not know.
    *
    * Keyed by what the player asked for (`collect:<unitId>`, `stock:hen`), and
@@ -640,6 +722,24 @@ export function StackAcresFarm() {
     if (data.secrets) setSecrets(data.secrets);
     if (data.secretDonations) setSecretDonations(data.secretDonations);
     if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
+    // `!== undefined` on purpose, not a truthiness check: `null` is a real,
+    // meaningful answer here ("confirmed no visit"), and treating it like a
+    // missing field would mean a visit that just expired could never be
+    // told apart from a response too old to carry the field at all. See
+    // `midnightMerchant`'s own doc comment on StackAcresResponse.
+    if (data.midnightMerchant !== undefined) {
+      merchantManager.current.applySnapshot(data.midnightMerchant);
+      const next = merchantManager.current.snapshot();
+      setMerchantSnapshot(next);
+      // A visit ending while its own sheet is open closes that sheet here,
+      // in the same handler that just learned the visit is gone, rather
+      // than a second effect watching for it -- setting it to `false` when
+      // it is already `false` is a no-op React bails out of on its own.
+      if (!next.visit) setShowMerchant(false);
+    }
+    if (data.midnightMerchantPurchase) {
+      lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
+    }
   }, []);
 
   const refresh = useCallback(async () => {
@@ -709,6 +809,30 @@ export function StackAcresFarm() {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
+
+  // The Merchant's own clock -- unconditional, unlike the interval above:
+  // a visit can be live with every animal idle, and `tick` is a cheap no-op
+  // whenever there is nothing to age down (see its own early return). The
+  // fresh snapshot is mirrored into React state immediately, in the same
+  // callback that mutated the manager -- never read from the ref during
+  // render (see `merchantSnapshot`'s own declaration for why that matters).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      merchantManager.current.tick(1000);
+      const next = merchantManager.current.snapshot();
+      setMerchantSnapshot(next);
+      if (!next.visit) setShowMerchant(false);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Pushed to the scene only when the render decision actually flips, the
+  // same "push, never rebuild" contract setToolTier/setMuseumGlowTier
+  // already follow -- see StackAcresWorldApi's own `setMerchant` doc.
+  const merchantRendered = merchantSnapshot.state !== "absent";
+  useEffect(() => {
+    world.current?.setMerchant(merchantRendered);
+  }, [merchantRendered]);
 
   /**
    * A request nobody pressed a button for.
@@ -864,6 +988,10 @@ export function StackAcresFarm() {
         if (body.action === "collect" && data.harvest) {
           const { harvest } = data;
           const single = body.unitIds?.length === 1 ? body.unitIds[0] : null;
+          // Critical Harvest Cascade: stash it for `triggerCascade` to pick
+          // up once this call has fully returned -- see lastHarvestRef's own
+          // header for why that has to happen outside this function.
+          if (single) lastHarvestRef.current = { crit: harvest.crit, units: data.units ?? [] };
           // Fired here rather than on the press because the ANIMAL is what
           // makes this sound worth having, and only the response knows which
           // unit actually paid out: a hen clucking as the eggs go in the
@@ -1241,6 +1369,46 @@ export function StackAcresFarm() {
   const closeRadial = useCallback(() => setRadial(null), []);
 
   /**
+   * Critical Harvest Cascade: a solo tap that just crit chains into other
+   * ready units standing in the same district, each collected through the
+   * exact same `collect` action a second tap would have sent -- see
+   * lib/stackacres/harvest-cascade.ts's own header for why that is the
+   * entire write path (no new RPC, no separate Gold or inventory call at
+   * all) and why this goes exactly one generation deep.
+   *
+   * Called ONLY from onWorldUnitTap's own collect branch, and only after
+   * that branch's own `act(...)` call has fully settled -- reading
+   * `lastHarvestRef` any earlier would race `act`'s `inFlight` guard, since
+   * every `collect` action collapses to the same intent string regardless of
+   * which units it names. `originUnitId`/`originStock` are the just-tapped
+   * unit as it stood BEFORE the harvest, handed in by the caller's own
+   * closure rather than re-read here: a consumed, non-permanent crop is gone
+   * from `units` the instant it settles, so there would be nothing left in
+   * state to look its stock up from afterward.
+   */
+  const triggerCascade = useCallback(
+    async (originUnitId: string, originStock: StackAcresStock) => {
+      const result = lastHarvestRef.current;
+      lastHarvestRef.current = null;
+      if (!result || result.crit <= 0) return;
+      const targets = findCascadeTargets(
+        result.units,
+        stockZone(originStock),
+        new Set([originUnitId]),
+      );
+      if (targets.length === 0) return;
+      // Local-optimistic: pop every chained unit immediately, before the
+      // follow-up request is even sent -- the same "answer the touch, let
+      // the network answer later" contract onWorldUnitTap's own popUnit
+      // already keeps for the tap that started this chain.
+      for (const id of targets) world.current?.popUnit(id);
+      const chained = await act({ action: "collect", unitIds: targets });
+      if (chained.ok) world.current?.celebrateCascade(targets);
+    },
+    [act],
+  );
+
+  /**
    * A finger landed on a unit's own picture. It pops immediately -- before
    * anything has been sent, which is the whole point: the farm answers the
    * touch, and the network answers a moment later. What happens next is
@@ -1303,16 +1471,33 @@ export function StackAcresFarm() {
       if (action.kind === "feed" || action.kind === "water" || action.kind === "clear") {
         tendLocally(unitId, action.kind);
       }
+      // Frenzy Heat Combo Engine: every accepted tap (a refused one already
+      // returned above) counts as a hit for how fast the player is tapping.
+      // Collect is the only action with a yield to bonus off of --
+      // STACKACRES_YIELDS' quantity times its Gold value, an ESTIMATE with
+      // no crit or synergy bonus folded in (both are rolled server-side, and
+      // this fires before the server has answered at all). This is a
+      // DISPLAY-ONLY number: it never changes what `act` below actually
+      // settles for -- see lib/stackacres/frenzy.ts's own header.
+      const baseYieldGold =
+        action.kind === "collect"
+          ? STACKACRES_YIELDS[unit.stock].quantity * itemGoldValue(STACKACRES_YIELDS[unit.stock].item)
+          : undefined;
+      world.current?.registerFrenzyTap(unitId, baseYieldGold);
       // A tap is a one-unit sweep. It earns no synergy by construction --
       // three is the fewest a Bountiful Harvest considers -- which is exactly
-      // what the Harvest key beside it is for.
-      void act(
-        action.kind === "collect"
-          ? { action: "collect", unitIds: [unitId] }
-          : { action: action.kind, unitId },
-      );
+      // what the Harvest key beside it is for. A collect is chained onto
+      // `triggerCascade` once it settles, in case it crit -- every other verb
+      // has nothing to chain.
+      if (action.kind === "collect") {
+        void act({ action: "collect", unitIds: [unitId] }).then((result) => {
+          if (result.ok) void triggerCascade(unitId, unit.stock);
+        });
+      } else {
+        void act({ action: action.kind, unitId });
+      }
     },
-    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally],
+    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally, triggerCascade],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -1334,6 +1519,21 @@ export function StackAcresFarm() {
     setRadial(null);
     panelSound();
     setShowMuseum(true);
+  }, []);
+
+  /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
+   *  (true only in the steady `"present"` state, see
+   *  lib/stackacres/midnight-merchant.ts) rather than trusting the scene's
+   *  own gate alone -- the scene only calls this while its OWN
+   *  `merchantNode` exists, which can be one tick ahead of or behind this
+   *  component's render of `merchantSnapshot` by construction (the scene is
+   *  pushed to via an effect, not read synchronously), so a tap arriving in
+   *  that gap must not open a sheet for a visit already gone. */
+  const onWorldMerchantTap = useCallback(() => {
+    if (!merchantManager.current.isInteractive()) return;
+    setRadial(null);
+    panelSound();
+    setShowMerchant(true);
   }, []);
 
   /**
@@ -1441,6 +1641,25 @@ export function StackAcresFarm() {
 
   const onRequestContract = useCallback(
     () => act({ action: "request-contract" }),
+    [act],
+  );
+
+  /**
+   * The Merchant's own purchase, adapted from `act`'s fixed
+   * `ContractActionResult` shape to `MidnightMerchantPurchaseResult` --
+   * see `lastMerchantPurchase`'s own doc comment for why the price paid
+   * has to travel by that sidecar rather than through `act`'s return value
+   * directly. A refusal's message is passed straight through unchanged:
+   * this component never rewords a reason the server already gave in
+   * plain language (see buyFromMidnightMerchant's own three refusal
+   * messages).
+   */
+  const onBuyFromMerchant = useCallback(
+    async (itemId: MidnightMerchantItemId): Promise<MidnightMerchantPurchaseResult> => {
+      const result = await act({ action: "midnight-merchant-buy", itemId });
+      if (!result.ok) return { ok: false, message: result.message };
+      return { ok: true, pricePaid: lastMerchantPurchase.current?.pricePaid ?? 0 };
+    },
     [act],
   );
 
@@ -1645,6 +1864,7 @@ export function StackAcresFarm() {
               onBarnTap={onWorldBarnTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
+              onMerchantTap={onWorldMerchantTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
@@ -2201,6 +2421,29 @@ export function StackAcresFarm() {
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
+        />
+      )}
+      {/*
+       * OVERRIDES Ray's board rather than composing with it: `showMerchant`
+       * and `showContracts` are two independent booleans, but a visit's
+       * window is short and the two sheets share the identical `.sa-sheet-
+       * scrim`, so a player is never meant to have both open at once in
+       * practice -- see midnight-merchant-storefront.tsx's own header.
+       * Gated on `merchantSnapshot.visit` rather than on `showMerchant`
+       * alone: a visit that expires while its sheet is open (the countdown
+       * hit zero, or a second browser tab bought the last one) must close
+       * this sheet on the very next snapshot rather than show stale stock
+       * with nothing left to load it from.
+       */}
+      {showMerchant && merchantSnapshot.visit && (
+        <MidnightMerchantStorefront
+          visit={merchantSnapshot.visit}
+          msRemainingLocal={merchantSnapshot.msRemaining}
+          urgent={merchantSnapshot.urgent}
+          goldBalance={profile?.unlimitedGold ? Number.POSITIVE_INFINITY : profile?.goldBalance ?? 0}
+          busy={busy}
+          onBuy={onBuyFromMerchant}
+          onClose={() => { panelSound(); setShowMerchant(false); }}
         />
       )}
     </main>

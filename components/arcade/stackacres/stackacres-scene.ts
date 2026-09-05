@@ -334,6 +334,15 @@ const TAP_SLOP = 8;
  */
 const SWISH_GAP_MS = 190;
 
+/**
+ * Gap between one chained unit's gold-burst and the next in a Critical
+ * Harvest Cascade. Slow enough to read as a CHAIN rather than one bigger
+ * burst -- the whole point of the effect -- and well under the pacing that
+ * would make a 3-unit cascade (see harvest-cascade.ts's `CASCADE_MAX_UNITS`)
+ * feel sluggish to sit through.
+ */
+const CASCADE_POP_STAGGER_MS = 110;
+
 /** How far outside its own art a unit still answers a tap, in CSS pixels. A
  *  hen at the zoomed-out end of the range is a thumbnail; without this the
  *  only way to collect one is to zoom in first, which is exactly the friction
@@ -3277,6 +3286,34 @@ export class StackAcresScene extends Phaser.Scene {
         onComplete: () => spark.destroy(),
       });
     }
+  }
+
+  /**
+   * The chain-reaction twin of `celebrateHarvest` above: the same gold burst,
+   * one per unit, staggered a beat apart (`CASCADE_POP_STAGGER_MS`) so a
+   * multi-unit chain reads as a CASCADE rather than every burst landing in
+   * the same frame. Reuses `celebrateHarvest` unit for unit instead of
+   * re-implementing its Graphics/tween pair, so a chained unit gets exactly
+   * the burst a solo tap's own crit already gets.
+   *
+   * Fanned out with `time.delayedCall`, not a `TweenChain`: a TweenChain
+   * drives ONE target through a sequence of tween configs, and this is the
+   * opposite shape -- one identical effect repeated across several
+   * independent targets, the same pattern the pond's own ripple loop already
+   * uses a `delay: i * <ms>` stagger for. Each call stands alone, so a unit
+   * that is gone by the time its turn comes up (picked, mucked, or diffed
+   * away by `setUnits` in the meantime) simply no-ops inside
+   * `celebrateHarvest` itself -- there is nothing here to cancel or clean up.
+   */
+  celebrateCascade(unitIds: readonly string[]): void {
+    const stagger = this.options.reducedMotion ? 0 : CASCADE_POP_STAGGER_MS;
+    unitIds.forEach((unitId, index) => {
+      if (index === 0) {
+        this.celebrateHarvest(unitId);
+        return;
+      }
+      this.time.delayedCall(index * stagger, () => this.celebrateHarvest(unitId));
+    });
   }
 
   /**

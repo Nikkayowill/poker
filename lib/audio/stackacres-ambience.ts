@@ -268,22 +268,15 @@ class Ambience {
     const bus = this.bedBus;
     if (!ctx || !bus) return;
 
-    // `air`: the floor. Brown noise with the top taken off -- the sound of
-    // being outdoors, with nothing in particular happening.
-    this.beds.set("air", this.bed(ctx, bus, (out) => {
-      const source = noiseSource(ctx, "brown");
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = 420;
-      source.connect(filter).connect(out);
-      return { sources: [source], walks: [] };
-    }));
-
     // `grass`: the rustle, and all that is left of the weather -- see
     // AMBIENCE_BEDS in lib/stackacres/ambience-plan.ts for why there is no
-    // wind bed above it any more. Its own gust walk is what carries the
-    // weather now: the band moves as well as the level, so it reads as air
-    // going THROUGH grass rather than as a level being ridden up and down.
+    // wind bed above it, and no `air` floor underneath it, any more. Grass
+    // used to carry its own gust walk (the band's centre frequency and level
+    // both wandering), on the theory that it would read as air going THROUGH
+    // grass rather than as wind. It read as wind: that walk is the same
+    // "band of noise that wanders in level and pitch" the wind bed was cut
+    // for, just moved rather than removed. Fixed, static filter -- a steady
+    // rustle, no gusts.
     this.beds.set("grass", this.bed(ctx, bus, (out) => {
       const source = noiseSource(ctx, "white");
       const high = ctx.createBiquadFilter();
@@ -296,13 +289,7 @@ class Ambience {
       const gust = ctx.createGain();
       gust.gain.value = 0.3;
       source.connect(high).connect(band).connect(gust).connect(out);
-      return {
-        sources: [source],
-        walks: [
-          new RandomWalk(band.frequency, 2000, 5200, 2200, ctx),
-          new RandomWalk(gust.gain, 0.06, 0.5, 1500, ctx),
-        ],
-      };
+      return { sources: [source], walks: [] };
     }));
 
     // `water`: a narrow low band, the body of moving water. The individual

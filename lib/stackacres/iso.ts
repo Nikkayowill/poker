@@ -113,6 +113,24 @@ export function unprojectBoundsApprox(rect: WorldRect): WorldRect {
 }
 
 /**
+ * The scene-space depth key for a world point: the projected y, which is
+ * monotonic in (worldX + worldY) by construction, so it is the correct
+ * isometric near/far ordering and not just a stand-in for one. `nudge` is a
+ * small scene-space tie-breaker for two things anchored at the same point --
+ * it is added AFTER projection, never before, because a tie-break has no
+ * direction in world space to be projected from.
+ *
+ * Shared by stackacres-scene.ts's own `depthAt` (a thin private wrapper kept
+ * there for its call sites' brevity) and game-juice-manager.ts, which has no
+ * scene instance of its own to delegate to -- a juice effect and the crop
+ * layer it plays over must use the exact same formula or the effect can draw
+ * on the wrong side of something it should pass behind.
+ */
+export function isoDepthAt(x: number, y: number, nudge = 0): number {
+  return isoProject(x, y).y + nudge;
+}
+
+/**
  * The two edge directions every diamond tile has, as rotation angles for a
  * sprite that was drawn lying along a world-space axis (a fence rail, a
  * furrow line) and now needs to lie along the matching screen-space edge

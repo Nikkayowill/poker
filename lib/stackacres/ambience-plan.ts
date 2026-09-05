@@ -37,21 +37,23 @@ export type AmbienceTimeOfDay = "day" | "dusk" | "night";
 /**
  * The continuous layers. Each is one synthesis recipe in the engine.
  *
- * `air` is the only one that is never silent -- it is the floor the rest sit
- * on, and a farm with every other bed at zero should still not sound like the
- * audio has failed.
- *
- * THERE IS NO `wind` BED, and that is a decision rather than an omission. One
- * shipped, was turned down once for being the loudest thing on the farm by a
- * wide margin, and was then cut outright: a band of noise whose level and
- * centre frequency both wander is the layer an ear locks onto and follows,
- * and this whole layer exists to be un-followed. What is left of the weather
- * is `air` underneath everything and `grass` moving on top of it, which is
- * the same picture with the part that kept asking to be listened to taken
- * out. Do not reinstate it as a quieter gust walk: that is exactly what was
- * tried first, and quieter wind is still wind.
+ * THERE IS NO `wind` BED and there is no `air` BED either, and both are
+ * decisions rather than omissions. Wind shipped, was turned down once for
+ * being the loudest thing on the farm by a wide margin, and was then cut
+ * outright. That left `grass` carrying a gust walk of its own, which read as
+ * wind just the same and was cut the next day. `air` was the last of it: a
+ * continuous low-passed noise floor under everything, held at close to full
+ * gain in every district and every hour so the farm was never silent -- which
+ * is exactly the brief for a wind bed, just without a gust to point at. It
+ * was killed rather than tuned again after three straight rounds of "still
+ * sounds like wind" against three different fixes. What is left is `grass`'s
+ * fixed, static rustle plus whatever `water`/`insects` a district actually
+ * has; a district with none of those genuinely goes quiet, which is the
+ * correct sound for bare ground with nothing on it. Do not reinstate a
+ * continuous noise-floor bed under any name -- that is the shape that has
+ * read as wind three times now, regardless of what wanders on top of it.
  */
-export const AMBIENCE_BEDS = ["air", "grass", "water", "insects"] as const;
+export const AMBIENCE_BEDS = ["grass", "water", "insects"] as const;
 export type AmbienceBed = (typeof AMBIENCE_BEDS)[number];
 
 /** Gain per bed, 0..1. A bed at 0 is held silent rather than torn down. */
@@ -98,7 +100,7 @@ export interface AmbienceCue {
   gain: number;
 }
 
-const SILENT: AmbienceMix = { air: 0, grass: 0, water: 0, insects: 0 };
+const SILENT: AmbienceMix = { grass: 0, water: 0, insects: 0 };
 
 /**
  * The bed mix for a district at an hour.
@@ -120,7 +122,6 @@ export function ambienceMix(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceMix {
   const base = zoneBed(zone);
   const day = timeBed(tod);
   return {
-    air: clamp01(base.air * day.air),
     grass: clamp01(base.grass * day.grass),
     water: clamp01(base.water * day.water),
     insects: clamp01(base.insects * day.insects),
@@ -131,18 +132,18 @@ function zoneBed(zone: ZoneId): AmbienceMix {
   switch (zone) {
     case "farmstead":
       // Buildings break the rustle up and the yard pump is the only water.
-      return { air: 1, grass: 0.3, water: 0.16, insects: 0.5 };
+      return { grass: 0.3, water: 0.16, insects: 0.5 };
     case "meadow":
       // Open grass, the loudest rustle on the map, no standing water.
-      return { air: 1, grass: 0.9, water: 0, insects: 0.85 };
+      return { grass: 0.9, water: 0, insects: 0.85 };
     case "oxfields":
-      // Bare open ground with nothing standing on it to make a noise. `air`
-      // carries this district nearly on its own, and it is the quietest of
-      // the four on purpose -- it used to be the loudest, on the wind bed.
-      return { air: 1, grass: 0.42, water: 0, insects: 0.35 };
+      // Bare open ground with nothing standing on it to make a noise --
+      // the quietest district on the map on purpose, now that there is no
+      // `air` floor to carry it.
+      return { grass: 0.42, water: 0, insects: 0.35 };
     case "wallow":
       // Wet, sheltered, low. Water carries; not much else does.
-      return { air: 1, grass: 0.34, water: 0.85, insects: 0.7 };
+      return { grass: 0.34, water: 0.85, insects: 0.7 };
     default:
       return SILENT;
   }
@@ -151,13 +152,13 @@ function zoneBed(zone: ZoneId): AmbienceMix {
 function timeBed(tod: AmbienceTimeOfDay): AmbienceMix {
   switch (tod) {
     case "day":
-      return { air: 1, grass: 1, water: 1, insects: 1 };
+      return { grass: 1, water: 1, insects: 1 };
     case "dusk":
       // The grass settles with the light; the insects are at their loudest.
-      return { air: 1, grass: 0.85, water: 1, insects: 1 };
+      return { grass: 0.85, water: 1, insects: 1 };
     case "night":
-      // Still air, and the daytime hum hands over to the cricket cue.
-      return { air: 0.9, grass: 0.55, water: 1, insects: 0 };
+      // The daytime hum hands over to the cricket cue.
+      return { grass: 0.55, water: 1, insects: 0 };
     default:
       return SILENT;
   }

@@ -433,9 +433,9 @@ export function AccountEntryCard({
       {error && <p className="account-entry-error" role="alert">{error}</p>}
 
       {/* Install guidance, the play-money disclosure, and a real support
-          address scroll with the form -- only the legal links are pinned in
-          the fixed bottom bar below (X-style: content in the middle,
-          "fluff" links as the footer). See .entry-footer's own CSS note. */}
+          address sit with the form; the legal links come last, in the footer
+          below (X-style: content in the middle, "fluff" links as the
+          footer). See .entry-footer's own CSS note. */}
       <div className="entry-scroll-footer">
         <InstallLine />
         <p className="account-entry-footnote">
@@ -448,10 +448,12 @@ export function AccountEntryCard({
       </div>
     </section>
 
-    {/* Sibling of .account-entry-card, not nested in it: pinned to the
-        viewport regardless of how tall the card's own content gets or how
-        far it scrolls (X-style -- content in the middle, only the legal
-        links fixed at the bottom). See .entry-footer's own CSS note. */}
+    {/* Sibling of .account-entry-card, not nested in it: the card's own
+        `margin: auto 0` drops this row onto the bottom of the page whatever
+        height the card comes out at (X-style -- content in the middle, only
+        the legal links at the bottom). It is in flow, not fixed, and that is
+        the fix for a reported bug -- read .entry-footer's CSS note before
+        pinning it to the viewport again. */}
     <footer className="entry-footer">
       {/* Three links, not four: Kayo's call -- Supporting StackChips drops
           off the sign-in screen specifically (the page itself is untouched,

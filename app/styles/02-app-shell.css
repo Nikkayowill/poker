@@ -12,7 +12,7 @@
 /* Keep the room's paint continuous beneath the transparent lobby chrome. The
    signed-out room uses the same base as its fixed ceiling so the header does
    not reveal a horizontal change in gradient at its lower edge. */
-.app-root:has(.account-entry-page) {
+html:has(.account-entry-page) {
   --entry-room:
     var(--grain),
     radial-gradient(560px 460px at 50% 44%, rgba(6, 8, 13, .55), transparent 72%),
@@ -21,8 +21,16 @@
     var(--glow-gold),
     radial-gradient(1400px 1100px at 50% 40%, rgba(74, 28, 136, .08), transparent 72%),
     var(--brand-ink);
-  background: var(--entry-room);
 }
+
+/* Declared on `html` just above so both of these can read it. The shell
+   paints the room, and `body` paints the same room behind it, for exactly
+   the reason `body:has(.lobby-hub)` below already does it for the hub: when
+   a short layout viewport leaves a strip under the shell, that strip gets
+   the room's colour instead of the bare document colour, so it reads as a
+   soft seam rather than the hard horizontal cutoff Kayo photographed. */
+.app-root:has(.account-entry-page),
+body:has(.account-entry-page) { background: var(--entry-room); }
 
 .app-root:has(.lobby-hub) { background: var(--brand-room); }
 

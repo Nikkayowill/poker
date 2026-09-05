@@ -414,6 +414,35 @@ export function cropSpot(zone: ZoneId, unitId: string): WorldPoint {
   return pointWithin(growAreaInterior(zone), seededRandom(seedFromId(unitId)));
 }
 
+/**
+ * The wheat field: the strip east of the Hen Coop, under the scarecrow.
+ *
+ * ITS OWN GROUND, DELIBERATELY OUTSIDE EVERY `GROW_AREA`. A wheat plot is
+ * not a `homestead_units` row and must never be reachable from the harvest
+ * sweep that pays Gold for one -- see ./machine-items.ts's header for why
+ * that separation is the whole reason wheat got its own table. Drawing it
+ * inside the Farmstead's fence would be the first step toward someone
+ * reasonably assuming the sweep covers it.
+ *
+ * Hand-placed, and the constraints are the ones a future move has to keep:
+ * clear of the Farmstead's grow area (170..330, so this starts at 348),
+ * inside `FARM_ZONE` (x 28..440, y -60..410, so this ends at 432), south of
+ * the scarecrow at (402, 110) which now reads as guarding it, and clear of
+ * the windmill at (330, 28). world.test.ts holds all four.
+ */
+export const WHEAT_FIELD: WorldRect = { x: 348, y: 140, width: 84, height: 180 };
+
+/**
+ * Where one wheat plot stands. Hashed off the plot's own row id, exactly the
+ * way `cropSpot` hashes off a unit's -- NOT off its position in the list.
+ * Plots are collected out from under each other (`workStackAcres` settles
+ * every ripe one in a single pass), so an ordinal spot would slide every
+ * surviving plot sideways the moment an earlier one was cashed.
+ */
+export function wheatPlotSpot(plotId: string): WorldPoint {
+  return pointWithin(WHEAT_FIELD, seededRandom(seedFromId(plotId)));
+}
+
 /* ------------------------------------------------------------------ */
 /* Scenery                                                             */
 /* ------------------------------------------------------------------ */

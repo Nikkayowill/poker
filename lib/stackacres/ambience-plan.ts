@@ -29,6 +29,7 @@
  *   field.
  */
 
+import { clamp01 } from "./world";
 import type { ZoneId } from "./zones";
 
 /** Which third of the day the farm is in. Mirrors `timeOfDay` in lib/audio/stackacres-music.ts. */
@@ -268,9 +269,4 @@ export function livestockCue(
 export function rollGapMs(cue: { minGapMs: number; maxGapMs: number }, random: () => number): number {
   const span = Math.max(0, cue.maxGapMs - cue.minGapMs);
   return cue.minGapMs + random() * span;
-}
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
 }

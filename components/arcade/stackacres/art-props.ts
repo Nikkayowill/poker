@@ -36,17 +36,21 @@ export type PropPainterName =
   | "stoneWall"
   | "scarecrow"
   | "grandfatherRay"
-  // Not props: the farmhand walks (see lib/stackacres/farmhand.ts) and so has
-  // no `PropPlacement` and no entry in YARD_PROPS. He is drawn here because
-  // this is where the map's people are drawn, Ray included. Both of these are
-  // his UPPER BODY only -- see their own comment below.
-  | "farmhand"
-  | "farmhandBack"
   | "log"
   | "mushroom"
   | "boulder";
 
 const TAU = Math.PI * 2;
+
+/**
+ * The dark edge Grandfather Ray is drawn with.
+ *
+ * Same tone prep_chibi.py rims his generated art with, so the fallback
+ * drawing and the asset it stands in for carry the same outline. Not black: a
+ * black rim reads as a sticker cut out and pasted onto the field, which is
+ * exactly what he must not look like.
+ */
+const RIM = "#2c1a16";
 
 /** A wooden member lit from the left: pale on its left edge, dark on its right. */
 function timber(c: Ctx, x: number, y: number, w: number, h: number, r: number): void {
@@ -579,141 +583,69 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
   // loads (see spriteBacked in stackacres-art.ts): straw hat, tan shirt,
   // brown bib overalls, boots -- tall and slender rather than square, the
   // one silhouette here built as a person rather than scenery.
-  grandfatherRay: painter(20, 40, (c) => {
-    for (const x of [6.4, 13.6]) {
-      rr(c, x - 1.8, 37, 3.6, 3, 1.2);
+  /*
+   * Grandfather Ray: the map's one person, CHIBI, drawn to the box his own
+   * generated art measures out.
+   *
+   * The proportions are not a style preference. Looking DOWN at a figure on an
+   * isometric grid foreshortens its body away to almost nothing, so the head
+   * is most of what survives -- and at the opening shot these are thirteen
+   * pixels tall. The first cast was rendered at real human proportions, about
+   * one head in six, and read as a lanky stick with no face. This is one head
+   * in three: the head is a third of the figure, the body is compact and the
+   * limbs are short and thick.
+   *
+   * He carries a dark rim, and that is not decoration either: the map's grass
+   * is a mid-green of about his own value, and a shape whose edge is only a
+   * darker shade of itself dissolves into it. `RIM` here is the same tone
+   * prep_chibi.py paints round the generated art.
+   */
+
+  grandfatherRay: painter(25.125, 40, (c) => {
+    for (const x of [7.6, 15.4]) {
+      rr(c, x, 33.4, 6.2, 6.6, 2.2);
+      F(c, RIM);
+      rr(c, x + 0.5, 33.9, 5.2, 5.6, 1.8);
       F(c, "#4a3324");
     }
-    for (const x of [6.4, 13.6]) {
-      rr(c, x - 1.9, 26, 3.8, 12, 1.4);
-      F(c, "#6b4a30");
-    }
-    rr(c, 4.4, 15, 11.2, 13, 2.6);
+    // Overalls: one short stubby barrel of a body, legs included. A chibi has
+    // no waist to speak of, so drawing hips and thighs separately just puts a
+    // seam across him.
+    rr(c, 6.4, 21.4, 12.4, 14.4, 3.4);
+    F(c, RIM);
+    rr(c, 7, 22, 11.2, 13.2, 3);
     F(c, "#6b4a30");
-    rr(c, 6.4, 12.4, 7.2, 5.6, 1.8);
+    rr(c, 9.4, 23.6, 6.4, 5.4, 1.6);
     F(c, "#7a563a");
-    for (const x of [3, 13.6]) {
-      rr(c, x, 13.6, 3.4, 9, 1.6);
+    // Sleeves either side, cream, ending in bare hands.
+    for (const x of [4.2, 17.1]) {
+      rr(c, x, 20.4, 4.4, 9.2, 2);
+      F(c, RIM);
+      rr(c, x + 0.5, 20.9, 3.4, 6.4, 1.6);
       F(c, "#e8dcc0");
+      ell(c, x + 2.2, 28.4, 1.9, 1.9);
+      F(c, "#8a5a3e");
     }
-    for (const x of [6.6, 12.2]) {
-      rr(c, x, 12.4, 1.2, 4, 0.5);
+    for (const x of [8.8, 14.6]) {
+      rr(c, x, 20.6, 1.6, 3.4, 0.6);
       F(c, "#5a3d26");
     }
-    ell(c, 10, 8.2, 3.6, 4);
+    // The head: a third of him, which is the whole point.
+    ell(c, 12.5, 12.6, 8.2, 8);
+    F(c, RIM);
+    ell(c, 12.5, 12.6, 7.4, 7.2);
     F(c, "#8a5a3e");
-    ell(c, 10, 5.6, 5.6, 1.7);
+    // The straw hat, wider than he is -- the one shape carrying "Ray" at
+    // thirteen pixels tall, where a face is long gone.
+    ell(c, 12.5, 7.2, 12.4, 3.4);
+    F(c, RIM);
+    ell(c, 12.5, 7.1, 11.6, 2.8);
     F(c, "#d8b866");
-    rr(c, 7.2, 1.6, 5.6, 4.4, 2.2);
+    rr(c, 7.4, 0.8, 10.2, 7, 3);
+    F(c, RIM);
+    rr(c, 7.9, 1.3, 9.2, 6, 2.6);
     F(c, "#e6c878");
   }),
-
-  /*
-   * The farmhand, coming and going -- HIS UPPER BODY ONLY.
-   *
-   * Two pieces of art rather than one, and that is the whole reason this pair
-   * exists: a mirror is a negative x scale (see `mirrorFor` in
-   * stackacres-scene.ts) and can only ever express LEFT and RIGHT, so the two
-   * screen directions a mirror cannot reach -- toward the camera and away
-   * from it -- need a second drawing. `farmhand` x mirror gives SE and SW,
-   * `farmhandBack` x mirror gives NE and NW: the four diagonals a 2:1 tile
-   * has, off two painters and one sign. `Farmhand.towards` in
-   * lib/stackacres/farmhand.ts picks between them.
-   *
-   * THESE STOP AT THE CROTCH, and there are no legs anywhere in this file.
-   * The scene rigs them instead, from lib/stackacres/farmhand-walk.ts, so
-   * they actually swing and bend -- a single frozen pose is what made the
-   * first version read as a cardboard cutout being jiggled. The box and the
-   * anchor are measured off the generated art these stand in front of (see
-   * rig_farmhand.py): the anchor's y is the cut line and its x is the hip
-   * midpoint, so placing one is just "put the pelvis here", and the two views
-   * can carry their pelvis in different places inside their own box (they do).
-   *
-   * Built on Grandfather Ray's proportions deliberately -- the two are the
-   * same species of silhouette. Everything else is pushed as far from Ray as
-   * the palette allows, because at the opening shot they are thirteen pixels
-   * tall and the only thing separating them is the outline. Ray is a straw
-   * hat and earth tones; this is a peaked cap, a red shirt and blue denim.
-   */
-  farmhand: painter(
-    11.375,
-    25.625,
-    (c) => {
-      // Far arm first, a shade darker, so the near side reads as nearer.
-      rr(c, 0.2, 12.4, 2.8, 8.2, 1.4);
-      F(c, RAMPS.roof.rim);
-      // The overalls run off the bottom of the box: the cut line is the hip,
-      // and this denim carries on into the legs the scene draws.
-      rr(c, 1.5, 13.6, 8, 12.1, 2.4);
-      F(c, RAMPS.water.rim);
-      // The shirt shows above the bib, which is what makes the torso two
-      // colours rather than one flat block at a distance.
-      rr(c, 1.2, 9.8, 8.6, 6.2, 2.2);
-      F(c, RAMPS.roof.top);
-      rr(c, 2.8, 12.4, 5.6, 4.4, 1.6);
-      F(c, RAMPS.water.side);
-      for (const x of [3.1, 7.3]) {
-        rr(c, x, 10, 1.1, 3.2, 0.5);
-        F(c, RAMPS.water.rim);
-      }
-      rr(c, 8.3, 12.8, 3, 8.2, 1.4);
-      F(c, RAMPS.roof.side);
-
-      ell(c, 5.5, 7, 3.4, 3.8);
-      F(c, "#c08758");
-      for (const x of [5.1, 7.3]) {
-        ell(c, x, 7.4, 0.5, 0.7);
-        F(c, "rgba(40,26,16,.8)");
-      }
-      // Peak first, crown over it, offset to the right: the peak is the one
-      // shape carrying which way he is looking at thirteen pixels tall.
-      ell(c, 6.8, 4.9, 3.9, 1.3);
-      F(c, RAMPS.roof.rim);
-      rr(c, 2.2, 1.2, 6.1, 4.3, 2.1);
-      F(c, RAMPS.roof.side);
-    },
-    0.4725,
-    1,
-  ),
-
-  // Walking away. No face, no bib (the overalls are one flat panel from
-  // behind), and the straps cross -- the one detail that says "this is his
-  // back" at a size where a face was never legible anyway.
-  farmhandBack: painter(
-    11.25,
-    25.625,
-    (c) => {
-      rr(c, 0.2, 12.4, 2.8, 8.2, 1.4);
-      F(c, RAMPS.roof.rim);
-      rr(c, 1.6, 12.6, 8, 13.1, 2.4);
-      F(c, RAMPS.water.rim);
-      rr(c, 1.3, 9.8, 8.6, 4.6, 2);
-      F(c, RAMPS.roof.top);
-      c.beginPath();
-      c.moveTo(3.2, 12.8);
-      c.lineTo(7.8, 17.4);
-      stroke(c, RAMPS.water.side, 1.1);
-      c.beginPath();
-      c.moveTo(7.8, 12.8);
-      c.lineTo(3.2, 17.4);
-      stroke(c, RAMPS.water.side, 1.1);
-      rr(c, 8.2, 12.8, 3, 8.2, 1.4);
-      F(c, RAMPS.roof.side);
-
-      ell(c, 5.6, 7, 3.4, 3.8);
-      F(c, "#c08758");
-      rr(c, 2.7, 7.2, 5.8, 3, 1.5);
-      F(c, "#5a3d26");
-      // The cap's own back seam, and no peak: it is on the far side of his
-      // head from here.
-      ell(c, 5.6, 5.9, 3.7, 1.1);
-      F(c, RAMPS.roof.rim);
-      rr(c, 2.3, 1.5, 6.1, 4.4, 2.1);
-      F(c, RAMPS.roof.side);
-    },
-    0.5667,
-    1,
-  ),
 
   /* ---- the woodland floor's litter, scattered by chunkScenery ---- */
 

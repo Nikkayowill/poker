@@ -49,11 +49,6 @@ export interface StackAcresWorldApi {
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
-  /** Send the farmhand over to a unit that has just been acted on.
-   *  Decoration on a request that has already left the browser: he refuses
-   *  silently outside the Farmstead, and can never delay or cancel a write.
-   *  See lib/stackacres/farmhand.ts. */
-  sendFarmhand: (unitId: string) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -280,7 +275,6 @@ export function StackAcresWorld({
       recenter: () => sceneRef.current?.recenter(),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
-      sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
     }),
     [],

@@ -24,6 +24,7 @@ function unit(
     isWatered: true,
     muckFee: state === "mucked" ? 22 : null,
     permanent: false,
+    housedIn: null,
     ...overrides,
   };
 }

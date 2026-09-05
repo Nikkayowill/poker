@@ -2042,6 +2042,29 @@
   text-wrap: pretty;
 }
 
+/* The Greenhouse panel (stackacres-greenhouse-panel.tsx). Reuses the museum's
+   own grid/card shell (.sa-museum-items/.sa-museum-item) for both of its
+   screens -- the build-cost checklist and the six-slot grow grid -- and adds
+   only what those two do not already cover: room for a slot card's own
+   button(s), and a wider column so a two-button empty slot does not clip. */
+.sa-greenhouse-slots {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+
+.sa-greenhouse-empty-slot {
+  gap: 6px;
+}
+
+.sa-greenhouse-sow-btn,
+.sa-greenhouse-empty-slot .sa-cta,
+.sa-greenhouse-slots .sa-cta {
+  margin-top: 4px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  width: 100%;
+}
+
 /* A bonus wing, not a redesign: a faint top divider is the whole visual
    difference from an ordinary exhibit above. */
 .sa-museum-secret-wing {

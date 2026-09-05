@@ -87,6 +87,7 @@ import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
+import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
@@ -214,6 +215,10 @@ interface StackAcresResponse {
    *  only from a response old enough to predate the feature. */
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
+  /** Whether the Greenhouse (lib/stackacres/greenhouse.ts) has been built.
+   *  Absent only from a response old enough to predate the feature, which
+   *  `applyResponse` reads as "not yet". */
+  greenhouseBuilt?: boolean;
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -221,7 +226,8 @@ interface StackAcresResponse {
 type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
   | { action: "clear-sector"; sector: SectorId }
-  | { action: "stock"; stock: StackAcresStock }
+  | { action: "build-greenhouse" }
+  | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
   // No `unitIds` means "bring in everything that is ready" -- what the
@@ -257,6 +263,11 @@ type Action =
  */
 function intentOf(body: Action): string {
   if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  // Distinguished from an outdoor sow of the same crop: the two are
+  // different intents (different slot cap, different growth clock), and
+  // treating them as one would let a request in flight for one silently
+  // swallow a press aimed at the other.
+  if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
   if ("stock" in body) return `${body.action}:${body.stock}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
@@ -410,6 +421,8 @@ export function StackAcresFarm() {
   const [showStore, setShowStore] = useState(false);
   const [showMuseum, setShowMuseum] = useState(false);
   const [showContracts, setShowContracts] = useState(false);
+  const [showGreenhouse, setShowGreenhouse] = useState(false);
+  const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
   /** Standing earned to date. Its own state rather than a fifth field on
    *  `processing`: nothing plans against it, it is a number the town board
    *  displays, and adding it there would widen an object whose whole point is
@@ -626,6 +639,7 @@ export function StackAcresFarm() {
     }
     if (data.secrets) setSecrets(data.secrets);
     if (data.secretDonations) setSecretDonations(data.secretDonations);
+    if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -1323,6 +1337,63 @@ export function StackAcresFarm() {
   }, []);
 
   /**
+   * A finger landed on the Greenhouse's own footprint, from outside it
+   * (lib/stackacres/greenhouse.ts). Opens the same panel either way -- built
+   * or not is what decides which of its two screens shows -- and, when it is
+   * already built, also eases the camera inside it. An unbuilt Greenhouse has
+   * no interior worth stepping into yet, so the camera stays put and the
+   * panel's own build screen is the whole story.
+   */
+  const onWorldGreenhouseTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowGreenhouse(true);
+    if (greenhouseBuilt) world.current?.enterGreenhouse();
+  }, [greenhouseBuilt]);
+
+  /**
+   * A finger landed on one of the Greenhouse's own six slots, while the scene
+   * is already stepped inside it. The panel -- already open by the time this
+   * can fire -- is the real interactive surface for a slot (same "a real DOM
+   * row does what the tap does" split every other structure on this map
+   * already takes; see stackacres-world.tsx's own header); this only
+   * guarantees it is showing.
+   */
+  const onWorldGreenhouseSlotTap = useCallback(() => {
+    setShowGreenhouse(true);
+  }, []);
+
+  /** Steps back to the open world and closes the panel, in that order --
+   *  the same "sound, then close" shape `onWorldBarnTap`'s own modal takes
+   *  on the way out (see its `onClose` below). A no-op camera-wise if the
+   *  Greenhouse was never built and the camera never stepped inside. */
+  const closeGreenhouse = useCallback(() => {
+    panelSound();
+    setShowGreenhouse(false);
+    world.current?.exitGreenhouse();
+  }, []);
+
+  const onBuildGreenhouse = useCallback(() => {
+    buySound();
+    void act({ action: "build-greenhouse" });
+  }, [act]);
+
+  const onSowGreenhouse = useCallback(
+    (stock: StackAcresStock) => {
+      sowSound();
+      void act({ action: "stock", stock, inGreenhouse: true });
+    },
+    [act],
+  );
+
+  const onCollectGreenhouse = useCallback(
+    (unitId: string) => {
+      void act({ action: "collect", unitIds: [unitId] });
+    },
+    [act],
+  );
+
+  /**
    * A finger landed on one of the three hidden discovery spots. The scene has
    * already fired its own local, optimistic `secretDiscoveryPuff` by the time
    * this callback runs (see stackacres-scene.ts's own dispatch) -- all this
@@ -1572,6 +1643,8 @@ export function StackAcresFarm() {
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
+              onGreenhouseTap={onWorldGreenhouseTap}
+              onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
@@ -2105,6 +2178,18 @@ export function StackAcresFarm() {
           secrets={museumSecrets}
           secretDonations={secretDonations}
           onClose={() => { panelSound(); setShowMuseum(false); }}
+        />
+      )}
+      {showGreenhouse && (
+        <StackAcresGreenhousePanel
+          built={greenhouseBuilt}
+          inventory={processing.inventory}
+          units={liveUnits}
+          busy={busy}
+          onBuild={onBuildGreenhouse}
+          onSow={onSowGreenhouse}
+          onCollect={onCollectGreenhouse}
+          onClose={closeGreenhouse}
         />
       )}
       {showContracts && (

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ISO_EDGE_ANGLE,
   isoProject,
+  isoProjectLocal,
   isoUnproject,
+  isoUnprojectLocal,
   projectedBounds,
   projectedCorners,
   unprojectBoundsApprox,
@@ -101,6 +103,43 @@ describe("unprojectBoundsApprox", () => {
     expect(back.y).toBeLessThanOrEqual(worldRect.y + 1e-6);
     expect(back.x + back.width).toBeGreaterThanOrEqual(worldRect.x + worldRect.width - 1e-6);
     expect(back.y + back.height).toBeGreaterThanOrEqual(worldRect.y + worldRect.height - 1e-6);
+  });
+});
+
+describe("isoProjectLocal / isoUnprojectLocal", () => {
+  it("equals projecting the origin and local point summed directly", () => {
+    // The whole reason this seam is safe to add: it must not be a second
+    // projection, just the additive property already proven above, named for
+    // a sub-grid's own use.
+    const origin = { x: 348, y: 330 };
+    const local = { x: 24, y: 16 };
+    const combined = isoProjectLocal(origin, local);
+    const direct = isoProject(origin.x + local.x, origin.y + local.y);
+    expect(combined.x).toBeCloseTo(direct.x, 9);
+    expect(combined.y).toBeCloseTo(direct.y, 9);
+  });
+
+  it("round-trips through isoUnprojectLocal", () => {
+    const origin = { x: 348, y: 330 };
+    const points = [
+      { x: 0, y: 0 },
+      { x: 48, y: 32 },
+      { x: -10, y: 70.5 },
+    ];
+    for (const local of points) {
+      const screen = isoProjectLocal(origin, local);
+      const back = isoUnprojectLocal(origin, screen);
+      expect(back.x).toBeCloseTo(local.x, 9);
+      expect(back.y).toBeCloseTo(local.y, 9);
+    }
+  });
+
+  it("at a zero origin, is exactly isoProject", () => {
+    const local = { x: 55, y: -12 };
+    const viaLocal = isoProjectLocal({ x: 0, y: 0 }, local);
+    const direct = isoProject(local.x, local.y);
+    expect(viaLocal.x).toBeCloseTo(direct.x, 9);
+    expect(viaLocal.y).toBeCloseTo(direct.y, 9);
   });
 });
 

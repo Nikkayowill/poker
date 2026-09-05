@@ -67,6 +67,14 @@ export interface StackAcresWorldApi {
    *  silently outside the Farmstead, and can never delay or cancel a write.
    *  See lib/stackacres/farmhand.ts. */
   sendFarmhand: (unitId: string) => void;
+  /** Steps the camera inside the Greenhouse (lib/stackacres/greenhouse.ts),
+   *  narrowing its bounds to the interior -- the shell's own cue, once it
+   *  has decided the Greenhouse is built (an unbuilt one opens a build panel
+   *  instead; see `onGreenhouseTap`). */
+  enterGreenhouse: () => void;
+  /** Steps back out to the open world. Also what a tap outside the
+   *  sub-grid's own six slots does on its own, from inside the scene. */
+  exitGreenhouse: () => void;
   /** What the AUTOMATED farmhand may do when a cycle finishes. Passed through
    *  the handle rather than as a prop because every hook is a request the
    *  shell already knows how to make, and rebuilding the scene's wiring on
@@ -91,6 +99,14 @@ export interface StackAcresWorldProps {
   onGroundTap: (zone: ZoneId, at: TapPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
+   *  the shell's cue to decide whether to open a build panel or call
+   *  `enterGreenhouse` (see the api handle above). */
+  onGreenhouseTap: () => void;
+  /** A finger landed on one of the Greenhouse's own six slots, and ONLY while
+   *  the scene is stepped inside it (`enterGreenhouse`). Row 0 is nearest the
+   *  door -- see lib/stackacres/greenhouse.ts's `greenhouseSlotLocal`. */
+  onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -143,6 +159,8 @@ export function StackAcresWorld({
   onUnitTap,
   onGroundTap,
   onBarnTap,
+  onGreenhouseTap,
+  onGreenhouseSlotTap,
   onSecretZoneTap,
   sectors,
   onLockedSectorTap,
@@ -165,6 +183,8 @@ export function StackAcresWorld({
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
+  const greenhouseTapRef = useRef(onGreenhouseTap);
+  const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
@@ -186,6 +206,8 @@ export function StackAcresWorld({
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
+    greenhouseTapRef.current = onGreenhouseTap;
+    greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
@@ -228,6 +250,8 @@ export function StackAcresWorld({
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at) => groundTapRef.current(zone, at),
           onBarnTap: () => barnTapRef.current(),
+          onGreenhouseTap: () => greenhouseTapRef.current(),
+          onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
@@ -333,6 +357,8 @@ export function StackAcresWorld({
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
+      enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
+      exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
     }),

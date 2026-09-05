@@ -58,6 +58,35 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### The Greenhouse: a built-once structure, six crop slots, weather-sealed and faster (2026-09-05)
+New `lib/stackacres/greenhouse.ts`. Built from a task brief that assumed a `homestead_plots`-era
+architecture (a tile grid in `iso.ts`, plot flags in `homestead_plots`) that no longer exists -- both
+were deleted outright on 2026-09-03 (see that day's own entries below: "places, not plots"). Built for
+real instead: `GREENHOUSE_PLOT` is one hand-placed `WorldRect` south of the wheat field, in the same
+convention `WHEAT_FIELD`/`BARN_FOOTPRINT` already use, holding a genuine sub-grid (6 slots) addressed
+in its own small local space via two new, purely-mathematical `iso.ts` exports
+(`isoProjectLocal`/`isoUnprojectLocal`) that lean on `isoProject`'s own proven-additive property rather
+than inventing a second projection. Slots are a capacity visualization, not a plot: `homestead_units`
+stores no row/col, only `housed_in = 'greenhouse'` and a count the database caps at 6 -- the same
+"places, not plots" call the rest of StackAcres already made, restated here on purpose rather than
+quietly reintroducing positional ownership. Two real invariants, not flavour text: growth runs at 0.7x
+`durationMs`, snapshotted onto `ready_at` at stocking like every other snapshotted number here; and the
+weather overlay's screen-wide tint/particle layers (its only currently-wired half -- the crit/cost
+economy hooks in `weather.ts` stay exactly as unwired as its own header says they should) are frozen
+and hidden the instant the camera steps inside (`WeatherOverlayManager.setSuppressed`), not merely
+skipped and left visually stale. Build cost is Flour+Cloth, debited by a new `build_homestead_greenhouse`
+RPC that takes an advisory lock (serializing concurrent builds), then `FOR UPDATE`-locks both cost-line
+rows in `homestead_processing_inventory` before debiting through the existing `adjust_homestead_processing_inventory`
+-- the brief asked for `adjust_homestead_inventory`, which is dead (superseded by the processing table
+in the 2026-09-04 Mill pass); verified live via `execute_sql` before writing the migration, not trusted
+from either name. `homestead_units_enforce_stock_shape` gained one new branch (crop-only, built,
+under-cap) rather than a second trigger. Migration `20260905130000_stackacres_greenhouse.sql`
+**unapplied** — see `[[reference_stackchips_migrations_not_auto_applied]]`; verified against the live
+schema, not merged. Scene wiring (`enterGreenhouse`/`exitGreenhouse` swap `camera.setBounds()` between
+the open world and the plot's own interior, mirroring `focusZone`) and a real `stackacres-greenhouse-panel.tsx`
+ship with it; the six-slot ground art itself is a Graphics volume in the palette's own "water" ramp, not
+a new baked painter — there is no supplied art for this structure yet.
+
 ### The Mill grew a Dairy and a Loom; recipes replaced per-machine config (2026-09-04)
 Second pass on the processing layer from earlier the same day (`20260904160000_stackacres_processing.sql`). Kayo asked for Milk -> Cheese and Wool -> Cloth on the existing one-table inventory, atomic, with instant-tap pacing. Four things worth keeping. **(1) The recipe, not the machine, is now the unit of configuration** (`lib/stackacres/recipes.ts`). `MachineDef` used to carry `input`/`output`/`processingMs` inline, which cannot survive a machine that runs a run: a working row has to say WHICH recipe it holds, so `homestead_machines` gained `recipe_id`/`units_processing`, snapshotted at start and never re-read from the catalogue at collection -- same rule `StoredWordStackRound.wagerLadder` states. **(2) `milk`/`wool` deliberately name the SAME items as the Gold track's own** (`items.ts`), not copies. A ready cow settles either into Gold or into the processing inventory, through the SAME version-guarded `collectStackAcresUnit`, so the two race for one row and exactly one wins -- which is what lets `harvestStackAcres` stay uniform (a diverted cow is not a row the sweep skips, it is a row the sweep no longer finds ready). The new `divert` action is therefore NOT a third Gold payer: it REMOVES Gold from the farm's day. The currency wall test was updated to say so rather than relaxed. The cost of the overlap is that `isStackAcresItem("milk")` and `isMachineRawItem("milk")` are both true and the compiler cannot catch a value crossing tracks; the rule is that anything reaching `itemGoldValue` is Gold-track and anything reaching `adjustStackAcresInventory` is processing-track. **(3) Instant recipes get a real transaction.** `process_homestead_recipe(profile, in_item, in_qty, out_item, out_qty)` does the debit and the credit in ONE function, with the sufficiency check inside the debit's own `where quantity >=` so two taps cannot both spend the same milk -- strictly stronger than the debit-then-compensating-refund pair a queued Mill run still uses. `processRecipe(profileId, recipeId)` takes a profile id rather than a token on purpose (the token-taking wrapper is `processStackAcresRecipeAction`), and `lib/stackacres/optimistic-recipe.ts` is the client half: rollback restores the pre-tap snapshot and is ONLY correct for a refusal, since an ambiguous failure may well have committed -- refetch there instead. **(4) A real bug fixed in passing:** `drawContract` could hand a player a contract for a good they had no machine for, and with one open contract at a time and no cancel that permanently blocks every future one. It now draws only from what the farm can produce and refuses when that set is empty. Also: one machine of each kind (`homestead_machines_one_per_kind`), cap 2 -> 3; Cheese/Cloth contract rungs pay a flat 1.3x `recipeRawGoldValue` (the forgone harvest Gold), pinned by a test, so a machine can never be a sink the player bought with their own Gold. Branch `feat/stackacres-mill-recipes`; migration `20260904170000_stackacres_recipes.sql` APPLIED and verified (grants postgres/service_role only, clean advisor pass, RPC exercised against the live DB in a rolling-back DO block). **No UI**: nothing in `components/` reads the processing layer yet, and `ico-cheese`/`ico-cloth` name painters that do not exist -- same deliberate deferral the first processing pass made, and the same reason (no art direction set).
 

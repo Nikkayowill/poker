@@ -53,6 +53,12 @@ import {
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { stockZone } from "@/lib/stackacres/world";
 import {
+  GREENHOUSE_SLOT_CAP,
+  greenhouseBuildCheck,
+  greenhouseDurationMs,
+  isGreenhouseStock,
+} from "@/lib/stackacres/greenhouse";
+import {
   HIDDEN_ZONES,
   SECRET_ITEM_CATALOGUE,
   SECRET_ITEM_IDS,
@@ -113,6 +119,9 @@ import {
   adjustStackAcresInventory,
   startStackAcresMachine,
   processStackAcresRecipe,
+  readStackAcresGreenhouse,
+  buildStackAcresGreenhouseRow,
+  countGreenhouseStackAcresUnits,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -337,6 +346,9 @@ export interface StackAcresView {
    *  `StackAcresItem`, and a secret item is deliberately not a member of that
    *  enum; see lib/stackacres/secrets.ts's own header). */
   secretDonations: Record<SecretItemId, boolean>;
+  /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
+   *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
+  greenhouseBuilt: boolean;
 }
 
 function parseUnitId(value: unknown): string {
@@ -414,6 +426,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     boostArmedQty,
     heldQtys,
+    greenhouseBuilt,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -436,6 +449,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // tuple overload needs a fixed-length literal to keep each position's own
     // type. Nesting keeps this array exactly 15 elements long.
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
+    readStackAcresGreenhouse(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -469,6 +483,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
+    greenhouseBuilt,
   };
 }
 
@@ -720,6 +735,64 @@ export async function clearStackAcresSector(
 }
 
 /**
+ * Builds the Greenhouse, exactly once: debits `GREENHOUSE_BUILD_COST`
+ * (lib/stackacres/greenhouse.ts) out of the processing-track inventory and
+ * records the permanent row, both inside `buildStackAcresGreenhouseRow`'s own
+ * database transaction -- see the migration for why this is one atomic,
+ * row-locked RPC rather than a check-then-debit-then-write done here.
+ *
+ * NOT A GOLD PATH. This spends processing-track goods (Flour, Cloth), the
+ * same currency `fulfillStackAcresTownContract`'s inputs and a Mill recipe's
+ * inputs already move in -- there is nothing here for the file header's Gold
+ * asymmetry note to answer, since no Gold changes hands either way.
+ */
+export async function buildStackAcresGreenhouse(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+
+  // Checked here for a clean 400/409 ahead of the database's own row-locked
+  // RPC, the same "checked here, enforced for real there" split every other
+  // action in this file already takes.
+  const [inventory, alreadyBuilt] = await Promise.all([
+    readStackAcresInventory(profile.id),
+    readStackAcresGreenhouse(profile.id),
+  ]);
+  const check = greenhouseBuildCheck(inventory, alreadyBuilt);
+  if (check.alreadyBuilt) {
+    throw new StackAcresRequestError("The Greenhouse already stands.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (!check.ok) {
+    const short = check.lines.find((line) => !line.met);
+    throw new StackAcresRequestError(
+      short
+        ? `Building the Greenhouse needs ${short.needed.toLocaleString()} ${short.item} (you have ${short.held.toLocaleString()}).`
+        : "Not yet.",
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const built = await buildStackAcresGreenhouseRow(profile.id);
+  if (!built) {
+    // Another tab either built it, or beat this one to the same materials,
+    // between the check above and now. Nothing was spent by this call
+    // either way -- the RPC's own transaction guarantees that -- so there is
+    // nothing to refund.
+    throw new StackAcresRequestError(
+      "That didn't go through -- check your materials and try again.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  return view(profile, now);
+}
+
+/**
  * Buys one extra capacity slot for a kind, at the flat per-kind price, IN ANY
  * ORDER -- there is nothing to unlock first, the same reasoning that
  * flattened the old plot ladder. Replaces `buyStackAcresPlot`.
@@ -930,27 +1003,48 @@ export async function buyStackAcresStock(
  */
 export async function stockStackAcres(
   token: string,
-  input: { stock: string },
+  input: { stock: string; inGreenhouse?: boolean },
   now = new Date(),
 ): Promise<StackAcresView> {
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
   const stock: StackAcresStock = input.stock;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
+  const inGreenhouse = input.inGreenhouse === true;
 
   const land = await readLand(profile.id);
   requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
+  if (inGreenhouse && !isGreenhouseStock(stock)) {
+    throw new StackAcresRequestError("The Greenhouse only houses crops.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
   // The caps are what bound this faucet; see lib/stackacres/catalogue.ts.
   // Checked here for a clean 409, enforced for real by the advisory-locked
   // trigger in the migration, which two racing requests cannot squeeze past.
-  const [occupied, cap] = await Promise.all([
+  const [occupied, cap, greenhouseBuilt, greenhouseOccupied] = await Promise.all([
     countOccupiedStackAcresUnits(profile.id, stock),
     capacityFor(profile.id, stock),
+    inGreenhouse ? readStackAcresGreenhouse(profile.id) : Promise.resolve(true),
+    inGreenhouse ? countGreenhouseStackAcresUnits(profile.id) : Promise.resolve(0),
   ]);
   if (occupied >= cap) {
     throw new StackAcresRequestError(
       `You already have ${cap} ${def.label}${cap === 1 ? "" : "s"} going. Collect from or clear one first, or expand capacity.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+  if (inGreenhouse && !greenhouseBuilt) {
+    throw new StackAcresRequestError("Build the Greenhouse first.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (inGreenhouse && greenhouseOccupied >= GREENHOUSE_SLOT_CAP) {
+    throw new StackAcresRequestError(
+      `The Greenhouse is full: ${greenhouseOccupied} of ${GREENHOUSE_SLOT_CAP} slots already growing.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -969,17 +1063,23 @@ export async function stockStackAcres(
   }
 
   try {
+    // Snapshotted at stocking, never re-derived at collection -- the same
+    // rule `yieldQuantity`/`stake` already follow. Outside the Greenhouse
+    // (or for a stock kind it does not accept) this is exactly `def.durationMs`,
+    // unchanged.
+    const durationMs = greenhouseDurationMs(stock, def.durationMs, inGreenhouse);
     await createStackAcresUnit(profile.id, {
       stock,
       stake: def.seedCost,
       yieldQuantity: produce.quantity,
       startedAt: now,
-      readyAt: new Date(now.getTime() + def.durationMs),
+      readyAt: new Date(now.getTime() + durationMs),
       // An animal counts as fed the moment it arrives; a crop never eats.
       lastFedAt: def.hungerMs === null ? null : now,
       // And a crop goes into watered ground; an animal has no soil to dry out.
       lastWateredAt: def.thirstMs === null ? null : now,
       permanent: false,
+      housedIn: inGreenhouse ? "greenhouse" : null,
     });
   } catch (error) {
     // The database refused outright -- the trigger raising on a cap race or a

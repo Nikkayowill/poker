@@ -79,6 +79,7 @@ declare global {
   var __riverRoomStackAcresContracts: Map<string, StoredContract> | undefined;
   var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
+  var __riverRoomStackAcresGreenhouse: Set<string> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -169,6 +170,13 @@ const memoryStackAcresSecretLedger =
   globalThis.__riverRoomStackAcresSecretLedger ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresSecretLedger = memoryStackAcresSecretLedger;
 
+/** Whether a profile has built their Greenhouse (lib/stackacres/greenhouse.ts).
+ *  Keyed by profileId alone -- built or not is the whole state, the same
+ *  posture `homestead_greenhouse`'s own primary key takes; there is no
+ *  per-district variant the way `memorySectors` needs one. */
+const memoryGreenhouse = globalThis.__riverRoomStackAcresGreenhouse ?? new Set<string>();
+globalThis.__riverRoomStackAcresGreenhouse = memoryGreenhouse;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -187,6 +195,7 @@ export function __resetStackAcresForTest(): void {
   memoryContracts.clear();
   memoryInfluence.clear();
   memoryStackAcresSecretLedger.clear();
+  memoryGreenhouse.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -195,7 +204,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in";
 
 interface UnitDbRow {
   id: string;
@@ -212,6 +221,7 @@ interface UnitDbRow {
   permanent: boolean | null;
   version: number | string;
   created_at: string;
+  housed_in: string | null;
 }
 
 function fromRow(row: UnitDbRow): StoredStackAcresUnit {
@@ -230,6 +240,7 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     permanent: row.permanent === true,
     version: Number(row.version),
     createdAt: String(row.created_at),
+    housedIn: row.housed_in === "greenhouse" ? "greenhouse" : null,
   };
 }
 
@@ -333,10 +344,18 @@ export async function createStackAcresUnit(
     lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
+    /** Set to `"greenhouse"` when this crop is being stocked into the built
+     *  Greenhouse (lib/stackacres/greenhouse.ts); omitted or null for the
+     *  ordinary open-air path. The database's own
+     *  `homestead_units_enforce_stock_shape` trigger is the real guard on
+     *  slot cap/allowed-stock/built-state; the service checks all three ahead
+     *  of the debit purely for a clean 409. */
+    housedIn?: "greenhouse" | null;
   },
 ): Promise<StoredStackAcresUnit> {
   const supabase = adminClient();
   const now = new Date().toISOString();
+  const housedIn = entry.housedIn ?? null;
 
   if (!supabase) {
     const unit: StoredStackAcresUnit = {
@@ -354,6 +373,7 @@ export async function createStackAcresUnit(
       permanent: entry.permanent,
       version: 1,
       createdAt: now,
+      housedIn,
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -373,6 +393,7 @@ export async function createStackAcresUnit(
       last_watered_at: entry.lastWateredAt ? entry.lastWateredAt.toISOString() : null,
       permanent: entry.permanent,
       version: 1,
+      housed_in: housedIn,
     })
     .select(UNIT_COLUMNS)
     .single();
@@ -796,6 +817,103 @@ export async function recordStackAcresSectorCleared(
   // `ignoreDuplicates` returns no row for a conflict, which is exactly the
   // "somebody else got here first" signal the caller needs.
   return (data ?? []).length > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The Greenhouse (lib/stackacres/greenhouse.ts)                       */
+/* ------------------------------------------------------------------ */
+
+/** Whether this player has built their Greenhouse. Read-only; building it is
+ *  `buildStackAcresGreenhouseRow` below, which is the only writer. */
+export async function readStackAcresGreenhouse(profileId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return memoryGreenhouse.has(profileId);
+
+  const { data, error } = await supabase
+    .from("homestead_greenhouse")
+    .select("profile_id")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your Greenhouse: ${error.message}`);
+  return data !== null;
+}
+
+/** How many crops this player currently has housed in the Greenhouse --
+ *  what `stockStackAcres` checks against `GREENHOUSE_SLOT_CAP` for a clean
+ *  409 ahead of the database's own advisory-locked trigger, the same
+ *  "checked here, enforced for real there" split `countOccupiedStackAcresUnits`
+ *  already documents. */
+export async function countGreenhouseStackAcresUnits(profileId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return [...memoryUnits.values()].filter(
+      (unit) => unit.profileId === profileId && unit.housedIn === "greenhouse",
+    ).length;
+  }
+
+  const { count, error } = await supabase
+    .from("homestead_units")
+    .select("id", { count: "exact", head: true })
+    .eq("profile_id", profileId)
+    .eq("housed_in", "greenhouse");
+  if (error) throw new Error(`Could not count your Greenhouse: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * Builds this player's Greenhouse exactly once, atomically debiting
+ * `GREENHOUSE_BUILD_COST` (lib/stackacres/greenhouse.ts) out of the
+ * processing-track inventory (`homestead_processing_inventory`, the same
+ * table `adjustStackAcresInventory` moves) as part of the SAME database
+ * transaction that inserts the permanent row.
+ *
+ * WHY THIS IS ONE RPC RATHER THAN "check the inventory here, then call
+ * `adjustStackAcresInventory` twice". Two independent debits racing a THIRD
+ * concurrent spender of the same Flour/Cloth (a Mill recipe fulfilling, or a
+ * second build attempt) could see a stale quantity between the check and
+ * either debit; `build_homestead_greenhouse` locks both cost-line rows with
+ * `FOR UPDATE` before validating them, in the same transaction that performs
+ * both debits and the insert, so a concurrent spender genuinely queues behind
+ * this call rather than racing it. See the migration for the full argument,
+ * including why it starts with an advisory lock rather than relying on
+ * `FOR UPDATE` alone.
+ *
+ * Returns false, spending nothing, when the Greenhouse already stands --
+ * the caller (buildStackAcresGreenhouse in stackacres-service.ts) treats that
+ * exactly like every other "already yours" lost race in this file: not an
+ * error, just nothing left to do.
+ */
+export async function buildStackAcresGreenhouseRow(profileId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    if (memoryGreenhouse.has(profileId)) return false;
+    let flour = 0;
+    let cloth = 0;
+    for (const [key, quantity] of memoryInventory) {
+      const [id, item] = key.split(":");
+      if (id !== profileId) continue;
+      if (item === "flour") flour = quantity;
+      if (item === "cloth") cloth = quantity;
+    }
+    if (flour < 20 || cloth < 12) return false;
+    memoryInventory.set(`${profileId}:flour`, flour - 20);
+    memoryInventory.set(`${profileId}:cloth`, cloth - 12);
+    memoryGreenhouse.add(profileId);
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("build_homestead_greenhouse", {
+    p_profile_id: profileId,
+  });
+  if (error) {
+    // The RPC's own materials check raises 23514 rather than returning false
+    // -- callers of adjust_homestead_processing_inventory already treat that
+    // code as "not enough", and this is the multi-item version of the exact
+    // same refusal.
+    if (error.code === "23514") return false;
+    throw new Error(`Could not build the Greenhouse: ${error.message}`);
+  }
+  return data === true;
 }
 
 /* ------------------------------------------------------------------ */

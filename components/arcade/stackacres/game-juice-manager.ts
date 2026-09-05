@@ -21,6 +21,13 @@ import {
   type JuiceShardStyle,
   type Point,
 } from "@/lib/stackacres/juice";
+import {
+  CROSSBREED_FLASH_TEXT_DURATION_MS,
+  CROSSBREED_FLASH_TEXT_LIFT,
+  crossbreedFlashLabel,
+  crossbreedFlashStyleFor,
+} from "@/lib/stackacres/crossbreed-juice";
+import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import { RAMPS, hex, type RampName } from "./art-palette";
 import type { PainterName } from "./stackacres-art";
 
@@ -89,7 +96,7 @@ const FALLBACK_FONT_STACK =
   'ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif';
 
 /** Depth (or nudge) constants shared by every trigger, named rather than
- *  inlined so the three effects' stacking order against each other and
+ *  inlined so the four effects' stacking order against each other and
  *  against the world is legible in one place. */
 const HARVEST_POP_DEPTH_NUDGE = 4;
 const HARVEST_SHARD_DEPTH_NUDGE = 3.5;
@@ -97,6 +104,10 @@ const CRIT_TEXT_DEPTH = 9500; // above floatAt's own 9000: a crit outranks a pla
 const BARN_ABSORB_DEPTH_NUDGE = 2;
 const BARN_ABSORB_FLIGHT_MS = 520;
 const BARN_ABSORB_ARRIVE_SHARDS = 6;
+// Above CRIT_TEXT_DEPTH: a hybrid is rarer than any single crit multiplier,
+// so its own label outranks one if the two ever land in the same frame.
+const CROSSBREED_TEXT_DEPTH = 9600;
+const CROSSBREED_SHARD_DEPTH_NUDGE = 3.5;
 
 export class GameJuiceManager {
   private readonly scene: Phaser.Scene;
@@ -361,6 +372,98 @@ export class GameJuiceManager {
     emitter.setDepth(depth);
     emitter.setPosition(at.x, at.y);
     emitter.explode(BARN_ABSORB_ARRIVE_SHARDS);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Trigger 4: the crossbreed flash                                     */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * A Crossbreeding Bed harvest that came back a hybrid instead of a plain
+   * collection: two shard bursts a beat apart, one in each parent's own
+   * colour (see lib/stackacres/crossbreed-juice.ts's `crossbreedFlashStyleFor`
+   * for why this is the "unique flash" rather than one fixed palette), and a
+   * floating label naming the exact hybrid. `x`/`y` are the harvested plot's
+   * true WORLD position, same convention every other trigger here takes.
+   *
+   * Called the SAME fire-and-forget way `triggerHarvestPop` is: the caller
+   * (the harvest tap handler) fires this the moment its own optimistic
+   * evaluation of lib/stackacres/crossbreeding.ts's pure engine says a cross
+   * is likely, without waiting on the settlement round-trip. See this
+   * class's own header for why a later refusal is a separate concern this
+   * method never rolls back.
+   */
+  triggerCrossbreedFlash(
+    x: number,
+    y: number,
+    parentA: StackAcresStock,
+    parentB: StackAcresStock,
+    hybrid: CrossbreedItem,
+  ): void {
+    if (!this.scene.sys.isActive()) return;
+    const screen = isoProject(x, y);
+    const depth = isoDepthAt(x, y, CROSSBREED_SHARD_DEPTH_NUDGE);
+    const style = crossbreedFlashStyleFor(parentA, parentB);
+
+    this.burstShards(screen, depth, style.parentA);
+    if (this.config.reducedMotion) {
+      this.burstShards(screen, depth, style.parentB);
+    } else {
+      this.scene.time.delayedCall(style.secondBurstDelayMs, () => {
+        if (!this.scene.sys.isActive()) return;
+        this.burstShards(screen, depth, style.parentB);
+      });
+    }
+
+    this.crossbreedText(screen, crossbreedFlashLabel(hybrid));
+  }
+
+  /** The hybrid's own name, lifting and fading -- the same final beat
+   *  `critText` uses, in chalk-white rather than crit's gold so the two
+   *  never read as the same kind of event even if they land in the same
+   *  frame (see CROSSBREED_TEXT_DEPTH's own comment for the tie-break when
+   *  they do). */
+  private crossbreedText(screen: Point, text: string): void {
+    const label = this.scene.add
+      .text(screen.x, screen.y, text, {
+        fontFamily: this.config.fontFamily ?? FALLBACK_FONT_STACK,
+        fontSize: "20px",
+        fontStyle: "800",
+        color: RAMPS.chalk.top,
+        stroke: RAMPS.gold.rim,
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(CROSSBREED_TEXT_DEPTH);
+
+    if (this.config.reducedMotion) {
+      label.setScale(1);
+      this.scene.tweens.add({
+        targets: label,
+        alpha: 0,
+        duration: 600,
+        delay: 400,
+        onComplete: () => label.destroy(),
+      });
+      return;
+    }
+
+    label.setScale(0.2);
+    this.scene.tweens.chain({
+      targets: label,
+      tweens: [
+        { scale: 1.3, duration: 160, ease: "Back.easeOut" },
+        { scale: 1, duration: 140, ease: "Sine.easeInOut" },
+        {
+          y: screen.y - CROSSBREED_FLASH_TEXT_LIFT,
+          alpha: 0,
+          duration: CROSSBREED_FLASH_TEXT_DURATION_MS,
+          ease: "Cubic.easeOut",
+          delay: 260,
+        },
+      ],
+      onComplete: () => label.destroy(),
+    });
   }
 
   /* ------------------------------------------------------------------ */

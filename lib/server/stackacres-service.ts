@@ -113,10 +113,19 @@ import {
   adjustStackAcresInventory,
   startStackAcresMachine,
   processStackAcresRecipe,
+  readStackAcresPrestige,
+  readStackAcresLifetimeGross,
+  resetStackAcresPrestige,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
 } from "./stackacres-store";
+import {
+  prestigeGoldRemaining,
+  type StackAcresPrestigeView,
+  type StackAcresPrestigeResetResult,
+} from "@/lib/stackacres/prestige";
+export type { StackAcresPrestigeView, StackAcresPrestigeResetResult } from "@/lib/stackacres/prestige";
 import {
   claimStackAcresIntent,
   completeStackAcresIntent,
@@ -367,6 +376,12 @@ export interface StackAcresView {
    *  the ENTIRE surface the client's own render manager is allowed to trust;
    *  a snapshot here is server-confirmed, never a local guess. */
   midnightMerchant: MidnightMerchantSnapshot | null;
+  /** The Prestige Reset Valve's permanent state: how many times it has been
+   *  pulled, the live harvest multiplier it bought, and how much further
+   *  gross production is needed before it can be pulled again. See
+   *  lib/stackacres/prestige.ts's own header for what "gross" means here and
+   *  why it is immune to the daily Gold ceiling. */
+  prestige: StackAcresPrestigeView;
 }
 
 function parseUnitId(value: unknown): string {
@@ -446,6 +461,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     heldQtys,
     blueprints,
     midnightMerchant,
+    prestige,
+    lifetimeGross,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -470,6 +487,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
     blueprintsView(profile.id),
     readMidnightMerchantVisit(profile.id, now),
+    readStackAcresPrestige(profile.id),
+    readStackAcresLifetimeGross(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -505,7 +524,34 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     secretDonations,
     blueprints,
     midnightMerchant,
+    prestige: {
+      prestigeCount: prestige.prestigeCount,
+      multiplier: prestige.multiplier,
+      goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
+    },
   };
+}
+
+/**
+ * The Prestige Reset Valve's calculation hook: loads a profile's stored
+ * permanent multiplier and hands back the bare number `settleHarvest` needs.
+ *
+ * Nothing here reaches into harvest logic itself -- see harvest.ts's own
+ * header for why the multiplier is a PARAMETER to that pure function rather
+ * than something it fetches for itself. This is the one function that closes
+ * the loop: it is the only place `readStackAcresPrestige` is called with the
+ * express purpose of pricing a harvest, as opposed to rendering the farm view
+ * (`view()`, above) or reporting a reset's own result
+ * (`prestigeResetStackAcres`, below).
+ *
+ * Defaults to STACKACRES_PRESTIGE_BASE_MULTIPLIER (1) for a profile that has
+ * never reset, which is exactly what `readStackAcresPrestige` already
+ * returns for a missing row -- this function adds no second fallback on top
+ * of that one.
+ */
+export async function getPrestigeMultiplier(profileId: string): Promise<number> {
+  const state = await readStackAcresPrestige(profileId);
+  return state.multiplier;
 }
 
 /**
@@ -527,10 +573,11 @@ async function refundGold(profileId: string, gold: number): Promise<void> {
 }
 
 /**
- * Everything any action can add to the view. Exactly ONE action returns
- * anything beyond the farm itself now -- a harvest, which has to say what it
- * brought in and what it paid -- which is why a replayed intent only has to
- * remember this much (see `replayDelta`).
+ * Everything any action can add to the view. Two actions return anything
+ * beyond the farm itself now -- a harvest, which has to say what it brought
+ * in and what it paid, and a prestige reset, which has to say what it just
+ * bought -- which is why a replayed intent only has to remember this much
+ * (see `replayDelta`).
  */
 export type StackAcresActionResult = StackAcresView & {
   harvest?: unknown;
@@ -545,6 +592,10 @@ export type StackAcresActionResult = StackAcresView & {
     purchaseStreak: number;
     remaining: number;
   };
+  /** Set by `prestigeResetStackAcres` to what THIS reset just bought -- never
+   *  named `prestige`, which is StackAcresView's own always-present current
+   *  standing and would collide with it in this intersection. */
+  prestigeReset?: unknown;
 };
 
 /**
@@ -562,6 +613,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.midnightMerchantPurchase !== undefined) {
     delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
   }
+  if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -1741,10 +1793,11 @@ export async function harvestStackAcres(
   }
 
   const day = stackacresExchangeDay(now);
-  const [upkeepPaid, cleared, capacity] = await Promise.all([
+  const [upkeepPaid, cleared, capacity, prestigeMultiplier] = await Promise.all([
     readStackAcresUpkeep(profile.id, day),
     readStackAcresSectors(profile.id),
     readStackAcresCapacity(profile.id),
+    getPrestigeMultiplier(profile.id),
   ]);
   // Charged on SLOTS ON CLEARED GROUND, not on what is standing in them.
   // Billing what is planted would let a player clear every district, leave it
@@ -1762,7 +1815,7 @@ export async function harvestStackAcres(
     yieldQuantity: row.yieldQuantity,
   });
 
-  const planned = settleHarvest(ready.map(candidateOf), upkeepDue);
+  const planned = settleHarvest(ready.map(candidateOf), upkeepDue, prestigeMultiplier);
 
   // The rung is read here, but the crit is not rolled here -- see step 3. All
   // this decides is how much headroom to reserve, since a crit paid out of an
@@ -1902,7 +1955,9 @@ export async function harvestStackAcres(
   // reserved: removing a unit can in principle change which synergy applies,
   // and the ceiling must hold whichever way that lands.
   const actual: HarvestSettlement =
-    settled.length === ready.length ? planned : settleHarvest(settled.map(candidateOf), upkeepDue);
+    settled.length === ready.length
+      ? planned
+      : settleHarvest(settled.map(candidateOf), upkeepDue, prestigeMultiplier);
   // Valued off what actually settled, so a unit that lost its race pays no
   // crit either. A missed roll releases the whole optimistic reservation on
   // the next line, so the headroom is never held past this point.
@@ -2687,6 +2742,66 @@ export async function contributeToStackAcresMythicBlueprint(
   const profile = await ensureProfile(token);
   await contributeToBlueprint(profile.id, structureId, itemId, amount);
   return view(profile, now);
+}
+
+/* -------------------------------------------------------------------- */
+/* Prestige Reset Valve                                                  */
+/* -------------------------------------------------------------------- */
+
+/**
+ * Pulls the Prestige Reset Valve for the caller's own farm.
+ *
+ * MOVES NO GOLD AT ALL -- this action joins neither list in the module
+ * header's payer/spender inventory. What it moves is irreversible instead:
+ * on success, every unit, wheat plot, inventory line, feed serving, today's
+ * Land Maintenance total and any open Town Contract are gone. See
+ * `reset_stackacres_prestige`'s own migration comment
+ * (20260905140000_stackacres_prestige_reset.sql) for the exact table list
+ * and, as importantly, for what survives it -- land cleared, purchased
+ * capacity, placed machines, Synergy Tree perks, Ray's Museum registries and
+ * Town Influence are all untouched.
+ *
+ * A refusal (not enough gross production since the last reset) is an
+ * ordinary outcome, not a database failure -- same posture every other
+ * Gold-gated refusal in this file takes -- so it surfaces as a
+ * StackAcresRequestError (409) with the current farm still intact, never as
+ * a thrown database error.
+ *
+ * Takes no argument beyond the token, on purpose, the same reason
+ * `upgradeStackAcresTool` does: there is nothing for the client to name. The
+ * server alone decides whether the valve turns, from what it already knows
+ * about this profile's own history.
+ */
+export async function prestigeResetStackAcres(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView & { prestigeReset: StackAcresPrestigeResetResult }> {
+  const profile = await ensureProfile(token);
+  const gain = await resetStackAcresPrestige(profile.id);
+
+  if (!gain.eligible) {
+    throw new StackAcresRequestError(
+      `This farm needs to gross ${gain.eligibleGross.toLocaleString()} more Gold since your last reset before the valve will turn -- ${(
+        gain.nextMultiplier - gain.gainedMultiplier
+      ).toFixed(4)}x stays where it is.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Read AFTER the reset commits, same pattern harvestStackAcres and
+  // fulfillStackAcresTownContract already use for their own post-write view:
+  // a fresh read is guaranteed to reflect the write that just happened,
+  // where reusing a value computed before it would not be.
+  const freshView = await view(profile, now);
+  return {
+    ...freshView,
+    prestigeReset: {
+      prestigeCount: freshView.prestige.prestigeCount,
+      multiplier: freshView.prestige.multiplier,
+      gainedMultiplier: gain.gainedMultiplier,
+    },
+  };
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

@@ -46,10 +46,12 @@ export type AmbienceTimeOfDay = "day" | "dusk" | "night";
  * wide margin, and was then cut outright: a band of noise whose level and
  * centre frequency both wander is the layer an ear locks onto and follows,
  * and this whole layer exists to be un-followed. What is left of the weather
- * is `air` underneath everything and `grass` moving on top of it, which is
- * the same picture with the part that kept asking to be listened to taken
- * out. Do not reinstate it as a quieter gust walk: that is exactly what was
- * tried first, and quieter wind is still wind.
+ * is `air` underneath everything and `grass`'s fixed, static rustle on top of
+ * it, which is the same picture with the part that kept asking to be
+ * listened to taken out. Do not reinstate a gust walk on either bed, even a
+ * quiet one and even on `grass`: that is exactly what shipped the first two
+ * times (the wind bed, then a gust walk left behind on grass after wind was
+ * supposedly deleted), and it read as wind both times.
  */
 export const AMBIENCE_BEDS = ["air", "grass", "water", "insects"] as const;
 export type AmbienceBed = (typeof AMBIENCE_BEDS)[number];

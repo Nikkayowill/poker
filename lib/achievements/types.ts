@@ -15,7 +15,8 @@ export type AchievementCategory =
   | "total_chips_won"
   | "duels_won"
   | "puzzles_completed"
-  | "levels_gained";
+  | "levels_gained"
+  | "museum_secrets";
 
 /**
  * 'stat' reads player_stats, 'counter' reads player_lifetime_counters, 'live'
@@ -74,4 +75,5 @@ export const ACHIEVEMENT_CATEGORY_LABELS: Record<AchievementCategory, string> = 
   duels_won: "Duels won",
   puzzles_completed: "Brain games",
   levels_gained: "Rank",
+  museum_secrets: "Ray's Museum",
 };

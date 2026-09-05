@@ -4,6 +4,12 @@ import { X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { STACKACRES_ITEM_CATALOGUE } from "@/lib/stackacres/items";
 import { MUSEUM_EXHIBITS, MUSEUM_EXHIBIT_CATALOGUE, type MuseumRegistry } from "@/lib/stackacres/museum";
+import {
+  SECRET_ARTIFACTS,
+  SECRET_MUSEUM_ITEM_CATALOGUE,
+  secretsFoundCount,
+  type SecretMuseumRegistry,
+} from "@/lib/stackacres/museum-secrets";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -19,14 +25,28 @@ import type { PainterName } from "./stackacres-art";
  */
 export function StackAcresMuseum({
   museum,
+  secrets,
   onClose,
 }: {
   museum: MuseumRegistry;
+  /** Ray's Museum, secret wing -- see lib/stackacres/museum-secrets.ts.
+   *  Optional only so a caller mid-migration to this prop doesn't break;
+   *  every real render of this modal passes it. */
+  secrets?: SecretMuseumRegistry;
   onClose: () => void;
 }) {
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
   const donatedCount = Object.values(museum).filter(Boolean).length;
   const totalCount = Object.keys(museum).length;
+  const secretsFound = secrets ? secretsFoundCount(secrets) : 0;
+  // Only a JOKE item this player has actually turned up gets a row -- unlike
+  // the core set below, there is no fixed "3 jokes to find" checklist to
+  // hold a "???" placeholder open for.
+  const foundJokes = secrets
+    ? (Object.keys(secrets) as (keyof typeof SECRET_MUSEUM_ITEM_CATALOGUE)[]).filter(
+        (item) => secrets[item] && !(SECRET_ARTIFACTS as readonly string[]).includes(item),
+      )
+    : [];
 
   return (
     <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
@@ -90,6 +110,45 @@ export function StackAcresMuseum({
               </section>
             );
           })}
+          {secrets && (
+            <section className="sa-museum-exhibit sa-museum-secret-wing" aria-labelledby="sa-exhibit-secrets">
+              <h3 id="sa-exhibit-secrets" className="sa-group-label">
+                Ray&rsquo;s Secret Wing
+              </h3>
+              <p className="sa-museum-exhibit-blurb">
+                {secretsFound < SECRET_ARTIFACTS.length
+                  ? "A locked case in the back. He won't say what's in it, only that a lucky harvest sometimes turns something up."
+                  : "The case is full. Nobody knows how he got half of this."}
+              </p>
+              <ul className="sa-museum-items">
+                {SECRET_ARTIFACTS.map((item) => {
+                  const found = secrets[item] === true;
+                  return (
+                    <li key={item} className={found ? "sa-museum-item is-found" : "sa-museum-item is-unfound"}>
+                      <span className="sa-museum-item-badge" aria-hidden="true">
+                        {found ? "✨" : "?"}
+                      </span>
+                      <span className="sa-museum-item-name">
+                        {found ? SECRET_MUSEUM_ITEM_CATALOGUE[item].label : "???"}
+                      </span>
+                      <span className="sa-museum-item-status">{found ? "Found" : "Not yet found"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {foundJokes.length > 0 && (
+                <ul className="sa-museum-items sa-museum-jokes">
+                  {foundJokes.map((item) => (
+                    <li key={item} className="sa-museum-item is-found">
+                      <span className="sa-museum-item-badge" aria-hidden="true">🎲</span>
+                      <span className="sa-museum-item-name">{SECRET_MUSEUM_ITEM_CATALOGUE[item].label}</span>
+                      <span className="sa-museum-item-status">{SECRET_MUSEUM_ITEM_CATALOGUE[item].blurb}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           <p className="sa-museum-hint">
             {donatedCount < totalCount
               ? "Collect from every kind of crop and animal at least once to fill every shelf."

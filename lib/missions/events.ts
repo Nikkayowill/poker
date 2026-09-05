@@ -53,5 +53,11 @@ export function missionSignalsForEvent(event: MissionEvent): MissionSignal[] {
       // Zero levels is not a signal at all -- awardWager calls this
       // unconditionally, and most wagers cross none.
       return event.levels > 0 ? [{ metric: "levels_gained", delta: event.levels }] : [];
+    case "museum_secret_set_completed":
+      // A lifetime one-off, not a "played something today" event -- there is
+      // no mission shaped like "complete Ray's hidden collection" and no
+      // existing metric it should quietly inflate. See lib/achievements/
+      // events.ts for where this actually pays out.
+      return [];
   }
 }

@@ -23,6 +23,7 @@ import { FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { scytheReachFor, type StackAcresToolTier } from "@/lib/stackacres/equipment";
+import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import {
   SPARKLE_MAX,
   godRayAlpha,
@@ -264,6 +265,12 @@ export interface StackAcresSceneOptions {
    *  swathe. Mutable through `setToolTier` -- buying an upgrade must widen
    *  the swathe without tearing the scene down and losing the mown map. */
   toolTier: StackAcresToolTier;
+  /** Which of the barn's two glow states should be showing, if either --
+   *  see lib/stackacres/museum-secrets.ts's `museumGlowTier`. Mutable
+   *  through `setMuseumGlowTier` for the same reason `toolTier` is: a fresh
+   *  find must restart or stop the barn's tween without rebuilding the
+   *  scene. */
+  museumGlowTier: MuseumGlowTier;
   /**
    * The element the canvas is mounted into. Gestures are read off this rather
    * than off the window or the canvas, so the map only ever hears a press that
@@ -765,6 +772,21 @@ export class StackAcresScene extends Phaser.Scene {
   private farmhand: FarmhandNode | null = null;
   private farmhandQueue: readonly FarmhandTask[] = [];
   private farmhandTask: FarmhandTask | null = null;
+  /** Set once, the moment `setFarmhandSecretUnlock(true)` first fires -- a
+   *  reused sprite sheet has no second image to swap to (see that method's
+   *  own header), so the flag exists only to stop a later, unrelated redraw
+   *  replaying the one-time unlock burst. */
+  private farmhandSecretUnlocked = false;
+
+  /** Ray's Museum's own entryway, captured off `paintBarn` so the glow
+   *  tween has a real target -- see `setMuseumGlowTier`. Null until
+   *  `create` has run. */
+  private barnSprite: Phaser.GameObjects.Image | null = null;
+  /** The barn glow's own running tween, exactly one at a time -- swapped out
+   *  (never layered) whenever the tier changes, the same discipline
+   *  `toolGhostTween` holds. */
+  private barnGlowTween: Phaser.Tweens.Tween | null = null;
+
   /**
    * What he does when nobody has tapped anything: work the wheat field on his
    * own. See lib/stackacres/farmhand-machine.ts -- this is a SECOND driver
@@ -1457,7 +1479,10 @@ export class StackAcresScene extends Phaser.Scene {
     // Same depth nudge the combined structure used before the barn became a
     // flat sprite, so it keeps sorting against nearby world objects the way
     // the approved mockup did.
-    this.put("barn", BARN_X, BARN_Y, this.depthAt(BARN_X, BARN_Y + 17));
+    this.barnSprite = this.put("barn", BARN_X, BARN_Y, this.depthAt(BARN_X, BARN_Y + 17));
+    this.applyMuseumGlowTier();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseBarnGlow, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseBarnGlow, this);
 
     // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
     // standing where the flat barn's own silo painter used to.
@@ -2598,6 +2623,129 @@ export class StackAcresScene extends Phaser.Scene {
    */
   setToolTier(tier: StackAcresToolTier): void {
     this.options.toolTier = tier;
+  }
+
+  /**
+   * Ray's Museum's own beacon, pushed the same way `setToolTier` is: a fresh
+   * find (or a fresh Golden Spade purchase) has to restart or stop the
+   * barn's tween NOW, not on the next scene rebuild -- rebuilding would
+   * throw away everything else `create()` painted for the same reason
+   * `setToolTier`'s own header gives.
+   *
+   * A no-op on a repeat call with the same tier: `applyMuseumGlowTier`
+   * always stops the previous tween before starting a fresh one, so calling
+   * this every poll tick with an unchanged tier must not restart the
+   * breathing cycle from its first frame each time.
+   */
+  setMuseumGlowTier(tier: MuseumGlowTier): void {
+    if (this.options.museumGlowTier === tier) return;
+    this.options.museumGlowTier = tier;
+    this.applyMuseumGlowTier();
+  }
+
+  /**
+   * Starts the tween for whatever tier is currently held, after tearing down
+   * whichever one was running -- called both from `setMuseumGlowTier` and
+   * once from `paintBarn` itself, since the barn sprite (the tween's target)
+   * does not exist until that method has run.
+   *
+   * BOTH STATES ARE PHASER TWEENS ON THE SPRITE ITSELF, never a manual
+   * per-frame nudge in `update()` -- the brief this shipped against asks for
+   * exactly that pipeline, and it is also simply the right tool: Phaser's
+   * tween manager already sleeps when nothing is animating, which a
+   * hand-rolled update() hook would not get for free.
+   */
+  private applyMuseumGlowTier(): void {
+    this.releaseBarnGlow();
+    const sprite = this.barnSprite;
+    if (!sprite) return;
+    sprite.setAlpha(1).clearTint();
+
+    if (this.options.museumGlowTier === "none") return;
+
+    if (this.options.reducedMotion) {
+      // No tween under reduced motion, the same posture every other loop in
+      // this file takes -- but the state should still read at a glance, so
+      // a steady (non-animated) tint stands in for the pulse.
+      if (this.options.museumGlowTier === "progression") sprite.setTint(0xffd54a);
+      else sprite.setAlpha(0.85);
+      return;
+    }
+
+    if (this.options.museumGlowTier === "ambient") {
+      // Slow breathing, same timing family as the pond's own ripples: a
+      // gentle "there's more here" nudge, not an alarm.
+      this.barnGlowTween = this.tweens.add({
+        targets: sprite,
+        alpha: { from: 1, to: 0.82 },
+        duration: 2_200,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+      return;
+    }
+
+    // "progression": a rapid golden tint-shift. Tweening a plain {t: 0..1}
+    // object and driving setTint from it (rather than tweening a colour
+    // property directly, which Phaser's tweens do not interpolate) is what
+    // makes this a genuine colour SHIFT rather than a hard flash between two
+    // fixed tints.
+    const mix = { t: 0 };
+    this.barnGlowTween = this.tweens.add({
+      targets: mix,
+      t: 1,
+      duration: 450,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+      onUpdate: () => {
+        const colour = Phaser.Display.Color.Interpolate.ColorWithColor(
+          Phaser.Display.Color.ValueToColor(0xffffff),
+          Phaser.Display.Color.ValueToColor(0xffd54a),
+          100,
+          Math.round(mix.t * 100),
+        );
+        sprite.setTint(colour.color);
+      },
+    });
+  }
+
+  private releaseBarnGlow(): void {
+    this.barnGlowTween?.remove();
+    this.barnGlowTween = null;
+  }
+
+  /**
+   * Ray's Museum's hidden wing, completed for the first time ever: the
+   * player's own local-optimistic unlock, played the instant the harvest
+   * response says so rather than waiting on a refetch.
+   *
+   * EMITS A REAL PHASER EVENT (`museum:hidden-set-unlocked`) rather than
+   * only changing the farmhand's own look, exactly as the brief this
+   * shipped against asks for -- any future listener (a sound cue, a toast,
+   * eventually a real alternate sprite sheet) can hook this without touching
+   * the call site that fires it.
+   *
+   * THE VISUAL ITSELF IS A TINT, NOT A SWAPPED TEXTURE, AND NOT A SCALE POP
+   * EITHER. The farmhand is a real baked sprite sheet with exactly one
+   * source image (FARMHAND_SHEET_URL); there is no second "easter-egg"
+   * sheet to point him at, and generating one is explicitly out of scope
+   * for this codebase -- new character art comes from Kayo's own supplied
+   * renders, never generated locally (see the project's own history on
+   * that). A scale tween is out for a sharper reason: `walkFarmhand` calls
+   * `sprite.setScale(...)` unconditionally on every single frame he exists,
+   * so any tween on his scale would be overwritten before it ever painted --
+   * tint is the one visual property that method never touches. So this
+   * ships the real mechanism -- a scene method and a real Phaser event any
+   * future art can hang a genuine texture swap off of -- and stands in with
+   * a permanent golden tint until that art exists.
+   */
+  setFarmhandSecretUnlock(unlocked: boolean): void {
+    if (!unlocked || this.farmhandSecretUnlocked) return;
+    this.farmhandSecretUnlocked = true;
+    this.events.emit("museum:hidden-set-unlocked");
+    this.farmhand?.sprite.setTint(0xffd54a);
   }
 
   /** Floats the held tool's own picture above a finger that just turned a

@@ -5,6 +5,7 @@ import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
+import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
@@ -100,6 +101,16 @@ export interface StackAcresWorldProps {
   onViewMoved: () => void;
   /** The equipment rung held, which sets the scythe's swathe. */
   toolTier: StackAcresToolTier;
+  /** Which of the barn's two glow states should be showing, if either -- see
+   *  lib/stackacres/museum-secrets.ts's `museumGlowTier`. */
+  museumGlowTier: MuseumGlowTier;
+  /** True once Ray's Museum's hidden set has ever been completed -- a
+   *  persistent fact of the registry, not a one-shot nonce, since the
+   *  farmhand's own unlock tint should hold on every load after the first,
+   *  not just the harvest that earned it. The scene's own
+   *  `setFarmhandSecretUnlock` is idempotent, so pushing this on every
+   *  change (and once at mount) is safe even before it ever flips true. */
+  secretSetComplete: boolean;
   /** What the automated farmhand works from. Null before the first snapshot
    *  lands, which is exactly when he should be standing still anyway. */
   processing: StackAcresProcessing | null;
@@ -120,6 +131,8 @@ export function StackAcresWorld({
   units,
   tool,
   toolTier,
+  museumGlowTier,
+  secretSetComplete,
   celebrate,
   onReady,
   onUnitTap,
@@ -158,6 +171,8 @@ export function StackAcresWorld({
   // Read at mount for the same reason `toolRef` is: the scene does not exist
   // yet to be told, and it needs the right swathe on its very first stroke.
   const toolTierRef = useRef<StackAcresToolTier>(toolTier);
+  // Read at mount for the same reason `toolTierRef` is.
+  const museumGlowTierRef = useRef<MuseumGlowTier>(museumGlowTier);
   useEffect(() => {
     processingRef.current = processing;
     readyRef.current = onReady;
@@ -169,6 +184,7 @@ export function StackAcresWorld({
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
     toolRef.current = tool;
     toolTierRef.current = toolTier;
+    museumGlowTierRef.current = museumGlowTier;
   });
 
   const sceneUnits = useMemo(() => toUnits(units), [units]);
@@ -207,7 +223,7 @@ export function StackAcresWorld({
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
-        { reducedMotion, host, toolTier: toolTierRef.current },
+        { reducedMotion, host, toolTier: toolTierRef.current, museumGlowTier: museumGlowTierRef.current },
       );
 
       const size = () => ({
@@ -346,6 +362,16 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setToolTier(toolTier);
   }, [toolTier]);
+
+  // Same "push, never rebuild" reasoning as toolTier above -- see
+  // `setMuseumGlowTier` in stackacres-scene.ts.
+  useEffect(() => {
+    sceneRef.current?.setMuseumGlowTier(museumGlowTier);
+  }, [museumGlowTier]);
+
+  useEffect(() => {
+    sceneRef.current?.setFarmhandSecretUnlock(secretSetComplete);
+  }, [secretSetComplete]);
 
   useEffect(() => {
     if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.unitId);

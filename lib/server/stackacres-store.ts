@@ -69,6 +69,7 @@ declare global {
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
   var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
+  var __riverRoomStackAcresMuseumSecrets: Map<string, Set<string>> | undefined;
   var __riverRoomStackAcresSectors: Map<string, string> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresWheatPlots: Map<string, StoredWheatPlot> | undefined;
@@ -106,6 +107,16 @@ globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
  *  item ids -- there is no "undonate", so a Set is the whole model. */
 const memoryMuseum = globalThis.__riverRoomStackAcresMuseum ?? new Map<string, Set<string>>();
 globalThis.__riverRoomStackAcresMuseum = memoryMuseum;
+
+/** Ray's Museum, secret wing: which hidden finds (core exhibit pieces AND
+ *  joke pool alike -- see lib/stackacres/museum-secrets.ts) a player has
+ *  ever turned up. Same "no undonate, a Set is the whole model" shape as
+ *  memoryMuseum, kept as its own map rather than folded into it: the two
+ *  registries are read and written by different call sites and never share
+ *  an item id, so merging them would only make each harder to reason about. */
+const memoryMuseumSecrets =
+  globalThis.__riverRoomStackAcresMuseumSecrets ?? new Map<string, Set<string>>();
+globalThis.__riverRoomStackAcresMuseumSecrets = memoryMuseumSecrets;
 
 /** Land cleared, keyed `${profileId}:${sector}` and holding the ISO moment it
  *  was cleared. A missing key is land still under growth. */
@@ -151,6 +162,7 @@ export function __resetStackAcresForTest(): void {
   memoryUpkeep.clear();
   memoryHarvests.length = 0;
   memoryMuseum.clear();
+  memoryMuseumSecrets.clear();
   memorySectors.clear();
   memoryWheatPlots.clear();
   memoryInventory.clear();
@@ -1117,6 +1129,49 @@ export async function markStackAcresDonated(profileId: string, itemId: string): 
   }
 
   const { data, error } = await supabase.rpc("mark_homestead_museum_donation", {
+    p_profile_id: profileId,
+    p_item_id: itemId,
+  });
+  if (error) throw new Error(`Could not reach Ray's Museum: ${error.message}`);
+  return data === true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ray's Museum, secret wing                                           */
+/* ------------------------------------------------------------------ */
+
+/** Every hidden item id this player has ever turned up. Same "no undonate"
+ *  contract as `readStackAcresMuseum` -- the service layer overlays it onto
+ *  lib/stackacres/museum-secrets.ts's `emptySecretMuseumRegistry()`. */
+export async function readStackAcresMuseumSecrets(profileId: string): Promise<string[]> {
+  const supabase = adminClient();
+  if (!supabase) return [...(memoryMuseumSecrets.get(profileId) ?? new Set())];
+
+  const { data, error } = await supabase
+    .from("homestead_museum_secrets")
+    .select("item_id")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read the museum's secret wing: ${error.message}`);
+  return (data as { item_id: string }[]).map((row) => row.item_id);
+}
+
+/**
+ * Flags one hidden item as found, exactly once, ever. Returns true only on
+ * the write that actually registered it -- the identical idempotency shape
+ * `markStackAcresDonated` uses, for the same reason: a repeat roll of an
+ * item already on the shelf is a harmless no-op, not a second event.
+ */
+export async function markStackAcresMuseumSecret(profileId: string, itemId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const found = memoryMuseumSecrets.get(profileId) ?? new Set<string>();
+    if (found.has(itemId)) return false;
+    found.add(itemId);
+    memoryMuseumSecrets.set(profileId, found);
+    return true;
+  }
+
+  const { data, error } = await supabase.rpc("mark_homestead_museum_secret", {
     p_profile_id: profileId,
     p_item_id: itemId,
   });

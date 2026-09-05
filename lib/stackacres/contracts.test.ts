@@ -7,14 +7,40 @@ import {
   isPostedRung,
   type StackAcresContractRow,
 } from "./contracts";
+import { MACHINE_PROCESSED_ITEMS } from "./machine-items";
+
+const EVERYTHING = [...MACHINE_PROCESSED_ITEMS];
 
 describe("drawContract", () => {
   it("is deterministic under an injected random source", () => {
-    expect(drawContract(() => 0)).toEqual(drawContract(() => 0));
+    expect(drawContract(EVERYTHING, () => 0)).toEqual(drawContract(EVERYTHING, () => 0));
   });
 
   it("never draws past the end of the table on a roll near 1", () => {
-    expect(() => drawContract(() => 0.999999)).not.toThrow();
+    expect(drawContract(EVERYTHING, () => 0.999999)).not.toBeNull();
+  });
+
+  it("only ever asks for a good the farm can actually make", () => {
+    // The whole point of the gate: one open contract at a time, no cancel, so
+    // a Flour contract handed to a player with no Mill blocks every future
+    // one. Rolled across the table rather than at one point, since a filtered
+    // draw that ignored `producible` would still pass a single-point check.
+    for (let roll = 0; roll < 1; roll += 0.05) {
+      expect(drawContract(["cheese"], () => roll)?.item).toBe("cheese");
+    }
+  });
+
+  it("refuses rather than drawing when the farm can make nothing", () => {
+    expect(drawContract([], () => 0)).toBeNull();
+  });
+
+  it("can reach every rung in the table", () => {
+    const seen = new Set(
+      CONTRACT_RUNGS.map((_, index) =>
+        JSON.stringify(drawContract(EVERYTHING, () => index / CONTRACT_RUNGS.length)),
+      ),
+    );
+    expect(seen.size).toBe(CONTRACT_RUNGS.length);
   });
 });
 

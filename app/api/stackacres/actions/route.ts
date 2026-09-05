@@ -3,6 +3,7 @@ import { z } from "zod";
 import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
 import { ZONE_IDS } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
+import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import {
   buyStackAcresFeed,
   buyStackAcresStock,
@@ -22,6 +23,8 @@ import {
   workStackAcres,
   requestStackAcresContract,
   fulfillStackAcresTownContract,
+  divertStackAcresUnit,
+  processStackAcresRecipeAction,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -51,7 +54,11 @@ export const runtime = "nodejs";
  * question a new action has to answer, and a new payer that does not reserve
  * first is the change to stop over.
  *
- * `work` and `request-contract` move no Gold at all -- inventory only.
+ * `work`, `divert`, `process` and `request-contract` move no Gold at all --
+ * inventory only. `divert` is worth reading twice: it takes a ready animal's
+ * produce into the processing inventory INSTEAD of paying for it, through the
+ * same version-guarded write `collect` uses, so it reduces what the farm pays
+ * out today rather than adding to it.
  *
  * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
  * by `collect` itself, inside the same reservation, so it is bounded by the
@@ -126,6 +133,17 @@ const bodySchema = z.discriminatedUnion("action", [
   // Gold; the client calls this on a short interval the same way the PvP
   // duel and cribbage shells run their own Realtime backup poll.
   z.object({ action: z.literal("work") }),
+  // Takes one ready animal's produce into the processing inventory instead of
+  // the harvest's Gold. Settles the SAME unit row a `collect` would, so the
+  // two race and exactly one wins -- it is not a second payout path, it is
+  // the absence of one. Moves no Gold.
+  z.object({ action: z.literal("divert"), unitId: unitIdSchema }),
+  // One batch of a recipe. Instant for a Dairy or a Loom (one transaction, no
+  // queue row); a Mill enqueues and `work` collects it. Moves no Gold.
+  z.object({
+    action: z.literal("process"),
+    recipe: z.enum(RECIPE_IDS as unknown as [string, ...string[]]),
+  }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
 ]);
@@ -176,6 +194,10 @@ function run(token: string, action: StackAcresAction) {
       return placeStackAcresMachine(token, action.kind);
     case "work":
       return workStackAcres(token);
+    case "divert":
+      return divertStackAcresUnit(token, action.unitId);
+    case "process":
+      return processStackAcresRecipeAction(token, action.recipe);
     case "request-contract":
       return requestStackAcresContract(token);
     case "fulfill-contract":

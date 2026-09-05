@@ -20,6 +20,15 @@
  * Town Influence (./town.ts) rides the same fulfillment, uncapped -- it is
  * progression, not currency, and spends nowhere, so it carries none of the
  * ceiling's risk.
+ *
+ * A CONTRACT IS ONLY EVER DRAWN FROM WHAT THE PLAYER CAN ACTUALLY MAKE, which
+ * is why `drawContract` takes that set rather than reading the rungs
+ * directly. With one open contract at a time and no way to cancel one, a
+ * contract for a good this farm has no machine for is not a missed
+ * opportunity -- it is a dead end that blocks every future contract too. That
+ * was already reachable before the Dairy and the Loom existed (a player who
+ * never placed a Mill could still be handed a Flour contract); three
+ * processed goods make it the common case rather than the odd one.
  */
 
 import type { MachineProcessedItem } from "./machine-items";
@@ -32,16 +41,36 @@ export interface ContractDef {
 }
 
 /**
- * The rungs a contract is drawn from. Priced so a Mill's own economics stay
- * honest: a Mill turns 3 Wheat (45 Gold of seed, at WHEAT_SEED_COST) into 1
- * Flour every 20 seconds, so a contract asking for a handful of Flour has to
- * clear what growing and milling it actually cost, the same "never pay less
- * than a tier's net" sanity check ./items.ts's `netPerCycle` runs for stock.
+ * The rungs a contract is drawn from.
+ *
+ * FLOUR is priced off seed: a Mill turns 3 Wheat (45 Gold of seed, at
+ * WHEAT_SEED_COST) into 1 Flour, so a contract asking for a handful of Flour
+ * has to clear what growing and milling it actually cost -- the same "never
+ * pay less than a tier's net" sanity check ./items.ts's `netPerCycle` runs
+ * for stock.
+ *
+ * CHEESE AND CLOTH are priced off something stricter, because their raw
+ * materials are not seed but FORGONE HARVEST GOLD. Milk and wool have a price
+ * on the Gold track (./items.ts); sending them to a Dairy or a Loom means the
+ * harvest never paid for them. So each rung below pays 1.3x
+ * `recipeRawGoldValue` -- a flat 30% premium for the round trip, pinned by a
+ * test in ./recipes.test.ts. Anything at or under 1.0x would make the machine
+ * a sink the player built with their own Gold, which is the shape of bug this
+ * file's header exists to stop repeating.
+ *
+ * The premium is uniform on purpose. A ladder where one good paid better per
+ * unit of raw material would turn the single open contract into an arbitrage
+ * puzzle -- reroll until Cheese comes up -- and there is no reroll, so it
+ * would just be a bad draw the player is stuck with.
  */
 export const CONTRACT_RUNGS: readonly ContractDef[] = [
   { item: "flour", quantity: 2, goldReward: 140, influenceReward: 10 },
   { item: "flour", quantity: 4, goldReward: 300, influenceReward: 25 },
   { item: "flour", quantity: 8, goldReward: 640, influenceReward: 60 },
+  { item: "cheese", quantity: 2, goldReward: 1_720, influenceReward: 60 },
+  { item: "cheese", quantity: 4, goldReward: 3_430, influenceReward: 130 },
+  { item: "cloth", quantity: 3, goldReward: 1_190, influenceReward: 40 },
+  { item: "cloth", quantity: 6, goldReward: 2_370, influenceReward: 90 },
 ];
 
 export interface StackAcresContractRow {
@@ -58,11 +87,24 @@ export interface StackAcresContractRow {
  *  the same seam ./world.ts's `Random` is. */
 export type Random = () => number;
 
-/** Draws one rung at random. Pure -- the server calls this with `Math.random`
- *  and stamps the result onto a row exactly once, the same "rolled once,
- *  never re-derived on read" rule ./catalogue.ts's muck chance follows. */
-export function drawContract(random: Random = Math.random): ContractDef {
-  return CONTRACT_RUNGS[Math.floor(random() * CONTRACT_RUNGS.length)];
+/**
+ * Draws one rung at random from the goods this farm can actually make.
+ *
+ * Null when `producible` is empty or names nothing any rung asks for -- the
+ * caller answers that as "place a machine first" rather than posting a
+ * contract nobody can ever close. See the header.
+ *
+ * Pure -- the server calls this with `Math.random` and stamps the result onto
+ * a row exactly once, the same "rolled once, never re-derived on read" rule
+ * ./catalogue.ts's muck chance follows.
+ */
+export function drawContract(
+  producible: readonly MachineProcessedItem[],
+  random: Random = Math.random,
+): ContractDef | null {
+  const eligible = CONTRACT_RUNGS.filter((rung) => producible.includes(rung.item));
+  if (eligible.length === 0) return null;
+  return eligible[Math.floor(random() * eligible.length)];
 }
 
 export function canFulfillContract(

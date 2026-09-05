@@ -9,7 +9,8 @@ import {
   type FarmhandPlanInput,
 } from "./farmhand-plan";
 import type { StackAcresContractRow } from "./contracts";
-import { MACHINE_CATALOGUE, type StackAcresMachineSnapshot } from "./machines";
+import type { StackAcresMachineSnapshot } from "./machines";
+import { RECIPE_CATALOGUE } from "./recipes";
 import { WHEAT_YIELD_QUANTITY } from "./wheat-plot";
 import { FARMHAND_SPEED, tileOf } from "./farmhand-path";
 import { FARMHAND_BASE } from "./farmhand";
@@ -25,7 +26,7 @@ import {
   wheatPlotSpot,
 } from "./world";
 
-const MILL = MACHINE_CATALOGUE.mill;
+const MILL = RECIPE_CATALOGUE.flour;
 
 function contract(over: Partial<StackAcresContractRow> = {}): StackAcresContractRow {
   return {
@@ -44,8 +45,15 @@ function plot(id: string, ready: boolean, readyAt = "2026-09-04T00:00:00.000Z") 
   return { id, startedAt: "2026-09-03T00:00:00.000Z", readyAt, ready, progress: ready ? 1 : 0.5 };
 }
 
-function machine(status: "idle" | "working"): Pick<StackAcresMachineSnapshot, "kind" | "status"> {
-  return { kind: "mill", status };
+function machine(
+  status: "idle" | "working",
+): Pick<StackAcresMachineSnapshot, "kind" | "status" | "recipeId" | "unitsProcessing"> {
+  // A working run carries its own recipe and batch size; an idle one carries
+  // neither, which is what the planner reads to tell "already spent" from
+  // "has taken nothing out of inventory".
+  return status === "working"
+    ? { kind: "mill", status, recipeId: "flour", unitsProcessing: RECIPE_CATALOGUE.flour.output.quantity }
+    : { kind: "mill", status, recipeId: null, unitsProcessing: 0 };
 }
 
 function input(over: Partial<FarmhandPlanInput> = {}): FarmhandPlanInput {
@@ -144,6 +152,14 @@ describe("wheatStillNeeded", () => {
     expect(wheatStillNeeded(contract({ quantity: 1 }), {}, [machine("idle")])).toBe(
       MILL.input.quantity,
     );
+  });
+
+  it("is zero for a contract wheat cannot fill", () => {
+    // Cheese comes from diverting a ready cow, not from sowing anything, so
+    // there is no plot for him to walk to. Without this he would plan a wheat
+    // run against a contract wheat never reaches.
+    expect(wheatStillNeeded(contract({ item: "cheese", quantity: 2 }), {}, [])).toBe(0);
+    expect(wheatStillNeeded(contract({ item: "cloth", quantity: 3 }), {}, [])).toBe(0);
   });
 
   it("never goes negative when the barn is already overfull", () => {

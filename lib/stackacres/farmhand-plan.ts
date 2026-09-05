@@ -22,8 +22,10 @@
 
 import type { StackAcresContractRow } from "./contracts";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
-import { MACHINE_CATALOGUE, type StackAcresMachineSnapshot } from "./machines";
-import type { MachineItemId } from "./machine-items";
+import type { StackAcresMachineSnapshot } from "./machines";
+import { RECIPE_CATALOGUE, recipeForOutput } from "./recipes";
+import type { MachineItemId, MachineProcessedItem } from "./machine-items";
+import { isMachineProcessedItem } from "./machine-items";
 import { tileOf, type TileCoord } from "./farmhand-path";
 import type { StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import { WHEAT_YIELD_QUANTITY } from "./wheat-plot";
@@ -51,26 +53,39 @@ import { wheatPlotSpot, type WorldPoint } from "./world";
 export function wheatStillNeeded(
   contract: StackAcresContractRow | null,
   inventory: StackAcresInventory,
-  machines: readonly Pick<StackAcresMachineSnapshot, "kind" | "status">[],
+  machines: readonly Pick<
+    StackAcresMachineSnapshot,
+    "kind" | "status" | "recipeId" | "unitsProcessing"
+  >[],
 ): number {
   if (!contract || contract.status !== "open") return 0;
 
   const held = inventoryQuantity(inventory, contract.item);
-  // Flour already coming off a running mill, counted as good as held.
+  // Flour already coming off a running mill, counted as good as held. Read
+  // off the machine's OWN run rather than off what its kind can make: the run
+  // snapshots `recipeId`/`unitsProcessing` when it starts, and a machine that
+  // can run more than one recipe has no single answer to "what is your
+  // output" until it is actually running one.
   const inFlight = machines.reduce((total, machine) => {
-    if (machine.status !== "working") return total;
-    const def = MACHINE_CATALOGUE[machine.kind];
-    return def.output.item === contract.item ? total + def.output.quantity : total;
+    if (machine.status !== "working" || !machine.recipeId) return total;
+    const running = RECIPE_CATALOGUE[machine.recipeId];
+    return running.output.item === contract.item ? total + machine.unitsProcessing : total;
   }, 0);
 
   const short = contract.quantity - held - inFlight;
   if (short <= 0) return 0;
 
-  // Which machine turns raw wheat into this contract's item. Only the Mill
-  // does today; looked up rather than assumed so a second machine kind does
-  // not silently keep planning against the Mill's own ratio.
-  const line = machineFor(contract.item);
+  // Which recipe turns a raw material into this contract's item. Looked up
+  // rather than assumed so a second producer does not silently keep planning
+  // against the Mill's own ratio.
+  const line = recipeFor(contract.item);
   if (!line) return 0;
+
+  // HE ONLY CUTS WHEAT. A Cheese or Cloth contract is fed by diverting a
+  // ready animal, not by sowing anything -- there is no plot for him to walk
+  // to, so the honest answer is that cutting advances nothing. Without this
+  // he would plan a wheat run against a contract wheat cannot fill.
+  if (line.input.item !== "wheat") return 0;
 
   // Batches are indivisible: two thirds of a mill run makes no flour at all,
   // so a shortfall of one flour still costs a whole batch of wheat.
@@ -80,13 +95,11 @@ export function wheatStillNeeded(
   return Math.max(0, rawWanted - rawHeld);
 }
 
-/** The machine that produces `item`, or null when nothing here makes it. */
-function machineFor(item: MachineItemId) {
-  for (const kind of Object.keys(MACHINE_CATALOGUE) as (keyof typeof MACHINE_CATALOGUE)[]) {
-    const def = MACHINE_CATALOGUE[kind];
-    if (def.output.item === item) return def;
-  }
-  return null;
+/** The recipe that produces `item`, or null when nothing here makes it. */
+function recipeFor(item: MachineItemId) {
+  if (!isMachineProcessedItem(item)) return null;
+  const id = recipeForOutput(item as MachineProcessedItem);
+  return id ? RECIPE_CATALOGUE[id] : null;
 }
 
 /** How many ripe plots it would take to cover `wheatStillNeeded`. Rounded UP
@@ -140,7 +153,10 @@ export const CONTRACT_DROP: WorldPoint = { x: 220, y: 26 };
 export interface FarmhandPlanInput {
   contract: StackAcresContractRow | null;
   inventory: StackAcresInventory;
-  machines: readonly Pick<StackAcresMachineSnapshot, "kind" | "status">[];
+  machines: readonly Pick<
+    StackAcresMachineSnapshot,
+    "kind" | "status" | "recipeId" | "unitsProcessing"
+  >[];
   wheatPlots: readonly StackAcresWheatPlotSnapshot[];
   /** Plots already cut this session whose refetch has not landed yet. See
    *  `FarmhandStateMachine`'s own optimistic set -- a plot the server still

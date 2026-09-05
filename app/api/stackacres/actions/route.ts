@@ -6,8 +6,10 @@ import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
+import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import {
   activateStackAcresSynergyPerk,
+  buyFromMidnightMerchant,
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresSector,
@@ -51,17 +53,22 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * TEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
+ * ELEVEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
- * `place-machine` and `unlock-synergy-perk` all spend; `collect` and
- * `fulfill-contract` pay, both under the SAME flat per-player daily ceiling
- * -- see `harvestStackAcres` and `fulfillStackAcresTownContract` in
- * lib/server/stackacres-service.ts. There is no second currency any more, so
- * "which direction does this action move Gold, and if it pays, does it
- * reserve against the ceiling first" is the question a new action has to
- * answer, and a new payer that does not reserve first is the change to stop
- * over. `activate-synergy-perk` moves no Gold at all -- see below.
+ * `place-machine`, `unlock-synergy-perk` and `midnight-merchant-buy` all
+ * spend; `collect` and `fulfill-contract` pay, both under the SAME flat
+ * per-player daily ceiling -- see `harvestStackAcres` and
+ * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
+ * is no second currency any more, so "which direction does this action move
+ * Gold, and if it pays, does it reserve against the ceiling first" is the
+ * question a new action has to answer, and a new payer that does not reserve
+ * first is the change to stop over. `activate-synergy-perk` moves no Gold at
+ * all -- see below. `midnight-merchant-buy` is worth reading twice: it
+ * spends Gold but NEVER reserves against the daily payout ceiling, because
+ * it is not a payout at all -- Gold only ever leaves the caller here,
+ * through the same `spend_gold_by_profile` every other spend in this list
+ * already uses.
  *
  * `work`, `divert`, `process` and `request-contract` move no Gold at all --
  * inventory only. `divert` is worth reading twice: it takes a ready animal's
@@ -202,6 +209,16 @@ const bodySchema = z.discriminatedUnion("action", [
     archetype: synergyArchetypeSchema,
     slot: synergySlotSchema,
   }),
+  // The Midnight Merchant: a temporary NPC visit, spawned server-side off a
+  // critical harvest (see harvestStackAcres's step 3c), never by a client
+  // request. This is the only action the visit exposes -- there is no
+  // client-named "spawn" or "expire". Spends Gold, at a price that climbs
+  // 20% per item already sold this same visit; see
+  // lib/stackacres/midnight-merchant.ts's `priceForNextPurchase`.
+  z.object({
+    action: z.literal("midnight-merchant-buy"),
+    itemId: z.enum(MIDNIGHT_MERCHANT_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
 ]);
 
 /**
@@ -270,6 +287,8 @@ function run(token: string, action: StackAcresAction) {
       return unlockStackAcresSynergyPerk(token, action.archetype);
     case "activate-synergy-perk":
       return activateStackAcresSynergyPerk(token, action.archetype, action.slot);
+    case "midnight-merchant-buy":
+      return buyFromMidnightMerchant(token, action.itemId);
   }
 }
 

@@ -278,15 +278,14 @@ describe("FarmhandStateMachine", () => {
     expect(machine.hand.travelled).toBe(0);
   });
 
-  it("walks farther per frame once setSpeedMultiplier boosts him", () => {
+  it("walks farther per frame at a higher speedMultiplier passed to update()", () => {
     const base = new FarmhandStateMachine();
     base.setWorld(world({ wheatPlots: [plot("a")] }));
     base.update(FRAME);
 
     const boosted = new FarmhandStateMachine();
     boosted.setWorld(world({ wheatPlots: [plot("a")] }));
-    boosted.setSpeedMultiplier(1.15);
-    boosted.update(FRAME);
+    boosted.update(FRAME, 1.15);
 
     expect(boosted.hand.travelled).toBeCloseTo(base.hand.travelled * 1.15);
   });

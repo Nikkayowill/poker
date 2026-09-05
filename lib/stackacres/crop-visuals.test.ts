@@ -47,15 +47,11 @@ describe("cropGroundOffset", () => {
    * ends up `scale * d` above it. Pushing the sprite down by the growth in
    * that gap puts the ink back where it was at 1x -- and a frame already
    * drawn to its own baseline needs no push at all.
+   *
+   * Every frame is zero now: all six are generated sprites, fit flush to
+   * their box's bottom edge by the FLUX prep pipeline (see FOOT_INSET's own
+   * doc comment in crop-visuals.ts), so none of them need a push.
    */
-  it("regrounds the carrot frames whose leaves spring from above the baseline", () => {
-    // Measured to the bottom of the INK: carrot1's stem path starts at y 15 in
-    // a 16-tall box, but its 1.4-wide stroke reaches 15.7, so the real gap is
-    // 0.3 -- not the 1.0 the path alone suggests.
-    expect(cropGroundOffset("carrot", 1)).toBeCloseTo((2.5 - 1) * 0.3);
-    expect(cropGroundOffset("carrot", 0)).toBeCloseTo((cropSpriteScale(0) - 1) * 0.4);
-  });
-
   it("never pushes a frame further down than its own box is tall", () => {
     // A correction bigger than the gap it corrects would bury the sprite. The
     // insets are fractions of a unit, so every offset stays well inside the
@@ -65,9 +61,10 @@ describe("cropGroundOffset", () => {
     }
   });
 
-  it("leaves alone every frame already drawn down to its own baseline", () => {
-    expect(cropGroundOffset("carrot", 2)).toBe(0);
-    for (const stage of STAGES) expect(cropGroundOffset("corn", stage)).toBe(0);
+  it("leaves alone every frame, all of which are already drawn to their own baseline", () => {
+    for (const art of ["carrot", "corn"] as const) {
+      for (const stage of STAGES) expect(cropGroundOffset(art, stage)).toBe(0);
+    }
   });
 
   it("pushes down, never up -- a correction can only ever reground", () => {

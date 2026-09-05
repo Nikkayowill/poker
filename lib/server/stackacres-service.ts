@@ -51,7 +51,20 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
-import { stockZone } from "@/lib/stackacres/world";
+import { cropSpot, stockZone } from "@/lib/stackacres/world";
+import {
+  recalculatePipeConnections,
+  type IrrigableCrop,
+  type NetworkGrid,
+  type PipeKind,
+  type PipeNode,
+} from "@/lib/stackacres/irrigation";
+import {
+  listStackAcresPipes,
+  placeStackAcresPipe,
+  removeStackAcresPipe,
+  syncStackAcresPipeNetwork,
+} from "./stackacres-pipe-store";
 import {
   GREENHOUSE_SLOT_CAP,
   greenhouseBuildCheck,
@@ -442,6 +455,29 @@ export interface StackAcresView {
    *  lib/stackacres/prestige.ts's own header for what "gross" means here and
    *  why it is immune to the daily Gold ceiling. */
   prestige: StackAcresPrestigeView;
+  /** The irrigation pipe network: every placed tile with its recomputed
+   *  connector frame and hydration (lib/stackacres/irrigation.ts). The scene
+   *  renders straight off this; a crop a hydrated pipe waters is already
+   *  reflected in `units` (its `isWatered`/`state`), not re-derived here. */
+  irrigation: PipeNode[];
+}
+
+/** The working crops the irrigation recompute cares about, each at the fixed
+ *  world point `cropSpot` hashes it to -- the pure module never touches
+ *  world geometry beyond the tile size, so this resolves it here. */
+function irrigableCrops(rows: readonly StoredStackAcresUnit[]): IrrigableCrop[] {
+  const crops: IrrigableCrop[] = [];
+  for (const row of rows) {
+    if (row.status !== "working") continue;
+    const zone = stockZone(row.stock);
+    // Livestock has no soil; stockZone still answers, but thirstMs === null
+    // means the recompute would never mark it irrigated anyway. Skip the
+    // work.
+    if (STACKACRES_CATALOGUE[row.stock].thirstMs === null) continue;
+    const spot = cropSpot(zone, row.id);
+    crops.push({ unitId: row.id, worldX: spot.x, worldY: spot.y });
+  }
+  return crops;
 }
 
 function parseUnitId(value: unknown): string {
@@ -452,7 +488,12 @@ function parseUnitId(value: unknown): string {
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSnapshot[]> {
-  return toStackAcresUnitSnapshots(await listStackAcresUnits(profileId), now);
+  const [rows, pipes] = await Promise.all([
+    listStackAcresUnits(profileId),
+    listStackAcresPipes(profileId),
+  ]);
+  const grid = recalculatePipeConnections({ tiles: pipes, crops: irrigableCrops(rows) });
+  return toStackAcresUnitSnapshots(rows, now, grid.irrigatedUnitIds);
 }
 
 /** Every donation flag for a player, split into the two registries that ride
@@ -526,6 +567,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     midnightMerchant,
     prestige,
     lifetimeGross,
+    pipeRows,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -546,7 +588,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // into this array literal: a spread of a variable-length array would
     // widen every sibling element's inferred type too, since Promise.all's
     // tuple overload needs a fixed-length literal to keep each position's own
-    // type. Nesting keeps this array exactly 19 elements long.
+    // type. Nesting keeps this array a fixed-length literal.
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
     listUnlockedSynergyArchetypes(profile.id),
     listActiveSynergyArchetypes(profile.id),
@@ -555,6 +597,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readMidnightMerchantVisit(profile.id, now),
     readStackAcresPrestige(profile.id),
     readStackAcresLifetimeGross(profile.id),
+    listStackAcresPipes(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -563,7 +606,11 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     if (heldQtys[index] > 0) held[itemId] = heldQtys[index];
   });
 
-  const units = toStackAcresUnitSnapshots(rows, now);
+  const irrigationGrid = recalculatePipeConnections({
+    tiles: pipeRows,
+    crops: irrigableCrops(rows),
+  });
+  const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
   const sectors = unlockedSectors(cleared, units);
   return {
     units,
@@ -607,6 +654,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       multiplier: prestige.multiplier,
       goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
     },
+    irrigation: [...irrigationGrid.nodes],
   };
 }
 
@@ -3057,6 +3105,143 @@ export async function prestigeResetStackAcres(
       gainedMultiplier: gain.gainedMultiplier,
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Irrigation pipe network                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Placing an irrigation tile spends Gold -- a construction sink, like a
+ * Mill's placeCost, and never refunded when the tile is later removed.
+ * HYDRATION ITSELF MOVES NO GOLD: a hydrated pipe watering a crop is free,
+ * the same way tapping Water is free. So irrigation adds exactly one Gold
+ * sink (place) and no new payer -- see the actions route's own header for
+ * the count that has to stay true.
+ */
+export const PIPE_PLACE_COST: Readonly<Record<PipeKind, number>> = {
+  well: 400,
+  pipe: 25,
+};
+
+/**
+ * Recomputes the network after a layout change, writes the derived
+ * framing/hydration back, and keeps `last_watered_at` honest for the crops
+ * it touches.
+ *
+ * The stamp rolls `last_watered_at` forward with ZERO excluded time --
+ * `ready_at` is passed through unchanged. Irrigation cost the crop no
+ * growing time (`isStackAcresUnitDry` returns false for an irrigated crop,
+ * so it never froze), so moving `ready_at` would be charging for time that
+ * was not lost. What the stamp buys is that pulling the pipe later starts
+ * the drought from that moment rather than retroactively from whenever the
+ * soil first ran dry. `alsoStamp` carries the crops that a just-removed
+ * tile had been watering, so they get the same fresh start.
+ *
+ * A lost version race on a stamp is harmless: the next layout change, or a
+ * manual Water, settles it.
+ */
+async function recomputeIrrigation(
+  profileId: string,
+  now: Date,
+  alsoStamp: ReadonlySet<string> = new Set<string>(),
+): Promise<NetworkGrid> {
+  const [rows, pipes] = await Promise.all([
+    listStackAcresUnits(profileId),
+    listStackAcresPipes(profileId),
+  ]);
+  const grid = recalculatePipeConnections({ tiles: pipes, crops: irrigableCrops(rows) });
+  await syncStackAcresPipeNetwork(profileId, grid);
+
+  const stampIds = new Set<string>([...grid.irrigatedUnitIds, ...alsoStamp]);
+  await Promise.all(
+    rows
+      .filter(
+        (row) =>
+          row.status === "working" &&
+          stampIds.has(row.id) &&
+          isStackAcresUnitDry(row, now, false),
+      )
+      .map((row) => waterStackAcresUnit(row, now, new Date(row.readyAt))),
+  );
+
+  return grid;
+}
+
+/**
+ * Places one irrigation tile (a well or a length of pipe) on the
+ * STACKACRES_TILE lattice, spending Gold. Rule 1: the Gold leaves first; a
+ * placement that cannot land -- layout full, the one well slot already
+ * taken, or a lost race -- refunds it.
+ */
+export async function placeStackAcresPipeTile(
+  token: string,
+  input: { tx: number; ty: number; kind: PipeKind },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const cost = PIPE_PLACE_COST[input.kind];
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error.
+  const debited = await spendGoldByProfile(profile.id, cost);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `${input.kind === "well" ? "A well" : "A length of pipe"} costs ${cost.toLocaleString()} Gold.`,
+      400,
+    );
+  }
+
+  let placed: Awaited<ReturnType<typeof placeStackAcresPipe>>;
+  try {
+    placed = await placeStackAcresPipe(profile.id, tx, ty, input.kind);
+  } catch (error) {
+    await refundGold(profile.id, cost);
+    throw error;
+  }
+  if (!placed) {
+    await refundGold(profile.id, cost);
+    throw new StackAcresRequestError(
+      input.kind === "well"
+        ? "This farm already has a well."
+        : "That pipe could not be placed.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  await recomputeIrrigation(profile.id, now);
+  return view(debited, now);
+}
+
+/**
+ * Removes one irrigation tile. Not a payout and not refunded -- a placed
+ * tile is a spent sink. The recompute afterwards freezes any crop that was
+ * only growing because this tile watered it, from now rather than
+ * retroactively.
+ */
+export async function removeStackAcresPipeTile(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+
+  const [unitsBefore, pipesBefore] = await Promise.all([
+    listStackAcresUnits(profile.id),
+    listStackAcresPipes(profile.id),
+  ]);
+  const before = recalculatePipeConnections({
+    tiles: pipesBefore,
+    crops: irrigableCrops(unitsBefore),
+  });
+
+  await removeStackAcresPipe(profile.id, tx, ty);
+  await recomputeIrrigation(profile.id, now, before.irrigatedUnitIds);
+  return view(profile, now);
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

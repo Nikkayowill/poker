@@ -195,7 +195,14 @@ export function thirstyAtFor(
 export function isStackAcresUnitDry(
   row: Pick<StackAcresUnitRow, "status" | "stock" | "startedAt" | "readyAt" | "lastWateredAt">,
   now: Date,
+  irrigated = false,
 ): boolean {
+  // A crop connected to a hydrated irrigation pipe is watered continuously
+  // (lib/stackacres/irrigation.ts) -- its soil never dries, so it never
+  // freezes. The service rolls last_watered_at forward for these on every
+  // layout change, so pulling the pipe later starts the drought from that
+  // moment rather than retroactively.
+  if (irrigated) return false;
   if (row.status !== "working" || isLivestock(row.stock)) return false;
   const thirstyAt = thirstyAtFor(row);
   if (!thirstyAt) return false;
@@ -228,6 +235,7 @@ export function isStackAcresUnitReady(
     "status" | "stock" | "readyAt" | "startedAt" | "lastFedAt" | "lastWateredAt"
   >,
   now: Date,
+  irrigated = false,
 ): boolean {
   if (row.status !== "working") return false;
   // A hungry unit is frozen: it cannot become ready while it is waiting to be
@@ -236,16 +244,23 @@ export function isStackAcresUnitReady(
   // no unit is ever subject to both.
   if (isStackAcresUnitHungry(row, now)) return false;
   // Only ever true for a crop that ran dry mid-cycle -- one that beat the
-  // drought to its own finish line stays collectable. See its own comment.
-  if (isStackAcresUnitDry(row, now)) return false;
+  // drought to its own finish line, or one an irrigation pipe keeps watered,
+  // stays collectable. See its own comment.
+  if (isStackAcresUnitDry(row, now, irrigated)) return false;
   const ready = Date.parse(row.readyAt);
   return Number.isFinite(ready) && ready <= now.getTime();
 }
+
+/** Every owned unit a hydrated irrigation pipe currently waters, by unit id.
+ *  Empty unless a caller passes one -- livestock and pipe-less farms just get
+ *  the same behaviour they had before. */
+const NO_IRRIGATED_UNITS: ReadonlySet<string> = new Set<string>();
 
 /** Every owned unit, as the client renders it. */
 export function toStackAcresUnitSnapshots(
   rows: readonly StackAcresUnitRow[],
   now: Date,
+  irrigatedUnitIds: ReadonlySet<string> = NO_IRRIGATED_UNITS,
 ): StackAcresUnitSnapshot[] {
   return rows.map((row) => {
     if (row.status === "mucked") {
@@ -267,9 +282,10 @@ export function toStackAcresUnitSnapshots(
       };
     }
 
+    const irrigated = irrigatedUnitIds.has(row.id);
     const hungry = isStackAcresUnitHungry(row, now);
-    const dry = isStackAcresUnitDry(row, now);
-    const ready = isStackAcresUnitReady(row, now);
+    const dry = isStackAcresUnitDry(row, now, irrigated);
+    const ready = isStackAcresUnitReady(row, now, irrigated);
     const thirstyAt = thirstyAtFor(row);
     // A dry crop's clock stopped the moment its soil did, so its bar is read
     // at THAT moment rather than at `now`. Everything else is read live.

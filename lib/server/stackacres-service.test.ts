@@ -1641,8 +1641,10 @@ describe("the currency wall", () => {
       "fulfill-contract",
       "midnight-merchant-buy",
       "place-machine",
+      "place-pipe",
       "prestige-reset",
       "process",
+      "remove-pipe",
       "request-contract",
       "retire",
       "sow-wheat",
@@ -1685,6 +1687,11 @@ describe("the currency wall", () => {
     // payout and the ceiling only ever bounds Gold leaving the farm.
     // `prestige-reset` moves no Gold either; what it moves is the whole grid,
     // irreversibly, for a permanent multiplier on every future `collect`.
+    // `place-pipe` is a pure sink, same category as `place-machine` -- it
+    // buys an irrigation tile, refunded only when the tile cannot land;
+    // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
+    // is spent). Irrigation's own hydration -- a wet pipe watering a crop --
+    // moves nothing, the same as tapping `water`.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     // `, now` on both: Chrono-DeLorean Mode threads a resolved `now` through

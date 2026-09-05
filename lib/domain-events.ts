@@ -31,4 +31,9 @@ export type DomainEvent =
   // than silently inflating duel_won's "Win 10 PvP duels" count.
   | { kind: "heads_up_won" }
   | { kind: "puzzle_completed" }
-  | { kind: "level_gained"; levels: number };
+  | { kind: "level_gained"; levels: number }
+  // Ray's Museum's hidden wing: every core secret exhibit piece has been
+  // found for the first time ever (see lib/stackacres/museum-secrets.ts's
+  // `secretHiddenSetComplete`). Fired once, by the harvest that completes
+  // it -- a later harvest with the set already full never re-fires this.
+  | { kind: "museum_secret_set_completed" };

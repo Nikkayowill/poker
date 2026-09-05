@@ -45,6 +45,16 @@ import {
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
+  SECRET_ARTIFACTS,
+  SECRET_MUSEUM_ITEM_CATALOGUE,
+  emptySecretMuseumRegistry,
+  museumGlowTier as museumGlowTierFor,
+  secretHiddenSetComplete,
+  secretsFoundCount,
+  type SecretMuseumItemId,
+  type SecretMuseumRegistry,
+} from "@/lib/stackacres/museum-secrets";
+import {
   HOME_SECTOR,
   STACKACRES_SECTORS,
   isSectorUnlocked,
@@ -131,6 +141,11 @@ interface StackAcresResponse {
   capacity: Partial<Record<StackAcresStock, number>>;
   exchange: StackAcresExchangeState;
   museum: MuseumRegistry;
+  /** Ray's Museum, secret wing: which hidden finds this player has ever
+   *  turned up (lib/stackacres/museum-secrets.ts). Absent from a response
+   *  old enough to predate the wing, which `emptySecretMuseumRegistry`
+   *  covers the same way `toStackAcresToolTier` covers a missing `tool`. */
+  museumSecrets?: SecretMuseumRegistry;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -152,6 +167,13 @@ interface StackAcresResponse {
     /** Items donated to Ray's Museum for the very first time in this sweep,
      *  and what each paid -- already folded into `gold` above. */
     discoveries: { item: StackAcresItem; bonus: number }[];
+    /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
+     *  null on the overwhelming majority of harvests. Never folded into
+     *  `gold` -- a secret find pays no Gold at all. */
+    secretFind: SecretMuseumItemId | null;
+    /** True only on the harvest whose find just completed the core hidden
+     *  set for the first time ever. */
+    secretSetJustCompleted: boolean;
   };
   upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
   error?: string;
@@ -306,6 +328,9 @@ export function StackAcresFarm() {
   const [tool, setTool] = useState<StackAcresTool>("inspect");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
+  const [museumSecrets, setMuseumSecrets] = useState<SecretMuseumRegistry>(() =>
+    emptySecretMuseumRegistry(),
+  );
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
   const [showMuseum, setShowMuseum] = useState(false);
@@ -500,6 +525,7 @@ export function StackAcresFarm() {
     if (data.capacity) setCapacity(data.capacity);
     if (data.exchange) setExchange(data.exchange);
     if (data.museum) setMuseum(data.museum);
+    if (data.museumSecrets) setMuseumSecrets(data.museumSecrets);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
     // Through toStackAcresToolTier rather than a cast, for the same reason the
@@ -545,6 +571,22 @@ export function StackAcresFarm() {
   }, [refresh]);
 
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
+
+  // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
+  // farmhand's own unlock tint should be showing -- both pure derivations of
+  // state already held above, recomputed only when one of its real inputs
+  // changes rather than tracked as state of their own.
+  const museumGlowTier = useMemo(
+    () =>
+      museumGlowTierFor({
+        regularUndonatedCount: Object.values(museum).filter((donated) => !donated).length,
+        secretsFound: secretsFoundCount(museumSecrets),
+        secretsTotal: SECRET_ARTIFACTS.length,
+        hasGoldenSpade: toolTier === "golden-spade",
+      }),
+    [museum, museumSecrets, toolTier],
+  );
+  const secretSetComplete = useMemo(() => secretHiddenSetComplete(museumSecrets), [museumSecrets]);
 
   const anyWorking = units.some(
     (unit) =>
@@ -681,6 +723,22 @@ export function StackAcresFarm() {
             goldSound();
             setLastCollect({
               text: `Rich pickings! +${harvest.crit.toLocaleString()} Gold`,
+              nonce: Date.now(),
+            });
+          }
+          // Ray's Museum, secret wing: its own toast, never folded into the
+          // money line above -- a secret find pays no Gold at all, so it has
+          // nothing to add to that figure and everything to say on its own.
+          if (harvest.secretFind) {
+            goldSound();
+            setLastCollect({
+              text: `You found something in the straw… ${SECRET_MUSEUM_ITEM_CATALOGUE[harvest.secretFind].label}!`,
+              nonce: Date.now(),
+            });
+          }
+          if (harvest.secretSetJustCompleted) {
+            setLastCollect({
+              text: "Ray's hidden collection is complete!",
               nonce: Date.now(),
             });
           }
@@ -1197,6 +1255,8 @@ export function StackAcresFarm() {
               units={liveUnits}
               tool={tool}
               toolTier={toolTier}
+              museumGlowTier={museumGlowTier}
+              secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
@@ -1681,7 +1741,11 @@ export function StackAcresFarm() {
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
       {showMuseum && (
-        <StackAcresMuseum museum={museum} onClose={() => { panelSound(); setShowMuseum(false); }} />
+        <StackAcresMuseum
+          museum={museum}
+          secrets={museumSecrets}
+          onClose={() => { panelSound(); setShowMuseum(false); }}
+        />
       )}
     </main>
   );

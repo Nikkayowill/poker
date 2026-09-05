@@ -76,6 +76,13 @@ const DEFAULT_DEFINITIONS: AchievementDefinition[] = [
   { code: "level_10", category: "levels_gained", tier: 1, sourceKind: "live", metric: "profile_level", threshold: 10, rewardGold: 500, rewardCosmeticId: null, title: "On The Board", description: "Reach level 10.", sortOrder: 81 },
   { code: "level_25", category: "levels_gained", tier: 2, sourceKind: "live", metric: "profile_level", threshold: 25, rewardGold: 5000, rewardCosmeticId: null, title: "Made Man", description: "Reach level 25.", sortOrder: 82 },
   { code: "level_50", category: "levels_gained", tier: 3, sourceKind: "live", metric: "profile_level", threshold: 50, rewardGold: 40000, rewardCosmeticId: null, title: "Legend Of The Room", description: "Reach level 50.", sortOrder: 83 },
+
+  // One tier only, on purpose -- unlike every category above, there is
+  // nothing to re-earn: the hidden set has exactly three pieces
+  // (lib/stackacres/museum-secrets.ts), so "collected 1" and "collected all
+  // of them, ever" are the same fact. Added in
+  // supabase/migrations/20260904190000_stackacres_museum_secrets.sql.
+  { code: "museum_secrets_1", category: "museum_secrets", tier: 1, sourceKind: "counter", metric: "museum_secrets_collected", threshold: 1, rewardGold: 2500, rewardCosmeticId: null, title: "Ray's Best Friend", description: "Complete Ray's hidden collection.", sortOrder: 91 },
 ];
 
 // ---- memory-mode mirror -------------------------------------------------

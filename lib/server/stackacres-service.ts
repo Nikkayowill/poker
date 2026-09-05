@@ -90,6 +90,8 @@ import {
   listStackAcresWheatPlots,
   readStackAcresInfluence,
   readStackAcresInventory,
+  readStackAcresMuseumSecrets,
+  markStackAcresMuseumSecret,
   readStackAcresOpenContract,
   adjustStackAcresInfluence,
   adjustStackAcresInventory,
@@ -133,6 +135,14 @@ import {
   type StackAcresMachineSnapshot,
 } from "@/lib/stackacres/machines";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
+import {
+  emptySecretMuseumRegistry,
+  rollSecretArtifact,
+  secretHiddenSetComplete,
+  type SecretMuseumItemId,
+  type SecretMuseumRegistry,
+} from "@/lib/stackacres/museum-secrets";
+import { applyAchievementEvent } from "./achievement-store";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -260,6 +270,10 @@ export interface StackAcresView {
   /** Ray's Museum: which produce items this player has ever donated. Total
    *  over every item, never partial -- see emptyMuseumRegistry. */
   museum: MuseumRegistry;
+  /** Ray's Museum, secret wing: which hidden finds this player has ever
+   *  turned up (see lib/stackacres/museum-secrets.ts). Total over every
+   *  item, same "never partial" contract `museum` above carries. */
+  museumSecrets: SecretMuseumRegistry;
   /**
    * Land the player may work. DERIVED, not just the stored clear list -- see
    * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
@@ -308,6 +322,16 @@ async function museumView(profileId: string): Promise<MuseumRegistry> {
   return registry as MuseumRegistry;
 }
 
+/** The secret wing's own version of `museumView`, same overlay contract. */
+async function museumSecretsView(profileId: string): Promise<SecretMuseumRegistry> {
+  const found = await readStackAcresMuseumSecrets(profileId);
+  const registry = { ...emptySecretMuseumRegistry() } as Record<string, boolean>;
+  for (const itemId of found) {
+    if (itemId in registry) registry[itemId] = true;
+  }
+  return registry as SecretMuseumRegistry;
+}
+
 /** Strips the profile id off a stored contract row -- the client-safe shape
  *  every other view already follows (StoredStackAcresUnit -> StackAcresUnitSnapshot
  *  does the same thing). */
@@ -333,6 +357,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     cleared,
     upkeepPaid,
     museum,
+    museumSecrets,
     tool,
     wheatRows,
     machineRows,
@@ -347,6 +372,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
     museumView(profile.id),
+    museumSecretsView(profile.id),
     readStackAcresToolTier(profile.id),
     listStackAcresWheatPlots(profile.id),
     listStackAcresMachines(profile.id),
@@ -364,6 +390,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     capacity,
     exchange: exchangeState(exchanged, now),
     museum,
+    museumSecrets,
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
@@ -1163,6 +1190,15 @@ export interface StackAcresHarvestResult {
   /** Items donated to Ray's Museum for the very first time in this sweep,
    *  and what each paid. Empty when nothing here was new -- most harvests. */
   discoveries: { item: StackAcresItem; bonus: number }[];
+  /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
+   *  null on the overwhelming majority of harvests. Pays no Gold -- see
+   *  lib/stackacres/museum-secrets.ts's own header. */
+  secretFind: SecretMuseumItemId | null;
+  /** True only on the harvest whose find carried the core hidden set from
+   *  incomplete to complete for the first time ever. The client reads this
+   *  to fire its own local unlock celebration -- see stackacres-scene.ts's
+   *  `setFarmhandSecretUnlock`. */
+  secretSetJustCompleted: boolean;
 }
 
 /**
@@ -1418,6 +1454,33 @@ export async function harvestStackAcres(
       console.error("stackacres.museum_donation_failed", { profileId: profile.id, item, quantity, error });
     }
   }
+
+  // Step 5b. Ray's Museum, secret wing: one roll for the sweep, off the SAME
+  // crit that already decided in step 3b -- a secret find piggybacks on a
+  // critical harvest rather than adding a second dice roll to the guarded
+  // write. Pays no Gold at all (see rollSecretArtifact's own header), so
+  // this cannot touch the ceiling and does not need a reservation the way
+  // the discovery bonus above does.
+  const secretFind = rollSecretArtifact(tool, critical, Math.random);
+  let secretSetJustCompleted = false;
+  if (secretFind) {
+    try {
+      // Read BEFORE the write on purpose: once the core set is complete, a
+      // later joke-pool find (or a re-roll of something already on the
+      // shelf) must never re-fire the completion event and re-play the
+      // client's unlock celebration. Only the write that carries the set
+      // from incomplete to complete may set `secretSetJustCompleted`.
+      const wasCompleteBefore = secretHiddenSetComplete(await museumSecretsView(profile.id));
+      const firstFind = await markStackAcresMuseumSecret(profile.id, secretFind);
+      if (firstFind && !wasCompleteBefore && secretHiddenSetComplete(await museumSecretsView(profile.id))) {
+        secretSetJustCompleted = true;
+        await applyAchievementEvent(profile.id, { kind: "museum_secret_set_completed" });
+      }
+    } catch (error) {
+      console.error("stackacres.museum_secret_failed", { profileId: profile.id, secretFind, error });
+    }
+  }
+
   const gold = produceGold + museumBonus;
 
   // Step 6. The credit lands only after every guarded write above is durable,
@@ -1491,6 +1554,8 @@ export async function harvestStackAcres(
       gold,
       mucked,
       discoveries,
+      secretFind,
+      secretSetJustCompleted,
     },
   };
 }

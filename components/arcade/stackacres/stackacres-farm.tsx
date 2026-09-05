@@ -60,6 +60,11 @@ import {
 } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { stockZone } from "@/lib/stackacres/world";
+import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
+import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
+import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
+import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
+import type { FarmhandHooks } from "@/lib/stackacres/farmhand-machine";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
@@ -74,7 +79,11 @@ import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
-import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
+import {
+  StackAcresWorld,
+  type StackAcresProcessing,
+  type StackAcresWorldApi,
+} from "./stackacres-world";
 import {
   STACKACRES_STARTING_TIER,
   nextToolTier,
@@ -154,6 +163,15 @@ interface StackAcresResponse {
     discoveries: { item: StackAcresItem; bonus: number }[];
   };
   upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
+  /* The processing track -- wheat, mills, stores, and the one open Town
+   * Contract. Deliberately NOT folded into `units`: none of it is a
+   * `homestead_units` row, and the harvest sweep that pays Gold must never be
+   * able to reach it (lib/stackacres/machine-items.ts). All four are optional
+   * so a phone holding a bundle older than this feature keeps working. */
+  wheatPlots?: StackAcresWheatPlotSnapshot[];
+  machines?: (StackAcresMachineSnapshot & { canStart: boolean })[];
+  inventory?: StackAcresInventory;
+  contract?: StackAcresContractRow | null;
   error?: string;
   round?: StackAcresUnitSnapshot[];
 }
@@ -172,7 +190,12 @@ type Action =
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
-  | { action: "upgrade-tool" };
+  | { action: "upgrade-tool" }
+  // The idle-worker pass: settles every ripe wheat plot and every mill that
+  // has become startable or finished. Moves no Gold; the automated farmhand
+  // is what asks for it (see `farmhandHooks`).
+  | { action: "work" }
+  | { action: "fulfill-contract" };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -295,6 +318,21 @@ export function StackAcresFarm() {
    */
   const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
+  /**
+   * The processing track, held as one object rather than four pieces of
+   * state. It is read as a whole (the farmhand plans against all of it at
+   * once) and it arrives as a whole, and one object means one identity for
+   * the effect that pushes it into the scene -- four pieces of state would
+   * push four times per snapshot, and each push is a chance for the
+   * farmhand's optimistic credits to retire against a half-applied world
+   * (see lib/stackacres/farmhand-machine.ts).
+   */
+  const [processing, setProcessing] = useState<Omit<StackAcresProcessing, "profileId">>(() => ({
+    contract: null,
+    inventory: emptyInventory(),
+    machines: [],
+    wheatPlots: [],
+  }));
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
 
@@ -505,6 +543,17 @@ export function StackAcresFarm() {
     // Through toStackAcresToolTier rather than a cast, for the same reason the
     // store reads it that way: an unknown rung must degrade to a playable one.
     if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
+    // All four move together or not at all: a response either carries the
+    // processing track or predates it, and a half-applied one would let the
+    // farmhand plan a contract against last minute's stores.
+    if (data.inventory && data.wheatPlots && data.machines) {
+      setProcessing({
+        contract: data.contract ?? null,
+        inventory: data.inventory,
+        machines: data.machines,
+        wheatPlots: data.wheatPlots,
+      });
+    }
   }, []);
 
   const refresh = useCallback(async () => {
@@ -558,6 +607,69 @@ export function StackAcresFarm() {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
+
+  /**
+   * A request nobody pressed a button for.
+   *
+   * `act`'s quiet sibling, for the automated farmhand's own two intents. It
+   * shares `act`'s duplicate guard and its idempotency key -- the same two
+   * refs, so a `work` the farmhand asked for and a `work` the player somehow
+   * triggered cannot both be in the air -- and it applies the response the
+   * same way. What it deliberately does NOT do is any of `act`'s theatre: no
+   * busy spinner, no error banner, no sound, no float. Nobody is waiting on
+   * this and nobody asked for it, so a failure is a silence, not a message
+   * about something the player did not do.
+   *
+   * Returns the parsed body, or null when the request never landed or was
+   * refused. Null is what rolls the farmhand's optimistic credit back off the
+   * screen -- see `FarmhandHooks.adjustInventory`.
+   */
+  const send = useCallback(
+    async (body: Action): Promise<Partial<StackAcresResponse> | null> => {
+      const intent = intentOf(body);
+      if (inFlight.current.has(intent)) return null;
+      inFlight.current.add(intent);
+      sending.current = true;
+      const key = pendingKeys.current.get(intent) ?? newIntentKey();
+      pendingKeys.current.set(intent, key);
+      let answered = false;
+      try {
+        const response = await fetch("/api/stackacres/actions", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, key }),
+        });
+        // Rate limited, or the pass expired. Both leave the farm exactly as
+        // it was, and both are the farmhand's problem rather than the
+        // player's -- a reload here would throw away whatever they are
+        // actually doing.
+        if (response.status === 429 || response.status === 401) {
+          answered = true;
+          return null;
+        }
+        const data = (await response.json()) as Partial<StackAcresResponse>;
+        answered = true;
+        if (!mounted.current) return null;
+        if (!response.ok) {
+          // A refusal still carries the true round, and painting it is the
+          // whole point: it is how the farmhand learns the plot he thought
+          // was ripe is gone.
+          if (data.round) setUnits(data.round);
+          return null;
+        }
+        applyResponse(data);
+        return data;
+      } catch {
+        return null;
+      } finally {
+        inFlight.current.delete(intent);
+        if (answered) pendingKeys.current.delete(intent);
+        sending.current = false;
+      }
+    },
+    [applyResponse],
+  );
 
   const act = useCallback(
     async (body: Action) => {
@@ -759,6 +871,56 @@ export function StackAcresFarm() {
   const sendFarmhand = useCallback((unitId: string) => {
     world.current?.sendFarmhand(unitId);
   }, []);
+
+  /* ---------------------------------------------------------------- */
+  /* The automated farmhand                                            */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * What the wheat field is worth, and where the browser's authority ends.
+   *
+   * The scene's `FarmhandStateMachine` decides WHEN a cycle finishes and
+   * predicts what it is worth on screen. This is the only place that turns
+   * one into a request, and every request here is an INTENT: `work` asks the
+   * server to settle every ripe plot and every mill it finds, and
+   * `fulfill-contract` asks it to pay the one open contract. Neither names a
+   * quantity, a plot or a price, so a tampered client can ask for the pass to
+   * run and nothing else -- the server reads the live rows itself and settles
+   * under its own guard. That matters more here than anywhere else on this
+   * screen, because a fulfilled contract pays real Gold.
+   *
+   * `adjustInventory` therefore does NOT call
+   * `adjust_homestead_processing_inventory`; it asks for the pass that will.
+   * It keeps the hook's `(profileId, itemId, delta)` shape because that is
+   * what the effect carries and what a future server-side worker would take
+   * unchanged, and it resolves with the item's own new quantity -- read back
+   * off the response, never predicted -- so a refusal comes back as null and
+   * rolls the optimistic credit off the screen.
+   */
+  const farmhandHooks = useMemo<FarmhandHooks>(
+    () => ({
+      adjustInventory: async (_profileId, itemId) => {
+        const data = await send({ action: "work" });
+        if (!data?.inventory) return null;
+        return data.inventory[itemId] ?? 0;
+      },
+      fulfillContract: async () => {
+        await send({ action: "fulfill-contract" });
+      },
+    }),
+    [send],
+  );
+
+  useEffect(() => {
+    world.current?.setFarmhandHooks(farmhandHooks);
+  }, [farmhandHooks, worldReady]);
+
+  /** The snapshot the scene plans against, rebuilt only when something in it
+   *  actually moved -- see `processing`'s own note on why one object. */
+  const sceneProcessing = useMemo<StackAcresProcessing>(
+    () => ({ ...processing, profileId: profile?.id ?? null }),
+    [processing, profile?.id],
+  );
 
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -1199,6 +1361,7 @@ export function StackAcresFarm() {
               toolTier={toolTier}
               celebrate={celebrate}
               onReady={onWorldReady}
+              processing={sceneProcessing}
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}

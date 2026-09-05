@@ -60,6 +60,7 @@ import {
   growAreaBounds,
   growAreaInterior,
   growthStage,
+  powerOfTwoCeil,
   scrollToKeepUnderPointer,
   seededRandom,
   spawnCritter,
@@ -71,6 +72,16 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "@/lib/stackacres/world";
+import {
+  enqueueFarmhandTask,
+  farmhandStandoff,
+  farmhandWalking,
+  pruneFarmhandTasks,
+  spawnFarmhand,
+  stepFarmhand,
+  type Farmhand,
+  type FarmhandTask,
+} from "@/lib/stackacres/farmhand";
 import {
   cropArtFor,
   cropFootprintHalf,
@@ -361,6 +372,95 @@ function mirrorFor(art: PainterName, heading: 1 | -1): 1 | -1 {
   return heading === (ART_FACES[art] ?? 1) ? 1 : -1;
 }
 
+/* ------------------------------------------------------------------ */
+/* The farmhand's art: a real sheet, not a painter                     */
+/* ------------------------------------------------------------------ */
+
+/** Where `preload` fetches the raw sheet from, and the key it lands under
+ *  before baking. Ten 64px frames in one row -- see farmhand-ranger.png. */
+const FARMHAND_SHEET_URL = "/stackacres/sprites/farmhand-ranger.png";
+const FARMHAND_SHEET_KEY = "farmhandRangerSheet";
+/** The baked, POT-padded texture `spawnFarmhandNode` actually draws from.
+ *  Baked rather than used as a raw Phaser spritesheet for the same reason
+ *  `bakeSpriteTexture` bakes the animals: an NPOT texture never gets mipped
+ *  on WebGL1, and the fully zoomed-out farm minifies it enough to shimmer. */
+const FARMHAND_TEXTURE = "farmhandRanger";
+const FARMHAND_SHEET_FRAME_PX = 64;
+const FARMHAND_SHEET_FRAMES = 10;
+/**
+ * Where his boots actually land within the 64px frame -- measured off the
+ * sheet, not assumed. Throneless drew every standing/walking pose with a
+ * twelve-pixel band of transparent padding below the feet (room for a
+ * ground shadow the export dropped), so anchoring at the frame's own bottom
+ * edge (origin 1.0) floats him a fifth of his own height above the shadow
+ * this scene draws separately. Anchoring at this row instead puts the two
+ * back together. The crouch pose's feet sit two pixels lower still, which
+ * at FARMHAND_SIZE's scale is under a pixel on screen -- not worth a
+ * per-frame origin for.
+ */
+const FARMHAND_SHEET_FOOT_ROW = 51;
+const FARMHAND_ORIGIN_Y = (FARMHAND_SHEET_FOOT_ROW + 1) / FARMHAND_SHEET_FRAME_PX;
+/** World units square he is drawn at -- the same "forty units tall" figure
+ *  the previous farmhand was built to, so FARMHAND_STANDOFF and the shadow
+ *  pool borrowed from Grandfather Ray still fit. */
+const FARMHAND_SIZE = 40;
+
+/** The sheet's ten poses, read off Throneless's own layout: five front-facing
+ *  frames (a two-pose shuffle, repeated), five more the same shape facing
+ *  away, and a crouch at the end of each half. There is no side-on pose at
+ *  all -- the sheet was drawn for a top-down tactics game -- so left/right
+ *  is a plain horizontal mirror of the front pose, the same trick every
+ *  other painter here uses. */
+const RANGER_FRAME = {
+  frontIdle: 0,
+  frontStep: 1,
+  backIdle: 5,
+  backStep: 6,
+  work: 8,
+} as const;
+
+/** World units travelled per shuffle-step -- there is no true walk cycle to
+ *  time against, just two poses, so this is a plain distance-driven toggle
+ *  rather than a phase like `stepGait`'s. */
+const FARMHAND_STEP_UNITS = 6;
+
+/**
+ * Bakes the farmhand's ten frames into one POT-padded canvas texture, exactly
+ * the treatment `bakeSpriteTexture` gives every other real image on this map.
+ * Returns whether the texture is ready; false (the sheet never arrived, or a
+ * canvas texture could not be created) means no farmhand this session -- he
+ * is pure decoration, so going without him costs nothing. See
+ * lib/stackacres/farmhand.ts.
+ */
+function bakeFarmhandTexture(scene: Phaser.Scene): boolean {
+  if (scene.textures.exists(FARMHAND_TEXTURE)) return true;
+  if (!scene.textures.exists(FARMHAND_SHEET_KEY)) return false;
+  const source = scene.textures.get(FARMHAND_SHEET_KEY).getSourceImage() as CanvasImageSource;
+  const cell = Math.ceil(FARMHAND_SIZE * ART_SCALE);
+  const texture = scene.textures.createCanvas(
+    FARMHAND_TEXTURE,
+    powerOfTwoCeil(cell * FARMHAND_SHEET_FRAMES),
+    powerOfTwoCeil(cell),
+  );
+  if (!texture) return false;
+  for (let i = 0; i < FARMHAND_SHEET_FRAMES; i++) {
+    texture.context.drawImage(
+      source,
+      i * FARMHAND_SHEET_FRAME_PX,
+      0,
+      FARMHAND_SHEET_FRAME_PX,
+      FARMHAND_SHEET_FRAME_PX,
+      i * cell,
+      0,
+      cell,
+      cell,
+    );
+    texture.add(i, 0, i * cell, 0, cell, cell);
+  }
+  texture.refresh();
+  return true;
+}
+
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -488,6 +588,28 @@ interface HerdSprite {
   state: Critter;
   /** The weight shift it walks with. See lib/stackacres/gait.ts. */
   gait: Gait;
+}
+
+/**
+ * The farmhand: one man, always present, walked and animated straight off a
+ * ten-frame sheet -- Throneless's Ranger (a 2021 Ludum Dare 48 game, see
+ * public/stackacres/sprites/farmhand-ranger.png), not generated art. The
+ * first cut of this NPC rigged two Graphics legs under a generated torso
+ * because the generator could not hold one character across frames; a real
+ * sheet has no such problem, so `sprite` is the whole man and there is no rig
+ * left to draw. See lib/stackacres/farmhand.ts for the state machine this
+ * plays out and CLAUDE.md's 2026-09-04 entries for why the previous attempt
+ * was scrapped.
+ *
+ * Built like a `HerdSprite`, not a `UnitNode`: sprite and shadow are two
+ * plain images in world space, both repositioned every frame from
+ * `state.x`/`state.y` in `walkFarmhand` -- there is no container here because
+ * there is nothing that needs one, the same reason herds don't have one.
+ */
+interface FarmhandNode {
+  sprite: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
+  state: Farmhand;
 }
 
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
@@ -621,6 +743,14 @@ export class StackAcresScene extends Phaser.Scene {
    *  Driven by the same `stepCritter` the owned units use. */
   private herds: HerdSprite[] = [];
 
+  /** The farmhand, and the jobs waiting for him. Null until `create` has run
+   *  (or forever, if his sheet never loaded -- see `bakeFarmhandTexture`).
+   *  `farmhandTask` is the one he has claimed, held out of the queue so a
+   *  prune cannot forget the unit he is walking to right now. */
+  private farmhand: FarmhandNode | null = null;
+  private farmhandQueue: readonly FarmhandTask[] = [];
+  private farmhandTask: FarmhandTask | null = null;
+
 
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
@@ -705,6 +835,7 @@ export class StackAcresScene extends Phaser.Scene {
     for (const name of SPRITE_NAMES) {
       this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
     }
+    this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
   }
 
   create(): void {
@@ -718,6 +849,7 @@ export class StackAcresScene extends Phaser.Scene {
       bakeArt(this, name);
     }
     bakeGrass(this);
+    bakeFarmhandTexture(this);
 
     // Depth is the world y of a thing's feet, so it can go far negative north
     // of the farm: the grass has to sit below anything the player can roam to.
@@ -742,6 +874,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintBarn();
     this.paintProps();
     this.spawnHerds();
+    this.spawnFarmhandNode();
     // Each district's own layer, which is either its farm (ground, fence,
     // grow area) or the wild growth standing where that farm is not built
     // yet. Rebuilt per district by `setSectors` when land is cleared.
@@ -842,6 +975,115 @@ export class StackAcresScene extends Phaser.Scene {
         this.herds.push({ sprite, shadow, art, state, gait: spawnGait(random() * Math.PI * 2) });
       }
     }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* The farmhand                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /** The one man on the map, standing at his post from boot. A no-op (and no
+   *  farmhand) if his sheet never baked -- see `bakeFarmhandTexture`. The
+   *  shadow pool is Grandfather Ray's own: they are drawn to the same
+   *  forty-unit build (see FARMHAND_SIZE), so a second set of numbers here
+   *  would only be a second set of numbers to drift from his. */
+  private spawnFarmhandNode(): void {
+    if (!this.textures.exists(FARMHAND_TEXTURE)) return;
+    const state = spawnFarmhand();
+    const pool = PROP_SHADOW.grandfatherRay;
+    const shadow = this.put("shadow", state.x, state.y + 1, 0)
+      .setAlpha(0.8)
+      .setScale(pool.w / 33 / S, pool.h / 13 / S);
+    const at = isoProject(state.x, state.y);
+    const sprite = this.add
+      .image(at.x, at.y, FARMHAND_TEXTURE, RANGER_FRAME.frontIdle)
+      .setOrigin(0.5, FARMHAND_ORIGIN_Y)
+      .setScale(1 / S)
+      .setDepth(at.y);
+    this.farmhand = { sprite, shadow, state };
+  }
+
+  /**
+   * Send the farmhand to a unit, if he is the right man for it.
+   *
+   * Called on a tap that was ACCEPTED, after the request has already left the
+   * browser -- see `onWorldUnitTap` in stackacres-farm.tsx. He is decoration
+   * on a write that has already happened, so everything here is allowed to
+   * refuse silently: a full queue, a unit in another district, a unit that
+   * has since gone. None of those can cost the player anything.
+   *
+   * FARMSTEAD ONLY. The four districts are hundreds of units apart, so a job
+   * out at Ox Fields or the Wallow would be most of a minute of watching a
+   * man cross a field -- and the camera is usually not even pointed at him
+   * while he does it.
+   */
+  sendFarmhand(unitId: string): void {
+    const node = this.nodes.get(unitId);
+    if (!node || stockZone(node.unit.stock) !== "farmstead") return;
+    // Already on it, or already holding it: `enqueueFarmhandTask` dedupes the
+    // queue, and this covers the one it cannot see.
+    if (this.farmhandTask?.unitId === unitId) return;
+    const at = farmhandStandoff(this.unitWorldSpot(node));
+    this.farmhandQueue = enqueueFarmhandTask(this.farmhandQueue, { unitId, x: at.x, y: at.y });
+  }
+
+  /** A job's target, re-read this frame: livestock keeps wandering while he
+   *  crosses the yard, so he chases where the hen IS rather than where it was
+   *  standing when the finger landed. Null once the unit has gone. */
+  private freshenFarmhandTask(task: FarmhandTask): FarmhandTask | null {
+    const node = this.nodes.get(task.unitId);
+    if (!node) return null;
+    const at = farmhandStandoff(this.unitWorldSpot(node));
+    return { unitId: task.unitId, x: at.x, y: at.y };
+  }
+
+  /**
+   * One frame of the farmhand's day. Stepped from `update` alongside the
+   * herds, which puts it inside the reduced-motion gate: with motion off he
+   * simply stands at his post.
+   *
+   * The frame he shows is a plain distance-driven toggle between the sheet's
+   * two near-identical poses per direction -- there is no real walk cycle on
+   * this sheet to time against, just a shuffle, and `working` overrides both
+   * with the crouched pose for as long as `FARMHAND_WORK_MS` runs.
+   */
+  private walkFarmhand(delta: number): void {
+    const node = this.farmhand;
+    if (!node) return;
+
+    // Jobs whose unit has gone -- collected, cleared, or refetched away.
+    this.farmhandQueue = pruneFarmhandTasks(this.farmhandQueue, (id) => this.nodes.has(id));
+    const claimed = this.farmhandTask ? this.freshenFarmhandTask(this.farmhandTask) : null;
+    if (this.farmhandTask && !claimed) this.farmhandTask = null;
+
+    const head = this.farmhandQueue[0];
+    const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
+    const step = stepFarmhand(node.state, next, delta);
+    if (step.claimed) {
+      this.farmhandTask = head ?? null;
+      this.farmhandQueue = this.farmhandQueue.slice(1);
+    }
+    if (step.finished) this.farmhandTask = null;
+    node.state = step.hand;
+
+    const stepped = Math.floor(node.state.travelled / FARMHAND_STEP_UNITS) % 2 === 1;
+    const frame =
+      node.state.phase === "working"
+        ? RANGER_FRAME.work
+        : node.state.towards === 1
+          ? farmhandWalking(node.state) && stepped
+            ? RANGER_FRAME.frontStep
+            : RANGER_FRAME.frontIdle
+          : farmhandWalking(node.state) && stepped
+            ? RANGER_FRAME.backStep
+            : RANGER_FRAME.backIdle;
+    node.sprite.setFrame(frame);
+
+    const at = isoProject(node.state.x, node.state.y);
+    node.sprite.setPosition(at.x, at.y);
+    node.sprite.setDepth(at.y);
+    node.sprite.setScale(node.state.facing / S, 1 / S);
+    node.shadow.setPosition(at.x, at.y + 1);
+    node.shadow.setDepth(at.y - 0.5);
   }
 
   /**
@@ -3100,6 +3342,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.animateSunlight(time, delta);
     this.animatePond(time);
     this.walkHerds(delta);
+    this.walkFarmhand(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
 

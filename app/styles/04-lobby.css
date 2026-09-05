@@ -207,7 +207,12 @@ button:disabled { cursor: wait; opacity: .62; }
   /* 148px clears the status bar/notch with real room to spare and reads as
      "centered in the upper half" rather than pinned to the top edge -- see
      the note above .entry-hero on why the avatars don't move with this. */
-  padding: calc(148px + var(--safe-top)) 16px calc(120px + var(--safe-bottom));
+  /* 80px flat, where this was `120px + safe-bottom` while .entry-footer
+     floated over the page. The footer is in flow now and brings its own
+     ~40px (14 pad + a 12px row + its own 14px floor) plus the safe-area
+     strip, so the space under the card is unchanged and the card stays
+     centred where it was tuned. Move the two together or the form shifts. */
+  padding: calc(148px + var(--safe-top)) 16px 80px;
   /* Transparent so the shell-level ceiling remains one continuous surface. */
   background: transparent;
 
@@ -1100,36 +1105,45 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 0 0 auto;
 }
 
-/* The one thing pinned to the bottom of the viewport: the legal links,
-   nothing else (X-style -- content in the middle, "fluff" as the footer).
-   Sibling of .account-entry-card in the JSX, so its own height never
-   depends on the card's. A short, single-purpose bar, sized for exactly
-   one row of links -- see .entry-legal-links below for that row's own
-   layout. .account-entry-page's own padding-bottom clears this bar's
-   height so the scrolling content never runs under it. */
+/* The last row on the page: the legal links, nothing else (X-style --
+   content in the middle, "fluff" as the footer). Sibling of
+   .account-entry-card, which carries `margin: auto 0`, so in this flex
+   column the card's auto margins eat the free space and drop this row onto
+   the bottom of the content box without it being positioned at all.
+
+   IT IS IN FLOW ON PURPOSE. DO NOT PIN IT AGAIN. This was
+   `position: fixed; bottom: 0`, and then fixed plus
+   `translateY(var(--vp-short))` once the short-launch correction landed
+   (PR #328). Both were reported by Kayo as a purple strip eating the links.
+   Measured off the second report (IMG_3212, an installed iOS PWA on a
+   390x844 iPhone, taken after #328 was live): the bar's border-top painted
+   at y=790 and its backing gradient faded in correctly for about 7px, then
+   every pixel below y=797 was flat #150a2b -- the bare `html, body` colour,
+   with no bar over it. y=797 is exactly where this page's own box ends, so
+   the bar was being positioned right and then cut off at the scroller's
+   edge. WebKit clips a `position: fixed` descendant of a scrollable
+   `overflow` ancestor, and .account-entry-page is `overflow-y: auto`. That
+   is also why the lobby's tab pill survived the same correction while this
+   did not -- .lobby-shell is `overflow: hidden`, not a scroller.
+
+   The correction cannot help here. It moves the bar DOWN into the strip,
+   which is further past the clip, so the better the measurement the more of
+   the row disappears. A row in normal flow is inside the box that was doing
+   the clipping, so there is nothing left to clip and nothing to measure.
+
+   No border and no backing gradient any more either: both existed to
+   separate a floating bar from content passing beneath it, and nothing
+   passes beneath it now. .entry-scroll-footer's rule one row up is the only
+   divider down here. The bottom pad still ABSORBS the safe-area strip rather
+   than sitting on top of it (#328's own note, still true and still the
+   reason this row clears a home indicator): the inset already is the
+   clearance, and 14px is only the floor for a device reporting none. */
 .entry-footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Reaches into the strip below a short layout viewport so the bar rests on
-     the real bottom edge rather than partway up the glass. A transform rather
-     than a negative `bottom`: a fixed box hanging below the containing block
-     flickers under WebKit's compositor, and this moves the same pixels with
-     no layout change at all. translateY(0px) when there is nothing to correct,
-     which is everywhere but an installed iOS app that launched short. */
-  transform: translateY(var(--vp-short));
-  z-index: 2;
+  flex: 0 0 auto;
+  width: 100%;
   display: flex;
   justify-content: center;
-  /* The bottom pad ABSORBS the safe-area strip rather than sitting on top of
-     it. `calc(14px + inset)` spent both, which on a home-indicator iPhone put
-     48px of empty bar under a 12px row of links and read as the footer
-     hovering rather than resting on the edge. The inset already is the
-     clearance; 14px is only the floor for a device that reports none. */
   padding: 14px 16px max(14px, var(--safe-bottom));
-  border-top: 1px solid rgba(182, 166, 219, .15);
-  background: linear-gradient(180deg, rgba(22, 27, 38, 0), rgba(22, 27, 38, .94) 35%);
 }
 
 /* Everything that used to share the fixed footer with the legal links --

@@ -103,11 +103,12 @@
        clearly visible push down with no scroll, and the 667-tall/47px-inset
        case only grows that pre-existing 3px scroll to ~17px, not something
        new. Re-check both renders before pushing this further. */
-    /* The fixed footer (~70px including safe-bottom) takes up permanent
-       screen space at the bottom, so pad accordingly to keep the form's
-       last content from scrolling under it. Still bring content down per
-       Kayo's call. */
-    padding: calc(198px + var(--safe-top)) 14px calc(40px + var(--safe-bottom));
+    /* 22px flat, where this was `40px + safe-bottom` while .entry-footer
+       floated over the page. The footer sits in flow now and brings its own
+       ~52px at this breakpoint (its padding-top drops to 6px below, plus a
+       12px row, plus the 34px capped safe-area strip), so the space under
+       the card is the same 74px it was tuned to. Move the two together. */
+    padding: calc(198px + var(--safe-top)) 14px 22px;
   }
   /* No card padding to restate -- the form stands on the page now. The
      headline still steps down: at clamp(32px...) over a star field it was

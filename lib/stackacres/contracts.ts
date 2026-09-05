@@ -38,7 +38,7 @@ export interface ContractDef {
  * clear what growing and milling it actually cost, the same "never pay less
  * than a tier's net" sanity check ./items.ts's `netPerCycle` runs for stock.
  */
-const CONTRACT_RUNGS: readonly ContractDef[] = [
+export const CONTRACT_RUNGS: readonly ContractDef[] = [
   { item: "flour", quantity: 2, goldReward: 140, influenceReward: 10 },
   { item: "flour", quantity: 4, goldReward: 300, influenceReward: 25 },
   { item: "flour", quantity: 8, goldReward: 640, influenceReward: 60 },
@@ -70,4 +70,33 @@ export function canFulfillContract(
   contract: Pick<StackAcresContractRow, "quantity" | "status">,
 ): boolean {
   return contract.status === "open" && held >= contract.quantity;
+}
+
+/**
+ * How far along the board a rung is, as a 0..1 fraction, for a progress bar
+ * to scale itself by.
+ *
+ * Clamped at both ends deliberately. A held count ABOVE the requirement is
+ * still a full bar rather than an overflowing one -- surplus Flour is not
+ * extra progress, it is just Flour -- and a `required` of zero reads as done
+ * rather than dividing by nothing. Pure, so the bar and the button below it
+ * cannot disagree about whether a rung is ready.
+ */
+export function contractProgress(held: number, required: number): number {
+  if (required <= 0) return 1;
+  return Math.min(1, Math.max(0, held / required));
+}
+
+/**
+ * Whether `contract` is the board rung `def` -- what lets the town board draw
+ * three rungs and mark the one actually posted.
+ *
+ * Matched on item AND quantity rather than on an id, because a rung in
+ * CONTRACT_RUNGS has no id: the id is minted when the row is written, and the
+ * board is drawn from the table. Two rungs asking for the same quantity of
+ * the same item would be indistinguishable here, which is why the table has
+ * none -- if one is ever added, give the rungs their own stable keys first.
+ */
+export function isPostedRung(contract: StackAcresContractRow | null, def: ContractDef): boolean {
+  return contract !== null && contract.item === def.item && contract.quantity === def.quantity;
 }

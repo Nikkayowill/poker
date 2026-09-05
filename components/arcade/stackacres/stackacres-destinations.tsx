@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Lock } from "lucide-react";
+import { Lock, ScrollText } from "lucide-react";
 import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
 import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
 
@@ -59,6 +59,15 @@ export interface StackAcresDestinationsProps {
   unlocked: readonly SectorId[];
   /** Opens the supply store. Ray's own entry, not a travel target. */
   onOpenStore: () => void;
+  /** Opens the town board. Like Ray's entry, not a travel target: the town
+   *  itself is off the map -- what is on the farm is the board it posts to,
+   *  and the whole of it is the sheet this opens. */
+  onOpenContracts: () => void;
+  /** Whether the town currently has an order up, for the dot on the entry.
+   *  Deliberately not a count: there is only ever one (see
+   *  lib/stackacres/contracts.ts), so a number would read as a promise of
+   *  more. */
+  contractPosted: boolean;
   /** Produce sitting in the barn, unsold -- shown as a badge on Ray's entry
    *  the same way it used to sit on the header's own Store button. */
   /** How many fields and pens are ready to bring in. */
@@ -70,6 +79,8 @@ export function StackAcresDestinations({
   onTravel,
   unlocked,
   onOpenStore,
+  onOpenContracts,
+  contractPosted,
   carrying,
 }: StackAcresDestinationsProps) {
   return (
@@ -129,6 +140,28 @@ export function StackAcresDestinations({
             {carrying}
           </span>
         )}
+      </button>
+      <button
+        type="button"
+        className="sa-dest sa-dest-board"
+        title="See what the town is asking for, and what it pays."
+        aria-label={
+          contractPosted
+            ? "Town board — an order is up. See what the town is asking for, and what it pays."
+            : "Town board — see what the town is asking for, and what it pays."
+        }
+        onClick={onOpenContracts}
+      >
+        <span className="sa-dest-swatch" aria-hidden="true">
+          <ScrollText size={14} />
+        </span>
+        <span className="sa-dest-text">
+          <span className="sa-dest-name">Town board</span>
+          <span className="sa-dest-way" aria-hidden="true">
+            {contractPosted ? "order up" : "orders"}
+          </span>
+        </span>
+        {contractPosted && <span className="sa-dest-dot" aria-hidden="true" />}
       </button>
     </nav>
   );

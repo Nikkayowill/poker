@@ -2495,6 +2495,215 @@
 
 .sa-clear-cta { margin-top: 16px; }
 
+/* ---- the town board ---------------------------------------------------
+   The signpost's last entry and the sheet it opens. The town itself is off
+   the map, so this is not a travel target: like Ray's entry it opens
+   directly, and it is cream rather than wood for the same reason his is --
+   set apart from the four places rather than reading as a fifth one. */
+
+.sa-dest-board {
+  position: relative;
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+/* The swatch slot holds a rolled notice instead of a ground colour, since
+   there is no district to key one to. Corn, so it reads as the one entry
+   with something waiting on it. */
+.sa-dest-board .sa-dest-swatch {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--sa-corn);
+  color: var(--sa-outline);
+}
+
+/* An order is up. A dot rather than a count: there is only ever one, and a
+   number here would read as a promise of more. */
+.sa-dest-dot {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-roof);
+}
+
+.sa-contracts-standing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sa-contracts-standing strong {
+  color: var(--sa-ink);
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sheet answers its own actions. The page's banner sits behind the
+   scrim, so a refusal raised in here has nowhere else to land. */
+.sa-contracts-note {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sa-contracts-note.is-paid {
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+  color: var(--sa-ink);
+}
+
+.sa-contracts-note.is-refused {
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  color: var(--sa-ink);
+}
+
+.sa-contracts-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* An offered rung is a notice on the board; the posted one is the notice
+   somebody has actually signed. It gets the corn edge the allowance meter
+   uses -- the marker for "this is the number to plan around". */
+.sa-contract {
+  padding: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-contract.is-posted {
+  background: var(--sa-paper);
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-contract-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sa-contract-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--sa-ink);
+}
+
+.sa-contract-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--sa-ink-soft);
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-contract-req {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Fills as the shelf fills, the opposite of the allowance meter next door --
+   and right for the opposite reason. That bar is what is LEFT of the day, so
+   it drains; this is progress toward a thing, so it grows. */
+.sa-contract-bar {
+  flex: 1;
+  height: 14px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream-rim);
+  overflow: hidden;
+}
+
+/* Scaled, not resized, same as .sa-exchange-bar: the tween stays off the
+   layout path. */
+.sa-contract-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+  transition: transform var(--duration-slow, .22s) var(--sa-ease-out);
+}
+
+.sa-contract-count {
+  flex: none;
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-contract-count strong { color: var(--sa-ink); font-weight: 800; }
+
+.sa-contract-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-contract-rewards li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sa-contract-rewards li strong {
+  color: var(--sa-ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-contract-rewards li.is-gold { background: var(--sa-corn); color: var(--sa-outline); }
+
+.sa-contract .sa-cta { margin-top: 12px; }
+
+.sa-contracts-ask { margin-top: 12px; }
+
+
 
 @media (prefers-reduced-motion: reduce) {
   .sa-play-pulse,
@@ -2503,7 +2712,8 @@
   .sa-sheet { animation: none; }
   .sa-sheet-scrim { animation: none; }
   .sa-cta,
-  .sa-exchange-bar > span { transition: none; }
+  .sa-exchange-bar > span,
+  .sa-contract-bar > span { transition: none; }
   .sa-district-panel,
   .sa-district-panel.is-open,
   .sa-panel-tab { transition-duration: 1ms; }
@@ -2534,6 +2744,9 @@
   .sa-shell .sa-heading-logo { width: 170px; }
 
   .sa-dest { min-height: 42px; padding: 4px 11px 4px 7px; }
+  .sa-dest-board .sa-dest-swatch { width: 22px; height: 22px; }
+  .sa-contract-head h3 { font-size: 15px; }
+  .sa-contract-req { margin-top: 8px; }
   .sa-dest-name { font-size: 14px; }
   .sa-dest-way { font-size: 10px; }
 

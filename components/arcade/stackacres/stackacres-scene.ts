@@ -10,6 +10,7 @@ import {
 } from "@/lib/stackacres/catalogue";
 import {
   ISO_EDGE_ANGLE,
+  isoDepthAt,
   isoProject,
   isoUnproject,
   projectedBounds,
@@ -32,6 +33,7 @@ import {
   type Sparkle,
 } from "@/lib/stackacres/sunlight";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
+import { WeatherOverlayManager } from "./weather-overlay-manager";
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
@@ -83,6 +85,12 @@ import {
   type Farmhand,
   type FarmhandTask,
 } from "@/lib/stackacres/farmhand";
+import {
+  FarmhandStateMachine,
+  automationWalking,
+  type FarmhandHooks,
+} from "@/lib/stackacres/farmhand-machine";
+import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 import {
   cropArtFor,
   cropFootprintHalf,
@@ -710,6 +718,13 @@ export class StackAcresScene extends Phaser.Scene {
 
   /** The live flecks, one per pool slot, driven by lib/stackacres/sunlight.ts. */
   private sparkles: Sparkle[] = [];
+
+  /** Solar flare / gold rush rain / dry spell -- its own manager, not more
+   *  private state here on purpose; see weather-overlay-manager.ts's header
+   *  for why it stays a separate class. Null under reduced motion, same
+   *  posture `buildSunlight` takes for its own layers. */
+  private weather: WeatherOverlayManager | null = null;
+
   /** The world's own hard edge, in the same projected screen space as
    *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
    *  every frame by `fitEdgeGuides()` to know how close the view is to it. */
@@ -771,6 +786,14 @@ export class StackAcresScene extends Phaser.Scene {
    *  (never layered) whenever the tier changes, the same discipline
    *  `toolGhostTween` holds. */
   private barnGlowTween: Phaser.Tweens.Tween | null = null;
+
+  /**
+   * What he does when nobody has tapped anything: work the wheat field on his
+   * own. See lib/stackacres/farmhand-machine.ts -- this is a SECOND driver
+   * for the SAME man, not a second farmhand, and `walkFarmhand` below is
+   * where the two are arbitrated.
+   */
+  private readonly auto = new FarmhandStateMachine();
 
 
   /**
@@ -918,6 +941,11 @@ export class StackAcresScene extends Phaser.Scene {
 
     this.buildSunlight();
 
+    if (!this.options.reducedMotion) {
+      this.weather = new WeatherOverlayManager(this, this.random);
+      this.weather.create();
+    }
+
     // The "you've gone far enough" nudges -- same screen-pinned treatment as
     // the vignette, one above it (a higher depth) so they read against its
     // darkened corners. Built invisible; `fitEdgeGuides()` (called every
@@ -944,16 +972,12 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
 
-  /**
-   * The scene-space depth key for a world point: the projected y, which is
-   * monotonic in (worldX + worldY) by construction (see iso.ts), so it is
-   * the correct isometric near/far ordering and not just a stand-in for one.
-   * `nudge` is a small scene-space tie-breaker for two things anchored at
-   * the same point -- it is added AFTER projection, never before, because a
-   * tie-break has no direction in world space to be projected from.
-   */
+  /** Thin wrapper over iso.ts's own `isoDepthAt` -- kept private here purely
+   *  for this file's call sites' brevity. See isoDepthAt's own doc comment
+   *  for why the formula itself lives there and not here: game-juice-manager.ts
+   *  needs the identical depth key with no scene instance to borrow it from. */
   private depthAt(x: number, y: number, nudge = 0): number {
-    return isoProject(x, y).y + nudge;
+    return isoDepthAt(x, y, nudge);
   }
 
   /** One painter, placed at a world-space anchor (projected here, the one
@@ -1067,6 +1091,44 @@ export class StackAcresScene extends Phaser.Scene {
    * this sheet to time against, just a shuffle, and `working` overrides both
    * with the crouched pose for as long as `FARMHAND_WORK_MS` runs.
    */
+  /**
+   * The processing half of a snapshot: what the automated farmhand plans
+   * against. Called from the shell every time a response lands, the same
+   * moment `setUnits` is. Safe to call before `create` -- the machine holds
+   * the world itself and the scene only reads it back out per frame.
+   */
+  setProcessing(world: Omit<FarmhandPlanInput, "claimed"> & { profileId?: string | null }): void {
+    this.auto.setWorld(world);
+  }
+
+  /** Wire what the automated farmhand is allowed to do when a cycle finishes.
+   *  Left unwired he works entirely in mime -- see `FarmhandHooks`. */
+  setFarmhandHooks(hooks: FarmhandHooks): void {
+    this.auto.setHooks(hooks);
+  }
+
+  /** The plot he is walking to or cutting, for a highlight ring on it. */
+  get farmhandPlotId(): string | null {
+    return this.auto.workingPlotId;
+  }
+
+  /**
+   * One frame of the farmhand's day, from whichever of his two drivers has
+   * the floor.
+   *
+   * THE TAP WINS, WITH ONE CARVE-OUT. A queued errand is the player watching
+   * for an answer to something they just did, so it preempts the field work
+   * -- except mid-cut. `HARVESTING` emits its effect on exactly one frame,
+   * and a preemption that landed on that frame would drop a harvest the
+   * server is about to be told about. `workMs` is the test, and it is the
+   * automation's own, so this cannot drift from what the machine considers
+   * committed.
+   *
+   * The two drivers keep separate positions, so whichever one did not move
+   * him is synced to wherever he actually ended up. Without that, handing the
+   * floor over would teleport him back to where the idle driver last left
+   * off.
+   */
   private walkFarmhand(delta: number): void {
     const node = this.farmhand;
     if (!node) return;
@@ -1078,25 +1140,60 @@ export class StackAcresScene extends Phaser.Scene {
 
     const head = this.farmhandQueue[0];
     const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
-    const step = stepFarmhand(node.state, next, delta);
-    if (step.claimed) {
-      this.farmhandTask = head ?? null;
-      this.farmhandQueue = this.farmhandQueue.slice(1);
-    }
-    if (step.finished) this.farmhandTask = null;
-    node.state = step.hand;
+    const committed = this.auto.hand.workMs > 0;
 
+    if (next && !committed) {
+      const step = stepFarmhand(node.state, next, delta);
+      if (step.claimed) {
+        this.farmhandTask = head ?? null;
+        this.farmhandQueue = this.farmhandQueue.slice(1);
+      }
+      if (step.finished) this.farmhandTask = null;
+      node.state = step.hand;
+      this.auto.followErrand(node.state);
+      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
+      return;
+    }
+
+    // Nobody has tapped anything he can reach (or he is mid-cut and will not
+    // be taken off it). Step the errand runner too, with no job: that is what
+    // walks him out of a `working` pose and lets `stepFarmhand` settle to
+    // `idle` rather than freezing at whatever it was doing when the queue
+    // emptied.
+    if (node.state.phase !== "idle") {
+      const step = stepFarmhand(node.state, null, delta);
+      if (step.finished) this.farmhandTask = null;
+      node.state = step.hand;
+      this.auto.followErrand(node.state);
+      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
+      return;
+    }
+
+    this.auto.update(delta);
+    const hand = this.auto.hand;
+    node.state = { ...node.state, x: hand.x, y: hand.y, facing: hand.facing, towards: hand.towards, travelled: hand.travelled };
+    this.paintFarmhand(node, hand.workMs > 0, automationWalking(hand));
+  }
+
+  /**
+   * Put the man on screen: pick his frame, project his feet, sort him.
+   *
+   * The frame is a plain distance-driven toggle between the sheet's two
+   * near-identical poses per direction -- there is no real walk cycle on this
+   * sheet to time against, just a shuffle -- and `working` overrides both
+   * with the crouched pose, whichever driver put him in it.
+   */
+  private paintFarmhand(node: FarmhandNode, working: boolean, walking: boolean): void {
     const stepped = Math.floor(node.state.travelled / FARMHAND_STEP_UNITS) % 2 === 1;
-    const frame =
-      node.state.phase === "working"
-        ? RANGER_FRAME.work
-        : node.state.towards === 1
-          ? farmhandWalking(node.state) && stepped
-            ? RANGER_FRAME.frontStep
-            : RANGER_FRAME.frontIdle
-          : farmhandWalking(node.state) && stepped
-            ? RANGER_FRAME.backStep
-            : RANGER_FRAME.backIdle;
+    const frame = working
+      ? RANGER_FRAME.work
+      : node.state.towards === 1
+        ? walking && stepped
+          ? RANGER_FRAME.frontStep
+          : RANGER_FRAME.frontIdle
+        : walking && stepped
+          ? RANGER_FRAME.backStep
+          : RANGER_FRAME.backIdle;
     node.sprite.setFrame(frame);
 
     const at = isoProject(node.state.x, node.state.y);
@@ -3487,6 +3584,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.options.reducedMotion) return;
 
     this.animateSunlight(time, delta);
+    this.weather?.update(time, delta);
     this.animatePond(time);
     this.walkHerds(delta);
     this.walkFarmhand(delta);

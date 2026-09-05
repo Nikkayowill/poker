@@ -84,6 +84,12 @@ import {
   type FarmhandTask,
 } from "@/lib/stackacres/farmhand";
 import {
+  FarmhandStateMachine,
+  automationWalking,
+  type FarmhandHooks,
+} from "@/lib/stackacres/farmhand-machine";
+import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
+import {
   cropArtFor,
   cropFootprintHalf,
   cropGroundOffset,
@@ -751,6 +757,13 @@ export class StackAcresScene extends Phaser.Scene {
   private farmhand: FarmhandNode | null = null;
   private farmhandQueue: readonly FarmhandTask[] = [];
   private farmhandTask: FarmhandTask | null = null;
+  /**
+   * What he does when nobody has tapped anything: work the wheat field on his
+   * own. See lib/stackacres/farmhand-machine.ts -- this is a SECOND driver
+   * for the SAME man, not a second farmhand, and `walkFarmhand` below is
+   * where the two are arbitrated.
+   */
+  private readonly auto = new FarmhandStateMachine();
 
 
   /**
@@ -1043,6 +1056,44 @@ export class StackAcresScene extends Phaser.Scene {
    * this sheet to time against, just a shuffle, and `working` overrides both
    * with the crouched pose for as long as `FARMHAND_WORK_MS` runs.
    */
+  /**
+   * The processing half of a snapshot: what the automated farmhand plans
+   * against. Called from the shell every time a response lands, the same
+   * moment `setUnits` is. Safe to call before `create` -- the machine holds
+   * the world itself and the scene only reads it back out per frame.
+   */
+  setProcessing(world: Omit<FarmhandPlanInput, "claimed"> & { profileId?: string | null }): void {
+    this.auto.setWorld(world);
+  }
+
+  /** Wire what the automated farmhand is allowed to do when a cycle finishes.
+   *  Left unwired he works entirely in mime -- see `FarmhandHooks`. */
+  setFarmhandHooks(hooks: FarmhandHooks): void {
+    this.auto.setHooks(hooks);
+  }
+
+  /** The plot he is walking to or cutting, for a highlight ring on it. */
+  get farmhandPlotId(): string | null {
+    return this.auto.workingPlotId;
+  }
+
+  /**
+   * One frame of the farmhand's day, from whichever of his two drivers has
+   * the floor.
+   *
+   * THE TAP WINS, WITH ONE CARVE-OUT. A queued errand is the player watching
+   * for an answer to something they just did, so it preempts the field work
+   * -- except mid-cut. `HARVESTING` emits its effect on exactly one frame,
+   * and a preemption that landed on that frame would drop a harvest the
+   * server is about to be told about. `workMs` is the test, and it is the
+   * automation's own, so this cannot drift from what the machine considers
+   * committed.
+   *
+   * The two drivers keep separate positions, so whichever one did not move
+   * him is synced to wherever he actually ended up. Without that, handing the
+   * floor over would teleport him back to where the idle driver last left
+   * off.
+   */
   private walkFarmhand(delta: number): void {
     const node = this.farmhand;
     if (!node) return;
@@ -1054,25 +1105,60 @@ export class StackAcresScene extends Phaser.Scene {
 
     const head = this.farmhandQueue[0];
     const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
-    const step = stepFarmhand(node.state, next, delta);
-    if (step.claimed) {
-      this.farmhandTask = head ?? null;
-      this.farmhandQueue = this.farmhandQueue.slice(1);
-    }
-    if (step.finished) this.farmhandTask = null;
-    node.state = step.hand;
+    const committed = this.auto.hand.workMs > 0;
 
+    if (next && !committed) {
+      const step = stepFarmhand(node.state, next, delta);
+      if (step.claimed) {
+        this.farmhandTask = head ?? null;
+        this.farmhandQueue = this.farmhandQueue.slice(1);
+      }
+      if (step.finished) this.farmhandTask = null;
+      node.state = step.hand;
+      this.auto.followErrand(node.state);
+      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
+      return;
+    }
+
+    // Nobody has tapped anything he can reach (or he is mid-cut and will not
+    // be taken off it). Step the errand runner too, with no job: that is what
+    // walks him out of a `working` pose and lets `stepFarmhand` settle to
+    // `idle` rather than freezing at whatever it was doing when the queue
+    // emptied.
+    if (node.state.phase !== "idle") {
+      const step = stepFarmhand(node.state, null, delta);
+      if (step.finished) this.farmhandTask = null;
+      node.state = step.hand;
+      this.auto.followErrand(node.state);
+      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
+      return;
+    }
+
+    this.auto.update(delta);
+    const hand = this.auto.hand;
+    node.state = { ...node.state, x: hand.x, y: hand.y, facing: hand.facing, towards: hand.towards, travelled: hand.travelled };
+    this.paintFarmhand(node, hand.workMs > 0, automationWalking(hand));
+  }
+
+  /**
+   * Put the man on screen: pick his frame, project his feet, sort him.
+   *
+   * The frame is a plain distance-driven toggle between the sheet's two
+   * near-identical poses per direction -- there is no real walk cycle on this
+   * sheet to time against, just a shuffle -- and `working` overrides both
+   * with the crouched pose, whichever driver put him in it.
+   */
+  private paintFarmhand(node: FarmhandNode, working: boolean, walking: boolean): void {
     const stepped = Math.floor(node.state.travelled / FARMHAND_STEP_UNITS) % 2 === 1;
-    const frame =
-      node.state.phase === "working"
-        ? RANGER_FRAME.work
-        : node.state.towards === 1
-          ? farmhandWalking(node.state) && stepped
-            ? RANGER_FRAME.frontStep
-            : RANGER_FRAME.frontIdle
-          : farmhandWalking(node.state) && stepped
-            ? RANGER_FRAME.backStep
-            : RANGER_FRAME.backIdle;
+    const frame = working
+      ? RANGER_FRAME.work
+      : node.state.towards === 1
+        ? walking && stepped
+          ? RANGER_FRAME.frontStep
+          : RANGER_FRAME.frontIdle
+        : walking && stepped
+          ? RANGER_FRAME.backStep
+          : RANGER_FRAME.backIdle;
     node.sprite.setFrame(frame);
 
     const at = isoProject(node.state.x, node.state.y);

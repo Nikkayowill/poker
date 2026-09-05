@@ -30,7 +30,17 @@
  * pure, returning a new state object, clamping its own frame internally.
  */
 
+import {
+  FARMHAND_SPEED,
+  advanceTowards,
+  frameSeconds,
+  type Walker,
+} from "./farmhand-path";
 import type { WorldPoint } from "./world";
+
+/** Re-exported because this was its home before ./farmhand-path.ts existed
+ *  and both the scene and farmhand.test.ts import it from here. */
+export { FARMHAND_SPEED };
 
 /**
  * Where he stands when there is nothing to do: the yard between the barn and
@@ -45,13 +55,6 @@ import type { WorldPoint } from "./world";
  * farmhand.test.ts holds all six.
  */
 export const FARMHAND_BASE: WorldPoint = { x: 156, y: 168 };
-
-/**
- * World units a second. Faster than every animal here (a hen is 14, a cow 7)
- * because he is running an errand rather than grazing, and because the walk
- * is the part of this the player is waiting through.
- */
-export const FARMHAND_SPEED = 20;
 
 /** How long he spends bent over the job before heading home. Long enough to
  *  read as work at a glance, short enough that a second tap is not queued
@@ -81,16 +84,6 @@ export function farmhandStandoff(at: WorldPoint): WorldPoint {
   return { x: at.x + FARMHAND_STANDOFF, y: at.y };
 }
 
-/** Arrival dead-band, in world units. Straight from `stepCritter`: a target
- *  reached within a stride is SNAPPED to rather than eased toward, which is
- *  what stops a walk ending in a permanent sub-pixel shuffle. */
-const ARRIVE_WITHIN = 0.75;
-
-/** The longest frame this will integrate, matching `stepCritter` and
- *  `stepGait`. A phone returning from a background tab hands the scene one
- *  enormous delta, and he did not walk for that whole time either. */
-const MAX_FRAME_MS = 250;
-
 /**
  * The four states, and the only four.
  *
@@ -110,9 +103,7 @@ export interface FarmhandTask {
   y: number;
 }
 
-export interface Farmhand {
-  x: number;
-  y: number;
+export interface Farmhand extends Walker {
   phase: FarmhandPhase;
   /** Where he is heading. Equal to his own position while idle. */
   targetX: number;
@@ -121,28 +112,6 @@ export interface Farmhand {
   workMs: number;
   /** The unit he has claimed, null while idle or walking home. */
   unitId: string | null;
-  /**
-   * Which way along the SCREEN's x axis he is heading: 1 right, -1 left.
-   * Screen rather than world for the same reason `Critter.facing` is -- the
-   * iso projection puts screen x at (world x - world y), so a step due +y
-   * reads as leftward however its world x looks.
-   */
-  facing: 1 | -1;
-  /**
-   * The other half of the four isometric diagonals: 1 walking TOWARD the
-   * camera (down the picture, growing x + y), -1 walking away from it.
-   *
-   * Two signs, four combinations, and they are exactly the four diagonals a
-   * 2:1 tile has: (+1, +1) is SE, (-1, +1) SW, (+1, -1) NE, (-1, -1) NW. A
-   * mirror can only ever express `facing`, which is why this needs a second
-   * piece of art rather than a second flip -- see the `farmhand` and
-   * `farmhandBack` painters in art-props.ts.
-   */
-  towards: 1 | -1;
-  /** World units walked, ever. Drives the hop cycle in ./farmhand-hop.ts,
-   *  which is tied to DISTANCE rather than time for the same reason the
-   *  animals' sway is. */
-  travelled: number;
 }
 
 export interface FarmhandStep {
@@ -176,55 +145,13 @@ export function farmhandWalking(hand: Farmhand): boolean {
   return hand.phase === "travelling" || hand.phase === "returning";
 }
 
-/**
- * Which way a step reads on screen. A step that is equal parts +x and +y runs
- * straight up or down the picture and is not a turn either way, so a tie
- * keeps the sign he already had rather than flipping him to some default
- * every time a target happens to land on the diagonal. Same rule, and same
- * reason, as `headingTo` in ./world.ts.
- */
-function heading(along: number, current: 1 | -1): 1 | -1 {
-  if (along === 0) return current;
-  return along > 0 ? 1 : -1;
-}
-
-/** Both facing signs for a step, in one place so `travelling` and
- *  `returning` can never drift apart on it. */
-function aim(hand: Farmhand, dx: number, dy: number): Pick<Farmhand, "facing" | "towards"> {
-  return { facing: heading(dx - dy, hand.facing), towards: heading(dx + dy, hand.towards) };
-}
-
-/** One frame of walking toward the current target. Returns the moved hand
- *  and whether it arrived. */
+/** One frame of walking toward the current target, in the shared walk of
+ *  ./farmhand-path.ts -- `targetX`/`targetY` are this file's own way of
+ *  carrying a destination, so they are unpacked into a point here rather
+ *  than pushed down into a primitive the automation does not share. */
 function advance(hand: Farmhand, dt: number): { hand: Farmhand; arrived: boolean } {
-  const dx = hand.targetX - hand.x;
-  const dy = hand.targetY - hand.y;
-  const distance = Math.hypot(dx, dy);
-  const stride = FARMHAND_SPEED * dt;
-  const facing = aim(hand, dx, dy);
-
-  if (distance <= Math.max(stride, ARRIVE_WITHIN)) {
-    return {
-      hand: {
-        ...hand,
-        ...facing,
-        x: hand.targetX,
-        y: hand.targetY,
-        travelled: hand.travelled + distance,
-      },
-      arrived: true,
-    };
-  }
-  return {
-    hand: {
-      ...hand,
-      ...facing,
-      x: hand.x + (dx / distance) * stride,
-      y: hand.y + (dy / distance) * stride,
-      travelled: hand.travelled + stride,
-    },
-    arrived: false,
-  };
+  const step = advanceTowards(hand, { x: hand.targetX, y: hand.targetY }, dt);
+  return { hand: step.walker, arrived: step.arrived };
 }
 
 function headHome(hand: Farmhand): Farmhand {
@@ -253,7 +180,7 @@ export function stepFarmhand(
   next: FarmhandTask | null,
   dtMs: number,
 ): FarmhandStep {
-  const dt = Math.max(0, Math.min(dtMs, MAX_FRAME_MS)) / 1000;
+  const dt = frameSeconds(dtMs);
 
   // Free to take work: standing at base, or on the way back to it. Claiming
   // mid-walk-home is the interesting one -- he turns around where he stands

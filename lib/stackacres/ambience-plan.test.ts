@@ -24,12 +24,16 @@ describe("ambienceMix", () => {
     }
   });
 
-  it("never leaves the farm completely silent", () => {
-    // `air` is the floor the rest sit on. A district that mixed to nothing at
-    // all would be indistinguishable from the audio having failed.
+  it("still gives every district something in the mix, now that there is no air floor", () => {
+    // There is no bed guaranteed non-zero any more (that guarantee was the
+    // `air` floor, and it read as wind) -- but every real zone still carries
+    // grass, so a district going genuinely silent would be a regression in
+    // the zone table, not a property this file enforces directly.
     for (const zone of ZONE_IDS) {
       for (const tod of TIMES) {
-        expect(ambienceMix(tod, zone).air, `${zone}/${tod}`).toBeGreaterThan(0);
+        const mix = ambienceMix(tod, zone);
+        const total = mix.grass + mix.water + mix.insects;
+        expect(total, `${zone}/${tod}`).toBeGreaterThan(0);
       }
     }
   });
@@ -44,11 +48,12 @@ describe("ambienceMix", () => {
     expect(water.sort((a, b) => b.value - a.value)[0].zone).toBe("wallow");
   });
 
-  it("has no wind bed at all", () => {
-    // Not a level to be tuned down -- the bed is gone, and the doc over
-    // AMBIENCE_BEDS says why it must not come back. A bed reinstated at a
-    // "safe" gain is the exact regression this is here to catch.
+  it("has no wind bed and no air bed", () => {
+    // Not a level to be tuned down -- both beds are gone, and the doc over
+    // AMBIENCE_BEDS says why neither must come back. A bed reinstated at a
+    // "safe" gain, under either name, is the exact regression this catches.
     expect([...AMBIENCE_BEDS] as string[]).not.toContain("wind");
+    expect([...AMBIENCE_BEDS] as string[]).not.toContain("air");
   });
 
   it("hands the daytime insect hum over to the cricket cue at night", () => {

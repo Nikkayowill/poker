@@ -32,7 +32,7 @@ describe("the daily ceiling", () => {
     // the change that turns StackAcres back into a scaling faucet, and it
     // should have to delete this test to happen.
     expect(typeof STACKACRES_GOLD_CEILING).toBe("number");
-    expect(STACKACRES_GOLD_CEILING).toBe(15_000);
+    expect(STACKACRES_GOLD_CEILING).toBe(50_000);
   });
 
   it("stays inside what the farm can actually spend it on", () => {
@@ -41,10 +41,16 @@ describe("the daily ceiling", () => {
     // farm had nothing to buy, because its output was pure addition to the
     // money supply. Now that Gold buys stock and capacity, the number that
     // keeps this honest is the SINK on the other side: a single day's ceiling
-    // must stay well under what a Cattle Pen costs, or the farm pays for its
-    // own upgrades in a day and stops being a sink at all.
+    // must stay under what a Cattle Pen costs outright, or the farm pays for
+    // its own top-of-ladder purchase in a day and stops being a sink at all.
+    //
+    // THE MARGIN SHRANK ON PURPOSE. At 15,000 a day's whole allowance covered
+    // a quarter of a Cattle Pen; at 50,000 (2026-09-05, Kayo's call) it covers
+    // five sixths of one. Still strictly under -- one day still cannot buy the
+    // priciest animal outright -- but this is the number to re-check first if
+    // the ceiling is ever raised again.
     expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(3_000);
-    expect(STACKACRES_GOLD_CEILING * 3).toBeLessThan(stackacresStockPrice("cattle"));
+    expect(STACKACRES_GOLD_CEILING).toBeLessThan(stackacresStockPrice("cattle"));
   });
 
   /**
@@ -52,11 +58,18 @@ describe("the daily ceiling", () => {
    * pays Gold directly now, and a Bountiful Harvest multiplies what it pays --
    * so the question a reviewer will ask is whether a synergy widened the
    * faucet. It cannot: the multiplier lands on a sweep's value, and the sweep
-   * is still paid through this ceiling. A maxed estate bringing in everything
-   * at once, at the best multiplier in the game, is worth more than one day's
-   * allowance, which means the allowance is what binds rather than the yield.
+   * is still paid through this ceiling.
+   *
+   * A MAXED SWEEP NO LONGER EXCEEDS ONE DAY'S ALLOWANCE ON ITS OWN, and that
+   * is a real, deliberate loosening from raising the ceiling 15,000 -> 50,000
+   * (2026-09-05, Kayo's call) rather than the fee ladder: one all-at-once
+   * sweep of a maxed estate, at the best multiplier in the game, is worth
+   * ~18,300, well under 50,000. The allowance still binds the DAY -- crops on
+   * fast cycles refill and re-sweep many times before midnight, and that
+   * repeated total still has to cross the ceiling -- it no longer binds a
+   * single sweep the instant that sweep happens.
    */
-  it("binds a maxed estate bringing everything in at once", () => {
+  it("does not let one sweep alone drain the day, but a few of them still would", () => {
     const perKind = STACKACRES_BASE_CAP + STACKACRES_MAX_EXTRA_CAP;
     const estate = STACKACRES_STOCK.flatMap((stock) =>
       Array.from({ length: perKind }, () => stock),
@@ -69,9 +82,14 @@ describe("the daily ceiling", () => {
       })),
     );
     // Bonus included, and before any maintenance is taken off -- the harshest
-    // reading of the sweep, which is the one that has to still be capped.
+    // reading of a single sweep.
     expect(settled.bounty.kind).toBe("crop_rotation");
-    expect(settled.net).toBeGreaterThan(STACKACRES_GOLD_CEILING);
+    // A single maxed sweep now fits comfortably inside one day's allowance --
+    // see the doc comment above for why that is an intended effect of the
+    // 2026-09-05 ceiling raise. Three of them (well within a day for the
+    // fast-cycling crops in this estate) still would not.
+    expect(settled.net).toBeLessThan(STACKACRES_GOLD_CEILING);
+    expect(settled.net * 3).toBeGreaterThan(STACKACRES_GOLD_CEILING);
   });
 
   it("is not something the best synergy can widen", () => {

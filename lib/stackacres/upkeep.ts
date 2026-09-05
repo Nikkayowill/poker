@@ -62,7 +62,7 @@ export const STACKACRES_UPKEEP_BASE_FEE = 25;
  *   21 plots                                      1,909
  *   30 plots (every sector, every slot bought)    3,507
  *
- * Against a flat daily allowance of 15,000 Gold, the top of the ladder costs a
+ * Against a flat daily allowance of 50,000 Gold, the top of the ladder costs a
  * real, visible slice of a big farm's day and nothing a small one would
  * notice. That is the point: owning everything should be a commitment rather
  * than a one-way ratchet, not unaffordable. `upkeep.test.ts` pins the SHAPE

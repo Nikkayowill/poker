@@ -37,14 +37,16 @@
  * not scale with land owned, stock owned, Gold held, harvest size, or which
  * synergy a sweep earned.
  *
- * Raised 5,000 -> 15,000 on 2026-09-03 (Kayo's call), when the Gold market
- * gave the farm real prices to pay. The original 5,000 was sized purely
- * against the other faucets -- the daily grant at 1,000 x up to a 2.5 streak
- * multiplier, rewarded ads at 500 x 6 = 3,000, the backstop at 1,000 per 12h
- * -- because at the time the farm had nothing to spend Gold ON and its output
- * was pure addition to the money supply. That changed: a Cattle Pen is 60,000
- * Gold and a maxed capacity ladder is far more, so the farm is a net SINK for
- * anyone building one.
+ * Raised 5,000 -> 15,000 on 2026-09-03, then 15,000 -> 50,000 on 2026-09-05
+ * (both Kayo's call). The first move was sized against the other faucets --
+ * the daily grant at 1,000 x up to a 2.5 streak multiplier, rewarded ads at
+ * 500 x 6 = 3,000, the backstop at 1,000 per 12h -- because at the time the
+ * farm had nothing to spend Gold ON and its output was pure addition to the
+ * money supply. That changed: a Cattle Pen is 60,000 Gold and a maxed
+ * capacity ladder is far more, so the farm is a net SINK for anyone building
+ * one, and 15,000/day made the payback on that stock too slow to be worth
+ * running for. 50,000 is close to a maxed Cattle Pen's own price in a single
+ * day, still flat and still per-player -- see below.
  *
  * IT SURVIVED THE SINGLE-CURRENCY CHANGE UNTOUCHED, on purpose. Every Bushel
  * price in the farm was multiplied by 2 -- the exact rate this window used to
@@ -53,7 +55,7 @@
  * on that number, never upward.
  *
  * The honest arithmetic, stated plainly so nobody has to rederive it: up to
- * ~5.5M a year for somebody who maxes it every single day. What bounds the
+ * ~18.25M a year for somebody who maxes it every single day. What bounds the
  * damage is that it is still FLAT and still per-player -- a thousand players
  * cannot each take more than one can, and no amount of farm makes any one of
  * them take more than another.
@@ -63,7 +65,7 @@
  * raising the farm's Gold faucet takes a deliberate migration. Keep the two in
  * step; the SQL one is the authority.
  */
-export const STACKACRES_GOLD_CEILING = 15_000;
+export const STACKACRES_GOLD_CEILING = 50_000;
 
 /**
  * The day a moment belongs to, as `YYYY-MM-DD` in UTC. Matches the daily Gold

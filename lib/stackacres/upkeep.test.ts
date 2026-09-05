@@ -62,10 +62,16 @@ describe("stackacresUpkeepFee", () => {
    * Sized against the flat daily allowance rather than against any one tier: a
    * maxed estate should feel the fee and a starting farm should never see it.
    * If either end of this band breaks, the base fee moved too far.
+   *
+   * The band's floor dropped 0.1 -> 0.05 when the ceiling itself rose
+   * 15,000 -> 50,000 (2026-09-05, Kayo's call): the fee (3,507 Gold, unchanged
+   * by that migration) is a genuinely smaller bite of a bigger allowance now,
+   * and that is the ceiling move's effect on this fee, not a sign the fee
+   * needs retuning too.
    */
   it("bites a maxed estate without swallowing it", () => {
     const share = stackacresUpkeepFee(MAX_PLOTS) / STACKACRES_GOLD_CEILING;
-    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeGreaterThan(0.05);
     expect(share).toBeLessThan(0.4);
   });
 });

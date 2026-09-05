@@ -19,7 +19,7 @@
  * exactly what the exchange window paid for a Bushel. That leaves the internal
  * balance of the economy untouched -- seed against yield, muck at 40% of a
  * tier's net, a serving of feed under a tenth of what the animals that eat it
- * earn -- and it leaves the daily ceiling calibrated, because 15,000 Gold a
+ * earn -- and it leaves the daily ceiling calibrated, because 50,000 Gold a
  * day was tuned against this exact rate.
  *
  * The values below are the FLOOR a future market would swing around, so they

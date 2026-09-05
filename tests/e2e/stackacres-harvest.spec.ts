@@ -74,8 +74,8 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
       inventory?: unknown;
     };
     expect(view.units).toEqual([]);
-    expect(view.exchange.ceiling).toBe(15_000);
-    expect(view.exchange.remaining).toBe(15_000);
+    expect(view.exchange.ceiling).toBe(50_000);
+    expect(view.exchange.remaining).toBe(50_000);
     // The Farmstead's own three slots are exactly the free base, so a farm
     // that has cleared nothing never sees a bill.
     expect(view.upkeep).toMatchObject({ plots: 3, fee: 0, due: 0 });
@@ -181,7 +181,7 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     const sheet = page.getByRole("dialog", { name: "Supply store" });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText(/Today.s allowance/i)).toBeVisible();
-    await expect(sheet.getByText(/15,000 Gold left today/)).toBeVisible();
+    await expect(sheet.getByText(/50,000 Gold left today/)).toBeVisible();
     await expect(sheet.getByText(/Land maintenance/i)).toBeVisible();
     await expect(sheet.getByText(/Holding cleared land costs/i)).toBeVisible();
 

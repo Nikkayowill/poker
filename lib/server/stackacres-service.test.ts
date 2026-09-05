@@ -1212,9 +1212,9 @@ describe("expanding capacity", () => {
  * useless for a test about ceilings.
  *
  * The day is filled with `burnAllowance` rather than by harvesting toward it.
- * Reaching 15,000 legitimately takes a maxed estate and many cycles; HOW the
- * day was spent is not what any of this is about, and a test that spent forty
- * lines getting there would be testing the fixture.
+ * Reaching the ceiling legitimately takes a maxed estate and many cycles; HOW
+ * the day was spent is not what any of this is about, and a test that spent
+ * forty lines getting there would be testing the fixture.
  */
 describe("the daily allowance", () => {
   const CROP_READY = new Date(T0.getTime() + SPROUT.durationMs);

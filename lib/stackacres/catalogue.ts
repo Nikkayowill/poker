@@ -20,7 +20,7 @@
  * the exchange window paid. That preserves the internal balance the numbers
  * were tuned for -- seed against yield, muck at 40% of a tier's net, a serving
  * of feed under a tenth of what the animals that eat it earn -- and it leaves
- * the daily ceiling calibrated, since 15,000 Gold a day was sized against
+ * the daily ceiling calibrated, since 50,000 Gold a day was sized against
  * exactly this rate.
  *
  * Seed cost and yield are snapshotted onto the unit row at stocking and never

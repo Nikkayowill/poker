@@ -21,6 +21,8 @@
  * arithmetic rather than Phaser.
  */
 
+import { clampFrameMs } from "./world";
+
 /** The pose one animal is currently in. Carried by the scene between frames
  *  and by a unit node across a rebuild, so an animal never snaps back to
  *  level because its picture was redrawn under it. */
@@ -61,11 +63,6 @@ const FALL_MS = 260;
  *  holds a rotation of exactly zero rather than an ever-smaller one forever. */
 const SETTLED = 1e-3;
 
-/** The longest frame this will integrate, matching `stepCritter`'s own cap:
- *  a phone coming back from a background tab hands us one enormous delta,
- *  and the animal it belongs to did not walk for that whole time either. */
-const MAX_FRAME_MS = 250;
-
 /** A fresh gait, level and still. `phase` is the caller's own per-animal
  *  offset, so a pen of hens does not sway in lockstep. */
 export function spawnGait(phase: number): Gait {
@@ -84,7 +81,8 @@ export function spawnGait(phase: number): Gait {
  * off when the animal sets off again.
  */
 export function stepGait(gait: Gait, walking: boolean, speed: number, dtMs: number): Gait {
-  const dt = Math.max(0, Math.min(dtMs, MAX_FRAME_MS)) / 1000;
+  // Matching `stepCritter`'s own cap -- see world.ts's `clampFrameMs`.
+  const dt = clampFrameMs(dtMs) / 1000;
   const phase = walking ? gait.phase + Math.abs(speed) * SWAY_PER_UNIT * dt : gait.phase;
 
   const target = walking ? 1 : 0;

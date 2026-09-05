@@ -1263,14 +1263,19 @@ export async function readStackAcresSecretLedgerQty(profileId: string, itemId: s
 
 /**
  * Moves one item's quantity by `delta`, refusing to go negative. Returns the
- * new quantity, or null when there was not enough to spend or the database
- * threw (the `quantity >= 0` CHECK failing on an over-spend arrives as a
- * thrown error from the RPC, caught here rather than left to bubble as an
- * unhandled rejection) -- the caller treats null exactly like every other
- * guarded-write refusal in this file: a lost race, never a successful spend.
- * The memory branch floors at 0 and returns null on that same over-spend,
- * mirroring the DB CHECK constraint's refusal so behaviour does not depend on
- * which backend is live.
+ * new quantity, or null when there was not enough to spend -- the caller
+ * treats that exactly like `adjustStackAcresInventory`'s null: a refusal or a
+ * lost race, and null must never be treated as a successful spend. The memory
+ * branch floors at 0 and returns null on that same over-spend, mirroring the
+ * DB CHECK constraint's refusal so behaviour does not depend on which backend
+ * is live.
+ *
+ * Only the expected `quantity >= 0` CHECK violation (23514) is folded into
+ * that null -- any other Postgrest error is a real failure and is thrown,
+ * same split `adjustStackAcresInventory` makes. An earlier version of this
+ * function caught every error (including a thrown network exception) into an
+ * identical silent null, which reported a Supabase outage to the player as an
+ * ordinary "already attempted" refusal with nothing logged anywhere.
  */
 export async function adjustStackAcresSecretLedger(
   profileId: string,
@@ -1287,17 +1292,16 @@ export async function adjustStackAcresSecretLedger(
     return next;
   }
 
-  try {
-    const { data, error } = await supabase.rpc("adjust_homestead_secret_ledger", {
-      p_profile_id: profileId,
-      p_item_id: itemId,
-      p_delta: delta,
-    });
-    if (error) return null;
-    return data === null ? null : Number(data);
-  } catch {
-    return null;
+  const { data, error } = await supabase.rpc("adjust_homestead_secret_ledger", {
+    p_profile_id: profileId,
+    p_item_id: itemId,
+    p_delta: delta,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not update your secrets: ${error.message}`);
   }
+  return data === null ? null : Number(data);
 }
 
 /* ------------------------------------------------------------------ */

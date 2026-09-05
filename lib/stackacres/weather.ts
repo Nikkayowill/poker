@@ -28,13 +28,19 @@
  * real ceiling -- it is reported for a future, separately-reviewed pass.
  * DO NOT wire this into settlement without redoing the review that gated it.
  *
- * The crit/cost side is different and IS live: `critChanceBonus` only
- * changes how fast a session's own bucket fills -- exactly the thing
- * ./bounty.ts's synergy multiplier already does -- never how big the bucket
- * is, so it carries none of the risk above.
+ * The crit/cost side carries none of the risk above -- `critChanceBonus`
+ * would only change how fast a session's own bucket fills, exactly the thing
+ * ./bounty.ts's synergy multiplier already does, never how big the bucket is
+ * -- but it is NOT WIRED IN EITHER, same as `upkeepCeilingDelta`.
+ * `applyWeatherModifiers` is called only from WeatherOverlayManager's own
+ * client-side cosmetic math; nothing feeds `critChanceBonus` into
+ * `harvestStackAcres`'s real crit roll on the server. Do not read an earlier
+ * version of this comment (or trust a stale mental model) as license to skip
+ * wiring it in for real -- verify against `harvestStackAcres` directly.
  */
 
-import type { WorldRect } from "./world";
+import { stepParticlePool } from "./particle-pool";
+import { clamp01, clampFrameMs, type WorldRect } from "./world";
 
 /* ------------------------------------------------------------------ */
 /* Registry                                                             */
@@ -189,7 +195,7 @@ export function stepWeather(
   deltaMs: number,
   random: () => number,
 ): WeatherSessionState {
-  const step = Math.min(Math.max(deltaMs, 0), 250);
+  const step = clampFrameMs(deltaMs);
   const heldMs = state.heldMs + step;
   if (heldMs < WEATHER_MIN_HOLD_MS) return { ...state, heldMs };
   if (random() >= WEATHER_SHIFT_CHANCE) return { ...state, heldMs };
@@ -318,14 +324,12 @@ export function solarDustField(
   deltaMs: number,
   random: () => number,
 ): SolarDustMote[] {
-  const next: SolarDustMote[] = [];
-  for (const mote of live) {
-    if (next.length >= SOLAR_DUST_MAX) break;
-    const stepped = stepSolarDust(mote, deltaMs);
-    if (stepped) next.push(stepped);
-  }
-  while (next.length < SOLAR_DUST_MAX) next.push(spawnSolarDust(area, random));
-  return next;
+  return stepParticlePool(
+    live,
+    SOLAR_DUST_MAX,
+    (mote) => stepSolarDust(mote, deltaMs),
+    () => spawnSolarDust(area, random),
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -362,25 +366,21 @@ export function rainStreakField(
   deltaMs: number,
   random: () => number,
 ): RainStreak[] {
-  const step = Math.min(Math.max(deltaMs, 0), 64) / 1000;
-  const next: RainStreak[] = [];
-  for (const streak of live) {
-    if (next.length >= RAIN_STREAK_MAX) break;
-    const y = streak.y + RAIN_STREAK_SPEED * step;
-    next.push(y > 1.1 ? spawnRainStreak(random) : { x: streak.x, y });
-  }
-  while (next.length < RAIN_STREAK_MAX) next.push(spawnRainStreak(random));
-  return next;
+  const stepSeconds = Math.min(Math.max(deltaMs, 0), 64) / 1000;
+  return stepParticlePool(
+    live,
+    RAIN_STREAK_MAX,
+    (streak) => {
+      const y = streak.y + RAIN_STREAK_SPEED * stepSeconds;
+      return y > 1.1 ? spawnRainStreak(random) : { x: streak.x, y };
+    },
+    () => spawnRainStreak(random),
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* Small helpers                                                       */
 /* ------------------------------------------------------------------ */
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
 
 function clampByte(value: number): number {
   if (!Number.isFinite(value)) return 0;

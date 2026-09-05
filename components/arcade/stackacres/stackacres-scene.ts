@@ -63,6 +63,8 @@ import {
   growAreaBounds,
   growAreaInterior,
   growthStage,
+  MIDNIGHT_MERCHANT_SPOT,
+  midnightMerchantHitAt,
   powerOfTwoCeil,
   scrollToKeepUnderPointer,
   seededRandom,
@@ -244,6 +246,15 @@ export interface StackAcresSceneCallbacks {
    * ordering `unitAt` already documents for "the farm itself" taps.
    */
   onBarnTap: () => void;
+  /**
+   * A tap that landed on the Midnight Merchant, ONLY while `setMerchant` has
+   * him actually standing on the lot -- see that method's own header. Fired
+   * before the barn check (he stands well clear of the barn footprint, so
+   * the two never compete, but the ordering matters if that ever changes:
+   * a temporary visitor should win over a permanent structure the same way
+   * a unit already wins over both) and before every other ground fallback.
+   */
+  onMerchantTap: () => void;
   /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
@@ -698,6 +709,14 @@ export class StackAcresScene extends Phaser.Scene {
   private nodes = new Map<string, UnitNode>();
   private units: StackAcresSceneUnit[] = [];
   private pending: StackAcresSceneUnit[] | null = null;
+  /** The Midnight Merchant's own picture and ground shadow, or null while he
+   *  is not on the lot. See `setMerchant`. */
+  private merchantNode: { image: Phaser.GameObjects.Image; shadow: Phaser.GameObjects.Image } | null = null;
+  /** Mirrors `pending`'s own role for `setUnits`: a `setMerchant` call that
+   *  lands before `create()` has run (the shell can call it the instant its
+   *  own snapshot arrives, which can race the scene's boot) is held here and
+   *  applied once there is a scene to add an image to. */
+  private pendingMerchant: boolean | null = null;
   private created = false;
   private opened = false;
   private random = seededRandom(Date.now() % 100_000);
@@ -1014,6 +1033,11 @@ export class StackAcresScene extends Phaser.Scene {
       const units = this.pending;
       this.pending = null;
       this.setUnits(units);
+    }
+    if (this.pendingMerchant !== null) {
+      const present = this.pendingMerchant;
+      this.pendingMerchant = null;
+      this.setMerchant(present);
     }
   }
 
@@ -1687,6 +1711,50 @@ export class StackAcresScene extends Phaser.Scene {
       this.openCamera();
       this.callbacks.onReady();
     }
+  }
+
+  /**
+   * Adds or removes the Midnight Merchant's own picture at his fixed spot
+   * (`MIDNIGHT_MERCHANT_SPOT`) -- called by stackacres-farm.tsx every time
+   * its `MidnightMerchantManager.isRendered()` value changes, NOT on every
+   * render tick; passing the same value twice is a harmless no-op (the
+   * early return below).
+   *
+   * Deliberately NOT routed through `setUnits`/`StackAcresSceneUnit`: that
+   * type's fields (`stock`, `state`, `progress`, `permanent`) describe an
+   * owned animal or crop, and the Merchant is neither -- forcing him through
+   * that shape would mean inventing meaningless values for four fields whose
+   * every existing reader (`signatureOf`, `growthStage`, `stockZone`) assumes
+   * they describe livestock. A second, minimal reconciled node is the
+   * honest fit: exactly the same "create the picture, tear it down later"
+   * shape `setUnits` uses per unit, sized down to the one thing this NPC
+   * actually needs -- present or not.
+   */
+  setMerchant(present: boolean): void {
+    if (!this.created) {
+      this.pendingMerchant = present;
+      return;
+    }
+    if (present === (this.merchantNode !== null)) return;
+
+    if (!present) {
+      this.merchantNode!.image.destroy();
+      this.merchantNode!.shadow.destroy();
+      this.merchantNode = null;
+      return;
+    }
+
+    const { x, y } = MIDNIGHT_MERCHANT_SPOT;
+    // Same shadow-pool math paintProps() uses for every static prop, off the
+    // identical pool grandfatherRay's own PROP_SHADOW entry already sizes --
+    // see MIDNIGHT_MERCHANT_SPOT's own doc comment for why the Merchant
+    // shares Ray's box rather than owning a PropKind entry of his own.
+    const pool = PROP_SHADOW.grandfatherRay;
+    const shadow = this.put("shadow", x, y + 1, this.depthAt(x, y, -0.5))
+      .setScale(pool.w / 33 / S, pool.h / 13 / S)
+      .setAlpha(0.8);
+    const image = this.put("midnightMerchant", x, y, this.depthAt(x, y));
+    this.merchantNode = { image, shadow };
   }
 
   /** A world-space child of `container`, positioned and scaled the way every
@@ -2569,6 +2637,16 @@ export class StackAcresScene extends Phaser.Scene {
         return;
       }
       const ground = resolveWorld(event.clientX, event.clientY);
+      // The Midnight Merchant -- checked FIRST among the structures, and
+      // only tested at all while he is actually standing there
+      // (`this.merchantNode !== null`, set by `setMerchant`). A stale visit
+      // the shell has not yet told the scene about cannot be tapped: there
+      // is simply no node there for `midnightMerchantHitAt`'s box to matter
+      // against, since nothing was ever drawn at that spot.
+      if (this.merchantNode && midnightMerchantHitAt(ground.x, ground.y)) {
+        this.callbacks.onMerchantTap();
+        return;
+      }
       // The barn -- Ray's Museum's own entryway -- checked before the
       // district ground fallback: it stands north of every grow area (see
       // BARN_FOOTPRINT's own doc comment), so the two never compete for the

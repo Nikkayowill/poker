@@ -10,6 +10,7 @@ import {
 } from "@/lib/stackacres/catalogue";
 import {
   ISO_EDGE_ANGLE,
+  isoDepthAt,
   isoProject,
   isoUnproject,
   projectedBounds,
@@ -923,16 +924,12 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
 
-  /**
-   * The scene-space depth key for a world point: the projected y, which is
-   * monotonic in (worldX + worldY) by construction (see iso.ts), so it is
-   * the correct isometric near/far ordering and not just a stand-in for one.
-   * `nudge` is a small scene-space tie-breaker for two things anchored at
-   * the same point -- it is added AFTER projection, never before, because a
-   * tie-break has no direction in world space to be projected from.
-   */
+  /** Thin wrapper over iso.ts's own `isoDepthAt` -- kept private here purely
+   *  for this file's call sites' brevity. See isoDepthAt's own doc comment
+   *  for why the formula itself lives there and not here: game-juice-manager.ts
+   *  needs the identical depth key with no scene instance to borrow it from. */
   private depthAt(x: number, y: number, nudge = 0): number {
-    return isoProject(x, y).y + nudge;
+    return isoDepthAt(x, y, nudge);
   }
 
   /** One painter, placed at a world-space anchor (projected here, the one

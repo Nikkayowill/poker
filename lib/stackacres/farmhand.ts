@@ -177,10 +177,12 @@ function headHome(hand: Farmhand): Farmhand {
  * the unit he was walking to has gone, which aborts the trip rather than
  * marching him to a spot where nothing is standing any more.
  *
- * `speedMultiplier` defaults to 1 and is the Frenzy Heat Combo Engine's own
- * hook into this errand runner -- see `advanceTowards`'s doc comment in
- * ./farmhand-path.ts. A walk-speed nudge only: it never changes which phase
- * he is in or what he claims, only how fast the walk gets there.
+ * `speedMultiplier` defaults to 1 and is the combined Frenzy Heat Combo
+ * Engine / Synergy Tree number -- see `advanceTowards`'s doc comment in
+ * ./farmhand-path.ts for where the two halves come from and why they
+ * multiply rather than pick one. A walk-speed nudge only: it never changes
+ * which phase he is in or what he claims, only how fast the walk gets
+ * there.
  */
 export function stepFarmhand(
   hand: Farmhand,

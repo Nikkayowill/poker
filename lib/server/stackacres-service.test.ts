@@ -4,6 +4,7 @@ import { join } from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   StackAcresRequestError,
+  activateStackAcresSynergyPerk,
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresSector,
@@ -19,6 +20,7 @@ import {
   stockStackAcres,
   tapStackAcresSecretZone,
   tradeStackAcresSecretItemToRay,
+  unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   waterStackAcres,
   sowStackAcresWheat,
@@ -108,6 +110,7 @@ import {
 } from "@/lib/stackacres/wheat-plot";
 import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
+import { SYNERGY_PERKS } from "@/lib/stackacres/synergy-perks";
 import {
   HIDDEN_ZONES,
   STACKACRES_DICE_BOOST_ARMED_KEY,
@@ -1617,6 +1620,7 @@ describe("the currency wall", () => {
     // question to answer while doing it is "does this move Gold, and which
     // way".
     expect(actions).toEqual([
+      "activate-synergy-perk",
       "build-greenhouse",
       "buy-feed",
       "buy-stock",
@@ -1641,6 +1645,7 @@ describe("the currency wall", () => {
       "stock",
       "tap-secret-zone",
       "trade-secret-item",
+      "unlock-synergy-perk",
       "upgrade-tool",
       "water",
       "work",
@@ -1660,9 +1665,16 @@ describe("the currency wall", () => {
     // reduces what the farm pays out today rather than adding a way in. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own. `midnight-merchant-buy`
-    // spends too, via `redeemMidnightMerchantItem`, which reaches
-    // `spend_gold_by_profile` inside its own row-locked RPC (see
+    // against -- never a Gold credit of their own. `unlock-synergy-perk` is a
+    // pure sink, same category as `upgrade-tool`; `activate-synergy-perk`
+    // moves no Gold at all, same category as `work`. Neither Synergy Tree
+    // perk that touches a payout (`sunlight_harvester`'s crit chance,
+    // `high_yield_processing`'s Mill double-output chance) is a third payer
+    // for the same reason the critical harvest above isn't one: both only
+    // reshape a probability an existing roll inside `collect`/`work` already
+    // makes. `midnight-merchant-buy` spends too, via
+    // `redeemMidnightMerchantItem`, which reaches `spend_gold_by_profile`
+    // inside its own row-locked RPC (see
     // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
     // -- never against STACKACRES_GOLD_CEILING, because spending is not a
     // payout and the ceiling only ever bounds Gold leaving the farm.
@@ -2935,6 +2947,171 @@ describe("hidden secrets", () => {
       expect(result.harvest.crit).toBe(0);
       expect(await readStackAcresSecretLedgerQty(id, STACKACRES_DICE_BOOST_ARMED_KEY)).toBe(0);
     });
+  });
+});
+
+/**
+ * The Synergy Tree: permanent Gold-bought archetypes, slotted into a
+ * per-session loadout. Ownership vs. activation is the split every test
+ * below cares about -- `unlockStackAcresSynergyPerk` is the only one of the
+ * two that moves Gold, and only once per archetype ever.
+ */
+describe("Synergy Tree", () => {
+  it("unlocks an archetype and grants it, permanently", async () => {
+    // NOT a Gold-balance assertion: unlockStackAcresPerk's memory-mode branch
+    // is documented (stackacres-synergy-store.ts) to skip the real Gold
+    // check entirely -- there is no shared ledger for it to charge against
+    // outside a real Postgres RPC, the same simplification every other
+    // memory-mode branch here takes for cross-store coordination. What this
+    // CAN prove without a real DB is the shape: the perk is granted, exactly
+    // once, and stays unslotted until separately activated.
+    const { token } = await funded();
+
+    const result = await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+
+    expect(result.synergyUnlock).toEqual({ archetype: "sunlight_harvester", success: true });
+    expect(result.synergy.unlocked).toEqual(["sunlight_harvester"]);
+    // Unlocked, not yet slotted: owning it alone contributes nothing.
+    expect(result.synergy.active).toEqual([]);
+  });
+
+  it("refuses a name that is not a real archetype", async () => {
+    const { token } = await funded();
+    await expect(unlockStackAcresSynergyPerk(token, "not-a-perk", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("refuses to unlock the same archetype twice, without charging a second time", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+    const before = await balance(token);
+
+    await expect(unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  // No "refuses an unlock the player cannot afford" test: the real
+  // affordability check lives entirely inside `unlock_stackacres_perk`'s
+  // real Postgres RPC, and memory-mode's own branch (see
+  // stackacres-synergy-store.ts) deliberately never runs it -- there is no
+  // insufficient-Gold outcome this suite can reach without a real DB, the
+  // same posture Blackjack's Supabase branch verification already accepts.
+
+  it("refuses to activate an archetype nobody unlocked", async () => {
+    const { token } = await funded();
+    await expect(
+      activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("refuses a slot outside the loadout's range", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+    await expect(
+      activateStackAcresSynergyPerk(token, "sunlight_harvester", 99, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("slots an owned archetype, which then shows up as active", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+    const result = await activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0);
+    expect(result.synergyActivate).toEqual({ archetype: "sunlight_harvester", success: true });
+    expect(result.synergy.active).toEqual(["sunlight_harvester"]);
+  });
+
+  it("reports the farmhand speed multiplier at 1 until automated_logistics is active", async () => {
+    const { token } = await funded();
+    const before = await readStackAcres(token, T0);
+    expect(before.synergy.farmhandSpeedMultiplier).toBe(1);
+
+    await unlockStackAcresSynergyPerk(token, "automated_logistics", T0);
+    await activateStackAcresSynergyPerk(token, "automated_logistics", 0, T0);
+    const after = await readStackAcres(token, T0);
+    const effect = SYNERGY_PERKS.automated_logistics.effect;
+    if (effect.kind !== "farmhand_velocity") throw new Error("archetype effect changed shape");
+    expect(after.synergy.farmhandSpeedMultiplier).toBeCloseTo(1 + effect.multiplierBonus);
+  });
+
+  it("boosts the harvest crit chance on a Trowel, which alone can never crit", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+    await activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    // Between the Trowel's own 0 and the perk's flat +0.05: a miss without
+    // the perk active, a hit with it -- proof the bonus is actually reaching
+    // the roll, not just being computed and discarded.
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.03);
+    let result;
+    try {
+      result = await collectOne(token, unitId, HEN_READY);
+    } finally {
+      roll.mockRestore();
+    }
+    expect(result.harvest.crit).toBeGreaterThan(0);
+  });
+
+  it("does not boost the crit chance for an unlocked-but-unslotted archetype", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
+    // Deliberately never activated.
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(bought, "hen").id;
+
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.03);
+    let result;
+    try {
+      result = await collectOne(token, unitId, HEN_READY);
+    } finally {
+      roll.mockRestore();
+    }
+    expect(result.harvest.crit).toBe(0);
+  });
+
+  it("doubles a finished Mill batch's output when high_yield_processing is active", async () => {
+    const { token } = await funded();
+    await unlockStackAcresSynergyPerk(token, "high_yield_processing", T0);
+    await activateStackAcresSynergyPerk(token, "high_yield_processing", 0, T0);
+    await sowStackAcresWheat(token, T0);
+    await placeStackAcresMachine(token, "mill", T0);
+
+    const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
+    await workStackAcres(token, ripenedAt); // collects wheat, starts the mill
+
+    const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
+    // Under the perk's 0.1 chance.
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.05);
+    let done;
+    try {
+      done = await workStackAcres(token, finishedAt);
+    } finally {
+      roll.mockRestore();
+    }
+    expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity * 2);
+  });
+
+  it("never rolls for double output with no active perk touching it, even at guaranteed odds", async () => {
+    const { token } = await funded();
+    await sowStackAcresWheat(token, T0);
+    await placeStackAcresMachine(token, "mill", T0);
+
+    const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
+    await workStackAcres(token, ripenedAt);
+
+    const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0);
+    let done;
+    try {
+      done = await workStackAcres(token, finishedAt);
+    } finally {
+      roll.mockRestore();
+    }
+    expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
   });
 });
 

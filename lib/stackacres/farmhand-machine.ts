@@ -170,12 +170,13 @@ export interface FarmhandStepResult {
  * effects -- an aborted `HARVESTING` would drop the one frame the effect is
  * emitted on and lose the write.
  *
- * `speedMultiplier` defaults to 1 and is the Frenzy Heat Combo Engine's own
- * hook into this driver -- see `advanceTowards`'s doc comment in
- * ./farmhand-path.ts. It only ever touches the WALKING states' stride; a
- * `HARVESTING`/`DELIVERING_TO_CONTRACT` handover's `workMs` countdown is
- * unaffected, since heat is a display/feel modifier and never a way to make
- * a real settlement (a harvest cycle's `effectOf`) fire any sooner.
+ * `speedMultiplier` defaults to 1 and is the combined Frenzy Heat Combo
+ * Engine / Synergy Tree number -- see `advanceTowards`'s doc comment in
+ * ./farmhand-path.ts for where the two halves come from and why they
+ * multiply rather than pick one. It only ever touches the WALKING states'
+ * stride; a `HARVESTING`/`DELIVERING_TO_CONTRACT` handover's `workMs`
+ * countdown is unaffected, since neither source is a way to make a real
+ * settlement (a harvest cycle's `effectOf`) fire any sooner.
  */
 export function stepFarmhandAutomation(
   hand: FarmhandAutomation,
@@ -547,10 +548,14 @@ export class FarmhandStateMachine {
    * millisecond delta -- the clamp against a backgrounded tab lives in
    * `frameSeconds`, so passing Phaser's delta straight through is correct.
    *
-   * `speedMultiplier` defaults to 1 -- the Frenzy Heat Combo Engine's own
-   * real-time, never-persisted walk-speed nudge (lib/stackacres/frenzy.ts).
-   * It rides straight through to `stepFarmhandAutomation`, which restricts it
-   * to the WALKING states; see that function's own doc comment for why a
+   * `speedMultiplier` defaults to 1 -- the caller's own combined number: the
+   * Frenzy Heat Combo Engine's real-time, never-persisted nudge
+   * (lib/stackacres/frenzy.ts) times the Synergy Tree's slow-changing,
+   * server-known one (`StackAcresView.synergy.farmhandSpeedMultiplier`).
+   * Neither is stored on this class -- the scene multiplies its own two
+   * numbers together fresh every frame and hands the product straight in.
+   * It rides through to `stepFarmhandAutomation`, which restricts it to the
+   * WALKING states; see that function's own doc comment for why a
    * `HARVESTING`/delivery handover is untouched by it.
    */
   update(deltaMs: number, speedMultiplier = 1): void {

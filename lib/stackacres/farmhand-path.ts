@@ -152,13 +152,18 @@ export interface WalkStep<W extends Walker> {
  * is the one way to misuse this, and it shows up immediately as a walker who
  * finishes every trip on his first frame.
  *
- * `speedMultiplier` defaults to 1 (every existing caller before the Frenzy
- * Heat Combo Engine gets exactly the speed it always did) and is expected to
- * come from `FrenzyTierDef.speedMultiplier` (lib/stackacres/frenzy.ts) when
- * it is not 1 -- a short-lived, real-time-only nudge, never a stored or
- * server-known value. It scales the STRIDE only, not `ARRIVE_WITHIN`: a
- * faster errand runner still snaps to a target from the same distance he
- * always did, he simply covers more ground to get there each frame.
+ * `speedMultiplier` defaults to 1 (every caller before the Frenzy Heat Combo
+ * Engine and the Synergy Tree gets exactly the speed it always did) and is
+ * ONE COMBINED NUMBER, not a slot for either source alone: the scene
+ * multiplies the Frenzy tier's real-time, never-persisted nudge
+ * (`FrenzyTierDef.speedMultiplier`, lib/stackacres/frenzy.ts) by the
+ * Synergy Tree's slow-changing, server-known one
+ * (`StackAcresView.synergy.farmhandSpeedMultiplier`,
+ * lib/stackacres/synergy-perks.ts) before it ever reaches here -- this
+ * function has no opinion about where either half came from. It scales the
+ * STRIDE only, not `ARRIVE_WITHIN`: a faster errand runner still snaps to a
+ * target from the same distance he always did, he simply covers more ground
+ * to get there each frame.
  */
 export function advanceTowards<W extends Walker>(
   walker: W,

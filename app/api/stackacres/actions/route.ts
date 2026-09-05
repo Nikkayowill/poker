@@ -5,10 +5,12 @@ import { ZONE_IDS } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
+import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import {
+  activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
   buyFromMidnightMerchant,
   buyStackAcresFeed,
@@ -26,6 +28,7 @@ import {
   tapStackAcresSecretZone,
   toStackAcresErrorResponse,
   tradeStackAcresSecretItemToRay,
+  unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   waterStackAcres,
   sowStackAcresWheat,
@@ -57,20 +60,22 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * TEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
+ * ELEVEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
- * `place-machine` and `midnight-merchant-buy` all spend; `collect` and
- * `fulfill-contract` pay, both under the SAME flat per-player daily ceiling
- * -- see `harvestStackAcres` and `fulfillStackAcresTownContract` in
- * lib/server/stackacres-service.ts. There is no second currency any more, so
- * "which direction does this action move Gold, and if it pays, does it
- * reserve against the ceiling first" is the question a new action has to
- * answer, and a new payer that does not reserve first is the change to stop
- * over. `midnight-merchant-buy` is worth reading twice: it spends Gold but
- * NEVER reserves against the daily payout ceiling, because it is not a
- * payout at all -- Gold only ever leaves the caller here, through the same
- * `spend_gold_by_profile` every other spend in this list already uses.
+ * `place-machine`, `unlock-synergy-perk` and `midnight-merchant-buy` all
+ * spend; `collect` and `fulfill-contract` pay, both under the SAME flat
+ * per-player daily ceiling -- see `harvestStackAcres` and
+ * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
+ * is no second currency any more, so "which direction does this action move
+ * Gold, and if it pays, does it reserve against the ceiling first" is the
+ * question a new action has to answer, and a new payer that does not reserve
+ * first is the change to stop over. `activate-synergy-perk` moves no Gold at
+ * all -- see below. `midnight-merchant-buy` is worth reading twice: it
+ * spends Gold but NEVER reserves against the daily payout ceiling, because
+ * it is not a payout at all -- Gold only ever leaves the caller here,
+ * through the same `spend_gold_by_profile` every other spend in this list
+ * already uses.
  *
  * `work`, `divert`, `process`, `request-contract` and `build-greenhouse` move
  * no Gold at all -- inventory only (`build-greenhouse` spends processing-track
@@ -88,7 +93,12 @@ export const runtime = "nodejs";
  *
  * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
  * by `collect` itself, inside the same reservation, so it is bounded by the
- * same daily ceiling as the harvest it rides on. See `harvestStackAcres`.
+ * same daily ceiling as the harvest it rides on. See `harvestStackAcres`. The
+ * Synergy Tree's `sunlight_harvester` (a crit-chance boost) and
+ * `high_yield_processing` (a Mill double-output chance) are the same
+ * non-payer shape: both only reshape a probability an existing roll already
+ * makes, inside `collect` and `work` respectively, and neither is a fourth
+ * or fifth way Gold can move.
  *
  * `clear-sector` is the one piece of land buying that came back: three of the
  * four districts start under wild growth, and clearing one is a permanent,
@@ -112,6 +122,11 @@ export const runtime = "nodejs";
  */
 const unitIdSchema = z.string().min(1);
 const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
+const synergyArchetypeSchema = z.enum(SYNERGY_ARCHETYPES as unknown as [string, ...string[]]);
+// [0, SYNERGY_MAX_ACTIVE_SLOTS) -- the service layer re-checks this too (see
+// `activateSynergyPerk`'s own comment), but a clean 400 here is cheaper than
+// a round trip for a value no real client would ever send.
+const synergySlotSchema = z.number().int().min(0).max(SYNERGY_MAX_ACTIVE_SLOTS - 1);
 
 /**
  * The client's own name for one intent, and the only thing that can tell a
@@ -205,6 +220,16 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("trade-secret-item"),
     itemId: z.enum(SECRET_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
+  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent --
+  // see lib/server/stackacres-synergy-service.ts's own money-ordering note.
+  // `activate-synergy-perk` moves no Gold; it only changes which already-
+  // owned archetypes are slotted for this session.
+  z.object({ action: z.literal("unlock-synergy-perk"), archetype: synergyArchetypeSchema }),
+  z.object({
+    action: z.literal("activate-synergy-perk"),
+    archetype: synergyArchetypeSchema,
+    slot: synergySlotSchema,
   }),
   // Ray's Mythic Blueprints: multi-stage structures filled with processing-
   // track materials. See lib/server/stackacres-blueprint-service.ts's own
@@ -317,6 +342,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return consumeStackAcresSecretItem(token, action.itemId, now);
     case "trade-secret-item":
       return tradeStackAcresSecretItemToRay(token, action.itemId, now);
+    case "unlock-synergy-perk":
+      return unlockStackAcresSynergyPerk(token, action.archetype, now);
+    case "activate-synergy-perk":
+      return activateStackAcresSynergyPerk(token, action.archetype, action.slot, now);
     case "start-blueprint":
       return startStackAcresMythicBlueprint(token, action.structureId, now);
     case "contribute-blueprint":

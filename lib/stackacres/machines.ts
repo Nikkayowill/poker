@@ -103,6 +103,23 @@ export function isMachineDone(
   return Number.isFinite(ready) && ready <= now.getTime();
 }
 
+/**
+ * Whether a finished batch pays double, per the Synergy Tree's
+ * `high_yield_processing` perk (see lib/stackacres/synergy-perks.ts, whose
+ * own header named this exact function as the seam it was written for).
+ *
+ * Takes its own random source rather than reaching for `Math.random`, same
+ * posture as equipment.ts's `rollHarvestCrit` and for the identical reason:
+ * the ONE call site is inside `workStackAcres`, right after
+ * `collectStackAcresMachine`'s guarded write has already landed, so the roll
+ * can neither be re-rolled by a refetch nor read before the write it doubles
+ * belongs to. `chance` is 0 for a player with no active perk, so this is a
+ * no-op call rather than a branch the caller has to special-case.
+ */
+export function rollMillDoubleOutput(chance: number, random: () => number): boolean {
+  return random() < chance;
+}
+
 /** 0..1 while working; null while idle -- there is no run in progress to
  *  show a bar for. */
 export function machineProgress(

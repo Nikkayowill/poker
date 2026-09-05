@@ -108,6 +108,24 @@ export function synergyPerkItemId(archetype: SynergyArchetype, version = 1): str
   return `perk_${archetype}_v${version}`;
 }
 
+/**
+ * The inverse of `synergyPerkItemId`: recovers the archetype an owned or
+ * slotted item_id names, stripping whichever version wrapper it carries --
+ * null for anything that isn't one of this feature's ids at all (a stale row
+ * from a deleted archetype, or garbage). NOT the same check as
+ * `isSynergyArchetype`, which tests a BARE archetype name: `perk_id` columns
+ * in both `stackacres_perk_unlocks.item_id` and
+ * `stackacres_session_perks.perk_id` store the versioned wrapper, never the
+ * bare name (see the migration), so a caller reading either column has to
+ * unwrap through this first -- passing a raw row value straight to
+ * `isSynergyArchetype` always misses.
+ */
+export function parseSynergyPerkItemId(itemId: string): SynergyArchetype | null {
+  const match = /^perk_(.+)_v\d+$/.exec(itemId);
+  if (!match || !isSynergyArchetype(match[1])) return null;
+  return match[1];
+}
+
 /** How many perks a loadout can hold at once. Mirrors the DB CHECK on
  *  `stackacres_session_perks.slot` (0..2) in the migration by hand -- a
  *  trigger/CHECK cannot import a TypeScript module. */

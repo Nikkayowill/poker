@@ -143,6 +143,13 @@ describe("stepFarmhand", () => {
     expect(second.claimed).toBe(false);
   });
 
+  it("travels farther per frame at a higher speedMultiplier, same job and delta", () => {
+    const job = task("u1", 240, 300);
+    const base = stepFarmhand(spawnFarmhand(), job, FRAME);
+    const boosted = stepFarmhand(spawnFarmhand(), job, FRAME, 1.15);
+    expect(boosted.hand.travelled).toBeCloseTo(base.hand.travelled * 1.15);
+  });
+
   it("arrives exactly on the target rather than easing at it forever", () => {
     const job = task("u1", 200, 200);
     const arrived = run(

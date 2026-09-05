@@ -2734,6 +2734,86 @@
 
 .sa-contracts-ask { margin-top: 12px; }
 
+/* ---- the Synergy Tree ------------------------------------------------- */
+
+/* The HUD badge, same paper pill as .sa-feed next door. The corn ring shows
+   up only once a perk is actually active -- an empty loadout reads as plain
+   paper, the same "nothing to see yet" the allowance meter gives a fresh
+   day. */
+.sa-synergy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+/* A highlight only once at least one perk is actually contributing --
+   otherwise the badge is indistinguishable chrome nobody has a reason to
+   tap. */
+.sa-synergy-badge.has-active {
+  background: var(--sa-corn);
+  box-shadow: 0 3px 0 var(--sa-corn-rim), var(--sa-drop);
+}
+
+.sa-synergy-milestone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-corn);
+  color: var(--sa-outline);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+/* A locked perk reads as scenery, not a decision -- dimmed the way a wild,
+   uncleared district is, so the eye lands on what is actually ownable. An
+   active one gets the same corn ring TownContractsModal's posted rung does:
+   the marker for "this is the one actually doing something right now". */
+.sa-synergy-perk.is-locked { opacity: .72; }
+
+.sa-synergy-perk.is-active {
+  background: var(--sa-paper);
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-synergy-perk-desc {
+  margin: 6px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.sa-synergy-perk-btn {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+/* Slotting an owned perk spends no Gold, so it gets the leaf material
+   .sa-buy-btn.is-expand uses for the same "growth, not a purchase" reason. */
+.sa-synergy-perk-btn.is-slot {
+  background: var(--sa-leaf);
+  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-leaf-rim), var(--sa-drop);
+  color: var(--sa-ink);
+}
+
 /* The Midnight Merchant's own sheet. Reuses .sa-sheet/.sa-sheet-scrim/
    .sa-cta/.sa-contract-count/.sa-contracts-note wholesale (see
    midnight-merchant-storefront.tsx's own header on why it overrides Ray's

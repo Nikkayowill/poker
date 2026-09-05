@@ -177,10 +177,24 @@ import {
   canStartMachine,
   isMachineDone,
   isMachineKind,
+  rollMillDoubleOutput,
   toMachineSnapshot,
   type MachineKind,
   type StackAcresMachineSnapshot,
 } from "@/lib/stackacres/machines";
+import {
+  SYNERGY_PERKS,
+  applySynergyEffects,
+  isSynergyArchetype,
+  type SynergyArchetype,
+} from "@/lib/stackacres/synergy-perks";
+import {
+  activateSynergyPerk,
+  applySynergyBuffs,
+  listActiveSynergyArchetypes,
+  listUnlockedSynergyArchetypes,
+  unlockSynergyPerk,
+} from "./stackacres-synergy-service";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 import {
   emptySecretMuseumRegistry,
@@ -325,6 +339,25 @@ export class StackAcresRequestError extends ArcadeRequestError<StackAcresUnitSna
   readonly name = "StackAcresRequestError";
 }
 
+/**
+ * The Synergy Tree, as the client renders it. See
+ * lib/server/stackacres-synergy-service.ts's own header for the ownership
+ * vs. loadout split -- `unlocked` is "ever bought", `active` is "slotted for
+ * this session", and an id can be in the first without being in the second.
+ */
+export interface StackAcresSynergyView {
+  unlocked: SynergyArchetype[];
+  active: SynergyArchetype[];
+  /**
+   * The multiplier the client applies to its own FARMHAND_SPEED constant.
+   * Computed here against a base of 1 rather than sent as an absolute speed
+   * -- the farmhand's walk is presentation-only and lives entirely
+   * client-side (lib/stackacres/farmhand-path.ts), so this is the one number
+   * that seam actually needs. 1 when `automated_logistics` is not active.
+   */
+  farmhandSpeedMultiplier: number;
+}
+
 export interface StackAcresView {
   units: StackAcresUnitSnapshot[];
   profile: PlayerProfile;
@@ -374,6 +407,9 @@ export interface StackAcresView {
    *  `StackAcresItem`, and a secret item is deliberately not a member of that
    *  enum; see lib/stackacres/secrets.ts's own header). */
   secretDonations: Record<SecretItemId, boolean>;
+  /** The Synergy Tree: which archetypes are unlocked/active, and what that
+   *  currently does to the farmhand's presentation-only walk speed. */
+  synergy: StackAcresSynergyView;
   /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
    *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
   greenhouseBuilt: boolean;
@@ -471,6 +507,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     boostArmedQty,
     heldQtys,
+    unlockedSynergies,
+    activeSynergies,
     greenhouseBuilt,
     blueprints,
     midnightMerchant,
@@ -498,6 +536,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // tuple overload needs a fixed-length literal to keep each position's own
     // type. Nesting keeps this array exactly 19 elements long.
     Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
+    listUnlockedSynergyArchetypes(profile.id),
+    listActiveSynergyArchetypes(profile.id),
     readStackAcresGreenhouse(profile.id),
     blueprintsView(profile.id),
     readMidnightMerchantVisit(profile.id, now),
@@ -536,6 +576,17 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     influence,
     secrets: { held, boostArmed: boostArmedQty >= 1 },
     secretDonations,
+    synergy: {
+      unlocked: unlockedSynergies,
+      active: activeSynergies,
+      // Base 1, not the real FARMHAND_SPEED constant: farmhand.ts owns that
+      // number and lives client-side, so the multiplier is what actually
+      // crosses the wire -- see StackAcresSynergyView's own comment.
+      farmhandSpeedMultiplier: applySynergyEffects(
+        { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
+        activeSynergies,
+      ).farmhandSpeed,
+    },
     greenhouseBuilt,
     blueprints,
     midnightMerchant,
@@ -599,6 +650,12 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set (to an item id or null) by `tapStackAcresSecretZone`; every other
    *  action leaves this undefined. */
   discovery?: unknown;
+  /** Set by `unlockStackAcresSynergyPerk`/`activateStackAcresSynergyPerk`;
+   *  every other action leaves these undefined. `synergy` on the view itself
+   *  already carries the resulting state, so these are only the "what did
+   *  this specific call just do" confirmation a toast reads off of. */
+  synergyUnlock?: unknown;
+  synergyActivate?: unknown;
   /** Set by `buyFromMidnightMerchant` on a successful purchase; every other
    *  action leaves this undefined. */
   midnightMerchantPurchase?: {
@@ -625,6 +682,8 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   const delta: Record<string, unknown> = {};
   if (result.harvest !== undefined) delta.harvest = result.harvest;
   if (result.discovery !== undefined) delta.discovery = result.discovery;
+  if (result.synergyUnlock !== undefined) delta.synergyUnlock = result.synergyUnlock;
+  if (result.synergyActivate !== undefined) delta.synergyActivate = result.synergyActivate;
   if (result.midnightMerchantPurchase !== undefined) {
     delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
   }
@@ -1003,6 +1062,62 @@ export async function upgradeStackAcresTool(
   }
 
   return { ...(await view(debited, now)), upgraded: { from: current, to: settled } };
+}
+
+/**
+ * Permanently unlocks a Synergy Tree archetype, with Gold. The debit and the
+ * grant are one atomic step server-side -- `unlockSynergyPerk` (which this
+ * wraps) delegates whole to `unlock_stackacres_perk`, so there is no second
+ * "rule 1: debit first" to restate here the way every other Gold sink in
+ * this file has to: that ordering is the RPC's job, not this function's.
+ */
+export async function unlockStackAcresSynergyPerk(
+  token: string,
+  archetypeInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { synergyUnlock: { archetype: SynergyArchetype; success: boolean } }> {
+  if (!isSynergyArchetype(archetypeInput)) {
+    throw new StackAcresRequestError("Not a real archetype.", 400);
+  }
+  const archetype = archetypeInput;
+  const profile = await ensureProfile(token);
+  const { outcome } = await unlockSynergyPerk(profile.id, archetype);
+  if (!outcome.success) {
+    const label = SYNERGY_PERKS[archetype].label;
+    const message =
+      outcome.reason === "already_owned"
+        ? `You already own ${label}.`
+        : `${label} costs ${SYNERGY_PERKS[archetype].unlockCostGold.toLocaleString()} Gold.`;
+    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return { ...(await view(profile, now)), synergyUnlock: { archetype, success: true } };
+}
+
+/**
+ * Slots an already-unlocked archetype into the current session's loadout.
+ * Moves no Gold -- ownership was already paid for by `unlockStackAcresSynergyPerk`,
+ * this only changes which owned perks are actively contributing.
+ */
+export async function activateStackAcresSynergyPerk(
+  token: string,
+  archetypeInput: string,
+  slot: number,
+  now = new Date(),
+): Promise<StackAcresView & { synergyActivate: { archetype: SynergyArchetype; success: boolean } }> {
+  if (!isSynergyArchetype(archetypeInput)) {
+    throw new StackAcresRequestError("Not a real archetype.", 400);
+  }
+  const archetype = archetypeInput;
+  const profile = await ensureProfile(token);
+  const outcome = await activateSynergyPerk(profile.id, archetype, slot);
+  if (!outcome.success) {
+    const message =
+      outcome.reason === "invalid_slot" ? "That is not a real loadout slot." : "You have not unlocked that yet.";
+    throw new StackAcresRequestError(message, 400, { round: await snapshots(profile.id, now) });
+  }
+  return { ...(await view(profile, now)), synergyActivate: { archetype, success: true } };
 }
 
 /**
@@ -1929,7 +2044,21 @@ export async function harvestStackAcres(
   // one that already exists.
   const diceBoostArmed =
     (await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY)) >= 1;
-  const critChance = effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoostArmed);
+  // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
+  // is the same shape of boost as the dice: it widens the odds, never the
+  // payout, so it layers on top here rather than touching `critCeiling`
+  // below -- same reasoning as the dice comment above, and additive with it
+  // for the same reason two flat bonuses always are.
+  const critChance = (
+    await applySynergyBuffs(
+      {
+        harvestCritChance: effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoostArmed),
+        farmhandSpeed: 1,
+        millDoubleOutputChance: 0,
+      },
+      profile.id,
+    )
+  ).harvestCritChance;
   const critCeiling = critGoldFor(planned.net, tool);
 
   // Step 2. A sweep whose whole value is eaten by maintenance reserves
@@ -2365,6 +2494,13 @@ export async function workStackAcres(
   let machinesStarted = 0;
   let machinesCollected = 0;
   const machines = await listStackAcresMachines(profile.id);
+  // Read once for the whole pass rather than per machine -- a loadout does
+  // not change mid-request, and this moves no Gold either way (see the
+  // header above), so there is no reservation this needs to line up with.
+  const { millDoubleOutputChance } = await applySynergyBuffs(
+    { harvestCritChance: 0, farmhandSpeed: 1, millDoubleOutputChance: 0 },
+    profile.id,
+  );
   for (const machine of machines) {
     if (machine.status === "idle") {
       // INSTANT recipes are never auto-started here. They have no run to
@@ -2418,8 +2554,15 @@ export async function workStackAcres(
         continue;
       }
       const output = RECIPE_CATALOGUE[machine.recipeId].output.item;
+      // Rolled AFTER the guarded collect above has already landed, the same
+      // discipline `rollHarvestCrit` is held to and for the same reason:
+      // anything reachable from a read can be re-rolled by pulling to
+      // refresh. `high_yield_processing` (lib/stackacres/synergy-perks.ts).
+      const doubled =
+        millDoubleOutputChance > 0 && rollMillDoubleOutput(millDoubleOutputChance, Math.random);
+      const credited = doubled ? machine.unitsProcessing * 2 : machine.unitsProcessing;
       try {
-        await adjustStackAcresInventory(profile.id, output, machine.unitsProcessing);
+        await adjustStackAcresInventory(profile.id, output, credited);
         machinesCollected += 1;
       } catch (error) {
         console.error("stackacres.machine_output_credit_failed", {

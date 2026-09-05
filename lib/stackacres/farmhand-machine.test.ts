@@ -278,6 +278,18 @@ describe("FarmhandStateMachine", () => {
     expect(machine.hand.travelled).toBe(0);
   });
 
+  it("walks farther per frame at a higher speedMultiplier passed to update()", () => {
+    const base = new FarmhandStateMachine();
+    base.setWorld(world({ wheatPlots: [plot("a")] }));
+    base.update(FRAME);
+
+    const boosted = new FarmhandStateMachine();
+    boosted.setWorld(world({ wheatPlots: [plot("a")] }));
+    boosted.update(FRAME, 1.15);
+
+    expect(boosted.hand.travelled).toBeCloseTo(base.hand.travelled * 1.15);
+  });
+
   it("cuts a ripe plot and calls the inventory hook with (profileId, item, delta)", async () => {
     const adjustInventory = vi.fn().mockResolvedValue(WHEAT_YIELD_QUANTITY);
     const machine = new FarmhandStateMachine({ adjustInventory });

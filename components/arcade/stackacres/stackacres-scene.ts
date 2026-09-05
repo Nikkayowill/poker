@@ -31,6 +31,7 @@ import {
   type Sparkle,
 } from "@/lib/stackacres/sunlight";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
+import { WeatherOverlayManager } from "./weather-overlay-manager";
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
@@ -703,6 +704,13 @@ export class StackAcresScene extends Phaser.Scene {
 
   /** The live flecks, one per pool slot, driven by lib/stackacres/sunlight.ts. */
   private sparkles: Sparkle[] = [];
+
+  /** Solar flare / gold rush rain / dry spell -- its own manager, not more
+   *  private state here on purpose; see weather-overlay-manager.ts's header
+   *  for why it stays a separate class. Null under reduced motion, same
+   *  posture `buildSunlight` takes for its own layers. */
+  private weather: WeatherOverlayManager | null = null;
+
   /** The world's own hard edge, in the same projected screen space as
    *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
    *  every frame by `fitEdgeGuides()` to know how close the view is to it. */
@@ -896,6 +904,11 @@ export class StackAcresScene extends Phaser.Scene {
       .setDepth(1e9);
 
     this.buildSunlight();
+
+    if (!this.options.reducedMotion) {
+      this.weather = new WeatherOverlayManager(this, this.random);
+      this.weather.create();
+    }
 
     // The "you've gone far enough" nudges -- same screen-pinned treatment as
     // the vignette, one above it (a higher depth) so they read against its
@@ -3340,6 +3353,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.options.reducedMotion) return;
 
     this.animateSunlight(time, delta);
+    this.weather?.update(time, delta);
     this.animatePond(time);
     this.walkHerds(delta);
     this.walkFarmhand(delta);

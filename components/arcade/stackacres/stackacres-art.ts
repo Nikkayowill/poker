@@ -136,7 +136,9 @@ type CorePainterName =
   | "ico-carrot"
   | "ico-corn"
   | "ico-wheat"
-  | "ico-flour";
+  | "ico-flour"
+  | "ico-cheese"
+  | "ico-cloth";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -1062,6 +1064,54 @@ const DRAWN: Record<PainterName, Painter> = {
     for (const [x, y, r] of [[10, 15, 1.5], [13.5, 17, 1.2], [12, 12.5, 1]] as const) {
       ell(c, x, y, r, r * 0.75);
       F(c, "rgba(255,255,255,.75)");
+    }
+  }),
+
+  // The Dairy's and the Loom's outputs. Same reason the two above exist: the
+  // town board renders every contract rung's item through MACHINE_ITEM_CATALOGUE's
+  // `icon`, and paintIcon dereferences the painter without checking, so a name
+  // with no painter behind it is a crash rather than a blank square.
+  "ico-cheese": painter(24, 24, (c) => {
+    // A wedge with a real thickness -- the lit top face, then the cut face
+    // below it. A flat triangle reads as a slice of pie at this size.
+    poly(c, [[3, 10], [21, 10], [12.5, 5]]);
+    F(c, "#f8dc8c");
+    c.beginPath();
+    c.moveTo(3, 10);
+    c.lineTo(21, 10);
+    c.lineTo(21, 14.5);
+    c.quadraticCurveTo(12, 20, 3, 15.5);
+    c.closePath();
+    F(c, lin(c, 3, 10, 21, 20, [[0, "#f2c94c"], [1, "#d09a2c"]]));
+    stroke(c, "#a9762a", 1.4);
+    // Holes on the cut face only, which is where a wedge actually shows them.
+    for (const [x, y, r] of [[8, 13.5, 1.7], [14.5, 12.8, 1.2], [11.5, 16.4, 0.9]] as const) {
+      ell(c, x, y, r, r * 0.85);
+      F(c, "rgba(150,105,35,.4)");
+    }
+  }),
+
+  "ico-cloth": painter(24, 24, (c) => {
+    // A folded bolt rather than a flat swatch: two offset layers give it a
+    // fold line, which is what separates cloth from the fleece it was woven
+    // from -- and `ico-fleece` is a cream puff, so a cream rectangle here
+    // would read as the same item twice.
+    rr(c, 4, 11, 16, 8, 1.6);
+    F(c, lin(c, 4, 11, 20, 19, [[0, "#efe5d4"], [1, "#c9b899"]]));
+    stroke(c, "#9c8557", 1.3);
+    rr(c, 6, 7.5, 14, 6.5, 1.6);
+    F(c, lin(c, 6, 7.5, 20, 14, [[0, "#f7efe1"], [1, "#d8c8ab"]]));
+    stroke(c, "#9c8557", 1.3);
+    // The selvedge band, the one saturated mark, so the bolt has a colour of
+    // its own at 24px instead of being another cream shape.
+    rr(c, 6, 9.5, 14, 2.2, 1);
+    F(c, "#7a9a8b");
+    // Weave, suggested rather than drawn -- two threads is enough at this size.
+    for (const y of [15.5, 17.2] as const) {
+      c.beginPath();
+      c.moveTo(6, y);
+      c.lineTo(18, y);
+      stroke(c, "rgba(120,100,70,.28)", 0.8);
     }
   }),
 };

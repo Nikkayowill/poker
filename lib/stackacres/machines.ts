@@ -1,12 +1,17 @@
 /**
- * Processing buildings: a Mill and, in shape only for now, the rest of the
- * ladder it will grow into.
+ * Processing buildings: the Mill, the Dairy and the Loom.
  *
- * A machine eats a fixed batch of a raw item, runs a delta-time-safe
- * countdown, and produces a fixed batch of a processed item -- see
- * `MachineDef`. It never touches Gold directly; every input and output here
- * is inventory (./inventory.ts). The only door from a machine's output back
- * to Gold is a fulfilled Contract (./contracts.ts).
+ * A machine is a PLACE A RECIPE CAN RUN, and nothing more. What it eats and
+ * what it makes lives in ./recipes.ts, not here -- see that file's header for
+ * why the recipe rather than the machine became the unit of configuration,
+ * and for the instant-versus-queued split the two pacings sit on. A machine
+ * contributes exactly three things: it costs Gold to place, it caps how much
+ * processing can happen at once, and (for a queued recipe) its row is the
+ * queue entry.
+ *
+ * It never touches Gold except at placement, which is a pure sink. Every
+ * input and output is inventory (./inventory.ts). The only door from a
+ * machine's output back to Gold is a fulfilled Contract (./contracts.ts).
  *
  * Same timer discipline as ./wheat-plot.ts and ./units.ts: `isMachineDone`/
  * `machineProgress` are pure functions of `now`, and the server's own
@@ -15,10 +20,10 @@
  * lib/server/stackacres-service.ts.
  */
 
-import type { MachineProcessedItem, MachineRawItem } from "./machine-items";
+import { RECIPE_CATALOGUE, recipesForMachine, type RecipeId } from "./recipes";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const MACHINE_KINDS = ["mill"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -30,26 +35,28 @@ export interface MachineDef {
   /** Gold debited once, when the machine is placed. A sink, same category as
    *  `stackacresCapacityPrice` -- nothing here is ever sold back. */
   placeCost: number;
-  input: { item: MachineRawItem; quantity: number };
-  output: { item: MachineProcessedItem; quantity: number };
-  /** How long one batch takes to process, once started. */
-  processingMs: number;
 }
 
+/**
+ * Placement prices sit at roughly one batch of the raw material the machine
+ * eats, so a machine pays for itself over a few runs rather than gating the
+ * loop behind a grind. The Mill is the cheapest because wheat costs seed
+ * rather than forgone harvest Gold; the Dairy is dearest because milk is the
+ * most valuable thing on the farm to divert (see `recipeRawGoldValue`).
+ */
 export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
-  mill: {
-    label: "Mill",
-    placeCost: 200,
-    input: { item: "wheat", quantity: 3 },
-    output: { item: "flour", quantity: 1 },
-    processingMs: 20 * 1000,
-  },
+  mill: { label: "Mill", placeCost: 200 },
+  dairy: { label: "Dairy", placeCost: 700 },
+  loom: { label: "Loom", placeCost: 350 },
 };
 
-/** Flat, same reasoning as `WHEAT_PLOT_CAP` -- one Mill is the whole loop
- *  today; a second machine kind gets its own cap when it exists rather than
- *  sharing this one. */
-export const MACHINE_CAP = 2;
+/** Flat total, and deliberately equal to the number of kinds: with the
+ *  database's own `homestead_machines_one_per_kind` unique index alongside it,
+ *  the cap means "you may run the whole ladder, not two of anything". A
+ *  second Dairy would double throughput without adding a decision. Kept in
+ *  step by hand with `homestead_machines_enforce_cap`; see that trigger's own
+ *  comment for why the duplication is accepted. */
+export const MACHINE_CAP = 3;
 
 export type MachineStatus = "idle" | "working";
 
@@ -60,17 +67,31 @@ export interface StackAcresMachineRow {
   /** Set only while working; null while idle. */
   startedAt: string | null;
   readyAt: string | null;
+  /**
+   * The queue entry, set together with `startedAt`/`readyAt` and cleared
+   * together with them. Snapshotted at start so a retune of RECIPE_CATALOGUE
+   * cannot change what an already-running batch pays out -- the same rule
+   * `StoredStackAcresUnit.yieldQuantity` follows for a stocked animal.
+   */
+  recipeId: RecipeId | null;
+  /** How many units of the recipe's output this run will yield. Zero while
+   *  idle. Snapshotted for the same reason as `recipeId`. */
+  unitsProcessing: number;
   version: number;
 }
 
-/** Whether the inventory holds enough of this machine kind's input to start
- *  a run.
- *  Does not check the machine's own status -- callers only start an idle
- *  one, and this is also how the sidebar shows "waiting on Wheat" for a Mill
- *  that already has enough sitting idle for another reason. */
-export function canStartMachine(inventory: StackAcresInventory, kind: MachineKind): boolean {
-  const def = MACHINE_CATALOGUE[kind];
+/** Whether the inventory holds enough to start `recipe`.
+ *  Does not check any machine's status -- callers only start an idle one,
+ *  and this is also how the sidebar shows "waiting on Milk" for a Dairy that
+ *  is idle for some other reason. */
+export function canStartRecipe(inventory: StackAcresInventory, recipe: RecipeId): boolean {
+  const def = RECIPE_CATALOGUE[recipe];
   return hasEnough(inventory, def.input.item, def.input.quantity);
+}
+
+/** Whether any recipe this machine kind runs could start right now. */
+export function canStartMachine(inventory: StackAcresInventory, kind: MachineKind): boolean {
+  return recipesForMachine(kind).some((recipe) => canStartRecipe(inventory, recipe));
 }
 
 export function isMachineDone(
@@ -106,6 +127,8 @@ export interface StackAcresMachineSnapshot {
   status: MachineStatus;
   startedAt: string | null;
   readyAt: string | null;
+  recipeId: RecipeId | null;
+  unitsProcessing: number;
   done: boolean;
   progress: number | null;
 }
@@ -117,6 +140,8 @@ export function toMachineSnapshot(row: StackAcresMachineRow, now: Date): StackAc
     status: row.status,
     startedAt: row.startedAt,
     readyAt: row.readyAt,
+    recipeId: row.recipeId,
+    unitsProcessing: row.unitsProcessing,
     done: isMachineDone(row, now),
     progress: machineProgress(row, now),
   };

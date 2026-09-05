@@ -5,12 +5,12 @@
  * (carrot, corn, eggs, wool, milk) are valued and paid in Gold the instant
  * they are harvested -- see items.ts's own header for why that collapsed from
  * a three-step Bushel economy to one atomic step, and exchange.ts for the
- * flat daily ceiling that makes it safe. Nothing here touches that: wheat and
- * flour never carry a Gold value of their own and are never sw wept into
- * `harvestStackAcres`. They sit in an inventory instead (./inventory.ts) and
- * the only door back to Gold is a fulfilled Contract (./contracts.ts), which
- * reserves against the exact same ceiling a harvest does. Neither is ever
- * swept into `harvestStackAcres`.
+ * flat daily ceiling that makes it safe. Nothing here touches that: an item
+ * sitting in this space never carries a Gold value of its own and is never
+ * swept into `harvestStackAcres`. It sits in an inventory instead
+ * (./inventory.ts) and the only door back to Gold is a fulfilled Contract
+ * (./contracts.ts), which reserves against the exact same ceiling a harvest
+ * does.
  *
  * That is also why wheat is not a `StackAcresStock` (./catalogue.ts). A
  * `homestead_units` row is guaranteed to be swept into a harvest's Gold
@@ -19,10 +19,27 @@
  * Growing wheat needed its own row, its own table, its own ready/collect
  * pair -- see ./wheat-plot.ts -- specifically so it could not be reached by
  * that sweep.
+ *
+ * `milk` AND `wool` DELIBERATELY NAME THE SAME PHYSICAL THING AS ./items.ts's
+ * OWN `milk`/`wool`, AND THAT OVERLAP IS THE FEATURE. A ready cow is worth
+ * either 8 Milk of Gold or 8 Milk in this inventory -- never both, and never
+ * half of each. `divertStackAcresUnit` (lib/server/stackacres-service.ts)
+ * settles the unit through the SAME version-guarded write `harvestStackAcres`
+ * uses, so the two paths race for one row and exactly one wins. That is what
+ * keeps the sweep uniform: a diverted cow is not a row the harvest skips, it
+ * is a row the harvest no longer finds ready.
+ *
+ * The cost of the overlap is that `isStackAcresItem("milk")` and
+ * `isMachineRawItem("milk")` are BOTH true, and `"milk"` satisfies both
+ * `StackAcresItem` and `MachineRawItem`, so the compiler will not catch a
+ * value crossing between the two tracks. The rule that keeps that honest:
+ * anything reaching `itemGoldValue` is Gold-track produce; anything reaching
+ * `adjustStackAcresInventory` is processing-track stock. Wheat, flour, cheese
+ * and cloth exist in one space only, so they are the shapes a test can pin.
  */
 
-export const MACHINE_RAW_ITEMS = ["wheat"] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour"] as const;
+export const MACHINE_RAW_ITEMS = ["wheat", "milk", "wool"] as const;
+export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
@@ -57,6 +74,13 @@ export interface MachineItemDef {
 export const MACHINE_ITEM_CATALOGUE: Readonly<Record<MachineItemId, MachineItemDef>> = {
   wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat" },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour" },
+  // Shares ./items.ts's own label and painter on purpose: the player is
+  // looking at the same milk either way, and a second name for it would read
+  // as a second resource.
+  milk: { label: "Milk", plural: "Milk", icon: "ico-milk" },
+  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece" },
+  cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese" },
+  cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth" },
 };
 
 /** "3 Wheat", "1 Flour" -- same pluralisation contract as items.ts's own

@@ -96,6 +96,7 @@ import {
   adjustStackAcresInfluence,
   adjustStackAcresInventory,
   startStackAcresMachine,
+  processStackAcresRecipe,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -143,6 +144,18 @@ import {
   type SecretMuseumRegistry,
 } from "@/lib/stackacres/museum-secrets";
 import { applyAchievementEvent } from "./achievement-store";
+import {
+  RECIPE_CATALOGUE,
+  isInstantRecipe,
+  isRecipeId,
+  recipesForMachine,
+  type RecipeId,
+} from "@/lib/stackacres/recipes";
+import {
+  isMachineRawItem,
+  type MachineProcessedItem,
+  type MachineRawItem,
+} from "@/lib/stackacres/machine-items";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -1632,6 +1645,14 @@ export async function placeStackAcresMachine(
   const profile = await ensureProfile(token);
 
   const machines = await listStackAcresMachines(profile.id);
+  // One of each kind, checked here for a clean 409; the database's own
+  // `homestead_machines_one_per_kind` index is the guard a race cannot get
+  // past, and `createStackAcresMachine` treats its 23505 like a lost race.
+  if (machines.some((machine) => machine.kind === kind)) {
+    throw new StackAcresRequestError(`You already have a ${def.label}.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
   if (machines.length >= MACHINE_CAP) {
     throw new StackAcresRequestError(
       `You already have ${MACHINE_CAP} machines placed. That is all the room there is for now.`,
@@ -1717,7 +1738,14 @@ export async function workStackAcres(
   const machines = await listStackAcresMachines(profile.id);
   for (const machine of machines) {
     if (machine.status === "idle") {
-      const def = MACHINE_CATALOGUE[machine.kind];
+      // INSTANT recipes are never auto-started here. They have no run to
+      // collect, so starting one on the player's behalf would silently spend
+      // their milk the moment a poll came round -- a Dairy is a choice
+      // (`processRecipe`), a Mill is a queue. Only queued recipes belong to
+      // the worker pass.
+      const recipe = recipesForMachine(machine.kind).find((id) => !isInstantRecipe(id));
+      if (!recipe) continue;
+      const def = RECIPE_CATALOGUE[recipe];
       // Rule 1: the input leaves inventory first. `adjustStackAcresInventory`
       // is the real, atomic guard -- a prior read of the inventory (in
       // `view`) can be stale, but this call cannot be.
@@ -1731,6 +1759,8 @@ export async function workStackAcres(
         machine,
         now,
         new Date(now.getTime() + def.processingMs),
+        recipe,
+        def.output.quantity,
       );
       if (!started) {
         // Lost the race to start this exact machine (a concurrent call got
@@ -1743,11 +1773,24 @@ export async function workStackAcres(
       }
       machinesStarted += 1;
     } else if (isMachineDone(machine, now)) {
-      const def = MACHINE_CATALOGUE[machine.kind];
+      // Read off the ROW, not off RECIPE_CATALOGUE: what this batch pays was
+      // snapshotted when it started, so a retune landing mid-run cannot
+      // change it. A row with no snapshot predates the migration that added
+      // the column and is skipped rather than guessed at -- it collects on
+      // the next pass once someone repairs it, and guessing would be the one
+      // way to credit an output the player never started.
       const settled = await collectStackAcresMachine(machine, now);
       if (!settled) continue; // Lost race; nothing to credit.
+      if (!machine.recipeId || machine.unitsProcessing <= 0) {
+        console.error("stackacres.machine_run_missing_recipe", {
+          profileId: profile.id,
+          machineId: machine.id,
+        });
+        continue;
+      }
+      const output = RECIPE_CATALOGUE[machine.recipeId].output.item;
       try {
-        await adjustStackAcresInventory(profile.id, def.output.item, def.output.quantity);
+        await adjustStackAcresInventory(profile.id, output, machine.unitsProcessing);
         machinesCollected += 1;
       } catch (error) {
         console.error("stackacres.machine_output_credit_failed", {
@@ -1771,6 +1814,215 @@ function isWheatPlotReadyRow(row: Pick<StoredWheatPlot, "readyAt">, now: Date): 
   return Date.parse(row.readyAt) <= now.getTime();
 }
 
+/**
+ * Sends one ready animal's produce to the processing inventory instead of to
+ * the harvest's Gold payout.
+ *
+ * THIS IS NOT A NEW WAY GOLD ENTERS THE FARM -- it is a way Gold does NOT.
+ * A cow is worth 8 Milk either way; taking it here means the harvest never
+ * pays for it. That matters because it is what lets `milk`/`wool` name the
+ * same physical produce in both item spaces without ever double-counting:
+ * this calls the SAME version-guarded `collectStackAcresUnit` a harvest
+ * calls, so the two race for one row and exactly one wins. A diverted cow is
+ * not a row the sweep skips -- it is a row the sweep no longer finds ready,
+ * which is why `harvestStackAcres` stays uniform (see
+ * lib/stackacres/machine-items.ts's header).
+ *
+ * No ceiling reservation, because nothing is paid: the ceiling bounds Gold
+ * leaving the farm, and the Gold this produce is eventually worth is bounded
+ * by it later, at the contract that pays for the finished goods.
+ *
+ * Ordered the way every settlement here is: the guarded write first, and the
+ * inventory credited only once it is confirmed. A lost race credits nothing.
+ */
+export async function divertStackAcresUnit(
+  token: string,
+  unitId: string,
+  now = new Date(),
+): Promise<StackAcresView & { diverted: { item: MachineRawItem; quantity: number } }> {
+  const profile = await ensureProfile(token);
+  const rows = await listStackAcresUnits(profile.id);
+  const row = rows.find((candidate) => candidate.id === unitId);
+
+  if (!row || row.status !== "working") {
+    throw new StackAcresRequestError("Nothing to collect here.", 404, {
+      round: toStackAcresUnitSnapshots(rows, now),
+    });
+  }
+  const produce = STACKACRES_YIELDS[row.stock];
+  if (!isMachineRawItem(produce.item)) {
+    throw new StackAcresRequestError("No machine takes that.", 400, {
+      round: toStackAcresUnitSnapshots(rows, now),
+    });
+  }
+  if (isStackAcresUnitHungry(row, now)) {
+    throw new StackAcresRequestError("Feed them first.", 409, {
+      round: toStackAcresUnitSnapshots(rows, now),
+    });
+  }
+  if (!isStackAcresUnitReady(row, now)) {
+    throw new StackAcresRequestError("Not ready yet.", 409, {
+      round: toStackAcresUnitSnapshots(rows, now),
+    });
+  }
+
+  // Identical to what a harvest does to this row, deliberately: mucking and
+  // restarting are properties of taking the produce, not of where it goes.
+  const muckFee = row.permanent ? null : rollMuck(row.stock);
+  const restartReadyAt = row.permanent
+    ? new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs)
+    : null;
+  const settled = await collectStackAcresUnit(row, now, muckFee, restartReadyAt);
+  if (!settled) {
+    // Lost the race to a harvest or a second tab. Whoever won it took the
+    // produce; nothing is credited here.
+    throw new StackAcresRequestError("That moved on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Rule 3: the yield snapshotted onto the row at stocking, never a re-read
+  // of the catalogue -- the same number a harvest would have valued.
+  //
+  // Credited only after the guarded write above is durable, and never
+  // retried: the settlement is already committed, and a retry that ran twice
+  // would credit twice, which is worse than a missing credit. Logged loudly
+  // and reported as nothing taken, the same posture `harvestStackAcres`'s own
+  // payout takes when its credit fails -- the response must not claim produce
+  // that is not in the inventory.
+  let credited = 0;
+  try {
+    await adjustStackAcresInventory(profile.id, produce.item, row.yieldQuantity);
+    credited = row.yieldQuantity;
+  } catch (error) {
+    console.error("stackacres.divert_credit_failed", {
+      profileId: profile.id,
+      unitId,
+      item: produce.item,
+      quantity: row.yieldQuantity,
+      error,
+    });
+  }
+
+  return {
+    ...(await view(profile, now)),
+    diverted: { item: produce.item, quantity: credited },
+  };
+}
+
+/**
+ * Runs one batch of a recipe for this player.
+ *
+ * TAKES A PROFILE ID, NOT A SESSION TOKEN, unlike every other exported action
+ * in this file. That is deliberate: this is the piece the atomicity argument
+ * lives in, and keeping authentication out of it means a test can drive the
+ * money-shaped path directly without minting a session.
+ * `processStackAcresRecipe` below is the token-taking wrapper the route uses,
+ * and it is the only caller that should exist.
+ *
+ * TWO PACINGS, one entry point (see lib/stackacres/recipes.ts's header):
+ *
+ *   - An INSTANT recipe (Dairy, Loom) settles in `process_homestead_recipe`:
+ *     the input debit and the output credit are one transaction, so there is
+ *     no window where the milk is gone and the cheese never arrived. No queue
+ *     row is written at all.
+ *   - A QUEUED recipe (Mill) debits the input, then starts the machine under
+ *     its version guard, snapshotting `recipe_id`/`units_processing` onto the
+ *     row. A lost start refunds the input, exactly as `workStackAcres` does.
+ *
+ * NO GOLD MOVES HERE, in either branch. Every input and output is inventory.
+ *
+ * `null` from the store is a REFUSAL, never a partial write -- it means the
+ * player did not have enough, checked under a row lock. That is answered as a
+ * 409 so the client can tell it apart from an ambiguous failure and roll its
+ * optimistic update back; see lib/stackacres/optimistic-recipe.ts.
+ */
+export interface ProcessRecipeResult {
+  recipe: RecipeId;
+  /** Set for an instant recipe: the byproduct is already in the inventory.
+   *  Null for a queued one, which has only just started. */
+  produced: { item: MachineProcessedItem; quantity: number } | null;
+  /** Set for a queued recipe: when `workStackAcres` will be able to collect
+   *  it. Null for an instant one, which has nothing to collect. */
+  readyAt: string | null;
+}
+
+export async function processRecipe(
+  profileId: string,
+  recipeId: RecipeId,
+  now = new Date(),
+): Promise<ProcessRecipeResult> {
+  const def = RECIPE_CATALOGUE[recipeId];
+
+  const machines = await listStackAcresMachines(profileId);
+  const machine = machines.find(
+    (candidate) => candidate.kind === def.machine && candidate.status === "idle",
+  );
+  if (!machine) {
+    const owned = machines.some((candidate) => candidate.kind === def.machine);
+    throw new StackAcresRequestError(
+      owned
+        ? `Your ${MACHINE_CATALOGUE[def.machine].label} is already running.`
+        : `You need a ${MACHINE_CATALOGUE[def.machine].label} for that.`,
+      409,
+    );
+  }
+
+  const shortfall = () =>
+    new StackAcresRequestError(
+      `Not enough. One batch takes ${machineItemLabel(def.input.item, def.input.quantity)}.`,
+      409,
+    );
+
+  if (isInstantRecipe(recipeId)) {
+    // One transaction: negative delta on the input under a row lock, then the
+    // positive delta on the byproduct. Null means the lock-guarded check
+    // refused and NOTHING was written.
+    const produced = await processStackAcresRecipe(profileId, def.input, def.output);
+    if (produced === null) throw shortfall();
+    return { recipe: recipeId, produced: { ...def.output }, readyAt: null };
+  }
+
+  // Rule 1: the input leaves inventory before the run that consumes it exists.
+  const afterDebit = await adjustStackAcresInventory(
+    profileId,
+    def.input.item,
+    -def.input.quantity,
+  );
+  if (afterDebit === null) throw shortfall();
+
+  const readyAt = new Date(now.getTime() + def.processingMs);
+  const started = await startStackAcresMachine(
+    machine,
+    now,
+    readyAt,
+    recipeId,
+    def.output.quantity,
+  );
+  if (!started) {
+    // Lost the race to start this exact machine; give the input back.
+    await adjustStackAcresInventory(profileId, def.input.item, def.input.quantity).catch(
+      () => null,
+    );
+    throw new StackAcresRequestError("That machine just started something else.", 409);
+  }
+
+  return { recipe: recipeId, produced: null, readyAt: readyAt.toISOString() };
+}
+
+/** The route's entry point: resolves the session, then runs `processRecipe`
+ *  and returns the refreshed view alongside what it made. */
+export async function processStackAcresRecipeAction(
+  token: string,
+  recipeInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { processed: ProcessRecipeResult }> {
+  if (!isRecipeId(recipeInput)) throw new StackAcresRequestError("Not a real recipe.", 400);
+  const profile = await ensureProfile(token);
+  const processed = await processRecipe(profile.id, recipeInput, now);
+  return { ...(await view(profile, now)), processed };
+}
+
 /** Posts a new open Town Contract, if this player does not already have one.
  *  Spends and moves nothing -- see lib/stackacres/contracts.ts's header for
  *  why there is ever only one. */
@@ -1787,7 +2039,26 @@ export async function requestStackAcresContract(
     });
   }
 
-  const def = drawContract(Math.random);
+  // Only ever ask for goods this farm has a machine for. With one open
+  // contract at a time and no way to cancel one, an unfulfillable contract is
+  // not a bad draw -- it is a permanent block on every future one. See
+  // lib/stackacres/contracts.ts's header.
+  const machines = await listStackAcresMachines(profile.id);
+  const producible = [
+    ...new Set(
+      machines.flatMap((machine) =>
+        recipesForMachine(machine.kind).map((recipe) => RECIPE_CATALOGUE[recipe].output.item),
+      ),
+    ),
+  ];
+  const def = drawContract(producible, Math.random);
+  if (!def) {
+    throw new StackAcresRequestError(
+      "The town has nothing to ask for yet. Place a machine first.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
   // A null here means a concurrent tab posted one first -- not an error, the
   // view below simply shows whichever one won.
   await createStackAcresContract(profile.id, def);

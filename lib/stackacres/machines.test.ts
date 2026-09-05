@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { canStartMachine, isMachineDone, machineProgress, MACHINE_CATALOGUE } from "./machines";
+import { canStartMachine, canStartRecipe, isMachineDone, machineProgress } from "./machines";
+import { RECIPE_CATALOGUE } from "./recipes";
 
 describe("canStartMachine", () => {
   it("requires the mill's full input batch, not just some of it", () => {
-    const def = MACHINE_CATALOGUE.mill;
+    const def = RECIPE_CATALOGUE.flour;
     expect(canStartMachine({ wheat: def.input.quantity - 1 }, "mill")).toBe(false);
     expect(canStartMachine({ wheat: def.input.quantity }, "mill")).toBe(true);
     expect(canStartMachine({ wheat: def.input.quantity + 5 }, "mill")).toBe(true);
+  });
+
+  it("does not confuse one machine's input for another's", () => {
+    // A Dairy full of milk says nothing about whether the Mill can run, and
+    // vice versa -- the pair is what would break if `canStartMachine` ever
+    // stopped filtering by the machine's own recipes.
+    expect(canStartMachine({ milk: 99 }, "mill")).toBe(false);
+    expect(canStartMachine({ wheat: 99 }, "dairy")).toBe(false);
+    expect(canStartMachine({ milk: RECIPE_CATALOGUE.cheese.input.quantity }, "dairy")).toBe(true);
+    expect(canStartMachine({ wool: RECIPE_CATALOGUE.cloth.input.quantity }, "loom")).toBe(true);
+  });
+});
+
+describe("canStartRecipe", () => {
+  it("reads the recipe's own input, not the machine's kind", () => {
+    expect(canStartRecipe({ wool: 3 }, "cloth")).toBe(false);
+    expect(canStartRecipe({ wool: 4 }, "cloth")).toBe(true);
   });
 });
 

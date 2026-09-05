@@ -22,6 +22,8 @@ import {
   workStackAcres,
   requestStackAcresContract,
   fulfillStackAcresTownContract,
+  divertStackAcresUnit,
+  processRecipe,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -43,6 +45,7 @@ import {
   readStackAcresUpkeep,
   recordStackAcresSectorCleared,
   reserveStackAcresExchange,
+  adjustStackAcresInventory,
 } from "./stackacres-store";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
@@ -87,7 +90,8 @@ import {
   WHEAT_SEED_COST,
   WHEAT_YIELD_QUANTITY,
 } from "@/lib/stackacres/wheat-plot";
-import { MACHINE_CAP, MACHINE_CATALOGUE } from "@/lib/stackacres/machines";
+import { MACHINE_CAP, MACHINE_CATALOGUE, MACHINE_KINDS } from "@/lib/stackacres/machines";
+import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
 
 // Passthrough by default; one test swaps createStackAcresUnit's next call for
 // a thrown error, standing in for the DB trigger raising (which the memory
@@ -1589,10 +1593,12 @@ describe("the currency wall", () => {
       "clear",
       "clear-sector",
       "collect",
+      "divert",
       "expand-capacity",
       "feed",
       "fulfill-contract",
       "place-machine",
+      "process",
       "request-contract",
       "retire",
       "sow-wheat",
@@ -1608,7 +1614,11 @@ describe("the currency wall", () => {
     // either spends it or moves no money at all -- `upgrade-tool` included,
     // which is a pure sink, and the critical harvest it buys is paid BY
     // `collect` out of the same reservation rather than being a third payer;
-    // `work` and `request-contract` included, which move inventory only.
+    // `work`, `process` and `request-contract` included, which move inventory
+    // only. `divert` is the interesting one and it is still not a payer: it
+    // takes a ready animal's produce into inventory INSTEAD of into a
+    // harvest, through the same version-guarded write `collect` uses, so it
+    // reduces what the farm pays out today rather than adding a way in.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");
@@ -2273,7 +2283,10 @@ describe("wheat and machines", () => {
 
   it("refuses and refunds once the machine cap is reached", async () => {
     const { token } = await funded();
-    for (let i = 0; i < MACHINE_CAP; i += 1) await placeStackAcresMachine(token, "mill", T0);
+    // One of each kind, which is exactly MACHINE_CAP of them -- a second Mill
+    // is refused before the total cap is ever the reason.
+    for (const kind of MACHINE_KINDS) await placeStackAcresMachine(token, kind, T0);
+    expect(MACHINE_KINDS).toHaveLength(MACHINE_CAP);
     const before = await balance(token);
     await expect(placeStackAcresMachine(token, "mill", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
@@ -2305,23 +2318,23 @@ describe("wheat and machines", () => {
     const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
     const ripe = await workStackAcres(token, ripenedAt);
     expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0 });
-    expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - MACHINE_CATALOGUE.mill.input.quantity);
+    expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - RECIPE_CATALOGUE.flour.input.quantity);
     expect(ripe.machines[0].status).toBe("working");
     expect(ripe.wheatPlots).toHaveLength(0);
 
     // Not done yet: another pass mid-run changes nothing.
     const midRun = await workStackAcres(
       token,
-      new Date(ripenedAt.getTime() + MACHINE_CATALOGUE.mill.processingMs - 1),
+      new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs - 1),
     );
     expect(midRun.work.machinesCollected).toBe(0);
     expect(midRun.inventory.flour ?? 0).toBe(0);
 
     // Done: the run settles into Flour, and the mill goes back to idle.
-    const finishedAt = new Date(ripenedAt.getTime() + MACHINE_CATALOGUE.mill.processingMs);
+    const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
     const done = await workStackAcres(token, finishedAt);
     expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1 });
-    expect(done.inventory.flour).toBe(MACHINE_CATALOGUE.mill.output.quantity);
+    expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
     expect(done.machines[0].status).toBe("idle");
   });
 
@@ -2330,7 +2343,7 @@ describe("wheat and machines", () => {
     await placeStackAcresMachine(token, "mill", T0);
     // One wheat plot yields fewer than the mill's own input requirement, so
     // it must sit in inventory rather than starting a run.
-    expect(WHEAT_YIELD_QUANTITY).toBeLessThan(MACHINE_CATALOGUE.mill.input.quantity * 2);
+    expect(WHEAT_YIELD_QUANTITY).toBeLessThan(RECIPE_CATALOGUE.flour.input.quantity * 2);
     const view = await workStackAcres(token, new Date(T0.getTime() + WHEAT_DURATION_MS));
     expect(view.machines[0].status).toBe("idle");
   });
@@ -2341,21 +2354,21 @@ describe("Town Contracts", () => {
    *  holding, regardless of which rung was drawn. */
   async function stockpileFlour(token: string, flour: number, at = T0): Promise<Date> {
     let now = at;
-    await placeStackAcresMachine(token, "mill", now);
     let made = 0;
     while (made < flour) {
       await sowStackAcresWheat(token, now);
       now = new Date(now.getTime() + WHEAT_DURATION_MS);
       await workStackAcres(token, now); // collects wheat, starts the mill
-      now = new Date(now.getTime() + MACHINE_CATALOGUE.mill.processingMs);
+      now = new Date(now.getTime() + RECIPE_CATALOGUE.flour.processingMs);
       await workStackAcres(token, now); // collects the run into inventory
-      made += MACHINE_CATALOGUE.mill.output.quantity;
+      made += RECIPE_CATALOGUE.flour.output.quantity;
     }
     return now;
   }
 
   it("posts one open contract and refuses a second while one is open", async () => {
     const { token } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
     const view = await requestStackAcresContract(token, T0);
     expect(view.contract).not.toBeNull();
     expect(view.contract!.status).toBe("open");
@@ -2365,6 +2378,7 @@ describe("Town Contracts", () => {
 
   it("fulfilling pays Gold and Influence, deducts the goods, and closes the contract", async () => {
     const { token } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
     const opened = await requestStackAcresContract(token, T0);
     const contract = opened.contract!;
     const now = await stockpileFlour(token, contract.quantity, T0);
@@ -2384,6 +2398,7 @@ describe("Town Contracts", () => {
 
   it("refuses fulfilment without enough of the goods on hand, spending nothing", async () => {
     const { token } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
     await requestStackAcresContract(token, T0);
     const before = await balance(token);
     await expect(fulfillStackAcresTownContract(token, T0)).rejects.toBeInstanceOf(
@@ -2394,6 +2409,7 @@ describe("Town Contracts", () => {
 
   it("refuses when the day's Gold ceiling has no room, and refunds the goods it had already taken", async () => {
     const { token, id } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
     const opened = await requestStackAcresContract(token, T0);
     const contract = opened.contract!;
     const now = await stockpileFlour(token, contract.quantity, T0);
@@ -2412,5 +2428,197 @@ describe("Town Contracts", () => {
     const after = await readStackAcres(token, now);
     expect(after.inventory.flour).toBe(contract.quantity);
     expect(after.contract?.status).toBe("open");
+  });
+});
+
+describe("recipes", () => {
+  /** A ready animal, seeded straight into the store.
+   *
+   *  Going through `stockStackAcres` and waiting would mean feeding a cow
+   *  three times across its 24-hour cycle, which is a test about hunger, not
+   *  about recipes. `lastFedAt` is set to `readyAt` so the unit is ready and
+   *  not hungry at exactly the moment these tests act on it. */
+  async function readyAnimal(id: string, stock: "cattle" | "pig", at = T0) {
+    return createStackAcresUnit(id, {
+      stock,
+      stake: STACKACRES_CATALOGUE[stock].seedCost,
+      yieldQuantity: STACKACRES_YIELDS[stock].quantity,
+      startedAt: new Date(at.getTime() - STACKACRES_CATALOGUE[stock].durationMs),
+      readyAt: at,
+      lastFedAt: at,
+      lastWateredAt: null,
+      permanent: false,
+    });
+  }
+
+  describe("divert", () => {
+    it("takes an animal's produce into the inventory and pays no Gold for it", async () => {
+      const { token, id } = await funded();
+      const unit = await readyAnimal(id, "cattle");
+      const before = await balance(token);
+
+      const result = await divertStackAcresUnit(token, unit.id, T0);
+
+      expect(result.diverted).toEqual({ item: "milk", quantity: STACKACRES_YIELDS.cattle.quantity });
+      expect(result.inventory.milk).toBe(STACKACRES_YIELDS.cattle.quantity);
+      // THE WHOLE SAFETY ARGUMENT: diverting REMOVES Gold from the farm's day
+      // rather than adding to it, so it needs no ceiling reservation.
+      expect(await balance(token)).toBe(before);
+    });
+
+    it("settles the same row a harvest would, so the two cannot both take it", async () => {
+      const { token, id } = await funded();
+      const unit = await readyAnimal(id, "pig");
+      await divertStackAcresUnit(token, unit.id, T0);
+
+      // The harvest no longer finds a ready row -- it is not skipping one.
+      await expect(harvestStackAcres(token, { unitIds: [unit.id] }, T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+      const after = await readStackAcres(token, T0);
+      expect(after.inventory.wool).toBe(STACKACRES_YIELDS.pig.quantity);
+    });
+
+    it("refuses produce no machine takes, leaving the unit standing", async () => {
+      const { token } = await funded();
+      const view = await stockStackAcres(token, { stock: "hen" }, T0);
+      const unitId = unitOf(view, "hen").id;
+      await expect(divertStackAcresUnit(token, unitId, HEN_READY)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+      const after = await readStackAcres(token, HEN_READY);
+      expect(unitOf(after, "hen").state).toBe("ready");
+    });
+
+    it("refuses a unit that is not ready yet", async () => {
+      const { token } = await funded();
+      const view = await stockStackAcres(token, { stock: "cattle" }, T0);
+      await expect(
+        divertStackAcresUnit(token, unitOf(view, "cattle").id, T0),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+    });
+  });
+
+  describe("processRecipe", () => {
+    it("converts in one step for an instant recipe, and moves no Gold", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "dairy", T0);
+      await adjustStackAcresInventory(id, "milk", 7);
+      const before = await balance(token);
+
+      const result = await processRecipe(id, "cheese", T0);
+
+      expect(result.produced).toEqual(RECIPE_CATALOGUE.cheese.output);
+      expect(result.readyAt).toBeNull();
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.milk).toBe(7 - RECIPE_CATALOGUE.cheese.input.quantity);
+      expect(view.inventory.cheese).toBe(RECIPE_CATALOGUE.cheese.output.quantity);
+      // No queue row: an instant recipe leaves the machine idle.
+      expect(view.machines[0].status).toBe("idle");
+      expect(await balance(token)).toBe(before);
+    });
+
+    it("refuses short of a full batch and spends nothing", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "loom", T0);
+      await adjustStackAcresInventory(id, "wool", RECIPE_CATALOGUE.cloth.input.quantity - 1);
+
+      await expect(processRecipe(id, "cloth", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      // The refusal is the whole point: the input is still there, untouched.
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.wool).toBe(RECIPE_CATALOGUE.cloth.input.quantity - 1);
+      expect(view.inventory.cloth ?? 0).toBe(0);
+    });
+
+    it("refuses without the machine the recipe needs, even with the input on hand", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "milk", 99);
+      await expect(processRecipe(id, "cheese", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+      const view = await readStackAcres(token, T0);
+      expect(view.inventory.milk).toBe(99);
+    });
+
+    it("enqueues a queued recipe onto the machine, snapshotting what it will pay", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await adjustStackAcresInventory(id, "wheat", 5);
+
+      const result = await processRecipe(id, "flour", T0);
+      expect(result.produced).toBeNull();
+      expect(result.readyAt).toBe(
+        new Date(T0.getTime() + RECIPE_CATALOGUE.flour.processingMs).toISOString(),
+      );
+
+      const running = await readStackAcres(token, T0);
+      expect(running.machines[0].status).toBe("working");
+      expect(running.machines[0].recipeId).toBe("flour");
+      expect(running.machines[0].unitsProcessing).toBe(RECIPE_CATALOGUE.flour.output.quantity);
+      // Rule 1: the input left before the run that consumes it existed.
+      expect(running.inventory.wheat).toBe(5 - RECIPE_CATALOGUE.flour.input.quantity);
+      expect(running.inventory.flour ?? 0).toBe(0);
+
+      // And `work` collects it, off the row's own snapshot.
+      const done = await workStackAcres(
+        token,
+        new Date(T0.getTime() + RECIPE_CATALOGUE.flour.processingMs),
+      );
+      expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
+      expect(done.machines[0].status).toBe("idle");
+      expect(done.machines[0].recipeId).toBeNull();
+    });
+
+    it("refuses a second batch while the machine is still running the first", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await adjustStackAcresInventory(id, "wheat", 99);
+      await processRecipe(id, "flour", T0);
+
+      await expect(processRecipe(id, "flour", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+      const view = await readStackAcres(token, T0);
+      // Only the first batch's input was taken.
+      expect(view.inventory.wheat).toBe(99 - RECIPE_CATALOGUE.flour.input.quantity);
+    });
+
+    it("never auto-starts an instant recipe from the worker pass", async () => {
+      // A Dairy is a choice, not a queue. If `work` started one on a poll, a
+      // player's milk would vanish into cheese they never asked for.
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "dairy", T0);
+      await adjustStackAcresInventory(id, "milk", 99);
+
+      const result = await workStackAcres(token, T0);
+      expect(result.work.machinesStarted).toBe(0);
+      expect(result.inventory.milk).toBe(99);
+      expect(result.inventory.cheese ?? 0).toBe(0);
+    });
+  });
+
+  describe("the whole loop", () => {
+    it("carries a cow's milk through a Dairy to a fulfilled Cheese contract", async () => {
+      const { token, id } = await funded();
+      await placeStackAcresMachine(token, "dairy", T0);
+
+      // Enough cows for the largest Cheese rung.
+      for (let i = 0; i < 4; i += 1) {
+        const unit = await readyAnimal(id, "cattle");
+        await divertStackAcresUnit(token, unit.id, T0);
+      }
+
+      const opened = await requestStackAcresContract(token, T0);
+      const contract = opened.contract!;
+      expect(contract.item).toBe("cheese");
+
+      while ((await readStackAcres(token, T0)).inventory.cheese ?? 0 < contract.quantity) {
+        const held = (await readStackAcres(token, T0)).inventory.cheese ?? 0;
+        if (held >= contract.quantity) break;
+        await processRecipe(id, "cheese", T0);
+      }
+
+      const before = await balance(token);
+      const result = await fulfillStackAcresTownContract(token, T0);
+      expect(await balance(token)).toBe(before + contract.goldReward);
+      expect(result.contract).toBeNull();
+    });
   });
 });

@@ -17,6 +17,7 @@ import {
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
+import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -1434,6 +1435,57 @@ export async function adjustStackAcresInventory(
   return data === null ? null : Number(data);
 }
 
+/**
+ * Runs one batch of an INSTANT recipe: the raw input leaves and the byproduct
+ * arrives in a single database transaction.
+ *
+ * WHY THIS IS NOT TWO CALLS TO `adjustStackAcresInventory`. That pair is what
+ * a queued machine run uses, and it is a debit followed, on failure, by a
+ * compensating refund -- which is only as good as the refund actually
+ * landing. An instant tap has no run to guard it and no `work` pass coming
+ * along behind it, so the two deltas have to be one commit or the player can
+ * lose milk to a hiccup between them. `process_homestead_recipe` also folds
+ * the sufficiency check into the debit's own WHERE clause, under a row lock,
+ * so two taps arriving together cannot both spend the same milk.
+ *
+ * Returns the byproduct's new total, or null when there was not enough input
+ * -- the same "null is a refusal or a lost race, and must never be treated as
+ * a successful spend" contract every other write in this file carries.
+ */
+export async function processStackAcresRecipe(
+  profileId: string,
+  input: { item: MachineItemId; quantity: number },
+  output: { item: MachineProcessedItem; quantity: number },
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    // Memory mode has no transaction, but it also has no concurrency: the
+    // whole store is one process's Map, and nothing yields between these two
+    // lines. Checking before either write is what keeps it equivalent.
+    const inputKey = `${profileId}:${input.item}`;
+    const held = memoryInventory.get(inputKey) ?? 0;
+    if (held < input.quantity) return null;
+    const outputKey = `${profileId}:${output.item}`;
+    const total = (memoryInventory.get(outputKey) ?? 0) + output.quantity;
+    memoryInventory.set(inputKey, held - input.quantity);
+    memoryInventory.set(outputKey, total);
+    return total;
+  }
+
+  const { data, error } = await supabase.rpc("process_homestead_recipe", {
+    p_profile_id: profileId,
+    p_input_item: input.item,
+    p_input_quantity: input.quantity,
+    p_output_item: output.item,
+    p_output_quantity: output.quantity,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not run that recipe: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
 /* ------------------------------------------------------------------ */
 /* Machines                                                            */
 /* ------------------------------------------------------------------ */
@@ -1443,7 +1495,8 @@ export interface StoredMachine extends StackAcresMachineRow {
   createdAt: string;
 }
 
-const MACHINE_COLUMNS = "id, profile_id, kind, status, started_at, ready_at, version, created_at";
+const MACHINE_COLUMNS =
+  "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, version, created_at";
 
 interface MachineDbRow {
   id: string;
@@ -1452,6 +1505,8 @@ interface MachineDbRow {
   status: string;
   started_at: string | null;
   ready_at: string | null;
+  recipe_id: string | null;
+  units_processing: number | string | null;
   version: number | string;
   created_at: string;
 }
@@ -1464,6 +1519,11 @@ function machineFromRow(row: MachineDbRow): StoredMachine {
     status: row.status === "working" ? "working" : "idle",
     startedAt: row.started_at ? String(row.started_at) : null,
     readyAt: row.ready_at ? String(row.ready_at) : null,
+    // A row written before 20260904170000 and still working reads as a Mill
+    // batch of Flour, which is what it is -- the migration backfills exactly
+    // that, and this fallback only matters if that backfill were ever missed.
+    recipeId: row.recipe_id && isRecipeId(row.recipe_id) ? row.recipe_id : null,
+    unitsProcessing: Number(row.units_processing ?? 0),
     version: Number(row.version),
     createdAt: String(row.created_at),
   };
@@ -1518,6 +1578,11 @@ export async function createStackAcresMachine(
   const now = new Date().toISOString();
 
   if (!supabase) {
+    if ([...memoryMachines.values()].some((m) => m.profileId === profileId && m.kind === kind)) {
+      // Mirrors homestead_machines_one_per_kind. Memory mode has no unique
+      // index, so the check lives here or the two modes disagree.
+      throw new Error("You already have one of those.");
+    }
     const machine: StoredMachine = {
       id: randomUUID(),
       profileId,
@@ -1525,6 +1590,8 @@ export async function createStackAcresMachine(
       status: "idle",
       startedAt: null,
       readyAt: null,
+      recipeId: null,
+      unitsProcessing: 0,
       version: 1,
       createdAt: now,
     };
@@ -1549,6 +1616,8 @@ export async function startStackAcresMachine(
   current: StoredMachine,
   startedAt: Date,
   readyAt: Date,
+  recipeId: RecipeId,
+  unitsProcessing: number,
 ): Promise<StoredMachine | null> {
   const supabase = adminClient();
   const version = current.version + 1;
@@ -1561,6 +1630,8 @@ export async function startStackAcresMachine(
       status: "working",
       startedAt: startedAt.toISOString(),
       readyAt: readyAt.toISOString(),
+      recipeId,
+      unitsProcessing,
       version,
     };
     memoryMachines.set(current.id, { ...updated });
@@ -1573,6 +1644,8 @@ export async function startStackAcresMachine(
       status: "working",
       started_at: startedAt.toISOString(),
       ready_at: readyAt.toISOString(),
+      recipe_id: recipeId,
+      units_processing: unitsProcessing,
       version,
     })
     .eq("id", current.id)
@@ -1611,6 +1684,8 @@ export async function collectStackAcresMachine(
       status: "idle",
       startedAt: null,
       readyAt: null,
+      recipeId: null,
+      unitsProcessing: 0,
       version,
     };
     memoryMachines.set(current.id, { ...updated });
@@ -1619,7 +1694,14 @@ export async function collectStackAcresMachine(
 
   const { data, error } = await supabase
     .from("homestead_machines")
-    .update({ status: "idle", started_at: null, ready_at: null, version })
+    .update({
+      status: "idle",
+      started_at: null,
+      ready_at: null,
+      recipe_id: null,
+      units_processing: 0,
+      version,
+    })
     .eq("id", current.id)
     .eq("version", current.version)
     .eq("status", "working")

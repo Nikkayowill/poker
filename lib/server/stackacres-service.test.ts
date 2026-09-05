@@ -1670,8 +1670,10 @@ describe("the currency wall", () => {
     // irreversibly, for a permanent multiplier on every future `collect`.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
-    expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");
-    expect(ROUTE).toContain("fulfillStackAcresTownContract(token)");
+    // `, now` on both: Chrono-DeLorean Mode threads a resolved `now` through
+    // every action (lib/server/chrono-delorean.ts), the two payers included.
+    expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds }, now)");
+    expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
     // Both payers reserve against the exact same daily ceiling -- this is
     // the property that makes a second payer safe rather than a second
     // faucet. See lib/stackacres/exchange.ts. (STACKACRES_GOLD_CEILING is a

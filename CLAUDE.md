@@ -43,6 +43,7 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
   because those land under whoever else is mid-task rather than staying local. Reads are always fine;
   `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
+- **When running 10+ parallel Claude sessions:** Each agent must work in its own worktree to avoid merge conflicts and lost work. Coordinate task scope ahead of time to prevent overlapping file edits. Check `git worktree list` before starting new work — if another session is active on overlapping code, wait for it to finish or communicate explicitly. The shared-tree guard (rule above) will block branch-level operations, but only worktrees prevent concurrent edits to the same files.
 - Commit messages and PR descriptions: short and plain, like a person telling a coworker what
   changed. No em-dashes, no comma-chained "did X, Y, and Z" example lists. Say what changed and why
   in a sentence or two, not an essay. New code comments get the same treatment: a short "why" where

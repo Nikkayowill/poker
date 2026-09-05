@@ -1224,6 +1224,39 @@
 
 .sa-harvest-all .sa-ico { width: 22px; height: 22px; }
 
+/* The day-capped stand-in for the Harvest key: same spot, but a parchment
+   sign rather than a corn block, since it informs rather than invites a press.
+   Wraps to two lines on a narrow phone instead of pushing past the safe area. */
+.sa-harvest-capped {
+  position: absolute;
+  left: 50%;
+  bottom: calc(10px + var(--sa-tap) + 12px);
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(78vw, 360px);
+  min-height: var(--sa-tap);
+  margin: 0;
+  padding: 8px 16px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-frame), var(--sa-drop);
+  color: var(--sa-ink-soft);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.sa-harvest-capped .sa-ico {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
 .sa-panel-tab {
   position: absolute;
   top: 50%;

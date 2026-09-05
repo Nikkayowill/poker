@@ -42,9 +42,17 @@
  * CSS as `--vp-short` so the handful of rules that touch the bottom edge can
  * subtract it.
  *
+ * HOW IT IS APPLIED. As a `translateY` on the two bars, never as a negative
+ * `bottom`. A fixed element whose box hangs below the initial containing
+ * block gets composited badly by WebKit and visibly flickers; a transform is
+ * a compositor offset that moves the same pixels without changing layout at
+ * all. Both spellings put the bar in the same place, and only one of them is
+ * steady.
+ *
  * It is self-cancelling in every healthy case: in a browser, on a device with
  * no shortfall, and on the same device after a rotation has corrected it,
- * the measurement is 0 and every `calc()` that reads it is a no-op.
+ * the measurement is 0, `translateY(0px)` is the identity, and every rule
+ * that reads it is a no-op.
  */
 
 import { useEffect } from "react";
@@ -88,31 +96,55 @@ function measure(): number {
 
 export function ViewportFit() {
   useEffect(() => {
-    const apply = () => {
-      document.documentElement.style.setProperty("--vp-short", `${measure()}px`);
+    // Last value written. Setting a custom property on the root element
+    // invalidates style for the whole document, so the write is skipped
+    // whenever the measurement has not actually moved. Without this the app
+    // visibly stuttered: the handlers below can fire many times a second and
+    // every one of them was paying a full restyle to set the same number.
+    let written: number | null = null;
+    let frame = 0;
+
+    const write = () => {
+      frame = 0;
+      const next = measure();
+      if (next === written) return;
+      written = next;
+      document.documentElement.style.setProperty("--vp-short", `${next}px`);
     };
 
-    apply();
+    // Coalesced to one measurement per frame: a rotation fires resize and
+    // orientationchange together, and reading layout once per event rather
+    // than once per frame is how a correction turns into jank.
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(write);
+    };
+
+    write();
     // The launch measurement is the wrong one and WebKit corrects itself a
     // little later without always firing an event we hear about, so re-read
-    // across the settle window rather than trusting the first value.
-    const timers = [80, 300, 900, 2000].map((ms) => window.setTimeout(apply, ms));
+    // across the settle window rather than trusting the first value. Cheap,
+    // because `write` is a no-op once the value stops moving.
+    const timers = [80, 300, 900, 2000].map((ms) => window.setTimeout(write, ms));
 
-    // And on anything that is or follows a real bounds change -- a rotation
-    // being the one the player already knows fixes it. `pageshow` covers a
-    // resume from the back/forward cache, which is how an installed app
-    // usually comes back rather than through a fresh load.
-    window.addEventListener("resize", apply);
-    window.addEventListener("orientationchange", apply);
-    window.addEventListener("pageshow", apply);
-    window.visualViewport?.addEventListener("resize", apply);
+    // Deliberately NOT visualViewport's resize. That one fires continuously --
+    // on every scroll frame, and right through the software keyboard's open
+    // and close animation -- while reporting a height that moves for reasons
+    // that have nothing to do with this bug. Subscribing to it is what made
+    // the app stutter. `resize` and `orientationchange` are the real bounds
+    // changes, and `pageshow` covers a resume from the back/forward cache,
+    // which is how an installed app usually comes back rather than through a
+    // fresh load.
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+    window.addEventListener("pageshow", schedule);
 
     return () => {
       timers.forEach(window.clearTimeout);
-      window.removeEventListener("resize", apply);
-      window.removeEventListener("orientationchange", apply);
-      window.removeEventListener("pageshow", apply);
-      window.visualViewport?.removeEventListener("resize", apply);
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+      window.removeEventListener("pageshow", schedule);
     };
   }, []);
 

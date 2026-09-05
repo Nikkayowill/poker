@@ -1111,9 +1111,14 @@ button:disabled { cursor: wait; opacity: .62; }
   position: fixed;
   left: 0;
   right: 0;
-  /* Reaches into the strip below a short layout viewport so the bar rests
-     on the real bottom edge rather than partway up the glass. */
-  bottom: calc(0px - var(--vp-short));
+  bottom: 0;
+  /* Reaches into the strip below a short layout viewport so the bar rests on
+     the real bottom edge rather than partway up the glass. A transform rather
+     than a negative `bottom`: a fixed box hanging below the containing block
+     flickers under WebKit's compositor, and this moves the same pixels with
+     no layout change at all. translateY(0px) when there is nothing to correct,
+     which is everywhere but an installed iOS app that launched short. */
+  transform: translateY(var(--vp-short));
   z-index: 2;
   display: flex;
   justify-content: center;

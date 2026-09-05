@@ -670,7 +670,10 @@
        both put the pill 44px off the edge. 20px is the floor for anything
        reporting no inset, which is what keeps it reading as floating on
        Android and on a narrow desktop window. */
-    bottom: calc(max(var(--safe-bottom), 20px) - var(--vp-short));
+    bottom: max(var(--safe-bottom), 20px);
+    /* Same correction and the same reasoning as .entry-footer's in
+       04-lobby.css -- a transform, not a negative offset. */
+    transform: translateY(var(--vp-short));
     z-index: var(--z-status-overlay);
     padding: 0 4px;
     border-radius: var(--radius-pill);

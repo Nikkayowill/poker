@@ -30,6 +30,8 @@ import {
   fulfillStackAcresTownContract,
   divertStackAcresUnit,
   processRecipe,
+  getPrestigeMultiplier,
+  prestigeResetStackAcres,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -55,7 +57,14 @@ import {
   recordStackAcresSectorCleared,
   reserveStackAcresExchange,
   adjustStackAcresInventory,
+  recordStackAcresHarvest,
+  adjustStackAcresCapacity,
+  createStackAcresMachine,
 } from "./stackacres-store";
+import {
+  STACKACRES_PRESTIGE_BASE_MULTIPLIER,
+  STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
+} from "@/lib/stackacres/prestige";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
   STACKACRES_BASE_CAP,
@@ -1626,6 +1635,7 @@ describe("the currency wall", () => {
       "fulfill-contract",
       "midnight-merchant-buy",
       "place-machine",
+      "prestige-reset",
       "process",
       "request-contract",
       "retire",
@@ -1666,6 +1676,8 @@ describe("the currency wall", () => {
     // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
     // -- never against STACKACRES_GOLD_CEILING, because spending is not a
     // payout and the ceiling only ever bounds Gold leaving the farm.
+    // `prestige-reset` moves no Gold either; what it moves is the whole grid,
+    // irreversibly, for a permanent multiplier on every future `collect`.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds })");
@@ -3096,5 +3108,143 @@ describe("Synergy Tree", () => {
       roll.mockRestore();
     }
     expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
+  });
+});
+
+/**
+ * The Prestige Reset Valve.
+ *
+ * `giveLifetimeGross` seeds `homestead_harvests` directly rather than running
+ * enough real harvests to earn it -- the arithmetic that turns gross into a
+ * multiplier is already pinned exhaustively in prestige.test.ts, and what
+ * these tests are actually about is the SERVICE-LEVEL contract: eligibility
+ * gating through the real action, which tables a reset sweeps versus leaves
+ * alone, and that a harvest AFTER a reset is actually priced under the new
+ * multiplier -- the one seam prestige.test.ts and harvest.test.ts cannot see
+ * on their own, since neither reaches across into the other's module.
+ */
+async function giveLifetimeGross(profileId: string, gross: number): Promise<void> {
+  await recordStackAcresHarvest({
+    profileId,
+    unitId: randomUUID(),
+    stock: "cattle",
+    stake: 1,
+    payout: gross,
+    startedAt: T0.toISOString(),
+    collectedAt: T0.toISOString(),
+    permanent: false,
+  });
+}
+
+describe("getPrestigeMultiplier", () => {
+  it("is the base multiplier for a profile that has never reset", async () => {
+    const { id } = await funded();
+    expect(await getPrestigeMultiplier(id)).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
+  });
+});
+
+describe("prestigeResetStackAcres", () => {
+  it("refuses when the farm has not grossed enough since the last reset, and changes nothing", async () => {
+    const { token, id } = await funded();
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS - 1);
+    await stockStackAcres(token, { stock: "sprout" }, T0);
+
+    await expect(prestigeResetStackAcres(token, T0)).rejects.toThrow(StackAcresRequestError);
+
+    expect(await getPrestigeMultiplier(id)).toBe(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
+    expect(await listStackAcresUnits(id)).toHaveLength(1);
+  });
+
+  it("raises the permanent multiplier and reports what it gained, once eligible", async () => {
+    const { token, id } = await funded();
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
+
+    const result = await prestigeResetStackAcres(token, T0);
+
+    expect(result.prestigeReset.prestigeCount).toBe(1);
+    expect(result.prestigeReset.gainedMultiplier).toBeGreaterThan(0);
+    expect(result.prestigeReset.multiplier).toBeCloseTo(
+      STACKACRES_PRESTIGE_BASE_MULTIPLIER + result.prestigeReset.gainedMultiplier,
+      4,
+    );
+    expect(result.prestige.multiplier).toBe(result.prestigeReset.multiplier);
+    expect(await getPrestigeMultiplier(id)).toBe(result.prestigeReset.multiplier);
+  });
+
+  it("refuses a second reset immediately after the first, since no new gross has been earned", async () => {
+    const { token, id } = await funded();
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
+    const first = await prestigeResetStackAcres(token, T0);
+
+    await expect(prestigeResetStackAcres(token, T0)).rejects.toThrow(StackAcresRequestError);
+    expect(await getPrestigeMultiplier(id)).toBe(first.prestigeReset.multiplier);
+  });
+
+  it("clears the grid and every resource stockpile riding on it", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "sprout" }, T0);
+    await sowStackAcresWheat(token, T0);
+    await buyStackAcresFeed(token, "feed_sack", T0);
+    await createStackAcresMachine(id, MACHINE_KINDS[0]);
+    await requestStackAcresContract(token, T0);
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
+
+    const before = await readStackAcres(token, T0);
+    expect(before.units.length).toBeGreaterThan(0);
+    expect(before.wheatPlots.length).toBeGreaterThan(0);
+    expect(before.feed).toBeGreaterThan(0);
+    expect(before.contract).not.toBeNull();
+    // funded()'s default settled:true already pre-paid today's Land
+    // Maintenance in full -- the non-zero figure a reset has to sweep away.
+    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(T0))).toBeGreaterThan(0);
+
+    const after = await prestigeResetStackAcres(token, T0);
+
+    expect(after.units).toHaveLength(0);
+    expect(after.wheatPlots).toHaveLength(0);
+    expect(after.feed).toBe(0);
+    expect(after.contract).toBeNull();
+    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(T0))).toBe(0);
+  });
+
+  it("leaves land, purchased capacity, placed machines, Ray's Museum and Town Influence untouched", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresCapacity(id, "hen", 1);
+    await createStackAcresMachine(id, MACHINE_KINDS[0]);
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
+
+    const before = await readStackAcres(token, T0);
+    const after = await prestigeResetStackAcres(token, T0);
+
+    expect(after.sectors.sort()).toEqual(before.sectors.sort());
+    expect(after.capacity.hen).toBe(1);
+    expect(after.machines).toHaveLength(1);
+    expect(after.museum).toEqual(before.museum);
+    expect(after.influence).toBe(before.influence);
+  });
+
+  it("prices the next harvest under the new multiplier", async () => {
+    // No extra land cleared: a reset wipes today's Land Maintenance payment
+    // right alongside the grid it was charged against, and re-clearing the
+    // whole ladder (funded()'s own default) would recompute a real bill the
+    // very next harvest has to pay off before this test's arithmetic could
+    // hold. A hen-only farm never leaves the free base regardless.
+    const { token, id } = await funded(500_000, { land: [] });
+    await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
+    const { prestigeReset } = await prestigeResetStackAcres(token, T0);
+    expect(prestigeReset.multiplier).toBeGreaterThan(STACKACRES_PRESTIGE_BASE_MULTIPLIER);
+
+    // Starting tool tier (trowel) has a 0% crit chance and every item is
+    // pre-donated by funded()'s default, so `gold` here is exactly the
+    // boosted, un-bonused, un-critted single-unit gross -- nothing else is
+    // in play to make this non-deterministic. Hen, not cattle: a hen's short
+    // cycle finishes well inside its own hunger window (the same reason
+    // every other single-unit collect in this file uses HEN_READY directly,
+    // with no feed in between), where cattle's day-long cycle would not.
+    const stocked = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    const unitId = unitOf(stocked, "hen").id;
+    const result = await collectOne(token, unitId, HEN_READY);
+
+    expect(result.harvest.gold).toBe(Math.floor(yieldValue("hen") * prestigeReset.multiplier));
   });
 });

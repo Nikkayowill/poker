@@ -18,6 +18,12 @@ import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
+import {
+  computePrestigeGain,
+  STACKACRES_PRESTIGE_DEFAULT_STATE,
+  type StackAcresPrestigeGain,
+  type StackAcresPrestigeState,
+} from "@/lib/stackacres/prestige";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -79,6 +85,7 @@ declare global {
   var __riverRoomStackAcresContracts: Map<string, StoredContract> | undefined;
   var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
+  var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -169,6 +176,13 @@ const memoryStackAcresSecretLedger =
   globalThis.__riverRoomStackAcresSecretLedger ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresSecretLedger = memoryStackAcresSecretLedger;
 
+/** The Prestige Reset Valve's permanent state, keyed by profileId. A missing
+ *  entry means "never reset" -- see STACKACRES_PRESTIGE_DEFAULT_STATE --
+ *  which needs no backfill, the same convention memoryTool's missing-entry
+ *  (the free starting Trowel) already follows. */
+const memoryPrestige = globalThis.__riverRoomStackAcresPrestige ?? new Map<string, StackAcresPrestigeState>();
+globalThis.__riverRoomStackAcresPrestige = memoryPrestige;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -187,6 +201,7 @@ export function __resetStackAcresForTest(): void {
   memoryContracts.clear();
   memoryInfluence.clear();
   memoryStackAcresSecretLedger.clear();
+  memoryPrestige.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -1991,4 +2006,150 @@ export async function adjustStackAcresInfluence(profileId: string, delta: number
   });
   if (error) throw new Error(`Could not update your standing in town: ${error.message}`);
   return Number(data);
+}
+
+/* ------------------------------------------------------------------ */
+/* Prestige Reset Valve                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The permanent multiplier state for one profile. A profile that has never
+ * pulled the valve has no row at all -- returned as
+ * STACKACRES_PRESTIGE_DEFAULT_STATE (multiplier 1, count 0), needing no
+ * backfill, the same convention `readStackAcresToolTier`'s missing-row-means-
+ * the-free-starting-rung already follows.
+ */
+export async function readStackAcresPrestige(profileId: string): Promise<StackAcresPrestigeState> {
+  const supabase = adminClient();
+  if (!supabase) return memoryPrestige.get(profileId) ?? STACKACRES_PRESTIGE_DEFAULT_STATE;
+
+  const { data, error } = await supabase
+    .from("homestead_prestige_state")
+    .select("prestige_count, multiplier, lifetime_gross_at_reset")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your prestige standing: ${error.message}`);
+  if (!data) return STACKACRES_PRESTIGE_DEFAULT_STATE;
+
+  const row = data as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string };
+  return {
+    prestigeCount: Number(row.prestige_count),
+    multiplier: Number(row.multiplier),
+    lifetimeGrossAtReset: Number(row.lifetime_gross_at_reset),
+  };
+}
+
+/**
+ * The read-only counterpart to what `resetStackAcresPrestige` computes
+ * internally: every Gold this profile's farm has ever grossed, across every
+ * reset. A read, never a write -- this exists so the client can render "how
+ * much further to the next reset" without pulling the valve to find out.
+ *
+ * Aggregated in the database (stackacres_lifetime_gross), not by fetching
+ * every homestead_harvests row for this profile and summing in Node: this is
+ * called on every farm-view load, and the ledger only ever grows.
+ */
+export async function readStackAcresLifetimeGross(profileId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return memoryHarvests
+      .filter((entry) => entry.profileId === profileId)
+      .reduce((total, entry) => total + entry.payout, 0);
+  }
+
+  const { data, error } = await supabase.rpc("stackacres_lifetime_gross", { p_profile_id: profileId });
+  if (error) throw new Error(`Could not read your farm's history: ${error.message}`);
+  return Number(data ?? 0);
+}
+
+/**
+ * Pulls the valve: wipes the grid and every resource stockpile riding on it,
+ * and raises the permanent multiplier by what the profile's gross farm
+ * production since the last reset actually earned. See
+ * 20260905140000_stackacres_prestige_reset.sql's own header for exactly
+ * which tables this sweeps and which it deliberately leaves untouched (land
+ * cleared, purchased capacity, placed machines, Synergy Tree perks, the
+ * museum registries and Town Influence all survive -- none of them is a
+ * memory-mode analog this function needs to sweep here either).
+ *
+ * Returns `eligible: false` rather than throwing when there is not enough
+ * gross yet -- a refusal here is an ordinary outcome the caller renders as
+ * copy, not a failure, the same convention `unlock_stackacres_perk` uses on
+ * the SQL side for "already_owned".
+ */
+export async function resetStackAcresPrestige(profileId: string): Promise<StackAcresPrestigeGain> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const current = memoryPrestige.get(profileId) ?? STACKACRES_PRESTIGE_DEFAULT_STATE;
+    const totalGross = memoryHarvests
+      .filter((entry) => entry.profileId === profileId)
+      .reduce((total, entry) => total + entry.payout, 0);
+    const gain = computePrestigeGain(current, totalGross);
+    if (!gain.eligible) return gain;
+
+    memoryPrestige.set(profileId, {
+      prestigeCount: current.prestigeCount + 1,
+      multiplier: gain.nextMultiplier,
+      lifetimeGrossAtReset: totalGross,
+    });
+
+    // THE SWEEP, memory-mode twin of the migration's DELETE statements.
+    // Unconditional on profileId alone, same reasoning as the SQL side: a
+    // permanent (Gold-bought) unit is grid state and does not survive a
+    // prestige, unlike the tables this function does not touch above.
+    //
+    // No memoryPlots/memoryHomesteadInventory entry is cleared here, and
+    // that is not an omission: this file never modeled either table in
+    // memory mode in the first place (see this file's own top-of-file
+    // header on why `homestead_plots` and the barn-era `homestead_inventory`
+    // are both left "untouched and unread from here on"), so there is
+    // nothing to sweep. `memoryInventory` below is this file's stand-in for
+    // `homestead_processing_inventory` (the Mill's wheat/flour store, a
+    // wholly different table despite the similar name) and IS cleared.
+    // The SQL side's compliance mirror into `homestead_inventory`
+    // (`prestige_multiplier_bp`, see the migration's own COMPLIANCE
+    // ADDENDUM) has no memory-mode counterpart for the same reason: it is a
+    // write-only record satisfying an external directive against a table
+    // this codebase already treats as dead, nothing anywhere reads it back,
+    // and fabricating a memory map solely to hold it would be complexity
+    // with no observable effect on a profile running without Supabase.
+    for (const [id, unit] of memoryUnits) if (unit.profileId === profileId) memoryUnits.delete(id);
+    for (const [id, plot] of memoryWheatPlots) if (plot.profileId === profileId) memoryWheatPlots.delete(id);
+    for (const key of [...memoryInventory.keys()]) {
+      if (key.startsWith(`${profileId}:`)) memoryInventory.delete(key);
+    }
+    memoryFeed.delete(profileId);
+    for (const key of [...memoryUpkeep.keys()]) {
+      if (key.startsWith(`${profileId}:`)) memoryUpkeep.delete(key);
+    }
+    for (const [id, contract] of memoryContracts) {
+      if (contract.profileId === profileId && contract.status === "open") memoryContracts.delete(id);
+    }
+
+    return gain;
+  }
+
+  const { data, error } = await supabase
+    .rpc("reset_stackacres_prestige", { p_profile_id: profileId })
+    .maybeSingle();
+  if (error) throw new Error(`Could not pull the prestige valve: ${error.message}`);
+  if (!data) throw new Error("Could not pull the prestige valve: the database returned nothing.");
+
+  const row = data as {
+    success: boolean;
+    reason: string;
+    prestige_count: number | string;
+    multiplier: number | string;
+    gained_multiplier: number | string;
+    eligible_gross: number | string;
+  };
+
+  return {
+    eligible: row.success,
+    reason: row.success ? "reset" : "not_enough_lifetime_gross",
+    eligibleGross: Number(row.eligible_gross),
+    gainedMultiplier: Number(row.gained_multiplier),
+    nextMultiplier: Number(row.multiplier),
+  };
 }

@@ -39,6 +39,7 @@ import {
   processStackAcresRecipeAction,
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
+  prestigeResetStackAcres,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -100,6 +101,12 @@ export const runtime = "nodejs";
  * unrefunded Gold spend. Keeping cleared land then costs a daily fee, which no
  * action here asks for -- it comes off what a harvest pays, automatically (see
  * lib/stackacres/upkeep.ts).
+ *
+ * `prestige-reset` moves no Gold either, and is not like `work`/`divert`'s
+ * "inventory only" either: it is the one action with no undo, trading the
+ * whole grid and every stockpile riding on it for a permanent multiplier on
+ * every future `collect`. See prestigeResetStackAcres's own header
+ * (lib/server/stackacres-service.ts) for exactly what it sweeps.
  *
  * No `version` field in any action: each handler reads the live row itself
  * and the guarded write settles at most once, so a stale client gets a 409
@@ -239,6 +246,19 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("midnight-merchant-buy"),
     itemId: z.enum(MIDNIGHT_MERCHANT_ITEM_IDS as unknown as [string, ...string[]]),
   }),
+  // The Prestige Reset Valve. Moves no Gold; wipes the grid and every
+  // resource stockpile riding on it in exchange for a permanent harvest
+  // multiplier -- see prestigeResetStackAcres's own header. `confirm: true`
+  // is required at the wire level, not just in the client's own dual-
+  // confirmation UI: this is the one action here with no undo, so the
+  // request body itself has to say the caller meant it, the same way a
+  // destructive CLI flag is spelled out rather than implied by the verb
+  // alone. The client is also expected to always send `key` for this action
+  // even though the schema leaves it optional for every action -- see
+  // runStackAcresAction's own header for why an intent key is what makes a
+  // duplicated request safe for an action with no row of its own to
+  // version-guard, exactly the category this one is in.
+  z.object({ action: z.literal("prestige-reset"), confirm: z.literal(true) }),
 ]);
 
 /**
@@ -313,6 +333,8 @@ function run(token: string, action: StackAcresAction) {
       return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount);
     case "midnight-merchant-buy":
       return buyFromMidnightMerchant(token, action.itemId);
+    case "prestige-reset":
+      return prestigeResetStackAcres(token);
   }
 }
 

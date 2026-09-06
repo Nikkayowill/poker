@@ -1863,7 +1863,10 @@ export function StackAcresFarm() {
     [sectors],
   );
 
-  const closeRadial = useCallback(() => setRadial(null), []);
+  const closeRadial = useCallback(() => {
+    panelSound();
+    setRadial(null);
+  }, []);
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
   // both go away rather than drift off what they were opened on.
@@ -2551,13 +2554,13 @@ export function StackAcresFarm() {
           />
 
           <div className="sa-camera" role="group" aria-label="Map view">
-            <button type="button" className="sa-camera-btn" aria-label="Zoom in" onClick={() => world.current?.zoomBy(1.3)}>
+            <button type="button" className="sa-camera-btn" aria-label="Zoom in" onClick={() => { panelSound(); world.current?.zoomBy(1.3); }}>
               <ZoomIn size={16} aria-hidden="true" />
             </button>
-            <button type="button" className="sa-camera-btn" aria-label="Zoom out" onClick={() => world.current?.zoomBy(1 / 1.3)}>
+            <button type="button" className="sa-camera-btn" aria-label="Zoom out" onClick={() => { panelSound(); world.current?.zoomBy(1 / 1.3); }}>
               <ZoomOut size={16} aria-hidden="true" />
             </button>
-            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { setPlace("farmstead"); setRadial(null); world.current?.recenter(); }}>
+            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { panelSound(); setPlace("farmstead"); setRadial(null); world.current?.recenter(); }}>
               <LocateFixed size={16} aria-hidden="true" />
             </button>
           </div>

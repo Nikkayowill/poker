@@ -167,8 +167,11 @@ import {
   createStackAcresContract,
   createStackAcresMachine,
   createStackAcresWheatPlot,
+  createStackAcresVatManifest,
   collectStackAcresMachine,
+  collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
+  readStackAcresVatManifest,
   fulfillStackAcresContract as settleStackAcresContract,
   listStackAcresMachines,
   listStackAcresWheatPlots,
@@ -249,6 +252,16 @@ import {
   type StackAcresMachineSnapshot,
 } from "@/lib/stackacres/machines";
 import {
+  VAT_INPUT_ITEM,
+  VAT_INPUT_QUANTITY,
+  baseGoldValueForSeal,
+  firstAgingTier,
+  toVatContainer,
+  vatTierForElapsed,
+  agedGoldValue,
+  type VatContainer,
+} from "@/lib/stackacres/aging";
+import {
   SYNERGY_PERKS,
   applySynergyEffects,
   isSynergyArchetype,
@@ -291,6 +304,12 @@ import {
   startBlueprintForProfile,
   type BlueprintView,
 } from "./stackacres-blueprint-service";
+import {
+  evaluateStackAcresShopLock,
+  stackacresShopLockRefusal,
+  type StackAcresShopLock,
+  type StackAcresShopProgress,
+} from "@/lib/stackacres/shop-locks";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -531,6 +550,10 @@ export interface StackAcresView {
    *  now). A SEPARATE mechanic from `devotion` above -- see
    *  lib/stackacres/friendship.ts's own header. */
   friendship: Record<NpcId, StackAcresFriendshipView>;
+  /** The Fermenting Vat: null until the player has placed one (see
+   *  `machines`, kind `"vat"`), otherwise its current seal (if any) and what
+   *  each tier of it is worth. See lib/stackacres/aging.ts. */
+  vat: VatContainer | null;
 }
 
 /**
@@ -703,6 +726,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     soilStock,
     storedDevotion,
     storedFriendships,
+    vatManifest,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -740,6 +764,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
     // this array literal would widen every sibling element's inferred type.
     Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
+    readStackAcresVatManifest(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -755,6 +780,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   });
   const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
   const sectors = unlockedSectors(cleared, units);
+  const vatMachine = machineRows.find((machine) => machine.kind === "vat") ?? null;
+  const vat = vatMachine ? toVatContainer(vatMachine, vatManifest, now) : null;
   return {
     units,
     profile,
@@ -802,6 +829,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     soilStock,
     devotion: devotionView(storedDevotion, now),
     friendship,
+    vat,
   };
 }
 
@@ -933,6 +961,16 @@ export type StackAcresActionResult = StackAcresView & {
     outcome: "gifted" | "already-gifted-today" | "insufficient-item";
     grantedKeepsake: KeepsakeId | null;
   };
+  /** Set by `collectStackAcresVat` to what THIS collection just paid --
+   *  never named `vat`, which is StackAcresView's own always-present current
+   *  standing and would collide with it in this intersection. */
+  vatCollected?: {
+    quantity: number;
+    tier: 1 | 2 | 3;
+    stars: 1 | 2 | 3;
+    multiplier: number;
+    gold: number;
+  };
 };
 
 /**
@@ -955,6 +993,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
   if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
+  if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -1071,6 +1110,61 @@ async function readLand(
     listStackAcresUnits(profileId),
   ]);
   return { sectors: unlockedSectors(cleared, units), units };
+}
+
+/**
+ * What Ray's shop is allowed to know about this farm before it sells
+ * anything -- see lib/stackacres/shop-locks.ts.
+ *
+ * Three reads, in parallel, rather than the whole `view()`: a gate check runs
+ * BEFORE the Gold moves and `view()` runs after it, so building the entire
+ * farm twice per purchase to answer one boolean would double the cost of
+ * every shelf button on the screen. Deliberately narrow for a second reason
+ * too -- a progress struct that cannot see the purse cannot accidentally
+ * become a second place that decides whether somebody can afford something.
+ *
+ * Land comes through `readLand` above rather than by unioning the cleared
+ * rows and the units here. That is the whole point: a second, subtly
+ * different idea of which land is yours is the one bug this gate cannot
+ * afford, so there is exactly one place that derivation is written.
+ */
+async function readShopProgress(profileId: string): Promise<StackAcresShopProgress> {
+  const [{ sectors }, influence, greenhouseBuilt] = await Promise.all([
+    readLand(profileId),
+    readStackAcresInfluence(profileId),
+    readStackAcresGreenhouse(profileId),
+  ]);
+  return { sectors, influence, greenhouseBuilt };
+}
+
+/**
+ * Refuses a purchase the farm has not unlocked yet, before a piece of Gold
+ * moves.
+ *
+ * THIS IS THE SECURITY BOUNDARY, not the greyed-out card. The shelf disables
+ * a locked row, but the shelf is a browser: a hand-rolled POST, a tab left
+ * open across a prestige reset, or a replayed request all arrive here with a
+ * perfectly well-formed body naming a real item. So the check sits on the
+ * near side of `spendGoldByProfile` in every gated path -- refusing after the
+ * debit would mean a refund, and a refund is a second money path where a
+ * plain "no" will do.
+ *
+ * Costs nothing on an ungated row, and nothing extra on a row that passes:
+ * the reads are skipped outright when the entry carries no lock, and the
+ * refusal's snapshot is only built once there is actually a refusal to send.
+ * Most of Ray's shelf is ungated and must not pay for this.
+ */
+async function requireUnlockedShopEntry(
+  entry: StackAcresShopLock & { label: string },
+  profileId: string,
+  now: Date,
+): Promise<void> {
+  if (!entry.requiredQuestFlag && !entry.minimumMilestone) return;
+  const state = evaluateStackAcresShopLock(entry, await readShopProgress(profileId));
+  if (state.isUnlocked) return;
+  throw new StackAcresRequestError(stackacresShopLockRefusal(entry.label, state), 409, {
+    round: await snapshots(profileId, now),
+  });
 }
 
 /** Refuses an action aimed at land nobody has cleared yet. The client hides
@@ -1298,6 +1392,11 @@ export async function upgradeStackAcresTool(
       round: await snapshots(profile.id, now),
     });
   }
+
+  // Before the money, not after it. The rung the ladder offers next is the
+  // only one this request can name (see the doc comment above), so the gate
+  // has exactly one entry to evaluate and no index off the wire to trust.
+  await requireUnlockedShopEntry(stackacresToolTierDef(next), profile.id, now);
 
   // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
   // spendGoldByProfile is the authority.
@@ -1637,6 +1736,11 @@ export async function buyStackAcresFeed(
   const item = STACKACRES_FEED[itemId];
   if (!item) throw new StackAcresRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
+
+  // The shelf greys this row out, and that is presentation; this is the
+  // check. `itemId` came off the wire, so a request naming the Bulk Shipment
+  // from a farm that has never seen the Fold reaches exactly here and stops.
+  await requireUnlockedShopEntry(item, profile.id, now);
 
   // Rule 1: the Gold leaves before the servings land.
   const debited = await spendGoldByProfile(profile.id, item.cost);
@@ -2721,6 +2825,173 @@ export async function placeStackAcresMachine(
   }
 
   return view(debited, now);
+}
+
+/** The player's own Fermenting Vat, or a 404 -- every seal/collect action
+ *  needs this first, and the message is the same whichever one asked. */
+async function requireVatMachine(profileId: string, now: Date) {
+  const machines = await listStackAcresMachines(profileId);
+  const vat = machines.find((machine) => machine.kind === "vat");
+  if (!vat) {
+    throw new StackAcresRequestError("Place a Fermenting Vat first.", 404, {
+      round: await snapshots(profileId, now),
+    });
+  }
+  return vat;
+}
+
+/**
+ * Seals a fresh batch inside the player's vat: `VAT_INPUT_QUANTITY` Cheese
+ * leaves inventory and is locked inside a new `AgingManifest`, both in one
+ * database transaction (`seal_homestead_vat`) -- see that migration's own
+ * header for why this cannot be a debit followed by a separate insert.
+ *
+ * ONE SEAL AT A TIME, same posture as Town Contracts' one-open-contract rule:
+ * the database's own `homestead_vat_manifests_one_per_machine` unique index
+ * is the real guard against two racing calls both sealing the same vat, and
+ * this function checks ahead of the debit only for a clean 409 -- the same
+ * "check first for a nice error, guarded write is the real gate" shape
+ * `placeStackAcresMachine` takes above.
+ *
+ * `baseGoldValueForSeal` prices the batch OFF THE LIVE RECIPE TABLE, but only
+ * ONCE, right here -- the value it returns is written straight into the
+ * manifest and never re-read at collection. See aging.ts's header for why
+ * that snapshot is load-bearing.
+ */
+export async function sealStackAcresVat(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const vat = await requireVatMachine(profile.id, now);
+
+  const existing = await readStackAcresVatManifest(profile.id);
+  if (existing) {
+    throw new StackAcresRequestError("The vat is already sealed.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const baseGoldValue = baseGoldValueForSeal();
+  if (baseGoldValue === null) {
+    // Cannot happen for cheese today (milk always prices on the Gold track),
+    // but the vat must refuse to seal a batch it cannot value rather than
+    // seal one worth nothing -- see aging.ts's own comment on this return.
+    throw new StackAcresRequestError("The vat cannot price that right now.", 500, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const sealedAt = now;
+  const readyAt = new Date(now.getTime() + firstAgingTier().durationMs);
+
+  const manifest = await createStackAcresVatManifest(
+    profile.id,
+    vat.id,
+    VAT_INPUT_ITEM,
+    VAT_INPUT_QUANTITY,
+    baseGoldValue,
+    sealedAt,
+    readyAt,
+  );
+  if (manifest === null) {
+    throw new StackAcresRequestError(
+      `Sealing the vat takes ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  return view(profile, now);
+}
+
+/**
+ * Collects whatever tier the sealed batch has reached and pays for it.
+ *
+ * MONEY ORDERING, the same four steps `fulfillStackAcresTownContract` runs,
+ * in the same order and for the same reason (see its own header): (1) the
+ * value is computed and reserved against the SAME flat daily
+ * `STACKACRES_GOLD_CEILING` a harvest and a contract both respect -- BEFORE
+ * the manifest is settled, so a full day refuses while the batch is still
+ * sealed rather than after it is gone; (2) the manifest is deleted under a
+ * once-only guard; (3) Gold is credited only once that delete is confirmed
+ * durable; any refusal along the way releases the reservation it took.
+ */
+export async function collectStackAcresVat(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  await requireVatMachine(profile.id, now);
+
+  const manifest = await readStackAcresVatManifest(profile.id);
+  if (!manifest) {
+    throw new StackAcresRequestError("Nothing is sealed in the vat.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const elapsedMs = now.getTime() - Date.parse(manifest.sealedAt);
+  const tier = vatTierForElapsed(elapsedMs);
+  if (!tier) {
+    throw new StackAcresRequestError(
+      "Still aging. Come back once it reaches Aged quality.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+  const gold = agedGoldValue(manifest.baseGoldValue, tier);
+
+  // Step 1: reserve against the harvest's own ceiling, before the manifest
+  // is settled.
+  const day = stackacresExchangeDay(now);
+  let reserved = 0;
+  if (gold > 0) {
+    const taken = await reserveStackAcresExchange(profile.id, day, gold, STACKACRES_GOLD_CEILING);
+    if (taken === null) {
+      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
+      throw new StackAcresRequestError(
+        state.remaining > 0
+          ? `The town can pay out ${state.remaining.toLocaleString()} more Gold today, and this batch is worth ${gold.toLocaleString()}. Come back after midnight UTC.`
+          : "This farm has sent out all the Gold it can today. The vat keeps until midnight UTC.",
+        409,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    reserved = gold;
+  }
+
+  // Step 2: settle the manifest itself, exactly once.
+  const settled = await collectStackAcresVatManifest(manifest, now);
+  if (!settled) {
+    await releaseStackAcresExchange(profile.id, day, reserved).catch(() => null);
+    throw new StackAcresRequestError("That batch was already collected.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Step 3: pay, only now that step 2 is durable.
+  let paid: PlayerProfile | null = null;
+  if (gold > 0) {
+    try {
+      paid = await creditGoldByProfile(profile.id, gold);
+    } catch (error) {
+      console.error("stackacres.vat_credit_failed", {
+        profileId: profile.id,
+        manifestId: manifest.id,
+        gold,
+        error,
+      });
+    }
+  }
+
+  return {
+    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    vatCollected: {
+      quantity: manifest.quantity,
+      tier: tier.tier,
+      stars: tier.stars,
+      multiplier: tier.multiplier,
+      gold,
+    },
+  };
 }
 
 /**

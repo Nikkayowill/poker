@@ -49,6 +49,8 @@ import {
   removeStackAcresSoilTile,
   prayAtStackAcresShrine,
   giveStackAcresGift,
+  sealStackAcresVat,
+  collectStackAcresVat,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -213,6 +215,12 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
+  // inside the vat's own manifest; `collect-vat` is the one action here that
+  // pays -- through the same daily ceiling `fulfill-contract` does. See
+  // lib/server/stackacres-service.ts's sealStackAcresVat/collectStackAcresVat.
+  z.object({ action: z.literal("seal-vat") }),
+  z.object({ action: z.literal("collect-vat") }),
   // Hidden secrets: three small discovery spots, one collectible. See
   // lib/server/stackacres-service.ts's own "Hidden secrets" section --
   // `tap-secret-zone` moves no Gold at all, and neither do the other three;
@@ -407,6 +415,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token, now);
+    case "seal-vat":
+      return sealStackAcresVat(token, now);
+    case "collect-vat":
+      return collectStackAcresVat(token, now);
     case "tap-secret-zone":
       return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":

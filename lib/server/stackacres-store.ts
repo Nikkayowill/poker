@@ -18,6 +18,7 @@ import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
+import type { AgingManifest } from "@/lib/stackacres/aging";
 import {
   computePrestigeGain,
   STACKACRES_PRESTIGE_DEFAULT_STATE,
@@ -83,6 +84,7 @@ declare global {
   var __riverRoomStackAcresWheatPlots: Map<string, StoredWheatPlot> | undefined;
   var __riverRoomStackAcresInventory: Map<string, number> | undefined;
   var __riverRoomStackAcresMachines: Map<string, StoredMachine> | undefined;
+  var __riverRoomStackAcresVatManifests: Map<string, StoredVatManifest> | undefined;
   var __riverRoomStackAcresContracts: Map<string, StoredContract> | undefined;
   var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
@@ -156,6 +158,12 @@ globalThis.__riverRoomStackAcresInventory = memoryInventory;
 /** Machines, keyed by row id. */
 const memoryMachines = globalThis.__riverRoomStackAcresMachines ?? new Map<string, StoredMachine>();
 globalThis.__riverRoomStackAcresMachines = memoryMachines;
+
+/** Fermenting Vat manifests, keyed by machine id -- at most one per vat,
+ *  mirroring `homestead_vat_manifests_one_per_machine`. */
+const memoryVatManifests =
+  globalThis.__riverRoomStackAcresVatManifests ?? new Map<string, StoredVatManifest>();
+globalThis.__riverRoomStackAcresVatManifests = memoryVatManifests;
 
 /** Contracts, keyed by row id. */
 const memoryContracts = globalThis.__riverRoomStackAcresContracts ?? new Map<string, StoredContract>();
@@ -1971,6 +1979,183 @@ export async function collectStackAcresMachine(
     .maybeSingle();
   if (error) throw new Error(`Could not collect that machine's run: ${error.message}`);
   return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fermenting Vat                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface StoredVatManifest extends AgingManifest {
+  id: string;
+  profileId: string;
+  machineId: string;
+  version: number;
+  createdAt: string;
+}
+
+const VAT_MANIFEST_COLUMNS =
+  "id, profile_id, machine_id, item, quantity, base_gold_value, sealed_at, ready_at, version, created_at";
+
+interface VatManifestDbRow {
+  id: string;
+  profile_id: string;
+  machine_id: string;
+  item: string;
+  quantity: number | string;
+  base_gold_value: number | string;
+  sealed_at: string;
+  ready_at: string;
+  version: number | string;
+  created_at: string;
+}
+
+function vatManifestFromRow(row: VatManifestDbRow): StoredVatManifest {
+  return {
+    id: String(row.id),
+    profileId: String(row.profile_id),
+    machineId: String(row.machine_id),
+    // Only "cheese" exists today (VAT_INPUT_ITEM); a row can never carry
+    // anything else, since seal_homestead_vat's own CHECK constraint and
+    // this store's write path both fix it. isMachineProcessedItem narrows
+    // the type without inventing a fallback item nothing actually produced.
+    item: isMachineProcessedItem(row.item) ? row.item : "cheese",
+    quantity: Number(row.quantity),
+    baseGoldValue: Number(row.base_gold_value),
+    sealedAt: String(row.sealed_at),
+    readyAt: String(row.ready_at),
+    version: Number(row.version),
+    createdAt: String(row.created_at),
+  };
+}
+
+/** The manifest currently sealed inside this player's vat, or null when it is
+ *  empty. At most one row can ever exist per profile today -- a player has
+ *  at most one vat machine (`homestead_machines_one_per_kind`), and at most
+ *  one manifest per machine (`homestead_vat_manifests_one_per_machine`). */
+export async function readStackAcresVatManifest(profileId: string): Promise<StoredVatManifest | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    for (const manifest of memoryVatManifests.values()) {
+      if (manifest.profileId === profileId) return { ...manifest };
+    }
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_vat_manifests")
+    .select(VAT_MANIFEST_COLUMNS)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read the vat: ${error.message}`);
+  return data ? vatManifestFromRow(data as VatManifestDbRow) : null;
+}
+
+/**
+ * Debits `quantity` of `item` and locks it inside `machineId`'s manifest, in
+ * one transaction (`seal_homestead_vat`). Returns the new manifest, or null
+ * when there was not enough `item` on hand -- the caller treats null exactly
+ * like `adjustStackAcresInventory`'s own null: a refusal or a lost race,
+ * never a successful seal.
+ *
+ * Can also lose the race to a second concurrent seal of the SAME vat (the
+ * database's own `homestead_vat_manifests_one_per_machine` unique index);
+ * that surfaces as a thrown 23505, which the caller treats the same way
+ * `createStackAcresContract` already treats its own partial unique index --
+ * refund the debit this call just made, then report a normal refusal.
+ */
+export async function createStackAcresVatManifest(
+  profileId: string,
+  machineId: string,
+  item: MachineProcessedItem,
+  quantity: number,
+  baseGoldValue: number,
+  sealedAt: Date,
+  readyAt: Date,
+): Promise<StoredVatManifest | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    // Memory mode has no transaction, but also no concurrency between these
+    // two lines -- same reasoning processStackAcresRecipe's own memory
+    // branch gives for checking the debit before either write lands.
+    if ([...memoryVatManifests.values()].some((m) => m.machineId === machineId)) {
+      throw new Error("That vat is already sealed.");
+    }
+    const key = `${profileId}:${item}`;
+    const held = memoryInventory.get(key) ?? 0;
+    if (held < quantity) return null;
+    memoryInventory.set(key, held - quantity);
+    const manifest: StoredVatManifest = {
+      id: randomUUID(),
+      profileId,
+      machineId,
+      item,
+      quantity,
+      baseGoldValue,
+      sealedAt: sealedAt.toISOString(),
+      readyAt: readyAt.toISOString(),
+      version: 1,
+      createdAt: new Date().toISOString(),
+    };
+    memoryVatManifests.set(machineId, { ...manifest });
+    return { ...manifest };
+  }
+
+  const { data, error } = await supabase.rpc("seal_homestead_vat", {
+    p_profile_id: profileId,
+    p_machine_id: machineId,
+    p_item: item,
+    p_quantity: quantity,
+    p_base_gold_value: baseGoldValue,
+    p_sealed_at: sealedAt.toISOString(),
+    p_ready_at: readyAt.toISOString(),
+  });
+  if (error) {
+    if (error.code === "23514") return null; // Not enough input on hand.
+    throw new Error(`Could not seal the vat: ${error.message}`); // Includes 23505, a lost race.
+  }
+  return data ? vatManifestFromRow(data as VatManifestDbRow) : null;
+}
+
+/**
+ * Collects a sealed manifest, once. Guarded on version and on the
+ * database's own `ready_at` (the earliest tier), the same three-part shape
+ * `collectStackAcresWheatPlot` uses -- a lost race, a stale version, or a
+ * call before the first tier clears all return null, and null must never
+ * credit Gold. Deletes the row outright: a vat manifest is single-use, the
+ * same "collected means gone" contract a wheat plot's row already carries,
+ * never an update back to some "idle" state the way a Mill's run resets to.
+ */
+export async function collectStackAcresVatManifest(
+  current: StoredVatManifest,
+  now: Date,
+): Promise<StoredVatManifest | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const stored = memoryVatManifests.get(current.machineId);
+    if (
+      !stored ||
+      stored.id !== current.id ||
+      stored.version !== current.version ||
+      Date.parse(stored.readyAt) > now.getTime()
+    ) {
+      return null;
+    }
+    memoryVatManifests.delete(current.machineId);
+    return { ...stored };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_vat_manifests")
+    .delete()
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .lte("ready_at", now.toISOString())
+    .select(VAT_MANIFEST_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not collect the vat: ${error.message}`);
+  return data ? vatManifestFromRow(data as VatManifestDbRow) : null;
 }
 
 /* ------------------------------------------------------------------ */

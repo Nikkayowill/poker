@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { ChevronLeft, Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, Coins, HelpCircle, LocateFixed, Lock, X, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -137,6 +137,8 @@ import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
+import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
+import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
@@ -155,6 +157,10 @@ import {
   toolUpgradePrice,
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
+import {
+  evaluateStackAcresShopLock,
+  type StackAcresShopProgress,
+} from "@/lib/stackacres/shop-locks";
 import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actions";
 import {
@@ -465,6 +471,18 @@ export function StackAcresFarm() {
         grantedRelic: RelicId | null;
       };
   const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
+  /**
+   * The fence-upgrade popup: opened by `onWorldFenceSegmentTap`, closed by
+   * "Not now", the next world tap (`onViewMoved`), or a successful upgrade.
+   * Unlike the monk dialogue, it holds no separate "result" phase -- a
+   * successful upgrade just closes it, since there is nothing more to say
+   * once the fence line is already whichever tier a re-tap would show.
+   */
+  const [fencePopup, setFencePopup] = useState<
+    | { zone: ZoneId; segmentIndex: number; at: TapPoint; tier: FenceTier; durability: number; version: number }
+    | null
+  >(null);
+  const [fenceUpgradeBusy, setFenceUpgradeBusy] = useState(false);
   // NPC friendship. Seeded to a fresh player's own answer for every NPC that
   // has one -- the same "fresh player" seed devotion above uses -- rather
   // than an empty object, so a render before the first read lands never has
@@ -875,6 +893,20 @@ export function StackAcresFarm() {
   useEffect(() => {
     unitsRef.current = units;
   }, [units]);
+
+  /**
+   * The held equipment rung, read the same way `unitsRef` is and for the same
+   * reason: `act` needs it to name the multiple a crit just paid ("CRIT! x2"),
+   * and it is the only plain VALUE that callback wants. Held in a ref rather
+   * than added to its dependency list so buying an upgrade does not give the
+   * dispatch a new identity -- every other entry in that list is a stable
+   * callback, and this is the file's own convention for a value `act` reads
+   * without depending on.
+   */
+  const toolTierRef = useRef(toolTier);
+  useEffect(() => {
+    toolTierRef.current = toolTier;
+  }, [toolTier]);
 
   const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
     if (data.profile) setProfile(data.profile);
@@ -1332,6 +1364,18 @@ export function StackAcresFarm() {
               text: `Rich pickings! +${harvest.crit.toLocaleString()} Gold`,
               nonce: Date.now(),
             });
+            // And the world's own answer to it, on the unit that got lucky:
+            // the crit flash names the exact multiple the ladder just paid.
+            // `1 + critBonus` rather than `critBonus`, because the label reads
+            // as a TOTAL ("CRIT! x2" for the Golden Spade's bonus of 1) -- see
+            // `critFlashLabel`. A whole-farm sweep has no single unit to hang
+            // this on, so it keeps the toast alone.
+            if (single) {
+              world.current?.celebrateCrit(
+                single,
+                1 + stackacresToolTierDef(toolTierRef.current).critBonus,
+              );
+            }
           }
           // Ray's Museum, secret wing: its own toast, never folded into the
           // money line above -- a secret find pays no Gold at all, so it has
@@ -1513,6 +1557,97 @@ export function StackAcresFarm() {
   }, [act]);
 
   /* ---------------------------------------------------------------- */
+  /* Wildlife Ecosystem & Nighttime Predator Defense                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A finger landed on one bay of a district's own fence line. Reads that
+   * bay's current tier/durability/version fresh (rather than trusting
+   * whatever the live simulation last saw) before opening the popup, so a
+   * stale client can never offer an upgrade against a version the server
+   * has already moved past.
+   *
+   * A SEPARATE fetch from `act`, deliberately: this feature's route
+   * (`/api/stackacres/defense`) answers in a different shape than
+   * `StackAcresResponse`, and folding it into `act`'s response handling
+   * would mean teaching that one large function a second response contract
+   * for a feature with no Gold/unit-list side effects of its own.
+   */
+  const onWorldFenceSegmentTap = useCallback((zone: ZoneId, segmentIndex: number, at: TapPoint) => {
+    setRadial(null);
+    setMonkDialogue(null);
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/stackacres/defense?zone=${zone}&segmentIndex=${segmentIndex}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok || !mounted.current) return;
+        const data = (await response.json()) as {
+          segment?: { tier: FenceTier; durability: number; version: number };
+        };
+        if (!data.segment) return;
+        setFencePopup({
+          zone,
+          segmentIndex,
+          at,
+          tier: data.segment.tier,
+          durability: data.segment.durability,
+          version: data.segment.version,
+        });
+      } catch {
+        // A failed read just means the popup does not open -- nothing was
+        // asked of the server, so there is nothing to undo.
+      }
+    })();
+  }, []);
+
+  /** The only path that ever sends `upgrade-fence`. On success, pushes the
+   *  new tier straight into the live simulation (`setFenceTier`) so a
+   *  predator testing that bay a moment later already sees it, rather than
+   *  waiting on a reload. On a lost race (409, someone else's tap landed
+   *  first), the response still carries the segment as it now stands --
+   *  the popup re-renders from that truth instead of just erroring. */
+  const onUpgradeFence = useCallback(() => {
+    if (!fencePopup) return;
+    const { zone, segmentIndex, version, at } = fencePopup;
+    setFenceUpgradeBusy(true);
+    void (async () => {
+      try {
+        const response = await fetch("/api/stackacres/defense", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upgrade-fence", zone, segmentIndex, version }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          segment?: { tier: FenceTier; durability: number; version: number };
+          error?: string;
+        };
+        if (!mounted.current) return;
+        if (!response.ok) {
+          refusedSound();
+          if (data.segment) {
+            world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
+            setFencePopup({ zone, segmentIndex, at, ...data.segment });
+          }
+          setError(data.error ?? "Could not upgrade that fence.");
+          return;
+        }
+        if (data.segment) {
+          world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
+        }
+        panelSound();
+        setFencePopup(null);
+      } catch {
+        if (mounted.current) setError("Could not upgrade that fence.");
+      } finally {
+        if (mounted.current) setFenceUpgradeBusy(false);
+      }
+    })();
+  }, [fencePopup]);
+
+  /* ---------------------------------------------------------------- */
   /* NPC friendship                                                     */
   /* ---------------------------------------------------------------- */
 
@@ -1670,6 +1805,7 @@ export function StackAcresFarm() {
   const onViewMoved = useCallback(() => {
     setRadial(null);
     setMonkDialogue(null);
+    setFencePopup(null);
     setGiftDialogue(null);
   }, []);
 
@@ -2061,6 +2197,13 @@ export function StackAcresFarm() {
   useEffect(() => {
     setAmbiencePlace(place, tod);
   }, [place, tod]);
+  // Wildlife Ecosystem & Nighttime Predator Defense reads the SAME `tod`
+  // ambience already computes, rather than polling `timeOfDay()` a second
+  // time -- see wildlife.ts's own header for why the two must never be
+  // able to disagree about whether it is night.
+  useEffect(() => {
+    world.current?.setWildlifeTimeOfDay(tod);
+  }, [tod]);
 
   /**
    * Standing in Ox Fields with no cattle should sound like empty ground;
@@ -2093,6 +2236,19 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
+
+  /**
+   * What Ray's shelf is allowed to look at when it decides which rows are
+   * open -- the same three facts the SERVER reads before it takes any Gold
+   * (`readShopProgress` in lib/server/stackacres-service.ts), fed through the
+   * same pure evaluator. That is the whole reason this is a struct and not
+   * three loose props: a greyed-out card and the refusal behind it have to be
+   * two renderings of one answer, never two answers.
+   */
+  const shopProgress = useMemo<StackAcresShopProgress>(
+    () => ({ sectors, influence, greenhouseBuilt }),
+    [sectors, influence, greenhouseBuilt],
+  );
 
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
   // The farm has paid out everything it can today. `< 1`, not `<= 0`, because a
@@ -2273,6 +2429,7 @@ export function StackAcresFarm() {
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onSecretZoneTap={onWorldSecretZoneTap}
+              onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
@@ -2370,6 +2527,21 @@ export function StackAcresFarm() {
               busy={pendingByPrefix("pray")}
               onPray={onMonkPray}
               onClose={() => setMonkDialogue(null)}
+            />
+          )}
+
+          {/* The fence-upgrade popup, same screen-anchored treatment as the
+              seed menu and the monk dialogue above. */}
+          {fencePopup && (
+            <StackAcresFenceUpgradePopup
+              at={fencePopup.at}
+              zone={fencePopup.zone}
+              segmentIndex={fencePopup.segmentIndex}
+              tier={fencePopup.tier}
+              durability={fencePopup.durability}
+              busy={fenceUpgradeBusy}
+              onUpgrade={onUpgradeFence}
+              onClose={() => setFencePopup(null)}
             />
           )}
 
@@ -2704,20 +2876,36 @@ export function StackAcresFarm() {
               // purchase the server would have allowed.
               const affordable =
                 (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+              // Unlimited Gold is a purse exemption, not a progression one:
+              // the milestone gate is about what the farm has done, so it
+              // applies to every account the same way.
+              const lock = evaluateStackAcresShopLock(def, shopProgress);
               return (
                 <div className="sa-stock-cards">
-                  <div className="sa-stock-card">
+                  <div className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
                     <img src={def.sprite} alt="" className="sa-tool-art" width={72} height={72} />
                     <h3>{def.label}</h3>
                     <p className="sa-stock-terms">{def.blurb}</p>
+                    {/* The price stays visible while locked, deliberately --
+                        the sector modal shows its clearing cost to somebody
+                        who does not qualify yet for the same reason: you
+                        cannot decide to save up for a number you have never
+                        been shown. */}
                     <p className="sa-stock-yield">{price.toLocaleString()} Gold</p>
+                    {lock.lockHint && (
+                      <p className="sa-lock-hint" id="sa-lock-hint-tool">
+                        <Lock size={13} aria-hidden="true" />
+                        <span>{lock.lockHint}</span>
+                      </p>
+                    )}
                     <button
                       type="button"
                       className="sa-cta"
-                      disabled={isPending("upgrade-tool") || !affordable}
+                      disabled={!lock.isUnlocked || isPending("upgrade-tool") || !affordable}
+                      aria-describedby={lock.lockHint ? "sa-lock-hint-tool" : undefined}
                       onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
                     >
-                      {affordable ? "Buy" : "Not enough Gold"}
+                      {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
                     </button>
                   </div>
                 </div>
@@ -2768,24 +2956,41 @@ export function StackAcresFarm() {
               barn before you leave a Cattle Pen overnight.
             </p>
             <div className="sa-stock-cards">
-              {Object.entries(STACKACRES_FEED).map(([id, item]) => (
-                <div key={id} className="sa-stock-card">
-                  <h3>{item.label}</h3>
-                  <p className="sa-stock-terms">{item.servings} servings</p>
-                  <p className="sa-stock-yield">
-                    {item.cost.toLocaleString()} Gold{" "}
-                    <span>({Math.round(item.cost / item.servings)} each)</span>
-                  </p>
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={isPending(`buy-feed:${id}`) || gold < item.cost}
-                    onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
-                  >
-                    Buy
-                  </button>
-                </div>
-              ))}
+              {/* Locked rows are shown greyed rather than dropped. A shelf
+                  that silently shortens teaches nothing: the Bulk Shipment
+                  going missing looks like a bug, whereas the Bulk Shipment
+                  sitting there saying what it wants is the progression being
+                  legible. (The wild-ground rule in sectors.ts is the opposite
+                  and stays so -- that is about the WORLD, where a padlock
+                  floating over a field would be nonsense; this is a shop.) */}
+              {Object.entries(STACKACRES_FEED).map(([id, item]) => {
+                const lock = evaluateStackAcresShopLock(item, shopProgress);
+                return (
+                  <div key={id} className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
+                    <h3>{item.label}</h3>
+                    <p className="sa-stock-terms">{item.servings} servings</p>
+                    <p className="sa-stock-yield">
+                      {item.cost.toLocaleString()} Gold{" "}
+                      <span>({Math.round(item.cost / item.servings)} each)</span>
+                    </p>
+                    {lock.lockHint && (
+                      <p className="sa-lock-hint" id={`sa-lock-hint-${id}`}>
+                        <Lock size={13} aria-hidden="true" />
+                        <span>{lock.lockHint}</span>
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      className="sa-cta"
+                      disabled={!lock.isUnlocked || isPending(`buy-feed:${id}`) || gold < item.cost}
+                      aria-describedby={lock.lockHint ? `sa-lock-hint-${id}` : undefined}
+                      onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
+                    >
+                      {lock.isUnlocked ? "Buy" : "Locked"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
             <p className="sa-sheet-note">
               You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.

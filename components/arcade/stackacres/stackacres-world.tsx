@@ -4,10 +4,11 @@ import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
-import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
+import { stackacresToolTierDef, type StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
+import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
@@ -67,6 +68,21 @@ export interface StackAcresWorldApi {
    *  solo unit, fanned out across several units with a stagger between each
    *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
   celebrateCascade: (unitIds: string[]) => void;
+  /**
+   * The extra beat a LUCKY harvest gets: the crit flash (micro shake, gold
+   * wash, "CRIT! x2" springing up over the unit) and a burst of deep-gold
+   * sparks at its base.
+   *
+   * Pushed from the shell rather than fired inside the scene alongside the
+   * ordinary harvest burst, because only the settlement response knows whether
+   * the roll actually hit -- the crit is rolled server-side inside the guarded
+   * write (see lib/stackacres/equipment.ts's `rollHarvestCrit`), so there is
+   * nothing local to predict it from.
+   *
+   * `multiplier` is the TOTAL payout multiple (`1 + critBonus`), not the bonus
+   * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
+   */
+  celebrateCrit: (unitId: string, multiplier: number) => void;
   /** Starts the Pixel Pilgrim's bow, optimistically -- called only from his
    *  dialogue's own "yes", before the `pray` request has answered. See
    *  lib/stackacres/monk.ts and stackacres-scene.ts's `playMonkPrayer`. */
@@ -113,6 +129,15 @@ export interface StackAcresWorldApi {
    *  the shell because the shell owns the radial menu the preview belongs
    *  to -- the scene has no idea a ring is open. */
   previewSoilAt: (world: WorldPoint | null) => void;
+  /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
+   *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
+   *  drives the day/night population swap (the shell's own `timeOfDay()`
+   *  poll); `setFenceTier`/`setLivestockHealth` hydrate one district's saved
+   *  defense state, called once per segment/zone on load and again right
+   *  after a successful upgrade. */
+  setWildlifeTimeOfDay: (tod: WildlifeTimeOfDay) => void;
+  setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
+  setLivestockHealth: (zone: ZoneId, health: number) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -153,6 +178,14 @@ export interface StackAcresWorldProps {
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
+  /** A finger landed on one bay of a district's fence line -- the cue to
+   *  open the fence-upgrade popup. Optional: a caller that never wires it
+   *  simply never opts into the fence hit-test at all (see
+   *  StackAcresSceneCallbacks.onFenceSegmentTap's own doc). */
+  onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /** Informational: the Wildlife Manager's own predator simulation lowered
+   *  a district's livestock health. The shell's cue to persist it. */
+  onLivestockDamaged?: (zone: ZoneId, health: number) => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
@@ -192,6 +225,24 @@ export interface StackAcresWorldProps {
   api: Ref<StackAcresWorldApi | null>;
 }
 
+/**
+ * The picture the mow-drag ghost shows.
+ *
+ * The scythe is the one tool with a canvas gesture, and it is also the one tool
+ * the equipment ladder upgrades -- so while it is held, the ghost is the RUNG's
+ * own art (`stackacresToolTierDef(tier).icon`, one sprite-backed painter per
+ * rung) rather than the tool's generic icon. Every other tool keeps its own,
+ * because no other tool has a rung to be at.
+ *
+ * This replaced a flat `STACKACRES_TOOL_DEFS[tool].icon`, which drew the same
+ * scythe at every rung: a player who had bought the Golden Spade watched a
+ * Trowel sweep the field.
+ */
+function toolGhostIcon(tool: StackAcresTool, tier: StackAcresToolTier): PainterName {
+  const def = tool === "scythe" ? stackacresToolTierDef(tier) : STACKACRES_TOOL_DEFS[tool];
+  return def.icon as PainterName;
+}
+
 function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
   return units.map((unit) => ({
     id: unit.id,
@@ -222,6 +273,8 @@ export function StackAcresWorld({
   onMonkTap,
   onRayTap,
   onSecretZoneTap,
+  onFenceSegmentTap,
+  onLivestockDamaged,
   sectors,
   onLockedSectorTap,
   onViewMoved,
@@ -244,11 +297,13 @@ export function StackAcresWorld({
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
+  const fenceSegmentTapRef = useRef(onFenceSegmentTap);
+  const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
-  const toolIconRef = useRef<PainterName>(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
+  const toolIconRef = useRef<PainterName>(toolGhostIcon(tool, toolTier));
   // The tool itself, not just its picture: the scythe's target is ground
   // rather than a unit, so the scene has to know which tool is held to read a
   // drag correctly. See `setTool` in stackacres-scene.ts.
@@ -274,9 +329,11 @@ export function StackAcresWorld({
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
     secretZoneTapRef.current = onSecretZoneTap;
+    fenceSegmentTapRef.current = onFenceSegmentTap;
+    livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
-    toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
+    toolIconRef.current = toolGhostIcon(tool, toolTier);
     toolRef.current = tool;
     toolTierRef.current = toolTier;
     museumGlowTierRef.current = museumGlowTier;
@@ -325,6 +382,8 @@ export function StackAcresWorld({
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
+          onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
+          onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
@@ -444,6 +503,7 @@ export function StackAcresWorld({
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
+      celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
       registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       playMonkPrayer: () => sceneRef.current?.playMonkPrayer(),
       enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
@@ -455,6 +515,10 @@ export function StackAcresWorld({
       placeSoilAt: (x, y, origin) => sceneRef.current?.placeSoilAt(x, y, origin) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
+      setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
+      setFenceTier: (zone, segmentIndex, tier, durability) =>
+        sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
+      setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
     }),
     [],
   );
@@ -482,10 +546,13 @@ export function StackAcresWorld({
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
 
+  // Keyed on the RUNG as well as the tool: buying an upgrade has to change what
+  // is in the player's hand immediately, the same "push, never rebuild" reason
+  // `setToolTier` below exists rather than a remount.
   useEffect(() => {
-    sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
+    sceneRef.current?.setToolIcon(toolGhostIcon(tool, toolTier));
     sceneRef.current?.setTool(tool);
-  }, [tool]);
+  }, [tool, toolTier]);
 
   // Pushed rather than rebuilt: see `setToolTier` in stackacres-scene.ts for
   // why buying an upgrade must not tear the scene down.

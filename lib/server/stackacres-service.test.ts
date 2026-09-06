@@ -57,6 +57,7 @@ import {
   readStackAcresToolTier,
   readStackAcresUpkeep,
   recordStackAcresSectorCleared,
+  adjustStackAcresInfluence,
   reserveStackAcresExchange,
   adjustStackAcresInventory,
   recordStackAcresHarvest,
@@ -1126,6 +1127,37 @@ describe("feed shipments", () => {
     expect(await balance(token)).toBe(1);
     expect(await readStackAcresFeed(id)).toBe(0);
   });
+
+  /**
+   * The shelf greys the Bulk Shipment out on a farm that has never seen the
+   * Fold, but the shelf is a browser. These are the requests that skip it.
+   */
+  it("refuses a shipment the farm has not unlocked, and takes nothing", async () => {
+    // Rich, and holding no land but home -- exactly the account this gate was
+    // added for: a poker balance arriving at a farm that has never run a
+    // cycle. See lib/stackacres/shop-locks.ts.
+    const { token, id } = await funded(1_000_000, { land: [] });
+
+    await expect(buyStackAcresFeed(token, "bulk_shipment", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+
+    // Refused BEFORE the debit, which is the point: no Gold left, so there is
+    // no refund to have got wrong.
+    expect(await balance(token)).toBe(1_000_000);
+    expect(await readStackAcresFeed(id)).toBe(0);
+  });
+
+  it("sells the same shipment once the Fold is open", async () => {
+    const { token, id } = await funded(1_000_000, { land: ["meadow", "wallow"] });
+    const bulk = STACKACRES_FEED.bulk_shipment;
+    const before = await balance(token);
+
+    await buyStackAcresFeed(token, "bulk_shipment", T0);
+
+    expect(await balance(token)).toBe(before - bulk.cost);
+    expect(await readStackAcresFeed(id)).toBe(bulk.servings);
+  });
 });
 
 describe("expanding capacity", () => {
@@ -1438,6 +1470,54 @@ describe("the equipment ladder", () => {
     expect(await balance(token)).toBe(before - price);
   });
 
+  /**
+   * The ladder's second gate. Price was the only one, and a price is a gate
+   * on the PURSE -- which in this app is shared with poker, so it never asked
+   * anything of the farm at all. See lib/stackacres/shop-locks.ts.
+   */
+  it("refuses a rung the farm has not reached, however much Gold is in the purse", async () => {
+    const { token, id } = await funded(5_000_000, { land: [] });
+
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    // Refused on the near side of `spendGoldByProfile`: nothing to refund,
+    // because nothing moved.
+    expect(await balance(token)).toBe(5_000_000);
+    expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
+  });
+
+  it("opens the first paid rung on one milestone and the top rung on three", async () => {
+    const { token, id } = await funded(5_000_000, { land: ["meadow"] });
+
+    // One district cleared: the Iron Shovel is reachable.
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
+
+    // ...and the Golden Spade is not, at milestone 1 against its 3.
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
+
+    // Clearing the rest of the ladder is milestone 3 on land alone.
+    await recordStackAcresSectorCleared(id, "wallow", T0);
+    await recordStackAcresSectorCleared(id, "oxfields", T0);
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("golden-spade");
+  });
+
+  it("takes any three milestones, not one prescribed route to them", async () => {
+    // Two districts plus one town order is the same three as three districts.
+    // The top rung is gated on the farm running, not on a particular way of
+    // running it.
+    const { token, id } = await funded(5_000_000, { land: ["meadow", "wallow"] });
+    await upgradeStackAcresTool(token, T0);
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    await adjustStackAcresInfluence(id, 1);
+
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("golden-spade");
+  });
+
   it("refuses a rung the player cannot afford, and takes nothing", async () => {
     const price = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
     const { token, id } = await funded(price - 1);
@@ -1591,8 +1671,8 @@ describe("the currency wall", () => {
 
   const calls = (source: string, fn: string) => source.split(`${fn}(`).length - 1;
 
-  it("credits Gold in exactly three places: the refund helper, and two payouts", async () => {
-    // If this is 4, go and look at the new one and ask the only question that
+  it("credits Gold in exactly four places: the refund helper, and three payouts", async () => {
+    // If this is 5, go and look at the new one and ask the only question that
     // matters: which DIRECTION does it move Gold, and if it pays, does it
     // reserve against STACKACRES_GOLD_CEILING first? A refund belongs inside
     // `refundGold`. A credit that is not a refund is a faucet, and a faucet
@@ -1604,12 +1684,15 @@ describe("the currency wall", () => {
     // something: no amount of new refunds can move it, and only a new PAYOUT
     // can. It grew from two to three when Town Contracts added a second payer
     // (see the module header) -- both payers reserve against the identical
-    // ceiling before they settle, which is what is actually being guarded.
-    expect(calls(SERVICE, "creditGoldByProfile")).toBe(3);
-    // One of the three is the helper, whose whole body is that call.
+    // ceiling before they settle, which is what is actually being guarded --
+    // and from three to four when the Fermenting Vat added a third: the same
+    // ceiling, again, gated the same way.
+    expect(calls(SERVICE, "creditGoldByProfile")).toBe(4);
+    // One of the four is the helper, whose whole body is that call.
     expect(SERVICE).toContain("async function refundGold(");
-    // And the other two are the harvest and the contract payout -- the only
-    // two payouts there may be, and both reserve against the same ceiling.
+    // And the other three are the harvest, the contract payout and the vat
+    // collection -- the only three payouts there may be, all reserving
+    // against the same ceiling.
     expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, gold)");
     expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, contract.goldReward)");
   });
@@ -1621,7 +1704,7 @@ describe("the currency wall", () => {
     expect(calls(SERVICE, "spendGoldByProfile")).toBeGreaterThan(1);
   });
 
-  it("exposes exactly two actions that pay Gold out, both ceiling-gated", () => {
+  it("exposes exactly three actions that pay Gold out, all ceiling-gated", () => {
     const actions = [...ROUTE.matchAll(/z\.literal\("([a-z-]+)"\)/g)].map((m) => m[1]).sort();
     // Adding an action means editing this list, which is the point: the
     // question to answer while doing it is "does this move Gold, and which
@@ -1635,6 +1718,7 @@ describe("the currency wall", () => {
       "clear",
       "clear-sector",
       "collect",
+      "collect-vat",
       "consume-secret-item",
       "contribute-blueprint",
       "divert",
@@ -1654,6 +1738,7 @@ describe("the currency wall", () => {
       "remove-soil-tile",
       "request-contract",
       "retire",
+      "seal-vat",
       "sow-wheat",
       "start-blueprint",
       "stock",
@@ -1666,9 +1751,12 @@ describe("the currency wall", () => {
     ]);
 
     // The claim that actually matters, held separately from the list so it
-    // cannot be lost in a rename: `collect` and `fulfill-contract` are the
-    // only two actions that pay a player Gold. Everything else on that list
-    // either spends it or moves no money at all -- `upgrade-tool` included,
+    // cannot be lost in a rename: `collect`, `fulfill-contract` and
+    // `collect-vat` are the only three actions that pay a player Gold.
+    // `seal-vat` is not a fourth -- it spends Cheese, never Gold, the same
+    // "seal spends, collect pays" split `place-machine` and its own run take.
+    // Everything else on that list either spends it or moves no money at all
+    // -- `upgrade-tool` included,
     // which is a pure sink, and the critical harvest it buys is paid BY
     // `collect` out of the same reservation rather than being a third payer;
     // `work`, `process`, `request-contract` and `build-greenhouse` included,
@@ -1711,18 +1799,20 @@ describe("the currency wall", () => {
     // ladder pays a keepsake, never Gold -- see
     // lib/stackacres/friendship.ts's own header for why that reward is not
     // a third payer.
-    const paysGold = ["collect", "fulfill-contract"];
+    const paysGold = ["collect", "fulfill-contract", "collect-vat"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
-    // `, now` on both: Chrono-DeLorean Mode threads a resolved `now` through
-    // every action (lib/server/chrono-delorean.ts), the two payers included.
+    // `, now` on all three: Chrono-DeLorean Mode threads a resolved `now`
+    // through every action (lib/server/chrono-delorean.ts), the three payers
+    // included.
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds }, now)");
     expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
-    // Both payers reserve against the exact same daily ceiling -- this is
-    // the property that makes a second payer safe rather than a second
+    expect(ROUTE).toContain("collectStackAcresVat(token, now)");
+    // All three payers reserve against the exact same daily ceiling -- this
+    // is the property that makes a third payer safe rather than a second
     // faucet. See lib/stackacres/exchange.ts. (STACKACRES_GOLD_CEILING is a
     // constant, not a call, hence counting occurrences directly rather than
     // through the `calls` helper above.)
-    expect(SERVICE.split("STACKACRES_GOLD_CEILING").length - 1).toBeGreaterThanOrEqual(3);
+    expect(SERVICE.split("STACKACRES_GOLD_CEILING").length - 1).toBeGreaterThanOrEqual(4);
   });
 
   it("hands back no Gold at all for spending Gold", async () => {

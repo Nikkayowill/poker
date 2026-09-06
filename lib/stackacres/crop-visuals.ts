@@ -169,3 +169,107 @@ const CROP_SHADOW_FRACTION = 0.8;
 export function cropShadowScale(stage: CropStage): number {
   return (CROP_SHADOW_FRACTION * cropFootprintHalf(stage) * 2) / CROP_SHADOW_BOX_WIDTH;
 }
+
+/* ------------------------------------------------------------------ */
+/* Growing between two frames                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How long a plant takes to grow from one frame into the next, on screen.
+ *
+ * A crop's three frames are 1.6x, 2.5x and 4x, so crossing a boundary is a 56%
+ * then a 60% jump in apparent size. Until this existed the scene answered that
+ * by destroying the node and building a new one (`signatureOf` counts the
+ * stage, and `setUnits` rebuilds on a signature change), which put the whole
+ * jump plus a texture swap plus a shadow resize into a single frame with no
+ * anticipation and no settle -- the plant teleported.
+ *
+ * 350ms is long enough to read as the plant growing and short enough that a
+ * player sweeping a ready row is never waiting on it: the pop bounce a tap
+ * answers with (`popUnit`) is 370ms end to end, so a growth landing mid-sweep
+ * finishes inside a beat the player is already watching.
+ */
+export const CROP_GROWTH_TWEEN_MS = 350;
+
+/** Clamped to 0..1, so a tween read one frame late -- or an ease that leaves
+ *  the unit interval -- can never scale a plant past its own target frame or
+ *  invert it. */
+function growthProgress(t: number): number {
+  if (!Number.isFinite(t)) return 1;
+  return Math.min(1, Math.max(0, t));
+}
+
+/**
+ * The sprite scale to draw a growing plant at, `t` of the way from `from`'s
+ * apparent size to `to`'s -- expressed as a MULTIPLE OF THE `to` FRAME'S OWN
+ * NATURAL SIZE, so it is exactly 1 at `t = 1`.
+ *
+ * That framing is forced by the enlargement being BAKED into the texture (see
+ * `cropSpriteScale`'s own note, and `cropBakeScale` in stackacres-art.ts): the
+ * scene swaps the new stage's texture in immediately, and that texture is
+ * already drawn at `cropSpriteScale(to)`. So the tween's job is not to scale
+ * from one number to another, it is to start the NEW texture shrunk to the OLD
+ * frame's apparent size and then release it to its own. Hence the ratio -- at
+ * `t = 0` this is `scale(from) / scale(to)`, which renders the new frame at
+ * exactly the size the old one occupied, and the swap itself is invisible.
+ */
+export function cropStageSpriteBlend(from: CropStage, to: CropStage, t: number): number {
+  const a = cropSpriteScale(from);
+  const b = cropSpriteScale(to);
+  return (a + (b - a) * growthProgress(t)) / b;
+}
+
+/**
+ * The grounding shadow's scale at the same `t`, in the units `cropShadowScale`
+ * already returns.
+ *
+ * Driven off the SAME `t` as the plant rather than a tween of its own, which is
+ * the whole point: the shadow is what pins the plant to the furrow, and two
+ * tweens of equal duration are still two tweens -- one scheduled a frame apart
+ * from the other, or one surviving a rebuild the other did not, detaches the
+ * plant from its own shadow mid-growth. The scene drives both off one proxy
+ * object so they cannot come apart.
+ */
+export function cropShadowScaleBlend(from: CropStage, to: CropStage, t: number): number {
+  const a = cropShadowScale(from);
+  const b = cropShadowScale(to);
+  return a + (b - a) * growthProgress(t);
+}
+
+/**
+ * The feet correction at the same `t`.
+ *
+ * Zero at both ends for every frame shipping today (`FOOT_INSET` is all zero --
+ * see its own note), so this currently interpolates nothing. It is here for
+ * exactly the reason that table is kept rather than deleted: a crop whose art
+ * is not re-fit flush needs a non-zero inset, and a growth tween that moved the
+ * plant's size without moving its feet would slide it off the soil for 350ms
+ * every time it grew.
+ */
+export function cropGroundOffsetBlend(
+  art: CropArt,
+  from: CropStage,
+  to: CropStage,
+  t: number,
+): number {
+  const a = cropGroundOffset(art, from);
+  const b = cropGroundOffset(art, to);
+  return a + (b - a) * growthProgress(t);
+}
+
+/**
+ * The ground diamond's half-size at the same `t`.
+ *
+ * The gold "ready" ring is traced against this (`unitFootprintHalf` in
+ * stackacres-scene.ts), and so is the fallback half of the tap test -- so a
+ * ring left at the old frame's size for the length of the tween would sit
+ * inside a plant that had already outgrown it, which is the exact "framed
+ * rather than sitting inside it" complaint that sized the ring off the crop in
+ * the first place. Driven off the same proxy as the plant and the shadow, for
+ * the same reason they are.
+ */
+export function cropFootprintHalfBlend(from: CropStage, to: CropStage, t: number): number {
+  const a = cropFootprintHalf(from);
+  const b = cropFootprintHalf(to);
+  return a + (b - a) * growthProgress(t);
+}

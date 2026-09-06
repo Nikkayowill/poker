@@ -58,6 +58,151 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### The Fermenting Vat: a fourth processing machine, aging Cheese into Gold on its own timer (2026-09-06)
+Built from a spec brief that opened by proposing a punitive "seize 20% of a player's locked items" penalty
+for missing an invented daily debt — refused outright and confirmed with Kayo before writing any code:
+the brief's own "50,000 Gold ceiling" already exists (`STACKACRES_GOLD_CEILING`, unrelated purpose — a
+flat daily cap on Gold LEAVING the farm, not a debt owed), and StackAcres Gold is the same real-money-
+backed `profiles.gold_balance` Stripe purchases credit, so a seizure mechanic would have meant
+confiscating something a player may have paid real money for. Shipped instead: a straight aging/value-
+compounding machine, no penalty of any kind. A fourth `MachineKind` (`vat`, `lib/stackacres/machines.ts`;
+`MACHINE_CAP` 3 -> 4 alongside it), backed by its own locked-record table
+(`homestead_vat_manifests`, one row per active seal, deleted on collect) rather than squeezed into
+`homestead_machines`' generic single-run columns -- see `lib/stackacres/aging.ts`'s header for why a
+multi-tier "collectible at three different points, each worth more" batch needed a dedicated shape.
+Seals 2 Cheese (`seal_homestead_vat`, one debit+lock transaction); three tiers -- Aged/Well-Aged/
+Artisan-Aged at 10/30/60 minutes sealed, paying 2x/4x/8x a snapshotted base value -- with 1/2/3 quality
+stars. Collecting is the vat's OWN direct-to-Gold door, reserving against the identical
+`STACKACRES_GOLD_CEILING` a harvest and a fulfilled Town Contract already respect (never a new or bigger
+faucet). `FermentingVatModal.tsx` is built and correct but NOT wired into `stackacres-farm.tsx`'s live
+shell -- deliberately, matching the Mill/Dairy/Loom's own state today: `processing.machines` already
+flows through the client and has zero UI (placement, start, collect) for any of the three existing
+machines, called out as "UI wiring deferred" when Town Contracts/processing first shipped. Wiring only
+the Vat while its three siblings stay headless would be new, uneven scope, not a completion of this
+task. Also NOT Tailwind, despite the brief asking for it: this app has no Tailwind pipeline anywhere
+(confirmed absent from `package.json`) and utility classes would compile to nothing; the modal reuses
+the numbered plain-CSS system every sibling StackAcres sheet already draws from
+(`app/styles/52-stackacres.css`). Branch `feat/stackacres-fermenting-vat`, built in its own worktree off
+origin/main, uncommitted -- migration `20260906133000_stackacres_fermenting_vat.sql` unapplied; see
+`[[reference_stackchips_migrations_not_auto_applied]]`. `npx vitest run` (3907 passed; two pre-existing,
+unrelated reds: `table-anchors.test.ts`'s `dealerShoulderRoom`, `bot-personality.test.ts`'s VPIP
+timeout) + targeted `eslint`/`tsc --noEmit` all clean.
+### Game-feel pass: tap precision, crop growth, and the juice layer that was never turned on (2026-09-06)
+Four friction points from a spec brief, all presentation, no schema. (1) **`TAP_SLOP` 8 -> 12** CSS px
+(8 is inside an ordinary thumb's involuntary travel, and every crossing silently became a one-pixel
+pan), plus `tapRejectRipple` -- a ring at the touch origin when a press that was STANDING ON A UNIT
+becomes a pan. The brief asked for that ring on every slop crossing; that fires on every drag of the
+map and reads as broken, so it is gated on there having been a tap to lose. (2) **Alpha hit-masking**
+in `unitAt`: a ripe crop is drawn at 4x on a 14-unit column pitch, so several half-transparent boxes
+under one thumb is ordinary, and an art hit outranks a neighbour's ground hit -- the empty corner of
+the plant in front was stealing taps from the plant the thumb was on. `lib/stackacres/alpha-mask.ts`
+holds the pure half (a 32-cell max-alpha grid per texture, `ALPHA_HIT_THRESHOLD` 0.1); the scene reads
+each crop texture back ONCE via `getImageData` in `buildUnit`, never on the tap path, and a point in
+the fingertip PAD but outside the raw bounds is deliberately never masked away. (3) **Crops now grow
+instead of teleporting**: `signatureOf` counting the stage meant every boundary was a full node
+rebuild -- a 56%/60% size jump plus a texture swap in one frame. `growCrop` eases the node already
+standing there over `CROP_GROWTH_TWEEN_MS` (350), with plant scale, shadow, feet offset and the ready
+ring's radius all read off ONE `{t}` proxy (matching durations are not lockstep; a shadow that
+detaches from its plant is the one part of this that reads as a bug). The enlargement is baked into
+the texture, so the tween starts the NEW frame shrunk to the OLD one's apparent size --
+`cropStageSpriteBlend` is that ratio. (4) **`GameJuiceManager` is wired** -- 481 lines of harvest pop,
+crit flash and barn-absorb that were fully written, fully tested and never constructed (the codebase
+said so itself, in `frenzy-fx-manager.ts` and `frenzy.ts`: "unwired dead code"). Now built in
+`create()` and fired from `celebrateHarvest`; the crit is a separate `celebrateCrit` pushed from the
+shell, because the roll happens server-side inside the guarded write and nothing local can predict it.
+Also: Town Contracts settle from inside a modal, so `tapAnchor` is null and `floatAt` never fired --
+the largest deliberate Gold event in the game was quieter than picking one carrot. `contract-payout.tsx`
+gives it a mote burst out of the settled row and a `goldTickerValue` count-up. And the equipment ladder
+is visible at last: all three rungs named `ico-scythe`, so the Golden Spade looked exactly like the
+Trowel in hand -- each rung now has its own sprite-backed painter, and `cutBurst` throws 3/6/9
+clippings by `toolTierRank`.
+**Deliberately not done: `useCrossbreedHarvestFx` (task 3.3 of the brief).** Crossbreeding has a pure
+engine, a service and a store, and NO route, NO action and NO UI -- `grep -rl crossbreed app/ components/`
+finds only the FX hook and the juice manager. There is no execution branch to wire it into, and firing
+the flash off an ordinary crop harvest would promise a hybrid that nothing can ever credit. It needs
+the feature reaching a player first.
+**No DB work.** The brief asked for `adjust_homestead_inventory` RPC deltas with row-level locking;
+that RPC does not exist, `homestead_inventory` is dead (a brief has now named it wrongly five times --
+see `[[reference_stackchips_migrations_not_auto_applied]]`'s neighbours), and none of these four tasks
+touches persistence at all.
+
+### Wildlife Ecosystem & Nighttime Predator Defense (2026-09-06)
+New system, built from a spec brief rather than a direct Kayo ask: peaceful wildlife (squirrels,
+birds) roams the treeline by day, predators (coyotes, wolves) spawn along the map's outer perimeter
+by night and steer toward the barn or a district's own grow area, testing every fence bay they cross
+against a rolled resistance check. `lib/stackacres/wildlife.ts` is the pure engine (spawn/steering/
+fence-tier resistance/attack state machine, all continuous float world points, no tile grid);
+`components/arcade/stackacres/wildlife-manager.ts` is its Phaser-side twin, same split
+`weather-overlay-manager.ts` already established. **Day/night hook**: there is no in-scene day/night
+clock to hang off of (StackAcres' only existing time-of-day signal is `lib/audio/stackacres-music.ts`'s
+wall-clock `timeOfDay()`, consumed by ambience/music, not gameplay) — `wildlife.ts` mirrors that
+type rather than importing it (the same call `ambience-plan.ts` already made), and
+`stackacres-farm.tsx` pushes the SAME `tod` value ambience already computes into the scene via a new
+`setWildlifeTimeOfDay`, so the two layers can never disagree about whether it is night.
+
+Fence tiers (Basic Wood/Reinforced Wire/Steel Mesh) are geometry derived from `growAreaBounds`/
+`FENCE_BAY` the same way `paintDistrictBoundary` already walks a district's edge to paint one, not a
+stored array of segments — persistence keys a bay by `(zone, index)` instead. New, deliberately
+isolated store (`lib/server/stackacres-defense-store.ts`, three tables:
+`stackacres_fence_segments`/`stackacres_predator_waves`/`stackacres_livestock_health`) rather than
+reusing `homestead_units`/`homestead_inventory` — neither carries a position, and this feature is
+inherently spatial. Livestock health is tracked PER DISTRICT, not per `homestead_units` row, for the
+same reason. Version-guarded writes throughout (0 means "no row yet"), mirroring the money-ordering
+discipline even though nothing here moves Gold. Migration
+(`20260906140000_stackacres_wildlife_defense.sql`, three tables + three RPCs) is **APPLIED**, verified
+against the live project: EXECUTE confirmed service-role-only on all three RPCs via
+`has_function_privilege` (anon/authenticated both false), and `get_advisors` came back clean beyond the
+same routine "RLS enabled, no policy" INFO every sibling `homestead_*`/`stackacres_*` table already
+carries.
+
+The one player-initiated write this pass wires end to end is the fence-upgrade popup: a tap on a fence
+bay follows the exact tap-priority chain `stackacres-scene.ts`'s pointer-up handler already uses
+(checked right before the `growAreaAt` ground fallback, since a bay sits on a district's own
+boundary), opens `StackAcresFenceUpgradePopup` (same screen-pinned real-DOM convention as the monk
+dialogue/radial menu), and calls a new dedicated route, `/api/stackacres/defense` (GET reads one bay,
+POST upgrades it) — kept separate from `/api/stackacres/actions` because that dispatcher's `run()` is
+typed to always return a `StackAcresView`, and a fence segment is a different shape with no reason to
+be squeezed into that snapshot.
+
+**Deliberate scope cut, stated in the PR**: the live predator wave and per-district livestock health
+are simulated and rendered client-side by `WildlifeManager` (fence durability wears down on a breach,
+livestock takes damage, predators flee once driven off) but are NOT synced back into the store on
+every tick — `savePredatorWave`/`writeLivestockHealth` exist and are tested, but wiring a throttled or
+Realtime sync of the live loop into them is left as follow-up, the same "service layer built, live-loop
+wiring deferred" posture the Sunlight Forge and the Mill's recipe layer already took. No supplied art
+exists yet for a squirrel, bird, coyote or wolf; each is a plain Phaser Shape circle, the same
+"placeholder now, real art later" posture `paintGreenhouse`'s own Graphics volume took before its PNG
+landed.
+
+### Ray's supply store now gates its top rows on what the farm has done (2026-09-06)
+Price was the only gate on Ray's shelf, and a price gates the PURSE, not the farm -- the StackChips
+balance is shared with the poker tables, so a player who has never collected a Sprout Row could walk
+in off a poker win and buy the Golden Spade. New pure leaf `lib/stackacres/shop-locks.ts` adds a
+second gate: five named quest flags (`cleared_meadow`, `town_trusted`, `cleared_wallow`,
+`greenhouse_raised`, `cleared_oxfields`), each DERIVED from state the farm already keeps -- no
+`quest_flags` table, no migration, same posture `unlockedSectors` takes, so a live farm that has
+plainly done the thing is never asked to do it again. **Permanence is the selection rule for what may
+be a flag**: a lock that can re-lock takes something away from a player who already saw the row open,
+so only facts that cannot go away qualify (cleared land, cumulative Influence, the Greenhouse) --
+units held and Gold are deliberately excluded however tempting. `minimumMilestone` is a PLAIN COUNT of
+flags in any order, not the length of a leading run: the three land flags are forced into order by the
+sector `requires` chain but the Greenhouse and the town's first order float free of it, and a
+leading-run count would call a farm with all three districts and no town order milestone 1. Registry
+entries carry `requiredQuestFlag`/`minimumMilestone` as flat optional fields (both registries
+`extends StackAcresShopLock`), so gating a third registry is two fields rather than a refactor. Gated:
+`bulk_shipment` on the Fold (a Hen Coop's hunger window is longer than its own cycle, so a
+Farmstead-only farm has never fed anything), `iron-shovel` at milestone 1, `golden-spade` at 3. The
+Feed Sack and the Trowel stay ungated on purpose -- a hungry animal must be feedable by whoever is
+standing there, and the free rung is the game as it already plays. Enforcement is
+`requireUnlockedShopEntry` on the NEAR side of `spendGoldByProfile` in both paths, so a refusal needs
+no refund; the greyed-out card is presentation only. Locked rows are shown greyed rather than dropped
+(a row that silently vanishes reads as a bug and teaches nothing) -- note this is the OPPOSITE of
+sectors.ts's wild-ground rule, which is about the world, not a shop. Two CSS attempts: `filter:
+saturate()` on the card greyed the cream board with it and read as a UI kit dropped onto a game, so
+the card keeps its paper and only the copy/art step back. No migration. `/api/stackacres` is
+unchanged -- the client already had `sectors`/`influence`/`greenhouseBuilt` and computes the same
+locks through the same pure evaluator.
+
 ### StackAcres roads went wide and muddy; forks are rounded; the signpost collapses on phones (2026-09-06)
 Built from a `/goal` brief modelled on Stardew/Mistria path design. Four things landed. **(1) A road
 hierarchy** (`lib/stackacres/roads.ts`, a runtime leaf both `world.ts` and `paths.ts` can read without

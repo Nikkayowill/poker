@@ -42,7 +42,14 @@ export type ZonePainterName =
   | "hogTrough"
   | "hog"
   // Chrome.
-  | "ico-scythe";
+  | "ico-scythe"
+  // The equipment ladder's three rungs, drawn on the canvas as the ghost that
+  // follows a mow drag. All three fall back to `ico-scythe`'s own drawing (see
+  // TOOL_TIER_PAINTER below) -- they are sprite-backed names, and the fallback
+  // only ever shows in the frames before a PNG lands.
+  | "toolTrowel"
+  | "toolIronShovel"
+  | "toolGoldenSpade";
 
 /** One blade of grass: a tapering curve from a fixed root. Shared by the
  *  three meadow heights so a tile that has been cut and half-regrown is
@@ -84,6 +91,17 @@ function tuft(height: number, colours: readonly [string, string, string]) {
 const GRASS_DARK = "#4f8c31";
 const GRASS_MID = "#5f9a3d";
 const GRASS_LIGHT = "#79b34f";
+
+/**
+ * The shared box and fallback drawing behind all three equipment rungs -- read
+ * off `ico-scythe` itself rather than retyped, so a rung's ghost can never end
+ * up framed differently from the toolbelt icon it answers.
+ *
+ * Declared BEFORE `ZONE_PAINTERS` because the three rungs below reference it by
+ * value at module-initialisation time; the body's own lookup back into
+ * `ZONE_PAINTERS` runs at DRAW time, long after both exist.
+ */
+const TOOL_TIER_PAINTER: Painter = painter(24, 24, (c) => ZONE_PAINTERS["ico-scythe"](c), 0.5, 0.5);
 
 export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
   /* ---- The Long Meadow ------------------------------------------------ */
@@ -415,4 +433,17 @@ export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
     0.5,
     0.5,
   ),
+
+  /* ---- The equipment ladder ------------------------------------------- */
+
+  // Three names, one drawing. Each rung is a `spriteBacked` name in
+  // stackacres-art.ts, so what actually reaches the canvas is that rung's own
+  // generated PNG; these entries exist to give the three names a BOX (24x24,
+  // centred, exactly `ico-scythe`'s) and a fallback for the frames before the
+  // file lands. Sharing one painter is deliberate rather than lazy: three
+  // hand-drawn near-copies of the same scythe would be three things to keep in
+  // step for a picture nobody sees for more than a frame.
+  toolTrowel: TOOL_TIER_PAINTER,
+  toolIronShovel: TOOL_TIER_PAINTER,
+  toolGoldenSpade: TOOL_TIER_PAINTER,
 };

@@ -31,7 +31,11 @@ import { FARM_JUNCTIONS } from "@/lib/stackacres/path-junctions";
 import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
-import { scytheReachFor, type StackAcresToolTier } from "@/lib/stackacres/equipment";
+import {
+  scytheReachFor,
+  toolTierRank,
+  type StackAcresToolTier,
+} from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import {
   SPARKLE_MAX,
@@ -43,6 +47,8 @@ import {
 } from "@/lib/stackacres/sunlight";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import { WeatherOverlayManager } from "./weather-overlay-manager";
+import { WildlifeManager } from "./wildlife-manager";
+import { fenceSegmentsForZone, type FenceTier, type WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
@@ -120,12 +126,25 @@ import {
 import { FarmFrenzyManager, frenzyBonusYield } from "@/lib/stackacres/frenzy";
 import { FrenzyFxManager } from "./frenzy-fx-manager";
 import {
+  CROP_GROWTH_TWEEN_MS,
   cropArtFor,
   cropFootprintHalf,
+  cropFootprintHalfBlend,
   cropGroundOffset,
+  cropGroundOffsetBlend,
   cropShadowScale,
+  cropShadowScaleBlend,
   cropSpriteAlpha,
+  cropStageSpriteBlend,
+  type CropStage,
 } from "@/lib/stackacres/crop-visuals";
+import {
+  alphaMaskCovers,
+  boundsPoint,
+  buildAlphaMask,
+  type AlphaMask,
+} from "@/lib/stackacres/alpha-mask";
+import { GameJuiceManager } from "./game-juice-manager";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
 import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
 import { SECTOR_FOG, sectorOvergrowth, type SectorId } from "@/lib/stackacres/sectors";
@@ -351,6 +370,24 @@ export interface StackAcresSceneCallbacks {
    */
   onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
   /**
+   * A tap that landed on one bay of a district's own fence line -- the cue
+   * to open the fence-upgrade popup (see stackacres-fence-upgrade-popup.tsx).
+   * Checked right before the district's own grow-area fallback, the same
+   * "a structure wins over the plain ground behind it" ordering every other
+   * entry in this chain already documents: a fence bay sits ON a grow
+   * area's own boundary, so without this check first every fence tap would
+   * fall through to `onGroundTap`'s seed offer instead.
+   */
+  onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /**
+   * Informational only, fired whenever the Wildlife Manager's own predator
+   * simulation lowers a district's livestock health -- the shell's cue to
+   * persist it through lib/server/stackacres-defense-store.ts (throttled on
+   * the shell's own side; the scene calls this on every damage tick, not on
+   * a schedule of its own).
+   */
+  onLivestockDamaged?: (zone: ZoneId, health: number) => void;
+  /**
    * The view moved under whatever the shell has pinned to it. A menu dropped
    * at a finger is anchored to the screen, not to the world, so it has to go
    * away rather than drift off the thing it was opened on.
@@ -415,13 +452,38 @@ const S = ART_SCALE;
 const GOLD = 0xffd23f;
 const AMBER = 0xff8a3d;
 const MUCK = 0x785830;
+/** The crit's own gold: a shade under `GOLD`, so a lucky harvest's sparks read
+ *  as heavier metal beside the pale ring `celebrateHarvest` already throws
+ *  rather than as more of the same. */
+const DEEP_GOLD = 0xd99a1f;
+/** Sparks one crit throws. A tighter, denser ring than `celebrateHarvest`'s
+ *  seven, over a shorter reach -- see `critSparkBurst`. */
+const CRIT_SPARK_COUNT = 12;
+/** Grass clippings one cut tile throws PER RUNG of the equipment ladder, so
+ *  the Trowel throws 3, the Iron Shovel 6 and the Golden Spade 9. See
+ *  `cutBurst`. */
+const CUT_BURST_BITS_PER_RANK = 3;
 /** The dry-soil ring, off RAMPS.water.side -- a crop waiting for a drink is
  *  marked in the colour of the thing it is waiting for. */
 const WATER = 0x3fa6cc;
 
-/** How far a finger may wander before a press stops counting as a tap. In CSS
- *  pixels, because pointer events are. */
-const TAP_SLOP = 8;
+/**
+ * How far a finger may wander before a press stops counting as a tap. In CSS
+ * pixels, because pointer events are.
+ *
+ * 12, raised from 8. Eight is inside the range an ordinary thumb travels
+ * without meaning to -- a hand on a moving bus, a large thumb rolling on its
+ * own contact patch as it lifts -- and every one of those crossings turned a
+ * deliberate tap into a one-pixel pan, which does nothing visible and says
+ * nothing about why. 12 sits just above the 10 both Apple's and Material's own
+ * touch-slop guidance uses, and above it deliberately: the cost of a slightly
+ * late pan on a map that is mostly panned in long drags is far lower than the
+ * cost of a dropped harvest tap.
+ *
+ * A press that crosses this WHILE STANDING ON A UNIT still leaves with
+ * something to show for itself -- see `tapRejectRipple`.
+ */
+const TAP_SLOP = 12;
 /**
  * Shortest gap between two scythe swishes. A little under the cue's own
  * length, so a continuous sweep overlaps into one sustained cut rather than
@@ -444,6 +506,13 @@ const CASCADE_POP_STAGGER_MS = 110;
  *  this whole surface exists to remove. Constant on SCREEN, not in the world
  *  -- it is sized against a fingertip, and a fingertip does not zoom. */
 const TAP_PAD = 12;
+
+/** The dropped-tap ring's own resting radius and life. In CSS pixels and
+ *  milliseconds: sized against a fingertip like `TAP_PAD` (it is answering the
+ *  same thumb), and short enough to be gone before the pan it announced has
+ *  travelled far. See `tapRejectRipple`. */
+const TAP_REJECT_RIPPLE_RADIUS = 22;
+const TAP_REJECT_RIPPLE_MS = 260;
 
 /** How far the world may slide, in CSS pixels, before anything the shell has
  *  pinned to a screen position is told the ground has moved out from under
@@ -816,16 +885,49 @@ interface UnitNode {
    *  can be tapped over and over between rebuilds, and a list nothing ever
    *  prunes would grow one dead chain per tap. */
   pop: Phaser.Tweens.TweenChain | null;
+  /** The growth currently playing on this node, if one is -- a crop easing
+   *  from one frame's size into the next. Held on its own for the same reason
+   *  `pop` is: it is restarted rather than stacked, and it has to be stoppable
+   *  the instant something rebuilds the node under it. See `growCrop`. */
+  growth: Phaser.Tweens.Tween | null;
+  /** Which frame this node's picture is currently drawn at. Held rather than
+   *  re-derived from `unit`, because during a growth the two deliberately
+   *  disagree: `unit` is already the new stage while the picture is still
+   *  easing out of the old one. */
+  stage: CropStage;
+  /** A crop's own grounding shadow, null for anything that is not a crop.
+   *  Kept a reference (rather than found by walking the container) so a
+   *  growth can drive it off the same proxy as the plant -- see
+   *  `cropShadowScaleBlend`. */
+  cropShadow: Phaser.GameObjects.Image | null;
   signature: string;
   unit: StackAcresSceneUnit;
 }
 
+/** ./world.ts's own growth frame for a unit, in one place: three call sites
+ *  used to spell this out and a fourth now depends on it agreeing with them. */
+function unitStage(unit: StackAcresSceneUnit): CropStage {
+  return growthStage(unit.progress, unit.state === "ready");
+}
+
+/**
+ * Everything about a unit's picture EXCEPT which growth frame it is on.
+ *
+ * Split out of `signatureOf` for `growCrop`: a crop crossing a stage boundary
+ * is the one signature change this scene answers by GROWING the node it
+ * already has rather than throwing it away and building another. Deciding
+ * that needs "the stage moved" and "nothing else did" as separate questions,
+ * and a joined string cannot answer either.
+ */
+function pictureSignature(unit: StackAcresSceneUnit): string {
+  return [unit.state, unit.stock, unit.permanent ? 1 : 0].join("|");
+}
+
 /** What a unit's own picture is signed by: only its state, kind, growth
- *  stage and permanence change what gets drawn, so `setUnits` rebuilds a
+ *  stage and permanence change what gets drawn, so `setUnits` repaints a
  *  node exactly when one of these four actually changes. */
 function signatureOf(unit: StackAcresSceneUnit): string {
-  const stage = growthStage(unit.progress, unit.state === "ready");
-  return [unit.state, unit.stock, stage, unit.permanent ? 1 : 0].join("|");
+  return `${pictureSignature(unit)}|${unitStage(unit)}`;
 }
 
 export class StackAcresScene extends Phaser.Scene {
@@ -851,6 +953,20 @@ export class StackAcresScene extends Phaser.Scene {
    * tap, and ranking one crop costs the same sort as ranking all of them.
    */
   private cropRanks = new Map<string, number>();
+  /**
+   * One coarse alpha mask per crop texture, so `unitAt` can ask whether a
+   * finger landed on the plant rather than on the transparent corner of its
+   * box. Keyed by Phaser texture key; `null` is a cached FAILURE (a texture
+   * that could not be read), so a texture that cannot be masked is not
+   * re-read on every tap.
+   *
+   * Built in `buildUnit`, never on the tap path: reading a texture back is one
+   * `getImageData` over a few hundred thousand pixels, which is nothing once
+   * per texture and would be visible if it landed on a thumb's first press.
+   * See lib/stackacres/alpha-mask.ts for what the mask is and why it is
+   * coarse.
+   */
+  private alphaMasks = new Map<string, AlphaMask | null>();
   private pending: StackAcresSceneUnit[] | null = null;
   /** The Midnight Merchant's own picture and ground shadow, or null while he
    *  is not on the lot. See `setMerchant`. */
@@ -899,6 +1015,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  for why it stays a separate class. Null under reduced motion, same
    *  posture `buildSunlight` takes for its own layers. */
   private weather: WeatherOverlayManager | null = null;
+
+  /** Wildlife Ecosystem & Nighttime Predator Defense -- own manager for the
+   *  same reason weather is: see wildlife-manager.ts's own header. Unlike
+   *  weather, this runs under reduced motion too (it is gameplay, not an
+   *  ambient effect the player can opt out of), so it is never null once
+   *  `create()` has run. */
+  private wildlife: WildlifeManager | null = null;
 
   /** The world's own hard edge, in the same projected screen space as
    *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
@@ -981,6 +1104,21 @@ export class StackAcresScene extends Phaser.Scene {
    *  the per-tap ember/bonus bursts. Null under reduced motion, the same
    *  posture `this.weather` already takes -- see `create()`. */
   private frenzyFx: FrenzyFxManager | null = null;
+
+  /**
+   * The harvest-impact layer: the produce pop and shard burst a collection
+   * throws, the crit flash a lucky one adds, and the flight of the collected
+   * item into the barn. Built in `create()` alongside the two managers above.
+   *
+   * NOT gated on `reducedMotion` the way `frenzyFx` and `weather` are. This one
+   * takes the flag as config and still does each job -- a shard still lands, a
+   * crit is still legible, an item still visibly reaches the barn -- with the
+   * tween jump-cut, which is exactly the posture `popUnit`, `floatAt` and
+   * `celebrateHarvest` already take. Nulling it instead would silence a
+   * reduced-motion player's harvest completely, and reduced motion asks for
+   * less movement, not less information.
+   */
+  private juice: GameJuiceManager | null = null;
 
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
@@ -1147,6 +1285,25 @@ export class StackAcresScene extends Phaser.Scene {
       .setDepth(1e9);
 
     this.buildSunlight();
+
+    this.wildlife = new WildlifeManager(this, this.random);
+    this.wildlife.create();
+    this.wildlife.setOwnedZones(ZONE_IDS.filter((id) => !this.locked.has(id)));
+    this.wildlife.setCallbacks({
+      onLivestockDamaged: (zone, health) => this.callbacks.onLivestockDamaged?.(zone, health),
+    });
+
+    // The harvest-impact layer. Built unconditionally -- see `this.juice`'s own
+    // field comment for why reduced motion configures it rather than removing
+    // it. The barn's true world point is handed over rather than imported by
+    // the manager, so BARN_X/BARN_Y stay owned here.
+    this.juice = new GameJuiceManager(this, {
+      barnPoint: { x: BARN_X, y: BARN_Y },
+      reducedMotion: this.options.reducedMotion,
+      fontFamily: window.getComputedStyle(this.options.host).fontFamily || undefined,
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseJuice, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseJuice, this);
 
     if (!this.options.reducedMotion) {
       this.weather = new WeatherOverlayManager(this, this.random);
@@ -1855,6 +2012,12 @@ export class StackAcresScene extends Phaser.Scene {
         existing.unit = unit;
         continue;
       }
+      // A plant that grew is the one change answered by easing the node that
+      // is already standing there into its new frame, rather than destroying
+      // it and building another one a frame later. `growCrop` says whether it
+      // took the change; anything it declines falls through to the rebuild
+      // this always did.
+      if (existing && this.growCrop(existing, unit, signature)) continue;
       this.buildUnit(unit, signature, existing);
     }
     // A unit that is no longer in the list -- collected and consumed, or
@@ -1970,6 +2133,7 @@ export class StackAcresScene extends Phaser.Scene {
     const container = this.add.container(0, 0);
     let sprite: Phaser.GameObjects.Image;
     let critter: Critter | null = null;
+    let cropShadow: Phaser.GameObjects.Image | null = null;
 
     if (unit.state === "mucked") {
       // A mess to clear, not something with legs -- livestock or crop, a
@@ -2001,7 +2165,7 @@ export class StackAcresScene extends Phaser.Scene {
       container.setDepth(this.depthAt(critter.x, critter.y));
     } else {
       const at = this.staticSpotFor(unit);
-      const stage = growthStage(unit.progress, unit.state === "ready");
+      const stage = unitStage(unit);
       // Non-null for every non-livestock kind, which is the branch we are in.
       const crop = cropArtFor(unit.stock) ?? "carrot";
       // Grounding shadow, added before the plant so it paints underneath --
@@ -2012,10 +2176,14 @@ export class StackAcresScene extends Phaser.Scene {
       // `cropShadowScale`, not fixed like a livestock shadow, because a crop
       // swings 1.6x-4x across its three frames and one fixed size would
       // misfit two of them.
-      this.addLocal("cropShadow", 0, 0, container)
+      cropShadow = this.addLocal("cropShadow", 0, 0, container)
         .setScale(cropShadowScale(stage) / S)
         .setAlpha(0.8);
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
+      // Read the frame's own transparency back now, while a node is being
+      // built, so a tap never pays for it. Every stage of both crops warms
+      // itself the first time one is drawn; see `alphaMaskFor`.
+      this.alphaMaskFor(sprite.texture.key);
       // Crops -- and only crops -- are drawn well off the world's own scale,
       // so a ripe row is findable on a phone. That enlargement is now BAKED
       // into the crop's own texture (see `cropBakeScale` in
@@ -2047,6 +2215,9 @@ export class StackAcresScene extends Phaser.Scene {
       gait: critter ? (carriedGait ?? spawnGait(phase)) : null,
       tweens: [],
       pop: null,
+      growth: null,
+      stage: unitStage(unit),
+      cropShadow,
       signature,
       unit,
     };
@@ -2075,9 +2246,111 @@ export class StackAcresScene extends Phaser.Scene {
     node.pop = null;
   }
 
+  /**
+   * Grows a crop from the frame it is standing at into the one it has just
+   * reached, instead of destroying the node and building a new one.
+   *
+   * WHAT THIS REPLACES. `signatureOf` counts the growth stage, so crossing a
+   * boundary used to mean a full `buildUnit`: the container torn down, a new
+   * texture, a new shadow, and the plant 56% (0 -> 1) or 60% (1 -> 2) larger,
+   * all inside one frame. Nothing eased, so a plant never grew on screen -- it
+   * was replaced by a bigger one between two frames.
+   *
+   * ONE PROXY, EVERY PROPERTY. The plant's scale, its grounding shadow, its
+   * feet correction and the ready ring's radius are all read off a single
+   * `{ t }` object tweened 0 -> 1, rather than four tweens with matching
+   * durations. Matching durations are not lockstep: two tweens scheduled a
+   * frame apart, or one surviving something the other did not, visibly detach a
+   * plant from its own shadow -- the one part of this that would read as a bug
+   * rather than as a style.
+   *
+   * THE TEXTURE SWAPS IMMEDIATELY, THE SIZE DOES NOT. The new frame is a
+   * different drawing (a crop's growth is its shape changing, not its colour or
+   * its scale -- see stackacres-sprites.ts) and it is baked at its own
+   * enlargement, so the tween starts it shrunk to exactly the outgoing frame's
+   * apparent size and releases it from there. `cropStageSpriteBlend` is that
+   * ratio, and its own doc comment carries the derivation.
+   *
+   * Returns false, having touched nothing, for every change this cannot
+   * honestly express as one plant growing: livestock, a different crop kind, a
+   * unit falling into or rising out of muck (a different picture, not a bigger
+   * one), reduced motion, or a signature that moved without the stage moving.
+   * `setUnits` rebuilds all of those exactly as it always did.
+   */
+  private growCrop(node: UnitNode, unit: StackAcresSceneUnit, signature: string): boolean {
+    if (this.options.reducedMotion) return false;
+    const crop = cropArtFor(unit.stock);
+    if (crop === null) return false;
+    if (unit.stock !== node.unit.stock) return false;
+    if (unit.permanent !== node.unit.permanent) return false;
+    if (unit.state === "mucked" || node.unit.state === "mucked") return false;
+    const shadow = node.cropShadow;
+    if (shadow === null) return false;
+    const from = node.stage;
+    const to = unitStage(unit);
+    if (from === to) return false;
+
+    // The bob is a looping y tween on this same sprite (see `bob`), and the
+    // growth below owns that y for its duration. Taking it off now and putting
+    // it back at the end is what stops the two writing one property in the
+    // same frame. `tweens` holds nothing else on a crop.
+    for (const tween of node.tweens) tween.remove();
+    node.tweens = [];
+    this.cancelGrowth(node);
+
+    node.unit = unit;
+    node.signature = signature;
+    node.stage = to;
+    node.sprite.setTexture(`${crop}${to}` as PainterName, ART_FRAME);
+    this.alphaMaskFor(node.sprite.texture.key);
+    node.sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
+
+    const ease = { t: 0 };
+    // The ring's COLOUR is the new state's from the first frame -- a plant
+    // reaching stage 2 is a plant going ready, and a gold ring arriving a third
+    // of a second after the crop is ripe would read as lag. Only its radius
+    // eases, so it frames the plant the whole way up rather than snapping to
+    // the grown size around a plant that has not got there yet.
+    const apply = (t: number): void => {
+      node.sprite.setScale(cropStageSpriteBlend(from, to, t) / S);
+      node.sprite.y = cropGroundOffsetBlend(crop, from, to, t);
+      shadow.setScale(cropShadowScaleBlend(from, to, t) / S);
+      this.paintUnitRing(node, unit, cropFootprintHalfBlend(from, to, t));
+    };
+    apply(0);
+
+    node.growth = this.tweens.add({
+      targets: ease,
+      t: 1,
+      duration: CROP_GROWTH_TWEEN_MS,
+      // Sine.easeOut: the plant leaves the old frame quickly and settles into
+      // the new one, which is the shape of something growing INTO a size rather
+      // than being pushed to it.
+      ease: "Sine.easeOut",
+      onUpdate: () => apply(ease.t),
+      onComplete: () => {
+        node.growth = null;
+        // Land on the target rather than on whatever the last frame happened to
+        // sample -- the same reason `popUnit` rests its own scale on complete.
+        apply(1);
+        if (unit.state === "ready") this.bob(node, [node.sprite]);
+      },
+    });
+    return true;
+  }
+
+  /** Stops a growth mid-ease. A plain Tween, so `remove()` means what it says
+   *  here -- unlike `pop`, which is a TweenChain and needs `stop()`; see
+   *  `cancelPop`'s own comment for the crash that distinction caused. */
+  private cancelGrowth(node: UnitNode): void {
+    node.growth?.remove();
+    node.growth = null;
+  }
+
   private destroyNode(node: UnitNode): void {
     for (const tween of node.tweens) tween.remove();
     this.cancelPop(node);
+    this.cancelGrowth(node);
     node.container.destroy(true);
   }
 
@@ -2198,12 +2471,54 @@ export class StackAcresScene extends Phaser.Scene {
     const next = new Set<ZoneId>(
       OUTER_ZONE_IDS.filter((id) => !unlocked.includes(id)),
     );
+    // Kept in sync even when nothing else about the sector set changed --
+    // cheap (one filter over four ids), and a predator must never be able
+    // to target a district the player has not actually cleared.
+    this.wildlife?.setOwnedZones(ZONE_IDS.filter((id) => !next.has(id)));
     const changed = ZONE_IDS.filter((id) => next.has(id) !== this.locked.has(id));
     if (changed.length === 0) return;
     this.locked = next;
     if (!this.created) return;
     for (const id of changed) this.paintSector(id);
     this.dropChunks();
+  }
+
+  /** Which fence bay, if any, a ground point lands on -- only districts
+   *  actually unlocked are tested, since a locked one paints no fence line
+   *  to hit. See `fenceSegmentsForZone`'s own header for why this walks
+   *  the same derived geometry the predator's own collision check does
+   *  rather than a stored array. */
+  private fenceSegmentAt(x: number, y: number): { zone: ZoneId; segmentIndex: number } | null {
+    for (const zone of ZONE_IDS) {
+      if (this.locked.has(zone)) continue;
+      for (const segment of fenceSegmentsForZone(zone)) {
+        const r = segment.rect;
+        if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) {
+          return { zone, segmentIndex: segment.index };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Driven by the shell's own `timeOfDay()` poll -- see
+   *  wildlife-manager.ts's `setTimeOfDay` for the day/night population
+   *  swap this triggers. */
+  setWildlifeTimeOfDay(tod: WildlifeTimeOfDay): void {
+    this.wildlife?.setTimeOfDay(tod);
+  }
+
+  /** Hydrates one fence bay's tier/durability from the store -- called once
+   *  per segment as the shell loads a district's saved defense state, and
+   *  again immediately after a successful upgrade so the live simulation
+   *  never lags what was just persisted. */
+  setFenceTier(zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number): void {
+    this.wildlife?.setFenceTier(zone, segmentIndex, tier, durability);
+  }
+
+  /** Hydrates one district's livestock health from the store. */
+  setLivestockHealth(zone: ZoneId, health: number): void {
+    this.wildlife?.hydrateLivestockHealth(zone, health);
   }
 
   /**
@@ -2569,10 +2884,17 @@ export class StackAcresScene extends Phaser.Scene {
    * A unit's own state ring -- ready, hungry, mucked -- the one piece of the
    * old `paintRings` that still means anything now that there is no
    * afford/selected ring left to draw alongside it. Static once painted:
-   * unlike the old afford ring, nothing here pulses, so this only ever runs
-   * again when `setUnits` decides the unit's own signature changed.
+   * unlike the old afford ring, nothing here pulses, so this normally only
+   * runs again when `setUnits` decides the unit's own signature changed.
+   *
+   * `half` overrides the radius `unitFootprintHalf` would derive, and exists
+   * for exactly one caller: `growCrop`, which redraws this every frame of a
+   * growth so the ring widens WITH the plant instead of jumping to the grown
+   * size around a crop that has not finished growing into it. A clear and eight
+   * `lineTo`s per frame for a third of a second is cheaper than the second
+   * Graphics object the alternative would need.
    */
-  private paintUnitRing(node: UnitNode, unit: StackAcresSceneUnit): void {
+  private paintUnitRing(node: UnitNode, unit: StackAcresSceneUnit, half?: number): void {
     const ring = node.ring;
     ring.clear();
     const colour =
@@ -2586,16 +2908,16 @@ export class StackAcresScene extends Phaser.Scene {
               ? MUCK
               : null;
     if (colour === null) return;
-    const half = this.unitFootprintHalf(unit);
+    const radius = half ?? this.unitFootprintHalf(unit);
     if (unit.state === "ready") {
       ring.lineStyle(5, GOLD, 0.22);
       ring.beginPath();
-      this.traceUnitDiamond(ring, half, -1);
+      this.traceUnitDiamond(ring, radius, -1);
       ring.strokePath();
     }
     ring.lineStyle(2.2, colour, 1);
     ring.beginPath();
-    this.traceUnitDiamond(ring, half, 1.5);
+    this.traceUnitDiamond(ring, radius, 1.5);
     ring.strokePath();
   }
 
@@ -2893,6 +3215,15 @@ export class StackAcresScene extends Phaser.Scene {
           this.moveToolGhost(here.x, here.y);
           return;
         }
+        // A press that was standing on a unit and has now become a pan is a
+        // tap this map decided not to honour. Say so, once, at the point the
+        // finger actually went down -- see `tapRejectRipple` for why only
+        // this case rings and an ordinary pan across open ground stays
+        // silent. Resolved against the ORIGINAL touch origin, and before the
+        // camera below has moved under it.
+        if (this.unitAt(gesture.startX, gesture.startY)) {
+          this.tapRejectRipple(gesture.startX, gesture.startY);
+        }
         gesture.kind = "pan";
       }
       if (gesture.kind === "mow") {
@@ -3048,6 +3379,18 @@ export class StackAcresScene extends Phaser.Scene {
       if (wild !== null && this.locked.has(wild)) {
         this.callbacks.onLockedSectorTap(wild, local);
         return;
+      }
+      // A fence bay -- checked right before the grow-area fallback, since a
+      // bay sits ON a district's own boundary and would otherwise resolve
+      // as a plain ground tap (an offer to seed). Only tested against
+      // districts that are actually unlocked: a locked district paints no
+      // fence at all, so there is nothing here for a tap to land on.
+      if (this.callbacks.onFenceSegmentTap) {
+        const fence = this.fenceSegmentAt(ground.x, ground.y);
+        if (fence) {
+          this.callbacks.onFenceSegmentTap(fence.zone, fence.segmentIndex, local);
+          return;
+        }
       }
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local, { x: ground.x, y: ground.y });
@@ -3376,6 +3719,80 @@ export class StackAcresScene extends Phaser.Scene {
    * start on a hen began. Resolving the hit ourselves at release is what
    * keeps a drag across the map a drag.
    */
+  /**
+   * The alpha mask for one baked painter texture, read once and cached.
+   *
+   * Reads the ART_FRAME REGION, not the whole canvas: `bakeTexture` pads every
+   * painter out to a power of two (so the zoomed-out farm can mipmap) and
+   * registers the drawn region as a frame inside that padding. A sprite's
+   * bounds cover the frame, so a mask built over the padded canvas would be
+   * offset from the box it is meant to describe by however much padding
+   * happened to be on each side.
+   *
+   * Every failure path caches `null` and falls back to plain box hit-testing,
+   * which is what this scene did before the mask existed -- a texture that is
+   * an `<img>` rather than a canvas, a context that will not open, a browser
+   * that refuses the read. None of those is worth failing a tap over.
+   */
+  private alphaMaskFor(key: string): AlphaMask | null {
+    const cached = this.alphaMasks.get(key);
+    if (cached !== undefined) return cached;
+
+    let mask: AlphaMask | null = null;
+    if (this.textures.exists(key)) {
+      const texture = this.textures.get(key);
+      const frame = texture.has(ART_FRAME) ? texture.get(ART_FRAME) : null;
+      const source = texture.getSourceImage();
+      if (frame && source instanceof HTMLCanvasElement) {
+        const context = source.getContext("2d", { willReadFrequently: true });
+        if (context) {
+          try {
+            const pixels = context.getImageData(
+              frame.cutX,
+              frame.cutY,
+              frame.cutWidth,
+              frame.cutHeight,
+            );
+            mask = buildAlphaMask(frame.cutWidth, frame.cutHeight, pixels.data);
+          } catch {
+            // A read the browser declined. Box hit-testing still works.
+            mask = null;
+          }
+        }
+      }
+    }
+    this.alphaMasks.set(key, mask);
+    return mask;
+  }
+
+  /**
+   * Whether an art-box hit landed on the empty air a crop's box covers rather
+   * than on the plant itself -- the one reason `unitAt` throws an art hit away
+   * and drops through to the ground diamond instead.
+   *
+   * Only crops are masked, and that is not an arbitrary narrowing. A cow, a
+   * hen and the barn are all drawn roughly box-filling and stand well apart;
+   * their boxes barely overlap, so their extra corner costs nobody a tap. A
+   * ripe crop is drawn at 4x on a 14-unit column pitch (`SOIL_COL_PITCH`),
+   * which means several plants' boxes under one thumb is the ordinary case and
+   * more than half of each box is transparent.
+   *
+   * A point inside the fingertip pad but OUTSIDE the sprite's own bounds is
+   * never masked away -- `boundsPoint` returns null there and this answers
+   * true. The pad exists to make a small target reachable, and refusing the
+   * pad because the texture has no ink at a coordinate the texture does not
+   * even contain would undo it.
+   */
+  private artHitIsAir(node: UnitNode, x: number, y: number): boolean {
+    if (node.unit.state === "mucked") return false;
+    if (cropArtFor(node.unit.stock) === null) return false;
+    const mask = this.alphaMaskFor(node.sprite.texture.key);
+    if (!mask) return false;
+    const inside = boundsPoint(x, y, node.sprite.getBounds());
+    if (!inside) return false;
+    return !alphaMaskCovers(mask, inside.u, inside.v);
+  }
+
   private unitAt(clientX: number, clientY: number): string | null {
     if (this.nodes.size === 0) return null;
     const cam = this.cameras.main;
@@ -3421,11 +3838,17 @@ export class StackAcresScene extends Phaser.Scene {
     let best: { id: string; onArt: boolean; dist: number; depth: number } | null = null;
     for (const [id, node] of this.nodes) {
       const art = node.sprite.getBounds();
+      // The box, then -- for a crop only -- the texture underneath it. A ripe
+      // plant's box is half transparent, and an art hit outranks a
+      // neighbour's ground hit, so without this second question the
+      // transparent corner of the plant in FRONT took the tap away from the
+      // plant the thumb was squarely on. See `artHitIsAir`.
       const onArt =
         at.x >= art.x - pad &&
         at.x <= art.right + pad &&
         at.y >= art.y - pad &&
-        at.y <= art.bottom + pad;
+        at.y <= art.bottom + pad &&
+        !this.artHitIsAir(node, at.x, at.y);
       let hit = onArt;
       if (!hit) {
         const spot = this.unitWorldSpot(node);
@@ -3556,6 +3979,56 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
+   * The ring a dropped tap leaves behind: one thin circle at the point the
+   * finger went down, swelling and fading out in a quarter of a second.
+   *
+   * WHY IT DOES NOT FIRE ON EVERY PAN. The brief this came from asked for
+   * feedback whenever a press crosses `TAP_SLOP`, which is every drag of the
+   * map -- and a map that rings each time it is panned is a map that looks
+   * broken. What crossing the slop actually COSTS the player is only ever a
+   * tap they were about to land, so the ring is fired only when the press was
+   * standing on a unit (`unitAt` at the touch origin, checked at the moment of
+   * conversion in `bindInput`). A drag that starts on open ground had no tap to
+   * lose and stays silent. That keeps the signal honest: a ring means "there
+   * was something there and you moved off it", every time.
+   *
+   * One `Graphics` circle, tweened and destroyed in its own `onComplete` --
+   * the same shape `cutBurst` and `celebrateHarvest` already use, and
+   * deliberately not a pooled emitter (see frenzy-fx-manager.ts's own header on
+   * which convention this scene follows).
+   *
+   * Positioned in SCENE space rather than pinned to the screen, so the ring
+   * stays on the spot the finger touched while the pan it just became slides
+   * the world underneath it -- `floatAt` makes the same choice for the same
+   * reason.
+   */
+  private tapRejectRipple(clientX: number, clientY: number): void {
+    if (!this.created || this.options.reducedMotion) return;
+    const cam = this.cameras.main;
+    const at = cam.getWorldPoint(
+      (clientX - this.hostOrigin.left) * DPR,
+      (clientY - this.hostOrigin.top) * DPR,
+    );
+    // Authored at the radius it should APPEAR at (in CSS pixels) and divided
+    // back through the zoom, so the ring is the same size under the thumb
+    // whether the map is zoomed all the way in or all the way out -- the same
+    // constant-on-screen rule `TAP_PAD` itself follows.
+    const radius = TAP_REJECT_RIPPLE_RADIUS / this.zoomL();
+    const ring = this.add.graphics().setDepth(8900);
+    ring.lineStyle(2 / this.zoomL(), GOLD, 0.7);
+    ring.strokeCircle(0, 0, radius);
+    ring.setPosition(at.x, at.y).setScale(0.4);
+    this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0,
+      duration: TAP_REJECT_RIPPLE_MS,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /**
    * The reward, and the refusal: a line of text (and, when there is produce
    * to name, its own icon) that lifts off the tap, leans over and fades.
    *
@@ -3658,6 +4131,15 @@ export class StackAcresScene extends Phaser.Scene {
     if (!node) return;
     const x = node.container.x;
     const y = node.container.y;
+    // The impact layer, fired from the same place and off the same node
+    // lookup: the produce's own icon popping off the unit and a burst of
+    // shards in that stock's colour, then the item's flight into the barn.
+    // World space, not the scene space the gold ring below is drawn in --
+    // every GameJuiceManager trigger projects for itself (see its header), so
+    // this hands over the unit's true position rather than its screen one.
+    const spot = this.unitWorldSpot(node);
+    this.juice?.triggerHarvestPop(spot.x, spot.y, node.unit.stock);
+    this.juice?.triggerBarnAbsorb(spot.x, spot.y);
     const burst = this.add.graphics().setDepth(8500);
     burst.fillStyle(0xffe98a, 0.85);
     burst.fillCircle(0, 0, 36);
@@ -3691,6 +4173,75 @@ export class StackAcresScene extends Phaser.Scene {
         onComplete: () => spark.destroy(),
       });
     }
+  }
+
+  /**
+   * The extra beat a LUCKY harvest gets on top of `celebrateHarvest`: the crit
+   * flash (a micro camera shake, a soft gold wash and "CRIT! x1.75" springing
+   * up over the unit) plus a tight ring of deep-gold sparks thrown from the
+   * plant's own base.
+   *
+   * Separate from `celebrateHarvest` and fired separately by the shell,
+   * because only the server's response knows whether the roll actually hit --
+   * `rollHarvestCrit` happens inside the guarded settlement write and nothing
+   * before it can honestly predict the answer. Every other trigger here is
+   * fire-and-forget on the press; this one deliberately is not.
+   *
+   * `multiplier` is the harvest's TOTAL payout multiple (`1 + critBonus`, so
+   * the Golden Spade reads "CRIT! x2"), not the bonus on its own -- see
+   * `critFlashLabel`'s own doc comment for why that distinction is load-
+   * bearing.
+   */
+  celebrateCrit(unitId: string, multiplier: number): void {
+    const node = this.nodes.get(unitId);
+    if (!node) return;
+    const spot = this.unitWorldSpot(node);
+    this.juice?.triggerCritFlash(spot.x, spot.y, multiplier);
+    this.critSparkBurst(node.container.x, node.container.y);
+  }
+
+  /**
+   * The deep-gold sparks a crit throws at the plant's own base.
+   *
+   * Deliberately a second, DIFFERENT burst from `celebrateHarvest`'s: that one
+   * is a wide pale ring that reads as "collected", and stacking more of the
+   * same colour on it would only make a crit look like a bigger ordinary
+   * harvest. These are darker, tighter, thrown low and pulled down, so a crit
+   * reads as something heavier landing rather than as more of the same.
+   *
+   * Scene space in, matching `celebrateHarvest`'s own spark loop, which is
+   * what this is modelled on -- hand-built `Graphics`, one tween each,
+   * destroyed in `onComplete`, no pooled emitter (see frenzy-fx-manager.ts's
+   * header on which convention this scene follows).
+   */
+  private critSparkBurst(x: number, y: number): void {
+    if (this.options.reducedMotion) return;
+    for (let i = 0; i < CRIT_SPARK_COUNT; i += 1) {
+      const spark = this.add.graphics().setDepth(8502);
+      spark.fillStyle(DEEP_GOLD, 1);
+      spark.fillCircle(0, 0, 1.9);
+      spark.setPosition(x, y);
+      const angle = this.random() * Math.PI * 2;
+      const reach = 10 + this.random() * 16;
+      this.tweens.add({
+        targets: spark,
+        x: x + Math.cos(angle) * reach,
+        y: y + Math.sin(angle) * reach + 6,
+        alpha: 0,
+        scale: 0.4,
+        duration: 380 + this.random() * 220,
+        ease: "Quad.easeIn",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  /** Releases the harvest-impact layer's pooled emitters with the scene. Its
+   *  baked shard textures stay in the cache on purpose -- see the manager's
+   *  own `destroy()`. */
+  private releaseJuice(): void {
+    this.juice?.destroy();
+    this.juice = null;
   }
 
   /**
@@ -4077,12 +4628,22 @@ export class StackAcresScene extends Phaser.Scene {
    * The leaf burst off a cut tile: a few clippings thrown up and out, fading
    * as they fall. Short-lived and self-destroying -- there is no pool here
    * because a stroke cuts a handful of tiles at a time, not hundreds.
+   *
+   * HOW MANY CLIPPINGS IS THE EQUIPMENT LADDER TALKING. Until this the burst
+   * was a flat three at every rung, so the only thing 250,000 Gold of Golden
+   * Spade changed about a stroke was how many strokes it took -- a real effect
+   * (`scytheReachFor`, used by `mowSegment` above) that the swing itself said
+   * nothing about. Three per rung -- 3, 6, 9 -- so the top of the ladder throws
+   * three times the debris of the free one and the middle rung is visibly
+   * between them. `toolTierRank` is the ladder's own 0-based position, so a
+   * fourth rung would scale itself with no number here to remember to move.
    */
   private cutBurst(tx: number, ty: number): void {
     const x = tx * MEADOW_TILE + MEADOW_TILE / 2;
     const y = ty * MEADOW_TILE + MEADOW_TILE / 2;
     const at = isoProject(x, y);
-    for (let i = 0; i < 3; i += 1) {
+    const clippings = CUT_BURST_BITS_PER_RANK * (toolTierRank(this.options.toolTier) + 1);
+    for (let i = 0; i < clippings; i += 1) {
       const bit = this.add
         .image(at.x, at.y - 2, "grassStubble", ART_FRAME)
         .setScale(0.5 / S)
@@ -4360,6 +4921,7 @@ export class StackAcresScene extends Phaser.Scene {
     // isolates from.
     this.weather?.setSuppressed(this.steppedInGreenhouse);
     this.weather?.update(time, delta);
+    this.wildlife?.update(time, delta);
     // A read-only sample, not a hit -- see FarmFrenzyManager's own doc
     // comment. Runs every frame regardless of whether anything was tapped
     // this frame, which is what lets heat cool down in real time rather

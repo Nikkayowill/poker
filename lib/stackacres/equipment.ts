@@ -48,6 +48,7 @@
  * before they load and if they never do.
  */
 
+import type { StackAcresShopLock } from "./shop-locks";
 import { SCYTHE_REACH } from "./zones";
 
 export const STACKACRES_TOOL_TIERS = ["trowel", "iron-shovel", "golden-spade"] as const;
@@ -57,7 +58,15 @@ export type StackAcresToolTier = (typeof STACKACRES_TOOL_TIERS)[number];
 /** What everyone starts with. Never purchasable, never lost. */
 export const STACKACRES_STARTING_TIER: StackAcresToolTier = "trowel";
 
-export interface StackAcresToolTierDef {
+/**
+ * A rung, and what it asks for beyond Gold.
+ *
+ * `StackAcresShopLock` is where `requiredQuestFlag`/`minimumMilestone` come
+ * from -- see lib/stackacres/shop-locks.ts. The free rung carries neither and
+ * must not: the Trowel is the game as it already plays, the same invariant
+ * `reach` holds by importing SCYTHE_REACH rather than retyping it.
+ */
+export interface StackAcresToolTierDef extends StackAcresShopLock {
   /** What the shelf row says, and what a screen reader announces. */
   label: string;
   /** One line under the row saying what buying it changes. */
@@ -70,10 +79,18 @@ export interface StackAcresToolTierDef {
   /** Public path of the generated sprite, under public/. */
   sprite: string;
   /**
-   * Name of a vector painter in components/arcade/stackacres/stackacres-art.ts
-   * (its `PainterName` union), drawn until `sprite` loads. Kept a plain
-   * string for the same reason StackAcresToolDef.icon is: this file stays
-   * free of a components/ import.
+   * Name of a painter in components/arcade/stackacres/stackacres-art.ts (its
+   * `PainterName` union). Kept a plain string for the same reason
+   * StackAcresToolDef.icon is: this file stays free of a components/ import.
+   *
+   * ONE PER RUNG, and it has to stay that way. All three used to name
+   * `ico-scythe`, which meant the ghost floating over a mow drag drew the same
+   * picture whatever had been bought -- the Golden Spade looked exactly like
+   * the Trowel in the player's hand, and the only thing 250,000 Gold visibly
+   * changed was the number of passes. Each rung now names its own sprite-backed
+   * painter, which fronts the same PNG `sprite` above points the store shelf at
+   * (the painter is the canvas route to that file, `sprite` the DOM one), and
+   * falls back to the drawn scythe only for the frames before it loads.
    */
   icon: string;
   /** How far either side of the drag line one scythe stroke cuts, world units. */
@@ -116,7 +133,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     blurb: "The one in your back pocket. Cuts a narrow swathe, and never gets lucky.",
     price: null,
     sprite: "/stackacres/sprites/tool-trowel.png",
-    icon: "ico-scythe",
+    icon: "toolTrowel",
     reach: SCYTHE_REACH,
     // ZERO, and deliberately so. The free rung is the game as it already
     // plays: a player who never buys anything must see no behaviour change at
@@ -135,20 +152,33 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     blurb: "Half again the swathe, and harvests start coming up rich.",
     price: 45_000,
     sprite: "/stackacres/sprites/tool-iron-shovel.png",
-    icon: "ico-scythe",
+    icon: "toolIronShovel",
     reach: SCYTHE_REACH * 1.5,
     critChance: 0.12,
     critBonus: 0.75,
+    // One milestone: in practice the Long Meadow, which costs 15,000 Gold
+    // against this rung's 45,000. A gentle gate, and gentle is the point --
+    // the first paid rung is where a player learns the ladder exists, so it
+    // must not be the one that turns them away. What it stops is the case
+    // this whole module was added for: arriving with a poker balance and
+    // buying the crit ladder before ever running a cycle.
+    minimumMilestone: 1,
   },
   "golden-spade": {
     label: "Golden Spade",
     blurb: "Clears the meadow in half the passes. A quarter of harvests pay double.",
     price: 250_000,
     sprite: "/stackacres/sprites/tool-golden-spade.png",
-    icon: "ico-scythe",
+    icon: "toolGoldenSpade",
     reach: SCYTHE_REACH * 2,
     critChance: 0.25,
     critBonus: 1,
+    // Three of the five. Deliberately reachable more than one way -- the
+    // three land flags alone will do it, and so will two districts plus a
+    // town order or the Greenhouse. "The thing there is left to want once
+    // the farm is running" (see the price note above) should be gated on the
+    // farm running, not on one prescribed route through it.
+    minimumMilestone: 3,
   },
 };
 

@@ -116,6 +116,15 @@ export const SPRITE_ART = {
   corn0: "/stackacres/sprites/corn0.png",
   corn1: "/stackacres/sprites/corn1.png",
   corn2: "/stackacres/sprites/corn2.png",
+  // The three rungs of the equipment ladder (lib/stackacres/equipment.ts).
+  // These already shipped -- the store shelf has been showing them as plain
+  // `<img>` since the ladder landed -- but nothing ever put them on the canvas,
+  // so the tool floating over a mow drag was the same drawn scythe at every
+  // rung. They are here now because the ghost is a Phaser image and every
+  // Phaser image in this scene comes through this list.
+  toolTrowel: "/stackacres/sprites/tool-trowel.png",
+  toolIronShovel: "/stackacres/sprites/tool-iron-shovel.png",
+  toolGoldenSpade: "/stackacres/sprites/tool-golden-spade.png",
   // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
   // straight into its own 256-unit canvas. It rides this module only because
   // this is what the scene's `preload` walks, and a tile that arrived late

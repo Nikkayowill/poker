@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { ChevronLeft, Coins, HelpCircle, LocateFixed, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, Coins, HelpCircle, LocateFixed, Lock, X, ZoomIn, ZoomOut } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
@@ -150,6 +150,10 @@ import {
   toolUpgradePrice,
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
+import {
+  evaluateStackAcresShopLock,
+  type StackAcresShopProgress,
+} from "@/lib/stackacres/shop-locks";
 import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actions";
 import {
@@ -2180,6 +2184,19 @@ export function StackAcresFarm() {
   );
   const carrying = readyUnits.length;
 
+  /**
+   * What Ray's shelf is allowed to look at when it decides which rows are
+   * open -- the same three facts the SERVER reads before it takes any Gold
+   * (`readShopProgress` in lib/server/stackacres-service.ts), fed through the
+   * same pure evaluator. That is the whole reason this is a struct and not
+   * three loose props: a greyed-out card and the refusal behind it have to be
+   * two renderings of one answer, never two answers.
+   */
+  const shopProgress = useMemo<StackAcresShopProgress>(
+    () => ({ sectors, influence, greenhouseBuilt }),
+    [sectors, influence, greenhouseBuilt],
+  );
+
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
   // The farm has paid out everything it can today. `< 1`, not `<= 0`, because a
   // sub-Gold remainder settles no harvest either -- every yield is whole Gold.
@@ -2794,20 +2811,36 @@ export function StackAcresFarm() {
               // purchase the server would have allowed.
               const affordable =
                 (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+              // Unlimited Gold is a purse exemption, not a progression one:
+              // the milestone gate is about what the farm has done, so it
+              // applies to every account the same way.
+              const lock = evaluateStackAcresShopLock(def, shopProgress);
               return (
                 <div className="sa-stock-cards">
-                  <div className="sa-stock-card">
+                  <div className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
                     <img src={def.sprite} alt="" className="sa-tool-art" width={72} height={72} />
                     <h3>{def.label}</h3>
                     <p className="sa-stock-terms">{def.blurb}</p>
+                    {/* The price stays visible while locked, deliberately --
+                        the sector modal shows its clearing cost to somebody
+                        who does not qualify yet for the same reason: you
+                        cannot decide to save up for a number you have never
+                        been shown. */}
                     <p className="sa-stock-yield">{price.toLocaleString()} Gold</p>
+                    {lock.lockHint && (
+                      <p className="sa-lock-hint" id="sa-lock-hint-tool">
+                        <Lock size={13} aria-hidden="true" />
+                        <span>{lock.lockHint}</span>
+                      </p>
+                    )}
                     <button
                       type="button"
                       className="sa-cta"
-                      disabled={isPending("upgrade-tool") || !affordable}
+                      disabled={!lock.isUnlocked || isPending("upgrade-tool") || !affordable}
+                      aria-describedby={lock.lockHint ? "sa-lock-hint-tool" : undefined}
                       onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
                     >
-                      {affordable ? "Buy" : "Not enough Gold"}
+                      {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
                     </button>
                   </div>
                 </div>
@@ -2825,24 +2858,41 @@ export function StackAcresFarm() {
               barn before you leave a Cattle Pen overnight.
             </p>
             <div className="sa-stock-cards">
-              {Object.entries(STACKACRES_FEED).map(([id, item]) => (
-                <div key={id} className="sa-stock-card">
-                  <h3>{item.label}</h3>
-                  <p className="sa-stock-terms">{item.servings} servings</p>
-                  <p className="sa-stock-yield">
-                    {item.cost.toLocaleString()} Gold{" "}
-                    <span>({Math.round(item.cost / item.servings)} each)</span>
-                  </p>
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={isPending(`buy-feed:${id}`) || gold < item.cost}
-                    onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
-                  >
-                    Buy
-                  </button>
-                </div>
-              ))}
+              {/* Locked rows are shown greyed rather than dropped. A shelf
+                  that silently shortens teaches nothing: the Bulk Shipment
+                  going missing looks like a bug, whereas the Bulk Shipment
+                  sitting there saying what it wants is the progression being
+                  legible. (The wild-ground rule in sectors.ts is the opposite
+                  and stays so -- that is about the WORLD, where a padlock
+                  floating over a field would be nonsense; this is a shop.) */}
+              {Object.entries(STACKACRES_FEED).map(([id, item]) => {
+                const lock = evaluateStackAcresShopLock(item, shopProgress);
+                return (
+                  <div key={id} className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
+                    <h3>{item.label}</h3>
+                    <p className="sa-stock-terms">{item.servings} servings</p>
+                    <p className="sa-stock-yield">
+                      {item.cost.toLocaleString()} Gold{" "}
+                      <span>({Math.round(item.cost / item.servings)} each)</span>
+                    </p>
+                    {lock.lockHint && (
+                      <p className="sa-lock-hint" id={`sa-lock-hint-${id}`}>
+                        <Lock size={13} aria-hidden="true" />
+                        <span>{lock.lockHint}</span>
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      className="sa-cta"
+                      disabled={!lock.isUnlocked || isPending(`buy-feed:${id}`) || gold < item.cost}
+                      aria-describedby={lock.lockHint ? `sa-lock-hint-${id}` : undefined}
+                      onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
+                    >
+                      {lock.isUnlocked ? "Buy" : "Locked"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
             <p className="sa-sheet-note">
               You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.

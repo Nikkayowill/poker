@@ -106,6 +106,35 @@ exists yet for a squirrel, bird, coyote or wolf; each is a plain Phaser Shape ci
 "placeholder now, real art later" posture `paintGreenhouse`'s own Graphics volume took before its PNG
 landed.
 
+### Ray's supply store now gates its top rows on what the farm has done (2026-09-06)
+Price was the only gate on Ray's shelf, and a price gates the PURSE, not the farm -- the StackChips
+balance is shared with the poker tables, so a player who has never collected a Sprout Row could walk
+in off a poker win and buy the Golden Spade. New pure leaf `lib/stackacres/shop-locks.ts` adds a
+second gate: five named quest flags (`cleared_meadow`, `town_trusted`, `cleared_wallow`,
+`greenhouse_raised`, `cleared_oxfields`), each DERIVED from state the farm already keeps -- no
+`quest_flags` table, no migration, same posture `unlockedSectors` takes, so a live farm that has
+plainly done the thing is never asked to do it again. **Permanence is the selection rule for what may
+be a flag**: a lock that can re-lock takes something away from a player who already saw the row open,
+so only facts that cannot go away qualify (cleared land, cumulative Influence, the Greenhouse) --
+units held and Gold are deliberately excluded however tempting. `minimumMilestone` is a PLAIN COUNT of
+flags in any order, not the length of a leading run: the three land flags are forced into order by the
+sector `requires` chain but the Greenhouse and the town's first order float free of it, and a
+leading-run count would call a farm with all three districts and no town order milestone 1. Registry
+entries carry `requiredQuestFlag`/`minimumMilestone` as flat optional fields (both registries
+`extends StackAcresShopLock`), so gating a third registry is two fields rather than a refactor. Gated:
+`bulk_shipment` on the Fold (a Hen Coop's hunger window is longer than its own cycle, so a
+Farmstead-only farm has never fed anything), `iron-shovel` at milestone 1, `golden-spade` at 3. The
+Feed Sack and the Trowel stay ungated on purpose -- a hungry animal must be feedable by whoever is
+standing there, and the free rung is the game as it already plays. Enforcement is
+`requireUnlockedShopEntry` on the NEAR side of `spendGoldByProfile` in both paths, so a refusal needs
+no refund; the greyed-out card is presentation only. Locked rows are shown greyed rather than dropped
+(a row that silently vanishes reads as a bug and teaches nothing) -- note this is the OPPOSITE of
+sectors.ts's wild-ground rule, which is about the world, not a shop. Two CSS attempts: `filter:
+saturate()` on the card greyed the cream board with it and read as a UI kit dropped onto a game, so
+the card keeps its paper and only the copy/art step back. No migration. `/api/stackacres` is
+unchanged -- the client already had `sectors`/`influence`/`greenhouseBuilt` and computes the same
+locks through the same pure evaluator.
+
 ### StackAcres roads went wide and muddy; forks are rounded; the signpost collapses on phones (2026-09-06)
 Built from a `/goal` brief modelled on Stardew/Mistria path design. Four things landed. **(1) A road
 hierarchy** (`lib/stackacres/roads.ts`, a runtime leaf both `world.ts` and `paths.ts` can read without

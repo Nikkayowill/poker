@@ -2318,6 +2318,54 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
+/* ---- a shelf row the farm has not unlocked yet ----------------------- */
+
+/* Stock Ray is holding back, not a half-rendered card.
+   
+   NOT `filter: saturate()` ON THE CARD, which is the obvious way to grey
+   something out and was the first attempt here. It desaturates the cream
+   board along with everything on it, and a neutral grey panel on a warm cream
+   surface is the exact tell the palette block at the top of this file exists
+   to avoid -- the card stopped looking locked and started looking like a UI
+   kit dropped onto a game. So the CARD keeps its own paper and outline, and
+   what steps back is the copy and the art sitting on it. The Locked button
+   greys itself through the shared `.sa-cta:disabled` rule above, which is
+   where "you cannot press this" is already said in this surface's own voice.
+
+   The hint is deliberately left at full ink. It is the one line telling you
+   what to go and do, and dimming it would fade out the only part of a locked
+   row that is worth showing at all. */
+.sa-stock-card.is-locked {
+  background: var(--sa-paper);
+  box-shadow: none;
+}
+.sa-stock-card.is-locked h3,
+.sa-stock-card.is-locked .sa-stock-terms,
+.sa-stock-card.is-locked .sa-stock-yield {
+  color: var(--sa-ink-soft);
+  opacity: .72;
+}
+.sa-stock-card.is-locked .sa-tool-art {
+  filter: saturate(.2) brightness(1.04);
+}
+
+.sa-lock-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--sa-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.sa-lock-hint svg {
+  flex: none;
+  /* Optical, not arithmetic: the padlock sits on the cap height of the first
+     line rather than on its box. */
+  margin-top: 2px;
+}
+
 /* ---- the equipment rack ---------------------------------------------- */
 
 /* What is currently in hand, above the shelf's one buyable rung. A row rather

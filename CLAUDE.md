@@ -58,6 +58,45 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### Game-feel pass: tap precision, crop growth, and the juice layer that was never turned on (2026-09-06)
+Four friction points from a spec brief, all presentation, no schema. (1) **`TAP_SLOP` 8 -> 12** CSS px
+(8 is inside an ordinary thumb's involuntary travel, and every crossing silently became a one-pixel
+pan), plus `tapRejectRipple` -- a ring at the touch origin when a press that was STANDING ON A UNIT
+becomes a pan. The brief asked for that ring on every slop crossing; that fires on every drag of the
+map and reads as broken, so it is gated on there having been a tap to lose. (2) **Alpha hit-masking**
+in `unitAt`: a ripe crop is drawn at 4x on a 14-unit column pitch, so several half-transparent boxes
+under one thumb is ordinary, and an art hit outranks a neighbour's ground hit -- the empty corner of
+the plant in front was stealing taps from the plant the thumb was on. `lib/stackacres/alpha-mask.ts`
+holds the pure half (a 32-cell max-alpha grid per texture, `ALPHA_HIT_THRESHOLD` 0.1); the scene reads
+each crop texture back ONCE via `getImageData` in `buildUnit`, never on the tap path, and a point in
+the fingertip PAD but outside the raw bounds is deliberately never masked away. (3) **Crops now grow
+instead of teleporting**: `signatureOf` counting the stage meant every boundary was a full node
+rebuild -- a 56%/60% size jump plus a texture swap in one frame. `growCrop` eases the node already
+standing there over `CROP_GROWTH_TWEEN_MS` (350), with plant scale, shadow, feet offset and the ready
+ring's radius all read off ONE `{t}` proxy (matching durations are not lockstep; a shadow that
+detaches from its plant is the one part of this that reads as a bug). The enlargement is baked into
+the texture, so the tween starts the NEW frame shrunk to the OLD one's apparent size --
+`cropStageSpriteBlend` is that ratio. (4) **`GameJuiceManager` is wired** -- 481 lines of harvest pop,
+crit flash and barn-absorb that were fully written, fully tested and never constructed (the codebase
+said so itself, in `frenzy-fx-manager.ts` and `frenzy.ts`: "unwired dead code"). Now built in
+`create()` and fired from `celebrateHarvest`; the crit is a separate `celebrateCrit` pushed from the
+shell, because the roll happens server-side inside the guarded write and nothing local can predict it.
+Also: Town Contracts settle from inside a modal, so `tapAnchor` is null and `floatAt` never fired --
+the largest deliberate Gold event in the game was quieter than picking one carrot. `contract-payout.tsx`
+gives it a mote burst out of the settled row and a `goldTickerValue` count-up. And the equipment ladder
+is visible at last: all three rungs named `ico-scythe`, so the Golden Spade looked exactly like the
+Trowel in hand -- each rung now has its own sprite-backed painter, and `cutBurst` throws 3/6/9
+clippings by `toolTierRank`.
+**Deliberately not done: `useCrossbreedHarvestFx` (task 3.3 of the brief).** Crossbreeding has a pure
+engine, a service and a store, and NO route, NO action and NO UI -- `grep -rl crossbreed app/ components/`
+finds only the FX hook and the juice manager. There is no execution branch to wire it into, and firing
+the flash off an ordinary crop harvest would promise a hybrid that nothing can ever credit. It needs
+the feature reaching a player first.
+**No DB work.** The brief asked for `adjust_homestead_inventory` RPC deltas with row-level locking;
+that RPC does not exist, `homestead_inventory` is dead (a brief has now named it wrongly five times --
+see `[[reference_stackchips_migrations_not_auto_applied]]`'s neighbours), and none of these four tasks
+touches persistence at all.
+
 ### Wildlife Ecosystem & Nighttime Predator Defense (2026-09-06)
 New system, built from a spec brief rather than a direct Kayo ask: peaceful wildlife (squirrels,
 birds) roams the treeline by day, predators (coyotes, wolves) spawn along the map's outer perimeter

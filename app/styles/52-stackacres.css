@@ -3274,6 +3274,97 @@
 
 .sa-contract-rewards li.is-gold { background: var(--sa-corn); color: var(--sa-outline); }
 
+/* ---- a delivered contract's own answer --------------------------------
+   Every other Gold payout on this farm is answered in the world, because every
+   other one is earned there -- a harvest tap has a finger position and the
+   scene floats the reward out of it. A contract is settled from inside this
+   sheet with the map hidden behind a scrim, so the effect has to come to the
+   press instead. The burst rises out of the row that was filled and the
+   count-up sits over it; see components/arcade/stackacres/contract-payout.tsx.
+
+   The row is the positioning context, so nothing here escapes the board. */
+.sa-contract { position: relative; }
+
+.sa-contract.is-paid {
+  box-shadow: inset 0 0 0 3px var(--sa-corn), 0 0 0 4px rgb(255 210 63 / 0.28), var(--sa-drop);
+}
+
+.sa-contract-payout {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--sa-r-block);
+  pointer-events: none;
+}
+
+.sa-contract-payout-burst {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* One animation, driven by each mote's own --sa-mote-* numbers, so fourteen
+   motes cost one keyframe rule rather than fourteen. */
+.sa-contract-mote {
+  position: absolute;
+  bottom: 34%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sa-corn);
+  box-shadow: 0 0 0 1.5px var(--sa-outline);
+  opacity: 0;
+  animation-name: sa-contract-mote-rise;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes sa-contract-mote-rise {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) scale(0.5); }
+  18% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--sa-mote-drift, 0), calc(-1 * var(--sa-mote-rise, 60px)), 0)
+      scale(0.9);
+  }
+}
+
+/* The figure itself, over the middle of the row. Tabular so the digits do not
+   shuffle sideways while they count. */
+.sa-contract-ticker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  animation: sa-contract-ticker-in 260ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+.sa-contract-ticker strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  color: var(--sa-ink);
+  font-size: 19px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--sa-drop);
+}
+
+.sa-contract-ticker strong.is-gold { background: var(--sa-corn); color: var(--sa-outline); }
+
+.sa-contract-ticker strong.is-influence { font-size: 15px; }
+
+@keyframes sa-contract-ticker-in {
+  from { opacity: 0; transform: scale(0.72); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .sa-contract .sa-cta { margin-top: 12px; }
 
 .sa-contracts-ask { margin-top: 12px; }
@@ -3658,6 +3749,10 @@
   .sa-cta,
   .sa-exchange-bar > span,
   .sa-contract-bar > span { transition: none; }
+  /* The figure still arrives and still says what was paid; it just does not
+     spring in, and the component throws no motes at all (it checks the same
+     query in JS and counts straight to the total). */
+  .sa-contract-ticker { animation: none; }
   .sa-district-panel,
   .sa-district-panel.is-open,
   .sa-panel-tab { transition-duration: 1ms; }

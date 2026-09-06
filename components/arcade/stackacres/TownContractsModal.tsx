@@ -21,6 +21,7 @@ import {
   machineItemLabel,
   type MachineItemId,
 } from "@/lib/stackacres/machine-items";
+import { ContractPayout } from "./contract-payout";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -158,6 +159,23 @@ export interface TownContractsModalProps {
 type Note = { readonly tone: "paid" | "refused"; readonly text: string };
 
 /**
+ * A delivery that has actually paid, and which row it paid from.
+ *
+ * Held next to `note` rather than derived from it: the note is prose and gets
+ * overwritten by the next thing the sheet has to say, while this is the effect
+ * itself and is keyed by `nonce` so a second delivery replays rather than
+ * showing a ticker that has already finished counting. Only ever set from a
+ * confirmed `{ ok: true }` carrying a reward -- see `ContractPayout`'s own
+ * header on why this fires nothing optimistically.
+ */
+type Payout = {
+  readonly contractId: string;
+  readonly gold: number;
+  readonly influence: number;
+  readonly nonce: number;
+};
+
+/**
  * Wraps a handler so the press is consumed here rather than travelling on.
  * Applied to every pointer entry point on the scrim and the sheet, including
  * the ones with nothing else to do -- a bare `stopPropagation` handler is the
@@ -209,6 +227,7 @@ export function TownContractsModal({
   const [pending, setPending] = useState<readonly ContractRequirement[]>([]);
   const [settling, setSettling] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
+  const [payout, setPayout] = useState<Payout | null>(null);
 
   const closeAll = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(closeAll, !settling);
@@ -288,6 +307,7 @@ export function TownContractsModal({
       if (busy || settling || target.status !== "posted") return;
 
       setNote(null);
+      setPayout(null);
       setSettling(true);
       const applied: ContractRequirement[] = [];
       try {
@@ -323,6 +343,17 @@ export function TownContractsModal({
             ? `Delivered. ${reward.gold.toLocaleString()} Gold and ${reward.influence.toLocaleString()} Influence.`
             : "Delivered.",
         });
+        // The row's own answer, on top of the wording above. Anchored to the
+        // contract that was filled rather than to the sheet, so the burst rises
+        // out of the thing the player pressed.
+        if (reward) {
+          setPayout({
+            contractId: target.id,
+            gold: reward.gold,
+            influence: reward.influence,
+            nonce: Date.now(),
+          });
+        }
       } catch {
         rollback(applied);
         setNote({ tone: "refused", text: "That did not go through. Nothing was taken." });
@@ -418,8 +449,19 @@ export function TownContractsModal({
               className={clsx("sa-contract", {
                 "is-posted": entry.status === "posted",
                 "is-ready": entry.ready,
+                "is-paid": payout?.contractId === entry.id,
               })}
             >
+              {/* Keyed on the nonce, so a second delivery is a fresh instance
+                  rather than a live one asked to replay -- see
+                  ContractPayout's own header. */}
+              {payout?.contractId === entry.id && (
+                <ContractPayout
+                  key={payout.nonce}
+                  gold={payout.gold}
+                  influence={payout.influence}
+                />
+              )}
               <div className="sa-contract-head">
                 <h3>{entry.title}</h3>
                 <span className="sa-contract-tag">

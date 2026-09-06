@@ -9,6 +9,10 @@ import {
   cropShadowScale,
   cropSpriteAlpha,
   cropSpriteScale,
+  CROP_GROWTH_TWEEN_MS,
+  cropGroundOffsetBlend,
+  cropShadowScaleBlend,
+  cropStageSpriteBlend,
   type CropStage,
 } from "./crop-visuals";
 
@@ -141,5 +145,62 @@ describe("how big the grown footprint actually gets", () => {
     // Six of them side by side would not fit, which is the whole point of the
     // art-beats-ground tap rule -- but one must at least not span the field.
     expect(diamond).toBeLessThan(MEADOW_W / 2);
+  });
+});
+
+describe("growing between two frames", () => {
+  it("starts the new texture at exactly the old frame's apparent size", () => {
+    // The swap itself must be invisible: at t = 0 the new frame, drawn at its
+    // own baked size, has to render at the size the old one occupied.
+    expect(cropStageSpriteBlend(0, 1, 0)).toBeCloseTo(cropSpriteScale(0) / cropSpriteScale(1));
+    expect(cropStageSpriteBlend(1, 2, 0)).toBeCloseTo(cropSpriteScale(1) / cropSpriteScale(2));
+  });
+
+  it("lands on the new frame's own natural size", () => {
+    for (const [from, to] of [
+      [0, 1],
+      [1, 2],
+      [0, 2],
+    ] as const) {
+      expect(cropStageSpriteBlend(from, to, 1)).toBe(1);
+    }
+  });
+
+  it("grows monotonically across the tween", () => {
+    let previous = -Infinity;
+    for (let t = 0; t <= 1.0001; t += 0.1) {
+      const scale = cropStageSpriteBlend(1, 2, t);
+      expect(scale).toBeGreaterThan(previous);
+      previous = scale;
+    }
+  });
+
+  it("clamps rather than overshooting its target frame", () => {
+    expect(cropStageSpriteBlend(1, 2, 1.4)).toBe(1);
+    expect(cropStageSpriteBlend(1, 2, -0.4)).toBeCloseTo(cropSpriteScale(1) / cropSpriteScale(2));
+    expect(cropStageSpriteBlend(1, 2, Number.NaN)).toBe(1);
+  });
+
+  it("moves the shadow in lockstep with the plant, ending on the new stage's own size", () => {
+    expect(cropShadowScaleBlend(1, 2, 0)).toBeCloseTo(cropShadowScale(1));
+    expect(cropShadowScaleBlend(1, 2, 1)).toBeCloseTo(cropShadowScale(2));
+    // Linear in t, which is what "lockstep" has to mean for a shadow driven
+    // off the same proxy as the plant above it.
+    expect(cropShadowScaleBlend(1, 2, 0.5)).toBeCloseTo(
+      (cropShadowScale(1) + cropShadowScale(2)) / 2,
+    );
+  });
+
+  it("keeps the feet correction pinned at both ends of a growth", () => {
+    for (const art of ["carrot", "corn"] as const) {
+      expect(cropGroundOffsetBlend(art, 1, 2, 0)).toBe(cropGroundOffset(art, 1));
+      expect(cropGroundOffsetBlend(art, 1, 2, 1)).toBe(cropGroundOffset(art, 2));
+    }
+  });
+
+  it("is short enough to finish inside the beat a tap already plays", () => {
+    // popUnit's own chain is 90 + 130 + 150 = 370ms.
+    expect(CROP_GROWTH_TWEEN_MS).toBeLessThan(370);
+    expect(CROP_GROWTH_TWEEN_MS).toBeGreaterThan(200);
   });
 });

@@ -23,6 +23,7 @@ import type { SynergyArchetype } from "./synergy-perks";
 import type { MidnightMerchantItemId } from "./midnight-merchant";
 import type { NpcId } from "./friendship";
 import type { MachineItemId } from "./machine-items";
+import type { SoilTier } from "./soil-tiers";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -59,9 +60,12 @@ export type Action =
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
-  // coordinates, not world units -- see soilTileAt. `place-soil-tile` spends
-  // SOIL_TILE_PRICE_GOLD; `remove-soil-tile` moves no Gold.
-  | { action: "place-soil-tile"; tx: number; ty: number }
+  // coordinates, not world units -- see soilTileAt. Gold moves at the shop
+  // (`buy-soil`, priced from SOIL_TIER_DEFS server-side) and nowhere else:
+  // `place-soil-tile` spends a BAG of the named tier, and `remove-soil-tile`
+  // spends nothing and refunds nothing.
+  | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
+  | { action: "buy-soil"; tier: SoilTier; quantity: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
   // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens

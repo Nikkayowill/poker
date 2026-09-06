@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cropSpot, stockZone } from "@/lib/stackacres/world";
+import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_CATALOGUE } from "@/lib/stackacres/catalogue";
 import { pipeKey, pipeTileAt, PIPE_NEIGHBORS } from "@/lib/stackacres/irrigation";
 import {
@@ -20,6 +20,7 @@ import { __resetStackAcresPipesForTest } from "./stackacres-pipe-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { SECTOR_LADDER } from "@/lib/stackacres/sectors";
 import { adjustGold, ensureProfile } from "./profile-store";
+import { createSoilMap, mergeSoilTiles } from "@/lib/stackacres/soil";
 
 const T0 = new Date("2026-08-31T12:00:00.000Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
@@ -40,12 +41,27 @@ async function balance(token: string): Promise<number> {
   return (await ensureProfile(token)).goldBalance;
 }
 
-/** Sows a cash_crop and returns its id plus the pipe tile it stands on. */
+/**
+ * Sows a cash_crop and returns its id plus the pipe tile it stands on.
+ *
+ * RESOLVES THE SPOT THE WAY THE FARM DRAWS IT -- through the soil map and the
+ * crop's own fixed slot. This used to call `cropSpot(zone, unit.id)` with no
+ * placement, which is the hash-SCATTER fallback, and it passed only because
+ * the service resolved it the same wrong way: both agreed on a point the crop
+ * is not drawn at. Now that `irrigableCrops` measures reach from the bed the
+ * crop actually stands on, this helper has to as well, or it places the pipe
+ * somewhere the plant isn't.
+ */
 async function sowCropOnKnownTile(token: string) {
   const view = await stockStackAcres(token, { stock: "cash_crop" }, T0);
   const unit = view.units.filter((u) => u.stock === "cash_crop").at(-1);
   if (!unit) throw new Error("no cash_crop unit");
-  const spot = cropSpot(stockZone("cash_crop"), unit.id);
+  const soil = createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), view.soilTiles));
+  const spot = cropSpot(stockZone("cash_crop"), unit.id, {
+    soil,
+    rank: 0,
+    slot: unit.soilSlot,
+  });
   return { unitId: unit.id, tile: pipeTileAt(spot.x, spot.y), readyAt: unit.readyAt };
 }
 

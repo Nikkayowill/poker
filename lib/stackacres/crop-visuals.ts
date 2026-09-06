@@ -41,12 +41,27 @@ export function cropArtFor(stock: StackAcresStock): CropArt | null {
  * Sprite scale per frame, against the painter's own drawn size.
  *
  * Stage 1 (2.5x) and stage 2 (4x) are the two the mobile-legibility pass
- * actually specified. Stage 0 is 1.6x: a seedling has to stay clearly the
+ * actually specified. Stage 0 is 1.5x: a seedling has to stay clearly the
  * smallest of the three or the ramp stops reading as growth, but leaving it
  * at 1x next to a 2.5x sprout makes the first frame invisible and the second
  * one look like it teleported in.
+ *
+ * EVERY VALUE HERE MUST LAND ON A WHOLE PIXEL for both crops' painter boxes,
+ * because `bakeSpriteTexture` takes `Math.ceil(w * ART_SCALE * scale)` per
+ * axis INDEPENDENTLY. Stage 0 was 1.6x, which is where that bites: a carrot's
+ * 12x16 box gives 153.6 x 204.8, which ceils to 154 x 205 -- so the frame was
+ * resampled by 1.6042x across and 1.6016x down, a NON-UNIFORM stretch, and
+ * the seedling came out very slightly squashed as well as soft. At 1.5x all
+ * four numbers are exact (carrot 144x192, corn 144x264); stages 1 and 2
+ * already were. crop-visuals.test.ts holds the whole table to that rule so a
+ * future retune cannot reintroduce a fractional rung.
+ *
+ * This is a ROUNDING fix, not a fix for crop softness in general. The crop
+ * PNGs are ~5-6x upscales of 13-17 pixel source bands, so the frames are
+ * starved of real detail that no scale here can restore -- that needs new art
+ * at bake resolution. See `scripts/prepare-stackacres-crops.py`.
  */
-const STAGE_SCALE: Readonly<Record<CropStage, number>> = { 0: 1.6, 1: 2.5, 2: 4 };
+const STAGE_SCALE: Readonly<Record<CropStage, number>> = { 0: 1.5, 1: 2.5, 2: 4 };
 
 export function cropSpriteScale(stage: CropStage): number {
   return STAGE_SCALE[stage];

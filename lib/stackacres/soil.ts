@@ -36,6 +36,9 @@
 
 import type { StackAcresStock } from "./catalogue";
 import { isoProject } from "./iso";
+// A VALUE import, and safe: ./soil-tiers.ts imports nothing at all, so it is
+// a strictly deeper leaf than this file and cannot close a cycle back.
+import { toSoilTier, type SoilTier } from "./soil-tiers";
 // TYPE-ONLY, and it has to stay that way. ./world.ts value-imports THIS
 // file, so a value import back the other way is a runtime cycle: world.ts's
 // bindings are still in their temporal dead zone while this module's body
@@ -60,7 +63,7 @@ import type { WorldPoint, WorldRect } from "./world";
  *
  * Chosen at 4 art units rather than 1 because a tile is a PURCHASE. At one
  * art unit the player would be buying a square that holds a single plant and
- * the shop would be a clicker; at 64 a tile holds nine
+ * the shop would be a clicker; at 64 a tile holds a dozen
  * (`SOIL_SLOTS_PER_TILE`) and reads as a garden bed. It also has to stay
  * strictly larger than `SOIL_EDGE_BAND` for the 3x3 probe in
  * `soilSignedDistance` to be exhaustive -- see that function.
@@ -92,6 +95,25 @@ export interface SoilTile extends SoilTileCoord {
    */
   order: number;
   origin: SoilTileOrigin;
+  /**
+   * What the bed is made of (./soil-tiers.ts). OPTIONAL, and read through
+   * `soilTileTier` rather than directly: a starter tile has no stored tier at
+   * all (starter tiles are never persisted -- see `starterSoilTiles`), and
+   * every row written before the tier column existed has none either. Both
+   * cases mean `SOIL_DEFAULT_TIER`, which is what those beds have always
+   * been. Left optional rather than defaulted at every construction site so
+   * that the dozens of existing `{ tx, ty, order, origin }` literals -- most
+   * of them in tests about geometry, which the tier does not touch -- stay
+   * valid and keep meaning "a plain bed".
+   */
+  tier?: SoilTier;
+}
+
+/** The tier of a bed, with the absent case resolved. Always use this rather
+ *  than reading `.tier`, so a starter tile and a legacy row cannot read as
+ *  `undefined` at a call site doing arithmetic with the multiplier. */
+export function soilTileTier(tile: Pick<SoilTile, "tier">): SoilTier {
+  return toSoilTier(tile.tier);
 }
 
 /**
@@ -237,12 +259,20 @@ export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): 
 export const SOIL_STARTER_TILES = 2;
 
 /**
- * Gold cost of one purchased tile. Flat price per tile -- no ladder, no
- * scaling with how many a player already owns. A bed is cosmetic and
- * organisational (see the file header: it never gates how many crops can be
- * grown), so there is no economy reason for a rising price the way land or
- * capacity have one; a flat price is also the one number a shop button can
- * show without reading anything else off the farm first.
+ * Gold cost of one PLAIN purchased tile -- `SOIL_DEFAULT_TIER`'s own price,
+ * restated here because this constant predates tiers and is what the flat
+ * 2,000 Gold bed has always cost. soil-tiers.test.ts holds the two equal, so
+ * repricing the plain bed in one place cannot drift from the other.
+ *
+ * Flat per tile -- no ladder, no scaling with how many a player already owns.
+ * A bed still does not gate how many crops can be grown (see the file
+ * header), so there is no economy reason for a rising price the way land or
+ * capacity have one. What a bed is no longer is purely cosmetic: since
+ * ./soil-tiers.ts, the TIER a bed is bought at can shorten a crop's cycle and
+ * water its own tile. Those effects belong to the tier, not to this price,
+ * and both are applied outside this module -- growth is baked into `ready_at`
+ * at sow, hydration is resolved by the irrigation recompute. Nothing in THIS
+ * file reads a tier for anything but passing it along.
  */
 export const SOIL_TILE_PRICE_GOLD = 2000;
 
@@ -400,6 +430,71 @@ export function soilSlotSpotForRank(soil: SoilMap, rank: number): WorldPoint | n
   const tiles = orderedSoilTiles(soil);
   const tile = tiles[Math.floor(wrapped / SOIL_SLOTS_PER_TILE)];
   return soilSlotPoint(tile, wrapped % SOIL_SLOTS_PER_TILE);
+}
+
+/**
+ * The starter pair ahead of whatever this profile has bought -- the full slot
+ * space, in the one order both sides have to agree on.
+ *
+ * ONE OWNER, deliberately. The server assigns a crop's slot index and the
+ * client renders it, and those two only line up while both flatten the tiles
+ * the same way. Two hand-rolled spreads (there was one in the shell already)
+ * is exactly the drift `PEN_BLOCKS`/`GROW_AREA` and the three copies of
+ * `STAKES_TIERS` are cited for elsewhere in this codebase -- except here the
+ * symptom would be a crop drawn on a bed that is not the one that sped it up.
+ *
+ * The area is a parameter rather than read from ./world.ts's `growAreaBounds`
+ * because this module may not value-import that one (see the file header).
+ */
+export function mergeSoilTiles(area: WorldRect, purchased: readonly SoilTile[]): SoilTile[] {
+  return [...starterSoilTiles(area), ...purchased];
+}
+
+/**
+ * The world point for a crop holding a FIXED slot, or null when the slot
+ * space is empty. Wraps a slot past capacity exactly as
+ * `soilSlotSpotForRank` wraps a rank past it: selling off beds must not make
+ * a crop invisible and untappable.
+ */
+export function soilSlotSpot(soil: SoilMap, slot: number): WorldPoint | null {
+  const capacity = soilCapacity(soil);
+  if (capacity <= 0) return null;
+  const wrapped = ((slot % capacity) + capacity) % capacity;
+  const tiles = orderedSoilTiles(soil);
+  return soilSlotPoint(tiles[Math.floor(wrapped / SOIL_SLOTS_PER_TILE)], wrapped % SOIL_SLOTS_PER_TILE);
+}
+
+/** Which tile a slot index falls on, or null when there is no soil. Same
+ *  wrap as `soilSlotSpot`, so the two never disagree about a slot's home. */
+export function soilSlotTile(soil: SoilMap, slot: number): SoilTile | null {
+  const capacity = soilCapacity(soil);
+  if (capacity <= 0) return null;
+  const wrapped = ((slot % capacity) + capacity) % capacity;
+  return orderedSoilTiles(soil)[Math.floor(wrapped / SOIL_SLOTS_PER_TILE)] ?? null;
+}
+
+/**
+ * The lowest slot nobody is standing in, or null when the soil is full.
+ *
+ * LOWEST rather than random, so sowing fills bed one before bed two and a
+ * player watching their farm sees it pack in reading order. Full is a real
+ * answer, not an error: the caller sows anyway and leaves the slot null,
+ * which puts the crop back on the wrapping rank-hash path rather than
+ * refusing a purchase because the player is out of ground.
+ */
+export function nextFreeSoilSlot(soil: SoilMap, taken: Iterable<number>): number | null {
+  const capacity = soilCapacity(soil);
+  if (capacity <= 0) return null;
+  const used = new Set<number>();
+  for (const slot of taken) {
+    // Normalised the same way the renderer wraps it, so a stale out-of-range
+    // slot still blocks the cell it is actually drawn in.
+    used.add(((slot % capacity) + capacity) % capacity);
+  }
+  for (let slot = 0; slot < capacity; slot += 1) {
+    if (!used.has(slot)) return slot;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */

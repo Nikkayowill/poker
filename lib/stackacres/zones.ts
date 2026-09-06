@@ -360,8 +360,11 @@ function deepInZone(id: ZoneId, x: number, y: number): boolean {
  * The Farmstead has none: its own scatter list is already empty, so there is
  * nothing to exclude.
  */
-const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
-  meadow: { x: 220, y: 560, width: 160, height: 160 },
+export const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
+  // Must equal GROW_AREA.meadow in ./world.ts. zones.test.ts now holds every
+  // entry here to that source -- this pair has drifted apart before, and the
+  // wild-growth exclusion it exists for silently stopped covering the plot.
+  meadow: { x: 256, y: 576, width: 192, height: 192 },
   oxfields: { x: 680, y: 70, width: 160, height: 160 },
   wallow: { x: -320, y: -390, width: 160, height: 160 },
 };

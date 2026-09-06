@@ -79,9 +79,16 @@ import {
   soilTileAt,
   soilTilesEqual,
   starterSoilTiles,
-  SOIL_TILE_PRICE_GOLD,
   type SoilTile,
 } from "@/lib/stackacres/soil";
+import {
+  SOIL_DEFAULT_TIER,
+  SOIL_TIERS,
+  soilTierDef,
+  type SoilStock,
+  type SoilTier,
+} from "@/lib/stackacres/soil-tiers";
+
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
@@ -319,6 +326,9 @@ interface StackAcresResponse {
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
    *  `StackAcresView.soilTiles`'s own doc comment. */
   soilTiles?: SoilTile[];
+  /** Unplaced bags per tier. Absent on a response predating Ray's soil shelf,
+   *  which reads as an empty barn. */
+  soilStock?: SoilStock;
   error?: string;
   round?: StackAcresUnitSnapshot[];
   /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
@@ -502,6 +512,9 @@ export function StackAcresFarm() {
    *  comment for why the starter pair is never in here. Merged with
    *  `starterSoilTiles` below, right before it reaches the scene. */
   const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
+  /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
+   *  so a response can replace it wholesale. */
+  const [soilStock, setSoilStock] = useState<SoilStock>({});
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
    * The processing track (wheat, mills, the one open Town Contract), held as
@@ -924,6 +937,7 @@ export function StackAcresFarm() {
     if (data.soilTiles) {
       setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
     }
+    if (data.soilStock) setSoilStock(data.soilStock);
   }, []);
 
   /**
@@ -1143,6 +1157,17 @@ export function StackAcresFarm() {
   useEffect(() => {
     world.current?.setMerchant(merchantRendered);
   }, [merchantRendered]);
+
+  // The bed outline follows the ring, because the ring is where a bed is
+  // bought. Keyed on the radial state, which changes only on a tap, so this
+  // pushes once per open and once per close rather than per frame -- and
+  // every `setRadial(null)` site clears the outline without having to know
+  // it exists. Only the Crop Fields can hold a bed (the service refuses
+  // every other district), so no other zone draws one.
+  const radialSoilWorld = radial?.zone === "meadow" ? radial.world : null;
+  useEffect(() => {
+    world.current?.previewSoilAt(radialSoilWorld);
+  }, [radialSoilWorld]);
 
   /**
    * Answers what became of one action, for the callers that have to undo
@@ -1985,10 +2010,12 @@ export function StackAcresFarm() {
    * takes. Nothing here talks to the scene directly.
    */
   const onPlaceSoilTile = useCallback(
-    (tx: number, ty: number) => {
+    (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
       buySound();
       setRadial(null);
-      void act({ action: "place-soil-tile", tx, ty });
+      // The tier names WHICH bed; the server reads its price from
+      // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
+      void act({ action: "place-soil-tile", tx, ty, tier });
     },
     [act],
   );
@@ -2129,30 +2156,42 @@ export function StackAcresFarm() {
    * actually painted. A starter tile answers with neither button, matching
    * soil.ts's own "the free starter beds are permanent" rule.
    */
-  const soilExtraAction = (() => {
-    if (!radial || radial.zone !== "meadow") return null;
+  const soilExtraActions = (() => {
+    if (!radial || radial.zone !== "meadow") return [];
     const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
     const existing = mergedSoilTiles.find((tile) => tile.tx === tx && tile.ty === ty);
     if (!existing) {
-      const afford = gold >= SOIL_TILE_PRICE_GOLD;
-      return {
-        key: "till-bed",
-        label: "Till a Bed",
-        icon: "ico-plant" as PainterName,
-        cost: SOIL_TILE_PRICE_GOLD,
-        disabledReason: afford ? undefined : "Not enough Gold",
-        onSelect: () => onPlaceSoilTile(tx, ty),
-      };
+      // ONE BUTTON PER TIER, generated from SOIL_TIER_DEFS rather than listed
+      // here, so adding a tier to that table adds it to this ring and there is
+      // no second place to forget. The label carries the tier's own name --
+      // "Till a Bed" would no longer say what is being bought.
+      // NO `cost` HERE any more: soil is paid for at Ray's shelf, so showing a
+      // Gold price on this ring would read as a second charge. A tier with no
+      // bags left is offered but disabled, which is what tells the player the
+      // shop is where to go -- hiding it would make the ring silently shrink.
+      return SOIL_TIERS.map((tier) => {
+        const def = soilTierDef(tier);
+        const held = soilStock[tier] ?? 0;
+        return {
+          key: `till-bed-${tier}`,
+          label: `${def.label} (${held})`,
+          icon: "ico-plant" as PainterName,
+          disabledReason: held > 0 ? undefined : "None in the barn — buy from Ray",
+          onSelect: () => onPlaceSoilTile(tx, ty, tier),
+        };
+      });
     }
     if (existing.origin === "purchased") {
-      return {
-        key: "remove-bed",
-        label: "Remove Bed",
-        icon: "ico-clear" as PainterName,
-        onSelect: () => onRemoveSoilTile(tx, ty),
-      };
+      return [
+        {
+          key: "remove-bed",
+          label: "Remove Bed",
+          icon: "ico-clear" as PainterName,
+          onSelect: () => onRemoveSoilTile(tx, ty),
+        },
+      ];
     }
-    return null;
+    return [];
   })();
 
   return (
@@ -2317,7 +2356,7 @@ export function StackAcresFarm() {
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
-              extraAction={soilExtraAction}
+              extraActions={soilExtraActions}
             />
           )}
 
@@ -2689,6 +2728,39 @@ export function StackAcresFarm() {
               likely to come up rich — a critical harvest pays Bushels straight into your hand on
               top of the produce.
             </p>
+
+            <StoreShelf icon="ico-plant">Soil</StoreShelf>
+            <p className="sa-sheet-note">
+              Beds are laid in the Crop Fields, not here — buy the bags, then tap bare ground out
+              there to lay one. A bed you take up is spent, so pick the spot before you dig.
+            </p>
+            <div className="sa-stock-cards">
+              {SOIL_TIERS.map((tier) => {
+                const def = soilTierDef(tier);
+                const held = soilStock[tier] ?? 0;
+                return (
+                  <div key={tier} className="sa-stock-card">
+                    <h3>{def.label}</h3>
+                    <p className="sa-stock-terms">{def.blurb}</p>
+                    <p className="sa-stock-yield">{def.price.toLocaleString()} Gold</p>
+                    <button
+                      type="button"
+                      className="sa-cta"
+                      disabled={isPending(`buy-soil:${tier}`) || gold < def.price}
+                      onClick={() => {
+                        buySound();
+                        void act({ action: "buy-soil", tier, quantity: 1 });
+                      }}
+                    >
+                      Buy
+                    </button>
+                    <p className="sa-sheet-note">
+                      {held} in the barn
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
 
             <StoreShelf icon="ico-feed">Feed</StoreShelf>
             <p className="sa-sheet-note">

@@ -33,6 +33,7 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
     muckFee: null,
     permanent: false,
     housedIn: null,
+    soilSlot: null,
     ...overrides,
   };
 }

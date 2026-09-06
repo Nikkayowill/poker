@@ -25,6 +25,7 @@ function unit(
     muckFee: state === "mucked" ? 22 : null,
     permanent: false,
     housedIn: null,
+    soilSlot: null,
     ...overrides,
   };
 }

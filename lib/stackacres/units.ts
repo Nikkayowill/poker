@@ -52,6 +52,20 @@ export interface StackAcresUnitRow {
   /** What clearing this unit costs while it is mucked. Null unless mucked. */
   muckFee: number | null;
   /**
+   * Crops only, and only ones sown after soil tiers shipped: the fixed
+   * planting slot this crop holds in the flattened soil slot space (see
+   * `soilSlotPoint` in ./soil.ts).
+   *
+   * Null means "derive it from the rank hash", which is what every row
+   * written before this column existed does, and what livestock always does.
+   * The renderer honours a set slot and falls back to `soilSlotSpotForRank`
+   * for a null one, so an old crop keeps re-packing itself the way it always
+   * has while a new one stays put on the bed it was sown into. That stability
+   * is the whole point: it is what makes an Enriched bed's speed-up
+   * attributable to the crop actually standing on it.
+   */
+  soilSlot: number | null;
+  /**
    * True when this unit was bought outright with Gold. A permanent unit
    * restarts its own cycle at collection instead of being removed, and never
    * mucks -- see `collectStackAcres` in stackacres-service.ts. False for
@@ -108,6 +122,9 @@ export interface StackAcresUnitSnapshot {
    * that has no soil.
    */
   isWatered: boolean;
+  /** The crop's fixed planting slot, or null to derive it from the rank hash.
+   *  Passed straight through to the scene -- see `CropPlacement.slot`. */
+  soilSlot: number | null;
   /** What clearing this unit costs. Null unless mucked. */
   muckFee: number | null;
   /** True when this unit was bought outright and re-sows itself. */
@@ -281,6 +298,7 @@ export function toStackAcresUnitSnapshots(
         muckFee: row.muckFee,
         permanent: row.permanent,
         housedIn: row.housedIn,
+        soilSlot: row.soilSlot,
       };
     }
 
@@ -307,6 +325,7 @@ export function toStackAcresUnitSnapshots(
       muckFee: null,
       permanent: row.permanent,
       housedIn: row.housedIn,
+      soilSlot: row.soilSlot,
     };
   });
 }
@@ -387,6 +406,16 @@ export function optimisticallyStockedUnit(input: {
   nowMs: number;
 }): StackAcresUnitSnapshot {
   const def = STACKACRES_CATALOGUE[input.stock];
+  // Deliberately does NOT apply a soil tier's growth multiplier. Which bed
+  // this crop lands in is the server's own choice (`assignSoilSlot` picks the
+  // lowest free slot, which depends on what every other crop is standing in),
+  // so the client cannot know it without duplicating that search and reading
+  // the whole soil layout. The prediction is therefore PESSIMISTIC on tiered
+  // ground -- it shows the un-bonused cycle for the fraction of a second
+  // before the response lands and replaces the row with the real `ready_at`.
+  // Pessimistic is the right direction for a guess: a crop finishing sooner
+  // than predicted reads as a pleasant correction, one finishing later reads
+  // as the farm stalling.
   const durationMs = greenhouseDurationMs(input.stock, def.durationMs, input.inGreenhouse);
   return {
     id: input.id,
@@ -405,6 +434,7 @@ export function optimisticallyStockedUnit(input: {
     muckFee: null,
     permanent: input.permanent,
     housedIn: input.inGreenhouse ? "greenhouse" : null,
+    soilSlot: null,
   };
 }
 

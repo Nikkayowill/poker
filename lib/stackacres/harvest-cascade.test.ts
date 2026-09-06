@@ -19,6 +19,7 @@ function unit(id: string, stock: StackAcresStock, state: StackAcresUnitState): S
     muckFee: null,
     permanent: false,
     housedIn: null,
+    soilSlot: null,
   };
 }
 

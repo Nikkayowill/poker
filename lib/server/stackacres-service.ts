@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import {
   STACKACRES_CATALOGUE,
+  STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
@@ -51,7 +52,7 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
-import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
+import { cropRanks, cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import {
   recalculatePipeConnections,
   type IrrigableCrop,
@@ -65,9 +66,32 @@ import {
   removeStackAcresPipe,
   syncStackAcresPipeNetwork,
 } from "./stackacres-pipe-store";
-import { soilTileRect, SOIL_TILE_PRICE_GOLD, type SoilTile } from "@/lib/stackacres/soil";
 import {
+  createSoilMap,
+  mergeSoilTiles,
+  nextFreeSoilSlot,
+  soilSlotTile,
+  soilTileAt,
+  soilTileKey,
+  soilTileRect,
+  soilTileTier,
+  type SoilMap,
+  type SoilTile,
+} from "@/lib/stackacres/soil";
+import {
+  SOIL_BAGS_PER_PURCHASE,
+  soilGrowthMultiplier,
+  soilSelfHydrates,
+  soilTierDef,
+  soilTierPrice,
+  toSoilTier,
+  type SoilTier,
+} from "@/lib/stackacres/soil-tiers";
+import {
+  adjustStackAcresSoilStock,
   listStackAcresSoilTiles,
+  readStackAcresSoilStock,
+  type SoilStock,
   placeStackAcresSoilTile as placeSoilTileRow,
   removeStackAcresSoilTile as removeSoilTileRow,
 } from "./stackacres-soil-store";
@@ -496,6 +520,9 @@ export interface StackAcresView {
    *  `starterSoilTiles` and never persisted, see that function's own header.
    *  The client merges the two before handing the result to the scene. */
   soilTiles: SoilTile[];
+  /** Bags of each soil tier bought from Ray but not laid down yet
+   *  (`homestead_soil_stock`). A missing tier and 0 mean the same thing. */
+  soilStock: SoilStock;
   /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
    *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
   devotion: StackAcresDevotionView;
@@ -506,22 +533,81 @@ export interface StackAcresView {
   friendship: Record<NpcId, StackAcresFriendshipView>;
 }
 
-/** The working crops the irrigation recompute cares about, each at the fixed
- *  world point `cropSpot` hashes it to -- the pure module never touches
- *  world geometry beyond the tile size, so this resolves it here. */
-function irrigableCrops(rows: readonly StoredStackAcresUnit[]): IrrigableCrop[] {
+/**
+ * The working crops the irrigation recompute cares about, each at the world
+ * point it is actually DRAWN at -- the pure module never touches world
+ * geometry beyond the tile size, so this resolves it here.
+ *
+ * THE SOIL MAP IS REQUIRED, and passing it fixes a real mismatch rather than
+ * only serving the tiers. This used to call `cropSpot(zone, row.id)` with no
+ * placement, which is the hash-SCATTER fallback -- while the scene draws the
+ * same crop through `cropSpot(..., { soil, rank, slot })`, i.e. on a bed. The
+ * two disagreed, so a pipe's `PIPE_MAX_REACH` was measured from where the
+ * crop ISN'T: a player could run a pipe right up to a plant and have it stay
+ * thirsty, or water one nowhere near the network. Resolving the spot the same
+ * way the renderer does is what makes reach mean what the player sees.
+ *
+ * Ranks are computed over the same sibling set the scene uses (every crop it
+ * is drawing), so a rank-based fallback lands on the same slot on both sides.
+ */
+function irrigableCrops(
+  rows: readonly StoredStackAcresUnit[],
+  soil: SoilMap,
+): IrrigableCrop[] {
+  const working = rows.filter(
+    (row) => row.status === "working" && STACKACRES_CATALOGUE[row.stock].thirstMs !== null,
+  );
+  const ranks = cropRanks(working.map((row) => row.id));
   const crops: IrrigableCrop[] = [];
-  for (const row of rows) {
-    if (row.status !== "working") continue;
-    const zone = stockZone(row.stock);
-    // Livestock has no soil; stockZone still answers, but thirstMs === null
-    // means the recompute would never mark it irrigated anyway. Skip the
-    // work.
-    if (STACKACRES_CATALOGUE[row.stock].thirstMs === null) continue;
-    const spot = cropSpot(zone, row.id);
+  for (const row of working) {
+    // Livestock is already excluded above: thirstMs === null means the
+    // recompute would never mark it irrigated anyway, so skip the work.
+    const spot = cropSpot(stockZone(row.stock), row.id, {
+      soil,
+      rank: ranks.get(row.id) ?? 0,
+      slot: row.soilSlot,
+    });
     crops.push({ unitId: row.id, worldX: spot.x, worldY: spot.y });
   }
   return crops;
+}
+
+/**
+ * The whole hydration picture for one farm: the pipe network, plus the crops
+ * standing on a self-watering bed.
+ *
+ * ONE PLACE, called by every site that needs it (`snapshots`, the view
+ * builder, the pipe-removal before-shot and `recomputeIrrigation`). Those four
+ * used to each call `recalculatePipeConnections` themselves, which was fine
+ * while pipes were the only water source and is exactly the kind of thing
+ * that rots the moment a second one exists -- miss one site and a crop's
+ * `isWatered` disagrees with itself depending on which action last answered.
+ */
+function irrigationGridFor(
+  rows: readonly StoredStackAcresUnit[],
+  pipes: Parameters<typeof recalculatePipeConnections>[0]["tiles"],
+  soil: SoilMap,
+): NetworkGrid {
+  const crops = irrigableCrops(rows, soil);
+  const grid = recalculatePipeConnections({ tiles: pipes, crops });
+
+  const selfWatered = new Set<string>();
+  for (const crop of crops) {
+    const { tx, ty } = soilTileAt(crop.worldX, crop.worldY);
+    const tile = soil.get(soilTileKey(tx, ty));
+    if (tile && soilSelfHydrates(soilTileTier(tile))) selfWatered.add(crop.unitId);
+  }
+  if (selfWatered.size === 0) return grid;
+
+  return {
+    ...grid,
+    irrigatedUnitIds: new Set<string>([...grid.irrigatedUnitIds, ...selfWatered]),
+  };
+}
+
+/** The full slot space for one farm: the starter pair plus what was bought. */
+function soilMapFor(purchased: readonly SoilTile[]): SoilMap {
+  return createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), purchased));
 }
 
 function parseUnitId(value: unknown): string {
@@ -532,11 +618,12 @@ function parseUnitId(value: unknown): string {
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSnapshot[]> {
-  const [rows, pipes] = await Promise.all([
+  const [rows, pipes, purchasedSoil] = await Promise.all([
     listStackAcresUnits(profileId),
     listStackAcresPipes(profileId),
+    listStackAcresSoilTiles(profileId),
   ]);
-  const grid = recalculatePipeConnections({ tiles: pipes, crops: irrigableCrops(rows) });
+  const grid = irrigationGridFor(rows, pipes, soilMapFor(purchasedSoil));
   return toStackAcresUnitSnapshots(rows, now, grid.irrigatedUnitIds);
 }
 
@@ -613,6 +700,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     lifetimeGross,
     pipeRows,
     soilTiles,
+    soilStock,
     storedDevotion,
     storedFriendships,
   ] = await Promise.all([
@@ -646,6 +734,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresLifetimeGross(profile.id),
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
+    readStackAcresSoilStock(profile.id),
     readStackAcresDevotion(profile.id),
     // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
     // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
@@ -659,10 +748,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     if (heldQtys[index] > 0) held[itemId] = heldQtys[index];
   });
 
-  const irrigationGrid = recalculatePipeConnections({
-    tiles: pipeRows,
-    crops: irrigableCrops(rows),
-  });
+  const irrigationGrid = irrigationGridFor(rows, pipeRows, soilMapFor(soilTiles));
   const friendship = {} as Record<NpcId, StackAcresFriendshipView>;
   FRIENDSHIP_NPCS.forEach((npc, index) => {
     friendship[npc] = friendshipView(storedFriendships[index], now);
@@ -713,6 +799,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     },
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
+    soilStock,
     devotion: devotionView(storedDevotion, now),
     friendship,
   };
@@ -756,6 +843,47 @@ export async function getPrestigeMultiplier(profileId: string): Promise<number> 
 async function refundGold(profileId: string, gold: number): Promise<void> {
   if (gold <= 0) return;
   await creditGoldByProfile(profileId, gold).catch(() => null);
+}
+
+/**
+ * Picks the bed a crop about to be sown will stand in, and reports what that
+ * bed does to its cycle.
+ *
+ * READ-ONLY, and called BEFORE the seed is debited on purpose: it moves
+ * nothing and can only make the sow slower to answer, never wrong. A crop
+ * with nowhere to stand gets `slot: null` and the plain multiplier rather
+ * than a refusal -- running out of ground is not a reason to reject a
+ * purchase, and a null slot is exactly the pre-tier behaviour (the renderer
+ * falls back to the rank hash and the crop wraps into a shared slot).
+ *
+ * The full slot space is the starter pair plus what has been bought, flattened
+ * by `mergeSoilTiles` -- the SAME helper the shell hands the scene, which is
+ * what makes the slot index this returns mean the same bed on both sides.
+ */
+async function assignSoilSlot(
+  profileId: string,
+  stock: StackAcresStock,
+  inGreenhouse: boolean,
+): Promise<{ slot: number | null; growthMultiplier: number }> {
+  const plain = { slot: null, growthMultiplier: 1 };
+  if (inGreenhouse) return plain;
+  if (!(STACKACRES_CROPS as readonly string[]).includes(stock)) return plain;
+
+  const [purchased, units] = await Promise.all([
+    listStackAcresSoilTiles(profileId),
+    listStackAcresUnits(profileId),
+  ]);
+  const soil = createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), purchased));
+  const taken = units
+    .map((unit) => unit.soilSlot)
+    .filter((slot): slot is number => slot !== null);
+
+  const slot = nextFreeSoilSlot(soil, taken);
+  if (slot === null) return plain;
+  const tile = soilSlotTile(soil, slot);
+  if (!tile) return plain;
+
+  return { slot, growthMultiplier: soilGrowthMultiplier(soilTileTier(tile)) };
 }
 
 /**
@@ -1415,12 +1543,30 @@ export async function stockStackAcres(
     );
   }
 
+  // Which bed this crop is going into, and what that bed does for it.
+  //
+  // OPEN-AIR CROPS ONLY. Livestock never stands on a bed (`cropSpot` never
+  // ran for one), and a Greenhouse crop stands on the glasshouse's own
+  // sub-grid instead, so both keep a null slot and the plain multiplier. The
+  // two effects do not stack for the additional reason that they would
+  // otherwise multiply into a cycle far shorter than either was tuned for.
+  const soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse);
+
   try {
     // Snapshotted at stocking, never re-derived at collection -- the same
     // rule `yieldQuantity`/`stake` already follow. Outside the Greenhouse
-    // (or for a stock kind it does not accept) this is exactly `def.durationMs`,
-    // unchanged.
-    const durationMs = greenhouseDurationMs(stock, def.durationMs, inGreenhouse);
+    // (or for a stock kind it does not accept) the greenhouse term is exactly
+    // `def.durationMs`, unchanged.
+    //
+    // The soil term is snapshotted by the same act of writing `ready_at`:
+    // once the row carries an absolute instant, retuning
+    // `SOIL_TIER_DEFS[...].growthMultiplier` cannot reach back and change
+    // what an already-growing crop returns -- the rule the Ante Up wager
+    // ladders and `GREENHOUSE_GROWTH_MULTIPLIER` both state for themselves.
+    // Rounded once, at the end, so the two multipliers cannot each round.
+    const durationMs = Math.round(
+      greenhouseDurationMs(stock, def.durationMs, inGreenhouse) * soilAssignment.growthMultiplier,
+    );
     await createStackAcresUnit(profile.id, {
       stock,
       stake: def.seedCost,
@@ -1433,6 +1579,7 @@ export async function stockStackAcres(
       lastWateredAt: def.thirstMs === null ? null : now,
       permanent: false,
       housedIn: inGreenhouse ? "greenhouse" : null,
+      soilSlot: soilAssignment.slot,
     });
   } catch (error) {
     // The database refused outright -- the trigger raising on a cap race or a
@@ -3225,11 +3372,17 @@ async function recomputeIrrigation(
   now: Date,
   alsoStamp: ReadonlySet<string> = new Set<string>(),
 ): Promise<NetworkGrid> {
-  const [rows, pipes] = await Promise.all([
+  const [rows, pipes, purchasedSoil] = await Promise.all([
     listStackAcresUnits(profileId),
     listStackAcresPipes(profileId),
+    listStackAcresSoilTiles(profileId),
   ]);
-  const grid = recalculatePipeConnections({ tiles: pipes, crops: irrigableCrops(rows) });
+  const grid = irrigationGridFor(rows, pipes, soilMapFor(purchasedSoil));
+  // Only the PIPE topology is persisted -- `grid.irrigatedUnitIds` may now
+  // also hold crops a hydro bed waters, which is not a fact about any pipe.
+  // Syncing the whole grid is still right: the sync writes connector frames
+  // and hydration onto pipe rows, and a hydro-watered crop adds no pipe row
+  // for it to touch.
   await syncStackAcresPipeNetwork(profileId, grid);
 
   const stampIds = new Set<string>([...grid.irrigatedUnitIds, ...alsoStamp]);
@@ -3309,14 +3462,12 @@ export async function removeStackAcresPipeTile(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
 
-  const [unitsBefore, pipesBefore] = await Promise.all([
+  const [unitsBefore, pipesBefore, soilBefore] = await Promise.all([
     listStackAcresUnits(profile.id),
     listStackAcresPipes(profile.id),
+    listStackAcresSoilTiles(profile.id),
   ]);
-  const before = recalculatePipeConnections({
-    tiles: pipesBefore,
-    crops: irrigableCrops(unitsBefore),
-  });
+  const before = irrigationGridFor(unitsBefore, pipesBefore, soilMapFor(soilBefore));
 
   await removeStackAcresPipe(profile.id, tx, ty);
   await recomputeIrrigation(profile.id, now, before.irrigatedUnitIds);
@@ -3326,10 +3477,19 @@ export async function removeStackAcresPipeTile(
 /**
  * Places one purchased soil tile on the Crop Fields' own lattice, spending
  * Gold. Rule 1: the Gold leaves first, and a placement that cannot land --
- * the cell already taken, or a lost race for it -- refunds it. Purely
- * cosmetic/organisational (see lib/stackacres/soil.ts's own header): this
- * never touches a unit's growth or slot count beyond where it visually
- * stands, so there is nothing else here to keep in sync.
+ * the cell already taken, or a lost race for it -- refunds it.
+ *
+ * THE TIER SETS THE PRICE, and it is read from the tier table rather than
+ * from the request: the client sends WHICH bed it wants, never what that bed
+ * costs. `toSoilTier` degrades an unknown id to the cheapest tier, so a
+ * malformed or hostile body can only ever under-buy, never get an expensive
+ * bed for a cheap one.
+ *
+ * A tier is no longer purely cosmetic -- Enriched shortens a crop's cycle and
+ * Hydro waters its own tile -- but BOTH effects are applied elsewhere and
+ * neither is read here: growth is baked into `ready_at` at sow
+ * (`stockStackAcres`), and hydration is resolved by `recomputeIrrigation`.
+ * That split is why this function still moves nothing but Gold and one row.
  *
  * Bounded to the Long Meadow's own Crop Fields (`growAreaBounds("meadow")`)
  * -- never trust the client's tapped coordinate blindly, the same posture
@@ -3339,12 +3499,13 @@ export async function removeStackAcresPipeTile(
  */
 export async function placeStackAcresSoilTile(
   token: string,
-  input: { tx: number; ty: number },
+  input: { tx: number; ty: number; tier?: unknown },
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
+  const tier = toSoilTier(input.tier);
 
   const area = growAreaBounds("meadow");
   const rect = soilTileRect(tx, ty);
@@ -3357,24 +3518,27 @@ export async function placeStackAcresSoilTile(
     throw new StackAcresRequestError("A bed can only be tilled in the Crop Fields.", 400);
   }
 
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error.
-  const debited = await spendGoldByProfile(profile.id, SOIL_TILE_PRICE_GOLD);
-  if (!debited) {
+  // Rule 1, in bags rather than Gold: the thing being spent leaves before the
+  // bed exists, and anything that stops the bed existing puts it back. No Gold
+  // moves here at all -- it left at the shop (`buyStackAcresSoil`).
+  const remaining = await adjustStackAcresSoilStock(profile.id, tier, -1);
+  if (remaining === null) {
     throw new StackAcresRequestError(
-      `Tilling a bed costs ${SOIL_TILE_PRICE_GOLD.toLocaleString()} Gold.`,
-      400,
+      `No ${soilTierDef(tier).label} left. Buy a bag from Ray's supply store first.`,
+      409,
+      { round: await snapshots(profile.id, now) },
     );
   }
 
   let placed: Awaited<ReturnType<typeof placeSoilTileRow>>;
   try {
-    placed = await placeSoilTileRow(profile.id, tx, ty);
+    placed = await placeSoilTileRow(profile.id, tx, ty, tier);
   } catch (error) {
-    await refundGold(profile.id, SOIL_TILE_PRICE_GOLD);
+    await refundSoilBag(profile.id, tier);
     throw error;
   }
   if (!placed) {
-    await refundGold(profile.id, SOIL_TILE_PRICE_GOLD);
+    await refundSoilBag(profile.id, tier);
     throw new StackAcresRequestError(
       "There is already a bed there.",
       409,
@@ -3382,7 +3546,66 @@ export async function placeStackAcresSoilTile(
     );
   }
 
+  return view(profile, now);
+}
+
+/**
+ * Buys bags of one soil tier at Ray's supply store. Rule 1: the Gold leaves
+ * before the bags exist, and a failed credit refunds it.
+ *
+ * THE SHOP NEVER TOUCHES THE MAP. It sells a bag; `placeStackAcresSoilTile`
+ * decides where one goes and spends it. That split is why this function has no
+ * coordinate and no district check, and why a bought bag is never lost by
+ * tapping the wrong ground -- a refused placement returns the bag to the shelf.
+ *
+ * The price is read from `SOIL_TIER_DEFS`, never from the request. An unknown
+ * tier degrades to the cheapest via `toSoilTier`, so a hostile body can only
+ * ever under-buy.
+ */
+export async function buyStackAcresSoil(
+  token: string,
+  input: { tier?: unknown; quantity?: unknown },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tier = toSoilTier(input.tier);
+  const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > SOIL_BAGS_PER_PURCHASE) {
+    throw new StackAcresRequestError(
+      `Buy between 1 and ${SOIL_BAGS_PER_PURCHASE} bags at a time.`,
+      400,
+    );
+  }
+  const cost = soilTierPrice(tier) * quantity;
+
+  const debited = await spendGoldByProfile(profile.id, cost);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `${quantity} x ${soilTierDef(tier).label} costs ${cost.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  try {
+    const held = await adjustStackAcresSoilStock(profile.id, tier, quantity);
+    // A credit cannot go negative, so null here means the row moved under us
+    // rather than "not enough" -- either way no bags landed, so the Gold goes
+    // back.
+    if (held === null) throw new Error("Could not shelve that soil.");
+  } catch (error) {
+    await refundGold(profile.id, cost);
+    throw error;
+  }
+
   return view(debited, now);
+}
+
+/** Puts one bag back after a placement that could not land. Never throws, for
+ *  the same reason `refundGold` never does: this IS the failure path, and a
+ *  second failure here would hide the first. */
+async function refundSoilBag(profileId: string, tier: SoilTier): Promise<void> {
+  await adjustStackAcresSoilStock(profileId, tier, 1).catch(() => null);
 }
 
 /**

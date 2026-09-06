@@ -175,6 +175,45 @@ export const CRIT_SHAKE_DURATION_MS = 90;
 export const CRIT_FLASH_DURATION_MS = 120;
 
 /* ------------------------------------------------------------------ */
+/* Gold count-up ticker                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How long a payout takes to count up from nothing to its full figure.
+ *
+ * The one payout on this farm with NO world-space answer at all is a Town
+ * Contract: it is settled from inside a modal, so `stackacres-farm.tsx`'s tap
+ * anchor is null and `floatAt` never fires (see its call site, which says so).
+ * All a delivery got was a line of text and a sound, which left the single
+ * largest deliberate Gold event in StackAcres quieter than picking one carrot.
+ *
+ * 900ms is sized against the figure rather than picked round: contract rungs
+ * pay in the thousands, and a ticker fast enough to be over before the eye
+ * lands on it is a number that changed, not a number that was counted. It is
+ * also comfortably shorter than the sheet's own closing note takes to read, so
+ * nothing is left waiting on it.
+ */
+export const GOLD_TICKER_DURATION_MS = 900;
+
+/**
+ * The figure to show `t` of the way through the count-up.
+ *
+ * Ease-out cubic, so the ticker sprints through the leading digits and settles
+ * on the last few -- a linear count reads as a progress bar wearing a number.
+ * Floored, because Gold is counted in whole units everywhere else in the app,
+ * and exact at `t >= 1`: the last frame has to land on the real payout rather
+ * than one short of it, since this figure sits beside a balance the player can
+ * go and check.
+ */
+export function goldTickerValue(total: number, t: number): number {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (!Number.isFinite(t) || t >= 1) return Math.floor(total);
+  if (t <= 0) return 0;
+  const eased = 1 - Math.pow(1 - t, 3);
+  return Math.floor(total * eased);
+}
+
+/* ------------------------------------------------------------------ */
 /* Barn absorb                                                         */
 /* ------------------------------------------------------------------ */
 

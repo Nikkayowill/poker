@@ -881,6 +881,20 @@ export function StackAcresFarm() {
     unitsRef.current = units;
   }, [units]);
 
+  /**
+   * The held equipment rung, read the same way `unitsRef` is and for the same
+   * reason: `act` needs it to name the multiple a crit just paid ("CRIT! x2"),
+   * and it is the only plain VALUE that callback wants. Held in a ref rather
+   * than added to its dependency list so buying an upgrade does not give the
+   * dispatch a new identity -- every other entry in that list is a stable
+   * callback, and this is the file's own convention for a value `act` reads
+   * without depending on.
+   */
+  const toolTierRef = useRef(toolTier);
+  useEffect(() => {
+    toolTierRef.current = toolTier;
+  }, [toolTier]);
+
   const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.units) setUnits(data.units);
@@ -1325,6 +1339,18 @@ export function StackAcresFarm() {
               text: `Rich pickings! +${harvest.crit.toLocaleString()} Gold`,
               nonce: Date.now(),
             });
+            // And the world's own answer to it, on the unit that got lucky:
+            // the crit flash names the exact multiple the ladder just paid.
+            // `1 + critBonus` rather than `critBonus`, because the label reads
+            // as a TOTAL ("CRIT! x2" for the Golden Spade's bonus of 1) -- see
+            // `critFlashLabel`. A whole-farm sweep has no single unit to hang
+            // this on, so it keeps the toast alone.
+            if (single) {
+              world.current?.celebrateCrit(
+                single,
+                1 + stackacresToolTierDef(toolTierRef.current).critBonus,
+              );
+            }
           }
           // Ray's Museum, secret wing: its own toast, never folded into the
           // money line above -- a secret find pays no Gold at all, so it has

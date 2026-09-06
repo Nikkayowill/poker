@@ -79,10 +79,18 @@ export interface StackAcresToolTierDef extends StackAcresShopLock {
   /** Public path of the generated sprite, under public/. */
   sprite: string;
   /**
-   * Name of a vector painter in components/arcade/stackacres/stackacres-art.ts
-   * (its `PainterName` union), drawn until `sprite` loads. Kept a plain
-   * string for the same reason StackAcresToolDef.icon is: this file stays
-   * free of a components/ import.
+   * Name of a painter in components/arcade/stackacres/stackacres-art.ts (its
+   * `PainterName` union). Kept a plain string for the same reason
+   * StackAcresToolDef.icon is: this file stays free of a components/ import.
+   *
+   * ONE PER RUNG, and it has to stay that way. All three used to name
+   * `ico-scythe`, which meant the ghost floating over a mow drag drew the same
+   * picture whatever had been bought -- the Golden Spade looked exactly like
+   * the Trowel in the player's hand, and the only thing 250,000 Gold visibly
+   * changed was the number of passes. Each rung now names its own sprite-backed
+   * painter, which fronts the same PNG `sprite` above points the store shelf at
+   * (the painter is the canvas route to that file, `sprite` the DOM one), and
+   * falls back to the drawn scythe only for the frames before it loads.
    */
   icon: string;
   /** How far either side of the drag line one scythe stroke cuts, world units. */
@@ -125,7 +133,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     blurb: "The one in your back pocket. Cuts a narrow swathe, and never gets lucky.",
     price: null,
     sprite: "/stackacres/sprites/tool-trowel.png",
-    icon: "ico-scythe",
+    icon: "toolTrowel",
     reach: SCYTHE_REACH,
     // ZERO, and deliberately so. The free rung is the game as it already
     // plays: a player who never buys anything must see no behaviour change at
@@ -144,7 +152,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     blurb: "Half again the swathe, and harvests start coming up rich.",
     price: 45_000,
     sprite: "/stackacres/sprites/tool-iron-shovel.png",
-    icon: "ico-scythe",
+    icon: "toolIronShovel",
     reach: SCYTHE_REACH * 1.5,
     critChance: 0.12,
     critBonus: 0.75,
@@ -161,7 +169,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     blurb: "Clears the meadow in half the passes. A quarter of harvests pay double.",
     price: 250_000,
     sprite: "/stackacres/sprites/tool-golden-spade.png",
-    icon: "ico-scythe",
+    icon: "toolGoldenSpade",
     reach: SCYTHE_REACH * 2,
     critChance: 0.25,
     critBonus: 1,

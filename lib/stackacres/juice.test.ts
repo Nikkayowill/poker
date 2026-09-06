@@ -3,7 +3,9 @@ import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
 import { STACKACRES_YIELDS } from "./items";
 import {
   CRIT_SHAKE_DURATION_MS,
+  GOLD_TICKER_DURATION_MS,
   STACKACRES_JUICE_STYLES,
+  goldTickerValue,
   barnAbsorbAlpha,
   barnAbsorbDepth,
   barnAbsorbScale,
@@ -178,5 +180,45 @@ describe("every stock is reachable by name", () => {
   it("STACKACRES_STOCK and StackAcresStock stay in sync with the juice table", () => {
     const stocks: readonly StackAcresStock[] = STACKACRES_STOCK;
     expect(stocks.every((s) => s in STACKACRES_JUICE_STYLES)).toBe(true);
+  });
+});
+
+describe("goldTickerValue", () => {
+  it("starts at nothing and lands exactly on the payout", () => {
+    expect(goldTickerValue(4200, 0)).toBe(0);
+    expect(goldTickerValue(4200, 1)).toBe(4200);
+    // Past the end is still the payout, never one short of it -- this figure
+    // sits next to a balance the player can go and check.
+    expect(goldTickerValue(4200, 1.5)).toBe(4200);
+  });
+
+  it("counts up, never down", () => {
+    let previous = -1;
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      const shown = goldTickerValue(9999, t);
+      expect(shown).toBeGreaterThanOrEqual(previous);
+      previous = shown;
+    }
+  });
+
+  it("front-loads the count so the last digits settle", () => {
+    // Ease-out: half the time has already shown well over half the figure.
+    expect(goldTickerValue(1000, 0.5)).toBeGreaterThan(800);
+  });
+
+  it("shows whole Gold only", () => {
+    for (const t of [0.13, 0.37, 0.5, 0.81]) {
+      expect(Number.isInteger(goldTickerValue(1337, t))).toBe(true);
+    }
+  });
+
+  it("has nothing to count for a payout of nothing", () => {
+    expect(goldTickerValue(0, 0.5)).toBe(0);
+    expect(goldTickerValue(-10, 0.5)).toBe(0);
+    expect(goldTickerValue(Number.NaN, 0.5)).toBe(0);
+  });
+
+  it("is long enough to read as a count rather than a change", () => {
+    expect(GOLD_TICKER_DURATION_MS).toBeGreaterThanOrEqual(600);
   });
 });

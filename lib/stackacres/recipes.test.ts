@@ -25,8 +25,15 @@ describe("RECIPE_CATALOGUE", () => {
     }
   });
 
-  it("gives every machine kind at least one recipe, and every recipe one machine", () => {
+  it("gives every recipe-driven machine kind at least one recipe, and every recipe one machine", () => {
+    // The Vat is deliberately excluded: it is not a recipe-driven machine at
+    // all, and has no RECIPE_CATALOGUE entry to give it one -- see
+    // lib/stackacres/aging.ts's header on why sealing/collecting a Vat is a
+    // different shape (a multi-tier locked manifest, priced off
+    // `recipeRawGoldValue("cheese")` directly) rather than a queued or
+    // instant recipe run.
     for (const kind of MACHINE_KINDS) {
+      if (kind === "vat") continue;
       expect(recipesForMachine(kind).length).toBeGreaterThan(0);
     }
     expect(RECIPE_IDS.flatMap((id) => recipesForMachine(RECIPE_CATALOGUE[id].machine))).toContain(

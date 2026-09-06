@@ -56,6 +56,11 @@ export type Action =
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId }
+  // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
+  // coordinates, not world units -- see soilTileAt. `place-soil-tile` spends
+  // SOIL_TILE_PRICE_GOLD; `remove-soil-tile` moves no Gold.
+  | { action: "place-soil-tile"; tx: number; ty: number }
+  | { action: "remove-soil-tile"; tx: number; ty: number }
   // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
@@ -81,6 +86,7 @@ export function intentOf(body: Action): string {
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;
+  if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
   return body.action;
 }
 

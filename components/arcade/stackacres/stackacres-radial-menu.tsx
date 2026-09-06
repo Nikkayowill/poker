@@ -80,6 +80,22 @@ export interface StackAcresRadialMenuProps {
   /** "There is more to this district than seeding" -- hands off to the
    *  sidebar for capacity, buying outright and what's already standing here. */
   onManage: () => void;
+  /**
+   * One extra ring button appended after the stock options, for something
+   * that is not a `StackAcresStock` purchase at all -- today, tilling or
+   * removing a soil bed under the tap. Not tied to `STOCK_ICON`/`STACKACRES_CATALOGUE`
+   * the way a seed option is, since neither exists for a bed; the icon and
+   * label are named explicitly instead. `null` when the tapped ground has
+   * nothing extra to offer.
+   */
+  extraAction?: {
+    key: string;
+    label: string;
+    icon: PainterName;
+    cost?: number;
+    disabledReason?: string;
+    onSelect: () => void;
+  } | null;
 }
 
 export function StackAcresRadialMenu({
@@ -90,8 +106,13 @@ export function StackAcresRadialMenu({
   onSeed,
   onClose,
   onManage,
+  extraAction = null,
 }: StackAcresRadialMenuProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
+  // The extra button (till/remove a bed) is one more slot in the same ring,
+  // not a second ring -- it shares the arc's spacing math below so it never
+  // reads as a bolted-on afterthought.
+  const slotCount = options.length + (extraAction ? 1 : 0);
 
   useEffect(() => {
     // Deferred a tick for the same reason stackacres-farm.tsx defers its own
@@ -111,8 +132,8 @@ export function StackAcresRadialMenu({
 
   // One option sits straight above the finger rather than at the start of an
   // arc it would be the only thing on.
-  const spread = options.length > 1 ? (ARC_END - ARC_START) / (options.length - 1) : 0;
-  const base = options.length > 1 ? ARC_START : -90;
+  const spread = slotCount > 1 ? (ARC_END - ARC_START) / (slotCount - 1) : 0;
+  const base = slotCount > 1 ? ARC_START : -90;
   // Mirrored about the horizontal when there is no room overhead, which
   // negates every angle and puts the handoff pill above the pin instead.
   const flip = at.y < HEADROOM;
@@ -160,6 +181,36 @@ export function StackAcresRadialMenu({
             </button>
           );
         })}
+        {extraAction && (() => {
+          const index = options.length;
+          const degrees = base + spread * index;
+          const angle = ((flip ? -degrees : degrees) * Math.PI) / 180;
+          const disabled = busy || Boolean(extraAction.disabledReason);
+          return (
+            <button
+              key={extraAction.key}
+              ref={index === 0 ? firstRef : undefined}
+              type="button"
+              className="sa-radial-btn"
+              style={{
+                left: `${Math.cos(angle) * RADIUS}px`,
+                top: `${Math.sin(angle) * RADIUS}px`,
+              }}
+              disabled={disabled}
+              title={extraAction.disabledReason}
+              onClick={extraAction.onSelect}
+            >
+              <StackAcresIcon name={extraAction.icon} size={26} />
+              <span className="sa-radial-name">{extraAction.label}</span>
+              {typeof extraAction.cost === "number" && (
+                <span className="sa-radial-cost">
+                  <StackAcresIcon name="ico-gold" size={12} />
+                  {extraAction.cost.toLocaleString()}
+                </span>
+              )}
+            </button>
+          );
+        })()}
       </div>
       <button
         type="button"

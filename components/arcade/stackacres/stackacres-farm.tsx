@@ -73,7 +73,14 @@ import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
-import { stockZone } from "@/lib/stackacres/world";
+import { growAreaBounds, stockZone, type WorldPoint } from "@/lib/stackacres/world";
+import {
+  soilTileAt,
+  soilTilesEqual,
+  starterSoilTiles,
+  SOIL_TILE_PRICE_GOLD,
+  type SoilTile,
+} from "@/lib/stackacres/soil";
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
@@ -281,6 +288,11 @@ interface StackAcresResponse {
     purchaseStreak: number;
     remaining: number;
   };
+  /** Purchased soil beds (lib/stackacres/soil.ts). Absent only from a
+   *  response old enough to predate the feature, which `applyResponse` reads
+   *  as "no purchased tiles yet" -- starter tiles are never carried here, see
+   *  `StackAcresView.soilTiles`'s own doc comment. */
+  soilTiles?: SoilTile[];
   error?: string;
   round?: StackAcresUnitSnapshot[];
   /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
@@ -417,6 +429,10 @@ export function StackAcresFarm() {
    * a farm on land that might not be cleared is the wrong way to be wrong.
    */
   const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
+  /** Purchased soil beds only -- see `StackAcresResponse.soilTiles`'s own doc
+   *  comment for why the starter pair is never in here. Merged with
+   *  `starterSoilTiles` below, right before it reaches the scene. */
+  const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
    * The processing track (wheat, mills, the one open Town Contract), held as
@@ -627,7 +643,9 @@ export function StackAcresFarm() {
    * and where to draw it -- pixels inside .sa-field, which is the same box
    * the scene reported the tap in.
    */
-  const [radial, setRadial] = useState<{ zone: ZoneId; at: TapPoint } | null>(null);
+  const [radial, setRadial] = useState<{ zone: ZoneId; at: TapPoint; world: WorldPoint } | null>(
+    null,
+  );
   /**
    * Where the finger that started the request in flight landed, so the reward
    * floats out of the thing that was tapped rather than out of the middle of
@@ -824,6 +842,14 @@ export function StackAcresFarm() {
     if (data.midnightMerchantPurchase) {
       lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
     }
+    // Every response carries the FULL purchased list, not a diff, so a feed
+    // or a water tap that never touched the soil still hands this a fresh
+    // array from JSON. `soilTilesEqual` is what stops that from becoming a
+    // new state identity (and, downstream, a scene repaint) on every
+    // unrelated action -- see that function's own doc comment.
+    if (data.soilTiles) {
+      setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
+    }
   }, []);
 
   /**
@@ -982,6 +1008,14 @@ export function StackAcresFarm() {
   }, [refresh]);
 
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
+
+  /** The starter pair is never persisted (see `starterSoilTiles`'s own
+   *  header) so it is recomputed here every time rather than read off any
+   *  response, then handed down ahead of whatever this profile has bought. */
+  const mergedSoilTiles = useMemo(
+    () => [...starterSoilTiles(growAreaBounds("meadow")), ...soilTiles],
+    [soilTiles],
+  );
 
   // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
   // Pixel Pilgrim's own unlock tint should be showing -- both pure
@@ -1630,13 +1664,13 @@ export function StackAcresFarm() {
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
-  const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint) => {
+  const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
     // A menu opening over the map, same as the barn and the locked-land
     // sheets below -- not an action on the farm, so it takes the farm's
     // panel cue rather than one of the action voices.
     panelSound();
     setPlace(zone);
-    setRadial({ zone, at });
+    setRadial({ zone, at, world: worldPt });
   }, []);
 
   /** A finger landed on the barn -- Ray's Museum's own entryway. Opens the
@@ -1828,6 +1862,35 @@ export function StackAcresFarm() {
     [act, radial],
   );
 
+  /**
+   * Tilling a bed straight out of the radial ring. No optimistic guess
+   * (`predictStackAcresAction`'s own default bucket -- see that module's
+   * header, soil tiles are grouped with pipes there): the response's own
+   * `soilTiles` reaches the scene through `applyResponse` -> the `soilTiles`
+   * state below -> the controlled prop `StackAcresWorld` already pushes on
+   * change, the same path a newly stocked unit's `units` field already
+   * takes. Nothing here talks to the scene directly.
+   */
+  const onPlaceSoilTile = useCallback(
+    (tx: number, ty: number) => {
+      buySound();
+      setRadial(null);
+      void act({ action: "place-soil-tile", tx, ty });
+    },
+    [act],
+  );
+
+  /** Removing a purchased bed. Same "the response is the whole story" shape
+   *  as `onPlaceSoilTile` above. */
+  const onRemoveSoilTile = useCallback(
+    (tx: number, ty: number) => {
+      buySound();
+      setRadial(null);
+      void act({ action: "remove-soil-tile", tx, ty });
+    },
+    [act],
+  );
+
   /** The ring's own way through to the deep end -- the same drawer the peg on
    *  the right edge opens, reached without having to go and find the peg. */
   const openPanel = useCallback(() => {
@@ -1942,6 +2005,43 @@ export function StackAcresFarm() {
   const district = STACKACRES_ZONES[place];
   const placeLocked = !isSectorUnlocked(place, sectors);
 
+  /**
+   * The seed ring's one extra button for the Long Meadow: till empty ground
+   * into a bed, or lift a bed already there. Only ever set for `"meadow"" --
+   * soil is a Crop Fields concept everywhere else in this module, and every
+   * other zone's ring stays exactly what it was.
+   *
+   * `mergedSoilTiles` (starter + purchased) is the same list the scene was
+   * just handed, so "is there a tile here" never disagrees with what is
+   * actually painted. A starter tile answers with neither button, matching
+   * soil.ts's own "the free starter beds are permanent" rule.
+   */
+  const soilExtraAction = (() => {
+    if (!radial || radial.zone !== "meadow") return null;
+    const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
+    const existing = mergedSoilTiles.find((tile) => tile.tx === tx && tile.ty === ty);
+    if (!existing) {
+      const afford = gold >= SOIL_TILE_PRICE_GOLD;
+      return {
+        key: "till-bed",
+        label: "Till a Bed",
+        icon: "ico-plant" as PainterName,
+        cost: SOIL_TILE_PRICE_GOLD,
+        disabledReason: afford ? undefined : "Not enough Gold",
+        onSelect: () => onPlaceSoilTile(tx, ty),
+      };
+    }
+    if (existing.origin === "purchased") {
+      return {
+        key: "remove-bed",
+        label: "Remove Bed",
+        icon: "ico-clear" as PainterName,
+        onSelect: () => onRemoveSoilTile(tx, ty),
+      };
+    }
+    return null;
+  })();
+
   return (
     <main className="duel-shell ante-shell sa-shell">
       <header className="floor-bar">
@@ -2022,6 +2122,7 @@ export function StackAcresFarm() {
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
+              soilTiles={mergedSoilTiles}
               api={world}
             />
           )}
@@ -2092,10 +2193,15 @@ export function StackAcresFarm() {
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
-              busy={pendingByPrefix("stock")}
+              busy={
+                pendingByPrefix("stock") ||
+                pendingByPrefix("place-soil-tile") ||
+                pendingByPrefix("remove-soil-tile")
+              }
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
+              extraAction={soilExtraAction}
             />
           )}
 

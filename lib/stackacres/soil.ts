@@ -210,12 +210,41 @@ export function orderedSoilTiles(soil: SoilMap): SoilTile[] {
   );
 }
 
+/**
+ * Whether two purchased-tile lists name the same tiles, order-independent.
+ *
+ * The client's own reason to have this: every action response carries the
+ * FULL list (StackAcresView.soilTiles), not a diff, so a feed or a water tap
+ * that never touched the soil still hands the shop-facing shell a fresh
+ * array from JSON every time. Pushing that into the scene unconditionally
+ * would repaint the beds, the grass collar and every crop's slot on an
+ * unrelated action -- this is what lets the shell skip that push when
+ * nothing about the layout actually moved.
+ */
+export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (t: SoilTile) => `${t.tx},${t.ty},${t.order},${t.origin}`;
+  const as = a.map(key).sort();
+  const bs = b.map(key).sort();
+  return as.every((k, i) => k === bs[i]);
+}
+
 /* ------------------------------------------------------------------ */
 /* The starter kit                                                     */
 /* ------------------------------------------------------------------ */
 
 /** How many tiles a new farm is given. Every tile after these is bought. */
 export const SOIL_STARTER_TILES = 2;
+
+/**
+ * Gold cost of one purchased tile. Flat price per tile -- no ladder, no
+ * scaling with how many a player already owns. A bed is cosmetic and
+ * organisational (see the file header: it never gates how many crops can be
+ * grown), so there is no economy reason for a rising price the way land or
+ * capacity have one; a flat price is also the one number a shop button can
+ * show without reading anything else off the farm first.
+ */
+export const SOIL_TILE_PRICE_GOLD = 2000;
 
 /**
  * The two free tiles a new save opens with, derived from the area crops

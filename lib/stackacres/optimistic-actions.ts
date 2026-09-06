@@ -314,8 +314,9 @@ export function predictStackAcresAction(
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), or move
     // nothing the client keeps state for (`build-greenhouse`'s materials
-    // aside from the flag itself, blueprints, prestige, pipes). See this
-    // module's own header.
+    // aside from the flag itself, blueprints, prestige, pipes, soil tiles --
+    // the scene mutates its own soil map directly off the response instead,
+    // see stackacres-farm.tsx). See this module's own header.
     default:
       return null;
   }

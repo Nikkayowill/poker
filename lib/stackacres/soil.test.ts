@@ -15,6 +15,7 @@ import {
   SOIL_SLOT_ROWS,
   SOIL_STARTER_TILES,
   SOIL_TILE,
+  SOIL_TILE_PRICE_GOLD,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
@@ -33,8 +34,10 @@ import {
   soilTileKey,
   soilTileRect,
   soilTileState,
+  soilTilesEqual,
   starterSoilTiles,
   type CropSource,
+  type SoilTile,
 } from "./soil";
 
 const MEADOW = growAreaBounds("meadow");
@@ -540,5 +543,52 @@ describe("columns fill the bed", () => {
       expect(p.x).toBeGreaterThan(r.x);
       expect(p.x).toBeLessThan(r.x + r.width);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Placing a purchased tile costs Gold, flat                          */
+/* ------------------------------------------------------------------ */
+
+describe("SOIL_TILE_PRICE_GOLD", () => {
+  it("is a flat, positive price with no ladder", () => {
+    expect(SOIL_TILE_PRICE_GOLD).toBeGreaterThan(0);
+    expect(Number.isInteger(SOIL_TILE_PRICE_GOLD)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* soilTilesEqual: the client's skip-a-repaint check                  */
+/* ------------------------------------------------------------------ */
+
+describe("soilTilesEqual", () => {
+  const a: SoilTile = { tx: 0, ty: 0, order: 0, origin: "purchased" };
+  const b: SoilTile = { tx: 1, ty: 2, order: 1, origin: "purchased" };
+
+  it("is true for two empty lists", () => {
+    expect(soilTilesEqual([], [])).toBe(true);
+  });
+
+  it("is true for the same tiles in a different order", () => {
+    expect(soilTilesEqual([a, b], [b, a])).toBe(true);
+  });
+
+  it("is false when a tile's coordinate differs", () => {
+    const moved: SoilTile = { ...b, tx: 99 };
+    expect(soilTilesEqual([a, b], [a, moved])).toBe(false);
+  });
+
+  it("is false when a tile's order differs", () => {
+    const reordered: SoilTile = { ...b, order: 5 };
+    expect(soilTilesEqual([a, b], [a, reordered])).toBe(false);
+  });
+
+  it("is false when a tile's origin differs", () => {
+    const starter: SoilTile = { ...b, origin: "starter" };
+    expect(soilTilesEqual([a, b], [a, starter])).toBe(false);
+  });
+
+  it("is false when the lengths differ", () => {
+    expect(soilTilesEqual([a], [a, b])).toBe(false);
   });
 });

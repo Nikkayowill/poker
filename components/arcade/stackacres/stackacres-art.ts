@@ -16,7 +16,7 @@ import {
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
 import { ISO_K } from "@/lib/stackacres/iso";
-import type { CropArt, CropStage } from "@/lib/stackacres/crop-visuals";
+import { cropSpriteScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -1492,18 +1492,66 @@ export const PAINTERS: Record<PainterName, Painter> = {
  *
  * Falls back to painting the drawn version if the file never arrived.
  */
+/**
+ * The two crops are drawn well past their native resolution -- 1.6x to 4x
+ * their painter box, see crop-visuals.ts's `cropSpriteScale` -- and every
+ * other `spriteBacked` name bakes its source PNG 1:1 at `ART_SCALE`, leaving
+ * the enlargement to the scene's own `sprite.setScale(grown / S)`. That put
+ * the whole stretch on the GPU sampler at render time, which is the crudest
+ * available filter (plain bilinear) and the reason a ripe row read soft on
+ * a phone. Baking the stretch in HERE instead, once, means it goes through
+ * Canvas2D's own resampler with `imageSmoothingQuality` forced to `"high"`
+ * (Chromium's high setting is a proper multi-tap filter, not bilinear) --
+ * the same pixels are being invented either way, just by a better filter,
+ * and it costs nothing extra at render time since the result is cached like
+ * any other baked texture. The scene no longer needs its own extra scale for
+ * these six names; see the render call site in stackacres-scene.ts.
+ */
+function cropBakeScale(name: PainterSpriteName): number {
+  const stage = name.endsWith("0") ? 0 : name.endsWith("1") ? 1 : name.endsWith("2") ? 2 : null;
+  if (stage === null || !(name.startsWith("carrot") || name.startsWith("corn"))) return 1;
+  return cropSpriteScale(stage as CropStage);
+}
+
 export function bakeSpriteTexture(scene: Phaser.Scene, name: PainterSpriteName): string {
   if (scene.textures.exists(name)) return name;
+  const bakeScale = cropBakeScale(name);
   const source = scene.textures.exists(spriteLoadKey(name))
     ? (scene.textures.get(spriteLoadKey(name)).getSourceImage() as CanvasImageSource)
     : null;
-  if (!source) return bakeTexture(scene, name);
+  // A name with no crop bake scale keeps the original short-circuit: the
+  // vector fallback and the real sprite bake to the identical size for
+  // every other spriteBacked painter, so which one lands first has never
+  // mattered. A crop name cannot take that shortcut: `bakeTexture` only
+  // ever bakes the drawn painter's OWN box, and this cache is keyed by
+  // `name` alone, so if the fallback baked first under this same key the
+  // real photo would never get a second chance to bake at the right size --
+  // it would be stuck showing the tiny vector sprout forever. So a crop
+  // name always draws into its own enlarged canvas here, photo or not.
+  if (!source && bakeScale === 1) return bakeTexture(scene, name);
   const p = PAINTERS[name];
-  const width = Math.ceil(p.w * ART_SCALE);
-  const height = Math.ceil(p.h * ART_SCALE);
+  const width = Math.ceil(p.w * ART_SCALE * bakeScale);
+  const height = Math.ceil(p.h * ART_SCALE * bakeScale);
   const texture = scene.textures.createCanvas(name, powerOfTwoCeil(width), powerOfTwoCeil(height));
   if (!texture) return name;
-  texture.context.drawImage(source, 0, 0, width, height);
+  const ctx = texture.context;
+  if (source) {
+    // See cropBakeScale's header: this is the enlargement that used to
+    // happen at Phaser's own render-time GPU sampler (plain bilinear).
+    // Doing it here instead runs it through Canvas2D's own resampler at
+    // its highest quality setting, once, cached like any other texture.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(source, 0, 0, width, height);
+  } else {
+    // No sprite file loaded yet -- draw the vector fallback straight into
+    // the same enlarged canvas the real photo will eventually fill, at the
+    // matching scale, so the placeholder frame is never the wrong size.
+    ctx.save();
+    ctx.scale(ART_SCALE * bakeScale, ART_SCALE * bakeScale);
+    DRAWN[name](ctx);
+    ctx.restore();
+  }
   texture.add(ART_FRAME, 0, 0, 0, width, height);
   texture.refresh();
   return name;

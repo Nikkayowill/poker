@@ -1426,6 +1426,12 @@ export const PAINTERS: Record<PainterName, Painter> = {
   // be spread thin enough to get away with. These five are the same trade the
   // animals took (see stackacres-sprites.ts), and the drawn versions stay
   // exactly where they are as the fallback.
+  // The equipment ladder, so the tool floating over a mow drag is the tool the
+  // player actually bought. The shelf has shown these three PNGs since the
+  // ladder shipped; nothing had ever put one on the canvas.
+  toolTrowel: spriteBacked("toolTrowel", DRAWN.toolTrowel),
+  toolIronShovel: spriteBacked("toolIronShovel", DRAWN.toolIronShovel),
+  toolGoldenSpade: spriteBacked("toolGoldenSpade", DRAWN.toolGoldenSpade),
   tree1: spriteBacked("tree1", DRAWN.tree1),
   tree2: spriteBacked("tree2", DRAWN.tree2),
   tree3: spriteBacked("tree3", DRAWN.tree3),

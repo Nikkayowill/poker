@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
-import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
+import { stackacresToolTierDef, type StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
@@ -68,6 +68,21 @@ export interface StackAcresWorldApi {
    *  solo unit, fanned out across several units with a stagger between each
    *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
   celebrateCascade: (unitIds: string[]) => void;
+  /**
+   * The extra beat a LUCKY harvest gets: the crit flash (micro shake, gold
+   * wash, "CRIT! x2" springing up over the unit) and a burst of deep-gold
+   * sparks at its base.
+   *
+   * Pushed from the shell rather than fired inside the scene alongside the
+   * ordinary harvest burst, because only the settlement response knows whether
+   * the roll actually hit -- the crit is rolled server-side inside the guarded
+   * write (see lib/stackacres/equipment.ts's `rollHarvestCrit`), so there is
+   * nothing local to predict it from.
+   *
+   * `multiplier` is the TOTAL payout multiple (`1 + critBonus`), not the bonus
+   * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
+   */
+  celebrateCrit: (unitId: string, multiplier: number) => void;
   /** Starts the Pixel Pilgrim's bow, optimistically -- called only from his
    *  dialogue's own "yes", before the `pray` request has answered. See
    *  lib/stackacres/monk.ts and stackacres-scene.ts's `playMonkPrayer`. */
@@ -205,6 +220,24 @@ export interface StackAcresWorldProps {
   api: Ref<StackAcresWorldApi | null>;
 }
 
+/**
+ * The picture the mow-drag ghost shows.
+ *
+ * The scythe is the one tool with a canvas gesture, and it is also the one tool
+ * the equipment ladder upgrades -- so while it is held, the ghost is the RUNG's
+ * own art (`stackacresToolTierDef(tier).icon`, one sprite-backed painter per
+ * rung) rather than the tool's generic icon. Every other tool keeps its own,
+ * because no other tool has a rung to be at.
+ *
+ * This replaced a flat `STACKACRES_TOOL_DEFS[tool].icon`, which drew the same
+ * scythe at every rung: a player who had bought the Golden Spade watched a
+ * Trowel sweep the field.
+ */
+function toolGhostIcon(tool: StackAcresTool, tier: StackAcresToolTier): PainterName {
+  const def = tool === "scythe" ? stackacresToolTierDef(tier) : STACKACRES_TOOL_DEFS[tool];
+  return def.icon as PainterName;
+}
+
 function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
   return units.map((unit) => ({
     id: unit.id,
@@ -264,7 +297,7 @@ export function StackAcresWorld({
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
-  const toolIconRef = useRef<PainterName>(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
+  const toolIconRef = useRef<PainterName>(toolGhostIcon(tool, toolTier));
   // The tool itself, not just its picture: the scythe's target is ground
   // rather than a unit, so the scene has to know which tool is held to read a
   // drag correctly. See `setTool` in stackacres-scene.ts.
@@ -294,7 +327,7 @@ export function StackAcresWorld({
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
-    toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
+    toolIconRef.current = toolGhostIcon(tool, toolTier);
     toolRef.current = tool;
     toolTierRef.current = toolTier;
     museumGlowTierRef.current = museumGlowTier;
@@ -464,6 +497,7 @@ export function StackAcresWorld({
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
+      celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
       registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
       playMonkPrayer: () => sceneRef.current?.playMonkPrayer(),
       enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
@@ -505,10 +539,13 @@ export function StackAcresWorld({
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
 
+  // Keyed on the RUNG as well as the tool: buying an upgrade has to change what
+  // is in the player's hand immediately, the same "push, never rebuild" reason
+  // `setToolTier` below exists rather than a remount.
   useEffect(() => {
-    sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);
+    sceneRef.current?.setToolIcon(toolGhostIcon(tool, toolTier));
     sceneRef.current?.setTool(tool);
-  }, [tool]);
+  }, [tool, toolTier]);
 
   // Pushed rather than rebuilt: see `setToolTier` in stackacres-scene.ts for
   // why buying an upgrade must not tear the scene down.

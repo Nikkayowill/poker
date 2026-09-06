@@ -53,6 +53,8 @@ interface AnteUpResponse {
 
 /** How often the shell re-reads a live attempt, so the clock still settles even with no fill sent. */
 const POLL_MS = 3000;
+/** Fallback pause on a 429 with no (or a bogus) Retry-After header. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 export function AnteUpSudoku() {
   const [difficulty, setDifficulty] = useState<SudokuDifficulty>("easy");
@@ -101,19 +103,32 @@ export function AnteUpSudoku() {
     if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
   }, [setProfile]);
 
-  /** The background poll: reads the live attempt, sets no busy flag. */
-  const refresh = useCallback(async () => {
-    if (sending.current) return;
+  /**
+   * The background poll: reads the live attempt, sets no busy flag.
+   *
+   * Returns the pause (in ms) the poll loop should wait before its next tick
+   * when the server answered 429, or null for the ordinary POLL_MS cadence --
+   * same contract as Minesweeper's/Nonogram's own `refresh`, which this one
+   * used to lack, leaving a rate-limited response dropped silently forever.
+   */
+  const refresh = useCallback(async (): Promise<number | null> => {
+    if (sending.current) return null;
     try {
       const response = await fetch("/api/ante-up", { cache: "no-store" });
+      if (response.status === 429) {
+        const header = Number(response.headers.get("Retry-After"));
+        const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
+        return seconds * 1000;
+      }
       const data = (await response.json()) as Partial<AnteUpResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || sending.current) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is a few seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
+    return null;
   }, [applyResponse]);
 
   /** A player-initiated action: start, fill, resign. Sets busy; a 409 still applies its payload. */
@@ -160,11 +175,25 @@ export function AnteUpSudoku() {
 
   // Poll a live attempt so a clock that runs out with nobody clicking still
   // settles for the player looking at it, same reasoning DuelShell's poll
-  // gives.
+  // gives. A self-rescheduling timeout rather than setInterval: the next tick
+  // is only scheduled once the current refresh() has settled, so a slow
+  // response can never leave two polls in flight, and a 429 reply's own
+  // Retry-After becomes that one tick's delay in place of POLL_MS.
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = () => {
+      void refresh().then((pauseMs) => {
+        if (cancelled) return;
+        timer = window.setTimeout(tick, pauseMs ?? POLL_MS);
+      });
+    };
+    timer = window.setTimeout(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [active, refresh]);
 
   // The running clock, once a second, only while an attempt is live.
@@ -264,7 +293,13 @@ export function AnteUpSudoku() {
   // What the attempt did to the balance, not what it credited: the slow
   // rungs can pay back less than was staked. See lib/arcade/ante-up-result.ts.
   const result = anteUpResultLine(attempt?.wager ?? 0, attempt?.payout ?? 0);
-  const msRemaining = attempt ? Math.max(0, Date.parse(attempt.expiresAt) - now) : 0;
+  // Clamped at the tier's own time limit: expiresAt is the server's deadline
+  // and `now` is the browser's clock, so a slow response would otherwise put
+  // a second or two of network latency on the clock right after starting.
+  // Minesweeper/Nonogram already clamp their own countdowns for this reason.
+  const msRemaining = attempt
+    ? Math.min(ANTE_UP_TIERS[attempt.difficulty].timeLimitMs, Math.max(0, Date.parse(attempt.expiresAt) - now))
+    : 0;
 
   return (
     <main className="duel-shell ante-shell">
@@ -381,7 +416,7 @@ export function AnteUpSudoku() {
         <div className="duel-match ante-match">
           <div className="duel-scoreline ante-scoreline">
             <span className="ante-clock" aria-live="polite">
-              {active ? formatDuration(msRemaining) : "—:—"}
+              {active ? formatDuration(msRemaining) : formatDuration(attempt.elapsedMs)}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
@@ -456,7 +491,9 @@ export function AnteUpSudoku() {
               <strong>
                 {attempt.status === "won" ? "You beat it" : attempt.status === "timed-out" ? "Time's up" : "Gave up"}
               </strong>
-              <span>{attempt.mistakes} {attempt.mistakes === 1 ? "mistake" : "mistakes"}</span>
+              <span>
+                {formatDuration(attempt.elapsedMs)} · {attempt.mistakes} {attempt.mistakes === 1 ? "mistake" : "mistakes"}
+              </span>
               <span className="duel-result-gold">
                 {result.label}
               </span>

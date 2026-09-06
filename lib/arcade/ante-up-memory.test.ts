@@ -102,16 +102,16 @@ describe("flipAnteUpMemoryTile", () => {
     expect(solved.board.turns).toBe(MEMORY_PAIRS);
   });
 
-  it("stays active up through exactly the turn cap", () => {
-    const atCap = forceMismatches(orderedAttempt(500, START), ANTE_UP_MEMORY_MAX_TURNS, START);
+  it("stays active up through one turn short of the cap", () => {
+    const atCap = forceMismatches(orderedAttempt(500, START), ANTE_UP_MEMORY_MAX_TURNS - 1, START);
     expect(atCap.status).toBe("active");
-    expect(atCap.board.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
+    expect(atCap.board.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS - 1);
   });
 
-  it("forfeits the instant a flip pushes turns past the cap", () => {
-    const forfeited = forceMismatches(orderedAttempt(500, START), ANTE_UP_MEMORY_MAX_TURNS + 1, START);
+  it("forfeits the instant a flip reaches the cap without solving the board", () => {
+    const forfeited = forceMismatches(orderedAttempt(500, START), ANTE_UP_MEMORY_MAX_TURNS, START);
     expect(forfeited.status).toBe("lost");
-    expect(forfeited.board.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS + 1);
+    expect(forfeited.board.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
   });
 
   it("refuses a flip once the attempt is over, without touching state", () => {
@@ -134,14 +134,14 @@ describe("flipAnteUpMemoryTile", () => {
 
     // Past today's constant, but inside the cap this attempt was opened under.
     expect(forceMismatches(attempt, ANTE_UP_MEMORY_MAX_TURNS + 1, START).status).toBe("active");
-    expect(forceMismatches(attempt, generous + 1, START).status).toBe("lost");
+    expect(forceMismatches(attempt, generous, START).status).toBe("lost");
   });
 
   it("falls back to the constant for a row written before the cap was stored", () => {
     const legacy = orderedAttempt(500, START); // no maxTurns field at all
     expect(legacy.maxTurns).toBeUndefined();
-    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS, START).status).toBe("active");
-    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS + 1, START).status).toBe("lost");
+    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS - 1, START).status).toBe("active");
+    expect(forceMismatches(legacy, ANTE_UP_MEMORY_MAX_TURNS, START).status).toBe("lost");
   });
 
   it("stamps the cap onto every attempt it opens", () => {

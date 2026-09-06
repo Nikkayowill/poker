@@ -93,6 +93,14 @@ export interface AnteUpAttempt {
   startedAt: string;
   /** ISO instant the clock runs out. Past this, tickAnteUpAttempt ends it. */
   expiresAt: string;
+  /**
+   * When the attempt left `active` (win, resignation, or timeout), null while
+   * still active. `sudoku.finishedAt` only ever gets set on a solve, so a
+   * resignation or a timed-out clock needs its own stamp to show how long the
+   * attempt actually ran -- Minesweeper/Nonogram already show this on their
+   * result screens, Sudoku never has.
+   */
+  finishedAt: string | null;
 }
 
 /** A fresh attempt: `seed` is any string unique to this attempt, never a calendar day; see the file header. */
@@ -112,6 +120,7 @@ export function startAnteUpAttempt(
     status: "active",
     startedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + tier.timeLimitMs).toISOString(),
+    finishedAt: null,
   };
 }
 
@@ -125,7 +134,7 @@ export function startAnteUpAttempt(
 export function tickAnteUpAttempt(attempt: AnteUpAttempt, now: Date): AnteUpAttempt | null {
   if (attempt.status !== "active") return null;
   if (now.getTime() < Date.parse(attempt.expiresAt)) return null;
-  return { ...attempt, status: "timed-out" };
+  return { ...attempt, status: "timed-out", finishedAt: attempt.expiresAt };
 }
 
 /** Why a fill cannot be made, or null if it can. Checked before anything is written. */
@@ -155,15 +164,20 @@ export function fillAnteUpCell(
   const { round, correct } = fillSudokuCell(attempt.sudoku, index, value, now);
   const won = round.status === "solved";
   return {
-    attempt: { ...attempt, sudoku: round, status: won ? "won" : attempt.status },
+    attempt: {
+      ...attempt,
+      sudoku: round,
+      status: won ? "won" : attempt.status,
+      finishedAt: won ? now.toISOString() : attempt.finishedAt,
+    },
     correct,
   };
 }
 
 /** Gives up early. The wager is already spent (see ante-up-service.ts's rules); this only records how it ended. */
-export function resignAnteUpAttempt(attempt: AnteUpAttempt): AnteUpAttempt {
+export function resignAnteUpAttempt(attempt: AnteUpAttempt, now: Date): AnteUpAttempt {
   if (attempt.status !== "active") return attempt;
-  return { ...attempt, status: "lost" };
+  return { ...attempt, status: "lost", finishedAt: now.toISOString() };
 }
 
 /** What a win actually pays. Rounded: a fractional Gold credit is not a real amount. */
@@ -194,6 +208,13 @@ export interface AnteUpSnapshot {
   expiresAt: string;
   /** Milliseconds left on the clock, floored at 0. What the countdown reads. */
   msRemaining: number;
+  /**
+   * Milliseconds since the attempt started: live and growing while active,
+   * frozen at `finishedAt` once it isn't. Same shape as Minesweeper's and
+   * Nonogram's `elapsedMs`, which both show it on their scorelines and result
+   * screens -- Sudoku had no equivalent and printed a static placeholder.
+   */
+  elapsedMs: number;
 }
 
 export function toAnteUpSnapshot(
@@ -215,5 +236,9 @@ export function toAnteUpSnapshot(
     startedAt: attempt.startedAt,
     expiresAt: attempt.expiresAt,
     msRemaining: Math.max(0, Date.parse(attempt.expiresAt) - now.getTime()),
+    elapsedMs: Math.max(
+      0,
+      (attempt.finishedAt ? Date.parse(attempt.finishedAt) : now.getTime()) - Date.parse(attempt.startedAt),
+    ),
   };
 }

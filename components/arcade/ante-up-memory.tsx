@@ -169,7 +169,7 @@ export function AnteUpMemory() {
   const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : ANTE_UP_MEMORY_MAX_TURNS;
   // A forfeit can only come from the turn cap or a resignation; the turn
   // count is what tells them apart, since both settle as "lost".
-  const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns > attempt.maxTurns;
+  const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns >= attempt.maxTurns;
   // attempt.payout is 0 for the entire game; it only becomes real once the
   // board is solved (anteUpMemoryPayout's own rule), so the scoreline shows
   // this instead while active: what a win pays at the current turn count,

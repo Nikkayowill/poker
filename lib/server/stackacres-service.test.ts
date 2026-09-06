@@ -1713,6 +1713,7 @@ describe("the currency wall", () => {
       "activate-synergy-perk",
       "build-greenhouse",
       "buy-feed",
+      "buy-soil",
       "buy-stock",
       "clear",
       "clear-sector",
@@ -1785,10 +1786,15 @@ describe("the currency wall", () => {
     // buys an irrigation tile, refunded only when the tile cannot land;
     // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
     // is spent). Irrigation's own hydration -- a wet pipe watering a crop --
-    // moves nothing, the same as tapping `water`. `place-soil-tile` is the
-    // same shape as `place-pipe`: a flat Gold sink refunded only on a lost
-    // race for the cell; `remove-soil-tile` moves no Gold and is not a
-    // refund either, matching `remove-pipe`. `give-gift` moves no Gold
+    // moves nothing, the same as tapping `water`. SOIL IS THE ONE PAIR THAT
+    // SPLITS ITS SPEND FROM ITS PLACEMENT: `buy-soil` is the sink (tier price
+    // x quantity, refunded only if the bags cannot be shelved) and it never
+    // touches a coordinate, while `place-soil-tile` moves NO GOLD AT ALL --
+    // it spends a bag off `homestead_soil_stock` and hands the bag back if
+    // the cell is taken. So soil costs the player exactly once, at Ray's
+    // shelf, and a mis-tap on the map can never cost Gold. `remove-soil-tile`
+    // moves neither Gold nor a bag: a laid bed is spent, matching
+    // `remove-pipe`. `give-gift` moves no Gold
     // either way: it spends a processing-track item (never a purse) and its
     // ladder pays a keepsake, never Gold -- see
     // lib/stackacres/friendship.ts's own header for why that reward is not

@@ -248,7 +248,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot";
 
 interface UnitDbRow {
   id: string;
@@ -266,6 +266,7 @@ interface UnitDbRow {
   version: number | string;
   created_at: string;
   housed_in: string | null;
+  soil_slot: number | string | null;
 }
 
 function fromRow(row: UnitDbRow): StoredStackAcresUnit {
@@ -285,6 +286,7 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     version: Number(row.version),
     createdAt: String(row.created_at),
     housedIn: row.housed_in === "greenhouse" ? "greenhouse" : null,
+    soilSlot: row.soil_slot === null || row.soil_slot === undefined ? null : Number(row.soil_slot),
   };
 }
 
@@ -395,11 +397,16 @@ export async function createStackAcresUnit(
      *  slot cap/allowed-stock/built-state; the service checks all three ahead
      *  of the debit purely for a clean 409. */
     housedIn?: "greenhouse" | null;
+    /** Crops only: the fixed planting slot this crop takes. Omit (or null)
+     *  for livestock and for the Greenhouse, neither of which stands on a
+     *  soil bed. */
+    soilSlot?: number | null;
   },
 ): Promise<StoredStackAcresUnit> {
   const supabase = adminClient();
   const now = new Date().toISOString();
   const housedIn = entry.housedIn ?? null;
+  const soilSlot = entry.soilSlot ?? null;
 
   if (!supabase) {
     const unit: StoredStackAcresUnit = {
@@ -418,6 +425,7 @@ export async function createStackAcresUnit(
       version: 1,
       createdAt: now,
       housedIn,
+      soilSlot,
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -438,6 +446,7 @@ export async function createStackAcresUnit(
       permanent: entry.permanent,
       version: 1,
       housed_in: housedIn,
+      soil_slot: soilSlot,
     })
     .select(UNIT_COLUMNS)
     .single();

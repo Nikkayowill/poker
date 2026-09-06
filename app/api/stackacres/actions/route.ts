@@ -44,6 +44,7 @@ import {
   prestigeResetStackAcres,
   placeStackAcresPipeTile,
   removeStackAcresPipeTile,
+  buyStackAcresSoil,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
   prayAtStackAcresShrine,
@@ -56,6 +57,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { stackacresLocked, tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import { resolveChronoNow } from "@/lib/server/chrono-delorean";
+import { SOIL_BAGS_PER_PURCHASE, SOIL_TIERS } from "@/lib/stackacres/soil-tiers";
 
 export const runtime = "nodejs";
 
@@ -311,12 +313,25 @@ const bodySchema = z.discriminatedUnion("action", [
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
   // and placeStackAcresSoilTile itself is what actually confines a tile to
-  // the Crop Fields. `place-soil-tile` spends Gold (SOIL_TILE_PRICE_GOLD,
-  // flat); `remove-soil-tile` moves none.
+  // the Crop Fields. `place-soil-tile` spends Gold -- how MUCH is set by the
+  // tier and read from SOIL_TIER_DEFS on the server, never from the body, so
+  // the client only ever names which bed it wants. `remove-soil-tile` moves
+  // none. The tier is optional so a client from before tiers shipped still
+  // places a plain bed.
   z.object({
     action: z.literal("place-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
+    tier: z.enum(SOIL_TIERS).optional(),
+  }),
+  // Ray's soil shelf. SPENDS Gold (tier price x quantity, both read from
+  // SOIL_TIER_DEFS on the server) and moves no coordinate; `place-soil-tile`
+  // below now spends a BAG rather than Gold, so soil costs the player exactly
+  // once, here.
+  z.object({
+    action: z.literal("buy-soil"),
+    tier: z.enum(SOIL_TIERS),
+    quantity: z.number().int().min(1).max(SOIL_BAGS_PER_PURCHASE),
   }),
   z.object({
     action: z.literal("remove-soil-tile"),
@@ -429,7 +444,9 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "remove-pipe":
       return removeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty }, now);
     case "place-soil-tile":
-      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty, tier: action.tier }, now);
+    case "buy-soil":
+      return buyStackAcresSoil(token, { tier: action.tier, quantity: action.quantity }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "pray":

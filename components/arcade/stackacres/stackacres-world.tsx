@@ -124,6 +124,11 @@ export interface StackAcresWorldApi {
   setSoil: (tiles: readonly SoilTile[]) => void;
   placeSoilAt: (x: number, y: number, origin?: SoilTileOrigin) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
+  /** Outlines the tile a pending bed will actually land on, snapped through
+   *  the same `soilTileAt` the placement uses. `null` clears it. Pushed from
+   *  the shell because the shell owns the radial menu the preview belongs
+   *  to -- the scene has no idea a ring is open. */
+  previewSoilAt: (world: WorldPoint | null) => void;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
    *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
    *  drives the day/night population swap (the shell's own `timeOfDay()`
@@ -245,6 +250,7 @@ function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
     state: unit.state,
     progress: unit.progress,
     permanent: unit.permanent,
+    soilSlot: unit.soilSlot,
   }));
 }
 
@@ -508,6 +514,7 @@ export function StackAcresWorld({
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
       placeSoilAt: (x, y, origin) => sceneRef.current?.placeSoilAt(x, y, origin) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
+      previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),

@@ -148,6 +148,44 @@ describe("how big the grown footprint actually gets", () => {
   });
 });
 
+describe("bake scales land on whole pixels", () => {
+  // Restated from their sources rather than imported: the painter boxes live
+  // in components/arcade/stackacres/stackacres-art.ts (`painter(12, 16, ...)`
+  // for carrot0, `painter(12, 22, ...)` for corn0) and ART_SCALE in
+  // art-kit.ts, and both of those pull Phaser, which a lib/ test may not.
+  // Same "restate and hold it with a test" split SOIL_TILE already uses.
+  const ART_SCALE = 8;
+  const CROP_BOXES = [
+    { name: "carrot", w: 12, h: 16 },
+    { name: "corn", w: 12, h: 22 },
+  ];
+  const STAGES: CropStage[] = [0, 1, 2];
+
+  // `bakeSpriteTexture` does Math.ceil(w * ART_SCALE * scale) on each axis
+  // INDEPENDENTLY, so a fractional product resamples the frame by a slightly
+  // different factor across than down -- a non-uniform stretch on top of the
+  // softening. Every rung has to be exact on both axes of both crops.
+  it("scales every crop frame by a whole number of pixels on both axes", () => {
+    for (const stage of STAGES) {
+      const scale = cropSpriteScale(stage);
+      for (const box of CROP_BOXES) {
+        const width = box.w * ART_SCALE * scale;
+        const height = box.h * ART_SCALE * scale;
+        expect(Number.isInteger(width), `${box.name} stage ${stage} width ${width}`).toBe(true);
+        expect(Number.isInteger(height), `${box.name} stage ${stage} height ${height}`).toBe(true);
+      }
+    }
+  });
+
+  // The ramp still has to read as growth, which is the reason stage 0 is not
+  // simply 1x.
+  it("keeps the stage ramp strictly increasing", () => {
+    expect(cropSpriteScale(0)).toBeLessThan(cropSpriteScale(1));
+    expect(cropSpriteScale(1)).toBeLessThan(cropSpriteScale(2));
+    expect(cropSpriteScale(0)).toBeGreaterThan(1);
+  });
+});
+
 describe("growing between two frames", () => {
   it("starts the new texture at exactly the old frame's apparent size", () => {
     // The swap itself must be invisible: at t = 0 the new frame, drawn at its

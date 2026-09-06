@@ -98,18 +98,22 @@ import {
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
   createSoilMap,
+  hasSoilTile,
   nextSoilOrder,
   orderedSoilTiles,
   placeSoilTile,
   removeSoilTile,
   soilFurrowOffsets,
   soilTileAt,
+  soilTileDiamond,
   soilTileRect,
+  soilTileTier,
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
   type SoilTileOrigin,
 } from "@/lib/stackacres/soil";
+import { soilTierDef } from "@/lib/stackacres/soil-tiers";
 import {
   MONK_HOUSE_FOOTPRINT,
   MONK_POST,
@@ -253,6 +257,10 @@ export interface StackAcresSceneUnit {
    *  because it is part of what makes a unit's own picture change (see
    *  `signatureOf`), the same way it was on the old cell. */
   permanent: boolean;
+  /** The crop's fixed planting slot, or null to derive it from the rank hash
+   *  (see `CropPlacement.slot`). Null for livestock and for every crop sown
+   *  before soil tiers shipped. */
+  soilSlot?: number | null;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is
@@ -1159,6 +1167,11 @@ export class StackAcresScene extends Phaser.Scene {
    *  plot-sweep drag, and that gesture is gone, this is what is left of it. */
   private toolGhost: Phaser.GameObjects.Image | null = null;
   private toolGhostTween: Phaser.Tweens.Tween | null = null;
+  /** The snapped outline of the soil tile a pending placement will land on.
+   *  One reusable Graphics, cleared and redrawn rather than destroyed, since
+   *  it repaints on every ring open. Drawn in WORLD space (it has to track
+   *  the tile, not the screen), so it is not pinned like `toolGhost`. */
+  private soilPreview: Phaser.GameObjects.Graphics | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
@@ -1248,6 +1261,13 @@ export class StackAcresScene extends Phaser.Scene {
     // grow area) or the wild growth standing where that farm is not built
     // yet. Rebuilt per district by `setSectors` when land is cleared.
     for (const id of ZONE_IDS) this.paintSector(id);
+
+    // Just above the beds themselves, so the outline reads over a tile that
+    // already has one, but still under the crops standing on it.
+    this.soilPreview = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH + 1)
+      .setVisible(false);
 
     this.toolGhost = this.add
       .image(0, 0, this.toolIconName, ART_FRAME)
@@ -2092,7 +2112,11 @@ export class StackAcresScene extends Phaser.Scene {
     // it has no soil tile of its own and the scatter inside its pen is the
     // right answer for it. `cropSpot` falls back to exactly that.
     if (rank === undefined) return cropSpot(stockZone(unit.stock), unit.id);
-    return cropSpot(stockZone(unit.stock), unit.id, { soil: this.soil, rank });
+    return cropSpot(stockZone(unit.stock), unit.id, {
+      soil: this.soil,
+      rank,
+      slot: unit.soilSlot ?? null,
+    });
   }
 
   private buildUnit(unit: StackAcresSceneUnit, signature: string, previous: UnitNode | undefined): void {
@@ -2571,6 +2595,53 @@ export class StackAcresScene extends Phaser.Scene {
     return removed;
   }
 
+  /**
+   * Outlines the tile a world point falls in -- the bed's real bounds, not
+   * the finger's. `null` clears it.
+   *
+   * WHY THIS EXISTS. The tap marker the radial menu drops (`.sa-radial-pin`)
+   * sits at the raw pixel the finger landed on, while `placeSoilAt` floors
+   * that point to the lattice, so the dot can sit up to a tile's width away
+   * from the bed it is about to buy. This draws where the bed actually
+   * lands, through the same `soilTileAt` the placement itself uses -- one
+   * snap, read twice, so the preview cannot disagree with the purchase.
+   *
+   * ONE TILE, NOT A GRID, deliberately. A farm-wide diamond lattice was
+   * tried and deleted (see `paintSector`: "a translucent diamond grid over
+   * grass read as a patch of ugly brown squares"), and that judgement is not
+   * revisited here -- only the tile under the finger is ever drawn.
+   *
+   * The corners come from `soilTileDiamond` rather than being rebuilt from
+   * `soilTileRect`, so a future half-tile or L-shaped bed reshapes the
+   * preview by reshaping that one function.
+   */
+  previewSoilAt(world: WorldPoint | null): void {
+    if (!this.soilPreview) return;
+    const preview = this.soilPreview;
+    preview.clear();
+    if (!world) {
+      preview.setVisible(false);
+      return;
+    }
+    const { tx, ty } = soilTileAt(world.x, world.y);
+    // Occupied reads as the "remove" colour rather than a refusal: the ring
+    // offers Remove Bed on a tile that already has one, so the outline is
+    // marking what the action will act on either way.
+    const ramp = rampHex(hasSoilTile(this.soil, tx, ty) ? "soil" : "water");
+    const corners = soilTileDiamond(tx, ty);
+    preview.fillStyle(ramp.top, 0.22);
+    preview.lineStyle(1.5, ramp.rim, 0.85);
+    preview.beginPath();
+    preview.moveTo(corners.n.x, corners.n.y);
+    preview.lineTo(corners.e.x, corners.e.y);
+    preview.lineTo(corners.s.x, corners.s.y);
+    preview.lineTo(corners.w.x, corners.w.y);
+    preview.closePath();
+    preview.fillPath();
+    preview.strokePath();
+    preview.setVisible(true);
+  }
+
   /** Redraws everything a soil change moves: the beds themselves, the grass
    *  the SDF now cuts differently, and every crop whose slot shifted. */
   private refreshSoil(): void {
@@ -2757,12 +2828,16 @@ export class StackAcresScene extends Phaser.Scene {
       // on the square's own centre -- so the picture needs no anchoring
       // beyond that, and its size follows the bed rather than a constant.
       const centre = isoProject(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      built.push(
-        this.add
-          .image(centre.x, centre.y, bedKey)
-          .setDisplaySize(rect.width * 2, rect.height)
-          .setDepth(GROW_AREA_GROUND_DEPTH),
-      );
+      const picture = this.add
+        .image(centre.x, centre.y, bedKey)
+        .setDisplaySize(rect.width * 2, rect.height)
+        .setDepth(GROW_AREA_GROUND_DEPTH);
+      // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
+      // why a tint and not a plate of its own. A null tint leaves the plain
+      // bed exactly as it was, so an untiered farm is pixel-identical.
+      const tint = soilTierDef(soilTileTier(tile)).tint;
+      if (tint !== null) picture.setTint(tint);
+      built.push(picture);
     }
     return built;
   }

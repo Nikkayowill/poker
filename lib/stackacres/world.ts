@@ -37,7 +37,7 @@ import { inOuterZone, type ZoneId } from "./zones";
 // ./soil.ts is a runtime LEAF -- it imports only types back from here -- so
 // unlike ./paths, ./water and ./zones above, this one is a plain value
 // import with no cycle to work around. See that file's header.
-import { soilSlotSpotForRank, type SoilMap } from "./soil";
+import { soilSlotSpot, soilSlotSpotForRank, type SoilMap } from "./soil";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;
@@ -131,7 +131,15 @@ export function stocksInZone(zone: ZoneId): StackAcresStock[] {
  */
 const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   farmstead: { x: 170, y: 200, width: 160, height: 160 },
-  meadow: { x: 220, y: 560, width: 160, height: 160 },
+  // THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way.
+  // A bed is `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY
+  // inside this rect, so 160 -- two and a half beds across, and starting at
+  // 220, which is not a multiple of 64 -- left exactly TWO placeable cells on
+  // the whole farm, and `starterSoilTiles` hands out both. The shop had
+  // nowhere to sell a bed into. 192 = 3 beds, aligned to the lattice at
+  // 192/576, gives a 3x3 field that tiles exactly with no bed overhanging the
+  // fence. soil.test.ts holds the divisibility so this cannot regress.
+  meadow: { x: 256, y: 576, width: 192, height: 192 },
   oxfields: { x: 680, y: 70, width: 160, height: 160 },
   wallow: { x: -320, y: -390, width: 160, height: 160 },
 };
@@ -545,6 +553,18 @@ export function cropRank(unitId: string, siblingIds: readonly string[]): number 
 export interface CropPlacement {
   soil: SoilMap;
   rank: number;
+  /**
+   * This crop's FIXED slot, when it has one (`homestead_units.soil_slot`).
+   *
+   * Takes precedence over `rank` and is the whole difference between a bed
+   * that re-packs itself and one that does not. Null/undefined -- every crop
+   * sown before soil tiers shipped -- keeps the rank behaviour exactly as it
+   * was, which is why this needed no backfill: an old crop still shuffles up
+   * when a sibling is harvested, a new one stays on the bed it was sown into.
+   * That stability is what makes an Enriched bed's speed-up belong to the
+   * crop actually standing on it.
+   */
+  slot?: number | null;
 }
 
 /**
@@ -572,8 +592,11 @@ export interface CropPlacement {
  */
 export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement): WorldPoint {
   if (placement) {
-    const slot = soilSlotSpotForRank(placement.soil, placement.rank);
-    if (slot) return slot;
+    const at =
+      placement.slot === null || placement.slot === undefined
+        ? soilSlotSpotForRank(placement.soil, placement.rank)
+        : soilSlotSpot(placement.soil, placement.slot);
+    if (at) return at;
   }
   return pointWithin(growAreaInterior(zone), seededRandom(seedFromId(unitId)));
 }

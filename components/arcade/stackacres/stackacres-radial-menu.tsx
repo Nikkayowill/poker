@@ -88,14 +88,14 @@ export interface StackAcresRadialMenuProps {
    * label are named explicitly instead. `null` when the tapped ground has
    * nothing extra to offer.
    */
-  extraAction?: {
+  extraActions?: readonly {
     key: string;
     label: string;
     icon: PainterName;
     cost?: number;
     disabledReason?: string;
     onSelect: () => void;
-  } | null;
+  }[];
 }
 
 export function StackAcresRadialMenu({
@@ -106,13 +106,13 @@ export function StackAcresRadialMenu({
   onSeed,
   onClose,
   onManage,
-  extraAction = null,
+  extraActions = [],
 }: StackAcresRadialMenuProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
   // The extra button (till/remove a bed) is one more slot in the same ring,
   // not a second ring -- it shares the arc's spacing math below so it never
   // reads as a bolted-on afterthought.
-  const slotCount = options.length + (extraAction ? 1 : 0);
+  const slotCount = options.length + extraActions.length;
 
   useEffect(() => {
     // Deferred a tick for the same reason stackacres-farm.tsx defers its own
@@ -181,8 +181,8 @@ export function StackAcresRadialMenu({
             </button>
           );
         })}
-        {extraAction && (() => {
-          const index = options.length;
+        {extraActions.map((extraAction, offset) => {
+          const index = options.length + offset;
           const degrees = base + spread * index;
           const angle = ((flip ? -degrees : degrees) * Math.PI) / 180;
           const disabled = busy || Boolean(extraAction.disabledReason);
@@ -210,7 +210,7 @@ export function StackAcresRadialMenu({
               )}
             </button>
           );
-        })()}
+        })}
       </div>
       <button
         type="button"

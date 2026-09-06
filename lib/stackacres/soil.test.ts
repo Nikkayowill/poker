@@ -30,9 +30,15 @@ import {
   soilSignedDistance,
   soilSlotPoint,
   soilSlotSpotForRank,
+  soilSlotSpot,
   soilTileAt,
+  soilTileDiamond,
   soilTileKey,
   soilTileRect,
+  soilTileTier,
+  mergeSoilTiles,
+  nextFreeSoilSlot,
+  soilSlotTile,
   soilTileState,
   soilTilesEqual,
   starterSoilTiles,
@@ -125,6 +131,42 @@ describe("the coordinate map tracks what was placed", () => {
     // The trap `meadowTileAt` documents: truncation would collapse these two.
     expect(soilTileAt(-1, -1)).toEqual({ tx: -1, ty: -1 });
     expect(soilTileAt(-SOIL_TILE, -SOIL_TILE)).toEqual({ tx: -1, ty: -1 });
+  });
+
+  // What the placement preview relies on: the outline it draws is the tile
+  // the purchase will land on, for EVERY point inside that tile -- not the
+  // point the finger reported. A preview built from the raw point instead
+  // would drift up to a full tile away from the bed it is previewing.
+  it("gives one diamond for every point inside the same tile", () => {
+    const corner = soilTileDiamond(3, -2);
+    for (const [x, y] of [
+      [0, 0],
+      [1, 1],
+      [SOIL_TILE - 1, SOIL_TILE - 1],
+      [SOIL_TILE / 2, SOIL_TILE / 2],
+    ]) {
+      const { tx, ty } = soilTileAt(3 * SOIL_TILE + x, -2 * SOIL_TILE + y);
+      expect(soilTileDiamond(tx, ty)).toEqual(corner);
+    }
+  });
+
+  // The crispness property, stated where it can be checked: a tile's corners
+  // are whole screen pixels, so the outline never straddles one. This holds
+  // because SOIL_TILE is even -- isoProject halves (x + y), and an odd tile
+  // size would put every other corner on a half pixel.
+  it("puts a tile's corners on whole screen pixels", () => {
+    expect(SOIL_TILE % 2).toBe(0);
+    for (const [tx, ty] of [
+      [0, 0],
+      [3, -2],
+      [-5, 7],
+      [11, 11],
+    ]) {
+      for (const corner of Object.values(soilTileDiamond(tx, ty))) {
+        expect(Number.isInteger(corner.x)).toBe(true);
+        expect(Number.isInteger(corner.y)).toBe(true);
+      }
+    }
   });
 
   it("orders tiles by placement, not by Map insertion", () => {
@@ -591,4 +633,107 @@ describe("soilTilesEqual", () => {
   it("is false when the lengths differ", () => {
     expect(soilTilesEqual([a], [a, b])).toBe(false);
   });
+
+  /* -------------------------------------------------------------- */
+  /* Tiers and the fixed slot                                        */
+  /* -------------------------------------------------------------- */
+
+  it("reads a missing tier as the plain bed", () => {
+    expect(soilTileTier({ tier: undefined })).toBe("dirt");
+    expect(soilTileTier({ tier: "enriched" })).toBe("enriched");
+  });
+
+  it("hands out the lowest free slot, and null once the soil is full", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    const capacity = soilCapacity(soil);
+
+    expect(nextFreeSoilSlot(soil, [])).toBe(0);
+    // Lowest, not next-after-the-highest: a harvested crop frees its slot and
+    // the next sowing should reuse it rather than drifting off the end.
+    expect(nextFreeSoilSlot(soil, [0, 1, 3])).toBe(2);
+    expect(nextFreeSoilSlot(soil, Array.from({ length: capacity }, (_, i) => i))).toBeNull();
+    // No soil at all is full, not slot zero.
+    expect(nextFreeSoilSlot(createSoilMap([]), [])).toBeNull();
+  });
+
+  // An out-of-range stored slot must block the cell it is actually DRAWN in,
+  // or two crops silently stack there.
+  it("normalises an out-of-range taken slot before blocking", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    const capacity = soilCapacity(soil);
+    expect(nextFreeSoilSlot(soil, [capacity])).toBe(1);
+  });
+
+  it("puts a fixed slot on the tile that owns it, and wraps past capacity", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "enriched" },
+    ]);
+    // Slot 0 is on the first bed; the first slot of the second bed is
+    // SOIL_SLOTS_PER_TILE along, and carries that bed's own tier.
+    expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0 });
+    expect(soilSlotTile(soil, SOIL_SLOTS_PER_TILE)).toMatchObject({ tx: 1, ty: 0 });
+    expect(soilTileTier(soilSlotTile(soil, SOIL_SLOTS_PER_TILE)!)).toBe("enriched");
+
+    // Wrapping, so selling ground never makes a crop invisible.
+    const capacity = soilCapacity(soil);
+    expect(soilSlotSpot(soil, capacity)).toEqual(soilSlotSpot(soil, 0));
+    expect(soilSlotSpot(createSoilMap([]), 0)).toBeNull();
+  });
+
+  // The server assigns a slot index and the client draws it; they only agree
+  // while both flatten the tiles the same way, which is why the merge has one
+  // owner.
+  it("puts the starter beds ahead of purchased ones in the merged space", () => {
+    const area = growAreaBounds("meadow");
+    const bought = { tx: 40, ty: 40, order: 0, origin: "purchased" as const };
+    const merged = mergeSoilTiles(area, [bought]);
+    expect(merged).toHaveLength(SOIL_STARTER_TILES + 1);
+    expect(merged.slice(0, SOIL_STARTER_TILES)).toEqual(starterSoilTiles(area));
+    expect(merged[merged.length - 1]).toEqual(bought);
+  });
 });
+
+describe("the Crop Fields can actually hold bought beds", () => {
+  // THE BUG THIS EXISTS FOR. A bed is only placeable where it fits ENTIRELY
+  // inside the grow area, so the field's origin AND its size both have to be
+  // whole multiples of SOIL_TILE. At 160x160 starting at 220 (2.5 beds across,
+  // off-lattice) exactly two cells qualified -- and `starterSoilTiles` hands
+  // out two, so there was nowhere on the whole farm to buy a bed and the
+  // "Till a Bed" button never appeared. Any future move of this district has
+  // to keep both properties.
+  it("is aligned to the bed lattice and a whole number of beds across", () => {
+    expect(MEADOW.x % SOIL_TILE).toBe(0);
+    expect(MEADOW.y % SOIL_TILE).toBe(0);
+    expect(MEADOW.width % SOIL_TILE).toBe(0);
+    expect(MEADOW.height % SOIL_TILE).toBe(0);
+  });
+
+  it("leaves cells to buy after the starter beds take theirs", () => {
+    const placeable: string[] = [];
+    const acrossX = MEADOW.width / SOIL_TILE;
+    const acrossY = MEADOW.height / SOIL_TILE;
+    const origin = soilTileAt(MEADOW.x, MEADOW.y);
+    for (let dx = 0; dx < acrossX; dx += 1) {
+      for (let dy = 0; dy < acrossY; dy += 1) {
+        const r = soilTileRect(origin.tx + dx, origin.ty + dy);
+        // The exact containment test placeStackAcresSoilTile applies.
+        const fits =
+          r.x >= MEADOW.x &&
+          r.y >= MEADOW.y &&
+          r.x + r.width <= MEADOW.x + MEADOW.width &&
+          r.y + r.height <= MEADOW.y + MEADOW.height;
+        if (fits) placeable.push(soilTileKey(origin.tx + dx, origin.ty + dy));
+      }
+    }
+    expect(placeable).toHaveLength(acrossX * acrossY);
+
+    const taken = new Set(starterSoilTiles(MEADOW).map((t) => soilTileKey(t.tx, t.ty)));
+    const buyable = placeable.filter((key) => !taken.has(key));
+    expect(buyable.length).toBeGreaterThan(0);
+    // Every starter bed must itself sit on a placeable cell, or the free beds
+    // are drawn somewhere a bought one could never go.
+    for (const key of taken) expect(placeable).toContain(key);
+  });
+});
+

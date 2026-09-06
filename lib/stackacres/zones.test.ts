@@ -24,8 +24,9 @@ import {
   zoneToolPolicy,
   zonesByDistance,
   type ZoneId,
+  PEN_BLOCKS,
 } from "./zones";
-import { FARM_ZONE, chunkScenery, STACKACRES_CHUNK } from "./world";
+import { FARM_ZONE, chunkScenery, growAreaBounds, STACKACRES_CHUNK } from "./world";
 
 const corners = (r: { x: number; y: number; width: number; height: number }) => [
   { x: r.x, y: r.y },
@@ -413,3 +414,16 @@ describe("arriving", () => {
     expect(zoneFrame("meadow").width).toBe(zoneFrame("wallow").width);
   });
 });
+
+describe("PEN_BLOCKS mirrors its source", () => {
+  // The exclusion these rects provide is invisible when it breaks: wild growth
+  // simply starts sprouting through a district's fenced plot again. This pair
+  // has drifted before with no test holding it, which is exactly how that went
+  // unnoticed -- see the note in ./world.ts's own GROW_AREA comment.
+  it("equals GROW_AREA for every district it restates", () => {
+    for (const [zone, block] of Object.entries(PEN_BLOCKS)) {
+      expect(block, zone).toEqual(growAreaBounds(zone as ZoneId));
+    }
+  });
+});
+

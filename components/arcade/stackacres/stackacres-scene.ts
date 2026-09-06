@@ -125,7 +125,6 @@ import {
   cropGroundOffset,
   cropShadowScale,
   cropSpriteAlpha,
-  cropSpriteScale,
 } from "@/lib/stackacres/crop-visuals";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
 import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
@@ -260,8 +259,13 @@ export interface StackAcresSceneCallbacks {
   /**
    * A tap on a district's own fenced ground that hit no unit -- an offer to
    * seed something there, answered by the radial menu in stackacres-farm.tsx.
+   * `world` is the same point in world units (what `soilTileAt` and
+   * `placeSoilAt`/`removeSoilAt` want) alongside `at`, the CSS-pixel point
+   * the menu positions itself at -- the seed radial needed only the latter,
+   * but placing a soil bed needs the former too and there is no public way
+   * to invert a screen point back through the camera from outside the scene.
    */
-  onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+  onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   /**
    * A tap that landed on the barn -- Ray's Museum's own entryway. Checked
    * after a unit (a unit's own picture always wins over the structure
@@ -2020,7 +2024,6 @@ export class StackAcresScene extends Phaser.Scene {
       const stage = growthStage(unit.progress, unit.state === "ready");
       // Non-null for every non-livestock kind, which is the branch we are in.
       const crop = cropArtFor(unit.stock) ?? "carrot";
-      const grown = cropSpriteScale(stage);
       // Grounding shadow, added before the plant so it paints underneath --
       // same order the isLivestock branch above uses for its own `shadow`.
       // Both anchor (0.5, 0.5) at this same local (0, 0), the crop sprite's
@@ -2034,12 +2037,13 @@ export class StackAcresScene extends Phaser.Scene {
         .setAlpha(0.8);
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
       // Crops -- and only crops -- are drawn well off the world's own scale,
-      // so a ripe row is findable on a phone. `addLocal` has already set the
-      // painter's natural 1 / S; this replaces it, and pushes the sprite back
-      // down by however much scaling lifted its feet off the soil. Both
-      // numbers come from lib/stackacres/crop-visuals.ts, which is where the
-      // reasoning and the tests for them live.
-      sprite.setScale(grown / S);
+      // so a ripe row is findable on a phone. That enlargement is now BAKED
+      // into the crop's own texture (see `cropBakeScale` in
+      // stackacres-art.ts), so `addLocal`'s own natural `1 / S` is already
+      // the right scale here and is left alone; this only pushes the sprite
+      // back down by however much scaling lifted its feet off the soil.
+      // Both numbers come from lib/stackacres/crop-visuals.ts, which is
+      // where the reasoning and the tests for them live.
       sprite.y += cropGroundOffset(crop, stage);
       // Dry soil reads as a faded plant. The ring says it too, but a ring is
       // a thin outline on a small target and the fill is what carries at a
@@ -2992,7 +2996,7 @@ export class StackAcresScene extends Phaser.Scene {
         return;
       }
       const zone = growAreaAt(ground.x, ground.y);
-      if (zone) this.callbacks.onGroundTap(zone, local);
+      if (zone) this.callbacks.onGroundTap(zone, local, { x: ground.x, y: ground.y });
     };
 
     const onUp = (event: PointerEvent): void => up(event, false);

@@ -1642,9 +1642,11 @@ describe("the currency wall", () => {
       "midnight-merchant-buy",
       "place-machine",
       "place-pipe",
+      "place-soil-tile",
       "prestige-reset",
       "process",
       "remove-pipe",
+      "remove-soil-tile",
       "request-contract",
       "retire",
       "sow-wheat",
@@ -1691,7 +1693,10 @@ describe("the currency wall", () => {
     // buys an irrigation tile, refunded only when the tile cannot land;
     // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
     // is spent). Irrigation's own hydration -- a wet pipe watering a crop --
-    // moves nothing, the same as tapping `water`.
+    // moves nothing, the same as tapping `water`. `place-soil-tile` is the
+    // same shape as `place-pipe`: a flat Gold sink refunded only on a lost
+    // race for the cell; `remove-soil-tile` moves no Gold and is not a
+    // refund either, matching `remove-pipe`.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     // `, now` on both: Chrono-DeLorean Mode threads a resolved `now` through

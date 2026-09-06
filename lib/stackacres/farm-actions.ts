@@ -55,7 +55,12 @@ export type Action =
   // `activate-synergy-perk` moves no Gold, only the loadout.
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
-  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId };
+  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId }
+  // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
+  // coordinates, not world units -- see soilTileAt. `place-soil-tile` spends
+  // SOIL_TILE_PRICE_GOLD; `remove-soil-tile` moves no Gold.
+  | { action: "place-soil-tile"; tx: number; ty: number }
+  | { action: "remove-soil-tile"; tx: number; ty: number };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -77,6 +82,7 @@ export function intentOf(body: Action): string {
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;
+  if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
   return body.action;
 }
 

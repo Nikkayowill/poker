@@ -43,6 +43,8 @@ import {
   prestigeResetStackAcres,
   placeStackAcresPipeTile,
   removeStackAcresPipeTile,
+  placeStackAcresSoilTile,
+  removeStackAcresSoilTile,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -65,8 +67,9 @@ export const runtime = "nodejs";
  * TWELVE ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
  * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
- * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy` and
- * `place-pipe` all spend; `collect` and `fulfill-contract` pay, both under
+ * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
+ * `place-pipe` and `place-soil-tile` all spend; `collect` and
+ * `fulfill-contract` pay, both under
  * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
  * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
  * is no second currency any more, so "which direction does this action move
@@ -79,11 +82,12 @@ export const runtime = "nodejs";
  * through the same `spend_gold_by_profile` every other spend in this list
  * already uses.
  *
- * `work`, `divert`, `process`, `request-contract`, `build-greenhouse` and
- * `remove-pipe` move no Gold at all -- inventory only (`build-greenhouse`
- * spends processing-track Flour/Cloth; see buildStackAcresGreenhouse's own
- * header). `remove-pipe` is not a refund either: a placed irrigation tile is
- * a spent sink, like a placed Mill. `divert` is worth reading twice: it takes
+ * `work`, `divert`, `process`, `request-contract`, `build-greenhouse`,
+ * `remove-pipe` and `remove-soil-tile` move no Gold at all -- inventory only
+ * (`build-greenhouse` spends processing-track Flour/Cloth; see
+ * buildStackAcresGreenhouse's own header). Neither `remove-pipe` nor
+ * `remove-soil-tile` is a refund: a placed irrigation tile or soil bed is a
+ * spent sink, like a placed Mill. `divert` is worth reading twice: it takes
  * a ready animal's produce into the processing inventory INSTEAD of paying
  * for it, through the same version-guarded write `collect` uses, so it
  * reduces what the farm pays out today rather than adding to it. So do the
@@ -292,6 +296,22 @@ const bodySchema = z.discriminatedUnion("action", [
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // Placeable soil beds (lib/stackacres/soil.ts): the SOIL_TILE lattice
+  // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
+  // place-pipe above -- the coordinate range is generous but not unbounded,
+  // and placeStackAcresSoilTile itself is what actually confines a tile to
+  // the Crop Fields. `place-soil-tile` spends Gold (SOIL_TILE_PRICE_GOLD,
+  // flat); `remove-soil-tile` moves none.
+  z.object({
+    action: z.literal("place-soil-tile"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+  }),
+  z.object({
+    action: z.literal("remove-soil-tile"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+  }),
 ]);
 
 /**
@@ -380,6 +400,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
     case "remove-pipe":
       return removeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "place-soil-tile":
+      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "remove-soil-tile":
+      return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
   }
 }
 

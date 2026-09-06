@@ -10,6 +10,8 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
+import type { WorldPoint } from "@/lib/stackacres/world";
+import type { SoilTile, SoilTileOrigin } from "@/lib/stackacres/soil";
 import type { FarmhandHooks } from "@/lib/stackacres/farmhand-machine";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 
@@ -103,6 +105,16 @@ export interface StackAcresWorldApi {
    *  prop because it is closer in shape to `popUnit`/`floatAt` (a command
    *  fired from an event) than to a value the scene must always reflect. */
   setMerchant: (present: boolean) => void;
+  /** Placed soil beds (lib/stackacres/soil.ts), passed straight through to
+   *  the scene's own methods of the same name -- see stackacres-scene.ts's
+   *  "the seam the shop will arrive through" section for what each does.
+   *  Exposed here for the same reason `popUnit`/`floatAt` are: the shell
+   *  drives these off a server response landing, not off a prop the scene
+   *  must always reflect. */
+  soilTiles: () => SoilTile[];
+  setSoil: (tiles: readonly SoilTile[]) => void;
+  placeSoilAt: (x: number, y: number, origin?: SoilTileOrigin) => boolean;
+  removeSoilAt: (x: number, y: number) => boolean;
 }
 
 export interface StackAcresWorldProps {
@@ -115,8 +127,10 @@ export interface StackAcresWorldProps {
   /** A finger landed on this unit's own picture. */
   onUnitTap: (unitId: string, at: TapPoint) => void;
   /** A finger landed on this district's fenced ground, on nothing in
-   *  particular -- an offer to seed something there. */
-  onGroundTap: (zone: ZoneId, at: TapPoint) => void;
+   *  particular -- an offer to seed something there. `world` is the same
+   *  point in world units, alongside the CSS-pixel `at` -- see
+   *  StackAcresSceneCallbacks.onGroundTap's own doc for why both travel. */
+  onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
   /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
@@ -162,6 +176,11 @@ export interface StackAcresWorldProps {
   /** What the automated farmhand works from. Null before the first snapshot
    *  lands, which is exactly when he should be standing still anyway. */
   processing: StackAcresProcessing | null;
+  /** Placed soil beds, ALREADY merged with the starter pair -- the shell owns
+   *  that merge (see stackacres-farm.tsx's `applyResponse`), this component
+   *  only ever pushes what it is handed straight into the scene, the same
+   *  "push, never rebuild" contract `sectors` above already follows. */
+  soilTiles: readonly SoilTile[];
   api: Ref<StackAcresWorldApi | null>;
 }
 
@@ -195,6 +214,7 @@ export function StackAcresWorld({
   onLockedSectorTap,
   onViewMoved,
   processing,
+  soilTiles,
   api,
 }: StackAcresWorldProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -255,9 +275,11 @@ export function StackAcresWorld({
   const sceneUnits = useMemo(() => toUnits(units), [units]);
   const unitsRef = useRef(sceneUnits);
   const sectorsRef = useRef(sectors);
+  const soilTilesRef = useRef(soilTiles);
   useEffect(() => {
     unitsRef.current = sceneUnits;
     sectorsRef.current = sectors;
+    soilTilesRef.current = soilTiles;
   });
 
   useEffect(() => {
@@ -283,7 +305,7 @@ export function StackAcresWorld({
         {
           onReady: () => readyRef.current(),
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
-          onGroundTap: (zone, at) => groundTapRef.current(zone, at),
+          onGroundTap: (zone, at, world) => groundTapRef.current(zone, at, world),
           onBarnTap: () => barnTapRef.current(),
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
@@ -346,6 +368,7 @@ export function StackAcresWorld({
       // own default is "all wild" (see its `locked` field) precisely so the
       // gap between boot and this call never shows a pen that is not there.
       scene.setSectors(sectorsRef.current);
+      scene.setSoil(soilTilesRef.current);
       if (processingRef.current) scene.setProcessing(processingRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
@@ -414,6 +437,10 @@ export function StackAcresWorld({
       setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
       setMerchant: (present) => sceneRef.current?.setMerchant(present),
+      soilTiles: () => sceneRef.current?.soilTiles() ?? [],
+      setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
+      placeSoilAt: (x, y, origin) => sceneRef.current?.placeSoilAt(x, y, origin) ?? false,
+      removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
     }),
     [],
   );
@@ -430,6 +457,16 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setSectors(sectors);
   }, [sectors]);
+
+  // `setSoil` repaints the beds, the grass collar around them and every
+  // crop's slot -- not cheap on a snapshot that changed nothing about the
+  // soil. The shell (stackacres-farm.tsx) is what keeps this rare: it only
+  // hands down a new `soilTiles` array reference when `soilTilesEqual` says
+  // the layout actually moved, even though every action response carries the
+  // full list whether or not it did.
+  useEffect(() => {
+    sceneRef.current?.setSoil(soilTiles);
+  }, [soilTiles]);
 
   // Every snapshot, straight through. Each call is also what lets the
   // farmhand's optimistic credits retire (see `PendingDelta` in

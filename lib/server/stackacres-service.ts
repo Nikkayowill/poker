@@ -51,7 +51,7 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
-import { cropSpot, stockZone } from "@/lib/stackacres/world";
+import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import {
   recalculatePipeConnections,
   type IrrigableCrop,
@@ -65,6 +65,12 @@ import {
   removeStackAcresPipe,
   syncStackAcresPipeNetwork,
 } from "./stackacres-pipe-store";
+import { soilTileRect, SOIL_TILE_PRICE_GOLD, type SoilTile } from "@/lib/stackacres/soil";
+import {
+  listStackAcresSoilTiles,
+  placeStackAcresSoilTile as placeSoilTileRow,
+  removeStackAcresSoilTile as removeSoilTileRow,
+} from "./stackacres-soil-store";
 import {
   GREENHOUSE_SLOT_CAP,
   greenhouseBuildCheck,
@@ -460,6 +466,11 @@ export interface StackAcresView {
    *  renders straight off this; a crop a hydrated pipe waters is already
    *  reflected in `units` (its `isWatered`/`state`), not re-derived here. */
   irrigation: PipeNode[];
+  /** Purchased soil beds on the Crop Fields' own lattice (lib/stackacres/soil.ts).
+   *  Starter tiles are NOT in this list -- they are derived client-side by
+   *  `starterSoilTiles` and never persisted, see that function's own header.
+   *  The client merges the two before handing the result to the scene. */
+  soilTiles: SoilTile[];
 }
 
 /** The working crops the irrigation recompute cares about, each at the fixed
@@ -568,6 +579,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     prestige,
     lifetimeGross,
     pipeRows,
+    soilTiles,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -598,6 +610,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresPrestige(profile.id),
     readStackAcresLifetimeGross(profile.id),
     listStackAcresPipes(profile.id),
+    listStackAcresSoilTiles(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -655,6 +668,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
     },
     irrigation: [...irrigationGrid.nodes],
+    soilTiles,
   };
 }
 
@@ -3241,6 +3255,92 @@ export async function removeStackAcresPipeTile(
 
   await removeStackAcresPipe(profile.id, tx, ty);
   await recomputeIrrigation(profile.id, now, before.irrigatedUnitIds);
+  return view(profile, now);
+}
+
+/**
+ * Places one purchased soil tile on the Crop Fields' own lattice, spending
+ * Gold. Rule 1: the Gold leaves first, and a placement that cannot land --
+ * the cell already taken, or a lost race for it -- refunds it. Purely
+ * cosmetic/organisational (see lib/stackacres/soil.ts's own header): this
+ * never touches a unit's growth or slot count beyond where it visually
+ * stands, so there is nothing else here to keep in sync.
+ *
+ * Bounded to the Long Meadow's own Crop Fields (`growAreaBounds("meadow")`)
+ * -- never trust the client's tapped coordinate blindly, the same posture
+ * `place-pipe`'s tile-lattice bounds take one layer up (there the bound is a
+ * generous rectangle around the whole map; here it is the one district a
+ * bed can ever mean anything in).
+ */
+export async function placeStackAcresSoilTile(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+
+  const area = growAreaBounds("meadow");
+  const rect = soilTileRect(tx, ty);
+  const inMeadow =
+    rect.x >= area.x &&
+    rect.y >= area.y &&
+    rect.x + rect.width <= area.x + area.width &&
+    rect.y + rect.height <= area.y + area.height;
+  if (!inMeadow) {
+    throw new StackAcresRequestError("A bed can only be tilled in the Crop Fields.", 400);
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error.
+  const debited = await spendGoldByProfile(profile.id, SOIL_TILE_PRICE_GOLD);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `Tilling a bed costs ${SOIL_TILE_PRICE_GOLD.toLocaleString()} Gold.`,
+      400,
+    );
+  }
+
+  let placed: Awaited<ReturnType<typeof placeSoilTileRow>>;
+  try {
+    placed = await placeSoilTileRow(profile.id, tx, ty);
+  } catch (error) {
+    await refundGold(profile.id, SOIL_TILE_PRICE_GOLD);
+    throw error;
+  }
+  if (!placed) {
+    await refundGold(profile.id, SOIL_TILE_PRICE_GOLD);
+    throw new StackAcresRequestError(
+      "There is already a bed there.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  return view(debited, now);
+}
+
+/**
+ * Removes one purchased soil tile. No refund -- a placed bed is a spent
+ * sink, matching every other retire/clear convention here (see
+ * `removeStackAcresPipeTile`, `retireStackAcresStock`). Refuses for a
+ * starter tile or a missing coordinate; the store's own `origin = 'purchased'`
+ * guard is what makes that refusal unconditional rather than trusted from the
+ * client's own idea of which tile it tapped.
+ */
+export async function removeStackAcresSoilTile(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+
+  const removed = await removeSoilTileRow(profile.id, tx, ty);
+  if (!removed) {
+    throw new StackAcresRequestError("That bed cannot be removed.", 400);
+  }
   return view(profile, now);
 }
 

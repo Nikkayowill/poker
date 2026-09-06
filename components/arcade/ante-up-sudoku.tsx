@@ -204,13 +204,18 @@ export function AnteUpSudoku() {
   }, [active]);
 
   const start = () => {
+    if (sending.current) return;
     setSelected(null);
     setNotes({});
     void send("/api/ante-up", { difficulty, wager });
   };
 
   const fill = async (value: number) => {
-    if (!attempt || selected === null || busy || !active) return;
+    // sending.current, not just busy: busy is React state and hasn't
+    // committed yet for a second click landing in the same tick as the
+    // first, which let two fills race to the server. sending.current is set
+    // synchronously the instant send() starts.
+    if (!attempt || selected === null || sending.current || !active) return;
     if (attempt.puzzle[selected] !== 0) return;
     const cellIndex = selected;
     const result = await send("/api/ante-up/actions", {
@@ -278,7 +283,10 @@ export function AnteUpSudoku() {
     });
   };
 
-  const resign = () => void send("/api/ante-up/actions", { action: "resign" });
+  const resign = () => {
+    if (sending.current) return;
+    void send("/api/ante-up/actions", { action: "resign" });
+  };
   const playAgain = () => { setAttempt(null); setSelected(null); setNotes({}); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

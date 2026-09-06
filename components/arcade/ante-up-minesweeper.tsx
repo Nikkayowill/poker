@@ -210,24 +210,28 @@ export function AnteUpMinesweeper() {
   }, []);
 
   const start = () => {
+    if (sending.current) return;
     setFlagMode(false);
     void send("/api/ante-up-minesweeper", { difficulty, wager });
   };
 
   const move = (action: "reveal" | "flag" | "chord", index: number) => {
-    if (!attempt || !active || busy) return;
+    // sending.current, not just busy: busy is React state and hasn't
+    // committed yet for a second click landing in the same tick as the
+    // first, which let two moves race to the server.
+    if (!attempt || !active || sending.current) return;
     void send("/api/ante-up-minesweeper/actions", { action, version: attempt.version, index });
   };
 
   const flag = (index: number) => {
-    if (!attempt || !active || busy) return;
+    if (!attempt || !active || sending.current) return;
     tapSound();
     move("flag", index);
   };
 
   /** A plain tap: chord an open number, flag if Flag mode is on, otherwise open. */
   const tap = (index: number) => {
-    if (!attempt || !active || busy) return;
+    if (!attempt || !active || sending.current) return;
     const cell = attempt.board.cells[index];
     if (cell >= 0) {
       // Already open. Only a number can be chorded; a blank has nothing around it.
@@ -256,7 +260,10 @@ export function AnteUpMinesweeper() {
     }
   };
 
-  const resign = () => void send("/api/ante-up-minesweeper/actions", { action: "resign" });
+  const resign = () => {
+    if (sending.current) return;
+    void send("/api/ante-up-minesweeper/actions", { action: "resign" });
+  };
   const playAgain = () => { setAttempt(null); setFlagMode(false); };
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

@@ -8,6 +8,7 @@ import type { StackAcresToolTier } from "@/lib/stackacres/equipment";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
+import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
@@ -108,6 +109,15 @@ export interface StackAcresWorldApi {
   setSoil: (tiles: readonly SoilTile[]) => void;
   placeSoilAt: (x: number, y: number, origin?: SoilTileOrigin) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
+  /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
+   *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
+   *  drives the day/night population swap (the shell's own `timeOfDay()`
+   *  poll); `setFenceTier`/`setLivestockHealth` hydrate one district's saved
+   *  defense state, called once per segment/zone on load and again right
+   *  after a successful upgrade. */
+  setWildlifeTimeOfDay: (tod: WildlifeTimeOfDay) => void;
+  setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
+  setLivestockHealth: (zone: ZoneId, health: number) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -148,6 +158,14 @@ export interface StackAcresWorldProps {
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
+  /** A finger landed on one bay of a district's fence line -- the cue to
+   *  open the fence-upgrade popup. Optional: a caller that never wires it
+   *  simply never opts into the fence hit-test at all (see
+   *  StackAcresSceneCallbacks.onFenceSegmentTap's own doc). */
+  onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /** Informational: the Wildlife Manager's own predator simulation lowered
+   *  a district's livestock health. The shell's cue to persist it. */
+  onLivestockDamaged?: (zone: ZoneId, health: number) => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
@@ -216,6 +234,8 @@ export function StackAcresWorld({
   onMonkTap,
   onRayTap,
   onSecretZoneTap,
+  onFenceSegmentTap,
+  onLivestockDamaged,
   sectors,
   onLockedSectorTap,
   onViewMoved,
@@ -238,6 +258,8 @@ export function StackAcresWorld({
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
+  const fenceSegmentTapRef = useRef(onFenceSegmentTap);
+  const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
@@ -268,6 +290,8 @@ export function StackAcresWorld({
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
     secretZoneTapRef.current = onSecretZoneTap;
+    fenceSegmentTapRef.current = onFenceSegmentTap;
+    livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
     toolIconRef.current = STACKACRES_TOOL_DEFS[tool].icon as PainterName;
@@ -319,6 +343,8 @@ export function StackAcresWorld({
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
+          onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
+          onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
         },
@@ -448,6 +474,10 @@ export function StackAcresWorld({
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
       placeSoilAt: (x, y, origin) => sceneRef.current?.placeSoilAt(x, y, origin) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
+      setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
+      setFenceTier: (zone, segmentIndex, tier, durability) =>
+        sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
+      setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
     }),
     [],
   );

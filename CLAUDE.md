@@ -58,6 +58,54 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### Wildlife Ecosystem & Nighttime Predator Defense (2026-09-06)
+New system, built from a spec brief rather than a direct Kayo ask: peaceful wildlife (squirrels,
+birds) roams the treeline by day, predators (coyotes, wolves) spawn along the map's outer perimeter
+by night and steer toward the barn or a district's own grow area, testing every fence bay they cross
+against a rolled resistance check. `lib/stackacres/wildlife.ts` is the pure engine (spawn/steering/
+fence-tier resistance/attack state machine, all continuous float world points, no tile grid);
+`components/arcade/stackacres/wildlife-manager.ts` is its Phaser-side twin, same split
+`weather-overlay-manager.ts` already established. **Day/night hook**: there is no in-scene day/night
+clock to hang off of (StackAcres' only existing time-of-day signal is `lib/audio/stackacres-music.ts`'s
+wall-clock `timeOfDay()`, consumed by ambience/music, not gameplay) — `wildlife.ts` mirrors that
+type rather than importing it (the same call `ambience-plan.ts` already made), and
+`stackacres-farm.tsx` pushes the SAME `tod` value ambience already computes into the scene via a new
+`setWildlifeTimeOfDay`, so the two layers can never disagree about whether it is night.
+
+Fence tiers (Basic Wood/Reinforced Wire/Steel Mesh) are geometry derived from `growAreaBounds`/
+`FENCE_BAY` the same way `paintDistrictBoundary` already walks a district's edge to paint one, not a
+stored array of segments — persistence keys a bay by `(zone, index)` instead. New, deliberately
+isolated store (`lib/server/stackacres-defense-store.ts`, three tables:
+`stackacres_fence_segments`/`stackacres_predator_waves`/`stackacres_livestock_health`) rather than
+reusing `homestead_units`/`homestead_inventory` — neither carries a position, and this feature is
+inherently spatial. Livestock health is tracked PER DISTRICT, not per `homestead_units` row, for the
+same reason. Version-guarded writes throughout (0 means "no row yet"), mirroring the money-ordering
+discipline even though nothing here moves Gold. Migration
+(`20260906140000_stackacres_wildlife_defense.sql`, three tables + three RPCs) is **APPLIED**, verified
+against the live project: EXECUTE confirmed service-role-only on all three RPCs via
+`has_function_privilege` (anon/authenticated both false), and `get_advisors` came back clean beyond the
+same routine "RLS enabled, no policy" INFO every sibling `homestead_*`/`stackacres_*` table already
+carries.
+
+The one player-initiated write this pass wires end to end is the fence-upgrade popup: a tap on a fence
+bay follows the exact tap-priority chain `stackacres-scene.ts`'s pointer-up handler already uses
+(checked right before the `growAreaAt` ground fallback, since a bay sits on a district's own
+boundary), opens `StackAcresFenceUpgradePopup` (same screen-pinned real-DOM convention as the monk
+dialogue/radial menu), and calls a new dedicated route, `/api/stackacres/defense` (GET reads one bay,
+POST upgrades it) — kept separate from `/api/stackacres/actions` because that dispatcher's `run()` is
+typed to always return a `StackAcresView`, and a fence segment is a different shape with no reason to
+be squeezed into that snapshot.
+
+**Deliberate scope cut, stated in the PR**: the live predator wave and per-district livestock health
+are simulated and rendered client-side by `WildlifeManager` (fence durability wears down on a breach,
+livestock takes damage, predators flee once driven off) but are NOT synced back into the store on
+every tick — `savePredatorWave`/`writeLivestockHealth` exist and are tested, but wiring a throttled or
+Realtime sync of the live loop into them is left as follow-up, the same "service layer built, live-loop
+wiring deferred" posture the Sunlight Forge and the Mill's recipe layer already took. No supplied art
+exists yet for a squirrel, bird, coyote or wolf; each is a plain Phaser Shape circle, the same
+"placeholder now, real art later" posture `paintGreenhouse`'s own Graphics volume took before its PNG
+landed.
+
 ### Ray's supply store now gates its top rows on what the farm has done (2026-09-06)
 Price was the only gate on Ray's shelf, and a price gates the PURSE, not the farm -- the StackChips
 balance is shared with the poker tables, so a player who has never collected a Sprout Row could walk

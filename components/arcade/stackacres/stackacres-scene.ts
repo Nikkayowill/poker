@@ -43,6 +43,8 @@ import {
 } from "@/lib/stackacres/sunlight";
 import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import { WeatherOverlayManager } from "./weather-overlay-manager";
+import { WildlifeManager } from "./wildlife-manager";
+import { fenceSegmentsForZone, type FenceTier, type WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
@@ -342,6 +344,24 @@ export interface StackAcresSceneCallbacks {
    * lib/stackacres/greenhouse.ts's own `greenhouseSlotLocal` convention.
    */
   onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
+  /**
+   * A tap that landed on one bay of a district's own fence line -- the cue
+   * to open the fence-upgrade popup (see stackacres-fence-upgrade-popup.tsx).
+   * Checked right before the district's own grow-area fallback, the same
+   * "a structure wins over the plain ground behind it" ordering every other
+   * entry in this chain already documents: a fence bay sits ON a grow
+   * area's own boundary, so without this check first every fence tap would
+   * fall through to `onGroundTap`'s seed offer instead.
+   */
+  onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /**
+   * Informational only, fired whenever the Wildlife Manager's own predator
+   * simulation lowers a district's livestock health -- the shell's cue to
+   * persist it through lib/server/stackacres-defense-store.ts (throttled on
+   * the shell's own side; the scene calls this on every damage tick, not on
+   * a schedule of its own).
+   */
+  onLivestockDamaged?: (zone: ZoneId, health: number) => void;
   /**
    * The view moved under whatever the shell has pinned to it. A menu dropped
    * at a finger is anchored to the screen, not to the world, so it has to go
@@ -892,6 +912,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  posture `buildSunlight` takes for its own layers. */
   private weather: WeatherOverlayManager | null = null;
 
+  /** Wildlife Ecosystem & Nighttime Predator Defense -- own manager for the
+   *  same reason weather is: see wildlife-manager.ts's own header. Unlike
+   *  weather, this runs under reduced motion too (it is gameplay, not an
+   *  ambient effect the player can opt out of), so it is never null once
+   *  `create()` has run. */
+  private wildlife: WildlifeManager | null = null;
+
   /** The world's own hard edge, in the same projected screen space as
    *  `camera.setBounds()` and `viewRect()` -- set once in `create()`, read
    *  every frame by `fitEdgeGuides()` to know how close the view is to it. */
@@ -1127,6 +1154,13 @@ export class StackAcresScene extends Phaser.Scene {
       .setDepth(1e9);
 
     this.buildSunlight();
+
+    this.wildlife = new WildlifeManager(this, this.random);
+    this.wildlife.create();
+    this.wildlife.setOwnedZones(ZONE_IDS.filter((id) => !this.locked.has(id)));
+    this.wildlife.setCallbacks({
+      onLivestockDamaged: (zone, health) => this.callbacks.onLivestockDamaged?.(zone, health),
+    });
 
     if (!this.options.reducedMotion) {
       this.weather = new WeatherOverlayManager(this, this.random);
@@ -2174,12 +2208,54 @@ export class StackAcresScene extends Phaser.Scene {
     const next = new Set<ZoneId>(
       OUTER_ZONE_IDS.filter((id) => !unlocked.includes(id)),
     );
+    // Kept in sync even when nothing else about the sector set changed --
+    // cheap (one filter over four ids), and a predator must never be able
+    // to target a district the player has not actually cleared.
+    this.wildlife?.setOwnedZones(ZONE_IDS.filter((id) => !next.has(id)));
     const changed = ZONE_IDS.filter((id) => next.has(id) !== this.locked.has(id));
     if (changed.length === 0) return;
     this.locked = next;
     if (!this.created) return;
     for (const id of changed) this.paintSector(id);
     this.dropChunks();
+  }
+
+  /** Which fence bay, if any, a ground point lands on -- only districts
+   *  actually unlocked are tested, since a locked one paints no fence line
+   *  to hit. See `fenceSegmentsForZone`'s own header for why this walks
+   *  the same derived geometry the predator's own collision check does
+   *  rather than a stored array. */
+  private fenceSegmentAt(x: number, y: number): { zone: ZoneId; segmentIndex: number } | null {
+    for (const zone of ZONE_IDS) {
+      if (this.locked.has(zone)) continue;
+      for (const segment of fenceSegmentsForZone(zone)) {
+        const r = segment.rect;
+        if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) {
+          return { zone, segmentIndex: segment.index };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Driven by the shell's own `timeOfDay()` poll -- see
+   *  wildlife-manager.ts's `setTimeOfDay` for the day/night population
+   *  swap this triggers. */
+  setWildlifeTimeOfDay(tod: WildlifeTimeOfDay): void {
+    this.wildlife?.setTimeOfDay(tod);
+  }
+
+  /** Hydrates one fence bay's tier/durability from the store -- called once
+   *  per segment as the shell loads a district's saved defense state, and
+   *  again immediately after a successful upgrade so the live simulation
+   *  never lags what was just persisted. */
+  setFenceTier(zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number): void {
+    this.wildlife?.setFenceTier(zone, segmentIndex, tier, durability);
+  }
+
+  /** Hydrates one district's livestock health from the store. */
+  setLivestockHealth(zone: ZoneId, health: number): void {
+    this.wildlife?.hydrateLivestockHealth(zone, health);
   }
 
   /**
@@ -2973,6 +3049,18 @@ export class StackAcresScene extends Phaser.Scene {
       if (wild !== null && this.locked.has(wild)) {
         this.callbacks.onLockedSectorTap(wild, local);
         return;
+      }
+      // A fence bay -- checked right before the grow-area fallback, since a
+      // bay sits ON a district's own boundary and would otherwise resolve
+      // as a plain ground tap (an offer to seed). Only tested against
+      // districts that are actually unlocked: a locked district paints no
+      // fence at all, so there is nothing here for a tap to land on.
+      if (this.callbacks.onFenceSegmentTap) {
+        const fence = this.fenceSegmentAt(ground.x, ground.y);
+        if (fence) {
+          this.callbacks.onFenceSegmentTap(fence.zone, fence.segmentIndex, local);
+          return;
+        }
       }
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local, { x: ground.x, y: ground.y });
@@ -4285,6 +4373,7 @@ export class StackAcresScene extends Phaser.Scene {
     // isolates from.
     this.weather?.setSuppressed(this.steppedInGreenhouse);
     this.weather?.update(time, delta);
+    this.wildlife?.update(time, delta);
     // A read-only sample, not a hit -- see FarmFrenzyManager's own doc
     // comment. Runs every frame regardless of whether anything was tapped
     // this frame, which is what lets heat cool down in real time rather

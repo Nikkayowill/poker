@@ -58,6 +58,82 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### StackAcres is on supplied art: new ground, new grass, new crops, placed soil beds (2026-09-06)
+Kayo supplied four asset packs (`Tiles`, `hjm-fields_v2`, `hjm-crops_v2`, `isometric-plant-pack`) and
+asked for everything they cover to be replaced, with an explicit carve-out: **the trees, bushes, barn,
+Ray, greenhouse, animals and pen fences stay exactly as they are**, and the new bushes and shrubs are
+to be added ALONGSIDE them to fill the world rather than replace anything.
+
+**The placement half was already written and uncommitted.** "Keep the new user custom placement logic"
+pointed at the Soil Lattice Bench artifact, which names branch `feat/soil-tile-sandbox-grid` -- work
+sitting unstaged in a sibling worktree, never committed and not on any remote. It is transplanted here
+whole: `lib/stackacres/soil.ts` replaces the one district-sized dirt box with placeable 64-unit beds on
+a lattice, crops pack into slots by rank rather than scattering by a hash of their id, and
+`meadowBaseDensity` reads a signed distance to the placed soil so grass is cut on a bed and left as
+stubble in a collar around it. That last part is the fix for "don't let grass grow through the soil",
+and the bug was worse than hardcoding: `PEN_BLOCKS` only ever guarded `zoneScenery`, so waist-high
+grass grew straight through the Crop Fields and interleaved with the plants.
+
+**Three prep scripts, in the convention `extract-stackacres-tiles.py` set** -- the expensive thing to
+rediscover is which plate in a pack means what, so it is written down and re-runnable.
+`prepare-stackacres-terrain.py` builds the lawn, one tilled bed and the pond's surface grain;
+`prepare-stackacres-crops.py` the six crop frames; `prepare-stackacres-plants.py` the meadow's three
+grass heights and five new scrub kinds. Six things worth keeping:
+
+1. **A seamless iso lawn needs periodicity AND painter order, not just geometry.** Stamping one period
+   and compositing each diamond nine times at wrapped offsets lines the lattice up perfectly and still
+   ships a dark zigzag across the finished tile: each plate is cut with a soil rim along its bottom
+   that the row below is supposed to cover, and at the wrap the covering row composites first. Fixed
+   by choosing each cell's variant from its coordinates modulo the period and rendering 3x3 periods in
+   strict row order, then cropping the centre.
+2. **The lawn is drawn at 2x the pack's own density.** At 1x a clump is 16 scene units and the blades
+   land under a device pixel on a phone, so the whole field resolves to flat green static; at 4x the
+   soil between blades starts reading as dirt. 2x is the only rung that works.
+3. **A soil bed is one picture, not a repeating texture.** The thing it replaces had to be a masked
+   TileSprite because the field was a whole district; a bed is 64 units square, a repeat has nothing
+   to repeat, and drawing the diamond whole is what lets its three furrows land on exactly
+   `soilFurrowOffsets()` -- the lines the plants stand on. Furrows that disagree with the rows are
+   worse than no furrows.
+4. **`ImageDraw` writes alpha, it does not blend it.** Translucent clods drawn straight onto the bed
+   punched holes in it and the first bed shipped looking like gravel spatter. Composite a layer.
+5. **A baked ground shadow in this plant pack is found by ALPHA, not by colour.** The FLUX prep found
+   its baked mound by "dark and near-neutral"; measured, 92% of these bush plates' own pixels come
+   back dark-and-near-neutral, because the bushes are nearly black. The plant is drawn at alpha 200+
+   and the shadow is a wash at 9-84. Check a new plate against a LIGHT background -- a shadow is
+   invisible against the dark preview the pack ships.
+6. **Corn had to be built as a stand of three stalks.** The pack has one corn plant, 16x75, and every
+   one of its thirty specimens is the same height -- so the two younger frames are cut out of a full
+   one from the feet up, with the cut feathered (without the feather the render's dark interior leaves
+   a hard bar across the top, which was the most obvious defect in the first ramp). Even then a single
+   contained stalk is a hairline of gappy foliage at 4x and read on screen as a wisp of smoke; three
+   shoulder to shoulder fill the box and are also just what corn does.
+
+**Neither ripe frame is the pack's row of the same name, deliberately.** Its carrots and potatoes are
+8-10 pixel scribbles that smear when upscaled, which is the worst thing to have in the frame the player
+waits for; the Sprout Row's ramp is a flat lettuce sprout, a small lettuce head and a cabbage. Nothing
+user-facing calls it a cabbage -- the yield is still the `carrot` item, and **that is the constraint
+that fixed which two crops these are**: `STACKACRES_ITEMS` pays a Sprout Row in Carrots and a Cash Crop
+in Corn, those ids are stored and priced, and the museum and town contracts name them. The art was
+picked to fit the economy, not the other way round.
+
+**The pond keeps its drawn shore.** The pack's water is a square-diamond COASTLINE set and the pond is
+a hand-drawn ellipse with a sand ring, a gradient, a bank shadow and glints -- laying tiles over it
+would swap a smooth shore for a stair-stepped one, which is worse art, not newer art. What it gets is
+the one thing the drawn version had none of: surface grain under the gradient, at the lawn's own
+lattice density. That grain is read from the texture PHASER preloaded, not from stackacres-sprites'
+DOM cache, because the pond bakes in `create` and the DOM cache fills asynchronously -- `spriteImage`
+would come back null on most boots and the pond would silently bake plain.
+
+New scenery kinds (`weedTall`/`weedShort`/`scrubLow`/`scrubRound`/`scrubFan`) scatter as woodland
+understory and as a sparser fourth pass over open ground, with their own budget rather than folded into
+the tuft/flower pass -- at the tufts' rate the grass would be waist-deep in shrubs. `soil-tile.png` is
+deleted with the district-sized field it served. Verified against a real memory-mode run in Chromium,
+not only by test: full `npx vitest run` 3685/3686 (the one red is the pre-existing `table-anchors`
+regression, red on main itself), lint 0 errors, `npm run build` clean. Branch
+`feat/stackacres-art-refresh`. No migration. **Not done:** the packs' beach/shallow/deep transition
+sets (`ts_grass-beach0`, `ts_beach-shallow0`, `ts_shallow-deep0`) are unused -- they only pay off for a
+tile-based coastline, which this map does not have.
+
 ### Chrono-DeLorean Mode: a sandboxed dev harness for simulating StackAcres time (2026-09-05)
 Built from an autonomous engineering directive, not a direct Kayo ask -- worth flagging since every
 other entry here starts from one. A dev-only time-shift for one player's OWN farm, so a multi-day

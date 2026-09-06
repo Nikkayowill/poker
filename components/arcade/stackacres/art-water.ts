@@ -18,6 +18,7 @@ import {
   type Painter,
 } from "./art-kit";
 import { RAMPS } from "./art-palette";
+import { spriteLoadKey } from "./stackacres-sprites";
 
 /**
  * The pond, and everything that lives on it.
@@ -77,7 +78,12 @@ function softBlob(c: Ctx, x: number, y: number, rx: number, ry: number, rot: num
  * baked-in detail (bank shadow, depth, still glints). Deterministic: every
  * wobble and blotch comes from `r`.
  */
-function paintPond(c: Ctx, pond: Ellipse, r: () => number): void {
+function paintPond(
+  c: Ctx,
+  pond: Ellipse,
+  r: () => number,
+  grain: CanvasImageSource | null,
+): void {
   const { x: cx, y: cy, rx, ry } = pond;
   const sand = POND_SAND;
 
@@ -159,6 +165,35 @@ function paintPond(c: Ctx, pond: Ellipse, r: () => number): void {
   c.fillStyle = water;
   c.fillRect(-1.1, -1.1, 2.2, 2.2);
   c.restore();
+
+  // Surface grain, over the gradient and under everything else. The gradient
+  // alone gives the pond its depth but leaves it glassy, and a flat sheet of
+  // colour is the one thing on this map with no texture in it now that the
+  // lawn and the beds have theirs. Low alpha on purpose: this is the water's
+  // own ripple, not a second picture of a pond, and at full strength it
+  // flattens the deep-to-shallow ramp the gradient just drew. Skipped
+  // entirely until the file arrives, which costs nothing -- the gradient is
+  // what shipped before and is still complete on its own.
+  if (grain) {
+    const pattern = c.createPattern(grain, "repeat");
+    if (pattern) {
+      c.save();
+      c.globalAlpha = 0.28;
+      // The pattern is authored at GRASS_PX device pixels per unit, the same
+      // density as the lawn, and this context is already scaled to units --
+      // so it has to be scaled back down or one repeat covers 256 units of
+      // pond instead of 64.
+      c.scale(1 / GRASS_PX, 1 / GRASS_PX);
+      c.fillStyle = pattern;
+      c.fillRect(
+        (cx - rx - 2) * GRASS_PX,
+        (cy - ry - 2) * GRASS_PX,
+        (rx + 2) * 2 * GRASS_PX,
+        (ry + 2) * 2 * GRASS_PX,
+      );
+      c.restore();
+    }
+  }
 
   // The pale shallows at the very edge.
   ell(c, cx, cy, rx - 1, ry - 1);
@@ -248,7 +283,17 @@ export function bakePondTexture(scene: Phaser.Scene): PondBake | null {
   c.save();
   c.scale(GRASS_PX, GRASS_PX);
   c.translate(-box.x, -box.y);
-  paintPond(c, POND, seededRandom(0x2a0b_77d1));
+  // Taken from the texture PHASER preloaded, not from stackacres-sprites'
+  // own DOM cache. Both hold the same file, but the DOM cache fills
+  // asynchronously and this runs in `create`, so `spriteImage` would come
+  // back null on most boots and the pond would silently bake without its
+  // grain. Phaser guarantees `preload` finished before `create` did, which
+  // is the same guarantee `bakeGrass` leans on for the lawn.
+  const grainKey = spriteLoadKey("waterTile");
+  const grain = scene.textures.exists(grainKey)
+    ? (scene.textures.get(grainKey).getSourceImage() as CanvasImageSource)
+    : null;
+  paintPond(c, POND, seededRandom(0x2a0b_77d1), grain);
   c.restore();
   texture.add(ART_FRAME, 0, 0, 0, wpx, hpx);
   texture.refresh();

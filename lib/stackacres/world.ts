@@ -34,6 +34,10 @@ import { inPondZone } from "./water";
 // And again for ./zones, which grows the districts' own scenery in the same
 // chunks the woodland uses and so has to be able to say "not here".
 import { inOuterZone, type ZoneId } from "./zones";
+// ./soil.ts is a runtime LEAF -- it imports only types back from here -- so
+// unlike ./paths, ./water and ./zones above, this one is a plain value
+// import with no cycle to work around. See that file's header.
+import { soilSlotSpotForRank, type SoilMap } from "./soil";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;
@@ -470,9 +474,74 @@ export function seedFromId(id: string): number {
   return hash >>> 0;
 }
 
-/** A crop's fixed spot within its district's grow area -- it does not
- *  wander, so all it needs is one stable point. */
-export function cropSpot(zone: ZoneId, unitId: string): WorldPoint {
+/**
+ * A crop's rank among its siblings: its position once the whole set is
+ * sorted by a hash of each id, which is what `cropSpot` turns into a slot on
+ * the placed soil.
+ *
+ * Sorted by HASH, never by the order the rows arrived, for the reason
+ * `wheatPlotSpot` states directly below: crops are settled out from under
+ * each other in a single sweep, and a rank taken from list position would
+ * slide every surviving plant sideways the moment an earlier one was cashed.
+ * A hash rank still moves survivors when a crop LEAVES the set (the bed
+ * re-packs), which is a deliberate, documented trade -- see
+ * `soilSlotSpotForRank` in ./soil.ts.
+ *
+ * Ties on the hash fall back to the id itself, so the ordering is total and
+ * two crops can never be handed the same rank.
+ */
+export function cropRanks(siblingIds: readonly string[]): Map<string, number> {
+  const ranked = [...siblingIds].sort(
+    (a, b) => seedFromId(a) - seedFromId(b) || (a < b ? -1 : a > b ? 1 : 0),
+  );
+  const out = new Map<string, number>();
+  ranked.forEach((id, index) => out.set(id, index));
+  return out;
+}
+
+/** One crop's rank. A convenience over `cropRanks` for a single lookup; the
+ *  scene builds the whole map once per `setUnits` instead, since ranking one
+ *  crop costs the same sort as ranking all of them. */
+export function cropRank(unitId: string, siblingIds: readonly string[]): number {
+  return cropRanks(siblingIds).get(unitId) ?? siblingIds.length;
+}
+
+/** What `cropSpot` needs to put a crop on the player's own soil rather than
+ *  scattering it: the placed tiles, and this crop's rank among its siblings
+ *  (`cropRank`). Optional at the call site -- see `cropSpot`. */
+export interface CropPlacement {
+  soil: SoilMap;
+  rank: number;
+}
+
+/**
+ * A crop's fixed spot -- it does not wander, so all it needs is one stable
+ * point.
+ *
+ * TWO BEHAVIOURS, and which one you get is the whole point of this function.
+ * Given `placement`, a crop stands in a slot on the player's placed soil:
+ * strictly on the lattice, in rows, packed tight enough to overlap (see
+ * ./soil.ts). Given nothing -- or given a farm with no soil placed yet -- it
+ * falls back to the old hash-scatter inside the district's grow area.
+ *
+ * The fallback is not dead code and is not a deprecation path. It is what
+ * still places a MUCKED unit, and a mucked unit may be LIVESTOCK: a hog that
+ * has stopped wandering has to park somewhere, it has no soil tile of its
+ * own, and scattering it inside the pen is exactly right for it. It is also
+ * what every existing caller and test that has no soil map keeps getting,
+ * which is why the parameter is optional rather than required.
+ *
+ * Note what this function is NOT doing: it is not deciding whether a unit is
+ * an animal. A WANDERING animal never reaches here at all -- it spawns and
+ * walks inside `growAreaInterior` through `spawnCritter`/`stepCritter`. The
+ * "crops on a grid, animals scattered" split lives at those two call sites
+ * and is preserved by this function staying out of it.
+ */
+export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement): WorldPoint {
+  if (placement) {
+    const slot = soilSlotSpotForRank(placement.soil, placement.rank);
+    if (slot) return slot;
+  }
   return pointWithin(growAreaInterior(zone), seededRandom(seedFromId(unitId)));
 }
 
@@ -557,7 +626,16 @@ export type SceneryKind =
   | "flower3"
   | "log"
   | "mushroom"
-  | "boulder";
+  | "boulder"
+  // Scrub. Added alongside the trees rather than in place of them: the five
+  // woodland kinds above are art Kayo asked to keep exactly as it is, and
+  // what the open ground was short of is everything BETWEEN a grass tuft and
+  // a bush. These five fill that band.
+  | "weedTall"
+  | "weedShort"
+  | "scrubLow"
+  | "scrubRound"
+  | "scrubFan";
 
 export interface SceneryItem {
   kind: SceneryKind;
@@ -582,6 +660,18 @@ const CONIFER_KINDS: readonly SceneryKind[] = ["pine", "pine", "pine", "tree3"];
 // them now and then rather than a forest of them.
 const FOREST_FLOOR_KINDS: readonly SceneryKind[] = ["rock", "log", "mushroom", "boulder"];
 const GROUND_KINDS: readonly SceneryKind[] = ["flower1", "flower2", "flower3"];
+/** What grows under a canopy: the shade-tolerant half of the scrub. A wood
+ *  floor of nothing but litter reads as swept. */
+const UNDERSTORY_KINDS: readonly SceneryKind[] = ["scrubFan", "scrubLow", "weedTall"];
+/** What stands out in the open, away from the wood. Weeds and low scrub, not
+ *  the big fan shrub -- a shrub that size alone on a lawn reads as something
+ *  the player was meant to have planted. */
+const OPEN_SCRUB_KINDS: readonly SceneryKind[] = [
+  "weedShort",
+  "weedTall",
+  "scrubRound",
+  "scrubLow",
+];
 
 /**
  * One chunk of the open world's scenery, deterministic by chunk coordinate
@@ -757,6 +847,8 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
         kind = FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
       } else if (roll < 0.16) {
         kind = "bush";
+      } else if (roll < 0.29) {
+        kind = UNDERSTORY_KINDS[Math.floor(random() * UNDERSTORY_KINDS.length)];
       } else if (coniferStand(x, y)) {
         kind = CONIFER_KINDS[Math.floor(random() * CONIFER_KINDS.length)];
       } else {
@@ -767,7 +859,15 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
       // Litter on the floor stays near its drawn size; a 1.4x mushroom is a
       // different object, not a bigger one.
       const litter = kind === "rock" || kind === "log" || kind === "mushroom" || kind === "boulder";
-      const scale = litter ? 0.9 + random() * 0.3 : 0.78 + random() * 0.58;
+      // Understory is neither: it is not litter lying on the floor and it is
+      // not a tree, so it gets its own narrower range. A scrub varying as
+      // widely as a canopy does reads as three different plants.
+      const understory = (UNDERSTORY_KINDS as readonly string[]).includes(kind);
+      const scale = litter
+        ? 0.9 + random() * 0.3
+        : understory
+          ? 0.85 + random() * 0.4
+          : 0.78 + random() * 0.58;
       items.push({ kind, x, y, scale });
     }
   }
@@ -789,6 +889,19 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
     const kind: SceneryKind =
       random() < 0.55 ? "tuft" : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)];
     items.push({ kind, x, y, scale: 1 });
+  }
+
+  // A last, sparser pass of scrub over the open ground. Separate from the
+  // ten-a-chunk tuft/flower pass above rather than folded into it, because
+  // these are bigger and want their own budget: at the tufts' own rate the
+  // grass would be waist-deep in shrubs, and at the shrubs' rate there would
+  // be no tufts. Kept out of the wood, which has its own understory.
+  for (let i = 0; i < 4; i += 1) {
+    const x = x0 + random() * STACKACRES_CHUNK;
+    const y = y0 + random() * STACKACRES_CHUNK;
+    if (forestDensityAt(x, y) > 0.2 || blocked(x, y)) continue;
+    const kind = OPEN_SCRUB_KINDS[Math.floor(random() * OPEN_SCRUB_KINDS.length)];
+    items.push({ kind, x, y, scale: 0.8 + random() * 0.45 });
   }
   return items.sort((a, b) => a.y - b.y);
 }

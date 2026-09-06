@@ -50,6 +50,9 @@ import type { StackAcresTool } from "./tools";
 // paths.ts, and paths.ts imports only types back from world.ts -- so nothing
 // in the chain reads a constant from a module still evaluating.
 import { nearPath } from "./paths";
+// A runtime leaf (it imports only TYPES back from ./world.ts), so this is a
+// plain value import with no cycle to work around -- see ./soil.ts's header.
+import { SOIL_EDGE_BAND, soilSignedDistance, type SoilMap } from "./soil";
 
 export const ZONE_IDS = ["farmstead", "meadow", "oxfields", "wallow"] as const;
 
@@ -436,6 +439,17 @@ export function zoneScenery(
  * what makes mowing legible: a swathe you have walked reads differently from
  * one you have not, at any zoom, without a single number on screen.
  */
+/**
+ * The "no beds placed" map, shared rather than allocated per call.
+ *
+ * Every soil parameter in this file defaults to it, which is what keeps the
+ * dozens of existing callers and tests that predate placeable soil compiling
+ * and behaving exactly as they did. It is frozen at the type level only --
+ * `ReadonlyMap` would not assign to `SoilMap` -- so treat it as immutable;
+ * nothing here writes to a soil map.
+ */
+const NO_SOIL: SoilMap = new Map();
+
 export const MEADOW_TILE = 16;
 export const MEADOW_MAX_DENSITY = 3;
 
@@ -466,7 +480,7 @@ export function meadowTileRect(tx: number, ty: number): WorldRect {
  * Returns 0 outside the meadow, which is what makes every other function
  * here safe to call anywhere.
  */
-export function meadowBaseDensity(tx: number, ty: number): number {
+export function meadowBaseDensity(tx: number, ty: number, soil: SoilMap = NO_SOIL): number {
   const rect = meadowTileRect(tx, ty);
   const cx = rect.x + MEADOW_TILE / 2;
   const cy = rect.y + MEADOW_TILE / 2;
@@ -474,6 +488,23 @@ export function meadowBaseDensity(tx: number, ty: number): number {
   // Nothing grows on the lane through the field, so a stroke that follows the
   // road cuts nothing and the road stays visible through waist-high grass.
   if (nearPath(cx, cy)) return 0;
+  // Placed soil cuts the grass around it. This replaced a hardcoded
+  // `PEN_BLOCKS`-style rectangle test, which could not work once the player
+  // places beds anywhere -- and which, for the record, was never actually
+  // wired in here: `PEN_BLOCKS` guarded `zoneScenery` only, so waist-high
+  // grass grew straight through the Crop Fields and interleaved with the
+  // plants. That is the bug this replaces, not just the hardcoding.
+  //
+  // The band is measured from the tile's CENTRE, matching `mowStroke`'s own
+  // choice, so the collar's edge is where the grass visibly is rather than
+  // where its cell happens to start.
+  const d = soilSignedDistance(soil, cx, cy);
+  // On a bed: bare earth, no grass at all.
+  if (d <= 0) return 0;
+  // Just off one: a stubble collar. This is what reads as "somebody cleared
+  // this ground" -- a hard edge from waist-high grass straight to bare soil
+  // reads as a sprite pasted on the field, which is the whole complaint.
+  if (d < SOIL_EDGE_BAND) return 1;
   const random = seeded((tx * 374761393) ^ (ty * 668265263) ^ 0x27d4eb2f);
   const roll = random();
   if (roll < 0.12) return 1;
@@ -495,8 +526,14 @@ export const MEADOW_REGROW_MS = 9 * 60 * 1000;
  * thin patch stays a thin patch, so cutting the meadow flat and letting it
  * regrow does not quietly erase the grain `meadowBaseDensity` put there.
  */
-export function meadowDensityAt(tx: number, ty: number, cutAtMs: number | null, nowMs: number): number {
-  const base = meadowBaseDensity(tx, ty);
+export function meadowDensityAt(
+  tx: number,
+  ty: number,
+  cutAtMs: number | null,
+  nowMs: number,
+  soil: SoilMap = NO_SOIL,
+): number {
+  const base = meadowBaseDensity(tx, ty, soil);
   if (base === 0 || cutAtMs === null) return base;
   const grown = Math.floor(Math.max(0, nowMs - cutAtMs) / MEADOW_REGROW_MS);
   return Math.max(0, Math.min(base, grown));
@@ -534,6 +571,7 @@ export function mowStroke(
   from: WorldPoint,
   to: WorldPoint,
   reach: number = SCYTHE_REACH,
+  soil: SoilMap = NO_SOIL,
 ): { tx: number; ty: number }[] {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -555,7 +593,7 @@ export function mowStroke(
       for (let ox = -tileReach; ox <= tileReach; ox += 1) {
         const tx = centre.tx + ox;
         const ty = centre.ty + oy;
-        if (meadowBaseDensity(tx, ty) === 0) continue;
+        if (meadowBaseDensity(tx, ty, soil) === 0) continue;
         const key = meadowTileKey(tx, ty);
         if (seen.has(key)) continue;
         // Measured to the tile's centre, so the swathe's edge is where the

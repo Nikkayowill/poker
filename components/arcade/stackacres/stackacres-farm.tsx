@@ -92,6 +92,18 @@ import {
   type RelicId,
   type StackAcresDevotionView,
 } from "@/lib/stackacres/devotion";
+import {
+  FRIENDSHIP_NPCS,
+  KEEPSAKE_CATALOGUE,
+  NPC_GIFT_CATALOGUE,
+  freshFriendship,
+  friendshipView,
+  type GiftOutcome,
+  type KeepsakeId,
+  type NpcId,
+  type StackAcresFriendshipView,
+} from "@/lib/stackacres/friendship";
+import type { MachineItemId } from "@/lib/stackacres/machine-items";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -117,6 +129,7 @@ import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
+import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
@@ -192,6 +205,18 @@ const PIXEL_PILGRIM_LINES: readonly string[] = [
   "You keep good ground here. Where I am from, land like this is a rarer thing than gold.",
   "Every day I keep my devotions, whether or not a soul stops to share them with me.",
   "I ask nothing of you that I do not also ask of myself.",
+];
+
+/** Grandfather Ray's own opening lines, in the same drawl the welcome
+ *  modal and the Museum's own intro already use. One is picked at random
+ *  each time his gift dialogue opens; the prompt itself lives in
+ *  StackAcresFriendshipDialogue, not here, for the same reason
+ *  PIXEL_PILGRIM_LINES keeps its own prompt out of this array. */
+const RAY_GIFT_LINES: readonly string[] = [
+  "Well now, what've you got for me?",
+  "You didn't have to bring me anything, but I won't say no.",
+  "This old farm's given me plenty over the years. Nice to see a bit of it come back around.",
+  "Whatever you've got, I expect I'll find a use for it.",
 ];
 
 interface StackAcresResponse {
@@ -308,6 +333,19 @@ interface StackAcresResponse {
    *  this is only the dialogue's own confirmation (and, on a fresh rung,
    *  which relic to celebrate). */
   prayer?: { streak: number; alreadyPrayedToday: boolean; grantedRelic: RelicId | null };
+  /** NPC friendship: this player's current gift points and keepsake ladder
+   *  progress with every NPC that has one. Absent only from a response old
+   *  enough to predate the feature. See lib/stackacres/friendship.ts. */
+  friendship?: Record<NpcId, StackAcresFriendshipView>;
+  /** Set only by a `give-gift` response; every other action's answer leaves
+   *  this undefined. `friendship` above already carries the resulting
+   *  state -- this is only the dialogue's own confirmation. */
+  gift?: {
+    npc: NpcId;
+    points: number;
+    outcome: GiftOutcome | "insufficient-item";
+    grantedKeepsake: KeepsakeId | null;
+  };
 }
 
 /**
@@ -416,6 +454,36 @@ export function StackAcresFarm() {
         grantedRelic: RelicId | null;
       };
   const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
+  // NPC friendship. Seeded to a fresh player's own answer for every NPC that
+  // has one -- the same "fresh player" seed devotion above uses -- rather
+  // than an empty object, so a render before the first read lands never has
+  // to guard a missing key.
+  const [friendship, setFriendship] = useState<Record<NpcId, StackAcresFriendshipView>>(() => {
+    const initial = {} as Record<NpcId, StackAcresFriendshipView>;
+    FRIENDSHIP_NPCS.forEach((npc) => {
+      initial[npc] = friendshipView(freshFriendship(), new Date());
+    });
+    return initial;
+  });
+  /**
+   * A gift dialogue, one NPC at a time -- opened by `onWorldRayTap` (the
+   * "greeting" phase, a line plus his own item picker), closed by the next
+   * world tap (`onViewMoved`) or its own close button, or replaced by the
+   * "result" phase once a gift answers. Same shape as `MonkDialogueState`;
+   * kept a separate type (not a union with it) since a gift result also
+   * needs to say WHICH NPC it was for.
+   */
+  type GiftDialogueState =
+    | { phase: "greeting"; npc: NpcId; at: TapPoint; line: string }
+    | {
+        phase: "result";
+        npc: NpcId;
+        at: TapPoint;
+        outcome: GiftOutcome | "insufficient-item";
+        points: number;
+        grantedKeepsake: KeepsakeId | null;
+      };
+  const [giftDialogue, setGiftDialogue] = useState<GiftDialogueState | null>(null);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -823,6 +891,7 @@ export function StackAcresFarm() {
     if (data.secrets) setSecrets(data.secrets);
     if (data.secretDonations) setSecretDonations(data.secretDonations);
     if (data.devotion) setDevotion(data.devotion);
+    if (data.friendship) setFriendship(data.friendship);
     if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // meaningful answer here ("confirmed no visit"), and treating it like a
@@ -1320,6 +1389,24 @@ export function StackAcresFarm() {
             });
           }
         }
+        // Same "moves from greeting to result on the one response an action
+        // ever gives" pattern `pray` documents above -- a decline never
+        // reaches this function at all.
+        if (body.action === "give-gift" && data.gift) {
+          setGiftDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.gift! } : null));
+          if (data.gift.outcome === "gifted") {
+            panelSound();
+            if (anchor) world.current?.floatAt(anchor, "🎁", "gain");
+          }
+          if (data.gift.grantedKeepsake) {
+            const keepsake = KEEPSAKE_CATALOGUE[data.gift.grantedKeepsake];
+            goldSound();
+            setLastCollect({
+              text: `${keepsake.icon} Ray gives you his ${keepsake.label}`,
+              nonce: Date.now(),
+            });
+          }
+        }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
           goldSound();
           setLastCollect({
@@ -1394,6 +1481,26 @@ export function StackAcresFarm() {
     world.current?.playMonkPrayer();
     void act({ action: "pray" });
   }, [act]);
+
+  /* ---------------------------------------------------------------- */
+  /* NPC friendship                                                     */
+  /* ---------------------------------------------------------------- */
+
+  const onWorldRayTap = useCallback((at: TapPoint) => {
+    setRadial(null);
+    setGiftDialogue({ npc: "ray", phase: "greeting", at, line: RAY_GIFT_LINES[Math.floor(Math.random() * RAY_GIFT_LINES.length)] });
+  }, []);
+
+  /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
+   *  optimistic animation to fire on the press -- a gift's own reward (a
+   *  keepsake) only ever shows once the server confirms it, the same
+   *  "nothing to guess" posture a museum donation already takes. */
+  const onGiveGift = useCallback(
+    (npc: NpcId, item: MachineItemId) => {
+      void act({ action: "give-gift", npc, item });
+    },
+    [act],
+  );
 
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -1533,6 +1640,7 @@ export function StackAcresFarm() {
   const onViewMoved = useCallback(() => {
     setRadial(null);
     setMonkDialogue(null);
+    setGiftDialogue(null);
   }, []);
 
   /**
@@ -2118,6 +2226,7 @@ export function StackAcresFarm() {
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
               onMonkTap={onWorldMonkTap}
+              onRayTap={onWorldRayTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
@@ -2215,6 +2324,22 @@ export function StackAcresFarm() {
               busy={pendingByPrefix("pray")}
               onPray={onMonkPray}
               onClose={() => setMonkDialogue(null)}
+            />
+          )}
+
+          {/* NPC friendship's gift dialogue, same screen-anchored treatment
+              as the Pixel Pilgrim's above. */}
+          {giftDialogue && (
+            <StackAcresFriendshipDialogue
+              at={giftDialogue.at}
+              npc={giftDialogue.npc}
+              npcLabel={NPC_GIFT_CATALOGUE[giftDialogue.npc].label}
+              inventory={processing.inventory}
+              friendship={friendship[giftDialogue.npc]}
+              result={giftDialogue}
+              busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
+              onGift={(item) => onGiveGift(giftDialogue.npc, item)}
+              onClose={() => setGiftDialogue(null)}
             />
           )}
 

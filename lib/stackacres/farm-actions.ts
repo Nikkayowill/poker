@@ -21,6 +21,8 @@ import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { MidnightMerchantItemId } from "./midnight-merchant";
+import type { NpcId } from "./friendship";
+import type { MachineItemId } from "./machine-items";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -64,7 +66,10 @@ export type Action =
   // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
-  | { action: "pray" };
+  | { action: "pray" }
+  // NPC friendship: a gift, from the friendship dialogue's own item picker.
+  // See lib/stackacres/friendship.ts's own header.
+  | { action: "give-gift"; npc: NpcId; item: MachineItemId };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -83,6 +88,10 @@ export function intentOf(body: Action): string {
   if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
   if ("stock" in body) return `${body.action}:${body.stock}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
+  // Checked before the generic "item" branch below: a gift carries `item`
+  // but no `quantity` (it is always exactly one unit), and gifting one NPC
+  // must never be conflated with gifting another over the same item.
+  if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;

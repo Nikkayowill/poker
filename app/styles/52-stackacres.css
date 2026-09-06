@@ -1256,6 +1256,161 @@
 
 .sa-monk-dialogue-yes:disabled { opacity: .6; cursor: default; }
 
+/* ---- the NPC friendship gift dialogue ---------------------------------
+ * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
+ * a separate block rather than a shared class because the "greeting" phase
+ * here draws an item picker (a variable-length list of buttons) that the
+ * Pilgrim's own dialogue never needs. */
+.sa-gift-dialogue {
+  position: absolute;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-gift-dialogue-pin {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-sky, #8fa9d6);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-gift-dialogue-card {
+  position: absolute;
+  left: 16px;
+  top: -18px;
+  width: 260px;
+  padding: 12px 14px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  pointer-events: auto;
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+
+.sa-gift-dialogue-close {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sa-ink);
+  cursor: pointer;
+  opacity: .6;
+}
+
+.sa-gift-dialogue-close:hover { opacity: 1; }
+
+.sa-gift-dialogue-line {
+  margin: 0 18px 8px 0;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.sa-gift-dialogue-prompt {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.sa-gift-dialogue-items {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sa-gift-dialogue-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--sa-tap);
+  padding: 4px 8px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-cream, #fff7e6);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+.sa-gift-dialogue-item:hover:not(:disabled) { filter: brightness(1.05); }
+.sa-gift-dialogue-item:disabled { opacity: .6; cursor: default; }
+
+.sa-gift-dialogue-item-name {
+  flex: 1;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sa-gift-dialogue-item-pref {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sa-gift-dialogue-item-pref.is-loved { color: var(--sa-berry, #c0435a); }
+.sa-gift-dialogue-item-pref.is-liked { color: var(--sa-choc); }
+
+.sa-gift-dialogue-keepsake {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.sa-gift-dialogue-progress {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--sa-choc);
+}
+
+.sa-gift-dialogue-keepsakes-held {
+  margin: 0 0 10px;
+  font-size: 18px;
+  display: flex;
+  gap: 4px;
+}
+
+.sa-gift-dialogue-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sa-gift-dialogue-no {
+  flex: 1;
+  min-height: var(--sa-tap);
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  background: var(--sa-wood);
+  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink-light);
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+.sa-gift-dialogue-no:hover { filter: brightness(1.05); }
+
 /* ---- the district drawer ---------------------------------------------
  * Travelling to a district (the signpost) IS the selection -- there is no plot
  * to tap any more -- so this is a drawer on the right edge rather than

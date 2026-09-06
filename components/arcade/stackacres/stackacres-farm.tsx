@@ -117,6 +117,8 @@ import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
+import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
+import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
@@ -416,6 +418,18 @@ export function StackAcresFarm() {
         grantedRelic: RelicId | null;
       };
   const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
+  /**
+   * The fence-upgrade popup: opened by `onWorldFenceSegmentTap`, closed by
+   * "Not now", the next world tap (`onViewMoved`), or a successful upgrade.
+   * Unlike the monk dialogue, it holds no separate "result" phase -- a
+   * successful upgrade just closes it, since there is nothing more to say
+   * once the fence line is already whichever tier a re-tap would show.
+   */
+  const [fencePopup, setFencePopup] = useState<
+    | { zone: ZoneId; segmentIndex: number; at: TapPoint; tier: FenceTier; durability: number; version: number }
+    | null
+  >(null);
+  const [fenceUpgradeBusy, setFenceUpgradeBusy] = useState(false);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -1395,6 +1409,97 @@ export function StackAcresFarm() {
     void act({ action: "pray" });
   }, [act]);
 
+  /* ---------------------------------------------------------------- */
+  /* Wildlife Ecosystem & Nighttime Predator Defense                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A finger landed on one bay of a district's own fence line. Reads that
+   * bay's current tier/durability/version fresh (rather than trusting
+   * whatever the live simulation last saw) before opening the popup, so a
+   * stale client can never offer an upgrade against a version the server
+   * has already moved past.
+   *
+   * A SEPARATE fetch from `act`, deliberately: this feature's route
+   * (`/api/stackacres/defense`) answers in a different shape than
+   * `StackAcresResponse`, and folding it into `act`'s response handling
+   * would mean teaching that one large function a second response contract
+   * for a feature with no Gold/unit-list side effects of its own.
+   */
+  const onWorldFenceSegmentTap = useCallback((zone: ZoneId, segmentIndex: number, at: TapPoint) => {
+    setRadial(null);
+    setMonkDialogue(null);
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/stackacres/defense?zone=${zone}&segmentIndex=${segmentIndex}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok || !mounted.current) return;
+        const data = (await response.json()) as {
+          segment?: { tier: FenceTier; durability: number; version: number };
+        };
+        if (!data.segment) return;
+        setFencePopup({
+          zone,
+          segmentIndex,
+          at,
+          tier: data.segment.tier,
+          durability: data.segment.durability,
+          version: data.segment.version,
+        });
+      } catch {
+        // A failed read just means the popup does not open -- nothing was
+        // asked of the server, so there is nothing to undo.
+      }
+    })();
+  }, []);
+
+  /** The only path that ever sends `upgrade-fence`. On success, pushes the
+   *  new tier straight into the live simulation (`setFenceTier`) so a
+   *  predator testing that bay a moment later already sees it, rather than
+   *  waiting on a reload. On a lost race (409, someone else's tap landed
+   *  first), the response still carries the segment as it now stands --
+   *  the popup re-renders from that truth instead of just erroring. */
+  const onUpgradeFence = useCallback(() => {
+    if (!fencePopup) return;
+    const { zone, segmentIndex, version, at } = fencePopup;
+    setFenceUpgradeBusy(true);
+    void (async () => {
+      try {
+        const response = await fetch("/api/stackacres/defense", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upgrade-fence", zone, segmentIndex, version }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          segment?: { tier: FenceTier; durability: number; version: number };
+          error?: string;
+        };
+        if (!mounted.current) return;
+        if (!response.ok) {
+          refusedSound();
+          if (data.segment) {
+            world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
+            setFencePopup({ zone, segmentIndex, at, ...data.segment });
+          }
+          setError(data.error ?? "Could not upgrade that fence.");
+          return;
+        }
+        if (data.segment) {
+          world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
+        }
+        panelSound();
+        setFencePopup(null);
+      } catch {
+        if (mounted.current) setError("Could not upgrade that fence.");
+      } finally {
+        if (mounted.current) setFenceUpgradeBusy(false);
+      }
+    })();
+  }, [fencePopup]);
+
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       // Silent on the press on purpose: the collection announces itself when
@@ -1533,6 +1638,7 @@ export function StackAcresFarm() {
   const onViewMoved = useCallback(() => {
     setRadial(null);
     setMonkDialogue(null);
+    setFencePopup(null);
   }, []);
 
   /**
@@ -1921,6 +2027,13 @@ export function StackAcresFarm() {
   useEffect(() => {
     setAmbiencePlace(place, tod);
   }, [place, tod]);
+  // Wildlife Ecosystem & Nighttime Predator Defense reads the SAME `tod`
+  // ambience already computes, rather than polling `timeOfDay()` a second
+  // time -- see wildlife.ts's own header for why the two must never be
+  // able to disagree about whether it is night.
+  useEffect(() => {
+    world.current?.setWildlifeTimeOfDay(tod);
+  }, [tod]);
 
   /**
    * Standing in Ox Fields with no cattle should sound like empty ground;
@@ -2119,6 +2232,7 @@ export function StackAcresFarm() {
               onMerchantTap={onWorldMerchantTap}
               onMonkTap={onWorldMonkTap}
               onSecretZoneTap={onWorldSecretZoneTap}
+              onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
@@ -2215,6 +2329,21 @@ export function StackAcresFarm() {
               busy={pendingByPrefix("pray")}
               onPray={onMonkPray}
               onClose={() => setMonkDialogue(null)}
+            />
+          )}
+
+          {/* The fence-upgrade popup, same screen-anchored treatment as the
+              seed menu and the monk dialogue above. */}
+          {fencePopup && (
+            <StackAcresFenceUpgradePopup
+              at={fencePopup.at}
+              zone={fencePopup.zone}
+              segmentIndex={fencePopup.segmentIndex}
+              tier={fencePopup.tier}
+              durability={fencePopup.durability}
+              busy={fenceUpgradeBusy}
+              onUpgrade={onUpgradeFence}
+              onClose={() => setFencePopup(null)}
             />
           )}
 

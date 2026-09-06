@@ -106,6 +106,11 @@ type CorePainterName =
   | "flower2"
   | "flower3"
   | "tuft"
+  | "weedTall"
+  | "weedShort"
+  | "scrubLow"
+  | "scrubRound"
+  | "scrubFan"
   | "stump"
   | "puddle"
   | "mown"
@@ -622,6 +627,31 @@ const DRAWN: Record<PainterName, Painter> = {
 
   tuft: painter(8, 6, (c) => {
     blades(c, 4, 6, 5.6, RAMPS.lawn, 0.85);
+  }),
+
+  // The five scrub kinds, drawn only as the fallback behind their sprites
+  // (see stackacres-sprites.ts). Deliberately thin: unlike the animals and
+  // the trees, these have never shipped as painters and nobody is looking at
+  // this version -- it exists so a sprite that fails to load leaves a plant
+  // standing rather than a hole in the ground. Every one is an existing
+  // helper at a different size, which is the whole point of keeping them
+  // cheap.
+  weedTall: painter(14, 11, (c) => {
+    blades(c, 7, 11, 10, RAMPS.lawn, 1);
+    blades(c, 7, 11, 6.4, RAMPS.leaf, 0.8);
+  }),
+  weedShort: painter(12, 7, (c) => {
+    blades(c, 6, 7, 6.4, RAMPS.lawn, 0.9);
+  }),
+  scrubLow: painter(22, 11, (c) => {
+    canopy(c, [[6, 7, 4.4], [15, 7.4, 4], [10.6, 5.2, 4.6]], RAMPS.leaf);
+  }),
+  scrubRound: painter(16, 13, (c) => {
+    canopy(c, [[5.6, 8.6, 4.4], [10.6, 8.6, 4.4], [8, 5.6, 4.8]], RAMPS.leaf);
+  }),
+  scrubFan: painter(26, 24, (c) => {
+    canopy(c, [[8, 17, 6.4], [18, 17, 6.4], [13, 11, 7.4]], RAMPS.leaf);
+    blades(c, 13, 24, 9, RAMPS.lawn, 1.1);
   }),
 
   stump: painter(10, 8, (c) => {
@@ -1371,6 +1401,25 @@ export const PAINTERS: Record<PainterName, Painter> = {
   tree3: spriteBacked("tree3", DRAWN.tree3),
   pine: spriteBacked("pine", DRAWN.pine),
   bush: spriteBacked("bush", DRAWN.bush),
+  // Grass, everywhere it stands up off the ground rather than being part of
+  // the lawn texture: the Long Meadow's three mown heights and the open
+  // world's own clump. The drawn versions behind them were three and five
+  // quadratic strokes, which is the same trade the trees took and for the
+  // same reason -- at the size a phone actually shows a meadow tile, a stroke
+  // is a line and a render is grass.
+  grassTall: spriteBacked("grassTall", DRAWN.grassTall),
+  grassMid: spriteBacked("grassMid", DRAWN.grassMid),
+  grassStubble: spriteBacked("grassStubble", DRAWN.grassStubble),
+  tuft: spriteBacked("tuft", DRAWN.tuft),
+  // Scrub. New kinds standing ALONGSIDE `tree1`-`3`, `pine` and `bush`, not
+  // in place of them -- those five are Kayo's explicit carve-out and are
+  // untouched. What these fill is the size band between a grass clump and a
+  // bush, which the open ground had nothing in.
+  weedTall: spriteBacked("weedTall", DRAWN.weedTall),
+  weedShort: spriteBacked("weedShort", DRAWN.weedShort),
+  scrubLow: spriteBacked("scrubLow", DRAWN.scrubLow),
+  scrubRound: spriteBacked("scrubRound", DRAWN.scrubRound),
+  scrubFan: spriteBacked("scrubFan", DRAWN.scrubFan),
   // The two crops' three growth frames each. The drawn fallback for the two
   // unripe stages was a couple of quadratic-curve strokes -- legible as
   // "something is growing here" and nothing more, which is what these

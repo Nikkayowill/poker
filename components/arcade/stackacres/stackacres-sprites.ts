@@ -29,11 +29,12 @@
  * genuinely different renders now rather than three ramps, BECAUSE a PNG
  * cannot be recoloured -- the variety had to move into the art itself.
  *
- * `grassTile` and `soilTile` are in here but are not one of these: neither is
- * a painter, has no box or anchor, and neither is ever wrapped by
- * `spriteBacked`. They ride this module only because this list is what the
- * scene's `preload` walks, and `bakeGrass`/`paintAreaGround` want them in
- * hand before drawing rather than a frame later.
+ * `grassTile`, `soilBed` and `waterTile` are in here but are not one of
+ * these: none is a painter, none has a box or an anchor, and none is ever
+ * wrapped by `spriteBacked`. They ride this module only because this list is
+ * what the scene's `preload` walks, and `bakeGrass`/`paintSoilTiles`/
+ * `bakePondTexture` want them in hand before drawing rather than a frame
+ * later.
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
  * carry gradients where the rest of the farm is flat, and they cannot be
@@ -83,6 +84,22 @@ export const SPRITE_ART = {
   tree3: "/stackacres/sprites/tree3.png",
   pine: "/stackacres/sprites/pine.png",
   bush: "/stackacres/sprites/bush.png",
+  // The Long Meadow's own grass at the three heights the scythe leaves it
+  // (`meadowDensityAt`), plus the open world's grass clump. Cut from the
+  // isometric plant pack -- see scripts/prepare-stackacres-plants.py, which
+  // also records why the mown height had to be cut out of an uncut plate.
+  grassTall: "/stackacres/sprites/grass-tall.png",
+  grassMid: "/stackacres/sprites/grass-mid.png",
+  grassStubble: "/stackacres/sprites/grass-stubble.png",
+  tuft: "/stackacres/sprites/tuft.png",
+  // Scrub, and the reason the woodland got denser without the trees changing:
+  // Kayo's carve-out kept `tree1`-`3`, `pine` and `bush` exactly as they are,
+  // so these are NEW kinds scattered alongside them rather than replacements.
+  weedTall: "/stackacres/sprites/weed-tall.png",
+  weedShort: "/stackacres/sprites/weed-short.png",
+  scrubLow: "/stackacres/sprites/scrub-low.png",
+  scrubRound: "/stackacres/sprites/scrub-round.png",
+  scrubFan: "/stackacres/sprites/scrub-fan.png",
   // The three growth frames each for the Long Meadow's two crops. Named for
   // lib/stackacres/crop-visuals.ts's CropStage (0 seedling, 1 sprout,
   // 2 mature) exactly like the painters they front.
@@ -97,21 +114,30 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // Same deal as `grassTile`, for the Long Meadow's Crop Fields: a repeating
-  // tilled-furrow texture masked to the district's own diamond in
-  // `paintAreaGround`, replacing that fill's flat colour + drawn furrow
-  // lines when it has loaded (falls back to the old flat fill otherwise).
-  soilTile: "/stackacres/sprites/soil-tile.png",
+  // ONE tilled bed, not a texture -- which is what the thing it replaced
+  // (`soilTile`, a repeating furrow texture masked to the whole district's
+  // diamond) had to be back when the Crop Fields were one district-sized
+  // box. They are a lattice of 64-unit beds now (lib/stackacres/soil.ts), and
+  // a 64-unit square projects to a 128x64 screen diamond, so this is that
+  // diamond drawn whole. Drawing it whole is what lets its three furrows land
+  // exactly on `soilFurrowOffsets()` -- the lines the plants stand on -- where
+  // a repeating texture put them wherever its tile scale happened to fall.
+  soilBed: "/stackacres/sprites/soil-bed.png",
+  // The pond's surface grain, and only the grain -- the shore, the gradient,
+  // the bank shadow and the glints stay drawn (art-water.ts). Composited
+  // INSIDE the water's own ellipse at low alpha, so it is texture under the
+  // gradient rather than a picture of a pond.
+  waterTile: "/stackacres/sprites/water-tile.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
 
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the two ground tiles -- `grassTile`/`soilTile` have no painter
+ *  except the three ground pictures -- `grassTile`/`soilBed`/`waterTile` have no painter
  *  behind them (a ground tile is a texture, not a thing with a box and an
  *  anchor), so they are the names here that `spriteBacked` and
  *  `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilTile">;
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilBed" | "waterTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

@@ -66,6 +66,7 @@ import {
   chunkScenery,
   clampZoom,
   critterSpeed,
+  cropRanks,
   cropSpot,
   growAreaAt,
   growAreaBounds,
@@ -86,6 +87,20 @@ import {
   type WorldRect,
 } from "@/lib/stackacres/world";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
+import {
+  createSoilMap,
+  nextSoilOrder,
+  orderedSoilTiles,
+  placeSoilTile,
+  removeSoilTile,
+  soilFurrowOffsets,
+  soilTileAt,
+  soilTileRect,
+  starterSoilTiles,
+  type SoilMap,
+  type SoilTile,
+  type SoilTileOrigin,
+} from "@/lib/stackacres/soil";
 import {
   enqueueFarmhandTask,
   farmhandStandoff,
@@ -560,9 +575,22 @@ function shadeColor(hex: number, amt: number): number {
 
 /** Only things with height get a shadow: a canopy, a fallen log, a boulder.
  *  A rock, a tuft or a mushroom sitting on a smudge of its own reads as
- *  hovering, not as standing. */
+ *  hovering, not as standing.
+ *
+ *  The scrub splits on exactly that line rather than as one group. The fan
+ *  shrub and the round bush stand up and get one; the weeds and the low
+ *  scrub lie close enough to the ground that a pool under them reads as a
+ *  stain on the grass. */
 function castsShadow(kind: SceneryKind): boolean {
-  return kind.startsWith("tree") || kind === "pine" || kind === "bush" || kind === "log" || kind === "boulder";
+  return (
+    kind.startsWith("tree") ||
+    kind === "pine" ||
+    kind === "bush" ||
+    kind === "log" ||
+    kind === "boulder" ||
+    kind === "scrubFan" ||
+    kind === "scrubRound"
+  );
 }
 
 /** How wide and tall a wild thing's ground shadow is, as a scale of the
@@ -575,6 +603,10 @@ function sceneryShadowScale(kind: SceneryKind): readonly [number, number] {
       return [0.7, 0.5];
     case "boulder":
       return [0.85, 0.7];
+    case "scrubFan":
+      return [0.8, 1];
+    case "scrubRound":
+      return [0.55, 0.75];
     default:
       // Trees and pines, tracking the painters themselves (24 units wide
       // originally, then 42, now 64). A pool sized to a tree that no longer
@@ -752,6 +784,24 @@ export class StackAcresScene extends Phaser.Scene {
   private readonly options: StackAcresSceneOptions;
   private nodes = new Map<string, UnitNode>();
   private units: StackAcresSceneUnit[] = [];
+  /**
+   * The player's placed soil, seeded with the free starter beds.
+   *
+   * Seeded HERE, at field initialisation, rather than from a server payload,
+   * because nothing persists a soil tile yet: `starterSoilTiles` derives the
+   * same two coordinates from the live grow-area rect on every device and
+   * every reload, so a save that has never heard of soil still opens on the
+   * same two beds. Tiles bought from the shop need a table before they can
+   * survive a reload -- see `setSoil`, which is the seam they will arrive
+   * through.
+   */
+  private soil: SoilMap = createSoilMap(starterSoilTiles(growAreaBounds("meadow")));
+  /**
+   * Each crop's rank among its siblings, rebuilt once per `setUnits` rather
+   * than derived per lookup: `unitAt` asks for every node's spot on every
+   * tap, and ranking one crop costs the same sort as ranking all of them.
+   */
+  private cropRanks = new Map<string, number>();
   private pending: StackAcresSceneUnit[] | null = null;
   /** The Midnight Merchant's own picture and ground shadow, or null while he
    *  is not on the lot. See `setMerchant`. */
@@ -1809,6 +1859,13 @@ export class StackAcresScene extends Phaser.Scene {
       return;
     }
     this.units = units;
+    // Before any `buildUnit` below, which reads it through `staticSpotFor`.
+    // Livestock are excluded: a wandering animal has no slot, and a MUCKED
+    // animal deliberately keeps the old scatter (see `cropSpot`). A mucked
+    // CROP stays in the ranking so it holds the bed it stopped in.
+    this.cropRanks = cropRanks(
+      units.filter((unit) => !isLivestock(unit.stock)).map((unit) => unit.id),
+    );
     const seen = new Set<string>();
     for (const unit of units) {
       seen.add(unit.id);
@@ -1907,7 +1964,12 @@ export class StackAcresScene extends Phaser.Scene {
    * mucked unit's own kind that needs representing once it has stopped.
    */
   private staticSpotFor(unit: StackAcresSceneUnit): WorldPoint {
-    return cropSpot(stockZone(unit.stock), unit.id);
+    const rank = this.cropRanks.get(unit.id);
+    // No rank means livestock, which is only ever here because it is mucked:
+    // it has no soil tile of its own and the scatter inside its pen is the
+    // right answer for it. `cropSpot` falls back to exactly that.
+    if (rank === undefined) return cropSpot(stockZone(unit.stock), unit.id);
+    return cropSpot(stockZone(unit.stock), unit.id, { soil: this.soil, rank });
   }
 
   private buildUnit(unit: StackAcresSceneUnit, signature: string, previous: UnitNode | undefined): void {
@@ -2157,6 +2219,22 @@ export class StackAcresScene extends Phaser.Scene {
     this.locked = next;
     if (!this.created) return;
     for (const id of changed) this.paintSector(id);
+    this.dropChunks();
+  }
+
+  /**
+   * Throws away every built scenery chunk so `tendWorld` rebuilds them from
+   * scratch on the next frame.
+   *
+   * The blunt instrument, and the right one whenever something that FEEDS a
+   * chunk's contents has changed rather than the camera having moved --
+   * unlocking a sector, or placing soil. Grass is the reason it has to be
+   * blunt: a tile whose base density is 0 is never given a sprite at all
+   * (see `buildGrass`), so `refreshGrass` cannot bring one back, and a bed
+   * the player removes would leave a permanent bald patch. Rebuilding is
+   * cheap here because `tendWorld` only ever builds what the camera can see.
+   */
+  private dropChunks(): void {
     for (const content of this.chunks.values()) {
       for (const item of content.items) item.destroy();
       for (const tile of content.grassKeys) this.grassTiles.delete(tile);
@@ -2164,14 +2242,88 @@ export class StackAcresScene extends Phaser.Scene {
     this.chunks.clear();
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Placed soil -- the seam the shop will arrive through              */
+  /* ---------------------------------------------------------------- */
+
+  /** Every placed tile, in slot order. What a shop screen lists and what a
+   *  save would persist. */
+  soilTiles(): SoilTile[] {
+    return orderedSoilTiles(this.soil);
+  }
+
+  /**
+   * Replaces the placed soil wholesale -- what a loaded save calls once its
+   * tiles have somewhere to be stored.
+   *
+   * Repaints rather than diffs: the Crop Fields are one `paintSector` call
+   * and the chunks rebuild lazily, so there is nothing here worth the extra
+   * state a diff would need.
+   */
+  setSoil(tiles: readonly SoilTile[]): void {
+    this.soil = createSoilMap(tiles);
+    this.refreshSoil();
+  }
+
+  /**
+   * Places one tile under a world point, snapped to the lattice. Returns
+   * false when a tile is already there, so a shop can charge only on a
+   * purchase that actually landed.
+   *
+   * It does NOT check Gold, or the district, or whether the player has
+   * unlocked the ground. The scene draws; the shell decides what a tile
+   * costs and where one may go, the same split `onGroundTap` already keeps.
+   */
+  placeSoilAt(x: number, y: number, origin: SoilTileOrigin = "purchased"): boolean {
+    const { tx, ty } = soilTileAt(x, y);
+    const placed = placeSoilTile(this.soil, {
+      tx,
+      ty,
+      order: nextSoilOrder(this.soil),
+      origin,
+    });
+    if (placed) this.refreshSoil();
+    return placed;
+  }
+
+  /** Lifts a tile. Crops standing on it do not vanish -- they re-rank into
+   *  whatever soil is left, or fall back to the scatter if none is (see
+   *  `soilSlotSpotForRank`), which is why this repaints the units too. */
+  removeSoilAt(x: number, y: number): boolean {
+    const { tx, ty } = soilTileAt(x, y);
+    const removed = removeSoilTile(this.soil, tx, ty);
+    if (removed) this.refreshSoil();
+    return removed;
+  }
+
+  /** Redraws everything a soil change moves: the beds themselves, the grass
+   *  the SDF now cuts differently, and every crop whose slot shifted. */
+  private refreshSoil(): void {
+    if (!this.created) return;
+    this.paintSector("meadow");
+    this.dropChunks();
+    // Rebuild the units so each crop walks to its new slot. `setUnits`
+    // rebuilds only nodes whose signature changed, and a slot move does not
+    // change a signature, so the nodes are dropped first.
+    for (const [, node] of this.nodes) this.destroyNode(node);
+    this.nodes.clear();
+    this.setUnits(this.units);
+  }
+
   private paintDistrictBoundary(zone: ZoneId): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
     const area = growAreaBounds(zone);
     const livestock = stocksInZone(zone).find((stock) => isLivestock(stock));
     if (!livestock) {
-      // No livestock kind here at all -- the Long Meadow's Crop Fields,
-      // tilled and furrowed, no fence.
-      built.push(...this.paintAreaGround(area, "soil", true));
+      // No livestock kind here at all -- the Long Meadow's Crop Fields.
+      //
+      // This used to paint ONE district-sized tilled diamond over the whole
+      // grow area. It no longer paints the area at all: the Crop Fields are
+      // whatever soil the player has placed, so the ground is drawn per tile
+      // and the rest of the district is left as meadow. `area` is still the
+      // fenced box for taps and for animal wandering; it is simply no longer
+      // a picture.
+      built.push(...this.paintSoilTiles());
       return built;
     }
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
@@ -2234,22 +2386,21 @@ export class StackAcresScene extends Phaser.Scene {
    * different textures is deliberate -- a Cattle Pen is not a second crop
    * field wearing the same dye.
    *
-   * A furrowed area draws the generated `soilTile` once it has loaded,
-   * masked to the diamond's own polygon (a `TileSprite` clipped by a
-   * `GeometryMask` traced from the same corners the flat fill used) instead
-   * of the flat colour + drawn furrow lines -- the same "generated art
-   * REPLACES the procedural pass, does not sit under it" bargain `bakeGrass`
-   * makes for the lawn. Rotated by `ISO_EDGE_ANGLE.alongX` so the texture's
-   * own furrow stripes run along the diamond's grain rather than square to
-   * the screen, the same correction `ISO_EDGE_ANGLE` already gives a
-   * "furrow" prop's sprite elsewhere. Unfurrowed areas, and a furrowed one
-   * before the tile has loaded, keep the exact old flat-fill behaviour --
-   * nothing here is allowed to leave a district undrawn.
+   * This paints a FLAT diamond and, when asked, draws furrow lines onto it.
+   * It used to have a second mode -- a repeating tilled texture masked to the
+   * diamond -- which is gone with the district-sized crop field it was built
+   * for. A soil bed is 64 units square now, and `paintSoilTiles` draws each
+   * one as a single picture instead; a repeat has nothing to repeat at that
+   * size, and the picture's own furrows can be made to land on exactly the
+   * lines the plants stand on, which a tile scale could only approximate.
+   * What is left here is the fallback that draws when that picture has not
+   * arrived, plus every pen's own ground, which was never textured.
    */
   private paintAreaGround(
     area: WorldRect,
     kind: "straw" | "soil" | "muck",
     furrowed = false,
+    furrowOffsets?: readonly number[],
   ): Phaser.GameObjects.GameObject[] {
     const corners = projectedCorners(area);
     const ramp = rampHex(kind);
@@ -2257,73 +2408,88 @@ export class StackAcresScene extends Phaser.Scene {
     const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
     built.push(g);
 
-    const tileKey = spriteLoadKey("soilTile");
-    const useTexture = furrowed && this.textures.exists(tileKey);
-    if (!useTexture) g.fillStyle(ramp.top, 1);
+    g.fillStyle(ramp.top, 1);
     g.beginPath();
     g.moveTo(corners.n.x, corners.n.y);
     g.lineTo(corners.e.x, corners.e.y);
     g.lineTo(corners.s.x, corners.s.y);
     g.lineTo(corners.w.x, corners.w.y);
     g.closePath();
-    if (!useTexture) g.fillPath();
+    g.fillPath();
     g.lineStyle(1, ramp.rim, 0.55);
     g.strokePath();
 
-    if (useTexture) {
-      // The mask's own shape never needs to be seen -- only its path -- so
-      // it is built from a second Graphics rather than reusing `g`, which
-      // still needs to draw the visible rim stroke traced above.
-      const maskShape = this.add.graphics().setVisible(false);
-      maskShape.fillStyle(0xffffff, 1);
-      maskShape.beginPath();
-      maskShape.moveTo(corners.n.x, corners.n.y);
-      maskShape.lineTo(corners.e.x, corners.e.y);
-      maskShape.lineTo(corners.s.x, corners.s.y);
-      maskShape.lineTo(corners.w.x, corners.w.y);
-      maskShape.closePath();
-      maskShape.fillPath();
-      built.push(maskShape);
-
-      const bounds = projectedBounds(area);
-      const cx = bounds.x + bounds.width / 2;
-      const cy = bounds.y + bounds.height / 2;
-      // Oversized (the bounding box's own diagonal) so the rotated square
-      // still fully covers the diamond's screen-space box before the mask
-      // clips it back down to the diamond itself.
-      const side = Math.hypot(bounds.width, bounds.height);
-      const tile = this.add
-        .tileSprite(cx, cy, side, side, tileKey)
-        .setDepth(GROW_AREA_GROUND_DEPTH)
-        .setRotation(ISO_EDGE_ANGLE.alongX)
-        // Shrinks each repeat of the 512px source so its furrow spacing
-        // lands close to the ~23-unit spacing the six drawn rows this
-        // replaces used on the Long Meadow's own 160-unit box (160 / 7).
-        .setTileScale(0.4, 0.4)
-        .setMask(maskShape.createGeometryMask());
-      built.push(tile);
-    } else if (furrowed) {
-      this.paintFurrows(g, area);
-    }
+    if (furrowed) this.paintFurrows(g, area, furrowOffsets);
     return built;
   }
 
-  /** Furrow lines across a tilled grow area, drawn along the diamond's own
-   *  grain so they read as rows rather than as stripes painted over the top
-   *  of it -- the same idea the old per-plot soil ground used, spread across
-   *  a whole district's worth of field instead of one CELL. */
-  private paintFurrows(g: Phaser.GameObjects.Graphics, area: WorldRect): void {
-    const rows = 6;
-    for (let r = 1; r <= rows; r += 1) {
-      const k = r / (rows + 1);
-      const a = isoProject(area.x + 10, area.y + k * area.height);
-      const b = isoProject(area.x + area.width - 10, area.y + k * area.height);
+  /** Furrow lines across a tilled area, drawn along the diamond's own grain
+   *  so they read as rows rather than as stripes painted over the top of it.
+   *
+   *  `offsets` are distances DOWN from the area's own top edge in world
+   *  units. A soil tile passes `soilFurrowOffsets()` so its furrows land on
+   *  exactly the lines its plants stand on -- a furrow bed whose rows and
+   *  whose plants disagree is worse than no furrows at all. Omitted, it
+   *  keeps the old six evenly-spaced rows, which is what every non-tile
+   *  caller still wants. */
+  private paintFurrows(
+    g: Phaser.GameObjects.Graphics,
+    area: WorldRect,
+    offsets?: readonly number[],
+  ): void {
+    const rows = offsets ?? Array.from({ length: 6 }, (_, r) => ((r + 1) / 7) * area.height);
+    for (const dy of rows) {
+      const a = isoProject(area.x + 10, area.y + dy);
+      const b = isoProject(area.x + area.width - 10, area.y + dy);
       g.lineStyle(1.1, 0x000000, 0.14);
       g.beginPath();
       g.moveTo(a.x, a.y);
       g.lineTo(b.x, b.y);
       g.strokePath();
     }
+  }
+
+  /**
+   * Every placed soil tile, drawn as its own tilled diamond.
+   *
+   * One picture per bed rather than a merged outline: the beds share a fill
+   * and a rim, so two adjacent ones already read as one patch of earth with
+   * no auto-tiling -- there is no seam between them to bitmask away, only a
+   * rim, and that rim is what makes a bed the player placed legible as a
+   * bed. Merging them would cost the edge that says where the player may
+   * plant.
+   *
+   * The picture is `soilBed`, drawn at its own diamond's screen size and
+   * centred on the bed. It is NOT baked through `bakeSpriteTexture` the way
+   * every painter-backed sprite is: that path exists to pad a texture to a
+   * power of two so WebGL1 will mipmap it (see `bakeTexture`), and this
+   * source is already 512x256 -- both powers of two -- so the padding would
+   * be a no-op and the extra canvas pure cost. It is also not a painter: it
+   * has no box and no anchor, it is a picture of one specific world square.
+   *
+   * The flat fill underneath stays, and is not dead code: it draws for the
+   * frame or two before the file arrives, and forever if it never does.
+   */
+  private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
+    const built: Phaser.GameObjects.GameObject[] = [];
+    const bedKey = spriteLoadKey("soilBed");
+    const bed = this.textures.exists(bedKey);
+    for (const tile of orderedSoilTiles(this.soil)) {
+      const rect = soilTileRect(tile.tx, tile.ty);
+      built.push(...this.paintAreaGround(rect, "soil", !bed, soilFurrowOffsets()));
+      if (!bed) continue;
+      // A square projects to a diamond twice as wide as it is tall, centred
+      // on the square's own centre -- so the picture needs no anchoring
+      // beyond that, and its size follows the bed rather than a constant.
+      const centre = isoProject(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      built.push(
+        this.add
+          .image(centre.x, centre.y, bedKey)
+          .setDisplaySize(rect.width * 2, rect.height)
+          .setDepth(GROW_AREA_GROUND_DEPTH),
+      );
+    }
+    return built;
   }
 
   /**
@@ -2585,7 +2751,7 @@ export class StackAcresScene extends Phaser.Scene {
       const world = resolveWorld(clientX, clientY);
       const tile = meadowTileAt(world.x, world.y);
       const key = meadowTileKey(tile.tx, tile.ty);
-      return meadowDensityAt(tile.tx, tile.ty, this.mown.get(key) ?? null, Date.now()) > 0;
+      return meadowDensityAt(tile.tx, tile.ty, this.mown.get(key) ?? null, Date.now(), this.soil) > 0;
     };
     const oneFinger = (id: number, at: Finger, kind: "press" | "pan"): DragGesture => ({
       kind,
@@ -3170,10 +3336,29 @@ export class StackAcresScene extends Phaser.Scene {
     // the map however squarely the finger lands on its actual picture.
     //
     // Touching a unit's own ART therefore beats merely clipping another's
-    // ground, and depth only decides between hits of the same kind -- which is
-    // still what settles two overlapping sprites, the case the depth rule was
-    // written for.
-    let best: { id: string; onArt: boolean; depth: number } | null = null;
+    // ground, and the tie between hits of the same kind is settled by which
+    // centre the finger landed NEAREST.
+    //
+    // Nearest-centre replaced topmost-depth here when crops moved onto the
+    // soil lattice. At a 14-unit column pitch (`SOIL_COL_PITCH`) a mature
+    // plant overlaps most of its neighbour by design, so several art boxes
+    // under one thumb is now the ordinary case rather than the crowded one,
+    // and "whichever is drawn in front" stops answering the question the
+    // player is actually asking. It resolves to the plant they aimed at.
+    //
+    // The trade, stated because it is real: a small plant standing in front
+    // of a large one no longer automatically wins the tap. It only loses it
+    // when the finger is closer to the other plant's centre than to its own,
+    // which is the case where the player was aiming at the other plant.
+    // Depth survives as the final tie-break for two centres exactly equally
+    // far away.
+    //
+    // Measured in SCREEN space, not world space -- the thumb is on the
+    // picture, and the iso shear foreshortens world y by half, so a world
+    // distance would quietly bias every tie along one axis. (The farmhand's
+    // own `closestCrop` in lib/stackacres/soil.ts measures in WORLD space
+    // for the mirror-image reason: it walks the ground.)
+    let best: { id: string; onArt: boolean; dist: number; depth: number } | null = null;
     for (const [id, node] of this.nodes) {
       const art = node.sprite.getBounds();
       const onArt =
@@ -3199,9 +3384,21 @@ export class StackAcresScene extends Phaser.Scene {
       }
       if (!hit) continue;
       const depth = node.container.depth;
-      if (!best || (onArt !== best.onArt ? onArt : depth > best.depth)) {
-        best = { id, onArt, depth };
-      }
+      // An art hit measures to the picture's own centre; a ground hit
+      // measures to the unit's feet, which is where its diamond is centred.
+      // The two are never compared against each other -- `onArt` outranks
+      // distance -- so the frames never mix.
+      const cx = onArt ? art.centerX : node.container.x;
+      const cy = onArt ? art.centerY : node.container.y;
+      const dist = Math.hypot(at.x - cx, at.y - cy);
+      const better =
+        !best ||
+        (onArt !== best.onArt
+          ? onArt
+          : dist !== best.dist
+            ? dist < best.dist
+            : depth > best.depth);
+      if (better) best = { id, onArt, dist, depth };
     }
     return best ? best.id : null;
   }
@@ -3607,10 +3804,10 @@ export class StackAcresScene extends Phaser.Scene {
     const tiles = STACKACRES_CHUNK / MEADOW_TILE;
     for (let ty = ty0; ty < ty0 + tiles; ty += 1) {
       for (let tx = tx0; tx < tx0 + tiles; tx += 1) {
-        if (meadowBaseDensity(tx, ty) === 0) continue;
+        if (meadowBaseDensity(tx, ty, this.soil) === 0) continue;
         const key = meadowTileKey(tx, ty);
         if (this.grassTiles.has(key)) continue;
-        const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now());
+        const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now(), this.soil);
         // A little off-centre per tile, so the field is grass rather than a
         // grid of identical tufts. Deterministic, so it does not jump when
         // the chunk regrows.
@@ -3633,7 +3830,7 @@ export class StackAcresScene extends Phaser.Scene {
     const key = meadowTileKey(tx, ty);
     const sprite = this.grassTiles.get(key);
     if (!sprite) return;
-    const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now());
+    const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now(), this.soil);
     sprite.setVisible(density > 0);
     if (density > 0) sprite.setTexture(grassArt(density), ART_FRAME);
   }
@@ -3771,8 +3968,8 @@ export class StackAcresScene extends Phaser.Scene {
     const wall = Date.now();
     for (const [key, cutAt] of this.mown) {
       const [tx, ty] = key.split(":").map(Number);
-      const base = meadowBaseDensity(tx, ty);
-      if (meadowDensityAt(tx, ty, cutAt, wall) >= base) {
+      const base = meadowBaseDensity(tx, ty, this.soil);
+      if (meadowDensityAt(tx, ty, cutAt, wall, this.soil) >= base) {
         this.mown.delete(key);
       }
       this.refreshGrass(tx, ty);
@@ -3795,10 +3992,10 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.locked.has("meadow")) return;
     const wall = Date.now();
     let cut = false;
-    for (const tile of mowStroke(from, to, scytheReachFor(this.options.toolTier))) {
+    for (const tile of mowStroke(from, to, scytheReachFor(this.options.toolTier), this.soil)) {
       const key = meadowTileKey(tile.tx, tile.ty);
       const cutAt = this.mown.get(key) ?? null;
-      if (meadowDensityAt(tile.tx, tile.ty, cutAt, wall) === 0) continue;
+      if (meadowDensityAt(tile.tx, tile.ty, cutAt, wall, this.soil) === 0) continue;
       this.mown.set(key, wall);
       cut = true;
       this.refreshGrass(tile.tx, tile.ty);

@@ -55,7 +55,11 @@ export type Action =
   // `activate-synergy-perk` moves no Gold, only the loadout.
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
-  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId };
+  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId }
+  // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
+  // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
+  // it, so declining never reaches this at all.
+  | { action: "pray" };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same

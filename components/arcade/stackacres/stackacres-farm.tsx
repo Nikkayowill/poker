@@ -78,7 +78,13 @@ import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
-import type { FarmhandHooks } from "@/lib/stackacres/farmhand-machine";
+import {
+  RELIC_CATALOGUE,
+  devotionView,
+  freshDevotion,
+  type RelicId,
+  type StackAcresDevotionView,
+} from "@/lib/stackacres/devotion";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -103,6 +109,7 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
+import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
@@ -164,6 +171,21 @@ import {
  */
 
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * The Pixel Pilgrim's own opening lines -- formal, devout, and clear that he
+ * is a visitor here ("not from this world"), never the same one twice in a
+ * row where it can be helped. One is picked at random each time his
+ * dialogue opens; the prompt itself ("Will you pray with me?") is fixed and
+ * lives in StackAcresMonkDialogue, not here, since it is a question rather
+ * than flavor.
+ */
+const PIXEL_PILGRIM_LINES: readonly string[] = [
+  "Peace be with you. I am not of this world -- I came from the pixel realm, and StackAcres has been my home since.",
+  "You keep good ground here. Where I am from, land like this is a rarer thing than gold.",
+  "Every day I keep my devotions, whether or not a soul stops to share them with me.",
+  "I ask nothing of you that I do not also ask of myself.",
+];
 
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
@@ -265,6 +287,15 @@ interface StackAcresResponse {
    *  farm having hit its flat daily Gold ceiling -- see the ceiling throw in
    *  `harvestStackAcres`. Absent on a plain refusal and on every success. */
   reason?: "day-capped";
+  /** The Pixel Pilgrim's devotion: this player's current UTC-day streak and
+   *  progress up his relic ladder. Absent only from a response old enough
+   *  to predate the feature. See lib/stackacres/devotion.ts. */
+  devotion?: StackAcresDevotionView;
+  /** Set only by a `pray` response; every other action's answer leaves this
+   *  undefined. `devotion` above already carries the resulting state --
+   *  this is only the dialogue's own confirmation (and, on a fresh rung,
+   *  which relic to celebrate). */
+  prayer?: { streak: number; alreadyPrayedToday: boolean; grantedRelic: RelicId | null };
 }
 
 /**
@@ -346,6 +377,33 @@ export function StackAcresFarm() {
   const [synergyUnlocked, setSynergyUnlocked] = useState<SynergyArchetype[]>([]);
   const [synergyActive, setSynergyActive] = useState<SynergyArchetype[]>([]);
   const [farmhandSpeedMultiplier, setFarmhandSpeedMultiplier] = useState(1);
+  // The Pixel Pilgrim's devotion. Seeded to a fresh player's own answer --
+  // the same state a brand-new farm's own first read comes back with.
+  const [devotion, setDevotion] = useState<StackAcresDevotionView>(() =>
+    devotionView(freshDevotion(), new Date()),
+  );
+  /**
+   * His dialogue: opened by `onWorldMonkTap` (the "greeting" phase, a line
+   * plus the "will you pray with me?" prompt), closed by "no", by the next
+   * world tap (`onViewMoved`, below), or replaced by the "result" phase once
+   * a "yes" answers. `at` is where to anchor it -- the tap point the scene
+   * handed back, same convention `radial`'s own screen anchor uses.
+   *
+   * Deliberately holds no server state beyond one action's own answer:
+   * `devotion` above is the ongoing source of truth (streak, today's status,
+   * relics held); `result` is only this ONE prayer's own confirmation (so a
+   * fresh relic grant can be named), read once out of `act`'s response.
+   */
+  type MonkDialogueState =
+    | { phase: "greeting"; at: TapPoint; line: string }
+    | {
+        phase: "result";
+        at: TapPoint;
+        streak: number;
+        alreadyPrayedToday: boolean;
+        grantedRelic: RelicId | null;
+      };
+  const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -361,13 +419,14 @@ export function StackAcresFarm() {
   const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
-   * The processing track, held as one object rather than four pieces of
-   * state. It is read as a whole (the farmhand plans against all of it at
-   * once) and it arrives as a whole, and one object means one identity for
-   * the effect that pushes it into the scene -- four pieces of state would
-   * push four times per snapshot, and each push is a chance for the
-   * farmhand's optimistic credits to retire against a half-applied world
-   * (see lib/stackacres/farmhand-machine.ts).
+   * The processing track (wheat, mills, the one open Town Contract), held as
+   * one object rather than four pieces of state: it arrives as a whole in
+   * every response, and the panels that read it (contractPosted, the
+   * Greenhouse/Mill inventory rows) want it consistent within one render
+   * rather than four separately-updated fields that could briefly disagree.
+   * Used to also feed the scene's own automated farmhand -- that wiring is
+   * gone along with his walk (see MonkNode's own doc comment in
+   * stackacres-scene.ts); this state stays for the UI's own sake.
    */
   const [processing, setProcessing] = useState<Omit<StackAcresProcessing, "profileId">>(() => ({
     contract: null,
@@ -733,8 +792,8 @@ export function StackAcresFarm() {
       setFarmhandSpeedMultiplier(data.synergy.farmhandSpeedMultiplier);
     }
     // All four move together or not at all: a response either carries the
-    // processing track or predates it, and a half-applied one would let the
-    // farmhand plan a contract against last minute's stores.
+    // processing track or predates it, and a half-applied one would show a
+    // contract next to inventory numbers from a different moment.
     if (data.inventory && data.wheatPlots && data.machines) {
       setProcessing({
         contract: data.contract ?? null,
@@ -745,6 +804,7 @@ export function StackAcresFarm() {
     }
     if (data.secrets) setSecrets(data.secrets);
     if (data.secretDonations) setSecretDonations(data.secretDonations);
+    if (data.devotion) setDevotion(data.devotion);
     if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // meaningful answer here ("confirmed no visit"), and treating it like a
@@ -924,9 +984,9 @@ export function StackAcresFarm() {
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
 
   // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
-  // farmhand's own unlock tint should be showing -- both pure derivations of
-  // state already held above, recomputed only when one of its real inputs
-  // changes rather than tracked as state of their own.
+  // Pixel Pilgrim's own unlock tint should be showing -- both pure
+  // derivations of state already held above, recomputed only when one of
+  // its real inputs changes rather than tracked as state of their own.
   const museumGlowTier = useMemo(
     () =>
       museumGlowTierFor({
@@ -977,75 +1037,10 @@ export function StackAcresFarm() {
   }, [merchantRendered]);
 
   /**
-   * A request nobody pressed a button for.
-   *
-   * `act`'s quiet sibling, for the automated farmhand's own two intents. It
-   * shares `act`'s duplicate guard and its idempotency key -- the same two
-   * refs, so a `work` the farmhand asked for and a `work` the player somehow
-   * triggered cannot both be in the air -- and it applies the response the
-   * same way. What it deliberately does NOT do is any of `act`'s theatre: no
-   * busy spinner, no error banner, no sound, no float. Nobody is waiting on
-   * this and nobody asked for it, so a failure is a silence, not a message
-   * about something the player did not do.
-   *
-   * Returns the parsed body, or null when the request never landed or was
-   * refused. Null is what rolls the farmhand's optimistic credit back off the
-   * screen -- see `FarmhandHooks.adjustInventory`.
-   */
-  const send = useCallback(
-    async (body: Action): Promise<Partial<StackAcresResponse> | null> => {
-      const intent = intentOf(body);
-      if (inFlight.current.has(intent)) return null;
-      markInFlight(intent);
-      const key = pendingKeys.current.get(intent) ?? newIntentKey();
-      pendingKeys.current.set(intent, key);
-      let answered = false;
-      try {
-        const response = await fetch("/api/stackacres/actions", {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, key }),
-        });
-        // Rate limited, or the pass expired. Both leave the farm exactly as
-        // it was, and both are the farmhand's problem rather than the
-        // player's -- a reload here would throw away whatever they are
-        // actually doing.
-        if (response.status === 429 || response.status === 401) {
-          answered = true;
-          return null;
-        }
-        const data = (await response.json()) as Partial<StackAcresResponse>;
-        answered = true;
-        if (!mounted.current) return null;
-        if (!response.ok) {
-          // A refusal still carries the true round, and painting it is the
-          // whole point: it is how the farmhand learns the plot he thought
-          // was ripe is gone.
-          if (data.round) setUnits(data.round);
-          return null;
-        }
-        applyResponse(data);
-        return data;
-      } catch {
-        return null;
-      } finally {
-        clearInFlight(intent);
-        if (answered) pendingKeys.current.delete(intent);
-      }
-    },
-    [applyResponse, markInFlight, clearInFlight],
-  );
-
-  /**
    * Answers what became of one action, for the callers that have to undo
    * something of their own when it did not land -- today that is the town
    * board, whose optimistic debit has to go back on the shelf on any refusal
    * (see TownContractsModal's `handleSettleContract`).
-   *
-   * `send` above returns the body and `act` returns the outcome, which is the
-   * difference between the two callers: the farmhand needs what changed, and
-   * the board needs to know whether to put the goods back.
    *
    * Every existing caller ignores it and is unaffected: they call `void
    * act(...)` and let the response repaint the farm, which is still the only
@@ -1272,6 +1267,25 @@ export function StackAcresFarm() {
           setLastCollect({ text: `${found.icon} Found the ${found.label}!`, nonce: Date.now() });
           if (anchor) world.current?.floatAt(anchor, `${found.icon} ${found.label}!`, "gain");
         }
+        // The dialogue moves from "greeting" to "result" here, on the one
+        // response `pray` ever gives -- never on the press, since a decline
+        // never reaches this function at all. Keeps the dialogue's own
+        // anchor rather than reading a fresh one: the finger has not moved.
+        if (body.action === "pray" && data.prayer) {
+          setMonkDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.prayer! } : null));
+          if (!data.prayer.alreadyPrayedToday) {
+            panelSound();
+            if (anchor) world.current?.floatAt(anchor, `🙏 Day ${data.prayer.streak}`, "gain");
+          }
+          if (data.prayer.grantedRelic) {
+            const relic = RELIC_CATALOGUE[data.prayer.grantedRelic];
+            goldSound();
+            setLastCollect({
+              text: `${relic.icon} The Pilgrim entrusts you the ${relic.label}`,
+              nonce: Date.now(),
+            });
+          }
+        }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
           goldSound();
           setLastCollect({
@@ -1324,69 +1338,28 @@ export function StackAcresFarm() {
    * broken however fast it eventually answers. A press that turns out to be
    * refused gets the wooden knock on top of it, from `act`.
    */
-  /**
-   * Send the farmhand over to a unit that has just been acted on. Decoration
-   * on a request that has already left the browser -- see
-   * lib/stackacres/farmhand.ts.
-   *
-   * NOT for clearing. `act`'s own optimistic layer drops a mucked unit from
-   * the list under the same press, so by the time he has taken a step there
-   * is nothing standing there to walk to and he turns straight back round;
-   * setting off and immediately giving up looks worse than never setting off.
-   */
-  const sendFarmhand = useCallback((unitId: string) => {
-    world.current?.sendFarmhand(unitId);
+  /* ---------------------------------------------------------------- */
+  /* The Pixel Pilgrim                                                  */
+  /* ---------------------------------------------------------------- */
+
+  const onWorldMonkTap = useCallback((at: TapPoint) => {
+    setRadial(null);
+    setMonkDialogue({ phase: "greeting", at, line: PIXEL_PILGRIM_LINES[Math.floor(Math.random() * PIXEL_PILGRIM_LINES.length)] });
   }, []);
 
-  /* ---------------------------------------------------------------- */
-  /* The automated farmhand                                            */
-  /* ---------------------------------------------------------------- */
-
   /**
-   * What the wheat field is worth, and where the browser's authority ends.
-   *
-   * The scene's `FarmhandStateMachine` decides WHEN a cycle finishes and
-   * predicts what it is worth on screen. This is the only place that turns
-   * one into a request, and every request here is an INTENT: `work` asks the
-   * server to settle every ripe plot and every mill it finds, and
-   * `fulfill-contract` asks it to pay the one open contract. Neither names a
-   * quantity, a plot or a price, so a tampered client can ask for the pass to
-   * run and nothing else -- the server reads the live rows itself and settles
-   * under its own guard. That matters more here than anywhere else on this
-   * screen, because a fulfilled contract pays real Gold.
-   *
-   * `adjustInventory` therefore does NOT call
-   * `adjust_homestead_processing_inventory`; it asks for the pass that will.
-   * It keeps the hook's `(profileId, itemId, delta)` shape because that is
-   * what the effect carries and what a future server-side worker would take
-   * unchanged, and it resolves with the item's own new quantity -- read back
-   * off the response, never predicted -- so a refusal comes back as null and
-   * rolls the optimistic credit off the screen.
+   * The only path that ever sends `pray`. Fires the scene's own optimistic
+   * bow first (the player already said "yes"; the request has not answered
+   * yet, same posture every other tap-triggered animation on this map
+   * takes), then the request itself. A decline in the dialogue calls
+   * neither of these -- see StackAcresMonkDialogue. The dialogue's own
+   * anchor is preserved across the phase switch (`act`'s own `data.prayer`
+   * handling), never a new tap point.
    */
-  const farmhandHooks = useMemo<FarmhandHooks>(
-    () => ({
-      adjustInventory: async (_profileId, itemId) => {
-        const data = await send({ action: "work" });
-        if (!data?.inventory) return null;
-        return data.inventory[itemId] ?? 0;
-      },
-      fulfillContract: async () => {
-        await send({ action: "fulfill-contract" });
-      },
-    }),
-    [send],
-  );
-
-  useEffect(() => {
-    world.current?.setFarmhandHooks(farmhandHooks);
-  }, [farmhandHooks, worldReady]);
-
-  /** The snapshot the scene plans against, rebuilt only when something in it
-   *  actually moved -- see `processing`'s own note on why one object. */
-  const sceneProcessing = useMemo<StackAcresProcessing>(
-    () => ({ ...processing, profileId: profile?.id ?? null }),
-    [processing, profile?.id],
-  );
+  const onMonkPray = useCallback(() => {
+    world.current?.playMonkPrayer();
+    void act({ action: "pray" });
+  }, [act]);
 
   const onCollect = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -1394,10 +1367,9 @@ export function StackAcresFarm() {
       // it lands (in `act`), with the voice of the animal that actually paid
       // out. A chrome click in front of that is one sound too many, and it is
       // the app's click rather than the farm's.
-      sendFarmhand(unit.id);
       void act({ action: "collect", unitIds: [unit.id] });
     },
-    [act, sendFarmhand],
+    [act],
   );
   /**
    * Bring in everything that is ready, in one act. This is the only control
@@ -1416,22 +1388,20 @@ export function StackAcresFarm() {
   // `predictStackAcresAction` runs the identical `optimisticallyFedUnit`/
   // `optimisticallyWateredUnit` math the instant the request is sent, so a
   // second local tend here would double-apply it. These handlers now only
-  // supply the press's own sound and farmhand dispatch.
+  // supply the press's own sound.
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
-      sendFarmhand(unit.id);
       void act({ action: "feed", unitId: unit.id });
     },
-    [act, sendFarmhand],
+    [act],
   );
   const onWater = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       waterSound();
-      sendFarmhand(unit.id);
       void act({ action: "water", unitId: unit.id });
     },
-    [act, sendFarmhand],
+    [act],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -1523,6 +1493,13 @@ export function StackAcresFarm() {
   );
 
   const closeRadial = useCallback(() => setRadial(null), []);
+  // The view moving under whatever is pinned to it closes both screen-
+  // anchored panels the same way -- neither is anchored to the world, so
+  // both go away rather than drift off what they were opened on.
+  const onViewMoved = useCallback(() => {
+    setRadial(null);
+    setMonkDialogue(null);
+  }, []);
 
   /**
    * Critical Harvest Cascade: a solo tap that just crit chains into other
@@ -1622,9 +1599,6 @@ export function StackAcresFarm() {
       else if (action.kind === "water") waterSound();
       else if (action.kind === "clear") muckSound();
       tapAnchor.current = at;
-      // Only for a tap that actually became a request: he answers the write,
-      // not the finger. Clearing is excluded -- see `sendFarmhand`.
-      if (action.kind !== "clear") sendFarmhand(unitId);
       // Frenzy Heat Combo Engine: every accepted tap (a refused one already
       // returned above) counts as a hit for how fast the player is tapping.
       // Collect is the only action with a yield to bonus off of --
@@ -1651,7 +1625,7 @@ export function StackAcresFarm() {
         void act({ action: action.kind, unitId });
       }
     },
-    [act, feed, gold, liveUnits, nowMs, sendFarmhand, triggerCascade],
+    [act, feed, gold, liveUnits, nowMs, triggerCascade],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -2037,17 +2011,17 @@ export function StackAcresFarm() {
               secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
-              processing={sceneProcessing}
               onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
+              onMonkTap={onWorldMonkTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
-              onViewMoved={closeRadial}
+              onViewMoved={onViewMoved}
               api={world}
             />
           )}
@@ -2122,6 +2096,19 @@ export function StackAcresFarm() {
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
+            />
+          )}
+
+          {/* The Pixel Pilgrim's dialogue, same screen-anchored treatment
+              as the seed menu above. */}
+          {monkDialogue && (
+            <StackAcresMonkDialogue
+              at={monkDialogue.at}
+              devotion={devotion}
+              result={monkDialogue}
+              busy={pendingByPrefix("pray")}
+              onPray={onMonkPray}
+              onClose={() => setMonkDialogue(null)}
             />
           )}
 

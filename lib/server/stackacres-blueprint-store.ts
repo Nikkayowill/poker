@@ -49,6 +49,16 @@ import { adjustStackAcresInventory } from "./stackacres-store";
  * that material already fully supplied, or not enough of it on hand -- and
  * null must never be treated as a successful contribution, the same
  * contract every other guarded write in this feature carries.
+ *
+ * NOT using a write-behind cache here. `lib/server/write-behind-cache.ts`
+ * exists for state that is fine to lose a few seconds of on a cold
+ * serverless instance recycle -- a draft/UI-only value, not this file's own
+ * writes. `contributeToStackAcresBlueprintRow` debits inventory and can
+ * advance/complete a structure, both covered by the money-ordering rules in
+ * root CLAUDE.md (debit before effect, one confirmed write, never a
+ * best-effort background flush); wrapping it in a debounced cache would
+ * let a player see progress locally that a cold instance never actually
+ * persisted. See that file's own header for the full reasoning.
  */
 
 interface StoredBlueprintHeader {

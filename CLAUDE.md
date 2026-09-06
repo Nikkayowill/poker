@@ -106,6 +106,53 @@ exists yet for a squirrel, bird, coyote or wolf; each is a plain Phaser Shape ci
 "placeholder now, real art later" posture `paintGreenhouse`'s own Graphics volume took before its PNG
 landed.
 
+### StackAcres roads went wide and muddy; forks are rounded; the signpost collapses on phones (2026-09-06)
+Built from a `/goal` brief modelled on Stardew/Mistria path design. Four things landed. **(1) A road
+hierarchy** (`lib/stackacres/roads.ts`, a runtime leaf both `world.ts` and `paths.ts` can read without
+joining their import cycle): `PathSpec` carries a `tier`, and `roadWidth` holds every arterial axis
+(lane, road, meadowLane, oxRoad) to `ARTERIAL_ROAD_MIN_WIDTH` = 40 (2.5 tiles), a track to 24, a
+service spur to 16. Widening the lane/road moved real geometry: the road's centreline dropped y 46 ->
+58 so its body (38..78) clears the yard props at y <= 32, `FARM_ZONE`/`STACKACRES_ZONES.farmstead`
+grew west 28 -> 20, lamps/mailbox/signpost moved out to the new verge, and the monk's house shifted 8
+south off the road's scenery clearance. `props.test.ts`'s lamp rule is now width-relative (the test's
+own header had warned about exactly this). **(2) Feathered, wobbled edges**: `art-paths.ts` draws the
+body as a ribbon whose two edges wander on their own seeded phases (`roadEdgeWobble`) with three
+blurred translucent ribbons stepping out past it (`featherReach`) plus a mud spatter. **(3) Junction
+bitmasks** (`lib/stackacres/path-junctions.ts`): each branch's start inside a trunk becomes a
+junction with N/E/S/W arm bits, `JUNCTION_SHAPES[mask]` picks cap/straight/corner/tee/cross, and
+`junctionFillets` computes the concave-corner fillets the renderer bakes as one rounded pad per
+junction (`bakeJunctionTexture`), laid over the strips. `farmsteadClutter` now also keeps off a pad's
+reach, since `nearPath` alone reads a fillet as grass. **(4) Muddy yard mats** (`YARD_MATS` in
+`world.ts`, `art-mud.ts`): wobbled-superellipse mud under the barn, the Greenhouse and the Hen Pen,
+each reaching past its footprint, at `MUD_MAT_DEPTH` between the sector haze and a district's own
+floor. Plus the HUD half: `StackAcresDestinations` collapses into a single Compass Quick-Nav board on
+`useTightLandscape` phones (two-column drop-down, deliberately NOT a scroll container -- a scrolling
+box over the WebGL canvas composited as a black slab in Chromium), and the scene's `viewExpansion`
+option (`HUD_VIEW_EXPANSION` = 1.1) frames every arrival window a tenth wider while it is collapsed,
+read at the next framing move rather than yanking a panned camera. Texture cost went up: the lane and
+road bake at 4096x2048 each (the road already did). Verified live in memory-mode Chromium at 1280x720
+and 844x390; `chrono-delorean-simulation.test.ts` flaked once in the full run and passed twice alone.
+
+### NPC friendship: gift-giving to Grandfather Ray, Stardew-style (2026-09-06)
+Kayo's ask, following a "how does StackAcres compare to Stardew Valley" discussion: NPC interaction
+should be beneficial, the pillar StackAcres was genuinely missing next to its equipment ladder/synergy
+tree/museum/prestige depth. Ray gets a NEW tap target (`grandfatherRayHitAt` in `lib/stackacres/
+world.ts`, restated rather than imported from `props.ts` for the same import-cycle reason
+`MIDNIGHT_MERCHANT_FOOTPRINT` restates his spot) distinct from tapping the barn beside him (his own
+Museum) — a dialogue opens, an item picker over held processing-track goods (wheat/flour/milk/wool/
+cheese/cloth), a tap sends the gift immediately. `lib/stackacres/friendship.ts` is a DELIBERATELY
+SEPARATE mechanic from the Pixel Pilgrim's devotion above, despite the similar day-gate/claimed-rung
+shape — a future retune of one must never silently touch the other. One counted gift per NPC per UTC
+day, checked in the store's own `give_homestead_gift` RPC **before** the inventory debit, so a refused
+gift never costs the item; loved/liked gifts (cheese/cloth loved, flour liked) score more than neutral
+ones. Ladder rewards are KEEPSAKES, never Gold — `stackacres-service.ts`'s own "currency wall" test pins
+`creditGoldByProfile` to exactly three call sites (a refund helper, the harvest payout, the contract
+payout), and a friendship reward would have been an unguarded fourth faucet; caught before it shipped,
+not after. `FRIENDSHIP_NPCS` holds only `ray` today but the module is built to grow. Migration applied
+(`stackacres_friendship`, verified via `list_migrations` and a clean security-advisor pass — the one
+`homestead_friendship` finding is the same expected "RLS enabled, no policy" INFO every other
+service-role-only table here gets, not a real gap).
+
 ### The Pixel Pilgrim: StackAcres' first interactable character, replacing the farmhand (2026-09-06)
 Kayo's ask: repurpose the farmhand sprite into a devout monk "from the pixel world," posted at his own
 shrine, who talks first then asks "will you pray with me?" — declining costs nothing, praying advances

@@ -209,6 +209,39 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
   );
 }
 
+/**
+ * Grandfather Ray's own footprint -- the same box `PROP_SIZE.grandfatherRay`
+ * gives (25.125 wide, 40 tall) at his fixed spot (props.ts's
+ * `{ x: 178, y: 20 }`), restated here rather than imported from props.ts for
+ * the identical reason `MIDNIGHT_MERCHANT_FOOTPRINT` restates it: props.ts
+ * imports FROM this module (`BARN_FOOTPRINT`, `growAreaBounds`), so an
+ * import back the other way would be a cycle.
+ *
+ * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
+ * `onWorldRayTap`) -- a DIFFERENT surface from tapping the barn just west of
+ * him (`barnHitAt`, Ray's Museum) and from the signpost's "Buy from Ray"
+ * (the supply store, opened by a UI button, never a map tap). His box does
+ * not overlap the barn's (barn spans x 71..145; this spans roughly
+ * x 165..191), so the two never compete for one tap.
+ */
+const GRANDFATHER_RAY_FOOTPRINT: WorldRect = {
+  x: 178 - 25.125 / 2,
+  y: 20 - 40,
+  width: 25.125,
+  height: 40,
+};
+
+/** Whether a tapped ground point lands on Grandfather Ray himself, as
+ *  opposed to the barn behind him -- same shape as `midnightMerchantHitAt`. */
+export function grandfatherRayHitAt(x: number, y: number): boolean {
+  return (
+    x >= GRANDFATHER_RAY_FOOTPRINT.x &&
+    x <= GRANDFATHER_RAY_FOOTPRINT.x + GRANDFATHER_RAY_FOOTPRINT.width &&
+    y >= GRANDFATHER_RAY_FOOTPRINT.y &&
+    y <= GRANDFATHER_RAY_FOOTPRINT.y + GRANDFATHER_RAY_FOOTPRINT.height
+  );
+}
+
 /** Where a district's units stand: the fenced boundary the scene draws once
  *  per district, and the box every one of that district's animals wanders
  *  inside (crops sit at a fixed spot within the same box). */
@@ -575,6 +608,77 @@ export function wheatPlotSpot(plotId: string): WorldPoint {
 }
 
 /* ------------------------------------------------------------------ */
+/* Muddy yards                                                         */
+/* ------------------------------------------------------------------ */
+
+/** A key building's own footprint on the ground, and the mud around it. */
+export type YardMatId = "barn" | "greenhouse" | "henPen";
+
+export interface YardMat {
+  id: YardMatId;
+  /** The ground the structure itself stands on, in world units. */
+  footprint: WorldRect;
+  /** The mat: the footprint plus a messy margin on every side. */
+  rect: WorldRect;
+}
+
+/** The least a mat reaches past its footprint on any side, in world units:
+ *  half a tile, enough that the mud reads as a yard the building stands in
+ *  rather than a shadow it casts. */
+export const YARD_MAT_MIN_SPREAD = 8;
+
+/** A mat around a footprint: `spread` past each side, or one number for all
+ *  four. Sides are given in the order north, east, south, west. */
+export function yardMatFor(
+  id: YardMatId,
+  footprint: WorldRect,
+  spread: number | readonly [north: number, east: number, south: number, west: number],
+): YardMat {
+  const [n, e, s, w] = typeof spread === "number" ? [spread, spread, spread, spread] : spread;
+  return {
+    id,
+    footprint,
+    rect: { x: footprint.x - w, y: footprint.y - n, width: footprint.width + w + e, height: footprint.height + n + s },
+  };
+}
+
+/**
+ * The muddy yard mats: wide, messy dirt under the barn, the Greenhouse and
+ * the Hen Pen, each reaching well past the structure's own base so it sits
+ * embedded in a working farmstead rather than floating on clean pasture.
+ * Drawn by the scene below the paths and below every district's own ground
+ * fill (`MUD_MAT_DEPTH` in stackacres-scene.ts), so a road runs over the
+ * mud and a pen's straw floor sits on it.
+ *
+ * Footprints are restated literals, the same way every other cross-module
+ * coordinate in this file is: the barn's ground band is its picture box's
+ * feet (x 71..145, feet on y 34 -- `BARN_FOOTPRINT`, restated as ground
+ * rather than picture); the Greenhouse is ./greenhouse.ts's
+ * `GREENHOUSE_PLOT`; the Hen Pen is `GROW_AREA.farmstead`. world.test.ts
+ * holds each to its source.
+ *
+ * Spreads are hand-fitted, not uniform: the Greenhouse stands eight units
+ * off `FARM_ZONE`'s east edge and two off the wheat field's south edge, so
+ * its mat reaches least on those sides; the Hen Pen's mat reaches furthest
+ * north so the service spur from the road (./paths.ts's `henCoop` node at
+ * y 180) ends in mud rather than on a strip of grass.
+ */
+export const YARD_MATS: readonly YardMat[] = [
+  yardMatFor("barn", { x: 71, y: 10, width: 74, height: 24 }, [16, 30, 20, 16]),
+  yardMatFor("greenhouse", { x: 348, y: 330, width: 84, height: 64 }, [8, 8, 12, 12]),
+  yardMatFor("henPen", { x: 170, y: 200, width: 160, height: 160 }, [24, 14, 14, 16]),
+];
+
+/**
+ * How much further out the camera frames a district's arrival window once
+ * the signpost has collapsed into the compass quick-nav (see
+ * stackacres-destinations.tsx): the screen that rail used to cover is map
+ * again, and the frame grows to fill it rather than leaving the same shot
+ * with a margin of grass around it.
+ */
+export const HUD_VIEW_EXPANSION = 1.1;
+
+/* ------------------------------------------------------------------ */
 /* Scenery                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -589,17 +693,19 @@ export const STACKACRES_CHUNK = 160;
 export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1.5;
 
 /**
- * The rectangle kept clear of wild scenery: x 28..440, y -60..410. The Hen
+ * The rectangle kept clear of wild scenery: x 20..440, y -60..410. The Hen
  * Coop block (170..330, 200..360), the barn yard north of it (barn feet on
  * y 34, roof to -28, a stone wall at -50..-40), the pond, the lane down the
- * west verge with its lamps at x 40, and the mailbox at the lane's end
+ * west verge with its lamps at x 26, and the mailbox at the lane's end
  * (y 402) -- with air around all of it, so a tree can never grow on the roof
- * or lean its canopy over the lane.
+ * or lean its canopy over the lane. The west edge moved 28 -> 20 when the
+ * lane became a two-and-a-half-tile road (see ./roads.ts): its body now
+ * reaches x 30 and its feathered rim past that.
  *
  * Still has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts
  * exactly -- zones.test.ts holds the two to each other.
  */
-export const FARM_ZONE: WorldRect = { x: 28, y: -60, width: 412, height: 470 };
+export const FARM_ZONE: WorldRect = { x: 20, y: -60, width: 420, height: 470 };
 
 export function inFarmZone(x: number, y: number): boolean {
   return (

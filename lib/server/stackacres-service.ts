@@ -99,6 +99,17 @@ import {
   type RelicId,
   type StackAcresDevotionView,
 } from "@/lib/stackacres/devotion";
+import {
+  FRIENDSHIP_LADDER,
+  FRIENDSHIP_NPCS,
+  FRIENDSHIP_RUNG_THRESHOLDS,
+  friendshipView,
+  giftPoints,
+  isNpcId,
+  type KeepsakeId,
+  type NpcId,
+  type StackAcresFriendshipView,
+} from "@/lib/stackacres/friendship";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -154,6 +165,8 @@ import {
   resetStackAcresPrestige,
   readStackAcresDevotion,
   prayAtStackAcresShrine as prayAtStackAcresShrine_store,
+  readStackAcresFriendship,
+  giveStackAcresGift as giveStackAcresGift_store,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -241,7 +254,9 @@ import {
   type RecipeId,
 } from "@/lib/stackacres/recipes";
 import {
+  isMachineItem,
   isMachineRawItem,
+  type MachineItemId,
   type MachineProcessedItem,
   type MachineRawItem,
 } from "@/lib/stackacres/machine-items";
@@ -484,6 +499,11 @@ export interface StackAcresView {
   /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
    *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
   devotion: StackAcresDevotionView;
+  /** NPC friendship: this player's gift points and claimed keepsake ladder
+   *  with every NPC that has one (FRIENDSHIP_NPCS -- Grandfather Ray, for
+   *  now). A SEPARATE mechanic from `devotion` above -- see
+   *  lib/stackacres/friendship.ts's own header. */
+  friendship: Record<NpcId, StackAcresFriendshipView>;
 }
 
 /** The working crops the irrigation recompute cares about, each at the fixed
@@ -594,6 +614,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     pipeRows,
     soilTiles,
     storedDevotion,
+    storedFriendships,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -626,6 +647,10 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
     readStackAcresDevotion(profile.id),
+    // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
+    // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
+    // this array literal would widen every sibling element's inferred type.
+    Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -637,6 +662,10 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   const irrigationGrid = recalculatePipeConnections({
     tiles: pipeRows,
     crops: irrigableCrops(rows),
+  });
+  const friendship = {} as Record<NpcId, StackAcresFriendshipView>;
+  FRIENDSHIP_NPCS.forEach((npc, index) => {
+    friendship[npc] = friendshipView(storedFriendships[index], now);
   });
   const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
   const sectors = unlockedSectors(cleared, units);
@@ -685,6 +714,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
     devotion: devotionView(storedDevotion, now),
+    friendship,
   };
 }
 
@@ -766,6 +796,15 @@ export type StackAcresActionResult = StackAcresView & {
     alreadyPrayedToday: boolean;
     grantedRelic: RelicId | null;
   };
+  /** Set by `giveStackAcresGift` to what THIS gift just did -- never named
+   *  `friendship`, which is StackAcresView's own always-present current
+   *  standing and would collide with it in this intersection. */
+  gift?: {
+    npc: NpcId;
+    points: number;
+    outcome: "gifted" | "already-gifted-today" | "insufficient-item";
+    grantedKeepsake: KeepsakeId | null;
+  };
 };
 
 /**
@@ -787,6 +826,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   }
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
   if (result.prayer !== undefined) delta.prayer = result.prayer;
+  if (result.gift !== undefined) delta.gift = result.gift;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -3402,6 +3442,45 @@ export async function prayAtStackAcresShrine(token: string, now = new Date()): P
   return {
     ...(await view(profile, now)),
     prayer: { streak: result.streak, alreadyPrayedToday: result.alreadyPrayedToday, grantedRelic },
+  };
+}
+
+/**
+ * Gives one unit of a processing-track item to an NPC as a gift, advancing
+ * friendship with them for the UTC day. No spend against Gold or the daily
+ * ceiling either way -- see lib/stackacres/friendship.ts's own header for
+ * why a ladder rung pays a keepsake, never Gold: this file's own "currency
+ * wall" test pins `creditGoldByProfile` to exactly three call sites, and a
+ * friendship reward is not a fourth.
+ *
+ * Re-validates `npc`/`item` independently of the route's own zod schema,
+ * same posture `donateStackAcresSecretItem` already takes: this is the
+ * function of record, and the route is only its first caller.
+ *
+ * The store's own RPC (`give_homestead_gift`) is the whole idempotency
+ * story here -- it checks the day gate BEFORE touching inventory, so a
+ * refused gift never costs the player the item they tried to give, and
+ * `runStackAcresAction`'s intent-key wrapper (see the route) covers a
+ * duplicated request the same way every other action here is covered.
+ */
+export async function giveStackAcresGift(
+  token: string,
+  npcInput: string,
+  itemInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isNpcId(npcInput)) throw new StackAcresRequestError("There is nobody there to give that to.", 400);
+  if (!isMachineItem(itemInput)) throw new StackAcresRequestError("That is not something you can give.", 400);
+  const npc: NpcId = npcInput;
+  const item: MachineItemId = itemInput;
+  const profile = await ensureProfile(token);
+  const today = stackacresExchangeDay(now);
+
+  const result = await giveStackAcresGift_store(profile.id, npc, item, giftPoints(npc, item), today, FRIENDSHIP_RUNG_THRESHOLDS);
+  const grantedKeepsake = result.grantedRung === null ? null : FRIENDSHIP_LADDER[result.grantedRung].keepsake;
+  return {
+    ...(await view(profile, now)),
+    gift: { npc, points: result.points, outcome: result.outcome, grantedKeepsake },
   };
 }
 

@@ -606,6 +606,10 @@ export function AnteUpNonogram() {
     const apply = (indexes: readonly number[], mark: NonogramMark) => {
       for (const index of indexes) {
         if (cells[index] === MARK_FILLED) continue;
+        // Mirrors the engine's own guard: a fill stroke merely dragging across
+        // a crossed square must not paint over it locally either, or the
+        // preview shows something the server is about to refuse.
+        if (mark === "fill" && cells[index] === MARK_CROSSED) continue;
         cells[index] = mark === "fill" ? MARK_FILLED : mark === "cross" ? MARK_CROSSED : MARK_UNKNOWN;
       }
     };

@@ -287,6 +287,18 @@
      .sa-district-panel, .sa-panel-tab -- reads
      var(--safe-left)/var(--safe-right) itself instead. */
   position: relative;
+  /* Layered as progressive enhancement, same as .app-root (02-app-shell.css)
+     and .lobby (04-lobby.css): if `dvh` fails to parse -- an older WebKit, or
+     an in-app browser's WKWebView lagging behind system Safari's engine --
+     the whole `height` declaration it's on is invalid and dropped, and the
+     shell falls back to content-height (`auto`). That collapses .sa-shell to
+     whatever size the Phaser canvas boots at before its own ResizeObserver
+     ever fires, which looks like a small boxed video pillarboxed in the
+     middle of the room, not a few missing pixels of safe-area. `svh` is
+     supported everywhere `dvh` reasonably isn't, so it's the fallback rung,
+     with plain `vh` under that for anything older still. */
+  height: 100vh;
+  height: 100svh;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;

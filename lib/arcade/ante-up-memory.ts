@@ -130,7 +130,11 @@ export function flipAnteUpMemoryTile(attempt: AnteUpMemoryAttempt, index: number
 
   const board = flipMemoryTile(attempt.board, index, now);
   if (board.status === "solved") return { ...attempt, board, status: "won" };
-  if (board.turns > attemptMaxTurns(attempt)) return { ...attempt, board, status: "lost" };
+  // >=, not >: the cap is how many turns you GET, so the turn that reaches
+  // it without solving the board is the one that forfeits. `>` let a player
+  // take one turn past the advertised cap before losing, and left
+  // `turnsLeft` reading "0 turns left" while a flip was still legal.
+  if (board.turns >= attemptMaxTurns(attempt)) return { ...attempt, board, status: "lost" };
   return { ...attempt, board, status: "active" };
 }
 

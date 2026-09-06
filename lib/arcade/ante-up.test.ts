@@ -99,13 +99,13 @@ describe("fillAnteUpCell", () => {
 describe("resignAnteUpAttempt", () => {
   it("ends an active attempt as a loss", () => {
     const attempt = startAnteUpAttempt("easy", 500, "seed", START);
-    expect(resignAnteUpAttempt(attempt).status).toBe("lost");
+    expect(resignAnteUpAttempt(attempt, START).status).toBe("lost");
   });
 
   it("is a no-op on an attempt that already ended", () => {
     const attempt = startAnteUpAttempt("easy", 500, "seed", START);
     const timedOut = tickAnteUpAttempt(attempt, new Date(attempt.expiresAt))!;
-    expect(resignAnteUpAttempt(timedOut).status).toBe("timed-out");
+    expect(resignAnteUpAttempt(timedOut, START).status).toBe("timed-out");
   });
 });
 

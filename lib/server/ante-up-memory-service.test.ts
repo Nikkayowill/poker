@@ -172,14 +172,14 @@ describe("settlement", () => {
     expect(after).toBeLessThan(afterDebit + result.payout * 2);
   });
 
-  it("forfeits the wager when turns exceed the cap, crediting nothing", async () => {
+  it("forfeits the wager when turns reach the cap without solving the board, crediting nothing", async () => {
     const { token, id } = await funded();
     const before = await balance(token);
     await openAnteUpMemory(token, 750);
 
     const result = await forfeitByTurnCap(token, id);
     expect(result.status).toBe("lost");
-    expect(result.turns).toBeGreaterThan(ANTE_UP_MEMORY_MAX_TURNS);
+    expect(result.turns).toBe(ANTE_UP_MEMORY_MAX_TURNS);
     expect(result.payout).toBe(0);
     expect(await balance(token)).toBe(before - 750);
   });

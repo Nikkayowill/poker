@@ -285,7 +285,7 @@ export async function resignAnteUp(
   const current = await getActiveAnteUpAttempt<AnteUpAttempt>(profile.id, GAME);
   if (!current) return { attempt: null, profile };
 
-  const next = resignAnteUpAttempt(current.state);
+  const next = resignAnteUpAttempt(current.state, now);
   const stored =
     (await advanceAnteUpAttempt(current, next)) ?? (await getAnteUpAttemptById<AnteUpAttempt>(current.id)) ?? current;
   return { attempt: snapshot(stored, now), profile };

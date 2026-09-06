@@ -147,16 +147,23 @@ export function AnteUpMemory() {
   }, [attempt, play]);
 
   const start = () => {
+    if (sending.current) return;
     void send("/api/ante-up-memory", { wager });
   };
 
   const flip = (index: number) => {
-    if (!attempt || busy || !active) return;
+    // sending.current, not just busy: busy is React state and hasn't
+    // committed yet for a second click landing in the same tick as the
+    // first, which let two flips race to the server.
+    if (!attempt || sending.current || !active) return;
     if (attempt.matched.includes(index) || attempt.revealed.includes(index)) return;
     void send("/api/ante-up-memory/actions", { action: "flip", version: attempt.version, index });
   };
 
-  const resign = () => void send("/api/ante-up-memory/actions", { action: "resign" });
+  const resign = () => {
+    if (sending.current) return;
+    void send("/api/ante-up-memory/actions", { action: "resign" });
+  };
   const playAgain = () => setAttempt(null);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;
@@ -169,7 +176,7 @@ export function AnteUpMemory() {
   const turnsLeft = attempt ? Math.max(0, attempt.maxTurns - attempt.turns) : ANTE_UP_MEMORY_MAX_TURNS;
   // A forfeit can only come from the turn cap or a resignation; the turn
   // count is what tells them apart, since both settle as "lost".
-  const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns > attempt.maxTurns;
+  const ranOutOfTurns = attempt !== null && attempt.status === "lost" && attempt.turns >= attempt.maxTurns;
   // attempt.payout is 0 for the entire game; it only becomes real once the
   // board is solved (anteUpMemoryPayout's own rule), so the scoreline shows
   // this instead while active: what a win pays at the current turn count,

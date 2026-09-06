@@ -215,3 +215,19 @@ export const STACKACRES_DICE_BOOST_ARMED_KEY = "lucky_poker_dice_boost_armed";
 export function secretZoneAttemptKey(zoneId: HiddenZoneId, utcDay: string): string {
   return `secret-attempt:${zoneId}:${utcDay}`;
 }
+
+/**
+ * One held secret item spent: the held map with `itemId` decremented by one,
+ * floored at zero and the key dropped when it hits it. What
+ * donate/consume/trade all do to the backpack the instant they are sent.
+ */
+export function decrementHeldSecret(
+  held: Partial<Record<SecretItemId, number>>,
+  itemId: SecretItemId,
+): Partial<Record<SecretItemId, number>> {
+  const next = { ...held };
+  const remaining = (next[itemId] ?? 0) - 1;
+  if (remaining > 0) next[itemId] = remaining;
+  else delete next[itemId];
+  return next;
+}

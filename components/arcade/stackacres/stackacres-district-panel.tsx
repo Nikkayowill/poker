@@ -59,7 +59,10 @@ export interface StackAcresUnitRowsProps {
   feed: number;
   /** The player's Gold. It buys seed, feed and muck clearing now. */
   gold: number;
-  busyUnitId: string | null;
+  /** Whether a given action intent has a request in the air. Each row greys
+   *  out only its OWN button -- `collect:<id>` collapses to `"collect"`, the
+   *  rest are `<verb>:<unitId>` (see `intentOf`). */
+  isPending: (intent: string) => boolean;
   /** The unit currently mid-"are you sure" for retiring. Never a plain
    *  confirm(): retiring refunds nothing, so it takes two deliberate taps. */
   armedUnitId: string | null;
@@ -80,7 +83,7 @@ export function StackAcresUnitRows({
   nowMs,
   feed,
   gold,
-  busyUnitId,
+  isPending,
   armedUnitId,
   onCollect,
   onFeed,
@@ -103,7 +106,12 @@ export function StackAcresUnitRows({
       {units.map((unit) => {
         const def = STACKACRES_CATALOGUE[unit.stock];
         const action = unitRowAction(unit, { feed, gold });
-        const busy = busyUnitId === unit.id;
+        // Each verb's own intent. `collect` collapses to a bare `"collect"`
+        // in `intentOf` (the sweep has no unit id); the rest key on the row.
+        const busy =
+          action.kind === "collect"
+            ? isPending("collect")
+            : isPending(`${action.kind}:${unit.id}`);
         return (
           <li key={unit.id} className="sa-unit-row" data-state={unit.state}>
             <span className="sa-unit-icon">
@@ -194,14 +202,17 @@ export function StackAcresUnitRows({
 
 export interface StackAcresBuySectionProps {
   options: readonly BuyOption[];
-  busy: boolean;
+  /** Whether a given action intent has a request in the air -- each button
+   *  greys out on its own (`stock:<stock>`, `buy-stock:<stock>`,
+   *  `expand-capacity:<stock>`). */
+  isPending: (intent: string) => boolean;
   onSeed: (stock: StackAcresStock) => void;
   onBuyOutright: (stock: StackAcresStock) => void;
   onExpand: (stock: StackAcresStock) => void;
 }
 
 /** What can be bought in this district. */
-export function StackAcresBuySection({ options, busy, onSeed, onBuyOutright, onExpand }: StackAcresBuySectionProps) {
+export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright, onExpand }: StackAcresBuySectionProps) {
   return (
     <div className="sa-buy-section" aria-label="Buy">
       {options.map((option) => (
@@ -219,7 +230,7 @@ export function StackAcresBuySection({ options, busy, onSeed, onBuyOutright, onE
             <button
               type="button"
               className="sa-buy-btn is-seed"
-              disabled={busy || !option.seedAfford}
+              disabled={isPending(`stock:${option.stock}`) || !option.seedAfford}
               title={option.seedReason ?? undefined}
               onClick={() => onSeed(option.stock)}
             >
@@ -229,7 +240,7 @@ export function StackAcresBuySection({ options, busy, onSeed, onBuyOutright, onE
             <button
               type="button"
               className="sa-buy-btn is-gold"
-              disabled={busy || option.atCap}
+              disabled={isPending(`buy-stock:${option.stock}`) || option.atCap}
               title={option.atCap ? option.seedReason ?? undefined : undefined}
               onClick={() => onBuyOutright(option.stock)}
             >
@@ -240,7 +251,7 @@ export function StackAcresBuySection({ options, busy, onSeed, onBuyOutright, onE
               <button
                 type="button"
                 className="sa-buy-btn is-expand"
-                disabled={busy}
+                disabled={isPending(`expand-capacity:${option.stock}`)}
                 onClick={() => onExpand(option.stock)}
               >
                 <span className="sa-buy-label">Expand capacity</span>

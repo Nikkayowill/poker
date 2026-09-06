@@ -1,5 +1,5 @@
 /**
- * Where the farm's dirt paths run.
+ * Where the farm's dirt roads and paths run.
  *
  * Pure layout: a handful of polylines in world units, and the one question the open
  * world asks of them -- "is this point on or beside a path?" -- so wild
@@ -9,20 +9,29 @@
  * and a smoothed curve always stays inside its own polyline's corners, so a
  * margin on the polyline covers the drawn strip too.
  *
+ * Widths follow the tiers in ./roads.ts: a main road (the lane, the road and
+ * the two district connectors) is never laid thinner than
+ * `ARTERIAL_ROAD_MIN_WIDTH`, two and a half tiles, so it carries real weight
+ * on a phone the way Stardew's or Mistria's do; a track is a tile and a
+ * half; a service spur to a pen is one tile.
+ *
  * Types only from ./world. This module is imported BY world.ts (for
  * `chunkScenery`), so a runtime import back of any of its constants would be
  * read before world.ts has finished evaluating and throw. Every number here
- * is therefore a literal: plots occupy x 64..384, y 64..384 (four 80-unit
- * cells from STACKACRES_MARGIN 64), the barn's feet are on y 34 with its door
- * centred on x 108, and nothing below may touch the plot square.
+ * is therefore a literal: the Hen Coop block sits at x 170..330, y 200..360,
+ * the barn's feet are on y 34 with its door centred on x 108, and nothing
+ * below may touch a grow area.
  */
 
+import { roadWidth, type PathTier } from "./roads";
 import type { WorldPoint, WorldRect } from "./world";
 
 export interface PathSpec {
   /** Texture key suffix and the seed for this path's wobble. */
   key: string;
-  /** Body width in world units, 10..24. */
+  /** Which rung of the road hierarchy this is; sets the width floor. */
+  tier: PathTier;
+  /** Body width in world units, already held to its tier's floor. */
   width: number;
   /** The polyline, in world units. The renderer smooths it through the
    *  midpoints of its segments, so a vertex is a control point, not a place
@@ -45,23 +54,29 @@ export interface PathSpec {
 /** How far past a path's own edge scenery is kept off, in world units. */
 export const PATH_CLEARANCE = 6;
 
+/** A spec with its width evaluated against its tier's floor. */
+function path(spec: Omit<PathSpec, "width"> & { width: number }): PathSpec {
+  return { ...spec, width: roadWidth(spec.tier, spec.width) };
+}
+
 /**
  * The paths.
  *
- * `lane`: out of the barn door, a short leg south, then west and down the
- * verge between the plots and the woods, ending where the mailbox will stand.
- * At x 50 its body spans 40..60 and its damp rim 35..65: clear of the plot
- * square at 64, with the lamp posts standing on its west verge.
+ * `lane`: out of the barn door as a wide apron, a short leg south, then west
+ * and down the verge between the Hen Coop and the woods, ending where the
+ * mailbox stands. At x 50 its body spans 30..70 and its feathered mud rim
+ * reaches ~24..76: clear of the coop block at 170, with the lamp posts
+ * standing on its west verge at x 26.
  *
  * `road`: from the lane's corner east along the front of the barn yard at
- * y 46 (body 34..58; the barn's feet are on 34), then curving north-east out
- * of the home frame, so the map invites a pan. It starts inside the lane's
- * body so the two read as one T-junction, not two strips near each other.
- * Widest of the six -- it is the road, not a path -- so a district reached
- * by it reads as somewhere worth a road rather than a track.
+ * y 58 (body 38..78; the barn's feet are on 34, so the road's north rim laps
+ * the barn's own muddy yard), then curving north-east out of the home frame,
+ * so the map invites a pan. It starts inside the lane's body so the two read
+ * as one T-junction, not two strips near each other.
  *
  * `track`: the way out of the farm, forking off the lane's corner north-west
- * into the woods. Narrower than the road and the lane; a track, not a road.
+ * into the woods. A tier down from the road and the lane; a track, not a
+ * road.
  *
  * `spur`: a few steps west off the lane to the dock on the pond (see
  * ./water.ts): it starts inside the lane's body and ends on the sand beside
@@ -73,56 +88,60 @@ export const PATH_CLEARANCE = 6;
  * ./zones.ts, each documented at its own entry below.
  */
 export const FARM_PATHS: readonly PathSpec[] = [
-  {
+  path({
     key: "lane",
+    tier: "arterial",
     width: 18,
     points: [
       { x: 108, y: 36 },
-      { x: 108, y: 50 },
-      { x: 70, y: 50 },
-      { x: 50, y: 50 },
-      { x: 50, y: 70 },
+      { x: 108, y: 58 },
+      { x: 70, y: 58 },
+      { x: 50, y: 58 },
+      { x: 50, y: 78 },
       { x: 50, y: 402 },
     ],
     stones: 1,
-    stonesFrom: 88,
-  },
-  {
+    stonesFrom: 100,
+  }),
+  path({
     key: "road",
+    tier: "arterial",
     width: 20,
     points: [
-      { x: 108, y: 46 },
-      { x: 150, y: 47 },
-      { x: 300, y: 46 },
-      { x: 380, y: 48 },
-      { x: 430, y: 44 },
-      { x: 468, y: 20 },
-      { x: 496, y: -16 },
-      { x: 520, y: -60 },
+      { x: 108, y: 58 },
+      { x: 150, y: 59 },
+      { x: 300, y: 58 },
+      { x: 380, y: 60 },
+      { x: 430, y: 56 },
+      { x: 468, y: 32 },
+      { x: 496, y: -4 },
+      { x: 520, y: -48 },
     ],
     stones: 0,
-  },
-  {
+  }),
+  path({
     key: "track",
+    tier: "track",
     width: 15,
     points: [
-      { x: 60, y: 46 },
+      { x: 60, y: 58 },
       { x: 20, y: -14 },
       { x: -40, y: -120 },
       { x: -90, y: -190 },
       { x: -140, y: -260 },
     ],
     stones: -1,
-  },
-  {
+  }),
+  path({
     key: "spur",
+    tier: "service",
     width: 12,
     points: [
       { x: 50, y: 118 },
       { x: 26, y: 118 },
     ],
     stones: 0,
-  },
+  }),
 
   /*
    * The two connectors to the outer districts (see ./zones.ts). Both start
@@ -133,27 +152,22 @@ export const FARM_PATHS: readonly PathSpec[] = [
    *
    * They are separate specs rather than extra points on `lane` and `road`
    * for a reason worth keeping: `pathBounds` pads a spec's whole polyline
-   * box into one baked texture, and paths.test.ts holds that box under 2048
-   * px a side at 4 px per unit. Carrying the road all the way to the ox
-   * fields on one polyline would span ~730 units and blow straight through
-   * that ceiling; two shorter bakes cost one draw call each and stay well
+   * box into one baked texture, and paths.test.ts holds that box's projected
+   * footprint under 1024 units a side. Carrying the road all the way to the
+   * ox fields on one polyline would span ~730 units and blow straight
+   * through that ceiling; two shorter bakes cost one draw call each and stay
    * inside it.
    *
    * `wallow` gets no connector at all: the track already ends at (-140,
    * -260), which is inside the Fold's own eastern corner. The road that
    * was already there arrives -- it just had nothing to arrive at.
    */
-  {
+  path({
     // Out of the lane's end at the mailbox, south into the Long Meadow.
-    // Starts exactly at y 402, the lane's own last vertex, rather than a few
-    // units short of it: that is what buys this connector's body room to be
-    // as wide as the lane's -- starting at the old y 394 left only 10 units
-    // to the plot square's edge at y 384, which caps the width the plot-
-    // square-clearance test allows well below a road's. Starting at the
-    // lane's exact end instead of just before it costs nothing (the curve
-    // still smooths through it the same way every other junction here does)
-    // and buys back the other 8.
+    // Starts exactly at y 402, the lane's own last vertex, so the two read
+    // as one road south rather than a lane and a stub.
     key: "meadowLane",
+    tier: "arterial",
     width: 18,
     points: [
       { x: 50, y: 402 },
@@ -163,24 +177,25 @@ export const FARM_PATHS: readonly PathSpec[] = [
       { x: 176, y: 600 },
     ],
     stones: 0,
-  },
-  {
-    // Forks off the road where it turns north-east (430, 44) and carries on
+  }),
+  path({
+    // Forks off the road where it turns north-east (430, 56) and carries on
     // east instead, ending at the Ox Fields' gate. The road's own north-east
     // leg is deliberately left running off the map: a world that visibly
     // continues past its last destination is the point of an open map.
     key: "oxRoad",
+    tier: "arterial",
     width: 20,
     points: [
-      { x: 426, y: 45 },
-      { x: 470, y: 70 },
-      { x: 520, y: 96 },
-      { x: 580, y: 120 },
-      { x: 640, y: 150 },
+      { x: 426, y: 57 },
+      { x: 470, y: 82 },
+      { x: 520, y: 108 },
+      { x: 580, y: 132 },
+      { x: 640, y: 162 },
     ],
     stones: -1,
     stonesFrom: 60,
-  },
+  }),
 ];
 
 /** The closest point ON a segment to (px, py), plus how far away it is. The
@@ -198,24 +213,19 @@ function nearestPointOnSegment(px: number, py: number, a: WorldPoint, b: WorldPo
 
 /** Distance from a point to the nearest segment of a path's polyline. */
 export function distanceToPath(x: number, y: number, spec: PathSpec): number {
-  let best = Infinity;
-  const points = spec.points;
-  for (let i = 1; i < points.length; i += 1) {
-    const d = nearestPointOnSegment(x, y, points[i - 1], points[i]).distance;
-    if (d < best) best = d;
-  }
-  return best;
+  return nearestOnPath(x, y, spec).distance;
 }
 
-/** The closest point on a single spec's polyline to (x, y), plus the
- *  distance to it -- what `generatePathwaysBetweenNodes` walks a whole
- *  network of these to find. */
-function nearestPointOnPath(x: number, y: number, spec: PathSpec): { point: WorldPoint; distance: number } {
-  let best: { point: WorldPoint; distance: number } = { point: spec.points[0], distance: Infinity };
+/** The closest point on a single spec's polyline to (x, y), the distance to
+ *  it, and which segment it lies on -- what `generatePathwaysBetweenNodes`
+ *  walks a whole network of these to find, and what ./path-junctions.ts
+ *  reads the trunk's own direction off. */
+export function nearestOnPath(x: number, y: number, spec: PathSpec): { point: WorldPoint; distance: number; segment: number } {
+  let best = { point: spec.points[0], distance: Infinity, segment: 0 };
   const points = spec.points;
   for (let i = 1; i < points.length; i += 1) {
     const candidate = nearestPointOnSegment(x, y, points[i - 1], points[i]);
-    if (candidate.distance < best.distance) best = candidate;
+    if (candidate.distance < best.distance) best = { ...candidate, segment: i - 1 };
   }
   return best;
 }
@@ -225,7 +235,7 @@ function nearestPointOnPath(x: number, y: number, spec: PathSpec): { point: Worl
 function nearestPointOnNetwork(x: number, y: number, network: readonly PathSpec[]): { point: WorldPoint; distance: number } {
   let best: { point: WorldPoint; distance: number } = { point: { x, y }, distance: Infinity };
   for (const spec of network) {
-    const candidate = nearestPointOnPath(x, y, spec);
+    const candidate = nearestOnPath(x, y, spec);
     if (candidate.distance < best.distance) best = candidate;
   }
   return best;
@@ -276,8 +286,10 @@ export interface PathwayNode {
  * approach a connector lands at, not the middle of the pen) -- the same
  * clearance `nearPath`'s own "off every grow area's corners and centre"
  * invariant holds every hand-authored path to, checked by hand against
- * `CONNECTOR_WIDTH` below rather than left to come out right by luck:
- *   henCoop:    20 units clear of the Hen Coop's own north edge (y 200).
+ * `SERVICE_PATH_WIDTH` rather than left to come out right by luck:
+ *   henCoop:    20 units clear of the Hen Coop's own north edge (y 200),
+ *               and inside the coop's own muddy yard mat (world.ts's
+ *               `YARD_MATS`), so the spur ends in mud rather than on grass.
  *   wheatField: 20 units clear of the wheat field's own north edge (y 140),
  *               and clear of the scarecrow's footprint (x 392..412) on top.
  */
@@ -285,11 +297,6 @@ export const FARMSTEAD_PATH_NODES: readonly PathwayNode[] = [
   { id: "henCoop", x: 280, y: 180 },
   { id: "wheatField", x: 378, y: 120 },
 ];
-
-/** Body width of a generated connector spur -- between the dock spur's own
- *  12 and the lane's 18: wide enough to read as a real service path, narrow
- *  enough that it never claims to be a second road. */
-const CONNECTOR_WIDTH = 12;
 
 /**
  * Straight service spurs from the existing path network out to every node
@@ -316,14 +323,16 @@ export function generatePathwaysBetweenNodes(
 ): PathSpec[] {
   const network = [...base];
   const spurs: PathSpec[] = [];
+  const width = roadWidth("service", 16);
   for (const node of nodes) {
     const nearest = nearestPointOnNetwork(node.x, node.y, network);
     // Already inside an existing path's own body (or a spur laid earlier
     // this pass): the node already reads as served, nothing to add.
-    if (nearest.distance < CONNECTOR_WIDTH / 2 + PATH_CLEARANCE) continue;
+    if (nearest.distance < width / 2 + PATH_CLEARANCE) continue;
     const spur: PathSpec = {
       key: `spur-${node.id}`,
-      width: CONNECTOR_WIDTH,
+      tier: "service",
+      width,
       points: [nearest.point, { x: node.x, y: node.y }],
       stones: 0,
     };
@@ -346,10 +355,11 @@ export const FARMSTEAD_PATHWAYS: readonly PathSpec[] = generatePathwaysBetweenNo
  *  that matters -- ground-cover exclusion, wild scenery, and the render. */
 export const ALL_FARM_PATHS: readonly PathSpec[] = [...FARM_PATHS, ...FARMSTEAD_PATHWAYS];
 
-/** Padding a path's bake needs around its polyline: the damp rim, its blur
- *  and the parcel stones all sit outside the body, and the wobble adds two. */
+/** Padding a path's bake needs around its polyline: the feathered mud
+ *  margin, its blur and the parcel stones all sit outside the body, and the
+ *  edge wobble adds a couple more. */
 export function pathBakePadding(spec: PathSpec): number {
-  return spec.width / 2 + 10;
+  return spec.width / 2 + 16;
 }
 
 /** The world rectangle a path's texture covers: its polyline's box, padded. */

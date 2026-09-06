@@ -27,6 +27,7 @@ import {
   greenhouseSlotAt,
   greenhouseSlotLayouts,
 } from "@/lib/stackacres/greenhouse";
+import { FARM_JUNCTIONS } from "@/lib/stackacres/path-junctions";
 import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -86,6 +87,7 @@ import {
   type SceneryKind,
   type WorldPoint,
   type WorldRect,
+  YARD_MATS,
 } from "@/lib/stackacres/world";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
@@ -137,7 +139,8 @@ import {
 } from "./stackacres-art";
 import { SPRITE_ART, SPRITE_NAMES, spriteLoadKey } from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
-import { bakePathTexture } from "./art-paths";
+import { bakeYardMatTexture } from "./art-mud";
+import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
 
 /**
@@ -372,6 +375,14 @@ export interface StackAcresSceneOptions {
    */
   farmhandSpeedMultiplier: number;
   /**
+   * How much wider than the arrival window the camera frames a district:
+   * lib/stackacres/world.ts's `HUD_VIEW_EXPANSION` while the signpost rail
+   * is collapsed into the compass quick-nav, 1 otherwise. Mutable through
+   * `setViewExpansion`, since a rotation collapses or restores the rail
+   * without rebuilding the scene.
+   */
+  viewExpansion: number;
+  /**
    * The element the canvas is mounted into. Gestures are read off this rather
    * than off the window or the canvas, so the map only ever hears a press that
    * actually landed on it.
@@ -459,6 +470,10 @@ const ZONE_GROUND_DEPTH = -1e8 - 10;
  *  object in the scene, by the same always-behind-everything logic
  *  `ZONE_GROUND_DEPTH` itself uses. */
 const GROW_AREA_GROUND_DEPTH = ZONE_GROUND_DEPTH + 1;
+/** The muddy yard mats (`paintYardMats`) sit between the haze and a
+ *  district's own floor: a Hen Pen's straw is laid ON its yard's mud, and a
+ *  road runs OVER it, so a mat is under both. */
+const MUD_MAT_DEPTH = ZONE_GROUND_DEPTH + 0.5;
 const PATH_DEPTH = -1e8;
 const POND_DEPTH = PATH_DEPTH + 1;
 const POND_SURFACE_DEPTH = PATH_DEPTH + 2;
@@ -1079,8 +1094,9 @@ export class StackAcresScene extends Phaser.Scene {
     this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     this.worldBounds = bounds;
 
-    // Districts before paths: a road is laid on a field, and the ground the
-    // road runs over has to exist underneath it.
+    // Mud before paths, paths before districts: a road is laid over the
+    // barn's muddy yard, and a pen's straw floor is laid over its own.
+    this.paintYardMats();
     this.paintPaths();
     this.paintPond();
     this.paintBarn();
@@ -1326,6 +1342,32 @@ export class StackAcresScene extends Phaser.Scene {
         .setScale(1 / GRASS_PX)
         .setDepth(PATH_DEPTH);
     });
+    // The rounded pads over every junction, created after the strips so the
+    // stable depth sort puts them on top (see bakeJunctionTexture).
+    for (const junction of FARM_JUNCTIONS) {
+      const bake = bakeJunctionTexture(this, junction);
+      if (!bake) continue;
+      this.add
+        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .setOrigin(0)
+        .setScale(1 / GRASS_PX)
+        .setDepth(PATH_DEPTH);
+    }
+  }
+
+  /** The muddy yards under the barn, the Greenhouse and the Hen Pen
+   *  (lib/stackacres/world.ts's `YARD_MATS`), as ground art under the paths
+   *  -- see art-mud.ts. */
+  private paintYardMats(): void {
+    for (const mat of YARD_MATS) {
+      const bake = bakeYardMatTexture(this, mat);
+      if (!bake) continue;
+      this.add
+        .image(bake.x, bake.y, bake.key, ART_FRAME)
+        .setOrigin(0)
+        .setScale(1 / GRASS_PX)
+        .setDepth(MUD_MAT_DEPTH);
+    }
   }
 
   /**
@@ -2535,7 +2577,10 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private fitZoomToBox(box: { width: number; height: number }, viewW: number, viewH: number): number {
     const margin = 0.86;
-    return clampZoom(Math.min((viewW * margin) / box.width, (viewH * margin) / box.height));
+    // With the signpost collapsed, the screen it covered is map again, and
+    // the frame pulls out to fill it (`viewExpansion` > 1 shows more world).
+    const fit = Math.min((viewW * margin) / box.width, (viewH * margin) / box.height);
+    return clampZoom(fit / this.options.viewExpansion);
   }
 
   /** "Home": the Farmstead's own gate (lib/stackacres/zones.ts's
@@ -3065,6 +3110,14 @@ export class StackAcresScene extends Phaser.Scene {
    */
   setFarmhandSpeedMultiplier(multiplier: number): void {
     this.options.farmhandSpeedMultiplier = multiplier;
+  }
+
+  /** How much wider the camera frames a district (see the option's own
+   *  comment). Read on the next framing move, not applied to the current
+   *  view: a rotation that collapses the rail should not also yank a camera
+   *  the player has panned somewhere deliberate. */
+  setViewExpansion(expansion: number): void {
+    this.options.viewExpansion = Number.isFinite(expansion) && expansion > 0 ? expansion : 1;
   }
 
   /**

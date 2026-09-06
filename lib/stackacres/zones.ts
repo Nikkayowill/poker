@@ -121,7 +121,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "farmstead",
     label: "The Farmstead",
     blurb: "Home base -- your Hen Coops, the barn and the pond.",
-    bounds: { x: 28, y: -60, width: 412, height: 470 },
+    bounds: { x: 20, y: -60, width: 420, height: 470 },
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.

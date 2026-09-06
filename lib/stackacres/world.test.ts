@@ -4,6 +4,7 @@ import { nearPath } from "./paths";
 import {
   BARN_FOOTPRINT,
   FARM_ZONE,
+  HUD_VIEW_EXPANSION,
   STACKACRES_CHUNK,
   STACKACRES_ZOOM_MAX,
   STACKACRES_ZOOM_MIN,
@@ -26,7 +27,12 @@ import {
   stockAllowedInZone,
   stockZone,
   stocksInZone,
+  WHEAT_FIELD,
+  YARD_MATS,
+  YARD_MAT_MIN_SPREAD,
+  yardMatFor,
 } from "./world";
+import { GREENHOUSE_PLOT } from "./greenhouse";
 import { ZONE_IDS } from "./zones";
 
 describe("stock zoning", () => {
@@ -438,5 +444,69 @@ describe("cropSpot", () => {
         expect(spot.y).toBeLessThanOrEqual(interior.y + interior.height);
       }
     }
+  });
+});
+
+describe("muddy yard mats", () => {
+  const byId = (id: string) => {
+    const mat = YARD_MATS.find((m) => m.id === id);
+    if (!mat) throw new Error(`no mat ${id}`);
+    return mat;
+  };
+
+  it("pads a footprint on every side, evenly or per side", () => {
+    const even = yardMatFor("barn", { x: 10, y: 20, width: 30, height: 40 }, 5);
+    expect(even.rect).toEqual({ x: 5, y: 15, width: 40, height: 50 });
+    const sided = yardMatFor("barn", { x: 10, y: 20, width: 30, height: 40 }, [1, 2, 3, 4]);
+    expect(sided.rect).toEqual({ x: 6, y: 19, width: 36, height: 44 });
+  });
+
+  it("lays one mat under each key building, reaching past its base on every side", () => {
+    expect(YARD_MATS.map((m) => m.id)).toEqual(["barn", "greenhouse", "henPen"]);
+    for (const mat of YARD_MATS) {
+      const f = mat.footprint;
+      const r = mat.rect;
+      expect(f.x - r.x, `${mat.id} west`).toBeGreaterThanOrEqual(YARD_MAT_MIN_SPREAD);
+      expect(f.y - r.y, `${mat.id} north`).toBeGreaterThanOrEqual(YARD_MAT_MIN_SPREAD);
+      expect(r.x + r.width - (f.x + f.width), `${mat.id} east`).toBeGreaterThanOrEqual(YARD_MAT_MIN_SPREAD);
+      expect(r.y + r.height - (f.y + f.height), `${mat.id} south`).toBeGreaterThanOrEqual(YARD_MAT_MIN_SPREAD);
+    }
+  });
+
+  it("restates each building's real footprint rather than drifting from it", () => {
+    // The barn's ground band: its picture box's own x span, ending at its feet.
+    const barn = byId("barn").footprint;
+    expect(barn.x).toBe(BARN_FOOTPRINT.x);
+    expect(barn.width).toBe(BARN_FOOTPRINT.width);
+    expect(barn.y + barn.height).toBe(BARN_FOOTPRINT.y + BARN_FOOTPRINT.height);
+    expect(byId("greenhouse").footprint).toEqual(GREENHOUSE_PLOT);
+    expect(byId("henPen").footprint).toEqual(growAreaBounds("farmstead"));
+  });
+
+  it("keeps every mat inside the farm zone and off the wheat field", () => {
+    for (const mat of YARD_MATS) {
+      const r = mat.rect;
+      expect(r.x, mat.id).toBeGreaterThanOrEqual(FARM_ZONE.x);
+      expect(r.y, mat.id).toBeGreaterThanOrEqual(FARM_ZONE.y);
+      expect(r.x + r.width, mat.id).toBeLessThanOrEqual(FARM_ZONE.x + FARM_ZONE.width);
+      expect(r.y + r.height, mat.id).toBeLessThanOrEqual(FARM_ZONE.y + FARM_ZONE.height);
+      const overlapsWheat =
+        r.x < WHEAT_FIELD.x + WHEAT_FIELD.width &&
+        r.x + r.width > WHEAT_FIELD.x &&
+        r.y < WHEAT_FIELD.y + WHEAT_FIELD.height &&
+        r.y + r.height > WHEAT_FIELD.y;
+      expect(overlapsWheat, mat.id).toBe(false);
+    }
+  });
+
+  it("lands the Hen Pen's service spur in mud, not on grass", () => {
+    const pen = byId("henPen").rect;
+    expect(pen.y).toBeLessThanOrEqual(180);
+    expect(pen.x).toBeLessThan(280);
+    expect(pen.x + pen.width).toBeGreaterThan(280);
+  });
+
+  it("frames a district a tenth wider once the signpost has collapsed", () => {
+    expect(HUD_VIEW_EXPANSION).toBe(1.1);
   });
 });

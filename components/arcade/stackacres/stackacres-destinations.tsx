@@ -1,9 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { Lock, ScrollText } from "lucide-react";
+import { ChevronDown, Compass, Lock, ScrollText } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
-import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
+import { STACKACRES_ZONES, zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
 
 /**
  * The signpost: where else there is to go, and where to spend what you made.
@@ -31,6 +32,12 @@ import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
  * is what makes "go to him to buy anything" literally true rather than a
  * turn of phrase -- there is no purchase path left that does not start by
  * picking Ray off this list.
+ *
+ * On a short landscape phone (`compact`) the six boards collapse into one
+ * compass button -- the Compass Quick-Nav -- that names where you are and
+ * drops the same list down when tapped. The rail used to wrap onto two rows
+ * there and cover a good third of the map; the screen it gives back is what
+ * the camera's `viewExpansion` pulls out into.
  */
 
 /** Which way each district lies from the farmyard, on screen. Written down
@@ -49,6 +56,8 @@ export interface StackAcresDestinationsProps {
    *  camera opens, but "at the farm" is not a thing this component can know
    *  on its own -- panning away is not arriving anywhere. */
   active: ZoneId | null;
+  /** Collapse the rail into the compass quick-nav (short landscape phones). */
+  compact?: boolean;
   onTravel: (zone: ZoneId) => void;
   /**
    * Land the player may work. A district not in here is still listed and
@@ -76,6 +85,7 @@ export interface StackAcresDestinationsProps {
 
 export function StackAcresDestinations({
   active,
+  compact = false,
   onTravel,
   unlocked,
   onOpenStore,
@@ -83,86 +93,147 @@ export function StackAcresDestinations({
   contractPosted,
   carrying,
 }: StackAcresDestinationsProps) {
+  const [dropped, setOpen] = useState(false);
+  const menuId = useId();
+  const navRef = useRef<HTMLElement>(null);
+  // Only a compact rail has a drop-down to be open; a wide one always shows
+  // its boards, whatever was toggled before a rotation widened it.
+  const open = compact && dropped;
+  const showList = !compact || open;
+
+  // The drop-down closes on Escape and on a press anywhere outside it -- it
+  // sits over the map, and a tap on the map should reach the map.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onPress = (e: PointerEvent) => {
+      if (navRef.current && e.target instanceof Node && !navRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPress);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPress);
+    };
+  }, [open]);
+
+  const pick = (act: () => void) => () => {
+    setOpen(false);
+    act();
+  };
+
+  const here = active ? STACKACRES_ZONES[active] : STACKACRES_ZONES.farmstead;
+
   return (
-    <nav className="sa-destinations" aria-label="Places">
-      {zonesByDistance().map((zone) => {
-        const open = isSectorUnlocked(zone.id, unlocked);
-        return (
+    <nav ref={navRef} className={clsx("sa-destinations", { "is-compact": compact, "is-open": open })} aria-label="Places">
+      {compact && (
+        <button
+          type="button"
+          className={clsx("sa-dest sa-quicknav", { "is-there": active !== null })}
+          aria-expanded={open}
+          aria-controls={menuId}
+          aria-label={`Places -- you are at ${here.label}. ${open ? "Close" : "Open"} the list.`}
+          onClick={() => setOpen((was) => !was)}
+        >
+          <span className="sa-dest-swatch sa-quicknav-compass" aria-hidden="true">
+            <Compass size={16} />
+          </span>
+          <span className="sa-dest-text">
+            <span className="sa-dest-name">{here.label.replace(/^The /, "")}</span>
+            <span className="sa-dest-way" aria-hidden="true">
+              {active ? HEADING[active] : "places"}
+            </span>
+          </span>
+          <span className="sa-quicknav-caret" aria-hidden="true">
+            <ChevronDown size={14} />
+          </span>
+          {(carrying > 0 || contractPosted) && <span className="sa-dest-dot" aria-hidden="true" />}
+        </button>
+      )}
+      {showList && (
+        <div id={menuId} className="sa-dest-list">
+          {zonesByDistance().map((zone) => {
+            const cleared = isSectorUnlocked(zone.id, unlocked);
+            return (
+              <button
+                key={zone.id}
+                type="button"
+                className={clsx("sa-dest", `sa-dest-${zone.id}`, {
+                  "is-there": active === zone.id,
+                  "is-wild": !cleared,
+                })}
+                // The blurb is the honest description of the place and belongs to
+                // the button, not to a tooltip a thumb can never open.
+                title={cleared ? zone.blurb : `${zone.blurb} Not cleared yet.`}
+                aria-label={`${zone.label}, ${HEADING[zone.id]} — ${zone.blurb}${cleared ? "" : " Not cleared yet."}`}
+                onClick={pick(() => onTravel(zone.id))}
+              >
+                <span className="sa-dest-swatch" aria-hidden="true" />
+                <span className="sa-dest-text">
+                  <span className="sa-dest-name">{zone.label.replace(/^The /, "")}</span>
+                  <span className="sa-dest-way" aria-hidden="true">
+                    {cleared ? HEADING[zone.id] : "uncleared"}
+                  </span>
+                </span>
+                {!cleared && (
+                  <span className="sa-dest-lock" aria-hidden="true">
+                    <Lock size={12} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
           <button
-            key={zone.id}
             type="button"
-            className={clsx("sa-dest", `sa-dest-${zone.id}`, {
-              "is-there": active === zone.id,
-              "is-wild": !open,
-            })}
-            // The blurb is the honest description of the place and belongs to
-            // the button, not to a tooltip a thumb can never open.
-            title={open ? zone.blurb : `${zone.blurb} Not cleared yet.`}
-            aria-label={`${zone.label}, ${HEADING[zone.id]} — ${zone.blurb}${open ? "" : " Not cleared yet."}`}
-            onClick={() => onTravel(zone.id)}
+            className="sa-dest sa-dest-ray"
+            title="Buy feed, and see what is left of the daily allowance."
+            aria-label="Buy from Ray — buy feed, and see what is left of the daily allowance."
+            onClick={pick(onOpenStore)}
           >
-            <span className="sa-dest-swatch" aria-hidden="true" />
+            <img
+              src="/stackacres/sprites/grandfather-ray-portrait.png"
+              alt=""
+              className="sa-dest-ray-portrait"
+              aria-hidden="true"
+            />
             <span className="sa-dest-text">
-              <span className="sa-dest-name">{zone.label.replace(/^The /, "")}</span>
+              <span className="sa-dest-name">Buy from Ray</span>
               <span className="sa-dest-way" aria-hidden="true">
-                {open ? HEADING[zone.id] : "uncleared"}
+                supplies
               </span>
             </span>
-            {!open && (
-              <span className="sa-dest-lock" aria-hidden="true">
-                <Lock size={12} />
+            {carrying > 0 && (
+              <span className="sa-dest-badge" aria-hidden="true">
+                {carrying}
               </span>
             )}
           </button>
-        );
-      })}
-      <button
-        type="button"
-        className="sa-dest sa-dest-ray"
-        title="Buy feed, and see what is left of the daily allowance."
-        aria-label="Buy from Ray — buy feed, and see what is left of the daily allowance."
-        onClick={onOpenStore}
-      >
-        <img
-          src="/stackacres/sprites/grandfather-ray-portrait.png"
-          alt=""
-          className="sa-dest-ray-portrait"
-          aria-hidden="true"
-        />
-        <span className="sa-dest-text">
-          <span className="sa-dest-name">Buy from Ray</span>
-          <span className="sa-dest-way" aria-hidden="true">
-            supplies
-          </span>
-        </span>
-        {carrying > 0 && (
-          <span className="sa-dest-badge" aria-hidden="true">
-            {carrying}
-          </span>
-        )}
-      </button>
-      <button
-        type="button"
-        className="sa-dest sa-dest-board"
-        title="See what the town is asking for, and what it pays."
-        aria-label={
-          contractPosted
-            ? "Town board — an order is up. See what the town is asking for, and what it pays."
-            : "Town board — see what the town is asking for, and what it pays."
-        }
-        onClick={onOpenContracts}
-      >
-        <span className="sa-dest-swatch" aria-hidden="true">
-          <ScrollText size={14} />
-        </span>
-        <span className="sa-dest-text">
-          <span className="sa-dest-name">Town board</span>
-          <span className="sa-dest-way" aria-hidden="true">
-            {contractPosted ? "order up" : "orders"}
-          </span>
-        </span>
-        {contractPosted && <span className="sa-dest-dot" aria-hidden="true" />}
-      </button>
+          <button
+            type="button"
+            className="sa-dest sa-dest-board"
+            title="See what the town is asking for, and what it pays."
+            aria-label={
+              contractPosted
+                ? "Town board — an order is up. See what the town is asking for, and what it pays."
+                : "Town board — see what the town is asking for, and what it pays."
+            }
+            onClick={pick(onOpenContracts)}
+          >
+            <span className="sa-dest-swatch" aria-hidden="true">
+              <ScrollText size={14} />
+            </span>
+            <span className="sa-dest-text">
+              <span className="sa-dest-name">Town board</span>
+              <span className="sa-dest-way" aria-hidden="true">
+                {contractPosted ? "order up" : "orders"}
+              </span>
+            </span>
+            {contractPosted && <span className="sa-dest-dot" aria-hidden="true" />}
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

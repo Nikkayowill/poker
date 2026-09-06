@@ -17,6 +17,7 @@ import {
 // ./paths and ./world do, same arrangement connections.ts has with
 // connections-puzzles.ts -- this is purely a drift guard.
 import { PROP_PAINTERS } from "@/components/arcade/stackacres/art-props";
+import { FARM_JUNCTIONS } from "./path-junctions";
 import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
 import { POND, POND_SAND, inPondZone, pondRadial } from "./water";
 import { BARN_FOOTPRINT, FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
@@ -150,7 +151,9 @@ describe("yard props", () => {
     const lane = FARM_PATHS.find((p) => p.key === "lane");
     expect(lane).toBeDefined();
     if (!lane) return;
-    const verge = lane.points[lane.points.length - 1].x;
+    // The verge is the lane's own west body edge, off its width rather than
+    // a literal, so widening the lane moves this line with it.
+    const verge = lane.points[lane.points.length - 1].x - lane.width / 2;
     for (const lamp of lamps) {
       expect(lamp.x).toBeLessThan(verge);
       expect(lamp.x).toBeGreaterThanOrEqual(verge - 12);
@@ -169,7 +172,8 @@ describe("yard props", () => {
     expect(mailbox).toBeDefined();
     if (!mailbox || !lane) return;
     const end = lane.points[lane.points.length - 1];
-    expect(Math.hypot(mailbox.x - end.x, mailbox.y - end.y)).toBeLessThan(16);
+    // Just off the body at the lane's end: within a body-half plus a step.
+    expect(Math.hypot(mailbox.x - end.x, mailbox.y - end.y)).toBeLessThan(lane.width / 2 + 6);
     const [signpost] = of("signpost");
     const track = FARM_PATHS.find((p) => p.key === "track");
     expect(signpost && track && distanceToPath(signpost.x, signpost.y, track)).toBeLessThan(24);
@@ -289,5 +293,15 @@ describe("farmsteadClutter", () => {
   it("is a pure function of its seed", () => {
     expect(farmsteadClutter()).toEqual(farmsteadClutter());
     expect(farmsteadClutter(1)).not.toEqual(farmsteadClutter(2));
+  });
+});
+
+describe("clutter and the junction pads", () => {
+  it("keeps every piece of clutter off the rounded pad over a fork", () => {
+    for (const item of farmsteadClutter()) {
+      for (const j of FARM_JUNCTIONS) {
+        expect(Math.hypot(item.x - j.at.x, item.y - j.at.y), `${item.kind} at ${item.x},${item.y} on ${j.key}`).toBeGreaterThanOrEqual(j.reach);
+      }
+    }
   });
 });

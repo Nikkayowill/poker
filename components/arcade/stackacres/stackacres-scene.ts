@@ -68,6 +68,7 @@ import {
   critterSpeed,
   cropRanks,
   cropSpot,
+  grandfatherRayHitAt,
   growAreaAt,
   growAreaBounds,
   growAreaInterior,
@@ -288,6 +289,17 @@ export interface StackAcresSceneCallbacks {
    * player nothing and reaches the server not at all.
    */
   onMonkTap: (at: TapPoint) => void;
+  /**
+   * A tap that landed on Grandfather Ray himself, as opposed to the barn
+   * just west of him -- a DIFFERENT structure/character split from
+   * `onMonkTap`'s own: he stands right beside his own Museum's entryway, so
+   * he is checked before `onBarnTap` the same "a person wins over the
+   * structure behind them" ordering already gives the Midnight Merchant and
+   * the Pixel Pilgrim, even though (like theirs) his footprint does not
+   * actually overlap the barn's. Opens the friendship gift dialogue; see
+   * stackacres-farm.tsx's `onWorldRayTap`.
+   */
+  onRayTap: (at: TapPoint) => void;
   /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
@@ -2868,6 +2880,13 @@ export class StackAcresScene extends Phaser.Scene {
       // and the `pray` action only ever follow a "yes" there.
       if (monkHitAt(ground.x, ground.y)) {
         this.callbacks.onMonkTap(local);
+        return;
+      }
+      // Grandfather Ray himself -- checked right before the barn just west
+      // of him, the same "a person wins over the structure behind them"
+      // ordering the Pixel Pilgrim check above already documents.
+      if (grandfatherRayHitAt(ground.x, ground.y)) {
+        this.callbacks.onRayTap(local);
         return;
       }
       // The barn -- Ray's Museum's own entryway -- checked before the

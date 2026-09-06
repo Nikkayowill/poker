@@ -209,6 +209,39 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
   );
 }
 
+/**
+ * Grandfather Ray's own footprint -- the same box `PROP_SIZE.grandfatherRay`
+ * gives (25.125 wide, 40 tall) at his fixed spot (props.ts's
+ * `{ x: 178, y: 20 }`), restated here rather than imported from props.ts for
+ * the identical reason `MIDNIGHT_MERCHANT_FOOTPRINT` restates it: props.ts
+ * imports FROM this module (`BARN_FOOTPRINT`, `growAreaBounds`), so an
+ * import back the other way would be a cycle.
+ *
+ * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
+ * `onWorldRayTap`) -- a DIFFERENT surface from tapping the barn just west of
+ * him (`barnHitAt`, Ray's Museum) and from the signpost's "Buy from Ray"
+ * (the supply store, opened by a UI button, never a map tap). His box does
+ * not overlap the barn's (barn spans x 71..145; this spans roughly
+ * x 165..191), so the two never compete for one tap.
+ */
+const GRANDFATHER_RAY_FOOTPRINT: WorldRect = {
+  x: 178 - 25.125 / 2,
+  y: 20 - 40,
+  width: 25.125,
+  height: 40,
+};
+
+/** Whether a tapped ground point lands on Grandfather Ray himself, as
+ *  opposed to the barn behind him -- same shape as `midnightMerchantHitAt`. */
+export function grandfatherRayHitAt(x: number, y: number): boolean {
+  return (
+    x >= GRANDFATHER_RAY_FOOTPRINT.x &&
+    x <= GRANDFATHER_RAY_FOOTPRINT.x + GRANDFATHER_RAY_FOOTPRINT.width &&
+    y >= GRANDFATHER_RAY_FOOTPRINT.y &&
+    y <= GRANDFATHER_RAY_FOOTPRINT.y + GRANDFATHER_RAY_FOOTPRINT.height
+  );
+}
+
 /** Where a district's units stand: the fenced boundary the scene draws once
  *  per district, and the box every one of that district's animals wanders
  *  inside (crops sit at a fixed spot within the same box). */

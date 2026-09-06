@@ -24,6 +24,7 @@ import {
   type StackAcresPrestigeGain,
   type StackAcresPrestigeState,
 } from "@/lib/stackacres/prestige";
+import type { NpcId } from "@/lib/stackacres/friendship";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -88,6 +89,7 @@ declare global {
   var __riverRoomStackAcresGreenhouse: Set<string> | undefined;
   var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
   var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
+  var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -199,6 +201,15 @@ globalThis.__riverRoomStackAcresPrestige = memoryPrestige;
 const memoryDevotion = globalThis.__riverRoomStackAcresDevotion ?? new Map<string, StoredDevotionRow>();
 globalThis.__riverRoomStackAcresDevotion = memoryDevotion;
 
+/** NPC friendship, keyed by `${profileId}:${npc}` -- see
+ *  `readStackAcresFriendship`/`giveStackAcresGift` below. A missing entry is
+ *  `freshFriendship()`, the same "no row yet" convention memoryDevotion
+ *  uses. Keyed as one string rather than nested per-NPC maps since
+ *  FRIENDSHIP_NPCS holds exactly one member today and a second NPC is just
+ *  another key, not a reason to restructure this. */
+const memoryFriendship = globalThis.__riverRoomStackAcresFriendship ?? new Map<string, StoredFriendshipRow>();
+globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -220,6 +231,7 @@ export function __resetStackAcresForTest(): void {
   memoryGreenhouse.clear();
   memoryPrestige.clear();
   memoryDevotion.clear();
+  memoryFriendship.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -2382,6 +2394,133 @@ export async function prayAtStackAcresShrine(
   return {
     streak: Number(row.streak),
     alreadyPrayedToday: row.already_prayed_today,
+    grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* NPC friendship                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `homestead_friendship` and its `give_homestead_gift` RPC -- a fresh
+ * table, same reasoning `homestead_devotion`'s own header gives: a
+ * per-(player, NPC) points record has no existing table to reuse.
+ *
+ * The rollover math (same-day refusal before any spend, points accumulate
+ * with no lapse, at most one ladder rung claimed per gift) lives once in
+ * lib/stackacres/friendship.ts's pure `applyGift` -- the RPC below is a SQL
+ * restatement of that exact function so the two branches agree, the same
+ * discipline pray_at_homestead_shrine's own header holds itself to. Keep
+ * them in step if the ladder or gift scoring ever changes.
+ */
+
+export interface StoredFriendshipRow {
+  points: number;
+  lastGiftedDay: string | null;
+  claimedRungs: readonly number[];
+}
+
+const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, claimedRungs: [] };
+
+/** The stored friendship record for a profile/NPC pair, or a fresh one if
+ *  no gift has ever landed. Read-only -- `giveStackAcresGift` is the only
+ *  writer. */
+export async function readStackAcresFriendship(profileId: string, npc: NpcId): Promise<StoredFriendshipRow> {
+  const supabase = adminClient();
+  if (!supabase) return memoryFriendship.get(`${profileId}:${npc}`) ?? FRESH_FRIENDSHIP;
+
+  const { data, error } = await supabase
+    .from("homestead_friendship")
+    .select("points, last_gifted_day, claimed_rungs")
+    .eq("profile_id", profileId)
+    .eq("npc", npc)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your standing with him: ${error.message}`);
+  if (!data) return FRESH_FRIENDSHIP;
+  const row = data as { points: number | string; last_gifted_day: string | null; claimed_rungs: number[] | null };
+  return {
+    points: Number(row.points),
+    lastGiftedDay: row.last_gifted_day,
+    claimedRungs: row.claimed_rungs ?? [],
+  };
+}
+
+/** What one call to `give_homestead_gift` reports. `outcome` is
+ *  "already-gifted-today" (refused before the inventory was touched) or
+ *  "insufficient-item" (the day gate passed but the item was already
+ *  spent -- a lost race, since the client only ever offers items it still
+ *  holds) as well as the ordinary "gifted" success; there is no null case
+ *  here the way devotion's own RPC has one, because every outcome this
+ *  function can reach is a real, reportable answer rather than a lost race
+ *  the caller must silently re-derive. */
+export interface GiftAttemptResult {
+  points: number;
+  outcome: "gifted" | "already-gifted-today" | "insufficient-item";
+  grantedRung: number | null;
+}
+
+/**
+ * Debits one unit of `item` and advances the caller's friendship with `npc`
+ * for one UTC day, atomically. See the migration's own `give_homestead_gift`
+ * for why the day gate is checked before the debit: a refused gift must
+ * never cost the player the item they tried to give.
+ *
+ * `today` is a `YYYY-MM-DD` string the service computes once
+ * (lib/stackacres/exchange.ts's `stackacresExchangeDay`) and hands down, so
+ * this function never reads a clock itself. `points`/`rungThresholds` are
+ * service-owned data from lib/stackacres/friendship.ts this function has no
+ * other way to know, the same pattern `prayAtStackAcresShrine` already sets.
+ */
+export async function giveStackAcresGift(
+  profileId: string,
+  npc: NpcId,
+  item: MachineItemId,
+  points: number,
+  today: string,
+  rungThresholds: readonly number[],
+): Promise<GiftAttemptResult> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${npc}`;
+    const stored = memoryFriendship.get(key) ?? FRESH_FRIENDSHIP;
+    if (stored.lastGiftedDay === today) {
+      return { points: stored.points, outcome: "already-gifted-today", grantedRung: null };
+    }
+    const invKey = `${profileId}:${item}`;
+    const held = memoryInventory.get(invKey) ?? 0;
+    if (held < 1) {
+      return { points: stored.points, outcome: "insufficient-item", grantedRung: null };
+    }
+    memoryInventory.set(invKey, held - 1);
+    const newPoints = stored.points + points;
+    let grantedRung: number | null = null;
+    for (let i = 0; i < rungThresholds.length; i++) {
+      if (newPoints >= rungThresholds[i] && !stored.claimedRungs.includes(i)) {
+        grantedRung = i;
+        break;
+      }
+    }
+    const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
+    memoryFriendship.set(key, { points: newPoints, lastGiftedDay: today, claimedRungs });
+    return { points: newPoints, outcome: "gifted", grantedRung };
+  }
+
+  const { data, error } = await supabase
+    .rpc("give_homestead_gift", {
+      p_profile_id: profileId,
+      p_npc: npc,
+      p_item: item,
+      p_points: points,
+      p_today: today,
+      p_rung_thresholds: rungThresholds,
+    })
+    .maybeSingle();
+  if (error) throw new Error(`Could not give him that: ${error.message}`);
+  const row = data as { points: number | string; outcome: string; granted_rung: number | string | null };
+  return {
+    points: Number(row.points),
+    outcome: row.outcome as GiftAttemptResult["outcome"],
     grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
   };
 }

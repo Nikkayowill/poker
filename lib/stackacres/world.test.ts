@@ -12,6 +12,7 @@ import {
   forestDensityAt,
   clampZoom,
   cropSpot,
+  grandfatherRayHitAt,
   growAreaAt,
   growAreaBounds,
   growAreaInterior,
@@ -142,6 +143,27 @@ describe("the barn's tap target", () => {
       const bounds = growAreaBounds(zone);
       const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
       expect(barnHitAt(mid.x, mid.y)).toBe(false);
+    }
+  });
+});
+
+describe("Grandfather Ray's tap target", () => {
+  it("hits his own spot, and never the same point that hits the barn", () => {
+    expect(grandfatherRayHitAt(178, 0)).toBe(true);
+    // His box is clear of the barn's on both axes -- a tap can never land on
+    // both, which is what keeps the two an unambiguous choice for the scene.
+    for (let x = BARN_FOOTPRINT.x; x <= BARN_FOOTPRINT.x + BARN_FOOTPRINT.width; x += 5) {
+      for (let y = BARN_FOOTPRINT.y; y <= BARN_FOOTPRINT.y + BARN_FOOTPRINT.height; y += 5) {
+        expect(grandfatherRayHitAt(x, y)).toBe(false);
+      }
+    }
+  });
+
+  it("misses every district's own ground", () => {
+    for (const zone of ZONE_IDS) {
+      const bounds = growAreaBounds(zone);
+      const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      expect(grandfatherRayHitAt(mid.x, mid.y)).toBe(false);
     }
   });
 });

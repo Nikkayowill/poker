@@ -141,6 +141,9 @@ export interface StackAcresWorldProps {
    *  reaches no server by itself -- this is only the cue to open his
    *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
   onMonkTap: (at: TapPoint) => void;
+  /** A finger landed on Grandfather Ray himself, not the barn behind him --
+   *  see stackacres-farm.tsx's `onWorldRayTap`. */
+  onRayTap: (at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -206,6 +209,7 @@ export function StackAcresWorld({
   onGreenhouseSlotTap,
   onMerchantTap,
   onMonkTap,
+  onRayTap,
   onSecretZoneTap,
   sectors,
   onLockedSectorTap,
@@ -227,6 +231,7 @@ export function StackAcresWorld({
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
   const monkTapRef = useRef(onMonkTap);
+  const rayTapRef = useRef(onRayTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
@@ -254,6 +259,7 @@ export function StackAcresWorld({
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
     monkTapRef.current = onMonkTap;
+    rayTapRef.current = onRayTap;
     secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
@@ -303,6 +309,7 @@ export function StackAcresWorld({
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),
           onMonkTap: (at) => monkTapRef.current(at),
+          onRayTap: (at) => rayTapRef.current(at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),

@@ -58,6 +58,26 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### NPC friendship: gift-giving to Grandfather Ray, Stardew-style (2026-09-06)
+Kayo's ask, following a "how does StackAcres compare to Stardew Valley" discussion: NPC interaction
+should be beneficial, the pillar StackAcres was genuinely missing next to its equipment ladder/synergy
+tree/museum/prestige depth. Ray gets a NEW tap target (`grandfatherRayHitAt` in `lib/stackacres/
+world.ts`, restated rather than imported from `props.ts` for the same import-cycle reason
+`MIDNIGHT_MERCHANT_FOOTPRINT` restates his spot) distinct from tapping the barn beside him (his own
+Museum) — a dialogue opens, an item picker over held processing-track goods (wheat/flour/milk/wool/
+cheese/cloth), a tap sends the gift immediately. `lib/stackacres/friendship.ts` is a DELIBERATELY
+SEPARATE mechanic from the Pixel Pilgrim's devotion above, despite the similar day-gate/claimed-rung
+shape — a future retune of one must never silently touch the other. One counted gift per NPC per UTC
+day, checked in the store's own `give_homestead_gift` RPC **before** the inventory debit, so a refused
+gift never costs the item; loved/liked gifts (cheese/cloth loved, flour liked) score more than neutral
+ones. Ladder rewards are KEEPSAKES, never Gold — `stackacres-service.ts`'s own "currency wall" test pins
+`creditGoldByProfile` to exactly three call sites (a refund helper, the harvest payout, the contract
+payout), and a friendship reward would have been an unguarded fourth faucet; caught before it shipped,
+not after. `FRIENDSHIP_NPCS` holds only `ray` today but the module is built to grow. Migration applied
+(`stackacres_friendship`, verified via `list_migrations` and a clean security-advisor pass — the one
+`homestead_friendship` finding is the same expected "RLS enabled, no policy" INFO every other
+service-role-only table here gets, not a real gap).
+
 ### The Pixel Pilgrim: StackAcres' first interactable character, replacing the farmhand (2026-09-06)
 Kayo's ask: repurpose the farmhand sprite into a devout monk "from the pixel world," posted at his own
 shrine, who talks first then asks "will you pray with me?" — declining costs nothing, praying advances

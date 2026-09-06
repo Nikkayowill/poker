@@ -9,6 +9,7 @@ import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/s
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
+import { FRIENDSHIP_NPCS } from "@/lib/stackacres/friendship";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
@@ -46,6 +47,7 @@ import {
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
   prayAtStackAcresShrine,
+  giveStackAcresGift,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -318,6 +320,14 @@ const bodySchema = z.discriminatedUnion("action", [
   // stackacres-monk-dialogue.tsx), never from the tap itself, so a decline
   // never reaches this route at all.
   z.object({ action: z.literal("pray") }),
+  // NPC friendship: a gift. Moves no Gold either way -- it spends one unit
+  // of a processing-track item, never a purse. See
+  // lib/stackacres/friendship.ts's own header.
+  z.object({
+    action: z.literal("give-gift"),
+    npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
+    item: z.enum(MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
+  }),
 ]);
 
 /**
@@ -412,6 +422,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "pray":
       return prayAtStackAcresShrine(token, now);
+    case "give-gift":
+      return giveStackAcresGift(token, action.npc, action.item, now);
   }
 }
 

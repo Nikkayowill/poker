@@ -33,6 +33,7 @@ import {
   getPrestigeMultiplier,
   prestigeResetStackAcres,
   prayAtStackAcresShrine,
+  giveStackAcresGift,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -1640,6 +1641,7 @@ describe("the currency wall", () => {
       "expand-capacity",
       "feed",
       "fulfill-contract",
+      "give-gift",
       "midnight-merchant-buy",
       "place-machine",
       "place-pipe",
@@ -1698,7 +1700,11 @@ describe("the currency wall", () => {
     // moves nothing, the same as tapping `water`. `place-soil-tile` is the
     // same shape as `place-pipe`: a flat Gold sink refunded only on a lost
     // race for the cell; `remove-soil-tile` moves no Gold and is not a
-    // refund either, matching `remove-pipe`.
+    // refund either, matching `remove-pipe`. `give-gift` moves no Gold
+    // either way: it spends a processing-track item (never a purse) and its
+    // ladder pays a keepsake, never Gold -- see
+    // lib/stackacres/friendship.ts's own header for why that reward is not
+    // a third payer.
     const paysGold = ["collect", "fulfill-contract"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     // `, now` on both: Chrono-DeLorean Mode threads a resolved `now` through
@@ -2858,6 +2864,79 @@ describe("hidden secrets", () => {
       const first = await runStackAcresAction(token, key, "pray", run, DAY(1));
       const replay = await runStackAcresAction(token, key, "pray", run, DAY(1));
       expect(replay.prayer).toEqual(first.prayer);
+    });
+  });
+
+  describe("giveStackAcresGift", () => {
+    const DAY = (d: number) => new Date(`2026-09-${String(d).padStart(2, "0")}T12:00:00.000Z`);
+
+    it("refuses a gift with nothing held, without touching friendship", async () => {
+      const { token } = await funded();
+      const result = await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      expect(result.gift).toEqual({ npc: "ray", points: 0, outcome: "insufficient-item", grantedKeepsake: null });
+      expect(result.friendship.ray.points).toBe(0);
+    });
+
+    it("a loved gift is worth more points than a neutral one", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "cheese", 1);
+      const result = await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      expect(result.gift?.outcome).toBe("gifted");
+      expect(result.gift?.points).toBeGreaterThan(0);
+      expect(result.friendship.ray.points).toBe(result.gift?.points);
+
+      const { token: token2, id: id2 } = await funded();
+      await adjustStackAcresInventory(id2, "wheat", 1);
+      const neutral = await giveStackAcresGift(token2, "ray", "wheat", DAY(1));
+      expect(neutral.gift?.points).toBeLessThan(result.gift!.points);
+    });
+
+    it("actually spends the gifted item", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "cheese", 1);
+      await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      const again = await giveStackAcresGift(token, "ray", "cheese", DAY(2));
+      expect(again.gift?.outcome).toBe("insufficient-item");
+    });
+
+    it("a second gift the same UTC day is refused and never spends the item", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "cheese", 2);
+      const first = await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      const second = await giveStackAcresGift(token, "ray", "flour", DAY(1));
+      expect(second.gift).toEqual({
+        npc: "ray",
+        points: first.friendship.ray.points,
+        outcome: "already-gifted-today",
+        grantedKeepsake: null,
+      });
+      // The second gift's Flour must still be in the barn -- refused before
+      // the debit, same rule the migration's own header states.
+      expect(second.inventory?.flour ?? 0).toBe(0);
+      expect(second.inventory?.cheese ?? 0).toBe(1);
+    });
+
+    it("grants the first keepsake once enough loved gifts land, and never again", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "cheese", 3);
+      await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      await giveStackAcresGift(token, "ray", "cheese", DAY(2));
+      const third = await giveStackAcresGift(token, "ray", "cheese", DAY(3));
+      expect(third.gift?.grantedKeepsake).toBe("carved_whistle");
+      expect(third.friendship.ray.keepsakesHeld).toEqual(["carved_whistle"]);
+
+      await adjustStackAcresInventory(id, "cheese", 1);
+      const fourth = await giveStackAcresGift(token, "ray", "cheese", DAY(4));
+      expect(fourth.gift?.grantedKeepsake).toBeNull();
+    });
+
+    it("never credits or spends Gold either way", async () => {
+      const { token, id } = await funded(50_000);
+      await adjustStackAcresInventory(id, "cheese", 1);
+      const before = (await readStackAcres(token, DAY(1))).profile?.goldBalance;
+      expect(before).toBe(50_000);
+      const result = await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      expect(result.profile?.goldBalance).toBe(before);
     });
   });
 

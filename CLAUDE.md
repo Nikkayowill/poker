@@ -58,6 +58,33 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### StackAcres roads went wide and muddy; forks are rounded; the signpost collapses on phones (2026-09-06)
+Built from a `/goal` brief modelled on Stardew/Mistria path design. Four things landed. **(1) A road
+hierarchy** (`lib/stackacres/roads.ts`, a runtime leaf both `world.ts` and `paths.ts` can read without
+joining their import cycle): `PathSpec` carries a `tier`, and `roadWidth` holds every arterial axis
+(lane, road, meadowLane, oxRoad) to `ARTERIAL_ROAD_MIN_WIDTH` = 40 (2.5 tiles), a track to 24, a
+service spur to 16. Widening the lane/road moved real geometry: the road's centreline dropped y 46 ->
+58 so its body (38..78) clears the yard props at y <= 32, `FARM_ZONE`/`STACKACRES_ZONES.farmstead`
+grew west 28 -> 20, lamps/mailbox/signpost moved out to the new verge, and the monk's house shifted 8
+south off the road's scenery clearance. `props.test.ts`'s lamp rule is now width-relative (the test's
+own header had warned about exactly this). **(2) Feathered, wobbled edges**: `art-paths.ts` draws the
+body as a ribbon whose two edges wander on their own seeded phases (`roadEdgeWobble`) with three
+blurred translucent ribbons stepping out past it (`featherReach`) plus a mud spatter. **(3) Junction
+bitmasks** (`lib/stackacres/path-junctions.ts`): each branch's start inside a trunk becomes a
+junction with N/E/S/W arm bits, `JUNCTION_SHAPES[mask]` picks cap/straight/corner/tee/cross, and
+`junctionFillets` computes the concave-corner fillets the renderer bakes as one rounded pad per
+junction (`bakeJunctionTexture`), laid over the strips. `farmsteadClutter` now also keeps off a pad's
+reach, since `nearPath` alone reads a fillet as grass. **(4) Muddy yard mats** (`YARD_MATS` in
+`world.ts`, `art-mud.ts`): wobbled-superellipse mud under the barn, the Greenhouse and the Hen Pen,
+each reaching past its footprint, at `MUD_MAT_DEPTH` between the sector haze and a district's own
+floor. Plus the HUD half: `StackAcresDestinations` collapses into a single Compass Quick-Nav board on
+`useTightLandscape` phones (two-column drop-down, deliberately NOT a scroll container -- a scrolling
+box over the WebGL canvas composited as a black slab in Chromium), and the scene's `viewExpansion`
+option (`HUD_VIEW_EXPANSION` = 1.1) frames every arrival window a tenth wider while it is collapsed,
+read at the next framing move rather than yanking a panned camera. Texture cost went up: the lane and
+road bake at 4096x2048 each (the road already did). Verified live in memory-mode Chromium at 1280x720
+and 844x390; `chrono-delorean-simulation.test.ts` flaked once in the full run and passed twice alone.
+
 ### NPC friendship: gift-giving to Grandfather Ray, Stardew-style (2026-09-06)
 Kayo's ask, following a "how does StackAcres compare to Stardew Valley" discussion: NPC interaction
 should be beneficial, the pillar StackAcres was genuinely missing next to its equipment ladder/synergy

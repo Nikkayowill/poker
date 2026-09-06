@@ -63,9 +63,11 @@ export const MONK_POST: WorldPoint = { x: 170, y: 140 };
  * door -- small enough to clear the barn, the lane/road/spur paths, the
  * pond, the Farmstead fence and (see `MONK_POST`'s own comment) the Hen
  * Coop's pen itself at every corner; monk.test.ts holds all of it the same
- * way farmhand.test.ts holds `FARMHAND_BASE`.
+ * way farmhand.test.ts holds `FARMHAND_BASE`. Its north edge moved 80 -> 88
+ * when the road became two and a half tiles wide (./roads.ts): the road's
+ * body reaches y 78 now and its scenery clearance y 84.
  */
-export const MONK_HOUSE_FOOTPRINT: WorldRect = { x: 140, y: 80, width: 66, height: 46 };
+export const MONK_HOUSE_FOOTPRINT: WorldRect = { x: 140, y: 88, width: 66, height: 46 };
 
 /** Whether a tapped ground point lands on the shrine -- the Pixel Pilgrim's
  *  own tap target, same shape as `barnHitAt` in ./world.ts. Checked against

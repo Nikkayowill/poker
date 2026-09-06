@@ -7,6 +7,7 @@ import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useLandscape } from "@/components/use-landscape";
+import { useTightLandscape } from "@/components/use-tight-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
   setAmbienceAwake,
@@ -73,7 +74,7 @@ import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
-import { growAreaBounds, stockZone, type WorldPoint } from "@/lib/stackacres/world";
+import { HUD_VIEW_EXPANSION, growAreaBounds, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import {
   soilTileAt,
   soilTilesEqual,
@@ -676,6 +677,10 @@ export function StackAcresFarm() {
   // Landscape-only, same posture and same hook as the poker table (see
   // poker-table.tsx) rather than a second orientation check invented here.
   const landscape = useLandscape();
+  // A short landscape phone collapses the signpost rail into the compass
+  // quick-nav (stackacres-destinations.tsx) and hands the map the screen it
+  // used to cover (`viewExpansion`).
+  const compactNav = useTightLandscape();
   /**
    * No `useArcadeSound` here any more.
    *
@@ -2216,6 +2221,7 @@ export function StackAcresFarm() {
               toolTier={toolTier}
               museumGlowTier={museumGlowTier}
               farmhandSpeedMultiplier={farmhandSpeedMultiplier}
+              viewExpansion={compactNav ? HUD_VIEW_EXPANSION : 1}
               secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
@@ -2273,6 +2279,7 @@ export function StackAcresFarm() {
 
           <StackAcresDestinations
             active={place}
+            compact={compactNav}
             onTravel={travel}
             unlocked={sectors}
             onOpenStore={() => { panelSound(); setShowStore(true); }}

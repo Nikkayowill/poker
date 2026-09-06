@@ -2,7 +2,9 @@
 // at the top of stackacres-art.ts).
 import type * as Phaser from "phaser";
 import { ISO_K, projectedBounds } from "@/lib/stackacres/iso";
+import type { PathJunction } from "@/lib/stackacres/path-junctions";
 import { distanceToPath, pathBounds, type PathSpec } from "@/lib/stackacres/paths";
+import { edgeWobblePhase, featherReach, roadEdgeWobble } from "@/lib/stackacres/roads";
 import { powerOfTwoCeil, seededRandom, type WorldPoint } from "@/lib/stackacres/world";
 import { ART_FRAME, GRASS_PX, ell, F, lin, type Ctx } from "./art-kit";
 
@@ -19,22 +21,31 @@ import { ART_FRAME, GRASS_PX, ell, F, lin, type Ctx } from "./art-kit";
  * so the strip agrees with the diamond-tiled ground it sits on rather than
  * being a flat sticker laid over a tilted world.
  *
- * The look is FarmVille's: a warm tan strip with a soft damp rim, a worn
- * lighter centre, dark grass lapping over both edges, and a row of round
- * cream stones a little way off ONE side. The polyline from lib/stackacres/
- * paths.ts is smoothed through its segments' midpoints, densified, and given
- * a slow seeded wobble along its normal, so no edge is a ruler line. The
- * wobble is tapered to nothing at both ends, which is what keeps a junction
- * exactly where the layout says it is.
+ * The look is a cozy farm's: a wide, warm tan strip with a feathered muddy
+ * margin, a worn lighter centre, dark grass lapping over both edges, and a
+ * row of round cream stones a little way off ONE side. The polyline from
+ * lib/stackacres/paths.ts is smoothed through its segments' midpoints,
+ * densified, and given a slow seeded wobble along its normal, so the
+ * centreline is never a ruler line; then each EDGE wanders on its own
+ * (lib/stackacres/roads.ts's `roadEdgeWobble`), so the body is a ribbon
+ * that swells and pinches rather than a constant-width stroke. The margin
+ * is three translucent ribbons stepping out from the edge, each blurred, so
+ * the dirt blends into the grass by alpha rather than ending at a line.
+ * The centreline wobble is tapered to nothing at both ends, which is what
+ * keeps a junction exactly where the layout says it is.
  *
  * Junctions: a branch (the road, the track) starts inside the lane's body,
- * and its damp rim would otherwise paint a dark half-disc across the lane
- * where the two meet. So after its rim, a path repaints the body of every
- * path it branches off -- clipped to a disc around its own start, with the
- * same curve, gradient and mottles, so the pixels agree -- and only then
- * draws its own body over that. The body gradient runs in WORLD y for every
- * path, not along each path's own bbox, for the same reason: two strips that
- * meet must be the same tan where they meet.
+ * and its feathered margin would otherwise paint a dark half-disc across
+ * the lane where the two meet. So after its margin, a path repaints the
+ * body of every path it branches off -- clipped to a disc around its own
+ * start, with the same curve, gradient and mottles, so the pixels agree --
+ * and only then draws its own body over that. On top of all the strips the
+ * scene then lays one rounded pad per junction (`bakeJunctionTexture`,
+ * shaped by lib/stackacres/path-junctions.ts's bitmask lookup), which
+ * fills the sharp concave notch where two strips' edges cross with a
+ * fillet. The body gradient runs in WORLD y for every path, not along each
+ * path's own bbox, for the same reason: two strips that meet must be the
+ * same tan where they meet.
  */
 
 export interface PathBake {
@@ -64,6 +75,12 @@ const SUN_Y = -0.7071;
 
 const BODY_TOP = "#e2b262";
 const BODY_BOTTOM = "#cc9a4e";
+
+/** The body's tan, in WORLD y, so every strip and pad agrees where it meets
+ *  another. */
+function bodyGradient(c: Ctx): CanvasGradient {
+  return lin(c, 0, -80, 0, 420, [[0, BODY_TOP], [1, BODY_BOTTOM]]);
+}
 
 export function pathTextureKey(spec: PathSpec): string {
   return `path-${spec.key}`;
@@ -150,6 +167,35 @@ function pathCurve(spec: PathSpec): CurvePoint[] {
   return withNormals(wobbled);
 }
 
+/** How far each edge sits from the centreline at arc length s: the
+ *  nominal half-width plus that side's own seeded wander. */
+type EdgeOffset = (s: number, side: 1 | -1) => number;
+
+function edgeOffsetsFor(spec: PathSpec): EdgeOffset {
+  const phase = edgeWobblePhase(seededRandom(hashKey(`${spec.key}:edge`)));
+  const half = spec.width / 2;
+  return (s, side) => half + roadEdgeWobble(s, spec.width, side > 0 ? phase.right : phase.left);
+}
+
+/** The body as a closed polygon: one edge walked forward, the other back. */
+function ribbon(c: Ctx, curve: readonly CurvePoint[], offset: EdgeOffset, extra = 0): void {
+  c.beginPath();
+  for (let i = 0; i < curve.length; i += 1) {
+    const p = curve[i];
+    const d = offset(p.s, 1) + extra;
+    const x = p.x + p.nx * d;
+    const y = p.y + p.ny * d;
+    if (i === 0) c.moveTo(x, y);
+    else c.lineTo(x, y);
+  }
+  for (let i = curve.length - 1; i >= 0; i -= 1) {
+    const p = curve[i];
+    const d = offset(p.s, -1) + extra;
+    c.lineTo(p.x - p.nx * d, p.y - p.ny * d);
+  }
+  c.closePath();
+}
+
 function trace(c: Ctx, curve: readonly CurvePoint[]): void {
   c.beginPath();
   for (let i = 0; i < curve.length; i += 1) {
@@ -167,14 +213,38 @@ function strokeCurve(c: Ctx, curve: readonly CurvePoint[], style: string | Canva
   c.stroke();
 }
 
-/** Softly darker, slightly blurred, a little wider than the body: the damp
- *  ground at the edge of a track rather than an outline around it. */
-function paintRim(c: Ctx, curve: readonly CurvePoint[], width: number): void {
+/**
+ * The feathered margin: three ribbons stepping out from the body's own
+ * wobbled edge, each darker, translucent and blurred, so the alpha ramps
+ * down from the dirt into the grass rather than stopping at a line -- the
+ * damp, trodden ground beside a muddy road. On top, a sparse seeded
+ * spatter of mud blotches just past the edge, so the margin's outline is
+ * broken as well as soft.
+ */
+function paintFeather(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], offset: EdgeOffset, r: () => number): void {
+  const reach = featherReach(spec.width);
   c.save();
-  c.shadowColor = "rgba(100,64,28,.5)";
-  c.shadowBlur = 9;
-  strokeCurve(c, curve, "rgba(176,122,60,.36)", width + 5);
+  c.shadowColor = "rgba(100,64,28,.45)";
+  c.shadowBlur = 6;
+  for (const [step, alpha] of [
+    [1, 0.1],
+    [0.62, 0.17],
+    [0.3, 0.26],
+  ] as const) {
+    ribbon(c, curve, offset, reach * step);
+    F(c, `rgba(150,104,52,${alpha})`);
+  }
   c.restore();
+  const total = curve[curve.length - 1].s;
+  const count = Math.floor(total / 9);
+  for (let i = 0; i < count; i += 1) {
+    const at = curve[Math.min(curve.length - 1, Math.floor((r() * total) / STEP))];
+    const side = r() < 0.5 ? 1 : -1;
+    const out = offset(at.s, side) + reach * (0.3 + r() * 0.9);
+    const rot = Math.atan2(-at.nx, at.ny) + (r() - 0.5) * 0.8;
+    ell(c, at.x + at.nx * side * out, at.y + at.ny * side * out, 2 + r() * 3.5, 1 + r() * 1.6, rot);
+    F(c, `rgba(140,96,48,${(0.08 + r() * 0.1).toFixed(3)})`);
+  }
 }
 
 /**
@@ -187,11 +257,13 @@ function paintBody(
   c: Ctx,
   spec: PathSpec,
   curve: readonly CurvePoint[],
+  offset: EdgeOffset,
   r: () => number,
   clear: (x: number, y: number) => boolean,
 ): void {
   const width = spec.width;
-  strokeCurve(c, curve, lin(c, 0, -80, 0, 420, [[0, BODY_TOP], [1, BODY_BOTTOM]]), width);
+  ribbon(c, curve, offset);
+  F(c, bodyGradient(c));
   strokeCurve(c, curve, "rgba(255,236,190,.22)", width * 0.4);
 
   // Volume: the edge facing the sun catches a pale line, the edge facing away
@@ -199,8 +271,7 @@ function paintBody(
   // Each lit or shaded stretch is stroked as ONE path: a round-capped stroke
   // per two-unit step doubled its alpha at every join and read as a string
   // of beads along both edges.
-  const inset = width / 2 - 1.7;
-  for (const side of [1, -1]) {
+  for (const side of [1, -1] as const) {
     let run: CurvePoint[] = [];
     let runLit = 0;
     let runKind = 0;
@@ -209,6 +280,7 @@ function paintBody(
         const mean = runLit / (run.length - 1);
         c.beginPath();
         run.forEach((p, i) => {
+          const inset = offset(p.s, side) - 1.7;
           const x = p.x + p.nx * side * inset;
           const y = p.y + p.ny * side * inset;
           if (i === 0) c.moveTo(x, y);
@@ -287,18 +359,24 @@ function paintPebbles(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: (
  * in over the tan, low and diagonal. The first cut of this was blades alone,
  * every seven units on both sides, and it read as a picket fence.
  */
-function paintTufts(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: () => number, clear: (x: number, y: number) => boolean): void {
+function paintTufts(
+  c: Ctx,
+  spec: PathSpec,
+  curve: readonly CurvePoint[],
+  offset: EdgeOffset,
+  r: () => number,
+  clear: (x: number, y: number) => boolean,
+): void {
   const total = curve[curve.length - 1].s;
-  const half = spec.width / 2;
   const at = (s: number) => curve[Math.min(curve.length - 1, Math.max(0, Math.floor(s / STEP)))];
 
   for (let s = 3 + r() * 6; s < total - 3; s += 5 + r() * 6) {
     const p = at(s);
     const tx = p.ny;
     const ty = -p.nx;
-    for (const side of [1, -1]) {
+    for (const side of [1, -1] as const) {
       if (r() < 0.35) continue;
-      const out = half + 1.2 + r() * 1.6;
+      const out = offset(p.s, side) + 1.2 + r() * 1.6;
       const x = p.x + p.nx * side * out;
       const y = p.y + p.ny * side * out;
       if (!clear(x, y)) continue;
@@ -315,8 +393,9 @@ function paintTufts(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: () 
     const p = at(s);
     const tx = p.ny;
     const ty = -p.nx;
-    for (const side of [1, -1]) {
+    for (const side of [1, -1] as const) {
       if (r() < 0.45) continue;
+      const half = offset(p.s, side);
       const bx = p.x + p.nx * side * (half + 0.2);
       const by = p.y + p.ny * side * (half + 0.2);
       if (!clear(bx, by)) continue;
@@ -346,12 +425,19 @@ function paintTufts(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: () 
 
 /** The parcel stones: round cream discs every nine units, five outside the
  *  body on one side, each with a soft halo to the lower-right. */
-function paintStones(c: Ctx, spec: PathSpec, curve: readonly CurvePoint[], r: () => number, clear: (x: number, y: number) => boolean): void {
+function paintStones(
+  c: Ctx,
+  spec: PathSpec,
+  curve: readonly CurvePoint[],
+  offset: EdgeOffset,
+  r: () => number,
+  clear: (x: number, y: number) => boolean,
+): void {
   if (spec.stones === 0) return;
   const total = curve[curve.length - 1].s;
-  const out = spec.width / 2 + 5;
   for (let s = Math.max(6, spec.stonesFrom ?? 0); s < total - 3; s += 9) {
     const at = curve[Math.min(curve.length - 1, Math.floor(s / STEP))];
+    const out = offset(at.s, spec.stones) + 5;
     const x = at.x + at.nx * spec.stones * out + (r() - 0.5) * 1.4;
     const y = at.y + at.ny * spec.stones * out + (r() - 0.5) * 1.4;
     const rad = 1.6 * (0.88 + r() * 0.24);
@@ -422,33 +508,125 @@ export function bakePathTexture(scene: Phaser.Scene, spec: PathSpec, under: read
   c.transform(ISO_K, ISO_K / 2, -ISO_K, ISO_K / 2, 0, 0);
 
   const curve = pathCurve(spec);
+  const offset = edgeOffsetsFor(spec);
   const clear = (x: number, y: number) => under.every((u) => distanceToPath(x, y, u) >= u.width / 2 + 3);
   // Stones keep out of another path's stone band too, or the lane's row and
   // the track's row pile up where the two start together at the corner.
   const clearOfStones = (x: number, y: number) =>
     under.every((u) => distanceToPath(x, y, u) >= u.width / 2 + 9);
 
-  paintRim(c, curve, spec.width);
+  const r = seededRandom(hashKey(spec.key));
+  paintFeather(c, spec, curve, offset, r);
 
-  // The junction repaint (see the header): the lane's body back over this
-  // path's rim, within reach of this path's own start cap and rim.
+  // The junction repaint (see the header): the trunk's body back over this
+  // path's margin, within reach of this path's own start cap and margin.
   if (under.length > 0) {
     const start = spec.points[0];
-    const reach = spec.width + 14;
+    const reach = spec.width + featherReach(spec.width) + 10;
     c.save();
     ell(c, start.x, start.y, reach, reach);
     c.clip();
     for (const u of under) {
-      paintBody(c, u, pathCurve(u), seededRandom(hashKey(u.key)), () => true);
+      paintBody(c, u, pathCurve(u), edgeOffsetsFor(u), seededRandom(hashKey(u.key)), () => true);
     }
     c.restore();
   }
 
-  const r = seededRandom(hashKey(spec.key));
-  paintBody(c, spec, curve, r, clear);
+  paintBody(c, spec, curve, offset, r, clear);
   paintPebbles(c, spec, curve, r, clear);
-  paintTufts(c, spec, curve, r, clear);
-  paintStones(c, spec, curve, r, clearOfStones);
+  paintTufts(c, spec, curve, offset, r, clear);
+  paintStones(c, spec, curve, offset, r, clearOfStones);
+
+  c.restore();
+  texture.add(ART_FRAME, 0, 0, 0, wpx, hpx);
+  texture.refresh();
+  return { key, x: box.x, y: box.y };
+}
+
+export function junctionTextureKey(junction: PathJunction): string {
+  return `junction-${junction.key}`;
+}
+
+/**
+ * One rounded pad per junction, laid over the strips it joins. The shape
+ * came out of lib/stackacres/path-junctions.ts's bitmask lookup: a disc
+ * over the anchor to hide the seam where the strips overlap, and a fillet
+ * in every concave corner between two adjacent arms -- the crescent
+ * between the two edges and an arc tangent to both -- so the meeting reads
+ * as one piece of worn ground rather than two strips crossing at a sharp
+ * notch. Baked in the same sheared space and at the same density as the
+ * strips, with the same world-y gradient, so its pixels agree with theirs.
+ */
+export function bakeJunctionTexture(scene: Phaser.Scene, junction: PathJunction): PathBake | null {
+  const key = junctionTextureKey(junction);
+  const reach = junction.reach;
+  const box = projectedBounds({ x: junction.at.x - reach, y: junction.at.y - reach, width: reach * 2, height: reach * 2 });
+  if (scene.textures.exists(key)) return { key, x: box.x, y: box.y };
+  const wpx = Math.ceil(box.width * GRASS_PX);
+  const hpx = Math.ceil(box.height * GRASS_PX);
+  const texW = powerOfTwoCeil(wpx);
+  const texH = powerOfTwoCeil(hpx);
+  if (texW > 2048 || texH > 2048) {
+    console.warn(`stackacres: junction ${junction.key} would bake at ${texW}x${texH}; skipped`);
+    return null;
+  }
+  const texture = scene.textures.createCanvas(key, texW, texH);
+  if (!texture) return null;
+  const c = texture.context;
+  c.save();
+  c.scale(GRASS_PX, GRASS_PX);
+  c.translate(-box.x, -box.y);
+  c.transform(ISO_K, ISO_K / 2, -ISO_K, ISO_K / 2, 0, 0);
+
+  const r = seededRandom(hashKey(junction.key));
+  const at = junction.at;
+  const filletPath = (f: PathJunction["fillets"][number]) => {
+    c.beginPath();
+    c.moveTo(f.a.x, f.a.y);
+    c.quadraticCurveTo(f.corner.x, f.corner.y, f.b.x, f.b.y);
+    c.lineTo(f.corner.x, f.corner.y);
+    c.closePath();
+  };
+
+  // The fillets' own feathered margin first, so the arc blends out into the
+  // grass the way a strip's edge does.
+  c.save();
+  c.shadowColor = "rgba(100,64,28,.45)";
+  c.shadowBlur = 6;
+  for (const f of junction.fillets) {
+    c.beginPath();
+    c.moveTo(f.a.x, f.a.y);
+    c.quadraticCurveTo(f.corner.x, f.corner.y, f.b.x, f.b.y);
+    c.strokeStyle = "rgba(150,104,52,.28)";
+    c.lineWidth = 5;
+    c.lineCap = "round";
+    c.stroke();
+  }
+  c.restore();
+
+  const body = bodyGradient(c);
+  for (const f of junction.fillets) {
+    filletPath(f);
+    F(c, body);
+  }
+  const narrowest = Math.min(...junction.arms.map((a) => a.width));
+  const pad = narrowest / 2 - 1;
+  ell(c, at.x, at.y, pad, pad);
+  F(c, body);
+  // The worn centre, faint: at full strength it read as a pale disc dropped
+  // on the fork rather than as the strips' own worn bands meeting.
+  ell(c, at.x, at.y, pad * 0.7, pad * 0.45, (junction.arms[0]?.angle ?? 0));
+  F(c, "rgba(255,236,190,.07)");
+
+  // A few mottles over the pad and the fillets, so the repaint is trodden
+  // earth like the strips and not a clean disc laid on them.
+  const spread = pad + (junction.fillets.length > 0 ? narrowest * 0.4 : 0);
+  for (let i = 0; i < 6 + junction.fillets.length * 3; i += 1) {
+    const ang = r() * Math.PI * 2;
+    const d = r() * spread;
+    ell(c, at.x + Math.cos(ang) * d, at.y + Math.sin(ang) * d, 2.5 + r() * 4, 1.2 + r() * 1.6, r() * Math.PI);
+    F(c, r() < 0.5 ? "rgba(150,100,45,.12)" : "rgba(255,240,200,.14)");
+  }
 
   c.restore();
   texture.add(ART_FRAME, 0, 0, 0, wpx, hpx);

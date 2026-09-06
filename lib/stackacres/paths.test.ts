@@ -37,23 +37,25 @@ const byKey = (key: string) => {
 };
 
 describe("farm paths", () => {
-  it("has six paths with unique keys, at least two points each, 10..24 wide", () => {
+  it("has six paths with unique keys, at least two points each, 12..48 wide", () => {
     // Four around the yard, plus the two connectors out to the districts.
     expect(FARM_PATHS.length).toBe(6);
     expect(new Set(FARM_PATHS.map((p) => p.key)).size).toBe(FARM_PATHS.length);
     for (const spec of FARM_PATHS) {
       expect(spec.points.length).toBeGreaterThanOrEqual(2);
-      expect(spec.width).toBeGreaterThanOrEqual(10);
-      expect(spec.width).toBeLessThanOrEqual(24);
+      // A tile and a half for the narrowest service path, three tiles at the
+      // widest a road gets (see roads.ts; roads.test.ts holds the tiers).
+      expect(spec.width).toBeGreaterThanOrEqual(12);
+      expect(spec.width).toBeLessThanOrEqual(48);
     }
   });
 
   it("starts the lane's stone row only after its legs along the barn's foot", () => {
     const lane = FARM_PATHS.find((p) => p.key === "lane");
     expect(lane).toBeDefined();
-    // Door leg (14) + west leg (58) + corner (20) = 92 units of polyline; the
+    // Door leg (22) + west leg (58) + corner (20) = 100 units of polyline; the
     // smoothed curve cuts the corner, so the row starts a little before that.
-    expect(lane?.stonesFrom).toBeGreaterThanOrEqual(80);
+    expect(lane?.stonesFrom).toBeGreaterThanOrEqual(88);
     expect(lane?.stonesFrom).toBeLessThan(120);
     for (const path of FARM_PATHS) {
       if (path.stonesFrom === undefined) continue;

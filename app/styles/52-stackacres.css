@@ -798,6 +798,75 @@
 
 .sa-dest:hover { filter: brightness(1.05); }
 
+/* The boards themselves live in a list wrapper so the compact quick-nav below
+   can show and hide them as one; on a wide screen the wrapper is invisible to
+   layout and the rail wraps exactly as it always has. */
+.sa-destinations:not(.is-compact) .sa-dest-list {
+  display: contents;
+}
+
+/* ---- the compass quick-nav ------------------------------------------- */
+/* On a short landscape phone (stackacres-farm.tsx's useTightLandscape) the
+   six boards collapse into ONE: a compass board naming where you are, which
+   drops the same six down over the map when tapped. The two rows the rail
+   used to wrap onto there were a third of the map; that screen is map again,
+   and the camera pulls out a tenth further to use it (world.ts's
+   HUD_VIEW_EXPANSION). Positioned so the drop-down hangs from the board and
+   sits over the camera controls and the canvas, never under the drawer. */
+.sa-destinations.is-compact {
+  flex-wrap: nowrap;
+  z-index: 4;
+}
+
+.sa-quicknav {
+  position: relative;
+  padding-right: 9px;
+}
+
+.sa-quicknav-compass {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--sa-corn);
+  color: var(--sa-outline);
+}
+
+.sa-quicknav-caret {
+  display: grid;
+  place-items: center;
+  margin-left: 2px;
+  color: currentColor;
+  transition: transform var(--duration-fast, .12s) var(--sa-ease-out);
+}
+
+.sa-destinations.is-open .sa-quicknav-caret {
+  transform: rotate(180deg);
+}
+
+/* Two columns, never a scroll: six boards in one column outrun a 390px-tall
+   phone, and a scrolling box over the WebGL canvas composites badly. */
+.sa-destinations.is-compact .sa-dest-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 6px 8px;
+  width: max-content;
+  padding: 8px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+.sa-destinations.is-compact .sa-dest-list .sa-dest {
+  width: 100%;
+  min-height: 40px;
+  padding: 3px 9px 3px 6px;
+}
+
 /* Where you last chose to go. The board is stained darker and the lettering
    goes cream, the way a sign you are standing right in front of is the one in
    shadow -- rather than by adding a fifth colour to a rail that already has

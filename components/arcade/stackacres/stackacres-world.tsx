@@ -166,6 +166,10 @@ export interface StackAcresWorldProps {
    *  walk speed -- `StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with
    *  no active perk. */
   farmhandSpeedMultiplier: number;
+  /** How much wider than the arrival window the camera frames a district --
+   *  `HUD_VIEW_EXPANSION` while the signpost rail is collapsed into the
+   *  compass quick-nav, 1 otherwise. */
+  viewExpansion: number;
   /** True once Ray's Museum's hidden set has ever been completed -- a
    *  persistent fact of the registry, not a one-shot nonce, since the Pixel
    *  Pilgrim's own unlock tint should hold on every load after the first,
@@ -199,6 +203,7 @@ export function StackAcresWorld({
   toolTier,
   museumGlowTier,
   farmhandSpeedMultiplier,
+  viewExpansion,
   secretSetComplete,
   celebrate,
   onReady,
@@ -250,6 +255,8 @@ export function StackAcresWorld({
   // Read at mount for the same reason `toolTierRef` is: the boot path needs
   // the right walk speed on his very first step.
   const farmhandSpeedMultiplierRef = useRef(farmhandSpeedMultiplier);
+  // Read at mount for the same reason: the opening shot is framed in create().
+  const viewExpansionRef = useRef(viewExpansion);
   useEffect(() => {
     readyRef.current = onReady;
     unitTapRef.current = onUnitTap;
@@ -268,6 +275,7 @@ export function StackAcresWorld({
     toolTierRef.current = toolTier;
     museumGlowTierRef.current = museumGlowTier;
     farmhandSpeedMultiplierRef.current = farmhandSpeedMultiplier;
+    viewExpansionRef.current = viewExpansion;
   });
 
   const sceneUnits = useMemo(() => toUnits(units), [units]);
@@ -320,6 +328,7 @@ export function StackAcresWorld({
           toolTier: toolTierRef.current,
           museumGlowTier: museumGlowTierRef.current,
           farmhandSpeedMultiplier: farmhandSpeedMultiplierRef.current,
+          viewExpansion: viewExpansionRef.current,
         },
       );
 
@@ -482,6 +491,11 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setFarmhandSpeedMultiplier(farmhandSpeedMultiplier);
   }, [farmhandSpeedMultiplier]);
+
+  // Same "push, never rebuild" reasoning -- see `setViewExpansion`.
+  useEffect(() => {
+    sceneRef.current?.setViewExpansion(viewExpansion);
+  }, [viewExpansion]);
 
   // Same "push, never rebuild" reasoning as toolTier above -- see
   // `setMuseumGlowTier` in stackacres-scene.ts.

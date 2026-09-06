@@ -11,18 +11,20 @@
  * Every number here is a literal and only types come in from ./world and
  * ./paths, the arrangement those modules have with each other: this file is
  * not in that cycle today, but the props' positions are measured against
- * the same fixed geometry -- the plot square at x 64..384, y 64..384, the
- * barn's feet on y 34 (barn x 71..145, silo 143..165, hay 166..188 at
- * y 23..33, barrel 60..70 at y 20..33), the road centred on y 46 (body
- * 36..56, damp rim to ~33), the lane at x 50 (body 41..59), the track
- * leaving (60,46) north-west and the pond at x -84..20, y 80..160 -- and
- * props.test.ts is what holds them to it.
+ * the same fixed geometry -- the Hen Coop block at x 170..330, y 200..360,
+ * the barn's feet on y 34 (barn x 71..145, silo 143..165, hay 166..188 at
+ * y 23..33, barrel 60..70 at y 20..33), the road centred on y 58 (body
+ * 38..78, feathered rim to ~34), the lane at x 50 (body 30..70), the track
+ * leaving (60,58) north-west and the pond at x -84..20, y 80..160 -- and
+ * props.test.ts is what holds them to it. The road and the lane are two and
+ * a half tiles wide now (see ./roads.ts), which is what pushed the lamps,
+ * the mailbox and the signpost out to where they stand.
  *
  * The yard is the band NORTH of the road, between the silo and the seed
- * strip: feet at y <= 32, x 150..370. Nothing stands on a path body, on the
- * plot square, or in the pond's clearing. Lamps stand on the lane's west
- * verge only, three of them, the way FarmVille lights one driveway rather
- * than every path.
+ * strip: feet at y <= 32, x 150..370, on the barn's own muddy yard mat.
+ * Nothing stands on a path body, on the coop block, or in the pond's
+ * clearing. Lamps stand on the lane's west verge only, three of them, the
+ * way FarmVille lights one driveway rather than every path.
  */
 
 import { BARN_FOOTPRINT, WHEAT_FIELD, growAreaBounds, seededRandom, type WorldPoint, type WorldRect } from "./world";
@@ -31,6 +33,10 @@ import { BARN_FOOTPRINT, WHEAT_FIELD, growAreaBounds, seededRandom, type WorldPo
 // there is nothing here that could be read before either module finishes
 // evaluating.
 import { nearPath } from "./paths";
+// The rounded pads over every fork (see ./path-junctions.ts): a junction's
+// fillet fills the concave corner between two roads, ground `nearPath` alone
+// still reads as grass, so clutter has to be kept off it separately.
+import { FARM_JUNCTIONS } from "./path-junctions";
 import { inPondZone } from "./water";
 
 export type PropKind =
@@ -64,9 +70,9 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "windmill", x: 330, y: 28 },
 
   // Clutter east of the silo and the hay, against the road's north rim.
-  // The second crate and the wheelbarrow sit a few units further off the
-  // road than the rest of the cluster -- widening the road (2026-09-03,
-  // see lib/stackacres/paths.ts) pushed its rim out from under them.
+  // The road's body now starts at y 38 (two and a half tiles wide, centred
+  // on y 58 -- see lib/stackacres/paths.ts); everything here keeps its feet
+  // at y <= 32, on the mud of the barn yard, clear of the body.
   { kind: "crate", x: 200, y: 26 },
   { kind: "crate", x: 211, y: 24 },
   { kind: "logPile", x: 182, y: 2 },
@@ -75,17 +81,16 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "flowerBed", x: 270, y: 6 },
   { kind: "flowerBed", x: 302, y: 6 },
 
-  // At the fork where the track leaves the lane.
-  { kind: "signpost", x: 38, y: 42 },
+  // In the crook where the track leaves the lane, west of both bodies.
+  { kind: "signpost", x: 22, y: 30 },
 
   // Down the lane's west verge, on the stone line, ending at the mailbox.
-  // A little further off the centreline than the lane's own doc comment
-  // above once had them (2026-09-03: widening the lane pushed its body out
-  // from under the old x 40/39).
-  { kind: "lampPost", x: 38, y: 80 },
-  { kind: "lampPost", x: 38, y: 190 },
-  { kind: "lampPost", x: 38, y: 300 },
-  { kind: "mailbox", x: 36, y: 404 },
+  // The lane's body reaches x 30 now, so the verge is at 26 -- four units
+  // off the body, the same step the lamps always kept.
+  { kind: "lampPost", x: 26, y: 80 },
+  { kind: "lampPost", x: 26, y: 190 },
+  { kind: "lampPost", x: 26, y: 300 },
+  { kind: "mailbox", x: 26, y: 406 },
 
   // Field wall north of the yard: three broken lengths, not a fence line.
   { kind: "stoneWall", x: 176, y: -46 },
@@ -276,6 +281,7 @@ export function farmsteadClutter(seed = 0xc1f7e4): PropPlacement[] {
       const x = band.x + col * CLUTTER_CELL + random() * CLUTTER_CELL;
       const y = band.y + row * CLUTTER_CELL + random() * CLUTTER_CELL;
       if (nearPath(x, y)) continue;
+      if (FARM_JUNCTIONS.some((j) => Math.hypot(x - j.at.x, y - j.at.y) < j.reach)) continue;
       if (insideRect(x, y, BARN_FOOTPRINT, CLUTTER_CLEARANCE)) continue;
       if (insideRect(x, y, henCoop, CLUTTER_CLEARANCE)) continue;
       if (insideRect(x, y, WHEAT_FIELD, CLUTTER_CLEARANCE)) continue;

@@ -32,6 +32,7 @@ import {
   processRecipe,
   getPrestigeMultiplier,
   prestigeResetStackAcres,
+  prayAtStackAcresShrine,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -1643,6 +1644,7 @@ describe("the currency wall", () => {
       "place-machine",
       "place-pipe",
       "place-soil-tile",
+      "pray",
       "prestige-reset",
       "process",
       "remove-pipe",
@@ -2802,6 +2804,60 @@ describe("hidden secrets", () => {
       }
       expect(result.discovery).toBe(DICE);
       expect(await readStackAcresSecretLedgerQty(id, DICE)).toBe(1);
+    });
+  });
+
+  describe("prayAtStackAcresShrine", () => {
+    const DAY = (d: number) => new Date(`2026-09-${String(d).padStart(2, "0")}T12:00:00.000Z`);
+
+    it("a first prayer starts the streak at 1 and grants no relic", async () => {
+      const { token } = await funded();
+      const result = await prayAtStackAcresShrine(token, DAY(1));
+      expect(result.prayer).toEqual({ streak: 1, alreadyPrayedToday: false, grantedRelic: null });
+      expect(result.devotion.streak).toBe(1);
+      expect(result.devotion.prayedToday).toBe(true);
+    });
+
+    it("a second prayer the same UTC day is a no-op, not a second streak day", async () => {
+      const { token } = await funded();
+      await prayAtStackAcresShrine(token, DAY(1));
+      const second = await prayAtStackAcresShrine(token, DAY(1));
+      expect(second.prayer).toEqual({ streak: 1, alreadyPrayedToday: true, grantedRelic: null });
+    });
+
+    it("praying on consecutive UTC days advances the streak", async () => {
+      const { token } = await funded();
+      await prayAtStackAcresShrine(token, DAY(1));
+      const second = await prayAtStackAcresShrine(token, DAY(2));
+      expect(second.prayer?.streak).toBe(2);
+    });
+
+    it("skipping a UTC day resets the streak to 1", async () => {
+      const { token } = await funded();
+      await prayAtStackAcresShrine(token, DAY(1));
+      const afterGap = await prayAtStackAcresShrine(token, DAY(5));
+      expect(afterGap.prayer?.streak).toBe(1);
+    });
+
+    it("grants the first ladder relic on the third unbroken day, and never again", async () => {
+      const { token } = await funded();
+      await prayAtStackAcresShrine(token, DAY(1));
+      await prayAtStackAcresShrine(token, DAY(2));
+      const third = await prayAtStackAcresShrine(token, DAY(3));
+      expect(third.prayer?.grantedRelic).toBe("pilgrims_bead");
+      expect(third.devotion.relicsHeld).toEqual(["pilgrims_bead"]);
+
+      const fourth = await prayAtStackAcresShrine(token, DAY(4));
+      expect(fourth.prayer?.grantedRelic).toBeNull();
+    });
+
+    it("replaying the same intent key answers with the identical prayer delta", async () => {
+      const { token } = await funded();
+      const key = randomUUID();
+      const run = () => prayAtStackAcresShrine(token, DAY(1));
+      const first = await runStackAcresAction(token, key, "pray", run, DAY(1));
+      const replay = await runStackAcresAction(token, key, "pray", run, DAY(1));
+      expect(replay.prayer).toEqual(first.prayer);
     });
   });
 

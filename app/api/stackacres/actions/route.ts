@@ -45,6 +45,7 @@ import {
   removeStackAcresPipeTile,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
+  prayAtStackAcresShrine,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -312,6 +313,11 @@ const bodySchema = z.discriminatedUnion("action", [
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // The Pixel Pilgrim's shrine. Moves no Gold and spends no row of the
+  // caller's own -- only ever sent after the dialogue's own "yes" (see
+  // stackacres-monk-dialogue.tsx), never from the tap itself, so a decline
+  // never reaches this route at all.
+  z.object({ action: z.literal("pray") }),
 ]);
 
 /**
@@ -404,6 +410,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "pray":
+      return prayAtStackAcresShrine(token, now);
   }
 }
 

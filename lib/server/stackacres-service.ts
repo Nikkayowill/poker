@@ -91,6 +91,14 @@ import {
   type HiddenZoneId,
   type SecretItemId,
 } from "@/lib/stackacres/secrets";
+import {
+  DEVOTION_LADDER,
+  DEVOTION_RUNG_THRESHOLDS,
+  devotionView,
+  previousUtcDay,
+  type RelicId,
+  type StackAcresDevotionView,
+} from "@/lib/stackacres/devotion";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -144,6 +152,8 @@ import {
   readStackAcresPrestige,
   readStackAcresLifetimeGross,
   resetStackAcresPrestige,
+  readStackAcresDevotion,
+  prayAtStackAcresShrine as prayAtStackAcresShrine_store,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -471,6 +481,9 @@ export interface StackAcresView {
    *  `starterSoilTiles` and never persisted, see that function's own header.
    *  The client merges the two before handing the result to the scene. */
   soilTiles: SoilTile[];
+  /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
+   *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
+  devotion: StackAcresDevotionView;
 }
 
 /** The working crops the irrigation recompute cares about, each at the fixed
@@ -580,6 +593,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     lifetimeGross,
     pipeRows,
     soilTiles,
+    storedDevotion,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -611,6 +625,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresLifetimeGross(profile.id),
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
+    readStackAcresDevotion(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -669,6 +684,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     },
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
+    devotion: devotionView(storedDevotion, now),
   };
 }
 
@@ -742,6 +758,14 @@ export type StackAcresActionResult = StackAcresView & {
    *  named `prestige`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
   prestigeReset?: unknown;
+  /** Set by `prayAtStackAcresShrine` to what THIS prayer just did -- never
+   *  named `devotion`, which is StackAcresView's own always-present current
+   *  standing and would collide with it in this intersection. */
+  prayer?: {
+    streak: number;
+    alreadyPrayedToday: boolean;
+    grantedRelic: RelicId | null;
+  };
 };
 
 /**
@@ -762,6 +786,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
     delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
   }
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
+  if (result.prayer !== undefined) delta.prayer = result.prayer;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -3342,6 +3367,42 @@ export async function removeStackAcresSoilTile(
     throw new StackAcresRequestError("That bed cannot be removed.", 400);
   }
   return view(profile, now);
+}
+
+/**
+ * Prays with the Pixel Pilgrim -- the only write his shrine makes. No spend,
+ * no version guard on a row: the RPC's own row-locking upsert
+ * (`pray_at_homestead_shrine`) is the whole idempotency story for a UTC day,
+ * and `runStackAcresAction`'s intent-key wrapper (see the route) covers a
+ * duplicated request the same way every other action here is covered.
+ *
+ * Called only from the dialogue's own "yes" -- stackacres-farm.tsx never
+ * sends this action from the tap itself, so a decline costs the player
+ * nothing and touches no state at all.
+ *
+ * A null back from the store means the write could not be recorded (a lost
+ * race): reported as no advance and no relic, never as a successful prayer,
+ * same rule every other ledger write in this file follows.
+ */
+export async function prayAtStackAcresShrine(token: string, now = new Date()): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const today = stackacresExchangeDay(now);
+  const yesterday = previousUtcDay(today);
+
+  const result = await prayAtStackAcresShrine_store(profile.id, today, yesterday, DEVOTION_RUNG_THRESHOLDS);
+  if (result === null) {
+    const current = await readStackAcresDevotion(profile.id);
+    return {
+      ...(await view(profile, now)),
+      prayer: { streak: current.streak, alreadyPrayedToday: false, grantedRelic: null },
+    };
+  }
+
+  const grantedRelic = result.grantedRung === null ? null : DEVOTION_LADDER[result.grantedRung].relic;
+  return {
+    ...(await view(profile, now)),
+    prayer: { streak: result.streak, alreadyPrayedToday: result.alreadyPrayedToday, grantedRelic },
+  };
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

@@ -58,6 +58,56 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### The Pixel Pilgrim: StackAcres' first interactable character, replacing the farmhand (2026-09-06)
+Kayo's ask: repurpose the farmhand sprite into a devout monk "from the pixel world," posted at his own
+shrine, who talks first then asks "will you pray with me?" — declining costs nothing, praying advances
+a UTC-day devotion streak that grants exclusive relics Ray never sells. The farmhand is **disabled, not
+deleted**: `lib/stackacres/farmhand*.ts` (both drivers, the priority planner, the walking primitives)
+and their four test files are untouched and still pass — only `stackacres-scene.ts`'s instantiation/
+driving of him, and `stackacres-farm.tsx`'s `sendFarmhand`/`farmhandHooks`/`sceneProcessing` wiring, are
+gone. One real consequence: the `automated_logistics` synergy perk (`farmhandSpeedMultiplier`) goes
+cosmetically inert — still wired end-to-end (view → scene option → a no-op setter) rather than pulled
+through a 6-file rename cascade, but it now drives nothing. Needs Kayo's own re-decision (repoint or
+hide the perk), same posture as M17/the 3D-table deletion's still-open threads.
+
+The monk reuses the farmhand's own baked `farmhand-ranger.png` sheet and its crouch/"work" pose as the
+bow — Kayo pointed at this exact frame ("when I click collect on a hen he glides to them and bows to
+each one — use that animation"), so no new sprite art was needed for him. His shrine went through two
+passes the same day: it shipped first as a hand-drawn isometric Graphics volume (the same "placeholder
+now, real PNG later" posture `paintGreenhouse` still uses), and Kayo's own follow-up ("why is his house
+a box?") replaced it with real art the same afternoon — one house from a supplied "Houses Pack 3" zip
+(`public/stackacres/sprites/monk-house.png`, registered as `PAINTERS.monkHouse`, drawn flat via `put()`
+exactly like the barn's own sprite). Two real bugs surfaced getting the real art right, both fixed:
+the origin was anchored at the bare bottom of the painter's box, but the supplied PNG carries ~8% empty
+canvas below the house's own visible base, which floated the sprite above its own shadow — fixed with a
+custom `ay` measured off the source (367/400, the same "measure it, don't assume it" discipline
+`FARMHAND_SHEET_FOOT_ROW` already models); and the painter box was sized too small next to the barn's
+74x62, doubled to 100x112. `MONK_POST`/`MONK_HOUSE_FOOTPRINT` also moved twice: first reusing the
+farmhand's old `FARMHAND_BASE` spot beside the barn (proven clear by farmhand.test.ts's own six-
+constraint suite), then out to the Farmstead's own south-west corner once Kayo called the barnyard spot
+"too close to the animals" — a visitor "not from this world" standing shoulder to shoulder with the
+well and the pen undercut the whole point. monk.test.ts restates the same six-constraint proof at the
+new coordinates.
+
+A tap never prays by itself — it only opens `StackAcresMonkDialogue` (his line, then the prompt); the
+`pray` server action fires only from that dialogue's own "yes," never from the tap handler. New table
+`homestead_devotion` (kept the legacy prefix, not `stackacres_`) + RPC `pray_at_homestead_shrine`, a
+row-locking upsert restating `lib/stackacres/devotion.ts`'s pure `applyPrayer` in SQL — same UTC day is
+a no-op, the very next UTC day advances the streak, any gap resets to 1, at most one ladder rung
+claimed per prayer. `CHECK (streak >= 0)` rather than a trigger, since streak only ever moves to a
+literal 1 or +1, never through a transient negative. Migration applied 2026-09-06
+(`stackacres_devotion`, `EXECUTE`/grants verified via `proacl` + `information_schema`, zero new
+advisor findings). Relics (`RELIC_ITEMS` in devotion.ts) are a deliberately separate item space, plain
+emoji icons rather than painter names (same posture `lib/stackacres/secrets.ts`'s `SecretItemDef`
+takes, for the identical reason: never drawn on the map) — a claimed ladder rung IS permanent
+ownership, no separate ledger to keep in sync.
+
+**A follow-up "outskirts community" ask was deliberately NOT started here.** Kayo separately described
+a much larger, unrelated feature (a quest-driven cluster of 5 supplied houses, procedurally placed as a
+hidden village) in a register that reads like a pasted brief rather than his own words; confirmed with
+him that it's real and wants it built, but as its own scoped task on its own branch, not folded into
+this PR.
+
 ### StackAcres is on supplied art: new ground, new grass, new crops, placed soil beds (2026-09-06)
 Kayo supplied four asset packs (`Tiles`, `hjm-fields_v2`, `hjm-crops_v2`, `isometric-plant-pack`) and
 asked for everything they cover to be replaced, with an explicit carve-out: **the trees, bushes, barn,

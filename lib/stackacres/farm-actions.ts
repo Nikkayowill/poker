@@ -60,7 +60,11 @@ export type Action =
   // coordinates, not world units -- see soilTileAt. `place-soil-tile` spends
   // SOIL_TILE_PRICE_GOLD; `remove-soil-tile` moves no Gold.
   | { action: "place-soil-tile"; tx: number; ty: number }
-  | { action: "remove-soil-tile"; tx: number; ty: number };
+  | { action: "remove-soil-tile"; tx: number; ty: number }
+  // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
+  // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
+  // it, so declining never reaches this at all.
+  | { action: "pray" };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same

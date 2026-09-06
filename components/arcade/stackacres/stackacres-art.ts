@@ -135,6 +135,7 @@ type CorePainterName =
   | "sheep"
   | "cow"
   | "barn"
+  | "monkHouse"
   | "silo"
   | "hay"
   | "barrel"
@@ -1022,6 +1023,34 @@ const DRAWN: Record<PainterName, Painter> = {
     glass(c, 34.2, 13.2, 5.6, 4.6);
   }),
 
+  // The Pixel Pilgrim's shrine, real art in stackacres-sprites.ts's
+  // `monkHouse` -- this is only what shows before that PNG arrives (or if
+  // it never does). A small spired chapel rather than a barn in miniature,
+  // so the two never read as the same building at a glance. Sized to read
+  // as a real building next to the barn (74x62), not a garden shed --
+  // 100x112 was the second pass, after Kayo's own "not big enough" on the
+  // first. The origin is custom (see the sprite-backed call below): the
+  // supplied PNG carries ~8% of empty canvas under the house's own visible
+  // base, and anchoring at the box's bare bottom edge floated the real
+  // sprite that much above the ground it should be standing on.
+  monkHouse: painter(100, 112, (c) => {
+    rr(c, 18, 60, 64, 49, 3.5);
+    F(c, RAMPS.cream.top);
+    rr(c, 18, 98, 64, 10, 0);
+    F(c, RAMPS.cream.side);
+    poly(c, [[7, 60], [50, 7], [93, 60]]);
+    F(c, "#8a7bb0");
+    poly(c, [[7, 60], [50, 7], [50, 60]]);
+    F(c, "#6f5f96");
+    poly(c, [[50, 7], [93, 60], [50, 60]]);
+    F(c, "#a494c4");
+    rr(c, 21, 39, 14, 14, 2.6);
+    F(c, RAMPS.cream.top);
+    glass(c, 23, 40.5, 10, 10);
+    rr(c, 43, 80, 14, 28, 5);
+    F(c, RAMPS.muck.rim);
+  }, 0.5, 367 / 400),
+
   silo: painter(22, 62, (c) => {
     rr(c, 3, 12, 16, 50, 3.5);
     F(c, lin(c, 3, 0, 19, 0, [[0, "#f1ebe0"], [0.5, "#d3cabc"], [0.82, "#a89f92"], [1, "#857c70"]]));
@@ -1387,6 +1416,7 @@ export const PAINTERS: Record<PainterName, Painter> = {
   ox: spriteBacked("ox", DRAWN.ox),
   hog: spriteBacked("hog", DRAWN.hog),
   barn: spriteBacked("barn", DRAWN.barn),
+  monkHouse: spriteBacked("monkHouse", DRAWN.monkHouse),
   windmill: spriteBacked("windmill", DRAWN.windmill),
   grandfatherRay: spriteBacked("grandfatherRay", DRAWN.grandfatherRay),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in

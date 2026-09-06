@@ -3278,6 +3278,149 @@
 
 .sa-contracts-ask { margin-top: 12px; }
 
+/* ---- the Fermenting Vat ------------------------------------------------ */
+
+/* The chamber: what is sealed inside right now, or the empty state. Same
+   paper-2/outline/drop shape .sa-contract uses, sealed swapping to the
+   posted-contract's corn-ring treatment for the same reason: it is the one
+   state on this sheet with a live Gold number riding on it. */
+.sa-vat-chamber {
+  margin: 12px 0 0;
+  padding: 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+  text-align: center;
+}
+
+.sa-vat-chamber.is-sealed {
+  background: var(--sa-paper);
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-vat-status {
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sa-vat-status strong { color: var(--sa-ink); font-weight: 800; }
+
+.sa-vat-empty { font-style: italic; }
+
+.sa-vat-stars {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--sa-outline);
+}
+
+.sa-vat-star { color: var(--sa-cream-rim); }
+.sa-vat-star.is-lit { color: var(--sa-corn); }
+
+.sa-vat-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 10px 0 0;
+}
+
+.sa-vat-countdown-time {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--sa-ink);
+}
+
+.sa-vat-countdown-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--sa-ink-soft);
+}
+
+.sa-vat-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 4px 10px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-corn);
+  color: var(--sa-outline);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sa-vat-value strong { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* The ladder: every tier, always shown, the same "board draws three rungs,
+   only one is live" posture .sa-contracts-board takes -- a player sees the
+   whole payoff curve, not just the rung they are currently on. */
+.sa-vat-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-vat-rung {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sa-vat-rung.is-reached {
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+  color: var(--sa-ink);
+}
+
+.sa-vat-rung.is-current-target {
+  background: var(--sa-paper);
+  box-shadow: inset 0 0 0 2px var(--sa-corn);
+  color: var(--sa-ink);
+}
+
+.sa-vat-rung-stars {
+  display: inline-flex;
+  gap: 1px;
+  flex: none;
+  color: var(--sa-corn);
+}
+
+.sa-vat-rung-label { flex: 1; }
+
+.sa-vat-rung-multiplier {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-vat-rung-gold {
+  flex: none;
+  color: var(--sa-ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-vat-actions { margin-top: 12px; }
+.sa-vat-actions .sa-cta { width: 100%; }
+
 /* ---- the Synergy Tree ------------------------------------------------- */
 
 /* The HUD badge, same paper pill as .sa-feed next door. The corn ring shows

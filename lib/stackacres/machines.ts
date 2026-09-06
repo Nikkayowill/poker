@@ -23,7 +23,7 @@
 import { RECIPE_CATALOGUE, recipesForMachine, type RecipeId } from "./recipes";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -48,6 +48,12 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   mill: { label: "Mill", placeCost: 200 },
   dairy: { label: "Dairy", placeCost: 700 },
   loom: { label: "Loom", placeCost: 350 },
+  // Dearest of the four, and deliberately so: unlike the other three, the Vat
+  // never touches Town Contracts at all -- it is a second, direct door back
+  // to Gold (see lib/stackacres/aging.ts), and its placement price sits above
+  // the Dairy for the same reason a Dairy sits above the Mill: it is the most
+  // valuable thing on the floor to be locked out of using casually.
+  vat: { label: "Fermenting Vat", placeCost: 1_200 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -55,8 +61,11 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  the cap means "you may run the whole ladder, not two of anything". A
  *  second Dairy would double throughput without adding a decision. Kept in
  *  step by hand with `homestead_machines_enforce_cap`; see that trigger's own
- *  comment for why the duplication is accepted. */
-export const MACHINE_CAP = 3;
+ *  comment for why the duplication is accepted. Raised 3 -> 4 alongside the
+ *  Vat (2026-09-06) for the same reason it was never raised for a fourth of
+ *  an existing kind: it grew because the number of KINDS grew, not because
+ *  any one kind needed more room. */
+export const MACHINE_CAP = 4;
 
 export type MachineStatus = "idle" | "working";
 

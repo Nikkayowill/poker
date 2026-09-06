@@ -58,6 +58,36 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### The Fermenting Vat: a fourth processing machine, aging Cheese into Gold on its own timer (2026-09-06)
+Built from a spec brief that opened by proposing a punitive "seize 20% of a player's locked items" penalty
+for missing an invented daily debt — refused outright and confirmed with Kayo before writing any code:
+the brief's own "50,000 Gold ceiling" already exists (`STACKACRES_GOLD_CEILING`, unrelated purpose — a
+flat daily cap on Gold LEAVING the farm, not a debt owed), and StackAcres Gold is the same real-money-
+backed `profiles.gold_balance` Stripe purchases credit, so a seizure mechanic would have meant
+confiscating something a player may have paid real money for. Shipped instead: a straight aging/value-
+compounding machine, no penalty of any kind. A fourth `MachineKind` (`vat`, `lib/stackacres/machines.ts`;
+`MACHINE_CAP` 3 -> 4 alongside it), backed by its own locked-record table
+(`homestead_vat_manifests`, one row per active seal, deleted on collect) rather than squeezed into
+`homestead_machines`' generic single-run columns -- see `lib/stackacres/aging.ts`'s header for why a
+multi-tier "collectible at three different points, each worth more" batch needed a dedicated shape.
+Seals 2 Cheese (`seal_homestead_vat`, one debit+lock transaction); three tiers -- Aged/Well-Aged/
+Artisan-Aged at 10/30/60 minutes sealed, paying 2x/4x/8x a snapshotted base value -- with 1/2/3 quality
+stars. Collecting is the vat's OWN direct-to-Gold door, reserving against the identical
+`STACKACRES_GOLD_CEILING` a harvest and a fulfilled Town Contract already respect (never a new or bigger
+faucet). `FermentingVatModal.tsx` is built and correct but NOT wired into `stackacres-farm.tsx`'s live
+shell -- deliberately, matching the Mill/Dairy/Loom's own state today: `processing.machines` already
+flows through the client and has zero UI (placement, start, collect) for any of the three existing
+machines, called out as "UI wiring deferred" when Town Contracts/processing first shipped. Wiring only
+the Vat while its three siblings stay headless would be new, uneven scope, not a completion of this
+task. Also NOT Tailwind, despite the brief asking for it: this app has no Tailwind pipeline anywhere
+(confirmed absent from `package.json`) and utility classes would compile to nothing; the modal reuses
+the numbered plain-CSS system every sibling StackAcres sheet already draws from
+(`app/styles/52-stackacres.css`). Branch `feat/stackacres-fermenting-vat`, built in its own worktree off
+origin/main, uncommitted -- migration `20260906133000_stackacres_fermenting_vat.sql` unapplied; see
+`[[reference_stackchips_migrations_not_auto_applied]]`. `npx vitest run` (3907 passed; two pre-existing,
+unrelated reds: `table-anchors.test.ts`'s `dealerShoulderRoom`, `bot-personality.test.ts`'s VPIP
+timeout) + targeted `eslint`/`tsc --noEmit` all clean.
+
 ### Wildlife Ecosystem & Nighttime Predator Defense (2026-09-06)
 New system, built from a spec brief rather than a direct Kayo ask: peaceful wildlife (squirrels,
 birds) roams the treeline by day, predators (coyotes, wolves) spawn along the map's outer perimeter

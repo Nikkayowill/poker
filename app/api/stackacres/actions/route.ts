@@ -51,6 +51,8 @@ import {
   giveStackAcresGift,
   sealStackAcresVat,
   collectStackAcresVat,
+  deployStackAcresDrone,
+  collectStackAcresDroneForage,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -351,6 +353,14 @@ const bodySchema = z.discriminatedUnion("action", [
     npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
     item: z.enum(MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
   }),
+  // Mechanical Forage Drone: a flat-fee deploy, gated on the hangar's own
+  // derived museum-donation unlock (see stackacres-drone-service.ts).
+  z.object({ action: z.literal("deploy-drone") }),
+  // A drone id, not a tile or a collectible id: the server re-derives
+  // whether that drone is actually eligible (owned, off cooldown) rather
+  // than trusting anything the client claims about where it is or what it
+  // swept up.
+  z.object({ action: z.literal("collect-drone-forage"), droneId: z.string().uuid() }),
 ]);
 
 /**
@@ -453,6 +463,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return prayAtStackAcresShrine(token, now);
     case "give-gift":
       return giveStackAcresGift(token, action.npc, action.item, now);
+    case "deploy-drone":
+      return deployStackAcresDrone(token, now);
+    case "collect-drone-forage":
+      return collectStackAcresDroneForage(token, action.droneId, now);
   }
 }
 

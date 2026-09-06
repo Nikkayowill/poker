@@ -155,7 +155,8 @@ type CorePainterName =
   | "ico-wheat"
   | "ico-flour"
   | "ico-cheese"
-  | "ico-cloth";
+  | "ico-cloth"
+  | "ico-drone";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -1378,6 +1379,29 @@ const DRAWN: Record<PainterName, Painter> = {
       c.lineTo(18, y);
       stroke(c, "rgba(120,100,70,.28)", 0.8);
     }
+  }),
+
+  // Same body language as `bakeDroneTexture` in stackacres-scene.ts (iron
+  // rim, lit metal top, one cyan lens) so the shelf badge that sells a drone
+  // reads as the same object the district floats once it is deployed --
+  // scaled to the 24x24 toolbelt frame, since that bake is Phaser-only and
+  // can't be reused directly on this plain-canvas painter.
+  "ico-drone": painter(24, 24, (c) => {
+    c.beginPath();
+    c.moveTo(3, 10.5);
+    c.lineTo(21, 10.5);
+    stroke(c, "#7d868c", 2.2);
+    c.beginPath();
+    c.moveTo(3, 15);
+    c.lineTo(21, 15);
+    stroke(c, "#7d868c", 2.2);
+    ell(c, 12, 12.5, 7.5, 7.5);
+    F(c, lin(c, 12, 5, 12, 20, [[0, "#e3e8ea"], [1, "#9aa3a8"]]));
+    stroke(c, "#5b6266", 1.6);
+    ell(c, 12, 12.5, 3.4, 3.4);
+    F(c, "#5b6266");
+    ell(c, 12, 12.5, 1.7, 1.7);
+    F(c, "#9fe8ff");
   }),
 };
 

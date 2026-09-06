@@ -35,6 +35,7 @@ import {
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
 import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   exchangeState,
@@ -363,6 +364,20 @@ interface StackAcresResponse {
     outcome: GiftOutcome | "insufficient-item";
     grantedKeepsake: KeepsakeId | null;
   };
+  /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
+   *  from Ray's Museum donations) and every drone this profile owns.
+   *  Absent only from a response old enough to predate the feature, which
+   *  `applyResponse` reads as "no drones yet, hangar unconfirmed" -- the
+   *  same "old response, nothing changes" posture every other optional
+   *  field here takes. */
+  droneHangar?: { unlocked: boolean; drones: { droneId: string; deployedAt: string }[] };
+  /** Set only by a successful `deploy-drone` response; every other action's
+   *  answer leaves this undefined. `droneHangar` above already carries the
+   *  resulting ownership list -- this is only which one was just bought. */
+  droneDeploy?: { droneId: string };
+  /** Set only by a successful `collect-drone-forage` response; every other
+   *  action's answer leaves this undefined. */
+  droneForage?: { droneId: string; reward: number };
 }
 
 /**
@@ -533,6 +548,13 @@ export function StackAcresFarm() {
   /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
    *  so a response can replace it wholesale. */
   const [soilStock, setSoilStock] = useState<SoilStock>({});
+  /** The Mechanical Forage Drone hangar: whether it is unlocked and every
+   *  drone this profile owns. Starts closed/empty, same as every other
+   *  gated feature here, until the first response confirms otherwise. */
+  const [droneHangar, setDroneHangar] = useState<{
+    unlocked: boolean;
+    drones: { droneId: string; deployedAt: string }[];
+  }>({ unlocked: false, drones: [] });
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
    * The processing track (wheat, mills, the one open Town Contract), held as
@@ -970,6 +992,7 @@ export function StackAcresFarm() {
       setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
     }
     if (data.soilStock) setSoilStock(data.soilStock);
+    if (data.droneHangar) setDroneHangar(data.droneHangar);
   }, []);
 
   /**
@@ -1200,6 +1223,14 @@ export function StackAcresFarm() {
   useEffect(() => {
     world.current?.previewSoilAt(radialSoilWorld);
   }, [radialSoilWorld]);
+
+  // Same "push, never rebuild" contract: the scene diffs its own drone set
+  // against this list (see StackAcresScene.setDroneHangar), so pushing on
+  // every response -- even one that rebuilt the array without actually
+  // changing the fleet -- is a harmless no-op on the scene's own side.
+  useEffect(() => {
+    world.current?.setDroneHangar(droneHangar.drones.map((drone) => drone.droneId));
+  }, [droneHangar.drones]);
 
   /**
    * Answers what became of one action, for the callers that have to undo
@@ -1481,6 +1512,20 @@ export function StackAcresFarm() {
             });
           }
         }
+        // A drone's own vacuum animation already played (the scene's local-
+        // optimistic half, see `onDroneForageCollected`); this is only the
+        // confirmed amount, once the server's own cooldown/ceiling check
+        // has actually settled it. A refusal leaves `data.droneForage`
+        // undefined and this block simply does not run -- there is nothing
+        // to roll back on the canvas, since the pull was cosmetic either
+        // way. `setLastCollect`, not `floatAt`: a drone's own drop sits
+        // wherever it is patrolling on the map, not at a finger's tap
+        // point, so the fixed celebration toast is the honest fit rather
+        // than a floating text anchored to nothing.
+        if (body.action === "collect-drone-forage" && data.droneForage && data.droneForage.reward > 0) {
+          goldSound();
+          setLastCollect({ text: `🛰️ Drone forage: +${data.droneForage.reward} Gold`, nonce: Date.now() });
+        }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
           goldSound();
           setLastCollect({
@@ -1646,6 +1691,26 @@ export function StackAcresFarm() {
       }
     })();
   }, [fencePopup]);
+
+  /* ---------------------------------------------------------------- */
+  /* The Mechanical Forage Drone                                        */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * The scene's own local-optimistic vacuum animation just started on a
+   * spawned drop -- fire the real claim immediately, exactly as
+   * `onDroneForageCollected`'s own doc comment on StackAcresSceneCallbacks
+   * describes. `void act(...)`: a refusal (the drone's own cooldown losing
+   * a race, or the daily Gold ceiling) repaints nothing that needs undoing
+   * here -- there was never an optimistic Gold change to roll back, only a
+   * cosmetic pull that already played.
+   */
+  const onDroneForageCollected = useCallback(
+    (droneId: string) => {
+      void act({ action: "collect-drone-forage", droneId });
+    },
+    [act],
+  );
 
   /* ---------------------------------------------------------------- */
   /* NPC friendship                                                     */
@@ -2434,6 +2499,7 @@ export function StackAcresFarm() {
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
               soilTiles={mergedSoilTiles}
+              onDroneForageCollected={onDroneForageCollected}
               api={world}
             />
           )}
@@ -2995,6 +3061,53 @@ export function StackAcresFarm() {
             <p className="sa-sheet-note">
               You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.
             </p>
+
+            {/* Requirement's UI half: the hangar and its Gold, hangar-locked
+                state, and cost were all live server-side already (see
+                stackacres-drone-service.ts) with nothing on the sheet to tap
+                -- this is that missing button. Locked shown greyed rather
+                than hidden, same "the shelf says what it wants" rule the
+                Feed rows above follow. */}
+            <StoreShelf icon="ico-drone">Drone Hangar</StoreShelf>
+            <p className="sa-sheet-note">
+              A Mechanical Forage Drone patrols a district&apos;s outer edge on its own and vacuums
+              up whatever forage it finds along the way. Deploying one is a standing purchase, not a
+              single-use item — each drone you own keeps patrolling until you leave the farm.
+            </p>
+            <div className="sa-stock-cards">
+              <div className={droneHangar.unlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
+                <h3>Mechanical Forage Drone</h3>
+                <p className="sa-stock-terms">
+                  {droneHangar.drones.length > 0
+                    ? `${droneHangar.drones.length} patrolling now`
+                    : "None deployed yet"}
+                </p>
+                <p className="sa-stock-yield">{DRONE_DEPLOY_COST_GOLD.toLocaleString()} Gold</p>
+                {!droneHangar.unlocked && (
+                  <p className="sa-lock-hint" id="sa-lock-hint-drone">
+                    <Lock size={13} aria-hidden="true" />
+                    <span>Donate at least one item to every exhibit in Ray&apos;s Museum to unlock the hangar.</span>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="sa-cta"
+                  disabled={
+                    !droneHangar.unlocked ||
+                    isPending("deploy-drone") ||
+                    (!(profile?.unlimitedGold ?? false) && gold < DRONE_DEPLOY_COST_GOLD)
+                  }
+                  aria-describedby={!droneHangar.unlocked ? "sa-lock-hint-drone" : undefined}
+                  onClick={() => { buySound(); void act({ action: "deploy-drone" }); }}
+                >
+                  {!droneHangar.unlocked
+                    ? "Locked"
+                    : (profile?.unlimitedGold ?? false) || gold >= DRONE_DEPLOY_COST_GOLD
+                      ? "Deploy"
+                      : "Not enough Gold"}
+                </button>
+              </div>
+            </div>
 
           </div>
         </div>

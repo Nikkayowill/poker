@@ -34,9 +34,14 @@ import {
   prestigeResetStackAcres,
   prayAtStackAcresShrine,
   giveStackAcresGift,
+  deployStackAcresDrone,
+  collectStackAcresDroneForage,
+  listStackAcresDrones,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
+import { resetStackAcresDroneStoreForTests } from "./stackacres-drone-store";
+import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
 import {
@@ -298,6 +303,7 @@ const REAL = {
 beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresBlueprintsForTest();
+  resetStackAcresDroneStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
@@ -1718,9 +1724,11 @@ describe("the currency wall", () => {
       "clear",
       "clear-sector",
       "collect",
+      "collect-drone-forage",
       "collect-vat",
       "consume-secret-item",
       "contribute-blueprint",
+      "deploy-drone",
       "divert",
       "donate-secret-item",
       "expand-capacity",
@@ -1798,21 +1806,47 @@ describe("the currency wall", () => {
     // either way: it spends a processing-track item (never a purse) and its
     // ladder pays a keepsake, never Gold -- see
     // lib/stackacres/friendship.ts's own header for why that reward is not
-    // a third payer.
-    const paysGold = ["collect", "fulfill-contract", "collect-vat"];
+    // a third payer. `deploy-drone` is a pure sink, same category as
+    // `upgrade-tool` and `unlock-synergy-perk`: it spends
+    // DRONE_DEPLOY_COST_GOLD via `deploy_stackacres_drone`'s own row-locked
+    // RPC and never credits anything.
+    //
+    // `collect-drone-forage` IS a fourth payer -- the Mechanical Forage
+    // Drone (2026-09-06). Its Gold credit does not live in this file at all:
+    // `collectStackAcresDroneForage` here only delegates to
+    // `collectDroneForage` in lib/server/stackacres-drone-service.ts, which
+    // reserves against STACKACRES_GOLD_CEILING (the same constant, same
+    // daily bucket) BEFORE calling `collect_stackacres_drone_forage`'s own
+    // row-locked RPC, then releases the unused difference between the
+    // worst-case reservation and the amount actually rolled -- see that
+    // function's own doc comment for why a drone left patrolling all day is
+    // exactly the shape of faucet that turned Ante Up into a money printer,
+    // and why the ceiling still has to bound it even though no single claim
+    // is large.
+    const paysGold = ["collect", "fulfill-contract", "collect-vat", "collect-drone-forage"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
-    // `, now` on all three: Chrono-DeLorean Mode threads a resolved `now`
-    // through every action (lib/server/chrono-delorean.ts), the three payers
+    // `, now` on all four: Chrono-DeLorean Mode threads a resolved `now`
+    // through every action (lib/server/chrono-delorean.ts), the payers
     // included.
     expect(ROUTE).toContain("harvestStackAcres(token, { unitIds: action.unitIds }, now)");
     expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
     expect(ROUTE).toContain("collectStackAcresVat(token, now)");
-    // All three payers reserve against the exact same daily ceiling -- this
-    // is the property that makes a third payer safe rather than a second
-    // faucet. See lib/stackacres/exchange.ts. (STACKACRES_GOLD_CEILING is a
-    // constant, not a call, hence counting occurrences directly rather than
-    // through the `calls` helper above.)
+    expect(ROUTE).toContain("collectStackAcresDroneForage(token, action.droneId, now)");
+    // The first three payers reserve against the exact same daily ceiling
+    // inline in this file -- this is the property that makes another payer
+    // safe rather than a second faucet. See lib/stackacres/exchange.ts.
+    // (STACKACRES_GOLD_CEILING is a constant, not a call, hence counting
+    // occurrences directly rather than through the `calls` helper above.)
     expect(SERVICE.split("STACKACRES_GOLD_CEILING").length - 1).toBeGreaterThanOrEqual(4);
+    // The fourth payer reserves against the identical constant, just from its
+    // own sibling service file rather than inline here -- read directly
+    // rather than assumed, so a future drone change that drops the
+    // reservation fails this test rather than only this file's own claim.
+    const DRONE_SERVICE = readFileSync(
+      join(process.cwd(), "lib/server/stackacres-drone-service.ts"),
+      "utf8",
+    );
+    expect(DRONE_SERVICE).toContain("reserveStackAcresExchange(profileId, day, DRONE_FORAGE_MAX_GOLD, STACKACRES_GOLD_CEILING)");
   });
 
   it("hands back no Gold at all for spending Gold", async () => {
@@ -3498,5 +3532,83 @@ describe("prestigeResetStackAcres", () => {
     const result = await collectOne(token, unitId, HEN_READY);
 
     expect(result.harvest.gold).toBe(Math.floor(yieldValue("hen") * prestigeReset.multiplier));
+  });
+});
+
+describe("the Mechanical Forage Drone", () => {
+  it("refuses to deploy before the hangar is unlocked", async () => {
+    const { token, id } = await funded(500_000, { museum: false });
+    await expect(deployStackAcresDrone(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    const before = await balance(token);
+    expect(before).toBe(500_000);
+    const { hangarUnlocked, drones } = await listStackAcresDrones(token);
+    expect(hangarUnlocked).toBe(false);
+    expect(drones).toHaveLength(0);
+    void id;
+  });
+
+  it("unlocks once every museum exhibit has at least one donation", async () => {
+    const { token } = await funded(500_000, { museum: true });
+    const { hangarUnlocked } = await listStackAcresDrones(token);
+    expect(hangarUnlocked).toBe(true);
+  });
+
+  it("debits the flat deploy fee and creates one owned drone", async () => {
+    const { token } = await funded(500_000, { museum: true });
+    const result = await deployStackAcresDrone(token, T0);
+    expect(result.droneDeploy?.droneId).toBeTruthy();
+    expect(await balance(token)).toBe(500_000 - DRONE_DEPLOY_COST_GOLD);
+    const { drones } = await listStackAcresDrones(token);
+    expect(drones).toHaveLength(1);
+    expect(drones[0].droneId).toBe(result.droneDeploy?.droneId);
+  });
+
+  it("refuses to deploy without enough Gold, and takes none", async () => {
+    const { token } = await funded(100, { museum: true });
+    await expect(deployStackAcresDrone(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(100);
+  });
+
+  it("refuses a forage claim for a drone the caller does not own", async () => {
+    const { token } = await funded(500_000, { museum: true });
+    await expect(collectStackAcresDroneForage(token, randomUUID(), T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("pays out a forage claim once, then refuses a second claim inside the cooldown", async () => {
+    const { token } = await funded(500_000, { museum: true });
+    const deployed = await deployStackAcresDrone(token, T0);
+    const droneId = deployed.droneDeploy!.droneId;
+    const before = await balance(token);
+
+    const result = await collectStackAcresDroneForage(token, droneId, T0);
+    expect(result.droneForage?.reward).toBeGreaterThanOrEqual(0);
+    const after = await balance(token);
+    expect(after - before).toBe(result.droneForage?.reward);
+
+    // Same drone, same instant: still cooling down.
+    await expect(collectStackAcresDroneForage(token, droneId, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(after);
+
+    // Past the cooldown window, it pays out again.
+    const later = new Date(T0.getTime() + 21_000);
+    const second = await collectStackAcresDroneForage(token, droneId, later);
+    expect(second.droneForage?.reward).toBeGreaterThanOrEqual(0);
+  });
+
+  it("refuses a forage claim once the day's Gold ceiling is exhausted, and pays nothing", async () => {
+    const { token, id } = await funded(500_000, { museum: true });
+    const deployed = await deployStackAcresDrone(token, T0);
+    const droneId = deployed.droneDeploy!.droneId;
+    await burnAllowance(id, STACKACRES_GOLD_CEILING, T0);
+    const before = await balance(token);
+
+    await expect(collectStackAcresDroneForage(token, droneId, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
   });
 });

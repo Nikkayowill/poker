@@ -77,6 +77,13 @@ export const SPRITE_ART = {
   ox: "/stackacres/sprites/ox.png",
   hog: "/stackacres/sprites/hog.png",
   barn: "/stackacres/sprites/barn.png",
+  // The Pixel Pilgrim's shrine -- one of five isometric cottages from a
+  // supplied "Houses Pack 3" asset set (its own painted grass/stone plate
+  // included, same "straight-on elevation, placed flat" treatment the barn
+  // gets), replacing the hand-drawn Graphics volume the shrine shipped with
+  // at first. Picked for its chapel-like spire over the other four -- the
+  // most "shrine", least "cottage" silhouette in the set.
+  monkHouse: "/stackacres/sprites/monk-house.png",
   windmill: "/stackacres/sprites/windmill.png",
   grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
   tree1: "/stackacres/sprites/tree1.png",

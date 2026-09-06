@@ -10,7 +10,6 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
-import type { FarmhandHooks } from "@/lib/stackacres/farmhand-machine";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 
 /** The processing half of a snapshot: everything the AUTOMATED farmhand
@@ -66,11 +65,10 @@ export interface StackAcresWorldApi {
    *  solo unit, fanned out across several units with a stagger between each
    *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
   celebrateCascade: (unitIds: string[]) => void;
-  /** Send the farmhand over to a unit that has just been acted on.
-   *  Decoration on a request that has already left the browser: he refuses
-   *  silently outside the Farmstead, and can never delay or cancel a write.
-   *  See lib/stackacres/farmhand.ts. */
-  sendFarmhand: (unitId: string) => void;
+  /** Starts the Pixel Pilgrim's bow, optimistically -- called only from his
+   *  dialogue's own "yes", before the `pray` request has answered. See
+   *  lib/stackacres/monk.ts and stackacres-scene.ts's `playMonkPrayer`. */
+  playMonkPrayer: () => void;
   /** Steps the camera inside the Greenhouse (lib/stackacres/greenhouse.ts),
    *  narrowing its bounds to the interior -- the shell's own cue, once it
    *  has decided the Greenhouse is built (an unbuilt one opens a build panel
@@ -85,11 +83,6 @@ export interface StackAcresWorldApi {
    *  meaningful only for a "collect" tap -- see lib/stackacres/frenzy.ts's
    *  own header for why this never touches a real payout. */
   registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
-  /** What the AUTOMATED farmhand may do when a cycle finishes. Passed through
-   *  the handle rather than as a prop because every hook is a request the
-   *  shell already knows how to make, and rebuilding the scene's wiring on
-   *  each render of the shell would be a new closure per frame. */
-  setFarmhandHooks: (hooks: FarmhandHooks) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -130,6 +123,10 @@ export interface StackAcresWorldProps {
   /** A finger landed on the Midnight Merchant, while he is actually
    *  standing on the lot (see `setMerchant` on the imperative handle). */
   onMerchantTap: () => void;
+  /** A finger landed on the Pixel Pilgrim's own shrine. Fires no bow and
+   *  reaches no server by itself -- this is only the cue to open his
+   *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
+  onMonkTap: (at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -153,15 +150,14 @@ export interface StackAcresWorldProps {
    *  no active perk. */
   farmhandSpeedMultiplier: number;
   /** True once Ray's Museum's hidden set has ever been completed -- a
-   *  persistent fact of the registry, not a one-shot nonce, since the
-   *  farmhand's own unlock tint should hold on every load after the first,
-   *  not just the harvest that earned it. The scene's own
-   *  `setFarmhandSecretUnlock` is idempotent, so pushing this on every
-   *  change (and once at mount) is safe even before it ever flips true. */
+   *  persistent fact of the registry, not a one-shot nonce, since the Pixel
+   *  Pilgrim's own unlock tint should hold on every load after the first,
+   *  not just the harvest that earned it (see stackacres-scene.ts's own
+   *  header on that method for why it now lands on him rather than the
+   *  farmhand). The scene's own `setFarmhandSecretUnlock` is idempotent, so
+   *  pushing this on every change (and once at mount) is safe even before it
+   *  ever flips true. */
   secretSetComplete: boolean;
-  /** What the automated farmhand works from. Null before the first snapshot
-   *  lands, which is exactly when he should be standing still anyway. */
-  processing: StackAcresProcessing | null;
   api: Ref<StackAcresWorldApi | null>;
 }
 
@@ -190,11 +186,11 @@ export function StackAcresWorld({
   onGreenhouseTap,
   onGreenhouseSlotTap,
   onMerchantTap,
+  onMonkTap,
   onSecretZoneTap,
   sectors,
   onLockedSectorTap,
   onViewMoved,
-  processing,
   api,
 }: StackAcresWorldProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -203,11 +199,6 @@ export function StackAcresWorld({
 
   // The scene calls back into whatever the shell currently is, not whatever
   // it was when the game booted.
-  /** Read at mount for the same reason `toolTierRef` is: the boot path needs
-   *  the snapshot that has already arrived, and the scene does not exist yet
-   *  to be told about it. Kept current by the effect below, and separately
-   *  pushed into the scene by its own effect once it does exist. */
-  const processingRef = useRef(processing);
   const readyRef = useRef(onReady);
   const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
@@ -215,6 +206,7 @@ export function StackAcresWorld({
   const greenhouseTapRef = useRef(onGreenhouseTap);
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
+  const monkTapRef = useRef(onMonkTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
@@ -234,7 +226,6 @@ export function StackAcresWorld({
   // the right walk speed on his very first step.
   const farmhandSpeedMultiplierRef = useRef(farmhandSpeedMultiplier);
   useEffect(() => {
-    processingRef.current = processing;
     readyRef.current = onReady;
     unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
@@ -242,6 +233,7 @@ export function StackAcresWorld({
     greenhouseTapRef.current = onGreenhouseTap;
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
+    monkTapRef.current = onMonkTap;
     secretZoneTapRef.current = onSecretZoneTap;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
@@ -288,6 +280,7 @@ export function StackAcresWorld({
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),
+          onMonkTap: (at) => monkTapRef.current(at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
@@ -346,7 +339,6 @@ export function StackAcresWorld({
       // own default is "all wild" (see its `locked` field) precisely so the
       // gap between boot and this call never shows a pen that is not there.
       scene.setSectors(sectorsRef.current);
-      if (processingRef.current) scene.setProcessing(processingRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
@@ -408,10 +400,9 @@ export function StackAcresWorld({
       popUnit: (unitId) => sceneRef.current?.popUnit(unitId),
       celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
       registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
-      sendFarmhand: (unitId) => sceneRef.current?.sendFarmhand(unitId),
+      playMonkPrayer: () => sceneRef.current?.playMonkPrayer(),
       enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
       exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),
-      setFarmhandHooks: (hooks) => sceneRef.current?.setFarmhandHooks(hooks),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
       setMerchant: (present) => sceneRef.current?.setMerchant(present),
     }),
@@ -430,15 +421,6 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setSectors(sectors);
   }, [sectors]);
-
-  // Every snapshot, straight through. Each call is also what lets the
-  // farmhand's optimistic credits retire (see `PendingDelta` in
-  // lib/stackacres/farmhand-machine.ts), so this deliberately does not try to
-  // skip a snapshot whose contents look unchanged.
-  useEffect(() => {
-    if (!processing) return;
-    sceneRef.current?.setProcessing(processing);
-  }, [processing]);
 
   useEffect(() => {
     sceneRef.current?.setToolIcon(STACKACRES_TOOL_DEFS[tool].icon as PainterName);

@@ -102,21 +102,14 @@ import {
   type SoilTileOrigin,
 } from "@/lib/stackacres/soil";
 import {
-  enqueueFarmhandTask,
-  farmhandStandoff,
-  farmhandWalking,
-  pruneFarmhandTasks,
-  spawnFarmhand,
-  stepFarmhand,
-  type Farmhand,
-  type FarmhandTask,
-} from "@/lib/stackacres/farmhand";
-import {
-  FarmhandStateMachine,
-  automationWalking,
-  type FarmhandHooks,
-} from "@/lib/stackacres/farmhand-machine";
-import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
+  MONK_HOUSE_FOOTPRINT,
+  MONK_POST,
+  monkHitAt,
+  spawnMonk,
+  startMonkBow,
+  stepMonk,
+  type MonkPose,
+} from "@/lib/stackacres/monk";
 import { FarmFrenzyManager, frenzyBonusYield } from "@/lib/stackacres/frenzy";
 import { FrenzyFxManager } from "./frenzy-fx-manager";
 import {
@@ -279,6 +272,19 @@ export interface StackAcresSceneCallbacks {
    */
   onMerchantTap: () => void;
   /**
+   * A tap that landed on the Pixel Pilgrim's own shrine -- a character
+   * target, so it is checked right after the Midnight Merchant (another
+   * character) and before the barn, the same "a person wins over the
+   * permanent structure behind them" ordering `onMerchantTap` already
+   * documents, even though his footprint does not overlap the barn's
+   * either. Fires no bow and calls no server action by itself: this is
+   * only the cue to open his dialogue (he talks, then asks "will you pray
+   * with me?"). Only a "yes" there calls the scene's own `playMonkPrayer`
+   * (the optimistic bow) and sends the `pray` action -- declining costs the
+   * player nothing and reaches the server not at all.
+   */
+  onMonkTap: (at: TapPoint) => void;
+  /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
    * before the locked-sector/ground fallbacks, the same "structures win over
@@ -337,13 +343,17 @@ export interface StackAcresSceneOptions {
    *  find must restart or stop the barn's tween without rebuilding the
    *  scene. */
   museumGlowTier: MuseumGlowTier;
-  /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
-   *  walk speed (`StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with no
-   *  active perk). Mutable through `setFarmhandSpeedMultiplier` for the same
-   *  "push, don't rebuild" reason `toolTier` is. Combined with the Frenzy
-   *  Heat Combo Engine's own real-time multiplier (`this.frenzySpeedMultiplier`)
-   *  fresh every frame in `walkFarmhand` -- neither number alone is the
-   *  speed that actually lands on the walk. */
+  /**
+   * NOW INERT. Used to be the Synergy Tree's `automated_logistics`
+   * multiplier on the farmhand's own walk speed; the farmhand no longer
+   * roams this scene (see MonkNode's own doc comment), so nothing here
+   * reads this field any more. Left in place, still pushed by
+   * `setFarmhandSpeedMultiplier`, rather than pulling the thread through
+   * StackAcresView.synergy/stackacres-world.tsx/stackacres-farm.tsx for a
+   * field that costs nothing to leave wired -- see CLAUDE.md's own note on
+   * the `automated_logistics` perk needing a re-decision (repoint or hide)
+   * as separate, deliberate follow-up work.
+   */
   farmhandSpeedMultiplier: number;
   /**
    * The element the canvas is mounted into. Gestures are read off this rather
@@ -471,14 +481,18 @@ function mirrorFor(art: PainterName, heading: 1 | -1): 1 | -1 {
 }
 
 /* ------------------------------------------------------------------ */
-/* The farmhand's art: a real sheet, not a painter                     */
+/* The Pixel Pilgrim's art: the farmhand's own sheet, repurposed        */
 /* ------------------------------------------------------------------ */
 
 /** Where `preload` fetches the raw sheet from, and the key it lands under
- *  before baking. Ten 64px frames in one row -- see farmhand-ranger.png. */
+ *  before baking. Ten 64px frames in one row -- see farmhand-ranger.png.
+ *  Names kept `FARMHAND_*` on purpose: this is the same sheet, the same
+ *  bake, the same texture key the farmhand used before he was disabled --
+ *  only the character standing on it and what he does with the frames
+ *  changed (see lib/stackacres/monk.ts). */
 const FARMHAND_SHEET_URL = "/stackacres/sprites/farmhand-ranger.png";
 const FARMHAND_SHEET_KEY = "farmhandRangerSheet";
-/** The baked, POT-padded texture `spawnFarmhandNode` actually draws from.
+/** The baked, POT-padded texture `spawnMonkNode` actually draws from.
  *  Baked rather than used as a raw Phaser spritesheet for the same reason
  *  `bakeSpriteTexture` bakes the animals: an NPOT texture never gets mipped
  *  on WebGL1, and the fully zoomed-out farm minifies it enough to shimmer. */
@@ -499,28 +513,23 @@ const FARMHAND_SHEET_FRAMES = 10;
 const FARMHAND_SHEET_FOOT_ROW = 51;
 const FARMHAND_ORIGIN_Y = (FARMHAND_SHEET_FOOT_ROW + 1) / FARMHAND_SHEET_FRAME_PX;
 /** World units square he is drawn at -- the same "forty units tall" figure
- *  the previous farmhand was built to, so FARMHAND_STANDOFF and the shadow
- *  pool borrowed from Grandfather Ray still fit. */
+ *  the farmhand used to be built to, so the shadow pool borrowed from
+ *  Grandfather Ray still fits. */
 const FARMHAND_SIZE = 40;
 
-/** The sheet's ten poses, read off Throneless's own layout: five front-facing
- *  frames (a two-pose shuffle, repeated), five more the same shape facing
- *  away, and a crouch at the end of each half. There is no side-on pose at
- *  all -- the sheet was drawn for a top-down tactics game -- so left/right
- *  is a plain horizontal mirror of the front pose, the same trick every
- *  other painter here uses. */
+/**
+ * The two poses the Pixel Pilgrim actually uses off Throneless's ten-frame
+ * sheet -- `frontIdle` (standing) and `work` (the crouch a tap on a hen
+ * used to hold the farmhand in, reused whole as the bow). The sheet also
+ * has a back-facing idle/step pair and a front step, all still there for
+ * the farmhand's own pure FSM modules to reference if a future feature ever
+ * revives them, but the monk never turns his back or walks, so this scene
+ * has no use for them.
+ */
 const RANGER_FRAME = {
   frontIdle: 0,
-  frontStep: 1,
-  backIdle: 5,
-  backStep: 6,
   work: 8,
 } as const;
-
-/** World units travelled per shuffle-step -- there is no true walk cycle to
- *  time against, just two poses, so this is a plain distance-driven toggle
- *  rather than a phase like `stepGait`'s. */
-const FARMHAND_STEP_UNITS = 6;
 
 /**
  * Bakes the farmhand's ten frames into one POT-padded canvas texture, exactly
@@ -706,25 +715,26 @@ interface HerdSprite {
 }
 
 /**
- * The farmhand: one man, always present, walked and animated straight off a
- * ten-frame sheet -- Throneless's Ranger (a 2021 Ludum Dare 48 game, see
- * public/stackacres/sprites/farmhand-ranger.png), not generated art. The
- * first cut of this NPC rigged two Graphics legs under a generated torso
- * because the generator could not hold one character across frames; a real
- * sheet has no such problem, so `sprite` is the whole man and there is no rig
- * left to draw. See lib/stackacres/farmhand.ts for the state machine this
- * plays out and CLAUDE.md's 2026-09-04 entries for why the previous attempt
- * was scrapped.
+ * The Pixel Pilgrim: StackAcres' first interactable character, drawn off the
+ * identical ten-frame sheet the farmhand used to walk -- Throneless's Ranger
+ * (a 2021 Ludum Dare 48 game, see public/stackacres/sprites/farmhand-
+ * ranger.png), not generated art. He no longer roams; the farmhand's own two
+ * drivers (the errand queue and the automation FSM) are gone from this file
+ * entirely, kept only as pure, still-tested modules in lib/stackacres/
+ * farmhand*.ts (see that removal's own note in CLAUDE.md). What is reused
+ * here is narrower: `RANGER_FRAME.work`, the crouch pose a tap on a hen used
+ * to hold him in, because it already reads as a bow -- see
+ * lib/stackacres/monk.ts for the pure state this plays out.
  *
  * Built like a `HerdSprite`, not a `UnitNode`: sprite and shadow are two
- * plain images in world space, both repositioned every frame from
- * `state.x`/`state.y` in `walkFarmhand` -- there is no container here because
- * there is nothing that needs one, the same reason herds don't have one.
+ * plain images in world space, both repositioned once at spawn and never
+ * moved again -- he is POSTED, not walked, so unlike the farmhand's own
+ * node there is no per-frame `setPosition`, only a per-frame frame/tint/bob.
  */
-interface FarmhandNode {
+interface MonkNode {
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Image;
-  state: Farmhand;
+  state: MonkPose;
 }
 
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
@@ -891,13 +901,10 @@ export class StackAcresScene extends Phaser.Scene {
    *  Driven by the same `stepCritter` the owned units use. */
   private herds: HerdSprite[] = [];
 
-  /** The farmhand, and the jobs waiting for him. Null until `create` has run
-   *  (or forever, if his sheet never loaded -- see `bakeFarmhandTexture`).
-   *  `farmhandTask` is the one he has claimed, held out of the queue so a
-   *  prune cannot forget the unit he is walking to right now. */
-  private farmhand: FarmhandNode | null = null;
-  private farmhandQueue: readonly FarmhandTask[] = [];
-  private farmhandTask: FarmhandTask | null = null;
+  /** The Pixel Pilgrim. Null until `create` has run (or forever, if his
+   *  sheet never loaded -- see `bakeFarmhandTexture`; his shrine and tap
+   *  target exist either way, see `paintMonkHouse`/`monkHitAt`). */
+  private monk: MonkNode | null = null;
   /** Set once, the moment `setFarmhandSecretUnlock(true)` first fires -- a
    *  reused sprite sheet has no second image to swap to (see that method's
    *  own header), so the flag exists only to stop a later, unrelated redraw
@@ -924,14 +931,6 @@ export class StackAcresScene extends Phaser.Scene {
   private steppedInGreenhouse = false;
 
   /**
-   * What he does when nobody has tapped anything: work the wheat field on his
-   * own. See lib/stackacres/farmhand-machine.ts -- this is a SECOND driver
-   * for the SAME man, not a second farmhand, and `walkFarmhand` below is
-   * where the two are arbitrated.
-   */
-  private readonly auto = new FarmhandStateMachine();
-
-  /**
    * The Frenzy Heat Combo Engine's own state: how fast the player has been
    * tapping, decayed in real time. See lib/stackacres/frenzy.ts's own header
    * for why this is a plain field rather than anything persisted -- a
@@ -943,13 +942,6 @@ export class StackAcresScene extends Phaser.Scene {
    *  the per-tap ember/bonus bursts. Null under reduced motion, the same
    *  posture `this.weather` already takes -- see `create()`. */
   private frenzyFx: FrenzyFxManager | null = null;
-  /** This frame's own frenzy tier speed multiplier, read by `walkFarmhand`
-   *  for both drivers of the one man on the map. Refreshed once a frame in
-   *  `update()` (`this.frenzy.sample(time)`), the same "read fresh every
-   *  frame, never cached across one" posture `critterSpeed` already takes
-   *  for an animal's own walk speed -- see lib/stackacres/farmhand-path.ts's
-   *  `advanceTowards` for where this number actually lands. */
-  private frenzySpeedMultiplier = 1;
 
   /**
    * Land the player has not cleared (lib/stackacres/sectors.ts).
@@ -1077,10 +1069,11 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintPond();
     this.paintBarn();
     this.paintGreenhouse();
+    this.paintMonkHouse();
     this.paintProps();
     this.paintFarmsteadClutter();
     this.spawnHerds();
-    this.spawnFarmhandNode();
+    this.spawnMonkNode();
     // Each district's own layer, which is either its farm (ground, fence,
     // grow area) or the wild growth standing where that farm is not built
     // yet. Rebuilt per district by `setSectors` when land is cleared.
@@ -1198,188 +1191,97 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /* ---------------------------------------------------------------- */
-  /* The farmhand                                                      */
+  /* The Pixel Pilgrim                                                  */
   /* ---------------------------------------------------------------- */
 
-  /** The one man on the map, standing at his post from boot. A no-op (and no
-   *  farmhand) if his sheet never baked -- see `bakeFarmhandTexture`. The
-   *  shadow pool is Grandfather Ray's own: they are drawn to the same
-   *  forty-unit build (see FARMHAND_SIZE), so a second set of numbers here
-   *  would only be a second set of numbers to drift from his. */
-  private spawnFarmhandNode(): void {
+  /**
+   * The shrine: a hand-drawn isometric volume, exactly the treatment
+   * `paintGreenhouse` gives a structure with no supplied art yet -- a real,
+   * tappable place at a real world position, not a coloured rectangle
+   * standing in for one. Swappable for a real PNG later the same way the
+   * barn's own silo would be, without moving `MONK_HOUSE_FOOTPRINT` or
+   * touching `monkHitAt`.
+   *
+   * Painted unconditionally, independent of whether the sprite sheet ever
+   * bakes: the shrine and the tap it answers to are the feature, and must
+   * both work even on the (pure decoration) chance `spawnMonkNode` finds no
+   * texture to draw him with.
+   */
+  /**
+   * The shrine -- a straight-on elevation, placed flat, exactly the
+   * treatment `paintBarn` gives the barn's own generated sprite. Not a
+   * hand-drawn Graphics volume any more: the first pass drew one (the same
+   * placeholder-now-real-art-later posture `paintGreenhouse` still uses),
+   * and it read as a plain box with no supplied art to fit it to. Real art
+   * exists now (`PAINTERS.monkHouse`, backed by a supplied PNG -- see
+   * stackacres-sprites.ts), so this reduces to a `put()` call like every
+   * other flat structure sprite on this map.
+   *
+   * Placed at `MONK_HOUSE_FOOTPRINT`'s own bottom-centre -- its feet, in the
+   * same convention `BARN_X`/`BARN_Y` anchor the barn to its own footprint's
+   * bottom edge -- so the hit-test box (`monkHitAt`) and the drawn picture
+   * agree on where the shrine actually stands.
+   */
+  private paintMonkHouse(): void {
+    const cx = MONK_HOUSE_FOOTPRINT.x + MONK_HOUSE_FOOTPRINT.width / 2;
+    const feetY = MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height;
+    this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
+      .setScale(60 / 33 / S, 20 / 13 / S)
+      .setAlpha(0.85);
+    this.put("monkHouse", cx, feetY, this.depthAt(cx, feetY));
+  }
+
+  /** The Pixel Pilgrim himself, posted at his shrine from boot. A no-op (no
+   *  sprite drawn) if his sheet never baked -- see `bakeFarmhandTexture` --
+   *  but the shrine and his tap target exist regardless, see
+   *  `paintMonkHouse`/`monkHitAt`. The shadow pool is Grandfather Ray's own:
+   *  they are drawn to the same forty-unit build (see FARMHAND_SIZE), so a
+   *  second set of numbers here would only be a second set to drift from
+   *  his. A light tint marks him as not of this world. */
+  private spawnMonkNode(): void {
     if (!this.textures.exists(FARMHAND_TEXTURE)) return;
-    const state = spawnFarmhand();
+    const state = spawnMonk();
     const pool = PROP_SHADOW.grandfatherRay;
-    const shadow = this.put("shadow", state.x, state.y + 1, 0)
+    const shadow = this.put("shadow", MONK_POST.x, MONK_POST.y + 1, 0)
       .setAlpha(0.8)
       .setScale(pool.w / 33 / S, pool.h / 13 / S);
-    const at = isoProject(state.x, state.y);
+    const at = isoProject(MONK_POST.x, MONK_POST.y);
     const sprite = this.add
       .image(at.x, at.y, FARMHAND_TEXTURE, RANGER_FRAME.frontIdle)
       .setOrigin(0.5, FARMHAND_ORIGIN_Y)
       .setScale(1 / S)
-      .setDepth(at.y);
-    this.farmhand = { sprite, shadow, state };
+      .setDepth(at.y)
+      .setTint(0x8fa9d6);
+    this.monk = { sprite, shadow, state };
   }
 
   /**
-   * Send the farmhand to a unit, if he is the right man for it.
-   *
-   * Called on a tap that was ACCEPTED, after the request has already left the
-   * browser -- see `onWorldUnitTap` in stackacres-farm.tsx. He is decoration
-   * on a write that has already happened, so everything here is allowed to
-   * refuse silently: a full queue, a unit in another district, a unit that
-   * has since gone. None of those can cost the player anything.
-   *
-   * FARMSTEAD ONLY. The four districts are hundreds of units apart, so a job
-   * out at Ox Fields or the Wallow would be most of a minute of watching a
-   * man cross a field -- and the camera is usually not even pointed at him
-   * while he does it.
+   * Starts his bow, optimistically, the instant the dialogue's own "yes"
+   * fires -- before the server has answered the `pray` action. A decline
+   * never reaches here at all (see StackAcresSceneCallbacks.onMonkTap's own
+   * header), so this is only ever called on a real "yes".
    */
-  sendFarmhand(unitId: string): void {
-    const node = this.nodes.get(unitId);
-    if (!node || stockZone(node.unit.stock) !== "farmstead") return;
-    // Already on it, or already holding it: `enqueueFarmhandTask` dedupes the
-    // queue, and this covers the one it cannot see.
-    if (this.farmhandTask?.unitId === unitId) return;
-    const at = farmhandStandoff(this.unitWorldSpot(node));
-    this.farmhandQueue = enqueueFarmhandTask(this.farmhandQueue, { unitId, x: at.x, y: at.y });
-  }
-
-  /** A job's target, re-read this frame: livestock keeps wandering while he
-   *  crosses the yard, so he chases where the hen IS rather than where it was
-   *  standing when the finger landed. Null once the unit has gone. */
-  private freshenFarmhandTask(task: FarmhandTask): FarmhandTask | null {
-    const node = this.nodes.get(task.unitId);
-    if (!node) return null;
-    const at = farmhandStandoff(this.unitWorldSpot(node));
-    return { unitId: task.unitId, x: at.x, y: at.y };
+  playMonkPrayer(): void {
+    if (this.monk) this.monk.state = startMonkBow();
   }
 
   /**
-   * One frame of the farmhand's day. Stepped from `update` alongside the
-   * herds, which puts it inside the reduced-motion gate: with motion off he
-   * simply stands at his post.
-   *
-   * The frame he shows is a plain distance-driven toggle between the sheet's
-   * two near-identical poses per direction -- there is no real walk cycle on
-   * this sheet to time against, just a shuffle, and `working` overrides both
-   * with the crouched pose for as long as `FARMHAND_WORK_MS` runs.
+   * One frame of his bow. Called every frame regardless of reduced motion
+   * (see `update()`'s own call site) -- unlike the herds and the farmhand's
+   * old walk, the pose CHANGE here is the feature the player just asked
+   * for, not ambient motion; only the sinusoidal lift is suppressed under
+   * reduced motion, never the crouch/idle frame itself. Depth is set once
+   * at spawn and never touched again: the bob moves his screen y only, so
+   * it can never change his draw order.
    */
-  /**
-   * The processing half of a snapshot: what the automated farmhand plans
-   * against. Called from the shell every time a response lands, the same
-   * moment `setUnits` is. Safe to call before `create` -- the machine holds
-   * the world itself and the scene only reads it back out per frame.
-   */
-  setProcessing(world: Omit<FarmhandPlanInput, "claimed"> & { profileId?: string | null }): void {
-    this.auto.setWorld(world);
-  }
-
-  /** Wire what the automated farmhand is allowed to do when a cycle finishes.
-   *  Left unwired he works entirely in mime -- see `FarmhandHooks`. */
-  setFarmhandHooks(hooks: FarmhandHooks): void {
-    this.auto.setHooks(hooks);
-  }
-
-  /** The plot he is walking to or cutting, for a highlight ring on it. */
-  get farmhandPlotId(): string | null {
-    return this.auto.workingPlotId;
-  }
-
-  /**
-   * One frame of the farmhand's day, from whichever of his two drivers has
-   * the floor.
-   *
-   * THE TAP WINS, WITH ONE CARVE-OUT. A queued errand is the player watching
-   * for an answer to something they just did, so it preempts the field work
-   * -- except mid-cut. `HARVESTING` emits its effect on exactly one frame,
-   * and a preemption that landed on that frame would drop a harvest the
-   * server is about to be told about. `workMs` is the test, and it is the
-   * automation's own, so this cannot drift from what the machine considers
-   * committed.
-   *
-   * The two drivers keep separate positions, so whichever one did not move
-   * him is synced to wherever he actually ended up. Without that, handing the
-   * floor over would teleport him back to where the idle driver last left
-   * off.
-   */
-  private walkFarmhand(delta: number): void {
-    const node = this.farmhand;
+  private stepMonkNode(delta: number, reducedMotion: boolean): void {
+    const node = this.monk;
     if (!node) return;
-
-    // Jobs whose unit has gone -- collected, cleared, or refetched away.
-    this.farmhandQueue = pruneFarmhandTasks(this.farmhandQueue, (id) => this.nodes.has(id));
-    const claimed = this.farmhandTask ? this.freshenFarmhandTask(this.farmhandTask) : null;
-    if (this.farmhandTask && !claimed) this.farmhandTask = null;
-
-    const head = this.farmhandQueue[0];
-    const next = claimed ?? (head ? this.freshenFarmhandTask(head) : null);
-    const committed = this.auto.hand.workMs > 0;
-    // The two sources multiply, never pick one -- see StackAcresSceneOptions'
-    // own comment on `farmhandSpeedMultiplier`.
-    const speedMultiplier = this.options.farmhandSpeedMultiplier * this.frenzySpeedMultiplier;
-
-    if (next && !committed) {
-      const step = stepFarmhand(node.state, next, delta, speedMultiplier);
-      if (step.claimed) {
-        this.farmhandTask = head ?? null;
-        this.farmhandQueue = this.farmhandQueue.slice(1);
-      }
-      if (step.finished) this.farmhandTask = null;
-      node.state = step.hand;
-      this.auto.followErrand(node.state);
-      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
-      return;
-    }
-
-    // Nobody has tapped anything he can reach (or he is mid-cut and will not
-    // be taken off it). Step the errand runner too, with no job: that is what
-    // walks him out of a `working` pose and lets `stepFarmhand` settle to
-    // `idle` rather than freezing at whatever it was doing when the queue
-    // emptied.
-    if (node.state.phase !== "idle") {
-      const step = stepFarmhand(node.state, null, delta, speedMultiplier);
-      if (step.finished) this.farmhandTask = null;
-      node.state = step.hand;
-      this.auto.followErrand(node.state);
-      this.paintFarmhand(node, node.state.phase === "working", farmhandWalking(node.state));
-      return;
-    }
-
-    this.auto.update(delta, speedMultiplier);
-    const hand = this.auto.hand;
-    node.state = { ...node.state, x: hand.x, y: hand.y, facing: hand.facing, towards: hand.towards, travelled: hand.travelled };
-    this.paintFarmhand(node, hand.workMs > 0, automationWalking(hand));
-  }
-
-  /**
-   * Put the man on screen: pick his frame, project his feet, sort him.
-   *
-   * The frame is a plain distance-driven toggle between the sheet's two
-   * near-identical poses per direction -- there is no real walk cycle on this
-   * sheet to time against, just a shuffle -- and `working` overrides both
-   * with the crouched pose, whichever driver put him in it.
-   */
-  private paintFarmhand(node: FarmhandNode, working: boolean, walking: boolean): void {
-    const stepped = Math.floor(node.state.travelled / FARMHAND_STEP_UNITS) % 2 === 1;
-    const frame = working
-      ? RANGER_FRAME.work
-      : node.state.towards === 1
-        ? walking && stepped
-          ? RANGER_FRAME.frontStep
-          : RANGER_FRAME.frontIdle
-        : walking && stepped
-          ? RANGER_FRAME.backStep
-          : RANGER_FRAME.backIdle;
-    node.sprite.setFrame(frame);
-
-    const at = isoProject(node.state.x, node.state.y);
-    node.sprite.setPosition(at.x, at.y);
-    node.sprite.setDepth(at.y);
-    node.sprite.setScale(node.state.facing / S, 1 / S);
-    node.shadow.setPosition(at.x, at.y + 1);
-    node.shadow.setDepth(at.y - 0.5);
+    const { pose, frame } = stepMonk(node.state, delta);
+    node.state = pose;
+    node.sprite.setFrame(frame.crouched ? RANGER_FRAME.work : RANGER_FRAME.frontIdle);
+    const at = isoProject(MONK_POST.x, MONK_POST.y);
+    node.sprite.setPosition(at.x, at.y - (reducedMotion ? 0 : frame.bobLift));
   }
 
   /**
@@ -2951,6 +2853,19 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onMerchantTap();
         return;
       }
+      // The Pixel Pilgrim's shrine -- checked right after the Midnight
+      // Merchant (another character) and before the barn, the same "a
+      // person wins over the structure behind them" ordering, even though
+      // his footprint does not overlap the barn's either. Checked against
+      // the house geometry alone, never against whether his sprite drew --
+      // praying works even on the (pure decoration) chance the sheet never
+      // baked. Fires no bow and reaches no server by itself: this is only
+      // the cue to open his dialogue (he talks, then asks); `playMonkPrayer`
+      // and the `pray` action only ever follow a "yes" there.
+      if (monkHitAt(ground.x, ground.y)) {
+        this.callbacks.onMonkTap(local);
+        return;
+      }
       // The barn -- Ray's Museum's own entryway -- checked before the
       // district ground fallback: it stands north of every grow area (see
       // BARN_FOOTPRINT's own doc comment), so the two never compete for the
@@ -3120,11 +3035,10 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * The Synergy Tree's `automated_logistics` multiplier, pushed the same way
-   * `setToolTier` is: a fresh loadout has to speed him up NOW, not on the
-   * next scene rebuild. `walkFarmhand` reads it fresh every frame and
-   * multiplies it against `this.frenzySpeedMultiplier` -- there is no
-   * combined value to seed eagerly here.
+   * NOW INERT -- see `StackAcresSceneOptions.farmhandSpeedMultiplier`'s own
+   * comment. Kept only because it costs nothing to leave callable and its
+   * removal would pull a thread through stackacres-world.tsx and
+   * stackacres-farm.tsx for a field this scene no longer reads.
    */
   setFarmhandSpeedMultiplier(multiplier: number): void {
     this.options.farmhandSpeedMultiplier = multiplier;
@@ -3233,24 +3147,19 @@ export class StackAcresScene extends Phaser.Scene {
    * the call site that fires it.
    *
    * THE VISUAL ITSELF IS A TINT, NOT A SWAPPED TEXTURE, AND NOT A SCALE POP
-   * EITHER. The farmhand is a real baked sprite sheet with exactly one
-   * source image (FARMHAND_SHEET_URL); there is no second "easter-egg"
-   * sheet to point him at, and generating one is explicitly out of scope
-   * for this codebase -- new character art comes from Kayo's own supplied
-   * renders, never generated locally (see the project's own history on
-   * that). A scale tween is out for a sharper reason: `walkFarmhand` calls
-   * `sprite.setScale(...)` unconditionally on every single frame he exists,
-   * so any tween on his scale would be overwritten before it ever painted --
-   * tint is the one visual property that method never touches. So this
-   * ships the real mechanism -- a scene method and a real Phaser event any
-   * future art can hang a genuine texture swap off of -- and stands in with
-   * a permanent golden tint until that art exists.
+   * EITHER -- same reasoning as when this shipped against the farmhand: the
+   * sheet has no second "easter-egg" image to point at, and generating one
+   * is out of scope (new character art comes from Kayo's own supplied
+   * renders). Now lands on the Pixel Pilgrim instead, since he is the one
+   * standing on this same baked sheet since the farmhand was disabled --
+   * this replaces his own resting blue-grey tint (see `spawnMonkNode`)
+   * rather than layering over it, since `setTint` always replaces.
    */
   setFarmhandSecretUnlock(unlocked: boolean): void {
     if (!unlocked || this.farmhandSecretUnlocked) return;
     this.farmhandSecretUnlocked = true;
     this.events.emit("museum:hidden-set-unlocked");
-    this.farmhand?.sprite.setTint(0xffd54a);
+    this.monk?.sprite.setTint(0xffd54a);
   }
 
   /** Floats the held tool's own picture above a finger that just turned a
@@ -4283,6 +4192,11 @@ export class StackAcresScene extends Phaser.Scene {
     this.fitVignette();
     this.fitEdgeGuides();
     this.notifyViewMoved();
+    // Stepped BEFORE the reduced-motion gate below, on purpose: a bow the
+    // player just asked for is the feature, not ambient motion, so the
+    // crouch/idle pose must still change with motion off. Only the
+    // sinusoidal lift inside stepMonkNode itself is suppressed there.
+    this.stepMonkNode(delta, this.options.reducedMotion);
     if (this.options.reducedMotion) return;
 
     this.animateSunlight(time, delta);
@@ -4300,11 +4214,9 @@ export class StackAcresScene extends Phaser.Scene {
     // this frame, which is what lets heat cool down in real time rather
     // than only on the next tap.
     const frenzySnapshot = this.frenzy.sample(time);
-    this.frenzySpeedMultiplier = frenzySnapshot.tier.speedMultiplier;
     this.frenzyFx?.setHeat(frenzySnapshot, time);
     this.animatePond(time);
     this.walkHerds(delta);
-    this.walkFarmhand(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;
 

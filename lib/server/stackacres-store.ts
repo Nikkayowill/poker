@@ -87,6 +87,7 @@ declare global {
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
   var __riverRoomStackAcresGreenhouse: Set<string> | undefined;
   var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
+  var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -191,6 +192,13 @@ globalThis.__riverRoomStackAcresGreenhouse = memoryGreenhouse;
 const memoryPrestige = globalThis.__riverRoomStackAcresPrestige ?? new Map<string, StackAcresPrestigeState>();
 globalThis.__riverRoomStackAcresPrestige = memoryPrestige;
 
+/** The Pixel Pilgrim's devotion, keyed by profileId -- see
+ *  `readStackAcresDevotion`/`prayAtStackAcresShrine` below. A missing entry
+ *  is `freshDevotion()`, the same "no row yet" convention every other
+ *  memory-mode ledger in this file uses. */
+const memoryDevotion = globalThis.__riverRoomStackAcresDevotion ?? new Map<string, StoredDevotionRow>();
+globalThis.__riverRoomStackAcresDevotion = memoryDevotion;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -211,6 +219,7 @@ export function __resetStackAcresForTest(): void {
   memoryStackAcresSecretLedger.clear();
   memoryGreenhouse.clear();
   memoryPrestige.clear();
+  memoryDevotion.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -2269,5 +2278,110 @@ export async function resetStackAcresPrestige(profileId: string): Promise<StackA
     eligibleGross: Number(row.eligible_gross),
     gainedMultiplier: Number(row.gained_multiplier),
     nextMultiplier: Number(row.multiplier),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* The Pixel Pilgrim's devotion                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `homestead_devotion` and its `pray_at_homestead_shrine` RPC -- a fresh
+ * table, same posture as `homestead_secret_ledger`'s own header: a per-
+ * player streak record has no existing table to reuse and inventing one
+ * that overloads an unrelated ledger would be the mistake this codebase has
+ * already made and undone once (see that ledger's own doc comment).
+ *
+ * The rollover math (same-day no-op, consecutive-day increment, any-gap
+ * reset to 1, at most one ladder rung claimed per prayer) lives once, in
+ * lib/stackacres/devotion.ts's pure `applyPrayer` -- the RPC below is a SQL
+ * restatement of that exact function so the two branches agree, the same
+ * discipline `stepFarmhandAutomation` and its scene caller are held to.
+ * Keep them in step if the ladder or rollover rule ever changes.
+ */
+
+export interface StoredDevotionRow {
+  streak: number;
+  lastPrayedDay: string | null;
+  claimedRungs: readonly number[];
+}
+
+const FRESH_DEVOTION: StoredDevotionRow = { streak: 0, lastPrayedDay: null, claimedRungs: [] };
+
+/** The stored devotion record for a profile, or a fresh one if it has never
+ *  prayed. Read-only -- `prayAtStackAcresShrine` is the only writer. */
+export async function readStackAcresDevotion(profileId: string): Promise<StoredDevotionRow> {
+  const supabase = adminClient();
+  if (!supabase) return memoryDevotion.get(profileId) ?? FRESH_DEVOTION;
+
+  const { data, error } = await supabase
+    .from("homestead_devotion")
+    .select("streak, last_prayed_day, claimed_rungs")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your devotion: ${error.message}`);
+  if (!data) return FRESH_DEVOTION;
+  const row = data as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null };
+  return {
+    streak: Number(row.streak),
+    lastPrayedDay: row.last_prayed_day,
+    claimedRungs: row.claimed_rungs ?? [],
+  };
+}
+
+/**
+ * Advances the caller's devotion streak for one UTC day and claims at most
+ * one newly-earned ladder rung, atomically. Returns null only when the
+ * write could not be recorded (a lost race) -- the caller must never treat
+ * that as a successful prayer, same rule every other ledger write in this
+ * file follows.
+ *
+ * `today`/`yesterday` are `YYYY-MM-DD` strings the service computes once
+ * (lib/stackacres/exchange.ts's `stackacresExchangeDay` and
+ * lib/stackacres/devotion.ts's `previousUtcDay`) and hands down, so this
+ * function never reads a clock itself. `rungThresholds` is
+ * `DEVOTION_RUNG_THRESHOLDS` -- service-owned data the RPC has no other way
+ * to know, the same pattern a secret zone's roll is handed its own odds.
+ */
+export async function prayAtStackAcresShrine(
+  profileId: string,
+  today: string,
+  yesterday: string,
+  rungThresholds: readonly number[],
+): Promise<{ streak: number; alreadyPrayedToday: boolean; grantedRung: number | null } | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const stored = memoryDevotion.get(profileId) ?? FRESH_DEVOTION;
+    if (stored.lastPrayedDay === today) {
+      return { streak: stored.streak, alreadyPrayedToday: true, grantedRung: null };
+    }
+    const streak = stored.lastPrayedDay === yesterday ? stored.streak + 1 : 1;
+    let grantedRung: number | null = null;
+    for (let i = 0; i < rungThresholds.length; i++) {
+      if (streak >= rungThresholds[i] && !stored.claimedRungs.includes(i)) {
+        grantedRung = i;
+        break;
+      }
+    }
+    const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
+    memoryDevotion.set(profileId, { streak, lastPrayedDay: today, claimedRungs });
+    return { streak, alreadyPrayedToday: false, grantedRung };
+  }
+
+  const { data, error } = await supabase
+    .rpc("pray_at_homestead_shrine", {
+      p_profile_id: profileId,
+      p_today: today,
+      p_yesterday: yesterday,
+      p_rung_thresholds: rungThresholds,
+    })
+    .maybeSingle();
+  if (error) throw new Error(`Could not pray with him: ${error.message}`);
+  if (!data) return null;
+  const row = data as { streak: number | string; already_prayed_today: boolean; granted_rung: number | string | null };
+  return {
+    streak: Number(row.streak),
+    alreadyPrayedToday: row.already_prayed_today,
+    grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
   };
 }

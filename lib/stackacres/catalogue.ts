@@ -36,6 +36,8 @@
  * estate rather than attaching to a tier, so it lives in ./upkeep.ts.
  */
 
+import type { StackAcresShopLock } from "./shop-locks";
+
 export const STACKACRES_CROPS = ["sprout", "cash_crop"] as const;
 export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle"] as const;
 
@@ -163,15 +165,35 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
  * Cattle Pen two or three, so a serving has to cost well under a tenth of
  * those tiers' net or feeding costs more than the animal earns.
  */
-export interface StackAcresFeedDef {
+export interface StackAcresFeedDef extends StackAcresShopLock {
   label: string;
   cost: number;
   servings: number;
 }
 
+/**
+ * A shipment is gated on the land, not on the purse.
+ *
+ * The Feed Sack carries no lock and never will: it is the shelf's floor, and
+ * an animal that has gone hungry has to be feedable by whoever is standing
+ * there. The Bulk Shipment is the volume rung, and it asks for the Fold --
+ * which is exactly where feeding stops being optional. Nothing at the
+ * Farmstead needs it: a Hen Coop's `hungerMs` is longer than its own cycle
+ * (see STACKACRES_CATALOGUE above), so a farm that only keeps hens has never
+ * fed anything and would be buying twenty servings of nothing.
+ *
+ * No live farm is stranded by this. `sectors` is derived, so anybody already
+ * keeping sheep reads as holding the Fold whether or not they ever paid to
+ * clear it -- see lib/stackacres/shop-locks.ts's header.
+ */
 export const STACKACRES_FEED: Readonly<Record<string, StackAcresFeedDef>> = {
   feed_sack: { label: "Feed Sack", cost: 96, servings: 6 },
-  bulk_shipment: { label: "Bulk Shipment", cost: 280, servings: 20 },
+  bulk_shipment: {
+    label: "Bulk Shipment",
+    cost: 280,
+    servings: 20,
+    requiredQuestFlag: "cleared_wallow",
+  },
 };
 
 export const STACKACRES_FEED_IDS = Object.keys(STACKACRES_FEED);

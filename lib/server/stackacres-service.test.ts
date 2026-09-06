@@ -57,6 +57,7 @@ import {
   readStackAcresToolTier,
   readStackAcresUpkeep,
   recordStackAcresSectorCleared,
+  adjustStackAcresInfluence,
   reserveStackAcresExchange,
   adjustStackAcresInventory,
   recordStackAcresHarvest,
@@ -1126,6 +1127,37 @@ describe("feed shipments", () => {
     expect(await balance(token)).toBe(1);
     expect(await readStackAcresFeed(id)).toBe(0);
   });
+
+  /**
+   * The shelf greys the Bulk Shipment out on a farm that has never seen the
+   * Fold, but the shelf is a browser. These are the requests that skip it.
+   */
+  it("refuses a shipment the farm has not unlocked, and takes nothing", async () => {
+    // Rich, and holding no land but home -- exactly the account this gate was
+    // added for: a poker balance arriving at a farm that has never run a
+    // cycle. See lib/stackacres/shop-locks.ts.
+    const { token, id } = await funded(1_000_000, { land: [] });
+
+    await expect(buyStackAcresFeed(token, "bulk_shipment", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+
+    // Refused BEFORE the debit, which is the point: no Gold left, so there is
+    // no refund to have got wrong.
+    expect(await balance(token)).toBe(1_000_000);
+    expect(await readStackAcresFeed(id)).toBe(0);
+  });
+
+  it("sells the same shipment once the Fold is open", async () => {
+    const { token, id } = await funded(1_000_000, { land: ["meadow", "wallow"] });
+    const bulk = STACKACRES_FEED.bulk_shipment;
+    const before = await balance(token);
+
+    await buyStackAcresFeed(token, "bulk_shipment", T0);
+
+    expect(await balance(token)).toBe(before - bulk.cost);
+    expect(await readStackAcresFeed(id)).toBe(bulk.servings);
+  });
 });
 
 describe("expanding capacity", () => {
@@ -1436,6 +1468,54 @@ describe("the equipment ladder", () => {
     const before = await balance(token);
     await upgradeStackAcresTool(token, T0);
     expect(await balance(token)).toBe(before - price);
+  });
+
+  /**
+   * The ladder's second gate. Price was the only one, and a price is a gate
+   * on the PURSE -- which in this app is shared with poker, so it never asked
+   * anything of the farm at all. See lib/stackacres/shop-locks.ts.
+   */
+  it("refuses a rung the farm has not reached, however much Gold is in the purse", async () => {
+    const { token, id } = await funded(5_000_000, { land: [] });
+
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    // Refused on the near side of `spendGoldByProfile`: nothing to refund,
+    // because nothing moved.
+    expect(await balance(token)).toBe(5_000_000);
+    expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
+  });
+
+  it("opens the first paid rung on one milestone and the top rung on three", async () => {
+    const { token, id } = await funded(5_000_000, { land: ["meadow"] });
+
+    // One district cleared: the Iron Shovel is reachable.
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
+
+    // ...and the Golden Spade is not, at milestone 1 against its 3.
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
+
+    // Clearing the rest of the ladder is milestone 3 on land alone.
+    await recordStackAcresSectorCleared(id, "wallow", T0);
+    await recordStackAcresSectorCleared(id, "oxfields", T0);
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("golden-spade");
+  });
+
+  it("takes any three milestones, not one prescribed route to them", async () => {
+    // Two districts plus one town order is the same three as three districts.
+    // The top rung is gated on the farm running, not on a particular way of
+    // running it.
+    const { token, id } = await funded(5_000_000, { land: ["meadow", "wallow"] });
+    await upgradeStackAcresTool(token, T0);
+    await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    await adjustStackAcresInfluence(id, 1);
+
+    await upgradeStackAcresTool(token, T0);
+    expect(await readStackAcresToolTier(id)).toBe("golden-spade");
   });
 
   it("refuses a rung the player cannot afford, and takes nothing", async () => {

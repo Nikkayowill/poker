@@ -267,6 +267,12 @@ import {
   startBlueprintForProfile,
   type BlueprintView,
 } from "./stackacres-blueprint-service";
+import {
+  evaluateStackAcresShopLock,
+  stackacresShopLockRefusal,
+  type StackAcresShopLock,
+  type StackAcresShopProgress,
+} from "@/lib/stackacres/shop-locks";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -945,6 +951,61 @@ async function readLand(
   return { sectors: unlockedSectors(cleared, units), units };
 }
 
+/**
+ * What Ray's shop is allowed to know about this farm before it sells
+ * anything -- see lib/stackacres/shop-locks.ts.
+ *
+ * Three reads, in parallel, rather than the whole `view()`: a gate check runs
+ * BEFORE the Gold moves and `view()` runs after it, so building the entire
+ * farm twice per purchase to answer one boolean would double the cost of
+ * every shelf button on the screen. Deliberately narrow for a second reason
+ * too -- a progress struct that cannot see the purse cannot accidentally
+ * become a second place that decides whether somebody can afford something.
+ *
+ * Land comes through `readLand` above rather than by unioning the cleared
+ * rows and the units here. That is the whole point: a second, subtly
+ * different idea of which land is yours is the one bug this gate cannot
+ * afford, so there is exactly one place that derivation is written.
+ */
+async function readShopProgress(profileId: string): Promise<StackAcresShopProgress> {
+  const [{ sectors }, influence, greenhouseBuilt] = await Promise.all([
+    readLand(profileId),
+    readStackAcresInfluence(profileId),
+    readStackAcresGreenhouse(profileId),
+  ]);
+  return { sectors, influence, greenhouseBuilt };
+}
+
+/**
+ * Refuses a purchase the farm has not unlocked yet, before a piece of Gold
+ * moves.
+ *
+ * THIS IS THE SECURITY BOUNDARY, not the greyed-out card. The shelf disables
+ * a locked row, but the shelf is a browser: a hand-rolled POST, a tab left
+ * open across a prestige reset, or a replayed request all arrive here with a
+ * perfectly well-formed body naming a real item. So the check sits on the
+ * near side of `spendGoldByProfile` in every gated path -- refusing after the
+ * debit would mean a refund, and a refund is a second money path where a
+ * plain "no" will do.
+ *
+ * Costs nothing on an ungated row, and nothing extra on a row that passes:
+ * the reads are skipped outright when the entry carries no lock, and the
+ * refusal's snapshot is only built once there is actually a refusal to send.
+ * Most of Ray's shelf is ungated and must not pay for this.
+ */
+async function requireUnlockedShopEntry(
+  entry: StackAcresShopLock & { label: string },
+  profileId: string,
+  now: Date,
+): Promise<void> {
+  if (!entry.requiredQuestFlag && !entry.minimumMilestone) return;
+  const state = evaluateStackAcresShopLock(entry, await readShopProgress(profileId));
+  if (state.isUnlocked) return;
+  throw new StackAcresRequestError(stackacresShopLockRefusal(entry.label, state), 409, {
+    round: await snapshots(profileId, now),
+  });
+}
+
 /** Refuses an action aimed at land nobody has cleared yet. The client hides
  *  these controls entirely (a locked sector paints no pens to tap), so this
  *  is the guard against a hand-rolled request rather than a UI state. */
@@ -1170,6 +1231,11 @@ export async function upgradeStackAcresTool(
       round: await snapshots(profile.id, now),
     });
   }
+
+  // Before the money, not after it. The rung the ladder offers next is the
+  // only one this request can name (see the doc comment above), so the gate
+  // has exactly one entry to evaluate and no index off the wire to trust.
+  await requireUnlockedShopEntry(stackacresToolTierDef(next), profile.id, now);
 
   // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
   // spendGoldByProfile is the authority.
@@ -1490,6 +1556,11 @@ export async function buyStackAcresFeed(
   const item = STACKACRES_FEED[itemId];
   if (!item) throw new StackAcresRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
+
+  // The shelf greys this row out, and that is presentation; this is the
+  // check. `itemId` came off the wire, so a request naming the Bulk Shipment
+  // from a farm that has never seen the Fold reaches exactly here and stops.
+  await requireUnlockedShopEntry(item, profile.id, now);
 
   // Rule 1: the Gold leaves before the servings land.
   const debited = await spendGoldByProfile(profile.id, item.cost);

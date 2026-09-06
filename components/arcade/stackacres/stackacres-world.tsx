@@ -138,6 +138,13 @@ export interface StackAcresWorldApi {
   setWildlifeTimeOfDay: (tod: WildlifeTimeOfDay) => void;
   setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
   setLivestockHealth: (zone: ZoneId, health: number) => void;
+  /** Every Mechanical Forage Drone this profile owns, by id --
+   *  `StackAcresView.droneHangar.drones` mapped to their ids. PUSHED, same
+   *  "push, never rebuild" contract as `setMerchant`: stackacres-farm.tsx
+   *  calls this when the view's own drone list changes, not on every
+   *  render. Passing the unchanged list twice is a harmless no-op (the
+   *  scene's own `setDroneHangar` diffs against what it already has). */
+  setDroneHangar: (droneIds: string[]) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -222,6 +229,10 @@ export interface StackAcresWorldProps {
    *  only ever pushes what it is handed straight into the scene, the same
    *  "push, never rebuild" contract `sectors` above already follows. */
   soilTiles: readonly SoilTile[];
+  /** A patrolling drone just started its vacuum animation on a spawned
+   *  drop -- see StackAcresSceneCallbacks.onDroneForageCollected's own doc
+   *  comment for why this fires before the animation finishes. */
+  onDroneForageCollected: (droneId: string) => void;
   api: Ref<StackAcresWorldApi | null>;
 }
 
@@ -279,6 +290,7 @@ export function StackAcresWorld({
   onLockedSectorTap,
   onViewMoved,
   soilTiles,
+  onDroneForageCollected,
   api,
 }: StackAcresWorldProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -301,6 +313,7 @@ export function StackAcresWorld({
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
   const viewMovedRef = useRef(onViewMoved);
+  const droneForageCollectedRef = useRef(onDroneForageCollected);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
   const toolIconRef = useRef<PainterName>(toolGhostIcon(tool, toolTier));
@@ -333,6 +346,7 @@ export function StackAcresWorld({
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     viewMovedRef.current = onViewMoved;
+    droneForageCollectedRef.current = onDroneForageCollected;
     toolIconRef.current = toolGhostIcon(tool, toolTier);
     toolRef.current = tool;
     toolTierRef.current = toolTier;
@@ -386,6 +400,7 @@ export function StackAcresWorld({
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onViewMoved: () => viewMovedRef.current(),
+          onDroneForageCollected: (droneId) => droneForageCollectedRef.current(droneId),
         },
         {
           reducedMotion,
@@ -519,6 +534,7 @@ export function StackAcresWorld({
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
+      setDroneHangar: (droneIds) => sceneRef.current?.setDroneHangar(droneIds),
     }),
     [],
   );

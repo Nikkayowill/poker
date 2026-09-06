@@ -73,7 +73,15 @@ export type Action =
   | { action: "pray" }
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
-  | { action: "give-gift"; npc: NpcId; item: MachineItemId };
+  | { action: "give-gift"; npc: NpcId; item: MachineItemId }
+  // The Mechanical Forage Drone. `deploy-drone` spends the flat hangar fee,
+  // once per drone; `collect-drone-forage` pays whatever the server rolled
+  // for that one claim -- there is no fake patch for it in
+  // ./optimistic-actions.ts (a dice roll this app won't fake, same posture
+  // a harvest's own secret-find roll takes), only the scene's own
+  // local-optimistic vacuum animation. See lib/stackacres/drone.ts.
+  | { action: "deploy-drone" }
+  | { action: "collect-drone-forage"; droneId: string };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -98,6 +106,11 @@ export function intentOf(body: Action): string {
   if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
+  // A forage claim on one drone must never dedupe against or block a claim
+  // on a different drone -- checked before the generic fallback below,
+  // which would otherwise collapse every drone's claim onto one shared
+  // "collect-drone-forage" intent.
+  if ("droneId" in body) return `${body.action}:${body.droneId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;
   if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
   return body.action;

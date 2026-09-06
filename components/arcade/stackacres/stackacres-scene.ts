@@ -18,7 +18,21 @@ import {
   unprojectBoundsApprox,
   type DiamondCorners,
 } from "@/lib/stackacres/iso";
-import { worldBoundsScreenRect } from "@/lib/stackacres/bounds";
+import { worldBoundsRect, worldBoundsScreenRect } from "@/lib/stackacres/bounds";
+import {
+  DRONE_VACUUM_MS,
+  DroneState,
+  droneHoverOffset,
+  rollDropOffsetTiles,
+  spawnDrone,
+  stepDrone,
+  tileAtRingOffset,
+  tileGridBounds,
+  type Drone,
+  type GridBounds,
+  type TileCoord,
+} from "@/lib/stackacres/drone";
+import { tileCentre, tileOf } from "@/lib/stackacres/farmhand-path";
 import {
   GREENHOUSE_PLOT,
   GREENHOUSE_TILE,
@@ -393,6 +407,20 @@ export interface StackAcresSceneCallbacks {
    * away rather than drift off the thing it was opened on.
    */
   onViewMoved: () => void;
+  /**
+   * A patrolling Mechanical Forage Drone just arrived at a spawned
+   * collectible's tile and started its vacuum animation. Fired the INSTANT
+   * that happens (`stepDrone`'s own `arrivedAtCollectible` flag), before the
+   * animation finishes -- this is the local-optimistic half of the
+   * collection: the shell calls the real `collect-drone-forage` action
+   * right away rather than waiting for a purely cosmetic tween to land, the
+   * same "the action fires, the animation is decoration" rule
+   * `onMonkTap`/`playMonkPrayer` already follows. The scene does not know or
+   * care what the claim is worth -- see lib/server/stackacres-drone-
+   * service.ts for the server-authoritative cooldown/ceiling check this can
+   * still lose to.
+   */
+  onDroneForageCollected: (droneId: string) => void;
 }
 
 export interface StackAcresSceneOptions {
@@ -676,6 +704,81 @@ function bakeFarmhandTexture(scene: Phaser.Scene): boolean {
   return true;
 }
 
+/** Texture key for the drone's own body, baked once by `bakeDroneTexture`. */
+const DRONE_TEXTURE = "forageDrone";
+/** Texture key for a dropped collectible, baked once by
+ *  `bakeForageDropTexture`. */
+const FORAGE_DROP_TEXTURE = "forageDrop";
+
+/**
+ * Bakes the drone's own picture: a hand-drawn Graphics shape rather than a
+ * supplied sheet, since there is no drone art yet -- the same "goes without
+ * costing anything" posture `bakeFarmhandTexture` takes when its own sheet
+ * is missing, except here there was never a sheet to begin with. 32px, a
+ * power of two on both axes, so it needs no `powerOfTwoCeil` padding the
+ * way a sheet-sourced canvas texture does (see this file's own POT
+ * comments) -- a `generateTexture` bake is exactly the size it is drawn at.
+ *
+ * A simple metal disc body (iron rim, metal top -- see art-palette.ts),
+ * a lens dot for a "face", and two crossed rotor arms. Read once, cached by
+ * `scene.textures.exists`, exactly like every other bake in this file.
+ */
+function bakeDroneTexture(scene: Phaser.Scene): string {
+  if (scene.textures.exists(DRONE_TEXTURE)) return DRONE_TEXTURE;
+  const size = 32;
+  const mid = size / 2;
+  const metal = rampHex("metal");
+  const iron = rampHex("iron");
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  // Ground shadow disc first, so the body's own rim sits above it.
+  g.fillStyle(0x000000, 0.28);
+  g.fillEllipse(mid, size - 4, size * 0.55, size * 0.22);
+  // Rotor arms, drawn under the body so only their tips peek past its rim.
+  g.lineStyle(2, iron.side, 0.9);
+  g.lineBetween(4, mid - 6, size - 4, mid - 6);
+  g.lineBetween(4, mid + 2, size - 4, mid + 2);
+  // The body: an iron rim, a lit metal top -- the same one-sun convention
+  // (light from directly above) every isometric structure in this file
+  // follows, just applied to a disc instead of a roof.
+  g.fillStyle(iron.rim, 1);
+  g.fillCircle(mid, mid, mid - 3);
+  g.fillStyle(metal.side, 1);
+  g.fillCircle(mid, mid - 1, mid - 5);
+  g.fillStyle(metal.top, 1);
+  g.fillCircle(mid, mid - 2, mid - 7);
+  // A single lens: the "face" every autonomous unit on this map gets some
+  // version of (the farmhand's own sprite has eyes; a drone gets a lens).
+  g.fillStyle(iron.rim, 1);
+  g.fillCircle(mid, mid, 4);
+  g.fillStyle(0x9fe8ff, 0.95);
+  g.fillCircle(mid, mid, 2);
+  g.generateTexture(DRONE_TEXTURE, size, size);
+  g.destroy();
+  return DRONE_TEXTURE;
+}
+
+/**
+ * Bakes one dropped collectible's picture: a small gold orb, the ramp
+ * StackAcres already uses for currency-adjacent things. 16px, also a power
+ * of two.
+ */
+function bakeForageDropTexture(scene: Phaser.Scene): string {
+  if (scene.textures.exists(FORAGE_DROP_TEXTURE)) return FORAGE_DROP_TEXTURE;
+  const size = 16;
+  const mid = size / 2;
+  const gold = rampHex("gold");
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0x000000, 0.25);
+  g.fillEllipse(mid, size - 3, size * 0.6, size * 0.22);
+  g.fillStyle(gold.rim, 1);
+  g.fillCircle(mid, mid, mid - 2);
+  g.fillStyle(gold.top, 1);
+  g.fillCircle(mid, mid - 1, mid - 5);
+  g.generateTexture(FORAGE_DROP_TEXTURE, size, size);
+  g.destroy();
+  return FORAGE_DROP_TEXTURE;
+}
+
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -845,6 +948,32 @@ interface MonkNode {
   state: MonkPose;
 }
 
+/**
+ * One Mechanical Forage Drone, fully on the scene's own side of the split
+ * lib/stackacres/drone.ts's module doc describes: `drone` is the pure FSM
+ * state stepped every frame by `stepDrone`, everything else here is the
+ * Phaser picture of it.
+ */
+interface DroneNode {
+  drone: Drone;
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  /** Per-drone phase offset for `droneHoverOffset`, so a fleet of drones
+   *  does not bob in lockstep -- see that function's own doc comment. */
+  phaseSeed: number;
+  /** The tile a drop is waiting to be swept from, or null while none is
+   *  scheduled. Rolled fresh (`rollDropOffsetTiles` ahead of the drone's
+   *  CURRENT tile) the instant the previous one is collected or this drone
+   *  is first spawned, so there is always exactly one drop ahead of a
+   *  patrolling drone, never zero and never more than one. */
+  dropTile: TileCoord | null;
+  /** The drop's own sprite, or null while `dropTile` is null. Destroyed the
+   *  instant the vacuum animation finishes, never reused -- a drop is a
+   *  one-shot event, not a pooled effect, since it survives no longer than
+   *  it takes the drone whose ring it sits on to walk one edge. */
+  dropSprite: Phaser.GameObjects.Image | null;
+}
+
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
 interface PinchGesture {
   kind: "pinch";
@@ -976,6 +1105,27 @@ export class StackAcresScene extends Phaser.Scene {
    *  own snapshot arrives, which can race the scene's boot) is held here and
    *  applied once there is a scene to add an image to. */
   private pendingMerchant: boolean | null = null;
+  /**
+   * Every deployed Mechanical Forage Drone this profile owns, by drone id.
+   * Ownership (which ids exist) is server-confirmed via `setDroneHangar`;
+   * everything else about one -- its live tile, patrol waypoint, charge,
+   * whatever it is currently vacuuming -- is this scene's own, exactly as
+   * ephemeral as a critter's wander position. See lib/stackacres/drone.ts's
+   * own module doc for why that split is deliberate.
+   */
+  private droneNodes = new Map<string, DroneNode>();
+  /** Mirrors `pendingMerchant`'s own role: a `setDroneHangar` call that
+   *  lands before `create()` has run is held here and applied once there is
+   *  a scene to build drones into. */
+  private pendingDroneIds: string[] | null = null;
+  /** The whole farm's own outer edge, in tile space -- where every drone's
+   *  flight path is confined, per Architecture Constraint 1. Computed once
+   *  in `create()` (`worldBoundsRect()` does not change at runtime) rather
+   *  than per drone, since every drone here shares one ring. */
+  private droneGridBounds: GridBounds | null = null;
+  /** Baked once in `create()`; see `bakeDroneTexture`/`bakeForageDropTexture`. */
+  private droneTextureKey: string | null = null;
+  private forageDropTextureKey: string | null = null;
   private created = false;
   private opened = false;
   private random = seededRandom(Date.now() % 100_000);
@@ -1228,6 +1378,12 @@ export class StackAcresScene extends Phaser.Scene {
     }
     bakeGrass(this);
     bakeFarmhandTexture(this);
+    this.droneTextureKey = bakeDroneTexture(this);
+    this.forageDropTextureKey = bakeForageDropTexture(this);
+    // The whole farm's own outer edge, in tile space -- computed once here
+    // since worldBoundsRect() never changes at runtime, and shared by
+    // every drone rather than recomputed per drone.
+    this.droneGridBounds = tileGridBounds(worldBoundsRect());
 
     // Depth is the world y of a thing's feet, so it can go far negative north
     // of the farm: the grass has to sit below anything the player can roam to.
@@ -1345,6 +1501,11 @@ export class StackAcresScene extends Phaser.Scene {
       const present = this.pendingMerchant;
       this.pendingMerchant = null;
       this.setMerchant(present);
+    }
+    if (this.pendingDroneIds !== null) {
+      const droneIds = this.pendingDroneIds;
+      this.pendingDroneIds = null;
+      this.setDroneHangar(droneIds);
     }
   }
 
@@ -2078,6 +2239,122 @@ export class StackAcresScene extends Phaser.Scene {
       .setAlpha(0.8);
     const image = this.put("midnightMerchant", x, y, this.depthAt(x, y));
     this.merchantNode = { image, shadow };
+  }
+
+  /**
+   * Reconciles the live drone fleet against `droneIds` -- the server's own
+   * ownership list, from `StackAcresView.droneHangar.drones` -- the same
+   * "diff and reconcile" shape `setMerchant` uses for one entity, sized up
+   * to a set. Called by stackacres-farm.tsx every time that list changes,
+   * not on every render tick; an unchanged list is a harmless no-op.
+   *
+   * Requirement 1's runtime half lives here as much as in `stepDrone`
+   * itself: a drone this method never builds has no container, no sprite,
+   * and nothing in `update()` ever iterates it -- there is no update loop
+   * for a hangar the caller has not confirmed unlocked to enter, because
+   * there is no drone object for one to run on. The shell is the only thing
+   * that can call this with a non-empty list, and it does so only once
+   * `StackAcresView.droneHangar.unlocked` is true.
+   */
+  setDroneHangar(droneIds: string[]): void {
+    if (!this.created || !this.droneGridBounds || !this.droneTextureKey) {
+      this.pendingDroneIds = droneIds;
+      return;
+    }
+
+    const wanted = new Set(droneIds);
+    for (const [id, node] of this.droneNodes) {
+      if (wanted.has(id)) continue;
+      node.dropSprite?.destroy();
+      node.container.destroy(true);
+      this.droneNodes.delete(id);
+    }
+    for (const id of droneIds) {
+      if (this.droneNodes.has(id)) continue;
+      this.droneNodes.set(id, this.spawnDroneNode(id));
+    }
+  }
+
+  /** One freshly deployed drone's Phaser picture, parked at the ring tile
+   *  nearest the barn (Ray's Museum -- the hangar it was bought from) and
+   *  ready to start patrolling on the next `update()`. */
+  private spawnDroneNode(id: string): DroneNode {
+    const bounds = this.droneGridBounds!;
+    const hangarTile = tileOf({ x: BARN_X, y: BARN_Y });
+    const drone = spawnDrone(id, hangarTile, bounds);
+    const at = isoProject(drone.x, drone.y);
+    const container = this.add.container(at.x, at.y).setDepth(this.depthAt(drone.x, drone.y));
+    const sprite = this.add.image(0, 0, this.droneTextureKey!).setOrigin(0.5, 0.5).setScale(1 / S);
+    const shadow = this.add
+      .image(0, 3 / S, this.droneTextureKey!)
+      .setOrigin(0.5, 0.5)
+      .setScale(0.75 / S, 0.3 / S)
+      .setTint(0x000000)
+      .setAlpha(0.22);
+    container.add([shadow, sprite]);
+    // A stable per-drone phase from its own id (a UUID, so this need only be
+    // deterministic, not well-distributed) -- see `droneHoverOffset`'s own
+    // doc comment for why a fleet must not bob in lockstep.
+    let phaseSeed = 0;
+    for (let i = 0; i < id.length; i++) phaseSeed = (phaseSeed * 31 + id.charCodeAt(i)) % 6283;
+    return { drone, container, sprite, phaseSeed, dropTile: null, dropSprite: null };
+  }
+
+  /** Rolls and places this drone's next drop, `DRONE_DROP_MIN_GAP_TILES` to
+   *  `DRONE_DROP_MAX_GAP_TILES` ring-tiles ahead of wherever it stands right
+   *  now -- see `rollDropOffsetTiles`'s own doc comment for why this is the
+   *  perimeter's own analogue of Poisson-disc spacing rather than the 2D
+   *  original. Never called while a drop is already scheduled: exactly one
+   *  drop is ever ahead of a patrolling drone. */
+  private scheduleDrop(node: DroneNode): void {
+    const bounds = this.droneGridBounds!;
+    const offset = rollDropOffsetTiles(this.random);
+    node.dropTile = tileAtRingOffset(node.drone.waypoint, offset, bounds);
+    const centre = tileCentre(node.dropTile);
+    const at = isoProject(centre.x, centre.y);
+    node.dropSprite = this.add
+      .image(at.x, at.y, this.forageDropTextureKey!)
+      .setOrigin(0.5, 0.85)
+      .setScale(1 / S)
+      .setDepth(this.depthAt(centre.x, centre.y, -0.1));
+    // A gentle standing bob so a drop reads as alive from across the map,
+    // separate from the drone's own hover (which is applied in `update()`,
+    // not a tween -- this one has no state to step, so a looping tween is
+    // the cheaper tool for a sprite with nothing else going on).
+    this.tweens.add({
+      targets: node.dropSprite,
+      y: at.y - 3,
+      duration: 620,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  /**
+   * Plays the magnetic-vacuum pull and reports the pickup, the instant
+   * `stepDrone` says a patrol arrived at its own scheduled drop -- see
+   * `StackAcresSceneCallbacks.onDroneForageCollected`'s own doc comment for
+   * why the callback fires here, before the tween finishes, rather than on
+   * `onComplete`.
+   */
+  private playVacuum(node: DroneNode): void {
+    const drop = node.dropSprite;
+    node.dropSprite = null;
+    node.dropTile = null;
+    this.callbacks.onDroneForageCollected(node.drone.id);
+    if (!drop) return;
+    this.tweens.killTweensOf(drop);
+    this.tweens.add({
+      targets: drop,
+      x: node.container.x,
+      y: node.container.y,
+      scale: 0.15 / S,
+      alpha: 0,
+      duration: DRONE_VACUUM_MS,
+      ease: "Cubic.easeIn",
+      onComplete: () => drop.destroy(),
+    });
   }
 
   /** A world-space child of `container`, positioned and scaled the way every
@@ -4971,6 +5248,46 @@ export class StackAcresScene extends Phaser.Scene {
       const breath = walking ? 0 : Math.sin(time / 420 + node.phase) * 0.022;
       const mirror = mirrorFor(STOCK_ART[stock], node.critter.facing);
       node.sprite.setScale((mirror * (1 - breath * 0.5)) / S, (1 + breath) / S);
+    }
+
+    this.stepDrones(time, delta);
+  }
+
+  /**
+   * One frame of every deployed drone's flight -- gated, in full, on
+   * `this.droneGridBounds` existing at all: that field is set exactly once,
+   * in `create()`, and `this.droneNodes` can only hold entries `setDroneHangar`
+   * put there, which itself refuses to run before `create()` has. A drone
+   * with no confirmed hangar unlock is never in this map to begin with, so
+   * there is nothing here to specially skip for Requirement 1 -- the gate
+   * already happened at the door.
+   */
+  private stepDrones(time: number, delta: number): void {
+    const bounds = this.droneGridBounds;
+    if (!bounds) return;
+    for (const node of this.droneNodes.values()) {
+      // Exactly one drop ahead of a patrolling drone at all times -- rolled
+      // fresh the instant there is none (first spawn, or the previous one
+      // was just vacuumed).
+      if (!node.dropTile && node.drone.state !== DroneState.Locked) {
+        this.scheduleDrop(node);
+      }
+
+      const step = stepDrone(node.drone, delta, node.dropTile, bounds);
+      node.drone = step.drone;
+      if (step.arrivedAtCollectible) this.playVacuum(node);
+
+      const hover = droneHoverOffset(time, node.phaseSeed);
+      const at = isoProject(node.drone.x, node.drone.y);
+      node.container.setPosition(at.x, at.y + hover);
+      node.container.setDepth(this.depthAt(node.drone.x, node.drone.y));
+      // A slow yaw while patrolling, still while parked (vacuuming or
+      // recharging) -- the one cue on the sprite itself, beyond position,
+      // that distinguishes "flying" from "stopped", since there is no
+      // walk-cycle frame set to swap the way a critter's gait has.
+      if (node.drone.state === DroneState.Patrolling) {
+        node.sprite.setRotation(time / 900 + node.phaseSeed);
+      }
     }
   }
 }

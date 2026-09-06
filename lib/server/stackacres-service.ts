@@ -310,6 +310,14 @@ import {
   type StackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
+import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
+import {
+  collectDroneForage,
+  deployDrone,
+  isDroneHangarUnlocked,
+  listDrones,
+} from "./stackacres-drone-service";
+import type { StoredDrone } from "./stackacres-drone-store";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -554,6 +562,17 @@ export interface StackAcresView {
    *  `machines`, kind `"vat"`), otherwise its current seal (if any) and what
    *  each tier of it is worth. See lib/stackacres/aging.ts. */
   vat: VatContainer | null;
+  /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
+   *  from Ray's Museum donations, see `isDroneHangarUnlocked`) and every
+   *  drone this profile owns. A drone's own live tile/patrol/charge is
+   *  NEVER in this snapshot -- that is client-side, ephemeral state owned
+   *  entirely by lib/stackacres/drone.ts, the same split `units` takes with
+   *  a critter's own wander position. This is ownership only: what the
+   *  scene needs to know to decide how many drones to spawn and where. */
+  droneHangar: {
+    unlocked: boolean;
+    drones: { droneId: string; deployedAt: string }[];
+  };
 }
 
 /**
@@ -782,6 +801,16 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   const sectors = unlockedSectors(cleared, units);
   const vatMachine = machineRows.find((machine) => machine.kind === "vat") ?? null;
   const vat = vatMachine ? toVatContainer(vatMachine, vatManifest, now) : null;
+  // A separate pair of reads rather than folded into the big Promise.all
+  // above: that array is a fixed-length tuple on purpose (see its own
+  // comment on why a variable-length spread would widen every sibling
+  // element's type), and this pair has nothing to do with land/economy --
+  // it is read-only hangar ownership, exactly the same "narrow, no Gold
+  // opinion" posture `readShopProgress` takes for Ray's shop locks.
+  const [droneHangarUnlocked, droneRows] = await Promise.all([
+    isDroneHangarUnlocked(profile.id),
+    listDrones(profile.id),
+  ]);
   return {
     units,
     profile,
@@ -830,6 +859,10 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     devotion: devotionView(storedDevotion, now),
     friendship,
     vat,
+    droneHangar: {
+      unlocked: droneHangarUnlocked,
+      drones: droneRows.map((drone) => ({ droneId: drone.droneId, deployedAt: drone.deployedAt })),
+    },
   };
 }
 
@@ -971,6 +1004,12 @@ export type StackAcresActionResult = StackAcresView & {
     multiplier: number;
     gold: number;
   };
+  /** Set by `deployStackAcresDrone` on a successful deploy; every other
+   *  action leaves this undefined. */
+  droneDeploy?: { droneId: string };
+  /** Set by `collectStackAcresDroneForage` on a successful claim; every
+   *  other action leaves this undefined. */
+  droneForage?: { droneId: string; reward: number };
 };
 
 /**
@@ -3976,6 +4015,71 @@ export async function giveStackAcresGift(
     ...(await view(profile, now)),
     gift: { npc, points: result.points, outcome: result.outcome, grantedKeepsake },
   };
+}
+
+/**
+ * Deploys one Mechanical Forage Drone for the caller, at
+ * `DRONE_DEPLOY_COST_GOLD` flat. Both progression invariants live in
+ * `deployDrone` (./stackacres-drone-service.ts): the hangar's derived,
+ * museum-donation unlock gate is checked before any Gold moves, and the
+ * debit + ownership row are one atomic RPC, mirroring
+ * `unlockStackAcresSynergyPerk`'s own shape just above.
+ */
+export async function deployStackAcresDrone(token: string, now = new Date()): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const result = await deployDrone(profile.id, now);
+  if (!result.success) {
+    const message =
+      result.reason === "hangar_locked"
+        ? "Ray's Museum hasn't turned up the drone hangar blueprint yet -- keep donating finds."
+        : `A drone costs ${DRONE_DEPLOY_COST_GOLD.toLocaleString()} Gold.`;
+    throw new StackAcresRequestError(message, result.reason === "hangar_locked" ? 409 : 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return { ...(await view(profile, now)), droneDeploy: { droneId: result.droneId } };
+}
+
+/** Every drone the caller currently owns, and whether the hangar itself is
+ *  unlocked -- read-only, no Gold moves, safe to poll from the shelf the
+ *  same way `readShopProgress` is. */
+export async function listStackAcresDrones(
+  token: string,
+): Promise<{ hangarUnlocked: boolean; drones: StoredDrone[] }> {
+  const profile = await ensureProfile(token);
+  const [hangarUnlocked, drones] = await Promise.all([
+    isDroneHangarUnlocked(profile.id),
+    listDrones(profile.id),
+  ]);
+  return { hangarUnlocked, drones };
+}
+
+/**
+ * Claims one forage pickup swept up by an already-deployed drone. See
+ * `collectDroneForage`'s own doc comment for the full picture: local-
+ * optimistic on the client, re-verified (ownership, cooldown, the daily
+ * Gold ceiling) inside one locked transaction on the server before a single
+ * Gold piece moves.
+ */
+export async function collectStackAcresDroneForage(
+  token: string,
+  droneId: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const result = await collectDroneForage(profile.id, droneId, now);
+  if (!result.success) {
+    const message =
+      result.reason === "cooling_down"
+        ? "That drone is still recharging its magnets."
+        : result.reason === "day-capped"
+          ? "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC."
+          : "There is no such drone here.";
+    throw new StackAcresRequestError(message, result.reason === "no_such_drone" ? 404 : 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return { ...(await view(profile, now)), droneForage: { droneId, reward: result.reward } };
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

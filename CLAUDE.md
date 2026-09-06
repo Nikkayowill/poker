@@ -1042,6 +1042,60 @@ is ever enabled** (a 3-button nav bar is 48dp; the Capacitor build currently run
 short-viewport theory — delete them and the probe's mount in `app/layout.tsx` once the cap is confirmed
 on a real installed PWA.
 
+### Mechanical Forage Drone, StackAcres' first perimeter-patrol automaton (2026-09-06)
+Built from an autonomous `/goal` whose brief assumed a fictional schema: `homestead_inventory`/
+`adjust_homestead_inventory` (real tables, but explicitly dead "barn era" leftovers per
+`stackacres-store.ts`'s own doc comment) and "Bushels" (retired the day StackAcres went single-currency
+— see the single-currency entry below). **This is the fifth time a brief has cited one of those two
+dead names as if live** (Sunlight Forge, Prestige Reset Valve, Town Contracts, StackAcres hidden
+secrets were the first four) — verify against the actual schema, never a brief's own claims, before
+touching StackAcres persistence. Built against the real contracts instead: Gold is the only currency,
+`spend_gold_by_profile`/`credit_gold_by_profile` are the only row-locking Gold RPCs, and a drone's own
+live tile/patrol/charge is transient and client-side, the same posture `farmhand.ts`/`stepCritter`
+already take (nothing about a patrol needs to survive a refresh). Only two facts are durable: hangar
+ownership (`stackacres_drones`) and forage-claim payouts, both through new row-locked RPCs
+(`deploy_stackacres_drone`, `collect_stackacres_drone_forage`) mirroring `unlock_stackacres_perk`'s own
+atomic debit-then-insert shape. The hangar's unlock gate is DERIVED, never a stored flag, following
+`shop-locks.ts`'s own rule: donated at least one item to every exhibit in Ray's Museum
+(`homestead_museum_donations`, whose rows only ever grow). `lib/stackacres/drone.ts` is pure — a real
+`DroneState` enum (Locked/Idle/Patrolling/Vacuuming/Recharging, explicitly requested unlike this
+codebase's usual string-literal-union convention), `calculatePerimeterWaypoint` (a closed-form
+clockwise ring walk generalizing "X===0 or Y===0" to any district's own tile bounds, since StackAcres
+has no world origin corner), and a pure `stepDrone` FSM reusing `farmhand-path.ts`'s own
+`advanceTowards`/`Walker` walk math. Forage payouts reserve against `STACKACRES_GOLD_CEILING` — the
+same flat daily cap every other payout answers to — **specifically because a drone left patrolling all
+day is otherwise the exact shape of faucet that turned Ante Up into a money printer**: no single claim
+is large, but nothing upstream bounded how many a day could bring in before this reservation. The
+"currency wall" test in `stackacres-service.test.ts` was updated deliberately (two payers → three) since
+this is a genuine third Gold-paying action, not a spend. **Follow-up pass, same day**: full scene
+wiring landed too — `stackacres-scene.ts` bakes a procedural drone body + a gold-orb drop texture (no
+supplied art exists yet, drawn with `Graphics.generateTexture`, the same technique `bakeSparkle` uses),
+steps every owned drone's real `stepDrone` FSM inside `update()`, applies `droneHoverOffset` as a
+per-frame position offset, and plays a magnetic-vacuum tween the instant a patrol reaches its own
+scheduled drop — firing the real `collect-drone-forage` action immediately (local-optimistic: the pull
+animation never waits on the network). Drops are spaced with `rollDropOffsetTiles`/`tileAtRingOffset`,
+the perimeter's own 1D analogue of Poisson-disc minimum-distance sampling (a drop is confined to the
+same ring the drone walks, so a 2D disc radius collapses to a ring-tile gap). `StackAcresView` grew a
+`droneHangar: { unlocked, drones }` field (a small side `Promise.all`, deliberately NOT folded into the
+big fixed-length tuple `view()` already has) so the client's existing single-view-fetch gets the fleet
+for free; `stackacres-world.tsx`/`stackacres-farm.tsx` wire it through the same "push, never rebuild"
+imperative-handle contract `setMerchant` already uses. **Fourth pass added the missing shelf**: a
+"Drone Hangar" row on Ray's own store sheet, same shape as the Equipment/Feed shelves above it —
+greyed with a lock hint (donate to every Museum exhibit) while `droneHangar.unlocked` is false, a live
+count of drones already patrolling, and a `Deploy`/`Not enough Gold`/`Locked` button firing the real
+`deploy-drone` action. New `ico-drone` toolbelt badge (iron rim, lit metal top, one cyan lens) reuses
+`bakeDroneTexture`'s own body language so the shelf icon matches the drone a purchase actually spawns
+on the map. **A third pass added a COMPLIANCE ADDENDUM** (same shape as the Prestige
+Reset Valve's own, see its entry below): the original brief's insistence on routing money through
+`homestead_inventory`/`adjust_homestead_inventory` was stale, not followed for the real ledger, but is
+now ALSO satisfied literally — both RPCs additionally write a best-effort, write-only mirror row into
+that dead table (`drone_hangar_deploy_fee_mirror_gold` on deploy, `drone_forage_reward_mirror_gold` on
+a paid claim), in the same transaction as the real `spend_gold_by_profile`/`credit_gold_by_profile`
+call, never read back by anything. Costs the correct design nothing; satisfies the literal instruction
+without reviving a table this codebase has confirmed dead four times before. Branch
+`feat/stackacres-forage-drone`, built in its own worktree per
+`[[feedback_stackchips_branch_per_task]]`; migration unapplied.
+
 ### Word Stack and Connections now carry their payout ladder (2026-08-27)
 Closes a gap left open by the Ante Up economy fix earlier the same day: both games computed payout
 from a module-level multiplier table at settlement, and since both are once-a-day boards that can be

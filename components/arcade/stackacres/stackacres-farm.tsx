@@ -70,11 +70,7 @@ import {
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
 import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
-import {
-  optimisticallyFedUnit,
-  optimisticallyWateredUnit,
-  type StackAcresUnitSnapshot,
-} from "@/lib/stackacres/units";
+import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import { stockZone } from "@/lib/stackacres/world";
@@ -125,6 +121,11 @@ import {
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
 import type { TapPoint } from "./stackacres-scene";
+import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actions";
+import {
+  predictStackAcresAction,
+  type FarmPredictContext,
+} from "@/lib/stackacres/optimistic-actions";
 
 /**
  * StackAcres: a farm of staked crops and livestock, drawn as a place you look
@@ -266,80 +267,6 @@ interface StackAcresResponse {
   reason?: "day-capped";
 }
 
-type Action =
-  | { action: "expand-capacity"; stock: StackAcresStock }
-  | { action: "clear-sector"; sector: SectorId }
-  | { action: "build-greenhouse" }
-  | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean }
-  | { action: "buy-stock"; stock: StackAcresStock }
-  | { action: "retire"; unitId: string }
-  // No `unitIds` means "bring in everything that is ready" -- what the
-  // Harvest key sends. A single id is what tapping one unit sends.
-  | { action: "collect"; unitIds?: string[] }
-  | { action: "feed"; unitId: string }
-  | { action: "water"; unitId: string }
-  | { action: "clear"; unitId: string }
-  | { action: "buy-feed"; itemId: string }
-  | { action: "sell"; item: StackAcresItem; quantity: number }
-  | { action: "upgrade-tool" }
-  // The idle-worker pass: settles every ripe wheat plot and every mill that
-  // has become startable or finished. Moves no Gold; the automated farmhand
-  // is what asks for it (see `farmhandHooks`).
-  | { action: "work" }
-  // Asks the town to post an order. Moves nothing either. `fulfill-contract`
-  // below is the one that pays, and it reserves against the same flat daily
-  // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
-  | { action: "request-contract" }
-  | { action: "fulfill-contract" }
-  | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
-  | { action: "donate-secret-item"; itemId: SecretItemId }
-  | { action: "consume-secret-item"; itemId: SecretItemId }
-  | { action: "trade-secret-item"; itemId: SecretItemId }
-  // The Synergy Tree. `unlock-synergy-perk` spends Gold, once, permanent;
-  // `activate-synergy-perk` moves no Gold, only the loadout.
-  | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
-  | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
-  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId };
-
-/**
- * What the player asked for, as one string. Two presses that mean the same
- * thing share it; collecting two different hens does not.
- *
- * This is the identity both duplicate guards are keyed on -- the in-flight set
- * that drops a second press, and the idempotency key held across a request
- * whose answer never arrived.
- */
-function intentOf(body: Action): string {
-  if ("unitId" in body) return `${body.action}:${body.unitId}`;
-  // Distinguished from an outdoor sow of the same crop: the two are
-  // different intents (different slot cap, different growth clock), and
-  // treating them as one would let a request in flight for one silently
-  // swallow a press aimed at the other.
-  if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
-  if ("stock" in body) return `${body.action}:${body.stock}`;
-  if ("sector" in body) return `${body.action}:${body.sector}`;
-  if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
-  if ("itemId" in body) return `${body.action}:${body.itemId}`;
-  if ("archetype" in body) return `${body.action}:${body.archetype}`;
-  return body.action;
-}
-
-/**
- * A fresh idempotency key.
- *
- * `crypto.randomUUID` is only defined in a secure context, which the deployed
- * site always is and a phone pointed at a dev box over the LAN is not -- and a
- * throw here would silently swallow the action rather than perform it. The
- * fallback does not have to be a UUID, only unlikely to collide with this same
- * player's other keys inside the server's own ten-minute window.
- */
-function newIntentKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
 /**
  * A shelf in Ray's store, named and given the painted badge of what is on it.
  *
@@ -453,8 +380,16 @@ export function StackAcresFarm() {
 
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [busyUnitId, setBusyUnitId] = useState<string | null>(null);
+  /**
+   * The intents with a request in the air right now, mirrored into render so
+   * a button can grey out ITS OWN action while it settles -- and only its
+   * own. This replaced a single global `busy` flag that disabled every
+   * control on the screen for the whole round trip: with the optimistic
+   * layer applying each guess synchronously (see `act`), an unrelated button
+   * has no reason to wait. The authoritative copy is the `inFlight` ref
+   * below; this is the render-visible shadow of it.
+   */
+  const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -687,6 +622,42 @@ export function StackAcresFarm() {
    * one intent pressed twice, feeding one hen and collecting another are not.
    */
   const inFlight = useRef(new Set<string>());
+  /**
+   * How many requests are in the air, across every intent. `sending.current`
+   * (the flag `refresh` reads to hold off a refetch that would clobber an
+   * optimistic patch) is now "this is non-zero" rather than its own boolean,
+   * so two overlapping actions both have to finish before a background
+   * refresh is allowed through.
+   */
+  const inFlightCount = useRef(0);
+
+  /**
+   * Add / remove one intent from both the ref (synchronous, what the
+   * duplicate guard reads) and the render mirror (what a button reads).
+   * Called from `act` and from `send`.
+   */
+  const markInFlight = useCallback((intent: string) => {
+    inFlight.current.add(intent);
+    inFlightCount.current += 1;
+    sending.current = true;
+    setPendingIntents((prev) => {
+      if (prev.has(intent)) return prev;
+      const next = new Set(prev);
+      next.add(intent);
+      return next;
+    });
+  }, []);
+  const clearInFlight = useCallback((intent: string) => {
+    inFlight.current.delete(intent);
+    inFlightCount.current = Math.max(0, inFlightCount.current - 1);
+    if (inFlightCount.current === 0) sending.current = false;
+    setPendingIntents((prev) => {
+      if (!prev.has(intent)) return prev;
+      const next = new Set(prev);
+      next.delete(intent);
+      return next;
+    });
+  }, []);
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -704,6 +675,28 @@ export function StackAcresFarm() {
   const gold = profile?.unlimitedGold
     ? Number.MAX_SAFE_INTEGER
     : (profile?.goldBalance ?? 0);
+
+  /** Whether a given action is mid-flight -- what a button greys itself out
+   *  on now, in place of the old screen-wide `busy`. `anyPending` is only for
+   *  the ambient "Working…" tool hint, which gates nothing. */
+  const isPending = useCallback(
+    (intent: string) => pendingIntents.has(intent),
+    [pendingIntents],
+  );
+  /** Whether any in-flight intent is `prefix` or `prefix:...` -- for a modal
+   *  or menu that fires a family of intents (every synergy archetype, every
+   *  merchant item) and greys the whole surface while one is settling, while
+   *  the rest of the screen stays live. */
+  const pendingByPrefix = useCallback(
+    (prefix: string) => {
+      for (const intent of pendingIntents) {
+        if (intent === prefix || intent.startsWith(`${prefix}:`)) return true;
+      }
+      return false;
+    },
+    [pendingIntents],
+  );
+  const anyPending = pendingIntents.size > 0;
 
   /**
    * The unit list as of right now, for `act` to read when a response lands.
@@ -771,6 +764,124 @@ export function StackAcresFarm() {
     if (data.midnightMerchantPurchase) {
       lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
     }
+  }, []);
+
+  /**
+   * Everything an optimistic prediction reads, gathered off live state. A
+   * plain object rebuilt on demand rather than a memo -- it is only ever
+   * read once, synchronously, inside `act` before a fetch.
+   */
+  const buildPredictContext = useCallback(
+    (): FarmPredictContext => ({
+      profile,
+      goldBalance: profile?.goldBalance ?? 0,
+      unlimitedGold: profile?.unlimitedGold ?? false,
+      units,
+      feed,
+      capacity,
+      toolTier,
+      sectors,
+      upkeep,
+      influence,
+      contract: processing.contract,
+      synergyUnlocked,
+      synergyActive,
+      farmhandSpeedMultiplier,
+      secrets,
+      secretDonations,
+      merchantVisit: merchantSnapshot.visit,
+      greenhouseBuilt,
+      nowMs: Date.now(),
+    }),
+    [
+      profile,
+      units,
+      feed,
+      capacity,
+      toolTier,
+      sectors,
+      upkeep,
+      influence,
+      processing,
+      synergyUnlocked,
+      synergyActive,
+      farmhandSpeedMultiplier,
+      secrets,
+      secretDonations,
+      merchantSnapshot,
+      greenhouseBuilt,
+    ],
+  );
+
+  /**
+   * A copy of every farm atom an optimistic patch might touch, taken the
+   * instant before a guess is applied. Restored verbatim when the server
+   * refuses or the request never lands -- see `act`. The merchant VISIT is
+   * deliberately out: no predictor moves it, and it carries its own
+   * arriving/departing animation state that a blunt restore would jar.
+   */
+  const captureFarmSnapshot = useCallback(
+    () => ({
+      units,
+      profile,
+      feed,
+      capacity,
+      exchange,
+      museum,
+      museumSecrets,
+      sectors,
+      upkeep,
+      influence,
+      toolTier,
+      synergyUnlocked,
+      synergyActive,
+      farmhandSpeedMultiplier,
+      processing,
+      secrets,
+      secretDonations,
+      greenhouseBuilt,
+    }),
+    [
+      units,
+      profile,
+      feed,
+      capacity,
+      exchange,
+      museum,
+      museumSecrets,
+      sectors,
+      upkeep,
+      influence,
+      toolTier,
+      synergyUnlocked,
+      synergyActive,
+      farmhandSpeedMultiplier,
+      processing,
+      secrets,
+      secretDonations,
+      greenhouseBuilt,
+    ],
+  );
+  type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
+  const restoreFarmSnapshot = useCallback((snap: FarmSnapshot) => {
+    setUnits(snap.units);
+    setProfile(snap.profile);
+    setFeed(snap.feed);
+    setCapacity(snap.capacity);
+    setExchange(snap.exchange);
+    setMuseum(snap.museum);
+    setMuseumSecrets(snap.museumSecrets);
+    setSectors(snap.sectors);
+    setUpkeep(snap.upkeep);
+    setInfluence(snap.influence);
+    setToolTier(snap.toolTier);
+    setSynergyUnlocked(snap.synergyUnlocked);
+    setSynergyActive(snap.synergyActive);
+    setFarmhandSpeedMultiplier(snap.farmhandSpeedMultiplier);
+    setProcessing(snap.processing);
+    setSecrets(snap.secrets);
+    setSecretDonations(snap.secretDonations);
+    setGreenhouseBuilt(snap.greenhouseBuilt);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -885,8 +996,7 @@ export function StackAcresFarm() {
     async (body: Action): Promise<Partial<StackAcresResponse> | null> => {
       const intent = intentOf(body);
       if (inFlight.current.has(intent)) return null;
-      inFlight.current.add(intent);
-      sending.current = true;
+      markInFlight(intent);
       const key = pendingKeys.current.get(intent) ?? newIntentKey();
       pendingKeys.current.set(intent, key);
       let answered = false;
@@ -920,12 +1030,11 @@ export function StackAcresFarm() {
       } catch {
         return null;
       } finally {
-        inFlight.current.delete(intent);
+        clearInFlight(intent);
         if (answered) pendingKeys.current.delete(intent);
-        sending.current = false;
       }
     },
-    [applyResponse],
+    [applyResponse, markInFlight, clearInFlight],
   );
 
   /**
@@ -951,15 +1060,21 @@ export function StackAcresFarm() {
       if (inFlight.current.has(intent)) {
         return { ok: false, message: "That is already on its way." };
       }
-      inFlight.current.add(intent);
-      sending.current = true;
-      setBusy(true);
-      if ("unitId" in body) setBusyUnitId(body.unitId);
+      markInFlight(intent);
       setError(null);
       // A key held over from an attempt that never came back makes this press
       // a retry of that one; otherwise it names a new intent.
       const key = pendingKeys.current.get(intent) ?? newIntentKey();
       pendingKeys.current.set(intent, key);
+      // Assume the server says yes. `predictStackAcresAction` returns the
+      // patch a success would produce (or null when the outcome is a dice
+      // roll we won't fake), applied through the very same `applyResponse`
+      // the real answer uses. `snapshot` is what a refusal or a dropped
+      // request rolls back to.
+      const snapshot = captureFarmSnapshot();
+      const patch = predictStackAcresAction(body, buildPredictContext());
+      const optimisticApplied = patch !== null;
+      if (patch) applyResponse(patch);
       // Set the moment this browser knows what became of the request. While it
       // is false the key survives, so the next press at the same thing is a
       // retry; once it is true the key is dropped and the next press is a new
@@ -975,8 +1090,10 @@ export function StackAcresFarm() {
           body: JSON.stringify({ ...body, key }),
         });
         if (response.status === 429) {
-          // Rejected before it reached the farm, so nothing was applied.
+          // Rejected before it reached the farm, so the server applied
+          // nothing -- but this browser did, so put the guess back.
           answered = true;
+          if (optimisticApplied) restoreFarmSnapshot(snapshot);
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
           const tooFast = `Too many taps. Give it ${seconds}s.`;
@@ -997,6 +1114,10 @@ export function StackAcresFarm() {
           // harsh error tone on an ordinary event teaches a player to dread
           // their own farm.
           refusedSound();
+          // Nothing was written, so unwind the optimistic guess FIRST --
+          // purse, capacity, feed, the lot -- then overlay whatever
+          // authoritative unit list the refusal carried on top.
+          if (optimisticApplied) restoreFarmSnapshot(snapshot);
           // A refusal carries the true round; paint it, and only raise a
           // banner when there is no round to speak for itself.
           if (data.round) setUnits(data.round);
@@ -1160,23 +1281,31 @@ export function StackAcresFarm() {
         }
         return { ok: true, reward: data.contractReward };
       } catch {
+        // The outcome is unknown -- the write may well have committed. Put
+        // the guess back so nothing false is on screen, then re-read the
+        // farm from the server for the truth.
+        if (optimisticApplied) restoreFarmSnapshot(snapshot);
+        window.setTimeout(() => void refresh(), 0);
         const unreachable = "Could not reach the farm. Check your connection.";
         if (mounted.current) setError(unreachable);
         return { ok: false, message: unreachable };
       } finally {
-        inFlight.current.delete(intent);
+        clearInFlight(intent);
         if (answered) pendingKeys.current.delete(intent);
-        sending.current = false;
         // One request, one anchor. Leaving it set would float the NEXT
         // action's reward out of the last place a finger happened to be.
         tapAnchor.current = null;
-        if (mounted.current) {
-          setBusy(false);
-          setBusyUnitId(null);
-        }
       }
     },
-    [applyResponse, refresh],
+    [
+      applyResponse,
+      refresh,
+      markInFlight,
+      clearInFlight,
+      captureFarmSnapshot,
+      restoreFarmSnapshot,
+      buildPredictContext,
+    ],
   );
 
   // No effect needed to disarm the retire confirmation on district change:
@@ -1200,10 +1329,10 @@ export function StackAcresFarm() {
    * on a request that has already left the browser -- see
    * lib/stackacres/farmhand.ts.
    *
-   * NOT for clearing. `tendLocally` drops a mucked unit from the list under
-   * the same press, so by the time he has taken a step there is nothing
-   * standing there to walk to and he turns straight back round; setting off
-   * and immediately giving up looks worse than never setting off.
+   * NOT for clearing. `act`'s own optimistic layer drops a mucked unit from
+   * the list under the same press, so by the time he has taken a step there
+   * is nothing standing there to walk to and he turns straight back round;
+   * setting off and immediately giving up looks worse than never setting off.
    */
   const sendFarmhand = useCallback((unitId: string) => {
     world.current?.sendFarmhand(unitId);
@@ -1282,55 +1411,34 @@ export function StackAcresFarm() {
     void act({ action: "collect" });
   }, [act]);
 
-  /**
-   * Tends a unit in the LOCAL list the instant a feed/water/clear is sent,
-   * ahead of the network entirely -- a hungry hen goes back to work, a dry
-   * row starts growing again, a mucked plot is simply gone, all under the
-   * same press that asked for it. `optimisticallyFedUnit`/
-   * `optimisticallyWateredUnit` predict the row the same way the server's own
-   * feedStackAcres/waterStackAcres compute it; `withLocalClock` then reads
-   * `working` straight off the timestamps they write with no further help.
-   *
-   * A guess, not a promise: `act`'s own refusal handling already repaints
-   * `units` from the server's `round` the moment it disagrees, which corrects
-   * this the same way it always corrected a stale local clock.
-   */
-  const tendLocally = useCallback((unitId: string, kind: "feed" | "water" | "clear") => {
-    const at = Date.now();
-    setUnits((prev) => {
-      if (kind === "clear") return prev.filter((u) => u.id !== unitId);
-      return prev.map((u) => {
-        if (u.id !== unitId) return u;
-        return kind === "feed" ? optimisticallyFedUnit(u, at) : optimisticallyWateredUnit(u, at);
-      });
-    });
-  }, []);
-
+  // Feed/water/clear used to tend the tapped unit locally here, ahead of the
+  // network, via a dedicated `tendLocally`. That is now `act`'s own job --
+  // `predictStackAcresAction` runs the identical `optimisticallyFedUnit`/
+  // `optimisticallyWateredUnit` math the instant the request is sent, so a
+  // second local tend here would double-apply it. These handlers now only
+  // supply the press's own sound and farmhand dispatch.
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
-      tendLocally(unit.id, "feed");
       sendFarmhand(unit.id);
       void act({ action: "feed", unitId: unit.id });
     },
-    [act, sendFarmhand, tendLocally],
+    [act, sendFarmhand],
   );
   const onWater = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       waterSound();
-      tendLocally(unit.id, "water");
       sendFarmhand(unit.id);
       void act({ action: "water", unitId: unit.id });
     },
-    [act, sendFarmhand, tendLocally],
+    [act, sendFarmhand],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       muckSound();
-      tendLocally(unit.id, "clear");
       void act({ action: "clear", unitId: unit.id });
     },
-    [act, tendLocally],
+    [act],
   );
   const onArmRetire = useCallback((unit: StackAcresUnitSnapshot) => {
     panelSound();
@@ -1485,14 +1593,14 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, action.reason, "deny");
         return;
       }
-      // `sending`, not the `busy` STATE beside it. `busy` only becomes true a
-      // render after the request starts, so two taps landing in the same frame
-      // both read it as false and both fire -- which is what mashing a ready
-      // unit does. The ref flips synchronously inside `act`, so the second tap
-      // never leaves the browser. The intent key behind it is the backstop for
-      // the duplicates this cannot see (a retry after a dropped connection,
-      // another tab).
-      if (sending.current) return;
+      // Drop a second press at THIS unit's own action while its request is
+      // still out -- but nothing else. Two taps on different animals in the
+      // same frame both fire now (each is its own intent); a re-mash of the
+      // same one is caught here, and `act`'s own synchronous `inFlight` check
+      // and the idempotency key behind it are the backstops for the rest (a
+      // retry after a dropped connection, another tab).
+      const tapIntent = action.kind === "collect" ? "collect" : `${action.kind}:${unitId}`;
+      if (inFlight.current.has(tapIntent)) return;
       // The farm's own voice for the gesture, chosen off the same `action`
       // that is about to be sent. This is the press the whole sound set was
       // written for and it was the last thing still answering with the app's
@@ -1501,14 +1609,15 @@ export function StackAcresFarm() {
       // the same three things -- had had their own sounds since the sound
       // pass landed. The tap path simply predated it.
       //
-      // Feed, water and clear speak on the PRESS because `tendLocally` below
-      // has already applied them locally: the farm has changed by the time
-      // the finger lifts, so a sound that waits for the network would be late
-      // for something that has visibly already happened. Collect is the
-      // deliberate exception and stays silent here -- it answers in `act`,
-      // where the response says which unit paid out, and it answers with that
-      // animal's own voice. A click in front of a hen clucking is a click in
-      // front of the best sound on the farm.
+      // Feed, water and clear speak on the PRESS because `act`'s own
+      // optimistic layer applies them locally the instant the request is
+      // sent, below: the farm has changed by the time the finger lifts, so a
+      // sound that waits for the network would be late for something that
+      // has visibly already happened. Collect is the deliberate exception
+      // and stays silent here -- it answers in `act`, where the response
+      // says which unit paid out, and it answers with that animal's own
+      // voice. A click in front of a hen clucking is a click in front of the
+      // best sound on the farm.
       if (action.kind === "feed") feedSound(unit.stock);
       else if (action.kind === "water") waterSound();
       else if (action.kind === "clear") muckSound();
@@ -1516,9 +1625,6 @@ export function StackAcresFarm() {
       // Only for a tap that actually became a request: he answers the write,
       // not the finger. Clearing is excluded -- see `sendFarmhand`.
       if (action.kind !== "clear") sendFarmhand(unitId);
-      if (action.kind === "feed" || action.kind === "water" || action.kind === "clear") {
-        tendLocally(unitId, action.kind);
-      }
       // Frenzy Heat Combo Engine: every accepted tap (a refused one already
       // returned above) counts as a hit for how fast the player is tapping.
       // Collect is the only action with a yield to bonus off of --
@@ -1545,7 +1651,7 @@ export function StackAcresFarm() {
         void act({ action: action.kind, unitId });
       }
     },
-    [act, feed, gold, liveUnits, nowMs, sendFarmhand, tendLocally, triggerCascade],
+    [act, feed, gold, liveUnits, nowMs, sendFarmhand, triggerCascade],
   );
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
@@ -1653,7 +1759,7 @@ export function StackAcresFarm() {
     (zoneId: HiddenZoneId, at: TapPoint) => {
       setRadial(null);
       tapAnchor.current = at;
-      if (sending.current) return;
+      if (inFlight.current.has("tap-secret-zone")) return;
       void act({ action: "tap-secret-zone", zoneId });
     },
     [act],
@@ -1853,12 +1959,11 @@ export function StackAcresFarm() {
     return <StackAcresPlayScreen onStart={() => setHasStarted(true)} />;
   }
 
-  // Was `busy ? "Working…" : toolHint` -- feed/water/clear/collect all pop
-  // and tend the unit LOCALLY the instant a finger lands (see `tendLocally`
-  // above and `popUnit` in stackacres-world.tsx), so a caption that says the
-  // farm is still thinking about a tap it already answered would be a lie.
-  // `busy` still guards the buttons below it against a double financial
-  // spend; it just no longer has anything to say about it here.
+  // Was `busy ? "Working…" : toolHint` -- every action now pops and applies
+  // its guess the instant a finger lands (see the optimistic layer in
+  // `act`), so a caption saying the farm is still thinking about a tap it
+  // already answered would be a lie. The buttons below gate on their OWN
+  // in-flight intent, not a screen-wide flag.
   const hint = toolHint;
   const district = STACKACRES_ZONES[place];
   const placeLocked = !isSectorUnlocked(place, sectors);
@@ -1905,7 +2010,7 @@ export function StackAcresFarm() {
           <SynergyOverlay
             unlocked={synergyUnlocked}
             active={synergyActive}
-            busy={busy}
+            busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
             onUnlock={onUnlockSynergyPerk}
             onActivate={onActivateSynergyPerk}
           />
@@ -2013,14 +2118,14 @@ export function StackAcresFarm() {
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
-              busy={busy}
+              busy={pendingByPrefix("stock")}
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
             />
           )}
 
-          <p className={clsx("sa-tool-hint", { "is-busy": busy })} aria-live="polite">
+          <p className={clsx("sa-tool-hint", { "is-busy": anyPending })} aria-live="polite">
             {hint}
           </p>
 
@@ -2053,7 +2158,7 @@ export function StackAcresFarm() {
               <button
                 type="button"
                 className="sa-harvest-all"
-                disabled={busy}
+                disabled={isPending("collect")}
                 onClick={onHarvestAll}
               >
                 <StackAcresIcon name="ico-harvest" size={18} />
@@ -2134,7 +2239,7 @@ export function StackAcresFarm() {
                     <button
                       type="button"
                       className="sa-buy-btn"
-                      disabled={busy}
+                      disabled={isPending(`donate-secret-item:${itemId}`)}
                       onClick={() => onDonateSecretItem(itemId)}
                     >
                       <span className="sa-buy-label">Donate to Museum</span>
@@ -2142,7 +2247,7 @@ export function StackAcresFarm() {
                     <button
                       type="button"
                       className="sa-buy-btn is-gold"
-                      disabled={busy || secrets.boostArmed}
+                      disabled={isPending(`consume-secret-item:${itemId}`) || secrets.boostArmed}
                       onClick={() => onConsumeSecretItem(itemId)}
                     >
                       <span className="sa-buy-label">
@@ -2152,7 +2257,7 @@ export function StackAcresFarm() {
                     <button
                       type="button"
                       className="sa-buy-btn is-expand"
-                      disabled={busy}
+                      disabled={isPending(`trade-secret-item:${itemId}`)}
                       onClick={() => onTradeSecretItem(itemId)}
                     >
                       <span className="sa-buy-label">Trade to Ray for Land Maintenance</span>
@@ -2190,7 +2295,7 @@ export function StackAcresFarm() {
                   <h3 className="sa-group-label">Buy &amp; expand</h3>
                   <StackAcresBuySection
                     options={buyOptions}
-                    busy={busy}
+                    isPending={isPending}
                     onSeed={onSeed}
                     onBuyOutright={onBuyOutright}
                     onExpand={onExpand}
@@ -2208,7 +2313,7 @@ export function StackAcresFarm() {
                     nowMs={nowMs}
                     feed={feed}
                     gold={gold}
-                    busyUnitId={busyUnitId}
+                    isPending={isPending}
                     armedUnitId={retiringUnitId}
                     onCollect={onCollect}
                     onFeed={onFeed}
@@ -2345,7 +2450,7 @@ export function StackAcresFarm() {
                     <button
                       type="button"
                       className="sa-cta"
-                      disabled={busy || !affordable}
+                      disabled={isPending("upgrade-tool") || !affordable}
                       onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
                     >
                       {affordable ? "Buy" : "Not enough Gold"}
@@ -2377,7 +2482,7 @@ export function StackAcresFarm() {
                   <button
                     type="button"
                     className="sa-cta"
-                    disabled={busy || gold < item.cost}
+                    disabled={isPending(`buy-feed:${id}`) || gold < item.cost}
                     onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
                   >
                     Buy
@@ -2472,7 +2577,7 @@ export function StackAcresFarm() {
           goldBalance={profile?.goldBalance ?? null}
           unlimitedGold={profile?.unlimitedGold === true}
           upkeepOutstanding={upkeep.due}
-          busy={busy}
+          busy={pendingByPrefix("clear-sector")}
           onClear={onClearSector}
           onClose={() => { panelSound(); setClearing(null); }}
         />
@@ -2492,7 +2597,7 @@ export function StackAcresFarm() {
           built={greenhouseBuilt}
           inventory={processing.inventory}
           units={liveUnits}
-          busy={busy}
+          busy={isPending("build-greenhouse") || pendingByPrefix("stock")}
           onBuild={onBuildGreenhouse}
           onSow={onSowGreenhouse}
           onCollect={onCollectGreenhouse}
@@ -2504,7 +2609,7 @@ export function StackAcresFarm() {
           inventory={processing.inventory}
           contract={processing.contract}
           influence={influence}
-          busy={busy}
+          busy={isPending("fulfill-contract") || isPending("request-contract")}
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
@@ -2528,7 +2633,7 @@ export function StackAcresFarm() {
           msRemainingLocal={merchantSnapshot.msRemaining}
           urgent={merchantSnapshot.urgent}
           goldBalance={profile?.unlimitedGold ? Number.POSITIVE_INFINITY : profile?.goldBalance ?? 0}
-          busy={busy}
+          busy={pendingByPrefix("midnight-merchant-buy")}
           onBuy={onBuyFromMerchant}
           onClose={() => { panelSound(); setShowMerchant(false); }}
         />

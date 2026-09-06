@@ -23,6 +23,8 @@
  */
 
 import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catalogue";
+import { STACKACRES_YIELDS } from "./items";
+import { greenhouseDurationMs } from "./greenhouse";
 
 /** One owned unit as a store row. See lib/server/stackacres-store.ts. */
 export interface StackAcresUnitRow {
@@ -360,5 +362,91 @@ export function optimisticallyWateredUnit(
     ...unit,
     readyAt: new Date(pushed).toISOString(),
     thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
+  };
+}
+
+/**
+ * The row this browser expects the instant it sends a `stock` or `buy-stock`
+ * -- computed the same way `stockStackAcres`/`buyStackAcresStock` compute it
+ * server-side (see lib/server/stackacres-service.ts): the clock starts now,
+ * `readyAt` is one duration out (0.7x it inside the Greenhouse, the same
+ * `greenhouseDurationMs` the server snapshots), and the feed/thirst windows
+ * open from now.
+ *
+ * `id` is a throwaway the client mints -- the real row comes back with the
+ * server's own id on the success response and replaces this one. A guess,
+ * not a promise: a refusal's rollback drops it again.
+ */
+export function optimisticallyStockedUnit(input: {
+  id: string;
+  stock: StackAcresStock;
+  /** True for `buy-stock` (an owned unit that re-sows itself), false for a
+   *  one-cycle `stock`. */
+  permanent: boolean;
+  inGreenhouse: boolean;
+  nowMs: number;
+}): StackAcresUnitSnapshot {
+  const def = STACKACRES_CATALOGUE[input.stock];
+  const durationMs = greenhouseDurationMs(input.stock, def.durationMs, input.inGreenhouse);
+  return {
+    id: input.id,
+    state: "working",
+    stock: input.stock,
+    // The catalogue's own one-cycle seed price, notionally -- what the ledger
+    // records for a bought unit too (see `buyStackAcresStock`).
+    stake: def.seedCost,
+    yieldQuantity: STACKACRES_YIELDS[input.stock].quantity,
+    startedAt: new Date(input.nowMs).toISOString(),
+    readyAt: new Date(input.nowMs + durationMs).toISOString(),
+    progress: 0,
+    hungryAt: def.hungerMs === null ? null : new Date(input.nowMs + def.hungerMs).toISOString(),
+    thirstyAt: def.thirstMs === null ? null : new Date(input.nowMs + def.thirstMs).toISOString(),
+    isWatered: true,
+    muckFee: null,
+    permanent: input.permanent,
+    housedIn: input.inGreenhouse ? "greenhouse" : null,
+  };
+}
+
+/**
+ * The unit list with one row gone -- what `clear` (paying a mucked unit's
+ * fee) and `retire` (sending a bought unit away) both produce. Pure list
+ * filter; the caller handles any Gold the action also moves.
+ */
+export function withoutStackAcresUnit(
+  units: readonly StackAcresUnitSnapshot[],
+  unitId: string,
+): StackAcresUnitSnapshot[] {
+  return units.filter((unit) => unit.id !== unitId);
+}
+
+/**
+ * A permanent (bought-outright) unit's row the instant its own collect is
+ * sent -- it never leaves like a one-cycle sowing does, it restarts. Mirrors
+ * `collectStackAcresUnit`'s restart branch exactly (see
+ * lib/server/stackacres-store.ts): the clock restarts at `readyAt =
+ * durationMs` from now (the catalogue's own duration, not the Greenhouse's --
+ * a permanent unit is never Greenhouse-housed, `stockStackAcres` only sets
+ * `permanent` on the outdoor path); `thirstyAt` restarts too, since a
+ * restarted crop goes into watered ground; `hungryAt`/`lastFedAt` does NOT --
+ * an animal can be fed at any moment, so carrying its feed clock across a
+ * restart costs nothing extra.
+ */
+export function optimisticallyRestartedUnit(
+  unit: StackAcresUnitSnapshot,
+  nowMs: number,
+): StackAcresUnitSnapshot {
+  const def = STACKACRES_CATALOGUE[unit.stock];
+  return {
+    ...unit,
+    state: "working",
+    startedAt: new Date(nowMs).toISOString(),
+    readyAt: new Date(nowMs + def.durationMs).toISOString(),
+    progress: 0,
+    thirstyAt: unit.thirstyAt === null || def.thirstMs === null
+      ? null
+      : new Date(nowMs + def.thirstMs).toISOString(),
+    isWatered: true,
+    muckFee: null,
   };
 }

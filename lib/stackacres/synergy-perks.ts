@@ -200,3 +200,24 @@ export function applySynergyEffects(
     appliedPerkIds: applied,
   };
 }
+
+/**
+ * The session loadout after slotting `archetype` at `slot`, as the client
+ * predicts it the instant it sends `activate-synergy-perk`.
+ *
+ * Deliberately narrow, matching how the loadout is actually used: the UI
+ * only ever appends into the next empty slot and there is no unslot action,
+ * so `active` grows contiguously from empty. A request to re-slot something
+ * already active, or into a slot that is not the next one, or past the cap,
+ * is a no-op here -- the server is the authority and its answer replaces
+ * this either way.
+ */
+export function nextActiveLoadout(
+  active: readonly SynergyArchetype[],
+  archetype: SynergyArchetype,
+  slot: number,
+): SynergyArchetype[] {
+  if (active.includes(archetype)) return [...active];
+  if (slot !== active.length || active.length >= SYNERGY_MAX_ACTIVE_SLOTS) return [...active];
+  return [...active, archetype];
+}

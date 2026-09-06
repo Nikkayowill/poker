@@ -35,6 +35,14 @@
 .ng-match {
   --ng-line: var(--line);
   --ng-line-major: color-mix(in srgb, var(--neon-muted) 40%, transparent);
+  /* .duel-shell is a column flex with no justify-content, so a small board
+     (Easy's 5x5 is a fraction of .ng-frame's own max-height) leaves the whole
+     rest of the viewport blank below "Give up" instead of the board sitting
+     in the middle of the screen. Auto margins on both sides split whatever
+     room is left evenly; a board tall enough to fill the shell on its own
+     leaves nothing for them to absorb, so this is a no-op at 20x20/25x25. */
+  margin-top: auto;
+  margin-bottom: auto;
 }
 
 /* Scrolls in both axes rather than shrinking the board; see the header. The

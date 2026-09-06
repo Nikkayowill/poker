@@ -657,6 +657,13 @@ export function markNonogramCells(
     if (current === MARK_FILLED) continue;
     if (mark === "clear" && current === MARK_UNKNOWN) continue;
     if (mark === "cross" && current === MARK_CROSSED) continue;
+    // A cross is the player's own "this is empty" note. A fill stroke that
+    // merely drags across one (rather than starting on it) must not paint
+    // over it -- the client already routes a press that starts on a crossed
+    // square to "clear" instead, so the only way past this is to clear it
+    // first, on purpose, the same two-step rub-out a filled square already
+    // gets for free.
+    if (mark === "fill" && current === MARK_CROSSED) continue;
 
     changed.push({ index, was: current });
     applied += 1;

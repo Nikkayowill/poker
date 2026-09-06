@@ -367,6 +367,22 @@ describe("strokes", () => {
     expect(round.marks.slice(11, 14)).toBe(MARK_FILLED.repeat(3));
   });
 
+  // A fill drag that merely crosses a square the player already crossed off
+  // must leave it alone -- the same "settled" protection MARK_FILLED already
+  // gets, so a run painted across a cross does not silently erase it.
+  it("leaves a crossed square alone when a fill drag runs across it", () => {
+    const fresh = handmade(rows);
+    const crossed = markNonogramCells(fresh, [11], "cross", NOW).round;
+    const { round, applied } = markNonogramCells(crossed, [10, 11, 12, 13, 14], "fill", NOW);
+    expect(round.marks[11]).toBe(MARK_CROSSED);
+    expect(round.marks[10]).toBe(MARK_FILLED);
+    expect(round.marks[12]).toBe(MARK_FILLED);
+    expect(round.marks[13]).toBe(MARK_FILLED);
+    expect(round.marks[14]).toBe(MARK_FILLED);
+    // 11 itself was skipped, so only the other four squares of the run count.
+    expect(applied).toBe(4);
+  });
+
   it("hands back the same round when nothing changed, so no version is burned", () => {
     const fresh = handmade(rows);
     const { round, applied } = markNonogramCells(fresh, [0, 1], "clear", NOW);

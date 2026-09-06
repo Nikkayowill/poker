@@ -47,6 +47,24 @@
  * painters so it draws the image once the image is here and its own shapes
  * until then. Nothing at a draw site had to change.
  *
+ * `carrot0/1/2` and `corn0/1/2` joined them -- the three growth frames per
+ * crop (lib/stackacres/crop-visuals.ts's `CropStage`) used to be a couple of
+ * quadratic-curve strokes for the two unripe stages, which is legible as "a
+ * crop is here" and nothing more at the seedling/sprout sizes a phone
+ * actually shows. Same trade as the trees: six genuinely different renders
+ * (not three ramps -- a crop's growth is its SHAPE changing, not its colour),
+ * and `lib/stackacres/crop-visuals.ts`'s `FOOT_INSET` table went to all zero
+ * on the same pass, since the prep pipeline fits every one of these flush to
+ * its box's own bottom edge, the same convention the trees use.
+ *
+ * The one thing worth knowing before regenerating a crop: FLUX draws every
+ * carrot standing in a mound of earth no matter how flatly the prompt forbids
+ * ground, so the prep pass strips a brown pad out of the bottom band the way
+ * it already stripped a grey/pink one. It has to -- the scene draws its OWN
+ * grounding ellipse under each crop (`cropShadow`), so a baked mound ships
+ * two shadows stacked. Soil and carrot are both r>g>b and are told apart by
+ * saturation, not hue. The corn frames needed none of that.
+ *
  * The module is imported by Node tests through the painter module, so it must
  * never touch `Image` at import time.
  */
@@ -65,6 +83,15 @@ export const SPRITE_ART = {
   tree3: "/stackacres/sprites/tree3.png",
   pine: "/stackacres/sprites/pine.png",
   bush: "/stackacres/sprites/bush.png",
+  // The three growth frames each for the Long Meadow's two crops. Named for
+  // lib/stackacres/crop-visuals.ts's CropStage (0 seedling, 1 sprout,
+  // 2 mature) exactly like the painters they front.
+  carrot0: "/stackacres/sprites/carrot0.png",
+  carrot1: "/stackacres/sprites/carrot1.png",
+  carrot2: "/stackacres/sprites/carrot2.png",
+  corn0: "/stackacres/sprites/corn0.png",
+  corn1: "/stackacres/sprites/corn1.png",
+  corn2: "/stackacres/sprites/corn2.png",
   // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
   // straight into its own 256-unit canvas. It rides this module only because
   // this is what the scene's `preload` walks, and a tile that arrived late

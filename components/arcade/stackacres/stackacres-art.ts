@@ -67,6 +67,13 @@ export { ART_FRAME, ART_SCALE, GRASS_PX } from "./art-kit";
  * field, and because the source is vector the camera can zoom to 5x without
  * ever showing a pixel edge.
  *
+ * The generated sprites below (see stackacres-sprites.ts) are the exception
+ * to the first and third of those, and the ripe crop frames are the one place
+ * they touch the second: `ico-carrot`/`ico-corn` stay on the DRAWN carrot2 and
+ * corn2 while the field draws the sprite, so those two DO now differ. That is
+ * a choice, not an oversight -- see the icons' own comment for why 20 device
+ * pixels wants the flat shape, not the render.
+ *
  * A painter is a plain function with four numbers hung off it: `w`/`h` are the
  * box it draws inside, in units, and `ax`/`ay` are its origin within that box
  * as a fraction. Most things anchor at their feet (0.5, 1) so they sort by the
@@ -1191,8 +1198,13 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#7ec8e3");
   }),
 
-  // The two crop icons are the ripe crop itself, so the seed strip and the
-  // field can never drift apart.
+  // The two crop icons are the ripe crop's own painter, so the seed strip and
+  // the field draw the same plant. Since the ripe frames became sprites these
+  // deliberately keep the DRAWN shape rather than following: an icon is 20
+  // device pixels, and at that size the render's leaf detail collapses into a
+  // smudge while the flat three-tone shape still reads as a carrot. The
+  // silhouette and the palette are the same either way, which is the part a
+  // player matches between strip and field.
   // carrot2 is only 12x16, so dropped into the 24x24 icon box unscaled it
   // sits half-size in the top-left corner while every other icon fills its
   // square. Blow it up to corn's height and centre it.
@@ -1359,6 +1371,18 @@ export const PAINTERS: Record<PainterName, Painter> = {
   tree3: spriteBacked("tree3", DRAWN.tree3),
   pine: spriteBacked("pine", DRAWN.pine),
   bush: spriteBacked("bush", DRAWN.bush),
+  // The two crops' three growth frames each. The drawn fallback for the two
+  // unripe stages was a couple of quadratic-curve strokes -- legible as
+  // "something is growing here" and nothing more, which is what these
+  // replace. carrot2/corn2 (the ripe frame) are ALSO wrapped here, and the
+  // seed-strip icons above are left on the drawn version on purpose: they
+  // close over the local `carrot2`/`corn2` consts, not over this map.
+  carrot0: spriteBacked("carrot0", DRAWN.carrot0),
+  carrot1: spriteBacked("carrot1", DRAWN.carrot1),
+  carrot2: spriteBacked("carrot2", DRAWN.carrot2),
+  corn0: spriteBacked("corn0", DRAWN.corn0),
+  corn1: spriteBacked("corn1", DRAWN.corn1),
+  corn2: spriteBacked("corn2", DRAWN.corn2),
 };
 
 /**

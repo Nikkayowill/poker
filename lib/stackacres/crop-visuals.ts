@@ -54,25 +54,26 @@ export function cropSpriteScale(stage: CropStage): number {
 
 /**
  * How far above its own box's bottom edge each frame's ink actually begins,
- * in art units -- hand-read off the painters in
- * components/arcade/stackacres/stackacres-art.ts, which are canvas draw calls
- * and cannot be measured from here.
+ * in art units. All zero: every crop frame is now a generated sprite
+ * (stackacres-art.ts's `spriteBacked`), and the FLUX prep pipeline
+ * (~/.local/share/flux-sprite-test/task-crops/prep_crops.py, external to this
+ * repo) fits every asset to its box HEIGHT and pastes it flush to the
+ * canvas's own bottom edge -- the same "stand on its floor" convention
+ * task-trees's prep script established. So the ink always starts exactly at
+ * the box's bottom edge now, for every stage of both crops.
  *
- * Measured to the bottom of the INK, not to the path -- a stroke is centred
- * on its own line, so half the width sits below where `moveTo` put it, and
- * measuring to the path alone over-corrects and buries the stem.
- *
- *   carrot0   stems from y 15, stroke 1.2 -> ink to 15.6 in a 16 box  -> 0.4
- *   carrot1   stems from y 15, stroke 1.4 -> ink to 15.7 in a 16 box  -> 0.3
- *   carrot2   the root's own box runs to y 16.2, past the baseline,
- *             so it is already planted                              -> 0
- *   corn0/1/2 the stalk starts at y 22 in a 22-tall box              -> 0
+ * This table predates that: it used to be hand-read off the vector painters
+ * these sprites replaced (a carrot's stem stroke started a few tenths of a
+ * unit above the baseline), which is why it is kept as a table rather than
+ * deleted outright -- a future crop whose art is NOT re-fit flush (or a
+ * fallback path that draws the old vector shape) would need it non-zero
+ * again, and this is where that number would go.
  *
  * Anything nonzero here floats once the frame is scaled up, which is the
  * whole reason this table exists -- see `cropGroundOffset`.
  */
 const FOOT_INSET: Readonly<Record<CropArt, Readonly<Record<CropStage, number>>>> = {
-  carrot: { 0: 0.4, 1: 0.3, 2: 0 },
+  carrot: { 0: 0, 1: 0, 2: 0 },
   corn: { 0: 0, 1: 0, 2: 0 },
 };
 

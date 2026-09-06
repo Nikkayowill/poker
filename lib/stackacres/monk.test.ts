@@ -80,6 +80,22 @@ describe("MONK_HOUSE_FOOTPRINT", () => {
   it("sits north of MONK_POST -- he stands in front of his own door", () => {
     expect(MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height).toBeLessThanOrEqual(MONK_POST.y);
   });
+
+  // The gap the six-constraint proof above never covered: `growAreaAt`
+  // returning null only proves the footprint doesn't OVERLAP the Hen Coop's
+  // rectangle, not that it stands any real distance off it -- a shrine
+  // wedged right up against the pen fence still passes every check above.
+  // That is exactly the bug a screenshot caught after the first placement
+  // (74..140, 300..346) shipped ~30 units off the pen's west edge and read
+  // as leaning on the fence. This restates the Hen Coop block as a literal
+  // for the same import-cycle reason every other coordinate in this file
+  // is (see world.ts's own GROW_AREA.farmstead).
+  it("stands meaningfully clear of the Hen Coop, not just outside its rectangle", () => {
+    const HEN_COOP = { x: 170, y: 200, width: 160, height: 160 };
+    const dx = Math.max(HEN_COOP.x - (MONK_HOUSE_FOOTPRINT.x + MONK_HOUSE_FOOTPRINT.width), 0);
+    const dy = Math.max(HEN_COOP.y - (MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height), 0);
+    expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(40);
+  });
 });
 
 describe("monkHitAt", () => {

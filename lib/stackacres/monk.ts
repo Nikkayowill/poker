@@ -37,27 +37,35 @@ import { FARMHAND_WORK_MS } from "./farmhand";
 import type { WorldPoint, WorldRect } from "./world";
 
 /**
- * Where he stands and bows -- the far south-west corner of the Farmstead's
- * own territory, well clear of the barn, the barnyard clutter and every
- * path, not tucked in beside them. He is not from this world; standing
- * shoulder to shoulder with the well and the hay bales undercut that, and
- * Kayo's own call was to move him out to the perimeter once the shrine
- * itself stopped being a placeholder box. Still inside `FARM_ZONE` (the
- * camera can always reach him with a pan) and still `farmstead`'s own
- * territory (`zoneAt` returns null here, same as `FARMHAND_BASE` used to)
- * rather than a locked outer district.
+ * Where he stands and bows -- the open ground between the barn and the Hen
+ * Coop, well clear of the barnyard clutter, the road, and the pen fence
+ * itself. The first cut of this post (74..140, 300..346) put him only ~30
+ * units off the Hen Coop's own west edge (170..360), close enough that the
+ * shrine visibly leaned on the pen fence in-game -- Kayo caught it from a
+ * screenshot after the PR had already landed. None of the existing
+ * constraints below actually guarded against that: they clear the barn, the
+ * paths, the pond and Ray's own post, but nothing here ever measured
+ * distance to the Hen Coop block itself (`./world.ts`'s
+ * `GROW_AREA.farmstead`, x 170..330, y 200..360), so a placement that leaned
+ * on the pen passed every existing check. This post sits ~74 units north of
+ * the pen's own top edge instead -- also clear of the generated `henCoop`
+ * path spur (`./paths.ts`'s `FARMSTEAD_PATH_NODES`, a straight connector
+ * from the road down to (280, 180)), which the old spot never had to share
+ * space with either. Still inside `FARM_ZONE` and still `farmstead`'s own
+ * territory (`zoneAt` returns null here, same as `FARMHAND_BASE` used to).
  */
-export const MONK_POST: WorldPoint = { x: 100, y: 352 };
+export const MONK_POST: WorldPoint = { x: 170, y: 140 };
 
 /**
  * The shrine's footprint, in the same feet-anchored ground-rect convention
  * `BARN_FOOTPRINT`/`GROW_AREA` use (x/y is the top-left corner in world
  * units). Sits just north of `MONK_POST` -- he stands in front of his own
  * door -- small enough to clear the barn, the lane/road/spur paths, the
- * pond and the Farmstead fence at every corner; monk.test.ts holds all of
- * it the same way farmhand.test.ts holds `FARMHAND_BASE`.
+ * pond, the Farmstead fence and (see `MONK_POST`'s own comment) the Hen
+ * Coop's pen itself at every corner; monk.test.ts holds all of it the same
+ * way farmhand.test.ts holds `FARMHAND_BASE`.
  */
-export const MONK_HOUSE_FOOTPRINT: WorldRect = { x: 74, y: 300, width: 66, height: 46 };
+export const MONK_HOUSE_FOOTPRINT: WorldRect = { x: 140, y: 80, width: 66, height: 46 };
 
 /** Whether a tapped ground point lands on the shrine -- the Pixel Pilgrim's
  *  own tap target, same shape as `barnHitAt` in ./world.ts. Checked against

@@ -33,11 +33,14 @@ import {
   yardMatFor,
 } from "./world";
 import { GREENHOUSE_PLOT } from "./greenhouse";
+import { YARD_DELTA, yardPoint } from "./yard";
 import { ZONE_IDS } from "./zones";
 
 describe("stock zoning", () => {
-  it("gives every kind exactly the district the pen-zoning pass put it in", () => {
-    expect(stockZone("hen")).toBe("farmstead");
+  it("gives every kind exactly the district it is kept in", () => {
+    // The hens moved out of the Farmstead into Hen Haven in the 2026-09-07 map
+    // re-lay; everything else is where the pen-zoning pass put it.
+    expect(stockZone("hen")).toBe("henhaven");
     expect(stockZone("sprout")).toBe("meadow");
     expect(stockZone("cash_crop")).toBe("meadow");
     expect(stockZone("pig")).toBe("wallow");
@@ -155,7 +158,8 @@ describe("the barn's tap target", () => {
 
 describe("Grandfather Ray's tap target", () => {
   it("hits his own spot, and never the same point that hits the barn", () => {
-    expect(grandfatherRayHitAt(178, 0)).toBe(true);
+    const ray = yardPoint(178, 0);
+    expect(grandfatherRayHitAt(ray.x, ray.y)).toBe(true);
     // His box is clear of the barn's on both axes -- a tap can never land on
     // both, which is what keeps the two an unambiguous choice for the scene.
     for (let x = BARN_FOOTPRINT.x; x <= BARN_FOOTPRINT.x + BARN_FOOTPRINT.width; x += 5) {
@@ -317,13 +321,17 @@ describe("open-world scenery", () => {
   it("keeps the barn yard, the lane's verge and the mailbox inside the farm zone", () => {
     // Roof peak of the barn, the stone wall's sprite top, the lane's lamps
     // on the west verge, and the mailbox at the lane's end.
-    expect(inFarmZone(108, -28)).toBe(true);
-    expect(inFarmZone(160, -50)).toBe(true);
-    expect(inFarmZone(36, 300)).toBe(true);
-    expect(inFarmZone(46, 404)).toBe(true);
+    // The yard's own frame: the Farmstead moved bodily in the 2026-09-07
+    // re-lay, and these are the same four places in it they always were.
+    for (const [x, y] of [[108, -28], [160, -50], [36, 300], [46, 404]]) {
+      const p = yardPoint(x, y);
+      expect(inFarmZone(p.x, p.y), `${x},${y}`).toBe(true);
+    }
     // And not the woods a chunk away.
-    expect(inFarmZone(-100, 100)).toBe(false);
-    expect(inFarmZone(200, -100)).toBe(false);
+    for (const [x, y] of [[-100, 100], [200, -100]]) {
+      const p = yardPoint(x, y);
+      expect(inFarmZone(p.x, p.y), `${x},${y}`).toBe(false);
+    }
   });
 
   it("never grows scenery on a path", () => {
@@ -500,10 +508,11 @@ describe("muddy yard mats", () => {
   });
 
   it("lands the Hen Pen's service spur in mud, not on grass", () => {
+    // The yard's own frame; the mat and the spur node both moved with the yard.
     const pen = byId("henPen").rect;
-    expect(pen.y).toBeLessThanOrEqual(180);
-    expect(pen.x).toBeLessThan(280);
-    expect(pen.x + pen.width).toBeGreaterThan(280);
+    expect(pen.y - YARD_DELTA.y).toBeLessThanOrEqual(180);
+    expect(pen.x - YARD_DELTA.x).toBeLessThan(280);
+    expect(pen.x + pen.width - YARD_DELTA.x).toBeGreaterThan(280);
   });
 
   it("frames a district a tenth wider once the signpost has collapsed", () => {

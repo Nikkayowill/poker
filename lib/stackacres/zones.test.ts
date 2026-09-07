@@ -108,10 +108,14 @@ describe("the district map", () => {
   });
 
   it("is null out in the open woodland between the districts", () => {
-    expect(zoneAt(224, 430)).toBeNull(); // between the farm and the meadow
-    expect(zoneAt(470, 160)).toBeNull(); // between the farm and the ox fields
-    expect(zoneAt(-600, -600)).toBeNull(); // far out
-    expect(inOuterZone(224, 174)).toBe(false); // the farm is not an outer one
+    expect(zoneAt(224, 430)).toBeNull(); // between the Grand Farm and the pasture
+    expect(zoneAt(470, 160)).toBeNull(); // between the Grand Farm and the Fold
+    expect(zoneAt(900, 900)).toBeNull(); // far out to the south-east
+    // (-600, -600) used to be "far out" and is now inside the Mine's own
+    // rect: the 2026-09-07 re-lay put four new districts on the map, and
+    // "nowhere" moved further away.
+    const home = STACKACRES_ZONES.farmstead.approach;
+    expect(inOuterZone(home.x, home.y)).toBe(false); // the farm is not an outer one
   });
 
   it("orders the destination strip outward from the farm", () => {
@@ -179,7 +183,10 @@ describe("zone tool policy", () => {
   });
 
   it("refuses out in the woodland, where there is no district at all", () => {
-    const no = isActionValidInZone(-600, -600, "scythe");
+    // (-600, -600) was open woodland before the 2026-09-07 re-lay and is
+    // inside the Mine's rect now; (900, 900) is off the map's south-east
+    // corner, which is genuinely nowhere.
+    const no = isActionValidInZone(900, 900, "scythe");
     expect(no.ok).toBe(false);
     if (no.ok) throw new Error("unreachable");
     expect(no.zone).toBeNull();
@@ -236,14 +243,18 @@ describe("the Long Meadow's grass", () => {
   });
 
   it("grows only inside the meadow, and not on the lane through it", () => {
-    const farm = meadowTileAt(224, 174);
+    // In the yard, and out in open woodland: neither is the Grand Farm, so
+    // neither grows its grass.
+    const home = STACKACRES_ZONES.farmstead.approach;
+    const farm = meadowTileAt(home.x, home.y);
     expect(meadowBaseDensity(farm.tx, farm.ty)).toBe(0);
-    const woods = meadowTileAt(-600, -600);
+    const woods = meadowTileAt(900, 900);
     expect(meadowBaseDensity(woods.tx, woods.ty)).toBe(0);
 
-    // Every tile the meadow lane passes through is bare.
-    const lane = FARM_PATHS.find((p) => p.key === "meadowLane");
-    if (!lane) throw new Error("no meadowLane");
+    // Every tile the spur into the field passes through is bare. Renamed from
+    // `meadowLane` in the 2026-09-07 re-lay, when every district got a spur.
+    const lane = FARM_PATHS.find((p) => p.key === "meadowSpur");
+    if (!lane) throw new Error("no meadowSpur");
     for (const p of lane.points) {
       const t = meadowTileAt(p.x, p.y);
       if (zoneAt(p.x, p.y) !== "meadow") continue;
@@ -293,7 +304,10 @@ describe("the Long Meadow's grass", () => {
 });
 
 describe("the scythe's stroke", () => {
-  const gate = STACKACRES_ZONES.meadow.approach;
+  // A point in the open field rather than the gate itself: since the
+  // 2026-09-07 re-lay the gate sits on the spur that serves it, and grass
+  // never grows on a road, so a stroke there would have nothing to cut.
+  const gate = { x: 64, y: -64 };
 
   it("cuts an unbroken swathe however fast the finger moved", () => {
     // One long stroke arriving as a single move event: the sampling, not the

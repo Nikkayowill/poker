@@ -37,6 +37,11 @@ import {
   type Walker,
 } from "./farmhand-path";
 import type { WorldPoint } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardPoint } from "./yard";
 
 /** Re-exported because this was its home before ./farmhand-path.ts existed
  *  and both the scene and farmhand.test.ts import it from here. */
@@ -54,7 +59,7 @@ export { FARMHAND_SPEED };
  * `FARM_ZONE` so the camera's home shot actually contains him.
  * farmhand.test.ts holds all six.
  */
-export const FARMHAND_BASE: WorldPoint = { x: 156, y: 168 };
+export const FARMHAND_BASE: WorldPoint = yardPoint(156, 168);
 
 /** How long he spends bent over the job before heading home. Long enough to
  *  read as work at a glance, short enough that a second tap is not queued

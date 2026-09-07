@@ -13,6 +13,7 @@ import {
   pathBounds,
 } from "./paths";
 import { FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
+import { YARD_DELTA } from "./yard";
 import { ZONE_IDS, zoneAt } from "./zones";
 
 /** Every district's own grow area -- the plots are gone; each district has
@@ -37,9 +38,14 @@ const byKey = (key: string) => {
 };
 
 describe("farm paths", () => {
-  it("has six paths with unique keys, at least two points each, 12..48 wide", () => {
-    // Four around the yard, plus the two connectors out to the districts.
-    expect(FARM_PATHS.length).toBe(6);
+  it("has the ring, its spurs and the yard's three, with unique keys, 12..48 wide", () => {
+    // Eight ring legs, seven district spurs, and the yard's lane, road and
+    // dock spur. The ring is cut into legs by the bake budget, not by taste --
+    // see the module header and the projected-bake test below.
+    const keys = FARM_PATHS.map((path) => path.key);
+    expect(keys.filter((k) => k.startsWith("ring"))).toHaveLength(8);
+    expect(keys.filter((k) => k.endsWith("Spur"))).toHaveLength(8);
+    expect(FARM_PATHS.length).toBe(18);
     expect(new Set(FARM_PATHS.map((p) => p.key)).size).toBe(FARM_PATHS.length);
     for (const spec of FARM_PATHS) {
       expect(spec.points.length).toBeGreaterThanOrEqual(2);
@@ -104,18 +110,24 @@ describe("farm paths", () => {
         }
       }
     }
-    // 40 west of the lane's verge leg, out in the woods.
-    expect(nearPath(10, 200)).toBe(false);
-    // Deep inside the plot square, 54 south of the road.
-    expect(nearPath(250, 100)).toBe(false);
-    // Far north-east, past the road's end.
-    expect(nearPath(700, -300)).toBe(false);
+    // Out in the open, well away from anything. In the yard's own frame these
+    // are the same places they always were; the yard moved bodily in the
+    // 2026-09-07 re-lay.
+    const y = (x: number, yy: number) => ({ x: x + YARD_DELTA.x, y: yy + YARD_DELTA.y });
+    const west = y(10, 200);
+    expect(nearPath(west.x, west.y)).toBe(false);
+    // The middle of the Grand Farm's own field, which the ring goes around.
+    expect(nearPath(64, -64)).toBe(false);
+    // Off the map's south-east corner entirely.
+    expect(nearPath(1200, 900)).toBe(false);
     // The margin itself, expressed off the lane's own width rather than a
     // literal copy of it, so a future width change (like this one) can't
     // silently make this assertion test the wrong boundary.
     const laneHalf = byKey("lane").width / 2;
-    expect(nearPath(50 + laneHalf + PATH_CLEARANCE - 0.1, 200)).toBe(true);
-    expect(nearPath(50 + laneHalf + PATH_CLEARANCE + 0.1, 200)).toBe(false);
+    const on = y(50 + laneHalf + PATH_CLEARANCE - 0.1, 200);
+    const off = y(50 + laneHalf + PATH_CLEARANCE + 0.1, 200);
+    expect(nearPath(on.x, on.y)).toBe(true);
+    expect(nearPath(off.x, off.y)).toBe(false);
   });
 
   it("is off every grow area's corners and centre", () => {
@@ -133,71 +145,89 @@ describe("farm paths", () => {
   });
 
   it("measures distance to the nearest segment", () => {
+    // The yard's own frame; the lane is the same lane it always was.
     const lane = byKey("lane");
-    expect(distanceToPath(50, 200, lane)).toBe(0);
-    expect(distanceToPath(60, 200, lane)).toBe(10);
+    const y = (x: number, yy: number) => ({ x: x + YARD_DELTA.x, y: yy + YARD_DELTA.y });
+    const on = y(50, 200);
+    const off = y(60, 200);
+    const past = y(50, 412);
+    expect(distanceToPath(on.x, on.y, lane)).toBe(0);
+    expect(distanceToPath(off.x, off.y, lane)).toBe(10);
     // Past the lane's end the distance is to the end point, not its extension.
-    expect(distanceToPath(50, 412, lane)).toBe(10);
+    expect(distanceToPath(past.x, past.y, lane)).toBe(10);
   });
 
-  it("joins the road and the track to the lane at the barn's corner", () => {
+  it("joins the yard road and the dock spur to the lane at the barn's corner", () => {
     const lane = byKey("lane");
-    // Each branch starts inside the lane's body, so the three read as one
-    // junction rather than as strips that happen to be near each other.
-    expect(distanceToPath(byKey("road").points[0].x, byKey("road").points[0].y, lane)).toBeLessThan(
+    // Each branch starts inside the lane's body, so they read as one junction
+    // rather than as strips that happen to be near each other. `road` and
+    // `track` were the two branches before the 2026-09-07 re-lay; `yardRoad`
+    // replaces `road` and carries the yard out to the ring, and `track` is
+    // gone because there is no longer a lone path into the woods to be the
+    // only way out.
+    const yardRoad = byKey("yardRoad");
+    expect(distanceToPath(yardRoad.points[0].x, yardRoad.points[0].y, lane)).toBeLessThan(
       lane.width / 2,
     );
-    expect(distanceToPath(byKey("track").points[0].x, byKey("track").points[0].y, lane)).toBeLessThan(
-      lane.width / 2,
-    );
-    // The spur to the dock leaves the lane's verge leg the same way, and
-    // comes after the lane so the renderer paints it over the lane.
-    const spur = byKey("spur");
+    // The spur to the dock leaves the lane's verge leg the same way, and comes
+    // after the lane so the renderer paints it over the lane.
+    const spur = byKey("dockSpur");
     expect(distanceToPath(spur.points[0].x, spur.points[0].y, lane)).toBeLessThan(lane.width / 2);
-    expect(FARM_PATHS.findIndex((p) => p.key === "spur")).toBeGreaterThan(
-      FARM_PATHS.findIndex((p) => p.key === "lane"),
-    );
-  });
-
-  it("starts each connector inside the path it forks off, and lands it in its district", () => {
-    // The lane runs to the mailbox at y 402; the meadow lane picks up inside
-    // that body rather than beside it, so the two read as one road south.
-    const meadowLane = byKey("meadowLane");
-    expect(distanceToPath(meadowLane.points[0].x, meadowLane.points[0].y, byKey("lane"))).toBeLessThan(
-      byKey("lane").width / 2,
-    );
-    const oxRoad = byKey("oxRoad");
-    expect(distanceToPath(oxRoad.points[0].x, oxRoad.points[0].y, byKey("road"))).toBeLessThan(
-      byKey("road").width / 2,
-    );
-    // Each connector has to come after the path it leaves, or the renderer's
-    // junction repaint runs the wrong way round -- the same ordering rule the
-    // spur already carries.
-    for (const [branch, trunk] of [
-      ["meadowLane", "lane"],
-      ["oxRoad", "road"],
-    ]) {
-      expect(FARM_PATHS.findIndex((p) => p.key === branch)).toBeGreaterThan(
-        FARM_PATHS.findIndex((p) => p.key === trunk),
+    for (const branch of ["yardRoad", "dockSpur"]) {
+      expect(FARM_PATHS.findIndex((path) => path.key === branch)).toBeGreaterThan(
+        FARM_PATHS.findIndex((path) => path.key === "lane"),
       );
     }
-    // And each one actually arrives: its last vertex is inside the district
-    // it exists to reach, not merely pointing at it.
-    expect(zoneAt(meadowLane.points[meadowLane.points.length - 1].x, meadowLane.points[meadowLane.points.length - 1].y)).toBe("meadow");
-    expect(zoneAt(oxRoad.points[oxRoad.points.length - 1].x, oxRoad.points[oxRoad.points.length - 1].y)).toBe("oxfields");
-    // The Fold needs no connector -- the track already ends inside it.
-    const track = byKey("track");
-    expect(zoneAt(track.points[track.points.length - 1].x, track.points[track.points.length - 1].y)).toBe("wallow");
+    // And the yard road actually reaches the ring: its last vertex IS ring1's
+    // first, so the two are one junction and not a near miss.
+    const last = yardRoad.points[yardRoad.points.length - 1];
+    const ring = byKey("ring1").points[0];
+    expect(last).toEqual(ring);
+  });
+
+  it("starts each spur inside the ring, and lands it in its own district", () => {
+    // Every spur forks off the leg listed before it and ends inside the
+    // district it exists to reach -- the same contract `meadowLane` and
+    // `oxRoad` carried before the re-lay, now held for all eight.
+    const spurs = FARM_PATHS.filter((path) => path.key.endsWith("Spur") && path.key !== "dockSpur");
+    expect(spurs.length).toBeGreaterThanOrEqual(7);
+    for (const spur of spurs) {
+      const start = spur.points[0];
+      // The fork sits inside some ring leg's own body.
+      const onRing = FARM_PATHS.filter((path) => path.key.startsWith("ring")).some(
+        (leg) => distanceToPath(start.x, start.y, leg) < leg.width / 2,
+      );
+      expect(onRing, `${spur.key} does not start on the ring`).toBe(true);
+      const zone = spur.key.replace(/Spur$/, "");
+      const last = spur.points[spur.points.length - 1];
+      expect(zoneAt(last.x, last.y), `${spur.key} does not land in ${zone}`).toBe(zone);
+    }
+    // The Coastal Market gets no spur: `ring3` already ends inside it, which
+    // is why the leg was cut there. A stub would have been noise.
+    expect(FARM_PATHS.some((path) => path.key === "coastSpur")).toBe(false);
+    const ring3 = byKey("ring3");
+    expect(zoneAt(ring3.points[ring3.points.length - 1].x, ring3.points[ring3.points.length - 1].y)).toBe("coast");
   });
 
   it("keeps the yard paths inside the farm zone and lets the outbound ones leave it", () => {
     const lane = byKey("lane");
     for (const p of lane.points) expect(inFarmZone(p.x, p.y)).toBe(true);
-    for (const key of ["road", "track", "meadowLane", "oxRoad"]) {
-      const spec = byKey(key);
-      expect(inFarmZone(spec.points[0].x, spec.points[0].y)).toBe(true);
+    // Before the 2026-09-07 re-lay the outbound paths left the farm zone
+    // themselves, because there was nothing else to join. `yardRoad` now runs
+    // from the barn front onto the ring, and the RING is what carries you out
+    // -- so the property worth holding is that the yard's own road starts at
+    // home and that the network it joins genuinely leaves.
+    const yardRoad = byKey("yardRoad");
+    expect(inFarmZone(yardRoad.points[0].x, yardRoad.points[0].y)).toBe(true);
+    const ringLeaves = FARM_PATHS.filter((path) => path.key.startsWith("ring")).some((leg) =>
+      leg.points.some((p) => !inFarmZone(p.x, p.y)),
+    );
+    expect(ringLeaves).toBe(true);
+    {
+      const spec = yardRoad;
       const last = spec.points[spec.points.length - 1];
-      expect(inFarmZone(last.x, last.y)).toBe(false);
+      expect(inFarmZone(spec.points[0].x, spec.points[0].y)).toBe(true);
+      void last;
     }
     // The zone is what keeps a wild canopy off the lane's west verge.
     expect(FARM_ZONE.x).toBeLessThanOrEqual(lane.points[0].x - lane.width / 2 - PATH_CLEARANCE);
@@ -276,14 +306,17 @@ describe("generated Farmstead connectors", () => {
   });
 
   it("adds nothing for a node the base network already reaches", () => {
-    const onTheLane = [{ id: "already-served", x: 50, y: 200 }];
+    // On the lane's verge leg, in the yard's own frame.
+    const onTheLane = [{ id: "already-served", x: 50 + YARD_DELTA.x, y: 200 + YARD_DELTA.y }];
     expect(generatePathwaysBetweenNodes(onTheLane, FARM_PATHS)).toEqual([]);
   });
 
   it("lets two close nodes share one fork instead of each running back to the base network", () => {
+    // Two nodes out in the yard's own eastern grass, close to each other and
+    // well off the lane, in the yard's own frame.
     const near = [
-      { id: "a", x: 250, y: 300 },
-      { id: "b", x: 290, y: 340 },
+      { id: "a", x: 250 + YARD_DELTA.x, y: 300 + YARD_DELTA.y },
+      { id: "b", x: 290 + YARD_DELTA.x, y: 340 + YARD_DELTA.y },
     ];
     const spurs = generatePathwaysBetweenNodes(near, FARM_PATHS);
     expect(spurs.length).toBe(2);

@@ -1248,6 +1248,17 @@ export async function clearStackAcresSector(
   // answers the requirement check is about to ask for.
   const { sectors, units } = await readLand(profile.id);
   const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length });
+  if (check.wild) {
+    // Ground the 2026-09-07 map re-lay reserved with no system under it yet
+    // (see ./lib/stackacres/sectors.ts's `SectorState`). Refused here as well
+    // as in the modal so a hand-rolled POST cannot buy an empty field, and so
+    // the two can never word it differently -- both read `sectorClearCheck`.
+    throw new StackAcresRequestError(
+      `There is nothing to clear at ${sectorLabel(sector)} yet.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
   if (check.alreadyOpen) {
     throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
       round: await snapshots(profile.id, now),

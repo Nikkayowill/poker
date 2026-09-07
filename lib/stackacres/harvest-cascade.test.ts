@@ -31,28 +31,28 @@ describe("findCascadeTargets", () => {
       unit("same-zone-working", "hen", "working"),
       unit("other-zone-ready", "cattle", "ready"),
     ];
-    expect(findCascadeTargets(units, "farmstead", new Set(["origin"]))).toEqual([
+    expect(findCascadeTargets(units, "henhaven", new Set(["origin"]))).toEqual([
       "same-zone-ready",
     ]);
   });
 
   it("never returns an excluded id, even one that would otherwise match", () => {
     const units = [unit("a", "hen", "ready"), unit("b", "hen", "ready")];
-    expect(findCascadeTargets(units, "farmstead", new Set(["a", "b"]))).toEqual([]);
+    expect(findCascadeTargets(units, "henhaven", new Set(["a", "b"]))).toEqual([]);
   });
 
   it("caps at CASCADE_MAX_UNITS even with a whole district ready", () => {
     const units = Array.from({ length: CASCADE_MAX_UNITS + 5 }, (_, i) => unit(`u${i}`, "hen", "ready"));
-    expect(findCascadeTargets(units, "farmstead", new Set())).toHaveLength(CASCADE_MAX_UNITS);
+    expect(findCascadeTargets(units, "henhaven", new Set())).toHaveLength(CASCADE_MAX_UNITS);
   });
 
   it("returns nothing when nothing else in the district is ready", () => {
     const units = [unit("origin", "hen", "ready"), unit("other", "pig", "ready")];
-    expect(findCascadeTargets(units, "farmstead", new Set(["origin"]))).toEqual([]);
+    expect(findCascadeTargets(units, "henhaven", new Set(["origin"]))).toEqual([]);
   });
 
   it("is stable regardless of input order", () => {
     const units = [unit("z", "hen", "ready"), unit("a", "hen", "ready")];
-    expect(findCascadeTargets(units, "farmstead", new Set())).toEqual(["a", "z"]);
+    expect(findCascadeTargets(units, "henhaven", new Set())).toEqual(["a", "z"]);
   });
 });

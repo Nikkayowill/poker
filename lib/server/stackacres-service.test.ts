@@ -95,6 +95,7 @@ import {
 } from "@/lib/stackacres/exchange";
 import {
   HOME_SECTOR,
+  HOME_SECTORS,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
   unlockedPlotCount,
@@ -2123,9 +2124,12 @@ describe("clearing land", () => {
   const SECOND = SECTOR_LADDER[1];
 
   it("opens a new farm with home only", async () => {
+    // Home is two sectors since the 2026-09-07 map re-lay: the hens moved out
+    // of the Farmstead into Hen Haven, and gating the only animal a new farm
+    // can afford would leave it with no first move.
     const { token } = await greenfield();
     const view = await readStackAcres(token, T0);
-    expect(view.sectors).toEqual([HOME_SECTOR]);
+    expect(view.sectors).toEqual([...HOME_SECTORS]);
   });
 
   it("refuses to stock a kind whose land is still wild", async () => {

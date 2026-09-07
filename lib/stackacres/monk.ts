@@ -35,6 +35,11 @@
 
 import { FARMHAND_WORK_MS } from "./farmhand";
 import type { WorldPoint, WorldRect } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardPoint, yardRect } from "./yard";
 
 /**
  * Where he stands and bows -- the open ground between the barn and the Hen
@@ -54,7 +59,7 @@ import type { WorldPoint, WorldRect } from "./world";
  * space with either. Still inside `FARM_ZONE` and still `farmstead`'s own
  * territory (`zoneAt` returns null here, same as `FARMHAND_BASE` used to).
  */
-export const MONK_POST: WorldPoint = { x: 170, y: 140 };
+export const MONK_POST: WorldPoint = yardPoint(170, 140);
 
 /**
  * The shrine's footprint, in the same feet-anchored ground-rect convention
@@ -67,7 +72,7 @@ export const MONK_POST: WorldPoint = { x: 170, y: 140 };
  * when the road became two and a half tiles wide (./roads.ts): the road's
  * body reaches y 78 now and its scenery clearance y 84.
  */
-export const MONK_HOUSE_FOOTPRINT: WorldRect = { x: 140, y: 88, width: 66, height: 46 };
+export const MONK_HOUSE_FOOTPRINT: WorldRect = yardRect(140, 88, 66, 46);
 
 /** Whether a tapped ground point lands on the shrine -- the Pixel Pilgrim's
  *  own tap target, same shape as `barnHitAt` in ./world.ts. Checked against

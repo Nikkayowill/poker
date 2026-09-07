@@ -93,13 +93,13 @@ describe("occupiedCountFor", () => {
 
 describe("buyOptionsForZone", () => {
   it("lists only the stock kinds that live in this district", () => {
-    const options = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} });
+    const options = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
     expect(options.map((o) => o.stock)).toEqual(["hen"]);
   });
 
   it("caps at 3 by default and offers an expand option once full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {} });
     expect(hen.owned).toBe(3);
     expect(hen.cap).toBe(3);
     expect(hen.atCap).toBe(true);
@@ -110,19 +110,19 @@ describe("buyOptionsForZone", () => {
     // Caught by an actual browser run, not by a test: this used to check only
     // whether extra slots were maxed, so a brand-new farm with nothing owned
     // at all offered "Expand capacity" before the free cap was ever reached.
-    const [emptyHen] = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} });
+    const [emptyHen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
     expect(emptyHen.atCap).toBe(false);
     expect(emptyHen.expand).toBeNull();
 
     const twoOwned = [unit({ id: "a" }), unit({ id: "b" })];
-    const [almostFull] = buyOptionsForZone("farmstead", { units: twoOwned, gold: 1000, capacity: {} });
+    const [almostFull] = buyOptionsForZone("henhaven", { units: twoOwned, gold: 1000, capacity: {} });
     expect(almostFull.atCap).toBe(false);
     expect(almostFull.expand).toBeNull();
   });
 
   it("a purchased extra slot raises the cap and clears atCap", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: { hen: 1 } });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: { hen: 1 } });
     expect(hen.cap).toBe(4);
     expect(hen.atCap).toBe(false);
     // Not offered again either -- the fourth slot the player just bought has
@@ -132,17 +132,17 @@ describe("buyOptionsForZone", () => {
 
   it("expand disappears once the extra-slot ceiling is reached, even while genuinely full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" }), unit({ id: "d" }), unit({ id: "e" }), unit({ id: "f" })];
-    const [hen] = buyOptionsForZone("farmstead", { units, gold: 0, capacity: { hen: 3 } });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 0, capacity: { hen: 3 } });
     expect(hen.cap).toBe(6);
     expect(hen.atCap).toBe(true);
     expect(hen.expand).toBeNull();
   });
 
   it("seedReason names the Gold cost when short, and the cap when full", () => {
-    const [short] = buyOptionsForZone("farmstead", { units: [], gold: 0, capacity: {} });
+    const [short] = buyOptionsForZone("henhaven", { units: [], gold: 0, capacity: {} });
     expect(short.seedReason).toMatch(/Gold/);
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [full] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} });
+    const [full] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {} });
     expect(full.seedReason).toMatch(/full/);
   });
 });

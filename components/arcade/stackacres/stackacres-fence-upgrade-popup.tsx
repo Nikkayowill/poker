@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { FENCE_TIER_LABEL, FENCE_TIER_MAX_DURABILITY, nextFenceTier, type FenceTier } from "@/lib/stackacres/wildlife";
-import type { ZoneId } from "@/lib/stackacres/zones";
+import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { TapPoint } from "./stackacres-scene";
 
 /**
@@ -27,12 +27,16 @@ export interface StackAcresFenceUpgradePopupProps {
   onClose: () => void;
 }
 
-const ZONE_LABEL: Readonly<Record<ZoneId, string>> = {
-  farmstead: "the Farmstead",
-  meadow: "the Long Meadow",
-  oxfields: "Ox Fields",
-  wallow: "the Wallow",
-};
+/** The district's own name, read straight off ./zones.ts rather than kept as
+ *  a second hand-written copy. The old copy here had already drifted -- it
+ *  still said "the Long Meadow" and "the Wallow" after both were renamed --
+ *  which is exactly the failure this codebase keeps hitting with restated
+ *  constants (STAKES_TIERS, the wager ladders, PEN_BLOCKS against GROW_AREA).
+ *  Every label already carries its own article ("The Fold", "Cattle
+ *  Pasture"), so the sentence reads correctly without one being added here. */
+function zoneLabel(zone: ZoneId): string {
+  return STACKACRES_ZONES[zone].label;
+}
 
 export function StackAcresFenceUpgradePopup({
   at,
@@ -68,7 +72,7 @@ export function StackAcresFenceUpgradePopup({
           ×
         </button>
         <p className="sa-fence-upgrade-line">
-          {FENCE_TIER_LABEL[tier]} fencing along {ZONE_LABEL[zone]}.
+          {FENCE_TIER_LABEL[tier]} fencing along {zoneLabel(zone)}.
         </p>
         <p className="sa-fence-upgrade-durability">
           Durability {Math.max(0, durability)}/{maxDurability}

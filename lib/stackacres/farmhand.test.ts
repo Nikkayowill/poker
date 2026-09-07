@@ -111,7 +111,12 @@ describe("spawnFarmhand", () => {
 
 describe("stepFarmhand", () => {
   it("walks the whole loop: idle, travelling, working, returning, idle", () => {
-    const job = task("u1", 240, 300);
+    // Relative to his own base rather than an absolute spot. This is the one
+    // test that walks him all the way out and all the way back inside a frame
+    // budget, so it is the one that breaks if the yard moves -- and the
+    // 2026-09-07 map re-lay moved it by 850-odd units. The offsets are the
+    // same ones the old literal (240, 300) had from base.
+    const job = task("u1", FARMHAND_BASE.x + 84, FARMHAND_BASE.y + 132);
     const seen: string[] = [];
     let hand = spawnFarmhand();
     let claimed = false;

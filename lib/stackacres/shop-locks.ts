@@ -78,11 +78,11 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
  * ./zones.ts's own labels (there is a test holding these two in step).
  */
 export const STACKACRES_QUEST_LABELS: Readonly<Record<StackAcresQuestFlag, string>> = {
-  cleared_meadow: "Clear the Long Meadow",
+  cleared_meadow: "Clear the Grand Farm",
   town_trusted: "Fill an order for the town",
   cleared_wallow: "Clear the Fold",
   greenhouse_raised: "Raise the Greenhouse",
-  cleared_oxfields: "Clear the Ox Fields",
+  cleared_oxfields: "Clear the Cattle Pasture",
 };
 
 /* ------------------------------------------------------------------ */

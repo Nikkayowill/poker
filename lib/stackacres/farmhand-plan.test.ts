@@ -14,6 +14,7 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { WHEAT_YIELD_QUANTITY } from "./wheat-plot";
 import { FARMHAND_SPEED, tileOf } from "./farmhand-path";
 import { FARMHAND_BASE } from "./farmhand";
+import { YARD_DELTA } from "./yard";
 import { nearPath } from "./paths";
 import { inPondZone } from "./water";
 import {
@@ -73,11 +74,12 @@ describe("CONTRACT_DROP", () => {
 
   it("stands east of the barn, the silo, the hay and both crates", () => {
     expect(CONTRACT_DROP.x).toBeGreaterThan(BARN_FOOTPRINT.x + BARN_FOOTPRINT.width);
-    expect(CONTRACT_DROP.x).toBeGreaterThan(211);
+    // The yard's own frame: east of the second crate at x 211.
+    expect(CONTRACT_DROP.x - YARD_DELTA.x).toBeGreaterThan(211);
   });
 
   it("stops short of the well, so he is not handing sacks down it", () => {
-    expect(CONTRACT_DROP.x).toBeLessThan(238);
+    expect(CONTRACT_DROP.x - YARD_DELTA.x).toBeLessThan(238);
   });
 
   it("is a short enough errand to watch: under ten seconds from his post", () => {

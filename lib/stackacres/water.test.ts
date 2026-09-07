@@ -19,6 +19,7 @@ import {
 } from "./water";
 import { FARM_PATHS, nearPath } from "./paths";
 import { STACKACRES_CHUNK, chunkScenery, growAreaBounds } from "./world";
+import { YARD_DELTA } from "./yard";
 import { ZONE_IDS } from "./zones";
 
 /** Distance from a point to the nearest point of a rectangle. */
@@ -30,14 +31,22 @@ function rectDistance(x: number, y: number, r: { x: number; y: number; width: nu
 
 describe("the pond", () => {
   it("sits on the west verge, inside the home frame and clear of the lane", () => {
-    expect(POND.x + POND.rx).toBeLessThanOrEqual(20);
-    expect(POND.x - POND.rx).toBeGreaterThanOrEqual(-88);
-    expect(POND.y - POND.ry).toBeGreaterThanOrEqual(-41);
-    expect(POND.y + POND.ry).toBeLessThanOrEqual(184);
-    // The lane's body starts at x 43; the sand must not reach it.
-    expect(POND.x + POND.rx + POND_SAND).toBeLessThan(43);
+    // Measured in the YARD's own frame, not in absolute world units. The
+    // 2026-09-07 map re-lay moved the Farmstead as a rigid body, so the pond
+    // is at a different world position and in exactly the same place relative
+    // to the lane, the barn and the opening shot -- which is what this test
+    // was ever about. Subtracting YARD_DELTA puts these back on the numbers
+    // the yard was drawn with, and they are unchanged.
+    const px = POND.x - YARD_DELTA.x;
+    const py = POND.y - YARD_DELTA.y;
+    expect(px + POND.rx).toBeLessThanOrEqual(20);
+    expect(px - POND.rx).toBeGreaterThanOrEqual(-88);
+    expect(py - POND.ry).toBeGreaterThanOrEqual(-41);
+    expect(py + POND.ry).toBeLessThanOrEqual(184);
+    // The lane's body starts at x 43 in that frame; the sand must not reach it.
+    expect(px + POND.rx + POND_SAND).toBeLessThan(43);
     // Its clearing, which is what keeps the woods off, stops short of it too.
-    expect(POND_ZONE.x + POND_ZONE.width).toBeLessThan(43);
+    expect(POND_ZONE.x - YARD_DELTA.x + POND_ZONE.width).toBeLessThan(43);
   });
 
   it("pads its zone by the clearance on every side", () => {
@@ -75,10 +84,27 @@ describe("the pond", () => {
   });
 
   it("keeps wild scenery out of the water in every chunk the pond touches", () => {
-    // The zone spans x -106..42, y 58..182: chunks (-1,0) and (0,0) hold the
-    // water, (-1,1) and (0,1) its southern clearance.
+    // Derived rather than hand-listed. The chunks the pond falls in moved with
+    // the yard in the 2026-09-07 re-lay, and a hardcoded list of four would
+    // have to be recomputed by hand every time the Farmstead moves -- the
+    // property being tested is "no wild scenery grows in the water", in
+    // whichever chunks the water happens to occupy.
+    const chunkRange = (lo: number, hi: number) => {
+      const out: number[] = [];
+      for (let c = Math.floor(lo / STACKACRES_CHUNK); c <= Math.floor(hi / STACKACRES_CHUNK); c += 1) {
+        out.push(c);
+      }
+      return out;
+    };
+    const cells: [number, number][] = [];
+    for (const cx of chunkRange(POND_ZONE.x, POND_ZONE.x + POND_ZONE.width)) {
+      for (const cy of chunkRange(POND_ZONE.y, POND_ZONE.y + POND_ZONE.height)) {
+        cells.push([cx, cy]);
+      }
+    }
+    expect(cells.length).toBeGreaterThanOrEqual(4);
     const touched = new Set<string>();
-    for (const [cx, cy] of [[-1, 0], [0, 0], [-1, 1], [0, 1]]) {
+    for (const [cx, cy] of cells) {
       const x0 = cx * STACKACRES_CHUNK;
       const y0 = cy * STACKACRES_CHUNK;
       const overlaps =
@@ -92,7 +118,7 @@ describe("the pond", () => {
         expect(inPondZone(piece.x, piece.y), `${piece.kind} at ${piece.x},${piece.y}`).toBe(false);
       }
     }
-    expect(touched.has("-1:0") && touched.has("0:0")).toBe(true);
+    expect(touched.size).toBe(cells.length);
   });
 
   it("bakes into one texture no bigger than 1024x512 at 4 px per unit", () => {
@@ -119,7 +145,10 @@ describe("the dock", () => {
   });
 
   it("is where the spur off the lane ends", () => {
-    const spur = FARM_PATHS.find((p) => p.key === "spur");
+    // Renamed `spur` -> `dockSpur` in the 2026-09-07 re-lay: the map has a
+    // spur into every district now, so the yard's one needed a name that says
+    // which spur it is.
+    const spur = FARM_PATHS.find((p) => p.key === "dockSpur");
     expect(spur).toBeDefined();
     if (!spur) return;
     const end = spur.points[spur.points.length - 1];

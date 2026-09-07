@@ -7,6 +7,7 @@ import {
   rollGapMs,
   type AmbienceTimeOfDay,
 } from "./ambience-plan";
+import { WILD_SECTORS } from "./sectors";
 import { ZONE_IDS } from "./zones";
 
 const TIMES: AmbienceTimeOfDay[] = ["day", "dusk", "night"];
@@ -24,12 +25,20 @@ describe("ambienceMix", () => {
     }
   });
 
-  it("still gives every district something in the mix, now that there is no air floor", () => {
+  it("still gives every worked district something in the mix, now that there is no air floor", () => {
     // There is no bed guaranteed non-zero any more (that guarantee was the
-    // `air` floor, and it read as wind) -- but every real zone still carries
-    // grass, so a district going genuinely silent would be a regression in
+    // `air` floor, and it read as wind) -- but every worked zone still carries
+    // grass, so one of those going genuinely silent would be a regression in
     // the zone table, not a property this file enforces directly.
-    for (const zone of ZONE_IDS) {
+    //
+    // The four districts the 2026-09-07 map re-lay reserved are SILENT on
+    // purpose and excluded here: nothing is built on them, and inventing a bed
+    // for a market or a shoreline means new audio assets, which is a later
+    // pass. `WILD_SECTORS` is the same list, read from its one owner so this
+    // cannot quietly cover a district that has since been built.
+    const worked = ZONE_IDS.filter((zone) => !WILD_SECTORS.includes(zone));
+    expect(worked).toEqual(["farmstead", "henhaven", "meadow", "oxfields", "wallow"]);
+    for (const zone of worked) {
       for (const tod of TIMES) {
         const mix = ambienceMix(tod, zone);
         const total = mix.grass + mix.water + mix.insects;

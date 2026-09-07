@@ -43,12 +43,25 @@ import { STACKACRES_ZONES, zonesByDistance, type ZoneId } from "@/lib/stackacres
 /** Which way each district lies from the farmyard, on screen. Written down
  *  rather than derived: the isometric shear means a district that is due
  *  south in world space arrives at the lower LEFT of the screen, and the
- *  compass a player reads has to match the thumb, not the coordinates. */
+ *  compass a player reads has to match the thumb, not the coordinates.
+ *
+ *  Re-derived for the 2026-09-07 map re-lay by projecting each district's
+ *  centre relative to the Farmstead's and reading the screen angle off it.
+ *  FOUR OF THE NINE READ "east", and that is not a mistake to fix: the map is
+ *  a band running east across the screen, so most of it genuinely is east of
+ *  home. The heading is a hint, not an identifier -- the rail is sorted by
+ *  `zonesByDistance` and labelled with the district's own name, which is what
+ *  actually tells two easts apart. */
 const HEADING: Readonly<Record<ZoneId, string>> = {
   farmstead: "home",
-  meadow: "south",
+  henhaven: "north-east",
+  meadow: "east",
   oxfields: "east",
-  wallow: "north-west",
+  wallow: "east",
+  townsquare: "south-west",
+  mine: "north-east",
+  coast: "east",
+  oak: "east",
 };
 
 export interface StackAcresDestinationsProps {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HOME_SECTOR,
+  HOME_SECTORS,
   SECTOR_IDS,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
@@ -55,8 +56,8 @@ describe("the sector ladder", () => {
     // of slots the previous rungs actually give you makes it unreachable, and
     // there is no error anywhere to notice that -- the modal just never ticks.
     let reachable = 0;
-    for (const id of [HOME_SECTOR, ...SECTOR_LADDER]) {
-      if (id !== HOME_SECTOR) {
+    for (const id of [...HOME_SECTORS, ...SECTOR_LADDER]) {
+      if (!HOME_SECTORS.includes(id)) {
         expect(STACKACRES_SECTORS[id].requiresUnits).toBeLessThanOrEqual(reachable);
       }
       reachable += STACKACRES_STOCK.filter((stock) => stockZone(stock) === id).length * capFor(0);
@@ -66,7 +67,10 @@ describe("the sector ladder", () => {
 
 describe("unlockedSectors", () => {
   it("always includes home, even with nothing cleared and nothing owned", () => {
-    expect(unlockedSectors([], [])).toEqual([HOME_SECTOR]);
+    // Two home sectors since the 2026-09-07 re-lay: the hens moved out of the
+    // Farmstead into Hen Haven, and gating the only affordable animal behind
+    // Gold would leave a new farm with no first move.
+    expect(unlockedSectors([], [])).toEqual([...HOME_SECTORS]);
   });
 
   it("includes what was explicitly cleared", () => {
@@ -153,9 +157,11 @@ describe("sectorClearCheck", () => {
 
 describe("unlockedPlotCount", () => {
   it("counts only slots standing on cleared ground", () => {
-    // Home alone is the Hen Coop's own three free slots, which is exactly the
-    // free base -- so a brand-new farm owes nothing.
-    const home = unlockedPlotCount([HOME_SECTOR], {});
+    // Home is the Hen Coop's own three free slots, which is exactly the free
+    // base -- so a brand-new farm owes nothing. Those slots stand at Hen Haven
+    // now rather than in the Farmstead's yard, so the count is over both home
+    // sectors; the number it produces is unchanged.
+    const home = unlockedPlotCount([...HOME_SECTORS], {});
     expect(home).toBe(capFor(0));
     // Exactly the free base, so a brand-new farm owes nothing. The fee itself
     // now lives in ./upkeep.ts; upkeep.test.ts holds that half.
@@ -163,15 +169,15 @@ describe("unlockedPlotCount", () => {
   });
 
   it("grows as land is cleared", () => {
-    const home = unlockedPlotCount([HOME_SECTOR], {});
-    const plusMeadow = unlockedPlotCount([HOME_SECTOR, "meadow"], {});
-    // The Long Meadow holds two crop kinds, so it is worth two kinds' slots.
+    const home = unlockedPlotCount([...HOME_SECTORS], {});
+    const plusMeadow = unlockedPlotCount([...HOME_SECTORS, "meadow"], {});
+    // The Grand Farm holds two crop kinds, so it is worth two kinds' slots.
     expect(plusMeadow).toBe(home + 2 * capFor(0));
   });
 
   it("grows as capacity is bought on cleared ground", () => {
-    const before = unlockedPlotCount([HOME_SECTOR], {});
-    const after = unlockedPlotCount([HOME_SECTOR], { hen: 2 });
+    const before = unlockedPlotCount([...HOME_SECTORS], {});
+    const after = unlockedPlotCount([...HOME_SECTORS], { hen: 2 });
     expect(after).toBe(before + 2);
   });
 

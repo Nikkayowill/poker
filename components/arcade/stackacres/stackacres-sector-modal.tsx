@@ -78,6 +78,42 @@ export function StackAcresSectorModal({
   ];
   const ready = check.ok && upkeepOutstanding <= 0;
 
+  // Wild ground: reserved by the 2026-09-07 map re-lay, with no system under
+  // it yet. It shows what is coming and nothing else -- no price, no
+  // checklist, no button. Selling somebody Town Square today would take real
+  // Gold for an empty field, which is the whole reason `SectorState` exists.
+  if (check.wild) {
+    return (
+      <div
+        className="sa-sheet-scrim"
+        role="dialog"
+        aria-modal="true"
+        aria-label={sectorLabel(sector)}
+      >
+        <div className="sa-sheet sa-clear-sheet">
+          <header className="sa-sheet-head">
+            <div>
+              <p className="sa-clear-kicker">
+                <Lock size={13} aria-hidden="true" /> Wild ground
+              </p>
+              <h2>{sectorLabel(sector)}</h2>
+            </div>
+            <button type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
+              <X size={20} aria-hidden="true" />
+            </button>
+          </header>
+
+          <p className="sa-clear-blurb">{STACKACRES_ZONES[sector].blurb}</p>
+          <p className="sa-clear-promise">{def.promise}</p>
+          <p className="sa-sheet-note">
+            Nothing to clear here yet. The road reaches it, and that is all — come back when there
+            is something on the other side of it.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="sa-sheet-scrim"

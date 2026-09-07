@@ -38,6 +38,10 @@ import { inOuterZone, type ZoneId } from "./zones";
 // unlike ./paths, ./water and ./zones above, this one is a plain value
 // import with no cycle to work around. See that file's header.
 import { soilSlotSpot, soilSlotSpotForRank, type SoilMap } from "./soil";
+// Another strict leaf (it imports nothing at all), so this is a plain value
+// import with no cycle to worry about. Holds the Farmstead yard's offset --
+// see ./yard.ts on why sixty literals are wrapped rather than rewritten.
+import { yardPoint, yardRect } from "./yard";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;
@@ -83,13 +87,22 @@ export interface WorldPoint {
  * match each -- unchanged from the pen-zoning pass, just no longer routed
  * through a plot index to get there:
  *
- *   hen               -- the Farmstead (home base -- the cheap starter tier)
- *   sprout, cash_crop  -- the Long Meadow ("Crop Fields")
- *   pig                -- the Wallow (labelled Sheep Pens)
- *   cattle             -- Ox Fields
+ *   hen               -- Hen Haven (the cheap starter tier)
+ *   sprout, cash_crop  -- the Grand Farm ("Crop Fields")
+ *   pig                -- the Fold (labelled Sheep Pens)
+ *   cattle             -- Cattle Pasture
+ *
+ * THE HENS LEFT HOME in the 2026-09-07 map re-lay. They were the Farmstead's
+ * own stock from the pen-zoning pass until then, which is why `farmstead` no
+ * longer appears here at all: it keeps the house, the barn, the pond, Ray, the
+ * monk and the greenhouse, and no livestock. The four wild districts
+ * (townsquare, mine, coast, oak) hold no stock either, and `stocksInZone`
+ * returning an empty list for a district is now a real case rather than an
+ * impossible one -- see `paintDistrictBoundary` in stackacres-scene.ts, which
+ * had to grow a guard for it.
  */
 const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
-  hen: "farmstead",
+  hen: "henhaven",
   sprout: "meadow",
   cash_crop: "meadow",
   pig: "wallow",
@@ -130,18 +143,44 @@ export function stocksInZone(zone: ZoneId): StackAcresStock[] {
  * two to each other.
  */
 const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
-  farmstead: { x: 170, y: 200, width: 160, height: 160 },
+  // The Farmstead keeps its old Hen Coop block as a rect, moved with the yard,
+  // even though the hens now live at Hen Haven. Two reasons, and the second is
+  // the load-bearing one: `farmsteadClutter` in ./props.ts excludes this box so
+  // the yard's litter never piles up in the middle of it, and every consumer of
+  // `growAreaBounds` is typed on a TOTAL record -- making it partial would
+  // ripple into wildlife.ts's fence walk, the defense store and the scene for
+  // no gain. Nothing spawns here: `stocksInZone("farmstead")` is empty, so the
+  // scene's boundary painter returns before it draws a pen.
+  farmstead: yardRect(170, 200, 160, 160),
+  // The Hen Coops' own district now. 128 rather than the 160 they had in the
+  // yard: Hen Haven is a 200-unit district and a 160 box would leave a 20-unit
+  // verge, under the 16 the fence and its posts need.
+  henhaven: { x: -576, y: -256, width: 128, height: 128 },
   // THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way.
   // A bed is `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY
   // inside this rect, so 160 -- two and a half beds across, and starting at
   // 220, which is not a multiple of 64 -- left exactly TWO placeable cells on
   // the whole farm, and `starterSoilTiles` hands out both. The shop had
-  // nowhere to sell a bed into. 192 = 3 beds, aligned to the lattice at
-  // 192/576, gives a 3x3 field that tiles exactly with no bed overhanging the
-  // fence. soil.test.ts holds the divisibility so this cannot regress.
-  meadow: { x: 256, y: 576, width: 192, height: 192 },
-  oxfields: { x: 680, y: 70, width: 160, height: 160 },
-  wallow: { x: -320, y: -390, width: 160, height: 160 },
+  // nowhere to sell a bed into.
+  //
+  // 2026-09-07: 192 (3 beds) became 384 (6 beds) with the re-lay, on the same
+  // lattice -- x -128, y -256 and 384 are all multiples of 64, so the 6x6 field
+  // tiles exactly with no bed overhanging the fence. soil.test.ts holds the
+  // divisibility so this cannot regress. This is where the extra buildable
+  // ground the re-lay was asked for actually lands: 36 placeable beds, up
+  // from 9.
+  meadow: { x: -128, y: -256, width: 384, height: 384 },
+  oxfields: { x: -200, y: 376, width: 192, height: 192 },
+  wallow: { x: 404, y: -312, width: 128, height: 128 },
+  // The four wild districts. Nothing reads these until the pass that builds
+  // each place: they are permanently locked (see ./sectors.ts's `wild` state),
+  // and a locked district paints `sectorOvergrowth` instead of a grow area.
+  // They exist so the record stays total, and they are centred so that whoever
+  // builds one has a sane box to start from rather than a zero rect.
+  townsquare: { x: -304, y: 960, width: 80, height: 80 },
+  mine: { x: -546, y: -706, width: 80, height: 80 },
+  coast: { x: 442, y: -742, width: 80, height: 80 },
+  oak: { x: 1022, y: -98, width: 80, height: 80 },
 };
 
 /**
@@ -159,7 +198,7 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
  * function that needs no renderer -- the same tradeoff `GROW_AREA`'s own
  * flat district boxes already make.
  */
-export const BARN_FOOTPRINT: WorldRect = { x: 71, y: -28, width: 74, height: 62 };
+export const BARN_FOOTPRINT: WorldRect = yardRect(71, -28, 74, 62);
 
 /** Whether a tapped ground point (post `isoUnproject`, the same space
  *  `growAreaAt` and every `PropPlacement` live in) lands on the barn --
@@ -187,7 +226,7 @@ export function barnHitAt(x: number, y: number): boolean {
  * header for why a temporary NPC needed a node it could destroy, not a
  * static array entry it never could.
  */
-export const MIDNIGHT_MERCHANT_SPOT: WorldPoint = { x: 230, y: 20 };
+export const MIDNIGHT_MERCHANT_SPOT: WorldPoint = yardPoint(230, 20);
 
 /** Same box `PROP_SIZE.grandfatherRay` uses (25.125 wide, 40 tall) --
  *  restated here rather than imported from props.ts, since that module's
@@ -232,12 +271,7 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * not overlap the barn's (barn spans x 71..145; this spans roughly
  * x 165..191), so the two never compete for one tap.
  */
-const GRANDFATHER_RAY_FOOTPRINT: WorldRect = {
-  x: 178 - 25.125 / 2,
-  y: 20 - 40,
-  width: 25.125,
-  height: 40,
-};
+const GRANDFATHER_RAY_FOOTPRINT: WorldRect = yardRect(178 - 25.125 / 2, 20 - 40, 25.125, 40);
 
 /** Whether a tapped ground point lands on Grandfather Ray himself, as
  *  opposed to the barn behind him -- same shape as `midnightMerchantHitAt`. */
@@ -617,7 +651,7 @@ export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement
  * the scarecrow at (402, 110) which now reads as guarding it, and clear of
  * the windmill at (330, 28). world.test.ts holds all four.
  */
-export const WHEAT_FIELD: WorldRect = { x: 348, y: 140, width: 84, height: 180 };
+export const WHEAT_FIELD: WorldRect = yardRect(348, 140, 84, 180);
 
 /**
  * Where one wheat plot stands. Hashed off the plot's own row id, exactly the
@@ -687,9 +721,12 @@ export function yardMatFor(
  * y 180) ends in mud rather than on a strip of grass.
  */
 export const YARD_MATS: readonly YardMat[] = [
-  yardMatFor("barn", { x: 71, y: 10, width: 74, height: 24 }, [16, 30, 20, 16]),
-  yardMatFor("greenhouse", { x: 348, y: 330, width: 84, height: 64 }, [8, 8, 12, 12]),
-  yardMatFor("henPen", { x: 170, y: 200, width: 160, height: 160 }, [24, 14, 14, 16]),
+  yardMatFor("barn", yardRect(71, 10, 74, 24), [16, 30, 20, 16]),
+  yardMatFor("greenhouse", yardRect(348, 330, 84, 64), [8, 8, 12, 12]),
+  // Restates GROW_AREA.farmstead, which is the same yardRect. The hens have
+  // moved to Hen Haven but the mat stays: it is the worn ground the coops left
+  // behind, and world.test.ts holds it equal to that rect either way.
+  yardMatFor("henPen", yardRect(170, 200, 160, 160), [24, 14, 14, 16]),
 ];
 
 /**
@@ -728,7 +765,7 @@ export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1.5;
  * Still has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts
  * exactly -- zones.test.ts holds the two to each other.
  */
-export const FARM_ZONE: WorldRect = { x: 20, y: -60, width: 420, height: 470 };
+export const FARM_ZONE: WorldRect = yardRect(20, -60, 420, 470);
 
 export function inFarmZone(x: number, y: number): boolean {
   return (

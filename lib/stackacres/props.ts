@@ -28,6 +28,10 @@
  */
 
 import { BARN_FOOTPRINT, WHEAT_FIELD, growAreaBounds, seededRandom, type WorldPoint, type WorldRect } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Every literal below is the number the yard was
+// originally laid out with, so the comments naming them stay true.
+import { yardPoint, yardRect } from "./yard";
 // A value import, safe for the reason paths.ts's own header gives: this
 // module is not part of the world.ts/paths.ts/zones.ts import cycle, so
 // there is nothing here that could be read before either module finishes
@@ -67,41 +71,46 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   // The one tall silhouette in the yard, and the only thing that moves
   // there: its blades turn (see WINDMILL_HUB). Left of the seed strip
   // (x >= ~374 at the opening shot) so a new player sees it.
-  { kind: "windmill", x: 330, y: 28 },
+  { kind: "windmill", ...yardPoint(330, 28) },
 
   // Clutter east of the silo and the hay, against the road's north rim.
   // The road's body now starts at y 38 (two and a half tiles wide, centred
   // on y 58 -- see lib/stackacres/paths.ts); everything here keeps its feet
   // at y <= 32, on the mud of the barn yard, clear of the body.
-  { kind: "crate", x: 200, y: 26 },
-  { kind: "crate", x: 211, y: 24 },
-  { kind: "logPile", x: 182, y: 2 },
-  { kind: "well", x: 238, y: 30 },
-  { kind: "wheelbarrow", x: 284, y: 24 },
-  { kind: "flowerBed", x: 270, y: 6 },
-  { kind: "flowerBed", x: 302, y: 6 },
+  { kind: "crate", ...yardPoint(200, 26) },
+  { kind: "crate", ...yardPoint(211, 24) },
+  { kind: "logPile", ...yardPoint(182, 2) },
+  { kind: "well", ...yardPoint(238, 30) },
+  { kind: "wheelbarrow", ...yardPoint(284, 24) },
+  { kind: "flowerBed", ...yardPoint(270, 6) },
+  { kind: "flowerBed", ...yardPoint(302, 6) },
 
-  // In the crook where the track leaves the lane, west of both bodies.
-  { kind: "signpost", x: 22, y: 30 },
+  // In the crook of the yard's fork, south of the barn and off both bodies.
+  //
+  // Moved from (22, 30) in the 2026-09-07 map re-lay. It marked the fork where
+  // `track` left the lane for the woods, and that path is gone -- the yard now
+  // forks where `yardRoad` leaves the lane for the ring. A signpost standing at
+  // a fork that no longer exists is worse than one that moved.
+  { kind: "signpost", ...yardPoint(130, 84) },
 
   // Down the lane's west verge, on the stone line, ending at the mailbox.
   // The lane's body reaches x 30 now, so the verge is at 26 -- four units
   // off the body, the same step the lamps always kept.
-  { kind: "lampPost", x: 26, y: 80 },
-  { kind: "lampPost", x: 26, y: 190 },
-  { kind: "lampPost", x: 26, y: 300 },
-  { kind: "mailbox", x: 26, y: 406 },
+  { kind: "lampPost", ...yardPoint(26, 80) },
+  { kind: "lampPost", ...yardPoint(26, 190) },
+  { kind: "lampPost", ...yardPoint(26, 300) },
+  { kind: "mailbox", ...yardPoint(26, 406) },
 
   // Field wall north of the yard: three broken lengths, not a fence line.
-  { kind: "stoneWall", x: 176, y: -46 },
-  { kind: "stoneWall", x: 216, y: -46 },
-  { kind: "stoneWall", x: 254, y: -46 },
+  { kind: "stoneWall", ...yardPoint(176, -46) },
+  { kind: "stoneWall", ...yardPoint(216, -46) },
+  { kind: "stoneWall", ...yardPoint(254, -46) },
 
   // Watching the first row of fields from the east verge.
-  { kind: "scarecrow", x: 402, y: 110 },
+  { kind: "scarecrow", ...yardPoint(402, 110) },
 
   // Grandfather Ray, at his post beside the barn door -- the front desk.
-  { kind: "grandfatherRay", x: 178, y: 20 },
+  { kind: "grandfatherRay", ...yardPoint(178, 20) },
 ];
 
 /**
@@ -205,7 +214,7 @@ export const CLUTTER_KINDS: readonly PropKind[] = ["well", "logPile", "toolBarre
  * edges, with room for a candidate's own clearance check to bite before
  * either edge.
  */
-export const FARMSTEAD_CLUTTER_BAND: WorldRect = { x: 40, y: 40, width: 380, height: 155 };
+export const FARMSTEAD_CLUTTER_BAND: WorldRect = yardRect(40, 40, 380, 155);
 
 /** Grid cell a clutter candidate is rolled in, in world units -- coarse
  *  enough that a well and a barrel never crowd, fine enough that the band

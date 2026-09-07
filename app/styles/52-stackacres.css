@@ -170,9 +170,17 @@
      and the drawer's header band are what a reader would notice going
      wrong. */
   --sa-zone-farmstead: var(--sa-grass);
+  --sa-zone-henhaven: #e0c96a;
   --sa-zone-meadow: #8fce66;
   --sa-zone-oxfields: #7a5a34;
   --sa-zone-wallow: #54402c;
+  /* The four the 2026-09-07 map re-lay reserved. Every one of these is a tone
+     lifted off art-palette.ts's own RAMPS rather than a new colour: stone for
+     the town, iron for the mine, water for the coast, pine for the oak. */
+  --sa-zone-townsquare: #a3a199;
+  --sa-zone-mine: #5c5851;
+  --sa-zone-coast: #3fa6cc;
+  --sa-zone-oak: #439f57;
 
   /* ---- semantics ----------------------------------------------------- */
 
@@ -891,10 +899,15 @@
   box-shadow: inset 0 -2px 0 rgba(52, 34, 18, .25);
 }
 
-.sa-dest-farmstead .sa-dest-swatch { background: var(--sa-zone-farmstead); }
-.sa-dest-meadow    .sa-dest-swatch { background: var(--sa-zone-meadow); }
-.sa-dest-oxfields  .sa-dest-swatch { background: var(--sa-zone-oxfields); }
-.sa-dest-wallow    .sa-dest-swatch { background: var(--sa-zone-wallow); }
+.sa-dest-farmstead  .sa-dest-swatch { background: var(--sa-zone-farmstead); }
+.sa-dest-henhaven   .sa-dest-swatch { background: var(--sa-zone-henhaven); }
+.sa-dest-meadow     .sa-dest-swatch { background: var(--sa-zone-meadow); }
+.sa-dest-oxfields   .sa-dest-swatch { background: var(--sa-zone-oxfields); }
+.sa-dest-wallow     .sa-dest-swatch { background: var(--sa-zone-wallow); }
+.sa-dest-townsquare .sa-dest-swatch { background: var(--sa-zone-townsquare); }
+.sa-dest-mine       .sa-dest-swatch { background: var(--sa-zone-mine); }
+.sa-dest-coast      .sa-dest-swatch { background: var(--sa-zone-coast); }
+.sa-dest-oak        .sa-dest-swatch { background: var(--sa-zone-oak); }
 
 /* Ray's entry, last in the rail. His face stands in for a swatch -- he is not
    a district, so there is no ground colour to key it to -- and his board is
@@ -1785,9 +1798,14 @@
 }
 
 .sa-district-panel[data-zone="farmstead"] .sa-panel-head { background: var(--sa-zone-farmstead); }
+.sa-district-panel[data-zone="henhaven"] .sa-panel-head { background: var(--sa-zone-henhaven); }
 .sa-district-panel[data-zone="meadow"] .sa-panel-head { background: var(--sa-zone-meadow); }
 .sa-district-panel[data-zone="oxfields"] .sa-panel-head { background: var(--sa-zone-oxfields); }
 .sa-district-panel[data-zone="wallow"] .sa-panel-head { background: var(--sa-zone-wallow); }
+.sa-district-panel[data-zone="townsquare"] .sa-panel-head { background: var(--sa-zone-townsquare); }
+.sa-district-panel[data-zone="mine"] .sa-panel-head { background: var(--sa-zone-mine); }
+.sa-district-panel[data-zone="coast"] .sa-panel-head { background: var(--sa-zone-coast); }
+.sa-district-panel[data-zone="oak"] .sa-panel-head { background: var(--sa-zone-oak); }
 
 /* Ox Fields and the Wallow are dark ploughed ground; their band needs cream
    lettering where the two green districts need chocolate. */

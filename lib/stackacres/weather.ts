@@ -272,6 +272,54 @@ export function packWeatherTint(t: WeatherTint): number {
 }
 
 /* ------------------------------------------------------------------ */
+/* Screen-pinned placement                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ScreenPin {
+  x: number;
+  y: number;
+  /** Scale to hold a constant APPARENT size at this zoom. */
+  scale: number;
+}
+
+/**
+ * Where to put a screen-pinned particle, given its position in 0..1
+ * screen-fraction space.
+ *
+ * THE THING THIS EXISTS TO GET RIGHT. A Phaser object at `scrollFactor(0)`
+ * does not scroll with the camera, which is why the rain and the tint use it
+ * -- but it is still SCALED about the camera's centre by `camera.zoom`. So
+ * placing a streak at the raw pixel `(fx * width, fy * height)` is only
+ * correct at zoom exactly 1. Everywhere else the whole layer is scaled out
+ * from the middle of the screen: measured in-game at StackAcres' own zoom
+ * range (0.6 to 5), zoom 3 pushed EVERY rain streak off the viewport, so
+ * GOLD_RUSH_RAIN played as a bare gold tint with no rain in it, and zoom 0.6
+ * bunched the field into the middle 60% and left the edges dry.
+ *
+ * Undoing it is the same correction `animateTint` was already making for the
+ * tint overlay (`width / zoom`), just expressed once, here, where it can be
+ * tested -- rather than twice in a Phaser class where the second copy was
+ * simply missing.
+ *
+ * Non-finite or zero zoom falls back to 1, which is what a camera reports for
+ * a frame or two during setup; a NaN here would put the layer nowhere.
+ */
+export function screenPin(
+  fx: number,
+  fy: number,
+  width: number,
+  height: number,
+  zoom: number,
+): ScreenPin {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  return {
+    x: width / 2 + (fx - 0.5) * (width / z),
+    y: height / 2 + (fy - 0.5) * (height / z),
+    scale: 1 / z,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Solar dust (SOLAR_FLARE)                                            */
 /* ------------------------------------------------------------------ */
 

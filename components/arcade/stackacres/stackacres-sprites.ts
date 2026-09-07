@@ -29,6 +29,30 @@
  * genuinely different renders now rather than three ramps, BECAUSE a PNG
  * cannot be recoloured -- the variety had to move into the art itself.
  *
+ * ALL OF THE WILD FLORA IS ONE PACK AS OF 2026-09-06. The scrub had been cut
+ * from an isometric plant pack since it landed, while the five woodland kinds
+ * above stayed drawn under an explicit carve-out of Kayo's. He reversed it --
+ * "rid of everything from before and fill the map up with the new plates
+ * completely" -- so the trees, the pines and the bushes are pack renders now
+ * too, and the roster went 9 sprites to 44 -- every plate in the pack that is
+ * neither snow-laden nor the wrong climate.
+ * Two consequences worth knowing before touching any of it:
+ *
+ *   The plates are GRADIENT-MAPPED onto art-palette.ts's own `RAMPS` rather
+ *   than colour-corrected, because the pack renders near-black with almost no
+ *   blue channel and anything else comes out acid yellow. So this art IS on
+ *   the palette -- but as baked pixels, which means a ramp retuned in
+ *   art-palette.ts will NOT reach it. Re-run the prep script after one.
+ *
+ *   The boxes grew a lot (a broadleaf is 122x78 art units where it was
+ *   64x80), on Kayo's follow-up that they read too small next to the
+ *   characters. They are also wider than they are tall now, which is simply
+ *   what an isometric camera does to a tree.
+ *
+ * `flower1/2/3`, `rock`, `log`, `mushroom` and `boulder` are the scenery this
+ * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
+ * stone in it. They are still painters.
+ *
  * `grassTile`, `soilBed` and `waterTile` are in here but are not one of
  * these: none is a painter, none has a box or an anchor, and none is ever
  * wrapped by `spriteBacked`. They ride this module only because this list is
@@ -86,27 +110,58 @@ export const SPRITE_ART = {
   monkHouse: "/stackacres/sprites/monk-house.png",
   windmill: "/stackacres/sprites/windmill.png",
   grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
+  // The canopy. Off the isometric plant pack like everything below it since
+  // 2026-09-06 -- see scripts/prepare-stackacres-plants.py.
   tree1: "/stackacres/sprites/tree1.png",
   tree2: "/stackacres/sprites/tree2.png",
   tree3: "/stackacres/sprites/tree3.png",
   pine: "/stackacres/sprites/pine.png",
+  pine2: "/stackacres/sprites/pine2.png",
+  pine3: "/stackacres/sprites/pine3.png",
+  pine4: "/stackacres/sprites/pine4.png",
+  pine5: "/stackacres/sprites/pine5.png",
+  pine6: "/stackacres/sprites/pine6.png",
+  pine7: "/stackacres/sprites/pine7.png",
+  pine8: "/stackacres/sprites/pine8.png",
   bush: "/stackacres/sprites/bush.png",
+  bush2: "/stackacres/sprites/bush2.png",
+  bush3: "/stackacres/sprites/bush3.png",
   // The Long Meadow's own grass at the three heights the scythe leaves it
-  // (`meadowDensityAt`), plus the open world's grass clump. Cut from the
-  // isometric plant pack -- see scripts/prepare-stackacres-plants.py, which
-  // also records why the mown height had to be cut out of an uncut plate.
+  // (`meadowDensityAt`), plus the open world's grass clumps and rosettes. The
+  // prep script records why the mown height had to be cut out of an uncut
+  // plate.
   grassTall: "/stackacres/sprites/grass-tall.png",
   grassMid: "/stackacres/sprites/grass-mid.png",
   grassStubble: "/stackacres/sprites/grass-stubble.png",
   tuft: "/stackacres/sprites/tuft.png",
-  // Scrub, and the reason the woodland got denser without the trees changing:
-  // Kayo's carve-out kept `tree1`-`3`, `pine` and `bush` exactly as they are,
-  // so these are NEW kinds scattered alongside them rather than replacements.
+  tuft2: "/stackacres/sprites/tuft2.png",
+  swirl1: "/stackacres/sprites/swirl1.png",
+  swirl2: "/stackacres/sprites/swirl2.png",
+  // Scrub and ground cover -- the size band between a grass clump and a bush,
+  // which is where most of the map's variety lives.
   weedTall: "/stackacres/sprites/weed-tall.png",
   weedShort: "/stackacres/sprites/weed-short.png",
+  weed3: "/stackacres/sprites/weed3.png",
+  weed4: "/stackacres/sprites/weed4.png",
+  weed5: "/stackacres/sprites/weed5.png",
+  weed6: "/stackacres/sprites/weed6.png",
   scrubLow: "/stackacres/sprites/scrub-low.png",
   scrubRound: "/stackacres/sprites/scrub-round.png",
   scrubFan: "/stackacres/sprites/scrub-fan.png",
+  scrubPlume: "/stackacres/sprites/scrub-plume.png",
+  scrubBroad: "/stackacres/sprites/scrub-broad.png",
+  scrubLeafy: "/stackacres/sprites/scrub-leafy.png",
+  scrubSprig: "/stackacres/sprites/scrub-sprig.png",
+  scrubBristle: "/stackacres/sprites/scrub-bristle.png",
+  scrubThicket: "/stackacres/sprites/scrub-thicket.png",
+  scrubRosette: "/stackacres/sprites/scrub-rosette.png",
+  scrubPatch: "/stackacres/sprites/scrub-patch.png",
+  scrubMound: "/stackacres/sprites/scrub-mound.png",
+  frond1: "/stackacres/sprites/frond1.png",
+  frond2: "/stackacres/sprites/frond2.png",
+  frond3: "/stackacres/sprites/frond3.png",
+  frond4: "/stackacres/sprites/frond4.png",
+  frond5: "/stackacres/sprites/frond5.png",
   // The three growth frames each for the Long Meadow's two crops. Named for
   // lib/stackacres/crop-visuals.ts's CropStage (0 seedling, 1 sprout,
   // 2 mature) exactly like the painters they front.

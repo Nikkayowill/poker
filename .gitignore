@@ -49,3 +49,9 @@ assets-src/
 .tmp*.mjs
 .tmp3d/
 scripts/__pycache__/
+
+# The isometric plant pack StackAcres cuts its wild flora from. Kayo's own
+# supply, ~24MB of source plates plus a .blend, and only the derived sprites
+# under public/stackacres/sprites/ belong in the repo. Unzip
+# isometric-plant-pack.zip here to re-run scripts/prepare-stackacres-plants.py.
+/scripts/iso/

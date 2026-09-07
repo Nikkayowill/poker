@@ -743,28 +743,63 @@ export function inFarmZone(x: number, y: number): boolean {
  *  painter name -- crops, animals, buildings and icons are placed by the
  *  scene itself from the game state, not scattered as scenery. */
 export type SceneryKind =
+  // The canopy. Three broadleaves and three conifers, where there were three
+  // and one -- the pine kinds are the pack's single, double and triple-trunk
+  // plates, so a conifer stand has a coarser grain than one silhouette can
+  // give it.
   | "tree1"
   | "tree2"
   | "tree3"
   | "pine"
+  | "pine2"
+  | "pine3"
+  | "pine4"
+  | "pine5"
+  | "pine6"
+  | "pine7"
+  | "pine8"
   | "bush"
+  | "bush2"
+  | "bush3"
+  // Not plants, and the only scenery the plant pack cannot supply: these five
+  // are still painters. See components/arcade/stackacres/stackacres-sprites.ts.
   | "rock"
-  | "tuft"
   | "flower1"
   | "flower2"
   | "flower3"
   | "log"
   | "mushroom"
   | "boulder"
-  // Scrub. Added alongside the trees rather than in place of them: the five
-  // woodland kinds above are art Kayo asked to keep exactly as it is, and
-  // what the open ground was short of is everything BETWEEN a grass tuft and
-  // a bush. These five fill that band.
+  // Ground cover, in two bands. Tufts and rosettes lie flat in the lawn;
+  // weeds, scrub and fronds fill everything BETWEEN a grass clump and a bush,
+  // which is the band the open ground had nothing in.
+  | "tuft"
+  | "tuft2"
+  | "swirl1"
+  | "swirl2"
   | "weedTall"
   | "weedShort"
+  | "weed3"
+  | "weed4"
+  | "weed5"
+  | "weed6"
   | "scrubLow"
   | "scrubRound"
-  | "scrubFan";
+  | "scrubFan"
+  | "scrubPlume"
+  | "scrubBroad"
+  | "scrubLeafy"
+  | "scrubSprig"
+  | "scrubBristle"
+  | "scrubThicket"
+  | "scrubRosette"
+  | "scrubPatch"
+  | "scrubMound"
+  | "frond1"
+  | "frond2"
+  | "frond3"
+  | "frond4"
+  | "frond5";
 
 export interface SceneryItem {
   kind: SceneryKind;
@@ -783,24 +818,80 @@ export interface SceneryItem {
 // mostly one species at a time, and mixing them evenly is a large part of what
 // made the old scatter read as decoration rather than as forest.
 const BROADLEAF_KINDS: readonly SceneryKind[] = ["tree1", "tree2", "tree3"];
-const CONIFER_KINDS: readonly SceneryKind[] = ["pine", "pine", "pine", "tree3"];
+// All eight conifer plates weighted over one broadleaf, so a conifer stand is
+// overwhelmingly but not purely conifer. The five single spires carry the
+// stand and the three multi-trunk clusters (`pine2`, `pine3`, `pine7`,
+// `pine8`) are deliberately rarer: a treeline of nothing but clusters reads as
+// a hedge. The spires are not interchangeable either -- they run 0.65 to 1.04
+// in aspect, which is what gives a stand a skyline rather than one height
+// repeated.
+const CONIFER_KINDS: readonly SceneryKind[] = [
+  "pine",
+  "pine",
+  "pine4",
+  "pine5",
+  "pine5",
+  "pine6",
+  "pine6",
+  "pine2",
+  "pine3",
+  "pine7",
+  "pine8",
+  "tree3",
+];
 // The woodland floor's own litter -- a fallen log, a clutch of mushrooms, a
 // boulder -- is in the pool once each and drawn rarely, so a wood grows one of
 // them now and then rather than a forest of them.
 const FOREST_FLOOR_KINDS: readonly SceneryKind[] = ["rock", "log", "mushroom", "boulder"];
-const GROUND_KINDS: readonly SceneryKind[] = ["flower1", "flower2", "flower3"];
-/** What grows under a canopy: the shade-tolerant half of the scrub. A wood
+/** Flat things lying in the lawn: flowers, and the pack's two rosettes. */
+const GROUND_KINDS: readonly SceneryKind[] = [
+  "flower1",
+  "flower2",
+  "flower3",
+  "swirl1",
+  "swirl2",
+];
+/** The two grass clumps, drawn far more often than anything else in the open
+ *  -- this is what the player actually walks over away from the farm. */
+const TUFT_KINDS: readonly SceneryKind[] = ["tuft", "tuft", "tuft2"];
+/** What grows under a canopy: the shade-tolerant half of the scrub, plus the
+ *  broad-leaved fronds, which exist for exactly this -- a damp wood floor. A
  *  floor of nothing but litter reads as swept. */
-const UNDERSTORY_KINDS: readonly SceneryKind[] = ["scrubFan", "scrubLow", "weedTall"];
+const UNDERSTORY_KINDS: readonly SceneryKind[] = [
+  "scrubFan",
+  "scrubPlume",
+  "scrubLow",
+  "scrubLeafy",
+  "scrubBristle",
+  "scrubThicket",
+  "scrubRosette",
+  "scrubMound",
+  "weedTall",
+  "frond1",
+  "frond2",
+  "frond3",
+  "frond4",
+  "frond5",
+];
 /** What stands out in the open, away from the wood. Weeds and low scrub, not
  *  the big fan shrub -- a shrub that size alone on a lawn reads as something
  *  the player was meant to have planted. */
 const OPEN_SCRUB_KINDS: readonly SceneryKind[] = [
   "weedShort",
   "weedTall",
+  "weed3",
+  "weed4",
+  "weed5",
+  "weed6",
   "scrubRound",
   "scrubLow",
+  "scrubBroad",
+  "scrubSprig",
+  "scrubPatch",
 ];
+/** The lone bushes out in the grass. All three plates, since this is the one
+ *  pass where a single specimen stands by itself and gets looked at. */
+const OPEN_BUSH_KINDS: readonly SceneryKind[] = ["bush", "bush2", "bush3"];
 
 /**
  * One chunk of the open world's scenery, deterministic by chunk coordinate
@@ -975,7 +1066,7 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
       if (roll < 0.05) {
         kind = FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
       } else if (roll < 0.16) {
-        kind = "bush";
+        kind = OPEN_BUSH_KINDS[Math.floor(random() * OPEN_BUSH_KINDS.length)];
       } else if (roll < 0.29) {
         kind = UNDERSTORY_KINDS[Math.floor(random() * UNDERSTORY_KINDS.length)];
       } else if (coniferStand(x, y)) {
@@ -987,11 +1078,16 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
       // the range is wide enough (0.78x to 1.36x) to give a canopy a skyline.
       // Litter on the floor stays near its drawn size; a 1.4x mushroom is a
       // different object, not a bigger one.
-      const litter = kind === "rock" || kind === "log" || kind === "mushroom" || kind === "boulder";
+      const litter = (FOREST_FLOOR_KINDS as readonly string[]).includes(kind);
       // Understory is neither: it is not litter lying on the floor and it is
       // not a tree, so it gets its own narrower range. A scrub varying as
-      // widely as a canopy does reads as three different plants.
-      const understory = (UNDERSTORY_KINDS as readonly string[]).includes(kind);
+      // widely as a canopy does reads as three different plants. Bushes ride
+      // this band too -- they are the same kind of object at the same kind of
+      // size, and letting them take the canopy's 0.78-1.36 spread put 1.36x
+      // bushes next to 0.78x trees.
+      const understory =
+        (UNDERSTORY_KINDS as readonly string[]).includes(kind) ||
+        (OPEN_BUSH_KINDS as readonly string[]).includes(kind);
       const scale = litter
         ? 0.9 + random() * 0.3
         : understory
@@ -1003,29 +1099,38 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
 
   // The open ground is not bare, just sparse: the odd lone bush or boulder
   // out in the grass, well away from the wood's own edge.
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < 5; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
-    if (forestDensityAt(x, y) > 0.15 || random() < 0.55 || blocked(x, y)) continue;
-    const kind = random() < 0.5 ? "bush" : FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
+    if (forestDensityAt(x, y) > 0.15 || random() < 0.45 || blocked(x, y)) continue;
+    const kind =
+      random() < 0.5
+        ? OPEN_BUSH_KINDS[Math.floor(random() * OPEN_BUSH_KINDS.length)]
+        : FOREST_FLOOR_KINDS[Math.floor(random() * FOREST_FLOOR_KINDS.length)];
     items.push({ kind, x, y, scale: 0.85 + random() * 0.35 });
   }
 
-  for (let i = 0; i < 10; i += 1) {
+  // Grass clumps and flat rosettes, the thing there is most of. Grown from
+  // ten a chunk to sixteen on the "fill the map up" pass -- this is the layer
+  // that decides whether open ground reads as a lawn or as a field, and it is
+  // also the cheapest one to add to, since none of it casts a shadow.
+  for (let i = 0; i < 16; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (blocked(x, y)) continue;
     const kind: SceneryKind =
-      random() < 0.55 ? "tuft" : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)];
+      random() < 0.55
+        ? TUFT_KINDS[Math.floor(random() * TUFT_KINDS.length)]
+        : GROUND_KINDS[Math.floor(random() * GROUND_KINDS.length)];
     items.push({ kind, x, y, scale: 1 });
   }
 
   // A last, sparser pass of scrub over the open ground. Separate from the
-  // ten-a-chunk tuft/flower pass above rather than folded into it, because
-  // these are bigger and want their own budget: at the tufts' own rate the
-  // grass would be waist-deep in shrubs, and at the shrubs' rate there would
-  // be no tufts. Kept out of the wood, which has its own understory.
-  for (let i = 0; i < 4; i += 1) {
+  // tuft/flower pass above rather than folded into it, because these are
+  // bigger and want their own budget: at the tufts' own rate the grass would
+  // be waist-deep in shrubs, and at the shrubs' rate there would be no tufts.
+  // Kept out of the wood, which has its own understory.
+  for (let i = 0; i < 7; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (forestDensityAt(x, y) > 0.2 || blocked(x, y)) continue;

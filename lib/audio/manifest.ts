@@ -27,23 +27,28 @@ export type SoundEffect =
 
 export const SOUND_FILES: Record<SoundEffect, string | null> = {
   // Three chrome cues, split by what the press actually did rather than which
-  // screen it happened on. Before this split, every button played `ui` or
-  // nothing, so a menu row, a mode switch and sitting down at a table all
-  // sounded the same.
+  // screen it happened on. Before the original split, every button played
+  // `ui` or nothing, so a menu row, a mode switch and sitting down at a table
+  // all sounded the same.
   //   ui      - you moved: a menu opened, a link was followed, a panel closed.
   //   select  - you chose: a mode, a tier, a toggle, a tab. Something changed.
   //   game-on - you are in: a table or a game actually took you.
   // Keep it at three; a fourth would need a press meaning that isn't already
   // one of these.
-  ui: "/sounds/Menu_clicks.mp3",
-  // The old screen tap, unused since `your-turn` got its own recording, cut
-  // down to fix why it sat unused. The file is 1.08s holding two taps (a 5ms
-  // artefact at 0.10s, the real hit at 0.48s) over 0.42s of trailing silence,
-  // exactly what its own filename (Check_Sound_Repeats_Twice.mp3) says on the
-  // tin. Played in full it makes one button press sound like a double-click;
-  // this is the second burst alone, 0.25s, drier and shorter than the menu
-  // click, which is what makes a choice read as a choice beside it.
-  select: "/sounds/Select_Tap.mp3",
+  //
+  // Both files below are synthesized rather than sourced (built for the
+  // Ante Up neon-HUD redesign, then promoted app-wide), same reasoning
+  // `game-on` already used: a digital blip is easy to build and nothing on
+  // disk already sounded like one. `ui` (Ante_Tap.mp3) is a single 90ms sine
+  // (1600Hz + a quiet 3200Hz overtone); `select` (Ante_Select.mp3) is a
+  // rising two-note chime (D6 then G6). They replace the old
+  // Menu_clicks.mp3/Select_Tap.mp3 outright, not just at Ante Up -- every
+  // screen that calls tapSound()/selectSound() gets the new pair for free.
+  // StackAcres never calls either (it has its own separate synthesized SFX,
+  // see stackacres-sfx.ts), so it's untouched by construction, not by a
+  // carve-out here.
+  ui: "/sounds/Ante_Tap.mp3",
+  select: "/sounds/Ante_Select.mp3",
   // Built rather than sourced: every unused file in public/sounds turned out
   // to be a byte-identical rename of a cue the table already plays, so there
   // was nothing on disk that could sound like arriving somewhere. This is the
@@ -97,15 +102,16 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
  *
  * Re-measure the line if you replace a file; nothing else needs to change.
  *
- * The full-length screen-tap entry is kept even though nothing points at it
- * any more (`select` plays a trimmed cut of it instead): it's still on disk,
- * and a measurement already taken is cheaper to keep than to redo later.
+ * The screen-tap entry is kept even though nothing points at it any more
+ * (it predates the current `ui`/`select` pair by several sound passes):
+ * it's still on disk, and a measurement already taken is cheaper to keep
+ * than to redo later.
  */
 const FILE_LEVEL_DB: Record<string, number> = {
   "/sounds/All_In.mp3": -21.9,
   "/sounds/Game_On.mp3": -25.6,
-  "/sounds/Menu_clicks.mp3": -24.5,
-  "/sounds/Select_Tap.mp3": -19.9,
+  "/sounds/Ante_Tap.mp3": -29.3,
+  "/sounds/Ante_Select.mp3": -23.3,
   "/sounds/TimeBank.mp3": -20.4,
   "/sounds/Your_Turn.mp3": -20.8,
   "/sounds/bigsoundbank-poker-chips-4-0945.mp3": -21.4,

@@ -1,0 +1,325 @@
+/* The app's button skin: chamfered, lit panels with a 3D lip and a glass
+ * sheen, standing in for the plain pill/ghost buttons everywhere else in
+ * the chrome used to be. Started as an Ante Up-only redesign, then promoted
+ * app-wide (Kayo's call) -- the three classes below are StackChips' most
+ * reused button primitives, so widening THEM covers the arcade floor, every
+ * PvP duel lobby, and every puzzle CTA without a file-by-file crawl:
+ *   .floor-play          -- every arcade game's Play/blocked CTA (22-arcade.css)
+ *   .duel-tier(-active/-custom) -- every wager/stake picker, StakePicker's own
+ *                          markup (36-duels.css), shared by duels and Ante Up
+ *   .puzzle-share-button  -- every puzzle's commit CTA (25-puzzles.css)
+ * Loads after 22/25/36/43 and narrows those classes; it adds no shape of its
+ * own except the two Ante Up-only anchors kept at the bottom of this file.
+ *
+ * StackAcres is untouched by construction, not by a carve-out: it already
+ * has its own separate chrome (52-stackacres.css's .sa-* classes, its own
+ * claymorphic button language) and none of the three classes above appear
+ * anywhere under components/arcade/stackacres/. The poker table's own felt
+ * controls (09-action-bar.css) are also untouched -- the styling contract
+ * reserves the felt for its own green/gold, out of scope for chrome work.
+ *
+ * The look, in three recipes reused everywhere below:
+ *   neutral  -- resting/unpicked (a Play row, an unpicked wager chip)
+ *   selected -- picked but not committed (a chosen tier, an active wager)
+ *   gold     -- the commit CTA (Ante up, a puzzle's Play, a filled floor card's Play)
+ * Each is a chamfered panel (clip-path, not a rounded rect), a 3D "lip" --
+ * a flat offset shadow standing in for the button's own side face, the same
+ * idiom StackAcres' claymorphic buttons use with a real rim colour, done
+ * here with a shadow instead since this material is lit, not painted -- and
+ * a glass sheen (a white gradient layer) across the top so it reads as a
+ * physical key, not a flat swatch. Pressing it travels the lip's own
+ * height, same "the block travels" grammar. The chamfer and the glow ring
+ * both already satisfy the styling contract's "chrome is borderless" rule
+ * (a shape and a box-shadow, never a stroke); the lip is a second box-shadow
+ * layer, not a border either.
+ */
+
+:root {
+  --ante-cut: 14px;
+  --ante-cut-sm: 8px;
+  --btn-cut: 8px;
+  --btn-cut-lg: 16px;
+  --btn-lip: 3px;
+}
+
+/* ==========================================================================
+   Shared button recipes -- .floor-play, .duel-tier(-active), .puzzle-share-button
+   ========================================================================== */
+
+.floor-play,
+.duel-tier,
+.puzzle-share-button {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(
+    var(--btn-cut) 0, 100% 0, 100% calc(100% - var(--btn-cut)),
+    calc(100% - var(--btn-cut)) 100%, 0 100%, 0 var(--btn-cut)
+  );
+  transform: translateY(0);
+  transition: transform .1s ease, box-shadow .1s ease, background var(--duration-base) ease, color var(--duration-base) ease;
+}
+.puzzle-share-button {
+  clip-path: polygon(
+    var(--btn-cut-lg) 0, 100% 0, 100% calc(100% - var(--btn-cut-lg)),
+    calc(100% - var(--btn-cut-lg)) 100%, 0 100%, 0 var(--btn-cut-lg)
+  );
+}
+
+/* The sheen: one glass highlight layer, shared by every recipe below --
+   clip-path already crops it to the chamfer, so no overflow:hidden needed.
+   All the white/black alphas in this file are one graduated lighting
+   system (rest/hover/active x neutral/selected/gold), not one-off picks. */
+.floor-play::after,
+.duel-tier::after,
+.puzzle-share-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 48%);
+  pointer-events: none;
+}
+.puzzle-share-button::after,
+.floor-card .floor-play:not(:disabled)::after,
+.duel-tier-active::after {
+  /* Brighter on the gold/selected faces -- a glass highlight reads brighter
+     over a lit surface than a dark one, the same way a real bevel would. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 42%);
+}
+
+/* ---- Neutral: resting .floor-play, unpicked .duel-tier ---- */
+.floor-play,
+.duel-tier {
+  background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-ground));
+  color: var(--neon-muted);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .08),
+    inset 0 0 0 1px rgba(182, 166, 219, .18),
+    0 var(--btn-lip) 0 0 rgba(0, 0, 0, .55),
+    0 6px 14px -6px rgba(0, 0, 0, .55);
+}
+.floor-play:hover:not(:disabled),
+.duel-tier:hover {
+  color: var(--neon-chalk);
+  background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-purple-deep) 160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .12),
+    inset 0 0 0 1px rgba(155, 63, 240, .45),
+    0 4px 0 0 rgba(0, 0, 0, .55),
+    0 10px 20px -8px rgba(155, 63, 240, .55);
+  transform: translateY(-1px);
+}
+.floor-play:active:not(:disabled),
+.duel-tier:active {
+  transform: translateY(var(--btn-lip));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .05),
+    inset 0 0 0 1px rgba(182, 166, 219, .18);
+}
+.floor-play:disabled {
+  background: var(--neon-ground-lift);
+  color: #6f7b92;
+  box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .12);
+  transform: none;
+}
+
+/* ---- Selected (purple): a picked wager tier -- chosen, not yet committed ---- */
+.duel-tier-active {
+  background: linear-gradient(165deg, var(--neon-purple-deep), var(--neon-ground-lift-2));
+  color: var(--neon-chalk);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .14),
+    inset 0 0 0 1px rgba(155, 63, 240, .65),
+    0 var(--btn-lip) 0 0 rgba(0, 0, 0, .6),
+    0 8px 18px -6px rgba(155, 63, 240, .6);
+}
+.duel-tier-active:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    inset 0 0 0 1px rgba(155, 63, 240, .85),
+    0 4px 0 0 rgba(0, 0, 0, .6),
+    0 12px 24px -6px rgba(155, 63, 240, .75);
+}
+.duel-tier-active:active {
+  transform: translateY(var(--btn-lip));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 0 0 1px rgba(155, 63, 240, .65);
+}
+
+/* The custom-amount field: a chamfered well, not a press target, so no lip
+   or sheen -- typing into it isn't a button. */
+.duel-tier-custom {
+  border-radius: 0;
+  clip-path: polygon(var(--btn-cut) 0, 100% 0, 100% 100%, 0 100%, 0 var(--btn-cut));
+  background: var(--neon-ground-lift);
+  box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .16);
+  color: var(--neon-muted);
+}
+.duel-tier-custom input { color: var(--neon-chalk); }
+
+/* ---- Gold: the commit CTA -- Ante up, a puzzle's Play, a floor card's filled Play ---- */
+.puzzle-share-button,
+.floor-card .floor-play:not(:disabled) {
+  background: linear-gradient(165deg, var(--neon-yellow-bright), var(--neon-yellow) 55%, #a8842f);
+  color: var(--neon-ground);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .55),
+    inset 0 0 0 1px rgba(255, 210, 63, .6),
+    0 var(--btn-lip) 0 0 #a8842f,
+    0 8px 18px -6px rgba(255, 210, 63, .55);
+}
+.puzzle-share-button:hover:not(:disabled),
+.floor-card .floor-play:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .65),
+    inset 0 0 0 1px rgba(255, 210, 63, .8),
+    0 4px 0 0 #a8842f,
+    0 12px 24px -6px rgba(255, 210, 63, .75);
+}
+.puzzle-share-button:active:not(:disabled),
+.floor-card .floor-play:not(:disabled):active {
+  transform: translateY(var(--btn-lip));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 1px rgba(255, 210, 63, .6);
+}
+.puzzle-share-button:disabled {
+  background: var(--neon-ground-lift);
+  color: var(--neon-muted-2);
+  box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .16);
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floor-play,
+  .duel-tier,
+  .duel-tier-active,
+  .puzzle-share-button {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Ante Up-only: the pre-play card and its difficulty tiles. Cards stay
+   scoped -- only the button language above went app-wide.
+   ========================================================================== */
+
+.ante-lobby-card {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(
+    var(--ante-cut) 0, 100% 0, 100% calc(100% - var(--ante-cut)),
+    calc(100% - var(--ante-cut)) 100%, 0 100%, 0 var(--ante-cut)
+  );
+  background:
+    linear-gradient(160deg, rgba(155, 63, 240, .1), transparent 55%),
+    linear-gradient(180deg, var(--neon-ground-lift-2), var(--neon-ground) 82%);
+  box-shadow:
+    0 0 0 1px rgba(155, 63, 240, .38),
+    0 0 34px -16px rgba(155, 63, 240, .7),
+    inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+/* The chamfer cuts the corner off the box-shadow ring too (clip-path crops
+   the whole element), so the gold "readout" line has to be its own layer
+   drawn to the same corners rather than a border side. */
+.ante-lobby-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--neon-yellow) 0%, rgba(255, 210, 63, 0) 65%);
+  opacity: .85;
+}
+.ante-lobby-heading h1 {
+  position: relative;
+  padding-left: 14px;
+  color: var(--neon-chalk);
+}
+/* A HUD caret standing in for a bullet, in the same gold as the readout
+   line above -- the card's title reads as a channel name, not a headline. */
+.ante-lobby-heading h1::before {
+  content: "\25B8";
+  position: absolute;
+  left: 0;
+  color: var(--neon-yellow);
+}
+.ante-lobby-heading p { color: var(--neon-muted); }
+
+/* Difficulty / board-size tiles: the same neutral/selected recipe as
+   .duel-tier above, restated rather than shared with it -- .ante-difficulty
+   is a two-line tile (name + stats), not a one-line chip, so it needs its
+   own layout even though the material reads the same. */
+.ante-difficulty {
+  position: relative;
+  border-radius: 0;
+  clip-path: polygon(
+    var(--ante-cut-sm) 0, 100% 0, 100% calc(100% - var(--ante-cut-sm)),
+    calc(100% - var(--ante-cut-sm)) 100%, 0 100%, 0 var(--ante-cut-sm)
+  );
+  background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-ground));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .08),
+    inset 0 0 0 1px rgba(182, 166, 219, .16),
+    0 var(--btn-lip) 0 0 rgba(0, 0, 0, .55),
+    0 6px 14px -6px rgba(0, 0, 0, .5);
+  transform: translateY(0);
+  transition: transform .1s ease, box-shadow .1s ease, background var(--duration-base) ease;
+}
+.ante-difficulty::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0) 48%);
+  pointer-events: none;
+}
+.ante-difficulty strong { position: relative; padding-left: 12px; color: var(--neon-chalk); }
+.ante-difficulty strong::before {
+  content: "\25B8";
+  position: absolute;
+  left: 0;
+  color: var(--neon-muted-2);
+  transition: color var(--duration-base) ease;
+}
+.ante-difficulty span { color: var(--neon-muted); }
+.ante-difficulty:hover {
+  background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-purple-deep) 160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .12),
+    inset 0 0 0 1px rgba(155, 63, 240, .4),
+    0 4px 0 0 rgba(0, 0, 0, .55),
+    0 10px 18px -8px rgba(155, 63, 240, .5);
+  transform: translateY(-1px);
+}
+.ante-difficulty-active {
+  background: linear-gradient(165deg, var(--neon-purple-deep), var(--neon-ground-lift-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .14),
+    inset 0 0 0 1px rgba(155, 63, 240, .65),
+    0 var(--btn-lip) 0 0 rgba(0, 0, 0, .6),
+    0 8px 18px -6px rgba(155, 63, 240, .6);
+}
+.ante-difficulty-active strong::before { color: var(--neon-yellow); }
+
+.ante-lobby-card .ng-option input[type="checkbox"] { accent-color: var(--neon-purple-bright); }
+
+/* The arcade floor's "Beat the board" row: a distinct card finish, kept
+   scoped (arcade-floor.tsx passes variant="ante" only there) -- its own
+   .floor-play inside it already picked up the gold CTA recipe above via
+   the unscoped .floor-card .floor-play:not(:disabled) selector. */
+.floor-card-ante {
+  border-radius: 0;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  background:
+    linear-gradient(160deg, rgba(155, 63, 240, .12), transparent 55%),
+    linear-gradient(160deg, var(--neon-purple-deep), var(--neon-ground-lift-2) 72%);
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .3), 0 20px 42px -22px rgba(155, 63, 240, .85);
+}
+.floor-card-ante:hover {
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .5), 0 0 30px -8px rgba(155, 63, 240, .9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ante-difficulty {
+    transition: none;
+  }
+}

@@ -102,6 +102,12 @@
    skeleton-to-content crossfade (FadeSwap + Skeleton), and each panel's own
    skeleton shape. Self-contained, so its number is just the next one free. */
 @import "./styles/54-loading.css";
+/* The app's chamfered lift+sheen button skin (originally an Ante Up-only
+   redesign, promoted app-wide) plus the Ante Up-only card/tile finish.
+   After 22 (.floor-card/.floor-play), 25 (.puzzle-share-button), 36
+   (.duel-tier) and 43 (.ante-difficulty) -- it only narrows classes those
+   sheets already define. */
+@import "./styles/55-ante-up-neon.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

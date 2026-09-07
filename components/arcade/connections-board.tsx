@@ -394,7 +394,7 @@ export function ConnectionsBoard({ day, onExit }: { day?: string; onExit?: () =>
       )}
 
       {loaded && !round && !isArchive && (
-        <section className="puzzle-summary">
+        <section className="puzzle-summary ante-lobby-card">
           <p className="puzzle-verdict">Wager Gold on today&apos;s puzzle, or play free.</p>
           <StakePicker
             ariaLabel="Wager"

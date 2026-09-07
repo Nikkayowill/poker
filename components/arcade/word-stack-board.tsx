@@ -392,7 +392,7 @@ export function WordStackBoard({ day, onExit }: { day?: string; onExit?: () => v
       )}
 
       {loaded && !round && !isArchive && (
-        <section className="puzzle-summary">
+        <section className="puzzle-summary ante-lobby-card">
           <p className="puzzle-verdict">Wager Gold on today&apos;s word, or play free.</p>
           <StakePicker
             ariaLabel="Wager"

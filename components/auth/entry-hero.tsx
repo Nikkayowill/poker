@@ -3,33 +3,24 @@ import { seatArtCharacter, seatArtSrc } from "@/lib/scene/seat-art";
 /**
  * The sign-in centerpiece: three characters peeking up from behind the form.
  *
- * The two flanks reuse the real seat-art roster/plates the racetrack table
+ * All three are real seat-art roster members/plates the racetrack table
  * already draws (`public/table2d5/seats/<id>/<angle>.webp`) -- no separate
  * asset to source, crop or keep in sync. Named by Kayo's own pick rather
- * than randomly rolled: character14/28 are "Adelaide Sinclair"/"Wren
- * Callahan" in the store catalog (`lib/cosmetics/catalog.ts`), chosen by
- * name, not id -- resolve a character by name against that catalog, not by
- * number, if this ever needs to change again (see
+ * than randomly rolled: character14/25/28 are "Adelaide Sinclair"/"Bodie
+ * Ferris"/"Wren Callahan" in the store catalog (`lib/cosmetics/catalog.ts`),
+ * chosen by name, not id -- resolve a character by name against that
+ * catalog, not by number, if this ever needs to change again (see
  * reference_stackchips_seat_sheet_slicing's note on the roster's own id
  * renumbering history for why numbers alone aren't a stable way to talk
  * about a character).
  *
- * The centre is Kayo's own supplied art, deliberately NOT added to
- * `SEAT_ART_CHARACTERS`/`lib/cosmetics/catalog.ts`: every roster member is
- * also a real, priced Collection/store entry (`characterAvatarOffers`
- * throws if one is missing), and turning this into a purchasable character
- * with a real Gold price is Kayo's call, not an inference from "use this
- * for the sign-in." Kept out of the shared roster/store, this is a
- * sign-in-only asset -- still built with the real
- * `scripts/prepare-seat-art.py` pipeline for the cutout/normalisation (ran
- * against a throwaway one-character `art/seats/` input, output kept, source
- * removed so a future roster regen doesn't resurrect it), just referenced
- * directly by path rather than through `seatArtCharacter`/`seatArtSrc`. If
- * this ever should become a real roster member, add the catalog entry and
- * switch CENTER_SRC back to a `characterId` through `CastMember` like the
- * flanks.
+ * The centre used to be Kayo's own supplied art (kept out of the shared
+ * roster/store on purpose, since it wasn't a purchasable character) -- Kayo
+ * asked for it to stop being the centerpiece of his own app, so it's now
+ * Bodie Ferris like any other roster member, drawn through
+ * `seatArtCharacter`/`seatArtSrc` via `CastMember` same as the flanks.
  */
-const CENTER_SRC = "/table2d5/seats/character32/0.webp";
+const CENTER_CHARACTER_ID = "character25"; // Bodie Ferris
 const LEFT_CHARACTER_ID = "character28"; // Wren Callahan
 const RIGHT_CHARACTER_ID = "character14"; // Adelaide Sinclair
 
@@ -92,12 +83,12 @@ export function EntryHero() {
             him -- see the glints' own note in the CSS for why they're
             positioned here and not masked like the portrait is. */}
         <div className="entry-hero-center">
-          {/* A plain <img>, not next/image: one small already-sized file
-              with no build-time box to give the optimiser, same call the
-              flanks (via CastMember) and the dealer/table seat art already
-              make. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="entry-hero-center-img" src={CENTER_SRC} alt="" draggable={false} />
+          <CastMember
+            characterId={CENTER_CHARACTER_ID}
+            angle={0}
+            mirror={false}
+            className="entry-hero-center-img"
+          />
           <span className="entry-hero-glint entry-hero-glint-1" />
           <span className="entry-hero-glint entry-hero-glint-2" />
           <span className="entry-hero-glint entry-hero-glint-3" />

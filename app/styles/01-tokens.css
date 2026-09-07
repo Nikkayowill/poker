@@ -153,6 +153,50 @@
   --glow-purple: radial-gradient(1600px 900px at 8% -12%, rgba(155, 63, 240, .13), transparent 68%);
   --glow-gold: radial-gradient(1700px 1000px at 88% 112%, rgba(255, 210, 63, .07), transparent 70%);
 
+  /* The room's own bottom landing, and the fix for the flat violet band along
+     the bottom edge of an installed iOS PWA.
+
+     Read this before adding a thirteenth attempt at that band. Every previous
+     one tried to REACH the strip -- correct the fixed washes' bottom, repaint
+     the document canvas, translate the tab bar, change a manifest colour --
+     and every one failed, because they each assumed a different thing was
+     painting it and only one of them could be right.
+
+     They did not have to be right. Look at what the candidates actually are:
+
+       html, body                    background: #150a2b   (01-tokens.css)
+       --brand-room / --entry-room   last layer var(--brand-ink) = #150a2b
+       manifest theme_color                     #150a2b
+
+     Every one of them is the SAME COLOUR, and it is the colour the band
+     measures (#150a2b, sampled off a screen recording). The room is not a
+     colour, it is a stack of semi-transparent glows sitting ON that ink, and
+     the glows still carry real light this far down (--brand-room-floor below
+     records the room reading #241530 at its own bottom edge). So the band was
+     never a foreign colour arriving from somewhere -- it is this same room
+     with the lights off, showing wherever the glow layer stops and the flat
+     base carries on.
+
+     Which means the seam closes from the other side. Ramp the room to
+     --brand-ink before its own bottom edge and both sides of the boundary are
+     #150a2b, wherever that boundary actually falls -- and it no longer
+     matters which of the three is painting it, because they are the same
+     colour. That is the whole reason this works where twelve position fixes
+     did not.
+
+     The ramp is complete 56px early rather than at 100%, so it still lands
+     if the visible edge is a little above the box's own bottom (the tab pill
+     comes out clipped roughly 47px up on Kayo's phone, which is the size of
+     the shortfall this has to cover). It is first in both stacks below except
+     for the grain, so it paints over the glows and keeps the noise on top. */
+  --room-floor-fade:
+    linear-gradient(
+      to bottom,
+      transparent calc(100% - 160px),
+      var(--brand-ink) calc(100% - 56px),
+      var(--brand-ink) 100%
+    );
+
   /* The whole room in one value, because four screens now have to agree on
      it -- the landing page, the signed-in hub, the collection and the
      leaderboard. A custom property can hold a full multi-layer background, so
@@ -161,6 +205,7 @@
      light: three competing hues is how a dark page goes muddy. */
   --brand-room:
     var(--grain),
+    var(--room-floor-fade),
     var(--glow-purple),
     radial-gradient(1100px 640px at 96% -4%, rgba(220, 20, 19, .05), transparent 62%),
     var(--glow-gold),

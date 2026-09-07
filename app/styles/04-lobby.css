@@ -46,12 +46,15 @@
   /* Not `inset: 0`. On an installed iOS PWA's cold launch WebKit reports a
      layout viewport shorter than the real screen (the open item at the top
      of 45-mobile-shell.css) -- `bottom: 0` there resolves against that short
-     number, so this wash stops short of the true edge and the plain
-     html/body colour (#150a2b, 01-tokens.css) shows through underneath the
-     phone tab bar as a flat purple band, which is what was reported. The
-     mobile tab bar already corrects its OWN position for this
-     (`--vp-short` in .mshell-nav), but that only moves the pill -- it does
-     nothing for the room light behind it, which is a separate fixed layer.
+     number, so this wash stops short of the true edge and the document
+     canvas shows through underneath the phone tab bar as a flat band, which
+     is what was reported. That canvas now carries --brand-room-floor rather
+     than the bare ground (02-app-shell.css), so an exposed strip is no
+     longer visible even when this overshoot misses; this rule is still what
+     puts real room light down there rather than a flat colour. The mobile
+     tab bar already corrects its OWN position for this (`--vp-short` in
+     .mshell-nav), but that only moves the pill -- it does nothing for the
+     room light behind it, which is a separate fixed layer.
      Overshooting the bottom edge by more than the bug's own documented
      range (`MAX_CORRECTION_PX` in components/shell/viewport-fit.tsx caps it
      at 200px; this bug "runs to about a status bar's height" per that
@@ -519,20 +522,21 @@ button:disabled { cursor: wait; opacity: .62; }
 
 .entry-hero-side { object-fit: contain; animation: entry-hero-sway 31s ease-in-out infinite; }
 
-/* The centre takes cover, not contain, and the flanks stay on contain --
-   deliberately different rules for the two roles. A flank pairs against
-   another flank, so both need the same fixed box AND to sit fully inside
-   it (contain), which is why picking two similarly-proportioned characters
-   for the flanks still matters (see the note above). The centre has no
-   sibling to match, only a box to fill, so cover -- crop to fill, cropping
-   whichever dimension overflows -- guarantees it always reads at full
-   prominence regardless of its own crop's proportions, at the cost of
-   trimming its own edges slightly (symmetric, since object-position is
-   centred) rather than shrinking. Found by putting Kayo's own supplied
-   character (a much squarer bust crop than character25, the one this slot
-   held before) in this slot and watching it render visibly smaller than
-   the flanks under contain -- cover is what a centrepiece that has to
-   dominate actually wants.
+/* All three take contain, the centre included. It took cover for two
+   passes and that is what kept cutting his head: this box is always wider
+   in proportion than a full-length plate, so cover binds on width and
+   spills 16px (393x852) to 42px (a 700px window) off the vertical at every
+   phone height. Moving object-position only chose which edge lost it --
+   `bottom center` took the crown, `center` took some crown and some of the
+   cards in his hands, which also broke the shared bottom rail this lineup
+   is built on.
+
+   cover was picked for a centrepiece that has since been replaced: Kayo's
+   own supplied art, a squarer bust crop that really did render small under
+   contain. character25 is 430x712, near enough the flanks' own proportions,
+   so contain crops nothing and he still dominates on height alone (100% to
+   their 82%) plus the z-index and negative margins. If a future centre is a
+   square bust crop again, grow this slot rather than going back to cover.
 
    Split into a wrapper (.entry-hero-center, positioned/swayed) and the
    image itself (.entry-hero-center-img, sized/masked/cropped): the chain
@@ -553,16 +557,9 @@ button:disabled { cursor: wait; opacity: .62; }
   position: absolute;
   inset: 0;
   width: 100%;
-  object-fit: cover;
-  /* Overrides the shared bottom-center rule above: "symmetric, trimming its
-     own edges slightly" (the comment above this rule) only holds if the
-     crop is actually centred. Left on `bottom center`, cover kept the
-     portrait's bottom edge fully in frame and cropped the entire overflow
-     off the top instead -- on a bust crop taller than this box, that cut
-     straight through the top of his head. Centering the crop trims a
-     little off both the crown and the collar instead, which is what the
-     comment already described. */
-  object-position: center;
+  /* No object-position of its own: it inherits `bottom center` from the
+     shared rule above, which is what stands all three on one rail. */
+  object-fit: contain;
 }
 
 .entry-hero-side {

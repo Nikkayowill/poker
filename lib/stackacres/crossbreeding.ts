@@ -141,10 +141,18 @@ export interface CrossbreedMatrixEntry {
 
 /**
  * Every crossbreedable pair StackAcres actually grows. Deliberately real
- * StackAcres stock only (sprout, cash_crop, hen, pig, cattle -- see
- * ./catalogue.ts) -- there is no "tomato" in this farm, the same rule
- * ./juice.ts's own header states for its shard styling, and it applies just
- * as much to what two rows are allowed to cross.
+ * StackAcres stock only (see ./catalogue.ts) -- tomato IS real stock now (the
+ * 22-crop roster replaced the old sprout/cash_crop pair outright), the same
+ * rule ./juice.ts's own header states for its shard styling, and it applies
+ * just as much to what two rows are allowed to cross.
+ *
+ * `sprout`/`cash_crop` -- the two crop-side entries below used to pair on
+ * them -- are gone (see ./catalogue.ts's file header), which makes those
+ * pairings impossible; deleted outright rather than repointed, the same call
+ * the single-pumpkin-crop experiment made for the pairings it broke. This is
+ * deliberately NOT backfilled with new pairings for the 22 crops that
+ * replaced them -- every crop this matrix could pair against, it no longer
+ * has, and inventing new ones is out of scope here.
  *
  * Chances are deliberately modest (5%-18%) and deliberately asymmetric across
  * pairs: two crops standing together is the easiest, most literal reading of
@@ -154,9 +162,6 @@ export interface CrossbreedMatrixEntry {
  * own header for why a hybrid is inventory, not a payout.
  */
 export const CROSSBREED_MATRIX: readonly CrossbreedMatrixEntry[] = [
-  { a: "sprout", b: "cash_crop", hybrid: "golden_maize", chance: 0.18 },
-  { a: "sprout", b: "hen", hybrid: "sunroot_egg", chance: 0.1 },
-  { a: "cash_crop", b: "pig", hybrid: "candied_husk", chance: 0.08 },
   { a: "hen", b: "pig", hybrid: "marbled_down", chance: 0.07 },
   { a: "pig", b: "cattle", hybrid: "tallow_wool", chance: 0.06 },
   { a: "cattle", b: "hen", hybrid: "custard_curd", chance: 0.05 },

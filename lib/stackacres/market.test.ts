@@ -153,7 +153,7 @@ describe("districts", () => {
     // see zones.ts.
     expect(stockZone("cattle")).toBe("oxfields");
     expect(stockZone("pig")).toBe("wallow");
-    expect(stockZone("cash_crop")).toBe("meadow");
+    expect(stockZone("corn")).toBe("meadow");
     expect(stockZone("hen")).toBe("henhaven");
   });
 });

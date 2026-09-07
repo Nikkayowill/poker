@@ -484,10 +484,10 @@ describe("cropRanks", () => {
 describe("the farmhand's view of the field", () => {
   const soil = starterMap();
   const units: CropSource[] = [
-    { id: "dry-far", stock: "sprout", state: "dry", progress: 0.5 },
-    { id: "ripe-near", stock: "cash_crop", state: "ready", progress: 1 },
-    { id: "busy", stock: "sprout", state: "working", progress: 0.2 },
-    { id: "dry-near", stock: "sprout", state: "dry", progress: 0.9 },
+    { id: "dry-far", stock: "carrot", state: "dry", progress: 0.5 },
+    { id: "ripe-near", stock: "corn", state: "ready", progress: 1 },
+    { id: "busy", stock: "carrot", state: "working", progress: 0.2 },
+    { id: "dry-near", stock: "carrot", state: "dry", progress: 0.9 },
   ];
   const ranks = cropRanks(units.map((u) => u.id));
   const crops = buildCropInstances(

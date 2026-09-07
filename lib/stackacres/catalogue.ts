@@ -34,11 +34,47 @@
  *
  * WHAT HOLDING IT COSTS is not here: Land Maintenance scales with the whole
  * estate rather than attaching to a tier, so it lives in ./upkeep.ts.
+ *
+ * CROP ROSTER (2026-09-07): the original two hand-vector crops (`sprout`,
+ * `cash_crop`) are gone -- replaced outright, not extended, by all 22 CraftPix
+ * crop sprites, `carrot`/`corn` included at the same sprite filenames those
+ * two ids used to occupy. There is no more sprout->carrot / cash_crop->corn
+ * indirection anywhere in the stock system; every id below is both the stock
+ * kind and its own art id. Three tiers by seed cost/duration/yield -- see each
+ * tier's own comment below. `carrot` and `corn` land on tier 1 and tier 3
+ * respectively at the exact numbers `sprout`/`cash_crop` used to carry, on
+ * purpose -- that continuity is why those two rungs read like restatements.
  */
 
 import type { StackAcresShopLock } from "./shop-locks";
 
-export const STACKACRES_CROPS = ["sprout", "cash_crop"] as const;
+export const STACKACRES_CROPS = [
+  // Tier 1 (fast/cheap): 20 seed / 15m / 8m thirst / 32 muck.
+  "garlic",
+  "onion",
+  "beet",
+  "poppy",
+  "potato",
+  "carrot",
+  "cabbage",
+  // Tier 2 (medium): 55 seed / 90m / 40m thirst / 90 muck.
+  "cucumber",
+  "pepper",
+  "brokoly",
+  "sunflower",
+  "sunflowe_broken",
+  "wheat1",
+  "tomato",
+  // Tier 3 (slow/valuable): 120 seed / 4h / 90m thirst / 200 muck.
+  "corn",
+  "corn2",
+  "eggplant",
+  "grap",
+  "grap2",
+  "pumpkin",
+  "wheat2",
+  "artichoke",
+] as const;
 export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle"] as const;
 
 export type StackAcresCrop = (typeof STACKACRES_CROPS)[number];
@@ -99,32 +135,58 @@ export interface StackAcresStockDef {
   muckFee: number;
 }
 
+const TIER1 = { seedCost: 20, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, muckFee: 32 } as const;
+const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, muckFee: 90 } as const;
+const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, muckFee: 200 } as const;
+
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
  * of a cycle is the snapshotted yield times what that produce is worth today,
  * not a payout baked in here.
  */
 export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresStockDef>> = {
-  sprout: {
-    label: "Sprout Row",
-    seedCost: 20,
-    durationMs: 15 * 60 * 1000,
-    hungerMs: null,
-    // Half its own 15m cycle: one drink mid-row, so the cheapest crop teaches
-    // the watering loop without being a chore.
-    thirstMs: 8 * 60 * 1000,
-    muckFee: 32,
+  // ---- Tier 1 (fast/cheap): sprout's own old numbers, restated per crop. ----
+  garlic: { label: "Garlic", ...TIER1 },
+  onion: { label: "Onion", ...TIER1 },
+  beet: { label: "Beet", ...TIER1 },
+  poppy: { label: "Poppy", ...TIER1 },
+  potato: { label: "Potato", ...TIER1 },
+  // Same numbers `sprout` used to carry -- deliberate continuity, not a
+  // coincidence. See the file header.
+  carrot: { label: "Carrot", ...TIER1 },
+  cabbage: { label: "Cabbage", ...TIER1 },
+
+  // ---- Tier 2 (medium). ----
+  cucumber: { label: "Cucumber", ...TIER2 },
+  pepper: { label: "Pepper", ...TIER2 },
+  brokoly: {
+    // Labelled Broccoli, keyed as brokoly -- same "id and label diverge"
+    // pattern `pig` uses below for Sheep Pen. The id stays exactly as it is
+    // once stored on a unit row; only the caption moved.
+    label: "Broccoli",
+    ...TIER2,
   },
-  cash_crop: {
-    label: "Cash Crop",
-    seedCost: 120,
-    durationMs: 4 * 60 * 60 * 1000,
-    hungerMs: null,
-    // Roughly two drinks across a 4h cycle, the same tending weight a Sheep
-    // Pen carries on the livestock track at the same duration.
-    thirstMs: 90 * 60 * 1000,
-    muckFee: 200,
+  sunflower: { label: "Sunflower", ...TIER2 },
+  sunflowe_broken: { label: "Wild Sunflower", ...TIER2 },
+  wheat1: { label: "Wheat", ...TIER2 },
+  tomato: { label: "Tomato", ...TIER2 },
+
+  // ---- Tier 3 (slow/valuable): cash_crop's own old numbers, restated per
+  // crop (corn below carries them exactly -- see the file header). ----
+  corn: { label: "Corn", ...TIER3 },
+  corn2: { label: "Field Corn", ...TIER3 },
+  eggplant: { label: "Eggplant", ...TIER3 },
+  grap: {
+    // Labelled Grapes, keyed as grap -- same divergence pattern as `brokoly`
+    // above and `pig` below.
+    label: "Grapes",
+    ...TIER3,
   },
+  grap2: { label: "Muscat Grapes", ...TIER3 },
+  pumpkin: { label: "Pumpkin", ...TIER3 },
+  wheat2: { label: "Winter Wheat", ...TIER3 },
+  artichoke: { label: "Artichoke", ...TIER3 },
+
   hen: {
     label: "Hen Coop",
     seedCost: 50,
@@ -256,8 +318,30 @@ export const STACKACRES_MUCK_CHANCE = 0.2;
  * itself bounds how much can run at once.
  */
 export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresStock, number>> = {
-  sprout: 5_000,
-  cash_crop: 5_000,
+  // All 22 crops: flat 5,000 across every tier -- capacity is priced by
+  // track, not by tier.
+  garlic: 5_000,
+  onion: 5_000,
+  beet: 5_000,
+  poppy: 5_000,
+  potato: 5_000,
+  carrot: 5_000,
+  cabbage: 5_000,
+  cucumber: 5_000,
+  pepper: 5_000,
+  brokoly: 5_000,
+  sunflower: 5_000,
+  sunflowe_broken: 5_000,
+  wheat1: 5_000,
+  tomato: 5_000,
+  corn: 5_000,
+  corn2: 5_000,
+  eggplant: 5_000,
+  grap: 5_000,
+  grap2: 5_000,
+  pumpkin: 5_000,
+  wheat2: 5_000,
+  artichoke: 5_000,
   hen: 2_000,
   pig: 15_000,
   cattle: 40_000,

@@ -36,7 +36,7 @@ function row(overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
 
 describe("hungryAtFor", () => {
   it("is null for crops, which never eat", () => {
-    expect(hungryAtFor(row({ stock: "sprout", lastFedAt: NOW.toISOString() }))).toBeNull();
+    expect(hungryAtFor(row({ stock: "carrot", lastFedAt: NOW.toISOString() }))).toBeNull();
   });
 
   it("is null for livestock never fed", () => {
@@ -78,7 +78,7 @@ describe("isStackAcresUnitHungry / isStackAcresUnitReady", () => {
     // Watered, so the OTHER freeze condition is not what is being measured
     // here -- a crop is refused readiness by dry soil, never by hunger.
     const r = row({
-      stock: "sprout",
+      stock: "carrot",
       lastFedAt: null,
       lastWateredAt: NOW.toISOString(),
       readyAt: new Date(NOW.getTime() - 1000).toISOString(),
@@ -142,8 +142,8 @@ describe("toStackAcresUnitSnapshots", () => {
 /* Soil watering                                                       */
 /* ------------------------------------------------------------------ */
 
-const SPROUT = STACKACRES_CATALOGUE.sprout;
-const THIRST = SPROUT.thirstMs ?? 0;
+const CARROT = STACKACRES_CATALOGUE.carrot;
+const THIRST = CARROT.thirstMs ?? 0;
 
 /** A Sprout Row sown `agoMs` before NOW and watered at sowing, unless
  *  `lastWateredAt` says otherwise. Its whole cycle fits inside the window
@@ -151,11 +151,11 @@ const THIRST = SPROUT.thirstMs ?? 0;
 function crop(agoMs: number, overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
   const sown = NOW.getTime() - agoMs;
   return row({
-    stock: "sprout",
-    stake: SPROUT.seedCost,
+    stock: "carrot",
+    stake: CARROT.seedCost,
     yieldQuantity: 3,
     startedAt: new Date(sown).toISOString(),
-    readyAt: new Date(sown + SPROUT.durationMs).toISOString(),
+    readyAt: new Date(sown + CARROT.durationMs).toISOString(),
     lastFedAt: null,
     lastWateredAt: new Date(sown).toISOString(),
     ...overrides,
@@ -239,7 +239,7 @@ describe("a crop that beat the drought to its own finish line", () => {
 
 describe("growth pauses while a crop goes unwatered", () => {
   // Sown long enough ago that the timer alone would have finished the cycle.
-  const wellPastReady = SPROUT.durationMs + 60 * 60 * 1000;
+  const wellPastReady = CARROT.durationMs + 60 * 60 * 1000;
 
   it("refuses readiness for a dry crop however long its timer says it has run", () => {
     const dry = crop(wellPastReady);
@@ -267,7 +267,7 @@ describe("growth pauses while a crop goes unwatered", () => {
     // fraction of the cycle that had actually been worked by then.
     expect(frozen.state).toBe("dry");
     expect(frozen.isWatered).toBe(false);
-    expect(frozen.progress).toBeCloseTo(THIRST / SPROUT.durationMs, 6);
+    expect(frozen.progress).toBeCloseTo(THIRST / CARROT.durationMs, 6);
     expect(frozen.progress).toBeLessThan(1);
   });
 

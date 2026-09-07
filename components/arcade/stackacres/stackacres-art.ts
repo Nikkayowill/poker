@@ -69,10 +69,10 @@ export { ART_FRAME, ART_SCALE, GRASS_PX } from "./art-kit";
  *
  * The generated sprites below (see stackacres-sprites.ts) are the exception
  * to the first and third of those, and the ripe crop frames are the one place
- * they touch the second: `ico-carrot`/`ico-corn` stay on the DRAWN carrot2 and
- * corn2 while the field draws the sprite, so those two DO now differ. That is
- * a choice, not an oversight -- see the icons' own comment for why 20 device
- * pixels wants the flat shape, not the render.
+ * they touch the second: every crop's `ico-*` seed-strip icon stays on a flat
+ * `simpleCropIcon` shape while the field draws the sprite, so the two DO
+ * differ. That is a choice, not an oversight -- see the icons' own comment
+ * for why 20 device pixels wants the flat shape, not the render.
  *
  * A painter is a plain function with four numbers hung off it: `w`/`h` are the
  * box it draws inside, in units, and `ax`/`ay` are its origin within that box
@@ -153,12 +153,74 @@ type CorePainterName =
   | "gateX"
   | "troughFull"
   | "troughEmpty"
+  // All 22 crops' growth frames -- three-stage convention, `${crop}${stage}`.
+  // `sprout`/`cash_crop` are gone; carrot/corn are ordinary crops here now.
+  | "artichoke0"
+  | "artichoke1"
+  | "artichoke2"
+  | "beet0"
+  | "beet1"
+  | "beet2"
+  | "brokoly0"
+  | "brokoly1"
+  | "brokoly2"
+  | "cabbage0"
+  | "cabbage1"
+  | "cabbage2"
   | "carrot0"
   | "carrot1"
   | "carrot2"
   | "corn0"
   | "corn1"
   | "corn2"
+  | "corn20"
+  | "corn21"
+  | "corn22"
+  | "cucumber0"
+  | "cucumber1"
+  | "cucumber2"
+  | "eggplant0"
+  | "eggplant1"
+  | "eggplant2"
+  | "garlic0"
+  | "garlic1"
+  | "garlic2"
+  | "grap0"
+  | "grap1"
+  | "grap2"
+  | "grap20"
+  | "grap21"
+  | "grap22"
+  | "onion0"
+  | "onion1"
+  | "onion2"
+  | "pepper0"
+  | "pepper1"
+  | "pepper2"
+  | "poppy0"
+  | "poppy1"
+  | "poppy2"
+  | "potato0"
+  | "potato1"
+  | "potato2"
+  | "pumpkin0"
+  | "pumpkin1"
+  | "pumpkin2"
+  | "sunflowe_broken0"
+  | "sunflowe_broken1"
+  | "sunflowe_broken2"
+  | "sunflower0"
+  | "sunflower1"
+  | "sunflower2"
+  | "tomato0"
+  | "tomato1"
+  | "tomato2"
+  | "wheat10"
+  | "wheat11"
+  | "wheat12"
+  | "wheat20"
+  | "wheat21"
+  | "wheat22"
   | "cropShadow"
   | "cropField"
   | "hen"
@@ -180,9 +242,32 @@ type CorePainterName =
   | "ico-egg"
   | "ico-fleece"
   | "ico-milk"
+  // All 22 crops' seed-strip/shop icons. "ico-wheat" (wheat1) is NOT
+  // repeated here -- it reuses the existing wheat sheaf glyph a few lines
+  // below (machine-items.ts's wheat), rather than a second painter under the
+  // same key.
+  | "ico-artichoke"
+  | "ico-beet"
+  | "ico-brokoly"
+  | "ico-cabbage"
   | "ico-carrot"
   | "ico-corn"
+  | "ico-corn2"
+  | "ico-cucumber"
+  | "ico-eggplant"
+  | "ico-garlic"
+  | "ico-grap"
+  | "ico-grap2"
+  | "ico-onion"
+  | "ico-pepper"
+  | "ico-poppy"
+  | "ico-potato"
+  | "ico-pumpkin"
+  | "ico-sunflowe_broken"
+  | "ico-sunflower"
+  | "ico-tomato"
   | "ico-wheat"
+  | "ico-wheat2"
   | "ico-flour"
   | "ico-cheese"
   | "ico-cloth"
@@ -282,75 +367,96 @@ const flower =
 // build its own per-cell lookup -- both need a bindable reference, not an
 // object literal's own shorthand.
 
-const carrot0 = painter(12, 16, (c) => {
-  for (const i of [-1, 0, 1]) {
+/* ---- all 22 crops: minimal placeholder frames -----------------------------
+ * NOT hand-painted plants. These are the vector fallback `spriteBacked` shows
+ * only until each crop's real sprite (stackacres-sprites.ts) finishes
+ * loading -- SSR, first paint, a 404 -- so they stay deliberately plain: a
+ * couple of leaf strokes for the two unripe stages, a filled ramp-coloured
+ * blob at roughly the crop's own box proportions for the ripe one.
+ *
+ * carrot0-2/corn0-2 USED TO be hand-painted in more strokes than this (they
+ * predated the 16-crop expansion), but their box grew from the old
+ * `sprout`/`cash_crop` hand-vector art's own 12x16/12x22 to the real CraftPix
+ * sprite's 34x37/23x42 (see ./crop-visuals.ts's CROP_BOX), and a hand-tuned
+ * path drawn for one box does not stretch cleanly onto another -- so they get
+ * the same simpleCropFrames treatment as every other crop here now, and
+ * ico-carrot/ico-corn moved off their old hand-drawn ripe frame onto
+ * `simpleCropIcon` for the same reason (see those two entries below).
+ *
+ * Each crop's ramp is picked against art-palette.ts's existing RAMPS table --
+ * there is no purple ramp, so grap/grap2/artichoke/eggplant fall back to
+ * green -- the same choice lib/stackacres/juice.ts's harvest-pop styling
+ * makes for these same crops.
+ */
+
+function simpleCropFrames(w: number, h: number, mat: Ramp): [Painter, Painter, Painter] {
+  const s0 = painter(w, h, (c) => {
     c.beginPath();
-    c.moveTo(6, 15);
-    c.quadraticCurveTo(6 + i * 1.2, 13, 6 + i * 1.8, 11);
-    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.2);
-  }
-});
-
-const carrot1 = painter(12, 16, (c) => {
-  for (const i of [-1, 0, 1]) {
+    c.moveTo(w / 2, h);
+    c.quadraticCurveTo(w / 2, h * 0.72, w * 0.4, h * 0.55);
+    stroke(c, RAMPS.leaf.top, Math.max(1, w * 0.08));
+  });
+  const s1 = painter(w, h, (c) => {
     c.beginPath();
-    c.moveTo(6, 15);
-    c.quadraticCurveTo(6 + i * 2.2, 11, 6 + i * 3.2, 7.6);
-    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.4);
-  }
-});
-
-const carrot2 = painter(12, 16, (c) => {
-  for (const i of [-1, 0, 1]) {
+    c.moveTo(w / 2, h);
+    c.quadraticCurveTo(w * 0.35, h * 0.55, w * 0.3, h * 0.28);
+    stroke(c, RAMPS.leaf.top, Math.max(1, w * 0.09));
     c.beginPath();
-    c.moveTo(6, 12);
-    c.quadraticCurveTo(6 + i * 2.4, 8.4, 6 + i * 3.6, 5.2);
-    stroke(c, i === 0 ? RAMPS.leaf.top : RAMPS.leaf.side, 1.5);
-  }
-  rr(c, 3.2, 11.4, 5.6, 4.8, 2.6);
-  F(c, RAMPS.carrot.top);
-  rr(c, 6.2, 11.4, 2.6, 4.8, 1.3);
-  F(c, RAMPS.carrot.side);
-  rr(c, 3.2, 11.4, 5.6, 4.8, 2.6);
-  stroke(c, RAMPS.carrot.rim, 0.7);
-});
-
-const corn0 = painter(12, 22, (c) => {
-  c.beginPath();
-  c.moveTo(6, 22);
-  c.lineTo(6, 16);
-  stroke(c, RAMPS.leaf.top, 1.3);
-  ell(c, 4.4, 17.2, 2, 0.9);
-  F(c, RAMPS.leaf.top);
-});
-
-const corn1 = painter(12, 22, (c) => {
-  c.beginPath();
-  c.moveTo(6, 22);
-  c.lineTo(6, 10);
-  stroke(c, RAMPS.leaf.side, 1.5);
-  for (const [x, y, rx] of [[3.4, 15, 2.8], [8.6, 13, 2.8]] as const) {
-    ell(c, x, y, rx, 1.2);
+    c.moveTo(w / 2, h);
+    c.quadraticCurveTo(w * 0.65, h * 0.55, w * 0.7, h * 0.28);
+    stroke(c, RAMPS.leaf.side, Math.max(1, w * 0.09));
+  });
+  const s2 = painter(w, h, (c) => {
+    ell(c, w / 2, h * 0.32, w * 0.28, h * 0.22);
     F(c, RAMPS.leaf.top);
-  }
-});
+    ell(c, w / 2, h * 0.68, w * 0.42, h * 0.3);
+    F(c, mat.top);
+    ell(c, w * 0.6, h * 0.68, w * 0.2, h * 0.28);
+    F(c, mat.side);
+    ell(c, w / 2, h * 0.68, w * 0.42, h * 0.3);
+    stroke(c, mat.rim, Math.max(0.6, w * 0.03));
+  });
+  return [s0, s1, s2];
+}
 
-const corn2 = painter(12, 22, (c) => {
-  c.beginPath();
-  c.moveTo(6, 22);
-  c.lineTo(6, 4);
-  stroke(c, RAMPS.leaf.side, 1.6);
-  for (const [x, y, rx] of [[3.2, 16.5, 3.2], [9, 14.2, 3.2], [3.6, 10.6, 2.6]] as const) {
-    ell(c, x, y, rx, 1.3);
-    F(c, RAMPS.leaf.top);
-  }
-  rr(c, 6.3, 7, 3.8, 8.8, 1.9);
-  F(c, RAMPS.corn.top);
-  rr(c, 8.4, 7, 1.7, 8.8, 0.85);
-  F(c, RAMPS.corn.side);
-  rr(c, 6.3, 7, 3.8, 8.8, 1.9);
-  stroke(c, RAMPS.corn.rim, 0.6);
-});
+// Box sizes here mirror lib/stackacres/crop-visuals.ts's CROP_BOX exactly --
+// both are sized off the same trimmed sprite pixel dimensions ÷ ART_SCALE.
+const [artichoke0, artichoke1, artichoke2] = simpleCropFrames(22, 47, RAMPS.leaf);
+const [beet0, beet1, beet2] = simpleCropFrames(25, 41, RAMPS.roof);
+const [brokoly0, brokoly1, brokoly2] = simpleCropFrames(39, 30, RAMPS.pine);
+const [cabbage0, cabbage1, cabbage2] = simpleCropFrames(38, 31, RAMPS.cream);
+const [carrot0, carrot1, carrot2] = simpleCropFrames(34, 37, RAMPS.carrot);
+const [corn0, corn1, corn2] = simpleCropFrames(23, 42, RAMPS.corn);
+const [corn20, corn21, corn22] = simpleCropFrames(24, 44, RAMPS.gold);
+const [cucumber0, cucumber1, cucumber2] = simpleCropFrames(22, 44, RAMPS.leaf);
+const [eggplant0, eggplant1, eggplant2] = simpleCropFrames(33, 26, RAMPS.pine);
+const [garlic0, garlic1, garlic2] = simpleCropFrames(23, 40, RAMPS.cream);
+const [grap0, grap1, grap2] = simpleCropFrames(14, 46, RAMPS.pine);
+const [grap20, grap21, grap22] = simpleCropFrames(16, 44, RAMPS.leaf);
+const [onion0, onion1, onion2] = simpleCropFrames(33, 38, RAMPS.cream);
+const [pepper0, pepper1, pepper2] = simpleCropFrames(19, 40, RAMPS.carrot);
+const [poppy0, poppy1, poppy2] = simpleCropFrames(29, 44, RAMPS.roof);
+const [potato0, potato1, potato2] = simpleCropFrames(23, 47, RAMPS.cream);
+const [pumpkin0, pumpkin1, pumpkin2] = simpleCropFrames(41, 25, RAMPS.carrot);
+const [sunflowe_broken0, sunflowe_broken1, sunflowe_broken2] = simpleCropFrames(28, 36, RAMPS.gold);
+const [sunflower0, sunflower1, sunflower2] = simpleCropFrames(20, 40, RAMPS.corn);
+const [tomato0, tomato1, tomato2] = simpleCropFrames(31, 39, RAMPS.roof);
+const [wheat10, wheat11, wheat12] = simpleCropFrames(23, 37, RAMPS.straw);
+const [wheat20, wheat21, wheat22] = simpleCropFrames(37, 36, RAMPS.gold);
+
+/** A small flat silhouette for one of the 22 crops' seed-strip/shop icons --
+ *  24 device pixels wants a blob, not a render; see this file's own header
+ *  for why every crop icon keeps this flat shape instead of the sprite. */
+function simpleCropIcon(mat: Ramp): Paint {
+  return (c) => {
+    ell(c, 12, 13, 8, 7.5);
+    F(c, mat.top);
+    ell(c, 15, 13, 5, 6.5);
+    F(c, mat.side);
+    ell(c, 12, 13, 8, 7.5);
+    stroke(c, mat.rim, 1);
+  };
+}
 
 /** Glass with a gradient and a diagonal streak; a flat fill reads as a hole
  *  punched in the barn wall rather than a window. */
@@ -439,8 +545,28 @@ function cropFieldAnchor(row: number, col: number): { x: number; y: number } {
  *  `PainterName` elsewhere in this file -- what `paintCropField` looks a
  *  plant's frame up by. */
 const CROP_FIELD_FRAME: Readonly<Record<CropArt, readonly [Painter, Painter, Painter]>> = {
+  artichoke: [artichoke0, artichoke1, artichoke2],
+  beet: [beet0, beet1, beet2],
+  brokoly: [brokoly0, brokoly1, brokoly2],
+  cabbage: [cabbage0, cabbage1, cabbage2],
   carrot: [carrot0, carrot1, carrot2],
   corn: [corn0, corn1, corn2],
+  corn2: [corn20, corn21, corn22],
+  cucumber: [cucumber0, cucumber1, cucumber2],
+  eggplant: [eggplant0, eggplant1, eggplant2],
+  garlic: [garlic0, garlic1, garlic2],
+  grap: [grap0, grap1, grap2],
+  grap2: [grap20, grap21, grap22],
+  onion: [onion0, onion1, onion2],
+  pepper: [pepper0, pepper1, pepper2],
+  poppy: [poppy0, poppy1, poppy2],
+  potato: [potato0, potato1, potato2],
+  pumpkin: [pumpkin0, pumpkin1, pumpkin2],
+  sunflowe_broken: [sunflowe_broken0, sunflowe_broken1, sunflowe_broken2],
+  sunflower: [sunflower0, sunflower1, sunflower2],
+  tomato: [tomato0, tomato1, tomato2],
+  wheat1: [wheat10, wheat11, wheat12],
+  wheat2: [wheat20, wheat21, wheat22],
 };
 
 /** Paints one plant frame so its own anchor (`p.ax`, `p.ay` -- (0.5, 1) for
@@ -1006,14 +1132,74 @@ const DRAWN: Record<PainterName, Painter> = {
     0,
   ),
 
-  /* ---- crops, three frames each ---- */
+  /* ---- crops, three frames each (all 22) ---- */
 
+  artichoke0,
+  artichoke1,
+  artichoke2,
+  beet0,
+  beet1,
+  beet2,
+  brokoly0,
+  brokoly1,
+  brokoly2,
+  cabbage0,
+  cabbage1,
+  cabbage2,
   carrot0,
   carrot1,
   carrot2,
   corn0,
   corn1,
   corn2,
+  corn20,
+  corn21,
+  corn22,
+  cucumber0,
+  cucumber1,
+  cucumber2,
+  eggplant0,
+  eggplant1,
+  eggplant2,
+  garlic0,
+  garlic1,
+  garlic2,
+  grap0,
+  grap1,
+  grap2,
+  grap20,
+  grap21,
+  grap22,
+  onion0,
+  onion1,
+  onion2,
+  pepper0,
+  pepper1,
+  pepper2,
+  poppy0,
+  poppy1,
+  poppy2,
+  potato0,
+  potato1,
+  potato2,
+  pumpkin0,
+  pumpkin1,
+  pumpkin2,
+  sunflowe_broken0,
+  sunflowe_broken1,
+  sunflowe_broken2,
+  sunflower0,
+  sunflower1,
+  sunflower2,
+  tomato0,
+  tomato1,
+  tomato2,
+  wheat10,
+  wheat11,
+  wheat12,
+  wheat20,
+  wheat21,
+  wheat22,
 
   // The grounding pool under a crop's own feet -- every other standee on the
   // map (the `isLivestock` branch in stackacres-scene.ts) plants a `shadow`
@@ -1398,37 +1584,45 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#7ec8e3");
   }),
 
-  // The two crop icons are the ripe crop's own painter, so the seed strip and
-  // the field draw the same plant. Since the ripe frames became sprites these
-  // deliberately keep the DRAWN shape rather than following: an icon is 20
+  // All 22 crops' seed-strip/shop icons -- simple filled blobs (see
+  // `simpleCropIcon`), not the ripe field painter's own render: an icon is 24
   // device pixels, and at that size the render's leaf detail collapses into a
-  // smudge while the flat three-tone shape still reads as a carrot. The
-  // silhouette and the palette are the same either way, which is the part a
-  // player matches between strip and field.
-  // carrot2 is only 12x16, so dropped into the 24x24 icon box unscaled it
-  // sits half-size in the top-left corner while every other icon fills its
-  // square. Blow it up to corn's height and centre it.
-  "ico-carrot": painter(24, 24, (c) => {
-    c.save();
-    c.translate(3.75, 1);
-    c.scale(1.375, 1.375);
-    carrot2(c);
-    c.restore();
-  }),
-  "ico-corn": painter(24, 24, (c) => {
-    c.save();
-    c.translate(6, 1);
-    corn2(c);
-    c.restore();
-  }),
+  // smudge while the flat three-tone shape still reads clearly. carrot/corn
+  // used to keep their own hand-drawn ripe-frame shape here (predating the
+  // rest of the roster), but that depended on their old 12x16/12x22 box --
+  // now that both draw the real CraftPix sprite at a different box (see
+  // ./crop-visuals.ts's CROP_BOX), they get the same `simpleCropIcon`
+  // treatment as every other crop. "ico-wheat" is deliberately NOT redefined
+  // here for wheat1 -- it reuses the existing wheat sheaf glyph below, drawn
+  // for machine-items.ts's wheat.
+  "ico-artichoke": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
+  "ico-beet": painter(24, 24, simpleCropIcon(RAMPS.roof)),
+  "ico-brokoly": painter(24, 24, simpleCropIcon(RAMPS.pine)),
+  "ico-cabbage": painter(24, 24, simpleCropIcon(RAMPS.cream)),
+  "ico-carrot": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
+  "ico-corn": painter(24, 24, simpleCropIcon(RAMPS.corn)),
+  "ico-corn2": painter(24, 24, simpleCropIcon(RAMPS.gold)),
+  "ico-cucumber": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
+  "ico-eggplant": painter(24, 24, simpleCropIcon(RAMPS.pine)),
+  "ico-garlic": painter(24, 24, simpleCropIcon(RAMPS.cream)),
+  "ico-grap": painter(24, 24, simpleCropIcon(RAMPS.pine)),
+  "ico-grap2": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
+  "ico-onion": painter(24, 24, simpleCropIcon(RAMPS.cream)),
+  "ico-pepper": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
+  "ico-poppy": painter(24, 24, simpleCropIcon(RAMPS.roof)),
+  "ico-potato": painter(24, 24, simpleCropIcon(RAMPS.cream)),
+  "ico-pumpkin": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
+  "ico-sunflowe_broken": painter(24, 24, simpleCropIcon(RAMPS.gold)),
+  "ico-sunflower": painter(24, 24, simpleCropIcon(RAMPS.corn)),
+  "ico-tomato": painter(24, 24, simpleCropIcon(RAMPS.roof)),
+  "ico-wheat2": painter(24, 24, simpleCropIcon(RAMPS.gold)),
 
   // The processing track's two items. Named by MACHINE_ITEM_CATALOGUE in
   // lib/stackacres/machine-items.ts since it was written; these are the
-  // painters that finally make that name resolve. Not spriteBacked and not
-  // shared with a field crop, because wheat is deliberately not a
-  // StackAcresStock -- it grows on its own row (lib/stackacres/wheat-plot.ts)
-  // and has no ripe world sprite of its own to reuse the way carrot and corn
-  // do.
+  // painters that finally make that name resolve. Not spriteBacked, and
+  // deliberately shared with the plantable Wheat crop's own icon
+  // (STACKACRES_ITEM_CATALOGUE.wheat1.icon, ./items.ts) rather than given a
+  // second painter under the same key -- see that entry's own comment.
   "ico-wheat": painter(24, 24, (c) => {
     c.beginPath();
     c.moveTo(12, 22);
@@ -1652,18 +1846,78 @@ export const PAINTERS: Record<PainterName, Painter> = {
   frond3: spriteBacked("frond3", DRAWN.frond3),
   frond4: spriteBacked("frond4", DRAWN.frond4),
   frond5: spriteBacked("frond5", DRAWN.frond5),
-  // The two crops' three growth frames each. The drawn fallback for the two
-  // unripe stages was a couple of quadratic-curve strokes -- legible as
+  // All 22 crops' three growth frames each. The drawn fallback for the two
+  // unripe stages is a couple of quadratic-curve strokes -- legible as
   // "something is growing here" and nothing more, which is what these
-  // replace. carrot2/corn2 (the ripe frame) are ALSO wrapped here, and the
-  // seed-strip icons above are left on the drawn version on purpose: they
-  // close over the local `carrot2`/`corn2` consts, not over this map.
+  // replace. Every ripe frame is ALSO wrapped here; the seed-strip icons
+  // below draw their own flat `simpleCropIcon` shape rather than the sprite,
+  // so field and icon deliberately differ once the sprite loads.
+  artichoke0: spriteBacked("artichoke0", DRAWN.artichoke0),
+  artichoke1: spriteBacked("artichoke1", DRAWN.artichoke1),
+  artichoke2: spriteBacked("artichoke2", DRAWN.artichoke2),
+  beet0: spriteBacked("beet0", DRAWN.beet0),
+  beet1: spriteBacked("beet1", DRAWN.beet1),
+  beet2: spriteBacked("beet2", DRAWN.beet2),
+  brokoly0: spriteBacked("brokoly0", DRAWN.brokoly0),
+  brokoly1: spriteBacked("brokoly1", DRAWN.brokoly1),
+  brokoly2: spriteBacked("brokoly2", DRAWN.brokoly2),
+  cabbage0: spriteBacked("cabbage0", DRAWN.cabbage0),
+  cabbage1: spriteBacked("cabbage1", DRAWN.cabbage1),
+  cabbage2: spriteBacked("cabbage2", DRAWN.cabbage2),
   carrot0: spriteBacked("carrot0", DRAWN.carrot0),
   carrot1: spriteBacked("carrot1", DRAWN.carrot1),
   carrot2: spriteBacked("carrot2", DRAWN.carrot2),
   corn0: spriteBacked("corn0", DRAWN.corn0),
   corn1: spriteBacked("corn1", DRAWN.corn1),
   corn2: spriteBacked("corn2", DRAWN.corn2),
+  corn20: spriteBacked("corn20", DRAWN.corn20),
+  corn21: spriteBacked("corn21", DRAWN.corn21),
+  corn22: spriteBacked("corn22", DRAWN.corn22),
+  cucumber0: spriteBacked("cucumber0", DRAWN.cucumber0),
+  cucumber1: spriteBacked("cucumber1", DRAWN.cucumber1),
+  cucumber2: spriteBacked("cucumber2", DRAWN.cucumber2),
+  eggplant0: spriteBacked("eggplant0", DRAWN.eggplant0),
+  eggplant1: spriteBacked("eggplant1", DRAWN.eggplant1),
+  eggplant2: spriteBacked("eggplant2", DRAWN.eggplant2),
+  garlic0: spriteBacked("garlic0", DRAWN.garlic0),
+  garlic1: spriteBacked("garlic1", DRAWN.garlic1),
+  garlic2: spriteBacked("garlic2", DRAWN.garlic2),
+  grap0: spriteBacked("grap0", DRAWN.grap0),
+  grap1: spriteBacked("grap1", DRAWN.grap1),
+  grap2: spriteBacked("grap2", DRAWN.grap2),
+  grap20: spriteBacked("grap20", DRAWN.grap20),
+  grap21: spriteBacked("grap21", DRAWN.grap21),
+  grap22: spriteBacked("grap22", DRAWN.grap22),
+  onion0: spriteBacked("onion0", DRAWN.onion0),
+  onion1: spriteBacked("onion1", DRAWN.onion1),
+  onion2: spriteBacked("onion2", DRAWN.onion2),
+  pepper0: spriteBacked("pepper0", DRAWN.pepper0),
+  pepper1: spriteBacked("pepper1", DRAWN.pepper1),
+  pepper2: spriteBacked("pepper2", DRAWN.pepper2),
+  poppy0: spriteBacked("poppy0", DRAWN.poppy0),
+  poppy1: spriteBacked("poppy1", DRAWN.poppy1),
+  poppy2: spriteBacked("poppy2", DRAWN.poppy2),
+  potato0: spriteBacked("potato0", DRAWN.potato0),
+  potato1: spriteBacked("potato1", DRAWN.potato1),
+  potato2: spriteBacked("potato2", DRAWN.potato2),
+  pumpkin0: spriteBacked("pumpkin0", DRAWN.pumpkin0),
+  pumpkin1: spriteBacked("pumpkin1", DRAWN.pumpkin1),
+  pumpkin2: spriteBacked("pumpkin2", DRAWN.pumpkin2),
+  sunflowe_broken0: spriteBacked("sunflowe_broken0", DRAWN.sunflowe_broken0),
+  sunflowe_broken1: spriteBacked("sunflowe_broken1", DRAWN.sunflowe_broken1),
+  sunflowe_broken2: spriteBacked("sunflowe_broken2", DRAWN.sunflowe_broken2),
+  sunflower0: spriteBacked("sunflower0", DRAWN.sunflower0),
+  sunflower1: spriteBacked("sunflower1", DRAWN.sunflower1),
+  sunflower2: spriteBacked("sunflower2", DRAWN.sunflower2),
+  tomato0: spriteBacked("tomato0", DRAWN.tomato0),
+  tomato1: spriteBacked("tomato1", DRAWN.tomato1),
+  tomato2: spriteBacked("tomato2", DRAWN.tomato2),
+  wheat10: spriteBacked("wheat10", DRAWN.wheat10),
+  wheat11: spriteBacked("wheat11", DRAWN.wheat11),
+  wheat12: spriteBacked("wheat12", DRAWN.wheat12),
+  wheat20: spriteBacked("wheat20", DRAWN.wheat20),
+  wheat21: spriteBacked("wheat21", DRAWN.wheat21),
+  wheat22: spriteBacked("wheat22", DRAWN.wheat22),
 };
 
 /**

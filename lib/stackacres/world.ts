@@ -83,14 +83,18 @@ export interface WorldPoint {
 /* ------------------------------------------------------------------ */
 
 /**
- * Which district a stock kind belongs to. Four kinds, four districts, one
- * match each -- unchanged from the pen-zoning pass, just no longer routed
- * through a plot index to get there:
+ * Which district a stock kind belongs to. Four districts, one match each --
+ * unchanged from the pen-zoning pass, just no longer routed through a plot
+ * index to get there:
  *
- *   hen               -- Hen Haven (the cheap starter tier)
- *   sprout, cash_crop  -- the Grand Farm ("Crop Fields")
- *   pig                -- the Fold (labelled Sheep Pens)
- *   cattle             -- Cattle Pasture
+ *   hen                        -- Hen Haven (the cheap starter tier)
+ *   all 22 crops               -- the Grand Farm ("Crop Fields"/the Long
+ *                                  Meadow). The original two hand-vector crops
+ *                                  (sprout, cash_crop) are gone; all 22
+ *                                  CraftPix crops replace them at this same
+ *                                  zone.
+ *   pig                        -- the Fold (labelled Sheep Pens)
+ *   cattle                     -- Cattle Pasture
  *
  * THE HENS LEFT HOME in the 2026-09-07 map re-lay. They were the Farmstead's
  * own stock from the pen-zoning pass until then, which is why `farmstead` no
@@ -103,8 +107,29 @@ export interface WorldPoint {
  */
 const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
   hen: "henhaven",
-  sprout: "meadow",
-  cash_crop: "meadow",
+  // All 22 crops: the Long Meadow -- the only zone with soil beds.
+  garlic: "meadow",
+  onion: "meadow",
+  beet: "meadow",
+  poppy: "meadow",
+  potato: "meadow",
+  carrot: "meadow",
+  cabbage: "meadow",
+  cucumber: "meadow",
+  pepper: "meadow",
+  brokoly: "meadow",
+  sunflower: "meadow",
+  sunflowe_broken: "meadow",
+  wheat1: "meadow",
+  tomato: "meadow",
+  corn: "meadow",
+  corn2: "meadow",
+  eggplant: "meadow",
+  grap: "meadow",
+  grap2: "meadow",
+  pumpkin: "meadow",
+  wheat2: "meadow",
+  artichoke: "meadow",
   pig: "wallow",
   cattle: "oxfields",
 };

@@ -205,8 +205,8 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.clearStackAcresSector(token, "meadow", t0);
-    await service.stockStackAcres(token, { stock: "sprout" }, t0);
-    await service.stockStackAcres(token, { stock: "sprout" }, t0);
+    await service.stockStackAcres(token, { stock: "carrot" }, t0);
+    await service.stockStackAcres(token, { stock: "carrot" }, t0);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
 
     const [clearedSectors, capacity] = await Promise.all([
@@ -217,9 +217,9 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const plots = sectors.unlockedPlotCount(unlocked, capacity);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
     console.log("Chrono-DeLorean simulation: plots after Meadow+Wallow ->", plots, "fee ->", expectedFee);
-    // Farmstead(hen) + Meadow(sprout, cash_crop) + Wallow(pig) = 4 stock
-    // kinds x 3 free slots each = 12 plots, 9 chargeable past the free base.
-    expect(plots).toBe(12);
+    // Farmstead(hen) + Meadow(all 22 crops) + Wallow(pig) = 24 stock
+    // kinds x 3 free slots each = 72 plots, 69 chargeable past the free base.
+    expect(plots).toBe(72);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 
@@ -283,14 +283,24 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
 
     // Independently re-assessed, at the SAME fee shape -- day 1 is not a
     // continuation of day 0's ledger. Day 0's own ledger holds the SUM of
-    // its two harvests (the first one alone did not cover the full fee --
-    // see the log above), and that sum is exactly the fee: nothing was
-    // overcharged past the ceiling and nothing was left uncollected either.
+    // its two harvests, each capped at its own gross+bonus (never charged
+    // more than a harvest actually earned).
+    //
+    // NOT asserted here any more: that day 0's ledger sum equals the full
+    // fee. It did under the old 5-stock-kind economy, where a single pig's
+    // ~450 Gold gross comfortably covered the whole day's Land Maintenance.
+    // The 22-crop roster swap (2026-09-07) grew the Meadow's own free-base
+    // footprint from 2 kinds to 22, and `stackacresUpkeepFee` is deliberately
+    // superlinear (see upkeep.test.ts's own header) -- so `expectedFee` here
+    // (a farm with Meadow AND Wallow cleared) is now far larger than two pig
+    // harvests can pay off in one simulated day. That is a real economy
+    // question (is Land Maintenance now too steep once Meadow is cleared?),
+    // flagged for Kayo rather than resolved by this test.
     expect(harvestDay1.harvest.upkeep).toBe(expectedDay1Charge);
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(
       harvestDay0.harvest.upkeep + harvestSameDay.harvest.upkeep,
     );
-    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBeLessThanOrEqual(expectedFee);
     expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(harvestDay1.harvest.upkeep);
   });
 });

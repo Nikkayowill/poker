@@ -15,7 +15,7 @@ import {
   type SectorId,
 } from "./sectors";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
-import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
+import { STACKACRES_CROPS, STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
 import { stockZone } from "./world";
 import { STACKACRES_ZONES, ZONE_IDS } from "./zones";
@@ -84,7 +84,7 @@ describe("unlockedSectors", () => {
     // without any backfill having to get it right.
     expect(unlockedSectors([], owning("cattle"))).toContain("oxfields");
     expect(unlockedSectors([], owning("pig"))).toContain("wallow");
-    expect(unlockedSectors([], owning("sprout"))).toContain("meadow");
+    expect(unlockedSectors([], owning("carrot"))).toContain("meadow");
   });
 
   it("does not double-count a district both cleared and stocked", () => {
@@ -171,8 +171,9 @@ describe("unlockedPlotCount", () => {
   it("grows as land is cleared", () => {
     const home = unlockedPlotCount([...HOME_SECTORS], {});
     const plusMeadow = unlockedPlotCount([...HOME_SECTORS, "meadow"], {});
-    // The Grand Farm holds two crop kinds, so it is worth two kinds' slots.
-    expect(plusMeadow).toBe(home + 2 * capFor(0));
+    // The Grand Farm holds all 22 crop kinds now, so it is worth 22 kinds'
+    // slots (STACKACRES_CROPS.length).
+    expect(plusMeadow).toBe(home + STACKACRES_CROPS.length * capFor(0));
   });
 
   it("grows as capacity is bought on cleared ground", () => {

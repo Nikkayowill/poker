@@ -20,20 +20,20 @@ beforeEach(() => {
 
 describe("plantCrossbreedBed", () => {
   it("snapshots readyAt from the catalogue's own durationMs", async () => {
-    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
+    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
     expect(plot).not.toBeNull();
     expect(plot?.startedAt).toBe(NOW.toISOString());
-    expect(Date.parse(plot!.readyAt) - NOW.getTime()).toBe(STACKACRES_CATALOGUE.sprout.durationMs);
+    expect(Date.parse(plot!.readyAt) - NOW.getTime()).toBe(STACKACRES_CATALOGUE.hen.durationMs);
   });
 
   it("refuses a second plant on an already-occupied cell", async () => {
-    await plantCrossbreedBed(PROFILE, 1, 1, "sprout", NOW);
-    const second = await plantCrossbreedBed(PROFILE, 1, 1, "cash_crop", NOW);
+    await plantCrossbreedBed(PROFILE, 1, 1, "hen", NOW);
+    const second = await plantCrossbreedBed(PROFILE, 1, 1, "pig", NOW);
     expect(second).toBeNull();
   });
 
   it("throws for a coordinate outside the fixed 4x4 bed", async () => {
-    await expect(plantCrossbreedBed(PROFILE, 4, 0, "sprout", NOW)).rejects.toThrow(/outside the bed/);
+    await expect(plantCrossbreedBed(PROFILE, 4, 0, "hen", NOW)).rejects.toThrow(/outside the bed/);
   });
 });
 
@@ -43,14 +43,14 @@ describe("harvestCrossbreedBed", () => {
   });
 
   it("returns null for a plot that has not ripened yet", async () => {
-    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
-    const stillGrowing = new Date(NOW.getTime() + STACKACRES_CATALOGUE.sprout.durationMs - 1);
+    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
+    const stillGrowing = new Date(NOW.getTime() + STACKACRES_CATALOGUE.hen.durationMs - 1);
     expect(await harvestCrossbreedBed(PROFILE, plot!.id, stillGrowing)).toBeNull();
   });
 
   it("harvests a lone ripe plot plainly when nothing qualifies to cross", async () => {
-    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
-    const ripe = new Date(NOW.getTime() + STACKACRES_CATALOGUE.sprout.durationMs);
+    const plot = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
+    const ripe = new Date(NOW.getTime() + STACKACRES_CATALOGUE.hen.durationMs);
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0); // would hit any real chance
     const settlement = await harvestCrossbreedBed(PROFILE, plot!.id, ripe);
@@ -61,31 +61,31 @@ describe("harvestCrossbreedBed", () => {
   });
 
   it("clears both rows and credits the hybrid on a successful cross", async () => {
-    const a = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
-    const b = await plantCrossbreedBed(PROFILE, 0, 1, "cash_crop", NOW);
+    const a = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
+    const b = await plantCrossbreedBed(PROFILE, 0, 1, "pig", NOW);
     const ripeAt = new Date(
-      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.sprout.durationMs, STACKACRES_CATALOGUE.cash_crop.durationMs),
+      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.hen.durationMs, STACKACRES_CATALOGUE.pig.durationMs),
     );
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0); // guarantee the roll hits
     const settlement = await harvestCrossbreedBed(PROFILE, a!.id, ripeAt);
     roll.mockRestore();
 
-    expect(settlement?.hybridItem).toBe("golden_maize");
+    expect(settlement?.hybridItem).toBe("marbled_down");
     expect(settlement?.hybridQuantity).toBe(1);
     expect([...(settlement?.clearedPlotIds ?? [])].sort()).toEqual([a!.id, b!.id].sort());
     expect(await getStackAcresCrossbreedPlot(PROFILE, a!.id)).toBeNull();
     expect(await getStackAcresCrossbreedPlot(PROFILE, b!.id)).toBeNull();
 
     const inventory = await readStackAcresCrossbreedInventory(PROFILE);
-    expect(inventory.golden_maize).toBe(1);
+    expect(inventory.marbled_down).toBe(1);
   });
 
   it("misses the roll and leaves the neighbor growing, crediting nothing", async () => {
-    const a = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
-    const b = await plantCrossbreedBed(PROFILE, 0, 1, "cash_crop", NOW);
+    const a = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
+    const b = await plantCrossbreedBed(PROFILE, 0, 1, "pig", NOW);
     const ripeAt = new Date(
-      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.sprout.durationMs, STACKACRES_CATALOGUE.cash_crop.durationMs),
+      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.hen.durationMs, STACKACRES_CATALOGUE.pig.durationMs),
     );
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.999); // guarantee the roll misses
@@ -98,23 +98,23 @@ describe("harvestCrossbreedBed", () => {
     expect(await getStackAcresCrossbreedPlot(PROFILE, b!.id)).not.toBeNull();
 
     const inventory = await readStackAcresCrossbreedInventory(PROFILE);
-    expect(inventory.golden_maize ?? 0).toBe(0);
+    expect(inventory.marbled_down ?? 0).toBe(0);
   });
 
   it("accumulates a second hybrid credit onto the first player's running total", async () => {
     // First cross.
-    const a1 = await plantCrossbreedBed(PROFILE, 0, 0, "sprout", NOW);
-    const b1 = await plantCrossbreedBed(PROFILE, 0, 1, "cash_crop", NOW);
+    const a1 = await plantCrossbreedBed(PROFILE, 0, 0, "hen", NOW);
+    const b1 = await plantCrossbreedBed(PROFILE, 0, 1, "pig", NOW);
     const ripeAt = new Date(
-      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.sprout.durationMs, STACKACRES_CATALOGUE.cash_crop.durationMs),
+      NOW.getTime() + Math.max(STACKACRES_CATALOGUE.hen.durationMs, STACKACRES_CATALOGUE.pig.durationMs),
     );
     let roll = vi.spyOn(Math, "random").mockReturnValue(0);
     await harvestCrossbreedBed(PROFILE, a1!.id, ripeAt);
     roll.mockRestore();
 
     // Second cross, different cells.
-    const a2 = await plantCrossbreedBed(PROFILE, 2, 2, "sprout", NOW);
-    const b2 = await plantCrossbreedBed(PROFILE, 2, 3, "cash_crop", NOW);
+    const a2 = await plantCrossbreedBed(PROFILE, 2, 2, "hen", NOW);
+    const b2 = await plantCrossbreedBed(PROFILE, 2, 3, "pig", NOW);
     roll = vi.spyOn(Math, "random").mockReturnValue(0);
     const settlement = await harvestCrossbreedBed(PROFILE, a2!.id, ripeAt);
     roll.mockRestore();

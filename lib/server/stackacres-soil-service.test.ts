@@ -259,11 +259,11 @@ describe("soil tiers", () => {
   // at sow, so a later retune of the tier table cannot reach a crop already
   // in the ground.
   it("shortens a crop's cycle when it is sown into an enriched bed", async () => {
-    const base = STACKACRES_CATALOGUE.cash_crop.durationMs;
+    const base = STACKACRES_CATALOGUE.corn.durationMs;
 
     const plainToken = await sowingFarm();
-    const plain = (await stockStackAcres(plainToken, { stock: "cash_crop" }, T0)).units
-      .filter((u) => u.stock === "cash_crop")
+    const plain = (await stockStackAcres(plainToken, { stock: "corn" }, T0)).units
+      .filter((u) => u.stock === "corn")
       .at(-1)!;
     expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
     expect(plain.soilSlot).toBe(0);
@@ -271,8 +271,8 @@ describe("soil tiers", () => {
     const richToken = await sowingFarm();
     await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
     await placeStackAcresSoilTile(richToken, { ...CELL_A, tier: "enriched" }, T0);
-    const rich = (await stockStackAcres(richToken, { stock: "cash_crop" }, T0)).units
-      .filter((u) => u.stock === "cash_crop")
+    const rich = (await stockStackAcres(richToken, { stock: "corn" }, T0)).units
+      .filter((u) => u.stock === "corn")
       .at(-1)!;
 
     // Slot 0 is CELL_A, which is now the enriched bed.
@@ -283,12 +283,12 @@ describe("soil tiers", () => {
   // Hydro waters its own tile, feeding the same `irrigated` flag a pipe does.
   // No pipe is placed here at all: that is the point.
   it("keeps a crop on a hydro bed watered with no pipe anywhere", async () => {
-    const thirstMs = STACKACRES_CATALOGUE.cash_crop.thirstMs ?? 0;
+    const thirstMs = STACKACRES_CATALOGUE.corn.thirstMs ?? 0;
     const wellPastThirst = new Date(T0.getTime() + thirstMs * 1.5);
 
     const dryToken = await sowingFarm();
-    const dryId = (await stockStackAcres(dryToken, { stock: "cash_crop" }, T0)).units
-      .filter((u) => u.stock === "cash_crop")
+    const dryId = (await stockStackAcres(dryToken, { stock: "corn" }, T0)).units
+      .filter((u) => u.stock === "corn")
       .at(-1)!.id;
     const dried = (await readStackAcres(dryToken, wellPastThirst)).units.find((u) => u.id === dryId);
     expect(dried?.state).toBe("dry");
@@ -296,8 +296,8 @@ describe("soil tiers", () => {
     const hydroToken = await sowingFarm();
     await buyStackAcresSoil(hydroToken, { tier: "hydro", quantity: 1 }, T0);
     await placeStackAcresSoilTile(hydroToken, { ...CELL_A, tier: "hydro" }, T0);
-    const hydroId = (await stockStackAcres(hydroToken, { stock: "cash_crop" }, T0)).units
-      .filter((u) => u.stock === "cash_crop")
+    const hydroId = (await stockStackAcres(hydroToken, { stock: "corn" }, T0)).units
+      .filter((u) => u.stock === "corn")
       .at(-1)!.id;
     const still = (await readStackAcres(hydroToken, wellPastThirst)).units.find(
       (u) => u.id === hydroId,

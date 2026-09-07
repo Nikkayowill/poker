@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STACKACRES_CROPS } from "./catalogue";
 import { BARN_FOOTPRINT, FARM_ZONE, WHEAT_FIELD, growAreaBounds } from "./world";
 import {
   GREENHOUSE_ALLOWED_STOCK,
@@ -109,24 +110,24 @@ describe("greenhouseInteriorScreenBounds", () => {
 });
 
 describe("isGreenhouseStock / greenhouseDurationMs", () => {
-  it("only accepts the two crop kinds", () => {
-    expect(GREENHOUSE_ALLOWED_STOCK).toEqual(["sprout", "cash_crop"]);
-    expect(isGreenhouseStock("sprout")).toBe(true);
-    expect(isGreenhouseStock("cash_crop")).toBe(true);
+  it("only accepts crop kinds, all 22 of them", () => {
+    expect(GREENHOUSE_ALLOWED_STOCK).toEqual(STACKACRES_CROPS);
+    expect(isGreenhouseStock("carrot")).toBe(true);
+    expect(isGreenhouseStock("corn")).toBe(true);
     expect(isGreenhouseStock("hen")).toBe(false);
     expect(isGreenhouseStock("pig")).toBe(false);
     expect(isGreenhouseStock("cattle")).toBe(false);
   });
 
   it("shrinks a crop's duration by the growth multiplier when housed", () => {
-    expect(greenhouseDurationMs("sprout", 1000, true)).toBe(Math.round(1000 * GREENHOUSE_GROWTH_MULTIPLIER));
-    expect(greenhouseDurationMs("cash_crop", 4 * 60 * 60 * 1000, true)).toBe(
+    expect(greenhouseDurationMs("carrot", 1000, true)).toBe(Math.round(1000 * GREENHOUSE_GROWTH_MULTIPLIER));
+    expect(greenhouseDurationMs("corn", 4 * 60 * 60 * 1000, true)).toBe(
       Math.round(4 * 60 * 60 * 1000 * GREENHOUSE_GROWTH_MULTIPLIER),
     );
   });
 
   it("leaves duration unchanged when not housed, and for livestock even if told it is", () => {
-    expect(greenhouseDurationMs("sprout", 1000, false)).toBe(1000);
+    expect(greenhouseDurationMs("carrot", 1000, false)).toBe(1000);
     expect(greenhouseDurationMs("cattle", 5000, true)).toBe(5000);
     expect(greenhouseDurationMs("hen", 5000, true)).toBe(5000);
   });

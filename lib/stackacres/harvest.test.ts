@@ -41,8 +41,8 @@ describe("settleHarvest", () => {
   });
 
   it("sums a sweep and pays one number for it", () => {
-    const settled = settleHarvest([unit("sprout"), unit("cattle")]);
-    expect(settled.gross).toBe(yieldValue("sprout") + yieldValue("cattle"));
+    const settled = settleHarvest([unit("carrot"), unit("cattle")]);
+    expect(settled.gross).toBe(yieldValue("carrot") + yieldValue("cattle"));
     expect(settled.lines).toHaveLength(2);
     expect(settled.lines.map((line) => line.item)).toEqual(["carrot", "milk"]);
   });
@@ -56,7 +56,7 @@ describe("settleHarvest", () => {
   });
 
   it("applies Crop Rotation to a balanced mix", () => {
-    const settled = settleHarvest([unit("cash_crop"), unit("cattle")].concat([unit("sprout"), unit("hen")]));
+    const settled = settleHarvest([unit("corn"), unit("cattle")].concat([unit("carrot"), unit("hen")]));
     expect(settled.bounty.kind).toBe("crop_rotation");
     expect(settled.net).toBeGreaterThan(settled.gross);
   });
@@ -80,7 +80,7 @@ describe("settleHarvest", () => {
    * negative, however large the estate's fee has grown.
    */
   it("never settles below zero, however big the fee", () => {
-    const settled = settleHarvest([unit("sprout")], stackacresUpkeepFee(30));
+    const settled = settleHarvest([unit("carrot")], stackacresUpkeepFee(30));
     expect(settled.net).toBe(0);
     expect(settled.upkeepCharged).toBe(settled.gross);
     expect(settled.upkeepCharged).toBeLessThan(stackacresUpkeepFee(30));
@@ -110,7 +110,7 @@ describe("settleHarvest", () => {
    * clamp on the reasoning I started with.
    */
   it("can be worth MORE after a unit drops out, which is why the payout is capped", () => {
-    const carrot = unit("sprout");
+    const carrot = unit("carrot");
     const full = [unit("cattle"), unit("cattle"), unit("cattle"), carrot];
     const withoutCarrot = full.filter((candidate) => candidate !== carrot);
 
@@ -167,7 +167,7 @@ describe("settleHarvest with a prestige multiplier", () => {
   });
 
   it("floors the boosted amount rather than inventing a fractional Gold piece", () => {
-    const sweep = [unit("sprout")];
+    const sweep = [unit("carrot")];
     const boosted = settleHarvest(sweep, 0, 1.3333);
     expect(Number.isInteger(boosted.net)).toBe(true);
   });
@@ -175,10 +175,10 @@ describe("settleHarvest with a prestige multiplier", () => {
 
 describe("harvestTally", () => {
   it("sums a sweep per item, so five hen coops read as one line", () => {
-    const settled = settleHarvest([unit("hen"), unit("hen"), unit("sprout")]);
+    const settled = settleHarvest([unit("hen"), unit("hen"), unit("carrot")]);
     expect(harvestTally(settled)).toEqual([
       { item: "eggs", quantity: STACKACRES_YIELDS.hen.quantity * 2 },
-      { item: "carrot", quantity: STACKACRES_YIELDS.sprout.quantity },
+      { item: "carrot", quantity: STACKACRES_YIELDS.carrot.quantity },
     ]);
   });
 });

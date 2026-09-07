@@ -42,7 +42,7 @@ async function balance(token: string): Promise<number> {
 }
 
 /**
- * Sows a cash_crop and returns its id plus the pipe tile it stands on.
+ * Sows a corn and returns its id plus the pipe tile it stands on.
  *
  * RESOLVES THE SPOT THE WAY THE FARM DRAWS IT -- through the soil map and the
  * crop's own fixed slot. This used to call `cropSpot(zone, unit.id)` with no
@@ -53,11 +53,11 @@ async function balance(token: string): Promise<number> {
  * somewhere the plant isn't.
  */
 async function sowCropOnKnownTile(token: string) {
-  const view = await stockStackAcres(token, { stock: "cash_crop" }, T0);
-  const unit = view.units.filter((u) => u.stock === "cash_crop").at(-1);
-  if (!unit) throw new Error("no cash_crop unit");
+  const view = await stockStackAcres(token, { stock: "corn" }, T0);
+  const unit = view.units.filter((u) => u.stock === "corn").at(-1);
+  if (!unit) throw new Error("no corn unit");
   const soil = createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), view.soilTiles));
-  const spot = cropSpot(stockZone("cash_crop"), unit.id, {
+  const spot = cropSpot(stockZone("corn"), unit.id, {
     soil,
     rank: 0,
     slot: unit.soilSlot,
@@ -113,9 +113,9 @@ describe("irrigation keeps a connected crop growing", () => {
   it("a piped crop never reads dry, and losing no time either way", async () => {
     const { token } = await funded();
     const { unitId, tile, readyAt } = await sowCropOnKnownTile(token);
-    // cash_crop: 90 min thirst window inside a 240 min cycle.
-    const thirstMin = (STACKACRES_CATALOGUE.cash_crop.thirstMs ?? 0) / MIN;
-    const durationMin = STACKACRES_CATALOGUE.cash_crop.durationMs / MIN;
+    // corn: 90 min thirst window inside a 240 min cycle.
+    const thirstMin = (STACKACRES_CATALOGUE.corn.thirstMs ?? 0) / MIN;
+    const durationMin = STACKACRES_CATALOGUE.corn.durationMs / MIN;
     expect(thirstMin).toBe(90);
     expect(durationMin).toBe(240);
 

@@ -23,6 +23,25 @@ html:has(.account-entry-page) {
     var(--brand-ink);
 }
 
+/* The purple band under the phone chrome, from the other side. The canvas is
+   painted across the whole window whatever WebKit thinks the layout viewport
+   is, and it takes its colour from the ROOT -- body's background never
+   reaches it, since `html, body` in 01-tokens.css already gives html one,
+   which is why the body:has() rules below never closed this. That colour was
+   the bare ground, visibly darker than the room's own bottom edge, and that
+   difference is the band. Painting the canvas --brand-room-floor makes an
+   exposed strip invisible rather than trying to reach it, which is what the
+   --vp-short translate and the fixed washes' overshoot already do.
+
+   Listed per screen rather than set on `html, body`: that declaration is
+   also the paint behind the table, which has its own felt and no room to
+   match. These five are every screen that lights itself off --brand-room. */
+html:has(.account-entry-page),
+html:has(.lobby-hub),
+html:has(.floor-shell),
+html:has(.collection-shell),
+html:has(.leaderboard-shell) { background: var(--brand-room-floor); }
+
 /* Declared on `html` just above so both of these can read it. The shell
    paints the room, and `body` paints the same room behind it, for exactly
    the reason `body:has(.lobby-hub)` below already does it for the hub: when

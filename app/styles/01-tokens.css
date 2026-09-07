@@ -172,6 +172,15 @@
     radial-gradient(1400px 1100px at 50% 40%, rgba(74, 28, 136, .14), transparent 72%),
     var(--brand-ink);
 
+  /* What --brand-room resolves to along its own bottom edge, measured rather
+     than guessed: the stack above rendered at 393x852 and sampled at y=851
+     reads #251631 centre, #231531 left, #251730 right. --brand-ink is NOT
+     that colour -- the glows carry the #150a2b ground 16 units of red
+     lighter by the time it reaches the bottom of a phone, so wherever the
+     room's paint stops short of the real screen edge the bare ground shows
+     as a flat violet band. Used to paint the canvas in 02-app-shell.css. */
+  --brand-room-floor: #241530;
+
   /* The four safe-area insets, once, as tokens.
    *
    * Every rule that used to call env(safe-area-inset-*) directly now reads

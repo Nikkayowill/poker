@@ -15,6 +15,13 @@
 html:has(.account-entry-page) {
   --entry-room:
     var(--grain),
+    /* Lands this room on --brand-ink before its own bottom edge, same as
+       --brand-room does. The sign-in page is the screen Kayo reported the
+       band on most, and it has its own stack rather than sharing the hub's,
+       so it needs the layer stated here too -- see --room-floor-fade's own
+       block in 01-tokens.css for why closing the seam from this side works
+       where twelve attempts at repositioning the strip did not. */
+    var(--room-floor-fade),
     radial-gradient(560px 460px at 50% 44%, rgba(6, 8, 13, .55), transparent 72%),
     var(--glow-purple),
     radial-gradient(1000px 600px at 94% 0%, rgba(220, 20, 19, .05), transparent 58%),

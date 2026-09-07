@@ -39,36 +39,21 @@
      .account-entry-page. z-index -1 keeps it behind the tiles and their
      artwork; nothing here has a transform, so `fixed` really is the
      viewport. */
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  /* Not `inset: 0`. On an installed iOS PWA's cold launch WebKit reports a
-     layout viewport shorter than the real screen (the open item at the top
-     of 45-mobile-shell.css) -- `bottom: 0` there resolves against that short
-     number, so this wash would stop short of the true edge and let the
-     document canvas show through underneath the phone tab bar as a flat
-     band. That canvas carries --brand-room-floor rather than the bare ground
-     (02-app-shell.css), so an exposed strip would not be visible even when
-     this overshoot misses; this rule is what puts real room light down there
-     rather than a flat colour.
+  /* Back to a plain `inset: 0` after a spell at `bottom: -140px`. That
+     overshoot was one of the twelve attempts at the violet band along the
+     bottom edge of the installed PWA, on the theory that this wash was
+     stopping short of the real screen. It shipped, and the band did not
+     move.
 
-     NOT the fix for the band Kayo reported, though it was written for it:
-     that band is #150a2b, painted by iOS outside the web view, and no rule
-     in this file can reach it. See the top of 45-mobile-shell.css for the
-     measurement. Kept because a fixed wash falling short of the viewport is
-     a real thing to guard against and the overshoot is free. The mobile
-     tab bar already corrects its OWN position for this (`--vp-short` in
-     .mshell-nav), but that only moves the pill -- it does nothing for the
-     room light behind it, which is a separate fixed layer.
-     Overshooting the bottom edge by more than the bug's own documented
-     range (`MAX_CORRECTION_PX` in components/shell/viewport-fit.tsx caps it
-     at 200px; this bug "runs to about a status bar's height" per that
-     file's own comment) means the wash always reaches past the real edge
-     regardless of what WebKit is currently reporting, with no measurement
-     to get wrong. Safe to do here because the fill is a soft gradient wash,
-     not art with a hard bottom edge. */
-  bottom: -140px;
+     It also actively fights the thing that does work. --room-floor-fade
+     (01-tokens.css) lands the room on --brand-ink before its own bottom
+     edge, so the seam closes by colour rather than by reach -- but the fade
+     is positioned against THIS BOX, and a box hanging 140px below the
+     viewport puts its landing 140px off-screen where nobody can see it.
+     Every box that paints the room has to be the viewport for the fade to
+     line up, so this one is again. */
+  position: fixed;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
   /* The stack itself is --brand-room in 01-tokens.css: the collection and
@@ -282,14 +267,12 @@ button:disabled { cursor: wait; opacity: .62; }
       opacity.
    --------------------------------------------------------------------------- */
 .entry-sky {
+  /* `inset: 0`, not the `bottom: -140px` this carried briefly -- see the
+     matching note on .lobby-hub::before above. --room-floor-fade is
+     positioned against this box, so a box that hangs below the viewport
+     hides its own landing off-screen. */
   position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  /* Not `inset: 0` -- see the matching note on .lobby-hub::before below for
-     why this box deliberately overshoots the viewport's reported bottom
-     edge rather than trusting it. */
-  bottom: -140px;
+  inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;

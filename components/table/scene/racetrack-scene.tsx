@@ -152,7 +152,19 @@ export interface RacetrackLayout {
      */
     cardWidthPx: number;
   };
-  pot: { x: number; y: number };
+  pot: {
+    x: number;
+    y: number;
+    /**
+     * How tall the pot's mound (or flat spread, on a landscape phone) stands
+     * above its own anchor right now, canvas-local CSS pixels --
+     * `ChipScene.potMoundHeightPx`'s own value, not a re-derived guess. The
+     * DOM reads this to keep the floating "Pot $X" pill's clearance matched
+     * to the pile it names instead of a flat offset sized for the biggest
+     * chip this scene could ever draw.
+     */
+    moundHeightPx: number;
+  };
   /**
    * The dealer's place at far centre. She is not one of the six seats (a
    * real oval table has a dealer cutout there and no chair), so she is
@@ -439,6 +451,11 @@ export function RacetrackScene({
       const board = engine.room.project(boardAnchor);
       const boardCardWidthPx = BOARD_CARD_WIDTH_M * engine.room.scaleAt(boardAnchor);
       const potSpot = engine.room.project(potAnchor());
+      const moundHeightPx = engine.chips.potMoundHeightPx(
+        engine.chipView.scaleAt(engine.space.pot()),
+        engine.chipView.groundSquash,
+        engine.chipRadius,
+      );
       // Toward the pot as it actually appears, not as the plan says: under
       // perspective a seat's inward direction on screen is not the direction
       // from its plan position to the felt's centre.
@@ -453,7 +470,7 @@ export function RacetrackScene({
         height: engine.size.height,
         seats: seatLayout,
         board: { x: board.x, y: board.y, cardWidthPx: boardCardWidthPx },
-        pot: { x: potSpot.x, y: potSpot.y },
+        pot: { x: potSpot.x, y: potSpot.y, moundHeightPx },
         dealer: {
           x: dealerCrown.x,
           y: dealerCrown.y,
@@ -709,6 +726,11 @@ export function RacetrackScene({
     // them to the winner from where they stand. Clearing them here would
     // make a caller's bet blink out of existence the moment the hand ends.
     if (!paying) engine.chips.syncBets(streetBets, engine.seatCount, bigBlind);
+    // The mound's own height just changed (a chip added, removed, or the
+    // pile re-tiered into a new column) and `fit()` is the only other place
+    // that publishes a layout, so without this the DOM's pot-pill clearance
+    // would only ever update on the next resize.
+    publishLayoutRef.current?.();
     pumpRef.current?.();
   }, [pot, bigBlind, paying, streetBets]);
 

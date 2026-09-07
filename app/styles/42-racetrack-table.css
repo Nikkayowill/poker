@@ -346,15 +346,22 @@
    pot. `syncPile` stacks a real pot up to nine chips in a column, and past a
    few big blinds the pile's peak rose right through that fixed 6px and the
    label sat on top of the chips it was supposed to be naming. Fixed by
-   reading `--pot-mound-clearance-px` instead: poker-table.tsx runs the same
-   chip-count math `chip-scene.ts`'s `syncPile` does (chip-stack.ts's
-   `chipBreakdown`/`columnCount`/`columnHeights`) against the live pot and
-   converts the tallest column's chip count into the pile's actual worst-case
-   height in CSS pixels, via chip-spec.ts's own `MAX_WALL_PX`/`MAX_RADIUS_PX`
-   ceilings -- the same numbers the canvas painter is clamped to, so this
-   never draws a shorter pile than it clears for. `translate(-50%, -50%)`
-   centres the pill there the same H-independent way the bet labels above
-   do. */
+   reading `--pot-mound-clearance-px` instead.
+
+   THE OVERSHOOT BUG. That variable's first version was poker-table.tsx
+   reimplementing `chip-scene.ts`'s own column-count math (chip-stack.ts's
+   `chipBreakdown`/`columnCount`/`columnHeights`) and converting the tallest
+   column's chip count into a height via chip-spec.ts's `MAX_WALL_PX`/
+   `MAX_RADIUS_PX` -- hard ceilings on the biggest chip this scene could ever
+   draw, not the (almost always smaller) chip actually drawn at the pot's own
+   camera depth. That guaranteed the pill cleared the pile, but by more air
+   than the real pile needed on every hand where the camera wasn't at its
+   closest -- the "big gap, like it's in its own container" bug. Fixed by
+   having the scene measure its own pile instead of the DOM re-deriving a
+   ceiling: `ChipScene.potMoundHeightPx`, run through the camera's real scale
+   at the pot, published on `RacetrackLayout.pot.moundHeightPx`.
+   `translate(-50%, -50%)` centres the pill there the same H-independent way
+   the bet labels above do. */
 .scene-room-racetrack .center-pot-amount {
   position: absolute;
   left: 50%;

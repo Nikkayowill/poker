@@ -15,6 +15,26 @@
  * because it is not there. It does not matter what WebKit's reason is: the
  * shortfall is measurable, so it can simply be cancelled.
  *
+ * WHAT THIS DOES NOT COVER, measured 2026-09-07. The flat violet band Kayo
+ * reported at the bottom of the lobby and the sign-in page is a DIFFERENT
+ * failure and this file reads 0 for it, correctly. There the viewport is not
+ * short at all -- `innerHeight` is the full screen height and the page is
+ * laid out against it; the web view's FRAME is about 47px shorter than that,
+ * so the bottom of a correct layout is simply not on screen and iOS paints
+ * the manifest's background_color in the difference. The tell is that the tab
+ * pill comes out clipped mid-body rather than sitting too high. Since
+ * `measure()` compares the screen against `innerHeight` and those two agree,
+ * there is nothing here to detect, and no browser API reports a frame smaller
+ * than its own viewport. That band is handled by matching the manifest colour
+ * to the room's floor (app/manifest.ts); the block at the top of
+ * app/styles/45-mobile-shell.css carries the full measurement.
+ *
+ * Which leaves an open question worth answering before this file grows again:
+ * whether the genuinely-short-viewport case it was written for happens on any
+ * real device, or whether every report so far has been the frame bug. If it
+ * is the latter, this component and its `--vp-short` consumer in
+ * 45-mobile-shell.css are dead weight and should go.
+ *
  * WHAT IT MAY AND MAY NOT BE APPLIED TO. Only to `bottom` on a
  * `position: fixed` element. `bottom` resolves against the initial containing
  * block, and the ICB is the one thing that launches short. The viewport UNITS

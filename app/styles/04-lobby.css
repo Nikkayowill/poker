@@ -46,12 +46,18 @@
   /* Not `inset: 0`. On an installed iOS PWA's cold launch WebKit reports a
      layout viewport shorter than the real screen (the open item at the top
      of 45-mobile-shell.css) -- `bottom: 0` there resolves against that short
-     number, so this wash stops short of the true edge and the document
-     canvas shows through underneath the phone tab bar as a flat band, which
-     is what was reported. That canvas now carries --brand-room-floor rather
-     than the bare ground (02-app-shell.css), so an exposed strip is no
-     longer visible even when this overshoot misses; this rule is still what
-     puts real room light down there rather than a flat colour. The mobile
+     number, so this wash would stop short of the true edge and let the
+     document canvas show through underneath the phone tab bar as a flat
+     band. That canvas carries --brand-room-floor rather than the bare ground
+     (02-app-shell.css), so an exposed strip would not be visible even when
+     this overshoot misses; this rule is what puts real room light down there
+     rather than a flat colour.
+
+     NOT the fix for the band Kayo reported, though it was written for it:
+     that band is #150a2b, painted by iOS outside the web view, and no rule
+     in this file can reach it. See the top of 45-mobile-shell.css for the
+     measurement. Kept because a fixed wash falling short of the viewport is
+     a real thing to guard against and the overshoot is free. The mobile
      tab bar already corrects its OWN position for this (`--vp-short` in
      .mshell-nav), but that only moves the pill -- it does nothing for the
      room light behind it, which is a separate fixed layer.

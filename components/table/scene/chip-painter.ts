@@ -211,9 +211,16 @@ export function paintWall(
   ctx.fillStyle = barrel;
   ctx.fill();
 
-  const toCloth = ctx.createLinearGradient(0, -ry * 0.2, 0, wall + ry);
+  // Confined to the bottom rim rather than the old span (-ry*0.2 to wall+ry,
+  // which reached almost the whole way up the face) so an opponent's chip
+  // design stays legible across nearly the entire wall — only the last sliver
+  // against the felt gets any extra shade, and even that tops out well short
+  // of black. This used to be strong enough to read as a black band wrapping
+  // every stacked chip, drowning the printed body/edge colours that are the
+  // whole point of a purchased chip design.
+  const toCloth = ctx.createLinearGradient(0, wall * 0.35, 0, wall);
   toCloth.addColorStop(0, "rgba(0, 0, 0, 0)");
-  toCloth.addColorStop(1, "rgba(0, 0, 0, 0.34)");
+  toCloth.addColorStop(1, "rgba(0, 0, 0, 0.16)");
   ctx.fillStyle = toCloth;
   ctx.fill();
 
@@ -259,7 +266,9 @@ export function paintWall(
   // looks like from here.
   ctx.beginPath();
   ctx.ellipse(0, wall, rx * 0.995, ry * 0.995, 0, 0, Math.PI);
-  ctx.strokeStyle = "rgba(12, 9, 6, 0.55)";
+  // Was 0.55 — dark enough on its own, stacked with the (now-reduced) toCloth
+  // fade above, to read as a solid black band at the base of every chip.
+  ctx.strokeStyle = "rgba(12, 9, 6, 0.32)";
   ctx.lineWidth = Math.max(0.7, rx * 0.07);
   ctx.stroke();
 }

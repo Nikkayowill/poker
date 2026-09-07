@@ -401,18 +401,6 @@
     line-height: 1.45;
   }
 
-  /* Same control BuyInModal's own .buyin-format uses on desktop (11-panels.css),
-     restated at phone width rather than shared: this card's own grid/spacing
-     is all hand-tuned against .mshell-hero's own padding, not the modal's. */
-  .mshell-format {
-    grid-template-columns: repeat(3, 1fr);
-    margin-bottom: 14px;
-  }
-  .mshell-format button {
-    font-size: 12.5px;
-    padding: 0 2px;
-  }
-
   /* ---- the one saturated action --------------------------------------- */
 
   .mshell-primary {
@@ -441,47 +429,6 @@
   }
 
   .mshell-primary:not(:disabled):active { transform: scale(.985); }
-
-  /* ---- stakes ladder --------------------------------------------------- */
-
-  .mshell-tiers {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scroll-snap-type: x proximity;
-  }
-
-  .mshell-tier {
-    flex-shrink: 0;
-    /* 44px is the hit-target floor for everything in this shell. The min-width
-       is so a short label ("1k") still reads as a pill rather than a coin. */
-    height: 44px;
-    min-width: 68px;
-    padding: 0 16px;
-    border: 0;
-    border-radius: var(--radius-pill);
-    scroll-snap-align: center;
-    background: var(--brand-surface);
-    color: #a9b6cd;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  .mshell-tier-on {
-    background: linear-gradient(152deg, var(--brand-gold-light), var(--brand-gold));
-    color: #1c1305;
-    font-weight: 700;
-    box-shadow: 0 6px 16px rgba(255, 210, 63, .28);
-  }
-
-  .mshell-tier:disabled {
-    opacity: .4;
-    cursor: default;
-  }
 
   /* ---- rows and tiles -------------------------------------------------- */
 
@@ -617,7 +564,6 @@
 
   .mshell-tile:focus-visible,
   .mshell-row:focus-visible,
-  .mshell-tier:focus-visible,
   .mshell-primary:focus-visible,
   .mshell-action:focus-visible,
   .mshell-nav-item:focus-visible {

@@ -5,9 +5,22 @@ import { ViewportProbe } from "@/components/debug/viewport-probe";
 import { AppShell } from "@/components/shell/app-shell";
 import { ViewportFit } from "@/components/shell/viewport-fit";
 
-const TITLE = "StackChips - Play Free Texas Hold’em";
+/*
+ * The text half of every search result and unfurled link. This said
+ * "Play Free Texas Hold’em" long after Hold’em stopped being the whole
+ * product, so the one line Google shows advertised a poker site rather than
+ * a games platform with a poker room in it. Hold’em still leads because it
+ * is still the main game; the duels and the puzzles are named because they
+ * are what someone looking for them would actually search for.
+ *
+ * Two things to keep when editing: the title stays under ~60 characters and
+ * the description under ~160, or Google truncates them mid-phrase; and the
+ * description keeps Gold’s "no cash value" clause, which is the same
+ * disclosure lib/legal/documents.ts carries and is not decoration.
+ */
+const TITLE = "StackChips - Free Online Games, Poker & 1v1 Duels";
 const DESCRIPTION =
-  "Six-max Texas Hold’em, PvP duels, and cribbage tables played with Gold — an in-app currency with no cash value. No pure-chance games, no rake.";
+  "Free online games — six-max Texas Hold’em, 1v1 skill duels (chess, checkers, word race), blackjack, cribbage and daily puzzles. Gold has no cash value.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://stackchips.app"),

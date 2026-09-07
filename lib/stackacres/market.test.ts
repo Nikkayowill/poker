@@ -111,10 +111,15 @@ describe("capacity prices", () => {
 });
 
 describe("districts", () => {
-  it("give every district something to sell", () => {
-    for (const zone of ZONE_IDS) {
-      expect(stocksInZone(zone).length).toBeGreaterThan(0);
-    }
+  it("gives the four farming districts something to sell, and only those", () => {
+    // Was "every district sells something", which stopped being true with the
+    // 2026-09-07 map re-lay and is worth stating as the new fact rather than
+    // loosening. The Farmstead sells nothing now that the hens have moved out
+    // to Hen Haven -- it is the house, the barn, the pond and the yard. The
+    // four districts the re-lay reserved (townsquare, mine, coast, oak) sell
+    // nothing because nothing is built on them yet.
+    const trading = ZONE_IDS.filter((zone) => stocksInZone(zone).length > 0);
+    expect(trading).toEqual(["henhaven", "meadow", "oxfields", "wallow"]);
   });
 
   it("sell every stock in exactly one district", () => {
@@ -140,7 +145,7 @@ describe("districts", () => {
     }
   });
 
-  it("keep cattle at the Ox Fields and pigs at the Wallow", () => {
+  it("keeps cattle at the Cattle Pasture and pigs at the Fold", () => {
     // The districts were built with their own scenery and blurbs before the
     // pens moved in; a mapping that ignores that would read as arbitrary.
     // Held so a future reshuffle has to be deliberate. The internal zone id
@@ -149,7 +154,7 @@ describe("districts", () => {
     expect(stockZone("cattle")).toBe("oxfields");
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("cash_crop")).toBe("meadow");
-    expect(stockZone("hen")).toBe("farmstead");
+    expect(stockZone("hen")).toBe("henhaven");
   });
 });
 

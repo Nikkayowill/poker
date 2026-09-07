@@ -25,6 +25,11 @@
  */
 
 import type { WorldRect } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardRect } from "./yard";
 
 /* ------------------------------------------------------------------ */
 /* The one secret item                                                 */
@@ -115,21 +120,21 @@ export const HIDDEN_ZONES: readonly HiddenZoneDef[] = [
     id: "wishing-well",
     label: "The Well",
     hint: "Something glints at the bottom of the well.",
-    bounds: { x: 227, y: 8, width: 22, height: 22 },
+    bounds: yardRect(227, 8, 22, 22),
     discoveryChance: HIDDEN_ZONE_DISCOVERY_CHANCE,
   },
   {
     id: "loose-board",
     label: "Loose Board",
     hint: "A loose board behind the shop.",
-    bounds: { x: 156, y: -2, width: 22, height: 22 },
+    bounds: yardRect(156, -2, 22, 22),
     discoveryChance: HIDDEN_ZONE_DISCOVERY_CHANCE,
   },
   {
     id: "windmill-gear",
     label: "Jammed Gear",
     hint: "A jammed gear on the old windmill.",
-    bounds: { x: 319, y: 6, width: 22, height: 22 },
+    bounds: yardRect(319, 6, 22, 22),
     discoveryChance: HIDDEN_ZONE_DISCOVERY_CHANCE,
   },
 ];

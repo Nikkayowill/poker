@@ -23,6 +23,11 @@
  */
 
 import type { WorldPoint, WorldRect } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardPoint, yardPoints } from "./yard";
 
 export interface Ellipse {
   x: number;
@@ -32,7 +37,7 @@ export interface Ellipse {
 }
 
 /** The water's edge: an ellipse spanning x -84..20, y 80..160. */
-export const POND: Ellipse = { x: -32, y: 120, rx: 52, ry: 40 };
+export const POND: Ellipse = { ...yardPoint(-32, 120), rx: 52, ry: 40 };
 
 /** How far the sand ring runs out past the water, in units. */
 export const POND_SAND = 7;
@@ -79,7 +84,7 @@ export function inPond(x: number, y: number, pond: Ellipse = POND): boolean {
  * the rest is over water, which is what makes it read as a pier root rather
  * than a raft. The spur path off the lane meets it here.
  */
-export const DOCK: WorldPoint = { x: 24, y: 118 };
+export const DOCK: WorldPoint = yardPoint(24, 118);
 export const DOCK_LENGTH = 34;
 export const DOCK_DEPTH = 18;
 
@@ -93,17 +98,17 @@ export const LILY_DOCK_CLEARANCE = 14;
 
 /** Lily pads, on the water, well away from the dock and from each other.
  *  Two of them carry a flower. */
-export const LILY_PADS: readonly (WorldPoint & { flower: boolean })[] = [
+export const LILY_PADS: readonly (WorldPoint & { flower: boolean })[] = yardPoints([
   { x: -62, y: 116, flower: true },
   { x: -52, y: 132, flower: false },
   { x: -30, y: 144, flower: true },
   { x: -72, y: 128, flower: false },
   { x: -58, y: 100, flower: false },
-];
+]);
 
 /** Reeds, feet on the sand at the water's edge: a stand along the north
  *  shore and another at the south-west. */
-export const REEDS: readonly WorldPoint[] = [
+export const REEDS: readonly WorldPoint[] = yardPoints([
   { x: -46, y: 80 },
   { x: -23, y: 79 },
   { x: -5, y: 84 },
@@ -111,18 +116,18 @@ export const REEDS: readonly WorldPoint[] = [
   { x: -83, y: 134 },
   { x: -59, y: 156 },
   { x: -5, y: 156 },
-];
+]);
 
 /** Where the ripples spread from: one by the dock's posts, two out on the
  *  water. */
-export const RIPPLE_SPOTS: readonly WorldPoint[] = [
+export const RIPPLE_SPOTS: readonly WorldPoint[] = yardPoints([
   { x: -14, y: 116 },
   { x: -36, y: 120 },
   { x: -64, y: 140 },
-];
+]);
 
 /** The loop the duck paddles, on the open water north of the lilies. */
-export const DUCK_ORBIT: Ellipse = { x: -30, y: 100, rx: 14, ry: 5 };
+export const DUCK_ORBIT: Ellipse = { ...yardPoint(-30, 100), rx: 14, ry: 5 };
 
 /**
  * The world rectangle the pond's texture covers: the ellipse, the sand ring,

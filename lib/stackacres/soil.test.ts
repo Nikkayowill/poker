@@ -703,10 +703,14 @@ describe("the Crop Fields can actually hold bought beds", () => {
   // "Till a Bed" button never appeared. Any future move of this district has
   // to keep both properties.
   it("is aligned to the bed lattice and a whole number of beds across", () => {
-    expect(MEADOW.x % SOIL_TILE).toBe(0);
-    expect(MEADOW.y % SOIL_TILE).toBe(0);
-    expect(MEADOW.width % SOIL_TILE).toBe(0);
-    expect(MEADOW.height % SOIL_TILE).toBe(0);
+    // `Math.abs` because the field sits at a negative origin since the
+    // 2026-09-07 map re-lay, and `-128 % 64` is -0 in JavaScript, which
+    // `toBe(0)` rejects under Object.is. The property being asserted is
+    // divisibility, which -0 satisfies perfectly well.
+    expect(Math.abs(MEADOW.x % SOIL_TILE)).toBe(0);
+    expect(Math.abs(MEADOW.y % SOIL_TILE)).toBe(0);
+    expect(Math.abs(MEADOW.width % SOIL_TILE)).toBe(0);
+    expect(Math.abs(MEADOW.height % SOIL_TILE)).toBe(0);
   });
 
   it("leaves cells to buy after the starter beds take theirs", () => {

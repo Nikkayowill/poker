@@ -44,14 +44,52 @@ import { STACKACRES_ZONES, type ZoneId } from "./zones";
 export type SectorId = ZoneId;
 
 /**
- * The one sector that is never locked.
+ * What kind of ground a sector is. Three states, not two, since the
+ * 2026-09-07 map re-lay.
+ *
+ *   home       never locked, yours from the first second
+ *   claimable  under growth, on the ladder, buyable with Gold
+ *   wild       under growth and NOT for sale, because there is nothing under
+ *              it yet
+ *
+ * The third one is new, and it exists to stop a lie. A locked sector's modal
+ * offers to clear the land for Gold and promises what appears when you do. The
+ * re-lay reserved ground for four places whose systems do not exist (Town
+ * Square, the Mine, the Coastal Market, the Ancestral Oak) so that building
+ * them later does not shift the rest of the map -- and selling somebody Town
+ * Square today would take real Gold for an empty field. A wild sector
+ * therefore looks exactly like a claimable one from outside (same overgrowth,
+ * same tap) and says what is coming instead of naming a price.
+ */
+export type SectorState = "home" | "claimable" | "wild";
+
+/**
+ * The sectors that are never locked.
  *
  * Home base has to be free, and not out of generosity: the Hen Coops are the
  * only stock a new farm can afford, the starting Bushel grant is sized
  * against them, and a farm whose every district is behind a Gold wall has no
  * first move at all.
+ *
+ * TWO of them since the re-lay, not one. The hens moved out of the Farmstead
+ * into Hen Haven (see `STOCK_ZONE` in ./world.ts), so gating Hen Haven would
+ * put that exact wall straight back up: a new farm would own a house with
+ * nowhere to keep the one animal it can pay for.
  */
+export const HOME_SECTORS: readonly SectorId[] = ["farmstead", "henhaven"];
+
+/** The sector a farm is standing on before it does anything. Kept as its own
+ *  constant, separate from `HOME_SECTORS`, because plenty of call sites mean
+ *  "where you start" rather than "every free sector": a new farm's `sectors`
+ *  list, the simulation's fixtures, the upkeep floor. */
 export const HOME_SECTOR: SectorId = "farmstead";
+
+/**
+ * Ground the re-lay reserved with no system under it yet. Never unlockable by
+ * any route -- not by Gold, not by an explicitly cleared row, not by owning
+ * stock there (no stock kind maps to one). See `SectorState`.
+ */
+export const WILD_SECTORS: readonly SectorId[] = ["townsquare", "mine", "coast", "oak"];
 
 /**
  * The order the three outer sectors are cleared in.
@@ -66,10 +104,17 @@ export const HOME_SECTOR: SectorId = "farmstead";
  */
 export const SECTOR_LADDER: readonly SectorId[] = ["meadow", "wallow", "oxfields"];
 
-export const SECTOR_IDS: readonly SectorId[] = [HOME_SECTOR, ...SECTOR_LADDER];
+export const SECTOR_IDS: readonly SectorId[] = [
+  ...HOME_SECTORS,
+  ...SECTOR_LADDER,
+  ...WILD_SECTORS,
+];
 
 export interface SectorDef {
   id: SectorId;
+  /** Which of the three kinds of ground this is. The one field that decides
+   *  whether the modal names a price or says "not yet". */
+  state: SectorState;
   /** Gold to clear it, once, forever. 0 for the Farmstead, which is home. */
   clearCost: number;
   /** The sector that has to be cleared first, or null for the first rung.
@@ -108,13 +153,24 @@ export interface SectorDef {
 export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
   farmstead: {
     id: "farmstead",
+    state: "home",
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
-    promise: "Home. The barn, the pond and your Hen Coops.",
+    promise: "Home. The barn, the pond and the yard.",
+  },
+  // Free alongside the Farmstead -- see `HOME_SECTORS`.
+  henhaven: {
+    id: "henhaven",
+    state: "home",
+    clearCost: 0,
+    requires: null,
+    requiresUnits: 0,
+    promise: "Yours already. Every Hen Coop you keep stands here.",
   },
   meadow: {
     id: "meadow",
+    state: "claimable",
     clearCost: 15_000,
     requires: null,
     // Two hens. Enough that somebody has run a cycle and collected it, low
@@ -124,6 +180,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
   },
   wallow: {
     id: "wallow",
+    state: "claimable",
     clearCost: 45_000,
     requires: "meadow",
     requiresUnits: 4,
@@ -131,12 +188,58 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
   },
   oxfields: {
     id: "oxfields",
+    state: "claimable",
     clearCost: 100_000,
     requires: "wallow",
     requiresUnits: 6,
     promise: "Cleared, this becomes your Cattle Pens — the best-paying stock on the farm.",
   },
+
+  // The four the map re-lay reserved. `clearCost: 0` is not a free sector: a
+  // wild sector is refused before a price is ever read, by `sectorClearCheck`
+  // here and by `clearStackAcresSector` on the server. The zero is there so a
+  // stray render can only ever show nothing, never a real number somebody
+  // might try to pay. `promise` is what is coming, worded as a promise rather
+  // than an offer.
+  townsquare: {
+    id: "townsquare",
+    state: "wild",
+    clearCost: 0,
+    requires: null,
+    requiresUnits: 0,
+    promise: "One day: the town itself, instead of a board you post to.",
+  },
+  mine: {
+    id: "mine",
+    state: "wild",
+    clearCost: 0,
+    requires: null,
+    requiresUnits: 0,
+    promise: "One day: a way down, and whatever is under the hill.",
+  },
+  coast: {
+    id: "coast",
+    state: "wild",
+    clearCost: 0,
+    requires: null,
+    requiresUnits: 0,
+    promise: "One day: market stalls on the shore, and a dock to work from.",
+  },
+  oak: {
+    id: "oak",
+    state: "wild",
+    clearCost: 0,
+    requires: null,
+    requiresUnits: 0,
+    promise: "One day: whatever the old tree has been waiting for.",
+  },
 };
+
+/** Whether this ground is reserved with nothing under it yet. The one check
+ *  every caller that could otherwise offer to sell it must make first. */
+export function isWildSector(id: SectorId): boolean {
+  return STACKACRES_SECTORS[id].state === "wild";
+}
 
 /** What the player calls a sector. Straight off the district, so the modal,
  *  the signpost and the arrival banner can never disagree. */
@@ -157,9 +260,13 @@ export function unlockedSectors(
   cleared: readonly SectorId[],
   units: readonly Pick<StackAcresUnitSnapshot, "stock">[],
 ): SectorId[] {
-  const open = new Set<SectorId>([HOME_SECTOR, ...cleared]);
+  const open = new Set<SectorId>([...HOME_SECTORS, ...cleared]);
   for (const unit of units) open.add(stockZone(unit.stock));
-  return SECTOR_IDS.filter((id) => open.has(id));
+  // A wild sector can never be open, whatever a row says. `homestead_sectors`
+  // is player-writable through one guarded RPC, and the guard is here as well
+  // as there so a legacy or hand-inserted row cannot hand somebody ground that
+  // has nothing on it.
+  return SECTOR_IDS.filter((id) => open.has(id) && !isWildSector(id));
 }
 
 export function isSectorUnlocked(id: SectorId, unlocked: readonly SectorId[]): boolean {
@@ -195,6 +302,9 @@ export interface SectorClearCheck {
   requirements: SectorRequirement[];
   /** Set when there is nothing to clear -- already yours, or home. */
   alreadyOpen: boolean;
+  /** Set when this is reserved ground with no system under it. `ok` is false
+   *  and `cost` is 0; the modal shows `promise` and no price. */
+  wild: boolean;
 }
 
 /**
@@ -211,8 +321,13 @@ export function sectorClearCheck(
   context: { unlocked: readonly SectorId[]; unitCount: number },
 ): SectorClearCheck {
   const def = STACKACRES_SECTORS[id];
+  // Checked before `alreadyOpen`, and before the price is read at all: wild
+  // ground is never open and never for sale, so neither branch below applies.
+  if (def.state === "wild") {
+    return { id, cost: 0, ok: false, requirements: [], alreadyOpen: false, wild: true };
+  }
   if (isSectorUnlocked(id, context.unlocked)) {
-    return { id, cost: def.clearCost, ok: false, requirements: [], alreadyOpen: true };
+    return { id, cost: def.clearCost, ok: false, requirements: [], alreadyOpen: true, wild: false };
   }
 
   const requirements: SectorRequirement[] = [];
@@ -235,6 +350,7 @@ export function sectorClearCheck(
     ok: requirements.every((requirement) => requirement.met),
     requirements,
     alreadyOpen: false,
+    wild: false,
   };
 }
 

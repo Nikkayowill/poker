@@ -10,18 +10,47 @@
  * different when you arrive, has its own things standing in it, and can be
  * reached by a road that was already pointing at it.
  *
- * So: four districts. The farmstead is the one that already existed and is
- * NOT redefined here -- its rect is restated so `zoneAt` can name it, and
- * nothing about the plots, the economy, the barn or the pond moves. The
- * other three hang off the three roads that already left the yard and
- * previously ended in trees:
+ * NINE DISTRICTS, RE-LAID (2026-09-07). The map was four districts scattered
+ * around the origin, each hung off one of the three roads that already left
+ * the yard. It is now nine, laid out on Kayo's hand-drawn map proposal: a
+ * framed landscape with the sea to the east, a river and a village to the
+ * west, and one ring road round a central field with a spur into every place.
  *
- *   the lane  runs south past the mailbox  ->  the Long Meadow
- *   the road  runs east past the windmill  ->  the Ox Fields
- *   the track runs north-west into the woods -> the Fold
+ * HOW THE PROPOSAL BECAME THESE NUMBERS, since it is not obvious and getting
+ * it wrong rotates the whole world. The proposal is drawn plan-view, and this
+ * game draws through ./iso.ts's 2:1 shear, so pasting its coordinates in as
+ * world units would turn the arrangement 45 degrees on screen. Each district's
+ * centre was therefore read off the proposal as a fraction (u, v) of a SCREEN
+ * frame 3200 units wide (and 3200 * 672/1584 tall, the proposal's own aspect),
+ * and run back through `isoUnproject`:
  *
- * That is the whole trick, and it is why no road had to be invented: the
- * map already promised three journeys and delivered none of them.
+ *   sx = (u - 0.5) * 3200        gx = sy + sx / 2
+ *   sy = (v - 0.5) * 1357        gy = sy - sx / 2
+ *
+ * A world rect always draws as a diamond twice as wide as it is tall, so the
+ * proposal's boxes are matched on their SCREEN width (w + h), not copied as
+ * width and height. Nothing about the renderer changed for any of this: the
+ * scene draws exactly what it drew before, from different numbers.
+ *
+ * THE FARMSTEAD MOVED AS A RIGID BODY, by exactly (-760, +416). Its rect is
+ * still 420x470, and every hand-placed literal inside it -- the barn, the
+ * windmill, the well, Ray, the monk's shrine, the greenhouse plot, the wheat
+ * field, the three secret zones, the props, the whole pond -- is its old value
+ * plus that delta. That is why every relative assertion about the yard still
+ * holds: nothing inside it moved with respect to anything else inside it.
+ *
+ * The hens left home. `STOCK_ZONE.hen` now points at `henhaven`, its own
+ * district on the proposal, so the Farmstead is the house, barn, pond and yard
+ * and keeps no stock of its own. Hen Haven is unlocked from the start
+ * alongside it (see ./sectors.ts's `HOME_SECTORS`) -- a new farm has to have
+ * somewhere to keep the only animal it can afford.
+ *
+ * Four of the nine are WILD: townsquare, mine, coast and oak. They have
+ * ground, a road and a name, and nothing else, because none of their systems
+ * exist yet. They are deliberately not rungs on the sector ladder -- see
+ * ./sectors.ts's `SectorState` -- so tapping one says what is coming rather
+ * than offering to sell land that buys nothing. Reserving their rects now is
+ * the point of the pass: inserting a place later would shift everything else.
  *
  * Everything here is pure and in world units -- ./world.ts's true Cartesian
  * plane, NOT the sheared screen space the scene draws into. The camera's
@@ -33,13 +62,10 @@
  * the middle of a meadow), so a runtime import back of any of its constants
  * would be read before world.ts finished evaluating and throw -- the same
  * arrangement ./paths.ts and ./water.ts already have with it. The numbers
- * this file is measured against, restated once here: the Farmstead's Hen
- * Coop block is x 170..330, y 200..360; `FARM_ZONE` is x 28..440, y -60..410;
- * the lane ends at the mailbox (50, 402); the road's east leg runs along
- * y ~46 and turns north-east at x 430; the track leaves (60, 46) and ends at
- * (-140, -260); the pond spans x -84..20, y 80..160. `PEN_BLOCKS` below
- * restates the other three kinds' own 2x2 blocks (their real definition is
- * `PEN_GROUP_ORIGIN` in ./world.ts) for the same reason.
+ * this file is measured against, restated once here: `FARM_ZONE` is
+ * x -740..-320, y 356..826; the pond spans x -844..-740, y 496..576.
+ * `PEN_BLOCKS` below restates each stock district's own grow area (their real
+ * definition is `GROW_AREA` in ./world.ts) for the same reason.
  */
 
 import type { WorldPoint, WorldRect } from "./world";
@@ -54,7 +80,17 @@ import { nearPath } from "./paths";
 // plain value import with no cycle to work around -- see ./soil.ts's header.
 import { SOIL_EDGE_BAND, soilSignedDistance, type SoilMap } from "./soil";
 
-export const ZONE_IDS = ["farmstead", "meadow", "oxfields", "wallow"] as const;
+export const ZONE_IDS = [
+  "farmstead",
+  "henhaven",
+  "meadow",
+  "oxfields",
+  "wallow",
+  "townsquare",
+  "mine",
+  "coast",
+  "oak",
+] as const;
 
 export type ZoneId = (typeof ZONE_IDS)[number];
 
@@ -114,67 +150,139 @@ export const ZONE_FEATHER = 88;
  * grows in them, so a district is arrived AT rather than blended into, and
  * the road is what carries you across. */
 export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
-  // The farm as it already is. Its rect matches `FARM_ZONE` in ./world.ts
-  // exactly, because that is the rectangle wild scenery is already kept out
-  // of and two different answers to "where is the farm" would drift apart.
+  // Riverside Village on the proposal. The house, the barn, the pond, Ray,
+  // the monk's shrine, the greenhouse and the windmill -- the densest place
+  // on the map, and the one the proposal does not actually draw, since it
+  // shows barns inside the pens instead. Sited where the village is so the
+  // pond stays on its west verge exactly as it always has.
+  //
+  // Its rect matches `FARM_ZONE` in ./world.ts exactly, because that is the
+  // rectangle wild scenery is already kept out of and two different answers
+  // to "where is the farm" would drift apart. Same 420x470 it has always
+  // been: holding the size is what makes the yard a rigid-body move.
   farmstead: {
     id: "farmstead",
     label: "The Farmstead",
-    blurb: "Home base -- your Hen Coops, the barn and the pond.",
-    bounds: { x: 20, y: -60, width: 420, height: 470 },
+    blurb: "Home base -- the barn, the pond and the yard.",
+    bounds: { x: -740, y: 356, width: 420, height: 470 },
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.
     swatchColor: 0x86c96e,
-    approach: { x: 224, y: 174 },
+    approach: { x: -536, y: 590 },
   },
 
-  // South, down the lane past the mailbox. Open hay meadow, and now the real
-  // Crop Fields standing in it -- the one district that was nothing but
-  // grass before a pen block ever moved in.
+  // North of the farm, first stop off the ring road. The Hen Coops, which
+  // stood in the Farmstead's own yard until this pass. Never locked: the hen
+  // is the only stock a new farm can afford, so gating it would leave a first
+  // afternoon with no move in it.
+  henhaven: {
+    id: "henhaven",
+    label: "Hen Haven",
+    blurb: "Straw, low fences, and every Hen Coop you keep.",
+    // 240 rather than 200: at 200 the verge around its 128-unit grow area is
+    // 32 units, narrower than a spur's own body plus clearance, and there was
+    // literally nowhere to put the gate. The widening keeps the smallest
+    // inter-district gap on the map at 36.
+    bounds: { x: -628, y: -308, width: 240, height: 240 },
+    swatchColor: 0xe0c96a,
+    approach: { x: -418, y: -132 },
+  },
+
+  // The middle of the map and the biggest district on it: the open field the
+  // ring road runs around. Keeps the id `meadow` (a data migration to fix a
+  // caption is not worth doing) and is called The Grand Farm, which is what
+  // the proposal calls it and what it now actually is -- its grow area is
+  // 384x384, six soil beds a side, against the three it used to be.
   meadow: {
     id: "meadow",
-    label: "The Long Meadow",
-    blurb: "Waist-high grass, clover, buttercups, and your Crop Fields.",
-    bounds: { x: 24, y: 448, width: 380, height: 320 },
+    label: "The Grand Farm",
+    blurb: "The great open field, and every bed you have tilled in it.",
+    bounds: { x: -192, y: -320, width: 512, height: 512 },
     swatchColor: 0x8fce66,
-    // The lane's own end, carried a little into the field.
-    approach: { x: 150, y: 520 },
+    // The field's north-west gate, not its centre: arriving at the gate and
+    // seeing the field laid out beyond it reads as a place, where landing in
+    // the dead middle reads as a teleport.
+    approach: { x: -158, y: -262 },
   },
 
-  // East, along the road past the windmill. Heavy, rustic, worked: mud
-  // furrows, hitching posts, and now the real Cattle Pens standing in them.
+  // South-west of the field, between the farm and Town Square. Heavy,
+  // rustic, worked: ploughed furrows, hitching posts, and the cattle.
   oxfields: {
     id: "oxfields",
-    label: "The Ox Fields",
+    label: "Cattle Pasture",
     blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
-    bounds: { x: 500, y: 20, width: 360, height: 280 },
+    bounds: { x: -256, y: 320, width: 300, height: 300 },
     swatchColor: 0x7a5a34,
-    // Framed on the Cattle Pen block itself (world.ts's PEN_GROUP_ORIGIN.cattle,
-    // x 680..840, y 70..230) rather than on the road's own end -- the arrival
-    // shot exists to show what you came here to do, and a gate framed on the
-    // road alone left the pens crowded into the corner of the window.
-    approach: { x: 720, y: 150 },
+    approach: { x: -230, y: 526 },
   },
 
-  // North-west, at the end of the track. Wet, low and shaded: the mud
-  // wallow, a shade canopy, and now the real Sheep Pens standing in it.
-  // The district keeps its internal id "wallow" (a data migration to fix a
-  // caption is not worth doing), but the label players see is "The Fold" --
-  // a real term for a sheep enclosure, and a better fit for what actually
-  // stands here than the mud it was originally named for.
+  // East of the field. Wet, low and shaded: the mud wallow, a shade canopy,
+  // and the Sheep Pens that live in it.
+  //
+  // The proposal calls this Hog Hollow and draws pigs in it. The label stays
+  // "The Fold" until there is a pig: the stock is keyed `pig` but labelled
+  // "Sheep Pen" and drawn with sheep.png, for the reason ./catalogue.ts
+  // states in its own comment ("Draw a pig and this one line goes back").
+  // Renaming only the district would leave a Sheep Pen standing in Hog
+  // Hollow, which is worse than either name on its own.
   wallow: {
     id: "wallow",
     label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
-    // The smallest district, and its short side is what sets the floor on
-    // `ZONE_FEATHER`: a district too narrow has no point in it `deepInZone`
-    // ever calls deep enough in for scenery furniture to place.
-    bounds: { x: -340, y: -410, width: 240, height: 200 },
+    bounds: { x: 356, y: -360, width: 220, height: 220 },
     swatchColor: 0x54402c,
-    // The track's own last vertex is (-140, -260), just inside the eastern
-    // corner: the camera lands at the gate looking in.
-    approach: { x: -160, y: -275 },
+    approach: { x: 562, y: -282 },
+  },
+
+  /* ---------------------------------------------------------------- */
+  /* Wild ground: reserved, named, and nothing else yet                */
+  /* ---------------------------------------------------------------- */
+  //
+  // The four below have bounds, a road and a name. They hold no stock, sit on
+  // no rung of the sector ladder, and grow `sectorOvergrowth`'s wild growth
+  // until the pass that builds each one. Their rects are here now precisely
+  // so that pass does not have to move anything else.
+
+  // South-west, past the Cattle Pasture. The town the Contracts board, Ray's
+  // store and the Museum are all posted from today without being anywhere.
+  townsquare: {
+    id: "townsquare",
+    label: "Town Square",
+    blurb: "Wild ground. The town is still only a board you post to.",
+    bounds: { x: -384, y: 880, width: 240, height: 240 },
+    swatchColor: 0xa3a199,
+    approach: { x: -218, y: 930 },
+  },
+
+  // Far north, at the head of its own spur off the ring.
+  mine: {
+    id: "mine",
+    label: "Mine Entrance",
+    blurb: "Wild ground. A way in, and nothing on the other side of it yet.",
+    bounds: { x: -616, y: -776, width: 220, height: 220 },
+    swatchColor: 0x5c5851,
+    approach: { x: -436, y: -602 },
+  },
+
+  // North-east, where the road meets the shore on the proposal.
+  coast: {
+    id: "coast",
+    label: "Coastal Market",
+    blurb: "Wild ground. Stalls and a dock, once there is anything to trade.",
+    bounds: { x: 352, y: -832, width: 260, height: 260 },
+    swatchColor: 0x3fa6cc,
+    approach: { x: 486, y: -632 },
+  },
+
+  // The far south-east corner, on its own at the end of the ring.
+  oak: {
+    id: "oak",
+    label: "The Ancestral Oak",
+    blurb: "Wild ground. Something old stands here.",
+    bounds: { x: 952, y: -168, width: 220, height: 220 },
+    swatchColor: 0x439f57,
+    approach: { x: 992, y: -72 },
   },
 };
 
@@ -313,19 +421,37 @@ export const ZONE_CHUNK = 160;
  */
 const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
   farmstead: [],
+  // The Hen Coops' own district. Left empty deliberately: it inherited the
+  // Farmstead's yard, which has never scattered anything, and inventing hen
+  // furniture is an art pass, not part of re-laying the map.
+  henhaven: [],
   meadow: ["clover", "clover", "buttercup", "buttercup", "clover"],
   // Furrows dominate: the ground itself is the content in a worked field,
   // and the posts and gear are what break it up.
   oxfields: ["furrow", "furrow", "furrow", "furrow", "hitchPost", "hayBale", "plough", "oxTrough"],
   wallow: ["mudPool", "mudPool", "wallowPost", "hogTrough", "shadeCanopy"],
+  // The four wild districts scatter nothing at all, and this is the whole
+  // reason they can ship with no art. Everything in `ZoneSceneryKind` is FARM
+  // GEAR, and a plough or an ox trough standing on ground nobody has cleared
+  // tells exactly the story `sectorOvergrowth`'s own header forbids: a farm
+  // that is already there. What grows on them instead is that overgrowth.
+  townsquare: [],
+  mine: [],
+  coast: [],
+  oak: [],
 };
 
 /** Scatter density per chunk, by district. */
 const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
   farmstead: 0,
+  henhaven: 0,
   meadow: 7,
   oxfields: 9,
   wallow: 6,
+  townsquare: 0,
+  mine: 0,
+  coast: 0,
+  oak: 0,
 };
 
 /**
@@ -361,12 +487,16 @@ function deepInZone(id: ZoneId, x: number, y: number): boolean {
  * nothing to exclude.
  */
 export const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
-  // Must equal GROW_AREA.meadow in ./world.ts. zones.test.ts now holds every
-  // entry here to that source -- this pair has drifted apart before, and the
-  // wild-growth exclusion it exists for silently stopped covering the plot.
-  meadow: { x: 256, y: 576, width: 192, height: 192 },
-  oxfields: { x: 680, y: 70, width: 160, height: 160 },
-  wallow: { x: -320, y: -390, width: 160, height: 160 },
+  // Must equal GROW_AREA in ./world.ts. zones.test.ts holds every entry here
+  // to that source -- this pair has drifted apart before, and the wild-growth
+  // exclusion it exists for silently stopped covering the plot.
+  //
+  // The Farmstead and the four wild districts are absent on purpose: their
+  // scatter lists are empty, so there is nothing to exclude.
+  henhaven: { x: -576, y: -256, width: 128, height: 128 },
+  meadow: { x: -128, y: -256, width: 384, height: 384 },
+  oxfields: { x: -200, y: 376, width: 192, height: 192 },
+  wallow: { x: 404, y: -312, width: 128, height: 128 },
 };
 
 function inPenBlock(id: ZoneId, x: number, y: number): boolean {

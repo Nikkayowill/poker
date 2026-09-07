@@ -21,20 +21,27 @@ import { FARM_JUNCTIONS } from "./path-junctions";
 import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
 import { POND, POND_SAND, inPondZone, pondRadial } from "./water";
 import { BARN_FOOTPRINT, FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
+import { YARD_DELTA } from "./yard";
 
 /** The Farmstead's own grow area now: the Hen Coop block, x 170..330,
  *  y 200..360 -- not the old 4x4 square, which is what "the plot square"
  *  meant before the other three kinds moved out to their own districts. */
 const PLOTS = growAreaBounds("farmstead");
 
-/** What paintBarn stands in the yard, as boxes (see stackacres-scene.ts). */
+/** What paintBarn stands in the yard, as boxes (see stackacres-scene.ts).
+ *
+ *  Written in the YARD's own frame, the way the scene writes them, and moved
+ *  into world space by `YARD_DELTA` -- the 2026-09-07 map re-lay moved the
+ *  Farmstead bodily, and leaving these where they were would not have FAILED
+ *  this file, it would have quietly stopped overlapping anything and passed
+ *  vacuously forever. */
 const BARN_PIECES = [
   { name: "barn", x: 71, y: -28, width: 74, height: 62 },
   { name: "silo", x: 143, y: -28, width: 22, height: 62 },
   { name: "hay1", x: 166, y: 23, width: 14, height: 10 },
   { name: "hay2", x: 174, y: 23, width: 14, height: 10 },
   { name: "barrel", x: 60, y: 20, width: 10, height: 13 },
-];
+].map((piece) => ({ ...piece, x: piece.x + YARD_DELTA.x, y: piece.y + YARD_DELTA.y }));
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -55,7 +62,9 @@ describe("yard props", () => {
   });
 
   it("is about a dozen in the yard, not a junk shop", () => {
-    const yard = YARD_PROPS.filter((p) => p.y < PLOTS.y && p.x > 150);
+    // `p.x > 150` in the yard's own frame: the props are world coordinates
+    // now, and the yard moved bodily in the 2026-09-07 re-lay.
+    const yard = YARD_PROPS.filter((p) => p.y < PLOTS.y && p.x - YARD_DELTA.x > 150);
     expect(yard.length).toBeGreaterThanOrEqual(8);
     expect(yard.length).toBeLessThanOrEqual(14);
   });
@@ -174,9 +183,15 @@ describe("yard props", () => {
     const end = lane.points[lane.points.length - 1];
     // Just off the body at the lane's end: within a body-half plus a step.
     expect(Math.hypot(mailbox.x - end.x, mailbox.y - end.y)).toBeLessThan(lane.width / 2 + 6);
+    // The signpost marks the yard's fork. That fork used to be where `track`
+    // left the lane for the woods; the 2026-09-07 re-lay replaced `track` with
+    // `yardRoad`, which leaves the lane at the same corner for the ring.
     const [signpost] = of("signpost");
-    const track = FARM_PATHS.find((p) => p.key === "track");
-    expect(signpost && track && distanceToPath(signpost.x, signpost.y, track)).toBeLessThan(24);
+    const fork = FARM_PATHS.find((p) => p.key === "yardRoad");
+    expect(signpost).toBeDefined();
+    expect(fork).toBeDefined();
+    if (!signpost || !fork) return;
+    expect(distanceToPath(signpost.x, signpost.y, fork)).toBeLessThan(48);
   });
 
   it("stands one windmill left of the seed strip with its hub on the tower", () => {
@@ -192,11 +207,14 @@ describe("yard props", () => {
     expect(wall.length).toBeGreaterThanOrEqual(3);
     expect(wall.length).toBeLessThanOrEqual(4);
     for (const seg of wall) {
-      expect(seg.y).toBe(-46);
-      expect(seg.x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThanOrEqual(160);
-      expect(seg.x + PROP_SIZE.stoneWall.w / 2).toBeLessThanOrEqual(270);
+      // The yard's own frame, so these stay the numbers the wall was drawn
+      // with after the 2026-09-07 re-lay moved the Farmstead bodily.
+      const x = seg.x - YARD_DELTA.x;
+      expect(seg.y - YARD_DELTA.y).toBe(-46);
+      expect(x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThanOrEqual(160);
+      expect(x + PROP_SIZE.stoneWall.w / 2).toBeLessThanOrEqual(270);
       // Right of the title chip (x < 146, y < -41) at the opening shot.
-      expect(seg.x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThan(150);
+      expect(x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThan(150);
     }
     const xs = wall.map((s) => s.x).sort((a, b) => a - b);
     for (let i = 1; i < xs.length; i += 1) {

@@ -39,8 +39,17 @@ describe("road tiers", () => {
       if (spec.tier === "arterial") expect(spec.width, spec.key).toBeGreaterThanOrEqual(ARTERIAL_ROAD_MIN_WIDTH);
       if (spec.tier === "track") expect(spec.width, spec.key).toBeGreaterThanOrEqual(TRACK_MIN_WIDTH);
     }
+    // Every main road on the map, in FARM_PATHS' own order. Written out rather
+    // than counted, because the ORDER is load-bearing: the renderer's junction
+    // repaint runs down this list, so a branch listed before the trunk it
+    // forks off paints the junction the wrong way round.
     const arterial = FARM_PATHS.filter((p) => p.tier === "arterial").map((p) => p.key);
-    expect(arterial).toEqual(["lane", "road", "meadowLane", "oxRoad"]);
+    expect(arterial).toEqual([
+      "ring1", "ring2", "ring3", "ring4", "ring5", "ring6", "ring7", "ring8",
+      "henhavenSpur", "meadowSpur", "oxfieldsSpur", "wallowSpur",
+      "townsquareSpur", "mineSpur", "oakSpur",
+      "lane", "yardRoad",
+    ]);
     // The generated spurs are the narrowest thing on the map: one tile.
     for (const spur of ALL_FARM_PATHS.filter((p) => p.key.startsWith("spur-"))) {
       expect(spur.tier).toBe("service");

@@ -61,6 +61,11 @@ import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { projectedBounds } from "./iso";
 import { STACKACRES_CROPS, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { WorldPoint, WorldRect } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardRect } from "./yard";
 
 /** Re-exported so a caller working entirely in the Greenhouse's local space
  *  never has to import ./iso.ts directly for the two functions this
@@ -79,7 +84,7 @@ export { isoProjectLocal, isoUnprojectLocal } from "./iso";
  * it (348..432 x, 140..320 y, with 10 units of air between the two), and
  * inside `FARM_ZONE` (28..440 x, -60..410 y) on both edges.
  */
-export const GREENHOUSE_PLOT: WorldRect = { x: 348, y: 330, width: 84, height: 64 };
+export const GREENHOUSE_PLOT: WorldRect = yardRect(348, 330, 84, 64);
 
 /** A `ZoneBoundary` describes a sub-grid: its world-space origin (local
  *  (0, 0)) and the rows/cols/tile size of the matrix living inside it. Kept

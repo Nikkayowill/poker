@@ -2958,7 +2958,15 @@ export class StackAcresScene extends Phaser.Scene {
   private paintDistrictBoundary(zone: ZoneId): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
     const area = growAreaBounds(zone);
-    const livestock = stocksInZone(zone).find((stock) => isLivestock(stock));
+    const stocks = stocksInZone(zone);
+    // No stock kind lives here at all. Impossible before the 2026-09-07 map
+    // re-lay -- every district had one -- and now true of the Farmstead, whose
+    // hens moved out to Hen Haven, and of any of the four reserved districts
+    // once one is ever unlocked. Without this guard the Farmstead would fall
+    // into the crop branch below and paint the Grand Farm's soil tiles a
+    // second time, on top of the yard.
+    if (stocks.length === 0) return built;
+    const livestock = stocks.find((stock) => isLivestock(stock));
     if (!livestock) {
       // No livestock kind here at all -- the Long Meadow's Crop Fields.
       //

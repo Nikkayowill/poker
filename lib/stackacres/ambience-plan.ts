@@ -134,6 +134,10 @@ function zoneBed(zone: ZoneId): AmbienceMix {
     case "farmstead":
       // Buildings break the rustle up and the yard pump is the only water.
       return { grass: 0.3, water: 0.16, insects: 0.5 };
+    case "henhaven":
+      // The coops' own district since the 2026-09-07 re-lay. Straw and open
+      // grass with no standing water: the yard's bed without the yard pump.
+      return { grass: 0.55, water: 0, insects: 0.6 };
     case "meadow":
       // Open grass, the loudest rustle on the map, no standing water.
       return { grass: 0.9, water: 0, insects: 0.85 };
@@ -145,6 +149,10 @@ function zoneBed(zone: ZoneId): AmbienceMix {
     case "wallow":
       // Wet, sheltered, low. Water carries; not much else does.
       return { grass: 0.34, water: 0.85, insects: 0.7 };
+    // townsquare, mine, coast and oak fall through to SILENT deliberately.
+    // They are wild ground the map re-lay reserved with nothing standing on
+    // them (see ./sectors.ts's `SectorState`), and inventing a bed for a
+    // market or a shoreline means new audio assets, which is a later pass.
     default:
       return SILENT;
   }

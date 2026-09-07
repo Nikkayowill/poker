@@ -30,6 +30,11 @@ import { tileOf, type TileCoord } from "./farmhand-path";
 import type { StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import { WHEAT_YIELD_QUANTITY } from "./wheat-plot";
 import { wheatPlotSpot, type WorldPoint } from "./world";
+// A strict leaf (./yard.ts imports nothing), so this is a plain value import
+// with no cycle to work around. Carries the Farmstead yard's offset: the
+// literals below are the numbers the yard was originally laid out with, and
+// every doc comment here that names one is still true.
+import { yardPoint } from "./yard";
 
 /* ------------------------------------------------------------------ */
 /* What the town is still short of                                     */
@@ -148,7 +153,7 @@ export type FarmhandJob =
  * go to town": it is 265 units from his post, thirteen seconds of walking
  * each way at `FARMHAND_SPEED`, for an errand the player is watching.
  */
-export const CONTRACT_DROP: WorldPoint = { x: 220, y: 26 };
+export const CONTRACT_DROP: WorldPoint = yardPoint(220, 26);
 
 export interface FarmhandPlanInput {
   contract: StackAcresContractRow | null;

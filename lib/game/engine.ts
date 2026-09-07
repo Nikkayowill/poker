@@ -23,7 +23,7 @@ import {
 import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
 import { DECK_TEMPLATE, makeDeck } from "./deck";
 import { isSeatRebuyEligible } from "./rebuy";
-import { blindLevelForHand, forfeitTournamentSeat } from "./tournament";
+import { blindLevelForHand, forfeitTournamentSeat, headsUpBlindLevelForElapsed } from "./tournament";
 import { botProfiles } from "./bot-identities";
 
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
@@ -629,11 +629,18 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
     state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
     state.handNumber += 1;
   }
-  // Only a Sit & Go's blinds escalate. A heads-up match's stay exactly what
-  // createHeadsUpGame fixed them at for the whole match -- a real cash-style
-  // heads-up battle, not a turbo format.
+  // A Sit & Go escalates on a hand-count schedule; a heads-up match escalates
+  // on a wall-clock one instead (see tournament.ts's own comments on why each
+  // format uses the clock it does). Both recompute fresh every hand rather
+  // than tracking a counter that increments on its own.
   if (state.tournament?.format === "sit_and_go") {
     const level = blindLevelForHand(state.handNumber, TIER_CONFIG[state.tier]);
+    state.smallBlind = level.smallBlind;
+    state.bigBlind = level.bigBlind;
+    state.tournament.blindLevel = level.level;
+  } else if (state.tournament?.format === "heads_up") {
+    const elapsedMs = now - Date.parse(state.createdAt);
+    const level = headsUpBlindLevelForElapsed(elapsedMs, TIER_CONFIG[state.tier]);
     state.smallBlind = level.smallBlind;
     state.bigBlind = level.bigBlind;
     state.tournament.blindLevel = level.level;
@@ -844,9 +851,11 @@ export function createGame(
 export const HEADS_UP_SEAT_COUNT = 2;
 
 /**
- * Builds a fresh heads-up match: two human seats, no bots, fixed blinds for
- * the tier, and a `tournament` record that ends the table the instant one
- * seat runs out of chips (see `setupHand`'s funded-seat check). Both
+ * Builds a fresh heads-up match: two human seats, no bots, blinds that open
+ * at the tier's own smallBlind/bigBlind and escalate on a 15-minute wall-clock
+ * turbo schedule (see tournament.ts's headsUpBlindLevelForElapsed), and a
+ * `tournament` record that ends the table the instant one seat runs out of
+ * chips (see `setupHand`'s funded-seat check). Both
  * entrants buy in for exactly the tier's stack -- there is no separate
  * buy-in choice the way the cash lobby offers one, since the entry fee and
  * the eventual winner-take-all payout both have to agree on a single fixed
@@ -942,8 +951,10 @@ export function createHeadsUpGame(
       format: "heads_up",
       entryFee: startingStack,
       startingStack,
-      // Unused for heads-up -- see TournamentState's own comment. Zero
-      // rather than omitted, since every tournament shares the one shape.
+      // Level 0 at the open either way, same as a Sit & Go's first hand --
+      // setupHand recomputes this every hand from elapsed time for
+      // heads-up, hand number for sit_and_go. See TournamentState's own
+      // comment.
       blindLevel: 0,
       finishedAtHand: null,
       winnerProfileId: null,

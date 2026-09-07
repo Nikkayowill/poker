@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blindLevelForHand, forfeitTournamentSeat } from "./tournament";
+import { blindLevelForHand, forfeitTournamentSeat, headsUpBlindLevelForElapsed } from "./tournament";
 import type { GameState, Seat } from "./types";
 
 const BASE = { smallBlind: 25, bigBlind: 50 };
@@ -29,6 +29,32 @@ describe("blindLevelForHand", () => {
     // dealNextHandIfDue/normalizeGameState never actually produce 0, but the
     // function shouldn't throw or return a negative level for it either.
     expect(blindLevelForHand(0, BASE)).toEqual({ level: 0, smallBlind: 25, bigBlind: 50 });
+  });
+});
+
+describe("headsUpBlindLevelForElapsed", () => {
+  it("starts at level 0, the tier's own blinds, at the open", () => {
+    expect(headsUpBlindLevelForElapsed(0, BASE)).toEqual({ level: 0, smallBlind: 25, bigBlind: 50 });
+  });
+
+  it("holds level 0 for the rest of the first 15-minute level", () => {
+    expect(headsUpBlindLevelForElapsed(14 * 60_000, BASE)).toEqual({ level: 0, smallBlind: 25, bigBlind: 50 });
+  });
+
+  it("steps up exactly on the threshold minute, not one early or late", () => {
+    expect(headsUpBlindLevelForElapsed(15 * 60_000, BASE)).toEqual({ level: 1, smallBlind: 50, bigBlind: 100 });
+  });
+
+  it("reaches its final level (4x, 25 effective big blinds) at 45 minutes", () => {
+    expect(headsUpBlindLevelForElapsed(45 * 60_000, BASE)).toEqual({ level: 3, smallBlind: 100, bigBlind: 200 });
+  });
+
+  it("holds the final level indefinitely past the hour mark", () => {
+    expect(headsUpBlindLevelForElapsed(3 * 60 * 60_000, BASE)).toEqual({ level: 3, smallBlind: 100, bigBlind: 200 });
+  });
+
+  it("handles a negative elapsed time (clock skew) the same as 0", () => {
+    expect(headsUpBlindLevelForElapsed(-500, BASE)).toEqual({ level: 0, smallBlind: 25, bigBlind: 50 });
   });
 });
 

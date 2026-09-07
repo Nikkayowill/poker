@@ -5,6 +5,7 @@ import {
   createHeadsUpGame,
   HEADS_UP_SEAT_COUNT,
   MAX_MISSED_TURNS,
+  setupHand,
 } from "./engine";
 import { TIER_CONFIG } from "./tiers";
 import type { Card } from "./types";
@@ -70,6 +71,33 @@ describe("createHeadsUpGame", () => {
       finishedAtHand: null,
       winnerProfileId: null,
     });
+  });
+
+  it("escalates blinds on a 15-minute wall-clock turbo schedule, scaled to the tier", () => {
+    const { entrants } = twoEntrants();
+    const game = createHeadsUpGame(entrants, "5k");
+    const config = TIER_CONFIG["5k"];
+    const startedAt = Date.parse(game.createdAt);
+
+    setupHand(game, false, startedAt + 14 * 60_000);
+    expect(game.tournament?.blindLevel).toBe(0);
+    expect(game.smallBlind).toBe(config.smallBlind);
+    expect(game.bigBlind).toBe(config.bigBlind);
+
+    setupHand(game, false, startedAt + 15 * 60_000);
+    expect(game.tournament?.blindLevel).toBe(1);
+    expect(game.smallBlind).toBe(config.smallBlind * 2);
+    expect(game.bigBlind).toBe(config.bigBlind * 2);
+
+    setupHand(game, false, startedAt + 45 * 60_000);
+    expect(game.tournament?.blindLevel).toBe(3);
+    expect(game.smallBlind).toBe(config.smallBlind * 4);
+    expect(game.bigBlind).toBe(config.bigBlind * 4);
+
+    // Holds the final level indefinitely if the match runs past the hour.
+    setupHand(game, false, startedAt + 3 * 60 * 60_000);
+    expect(game.tournament?.blindLevel).toBe(3);
+    expect(game.bigBlind).toBe(config.bigBlind * 4);
   });
 
   it("throws unless given exactly two entrants", () => {

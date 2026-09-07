@@ -23,15 +23,23 @@ html:has(.account-entry-page) {
     var(--brand-ink);
 }
 
-/* The purple band under the phone chrome, from the other side. The canvas is
-   painted across the whole window whatever WebKit thinks the layout viewport
-   is, and it takes its colour from the ROOT -- body's background never
-   reaches it, since `html, body` in 01-tokens.css already gives html one,
-   which is why the body:has() rules below never closed this. That colour was
-   the bare ground, visibly darker than the room's own bottom edge, and that
-   difference is the band. Painting the canvas --brand-room-floor makes an
-   exposed strip invisible rather than trying to reach it, which is what the
-   --vp-short translate and the fixed washes' overshoot already do.
+/* Belt and braces for a strip of canvas showing at the bottom edge. The
+   canvas is painted across the whole window whatever WebKit thinks the
+   layout viewport is, and it takes its colour from the ROOT -- body's
+   background never reaches it, since `html, body` in 01-tokens.css already
+   gives html one, which is why the body:has() rules below never closed this.
+   Left as the bare ground it would be visibly darker than the room's own
+   bottom edge; --brand-room-floor makes an exposed strip invisible rather
+   than trying to reach it.
+
+   THIS IS NOT THE FIX FOR THE BAND KAYO REPORTED, though it was written for
+   it. That band is #150a2b, the manifest's background_color, painted by iOS
+   outside the web view entirely -- measured off a screen recording, see the
+   block at the top of 45-mobile-shell.css and the comment in
+   app/manifest.ts. This rule cannot reach it and neither can the fixed
+   washes' overshoot in 04-lobby.css. Both are kept because an exposed canvas
+   strip is a real thing to guard against and the guard is free; neither is
+   evidence that the reported bug was ever in this document.
 
    Listed per screen rather than set on `html, body`: that declaration is
    also the paint behind the table, which has its own felt and no room to

@@ -529,6 +529,15 @@ button:disabled { cursor: wait; opacity: .62; }
   inset: 0;
   width: 100%;
   object-fit: cover;
+  /* Overrides the shared bottom-center rule above: "symmetric, trimming its
+     own edges slightly" (the comment above this rule) only holds if the
+     crop is actually centred. Left on `bottom center`, cover kept the
+     portrait's bottom edge fully in frame and cropped the entire overflow
+     off the top instead -- on a bust crop taller than this box, that cut
+     straight through the top of his head. Centering the crop trims a
+     little off both the crown and the collar instead, which is what the
+     comment already described. */
+  object-position: center;
 }
 
 .entry-hero-side {

@@ -61,6 +61,56 @@ export function blindLevelForHand(
 }
 
 /**
+ * Turbo wall-clock blind schedule for a heads-up match.
+ *
+ * A heads-up match has no hand-count rhythm to key off (two players see
+ * every hand, so there's no "table speed" the way a 6-max Sit & Go has one) --
+ * elapsed real time is the only clock available, and it's also the actual
+ * thing this schedule is designed against: 100 effective big blinds at the
+ * open, ramping down to 25 by the top of the hour so a match that runs long
+ * is forced toward a decision instead of grinding on forever at a deep,
+ * low-variance stack.
+ *
+ * Same multiplicative trick as BLIND_LEVELS and for the same reason: every
+ * stakes tier's minBuyIn is exactly 100x its bigBlind (see tiers.ts), so
+ * multiplying a tier's own smallBlind/bigBlind by this ladder reproduces the
+ * identical effective-stack shape -- 100bb / 50bb / 33bb / 25bb -- at every
+ * tier from 1k to 500k with no per-tier table needed.
+ *
+ * `atMinutes` is the first elapsed minute a level takes effect on
+ * (inclusive); like BLIND_LEVELS, the schedule holds at its final entry
+ * indefinitely once reached.
+ */
+const HEADS_UP_BLIND_LEVELS: ReadonlyArray<{ atMinutes: number; multiplier: number }> = [
+  { atMinutes: 0, multiplier: 1 },
+  { atMinutes: 15, multiplier: 2 },
+  { atMinutes: 30, multiplier: 3 },
+  { atMinutes: 45, multiplier: 4 },
+];
+
+/**
+ * The blind level active after a given elapsed time in a heads-up match, and
+ * the actual small/big blind at that level against the table's own base
+ * (tier) blinds.
+ *
+ * Recomputed fresh from `elapsedMs` every hand, same discipline as
+ * blindLevelForHand -- see engine.ts's setupHand, the one caller.
+ */
+export function headsUpBlindLevelForElapsed(
+  elapsedMs: number,
+  base: { smallBlind: number; bigBlind: number },
+): BlindLevel {
+  const elapsedMinutes = elapsedMs / 60_000;
+  let level = 0;
+  for (let i = 0; i < HEADS_UP_BLIND_LEVELS.length; i += 1) {
+    if (elapsedMinutes >= HEADS_UP_BLIND_LEVELS[i].atMinutes) level = i;
+    else break;
+  }
+  const { multiplier } = HEADS_UP_BLIND_LEVELS[level];
+  return { level, smallBlind: base.smallBlind * multiplier, bigBlind: base.bigBlind * multiplier };
+}
+
+/**
  * Ends a Sit & Go seat's tournament early, by the seat's own choice, between
  * hands.
  *

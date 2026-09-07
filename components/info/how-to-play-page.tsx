@@ -200,8 +200,10 @@ export function HowToPlayPage() {
           <ul>
             <li>
               <strong>Heads-Up</strong> — you against one opponent, hand after
-              hand, for a fixed buy-in with no rebuys and no bots. Bust and
-              the match is over immediately; your opponent takes both stacks.
+              hand, for a fixed buy-in with no rebuys and no bots. Blinds open
+              at 100 big blinds deep and step up every 15 minutes to force a
+              decision inside the hour. Bust and the match is over
+              immediately; your opponent takes both stacks.
             </li>
             <li>
               <strong>Sit &amp; Go</strong> — a 6-max tournament for real

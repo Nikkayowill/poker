@@ -150,10 +150,11 @@ export interface Seat {
  * ordinary cash table. Its presence, not a separate mode enum, is what
  * every tournament-aware branch in engine.ts checks.
  *
- * Two formats share this one shape: a 6-max Sit & Go (escalating blinds,
- * winner takes entryFee * 6) and a heads-up match (fixed blinds, no bots at
- * either seat, winner takes entryFee * 2). `format` is what tells them
- * apart -- setupHand only escalates blinds for `"sit_and_go"`, and both
+ * Two formats share this one shape: a 6-max Sit & Go (blinds escalate on a
+ * hand-count schedule, winner takes entryFee * 6) and a heads-up match
+ * (blinds escalate on a wall-clock schedule instead, no bots at either seat,
+ * winner takes entryFee * 2). `format` is what tells them apart -- setupHand
+ * picks which clock to escalate against, and both
  * `createTournamentGame`/`createHeadsUpGame` set every other field the same
  * way.
  *
@@ -171,13 +172,14 @@ export interface TournamentState {
   /** Every seat's fixed starting stack -- always equal to entryFee, kept separate since they answer different questions. */
   startingStack: number;
   /**
-   * Which BLIND_LEVELS entry is active right now. Only meaningful for
-   * `"sit_and_go"` -- a heads-up match's blinds never escalate, so this
-   * stays 0 for the whole match.
+   * Which blind-level entry is active right now -- BLIND_LEVELS (by hand
+   * number) for `"sit_and_go"`, HEADS_UP_BLIND_LEVELS (by elapsed wall-clock
+   * time since `createdAt`) for `"heads_up"`.
    *
-   * Recomputed from handNumber at the top of every setupHand, never
-   * incremented on its own, so it can never drift out of sync with the hand
-   * it describes -- see lib/game/tournament.ts's blindLevelForHand.
+   * Recomputed fresh at the top of every setupHand, never incremented on its
+   * own, so it can never drift out of sync with the hand/time it
+   * describes -- see lib/game/tournament.ts's blindLevelForHand and
+   * headsUpBlindLevelForElapsed.
    */
   blindLevel: number;
   /** The hand number on which only one funded seat remained; null while the table is still live. */

@@ -64,7 +64,7 @@ import {
   type ChipMoveKind,
   type MotionProfile,
 } from "./chip-motion";
-import { flightVariance, type FlightVariance } from "./chip-spec";
+import { chipMetrics, flightVariance, type FlightVariance } from "./chip-spec";
 
 /**
  * The golden angle, in radians. Stepping by it (as `sweepBets` and
@@ -382,6 +382,32 @@ export class ChipScene {
     });
 
     this.prune(this.pile, wanted);
+  }
+
+  /**
+   * How tall the pot's mound (or, on a landscape phone, its flat spread)
+   * stands above the felt right now, in CSS pixels.
+   *
+   * This is the exact height `chip-painter.ts`'s `place()` lifts the tallest
+   * chip to -- `(stackIndex + 1) * pitchPx` for the mound shape, one chip's
+   * own silhouette for the spread shape -- not a guess sized off
+   * `MAX_RADIUS_PX`/`MAX_WALL_PX`. Those are hard ceilings this scene could
+   * draw a chip at, and the chip actually drawn at the pot's own camera
+   * depth is almost always smaller than that ceiling, so a clearance sized
+   * off them overshoots and leaves the DOM's floating "Pot $X" pill hanging
+   * with daylight above the real pile. `pixelsPerUnit`/`squash`/`chipRadius`
+   * are the same three values `place()` and `syncPile()`'s own slot solve
+   * already use for this exact pile, so the pill and the mound agree.
+   */
+  potMoundHeightPx(pixelsPerUnit: number, squash: number, chipRadius: number): number {
+    if (this.pile.size === 0) return 0;
+    const metrics = chipMetrics(pixelsPerUnit, squash, chipRadius);
+    if (this.potLayout === "spread") return metrics.wallPx + metrics.radiusPx * 2;
+    let tallestIndex = 0;
+    for (const entry of this.pile.values()) {
+      if (entry.chip.stackIndex > tallestIndex) tallestIndex = entry.chip.stackIndex;
+    }
+    return (tallestIndex + 1) * metrics.pitchPx + metrics.radiusPx * 2;
   }
 
   /**

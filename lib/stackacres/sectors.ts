@@ -306,9 +306,49 @@ const OVERGROWTH_SPACING = 30;
 
 /** The mix. Trees carry the silhouette, scrub fills between them, and the
  *  ground layer is what stops the gaps reading as mown lawn. */
-const OVERGROWTH_CANOPY: readonly SceneryKind[] = ["tree1", "tree2", "tree3", "pine"];
-const OVERGROWTH_SCRUB: readonly SceneryKind[] = ["bush", "bush", "log", "boulder", "rock"];
-const OVERGROWTH_FLOOR: readonly SceneryKind[] = ["tuft", "tuft", "tuft", "flower1", "flower2", "flower3", "mushroom"];
+const OVERGROWTH_CANOPY: readonly SceneryKind[] = [
+  "tree1",
+  "tree2",
+  "tree3",
+  "pine",
+  "pine2",
+  "pine3",
+  "pine5",
+  "pine6",
+  "pine8",
+];
+// Weighted toward the leggy, unkempt plates rather than the tidy round bush:
+// a locked sector has to read as "nothing has been done here in years", and
+// `scrubPlume`/`scrubLeafy` are the two that look most like they got away.
+const OVERGROWTH_SCRUB: readonly SceneryKind[] = [
+  "bush",
+  "bush2",
+  "bush3",
+  "scrubPlume",
+  "scrubPlume",
+  "scrubLeafy",
+  "scrubThicket",
+  "scrubThicket",
+  "scrubMound",
+  "scrubBristle",
+  "log",
+  "boulder",
+  "rock",
+];
+const OVERGROWTH_FLOOR: readonly SceneryKind[] = [
+  "tuft",
+  "tuft",
+  "tuft2",
+  "weed3",
+  "weed5",
+  "weed6",
+  "frond2",
+  "frond5",
+  "flower1",
+  "flower2",
+  "flower3",
+  "mushroom",
+];
 
 /**
  * A pale wash laid over a locked sector, under everything standing in it.

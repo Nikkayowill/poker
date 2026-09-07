@@ -804,34 +804,56 @@ function shadeColor(hex: number, amt: number): number {
 function castsShadow(kind: SceneryKind): boolean {
   return (
     kind.startsWith("tree") ||
-    kind === "pine" ||
-    kind === "bush" ||
+    kind.startsWith("pine") ||
+    kind.startsWith("bush") ||
     kind === "log" ||
     kind === "boulder" ||
     kind === "scrubFan" ||
-    kind === "scrubRound"
+    kind === "scrubPlume" ||
+    kind === "scrubRound" ||
+    kind === "scrubBristle" ||
+    kind === "scrubThicket" ||
+    kind === "scrubMound"
   );
 }
 
 /** How wide and tall a wild thing's ground shadow is, as a scale of the
  *  36x16 `shadow` painter: a tree's pool is most of it, a log's a low slot. */
 function sceneryShadowScale(kind: SceneryKind): readonly [number, number] {
+  // Prefix-tested ahead of the switch because there are eight conifer kinds
+  // and they all want the same pool. A `case` per plate would be eight lines
+  // that have to be remembered every time the pack gives up another spire.
+  if (kind.startsWith("pine")) return [2.6, 1.9];
   switch (kind) {
     case "bush":
-      return [0.95, 1.25];
+      return [1.5, 1.5];
+    case "bush2":
+      return [1.25, 1.4];
+    case "bush3":
+      return [1.05, 1.2];
     case "log":
       return [0.7, 0.5];
     case "boulder":
       return [0.85, 0.7];
     case "scrubFan":
-      return [0.8, 1];
+      return [1.1, 1.3];
+    case "scrubPlume":
+      return [1.25, 1.3];
     case "scrubRound":
-      return [0.55, 0.75];
+      return [0.8, 1];
+    case "scrubBristle":
+      return [0.95, 1.2];
+    case "scrubThicket":
+      return [1.2, 1.25];
+    case "scrubMound":
+      return [1.35, 1.35];
+    case "tree2":
+      return [3.1, 2.2];
     default:
-      // Trees and pines, tracking the painters themselves (24 units wide
-      // originally, then 42, now 64). A pool sized to a tree that no longer
-      // exists leaves a big canopy standing on a saucer.
-      return [2.05, 1.75];
+      // The broadleaves, tracking the painters themselves (24 units wide
+      // originally, then 42, then 64, now 122). A pool sized to a tree that
+      // no longer exists leaves a big canopy standing on a saucer.
+      return [3.9, 2.4];
   }
 }
 

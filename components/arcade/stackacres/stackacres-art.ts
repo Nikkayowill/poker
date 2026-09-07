@@ -100,17 +100,47 @@ type CorePainterName =
   | "tree2"
   | "tree3"
   | "pine"
+  | "pine2"
+  | "pine3"
+  | "pine4"
+  | "pine5"
+  | "pine6"
+  | "pine7"
+  | "pine8"
   | "bush"
+  | "bush2"
+  | "bush3"
   | "rock"
   | "flower1"
   | "flower2"
   | "flower3"
   | "tuft"
+  | "tuft2"
+  | "swirl1"
+  | "swirl2"
   | "weedTall"
   | "weedShort"
+  | "weed3"
+  | "weed4"
+  | "weed5"
+  | "weed6"
   | "scrubLow"
   | "scrubRound"
   | "scrubFan"
+  | "scrubPlume"
+  | "scrubBroad"
+  | "scrubLeafy"
+  | "scrubSprig"
+  | "scrubBristle"
+  | "scrubThicket"
+  | "scrubRosette"
+  | "scrubPatch"
+  | "scrubMound"
+  | "frond1"
+  | "frond2"
+  | "frond3"
+  | "frond4"
+  | "frond5"
   | "stump"
   | "puddle"
   | "mown"
@@ -203,6 +233,37 @@ const treeRound =
       mat,
     );
   };
+
+/** The fallback conifer, authored against a 20x34 box. Shared by all three
+ *  pine kinds: they differ only in which of the pack's plates fronts them. */
+const pineSpire: Paint = (c) => {
+  rr(c, 8.4, 24, 3.2, 10, 1.2);
+  F(c, RAMPS.wood.side);
+  // Three skirts, each split down the middle: lit half toward the sun, dark
+  // half away. Flat triangles, no stroke -- the tone step IS the edge.
+  for (const [y0, y1, hw] of [[10, 27, 9], [5.5, 20, 7.4], [1.5, 13.5, 5.6]] as const) {
+    poly(c, [[10 - hw, y1], [10, y0], [10, y1]]);
+    F(c, RAMPS.pine.top);
+    poly(c, [[10, y0], [10 + hw, y1], [10, y1]]);
+    F(c, RAMPS.pine.side);
+    poly(c, [[10 - hw, y1], [10, y0], [10 + hw, y1]]);
+    stroke(c, RAMPS.pine.rim, 0.7);
+  }
+};
+
+/** The fallback bush, authored against a 16x12 box. Shared by all three bush
+ *  kinds for the same reason `pineSpire` is. */
+const bushClump: Paint = (c) => {
+  canopy(
+    c,
+    [
+      [5.2, 8, 4.6],
+      [10.8, 8, 4.6],
+      [8, 5.4, 5.2],
+    ],
+    RAMPS.leaf,
+  );
+};
 
 const flower =
   (colour: string): Paint =>
@@ -576,44 +637,47 @@ const DRAWN: Record<PainterName, Painter> = {
   // the original 816x1024 renders each time it changes, never upscaled from
   // the previous asset -- 640px of art from a 1024px render is still a
   // downscale, so this stays sharp.
-  tree1: painter(64, 80, grown(24, 30, 64, 80, treeRound(RAMPS.leaf))),
+  // The boxes below are the PLATE's own aspect at the height Kayo asked for
+  // ("they must become bigger as well so theyre not small like my
+  // characters"), not the 64x80 these painters were authored against. An
+  // isometric render of a broadleaf is about 1.5x wider than it is tall where
+  // a drawn one is the reverse, so keeping the old box would have contained
+  // the render to 64 wide and left half of it as empty sky. `grown` scales
+  // the fallback drawing into whatever the box now is, so none of the
+  // arithmetic inside these had to be re-typed.
+  tree1: painter(122, 78, grown(24, 30, 122, 78, treeRound(RAMPS.leaf))),
   tree2: painter(
-    64,
-    80,
-    grown(24, 30, 64, 80, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
+    94,
+    78,
+    grown(24, 30, 94, 78, treeRound({ top: "#7acb46", side: "#5ca632", rim: "#3f7620" })),
   ),
   tree3: painter(
-    64,
-    80,
-    grown(24, 30, 64, 80, treeRound({ top: "#4fae55", side: "#3a8840", rim: "#27622c" })),
+    120,
+    78,
+    grown(24, 30, 120, 78, treeRound({ top: "#4fae55", side: "#3a8840", rim: "#27622c" })),
   ),
 
-  pine: painter(52, 88, grown(20, 34, 52, 88, (c) => {
-    rr(c, 8.4, 24, 3.2, 10, 1.2);
-    F(c, RAMPS.wood.side);
-    // Three skirts, each split down the middle: lit half toward the sun, dark
-    // half away. Flat triangles, no stroke -- the tone step IS the edge.
-    for (const [y0, y1, hw] of [[10, 27, 9], [5.5, 20, 7.4], [1.5, 13.5, 5.6]] as const) {
-      poly(c, [[10 - hw, y1], [10, y0], [10, y1]]);
-      F(c, RAMPS.pine.top);
-      poly(c, [[10, y0], [10 + hw, y1], [10, y1]]);
-      F(c, RAMPS.pine.side);
-      poly(c, [[10 - hw, y1], [10, y0], [10 + hw, y1]]);
-      stroke(c, RAMPS.pine.rim, 0.7);
-    }
-  })),
+  pine: painter(99, 104, grown(20, 34, 99, 104, pineSpire)),
+  // The pack's two- and three-trunk conifer plates, kept as clusters rather
+  // than cut into single trees: one scenery item that reads as a small stand
+  // costs a third of what three items cost, and it gives a treeline a coarser
+  // grain than a lattice of single trees can. The fallback is the same one
+  // spire -- nobody is looking at it, and drawing two of them just to match a
+  // sprite that has almost certainly already loaded is not worth the code.
+  pine2: painter(98, 100, grown(20, 34, 98, 100, pineSpire)),
+  pine3: painter(102, 98, grown(20, 34, 102, 98, pineSpire)),
+  // The other five conifer plates, which are taller and slimmer than the
+  // three above -- that spread is the point of having them, see
+  // scripts/prepare-stackacres-plants.py.
+  pine4: painter(92, 100, grown(20, 34, 92, 100, pineSpire)),
+  pine5: painter(77, 118, grown(20, 34, 77, 118, pineSpire)),
+  pine6: painter(82, 114, grown(20, 34, 82, 114, pineSpire)),
+  pine7: painter(93, 112, grown(20, 34, 93, 112, pineSpire)),
+  pine8: painter(92, 116, grown(20, 34, 92, 116, pineSpire)),
 
-  bush: painter(26, 20, grown(16, 12, 26, 20, (c) => {
-    canopy(
-      c,
-      [
-        [5.2, 8, 4.6],
-        [10.8, 8, 4.6],
-        [8, 5.4, 5.2],
-      ],
-      RAMPS.leaf,
-    );
-  })),
+  bush: painter(41, 26, grown(16, 12, 41, 26, bushClump)),
+  bush2: painter(34, 28, grown(16, 12, 34, 28, bushClump)),
+  bush3: painter(28, 24, grown(16, 12, 28, 24, bushClump)),
 
   rock: painter(14, 10, (c) => {
     blob(c, 7, 6, 6.2, 4.2, RAMPS.stone);
@@ -627,8 +691,20 @@ const DRAWN: Record<PainterName, Painter> = {
   flower2: painter(6, 8, flower("#fff5c2")),
   flower3: painter(6, 8, flower("#ffb347")),
 
-  tuft: painter(8, 6, (c) => {
+  tuft: painter(14, 10, grown(8, 6, 14, 10, (c) => {
     blades(c, 4, 6, 5.6, RAMPS.lawn, 0.85);
+  })),
+  tuft2: painter(10, 10, grown(8, 6, 10, 10, (c) => {
+    blades(c, 4, 6, 5.2, RAMPS.grass, 0.9);
+  })),
+  // Flat rosettes -- the smallest thing the pack has. They break up bare lawn
+  // without adding another silhouette up at tuft height, which is why they
+  // are drawn as a spread of short blades rather than a clump.
+  swirl1: painter(14, 8, (c) => {
+    blades(c, 7, 8, 5, RAMPS.grass, 0.7);
+  }),
+  swirl2: painter(16, 9, (c) => {
+    blades(c, 8, 9, 5.6, RAMPS.grass, 0.75);
   }),
 
   // The five scrub kinds, drawn only as the fallback behind their sprites
@@ -638,23 +714,87 @@ const DRAWN: Record<PainterName, Painter> = {
   // standing rather than a hole in the ground. Every one is an existing
   // helper at a different size, which is the whole point of keeping them
   // cheap.
-  weedTall: painter(14, 11, (c) => {
+  weedTall: painter(21, 16, grown(14, 11, 21, 16, (c) => {
     blades(c, 7, 11, 10, RAMPS.lawn, 1);
     blades(c, 7, 11, 6.4, RAMPS.leaf, 0.8);
-  }),
-  weedShort: painter(12, 7, (c) => {
+  })),
+  weedShort: painter(16, 12, grown(12, 7, 16, 12, (c) => {
     blades(c, 6, 7, 6.4, RAMPS.lawn, 0.9);
-  }),
-  scrubLow: painter(22, 11, (c) => {
+  })),
+  weed3: painter(20, 15, grown(14, 11, 20, 15, (c) => {
+    blades(c, 7, 11, 9, RAMPS.wild, 1);
+  })),
+  weed4: painter(18, 13, grown(14, 11, 18, 13, (c) => {
+    blades(c, 7, 11, 8.4, RAMPS.lawn, 0.95);
+  })),
+  weed5: painter(22, 13, grown(14, 11, 22, 13, (c) => {
+    blades(c, 7, 11, 9.6, RAMPS.wild, 1.05);
+  })),
+  weed6: painter(22, 11, grown(14, 11, 22, 11, (c) => {
+    blades(c, 7, 11, 8.8, RAMPS.lawn, 1);
+  })),
+  scrubLow: painter(32, 16, grown(22, 11, 32, 16, (c) => {
     canopy(c, [[6, 7, 4.4], [15, 7.4, 4], [10.6, 5.2, 4.6]], RAMPS.leaf);
-  }),
-  scrubRound: painter(16, 13, (c) => {
+  })),
+  scrubRound: painter(23, 19, grown(16, 13, 23, 19, (c) => {
     canopy(c, [[5.6, 8.6, 4.4], [10.6, 8.6, 4.4], [8, 5.6, 4.8]], RAMPS.leaf);
-  }),
-  scrubFan: painter(26, 24, (c) => {
+  })),
+  scrubFan: painter(36, 34, grown(26, 24, 36, 34, (c) => {
     canopy(c, [[8, 17, 6.4], [18, 17, 6.4], [13, 11, 7.4]], RAMPS.leaf);
     blades(c, 13, 24, 9, RAMPS.lawn, 1.1);
-  }),
+  })),
+  scrubPlume: painter(41, 32, grown(26, 24, 41, 32, (c) => {
+    canopy(c, [[9, 17, 6], [17, 17, 6], [13, 10, 7]], RAMPS.wild);
+    blades(c, 13, 24, 10, RAMPS.lawn, 1.2);
+  })),
+  scrubBroad: painter(34, 26, grown(22, 11, 34, 26, (c) => {
+    canopy(c, [[6, 7, 4.8], [15, 7.4, 4.4], [10.6, 4.8, 5]], RAMPS.wild);
+  })),
+  scrubLeafy: painter(38, 25, grown(22, 11, 38, 25, (c) => {
+    canopy(c, [[5.6, 7.2, 4.6], [15.4, 7.2, 4.6], [10.6, 5, 5.2]], RAMPS.leaf);
+  })),
+  // The rest of both shrub sets. `scrubSprig`/`Bristle`/`Thicket` are the
+  // upright bristly family and get blades over their mass; `scrubRosette`/
+  // `Patch`/`Mound` are the broad flat rosettes and do not.
+  scrubSprig: painter(22, 24, grown(26, 24, 22, 24, (c) => {
+    canopy(c, [[9, 17, 5.4], [17, 17, 5.4], [13, 11.5, 6]], RAMPS.wild);
+    blades(c, 13, 24, 8, RAMPS.lawn, 1);
+  })),
+  scrubBristle: painter(29, 32, grown(26, 24, 29, 32, (c) => {
+    canopy(c, [[8.4, 17, 6], [17.6, 17, 6], [13, 10.6, 6.8]], RAMPS.wild);
+    blades(c, 13, 24, 9.4, RAMPS.lawn, 1.15);
+  })),
+  scrubThicket: painter(38, 30, grown(26, 24, 38, 30, (c) => {
+    canopy(c, [[7, 17, 6.2], [13, 16, 6.4], [19, 17, 6.2]], RAMPS.wild);
+    blades(c, 13, 24, 9, RAMPS.lawn, 1.1);
+  })),
+  scrubRosette: painter(37, 26, grown(22, 11, 37, 26, (c) => {
+    canopy(c, [[6, 7.2, 5], [15, 7.2, 5], [10.6, 4.8, 5.4]], RAMPS.wild);
+  })),
+  scrubPatch: painter(27, 19, grown(22, 11, 27, 19, (c) => {
+    canopy(c, [[6.4, 7.4, 4.4], [14.6, 7.4, 4.4], [10.6, 5.4, 4.6]], RAMPS.wild);
+  })),
+  scrubMound: painter(46, 30, grown(22, 11, 46, 30, (c) => {
+    canopy(c, [[5.6, 7.4, 5.2], [15.4, 7.4, 5.2], [10.6, 4.6, 5.8]], RAMPS.wild);
+  })),
+  // Broad-leaved ground cover for the wood's damp floor -- the pack's
+  // `tropical` plates. Low and wide, so they fill between trunks without
+  // competing with the scrub for the waist-height band.
+  frond1: painter(24, 17, grown(16, 12, 24, 17, (c) => {
+    canopy(c, [[5.4, 8.4, 4.8], [10.6, 8.4, 4.8], [8, 6, 5]], RAMPS.leaf);
+  })),
+  frond2: painter(34, 15, grown(22, 11, 34, 15, (c) => {
+    canopy(c, [[6, 7.4, 4.6], [15, 7.4, 4.6], [10.6, 5.6, 4.8]], RAMPS.leaf);
+  })),
+  frond3: painter(31, 22, grown(16, 12, 31, 22, (c) => {
+    canopy(c, [[5.2, 8.2, 5], [10.8, 8.2, 5], [8, 5.6, 5.4]], RAMPS.leaf);
+  })),
+  frond4: painter(19, 15, grown(16, 12, 19, 15, (c) => {
+    canopy(c, [[5.6, 8.4, 4.4], [10.4, 8.4, 4.4], [8, 6.4, 4.6]], RAMPS.leaf);
+  })),
+  frond5: painter(28, 15, grown(22, 11, 28, 15, (c) => {
+    canopy(c, [[6.2, 7.4, 4.4], [14.8, 7.4, 4.4], [10.6, 5.8, 4.6]], RAMPS.leaf);
+  })),
 
   stump: painter(10, 8, (c) => {
     rr(c, 1, 2.6, 8, 5.4, 2);
@@ -1456,14 +1596,27 @@ export const PAINTERS: Record<PainterName, Painter> = {
   toolTrowel: spriteBacked("toolTrowel", DRAWN.toolTrowel),
   toolIronShovel: spriteBacked("toolIronShovel", DRAWN.toolIronShovel),
   toolGoldenSpade: spriteBacked("toolGoldenSpade", DRAWN.toolGoldenSpade),
+  // The canopy. These five were the carve-out that kept the drawn trees while
+  // the scrub around them came off the plant pack; that carve-out is reversed
+  // (2026-09-06) and the whole wild flora is one pack now. See
+  // stackacres-sprites.ts.
   tree1: spriteBacked("tree1", DRAWN.tree1),
   tree2: spriteBacked("tree2", DRAWN.tree2),
   tree3: spriteBacked("tree3", DRAWN.tree3),
   pine: spriteBacked("pine", DRAWN.pine),
+  pine2: spriteBacked("pine2", DRAWN.pine2),
+  pine3: spriteBacked("pine3", DRAWN.pine3),
+  pine4: spriteBacked("pine4", DRAWN.pine4),
+  pine5: spriteBacked("pine5", DRAWN.pine5),
+  pine6: spriteBacked("pine6", DRAWN.pine6),
+  pine7: spriteBacked("pine7", DRAWN.pine7),
+  pine8: spriteBacked("pine8", DRAWN.pine8),
   bush: spriteBacked("bush", DRAWN.bush),
+  bush2: spriteBacked("bush2", DRAWN.bush2),
+  bush3: spriteBacked("bush3", DRAWN.bush3),
   // Grass, everywhere it stands up off the ground rather than being part of
   // the lawn texture: the Long Meadow's three mown heights and the open
-  // world's own clump. The drawn versions behind them were three and five
+  // world's own clumps. The drawn versions behind them were three and five
   // quadratic strokes, which is the same trade the trees took and for the
   // same reason -- at the size a phone actually shows a meadow tile, a stroke
   // is a line and a render is grass.
@@ -1471,15 +1624,34 @@ export const PAINTERS: Record<PainterName, Painter> = {
   grassMid: spriteBacked("grassMid", DRAWN.grassMid),
   grassStubble: spriteBacked("grassStubble", DRAWN.grassStubble),
   tuft: spriteBacked("tuft", DRAWN.tuft),
-  // Scrub. New kinds standing ALONGSIDE `tree1`-`3`, `pine` and `bush`, not
-  // in place of them -- those five are Kayo's explicit carve-out and are
-  // untouched. What these fill is the size band between a grass clump and a
-  // bush, which the open ground had nothing in.
+  tuft2: spriteBacked("tuft2", DRAWN.tuft2),
+  swirl1: spriteBacked("swirl1", DRAWN.swirl1),
+  swirl2: spriteBacked("swirl2", DRAWN.swirl2),
+  // Scrub and ground cover: the band between a grass clump and a bush, which
+  // is where most of the map's variety now lives.
   weedTall: spriteBacked("weedTall", DRAWN.weedTall),
   weedShort: spriteBacked("weedShort", DRAWN.weedShort),
+  weed3: spriteBacked("weed3", DRAWN.weed3),
+  weed4: spriteBacked("weed4", DRAWN.weed4),
+  weed5: spriteBacked("weed5", DRAWN.weed5),
+  weed6: spriteBacked("weed6", DRAWN.weed6),
   scrubLow: spriteBacked("scrubLow", DRAWN.scrubLow),
   scrubRound: spriteBacked("scrubRound", DRAWN.scrubRound),
   scrubFan: spriteBacked("scrubFan", DRAWN.scrubFan),
+  scrubPlume: spriteBacked("scrubPlume", DRAWN.scrubPlume),
+  scrubBroad: spriteBacked("scrubBroad", DRAWN.scrubBroad),
+  scrubLeafy: spriteBacked("scrubLeafy", DRAWN.scrubLeafy),
+  scrubSprig: spriteBacked("scrubSprig", DRAWN.scrubSprig),
+  scrubBristle: spriteBacked("scrubBristle", DRAWN.scrubBristle),
+  scrubThicket: spriteBacked("scrubThicket", DRAWN.scrubThicket),
+  scrubRosette: spriteBacked("scrubRosette", DRAWN.scrubRosette),
+  scrubPatch: spriteBacked("scrubPatch", DRAWN.scrubPatch),
+  scrubMound: spriteBacked("scrubMound", DRAWN.scrubMound),
+  frond1: spriteBacked("frond1", DRAWN.frond1),
+  frond2: spriteBacked("frond2", DRAWN.frond2),
+  frond3: spriteBacked("frond3", DRAWN.frond3),
+  frond4: spriteBacked("frond4", DRAWN.frond4),
+  frond5: spriteBacked("frond5", DRAWN.frond5),
   // The two crops' three growth frames each. The drawn fallback for the two
   // unripe stages was a couple of quadratic-curve strokes -- legible as
   // "something is growing here" and nothing more, which is what these

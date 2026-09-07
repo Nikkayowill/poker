@@ -44,6 +44,7 @@ import {
   interpolateWeatherTint,
   packWeatherTint,
   rainStreakField,
+  screenPin,
   solarDustAlpha,
   solarDustField,
   stepWeather,
@@ -252,8 +253,13 @@ export class WeatherOverlayManager {
         sprite.setVisible(false);
         continue;
       }
+      // Through `screenPin`, not `streak.x * cam.width` -- a scrollFactor(0)
+      // object is still scaled about the camera's centre by zoom, and placing
+      // it in raw pixels was only correct at zoom 1. See that function.
+      const pin = screenPin(streak.x, streak.y, cam.width, cam.height, cam.zoom);
       sprite.setVisible(true);
-      sprite.setPosition(streak.x * cam.width, streak.y * cam.height);
+      sprite.setPosition(pin.x, pin.y);
+      sprite.setScale(pin.scale);
     }
   }
 }

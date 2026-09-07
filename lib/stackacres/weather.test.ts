@@ -12,6 +12,7 @@ import {
   interpolateWeatherTint,
   packWeatherTint,
   rainStreakField,
+  screenPin,
   solarDustAlpha,
   solarDustField,
   stepWeather,
@@ -179,5 +180,51 @@ describe("rainStreakField", () => {
     // At this speed a 100ms step pushes y past 1.1, so it must have wrapped
     // rather than continuing to fall unbounded.
     expect(next[0]!.y).toBeLessThan(0);
+  });
+});
+
+describe("screenPin", () => {
+  const W = 1400;
+  const H = 900;
+
+  it("is the plain pixel mapping at zoom 1", () => {
+    for (const [fx, fy] of [[0, 0], [0.5, 0.5], [1, 1], [0.25, 0.75]] as const) {
+      const pin = screenPin(fx, fy, W, H, 1);
+      expect(pin.x).toBeCloseTo(fx * W, 9);
+      expect(pin.y).toBeCloseTo(fy * H, 9);
+      expect(pin.scale).toBe(1);
+    }
+  });
+
+  it("keeps the field covering the viewport at every zoom in StackAcres' range", () => {
+    // The regression this exists for: at zoom 3 the old `fx * width` put every
+    // streak off the viewport, so GOLD_RUSH_RAIN played as a bare gold tint.
+    // A scrollFactor(0) layer is scaled about the camera centre by zoom, so
+    // the check is that the pinned point, once that scaling is undone, lands
+    // back on the pixel the fraction asked for.
+    for (const zoom of [0.6, 1, 1.75, 3, 5]) {
+      for (const [fx, fy] of [[0, 0], [0.5, 0.5], [1, 1]] as const) {
+        const pin = screenPin(fx, fy, W, H, zoom);
+        const drawnX = W / 2 + (pin.x - W / 2) * zoom;
+        const drawnY = H / 2 + (pin.y - H / 2) * zoom;
+        expect(drawnX).toBeCloseTo(fx * W, 6);
+        expect(drawnY).toBeCloseTo(fy * H, 6);
+      }
+    }
+  });
+
+  it("holds a constant apparent size by cancelling zoom", () => {
+    for (const zoom of [0.6, 1, 3, 5]) {
+      expect(screenPin(0.5, 0.5, W, H, zoom).scale * zoom).toBeCloseTo(1, 9);
+    }
+  });
+
+  it("falls back to zoom 1 rather than emitting NaN for a camera mid-setup", () => {
+    for (const bad of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const pin = screenPin(0.25, 0.75, W, H, bad);
+      expect(Number.isFinite(pin.x)).toBe(true);
+      expect(Number.isFinite(pin.y)).toBe(true);
+      expect(pin.scale).toBe(1);
+    }
   });
 });

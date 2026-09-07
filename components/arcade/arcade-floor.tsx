@@ -251,7 +251,7 @@ export function ArcadeFloor({
           </p>
           <div className="floor-free-grid">
             {wagers.map((game) => (
-              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} />
+              <GameCard key={game.id} game={game} wallet={wallet} stakeLabel={arcadeEntryLabel(game)} embedded={embedded} variant="ante" />
             ))}
           </div>
         </section>
@@ -337,15 +337,21 @@ function GameCard({
   wallet,
   stakeLabel,
   embedded,
+  variant,
 }: {
   game: ArcadeGame;
   wallet: ArcadeWallet;
   stakeLabel: string;
   embedded: boolean;
+  /** "ante": the Beat the board card finish, scoped to that row only. See 55-ante-up-neon.css.
+   *  The button itself needs no variant -- .floor-play carries the same lift+sheen skin
+   *  everywhere on the floor now, gold-filled inside any .floor-card by that rule alone. */
+  variant?: "ante";
 }) {
   const blocked = arcadeBlockedReason(game, wallet);
+  const cardClass = clsx("floor-card", variant === "ante" && "floor-card-ante");
   return (
-    <article className="floor-card">
+    <article className={cardClass}>
       <GamePreview id={game.id} />
       <strong>{game.name}</strong>
       <small>{game.blurb}</small>

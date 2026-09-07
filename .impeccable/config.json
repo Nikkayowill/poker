@@ -380,6 +380,123 @@
         "value": "#2a0d0c",
         "createdAt": "2026-09-03T18:47:30.149Z",
         "reason": "pre-existing .sa-retire-confirm text colour in app/styles/52-stackacres.css, paired with the same deliberate warning gradient"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#a8842f",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T03:39:08.990Z",
+        "reason": "reuses the exact literal already in 25-puzzles.css's .puzzle-share-button gradient (170deg gold-light/gold/#a8842f) -- not a new color, matching an existing one for the ante-up CTA variant"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .04)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:21.876Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .05)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:21.983Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .08)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.088Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .1)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.194Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .12)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.297Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .14)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.401Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .16)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.505Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .18)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.608Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .35)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.711Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .5)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.812Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .55)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:22.915Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 255, 255, .65)",
+        "files": [
+          "app/styles/55-ante-up-neon.css"
+        ],
+        "createdAt": "2026-09-07T04:01:23.019Z",
+        "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
       }
     ]
   }

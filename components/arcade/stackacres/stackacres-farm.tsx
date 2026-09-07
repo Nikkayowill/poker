@@ -2295,7 +2295,18 @@ export function StackAcresFarm() {
     [place, liveUnits, gold, capacity],
   );
 
-  const toolHint = STACKACRES_TOOL_DEFS[tool].hint;
+  // The ghost drawn over a mow drag is whatever tier is owned (see
+  // toolGhostIcon in stackacres-world.tsx) -- deliberately, so 250,000 Gold
+  // buys something visibly different in hand. Without a caption that reads
+  // as "I'm holding a shovel and can't get my scythe back," when what's
+  // actually true is the scythe never left; the equipped tier is a skin and
+  // a stat bump on it, not a second tool. Only say so once there is
+  // something to explain: the Trowel already looks like the drawn scythe, so
+  // its hint stays exactly what it always was.
+  const toolHint =
+    tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
+      ? `${STACKACRES_TOOL_DEFS.scythe.hint} That's your ${stackacresToolTierDef(toolTier).label} doing the cutting -- still the scythe, just upgraded.`
+      : STACKACRES_TOOL_DEFS[tool].hint;
 
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
   /** Everything standing ready right now. The Harvest key's whole subject. */

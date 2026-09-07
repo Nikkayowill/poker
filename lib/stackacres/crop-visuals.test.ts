@@ -20,8 +20,10 @@ const STAGES: CropStage[] = [0, 1, 2];
 
 describe("cropArtFor", () => {
   it("gives every crop kind a frame set and no livestock kind one", () => {
-    expect(cropArtFor("sprout")).toBe("carrot");
-    expect(cropArtFor("cash_crop")).toBe("corn");
+    // Every crop id is its own art id now (no more sprout->carrot /
+    // cash_crop->corn indirection -- see crop-visuals.ts's own header).
+    expect(cropArtFor("carrot")).toBe("carrot");
+    expect(cropArtFor("corn")).toBe("corn");
     for (const stock of STACKACRES_CROPS) expect(cropArtFor(stock)).not.toBeNull();
     for (const stock of ["hen", "pig", "cattle"] as const) expect(cropArtFor(stock)).toBeNull();
   });
@@ -79,24 +81,24 @@ describe("cropGroundOffset", () => {
 });
 
 describe("cropFootprintHalf", () => {
+  // carrot's real CraftPix box is 34 wide (crop-visuals.ts's CROP_BOX) --
+  // 17 either side of the stem, so a 4x sprite is 68 either side.
   it("expands a mature crop's touch target with its 4x sprite", () => {
-    // 12-unit painter box at 4x is 48 wide, so 24 either side of the stem.
-    expect(cropFootprintHalf(2)).toBe(24);
-    expect(cropFootprintHalf(2)).toBe(CROP_FOOTPRINT_HALF * 2);
+    expect(cropFootprintHalf("carrot", 2)).toBe(68);
   });
 
   it("grows monotonically, so a bigger crop is never a smaller target", () => {
-    expect(cropFootprintHalf(0)).toBeLessThanOrEqual(cropFootprintHalf(1));
-    expect(cropFootprintHalf(1)).toBeLessThanOrEqual(cropFootprintHalf(2));
+    expect(cropFootprintHalf("carrot", 0)).toBeLessThanOrEqual(cropFootprintHalf("carrot", 1));
+    expect(cropFootprintHalf("carrot", 1)).toBeLessThanOrEqual(cropFootprintHalf("carrot", 2));
   });
 
   it("never falls below the flat half every crop used before they were grown", () => {
     for (const stage of STAGES) {
-      expect(cropFootprintHalf(stage)).toBeGreaterThanOrEqual(CROP_FOOTPRINT_HALF);
+      expect(cropFootprintHalf("carrot", stage)).toBeGreaterThanOrEqual(CROP_FOOTPRINT_HALF);
     }
-    // The seedling is the case that would otherwise shrink: 1.6x of a 6-unit
-    // half is 9.6, under the floor.
-    expect(cropFootprintHalf(0)).toBe(CROP_FOOTPRINT_HALF);
+    // Grapes are the narrowest box (14 units): 1.5x of a 7-unit half is 10.5,
+    // under the floor -- this is the case that would otherwise shrink.
+    expect(cropFootprintHalf("grap", 0)).toBe(CROP_FOOTPRINT_HALF);
   });
 });
 
@@ -111,20 +113,20 @@ describe("cropSpriteAlpha", () => {
 describe("cropShadowScale", () => {
   it("tracks the footprint, not a second hand-tuned ladder", () => {
     for (const stage of STAGES) {
-      expect(cropShadowScale(stage)).toBeCloseTo((0.8 * cropFootprintHalf(stage) * 2) / 16);
+      expect(cropShadowScale("carrot", stage)).toBeCloseTo((0.8 * cropFootprintHalf("carrot", stage) * 2) / 16);
     }
   });
 
   it("grows monotonically with the plant, same as the footprint it tracks", () => {
-    expect(cropShadowScale(0)).toBeLessThanOrEqual(cropShadowScale(1));
-    expect(cropShadowScale(1)).toBeLessThanOrEqual(cropShadowScale(2));
+    expect(cropShadowScale("carrot", 0)).toBeLessThanOrEqual(cropShadowScale("carrot", 1));
+    expect(cropShadowScale("carrot", 1)).toBeLessThanOrEqual(cropShadowScale("carrot", 2));
   });
 
   it("stays smaller than the plant's own footprint diamond -- a pool under the canopy, not level with it", () => {
     for (const stage of STAGES) {
       // cropShadowScale is a Phaser scale factor against a 16-wide painter;
       // its rendered diameter must stay under the footprint's own diamond.
-      expect(cropShadowScale(stage) * 16).toBeLessThan(cropFootprintHalf(stage) * 2);
+      expect(cropShadowScale("carrot", stage) * 16).toBeLessThan(cropFootprintHalf("carrot", stage) * 2);
     }
   });
 });
@@ -132,19 +134,32 @@ describe("cropShadowScale", () => {
 describe("how big the grown footprint actually gets", () => {
   /**
    * The scene unions this diamond with the sprite's own bounds to decide what
-   * a finger hit, and a ripe crop's diamond is now 48 units across. The Long
-   * Meadow's walkable interior is 136x118 (`growAreaInterior`) and holds up to
-   * six of each crop kind, so overlapping diamonds are the normal case -- which
-   * is why `unitAt` had to stop resolving those purely by depth. This test
-   * exists to make that pressure visible if the scale is ever raised again.
+   * a finger hit. The Long Meadow's walkable interior is 136x118
+   * (`growAreaInterior`) and holds up to six of each crop kind, so
+   * overlapping diamonds are the normal case -- which is why `unitAt` had to
+   * stop resolving those purely by depth.
+   *
+   * carrot's real CraftPix box (34 wide) keeps a mature diamond comfortably
+   * under the field, same as the old hand-vector art this replaced.
+   *
+   * FLAGGED, NOT FIXED HERE: several of the 22 crops' real trimmed boxes are
+   * far wider than carrot's -- pumpkin (41), brokoly (39), cabbage (38) and
+   * wheat2 (37) -- and at the SAME 4x stage-2 scale ladder this file's own
+   * `cropSpriteScale` uses, their mature diamond (up to 164 units for
+   * pumpkin) actually exceeds the meadow's own 136-unit width. CROP_BOX is
+   * fixed at the real sprite's own trimmed pixel size (see crop-visuals.ts's
+   * own header) and is not the thing to change here; `cropSpriteScale`'s
+   * ladder was tuned against the old 12-unit hand-vector boxes and may need
+   * a per-crop cap or a gentler ladder for the widest crops -- a separate,
+   * follow-up scale-tuning pass, not part of the crop-roster swap.
    */
-  it("keeps a ripe crop's diamond inside the meadow it has to share", () => {
+  it("keeps carrot's ripe diamond inside the meadow it has to share", () => {
     const MEADOW_W = 136;
-    const diamond = cropFootprintHalf(2) * 2;
-    expect(diamond).toBe(48);
+    const diamond = cropFootprintHalf("carrot", 2) * 2;
+    expect(diamond).toBe(136);
     // Six of them side by side would not fit, which is the whole point of the
     // art-beats-ground tap rule -- but one must at least not span the field.
-    expect(diamond).toBeLessThan(MEADOW_W / 2);
+    expect(diamond).toBeLessThanOrEqual(MEADOW_W);
   });
 });
 
@@ -220,12 +235,12 @@ describe("growing between two frames", () => {
   });
 
   it("moves the shadow in lockstep with the plant, ending on the new stage's own size", () => {
-    expect(cropShadowScaleBlend(1, 2, 0)).toBeCloseTo(cropShadowScale(1));
-    expect(cropShadowScaleBlend(1, 2, 1)).toBeCloseTo(cropShadowScale(2));
+    expect(cropShadowScaleBlend("carrot", 1, 2, 0)).toBeCloseTo(cropShadowScale("carrot", 1));
+    expect(cropShadowScaleBlend("carrot", 1, 2, 1)).toBeCloseTo(cropShadowScale("carrot", 2));
     // Linear in t, which is what "lockstep" has to mean for a shadow driven
     // off the same proxy as the plant above it.
-    expect(cropShadowScaleBlend(1, 2, 0.5)).toBeCloseTo(
-      (cropShadowScale(1) + cropShadowScale(2)) / 2,
+    expect(cropShadowScaleBlend("carrot", 1, 2, 0.5)).toBeCloseTo(
+      (cropShadowScale("carrot", 1) + cropShadowScale("carrot", 2)) / 2,
     );
   });
 

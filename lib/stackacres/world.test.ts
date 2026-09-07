@@ -41,8 +41,8 @@ describe("stock zoning", () => {
     // The hens moved out of the Farmstead into Hen Haven in the 2026-09-07 map
     // re-lay; everything else is where the pen-zoning pass put it.
     expect(stockZone("hen")).toBe("henhaven");
-    expect(stockZone("sprout")).toBe("meadow");
-    expect(stockZone("cash_crop")).toBe("meadow");
+    expect(stockZone("carrot")).toBe("meadow");
+    expect(stockZone("corn")).toBe("meadow");
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("cattle")).toBe("oxfields");
   });

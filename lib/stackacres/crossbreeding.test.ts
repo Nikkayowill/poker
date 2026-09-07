@@ -68,23 +68,32 @@ describe("CROSSBREED_MATRIX", () => {
       expect(entry.chance).toBeLessThanOrEqual(1);
     }
   });
+
+  it("pairs livestock only -- the 22-crop roster is deliberately not backfilled here", () => {
+    // sprout/cash_crop were the only two crop-side pairings this matrix ever
+    // had, and they were deleted outright once those two ids stopped
+    // existing (see this file's own header). No crop appears in the matrix.
+    for (const entry of CROSSBREED_MATRIX) {
+      expect(crossedTrack(entry.a, entry.b)).toBe("livestock");
+    }
+  });
 });
 
 describe("crossbreedMatrixEntryFor", () => {
   it("matches a pair in either order", () => {
-    const forward = crossbreedMatrixEntryFor("sprout", "cash_crop");
-    const reverse = crossbreedMatrixEntryFor("cash_crop", "sprout");
+    const forward = crossbreedMatrixEntryFor("hen", "pig");
+    const reverse = crossbreedMatrixEntryFor("pig", "hen");
     expect(forward).not.toBeNull();
     expect(reverse).toEqual(forward);
   });
 
   it("refuses a kind paired with itself, even one the matrix would otherwise match", () => {
-    expect(crossbreedMatrixEntryFor("sprout", "sprout")).toBeNull();
+    expect(crossbreedMatrixEntryFor("hen", "hen")).toBeNull();
   });
 
   it("returns null for a pair StackAcres has never defined a cross for", () => {
-    // sprout + pig is not in CROSSBREED_MATRIX above.
-    expect(crossbreedMatrixEntryFor("sprout", "pig")).toBeNull();
+    // hen + carrot is not in CROSSBREED_MATRIX above -- crops are never in it.
+    expect(crossbreedMatrixEntryFor("hen", "carrot")).toBeNull();
   });
 });
 
@@ -97,39 +106,39 @@ describe("crossbreedableStock / crossedTrack", () => {
   });
 
   it("classifies crop/livestock/mixed pairings correctly", () => {
-    expect(crossedTrack("sprout", "cash_crop")).toBe("crop");
+    expect(crossedTrack("carrot", "corn")).toBe("crop");
     expect(crossedTrack("hen", "pig")).toBe("livestock");
-    expect(crossedTrack("sprout", "hen")).toBe("mixed");
+    expect(crossedTrack("carrot", "hen")).toBe("mixed");
   });
 });
 
 describe("evaluateMutationChance", () => {
   it("throws for a plot id absent from the snapshot", () => {
-    expect(() => evaluateMutationChance("ghost", [plot("a", 0, 0, "sprout")])).toThrow(/no plot ghost/);
+    expect(() => evaluateMutationChance("ghost", [plot("a", 0, 0, "hen")])).toThrow(/no plot ghost/);
   });
 
   it("returns null for empty soil", () => {
-    const grid = [plot("a", 0, 0, null), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, null), plot("b", 0, 1, "pig")];
     expect(evaluateMutationChance("a", grid)).toBeNull();
   });
 
   it("returns null for a plot that has not ripened yet", () => {
-    const grid = [plot("a", 0, 0, "sprout", false), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, "hen", false), plot("b", 0, 1, "pig")];
     expect(evaluateMutationChance("a", grid)).toBeNull();
   });
 
   it("returns null when the only neighbor is not ripe", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "cash_crop", false)];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "pig", false)];
     expect(evaluateMutationChance("a", grid)).toBeNull();
   });
 
   it("returns null when the only neighbor is the same stock (no self-cross)", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "sprout")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "hen")];
     expect(evaluateMutationChance("a", grid)).toBeNull();
   });
 
   it("returns null when a ripe neighbor pairs to nothing in the matrix", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "pig")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "carrot")];
     expect(evaluateMutationChance("a", grid)).toBeNull();
   });
 
@@ -138,36 +147,36 @@ describe("evaluateMutationChance", () => {
     // does not sit adjacent to in list order -- only row/col math should
     // matter.
     const grid = [
-      plot("far", 3, 3, "cash_crop"),
-      plot("neighbor", 1, 0, "cash_crop"),
-      plot("a", 0, 0, "sprout"),
+      plot("far", 3, 3, "pig"),
+      plot("neighbor", 1, 0, "pig"),
+      plot("a", 0, 0, "hen"),
     ];
     const evaluation = evaluateMutationChance("a", grid);
     expect(evaluation).not.toBeNull();
     expect(evaluation?.neighborPlotId).toBe("neighbor");
     expect(evaluation?.direction).toBe("south");
-    expect(evaluation?.hybrid).toBe("golden_maize");
+    expect(evaluation?.hybrid).toBe("marbled_down");
   });
 
   it("checks all four directions and ignores neighbors off the edge of the bed", () => {
     // Corner plot (0,0): north and west fall outside the grid and must never
     // be treated as a match even if something happened to occupy that id.
-    const grid = [plot("a", 0, 0, "sprout"), plot("e", 0, 1, "cash_crop"), plot("s", 1, 0, "hen")];
+    const grid = [plot("a", 0, 0, "pig"), plot("e", 0, 1, "hen"), plot("s", 1, 0, "cattle")];
     const evaluation = evaluateMutationChance("a", grid);
     expect(evaluation).not.toBeNull();
-    // Two qualifying neighbors (east: sprout+cash_crop 0.18, south: sprout+hen 0.1)
+    // Two qualifying neighbors (east: pig+hen 0.07, south: pig+cattle 0.06)
     // -- the higher chance wins.
     expect(evaluation?.neighborPlotId).toBe("e");
-    expect(evaluation?.hybrid).toBe("golden_maize");
+    expect(evaluation?.hybrid).toBe("marbled_down");
   });
 
   it("breaks a genuine tie in chance by north-south-east-west scan order", () => {
     // Craft two directions with equal chance by using the same matrix pair
     // twice from two different neighbors.
     const grid = [
-      plot("a", 1, 1, "sprout"),
-      plot("north", 0, 1, "cash_crop"),
-      plot("east", 1, 2, "cash_crop"),
+      plot("a", 1, 1, "hen"),
+      plot("north", 0, 1, "pig"),
+      plot("east", 1, 2, "pig"),
     ];
     const evaluation = evaluateMutationChance("a", grid);
     expect(evaluation?.neighborPlotId).toBe("north");
@@ -181,7 +190,7 @@ describe("rollCrossbreedMutation", () => {
   });
 
   it("rolls true only when random() lands under the evaluation's chance", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "pig")];
     const evaluation = evaluateMutationChance("a", grid);
     expect(rollCrossbreedMutation(evaluation, ALWAYS_ROLL)).toBe(true);
     expect(rollCrossbreedMutation(evaluation, NO_ROLL)).toBe(false);
@@ -190,30 +199,30 @@ describe("rollCrossbreedMutation", () => {
 
 describe("resolveCrossbreedHarvest", () => {
   it("clears only the harvested plot when nothing qualifies", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "pig")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "carrot")];
     const result = resolveCrossbreedHarvest("a", grid, ALWAYS_ROLL);
     expect(result).toEqual({ mutated: false, hybrid: null, clearedPlotIds: ["a"] });
   });
 
   it("clears only the harvested plot on a missed roll, leaving the neighbor growing", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "pig")];
     const result = resolveCrossbreedHarvest("a", grid, NO_ROLL);
     expect(result).toEqual({ mutated: false, hybrid: null, clearedPlotIds: ["a"] });
   });
 
   it("clears BOTH original rows and reports the hybrid on a successful cross", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "pig")];
     const result = resolveCrossbreedHarvest("a", grid, ALWAYS_ROLL);
     expect(result.mutated).toBe(true);
-    expect(result.hybrid).toBe("golden_maize");
+    expect(result.hybrid).toBe("marbled_down");
     expect(result.clearedPlotIds).toEqual(["a", "b"]);
   });
 
   it("harvesting the neighbor's own id resolves the identical pairing symmetrically", () => {
-    const grid = [plot("a", 0, 0, "sprout"), plot("b", 0, 1, "cash_crop")];
+    const grid = [plot("a", 0, 0, "hen"), plot("b", 0, 1, "pig")];
     const result = resolveCrossbreedHarvest("b", grid, ALWAYS_ROLL);
     expect(result.mutated).toBe(true);
-    expect(result.hybrid).toBe("golden_maize");
+    expect(result.hybrid).toBe("marbled_down");
     expect(result.clearedPlotIds).toEqual(["b", "a"]);
   });
 });

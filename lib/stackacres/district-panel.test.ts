@@ -27,10 +27,10 @@ describe("unitRowAction", () => {
   it("a dry crop offers water, and can never be refused for want of a resource", () => {
     // Nothing in context can turn this into a disabled button: watering is
     // free, which is the one way it differs from feeding.
-    expect(unitRowAction(unit({ state: "dry", stock: "sprout" }), { feed: 0, gold: 0 })).toEqual({
+    expect(unitRowAction(unit({ state: "dry", stock: "carrot" }), { feed: 0, gold: 0 })).toEqual({
       kind: "water",
     });
-    expect(unitRowAction(unit({ state: "dry", stock: "sprout" }), { feed: 99, gold: 99_999 })).toEqual({
+    expect(unitRowAction(unit({ state: "dry", stock: "carrot" }), { feed: 99, gold: 99_999 })).toEqual({
       kind: "water",
     });
   });

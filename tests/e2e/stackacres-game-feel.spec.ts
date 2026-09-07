@@ -94,7 +94,7 @@ test("growing, harvesting and the equipment ladder all run without throwing", as
       const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
       const crop = (progress: number | null, state: string): SceneUnit => ({
         id: "probe-crop",
-        stock: "sprout",
+        stock: "carrot",
         state,
         progress,
         permanent: false,

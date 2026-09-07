@@ -22,19 +22,22 @@
  * ladder: 0 seedling, 1 sprout, 2 mature/harvest-ready.
  */
 
-import { isLivestock, type StackAcresStock } from "./catalogue";
+import { isLivestock, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 
-/** Which crop's three frames a stock kind draws. Mirrors the scene's own
- *  `unit.stock === "cash_crop" ? "corn" : "carrot"`, which is the only place
- *  this mapping exists on the render side. */
-export type CropArt = "carrot" | "corn";
+/**
+ * Which crop's three frames a stock kind draws. Every crop id IS its own art
+ * id now -- there is no more sprout->carrot / cash_crop->corn indirection,
+ * since `sprout`/`cash_crop` are gone and all 22 CraftPix crop ids equal
+ * their own sprite file prefix (see ./items.ts's own note on that identity).
+ * `CropArt` is therefore just `StackAcresCrop` restated under its own name.
+ */
+export type CropArt = StackAcresCrop;
 
 /** ./world.ts's `growthStage` output, named for what each frame is. */
 export type CropStage = 0 | 1 | 2;
 
 export function cropArtFor(stock: StackAcresStock): CropArt | null {
-  if (isLivestock(stock)) return null;
-  return stock === "cash_crop" ? "corn" : "carrot";
+  return isLivestock(stock) ? null : (stock as CropArt);
 }
 
 /**
@@ -88,8 +91,30 @@ export function cropSpriteScale(stage: CropStage): number {
  * whole reason this table exists -- see `cropGroundOffset`.
  */
 const FOOT_INSET: Readonly<Record<CropArt, Readonly<Record<CropStage, number>>>> = {
+  // All 22 crops are flush-bottom trimmed sprites, so every one of these is
+  // zero.
+  garlic: { 0: 0, 1: 0, 2: 0 },
+  onion: { 0: 0, 1: 0, 2: 0 },
+  beet: { 0: 0, 1: 0, 2: 0 },
+  poppy: { 0: 0, 1: 0, 2: 0 },
+  potato: { 0: 0, 1: 0, 2: 0 },
   carrot: { 0: 0, 1: 0, 2: 0 },
+  cabbage: { 0: 0, 1: 0, 2: 0 },
+  cucumber: { 0: 0, 1: 0, 2: 0 },
+  pepper: { 0: 0, 1: 0, 2: 0 },
+  brokoly: { 0: 0, 1: 0, 2: 0 },
+  sunflower: { 0: 0, 1: 0, 2: 0 },
+  sunflowe_broken: { 0: 0, 1: 0, 2: 0 },
+  wheat1: { 0: 0, 1: 0, 2: 0 },
+  tomato: { 0: 0, 1: 0, 2: 0 },
   corn: { 0: 0, 1: 0, 2: 0 },
+  corn2: { 0: 0, 1: 0, 2: 0 },
+  eggplant: { 0: 0, 1: 0, 2: 0 },
+  grap: { 0: 0, 1: 0, 2: 0 },
+  grap2: { 0: 0, 1: 0, 2: 0 },
+  pumpkin: { 0: 0, 1: 0, 2: 0 },
+  wheat2: { 0: 0, 1: 0, 2: 0 },
+  artichoke: { 0: 0, 1: 0, 2: 0 },
 };
 
 /**
@@ -123,12 +148,39 @@ export function cropGroundOffset(art: CropArt, stage: CropStage): number {
  */
 export const CROP_FOOTPRINT_HALF = 12;
 
-/** Painter box width shared by every crop frame (carrot and corn are both
- *  12 units wide; see stackacres-art.ts). */
-const CROP_BOX_WIDTH = 12;
+/** Each crop art's own painter box, in art units (see stackacres-art.ts,
+ *  whose painters are drawn to these exact dimensions). Every box is sized
+ *  off its own trimmed CraftPix sprite's real pixel dimensions (÷
+ *  ART_SCALE) -- computed once, not recomputed here. This replaces the old
+ *  hand-vector carrot (12x16) / corn (12x22) boxes outright; those ids now
+ *  draw the new CraftPix renders at these dimensions instead. */
+const CROP_BOX: Readonly<Record<CropArt, { readonly w: number; readonly h: number }>> = {
+  artichoke: { w: 22, h: 47 },
+  beet: { w: 25, h: 41 },
+  brokoly: { w: 39, h: 30 },
+  cabbage: { w: 38, h: 31 },
+  carrot: { w: 34, h: 37 },
+  corn: { w: 23, h: 42 },
+  corn2: { w: 24, h: 44 },
+  cucumber: { w: 22, h: 44 },
+  eggplant: { w: 33, h: 26 },
+  garlic: { w: 23, h: 40 },
+  grap: { w: 14, h: 46 },
+  grap2: { w: 16, h: 44 },
+  onion: { w: 33, h: 38 },
+  pepper: { w: 19, h: 40 },
+  poppy: { w: 29, h: 44 },
+  potato: { w: 23, h: 47 },
+  pumpkin: { w: 41, h: 25 },
+  sunflowe_broken: { w: 28, h: 36 },
+  sunflower: { w: 20, h: 40 },
+  tomato: { w: 31, h: 39 },
+  wheat1: { w: 23, h: 37 },
+  wheat2: { w: 37, h: 36 },
+};
 
-export function cropFootprintHalf(stage: CropStage): number {
-  return Math.max(CROP_FOOTPRINT_HALF, (CROP_BOX_WIDTH / 2) * cropSpriteScale(stage));
+export function cropFootprintHalf(art: CropArt, stage: CropStage): number {
+  return Math.max(CROP_FOOTPRINT_HALF, (CROP_BOX[art].w / 2) * cropSpriteScale(stage));
 }
 
 /**
@@ -148,7 +200,7 @@ export function cropSpriteAlpha(isWatered: boolean): number {
  * How big to draw the grounding shadow under a crop, as a Phaser scale
  * factor against `cropShadow`'s own painted size -- the same kind of number
  * `cropSpriteScale` is for the plant itself, and used the same way at the
- * call site (`.setScale(cropShadowScale(stage) / S)`).
+ * call site (`.setScale(cropShadowScale(art, stage) / S)`).
  *
  * Every other standee on the map (`isLivestock` branch, stackacres-scene.ts)
  * plants a fixed-size shadow under itself because livestock don't change
@@ -166,8 +218,8 @@ const CROP_SHADOW_BOX_WIDTH = 16;
  *  it looks like a second, flatter plant instead. */
 const CROP_SHADOW_FRACTION = 0.8;
 
-export function cropShadowScale(stage: CropStage): number {
-  return (CROP_SHADOW_FRACTION * cropFootprintHalf(stage) * 2) / CROP_SHADOW_BOX_WIDTH;
+export function cropShadowScale(art: CropArt, stage: CropStage): number {
+  return (CROP_SHADOW_FRACTION * cropFootprintHalf(art, stage) * 2) / CROP_SHADOW_BOX_WIDTH;
 }
 
 /* ------------------------------------------------------------------ */
@@ -230,9 +282,9 @@ export function cropStageSpriteBlend(from: CropStage, to: CropStage, t: number):
  * plant from its own shadow mid-growth. The scene drives both off one proxy
  * object so they cannot come apart.
  */
-export function cropShadowScaleBlend(from: CropStage, to: CropStage, t: number): number {
-  const a = cropShadowScale(from);
-  const b = cropShadowScale(to);
+export function cropShadowScaleBlend(art: CropArt, from: CropStage, to: CropStage, t: number): number {
+  const a = cropShadowScale(art, from);
+  const b = cropShadowScale(art, to);
   return a + (b - a) * growthProgress(t);
 }
 
@@ -268,8 +320,8 @@ export function cropGroundOffsetBlend(
  * the first place. Driven off the same proxy as the plant and the shadow, for
  * the same reason they are.
  */
-export function cropFootprintHalfBlend(from: CropStage, to: CropStage, t: number): number {
-  const a = cropFootprintHalf(from);
-  const b = cropFootprintHalf(to);
+export function cropFootprintHalfBlend(art: CropArt, from: CropStage, to: CropStage, t: number): number {
+  const a = cropFootprintHalf(art, from);
+  const b = cropFootprintHalf(art, to);
   return a + (b - a) * growthProgress(t);
 }

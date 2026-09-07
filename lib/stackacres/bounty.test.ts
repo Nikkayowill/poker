@@ -40,7 +40,7 @@ describe("bountifulHarvest", () => {
   it("pays Crop Rotation for a balanced mix of fields and pens", () => {
     // Two crops, two livestock: a perfect half-and-half split, so the bonus is
     // at its cap.
-    const balanced = bountifulHarvest(["sprout", "cash_crop", "hen", "cattle"]);
+    const balanced = bountifulHarvest(["carrot", "corn", "hen", "cattle"]);
     expect(balanced.kind).toBe("crop_rotation");
     expect(balanced.multiplier).toBe(CROP_ROTATION_MAX_MULTIPLIER);
     expect(balanced.detail).toContain("2 from the fields");
@@ -50,18 +50,18 @@ describe("bountifulHarvest", () => {
     // Four cattle and one carrot is not a rotation, and this is the case the
     // whole minimum-share rule exists for: without it, a herd could bolt one
     // cheap crop on and take a bonus on the herd.
-    expect(bountifulHarvest(["cattle", "cattle", "cattle", "cattle", "sprout"])).toMatchObject({
+    expect(bountifulHarvest(["cattle", "cattle", "cattle", "cattle", "carrot"])).toMatchObject({
       kind: null,
       multiplier: 1,
     });
     // One-in-three is exactly the floor, and passes.
-    expect(bountifulHarvest(["cattle", "cattle", "sprout"]).kind).toBe("crop_rotation");
+    expect(bountifulHarvest(["cattle", "cattle", "carrot"]).kind).toBe("crop_rotation");
   });
 
   it("refuses a mix that is several kinds but all one track", () => {
     // Three kinds, no crops: varied, but nothing was rotated.
     expect(bountifulHarvest(["hen", "pig", "cattle"])).toMatchObject({ kind: null, multiplier: 1 });
-    expect(bountifulHarvest(["sprout", "cash_crop", "sprout"])).toMatchObject({
+    expect(bountifulHarvest(["carrot", "corn", "carrot"])).toMatchObject({
       kind: null,
       multiplier: 1,
     });
@@ -72,8 +72,19 @@ describe("bountifulHarvest", () => {
    * than a list: a set cannot be both, so nothing has to decide whether they
    * stack. A third bonus would have to answer that question deliberately, and
    * this test is what makes it impossible to answer it by accident.
+   *
+   * WALKS A REPRESENTATIVE SUBSET, NOT ALL 25 STACKACRES_STOCK KINDS. This
+   * function's only branch points are `isLivestock` and `Set(sweep).size`
+   * (kind cardinality) -- it never reads which specific crop or livestock id
+   * it was handed -- so every one of the 22 real crop ids is behaviourally
+   * identical here, and walking all of them (25^4 ~ 390k sequences at depth
+   * 4, up from 5^4 = 625 when there were 5 stock kinds) would only add
+   * runtime, not coverage. Two distinct crop stand-ins (enough to exercise
+   * "two different crop kinds") plus all three real livestock ids exhausts
+   * every logically distinct code path this function has.
    */
-  it("never applies more than one bonus, over every mix of the whole catalogue", () => {
+  it("never applies more than one bonus, over every mix of a representative subset", () => {
+    const REPRESENTATIVE_STOCK: readonly StackAcresStock[] = ["carrot", "corn", "hen", "pig", "cattle"];
     const seen = new Set<string>();
     const walk = (sweep: StackAcresStock[]) => {
       if (sweep.length > 4) return;
@@ -92,7 +103,7 @@ describe("bountifulHarvest", () => {
         if (bounty.kind === "crop_rotation") expect(bothTracks).toBe(true);
         expect(bounty.multiplier).toBeGreaterThanOrEqual(1);
       }
-      for (const stock of STACKACRES_STOCK) walk([...sweep, stock]);
+      for (const stock of REPRESENTATIVE_STOCK) walk([...sweep, stock]);
     };
     walk([]);
     expect(seen.size).toBeGreaterThan(100);

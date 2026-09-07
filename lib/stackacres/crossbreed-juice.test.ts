@@ -4,24 +4,24 @@ import { crossbreedFlashLabel, crossbreedFlashStyleFor } from "./crossbreed-juic
 
 describe("crossbreedFlashStyleFor", () => {
   it("scales both parents' own shard styles up rather than inventing new numbers", () => {
-    const style = crossbreedFlashStyleFor("sprout", "cash_crop");
-    const sproutBase = juiceStyleFor("sprout");
-    const cashCropBase = juiceStyleFor("cash_crop");
+    const style = crossbreedFlashStyleFor("carrot", "corn");
+    const carrotBase = juiceStyleFor("carrot");
+    const cornBase = juiceStyleFor("corn");
 
-    expect(style.parentA.ramp).toBe(sproutBase.ramp);
-    expect(style.parentA.shardCount).toBeGreaterThan(sproutBase.shardCount);
-    expect(style.parentB.ramp).toBe(cashCropBase.ramp);
-    expect(style.parentB.shardCount).toBeGreaterThan(cashCropBase.shardCount);
+    expect(style.parentA.ramp).toBe(carrotBase.ramp);
+    expect(style.parentA.shardCount).toBeGreaterThan(carrotBase.shardCount);
+    expect(style.parentB.ramp).toBe(cornBase.ramp);
+    expect(style.parentB.shardCount).toBeGreaterThan(cornBase.shardCount);
 
     // Every other physics number (speed, gravity, lifetime) is untouched --
     // only count and radius scale.
-    expect(style.parentA.speed).toEqual(sproutBase.speed);
-    expect(style.parentA.gravity).toBe(sproutBase.gravity);
-    expect(style.parentA.lifeMs).toEqual(sproutBase.lifeMs);
+    expect(style.parentA.speed).toEqual(carrotBase.speed);
+    expect(style.parentA.gravity).toBe(carrotBase.gravity);
+    expect(style.parentA.lifeMs).toEqual(carrotBase.lifeMs);
   });
 
   it("reads two different pairs as visually distinct (different ramps)", () => {
-    const cropCross = crossbreedFlashStyleFor("sprout", "cash_crop");
+    const cropCross = crossbreedFlashStyleFor("carrot", "corn");
     const livestockCross = crossbreedFlashStyleFor("hen", "pig");
     expect([cropCross.parentA.ramp, cropCross.parentB.ramp]).not.toEqual([
       livestockCross.parentA.ramp,

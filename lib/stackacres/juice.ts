@@ -9,11 +9,13 @@
  * components/arcade/stackacres/game-juice-manager.ts, owns none of these
  * decisions -- it plays them back through Phaser and nothing else.
  *
- * THERE IS NO "TOMATO" IN THIS FARM. StackAcres' crop track is carrot
- * (`sprout`) and corn (`cash_crop`); livestock pays eggs, wool and milk (see
- * ./catalogue.ts and ./items.ts). This file styles all five real items
- * StackAcres actually pays out, not an invented sixth -- a "tomato" style
- * would be dead config nothing ever looks up.
+ * THERE IS REAL TOMATO IN THIS FARM NOW. StackAcres' crop track used to be
+ * just carrot (`sprout`) and corn (`cash_crop`); those two hand-vector ids
+ * are gone, replaced outright by 22 real CraftPix crops -- a real Tomato
+ * (and Artichoke, Grapes, Wheat, and 18 more) instead of them, and livestock
+ * still pays eggs, wool and milk (see ./catalogue.ts and ./items.ts). This
+ * file styles every real stock kind StackAcres pays out -- nothing here is
+ * dead config nothing ever looks up.
  */
 
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
@@ -58,22 +60,44 @@ export interface JuiceShardStyle {
  * tended.
  */
 export const STACKACRES_JUICE_STYLES: Readonly<Record<StackAcresStock, JuiceShardStyle>> = {
-  sprout: {
-    ramp: "carrot",
-    shardCount: 9,
-    shardRadius: 2.2,
-    speed: { min: 70, max: 150 },
-    gravity: 340,
-    lifeMs: { min: 380, max: 620 },
-  },
-  cash_crop: {
-    ramp: "corn",
-    shardCount: 12,
-    shardRadius: 2.6,
-    speed: { min: 100, max: 200 },
-    gravity: 420,
-    lifeMs: { min: 420, max: 680 },
-  },
+  /* ---- All 22 crops: non-ramp fields copied from the old sprout (tier 1)
+   * or cash_crop (tier 2/3) styles before those two ids were deleted --
+   * only `ramp` varies, by each crop's own dominant colour against
+   * art-palette.ts's existing RAMPS table (no purple ramp exists, so
+   * grap/grap2/artichoke/eggplant fall back to green). */
+
+  // Tier 1 -- the old sprout's own non-ramp fields.
+  garlic: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  onion: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  beet: { ramp: "roof", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  poppy: { ramp: "roof", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  potato: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  // Same shard style `sprout` itself used to draw -- see catalogue.ts's file
+  // header on why carrot restates sprout's own numbers.
+  carrot: { ramp: "leaf", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+  cabbage: { ramp: "cream", shardCount: 9, shardRadius: 2.2, speed: { min: 70, max: 150 }, gravity: 340, lifeMs: { min: 380, max: 620 } },
+
+  // Tier 2 -- the old cash_crop's own non-ramp fields.
+  cucumber: { ramp: "leaf", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  pepper: { ramp: "carrot", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  brokoly: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  sunflower: { ramp: "corn", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  sunflowe_broken: { ramp: "gold", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  wheat1: { ramp: "straw", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  tomato: { ramp: "roof", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+
+  // Tier 3 -- the old cash_crop's own non-ramp fields.
+  // Same shard style `cash_crop` itself used to draw -- see catalogue.ts's
+  // file header on why corn restates cash_crop's own numbers.
+  corn: { ramp: "corn", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  corn2: { ramp: "gold", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  eggplant: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  grap: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  grap2: { ramp: "leaf", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  pumpkin: { ramp: "carrot", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  wheat2: { ramp: "gold", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  artichoke: { ramp: "leaf", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+
   hen: {
     ramp: "chalk",
     shardCount: 7,

@@ -32,7 +32,7 @@ export interface MuseumExhibitDef {
 /**
  * Every item sits in exactly one exhibit -- museum.test.ts holds that, the
  * same way world.test.ts holds the four districts' grow areas apart. Grouped
- * by what the item actually IS rather than split evenly: two crops, two
+ * by what the item actually IS rather than split evenly: all 22 crops, two
  * livestock byproducts that keep (fleece, milk), and eggs on their own --
  * "forage" is honest for a coop's own yard the way it would not be for a
  * planted row.
@@ -41,7 +41,30 @@ export const MUSEUM_EXHIBIT_CATALOGUE: Readonly<Record<MuseumExhibitId, MuseumEx
   "rays-choice-crops": {
     label: "Ray's Choice Crops",
     blurb: "What the Long Meadow grows.",
-    items: ["carrot", "corn"],
+    items: [
+      "garlic",
+      "onion",
+      "beet",
+      "poppy",
+      "potato",
+      "carrot",
+      "cabbage",
+      "cucumber",
+      "pepper",
+      "brokoly",
+      "sunflower",
+      "sunflowe_broken",
+      "wheat1",
+      "tomato",
+      "corn",
+      "corn2",
+      "eggplant",
+      "grap",
+      "grap2",
+      "pumpkin",
+      "wheat2",
+      "artichoke",
+    ],
   },
   "exotic-livestock-wonders": {
     label: "Exotic Livestock Wonders",

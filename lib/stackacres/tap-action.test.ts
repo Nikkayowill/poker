@@ -33,7 +33,7 @@ function unit(
 describe("tapActionFor", () => {
   it("waters a dry crop, with no barn stock to check first", () => {
     expect(
-      tapActionFor(unit("dry", { stock: "sprout" }), { feed: 0, gold: 0, nowMs: NOW }),
+      tapActionFor(unit("dry", { stock: "carrot" }), { feed: 0, gold: 0, nowMs: NOW }),
     ).toEqual({ kind: "water", unitId: "u1" });
   });
 

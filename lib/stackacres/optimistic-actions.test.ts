@@ -83,7 +83,7 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("waters a dry crop without touching Gold", () => {
-    const crop = unit({ id: "c1", stock: "sprout", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const crop = unit({ id: "c1", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
     const patch = predictStackAcresAction({ action: "water", unitId: crop.id }, ctx({ units: [crop] }));
     expect(patch?.units?.[0].id).toBe(crop.id);
     expect(patch?.profile).toBeUndefined();

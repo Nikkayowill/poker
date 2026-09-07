@@ -176,7 +176,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     // Two hens. Enough that somebody has run a cycle and collected it, low
     // enough that it is met on the first afternoon rather than farmed for.
     requiresUnits: 2,
-    promise: "Cleared, this becomes your Crop Fields — Sprout Rows and Cash Crops.",
+    promise: "Cleared, this becomes your Crop Fields — Carrots, Corn, and everything between.",
   },
   wallow: {
     id: "wallow",

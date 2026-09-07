@@ -2476,7 +2476,7 @@ export class StackAcresScene extends Phaser.Scene {
       // swings 1.6x-4x across its three frames and one fixed size would
       // misfit two of them.
       cropShadow = this.addLocal("cropShadow", 0, 0, container)
-        .setScale(cropShadowScale(stage) / S)
+        .setScale(cropShadowScale(crop, stage) / S)
         .setAlpha(0.8);
       sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
       // Read the frame's own transparency back now, while a node is being
@@ -2613,8 +2613,8 @@ export class StackAcresScene extends Phaser.Scene {
     const apply = (t: number): void => {
       node.sprite.setScale(cropStageSpriteBlend(from, to, t) / S);
       node.sprite.y = cropGroundOffsetBlend(crop, from, to, t);
-      shadow.setScale(cropShadowScaleBlend(from, to, t) / S);
-      this.paintUnitRing(node, unit, cropFootprintHalfBlend(from, to, t));
+      shadow.setScale(cropShadowScaleBlend(crop, from, to, t) / S);
+      this.paintUnitRing(node, unit, cropFootprintHalfBlend(crop, from, to, t));
     };
     apply(0);
 
@@ -3167,7 +3167,12 @@ export class StackAcresScene extends Phaser.Scene {
     // aiming at on a phone is the thing it lands on -- and so the gold ready
     // ring frames the ripe sprite rather than sitting inside it. Never
     // narrower than the flat half every crop used before they were grown.
-    return cropFootprintHalf(growthStage(unit.progress, unit.state === "ready"));
+    // Non-null here: `unit.stock` is neither livestock (handled above) nor
+    // mucked (handled above that), so it is one of the crop kinds.
+    return cropFootprintHalf(
+      cropArtFor(unit.stock) ?? "carrot",
+      growthStage(unit.progress, unit.state === "ready"),
+    );
   }
 
   /** Traces a diamond of the given half-size, centred on a unit's own

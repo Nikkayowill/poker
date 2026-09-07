@@ -252,12 +252,12 @@ export function Lobby({
             onDismissSaveProgress={onDismissSaveProgress}
             needsTopUp={needsTopUp}
             onClaimBackstop={onClaimBackstop}
-            /* Straight to a seat, no modal: every tier is a fixed buy-in
-               (minBuyIn === maxBuyIn in lib/game/tiers.ts), so the stake the
-               player picked in the pane is already the amount, and the modal
-               would only ask it again. Hosting still opens it, since that
-               flow also carries the table name. */
-            onQuickPlay={(tier) => onQuickPlay(name.trim() || "You", tier, TIER_CONFIG[tier].minBuyIn)}
+            /* Opens the same buy-in modal the desktop hub's "Texas Hold'em"
+               tile does, rather than quick-playing straight off a stake
+               already picked in the pane -- picking the format and the
+               stakes now both happen inside the "Take a seat" flow, not on
+               the main Play screen. */
+            onOpenBuyIn={() => setBuyInMode("join")}
             onHostPrivate={() => setBuyInMode("host")}
             onJoinCode={(code) => onJoinCode(name.trim() || "You", code)}
             onOpenFriends={() => setFriendsOpen(true)}

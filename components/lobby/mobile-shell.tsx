@@ -44,7 +44,6 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Bell,
@@ -68,8 +67,6 @@ import {
   X,
 } from "lucide-react";
 
-import { CHEAPEST_TIER, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import { TABLE_FORMATS, type TableFormat } from "./table-format";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { DailyGoldState } from "@/lib/profile/daily-gold";
@@ -128,14 +125,13 @@ function readStoredPage(): number {
 }
 
 /**
- * Anything that scrolls sideways inside a pane -- the stakes ladder, and the
- * leaderboard's own game-tab strip once it's wider than the screen (poker +
- * global + friends + every registered game is nine-plus segments). A drag
- * that starts in one belongs to it, not to the pager, or picking a stake (or
- * trying to reach the last game tab) would throw the player onto the next
- * shell tab instead.
+ * Anything that scrolls sideways inside a pane -- the leaderboard's own
+ * game-tab strip once it's wider than the screen (poker + global + friends +
+ * every registered game is nine-plus segments). A drag that starts in one
+ * belongs to it, not to the pager, or trying to reach the last game tab
+ * would throw the player onto the next shell tab instead.
  */
-const HORIZONTAL_SCROLLER = ".mshell-tiers, .leaderboard-game-tabs";
+const HORIZONTAL_SCROLLER = ".leaderboard-game-tabs";
 
 export function MobileShell({
   profile,
@@ -151,7 +147,7 @@ export function MobileShell({
   onDismissSaveProgress,
   needsTopUp,
   onClaimBackstop,
-  onQuickPlay,
+  onOpenBuyIn,
   onHostPrivate,
   onJoinCode,
   onOpenFriends,
@@ -185,7 +181,7 @@ export function MobileShell({
   onDismissSaveProgress: () => void;
   needsTopUp: boolean;
   onClaimBackstop: () => void;
-  onQuickPlay: (tier: StakesTier) => void;
+  onOpenBuyIn: () => void;
   onHostPrivate: () => void;
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
@@ -373,7 +369,7 @@ export function MobileShell({
               onDismissSaveProgress={onDismissSaveProgress}
               needsTopUp={needsTopUp}
               onClaimBackstop={onClaimBackstop}
-              onQuickPlay={onQuickPlay}
+              onOpenBuyIn={onOpenBuyIn}
               onHostPrivate={onHostPrivate}
               onJoinCode={onJoinCode}
               onOpenFriends={onOpenFriends}
@@ -439,7 +435,7 @@ function PlayPane({
   onDismissSaveProgress,
   needsTopUp,
   onClaimBackstop,
-  onQuickPlay,
+  onOpenBuyIn,
   onHostPrivate,
   onJoinCode,
   onOpenFriends,
@@ -457,36 +453,18 @@ function PlayPane({
   onDismissSaveProgress: () => void;
   needsTopUp: boolean;
   onClaimBackstop: () => void;
-  onQuickPlay: (tier: StakesTier) => void;
+  onOpenBuyIn: () => void;
   onHostPrivate: () => void;
   onJoinCode: (code: string) => void;
   onOpenFriends: () => void;
 }) {
-  const router = useRouter();
-  const [tier, setTier] = useState<StakesTier>(CHEAPEST_TIER);
-  const [format, setFormat] = useState<TableFormat>("cash");
   const [joinCode, setJoinCode] = useState("");
-  const config = TIER_CONFIG[tier];
-  const affordable = profile.unlimitedGold || profile.goldBalance >= config.minBuyIn;
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
     if (joinCode.trim().length !== 6) return;
     selectSound();
     onJoinCode(joinCode.trim());
-  };
-
-  // Cash seats directly through onQuickPlay; heads-up/tournament each
-  // already have their own matchmaking/registration lobby, so picking
-  // either just hands the chosen tier off to it -- same split BuyInModal's
-  // own confirm button makes on desktop.
-  const play = () => {
-    selectSound();
-    if (format === "cash") {
-      onQuickPlay(tier);
-    } else {
-      router.push(`/games/${format === "heads-up" ? "heads-up" : "sit-and-go"}?tier=${tier}`);
-    }
   };
 
   return (
@@ -514,47 +492,24 @@ function PlayPane({
       <div className="mshell-hero">
         <div className="mshell-hero-art" aria-hidden="true" />
         <div className="mshell-hero-body">
-          <span className="lobby-kicker mshell-hero-kicker">
-            {TABLE_FORMATS.find((candidate) => candidate.id === format)?.blurb}
-          </span>
-          <strong className="mshell-hero-name">
-            {TABLE_FORMATS.find((candidate) => candidate.id === format)?.label}
-          </strong>
+          <span className="lobby-kicker mshell-hero-kicker">Poker · No-limit Hold&rsquo;em</span>
+          <strong className="mshell-hero-name">Texas Hold&rsquo;em</strong>
           <span className="mshell-hero-meta">
-            {config.label} to sit down. Blinds {config.smallBlind} and {config.bigBlind}.
+            Six-max cash, Heads-Up, or a Sit &amp; Go &mdash; pick your format and stakes when you sit down.
           </span>
 
-          {/* Same three-way choice BuyInModal offers on desktop -- "choose
-              blinds, then choose Texas Hold'em / Heads-Up / Tournament" in
-              one flow, not scattered across separate tiles. */}
-          <div className="mshell-format entry-segment" role="group" aria-label="Format">
-            {TABLE_FORMATS.map((candidate) => (
-              <button
-                key={candidate.id}
-                type="button"
-                className={format === candidate.id ? "is-active" : undefined}
-                aria-pressed={format === candidate.id}
-                onClick={() => { selectSound(); setFormat(candidate.id); }}
-              >
-                {candidate.label}
-              </button>
-            ))}
-          </div>
-
+          {/* Format and stakes both live one step in, inside the buy-in
+              modal -- the same "choose blinds, then choose Texas Hold'em /
+              Heads-Up / Tournament" flow the desktop hub's own tile opens,
+              rather than a picker sitting on the main Play screen. */}
           <button
             type="button"
             className="mshell-primary"
-            disabled={loading || !sessionReady || !affordable}
-            onClick={play}
+            disabled={loading || !sessionReady}
+            onClick={() => { selectSound(); onOpenBuyIn(); }}
           >
-            {!sessionReady
-              ? "Getting your seat ready"
-              : loading
-                ? "Finding you a table"
-                : !affordable
-                  ? `You need ${config.minBuyIn.toLocaleString()} Gold`
-                  : format === "cash" ? "Take a seat" : `Go to ${TABLE_FORMATS.find((candidate) => candidate.id === format)?.label}`}
-            {!loading && sessionReady && affordable && <ArrowRight size={18} aria-hidden="true" />}
+            {!sessionReady ? "Getting your seat ready" : loading ? "Finding you a table" : "Take a seat"}
+            {!loading && sessionReady && <ArrowRight size={18} aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -587,35 +542,6 @@ function PlayPane({
           </span>
         </div>
       )}
-
-      {/* Every tier is a fixed buy-in (minBuyIn === maxBuyIn), so picking the
-          stake is also picking the amount. That's why the phone goes straight
-          to a seat instead of opening the buy-in modal the desktop hub uses.
-          Hosting still opens it, because that flow also names the room. */}
-      <div className="mshell-section">
-        <div className="mshell-section-head">
-          <span className="lobby-kicker">Stakes</span>
-        </div>
-        <div className="mshell-tiers" role="group" aria-label="Stakes">
-          {STAKES_TIERS.map((option) => {
-            const optionConfig = TIER_CONFIG[option];
-            const canAfford = profile.unlimitedGold || profile.goldBalance >= optionConfig.minBuyIn;
-            return (
-              <button
-                key={option}
-                type="button"
-                className={`mshell-tier${option === tier ? " mshell-tier-on" : ""}`}
-                aria-pressed={option === tier}
-                disabled={!canAfford}
-                title={canAfford ? undefined : `Needs ${optionConfig.minBuyIn.toLocaleString()} Gold`}
-                onClick={() => { selectSound(); setTier(option); }}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       <RankStrip />
 

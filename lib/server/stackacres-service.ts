@@ -310,6 +310,7 @@ import {
   type StackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
+import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import {
   collectDroneForage,
@@ -1425,8 +1426,8 @@ export async function upgradeStackAcresTool(
 
   const current = await readStackAcresToolTier(profile.id);
   const next = nextToolTier(current);
-  const price = toolUpgradePrice(current);
-  if (!next || price === null) {
+  const listPrice = toolUpgradePrice(current);
+  if (!next || listPrice === null) {
     throw new StackAcresRequestError("You already hold the finest tool on the farm.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1436,6 +1437,12 @@ export async function upgradeStackAcresTool(
   // only one this request can name (see the doc comment above), so the gate
   // has exactly one entry to evaluate and no index off the wire to trust.
   await requireUnlockedShopEntry(stackacresToolTierDef(next), profile.id, now);
+
+  // Town Favor: a permanent discount off the list price, keyed to cumulative
+  // Influence -- see lib/stackacres/influence-tiers.ts. Read once, right
+  // before the price is fixed, so the amount refunded on any failure below
+  // matches exactly what was charged.
+  const price = applyInfluenceDiscount(listPrice, await readStackAcresInfluence(profile.id));
 
   // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
   // spendGoldByProfile is the authority.
@@ -1781,11 +1788,15 @@ export async function buyStackAcresFeed(
   // from a farm that has never seen the Fold reaches exactly here and stops.
   await requireUnlockedShopEntry(item, profile.id, now);
 
+  // Town Favor discount -- see upgradeStackAcresTool's identical comment
+  // and lib/stackacres/influence-tiers.ts.
+  const price = applyInfluenceDiscount(item.cost, await readStackAcresInfluence(profile.id));
+
   // Rule 1: the Gold leaves before the servings land.
-  const debited = await spendGoldByProfile(profile.id, item.cost);
+  const debited = await spendGoldByProfile(profile.id, price);
   if (!debited) {
     throw new StackAcresRequestError(
-      `A ${item.label} costs ${item.cost.toLocaleString()} Gold.`,
+      `A ${item.label} costs ${price.toLocaleString()} Gold.`,
       400,
     );
   }
@@ -1793,7 +1804,7 @@ export async function buyStackAcresFeed(
   try {
     await adjustStackAcresFeed(profile.id, item.servings);
   } catch (error) {
-    await refundGold(profile.id, item.cost);
+    await refundGold(profile.id, price);
     throw error;
   }
 

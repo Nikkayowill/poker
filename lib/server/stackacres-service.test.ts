@@ -42,6 +42,7 @@ import {
 } from "./stackacres-service";
 import { resetStackAcresDroneStoreForTests } from "./stackacres-drone-store";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
+import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
 import {
@@ -1164,6 +1165,21 @@ describe("feed shipments", () => {
     expect(await balance(token)).toBe(before - bulk.cost);
     expect(await readStackAcresFeed(id)).toBe(bulk.servings);
   });
+
+  it("charges the Town Favor discount on a feed shipment too", async () => {
+    const { token, id } = await funded();
+    const sack = STACKACRES_FEED.feed_sack;
+    const tier = INFLUENCE_TIERS[1];
+    await adjustStackAcresInfluence(id, tier.threshold);
+    const discounted = applyInfluenceDiscount(sack.cost, tier.threshold);
+    expect(discounted).toBeLessThan(sack.cost);
+    const before = await balance(token);
+
+    await buyStackAcresFeed(token, "feed_sack", T0);
+
+    expect(await balance(token)).toBe(before - discounted);
+    expect(await readStackAcresFeed(id)).toBe(sack.servings);
+  });
 });
 
 describe("expanding capacity", () => {
@@ -1522,6 +1538,26 @@ describe("the equipment ladder", () => {
 
     await upgradeStackAcresTool(token, T0);
     expect(await readStackAcresToolTier(id)).toBe("golden-spade");
+  });
+
+  /**
+   * Town Favor: a permanent discount off every Ray's-shop price, keyed to
+   * cumulative Influence -- see lib/stackacres/influence-tiers.ts. Charges
+   * the discounted price, not the list price, and refunds the same amount
+   * on a lost race.
+   */
+  it("charges the Town Favor discount once enough Influence is banked", async () => {
+    const { token, id } = await funded(1_000_000);
+    const tier = INFLUENCE_TIERS[1];
+    await adjustStackAcresInfluence(id, tier.threshold);
+    const listPrice = toolUpgradePrice(STACKACRES_STARTING_TIER)!;
+    const discounted = applyInfluenceDiscount(listPrice, tier.threshold);
+    expect(discounted).toBeLessThan(listPrice);
+    const before = await balance(token);
+
+    await upgradeStackAcresTool(token, T0);
+
+    expect(await balance(token)).toBe(before - discounted);
   });
 
   it("refuses a rung the player cannot afford, and takes nothing", async () => {

@@ -58,6 +58,26 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### Town Influence gets a real use: Town Favor discount tiers (2026-09-07)
+Kayo asked "does influence actually do anything right now" and the honest answer was: only once, ever
+-- `stackacresQuestFlags` in `lib/stackacres/shop-locks.ts` already read cumulative Influence, but only
+as `influence > 0`, a one-time boolean that flips the moment a farm fulfills its first Town Contract.
+Every Influence point after that was inert. `lib/stackacres/influence-tiers.ts` adds a 5-rung ladder
+(New Face -> Familiar Face 25 -> Trusted Supplier 100 -> Town Favorite 300 -> Local Legend 750) where
+each rung is a permanent, cumulative discount (0/3/6/10/15%) off every Ray's-shop Gold price -- same
+permanence rule shop-locks.ts already states (Influence never spends down, so a rung once reached can
+never be lost). Wired into both existing Gold sinks that already read Influence for the lock check
+(`upgradeStackAcresTool`, `buyStackAcresFeed` in `lib/server/stackacres-service.ts`), read once right
+before the price is fixed so the amount any failure path refunds always matches what was actually
+charged -- rule 1 unchanged, this only changes what a listed price resolves to. `applyInfluenceDiscount`
+works in basis points and floors to a whole Gold, never letting a discount reach zero (a free rung would
+turn a Gold sink into a Gold-neutral loop, the exact bug contracts.ts's own header warns against).
+Client mirrors the same pure function for its own price preview (`stackacres-farm.tsx`, same "client
+renders the same functions" split shop-locks.ts already uses) and the Town Contracts modal now shows
+the farm's current Town Favor rung and progress to the next one, right under the Influence total it
+explains. Deliberately did not touch `town_trusted`'s existing `>0` gate or the shop-locks milestone
+ladder -- those are a different, already-shipped mechanic and stay as they are.
+
 ### The Fermenting Vat: a fourth processing machine, aging Cheese into Gold on its own timer (2026-09-06)
 Built from a spec brief that opened by proposing a punitive "seize 20% of a player's locked items" penalty
 for missing an invented daily debt — refused outright and confirmed with Kayo before writing any code:

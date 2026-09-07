@@ -162,6 +162,7 @@ import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
+import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actions";
 import {
@@ -2930,14 +2931,18 @@ export function StackAcresFarm() {
               // is no list of rungs here to get out of step with the server's
               // own idea of which one is next.
               const next = nextToolTier(toolTier);
-              const price = toolUpgradePrice(toolTier);
-              if (!next || price === null) {
+              const listPrice = toolUpgradePrice(toolTier);
+              if (!next || listPrice === null) {
                 return (
                   <p className="sa-sheet-note">
                     You hold the finest tool on the farm. Nothing left to buy here.
                   </p>
                 );
               }
+              // Town Favor discount, read off the same Influence total the
+              // server will charge against -- see influence-tiers.ts and
+              // upgradeStackAcresTool's identical read server-side.
+              const price = applyInfluenceDiscount(listPrice, influence);
               const def = stackacresToolTierDef(next);
               // `unlimitedGold` makes spendGold a no-op server-side, so a
               // profile carrying it can always afford this -- disabling the
@@ -2960,7 +2965,16 @@ export function StackAcresFarm() {
                         who does not qualify yet for the same reason: you
                         cannot decide to save up for a number you have never
                         been shown. */}
-                    <p className="sa-stock-yield">{price.toLocaleString()} Gold</p>
+                    <p className="sa-stock-yield">
+                      {price < listPrice ? (
+                        <>
+                          <span className="sa-stock-was">{listPrice.toLocaleString()}</span>{" "}
+                          {price.toLocaleString()} Gold
+                        </>
+                      ) : (
+                        `${price.toLocaleString()} Gold`
+                      )}
+                    </p>
                     {lock.lockHint && (
                       <p className="sa-lock-hint" id="sa-lock-hint-tool">
                         <Lock size={13} aria-hidden="true" />
@@ -3034,13 +3048,20 @@ export function StackAcresFarm() {
                   floating over a field would be nonsense; this is a shop.) */}
               {Object.entries(STACKACRES_FEED).map(([id, item]) => {
                 const lock = evaluateStackAcresShopLock(item, shopProgress);
+                // Town Favor discount -- same read as the tool tier card
+                // above, and the same price upgradeStackAcresTool's sibling
+                // buyStackAcresFeed will actually charge.
+                const price = applyInfluenceDiscount(item.cost, influence);
                 return (
                   <div key={id} className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
                     <h3>{item.label}</h3>
                     <p className="sa-stock-terms">{item.servings} servings</p>
                     <p className="sa-stock-yield">
-                      {item.cost.toLocaleString()} Gold{" "}
-                      <span>({Math.round(item.cost / item.servings)} each)</span>
+                      {price < item.cost && (
+                        <span className="sa-stock-was">{item.cost.toLocaleString()}</span>
+                      )}{" "}
+                      {price.toLocaleString()} Gold{" "}
+                      <span>({Math.round(price / item.servings)} each)</span>
                     </p>
                     {lock.lockHint && (
                       <p className="sa-lock-hint" id={`sa-lock-hint-${id}`}>
@@ -3051,7 +3072,7 @@ export function StackAcresFarm() {
                     <button
                       type="button"
                       className="sa-cta"
-                      disabled={!lock.isUnlocked || isPending(`buy-feed:${id}`) || gold < item.cost}
+                      disabled={!lock.isUnlocked || isPending(`buy-feed:${id}`) || gold < price}
                       aria-describedby={lock.lockHint ? `sa-lock-hint-${id}` : undefined}
                       onClick={() => { buySound(); void act({ action: "buy-feed", itemId: id }); }}
                     >

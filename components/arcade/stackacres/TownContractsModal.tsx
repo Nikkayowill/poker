@@ -21,6 +21,7 @@ import {
   machineItemLabel,
   type MachineItemId,
 } from "@/lib/stackacres/machine-items";
+import { influenceTier, nextInfluenceTier } from "@/lib/stackacres/influence-tiers";
 import { ContractPayout } from "./contract-payout";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
@@ -432,6 +433,28 @@ export function TownContractsModal({
           <strong>{influence.toLocaleString()}</strong>
           <span>Town Influence earned</span>
         </p>
+
+        {/* Town Favor: what cumulative Influence is actually for. A discount
+            rung, once reached, never regresses (see
+            lib/stackacres/influence-tiers.ts), so this is a status readout,
+            not a warning -- it always names something the farm has already
+            banked plus what's next, never something it could lose. */}
+        {(() => {
+          const tier = influenceTier(influence);
+          const next = nextInfluenceTier(influence);
+          return (
+            <p className="sa-contracts-standing sa-town-favor">
+              <strong>{tier.label}</strong>
+              <span>
+                {tier.discountBps > 0
+                  ? `${tier.discountBps / 100}% off Ray's shop`
+                  : "no discount at Ray's shop yet"}
+                {next &&
+                  ` — ${(next.threshold - influence).toLocaleString()} Influence to ${next.label}`}
+              </span>
+            </p>
+          );
+        })()}
 
         {note && (
           <p

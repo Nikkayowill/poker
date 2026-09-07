@@ -2334,6 +2334,16 @@
 
 .sa-stock-yield span { color: var(--sa-ink-soft); font-weight: 600; }
 
+/* The list price, struck through, when a Town Favor discount (see
+   influence-tiers.ts) has already cut the number just after it. Kept in
+   the same line as the price rather than a separate row -- this is a
+   discount reason, not a second fact competing for space. */
+.sa-stock-was {
+  color: var(--sa-ink-soft);
+  font-weight: 600;
+  text-decoration: line-through;
+}
+
 .sa-stock-card .sa-cta { margin-top: auto; }
 
 /* ---- a shelf row the farm has not unlocked yet ----------------------- */
@@ -3144,6 +3154,16 @@
   font-size: 17px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+
+/* Sits directly under the Influence total it explains, not spaced out as
+   its own block -- one is the number, the other is what the number bought. */
+.sa-town-favor {
+  margin-top: 6px;
+}
+.sa-town-favor strong {
+  font-size: 14px;
+  font-variant-numeric: initial;
 }
 
 /* The sheet answers its own actions. The page's banner sits behind the

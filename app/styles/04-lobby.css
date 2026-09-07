@@ -40,7 +40,26 @@
      artwork; nothing here has a transform, so `fixed` really is the
      viewport. */
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  /* Not `inset: 0`. On an installed iOS PWA's cold launch WebKit reports a
+     layout viewport shorter than the real screen (the open item at the top
+     of 45-mobile-shell.css) -- `bottom: 0` there resolves against that short
+     number, so this wash stops short of the true edge and the plain
+     html/body colour (#150a2b, 01-tokens.css) shows through underneath the
+     phone tab bar as a flat purple band, which is what was reported. The
+     mobile tab bar already corrects its OWN position for this
+     (`--vp-short` in .mshell-nav), but that only moves the pill -- it does
+     nothing for the room light behind it, which is a separate fixed layer.
+     Overshooting the bottom edge by more than the bug's own documented
+     range (`MAX_CORRECTION_PX` in components/shell/viewport-fit.tsx caps it
+     at 200px; this bug "runs to about a status bar's height" per that
+     file's own comment) means the wash always reaches past the real edge
+     regardless of what WebKit is currently reporting, with no measurement
+     to get wrong. Safe to do here because the fill is a soft gradient wash,
+     not art with a hard bottom edge. */
+  bottom: -140px;
   z-index: -1;
   pointer-events: none;
   /* The stack itself is --brand-room in 01-tokens.css: the collection and
@@ -255,7 +274,13 @@ button:disabled { cursor: wait; opacity: .62; }
    --------------------------------------------------------------------------- */
 .entry-sky {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  /* Not `inset: 0` -- see the matching note on .lobby-hub::before below for
+     why this box deliberately overshoots the viewport's reported bottom
+     edge rather than trusting it. */
+  bottom: -140px;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;

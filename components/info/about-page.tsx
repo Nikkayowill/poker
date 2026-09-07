@@ -12,18 +12,22 @@ export function AboutPage() {
       <header className="legal-page-header">
         <div>
           <p className="legal-page-kicker">StackChips · About</p>
-          <h1>A poker room, not a casino floor.</h1>
+          <h1>A game room, not a casino floor.</h1>
         </div>
         <Link className="legal-page-back" href="/">Back to StackChips</Link>
       </header>
 
       <article className="legal-page-document">
         <p>
-          StackChips is a six-max Texas Hold&rsquo;em table, played with Gold — an
-          in-app currency that has no cash value and can&rsquo;t be exchanged for
-          any. Alongside the table, head-to-head duels (Chess, Checkers, Trivia
-          Showdown, Word Race) let two players stake Gold against each other
-          directly, winner takes the pot, with nothing taken off the top.
+          StackChips is a room full of games, played with Gold — an in-app
+          currency that has no cash value and can&rsquo;t be exchanged for any.
+          Six-max Texas Hold&rsquo;em is the main table, with heads-up and Sit
+          &amp; Go alongside it. Beside the poker there are head-to-head duels
+          (Chess, Checkers, Trivia Showdown, Word Race) where you challenge a
+          friend and two players stake Gold against each other directly, winner
+          takes the pot with nothing taken off the top — plus cribbage,
+          blackjack, and the Ante Up puzzles: Word Stack, Connections, Sudoku,
+          Memory Match and Minesweeper. One wallet covers all of it.
         </p>
         <p>
           Every game on StackChips is skill or social — there&rsquo;s no roulette

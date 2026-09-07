@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "StackChips - Texas Hold'em";
+export const alt = "StackChips - free online poker, puzzles and 1v1 duels";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -19,6 +19,17 @@ export const contentType = "image/png";
  * Not a screenshot: a live table changes hand to hand and a stale screenshot
  * ages badly as a permanent asset cached by every platform that has ever
  * unfurled the link.
+ *
+ * The wording under the mark had the same drift the layout.tsx TITLE did: it
+ * read "Play-money Texas Hold'em" long after the duels, cribbage and the
+ * Ante Up puzzles landed beside the table, so every unfurl sold a poker site.
+ * Keep the "no cash value" clause in whatever replaces it.
+ *
+ * Satori (next/og's renderer) does not implement every CSS feature -- an
+ * earlier border-image version of the badge rendered as nothing at all, and
+ * the build did not catch it, because ImageResponse runs at request time
+ * rather than build time. Verify a change here by fetching /opengraph-image
+ * off a running server, not by reading the diff.
  */
 export default function Image() {
   return new ImageResponse(
@@ -68,12 +79,24 @@ export default function Image() {
         <div
           style={{
             display: "flex",
+            marginTop: 28,
+            fontSize: 40,
+            fontWeight: 600,
+            color: "#ffd23f",
+            letterSpacing: 1,
+          }}
+        >
+          Poker &middot; Puzzles &middot; 1v1 Duels
+        </div>
+        <div
+          style={{
+            display: "flex",
             marginTop: 20,
-            fontSize: 34,
+            fontSize: 30,
             color: "#c9c3d8",
           }}
         >
-          Play-money Texas Hold&rsquo;em. No cash value, no cash out.
+          Free to play. Gold has no cash value, and there is no rake.
         </div>
       </div>
     ),

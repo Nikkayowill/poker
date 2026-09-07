@@ -2,9 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "StackChips - Texas Hold’em",
+    // Shown on the install prompt and under the installed icon. Named for
+    // the platform, not just the poker room -- this said "Texas Hold’em"
+    // alone, which undersold everything beside the table (see the same fix
+    // in app/layout.tsx's TITLE).
+    name: "StackChips - Poker, Puzzles & Duels",
     short_name: "StackChips",
-    description: "A server-authoritative six-max Texas Hold’em table.",
+    description:
+      "Free online games: six-max Texas Hold’em, 1v1 skill duels, blackjack, cribbage and daily puzzles, one Gold wallet across all of them.",
     start_url: "/",
     display: "standalone",
     // The violet-black "Neon Marquee" ground, the same #150a2b html/body sit

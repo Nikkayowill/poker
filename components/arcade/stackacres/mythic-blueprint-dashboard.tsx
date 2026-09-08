@@ -116,7 +116,7 @@ export interface MythicBlueprintDashboardProps {
   onClose: () => void;
 }
 
-type Note = { readonly tone: "delivered" | "refused"; readonly text: string };
+type Note = { readonly tone: "delivered" | "refused" | "pending"; readonly text: string };
 
 /** Wraps a handler so the press is consumed here rather than travelling on
  *  to the canvas underneath -- see this file's own header. */
@@ -347,11 +347,15 @@ export function MythicBlueprintDashboard({
   const handleStart = useCallback(
     (structureId: BlueprintId) => {
       if (working) return;
-      setNote(null);
+      // Which structure broke ground is already decided by the press --
+      // only whether the town can actually afford to start it is the
+      // server's to say -- so answer that much instantly instead of
+      // leaving the card looking untouched until the round trip lands.
+      setNote({ tone: "pending", text: "Breaking ground…" });
       setStarting(structureId);
       void onStart(structureId)
         .then((result) => {
-          if (!result.ok) setNote({ tone: "refused", text: result.message });
+          setNote(result.ok ? null : { tone: "refused", text: result.message });
         })
         .catch(() => setNote({ tone: "refused", text: "That did not go through. Try again in a moment." }))
         .finally(() => setStarting(null));
@@ -434,7 +438,10 @@ export function MythicBlueprintDashboard({
 
         {note && (
           <p
-            className={clsx("sa-contracts-note", `is-${note.tone === "delivered" ? "paid" : "refused"}`)}
+            className={clsx(
+              "sa-contracts-note",
+              `is-${note.tone === "delivered" ? "paid" : note.tone === "pending" ? "pending" : "refused"}`,
+            )}
             role={note.tone === "refused" ? "alert" : "status"}
           >
             {note.text}

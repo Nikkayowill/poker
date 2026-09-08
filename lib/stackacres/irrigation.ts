@@ -41,6 +41,26 @@ import { STACKACRES_TILE } from "./world";
 export const PIPE_TILE = STACKACRES_TILE;
 
 /**
+ * Placing an irrigation tile spends Gold -- a construction sink, like a
+ * Mill's placeCost, and never refunded when the tile is later removed.
+ * HYDRATION ITSELF MOVES NO GOLD: a hydrated pipe watering a crop is free,
+ * the same way tapping Water is free. So irrigation adds exactly one Gold
+ * sink (place) and no new payer -- see the actions route's own header for
+ * the count that has to stay true.
+ *
+ * Lives here, not in lib/server/stackacres-service.ts, for the same reason
+ * lib/stackacres/prestige.ts's client-safe shapes live outside that
+ * `import "server-only"` file: a client component (the placement ring) has
+ * to show this price without pulling a server-only module into the browser
+ * bundle. `placeStackAcresPipeTile` imports it back from here so there is
+ * exactly one number either side reads.
+ */
+export const PIPE_PLACE_COST: Readonly<Record<PipeKind, number>> = {
+  well: 400,
+  pipe: 25,
+};
+
+/**
  * How far water travels, in pipe tiles, measured from a well (distance 0).
  * A pipe at BFS distance <= this is hydrated; nothing past it is.
  */

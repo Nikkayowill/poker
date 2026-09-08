@@ -439,6 +439,32 @@
   height: 20px;
 }
 
+/* The Prestige Reset Valve's HUD badge -- same paper pill as .sa-feed next
+   door, but a real button (it opens the valve's own sheet) rather than a
+   static readout. */
+.sa-prestige-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sa-prestige-badge:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
 .sa-music-toggle {
   display: inline-flex;
   align-items: center;
@@ -3386,6 +3412,25 @@
   color: var(--sa-outline);
 }
 
+/* ---- Ray's Mythic Blueprints -------------------------------------------
+   Same non-travel-target posture as the town board right above it: cream
+   card, no district colour, opens the dashboard directly. */
+
+.sa-dest-blueprints {
+  position: relative;
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+.sa-dest-blueprints .sa-dest-swatch {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--sa-wood);
+  color: var(--sa-outline);
+}
+
 /* An order is up. A dot rather than a count: there is only ever one, and a
    number here would read as a promise of more. */
 .sa-dest-dot {
@@ -3451,6 +3496,13 @@
   background: var(--sa-paper-2);
   box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
   color: var(--sa-ink);
+}
+
+.sa-contracts-note.is-pending {
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  color: var(--sa-ink);
+  opacity: 0.8;
 }
 
 .sa-contracts-board {
@@ -4229,6 +4281,7 @@
 
   .sa-dest { min-height: 42px; padding: 4px 11px 4px 7px; }
   .sa-dest-board .sa-dest-swatch { width: 22px; height: 22px; }
+  .sa-dest-blueprints .sa-dest-swatch { width: 22px; height: 22px; }
   .sa-contract-head h3 { font-size: 15px; }
   .sa-contract-req { margin-top: 8px; }
   .sa-dest-name { font-size: 14px; }

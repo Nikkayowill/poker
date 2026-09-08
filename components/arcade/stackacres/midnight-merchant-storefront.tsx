@@ -137,7 +137,13 @@ export function MidnightMerchantStorefront({
   const handleBuy = useCallback(
     async (itemId: MidnightMerchantItemId): Promise<void> => {
       if (working) return;
-      setNote(null);
+      // The Gold this costs is already predicted (see optimistic-actions.ts
+      // -- the debit lands instantly, only the visit's own state waits on
+      // the server), and `nextPrice` here is the same deterministic formula
+      // the server prices it with, so this is the real number, not a guess
+      // that might correct downward the way a harvest payout could.
+      const row = rows.find((candidate) => candidate.entry.itemId === itemId);
+      setNote(row ? { tone: "paid", text: `Sold. ${row.nextPrice.toLocaleString()} Gold.` } : null);
       setBuying(itemId);
       try {
         const result = await onBuy(itemId);
@@ -152,7 +158,7 @@ export function MidnightMerchantStorefront({
         setBuying(null);
       }
     },
-    [working, onBuy],
+    [working, onBuy, rows],
   );
 
   return (

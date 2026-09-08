@@ -159,6 +159,11 @@ export function isForgeEnchantmentId(value: string): value is keyof typeof FORGE
   return Object.prototype.hasOwnProperty.call(FORGE_ENCHANTMENTS, value);
 }
 
+/** Every catalogue id, for the route's own wire-level `z.enum` -- the same
+ *  "validate against a fixed list up front" posture every sibling catalogue
+ *  action (Midnight Merchant, Mythic Blueprints) already takes. */
+export const FORGE_ENCHANTMENT_IDS = Object.keys(FORGE_ENCHANTMENTS);
+
 export interface StackAcresForgedStats extends ForgeBaseStats {
   /** Which enchantments actually contributed. Excludes any id in the input
    *  that isn't a known enchantment -- a stale/renamed item_id in an

@@ -24,6 +24,8 @@ import type { MidnightMerchantItemId } from "./midnight-merchant";
 import type { NpcId } from "./friendship";
 import type { MachineItemId } from "./machine-items";
 import type { SoilTier } from "./soil-tiers";
+import type { BlueprintId } from "./blueprints";
+import type { PipeKind } from "./irrigation";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -86,7 +88,26 @@ export type Action =
   // a harvest's own secret-find roll takes), only the scene's own
   // local-optimistic vacuum animation. See lib/stackacres/drone.ts.
   | { action: "deploy-drone" }
-  | { action: "collect-drone-forage"; droneId: string };
+  | { action: "collect-drone-forage"; droneId: string }
+  // The Prestige Reset Valve. `confirm: true` is required rather than
+  // inferred from the action name alone -- see the route's own comment on
+  // this action for why an irreversible sweep with no row to version-guard
+  // wants a payload shape a stray retry cannot satisfy by accident.
+  | { action: "prestige-reset"; confirm: true }
+  // The Sunlight Forge: a permanent tool enchantment, catalogue id (not the
+  // versioned wrapper). See lib/stackacres/forge.ts.
+  | { action: "forge-enchantment"; itemId: string }
+  // The irrigation pipe network. `tx`/`ty` are STACKACRES_TILE lattice
+  // coordinates (floor(worldX / PIPE_TILE)), not world units -- see
+  // lib/stackacres/irrigation.ts's `pipeTileAt`. `place-pipe` spends Gold
+  // (PIPE_PLACE_COST); `remove-pipe` moves none.
+  | { action: "place-pipe"; tx: number; ty: number; kind: PipeKind }
+  | { action: "remove-pipe"; tx: number; ty: number }
+  // Ray's Mythic Blueprints. Neither moves Gold -- a stage is filled from
+  // the processing inventory, same as a Town Contract. See
+  // lib/server/stackacres-blueprint-service.ts's own header.
+  | { action: "start-blueprint"; structureId: BlueprintId }
+  | { action: "contribute-blueprint"; structureId: BlueprintId; itemId: MachineItemId; amount: number };
 
 /**
  * What the player asked for, as one string. Two presses that mean the same
@@ -116,6 +137,14 @@ export function intentOf(body: Action): string {
   // must never be conflated with gifting another over the same item.
   if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
+  // A contribution to one blueprint must never dedupe against or block a
+  // contribution to a different one -- checked before the generic `itemId`
+  // fallback below, which would otherwise collapse every structure's
+  // delivery of the same material onto one shared intent. `start-blueprint`
+  // carries no `itemId`, so it falls into this branch on `structureId` alone.
+  if ("structureId" in body) {
+    return "itemId" in body ? `${body.action}:${body.structureId}:${body.itemId}` : `${body.action}:${body.structureId}`;
+  }
   if ("itemId" in body) return `${body.action}:${body.itemId}`;
   // A forage claim on one drone must never dedupe against or block a claim
   // on a different drone -- checked before the generic fallback below,

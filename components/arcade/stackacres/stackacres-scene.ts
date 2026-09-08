@@ -296,6 +296,13 @@ export interface StackAcresSceneUnit {
    *  (see `CropPlacement.slot`). Null for livestock and for every crop sown
    *  before soil tiers shipped. */
   soilSlot?: number | null;
+  /** Set when this crop is standing in the built Greenhouse rather than out
+   *  on the meadow's own soil. Always paired with a null `soilSlot` (see
+   *  `assignSoilSlot`'s early return for it) -- excluded from `cropRanks` for
+   *  that reason, so a Greenhouse crop scatters inside its own zone instead
+   *  of wrapping onto the outdoor bed lattice and landing on top of a real
+   *  meadow crop. */
+  housedIn?: "greenhouse" | null;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is
@@ -1125,6 +1132,17 @@ interface UnitNode {
   cropShadow: Phaser.GameObjects.Image | null;
   signature: string;
   unit: StackAcresSceneUnit;
+  /** The world point `container` was last positioned at via `staticSpotFor`
+   *  (a crop's fixed spot, or a mucked unit's). `null` for working livestock,
+   *  which is driven by `critter` instead. Held so `setUnits` can tell a
+   *  fixed spot has drifted -- a sibling harvested changes this unit's
+   *  `cropRanks` rank, or a soil-slot race resolves to a different slot --
+   *  even when nothing else about the unit's own signature changed, and
+   *  reposition the container without a full rebuild. Without this the
+   *  container silently kept its old screen position while `unitAt`'s hit
+   *  test (which recomputes `staticSpotFor` fresh every tap) moved on,
+   *  making the tap target drift away from the drawn sprite. */
+  spot: WorldPoint | null;
 }
 
 /** ./world.ts's own growth frame for a unit, in one place: three call sites
@@ -2338,9 +2356,16 @@ export class StackAcresScene extends Phaser.Scene {
     // Before any `buildUnit` below, which reads it through `staticSpotFor`.
     // Livestock are excluded: a wandering animal has no slot, and a MUCKED
     // animal deliberately keeps the old scatter (see `cropSpot`). A mucked
-    // CROP stays in the ranking so it holds the bed it stopped in.
+    // CROP stays in the ranking so it holds the bed it stopped in. A crop
+    // housed in the Greenhouse is excluded too: it always carries a null
+    // `soilSlot` (`assignSoilSlot` never gives the Greenhouse a bed slot),
+    // so it would otherwise wrap onto the outdoor lattice through the same
+    // rank fallback a legacy pre-soil-tiers crop uses, landing on -- and
+    // sharing a tap target with -- a real meadow crop.
     this.cropRanks = cropRanks(
-      units.filter((unit) => !isLivestock(unit.stock)).map((unit) => unit.id),
+      units
+        .filter((unit) => !isLivestock(unit.stock) && unit.housedIn !== "greenhouse")
+        .map((unit) => unit.id),
     );
     const seen = new Set<string>();
     for (const unit of units) {
@@ -2349,6 +2374,15 @@ export class StackAcresScene extends Phaser.Scene {
       const existing = this.nodes.get(unit.id);
       if (existing && existing.signature === signature) {
         existing.unit = unit;
+        // The picture didn't change, but the FIXED POINT it stands at might
+        // have: harvesting any sibling crop reshuffles every rank in
+        // `cropRanks` above, and a soil-slot race (see `stockStackAcres`)
+        // can resolve to a different slot after this node was first built.
+        // Without this, the container would keep rendering at its old
+        // point while `unitAt`'s hit test (which recomputes the same spot
+        // fresh on every tap) moved on -- a tap landing where the crop now
+        // registers, not where it is drawn.
+        this.resyncStaticSpot(existing);
         continue;
       }
       // A plant that grew is the one change answered by easing the node that
@@ -2356,7 +2390,10 @@ export class StackAcresScene extends Phaser.Scene {
       // it and building another one a frame later. `growCrop` says whether it
       // took the change; anything it declines falls through to the rebuild
       // this always did.
-      if (existing && this.growCrop(existing, unit, signature)) continue;
+      if (existing && this.growCrop(existing, unit, signature)) {
+        this.resyncStaticSpot(existing);
+        continue;
+      }
       this.buildUnit(unit, signature, existing);
     }
     // A unit that is no longer in the list -- collected and consumed, or
@@ -2672,15 +2709,35 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private staticSpotFor(unit: StackAcresSceneUnit): WorldPoint {
     const rank = this.cropRanks.get(unit.id);
-    // No rank means livestock, which is only ever here because it is mucked:
-    // it has no soil tile of its own and the scatter inside its pen is the
-    // right answer for it. `cropSpot` falls back to exactly that.
+    // No rank means livestock (only ever here because it is mucked, with no
+    // soil tile of its own) or a Greenhouse crop (excluded from `cropRanks`
+    // in `setUnits` so it cannot wrap onto the outdoor bed lattice). Either
+    // way the scatter inside its own zone is the right answer, and `cropSpot`
+    // falls back to exactly that.
     if (rank === undefined) return cropSpot(stockZone(unit.stock), unit.id);
     return cropSpot(stockZone(unit.stock), unit.id, {
       soil: this.soil,
       rank,
       slot: unit.soilSlot ?? null,
     });
+  }
+
+  /**
+   * Repositions an unchanged node's container when its fixed spot moved
+   * without its own signature moving -- see `spot`'s doc comment on
+   * `UnitNode` for why that can happen. A no-op for working livestock
+   * (`critter`/`update()` drives its container every frame already) and for
+   * anything whose spot did not actually change, which is the common case on
+   * every `setUnits` call.
+   */
+  private resyncStaticSpot(node: UnitNode): void {
+    if (node.spot === null) return;
+    const at = this.staticSpotFor(node.unit);
+    if (at.x === node.spot.x && at.y === node.spot.y) return;
+    node.spot = at;
+    const screen = isoProject(at.x, at.y);
+    node.container.setPosition(screen.x, screen.y);
+    node.container.setDepth(this.depthAt(at.x, at.y));
   }
 
   private buildUnit(unit: StackAcresSceneUnit, signature: string, previous: UnitNode | undefined): void {
@@ -2698,12 +2755,17 @@ export class StackAcresScene extends Phaser.Scene {
     let sprite: Phaser.GameObjects.Image;
     let critter: Critter | null = null;
     let cropShadow: Phaser.GameObjects.Image | null = null;
+    // Working livestock is driven by `critter` every frame and has no fixed
+    // spot of its own; both other branches below set this before falling
+    // through. See `spot`'s own doc comment on `UnitNode`.
+    let spot: WorldPoint | null = null;
 
     if (unit.state === "mucked") {
       // A mess to clear, not something with legs -- livestock or crop, a
       // mucked unit stands at the same kind of fixed spot a crop always
       // uses and stops doing whatever it was doing.
       const at = this.staticSpotFor(unit);
+      spot = at;
       this.addLocal("puddle", -3, 6, container);
       this.addLocal("rock", -9, -3, container);
       sprite = this.addLocal("stump", 5, -2, container);
@@ -2761,6 +2823,7 @@ export class StackAcresScene extends Phaser.Scene {
       // a thin outline on a small target and the fill is what carries at a
       // glance.
       sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
+      spot = at;
       const screen = isoProject(at.x, at.y);
       container.setPosition(screen.x, screen.y);
       container.setDepth(this.depthAt(at.x, at.y));
@@ -2784,6 +2847,7 @@ export class StackAcresScene extends Phaser.Scene {
       cropShadow,
       signature,
       unit,
+      spot,
     };
     this.paintUnitRing(node, unit);
     if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);

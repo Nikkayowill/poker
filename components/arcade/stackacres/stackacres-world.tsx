@@ -280,6 +280,7 @@ function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
     progress: unit.progress,
     permanent: unit.permanent,
     soilSlot: unit.soilSlot,
+    housedIn: unit.housedIn,
   }));
 }
 

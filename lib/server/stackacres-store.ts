@@ -294,6 +294,21 @@ function clone(unit: StoredStackAcresUnit): StoredStackAcresUnit {
   return { ...unit };
 }
 
+/**
+ * Thrown by `createStackAcresUnit` when the `soil_slot` it was asked to write
+ * is already taken by another of this profile's units -- another sow won the
+ * race between `assignSoilSlot`'s read and this insert. The caller
+ * (`stockStackAcres`) re-picks a slot and retries rather than letting a
+ * duplicate land, the same way `placeStackAcresSoilTile`'s "raced" outcome is
+ * handled for `homestead_soil_tiles`.
+ */
+export class SoilSlotConflictError extends Error {
+  constructor() {
+    super("That soil slot was just taken by another sow.");
+    this.name = "SoilSlotConflictError";
+  }
+}
+
 /** Every unit the player owns. What renders the farm. */
 export async function listStackAcresUnits(profileId: string): Promise<StoredStackAcresUnit[]> {
   const supabase = adminClient();
@@ -409,6 +424,15 @@ export async function createStackAcresUnit(
   const soilSlot = entry.soilSlot ?? null;
 
   if (!supabase) {
+    // Mirrors the database's own partial unique index (see the
+    // 20260908120000 migration): two sows racing for the same slot in memory
+    // mode must fail the same way they would against Postgres.
+    if (soilSlot !== null) {
+      const taken = [...memoryUnits.values()].some(
+        (existing) => existing.profileId === profileId && existing.soilSlot === soilSlot,
+      );
+      if (taken) throw new SoilSlotConflictError();
+    }
     const unit: StoredStackAcresUnit = {
       id: randomUUID(),
       profileId,
@@ -450,7 +474,10 @@ export async function createStackAcresUnit(
     })
     .select(UNIT_COLUMNS)
     .single();
-  if (error) throw new Error(`Could not stock that: ${error.message}`);
+  if (error) {
+    if (error.code === "23505" && soilSlot !== null) throw new SoilSlotConflictError();
+    throw new Error(`Could not stock that: ${error.message}`);
+  }
   return fromRow(data as UnitDbRow);
 }
 

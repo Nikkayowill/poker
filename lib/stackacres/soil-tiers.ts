@@ -67,18 +67,18 @@ export interface SoilTierDef {
    *  `irrigated`, it does not replace the pipe network. */
   selfHydrating: boolean;
   /**
-   * A multiply tint laid over the ONE shared bed picture, or null to leave it
-   * alone.
+   * A multiply tint laid over the ONE shared `soilSlot` picture, or null to
+   * leave it alone.
    *
    * A TINT RATHER THAN ITS OWN ARTWORK, and that is a real constraint, not a
-   * shortcut: `soil-bed.png` is the only bed-sized soil art in the repo.
-   * (`public/stackacres/tiles/soil-rich.png` exists but is a 16x16 orphan
-   * from the tile-extraction script with no code referencing it -- it is not
-   * a bed plate.) Tinting one 512x256 texture keeps every tier at the same
-   * source resolution, which matters here: the crops standing on these beds
-   * are already starved of source pixels, and inventing upscaled bed variants
-   * would repeat exactly that mistake. Swap a tier to its own plate the day
-   * real art for it lands.
+   * shortcut: `soil-slot.png` is the only planting-square soil art in the
+   * repo. (`public/stackacres/tiles/soil-rich.png` exists but is a 16x16
+   * orphan from the tile-extraction script with no code referencing it -- it
+   * is not a slot plate.) Tinting one 256x128 texture keeps every tier at
+   * the same source resolution, which matters here: the crops standing on
+   * these squares are already starved of source pixels, and inventing
+   * upscaled variants would repeat exactly that mistake. Swap a tier to its
+   * own plate the day real art for it lands.
    */
   tint: number | null;
 }

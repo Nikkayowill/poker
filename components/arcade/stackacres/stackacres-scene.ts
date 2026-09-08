@@ -119,8 +119,6 @@ import {
   removeSoilTile,
   SOIL_COL_PITCH,
   SOIL_ROW_PITCH,
-  SOIL_SLOTS_PER_TILE,
-  soilFurrowOffsets,
   soilSlotPoint,
   soilTileAt,
   soilTileDiamond,
@@ -130,7 +128,6 @@ import {
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
-  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
@@ -1211,6 +1208,10 @@ export class StackAcresScene extends Phaser.Scene {
   private unbindInput: (() => void) | null = null;
   /** Wall-clock time of the last scythe swish, throttling the cue. See `mowSegment`. */
   private lastSwishAt = 0;
+  /** The "what did this tap land on" chain a real pointer-up runs, reused by
+   *  `tapAt` below -- see that method's own doc comment for why. Assigned
+   *  once, in `bindInput`, and never rebound after. */
+  private dispatchTap: (clientX: number, clientY: number) => void = () => {};
 
   private grass: Phaser.GameObjects.TileSprite | null = null;
   /** The screen-pinned wash over everything: darker corners, warm sun corner. */
@@ -1454,13 +1455,13 @@ export class StackAcresScene extends Phaser.Scene {
    * farm was holding on a phone and nothing reads it again.
    *
    * The three ground pictures are the exception and keep theirs, because they
-   * are not baked once: `paintSoilTiles` re-reads `soilBed` on every soil
+   * are not baked once: `paintOwnedSlots` re-reads `soilSlot` on every soil
    * change, and the lawn and the pond re-read theirs when their own art is
    * rebuilt.
    */
   private releaseSpriteSources(): void {
     for (const name of CORE_SPRITE_NAMES) {
-      if (name === "grassTile" || name === "soilBed" || name === "waterTile") continue;
+      if (name === "grassTile" || name === "soilSlot" || name === "waterTile") continue;
       const key = spriteLoadKey(name);
       if (this.textures.exists(key)) this.textures.remove(key);
     }
@@ -1491,8 +1492,8 @@ export class StackAcresScene extends Phaser.Scene {
     // raw preloaded file, so from here every `sprite:*` entry is a second full
     // copy of pixels that already exist in the baked canvas beside it. On a
     // phone that duplicate was tens of megabytes of decoded image sitting
-    // there for the whole session. `soilBed` is the exception and is kept:
-    // `paintSoilTiles` re-reads it on every soil change, not just at boot.
+    // there for the whole session. `soilSlot` is the exception and is kept:
+    // `paintOwnedSlots` re-reads it on every soil change, not just at boot.
     this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
@@ -2982,6 +2983,27 @@ export class StackAcresScene extends Phaser.Scene {
    * No `origin` parameter any more -- `addSoilSlot` always creates a
    * `"purchased"` bed itself, and nothing ever called this with `"starter"`.
    */
+  /**
+   * Replays a real tap's own hit-test chain (`dispatchTap` in `bindInput`)
+   * against a point that never actually reached the canvas -- CSS client
+   * coordinates, the same space a `PointerEvent` carries.
+   *
+   * Exists for the seed menu's dismissal scrim (`.sa-radial-scrim` in
+   * stackacres-farm.tsx): that scrim is a real DOM button stacked over the
+   * canvas, so its own click never reaches this scene's `pointerdown`
+   * listener -- picking a DIFFERENT patch while the menu is open used to
+   * take two taps, one that only closed the menu and a second that finally
+   * landed on the new spot. The scrim now calls this with the same click
+   * once it has closed the menu, so one tap both switches and reopens.
+   *
+   * A no-op before the scene has ever bound its input (`dispatchTap`'s
+   * default), which cannot happen in practice -- the scrim only renders
+   * once a tap has already opened the menu it dismisses.
+   */
+  tapAt(clientX: number, clientY: number): void {
+    this.dispatchTap(clientX, clientY);
+  }
+
   placeSoilAt(x: number, y: number, tier: SoilTier = SOIL_DEFAULT_TIER): boolean {
     const { tx, ty } = soilTileAt(x, y);
     const outcome = addSoilSlot(this.soil, { tx, ty }, tier);
@@ -3209,103 +3231,94 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Every placed soil tile, drawn as its own tilled diamond.
+   * Every placed soil tile's flat, unfurrowed ground (`paintAreaGround`,
+   * always `furrowed: false` now -- furrows were a whole-bed picture's own
+   * texture, and there is no whole-bed picture any more), plus one
+   * `soilSlot` picture per OWNED planting square on top of it, from
+   * `paintOwnedSlots` below.
    *
-   * One picture per bed rather than a merged outline: the beds share a fill
-   * and a rim, so two adjacent ones already read as one patch of earth with
-   * no auto-tiling -- there is no seam between them to bitmask away, only a
-   * rim, and that rim is what makes a bed the player placed legible as a
-   * bed. Merging them would cost the edge that says where the player may
-   * plant.
-   *
-   * The picture is `soilBed`, drawn at its own diamond's screen size and
-   * centred on the bed. It is NOT baked through `bakeSpriteTexture` the way
-   * every painter-backed sprite is: that path exists to pad a texture to a
-   * power of two so WebGL1 will mipmap it (see `bakeTexture`), and this
-   * source is already 512x256 -- both powers of two -- so the padding would
-   * be a no-op and the extra canvas pure cost. It is also not a painter: it
-   * has no box and no anchor, it is a picture of one specific world square.
-   *
-   * The flat fill underneath stays, and is not dead code: it draws for the
-   * frame or two before the file arrives, and forever if it never does.
-   *
-   * A BED BOUGHT ONE SQUARE AT A TIME skips all of the above until every
-   * `SOIL_SLOTS_PER_TILE` square is owned. Both the furrow lines and the
-   * whole-bed picture assume all twelve squares are tilled ground, which is
-   * not true of a bed still being filled in -- drawing either over an
-   * unbought square would show the player dirt they have not paid for. Such
-   * a bed instead gets the plain, unfurrowed fill (exactly what a full bed
-   * shows for the frame or two before its own picture loads) plus one small
-   * tilled square per owned slot, from `paintOwnedSlots` below.
+   * The flat fill under a bed still bought whole is not dead weight: with a
+   * `SOIL_SLOT_INSET` gap between squares (see `paintOwnedSlots`'s own doc),
+   * it is what shows through as the hairline grout between them, the same
+   * job it already did for a bed still being filled in one square at a
+   * time -- which is why a full bed and a partial one now go through the
+   * exact same two calls instead of a fork between them.
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const bedKey = spriteLoadKey("soilBed");
-    const bed = this.textures.exists(bedKey);
     for (const tile of orderedSoilTiles(this.soil)) {
       const rect = soilTileRect(tile.tx, tile.ty);
-      const owned = soilTileOwnedSlots(tile);
-      if (owned < SOIL_SLOTS_PER_TILE) {
-        built.push(...this.paintAreaGround(rect, "soil", false));
-        built.push(...this.paintOwnedSlots(tile, owned));
-        continue;
-      }
-      built.push(...this.paintAreaGround(rect, "soil", !bed, soilFurrowOffsets()));
-      if (!bed) continue;
-      // A square projects to a diamond twice as wide as it is tall, centred
-      // on the square's own centre -- so the picture needs no anchoring
-      // beyond that, and its size follows the bed rather than a constant.
-      const centre = isoProject(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      const picture = this.add
-        .image(centre.x, centre.y, bedKey)
-        .setDisplaySize(rect.width * 2, rect.height)
-        .setDepth(GROW_AREA_GROUND_DEPTH);
-      // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
-      // why a tint and not a plate of its own. A null tint leaves the plain
-      // bed exactly as it was, so an untiered farm is pixel-identical.
-      const tint = soilTierDef(soilTileTier(tile)).tint;
-      if (tint !== null) picture.setTint(tint);
-      built.push(picture);
+      built.push(...this.paintAreaGround(rect, "soil", false));
+      built.push(...this.paintOwnedSlots(tile, soilTileOwnedSlots(tile)));
     }
     return built;
   }
 
   /**
-   * One small tilled square per OWNED planting square in a bed that has not
-   * been bought whole -- the honest picture of "these squares are dug, that
-   * ground is not" for a bed with no per-square art of its own (there is
-   * exactly one bed-sized picture in the repo, `soilBed`, sized for a whole
-   * tilled bed -- see `paintSoilTiles`'s own note). Graphics rather than a
-   * second picture, drawn at exactly the footprint `soilSlotPoint` already
-   * centres a plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units
-   * so neighbouring squares show a hairline gap instead of touching), so a
+   * One `soilSlot` picture per OWNED planting square -- the same picture
+   * whether the bed is still being filled in one square at a time or was
+   * bought whole, at exactly the footprint `soilSlotPoint` already centres a
+   * plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units so
+   * neighbouring squares show a hairline gap instead of touching), so a
    * plant standing on square `i` always stands inside the square drawn for
    * it -- never on the edge of one or straddling two.
+   *
+   * `soilSlot` is a single planting square's own art (stackacres-sprites.ts),
+   * not baked through `bakeSpriteTexture` the way every painter-backed
+   * sprite is -- that path pads a texture to a power of two so WebGL1 will
+   * mipmap it (see `bakeTexture`), and this source is already 256x128, both
+   * powers of two, so the padding would be a no-op. It is also not a
+   * painter: it has no box and no anchor, it is a picture of one specific
+   * world square. A vector square is the fallback for the frame or two
+   * before the file arrives, and forever if it never does -- the same
+   * "flat fill first, picture once it loads" contract `paintSoilTiles`
+   * used to keep for a whole bed.
    *
    * `owned` is always in reading order starting from square 0
    * (`soilTileOwnedSlots`'s own doc comment), so this never has to ask WHICH
    * squares are owned, only how many.
    */
-  private paintOwnedSlots(tile: SoilTileCoord, owned: number): Phaser.GameObjects.GameObject[] {
+  private paintOwnedSlots(tile: SoilTile, owned: number): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const ramp = rampHex("soil");
-    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
-    built.push(g);
     const halfW = (SOIL_COL_PITCH - 2) / 2;
     const halfH = (SOIL_ROW_PITCH - 2) / 2;
+    // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
+    // why a tint and not a plate of its own. A null tint leaves every slot
+    // exactly as it was, so an untiered farm is pixel-identical.
+    const tint = soilTierDef(soilTileTier(tile)).tint;
+    const slotKey = spriteLoadKey("soilSlot");
+    const hasArt = this.textures.exists(slotKey);
+    const ramp = rampHex("soil");
+    const g = hasArt ? null : this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    if (g) built.push(g);
     for (let slot = 0; slot < owned; slot += 1) {
       const p = soilSlotPoint(tile, slot);
-      const corners = projectedCorners({ x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 });
-      g.fillStyle(ramp.top, 1);
-      g.beginPath();
-      g.moveTo(corners.n.x, corners.n.y);
-      g.lineTo(corners.e.x, corners.e.y);
-      g.lineTo(corners.s.x, corners.s.y);
-      g.lineTo(corners.w.x, corners.w.y);
-      g.closePath();
-      g.fillPath();
-      g.lineStyle(1, ramp.rim, 0.6);
-      g.strokePath();
+      const rect = { x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 };
+      if (hasArt) {
+        // Any world rect projects to an exactly-2:1 diamond (see
+        // lib/stackacres/iso.ts's `isoProject`), the same shape `soilSlot`
+        // is drawn in, so its own centre and `(width + height)`/`/2` size
+        // need no per-square anchoring beyond that.
+        const centre = isoProject(p.x, p.y);
+        const picture = this.add
+          .image(centre.x, centre.y, slotKey)
+          .setDisplaySize(rect.width + rect.height, (rect.width + rect.height) / 2)
+          .setDepth(GROW_AREA_GROUND_DEPTH);
+        if (tint !== null) picture.setTint(tint);
+        built.push(picture);
+        continue;
+      }
+      const corners = projectedCorners(rect);
+      g!.fillStyle(ramp.top, 1);
+      g!.beginPath();
+      g!.moveTo(corners.n.x, corners.n.y);
+      g!.lineTo(corners.e.x, corners.e.y);
+      g!.lineTo(corners.s.x, corners.s.y);
+      g!.lineTo(corners.w.x, corners.w.y);
+      g!.closePath();
+      g!.fillPath();
+      g!.lineStyle(1, ramp.rim, 0.6);
+      g!.strokePath();
     }
     return built;
   }
@@ -3756,18 +3769,25 @@ export class StackAcresScene extends Phaser.Scene {
         this.mowSegment(at, at);
         return;
       }
-      // Every other tap is aimed at the farm itself. A unit's own picture
-      // first -- collecting, feeding and clearing happen where the finger
-      // landed now, not in a sidebar row -- and failing that, the fenced
-      // ground of whichever district it fell in, which is an offer to seed
-      // something there. A tap in the woods still does nothing.
-      const local = { x: event.clientX - this.hostOrigin.left, y: event.clientY - this.hostOrigin.top };
-      const hit = this.unitAt(event.clientX, event.clientY);
+      // Every other tap is aimed at the farm itself, through `dispatchTap`
+      // below -- the same chain `tapAt` replays for a tap that arrived via a
+      // DOM overlay instead of the canvas (see that method's own doc).
+      this.dispatchTap(event.clientX, event.clientY);
+    };
+
+    const dispatchTap = (clientX: number, clientY: number): void => {
+      // A unit's own picture first -- collecting, feeding and clearing
+      // happen where the finger landed now, not in a sidebar row -- and
+      // failing that, the fenced ground of whichever district it fell in,
+      // which is an offer to seed something there. A tap in the woods still
+      // does nothing.
+      const local = { x: clientX - this.hostOrigin.left, y: clientY - this.hostOrigin.top };
+      const hit = this.unitAt(clientX, clientY);
       if (hit) {
         this.callbacks.onUnitTap(hit, local);
         return;
       }
-      const ground = resolveWorld(event.clientX, event.clientY);
+      const ground = resolveWorld(clientX, clientY);
       // While stepped inside the Greenhouse, every tap resolves against its
       // own six-slot sub-grid instead of the open-world chain below -- see
       // `enterGreenhouse`. Checked before anything else in this chain, since
@@ -3876,6 +3896,7 @@ export class StackAcresScene extends Phaser.Scene {
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local, { x: ground.x, y: ground.y });
     };
+    this.dispatchTap = dispatchTap;
 
     const onUp = (event: PointerEvent): void => up(event, false);
     const onCancel = (event: PointerEvent): void => up(event, true);

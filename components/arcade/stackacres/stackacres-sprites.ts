@@ -53,10 +53,10 @@
  * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
  * stone in it. They are still painters.
  *
- * `grassTile`, `soilBed` and `waterTile` are in here but are not one of
+ * `grassTile`, `soilSlot` and `waterTile` are in here but are not one of
  * these: none is a painter, none has a box or an anchor, and none is ever
  * wrapped by `spriteBacked`. They ride this module only because this list is
- * what the scene's `preload` walks, and `bakeGrass`/`paintSoilTiles`/
+ * what the scene's `preload` walks, and `bakeGrass`/`paintOwnedSlots`/
  * `bakePondTexture` want them in hand before drawing rather than a frame
  * later.
  *
@@ -251,15 +251,16 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // ONE tilled bed, not a texture -- which is what the thing it replaced
-  // (`soilTile`, a repeating furrow texture masked to the whole district's
-  // diamond) had to be back when the Crop Fields were one district-sized
-  // box. They are a lattice of 64-unit beds now (lib/stackacres/soil.ts), and
-  // a 64-unit square projects to a 128x64 screen diamond, so this is that
-  // diamond drawn whole. Drawing it whole is what lets its three furrows land
-  // exactly on `soilFurrowOffsets()` -- the lines the plants stand on -- where
-  // a repeating texture put them wherever its tile scale happened to fall.
-  soilBed: "/stackacres/sprites/soil-bed.png",
+  // ONE planting square, not a whole bed -- replaced the old `soilBed`
+  // (one picture per 64-unit bed, all twelve of its squares baked into a
+  // single furrowed diamond) so a bed bought one square at a time and a bed
+  // bought whole draw through the same picture, at the same
+  // `SOIL_COL_PITCH`x`SOIL_ROW_PITCH` footprint `paintOwnedSlots` already
+  // draws squares at. Any world rect projects to an exactly-2:1 diamond
+  // (see lib/stackacres/iso.ts's `isoProject`), which is why one 256x128
+  // picture displays correctly at a square's own screen size with no
+  // stretch, whatever that size works out to.
+  soilSlot: "/stackacres/sprites/soil-slot.png",
   // The pond's surface grain, and only the grain -- the shore, the gradient,
   // the bank shadow and the glints stay drawn (art-water.ts). Composited
   // INSIDE the water's own ellipse at low alpha, so it is texture under the
@@ -328,11 +329,11 @@ export function spriteUrl(name: SpriteName): string {
 }
 
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the three ground pictures -- `grassTile`/`soilBed`/`waterTile` have no painter
+ *  except the three ground pictures -- `grassTile`/`soilSlot`/`waterTile` have no painter
  *  behind them (a ground tile is a texture, not a thing with a box and an
  *  anchor), so they are the names here that `spriteBacked` and
  *  `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilBed" | "waterTile">;
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilSlot" | "waterTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

@@ -121,7 +121,10 @@ test.describe("safe-area insets", () => {
 
       const viewport = page.viewportSize()!;
       const shell = await page.locator(".game-shell").boundingBox();
-      expect(Math.round(shell!.bottom)).toBe(viewport.height - PORTRAIT.bottom);
+      // Playwright's BoundingBox is { x, y, width, height }, not a DOMRect --
+      // no .bottom of its own, unlike `boxes` below (built from
+      // getBoundingClientRect() inside the page, which does have one).
+      expect(Math.round(shell!.y + shell!.height)).toBe(viewport.height - PORTRAIT.bottom);
       const boxes = await collect(page, WATCHED);
       expect(boxes.length).toBeGreaterThan(2);
 

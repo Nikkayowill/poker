@@ -466,6 +466,30 @@ export function soilFurrowOffsets(): number[] {
 }
 
 /**
+ * Which furrow row fills `n`th, centre-out rather than top-down.
+ *
+ * A bed's first crop is slot 0, and slot 0 used to always land in furrow row
+ * 0 -- the row nearest one edge of the tile, not the tile's middle. A single
+ * crop standing alone in an otherwise-empty bed is the common case (most
+ * beds hold one or two plants, not a full dozen), and top-down fill made that
+ * common case read as "planted in the corner" rather than "planted in the
+ * middle of the patch". Filling the centre furrow first fixes exactly that
+ * case without touching the lattice itself: a bed with every square filled
+ * still ends up with one plant standing on each of the `SOIL_SLOT_ROWS`
+ * furrow lines, just filled in a different order.
+ */
+function soilRowFillOrder(): readonly number[] {
+  const order: number[] = [];
+  const mid = Math.floor(SOIL_SLOT_ROWS / 2);
+  order.push(mid);
+  for (let d = 1; order.length < SOIL_SLOT_ROWS; d += 1) {
+    if (mid + d < SOIL_SLOT_ROWS) order.push(mid + d);
+    if (order.length < SOIL_SLOT_ROWS && mid - d >= 0) order.push(mid - d);
+  }
+  return order;
+}
+
+/**
  * A slot's world point: strictly on the lattice, with no jitter at all.
  *
  * The scatter this replaced rolled a random point per crop, and that is what
@@ -475,12 +499,15 @@ export function soilFurrowOffsets(): number[] {
  *
  * Columns are centred across the tile's usable width rather than started at
  * the inset, so a bed that does not divide evenly has equal margins instead
- * of a gap all down one side.
+ * of a gap all down one side. Rows fill centre-out (`soilRowFillOrder`)
+ * rather than top-down, so the first plant in a bed stands in the middle of
+ * it rather than against one edge.
  */
 export function soilSlotPoint(tile: SoilTileCoord, slot: number): WorldPoint {
   const r = soilTileRect(tile.tx, tile.ty);
   const col = slot % SOIL_SLOT_COLS;
-  const row = Math.floor(slot / SOIL_SLOT_COLS) % SOIL_SLOT_ROWS;
+  const fillRow = Math.floor(slot / SOIL_SLOT_COLS) % SOIL_SLOT_ROWS;
+  const row = soilRowFillOrder()[fillRow];
   const span = (SOIL_SLOT_COLS - 1) * SOIL_COL_PITCH;
   return {
     x: r.x + SOIL_TILE / 2 - span / 2 + col * SOIL_COL_PITCH,

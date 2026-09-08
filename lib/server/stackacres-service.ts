@@ -153,6 +153,7 @@ import {
   collectStackAcresUnit,
   countOccupiedStackAcresUnits,
   createStackAcresUnit,
+  SoilSlotConflictError,
   feedStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
@@ -1737,37 +1738,54 @@ export async function stockStackAcres(
   // sub-grid instead, so both keep a null slot and the plain multiplier. The
   // two effects do not stack for the additional reason that they would
   // otherwise multiply into a cycle far shorter than either was tuned for.
-  const soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse);
+  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse);
 
   try {
-    // Snapshotted at stocking, never re-derived at collection -- the same
-    // rule `yieldQuantity`/`stake` already follow. Outside the Greenhouse
-    // (or for a stock kind it does not accept) the greenhouse term is exactly
-    // `def.durationMs`, unchanged.
-    //
-    // The soil term is snapshotted by the same act of writing `ready_at`:
-    // once the row carries an absolute instant, retuning
-    // `SOIL_TIER_DEFS[...].growthMultiplier` cannot reach back and change
-    // what an already-growing crop returns -- the rule the Ante Up wager
-    // ladders and `GREENHOUSE_GROWTH_MULTIPLIER` both state for themselves.
-    // Rounded once, at the end, so the two multipliers cannot each round.
-    const durationMs = Math.round(
-      greenhouseDurationMs(stock, def.durationMs, inGreenhouse) * soilAssignment.growthMultiplier,
-    );
-    await createStackAcresUnit(profile.id, {
-      stock,
-      stake: def.seedCost,
-      yieldQuantity: produce.quantity,
-      startedAt: now,
-      readyAt: new Date(now.getTime() + durationMs),
-      // An animal counts as fed the moment it arrives; a crop never eats.
-      lastFedAt: def.hungerMs === null ? null : now,
-      // And a crop goes into watered ground; an animal has no soil to dry out.
-      lastWateredAt: def.thirstMs === null ? null : now,
-      permanent: false,
-      housedIn: inGreenhouse ? "greenhouse" : null,
-      soilSlot: soilAssignment.slot,
-    });
+    // `assignSoilSlot` only reads; a second sow can read the same free slot
+    // before this insert lands, and the database's own partial unique index
+    // on (profile_id, soil_slot) is what actually catches that -- surfaced
+    // here as `SoilSlotConflictError`. Re-picking a slot and trying again a
+    // couple of times resolves an honest race; past that, sow onto the
+    // wrapping rank-hash path (slot: null) rather than fail a purchase over
+    // ground contention -- the same "no ground is not a refusal" posture
+    // `assignSoilSlot` already takes when the farm is simply full.
+    for (let attempt = 0; ; attempt += 1) {
+      // Snapshotted at stocking, never re-derived at collection -- the same
+      // rule `yieldQuantity`/`stake` already follow. Outside the Greenhouse
+      // (or for a stock kind it does not accept) the greenhouse term is
+      // exactly `def.durationMs`, unchanged.
+      //
+      // The soil term is snapshotted by the same act of writing `ready_at`:
+      // once the row carries an absolute instant, retuning
+      // `SOIL_TIER_DEFS[...].growthMultiplier` cannot reach back and change
+      // what an already-growing crop returns -- the rule the Ante Up wager
+      // ladders and `GREENHOUSE_GROWTH_MULTIPLIER` both state for themselves.
+      // Rounded once, at the end, so the two multipliers cannot each round.
+      const durationMs = Math.round(
+        greenhouseDurationMs(stock, def.durationMs, inGreenhouse) * soilAssignment.growthMultiplier,
+      );
+      try {
+        await createStackAcresUnit(profile.id, {
+          stock,
+          stake: def.seedCost,
+          yieldQuantity: produce.quantity,
+          startedAt: now,
+          readyAt: new Date(now.getTime() + durationMs),
+          // An animal counts as fed the moment it arrives; a crop never eats.
+          lastFedAt: def.hungerMs === null ? null : now,
+          // And a crop goes into watered ground; an animal has no soil to dry out.
+          lastWateredAt: def.thirstMs === null ? null : now,
+          permanent: false,
+          housedIn: inGreenhouse ? "greenhouse" : null,
+          soilSlot: soilAssignment.slot,
+        });
+        break;
+      } catch (error) {
+        if (!(error instanceof SoilSlotConflictError)) throw error;
+        soilAssignment =
+          attempt < 2 ? await assignSoilSlot(profile.id, stock, inGreenhouse) : { slot: null, growthMultiplier: 1 };
+      }
+    }
   } catch (error) {
     // The database refused outright -- the trigger raising on a cap race or a
     // ceiling desync arrives HERE as a throw -- and nothing came into

@@ -264,6 +264,21 @@ export const SPRITE_ART = {
   // INSIDE the water's own ellipse at low alpha, so it is texture under the
   // gradient rather than a picture of a pond.
   waterTile: "/stackacres/sprites/water-tile.png",
+  // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
+  // tappable, already-generated pixel-art PNGs standing in a flat-vector
+  // world on purpose (the "art-style shock" greeting is the whole feature).
+  // Ordinary core sprites in every other respect: `CORE_SPRITE_NAMES` below
+  // picks them up automatically since they are not crop frames.
+  visitorBleep: "/stackacres/sprites/visitor-bleep.png",
+  visitorGlimm: "/stackacres/sprites/visitor-glimm.png",
+  visitorNib: "/stackacres/sprites/visitor-nib.png",
+  visitorPixl: "/stackacres/sprites/visitor-pixl.png",
+  visitorSquee: "/stackacres/sprites/visitor-squee.png",
+  visitorDott: "/stackacres/sprites/visitor-dott.png",
+  visitorMira: "/stackacres/sprites/visitor-mira.png",
+  visitorZeph: "/stackacres/sprites/visitor-zeph.png",
+  visitorKip: "/stackacres/sprites/visitor-kip.png",
+  visitorTavo: "/stackacres/sprites/visitor-tavo.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;

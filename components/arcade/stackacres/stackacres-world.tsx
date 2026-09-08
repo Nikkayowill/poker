@@ -8,6 +8,7 @@ import { stackacresToolTierDef, type StackAcresToolTier } from "@/lib/stackacres
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
+import type { PropKind } from "@/lib/stackacres/props";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
@@ -182,6 +183,10 @@ export interface StackAcresWorldProps {
   /** A finger landed on Grandfather Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
+  /** A finger landed on one of the ten stranded visitors (see
+   *  lib/stackacres/visitors.ts) -- the cue to show that visitor's own
+   *  one-line greeting; see stackacres-farm.tsx's `onWorldVisitorTap`. */
+  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -284,6 +289,7 @@ export function StackAcresWorld({
   onMerchantTap,
   onMonkTap,
   onRayTap,
+  onVisitorTap,
   onSecretZoneTap,
   onFenceSegmentTap,
   onLivestockDamaged,
@@ -309,6 +315,7 @@ export function StackAcresWorld({
   const merchantTapRef = useRef(onMerchantTap);
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
+  const visitorTapRef = useRef(onVisitorTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const livestockDamagedRef = useRef(onLivestockDamaged);
@@ -342,6 +349,7 @@ export function StackAcresWorld({
     merchantTapRef.current = onMerchantTap;
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
+    visitorTapRef.current = onVisitorTap;
     secretZoneTapRef.current = onSecretZoneTap;
     fenceSegmentTapRef.current = onFenceSegmentTap;
     livestockDamagedRef.current = onLivestockDamaged;
@@ -396,6 +404,7 @@ export function StackAcresWorld({
           onMerchantTap: () => merchantTapRef.current(),
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
+          onVisitorTap: (kind, at) => visitorTapRef.current(kind, at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),

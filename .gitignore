@@ -59,3 +59,9 @@ scripts/__pycache__/
 # CLAUDE.md is Kayo's own local project-notes file now, not a shared doc --
 # it stays on his machine instead of getting pushed.
 /CLAUDE.md
+
+# Impeccable design-review tool output. config.json/design.json are shared
+# settings and stay tracked; the critique reports and hook cache are local
+# scratch output from running the tool, not something to publish.
+.impeccable/critique/
+.impeccable/hook.cache.json

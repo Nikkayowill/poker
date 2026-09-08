@@ -178,7 +178,7 @@ import {
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
-import { SPRITE_ART, SPRITE_NAMES, spriteLoadKey } from "./stackacres-sprites";
+import { CORE_SPRITE_NAMES, CROP_SPRITE_NAMES, SPRITE_ART, spriteLoadKey } from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
 import { bakeYardMatTexture } from "./art-mud";
 import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
@@ -550,6 +550,14 @@ const TAP_REJECT_RIPPLE_MS = 260;
  *  pinned to a screen position is told the ground has moved out from under
  *  it. See `notifyViewMoved`. */
 const VIEW_MOVE_SLOP = 4;
+
+/** How far outside the Long Meadow's own bounds, in world units, the camera
+ *  may sit before its crop frames start fetching -- a pan that is about to
+ *  cross into the Meadow should already have them arriving, not start the
+ *  instant the boundary is crossed. One soil tile's width or so, not a
+ *  whole district: this only needs to beat a drag, not a jump-cut travel
+ *  tween. See `ensureCropTextures`. */
+const CROP_LOAD_MARGIN = 96;
 
 /** Inertia after a flick. Speeds are CSS pixels per millisecond. */
 const FLICK_WINDOW_MS = 80;
@@ -1363,6 +1371,10 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private lastView = { x: 0, y: 0, zoom: 0 };
 
+  /** Whether the Long Meadow's crop frames (`CROP_SPRITE_NAMES`) have been
+   *  fetched yet. See `ensureCropTextures`. */
+  private cropTexturesState: "unloaded" | "loading" | "loaded" = "unloaded";
+
   /**
    * The farm's own display face, read off the host element rather than
    * hardcoded -- `.sa-theme` sets `--sa-font` and the canvas host inherits it,
@@ -1379,14 +1391,18 @@ export class StackAcresScene extends Phaser.Scene {
     this.options = options;
   }
 
-  /** The only files StackAcres fetches: the four generated sprites (see
-   *  stackacres-sprites.ts). Everything else is still drawn at boot. Loading
-   *  them here rather than letting the painters pick them up asynchronously
-   *  is what stops the world baking a cow, then a different cow a moment
-   *  later -- Phaser guarantees `preload` finishes before `create`. A file
-   *  that fails to load is not fatal: `bakeArt` paints the drawn version. */
+  /** Every sprite file StackAcres fetches, minus the Long Meadow's crop
+   *  frames (see `CROP_SPRITE_NAMES`'s own note, and `ensureCropTextures`
+   *  below) -- loading all 150+ of them on every single boot, whether or not
+   *  a player ever walks into the Meadow that session, is what was crashing
+   *  the game out on a phone's much tighter WebView memory budget. Loading
+   *  the rest here rather than letting the painters pick them up
+   *  asynchronously is what stops the world baking a cow, then a different
+   *  cow a moment later -- Phaser guarantees `preload` finishes before
+   *  `create`. A file that fails to load is not fatal: `bakeArt` paints the
+   *  drawn version. */
   preload(): void {
-    for (const name of SPRITE_NAMES) {
+    for (const name of CORE_SPRITE_NAMES) {
       this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
     }
     this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
@@ -4479,6 +4495,50 @@ export class StackAcresScene extends Phaser.Scene {
    * easing out over its last few sub-pixel frames does not -- a menu opened
    * just as the camera settled should stay open.
    */
+  /**
+   * Fetches the Long Meadow's crop frames the moment the camera's own visible
+   * rectangle could reach them, rather than at boot with everything else
+   * (`preload`'s own note has the crash this fixes). A plain AABB test
+   * against `worldView` -- padded by `CROP_LOAD_MARGIN` so the fetch is
+   * already running by the time a bed panned into view would actually need a
+   * frame, not the instant it crosses the camera's exact edge.
+   *
+   * Checked every frame while unloaded rather than only on `notifyViewMoved`:
+   * that method's own move threshold is sized for "did the shell's pinned
+   * overlays need to hear about this", not "is the Meadow visible yet", and
+   * gating on it would risk a static starting view that happens to already
+   * include the Meadow never firing this at all.
+   *
+   * Zooming out far enough to see the whole map still loads every one of
+   * these, same as `preload` used to for every boot -- the difference is
+   * that is now a deliberate, occasional pull from a session already
+   * running, not a tax on every single one.
+   */
+  private ensureCropTextures(): void {
+    if (this.cropTexturesState !== "unloaded") return;
+    const view = this.cameras.main.worldView;
+    const bounds = STACKACRES_ZONES.meadow.bounds;
+    const overlaps =
+      view.x < bounds.x + bounds.width + CROP_LOAD_MARGIN &&
+      view.x + view.width > bounds.x - CROP_LOAD_MARGIN &&
+      view.y < bounds.y + bounds.height + CROP_LOAD_MARGIN &&
+      view.y + view.height > bounds.y - CROP_LOAD_MARGIN;
+    if (!overlaps) return;
+    this.cropTexturesState = "loading";
+    for (const name of CROP_SPRITE_NAMES) {
+      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.cropTexturesState = "loaded";
+      // Every crop unit painted so far did so against the drawn painter
+      // fallback (no sprite was here yet) -- this is the same rebuild
+      // `refreshSoil` already does after a soil change, reused here to swap
+      // every one of them over to the real frame now that it exists.
+      this.refreshSoil();
+    });
+    this.load.start();
+  }
+
   private notifyViewMoved(): void {
     const cam = this.cameras.main;
     const screen = cam.zoom / DPR;
@@ -5275,6 +5335,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.fitVignette();
     this.fitEdgeGuides();
     this.notifyViewMoved();
+    this.ensureCropTextures();
     // Stepped BEFORE the reduced-motion gate below, on purpose: a bow the
     // player just asked for is the feature, not ambient motion, so the
     // crouch/idle pose must still change with motion off. Only the

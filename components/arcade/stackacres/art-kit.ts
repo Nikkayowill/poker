@@ -9,11 +9,49 @@
  * evaluation time throws. Nothing here touches Phaser.
  */
 
-/** Device pixels per world unit in a baked texture. Eight is enough that the
- *  camera's 5x ceiling still samples the texture down rather than up. */
 import type { Ramp } from "./art-palette";
 
-export const ART_SCALE = 8;
+/**
+ * The shortest screen side, in CSS pixels, at or below which a device is
+ * treated as a phone for art-memory purposes. An iPhone 14 is 390 and a Pro
+ * Max 430; the smallest iPad is 744, so tablets stay on the desktop value.
+ */
+const PHONE_SHORTEST_SIDE = 500;
+
+/**
+ * Device pixels per world unit in a baked texture.
+ *
+ * WHY THIS IS NOT JUST 8. Every painter bakes into a canvas padded out to a
+ * power of two (`bakeTexture`), and that canvas is held twice: once as the
+ * Canvas2D backing store, once as the uploaded WebGL texture, plus a third of
+ * it again in mipmaps. At 8 a broadleaf's 122x78 box comes to 976x624, which
+ * pads to 1024x1024 -- four megabytes, eleven times over for the woodland
+ * alone. Summed across every painter the scene bakes at boot it was north of
+ * a hundred megabytes before a single frame drew, which is what a phone's
+ * WebView was dying on.
+ *
+ * Four is the phone value because of the padding, not in spite of it: the
+ * same broadleaf lands at 488x312, which pads to 512x512 and costs a quarter
+ * as much. Five or six would only buy back half, since both still round up to
+ * a 1024-wide canvas.
+ *
+ * What it costs: the camera opens around 0.75x and tops out at 5x, and `DPR`
+ * is capped at 2, so the most a world unit is ever worth is ten device
+ * pixels. Four is still oversampled at the view the game actually opens on
+ * and goes soft only when a phone is pinched the whole way in. Desktop keeps
+ * eight and is unchanged.
+ *
+ * Read once at module load, the same way `DPR` is, so every `1 / ART_SCALE`
+ * draw scale in the scene stays in step with whatever the bakes used. Node
+ * (tests, the server render) has no screen and gets eight.
+ */
+function artScaleForDevice(): number {
+  if (typeof window === "undefined" || typeof window.screen === "undefined") return 8;
+  const shortest = Math.min(window.screen.width, window.screen.height);
+  return shortest > 0 && shortest <= PHONE_SHORTEST_SIDE ? 4 : 8;
+}
+
+export const ART_SCALE = artScaleForDevice();
 
 /**
  * The frame every painter's picture lives in. A baked canvas is padded out to

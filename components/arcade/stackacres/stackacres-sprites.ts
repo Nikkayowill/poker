@@ -310,33 +310,42 @@ export function spriteLoadKey(name: SpriteName): string {
 }
 
 const loaded = new Map<SpriteName, HTMLImageElement>();
+const requested = new Set<SpriteName>();
 const waiting = new Set<() => void>();
-let started = false;
 
 /**
- * Starts fetching every one of them. Safe to call from anywhere and any
- * number of times; a no-op on the server and after the first call.
+ * Starts fetching ONE sprite. Safe to call from anywhere and any number of
+ * times; a no-op on the server and after the first call for that name.
+ *
+ * One at a time, and only on ask, because this cache is the DOM side of the
+ * art -- the toolbelt, the seed strip, the splash -- and those between them
+ * reach a couple of dozen painters, not all 130. It used to fetch the lot the
+ * first time anything touched it, which meant opening a panel with a gold
+ * coin in it decoded every tree, every pine and all 66 crop frames into an
+ * `HTMLImageElement` that nothing was ever going to draw, and held them for
+ * the session. On a desktop that was invisible. On a phone it was tens of
+ * megabytes next to the ones Phaser was already holding, and the farm was
+ * running out of WebView before it finished booting.
  */
-export function loadSprites(): void {
-  if (started || typeof window === "undefined" || typeof Image === "undefined") return;
-  started = true;
-  for (const name of SPRITE_NAMES) {
-    const img = new Image();
-    img.decoding = "async";
-    img.onload = () => {
-      loaded.set(name, img);
-      for (const cb of [...waiting]) cb();
-    };
-    // A sprite that fails to load is not an error worth breaking the farm
-    // over: the painter it wraps is still there and still draws.
-    img.onerror = () => {};
-    img.src = SPRITE_ART[name];
-  }
+function loadSprite(name: SpriteName): void {
+  if (requested.has(name) || typeof window === "undefined" || typeof Image === "undefined") return;
+  requested.add(name);
+  const img = new Image();
+  img.decoding = "async";
+  img.onload = () => {
+    loaded.set(name, img);
+    for (const cb of [...waiting]) cb();
+  };
+  // A sprite that fails to load is not an error worth breaking the farm
+  // over: the painter it wraps is still there and still draws.
+  img.onerror = () => {};
+  img.src = SPRITE_ART[name];
 }
 
-/** The decoded image, or null while it is still coming. */
+/** The decoded image, or null while it is still coming. Asking is what starts
+ *  it coming. */
 export function spriteImage(name: SpriteName): HTMLImageElement | null {
-  loadSprites();
+  loadSprite(name);
   const img = loaded.get(name);
   return img && img.complete && img.naturalWidth > 0 ? img : null;
 }
@@ -346,12 +355,17 @@ export function spriteImage(name: SpriteName): HTMLImageElement | null {
  * painted the fallback can paint again. Returns its own unsubscribe.
  */
 export function onSpriteReady(cb: () => void): () => void {
-  loadSprites();
   waiting.add(cb);
   return () => waiting.delete(cb);
 }
 
-/** True once every sprite has arrived — lets a caller stop re-subscribing. */
+/**
+ * True once every sprite anything has ASKED for has arrived -- which is what
+ * a caller subscribing to `onSpriteReady` actually wants to know, since the
+ * only sprites that will ever arrive now are the ones something requested.
+ * False before the first request, so a canvas that has not painted yet keeps
+ * listening.
+ */
 export function allSpritesReady(): boolean {
-  return SPRITE_NAMES.every((n) => spriteImage(n) !== null);
+  return requested.size > 0 && [...requested].every((n) => spriteImage(n) !== null);
 }

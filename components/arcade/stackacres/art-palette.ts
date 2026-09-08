@@ -59,14 +59,15 @@ export const RAMPS = {
   /** Land nobody has cleared: darker and cooler, so owned land wins. */
   wild: { top: "#5e9b3a", side: "#487a2b", rim: "#33591d" },
   path: { top: "#f7d98c", side: "#dbb46a", rim: "#9f7c40" },
-  // Darkened 2026-09-06: this was the flat FILL colour worked ground draws
-  // when it has no baked texture over it -- the Ox Fields cattle ground
-  // (never textured at all) and every soil tile before its "soilBed"
-  // picture has loaded (stackacres-scene.ts's `paintSoilTiles`). At the old
-  // #c89058 it read as a pale tan sandbox rather than dirt; this is close
-  // to the actual soil-bed art's own tone so there is no visible seam once
-  // that picture arrives on top of it.
-  soil: { top: "#8a5c34", side: "#6b4526", rim: "#4a2f19" },
+  // The flat FILL colour worked ground draws when it has no picture over it
+  // -- the Ox Fields cattle ground (never textured at all), the hairline
+  // grout between soil squares (stackacres-scene.ts's `paintOwnedSlots`
+  // insets each `soilSlot` picture, and this shows through the gap), and
+  // any soil square before its own picture has loaded. Darkened 2026-09-08
+  // to match `soilSlot`'s own dark, realistic dirt tone (Kayo: "the soil
+  // needs to be dark like IRL") -- the old light tan read as a mismatch,
+  // both against the picture and against real soil.
+  soil: { top: "#332417", side: "#241a10", rim: "#1a130b" },
   straw: { top: "#efd98a", side: "#d4ba63", rim: "#a8913f" },
   muck: { top: "#7a5636", side: "#5c3f26", rim: "#3c2817" },
   wood: { top: "#dd9a4a", side: "#b8762c", rim: "#79491b" },

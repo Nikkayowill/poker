@@ -131,6 +131,11 @@ export interface StackAcresWorldApi {
    *  the shell because the shell owns the radial menu the preview belongs
    *  to -- the scene has no idea a ring is open. */
   previewSoilAt: (world: WorldPoint | null) => void;
+  /** Replays a tap's own hit-test chain against a point that never actually
+   *  reached the canvas -- see StackAcresScene's own `tapAt` for why the
+   *  seed menu's dismissal scrim needs this. `clientX`/`clientY` are CSS
+   *  pixels, the same space a `PointerEvent` carries. */
+  tapAt: (clientX: number, clientY: number) => void;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
    *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
    *  drives the day/night population swap (the shell's own `timeOfDay()`
@@ -540,6 +545,7 @@ export function StackAcresWorld({
       placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
+      tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),

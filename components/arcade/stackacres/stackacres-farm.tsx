@@ -1920,6 +1920,18 @@ export function StackAcresFarm() {
     panelSound();
     setRadial(null);
   }, []);
+  /** The scrim's own click: closes the menu, same as `closeRadial`, then
+   *  replays the very click that closed it against the scene underneath
+   *  (`StackAcresScene.tapAt`) -- a real DOM button sits over the canvas
+   *  while the menu is open, so that canvas never sees the click at all.
+   *  Without this, switching to a DIFFERENT patch took two taps: one that
+   *  only closed the old menu, and a second that finally landed on the new
+   *  spot. */
+  const onRadialScrimTap = useCallback((event: { clientX: number; clientY: number }) => {
+    panelSound();
+    setRadial(null);
+    world.current?.tapAt(event.clientX, event.clientY);
+  }, []);
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
   // both go away rather than drift off what they were opened on.
@@ -2601,14 +2613,18 @@ export function StackAcresFarm() {
               the whole design: it covers the map but sits EARLIER than the
               toolbelt, the signpost and the camera buttons, which are
               positioned siblings with no z-index of their own and therefore
-              stack above it. So the next tap on the world closes the menu,
-              and the chrome stays live while it is open. */}
+              stack above it. So the next tap on the world closes the menu
+              and the chrome stays live while it is open -- and, since this
+              is a real DOM button the canvas underneath never sees the tap,
+              `onRadialScrimTap` replays that same click against the scene
+              once the menu is gone, so a tap on a different patch switches
+              straight to it instead of taking a second tap to land. */}
           {radial && (
             <button
               type="button"
               className="sa-radial-scrim"
               aria-label="Close the seed menu"
-              onClick={closeRadial}
+              onClick={onRadialScrimTap}
             />
           )}
 

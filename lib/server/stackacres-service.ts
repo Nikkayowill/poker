@@ -59,12 +59,18 @@ import {
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { cropRanks, cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import {
+  PIPE_PLACE_COST,
   recalculatePipeConnections,
   type IrrigableCrop,
   type NetworkGrid,
   type PipeKind,
   type PipeNode,
 } from "@/lib/stackacres/irrigation";
+// Re-exported for existing call sites (e.g. stackacres-pipe-service.test.ts)
+// that imported the price straight off this file before it moved to
+// lib/stackacres/irrigation.ts to be client-safe -- see that file's own
+// comment on PIPE_PLACE_COST for why.
+export { PIPE_PLACE_COST } from "@/lib/stackacres/irrigation";
 import {
   listStackAcresPipes,
   placeStackAcresPipe,
@@ -280,6 +286,12 @@ import {
   listUnlockedSynergyArchetypes,
   unlockSynergyPerk,
 } from "./stackacres-synergy-service";
+import {
+  forgeEnchantment,
+  forgedToolStatsFor,
+  listOwnedForgeEnchantmentIds,
+} from "./stackacres-forge-service";
+import { FORGE_ENCHANTMENTS, isForgeEnchantmentId } from "@/lib/stackacres/forge";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 import {
   emptySecretMuseumRegistry,
@@ -544,6 +556,12 @@ export interface StackAcresView {
    *  lib/stackacres/prestige.ts's own header for what "gross" means here and
    *  why it is immune to the daily Gold ceiling. */
   prestige: StackAcresPrestigeView;
+  /** The Sunlight Forge: catalogue ids (FORGE_ENCHANTMENTS keys, not the
+   *  versioned `enchant_..._v1` wrapper) this player has permanently
+   *  forged. Applies to whichever equipment tier `tool` above currently
+   *  holds -- there is no per-tool-instance row, see lib/stackacres/
+   *  forge.ts's own header for why that is deliberate. */
+  forge: readonly string[];
   /** The irrigation pipe network: every placed tile with its recomputed
    *  connector frame and hydration (lib/stackacres/irrigation.ts). The scene
    *  renders straight off this; a crop a hydrated pipe waters is already
@@ -751,6 +769,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     midnightMerchant,
     prestige,
     lifetimeGross,
+    forgedEnchantments,
     pipeRows,
     soilTiles,
     soilStock,
@@ -787,6 +806,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readMidnightMerchantVisit(profile.id, now),
     readStackAcresPrestige(profile.id),
     readStackAcresLifetimeGross(profile.id),
+    listOwnedForgeEnchantmentIds(profile.id),
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
     readStackAcresSoilStock(profile.id),
@@ -866,6 +886,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       multiplier: prestige.multiplier,
       goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
     },
+    forge: forgedEnchantments,
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
     soilStock,
@@ -991,6 +1012,10 @@ export type StackAcresActionResult = StackAcresView & {
    *  named `prestige`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
   prestigeReset?: unknown;
+  /** Set by `forgeStackAcresToolEnchantment` to what THIS forge just bought
+   *  -- never named `forge`, which is StackAcresView's own always-present
+   *  owned-list and would collide with it in this intersection. */
+  forgeResult?: unknown;
   /** Set by `prayAtStackAcresShrine` to what THIS prayer just did -- never
    *  named `devotion`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
@@ -1044,6 +1069,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
     delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
   }
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
+  if (result.forgeResult !== undefined) delta.forgeResult = result.forgeResult;
   if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
@@ -1554,6 +1580,43 @@ export async function activateStackAcresSynergyPerk(
     throw new StackAcresRequestError(message, 400, { round: await snapshots(profile.id, now) });
   }
   return { ...(await view(profile, now)), synergyActivate: { archetype, success: true } };
+}
+
+/**
+ * Permanently forges one Sunlight Forge enchantment, spending Gold and a
+ * processing-track material in one call -- see `forgeEnchantment`'s own
+ * header for why this needs a single atomic RPC rather than two ordered
+ * spends. `enchantmentId` is the bare catalogue key (FORGE_ENCHANTMENTS'
+ * own keys), matching every other client-facing id in this file (a Synergy
+ * archetype, a secret item id) rather than the versioned wrapper the store
+ * persists.
+ */
+export async function forgeStackAcresToolEnchantment(
+  token: string,
+  enchantmentId: string,
+  now = new Date(),
+): Promise<StackAcresView & { forgeResult: { enchantmentId: string; success: true } }> {
+  if (!isForgeEnchantmentId(enchantmentId)) {
+    throw new StackAcresRequestError("Not a real enchantment.", 400);
+  }
+  const profile = await ensureProfile(token);
+  const outcome = await forgeEnchantment(profile.id, enchantmentId);
+  if (!outcome.success) {
+    const def = FORGE_ENCHANTMENTS[enchantmentId];
+    const message =
+      outcome.reason === "already_owned"
+        ? `You already forged ${def.label}.`
+        : outcome.reason === "insufficient_material"
+          ? `Needs ${def.materialQuantity.toLocaleString()} ${machineItemLabel(def.materialItem, def.materialQuantity)}.`
+          : `${def.label} costs ${def.goldCost.toLocaleString()} Gold.`;
+    throw new StackAcresRequestError(message, outcome.reason === "already_owned" ? 409 : 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return {
+    ...(await view(profile, now)),
+    forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
+  };
 }
 
 /**
@@ -2523,6 +2586,12 @@ export async function harvestStackAcres(
   // this decides is how much headroom to reserve, since a crit paid out of an
   // under-reservation would be silently clipped by step 4's cap.
   const tool = await readStackAcresToolTier(profile.id);
+  // The Sunlight Forge's own permanent enchantments (lib/stackacres/forge.ts)
+  // -- computed BEFORE the Synergy Tree's session buffs below, per that
+  // file's own header: forged stats are what "the tool's own odds" means
+  // from here on, and the Synergy layer composes on top of them, not
+  // instead of them.
+  const forgedStats = await forgedToolStatsFor(profile.id, stackacresToolTierDef(tool));
   // A consumed Lucky Poker Dice (lib/stackacres/secrets.ts) arms a one-shot
   // crit-CHANCE boost for the very next harvest -- it widens the odds, never
   // the payout, so the reservation ceiling below (sized off critBonus alone)
@@ -2539,14 +2608,14 @@ export async function harvestStackAcres(
   const critChance = (
     await applySynergyBuffs(
       {
-        harvestCritChance: effectiveCritChance(stackacresToolTierDef(tool).critChance, diceBoostArmed),
+        harvestCritChance: effectiveCritChance(forgedStats.critChance, diceBoostArmed),
         farmhandSpeed: 1,
         millDoubleOutputChance: 0,
       },
       profile.id,
     )
   ).harvestCritChance;
-  const critCeiling = critGoldFor(planned.net, tool);
+  const critCeiling = critGoldFor(planned.net, tool, forgedStats.critBonus);
 
   // Step 2. A sweep whose whole value is eaten by maintenance reserves
   // nothing, and must not: the RPC raises on a non-positive amount on purpose,
@@ -2677,7 +2746,7 @@ export async function harvestStackAcres(
   // Valued off what actually settled, so a unit that lost its race pays no
   // crit either. A missed roll releases the whole optimistic reservation on
   // the next line, so the headroom is never held past this point.
-  const crit = critical ? critGoldFor(actual.net, tool) : 0;
+  const crit = critical ? critGoldFor(actual.net, tool, forgedStats.critBonus) : 0;
   const produceGold = Math.min(actual.net + crit, reserved);
   await releaseReservation(profile.id, day, reserved - produceGold);
 
@@ -3704,19 +3773,6 @@ export async function prestigeResetStackAcres(
 /* ------------------------------------------------------------------ */
 /* Irrigation pipe network                                             */
 /* ------------------------------------------------------------------ */
-
-/**
- * Placing an irrigation tile spends Gold -- a construction sink, like a
- * Mill's placeCost, and never refunded when the tile is later removed.
- * HYDRATION ITSELF MOVES NO GOLD: a hydrated pipe watering a crop is free,
- * the same way tapping Water is free. So irrigation adds exactly one Gold
- * sink (place) and no new payer -- see the actions route's own header for
- * the count that has to stay true.
- */
-export const PIPE_PLACE_COST: Readonly<Record<PipeKind, number>> = {
-  well: 400,
-  pipe: 25,
-};
 
 /**
  * Recomputes the network after a layout change, writes the derived

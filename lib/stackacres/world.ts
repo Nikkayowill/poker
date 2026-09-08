@@ -177,35 +177,28 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   // no gain. Nothing spawns here: `stocksInZone("farmstead")` is empty, so the
   // scene's boundary painter returns before it draws a pen.
   farmstead: yardRect(170, 200, 160, 160),
-  // The Hen Coops' own district now. 128 rather than the 160 they had in the
-  // yard: Hen Haven is a 200-unit district and a 160 box would leave a 20-unit
-  // verge, under the 16 the fence and its posts need.
-  henhaven: { x: -576, y: -256, width: 128, height: 128 },
+  // The Hen Coops' own district. Same 128 box as before the 2026-09-08
+  // restructure, offset by the same 52 units from its (moved) district
+  // corner -- only the district's position changed, not its own layout.
+  henhaven: { x: -576, y: -463, width: 128, height: 128 },
   // THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way.
   // A bed is `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY
-  // inside this rect, so 160 -- two and a half beds across, and starting at
-  // 220, which is not a multiple of 64 -- left exactly TWO placeable cells on
-  // the whole farm, and `starterSoilTiles` hands out both. The shop had
-  // nowhere to sell a bed into.
-  //
-  // 2026-09-07: 192 (3 beds) became 384 (6 beds) with the re-lay, on the same
-  // lattice -- x -128, y -256 and 384 are all multiples of 64, so the 6x6 field
-  // tiles exactly with no bed overhanging the fence. soil.test.ts holds the
-  // divisibility so this cannot regress. This is where the extra buildable
-  // ground the re-lay was asked for actually lands: 36 placeable beds, up
-  // from 9.
-  meadow: { x: -128, y: -256, width: 384, height: 384 },
-  oxfields: { x: -200, y: 376, width: 192, height: 192 },
-  wallow: { x: 404, y: -312, width: 128, height: 128 },
+  // inside this rect. Unchanged at 384 (6x6 = 36 beds) by the 2026-09-08
+  // restructure -- x -192, y -192 and 384 are all multiples of 64, so the
+  // field still tiles exactly with no bed overhanging the fence. soil.test.ts
+  // holds the divisibility so this cannot regress.
+  meadow: { x: -192, y: -192, width: 384, height: 384 },
+  oxfields: { x: -572, y: 331, width: 192, height: 192 },
+  wallow: { x: 344, y: -187, width: 128, height: 128 },
   // The four wild districts. Nothing reads these until the pass that builds
   // each place: they are permanently locked (see ./sectors.ts's `wild` state),
   // and a locked district paints `sectorOvergrowth` instead of a grow area.
   // They exist so the record stays total, and they are centred so that whoever
   // builds one has a sane box to start from rather than a zero rect.
-  townsquare: { x: -304, y: 960, width: 80, height: 80 },
-  mine: { x: -546, y: -706, width: 80, height: 80 },
-  coast: { x: 442, y: -742, width: 80, height: 80 },
-  oak: { x: 1022, y: -98, width: 80, height: 80 },
+  townsquare: { x: -548, y: 695, width: 80, height: 80 },
+  mine: { x: -558, y: -705, width: 80, height: 80 },
+  coast: { x: 316, y: -335, width: 80, height: 80 },
+  oak: { x: 626, y: -165, width: 80, height: 80 },
 };
 
 /**
@@ -367,8 +360,16 @@ export function powerOfTwoCeil(n: number): number {
   return 2 ** Math.ceil(Math.log2(n));
 }
 
-/** How far in and out the camera may go. */
-export const STACKACRES_ZOOM_MIN = 0.6;
+/** How far in and out the camera may go.
+ *
+ * 0.6 -> 0.65 with the 2026-09-08 map restructure, one of the two engine
+ * tuning knobs the design project flagged directly: a tighter world (see
+ * `WORLD_BOUND_MARGIN` below and ./yard.ts's `YARD_DELTA`) needs less room to
+ * zoom all the way out to. bounds.test.ts's own worst-case mobile-viewport
+ * check keeps its independent 0.6 literal -- that is a floor on how far this
+ * constant could ever fall, not a mirror of it, and 0.65 is comfortably above
+ * it. */
+export const STACKACRES_ZOOM_MIN = 0.65;
 export const STACKACRES_ZOOM_MAX = 5;
 
 export function clampZoom(zoom: number): number {
@@ -771,21 +772,28 @@ export const HUD_VIEW_EXPANSION = 1.1;
 export const STACKACRES_CHUNK = 160;
 
 /** How far past the union of every district's own bounds the hard camera
- *  boundary sits (./bounds.ts), in world units -- about one and a half
- *  scenery chunks, so a ring or two of the woodland `chunkScenery` already
- *  thins into still stands between the outermost district and the wall,
- *  rather than the districts' own fences butting straight up against it. */
-export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1.5;
+ *  boundary sits (./bounds.ts), in world units -- one scenery chunk, so at
+ *  least one ring of the woodland `chunkScenery` already thins into still
+ *  stands between the outermost district and the wall, rather than the
+ *  districts' own fences butting straight up against it.
+ *
+ *  1.5 chunks (240) -> 1 chunk (160) with the 2026-09-08 map restructure, the
+ *  other engine tuning knob the design project flagged directly: the tighter
+ *  district layout (./yard.ts's `YARD_DELTA`) already leaves less open
+ *  woodland to cross between districts, and a full 1.5-chunk margin on top of
+ *  that padded the world with scenery nobody was walking through -- fewer
+ *  scenery chunks generated overall is the whole point of tightening the map. */
+export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1;
 
 /**
- * The rectangle kept clear of wild scenery: x 20..440, y -60..410. The Hen
- * Coop block (170..330, 200..360), the barn yard north of it (barn feet on
- * y 34, roof to -28, a stone wall at -50..-40), the pond, the lane down the
- * west verge with its lamps at x 26, and the mailbox at the lane's end
- * (y 402) -- with air around all of it, so a tree can never grow on the roof
- * or lean its canopy over the lane. The west edge moved 28 -> 20 when the
- * lane became a two-and-a-half-tile road (see ./roads.ts): its body now
- * reaches x 30 and its feathered rim past that.
+ * The rectangle kept clear of wild scenery: x 20..440, y -60..410 in the
+ * yard's own frame. The Hen Coop block (170..330, 200..360), the barn yard
+ * north of it (barn feet on y 34, roof to -28, a stone wall at -50..-40), the
+ * pond, the lane down the west verge with its lamps at x 26, and the mailbox
+ * at the lane's end (y 402) -- with air around all of it, so a tree can never
+ * grow on the roof or lean its canopy over the lane. The west edge moved
+ * 28 -> 20 when the lane became a two-and-a-half-tile road (see ./roads.ts):
+ * its body now reaches x 30 and its feathered rim past that.
  *
  * Still has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts
  * exactly -- zones.test.ts holds the two to each other.

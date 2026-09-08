@@ -14,6 +14,7 @@ import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
+import type { PipeNode } from "@/lib/stackacres/irrigation";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 
@@ -240,6 +241,12 @@ export interface StackAcresWorldProps {
    *  only ever pushes what it is handed straight into the scene, the same
    *  "push, never rebuild" contract `sectors` above already follows. */
   soilTiles: readonly SoilTile[];
+  /** The irrigation pipe network, straight off `StackAcresView.irrigation` --
+   *  pushed straight through to the scene's own `setIrrigation`, the same
+   *  "push, never rebuild" contract `soilTiles` above already follows (the
+   *  scene diffs against what it already drew via `diffPipeGrid`, so a
+   *  reference that has not moved repaints nothing). */
+  irrigation: readonly PipeNode[];
   /** A patrolling drone just started its vacuum animation on a spawned
    *  drop -- see StackAcresSceneCallbacks.onDroneForageCollected's own doc
    *  comment for why this fires before the animation finishes. */
@@ -302,6 +309,7 @@ export function StackAcresWorld({
   onLockedSectorTap,
   onViewMoved,
   soilTiles,
+  irrigation,
   onDroneForageCollected,
   api,
 }: StackAcresWorldProps) {
@@ -373,10 +381,12 @@ export function StackAcresWorld({
   const unitsRef = useRef(sceneUnits);
   const sectorsRef = useRef(sectors);
   const soilTilesRef = useRef(soilTiles);
+  const irrigationRef = useRef(irrigation);
   useEffect(() => {
     unitsRef.current = sceneUnits;
     sectorsRef.current = sectors;
     soilTilesRef.current = soilTiles;
+    irrigationRef.current = irrigation;
   });
 
   useEffect(() => {
@@ -473,6 +483,7 @@ export function StackAcresWorld({
       // gap between boot and this call never shows a pen that is not there.
       scene.setSectors(sectorsRef.current);
       scene.setSoil(soilTilesRef.current);
+      scene.setIrrigation(irrigationRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
@@ -577,6 +588,14 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
+
+  // `setIrrigation` diffs against what the scene already drew (see its own
+  // doc comment), so handing it the same reference twice -- which every
+  // action response does whether or not the network actually moved -- is a
+  // harmless no-op, the same posture `setSectors` above takes.
+  useEffect(() => {
+    sceneRef.current?.setIrrigation(irrigation);
+  }, [irrigation]);
 
   // Keyed on the RUNG as well as the tool: buying an upgrade has to change what
   // is in the player's hand immediately, the same "push, never rebuild" reason

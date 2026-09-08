@@ -439,6 +439,32 @@
   height: 20px;
 }
 
+/* The Prestige Reset Valve's HUD badge -- same paper pill as .sa-feed next
+   door, but a real button (it opens the valve's own sheet) rather than a
+   static readout. */
+.sa-prestige-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sa-prestige-badge:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
 .sa-music-toggle {
   display: inline-flex;
   align-items: center;
@@ -523,23 +549,83 @@
   flex: none;
 }
 
-/* The one line of text on this surface with nothing behind it -- it is painted
-   straight onto the lawn while the scene boots, so it is the one place the
-   chocolate ring earns its keep. Everything else here reads off a board, and a
-   ring on text that already has a board under it is noise. */
+/* The screen shown while the Phaser scene boots: Ray's cutout (reused from
+   stackacres-ray-welcome.tsx, not new art) swaying gently over the lawn,
+   with the "Walking the fences…" line, a skeleton-shimmer bar standing in
+   for real progress, and a rotating tip pinned to the bottom. Fills
+   .sa-field exactly, same as the old text-only version.
+   `bootPhase` (stackacres-farm.tsx, useMinHoldFade) holds this up for a
+   minimum beat and fades it out rather than swapping straight to the world
+   the instant onReady fires -- onReady lands before Phaser's own render
+   loop has actually painted a frame, so an abrupt swap could expose that
+   gap as a pop. The fade covers it. */
 .sa-loading {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+  padding: 24px 20px;
   margin: 0;
   background: var(--sa-grass);
+  opacity: 1;
+  transition: opacity 320ms ease;
+  pointer-events: none;
+}
+.sa-loading-hiding {
+  opacity: 0;
+}
+
+.sa-loading-ray-img {
+  width: min(30vw, 20vh, 150px);
+  height: auto;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25));
+  animation: sa-loading-sway 3600ms ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+@keyframes sa-loading-sway {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-5px) rotate(-1deg); }
+}
+
+/* The one line of text on this surface with nothing behind it -- painted
+   straight onto the lawn, so it is the one place the chocolate ring earns
+   its keep. Everything else here reads off a board, and a ring on text that
+   already has a board under it is noise. */
+.sa-loading-text {
+  margin: 0;
   color: var(--sa-cream);
   font-size: 19px;
   font-weight: 800;
   text-shadow: var(--sa-text-ring);
-  pointer-events: none;
+}
+
+.sa-loading-track {
+  width: min(60vw, 220px);
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Pinned to the bottom of the overlay rather than grouped with the sway/
+   text/track above it -- `margin-top: auto` pushes it down the flex column
+   without needing the rest of the overlay to know it's there. */
+.sa-loading-tip {
+  margin-top: auto;
+  margin-bottom: 0;
+  max-width: min(80vw, 360px);
+  color: var(--sa-cream);
+  opacity: .78;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  text-shadow: var(--sa-text-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-loading { transition: none; }
+  .sa-loading-ray-img { animation: none; }
 }
 
 /* ---- the pressable block ---------------------------------------------

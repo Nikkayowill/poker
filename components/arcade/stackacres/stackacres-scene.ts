@@ -188,6 +188,18 @@ import { RAMPS, rampHex } from "./art-palette";
 import { bakeYardMatTexture } from "./art-mud";
 import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
+import { bakeIrrigation, FLOW_SEG_KEY, PIPE_ARM_ANGLE } from "./art-irrigation";
+import {
+  diffPipeGrid,
+  indexPipeNodes,
+  pipeFlowFrame,
+  pipeFrameKey,
+  pipeKey,
+  pipeTileCenter,
+  WELL_TEXTURE_KEY,
+  type PipeIndex,
+  type PipeNode,
+} from "@/lib/stackacres/irrigation";
 
 /**
  * The farm as a place you look around in.
@@ -1041,6 +1053,21 @@ interface DroneNode {
   dropSprite: Phaser.GameObjects.Image | null;
 }
 
+/**
+ * One placed irrigation tile's own Phaser picture. `body` is the connector
+ * (or well) sprite, always present; `flow` is one image per set arm bit,
+ * only ever populated while `node.hydrated` -- a dry pipe or a well shows
+ * no flow at all (see `pipeFlowFrame`'s own doc comment). Kept alongside
+ * the `PipeNode` it was built from purely so `setIrrigation`'s "changed"
+ * branch can tell a mask/hydration move from a no-op without re-deriving
+ * it from the sprites themselves.
+ */
+interface PipeSceneNode {
+  node: PipeNode;
+  body: Phaser.GameObjects.Image;
+  flow: Phaser.GameObjects.Image[];
+}
+
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
 interface PinchGesture {
   kind: "pinch";
@@ -1193,6 +1220,22 @@ export class StackAcresScene extends Phaser.Scene {
   /** Baked once in `create()`; see `bakeDroneTexture`/`bakeForageDropTexture`. */
   private droneTextureKey: string | null = null;
   private forageDropTextureKey: string | null = null;
+  /**
+   * The irrigation pipe network's own live sprites, keyed by `pipeKey(tx,
+   * ty)` -- one `Phaser.GameObjects.Image` for the connector/well body, plus
+   * one flow-segment image per set arm bit (only for a hydrated pipe tile;
+   * a well or a dry pipe carries none). `pipeIndex` is the last grid handed
+   * to `setIrrigation`, kept so the NEXT call can diff against it via
+   * `diffPipeGrid` rather than tearing the whole layer down every time --
+   * see that function's own doc comment for the added/changed/removed
+   * contract this class follows exactly.
+   */
+  private pipeNodes = new Map<string, PipeSceneNode>();
+  private pipeIndex: PipeIndex | null = null;
+  /** Mirrors `pendingDroneIds`'s own role: a `setIrrigation` call that lands
+   *  before `create()` has baked the connector textures is held here and
+   *  applied once there is a scene to build sprites into. */
+  private pendingPipeNodes: readonly PipeNode[] | null = null;
   private created = false;
   private opened = false;
   private random = seededRandom(Date.now() % 100_000);
@@ -1488,6 +1531,7 @@ export class StackAcresScene extends Phaser.Scene {
     }
     bakeGrass(this);
     bakeFarmhandTexture(this);
+    bakeIrrigation(this);
     // `bakeGrass` above and `bakePondTexture` are the last things that read a
     // raw preloaded file, so from here every `sprite:*` entry is a second full
     // copy of pixels that already exist in the baked canvas beside it. On a
@@ -1623,6 +1667,11 @@ export class StackAcresScene extends Phaser.Scene {
       const droneIds = this.pendingDroneIds;
       this.pendingDroneIds = null;
       this.setDroneHangar(droneIds);
+    }
+    if (this.pendingPipeNodes !== null) {
+      const nodes = this.pendingPipeNodes;
+      this.pendingPipeNodes = null;
+      this.setIrrigation(nodes);
     }
   }
 
@@ -2401,6 +2450,115 @@ export class StackAcresScene extends Phaser.Scene {
     for (const id of droneIds) {
       if (this.droneNodes.has(id)) continue;
       this.droneNodes.set(id, this.spawnDroneNode(id));
+    }
+  }
+
+  /**
+   * Reconciles the live irrigation layer against `nodes` -- the server's own
+   * `StackAcresView.irrigation`, recomputed by `recalculatePipeConnections`
+   * on every action that could move it. Diffs via `diffPipeGrid` rather
+   * than tearing the layer down wholesale (the same "diff and reconcile"
+   * shape `setDroneHangar` above takes for its own set, sized down to one
+   * entity per changed tile instead of the whole fleet): `added` builds a
+   * fresh `PipeSceneNode`, `changed` re-textures the one already there, and
+   * `removed` destroys it. Called by stackacres-farm.tsx every time the
+   * array's own reference changes, not on every render tick.
+   */
+  setIrrigation(nodes: readonly PipeNode[]): void {
+    if (!this.created) {
+      this.pendingPipeNodes = nodes;
+      return;
+    }
+
+    const next = indexPipeNodes(nodes);
+    const diff = diffPipeGrid(this.pipeIndex, next);
+    this.pipeIndex = next;
+
+    for (const key of diff.removed) {
+      const sceneNode = this.pipeNodes.get(key);
+      if (!sceneNode) continue;
+      sceneNode.body.destroy();
+      for (const flow of sceneNode.flow) flow.destroy();
+      this.pipeNodes.delete(key);
+    }
+    for (const node of diff.added) {
+      this.pipeNodes.set(pipeKey(node.tx, node.ty), this.spawnPipeSceneNode(node));
+    }
+    for (const node of diff.changed) {
+      const key = pipeKey(node.tx, node.ty);
+      const sceneNode = this.pipeNodes.get(key);
+      if (!sceneNode) {
+        // Cannot happen given diffPipeGrid's own contract (a "changed" node
+        // was necessarily present in the previous index), but a stale
+        // lookup here must not throw over a rendering layer -- rebuild it
+        // as if it were newly added rather than crashing the scene.
+        this.pipeNodes.set(key, this.spawnPipeSceneNode(node));
+        continue;
+      }
+      this.restylePipeSceneNode(sceneNode, node);
+    }
+  }
+
+  /** Builds one tile's connector/well body and its (initially empty) flow
+   *  arms, then styles it -- shared with the "added" and the recovery
+   *  branch of the "changed" loop above so there is exactly one place a
+   *  fresh `PipeSceneNode` is assembled. */
+  private spawnPipeSceneNode(node: PipeNode): PipeSceneNode {
+    const centre = pipeTileCenter(node.tx, node.ty);
+    const at = isoProject(centre.x, centre.y);
+    const body = this.add
+      .image(at.x, at.y, node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask))
+      .setOrigin(0.5, 0.5)
+      .setScale(1 / S)
+      .setDepth(GROW_AREA_GROUND_DEPTH);
+    const sceneNode: PipeSceneNode = { node, body, flow: [] };
+    this.restylePipeSceneNode(sceneNode, node, true);
+    return sceneNode;
+  }
+
+  /** Re-textures an existing tile's body for a moved mask/kind/hydration,
+   *  and rebuilds its flow-arm images to match which bits are now set.
+   *  `fresh` skips the "did the body texture actually change" check
+   *  `spawnPipeSceneNode` doesn't need on its own first frame. */
+  private restylePipeSceneNode(sceneNode: PipeSceneNode, node: PipeNode, fresh = false): void {
+    if (fresh || sceneNode.node.mask !== node.mask || sceneNode.node.kind !== node.kind) {
+      sceneNode.body.setTexture(node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask));
+    }
+    sceneNode.node = node;
+
+    for (const flow of sceneNode.flow) flow.destroy();
+    sceneNode.flow = [];
+    // A well sources the network but shows no flow itself (see
+    // `pipeFlowFrame`'s own doc comment) -- only a hydrated PIPE tile grows
+    // arm images, one per set bit, each anchored at the hub (origin 0, 0.5)
+    // and rotated to the arm's own screen angle so the shared strip reads
+    // as flowing outward along whichever arms this tile actually has.
+    if (node.kind !== "pipe" || !node.hydrated) return;
+    const centre = pipeTileCenter(node.tx, node.ty);
+    const at = isoProject(centre.x, centre.y);
+    for (let bit = 0; bit < 4; bit += 1) {
+      if ((node.mask & (1 << bit)) === 0) continue;
+      const flow = this.add
+        .image(at.x, at.y, FLOW_SEG_KEY, 0)
+        .setOrigin(0, 0.5)
+        .setRotation(PIPE_ARM_ANGLE[bit])
+        .setScale(1 / S)
+        .setDepth(GROW_AREA_GROUND_DEPTH + 0.1)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      sceneNode.flow.push(flow);
+    }
+  }
+
+  /** Advances every hydrated pipe's flow animation one frame -- called from
+   *  `update()`. `pipeFlowFrame` offsets each tile's phase by its own BFS
+   *  distance from the nearest well, so water reads as travelling outward
+   *  one tile at a time rather than every arm pulsing in lockstep. */
+  private updatePipeFlow(time: number): void {
+    if (this.pipeNodes.size === 0) return;
+    for (const sceneNode of this.pipeNodes.values()) {
+      const frame = pipeFlowFrame(sceneNode.node, time);
+      if (frame === null) continue;
+      for (const flow of sceneNode.flow) flow.setFrame(frame);
     }
   }
 
@@ -5528,6 +5686,7 @@ export class StackAcresScene extends Phaser.Scene {
     const frenzySnapshot = this.frenzy.sample(time);
     this.frenzyFx?.setHeat(frenzySnapshot, time);
     this.animatePond(time);
+    this.updatePipeFlow(time);
     this.walkHerds(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;

@@ -266,6 +266,14 @@ export type PlayerAction =
   | { type: "leave-seat" }
   | { type: "rebuy"; amount: number };
 
+/**
+ * A decision queued client-side before it's actually the player's turn (see
+ * components/poker-app.tsx's armed-pre-action effect). Only the three
+ * decisions that need no further input are offered -- raising takes an
+ * amount, so there is nothing sensible to pre-arm.
+ */
+export type PreActionType = "fold" | "check" | "call";
+
 export interface LegalActions {
   canFold: boolean;
   canCheck: boolean;

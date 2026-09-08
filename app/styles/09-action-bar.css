@@ -125,6 +125,7 @@
 
 .action-slot-controls button {
   min-height: 100%;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -143,6 +144,25 @@
      its own bevel. */
   box-shadow: inset 0 1px rgba(255,255,255,.1), 0 2px 0 rgba(0,0,0,.3), 0 6px 14px rgba(0,0,0,.2);
   transition: background-color .12s ease, border-color .12s ease, transform .08s ease, box-shadow .08s ease;
+}
+
+/* The check/call slot's label swaps between "Check" and "Call 12,340" (or,
+   pre-turn, "Call any") depending on state, and those are very different
+   lengths. Without this, a long one could wrap to a second line -- and on
+   the floating mobile-landscape bar (12-responsive.css), whose height is
+   `auto`, that growth pushes the whole bar upward into the seat/cards it
+   floats next to the instant your turn arrives. Ellipsis instead of wrap
+   keeps the bar exactly the height it was before your turn, always;
+   min-width:0 is what lets a grid/flex item actually shrink enough for the
+   ellipsis to take effect instead of just overflowing the button. */
+.action-button-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A wider share for the one-button states, which have nothing to line up
    against and read better with some weight behind them. */
@@ -185,6 +205,19 @@
   color: #12180f;
   border-color: rgba(217,184,93,.5) !important;
   background: linear-gradient(160deg, #f3e2a0 0%, var(--gold-light) 42%, var(--gold) 100%) !important;
+}
+
+/* A queued pre-action (armed before your turn arrives -- see
+   armedPreAction in poker-app.tsx). Same button, same slot, same size --
+   only the ring pulses, so arming one never touches the bar's footprint. */
+.action-armed {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+  animation: action-armed-pulse 1.4s ease-in-out infinite;
+}
+@keyframes action-armed-pulse {
+  0%, 100% { outline-color: rgba(217,184,93,.35); }
+  50% { outline-color: rgba(217,184,93,.95); }
 }
 
 /* .action-pressed mirrors :active but is held for a guaranteed minimum

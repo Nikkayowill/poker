@@ -8,6 +8,17 @@
  *   .duel-tier(-active/-custom) -- every wager/stake picker, StakePicker's own
  *                          markup (36-duels.css), shared by duels and Ante Up
  *   .puzzle-share-button  -- every puzzle's commit CTA (25-puzzles.css)
+ *   .duel-open            -- a duel lobby's own commit CTA -- Cribbage/chess/
+ *                          checkers/othello/trivia/word-race's "Open/Challenge
+ *                          a N Gold table", heads-up and Sit & Go's buy-in
+ *                          (36-duels.css). Always paired with .floor-play on
+ *                          the same element, but the gold recipe below used
+ *                          to key off `.floor-card .floor-play`, which only
+ *                          the arcade floor's own grid tiles satisfy -- so
+ *                          every duel lobby's actual commit button rendered
+ *                          in the neutral recipe instead, looking like an
+ *                          inert resting button next to Ante Up's gold "Ante
+ *                          up"/"Play".
  * Loads after 22/25/36/43 and narrows those classes; it adds no shape of its
  * own except the two Ante Up-only anchors kept at the bottom of this file.
  *
@@ -43,12 +54,14 @@
 }
 
 /* ==========================================================================
-   Shared button recipes -- .floor-play, .duel-tier(-active), .puzzle-share-button
+   Shared button recipes -- .floor-play, .duel-tier(-active), .puzzle-share-button,
+   .mshell-primary (the phone Play tab's own hero CTA, "Take a seat")
    ========================================================================== */
 
 .floor-play,
 .duel-tier,
-.puzzle-share-button {
+.puzzle-share-button,
+.mshell-primary {
   position: relative;
   border: 0;
   border-radius: 0;
@@ -59,7 +72,8 @@
   transform: translateY(0);
   transition: transform .1s ease, box-shadow .1s ease, background var(--duration-base) ease, color var(--duration-base) ease;
 }
-.puzzle-share-button {
+.puzzle-share-button,
+.mshell-primary {
   clip-path: polygon(
     var(--btn-cut-lg) 0, 100% 0, 100% calc(100% - var(--btn-cut-lg)),
     calc(100% - var(--btn-cut-lg)) 100%, 0 100%, 0 var(--btn-cut-lg)
@@ -72,7 +86,8 @@
    system (rest/hover/active x neutral/selected/gold), not one-off picks. */
 .floor-play::after,
 .duel-tier::after,
-.puzzle-share-button::after {
+.puzzle-share-button::after,
+.mshell-primary::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -80,6 +95,7 @@
   pointer-events: none;
 }
 .puzzle-share-button::after,
+.mshell-primary::after,
 .floor-card .floor-play:not(:disabled)::after,
 .duel-tier-active::after {
   /* Brighter on the gold/selected faces -- a glass highlight reads brighter
@@ -157,9 +173,11 @@
 }
 .duel-tier-custom input { color: var(--neon-chalk); }
 
-/* ---- Gold: the commit CTA -- Ante up, a puzzle's Play, a floor card's filled Play ---- */
+/* ---- Gold: the commit CTA -- Ante up, a puzzle's Play, a floor card's filled Play, a duel lobby's Open/Challenge, the phone Play tab's Take a seat ---- */
 .puzzle-share-button,
-.floor-card .floor-play:not(:disabled) {
+.floor-card .floor-play:not(:disabled),
+.duel-open:not(:disabled),
+.mshell-primary:not(:disabled) {
   background: linear-gradient(165deg, var(--neon-yellow-bright), var(--neon-yellow) 55%, #a8842f);
   color: var(--neon-ground);
   box-shadow:
@@ -169,7 +187,9 @@
     0 8px 18px -6px rgba(255, 210, 63, .55);
 }
 .puzzle-share-button:hover:not(:disabled),
-.floor-card .floor-play:not(:disabled):hover {
+.floor-card .floor-play:not(:disabled):hover,
+.duel-open:not(:disabled):hover,
+.mshell-primary:not(:disabled):hover {
   transform: translateY(-1px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .65),
@@ -178,11 +198,14 @@
     0 12px 24px -6px rgba(255, 210, 63, .75);
 }
 .puzzle-share-button:active:not(:disabled),
-.floor-card .floor-play:not(:disabled):active {
+.floor-card .floor-play:not(:disabled):active,
+.duel-open:not(:disabled):active,
+.mshell-primary:not(:disabled):active {
   transform: translateY(var(--btn-lip));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 1px rgba(255, 210, 63, .6);
 }
-.puzzle-share-button:disabled {
+.puzzle-share-button:disabled,
+.mshell-primary:disabled {
   background: var(--neon-ground-lift);
   color: var(--neon-muted-2);
   box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .16);

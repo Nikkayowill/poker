@@ -1,15 +1,19 @@
 /* Daily Word Stack and Connections, plus the shared felt override Sudoku and
- * Memory Match need (see `.hud-felt-plain` below) -- all four reuse the
- * Blackjack shell (.bj-shell, .bj-header, .bj-back, .bj-hand-who) directly,
- * so this file holds only what a puzzle genuinely adds: the boards, the
- * keyboard, the share summary, and that felt fix. It cascades after 23
- * because it overrides pieces of that shell.
+ * Memory Match used to need (see `.hud-felt-plain` below) -- Word Stack and
+ * Connections reuse the Blackjack shell (.bj-shell, .bj-header, .bj-back,
+ * .bj-hand-who) directly, so this file holds only what a puzzle genuinely
+ * adds: the boards, the keyboard, and the shared summary/share card. It
+ * cascades after 23 because it overrides pieces of that shell.
  *
- * The palette is the app's own green felt and brass -- these are not recoloured
- * to match the games they are modelled on. The one place the source palette is
- * honoured is the four Connections difficulty colours, which are load-bearing:
- * they have to match the emoji in the shared grid, or a player's board and
- * their own posted result disagree.
+ * (2026-09-06) The summary/lobby card (`.puzzle-summary`) used to be styled
+ * off the app's green felt/brass palette on the theory that these games were
+ * "modelled on" that world -- but every one of them is Ante Up chrome, not
+ * the felt table, and reads as a stray green box against the Neon Marquee
+ * ground everywhere else in the app. Recoloured onto the same brand-surface/
+ * brand-gold tokens `.duel-result` already uses. The one place the felt/brass
+ * palette is still deliberately honoured is the four Connections difficulty
+ * colours below, which are load-bearing: they have to match the emoji in the
+ * shared grid, or a player's board and their own posted result disagree.
  */
 
 /* ---- Daily Sudoku and Memory Match's felt ----
@@ -65,7 +69,7 @@
 
 .puzzle-loading {
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-slate);
   font-size: 13px;
   text-align: center;
 }
@@ -194,7 +198,7 @@
 .word-stack-key-wide { flex: 1.5 1 0; }
 .word-stack-key-correct { background: #2f7d4f; border-color: transparent; }
 .word-stack-key-present { background: #b8952f; border-color: transparent; }
-.word-stack-key-absent { background: #262e3a; color: var(--muted); border-color: transparent; }
+.word-stack-key-absent { background: #262e3a; color: var(--muted-slate); border-color: transparent; }
 
 /* ---- Connections board ---- */
 
@@ -235,7 +239,7 @@
    poker table's felt green here said "right" before a guess was even sent. */
 .cx-tile-on {
   background: color-mix(in srgb, var(--brand-purple) 32%, var(--brand-ink));
-  border-color: var(--gold);
+  border-color: var(--brand-gold);
   color: #fff;
 }
 .cx-tile:disabled { cursor: default; }
@@ -269,7 +273,7 @@
   justify-content: center;
   gap: 8px;
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-slate);
   font-size: 12.5px;
 }
 .cx-pips { display: inline-flex; gap: 5px; }
@@ -302,25 +306,33 @@
 }
 .cx-action:disabled { opacity: 0.45; cursor: default; }
 .cx-action-submit {
-  border-color: var(--gold);
-  background: linear-gradient(170deg, var(--gold-light), var(--gold) 45%, #a8842f);
-  color: #241c05;
+  border-color: var(--brand-gold);
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  color: #1c1305;
 }
 
 /* ---- Shared summary and share button ---- */
 
+/* Borderless, per the chrome's own rule (app/styles/CLAUDE.md): a raised
+   fill and real shadow stand in for the border this used to carry, and the
+   fill is the same brand-surface lift `.duel-result` already uses -- one
+   card language across every Ante Up game's pre-play and finished states. */
 .puzzle-summary {
   display: grid;
   gap: 10px;
   justify-items: center;
-  padding: 16px;
-  border: 1px solid var(--line);
+  padding: 18px 16px;
   border-radius: var(--radius-xl, 12px);
-  background: var(--surface-2);
+  background: var(--brand-surface-2);
+  box-shadow: 0 18px 40px -26px rgba(0, 0, 0, 0.6);
   text-align: center;
+  /* Absorbs the leftover space in the shell's flex column so the card sits
+     centred in whatever room the header leaves rather than pinned to the
+     top with a slab of empty page below it. */
+  margin-block: auto;
 }
 .puzzle-verdict { margin: 0; font: 600 15px Georgia, serif; }
-.puzzle-verdict em { color: var(--muted); font-style: normal; }
+.puzzle-verdict em { color: var(--muted-slate); font-style: normal; }
 
 /* The result exactly as it will be posted. A preview is what makes the button
    read as "send this" rather than "send something". */
@@ -345,15 +357,15 @@
   max-width: 320px;
   min-height: 46px;
   padding: 0 22px;
-  border: 1px solid var(--gold);
-  border-radius: var(--radius-pill, 999px);
-  background: linear-gradient(170deg, var(--gold-light), var(--gold) 45%, #a8842f);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  color: #241c05;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
+  color: #1c1305;
   font: 700 14px system-ui, sans-serif;
   cursor: pointer;
 }
-.puzzle-share-button:hover { filter: brightness(1.06); }
+.puzzle-share-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.puzzle-share-button:hover:not(:disabled) { filter: brightness(1.06); }
 
 /* Reserved height, same reasoning as .puzzle-notice: a confirmation appearing
    must not push the countdown down the page. */
@@ -363,7 +375,7 @@
   gap: 5px;
   min-height: 20px;
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-slate);
   font-size: 12px;
   opacity: 0;
   transition: opacity 140ms ease;
@@ -372,7 +384,7 @@
 
 .puzzle-countdown {
   margin: 0;
-  color: var(--muted);
+  color: var(--muted-slate);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }

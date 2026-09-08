@@ -39,7 +39,7 @@
   width: var(--sk-board-w);
   aspect-ratio: 1;
   margin: 0 auto;
-  background: rgba(4,9,8,.6);
+  background: rgba(9,6,20,.6);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -49,7 +49,7 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: var(--gold-light);
+  color: var(--brand-gold-light);
   /* The thin interior grid, plus one slot per side for the heavy box rule.
      Composed from custom properties rather than from a rule per combination:
      `box-shadow` does not add across declarations, so the enumerated version
@@ -90,7 +90,7 @@
    so a solver can always tell which digits they can still change -- without
    that, an error is impossible to unpick. */
 .sk-cell-given {
-  color: #e7ece6;
+  color: var(--ink);
   font-weight: 750;
   background: rgba(255,255,255,.05);
   cursor: default;
@@ -99,23 +99,25 @@
 /* The heavy box rules. Drawn as insets on the first cell of each band so the
    nine boxes read as nine boxes -- this is the single most important visual
    rule on the page. Each class fills one slot, so any combination composes. */
-.sk-cell-box-left { --sk-rule-left: inset 2px 0 0 rgba(217,184,93,.4); }
-.sk-cell-box-top { --sk-rule-top: inset 0 2px 0 rgba(217,184,93,.4); }
-.sk-cell-box-right { --sk-rule-right: inset -2px 0 0 rgba(217,184,93,.4); }
-.sk-cell-box-bottom { --sk-rule-bottom: inset 0 -2px 0 rgba(217,184,93,.4); }
+.sk-cell-box-left { --sk-rule-left: inset 2px 0 0 rgba(155,63,240,.4); }
+.sk-cell-box-top { --sk-rule-top: inset 0 2px 0 rgba(155,63,240,.4); }
+.sk-cell-box-right { --sk-rule-right: inset -2px 0 0 rgba(155,63,240,.4); }
+.sk-cell-box-bottom { --sk-rule-bottom: inset 0 -2px 0 rgba(155,63,240,.4); }
 
 /* Selection, and the three things it highlights. The peers (same row, column
    or box) are what a player is actually scanning when they pick a cell, and
    the twins (same digit anywhere) are how you spot where a number can still
    go -- both are standard in every good sudoku app and both are why a
-   selection here is more than a cursor. */
-.sk-cell-peer { background: rgba(217,184,93,.06); }
-.sk-cell-twin { background: rgba(217,184,93,.16); }
+   selection here is more than a cursor. Purple, not gold, for the same reason
+   Connections' .cx-tile-on is purple: a digit's own ink is gold, so a
+   selection wash in that same hue would read as a value, not a cursor. */
+.sk-cell-peer { background: rgba(155,63,240,.08); }
+.sk-cell-twin { background: rgba(155,63,240,.18); }
 .sk-cell-selected {
-  background: rgba(217,184,93,.3);
-  color: #fff6dd;
+  background: rgba(155,63,240,.32);
+  color: var(--ink);
 }
-.sk-cell:focus-visible { outline: 2px solid var(--gold-light); outline-offset: -2px; }
+.sk-cell:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: -2px; }
 
 /* A refused digit. One shake, then gone -- long enough to notice, short enough
    not to be in the way of the next attempt. */
@@ -158,7 +160,7 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: rgba(217,184,93,.65);
+  color: rgba(255,210,63,.65);
 }
 
 /* ---- The toolbar (notes toggle) ---- */
@@ -181,21 +183,21 @@
   border: 0;
   border-radius: var(--radius-control);
   background: rgba(255,255,255,.05);
-  color: #9fb0a7;
+  color: var(--muted-slate);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   transition: background .14s ease, color .14s ease;
 }
-.sk-notes-toggle:hover:not(:disabled) { background: rgba(217,184,93,.14); }
-.sk-notes-toggle:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.sk-notes-toggle:hover:not(:disabled) { background: rgba(155,63,240,.16); }
+.sk-notes-toggle:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 2px; }
 .sk-notes-toggle:disabled { opacity: .5; cursor: not-allowed; }
 
-/* On: the same gold wash a selected cell gets, so "notes are live" reads as
+/* On: the same purple wash a selected cell gets, so "notes are live" reads as
    an active state rather than a second idle button next to the first. */
 .sk-notes-toggle-active {
-  background: rgba(217,184,93,.3);
-  color: #fff6dd;
+  background: rgba(155,63,240,.32);
+  color: var(--ink);
 }
 
 /* ---- The keypad ---- */
@@ -209,7 +211,7 @@
 }
 .sk-key {
   min-height: 44px;
-  color: var(--gold-light);
+  color: var(--brand-gold-light);
   border: 0;
   border-radius: 8px;
   background: rgba(255,255,255,.05);
@@ -219,11 +221,11 @@
   cursor: pointer;
   transition: background .14s ease, transform .08s ease;
 }
-.sk-key:hover:not(:disabled) { background: rgba(217,184,93,.18); }
+.sk-key:hover:not(:disabled) { background: rgba(155,63,240,.2); }
 .sk-key:active:not(:disabled) { transform: translateY(1px); }
-.sk-key:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.sk-key:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 2px; }
 .sk-key:disabled { opacity: .35; cursor: not-allowed; }
-.sk-key-erase { color: #9fb0a7; display: flex; align-items: center; justify-content: center; }
+.sk-key-erase { color: var(--muted-slate); display: flex; align-items: center; justify-content: center; }
 
 @media (max-width: 640px) {
   /* 44px, not the old 38 -- this pad is the one control on the page a thumb

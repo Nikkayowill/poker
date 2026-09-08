@@ -38,7 +38,7 @@
   margin: 0 auto;
   gap: 1px;
   padding: 1px;
-  background: rgba(4, 9, 8, .6);
+  background: rgba(9, 6, 20, .6);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -61,7 +61,7 @@
   -webkit-touch-callout: none;
   transition: background .1s ease, transform .1s ease;
 }
-.ms-cell:focus-visible { outline: 2px solid var(--gold-light); outline-offset: -2px; }
+.ms-cell:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: -2px; }
 .ms-cell:disabled { cursor: default; }
 
 /* Covered vs uncovered is the single distinction a player scans, constantly,
@@ -76,7 +76,7 @@
   box-shadow:
     inset 1.5px 1.5px 0 rgba(255, 255, 255, .16),
     inset -1.5px -1.5px 0 rgba(0, 0, 0, .38);
-  color: var(--gold-light);
+  color: var(--brand-gold-light);
 }
 .ms-cell-hidden:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
 .ms-cell-hidden:active:not(:disabled) { transform: scale(.94); }
@@ -108,7 +108,7 @@
 .ms-cell-7 { color: #e7ece6; }
 .ms-cell-8 { color: #9fb0a7; }
 
-.ms-cell-flagged { color: var(--gold-light); }
+.ms-cell-flagged { color: var(--brand-gold-light); }
 
 /* The mine that ended it, every other mine, and a flag that was wrong -- three
    different facts, so three different colours rather than one "revealed" look. */
@@ -157,7 +157,7 @@
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 999px;
   background: rgba(255, 255, 255, .04);
-  color: #cfd8d2;
+  color: var(--muted-slate);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -167,14 +167,14 @@
 /* On is a real state change, not a hover: a tap now flags instead of opening,
    which is the difference between winning and losing the board. */
 .ms-flag-toggle-active {
-  background: var(--gold-light);
-  border-color: var(--gold-light);
-  color: #14201b;
+  background: var(--brand-gold-light);
+  border-color: var(--brand-gold-light);
+  color: #1c1305;
 }
 
 .ms-hint {
   margin: 0;
-  color: #9fb0a7;
+  color: var(--muted-slate);
   font-size: 11.5px;
   text-align: center;
   flex: 1 1 100%;

@@ -403,6 +403,10 @@
 
   /* ---- the one saturated action --------------------------------------- */
 
+  /* Same filled-yellow recipe as .floor-card .floor-play:not(:disabled)
+     (22-arcade.css) -- a flat --neon-yellow fill and --neon-ground-lift-2
+     text, not a bespoke gradient/shadow, so the app's one full-width hero CTA
+     reads as the same button as every card's own loud CTA. */
   .mshell-primary {
     display: flex;
     align-items: center;
@@ -412,14 +416,19 @@
     height: 52px;
     border: 0;
     border-radius: var(--radius-control);
-    color: #1c1305;
+    color: var(--neon-ground-lift-2);
     font: inherit;
     font-size: 16px;
-    font-weight: 700;
-    background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
-    box-shadow: 0 12px 30px rgba(255, 210, 63, .34), inset 0 1px rgba(255, 255, 255, .45);
+    font-weight: 750;
+    background: var(--neon-yellow);
+    box-shadow: none;
     cursor: pointer;
     touch-action: manipulation;
+  }
+
+  .mshell-primary:not(:disabled):hover {
+    background: var(--neon-yellow-bright);
+    box-shadow: 0 6px 16px -4px rgba(255, 210, 63, .6);
   }
 
   .mshell-primary:disabled {

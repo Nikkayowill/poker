@@ -26,7 +26,7 @@
   transition: transform .16s ease, filter .2s ease;
 }
 .mm-tile:hover:not(:disabled) { transform: translateY(-3px); }
-.mm-tile:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 3px; }
+.mm-tile:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 3px; }
 .mm-tile:disabled { cursor: default; }
 
 .mm-tile .playing-card { width: 100%; height: auto; }

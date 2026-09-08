@@ -499,6 +499,10 @@
         "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
       },
       {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, 0.6)",
+        "createdAt": "2026-09-08T00:33:49.794Z",
+        "reason": "matches the existing sanctioned .puzzle-summary card shadow in 25-puzzles.css (same Ante Up card language, intentionally reused on .duel-panel)"
         "rule": "bounce-easing",
         "value": "var(--sa-bounce)",
         "files": [

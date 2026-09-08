@@ -46,9 +46,8 @@ function botProfileFor(identity: number): (typeof botProfiles)[number] {
  * unique at a table; a real cash game has more than one loose-passive player
  * in it at once.
  *
- * The three that exist are the three worth having, and the names are
- * compatibility IDs rather than labels (`personalityProfiles` and the
- * preflop chart are both keyed on them):
+ * Six archetypes, and the names are compatibility IDs rather than labels
+ * (`personalityProfiles` and the preflop chart are both keyed on them):
  *
  *  - `MANIAC` ("Loose Cannon"): very aggressive, plays a wide range, shoves
  *    with merely-good equity rather than only the nuts.
@@ -56,16 +55,30 @@ function botProfileFor(identity: number): (typeof botProfiles)[number] {
  *    well and punishes limpers.
  *  - `CALLING_STATION` ("Whale"): very loose, very passive, wants to see
  *    almost every flop and rarely raises without a monster.
+ *  - `LAG` ("Live Wire"): loose *and* aggressive rather than loose-passive --
+ *    plays a wide range like the Whale but bets and raises it like the
+ *    Loose Cannon, minus the shove-happy equity discount. The player who
+ *    somehow has a hand every time and bets it big.
+ *  - `NIT` ("Iron Vault"): the Rock's tighter, more paranoid cousin. Folds
+ *    almost anything short of a real hand, rarely bluffs, and needs extra
+ *    equity over the pot odds to even call.
+ *  - `TAG` ("Straight Shooter"): the textbook solid-competent baseline --
+ *    tighter than a Maniac, looser than a Nit, aggressive when it raises
+ *    and otherwise entirely unremarkable. What most winning regs look like.
  *
- * Weighted 35/45/20 (Loose Cannon/Table Captain/Whale), rolled with
- * `randomInt` (not `Math.random`) to match every other source of table
- * randomness in this file.
+ * Weighted 18/20/14/16/12/20 (Loose Cannon/Table Captain/Whale/Live
+ * Wire/Iron Vault/Straight Shooter), rolled with `randomInt` (not
+ * `Math.random`) to match every other source of table randomness in this
+ * file.
  */
 function pickBotPersonality(): BotPersonality {
   const roll = randomInt(100);
-  if (roll < 35) return "MANIAC";
-  if (roll < 80) return "ROCK";
-  return "CALLING_STATION";
+  if (roll < 18) return "MANIAC";
+  if (roll < 38) return "ROCK";
+  if (roll < 52) return "CALLING_STATION";
+  if (roll < 68) return "LAG";
+  if (roll < 80) return "NIT";
+  return "TAG";
 }
 
 /**
@@ -337,6 +350,9 @@ function setCurrentPlayer(state: GameState, index: number | null, now = Date.now
     MANIAC: [BOT_DECISION_MIN_MS, 2_600],
     ROCK: [1_400, BOT_DECISION_MAX_MS],
     CALLING_STATION: [1_000, 3_800],
+    LAG: [1_100, 2_900],
+    NIT: [1_800, 4_200],
+    TAG: [1_500, 3_400],
   };
   const [minimum, maximum] = botThinkRanges[seat.personality ?? "ROCK"];
   const duration = seat.isHuman
@@ -656,7 +672,41 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
   state.rake = 0;
   state.message = "Cards are in the air";
 
+  // Drops any opponentReads entry for someone no longer seated anywhere at
+  // this table, so a cash table that runs for months and sees many
+  // different players through doesn't grow that map forever -- a read is
+  // about "this specific person, still at this table" by design (see
+  // OpponentRead's own note), so a departed player's read is not merely
+  // stale, it's meaningless the moment they leave. Bounds the map at the
+  // seat count rather than the lifetime player count.
+  if (state.opponentReads) {
+    const seatedTokens = new Set(
+      state.seats.map((seat) => seat.ownerToken).filter((token): token is string => token !== null),
+    );
+    for (const token of Object.keys(state.opponentReads)) {
+      if (!seatedTokens.has(token)) delete state.opponentReads[token];
+    }
+  }
+
   state.seats.forEach((seat) => {
+    // Snapshot the hand that's about to be cleared into this player's
+    // running read before wiping holeCards/vpip below -- the only two
+    // fields that say whether they were actually dealt in and whether they
+    // played it. Skipped on the very first hand (nothing happened yet) and
+    // for anyone not dealt into that hand (an empty/backfilling seat), so
+    // the sample only ever grows on hands this person actually saw cards
+    // for. See OpponentRead for what chooseBotAction does with this.
+    if (!firstHand && seat.isHuman && seat.ownerToken && seat.holeCards.length > 0) {
+      state.opponentReads ??= {};
+      const read = (state.opponentReads[seat.ownerToken] ??= {
+        hands: 0,
+        vpipHands: 0,
+        raisesFaced: 0,
+        foldsToRaise: 0,
+      });
+      read.hands += 1;
+      if (seat.vpip) read.vpipHands += 1;
+    }
     seat.status = seat.stack > 0 ? "active" : "out";
     seat.holeCards = [];
     seat.streetBet = 0;
@@ -665,6 +715,7 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
     seat.actedAtBet = null;
     seat.lastAction = null;
     seat.vpip = false;
+    seat.bluffStreak = 0;
   });
 
   for (let round = 0; round < 2; round += 1) {
@@ -1490,6 +1541,26 @@ function applyTurnAction(state: GameState, action: TurnAction) {
     seat.vpip = true;
   }
 
+  // Opponent read bookkeeping: only for a human facing a real raise, not
+  // just the blind requirement (preflop's toCall is never 0, so a currentBet
+  // still at the big blind means nobody has actually raised yet). A bot's
+  // own actions never feed this -- see OpponentRead's own note on why the
+  // key is ownerToken rather than something a bot seat would even have.
+  if (seat.isHuman && seat.ownerToken && toCall > 0) {
+    const facingRaise = state.street === "preflop" ? state.currentBet > state.bigBlind : true;
+    if (facingRaise) {
+      state.opponentReads ??= {};
+      const read = (state.opponentReads[seat.ownerToken] ??= {
+        hands: 0,
+        vpipHands: 0,
+        raisesFaced: 0,
+        foldsToRaise: 0,
+      });
+      read.raisesFaced += 1;
+      if (action.type === "fold") read.foldsToRaise += 1;
+    }
+  }
+
   if (action.type === "fold") {
     if (!legal.canFold) throw new Error("Folding is not available.");
     seat.status = "folded";
@@ -1624,6 +1695,46 @@ const personalityProfiles: Record<
     trashContinueChance: 0.55,
     shoveEquityDiscount: 0,
     limperPunishBonus: 0,
+  },
+  // "Live Wire": loose AND aggressive, unlike the Whale's loose-passive.
+  // Plays a wide range like the Whale but bets/raises it hard like the
+  // Maniac, without the Maniac's willingness to shove thin -- a Live Wire
+  // wants to build a big pot and see a flop, not get it in preflop.
+  LAG: {
+    aggression: 0.62,
+    callTolerance: 0.06,
+    equityAdjustment: 0,
+    slowPlayFrequency: 0.1,
+    postflopBetSizes: [0.5, 0.66, 0.85, 1.1],
+    trashContinueChance: 0.3,
+    shoveEquityDiscount: 0.03,
+    limperPunishBonus: 0.1,
+  },
+  // "Iron Vault": the Rock's tighter, more paranoid cousin. Rarely
+  // continues without real equity (negative callTolerance means the bar to
+  // call is *above* pot odds, not just at them) and almost never bluffs.
+  NIT: {
+    aggression: 0.34,
+    callTolerance: -0.04,
+    equityAdjustment: -0.01,
+    slowPlayFrequency: 0.25,
+    postflopBetSizes: [0.33, 0.5, 0.66],
+    trashContinueChance: 0.03,
+    shoveEquityDiscount: 0,
+    limperPunishBonus: 0.06,
+  },
+  // "Straight Shooter": the textbook solid-competent baseline. Tighter than
+  // a Maniac, looser than a Nit, and punishes limps the hardest of anyone
+  // -- the one archetype whose whole game plan is "play well, no leaks."
+  TAG: {
+    aggression: 0.55,
+    callTolerance: 0.02,
+    equityAdjustment: 0,
+    slowPlayFrequency: 0.12,
+    postflopBetSizes: [0.5, 0.66, 0.75, 1],
+    trashContinueChance: 0.1,
+    shoveEquityDiscount: 0.01,
+    limperPunishBonus: 0.16,
   },
 };
 
@@ -1845,14 +1956,53 @@ export function chooseBotAction(
     0.24,
     Math.max(0, opponents - 1) * 0.025 + allInOpponents * 0.065,
   );
+
+  // Session-level opponent read: only trusted heads-up against a human with
+  // a real sample of raises behind it (raisesFaced's own note has the
+  // threshold), so a multiway pot or a stranger this bot has barely raised
+  // never gets second-guessed off a thin read. -0.5 means "never folds to a
+  // raise" (a calling station), +0.5 means "folds to almost every raise"; 0
+  // with no reliable read yet, which leaves every adjustment below inert.
+  const soleHumanOpponent = liveOpponents.length === 1 && liveOpponents[0].isHuman
+    ? liveOpponents[0]
+    : null;
+  const opponentRead = soleHumanOpponent?.ownerToken
+    ? state.opponentReads?.[soleHumanOpponent.ownerToken]
+    : undefined;
+  const hasReliableRead = Boolean(opponentRead) && opponentRead!.raisesFaced >= 6;
+  const readTilt = hasReliableRead
+    ? opponentRead!.foldsToRaise / opponentRead!.raisesFaced - 0.5
+    : 0;
+
   const valueRaiseThreshold = Math.max(
-    baselineEquity + 0.12 - style.aggression * 0.035,
+    // Thinner value against a read who rarely folds (readTilt < 0): betting
+    // a worse hand for value is good against someone who calls anyway.
+    baselineEquity + 0.12 - style.aggression * 0.035 - Math.max(0, -readTilt) * 0.05,
     potOdds + 0.12 + multiwayRiskPremium,
   );
   const hasValueRaise = effectiveEquity >= valueRaiseThreshold;
-  const bluffWindow = position >= 0.58
-    && effectiveEquity < baselineEquity + 0.04
-    && decisionRoll < BOT_BLUFF_FREQUENCY;
+
+  // Bluff frequency has two independent boosts on top of the personality-
+  // blind BOT_BLUFF_FREQUENCY baseline: readTilt > 0 (this specific human
+  // folds a lot) raises it further, since a fold-prone opponent is exactly
+  // who bluffing is profitable against.
+  const adaptiveBluffFrequency = clampUnit(BOT_BLUFF_FREQUENCY + Math.max(0, readTilt) * 0.3);
+  // Barreling: a bot that already bet a prior street on air, this same
+  // hand, doesn't re-roll the bluff dice fresh -- it leans into the story it
+  // already told, at decreasing frequency the longer the line runs (a
+  // second, then third consecutive bluff barrel is rarer than the first),
+  // and gives up once effectiveEquity climbs into real-hand territory
+  // instead of continuing to fire with nothing regardless of the board.
+  const priorBluffStreak = seat.bluffStreak ?? 0;
+  const isContinuingBluffLine = priorBluffStreak > 0
+    && state.street !== "preflop"
+    && effectiveEquity < baselineEquity + 0.1;
+  const barrelFrequency = Math.max(0.08, 0.5 - priorBluffStreak * 0.18);
+  const bluffWindow = isContinuingBluffLine
+    ? decisionRoll < barrelFrequency
+    : position >= 0.58
+      && effectiveEquity < baselineEquity + 0.04
+      && decisionRoll < adaptiveBluffFrequency;
   // The actual VPIP knob: a personality-specific chance to play a "trash"
   // hand anyway rather than being blocked from ever trying, on the same
   // `decisionRoll` the bluff gate above already reads. No extra random()
@@ -1873,73 +2023,88 @@ export function chooseBotAction(
         + (preflopLimpers > 0 ? style.limperPunishBonus : 0),
     );
 
-  if (legal.toCall > 0) {
-    // Weak offsuit holdings mostly do not drift into multiway pots because a
-    // Monte Carlo roll happened to land high. The bluff gate and the
-    // personality's own looseness are the two ways in.
+  // Every exit below runs through this one call site rather than each
+  // return wrapping itself -- a future branch added inside decideAction
+  // can't forget to keep seat.bluffStreak in sync with what the bot
+  // actually did, since there's nowhere else for its result to escape.
+  // Betting or shoving without real equity (hasValueRaise false) extends
+  // the streak, the same action with real equity resets it (no longer
+  // telling a bluff story), and giving up the line -- checking, folding, or
+  // just calling instead of leading -- resets it too.
+  const decideAction = (): TurnAction => {
+    if (legal.toCall > 0) {
+      // Weak offsuit holdings mostly do not drift into multiway pots because
+      // a Monte Carlo roll happened to land high. The bluff gate and the
+      // personality's own looseness are the two ways in.
+      if (
+        state.street === "preflop"
+        && startingTier === "trash"
+        && !bluffWindow
+        && !trashContinueRoll
+      ) {
+        return { type: "fold" };
+      }
+
+      const stackInBigBlinds = seat.stack / Math.max(1, state.bigBlind);
+      const criticallyShort = stackInBigBlinds < 10;
+      const potIsMassive = state.pot >= seat.stack;
+      const preflopShove = state.street === "preflop"
+        && (
+          (criticallyShort && preflopStrength >= (stackInBigBlinds < 6 ? 2 : 3))
+          || (potIsMassive && startingTier === "premium")
+        );
+      const postflopShove = state.street !== "preflop"
+        && (
+          (
+            criticallyShort
+            && effectiveEquity >= potOdds + multiwayRiskPremium + 0.18 - style.shoveEquityDiscount
+          )
+          || (
+            potIsMassive
+            && effectiveEquity >= (opponents > 1 ? 0.9 : 0.82) - style.shoveEquityDiscount
+          )
+        );
+      if (
+        legal.canAllIn
+        && (preflopShove || postflopShove)
+        && decisionRoll < Math.min(0.9, style.aggression + 0.08)
+      ) {
+        return { type: "all-in" };
+      }
+      if (shouldRaise && decisionRoll >= style.slowPlayFrequency) {
+        return { type: "raise", amount: botRaiseTarget(state, legal, style, random) };
+      }
+      if (
+        effectiveEquity + style.callTolerance < potOdds + multiwayRiskPremium
+        || (
+          state.street === "preflop"
+          && allInOpponents > 0
+          && preflopStrength < (allInOpponents > 1 ? 4 : 3)
+        )
+      ) {
+        return { type: "fold" };
+      }
+      return legal.canCall ? { type: "call" } : { type: "fold" };
+    }
+
     if (
       state.street === "preflop"
       && startingTier === "trash"
       && !bluffWindow
       && !trashContinueRoll
     ) {
-      return { type: "fold" };
-    }
-
-    const stackInBigBlinds = seat.stack / Math.max(1, state.bigBlind);
-    const criticallyShort = stackInBigBlinds < 10;
-    const potIsMassive = state.pot >= seat.stack;
-    const preflopShove = state.street === "preflop"
-      && (
-        (criticallyShort && preflopStrength >= (stackInBigBlinds < 6 ? 2 : 3))
-        || (potIsMassive && startingTier === "premium")
-      );
-    const postflopShove = state.street !== "preflop"
-      && (
-        (
-          criticallyShort
-          && effectiveEquity >= potOdds + multiwayRiskPremium + 0.18 - style.shoveEquityDiscount
-        )
-        || (
-          potIsMassive
-          && effectiveEquity >= (opponents > 1 ? 0.9 : 0.82) - style.shoveEquityDiscount
-        )
-      );
-    if (
-      legal.canAllIn
-      && (preflopShove || postflopShove)
-      && decisionRoll < Math.min(0.9, style.aggression + 0.08)
-    ) {
-      return { type: "all-in" };
+      return legal.canCheck ? { type: "check" } : { type: "fold" };
     }
     if (shouldRaise && decisionRoll >= style.slowPlayFrequency) {
       return { type: "raise", amount: botRaiseTarget(state, legal, style, random) };
     }
-    if (
-      effectiveEquity + style.callTolerance < potOdds + multiwayRiskPremium
-      || (
-        state.street === "preflop"
-        && allInOpponents > 0
-        && preflopStrength < (allInOpponents > 1 ? 4 : 3)
-      )
-    ) {
-      return { type: "fold" };
-    }
-    return legal.canCall ? { type: "call" } : { type: "fold" };
-  }
-
-  if (
-    state.street === "preflop"
-    && startingTier === "trash"
-    && !bluffWindow
-    && !trashContinueRoll
-  ) {
     return legal.canCheck ? { type: "check" } : { type: "fold" };
-  }
-  if (shouldRaise && decisionRoll >= style.slowPlayFrequency) {
-    return { type: "raise", amount: botRaiseTarget(state, legal, style, random) };
-  }
-  return legal.canCheck ? { type: "check" } : { type: "fold" };
+  };
+
+  const chosen = decideAction();
+  const isAggressive = chosen.type === "raise" || chosen.type === "all-in";
+  seat.bluffStreak = isAggressive && !hasValueRaise ? priorBluffStreak + 1 : 0;
+  return chosen;
 }
 
 /**

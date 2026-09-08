@@ -438,7 +438,14 @@
     left: 50%;
     /* 844 / 390 and its reciprocal. Written as decimals because calc() takes
        a number here, not a ratio literal. */
-    width: min(100vw, calc(100dvh * 2.1641));
+    /* --browser-chrome-px (components/shell/browser-chrome-width.tsx, 0 on
+       an installed PWA) is a mobile browser's own toolbar height, added back
+       into 100dvh here because this term sizes a WIDTH: without it, a
+       toolbar that only ate vertical room reads as "the screen is narrower"
+       and pillarboxes both sides for no reason tied to the screen's actual
+       width. `height` below stays on plain 100dvh -- the toolbar really is
+       covering that strip and nothing should size itself as if it weren't. */
+    width: min(100vw, calc((100dvh + var(--browser-chrome-px)) * 2.1641));
     height: min(100dvh, calc(100vw * 0.46209));
     max-width: 100vw;
     max-height: 100dvh;

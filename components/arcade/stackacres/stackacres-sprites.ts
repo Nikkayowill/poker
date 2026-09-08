@@ -94,6 +94,8 @@
  * never touch `Image` at import time.
  */
 
+import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+
 export const SPRITE_ART = {
   cow: "/stackacres/sprites/cow.png",
   hen: "/stackacres/sprites/hen.png",
@@ -278,6 +280,26 @@ export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 export function isSpriteName(name: string): name is SpriteName {
   return name in SPRITE_ART;
 }
+
+/**
+ * Every crop's three growth-stage frames -- 22 crops x 3 stages, derived
+ * from `STACKACRES_CROPS` rather than hand-listed so a new crop's frames are
+ * picked up automatically. These are the reason the scene's `preload` used
+ * to fetch 150+ files on every single boot: a crop only ever stands in the
+ * Long Meadow (soil is a Crop Fields concept everywhere else, see
+ * stackacres-farm.tsx's own note on that), so nothing needs these until the
+ * camera actually reaches it. `stackacres-scene.ts` loads `CORE_SPRITE_NAMES`
+ * at boot and fetches this set lazily once the Long Meadow enters view.
+ */
+export const CROP_SPRITE_NAMES: readonly SpriteName[] = STACKACRES_CROPS.flatMap(
+  (crop) => [0, 1, 2].map((stage) => `${crop}${stage}` as SpriteName),
+);
+
+/** Everything preload can fetch immediately -- every sprite except the
+ *  Long-Meadow-only crop frames above. */
+export const CORE_SPRITE_NAMES: readonly SpriteName[] = SPRITE_NAMES.filter(
+  (name) => !(CROP_SPRITE_NAMES as readonly string[]).includes(name),
+);
 
 /** The Phaser texture key the raw file is loaded under. Deliberately not the
  *  painter's own name: the name has to stay the power-of-two canvas texture

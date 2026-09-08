@@ -94,6 +94,28 @@ export function isLivestock(stock: StackAcresStock): stock is StackAcresLivestoc
   return (STACKACRES_LIVESTOCK as readonly string[]).includes(stock);
 }
 
+export function isStackAcresCrop(value: string): value is StackAcresCrop {
+  return (STACKACRES_CROPS as readonly string[]).includes(value);
+}
+
+/**
+ * Seeds of each crop bought from Ray's shop but not yet planted, keyed by
+ * crop id. A missing key and an explicit 0 mean the same thing everywhere
+ * this is read -- the same convention SoilStock (./soil-tiers.ts) already
+ * carries for bags of soil.
+ *
+ * LIVESTOCK IS NOT HERE. A Hen Coop/Sheep Pen/Cattle Pen is still stocked
+ * straight for Gold via `stockStackAcres`'s unchanged path -- there is no
+ * "hen seed" to buy ahead of time, only a crop has this two-step shape.
+ */
+export type SeedStock = Partial<Record<StackAcresCrop, number>>;
+
+/** The most seed bags one purchase may buy -- same ceiling-on-a-single-request
+ *  reasoning as SOIL_BAGS_PER_PURCHASE (see that constant's own comment):
+ *  every money-moving route needs an upper bound on a body-supplied quantity
+ *  that isn't just the player's own balance. */
+export const STACKACRES_SEED_BAGS_PER_PURCHASE = 20;
+
 export interface StackAcresStockDef {
   /** What the player calls it. */
   label: string;

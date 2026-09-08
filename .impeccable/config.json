@@ -503,6 +503,13 @@
         "value": "rgba(0, 0, 0, 0.6)",
         "createdAt": "2026-09-08T00:33:49.794Z",
         "reason": "matches the existing sanctioned .puzzle-summary card shadow in 25-puzzles.css (same Ante Up card language, intentionally reused on .duel-panel)"
+        "rule": "bounce-easing",
+        "value": "var(--sa-bounce)",
+        "files": [
+          "app/styles/52-stackacres.css"
+        ],
+        "createdAt": "2026-09-08T00:16:02.540Z",
+        "reason": "matches existing StackAcres popup motion language (.sa-radial-btn, monk dialogue) already used consistently across this file, not new drift"
       }
     ]
   }

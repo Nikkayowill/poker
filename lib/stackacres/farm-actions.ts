@@ -15,7 +15,7 @@
  * component's last reference to it is gone.
  */
 
-import type { StackAcresStock } from "./catalogue";
+import type { StackAcresCrop, StackAcresStock } from "./catalogue";
 import type { StackAcresItem } from "./items";
 import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
@@ -67,6 +67,11 @@ export type Action =
   | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
   | { action: "buy-soil"; tier: SoilTier; quantity: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
+  // Ray's seed shelf (./catalogue.ts's SeedStock). Buys seeds of one crop for
+  // Gold, ahead of planting -- `stock` above spends one off the shelf
+  // instead of charging Gold directly once the crop it names is a crop
+  // rather than livestock. See stockStackAcres's own header.
+  | { action: "buy-seed"; crop: StackAcresCrop; quantity: number }
   // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
@@ -99,6 +104,12 @@ export function intentOf(body: Action): string {
   // swallow a press aimed at the other.
   if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
   if ("stock" in body) return `${body.action}:${body.stock}`;
+  // A seed purchase for one crop must never dedupe against or block a
+  // purchase of a different crop -- checked before the generic fallback,
+  // which would otherwise collapse every crop's buy onto one shared
+  // "buy-seed" intent the way soil's own tier-blind intent already does
+  // (a gap that is fine at 3 soil tiers and would not be at 22 crops).
+  if ("crop" in body) return `${body.action}:${body.crop}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
   // but no `quantity` (it is always exactly one unit), and gifting one NPC

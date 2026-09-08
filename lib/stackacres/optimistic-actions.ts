@@ -29,7 +29,14 @@
  */
 
 import type { PlayerProfile } from "@/lib/profile/types";
-import { STACKACRES_CATALOGUE, STACKACRES_FEED, stackacresCapacityPrice, type StackAcresStock } from "./catalogue";
+import {
+  STACKACRES_CATALOGUE,
+  STACKACRES_FEED,
+  isLivestock,
+  stackacresCapacityPrice,
+  type SeedStock,
+  type StackAcresStock,
+} from "./catalogue";
 import { stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import { sectorClearCheck, type SectorId } from "./sectors";
@@ -65,6 +72,7 @@ export interface FarmPredictContext {
   units: StackAcresUnitSnapshot[];
   feed: number;
   capacity: Partial<Record<StackAcresStock, number>>;
+  seedStock: SeedStock;
   toolTier: StackAcresToolTier;
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -90,6 +98,7 @@ export interface FarmStatePatch {
   profile?: PlayerProfile | null;
   feed?: number;
   capacity?: Partial<Record<StackAcresStock, number>>;
+  seedStock?: SeedStock;
   sectors?: SectorId[];
   upkeep?: StackAcresUpkeepState;
   tool?: StackAcresToolTier;
@@ -181,8 +190,6 @@ export function predictStackAcresAction(
       return { units: [...kept, ...resown] };
     }
     case "stock": {
-      const profile = debited(ctx, STACKACRES_CATALOGUE[body.stock].seedCost);
-      if (!profile) return null;
       const unit = optimisticallyStockedUnit({
         id: newOptimisticUnitId(),
         stock: body.stock,
@@ -190,7 +197,22 @@ export function predictStackAcresAction(
         inGreenhouse: body.inGreenhouse === true,
         nowMs: ctx.nowMs,
       });
-      return { units: [...ctx.units, unit], profile };
+      // Livestock still pays Gold straight out of the purse, unchanged --
+      // there is no seed shelf for a Hen Coop/Sheep Pen/Cattle Pen. A crop
+      // spends one seed off the shelf instead; the Gold already left at
+      // Ray's shop when the seed was bought, so guessing a Gold debit here
+      // too would flash a spend that never happens.
+      if (isLivestock(body.stock)) {
+        const profile = debited(ctx, STACKACRES_CATALOGUE[body.stock].seedCost);
+        if (!profile) return null;
+        return { units: [...ctx.units, unit], profile };
+      }
+      const held = ctx.seedStock[body.stock] ?? 0;
+      if (held < 1) return null;
+      return {
+        units: [...ctx.units, unit],
+        seedStock: { ...ctx.seedStock, [body.stock]: held - 1 },
+      };
     }
     case "buy-stock": {
       const profile = debited(ctx, stackacresStockPrice(body.stock));

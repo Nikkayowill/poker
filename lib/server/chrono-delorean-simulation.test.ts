@@ -50,6 +50,7 @@ async function loadSimulation() {
 
   const service = await import("./stackacres-service");
   const store = await import("./stackacres-store");
+  const seedStore = await import("./stackacres-seed-store");
   const profileStore = await import("./profile-store");
   const chrono = await import("./chrono-delorean");
   const catalogue = await import("@/lib/stackacres/catalogue");
@@ -57,7 +58,7 @@ async function loadSimulation() {
   const sectors = await import("@/lib/stackacres/sectors");
   const exchange = await import("@/lib/stackacres/exchange");
 
-  return { service, store, profileStore, chrono, catalogue, upkeep, sectors, exchange };
+  return { service, store, seedStore, profileStore, chrono, catalogue, upkeep, sectors, exchange };
 }
 
 afterEach(() => {
@@ -184,12 +185,16 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
   });
 
   it("freezes a pig's clock while hungry, charges Land Maintenance once land is cleared, and re-assesses it independently on the next simulated UTC day", async () => {
-    const { service, store, profileStore, chrono, catalogue, upkeep, sectors, exchange } =
+    const { service, store, seedStore, profileStore, chrono, catalogue, upkeep, sectors, exchange } =
       await loadSimulation();
 
     const token = randomUUID();
     const profile = await profileStore.ensureProfile(token);
     await profileStore.adjustGold(profile.id, 500_000 - profile.goldBalance);
+    // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
+    // inventory pass. The two carrot sowings below (unit-count gates for
+    // clearing Wallow) predate that gate.
+    await seedStore.adjustStackAcresSeedStock(profile.id, "carrot", 2);
 
     const pig = catalogue.STACKACRES_CATALOGUE.pig;
     expect(pig.hungerMs).not.toBeNull();

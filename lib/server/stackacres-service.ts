@@ -6,9 +6,14 @@ import {
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
+  STACKACRES_SEED_BAGS_PER_PURCHASE,
   capFor,
   stackacresCapacityPrice,
+  isLivestock,
+  isStackAcresCrop,
   isStackAcresStock,
+  type SeedStock,
+  type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import {
@@ -95,6 +100,7 @@ import {
   placeStackAcresSoilTile as placeSoilTileRow,
   removeStackAcresSoilTile as removeSoilTileRow,
 } from "./stackacres-soil-store";
+import { adjustStackAcresSeedStock, readStackAcresSeedStock } from "./stackacres-seed-store";
 import {
   GREENHOUSE_SLOT_CAP,
   greenhouseBuildCheck,
@@ -551,6 +557,10 @@ export interface StackAcresView {
   /** Bags of each soil tier bought from Ray but not laid down yet
    *  (`homestead_soil_stock`). A missing tier and 0 mean the same thing. */
   soilStock: SoilStock;
+  /** Seeds of each crop bought from Ray but not planted yet
+   *  (`homestead_seed_stock`). A missing crop and 0 mean the same thing.
+   *  Livestock is never a key here -- see SeedStock's own doc comment. */
+  seedStock: SeedStock;
   /** The Pixel Pilgrim's devotion: this player's UTC-day prayer streak and
    *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
   devotion: StackAcresDevotionView;
@@ -744,6 +754,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     pipeRows,
     soilTiles,
     soilStock,
+    seedStock,
     storedDevotion,
     storedFriendships,
     vatManifest,
@@ -779,6 +790,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
     readStackAcresSoilStock(profile.id),
+    readStackAcresSeedStock(profile.id),
     readStackAcresDevotion(profile.id),
     // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
     // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
@@ -857,6 +869,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
     soilStock,
+    seedStock,
     devotion: devotionView(storedDevotion, now),
     friendship,
     vat,
@@ -1687,16 +1700,34 @@ export async function stockStackAcres(
     );
   }
 
-  // Rule 1: the seed is paid for first. A null here is an empty purse or a
-  // lost race, and both mean nothing was sown.
+  // Rule 1: the seed is paid for first -- but crops and livestock pay in two
+  // different currencies now. Livestock still spends Gold straight out of
+  // the purse, unchanged: there is no "hen seed" bought ahead of time. A crop
+  // spends one seed off the shelf instead -- the Gold for it already left at
+  // Ray's shop (buyStackAcresSeed), so charging Gold again here would be a
+  // second debit for the same seed. Either way a null/refusal here means
+  // nothing was sown.
   const produce = STACKACRES_YIELDS[stock];
-  const debited = await spendGoldByProfile(profile.id, def.seedCost);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
-      400,
-      { round: await snapshots(profile.id, now) },
-    );
+  let debited: PlayerProfile | null;
+  if (isLivestock(stock)) {
+    debited = await spendGoldByProfile(profile.id, def.seedCost);
+    if (!debited) {
+      throw new StackAcresRequestError(
+        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+  } else {
+    const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
+    if (heldSeeds === null) {
+      throw new StackAcresRequestError(
+        `You have no ${def.label} seeds. Buy some from Ray's shop first.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    debited = profile;
   }
 
   // Which bed this crop is going into, and what that bed does for it.
@@ -1740,8 +1771,13 @@ export async function stockStackAcres(
   } catch (error) {
     // The database refused outright -- the trigger raising on a cap race or a
     // ceiling desync arrives HERE as a throw -- and nothing came into
-    // existence, so the player must not have paid for it.
-    await refundGold(profile.id, def.seedCost);
+    // existence, so the player must not have paid for it. Refund whichever
+    // currency was actually spent above.
+    if (isLivestock(stock)) {
+      await refundGold(profile.id, def.seedCost);
+    } else {
+      await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
+    }
     throw error;
   }
 
@@ -3938,6 +3974,66 @@ export async function buyStackAcresSoil(
  *  second failure here would hide the first. */
 async function refundSoilBag(profileId: string, tier: SoilTier): Promise<void> {
   await adjustStackAcresSoilStock(profileId, tier, 1).catch(() => null);
+}
+
+/**
+ * Buys seeds of one crop at Ray's supply store. Rule 1: the Gold leaves
+ * before the seeds exist, and a failed credit refunds it.
+ *
+ * THE SHOP NEVER PLANTS ANYTHING. It sells a seed; `stockStackAcres` decides
+ * where and when one gets planted and spends it. That split is why this
+ * function has no district/capacity check of its own -- those are enforced
+ * at planting, same as they always were.
+ *
+ * The price is read from `STACKACRES_CATALOGUE[crop].seedCost`, never from
+ * the request -- the same per-tier price a crop always cost to plant, now
+ * paid up front instead of at stocking time. `isStackAcresCrop` refuses an
+ * unknown or livestock id outright rather than degrading, unlike soil's
+ * tier degradation: there is no "cheapest crop" a hostile body should be
+ * allowed to fall back onto.
+ */
+export async function buyStackAcresSeed(
+  token: string,
+  input: { crop?: unknown; quantity?: unknown },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const cropInput = input.crop;
+  if (typeof cropInput !== "string" || !isStackAcresCrop(cropInput)) {
+    throw new StackAcresRequestError("Not a real crop.", 400);
+  }
+  const crop: StackAcresCrop = cropInput;
+  const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > STACKACRES_SEED_BAGS_PER_PURCHASE) {
+    throw new StackAcresRequestError(
+      `Buy between 1 and ${STACKACRES_SEED_BAGS_PER_PURCHASE} seeds at a time.`,
+      400,
+    );
+  }
+  const def = STACKACRES_CATALOGUE[crop];
+  const cost = def.seedCost * quantity;
+
+  const debited = await spendGoldByProfile(profile.id, cost);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `${quantity} x ${def.label} seed costs ${cost.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  try {
+    const held = await adjustStackAcresSeedStock(profile.id, crop, quantity);
+    // A credit cannot go negative, so null here means the row moved under us
+    // rather than "not enough" -- either way no seeds landed, so the Gold
+    // goes back.
+    if (held === null) throw new Error("Could not shelve that seed.");
+  } catch (error) {
+    await refundGold(profile.id, cost);
+    throw error;
+  }
+
+  return view(debited, now);
 }
 
 /**

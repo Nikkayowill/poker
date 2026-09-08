@@ -4,8 +4,9 @@
  * skeleton shape. See components/loading/ for the React side.
  *
  * Every animation here has a prefers-reduced-motion fallback -- the shimmer
- * and the dealer's sway both stop, and CSS opacity/height transitions that
- * exist purely as motion are removed rather than left to snap instantly.
+ * and the progress bar's fill transition both stop, and CSS opacity/height
+ * transitions that exist purely as motion are removed rather than left to
+ * snap instantly.
  */
 
 /* ---------------------------------------------------------------------------
@@ -107,46 +108,33 @@
   pointer-events: none;
 }
 
-/* A dim, cool spotlight behind Claira, distinct from the warm gold accent
-   the live table draws her with -- the "different lighting" PlayPokerGO's
-   own loading screen has, without needing a second render of her. */
-.app-loading-dealer {
-  position: relative;
-  display: grid;
-  place-items: center;
-  /* Bounded on both axes -- 46vw/220px had no height cap, so on a short or
-     landscape viewport the dealer (native 306x478, ~1.56 tall-per-wide) grew
-     tall enough to crowd out the mark and flavor text below her. The 18vh
-     term keeps her under ~28vh tall on any viewport shape, not just narrow
-     ones; she's a quiet background beat here, not the hero. */
-  width: min(28vw, 18vh, 140px);
-  padding-top: 3vh;
-}
-.app-loading-dealer::before {
-  content: "";
-  position: absolute;
-  inset: -20% -40% -6% -40%;
-  background: radial-gradient(closest-side, rgba(152, 63, 224, .16), transparent 72%);
-  filter: blur(2px);
-}
-
-.app-loading-dealer-img {
-  position: relative;
-  width: 100%;
+/* The wordmark stands in for the old dealer cutout -- no character art on
+   this screen any more, just the brand lockup where she used to sit. */
+.app-loading-logo {
+  width: clamp(200px, 46vw, 320px);
   height: auto;
-  filter: brightness(.86) saturate(.9);
-  animation: app-loading-sway 3600ms ease-in-out infinite;
-  transform-origin: 50% 100%;
-}
-@keyframes app-loading-sway {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-5px) rotate(-1deg); }
 }
 
-.app-loading-flavor {
+.app-loading-bar-track {
+  width: min(60vw, 240px);
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(164, 186, 224, .14);
+  overflow: hidden;
+}
+
+.app-loading-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #9b3ff0, #ffd23f);
+  transition: width 150ms ease-out;
+}
+
+.app-loading-percent {
   margin: 0;
   color: #93a1bb;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
 
@@ -164,5 +152,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .app-loading-screen { transition: none; }
-  .app-loading-dealer-img { animation: none; }
+  .app-loading-bar-fill { transition: none; }
 }

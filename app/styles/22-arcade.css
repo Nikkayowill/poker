@@ -203,25 +203,35 @@
   gap: 12px;
 }
 
-/* Loud on purpose -- the one place in the chrome that breaks "purple is a
-   line and a glow, never a fill" (01-tokens.css's accent block). The floor is
-   the arcade cabinet's own marquee, not a settings panel; the gradient fill,
-   yellow-lit edge and filled CTA below are the concept the Neon Marquee
-   design canvas argued for the lobby/floor specifically, not a chrome-wide
-   rule -- .floor-row below and every other card-shaped surface in the app
-   stay on the restrained hairline treatment. */
+/* Loud on purpose -- one of the few places in the chrome that breaks "purple
+   is a line and a glow, never a fill" (01-tokens.css's accent block). The
+   floor is the arcade cabinet's own marquee, not a settings panel; the
+   gradient fill, yellow-lit edge and filled CTA below were the concept the
+   Neon Marquee design canvas argued for the lobby/floor specifically -- since
+   promoted to the chamfered "card" recipe every duel/puzzle panel and phone
+   tile now shares too (55-ante-up-neon.css). .floor-row below stays on the
+   restrained hairline treatment; it is a list row, not a card. */
+/* The chamfered clip-path corner is the same "upgraded" finish every Ante Up
+   card/button wears (55-ante-up-neon.css) -- this used to be a plain rounded
+   rect everywhere except the Beat the board row (a `variant="ante"` prop on
+   GameCard swapped in a second class, .floor-card-ante, just there), so
+   Head to head and Against the house read as an older, unfinished card next
+   to it. One finish for every card on the floor now; the variant is gone. */
 .floor-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 15px 16px 14px;
-  border-radius: var(--radius-card);
-  background: linear-gradient(160deg, var(--neon-purple-deep), var(--neon-ground-lift-2) 70%);
-  box-shadow: 0 0 0 1px rgba(255, 210, 63, .35), 0 18px 40px -22px rgba(155, 63, 240, .75);
+  border-radius: 0;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  background:
+    linear-gradient(160deg, rgba(155, 63, 240, .12), transparent 55%),
+    linear-gradient(160deg, var(--neon-purple-deep), var(--neon-ground-lift-2) 72%);
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .3), 0 20px 42px -22px rgba(155, 63, 240, .85);
   transition: box-shadow var(--duration-base) ease, transform var(--duration-base) ease;
 }
 .floor-card:hover {
-  box-shadow: 0 0 0 1px rgba(255, 210, 63, .5), 0 22px 46px -20px rgba(155, 63, 240, .9);
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, .5), 0 0 30px -8px rgba(155, 63, 240, .9);
   transform: translateY(-1px);
 }
 .floor-card strong { color: var(--neon-chalk); font: 600 17px Georgia, serif; letter-spacing: -.01em; }

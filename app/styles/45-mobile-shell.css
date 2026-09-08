@@ -297,18 +297,13 @@
     gap: 9px;
   }
 
-  /* Same flat panel every Ante Up card (.puzzle-summary/.duel-panel) already
-     uses, not the desktop hub's own diagonal-scrim tile art: this used to
-     match .hub-tile so the shell and the desktop grid were "visibly the same
-     material," but that just meant the Play tab's own cards (Private table,
-     Friends, the StackAcres row, the whole Profile tab) were the one thing on
-     these four tabs still wearing the old lobby-tile look instead of Ante
-     Up's. */
-  .mshell-card {
-    border-radius: var(--radius-xl, 12px);
-    background: var(--brand-surface-2);
-    box-shadow: 0 18px 40px -26px rgba(0, 0, 0, .6);
-  }
+  /* Shape/background/shadow come from 55-ante-up-neon.css's shared card
+     recipe (.ante-lobby-card/.duel-panel/.mshell-card) now, not the desktop
+     hub's own diagonal-scrim tile art: this used to match .hub-tile so the
+     shell and the desktop grid were "visibly the same material," but that
+     just meant the Play tab's own cards (Private table, Friends, the
+     StackAcres row, the whole Profile tab) were the one thing on these four
+     tabs still on the old lobby-tile look instead of Ante Up's. */
 
   .mshell-grid {
     display: grid;
@@ -556,7 +551,11 @@
   @media (hover: hover) {
     .mshell-tile:hover,
     .mshell-row:hover {
-      box-shadow: 0 18px 40px -26px rgba(0, 0, 0, .6), var(--accent-edge);
+      box-shadow:
+        0 0 0 1px rgba(155, 63, 240, .38),
+        0 0 34px -16px rgba(155, 63, 240, .7),
+        inset 0 1px 0 rgba(255, 255, 255, .04),
+        var(--accent-edge);
     }
   }
 

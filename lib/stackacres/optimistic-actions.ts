@@ -19,7 +19,10 @@
  *     the drawn contract, a mill's double-output). `collect` still gets an
  *     optimistic unit removal (that part is deterministic); the Gold it pays
  *     waits for the real number rather than flashing one that then corrects
- *     downward.
+ *     downward. stackacres-farm.tsx's `act` does show a numberless "on its
+ *     way" toast the instant this predictor applies, so the tap still gets
+ *     an immediate answer -- it just never promises a figure it might have
+ *     to walk back.
  *   - anything the client keeps no state for (blueprints, prestige,
  *     irrigation): there is nothing on screen to move.
  *

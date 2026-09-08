@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { ChevronDown, Compass, Lock, ScrollText } from "lucide-react";
+import { ChevronDown, Compass, Hammer, Lock, ScrollText } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
 import { STACKACRES_ZONES, zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
@@ -94,6 +94,15 @@ export interface StackAcresDestinationsProps {
    *  the same way it used to sit on the header's own Store button. */
   /** How many fields and pens are ready to bring in. */
   carrying: number;
+  /** Opens Ray's Mythic Blueprints dashboard. Same non-travel-target posture
+   *  as `onOpenContracts` -- there is nowhere on the map for the camera to
+   *  fly to, the whole of the feature is the sheet this opens. */
+  onOpenBlueprints: () => void;
+  /** Whether any structure currently has an active build, for the dot on
+   *  the entry -- same "presence, not a count" convention `contractPosted`
+   *  takes, since a fraction of stages complete would be a false promise of
+   *  precision this rail was never built to show. */
+  blueprintInProgress: boolean;
 }
 
 export function StackAcresDestinations({
@@ -105,6 +114,8 @@ export function StackAcresDestinations({
   onOpenContracts,
   contractPosted,
   carrying,
+  onOpenBlueprints,
+  blueprintInProgress,
 }: StackAcresDestinationsProps) {
   const [dropped, setOpen] = useState(false);
   const menuId = useId();
@@ -162,7 +173,9 @@ export function StackAcresDestinations({
           <span className="sa-quicknav-caret" aria-hidden="true">
             <ChevronDown size={14} />
           </span>
-          {(carrying > 0 || contractPosted) && <span className="sa-dest-dot" aria-hidden="true" />}
+          {(carrying > 0 || contractPosted || blueprintInProgress) && (
+            <span className="sa-dest-dot" aria-hidden="true" />
+          )}
         </button>
       )}
       {showList && (
@@ -244,6 +257,28 @@ export function StackAcresDestinations({
               </span>
             </span>
             {contractPosted && <span className="sa-dest-dot" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="sa-dest sa-dest-blueprints"
+            title="Ray's Mythic Blueprints -- build the town's grand structures over time."
+            aria-label={
+              blueprintInProgress
+                ? "Ray's Blueprints — a structure is under construction. See what it still needs."
+                : "Ray's Blueprints — build the town's grand structures over time."
+            }
+            onClick={pick(onOpenBlueprints)}
+          >
+            <span className="sa-dest-swatch" aria-hidden="true">
+              <Hammer size={14} />
+            </span>
+            <span className="sa-dest-text">
+              <span className="sa-dest-name">Blueprints</span>
+              <span className="sa-dest-way" aria-hidden="true">
+                {blueprintInProgress ? "building" : "construction"}
+              </span>
+            </span>
+            {blueprintInProgress && <span className="sa-dest-dot" aria-hidden="true" />}
           </button>
         </div>
       )}

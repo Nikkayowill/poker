@@ -89,7 +89,7 @@ type Step = "review" | "confirm";
  *  TownContractsModal's own tone contract (`is-paid`/`is-refused` CSS), so
  *  the two sheets read as one family rather than two different vocabularies
  *  for the same idea. */
-type Note = { readonly tone: "paid" | "refused"; readonly text: string };
+type Note = { readonly tone: "paid" | "refused" | "pending"; readonly text: string };
 
 /** Wraps a handler so the press is consumed here rather than travelling on
  *  to the scene underneath. See TownContractsModal.tsx's own header for why
@@ -165,7 +165,11 @@ export function StackAcresPrestigeResetModal({
    */
   const handleConfirm = useCallback(async (): Promise<void> => {
     if (busy || resetting || !confirmUnlocked || !eligible) return;
-    setNote(null);
+    // Still nothing to guess about the multiplier itself (see this
+    // function's header), but a resolved press deserves an instant answer
+    // rather than a silent wait behind the disabled button -- the real
+    // outcome overwrites this the moment it lands.
+    setNote({ tone: "pending", text: "Resetting the farm…" });
     setResetting(true);
     try {
       const outcome = await onReset();

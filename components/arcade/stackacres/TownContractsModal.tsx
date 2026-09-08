@@ -157,7 +157,7 @@ export interface TownContractsModalProps {
 /** A message the sheet is showing about its own last action. The page's error
  *  banner sits behind the scrim, so a refusal raised in here has to be
  *  answered in here -- the same rule the supply store follows. */
-type Note = { readonly tone: "paid" | "refused"; readonly text: string };
+type Note = { readonly tone: "paid" | "refused" | "pending"; readonly text: string };
 
 /**
  * A delivery that has actually paid, and which row it paid from.
@@ -369,11 +369,16 @@ export function TownContractsModal({
    *  nothing to debit optimistically and nothing to roll back. */
   const handleRequestContract = useCallback(async (): Promise<void> => {
     if (busy || settling) return;
-    setNote(null);
+    // Nothing here moves any goods or Gold, so there's no guess to apply --
+    // but the press still deserves an instant answer instead of a silent
+    // wait, so say the honest, contentless part right away and let the
+    // response overwrite it with the drawn contract (or a refusal) below.
+    setNote({ tone: "pending", text: "Asking the town…" });
     setSettling(true);
     try {
       const result = await onRequest();
       if (!result.ok) setNote({ tone: "refused", text: result.message });
+      else setNote(null);
     } catch {
       setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
     } finally {

@@ -131,6 +131,12 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import {
+  MythicBlueprintDashboard,
+  type BlueprintActionResult,
+  type BlueprintCardView,
+} from "./mythic-blueprint-dashboard";
+import type { BlueprintId } from "@/lib/stackacres/blueprints";
 import { SynergyOverlay } from "./SynergyOverlay";
 import {
   MidnightMerchantStorefront,
@@ -395,6 +401,14 @@ interface StackAcresResponse {
   /** Set only by a successful `collect-drone-forage` response; every other
    *  action's answer leaves this undefined. */
   droneForage?: { droneId: string; reward: number };
+  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
+   *  present whether or not the player has started it, shaped identically to
+   *  `BlueprintCardView` (mythic-blueprint-dashboard.tsx's own client-local
+   *  type -- see that file's header for why this reads it structurally
+   *  rather than importing the server's `BlueprintView`). Always present on
+   *  a current server, optional only so a bundle old enough to predate the
+   *  feature keeps working. */
+  blueprints?: Record<BlueprintId, BlueprintCardView>;
 }
 
 /**
@@ -585,6 +599,13 @@ export function StackAcresFarm() {
     unlocked: boolean;
     drones: { droneId: string; deployedAt: string }[];
   }>({ unlocked: false, drones: [] });
+  // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
+  // from a player press well after mount, by which point the first poll has
+  // long since landed, the same posture every other gated feature here takes.
+  const [blueprints, setBlueprints] = useState<Record<BlueprintId, BlueprintCardView>>(
+    {} as Record<BlueprintId, BlueprintCardView>,
+  );
+  const [showBlueprints, setShowBlueprints] = useState(false);
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
    * The processing track (wheat, mills, the one open Town Contract), held as
@@ -1024,6 +1045,7 @@ export function StackAcresFarm() {
     if (data.soilStock) setSoilStock(data.soilStock);
     if (data.seedStock) setSeedStock(data.seedStock);
     if (data.droneHangar) setDroneHangar(data.droneHangar);
+    if (data.blueprints) setBlueprints(data.blueprints);
   }, []);
 
   /**
@@ -1306,6 +1328,15 @@ export function StackAcresFarm() {
       const patch = predictStackAcresAction(body, buildPredictContext());
       const optimisticApplied = patch !== null;
       if (patch) applyResponse(patch);
+      // The unit resets instantly (above), but the payout itself is a dice
+      // roll this layer won't fake -- see predictStackAcresAction's header.
+      // A player who taps and hears/sees nothing until the round trip lands
+      // reads that gap as lag, so say the honest, numberless part out loud
+      // right away; the real toast overwrites this the moment the response
+      // is in, and a refusal below retracts it.
+      if (body.action === "collect" && optimisticApplied) {
+        setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
+      }
       // Set the moment this browser knows what became of the request. While it
       // is false the key survives, so the next press at the same thing is a
       // retry; once it is true the key is dropped and the next press is a new
@@ -1365,6 +1396,11 @@ export function StackAcresFarm() {
             });
           } else if (!data.round) {
             setError(data.error ?? "That did not go through.");
+          } else if (body.action === "collect") {
+            // Take back the "on its way" promise from above -- the round
+            // repainted silently because there was nothing to collect after
+            // all, and nothing is actually inbound.
+            setLastCollect(null);
           }
           // Re-read the allowance once this request has let go of the send
           // lock, so the window (and the standing notice) show the server's
@@ -2245,6 +2281,22 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** Ray's Mythic Blueprints. `act`'s `ContractActionResult` is already a
+   *  superset of `BlueprintActionResult`, and `blueprints` in the response
+   *  already carries the resulting card, so there is nothing else to adapt
+   *  -- same reuse `onBuyFromMerchant` above takes for its own shape. */
+  const onStartBlueprint = useCallback(
+    (structureId: BlueprintId): Promise<BlueprintActionResult> =>
+      act({ action: "start-blueprint", structureId }),
+    [act],
+  );
+
+  const onContributeBlueprint = useCallback(
+    (structureId: BlueprintId, itemId: MachineItemId, amount: number): Promise<BlueprintActionResult> =>
+      act({ action: "contribute-blueprint", structureId, itemId, amount }),
+    [act],
+  );
+
   const onClearSector = useCallback(
     (sector: SectorId) => {
       buySound();
@@ -2283,6 +2335,12 @@ export function StackAcresFarm() {
     (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
       buySound();
       setRadial(null);
+      // No optimistic bed appears until the response repaints `soilTiles`
+      // (see the comment above), so the sound alone left the press feeling
+      // like it did nothing for however long that round trip takes. This
+      // toast is the same numberless "it's happening" answer `collect` gives
+      // -- it never claims the bed is down yet, just that the ask landed.
+      setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       // The tier names WHICH bed; the server reads its price from
       // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
       void act({ action: "place-soil-tile", tx, ty, tier });
@@ -2296,6 +2354,7 @@ export function StackAcresFarm() {
     (tx: number, ty: number) => {
       buySound();
       setRadial(null);
+      setLastCollect({ text: "Clearing the bed…", nonce: Date.now() });
       void act({ action: "remove-soil-tile", tx, ty });
     },
     [act],
@@ -2654,6 +2713,8 @@ export function StackAcresFarm() {
             onOpenContracts={() => { panelSound(); setShowContracts(true); }}
             contractPosted={processing.contract !== null}
             carrying={carrying}
+            onOpenBlueprints={() => { panelSound(); setShowBlueprints(true); }}
+            blueprintInProgress={Object.values(blueprints).some((b) => b.status === "in_progress")}
           />
 
           <div className="sa-camera" role="group" aria-label="Map view">
@@ -3414,6 +3475,17 @@ export function StackAcresFarm() {
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
+        />
+      )}
+
+      {showBlueprints && (
+        <MythicBlueprintDashboard
+          blueprints={Object.values(blueprints)}
+          inventory={processing.inventory}
+          busy={pendingByPrefix("start-blueprint") || pendingByPrefix("contribute-blueprint")}
+          onStart={onStartBlueprint}
+          onContribute={onContributeBlueprint}
+          onClose={() => { panelSound(); setShowBlueprints(false); }}
         />
       )}
       {/*

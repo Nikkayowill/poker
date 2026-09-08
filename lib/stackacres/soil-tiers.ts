@@ -43,8 +43,20 @@ export const SOIL_DEFAULT_TIER: SoilTier = "dirt";
 export interface SoilTierDef {
   label: string;
   blurb: string;
-  /** Gold. `dirt` holds the price beds have always cost, so tiering the shop
-   *  does not silently reprice the bed players already know. */
+  /**
+   * Gold, PER PLANTING SQUARE, not per bed.
+   *
+   * Used to be the price of a whole `SOIL_SLOTS_PER_TILE`-square bed --
+   * `dirt` was a flat 2,000 for all twelve. That let a single purchase hand
+   * the player eleven squares they had not asked for and had no way to plant
+   * one at a time, which is not how a real garden bed gets dug: one square
+   * of ground is for one seed. Each tier's price is now that same total
+   * divided by `SOIL_SLOTS_PER_TILE` (2,000 -> 167, 8,000 -> 667,
+   * 20,000 -> 1,667, all rounded to the nearest Gold), so filling a whole
+   * bed still costs what it always did -- a player who wants to buy all
+   * twelve squares in one bed pays the same total as the old flat price,
+   * just twelve small purchases instead of one big one.
+   */
   price: number;
   /** Multiplies a crop's own `durationMs` at sow time. Strictly `0 < m <= 1`
    *  -- a tier may shorten a cycle, never lengthen one, and never to zero
@@ -80,8 +92,8 @@ export interface SoilTierDef {
 export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   dirt: {
     label: "Tillable Dirt",
-    blurb: "A plain worked bed. Nine planting slots, no frills.",
-    price: 2000,
+    blurb: "One worked planting square, no frills.",
+    price: 167,
     growthMultiplier: 1,
     selfHydrating: false,
     tint: null,
@@ -89,7 +101,7 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   enriched: {
     label: "Enriched Substrate",
     blurb: "Composted through. Crops sown here come up a fifth faster.",
-    price: 8000,
+    price: 667,
     growthMultiplier: 0.8,
     selfHydrating: false,
     // Darker and warmer: composted earth reads richer than plain dirt.
@@ -98,7 +110,7 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   hydro: {
     label: "Hydro Soil",
     blurb: "Holds its own water. This bed never needs a pipe run to it.",
-    price: 20000,
+    price: 1667,
     growthMultiplier: 0.9,
     selfHydrating: true,
     // Cool and damp. Pulled toward the `water` ramp's own top so a hydro bed
@@ -112,8 +124,10 @@ export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
  * how many a player may own: they can buy again. It exists because every
  * money-moving route in this codebase needs an upper bound on the quantity a
  * body can name -- the Ante Up farming fix landed after finding routes whose
- * only bound was the player's own balance, and 20 x the dearest tier is
- * already 400,000 Gold.
+ * only bound was the player's own balance. Each bag is one planting square
+ * now, not a whole bed, so 20 x the dearest tier is 33,340 Gold -- the
+ * ceiling stayed the same count of bags across that repricing, which is why
+ * it no longer reads as a huge number the way it did when a bag was a bed.
  */
 export const SOIL_BAGS_PER_PURCHASE = 20;
 

@@ -12,7 +12,8 @@ import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
-import type { SoilTile, SoilTileOrigin } from "@/lib/stackacres/soil";
+import type { SoilTile } from "@/lib/stackacres/soil";
+import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 
 /** The processing half of a snapshot: everything the AUTOMATED farmhand
@@ -122,7 +123,7 @@ export interface StackAcresWorldApi {
    *  must always reflect. */
   soilTiles: () => SoilTile[];
   setSoil: (tiles: readonly SoilTile[]) => void;
-  placeSoilAt: (x: number, y: number, origin?: SoilTileOrigin) => boolean;
+  placeSoilAt: (x: number, y: number, tier?: SoilTier) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
   /** Outlines the tile a pending bed will actually land on, snapped through
    *  the same `soilTileAt` the placement uses. `null` clears it. Pushed from
@@ -527,7 +528,7 @@ export function StackAcresWorld({
       setMerchant: (present) => sceneRef.current?.setMerchant(present),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
-      placeSoilAt: (x, y, origin) => sceneRef.current?.placeSoilAt(x, y, origin) ?? false,
+      placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),

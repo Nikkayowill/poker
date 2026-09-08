@@ -55,3 +55,7 @@ scripts/__pycache__/
 # under public/stackacres/sprites/ belong in the repo. Unzip
 # isometric-plant-pack.zip here to re-run scripts/prepare-stackacres-plants.py.
 /scripts/iso/
+
+# CLAUDE.md is Kayo's own local project-notes file now, not a shared doc --
+# it stays on his machine instead of getting pushed.
+/CLAUDE.md

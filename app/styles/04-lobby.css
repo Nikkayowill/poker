@@ -1037,33 +1037,13 @@ button:disabled { cursor: wait; opacity: .62; }
     filter var(--duration-base) ease;
 }
 
-.account-primary-action {
-  color: #1c1305;
-  /* The inset highlight is a bevel on a filled control, not an outline -- it
-     is light on the top face, and it stops at the top face. */
-  background: linear-gradient(152deg, #ffe08f 0%, var(--brand-gold-light) 38%, var(--brand-gold) 74%, #a8760c 100%);
-  box-shadow:
-    0 16px 38px rgba(255, 210, 63, .3),
-    inset 0 1px rgba(255, 255, 255, .45);
-}
-
-.account-primary-action:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
-
-.account-oauth-action {
-  color: #e9eef6;
-  background: var(--brand-surface-2);
-}
-.account-oauth-action:hover:not(:disabled) { background: rgba(182, 166, 219, .13); }
-
-/* One step quieter than Google: Google is the front screen's one filled
-   secondary action, Email is the second choice sitting beside it, so it
-   takes the same treatment as the guest action rather than a second filled
-   surface competing for the same weight. */
-.account-email-toggle {
-  color: #b6c0d6;
-  background: var(--brand-surface);
-}
-.account-email-toggle:hover:not(:disabled) { color: #e9eef6; background: var(--brand-surface-2); }
+/* .account-primary-action (gold)/.account-oauth-action/.account-email-toggle
+   (neutral) get their shape, background, and hover/active/disabled states
+   from 55-ante-up-neon.css's shared button recipe now -- the same chamfer/
+   gradient/sheen every other CTA in the chrome wears -- rather than this
+   file's own rounded-corner fill. Only .account-guest-action ("Play as
+   guest", the deliberately unobtrusive third choice) stays on its own
+   transparent-ghost look below. */
 
 .account-guest-action {
   color: #9fadc5;

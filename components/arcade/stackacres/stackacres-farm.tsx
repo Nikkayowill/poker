@@ -6,6 +6,7 @@ import { ChevronLeft, Coins, HelpCircle, LocateFixed, Lock, X, ZoomIn, ZoomOut }
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
+import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
 import { useTightLandscape } from "@/components/use-tight-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -246,6 +247,20 @@ const RAY_GIFT_LINES: readonly string[] = [
   "You didn't have to bring me anything, but I won't say no.",
   "This old farm's given me plenty over the years. Nice to see a bit of it come back around.",
   "Whatever you've got, I expect I'll find a use for it.",
+];
+
+/** Rotates at the bottom of the boot-up loading screen (see `bootPhase`
+ *  below) -- short, concrete pointers to shipped mechanics, not flavor text.
+ *  Same "one at a time, on an interval" shape as PIXEL_PILGRIM_LINES/
+ *  RAY_GIFT_LINES above, just gated on the loading overlay instead of a
+ *  dialogue opening. */
+const STACKACRES_LOADING_TIPS: readonly string[] = [
+  "Ray's shop sells soil, tools, and land -- tap his sign to visit.",
+  "Better tools raise your odds of a critical harvest.",
+  "The Mill turns raw crops into higher-value goods for contracts.",
+  "Check the Synergy Tree to unlock perks for your loadout.",
+  "Bring Ray something new and he might add it to his Museum.",
+  "A farmhand can work your fields automatically once you unlock one.",
 ];
 
 interface StackAcresResponse {
@@ -607,6 +622,7 @@ export function StackAcresFarm() {
 
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
   /**
    * The intents with a request in the air right now, mirrored into render so
    * a button can grey out ITS OWN action while it settles -- and only its
@@ -2403,7 +2419,25 @@ export function StackAcresFarm() {
   const dayCapped = exchange.remaining < 1;
   const capResetLabel = countdownLabel(Date.parse(exchange.resetsAt) - nowMs);
 
-  const onWorldReady = useCallback(() => setWorldReady(true), []);
+  // stackacres-scene.ts fires onReady synchronously once the scene is built
+  // and the camera framed -- before Phaser's own render loop has actually
+  // painted that frame to the canvas. Waiting two rAF ticks closes that gap
+  // so the loading overlay doesn't drop a beat before the world.
+  const onWorldReady = useCallback(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setWorldReady(true)));
+  }, []);
+
+  // Rotates independently of the flavor line above it; only runs while the
+  // overlay is actually up (bootPhase below gates rendering), so this never
+  // ticks a hidden timer for the life of the session.
+  const bootPhase = useMinHoldFade(!loaded || !worldReady, { minMs: 500, fadeMs: 320 });
+  useEffect(() => {
+    if (bootPhase === "hidden") return;
+    const timer = window.setInterval(() => {
+      setTipIndex((index) => (index + 1) % STACKACRES_LOADING_TIPS.length);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [bootPhase]);
 
   // After every hook above, same position poker-table.tsx gates its own
   // render at. A full replacement, not an overlay -- the farm itself never
@@ -2605,8 +2639,24 @@ export function StackAcresFarm() {
               api={world}
             />
           )}
-          {(!loaded || !worldReady) && (
-            <p className="sa-hint sa-loading">Walking the fences…</p>
+          {bootPhase !== "hidden" && (
+            <div className={clsx("sa-loading", bootPhase === "hiding" && "sa-loading-hiding")}>
+              {/* Ray's shop-welcome cutout, reused rather than new art -- see
+                  stackacres-ray-welcome.tsx for the other place it's drawn
+                  from. A plain <img>, not next/image: one small already-sized
+                  cutout, not user content needing a CDN. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="sa-loading-ray-img"
+                src="/stackacres/sprites/grandfather-ray.png"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+              />
+              <p className="sa-hint sa-loading-text">Walking the fences…</p>
+              <div className="sa-loading-track skeleton-block" />
+              <p className="sa-hint sa-loading-tip">{STACKACRES_LOADING_TIPS[tipIndex]}</p>
+            </div>
           )}
 
           {/* The seed menu's dismissal layer, and its position in this file is

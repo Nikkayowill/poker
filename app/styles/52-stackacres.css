@@ -566,6 +566,7 @@
 .sa-harvest-all,
 .sa-radial-btn,
 .sa-radial-more,
+.sa-seed-chip,
 .sa-cta,
 .sa-theme .sa-sheet-close {
   font-family: var(--sa-font);
@@ -591,6 +592,7 @@
 .sa-harvest-all:not(:disabled):active,
 .sa-radial-btn:not(:disabled):active,
 .sa-radial-more:active,
+.sa-seed-chip:not(:disabled):active,
 .sa-cta:not(:disabled):active,
 .sa-theme .sa-sheet-close:active {
   transform: translateY(var(--sa-lift)) scale(.98);
@@ -615,6 +617,7 @@
 .sa-harvest-all:focus-visible,
 .sa-radial-btn:focus-visible,
 .sa-radial-more:focus-visible,
+.sa-seed-chip:focus-visible,
 .sa-cta:focus-visible,
 .sa-theme .sa-sheet-close:focus-visible {
   outline: 3px solid var(--sa-corn);
@@ -631,6 +634,7 @@
 .sa-buy-btn:disabled,
 .sa-harvest-all:disabled,
 .sa-radial-btn:disabled,
+.sa-seed-chip:disabled,
 .sa-cta:disabled {
   filter: saturate(.35) brightness(.94);
   cursor: not-allowed;
@@ -1214,6 +1218,131 @@
 @keyframes sa-radial-in {
   from { opacity: 0; transform: scale(.7); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* ---- the Long Meadow's seed strip -------------------------------------
+ * The Long Meadow's own planting menu (StackAcresSeedStrip): a horizontal
+ * scroll strip, not the ring above -- 22 crops cannot lay out on a fixed
+ * arc, see that component's own header for the full reasoning. Every other
+ * district keeps the ring; only this one swaps.
+ *
+ * DOCKED, NOT PINNED TO THE FINGER. The ring orbits the tap because it never
+ * grows past a handful of buttons; a strip long enough to scroll cannot stay
+ * centred under an arbitrary fingertip without risking running off either
+ * edge of a landscape phone, so it sits along the bottom of .sa-field
+ * instead -- the same "the screen is 390px tall" ceiling the ring's own
+ * HEADROOM constant is sized against.
+ *
+ * Same pressable-block material as the ring (`.sa-radial-btn`'s own family
+ * further up this file), and `.sa-seed-chip` is added to those shared
+ * active/focus/disabled rules rather than repeating them here.
+ */
+.sa-seed-strip {
+  position: absolute;
+  left: max(10px, var(--safe-left));
+  right: max(10px, var(--safe-right));
+  bottom: max(10px, var(--safe-bottom));
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 34px 10px 10px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+
+.sa-seed-strip-close {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--sa-ink);
+  cursor: pointer;
+  opacity: .6;
+}
+
+.sa-seed-strip-close:hover { opacity: 1; }
+
+/* Eight crops do not fit a phone in one row -- twenty-two certainly don't --
+   so the strip scrolls sideways rather than wrapping into a block tall
+   enough to swallow the map, the same reasoning .bj-stakes already states
+   for Blackjack's own tier ladder. */
+.sa-seed-strip-row {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sa-seed-strip-row::-webkit-scrollbar { display: none; }
+
+.sa-seed-chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 74px;
+  min-height: var(--sa-tap);
+  padding: 7px 5px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    background var(--duration-fast, .12s) ease;
+}
+
+.sa-seed-chip:hover:not(:disabled) { filter: brightness(1.04); }
+.sa-seed-chip .sa-ico { width: 24px; height: 24px; }
+
+.sa-seed-chip-name {
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* How many of this seed are left on the shelf. Same badge weight the ring's
+   own .sa-radial-cost carries, but a count rather than a price -- the Gold
+   for it already left at Ray's shop. */
+.sa-seed-chip-qty {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--sa-choc);
+}
+
+.sa-seed-strip-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--sa-ink);
+}
+
+.sa-seed-strip-empty p { margin: 0; }
+
+/* Overrides .sa-radial-more's own absolute/ring-anchored position -- same
+   button, same wood, docked as this strip's footer row instead of pinned
+   under a ring. */
+.sa-seed-strip-manage {
+  position: static;
+  align-self: flex-start;
+  translate: none;
 }
 
 /* ---- the Pixel Pilgrim's dialogue -------------------------------------

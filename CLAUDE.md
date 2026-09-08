@@ -58,6 +58,24 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
   many worktrees/branches at once (`git branch -a`, or `gh pr list` for what's open). Read the most
   recent dated entries below for what's actually in flight; don't trust this line to name it.
 
+### Crops are bought as seed before planting; the Long Meadow's ring became a scroll strip (2026-09-08)
+The 22-crop CraftPix roster (2026-09-07) broke the seed ring: it lays every option on a fixed
+100-degree arc sized for a couple of buy options, and with 22 crops the per-item spread collapses
+until buttons render stacked on top of each other -- only the topmost is tappable. Kayo's ask went
+past a layout fix: crops are now bought as seed from Ray's shop ahead of time (same Gold price a
+plant always cost, paid once at the shelf instead of at every stocking), and planting a crop spends
+one seed off that shelf instead of charging Gold directly -- same "buy at the barn, use for free
+later" shape `homestead_soil_stock` already established for soil bags, new table+RPC pair
+(`homestead_seed_stock`/`adjust_homestead_seed_stock`) built the same way. Livestock is untouched: a
+Hen Coop/Sheep Pen/Cattle Pen still stocks straight for Gold, there is no "hen seed" to buy ahead. The
+Long Meadow's own tap-to-plant menu is a new horizontal scroll strip now (`StackAcresSeedStrip`, same
+`overflow-x` idiom Blackjack's own stake ladder uses) **filtered to crops the shelf actually holds** --
+an empty shelf points at the shop instead of showing an empty strip. Every other district (three
+livestock kinds, never broken by the 22-crop roster) keeps the original ring
+(`StackAcresRadialMenu`) unchanged -- the two components share the same props contract on purpose, so
+`stackacres-farm.tsx`'s call site swaps between them on nothing more than which zone was tapped.
+Migration applied same-day. PR #396.
+
 ### Town Influence gets a real use: Town Favor discount tiers (2026-09-07)
 Kayo asked "does influence actually do anything right now" and the honest answer was: only once, ever
 -- `stackacresQuestFlags` in `lib/stackacres/shop-locks.ts` already read cumulative Influence, but only

@@ -37,6 +37,7 @@ import {
   deployStackAcresDrone,
   collectStackAcresDroneForage,
   listStackAcresDrones,
+  buyStackAcresSeed,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -78,11 +79,17 @@ import { adjustGold, ensureProfile } from "./profile-store";
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
+  STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
+  STACKACRES_SEED_BAGS_PER_PURCHASE,
   stackacresCapacityPrice,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
+import {
+  __resetStackAcresSeedStockForTest,
+  adjustStackAcresSeedStock,
+} from "./stackacres-seed-store";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
 import {
   STACKACRES_STARTING_TIER,
@@ -228,6 +235,12 @@ async function funded(
   if (museum) {
     for (const item of STACKACRES_ITEMS) await markStackAcresDonated(profile.id, item);
   }
+  // Ray's seed shelf gates planting a crop now (see the 2026-09-07 seed
+  // inventory pass) -- "funded" has always meant "ready to do anything this
+  // suite might ask of it", and every crop-stocking test in this file
+  // predates that gate, so a funded farm starts carrying a deep shelf of
+  // every crop rather than making each of those call sites buy seed first.
+  for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
   return { token, id: profile.id };
 }
 
@@ -305,6 +318,7 @@ const REAL = {
 beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresBlueprintsForTest();
+  __resetStackAcresSeedStockForTest();
   resetStackAcresDroneStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
@@ -380,6 +394,99 @@ describe("stocking", () => {
     await stockStackAcres(token, { stock: "cattle" }, T0);
     const view = await readStackAcres(token, T0);
     expect(view.units.filter((u) => u.state === "working")).toHaveLength(STACKACRES_BASE_CAP + 2);
+  });
+
+  it("stocks a crop by spending a seed off the shelf, never Gold", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", 3);
+    const before = await balance(token);
+
+    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
+
+    expect(await balance(token)).toBe(before);
+    expect(unitOf(view, "carrot").state).toBe("working");
+    expect(view.seedStock.carrot).toBe(2);
+  });
+
+  it("refuses to stock a crop with no seed on the shelf, and moves no Gold", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    const before = await balance(token);
+
+    await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcres(token, T0)).units).toEqual([]);
+  });
+
+  it("still stocks livestock straight for Gold, unchanged -- there is no seed shelf for it", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    const before = await balance(token);
+
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+
+    expect(await balance(token)).toBe(before - HEN.seedCost);
+    expect(unitOf(view, "hen").state).toBe("working");
+  });
+
+  it("refunds the seed when the guarded write throws, standing in for the DB trigger", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", 1);
+    vi.mocked(createStackAcresUnit).mockRejectedValueOnce(new Error("trigger said no"));
+
+    await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toThrow("trigger said no");
+
+    expect((await readStackAcres(token, T0)).seedStock.carrot).toBe(1);
+  });
+});
+
+describe("buyStackAcresSeed — Ray's shelf", () => {
+  it("charges the crop's seed price x quantity and shelves the seeds", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    const start = await balance(token);
+
+    const view = await buyStackAcresSeed(token, { crop: "carrot", quantity: 3 }, T0);
+
+    expect(await balance(token)).toBe(start - STACKACRES_CATALOGUE.carrot.seedCost * 3);
+    expect(view.seedStock.carrot).toBe(3);
+  });
+
+  it("refuses when Gold is short and shelves nothing", async () => {
+    const { token, id } = await funded(10);
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+
+    await expect(
+      buyStackAcresSeed(token, { crop: "carrot", quantity: 1 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(10);
+    expect((await readStackAcres(token, T0)).seedStock.carrot ?? 0).toBe(0);
+  });
+
+  it("bounds the quantity a single purchase may name", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    for (const quantity of [0, -5, STACKACRES_SEED_BAGS_PER_PURCHASE + 1]) {
+      await expect(
+        buyStackAcresSeed(token, { crop: "carrot", quantity }, T0),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+    }
+    expect((await readStackAcres(token, T0)).seedStock.carrot ?? 0).toBe(0);
+  });
+
+  it("refuses an unknown or livestock id outright rather than degrading", async () => {
+    const { token } = await funded();
+    await expect(
+      buyStackAcresSeed(token, { crop: "hen", quantity: 1 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(
+      buyStackAcresSeed(token, { crop: "not-a-real-crop", quantity: 1 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 });
 
@@ -475,10 +582,12 @@ describe("thirst", () => {
     const parched = wateredAt.getTime() - (T0.getTime() + THIRST);
     expect(Date.parse(after?.readyAt ?? "")).toBe(Date.parse(before?.readyAt ?? "") + parched);
     expect(after?.lastWateredAt).toBe(wateredAt.toISOString());
-    // The seed cost is the only thing that ever left the purse: watering is
-    // free, and costs attention rather than money.
-    expect(spentOnSeed).toBe(SPROUT.seedCost);
-    expect(await balance(token)).toBe(startingGold - SPROUT.seedCost);
+    // A crop's seed cost is paid at Ray's shop now, not at stocking (see the
+    // 2026-09-07 seed inventory pass) -- stocking spends a seed off the
+    // shelf, and watering is still free either way, so nothing here should
+    // touch the purse at all.
+    expect(spentOnSeed).toBe(0);
+    expect(await balance(token)).toBe(startingGold);
     expect(await readStackAcresFeed(id)).toBe(0);
   });
 
@@ -1756,6 +1865,7 @@ describe("the currency wall", () => {
       "activate-synergy-perk",
       "build-greenhouse",
       "buy-feed",
+      "buy-seed",
       "buy-soil",
       "buy-stock",
       "clear",
@@ -2339,6 +2449,8 @@ describe("idempotency keys", () => {
   });
 
   it("sows once when the same key arrives twice", async () => {
+    // A crop spends a seed off the shelf now, not Gold directly -- see the
+    // 2026-09-07 seed inventory pass. `funded()` stocks 1000 of every crop.
     const { token } = await funded();
     const key = randomUUID();
     const before = await balance(token);
@@ -2349,7 +2461,8 @@ describe("idempotency keys", () => {
     );
 
     expect(replay.units.filter((u) => u.stock === "carrot")).toHaveLength(1);
-    expect(await balance(token)).toBe(before - STACKACRES_CATALOGUE.carrot.seedCost);
+    expect(replay.seedStock.carrot).toBe(999);
+    expect(await balance(token)).toBe(before);
   });
 
   it("sows twice when two different keys arrive -- two intents, not a duplicate", async () => {
@@ -2362,7 +2475,8 @@ describe("idempotency keys", () => {
     );
 
     expect(second.units.filter((u) => u.stock === "carrot")).toHaveLength(2);
-    expect(await balance(token)).toBe(before - STACKACRES_CATALOGUE.carrot.seedCost * 2);
+    expect(second.seedStock.carrot).toBe(998);
+    expect(await balance(token)).toBe(before);
   });
 
   it("debits Gold once when a bought animal's key arrives twice", async () => {
@@ -2444,16 +2558,20 @@ describe("idempotency keys", () => {
   });
 
   it("frees the key when the action refused, so the retry is a real attempt", async () => {
-    const { token, id } = await funded(0);
+    // Gold is not what refuses a crop any more -- an empty seed shelf is.
+    // `funded()` stocks 1000 carrot seeds, so this drains them back to 0
+    // first to reach the same refusal by the new route.
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
     const key = randomUUID();
 
     await expect(
       run(token, key, "stock", () => stockStackAcres(token, { stock: "carrot" }, T0)),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
-    // The player tops up and presses again. A held key would answer this with
-    // "already done" and sow nothing.
-    await adjustGold(id, 10_000);
+    // The player buys a seed and presses again. A held key would answer this
+    // with "already done" and sow nothing.
+    await adjustStackAcresSeedStock(id, "carrot", 1);
     const retried = await run(token, key, "stock", () =>
       stockStackAcres(token, { stock: "carrot" }, T0),
     );
@@ -2470,7 +2588,8 @@ describe("idempotency keys", () => {
     );
 
     expect(second.units.filter((u) => u.stock === "carrot")).toHaveLength(2);
-    expect(await balance(token)).toBe(before - STACKACRES_CATALOGUE.carrot.seedCost * 2);
+    expect(second.seedStock.carrot).toBe(998);
+    expect(await balance(token)).toBe(before);
   });
 
   it("sows once when both copies land at the same time", async () => {
@@ -2487,7 +2606,12 @@ describe("idempotency keys", () => {
     ]);
 
     expect(second.units.filter((u) => u.stock === "carrot").length).toBeLessThanOrEqual(1);
-    expect(await balance(token)).toBe(before - STACKACRES_CATALOGUE.carrot.seedCost);
+    // Not `second.seedStock` -- the "in-flight" loser's own view can be read
+    // before the winner's write lands, same as `before`/`balance` above never
+    // trusted a losing call's own embedded profile. A fresh read once both
+    // promises have actually settled is the only trustworthy number.
+    expect((await readStackAcres(token, T0)).seedStock.carrot).toBe(999);
+    expect(await balance(token)).toBe(before);
   });
 
   it("keeps one player's key clear of another's", async () => {

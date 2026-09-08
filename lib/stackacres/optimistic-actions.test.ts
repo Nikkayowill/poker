@@ -47,6 +47,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     units: [],
     feed: 5,
     capacity: {},
+    seedStock: {},
     toolTier: "trowel",
     sectors: [HOME_SECTOR],
     upkeep: { plots: 0, fee: 0, paidToday: 0, due: 0 },
@@ -144,6 +145,25 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     const patch = predictStackAcresAction(
       { action: "stock", stock: "cattle" },
       ctx({ profile: profile({ goldBalance: 1 }) }),
+    );
+    expect(patch).toBeNull();
+  });
+
+  it("stocks a crop by spending a seed off the shelf, never Gold", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn" },
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 } }),
+    );
+    expect(patch?.profile).toBeUndefined();
+    expect(patch?.seedStock).toEqual({ corn: 1 });
+    expect(patch?.units).toHaveLength(1);
+    expect(patch?.units?.[0].permanent).toBe(false);
+  });
+
+  it("refuses to stock a crop with no seed on the shelf", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn" },
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: {} }),
     );
     expect(patch).toBeNull();
   });

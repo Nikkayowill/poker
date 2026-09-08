@@ -54,34 +54,19 @@ export interface YardRect {
 }
 
 /**
- * How far the Farmstead's yard moved in the 2026-09-08 map restructure
- * (Kayo's "Chore Efficiency" layout, imported from the StackAcres Map
- * Restructure design project).
+ * How far the Farmstead's yard moved in the 2026-09-07 re-lay.
  *
  * Derived, not chosen: the yard's new rect is `FARM_ZONE` at
- * x -716, y -235, and its old one was x 20, y -60, so the delta is
- * (-716 - 20, -235 - (-60)) = (-736, -175). world.test.ts holds it to
+ * x -740, y 356, and its old one was x 20, y -60, so the delta is
+ * (-740 - 20, 356 - (-60)) = (-760, 416). world.test.ts holds it to
  * `FARM_ZONE` so the two cannot drift apart.
- *
- * WHY THE MAP MOVED AGAIN. The 2026-09-07 re-lay spread nine districts
- * (farmstead plus eight) across a roughly 1,900x1,950-unit world with a full
- * ring road, because it was laid out straight off Kayo's hand-drawn plan-view
- * map. That map made every district a real place, but it also meant a full
- * chore circuit -- Coop to Coop to Pasture to Fold -- was a long drag of the
- * camera with a lot of empty scenery chunks between stops. This pass keeps
- * every district (same nine ids, same sizes -- nothing here resizes a
- * district, only repositions it) and pulls them into a tighter ring around
- * the Grand Farm, cutting the union of every district's bounds from roughly
- * 1,912x1,952 to 1,492x1,630 world units. `WORLD_BOUND_MARGIN` and
- * `STACKACRES_ZOOM_MIN` in ./world.ts were retuned alongside it for the same
- * reason.
  *
  * Both components are multiples of 8, which keeps every yard literal that was
  * on an 8-unit boundary on one afterwards. It is deliberately NOT a multiple
  * of `SOIL_TILE` (64), and it does not need to be: no soil bed has ever been
  * placeable in the Farmstead, so nothing on that lattice moves with the yard.
  */
-export const YARD_DELTA: YardPoint = { x: -736, y: -175 };
+export const YARD_DELTA: YardPoint = { x: -760, y: 416 };
 
 /** A yard literal, moved. Pass the number the yard was originally laid out
  *  with; the offset is applied here and nowhere else. */

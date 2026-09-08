@@ -16,6 +16,7 @@ import {
   SOIL_STARTER_TILES,
   SOIL_TILE,
   SOIL_TILE_PRICE_GOLD,
+  addSoilSlot,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
@@ -34,6 +35,7 @@ import {
   soilTileAt,
   soilTileDiamond,
   soilTileKey,
+  soilTileOwnedSlots,
   soilTileRect,
   soilTileTier,
   mergeSoilTiles,
@@ -299,6 +301,89 @@ describe("the slot lattice", () => {
       const p = soilSlotSpotForRank(soil, rank)!;
       expect(onSoil(soil, p.x, p.y)).toBe(true);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Buying a bed one square at a time                                   */
+/* ------------------------------------------------------------------ */
+
+describe("soilTileOwnedSlots", () => {
+  it("reads a missing boughtSlots as the whole bed, the same default tier gets", () => {
+    expect(soilTileOwnedSlots({ boughtSlots: undefined })).toBe(SOIL_SLOTS_PER_TILE);
+    expect(soilTileOwnedSlots({ boughtSlots: 1 })).toBe(1);
+    expect(soilTileOwnedSlots({ boughtSlots: 7 })).toBe(7);
+  });
+});
+
+describe("addSoilSlot", () => {
+  it("starts a brand new one-square bed on bare ground", () => {
+    const soil = createSoilMap();
+    const result = addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    expect(result.kind).toBe("created");
+    expect(result.kind === "created" && result.tile.boughtSlots).toBe(1);
+    expect(soilCapacity(soil)).toBe(1);
+  });
+
+  it("grows the same bed by one square per call, up to the full lattice", () => {
+    const soil = createSoilMap();
+    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    for (let i = 2; i <= SOIL_SLOTS_PER_TILE; i += 1) {
+      const result = addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+      expect(result.kind).toBe("grown");
+      expect(result.kind === "grown" && result.tile.boughtSlots).toBe(i);
+    }
+    expect(soilCapacity(soil)).toBe(SOIL_SLOTS_PER_TILE);
+  });
+
+  it("refuses once every square in a bed is owned", () => {
+    const soil = createSoilMap();
+    for (let i = 0; i < SOIL_SLOTS_PER_TILE; i += 1) addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    expect(addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({ kind: "full" });
+  });
+
+  it("refuses a tier that does not match the bed already standing there", () => {
+    const soil = createSoilMap();
+    addSoilSlot(soil, { tx: 0, ty: 0 }, "enriched");
+    expect(addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({
+      kind: "tier-mismatch",
+      tier: "enriched",
+    });
+    // The mismatch never touched the bed -- still one owned square, still
+    // its original tier.
+    expect(soilTileTier(soilSlotTile(soil, 0)!)).toBe("enriched");
+    expect(soilCapacity(soil)).toBe(1);
+  });
+
+  it("fills a partial bed's squares in reading order, matching soilSlotPoint", () => {
+    const soil = createSoilMap();
+    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
+    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
+    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
+    // Three owned squares: slots 0, 1 and 2 all stand on this bed, slot 3
+    // does not exist yet -- capacity is exactly 3, not SOIL_SLOTS_PER_TILE.
+    expect(soilCapacity(soil)).toBe(3);
+    for (const slot of [0, 1, 2]) {
+      expect(soilSlotSpot(soil, slot)).toEqual(soilSlotPoint({ tx: 2, ty: 5 }, slot));
+    }
+  });
+
+  it("a rank/slot walk crosses correctly from a partial first bed into a full second one", () => {
+    const soil = createSoilMap();
+    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    const full: SoilTile = { tx: 1, ty: 0, order: 1, origin: "purchased" };
+    placeSoilTile(soil, full);
+
+    expect(soilCapacity(soil)).toBe(2 + SOIL_SLOTS_PER_TILE);
+    // Slots 0 and 1 are the two-square bed; slot 2 is the FIRST square of
+    // the full bed, not its own slot 2 -- a uniform "divide by
+    // SOIL_SLOTS_PER_TILE" would have misplaced this by landing it on the
+    // partial bed's own (nonexistent) slot 2 instead.
+    expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0 });
+    expect(soilSlotTile(soil, 1)).toMatchObject({ tx: 0, ty: 0 });
+    expect(soilSlotTile(soil, 2)).toMatchObject({ tx: 1, ty: 0 });
+    expect(soilSlotSpot(soil, 2)).toEqual(soilSlotPoint({ tx: 1, ty: 0 }, 0));
   });
 });
 

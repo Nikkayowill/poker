@@ -3843,21 +3843,27 @@ export async function removeStackAcresPipeTile(
 }
 
 /**
- * Places one purchased soil tile on the Crop Fields' own lattice, spending
- * Gold. Rule 1: the Gold leaves first, and a placement that cannot land --
- * the cell already taken, or a lost race for it -- refunds it.
+ * Spends one bag on the Crop Fields' own lattice: a brand new one-square bed
+ * on bare ground, or the next square of the bed already standing at that
+ * coordinate. Rule 1, in bags: the bag leaves before the outcome is known,
+ * and anything that stops a square landing -- the bed is full, the bed is a
+ * different tier, or (rarely) a race for a bare cell -- refunds it. See
+ * `addSoilSlot` in lib/stackacres/soil.ts, the pure version of this same
+ * decision, for why a purchase is one square rather than a whole bed.
  *
  * THE TIER SETS THE PRICE, and it is read from the tier table rather than
- * from the request: the client sends WHICH bed it wants, never what that bed
- * costs. `toSoilTier` degrades an unknown id to the cheapest tier, so a
- * malformed or hostile body can only ever under-buy, never get an expensive
- * bed for a cheap one.
+ * from the request: the client sends WHICH bag it is spending, never what
+ * that bag costs. `toSoilTier` degrades an unknown id to the cheapest tier,
+ * so a malformed or hostile body can only ever under-buy, never get an
+ * expensive square for a cheap one. Gold itself never moves here -- it left
+ * at the shelf (`buyStackAcresSoil`), which is why every refusal below only
+ * ever refunds a bag, never Gold.
  *
  * A tier is no longer purely cosmetic -- Enriched shortens a crop's cycle and
  * Hydro waters its own tile -- but BOTH effects are applied elsewhere and
  * neither is read here: growth is baked into `ready_at` at sow
  * (`stockStackAcres`), and hydration is resolved by `recomputeIrrigation`.
- * That split is why this function still moves nothing but Gold and one row.
+ * That split is why this function still moves nothing but a bag and one row.
  *
  * Bounded to the Long Meadow's own Crop Fields (`growAreaBounds("meadow")`)
  * -- never trust the client's tapped coordinate blindly, the same posture
@@ -3898,23 +3904,29 @@ export async function placeStackAcresSoilTile(
     );
   }
 
-  let placed: Awaited<ReturnType<typeof placeSoilTileRow>>;
+  let outcome: Awaited<ReturnType<typeof placeSoilTileRow>>;
   try {
-    placed = await placeSoilTileRow(profile.id, tx, ty, tier);
+    outcome = await placeSoilTileRow(profile.id, tx, ty, tier);
   } catch (error) {
     await refundSoilBag(profile.id, tier);
     throw error;
   }
-  if (!placed) {
-    await refundSoilBag(profile.id, tier);
-    throw new StackAcresRequestError(
-      "There is already a bed there.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
+  if (outcome.kind === "created" || outcome.kind === "grown") {
+    return view(profile, now);
   }
 
-  return view(profile, now);
+  // Every other outcome spent nothing: refund the bag and tell the player
+  // which of the three ways a square can be refused actually happened,
+  // rather than the one flat "already a bed there" message a plain
+  // insert-or-conflict used to have to settle for.
+  await refundSoilBag(profile.id, tier);
+  const message =
+    outcome.kind === "full"
+      ? "This bed is already full. Till a new one."
+      : outcome.kind === "tier-mismatch"
+        ? `This bed is already ${soilTierDef(outcome.tier).label}; buy a matching bag or till new ground.`
+        : "There is already a bed there.";
+  throw new StackAcresRequestError(message, 409, { round: await snapshots(profile.id, now) });
 }
 
 /**

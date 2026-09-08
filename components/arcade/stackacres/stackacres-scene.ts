@@ -111,23 +111,27 @@ import {
 } from "@/lib/stackacres/world";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
+  addSoilSlot,
   createSoilMap,
   hasSoilTile,
-  nextSoilOrder,
   orderedSoilTiles,
-  placeSoilTile,
   removeSoilTile,
+  SOIL_COL_PITCH,
+  SOIL_ROW_PITCH,
+  SOIL_SLOTS_PER_TILE,
   soilFurrowOffsets,
+  soilSlotPoint,
   soilTileAt,
   soilTileDiamond,
+  soilTileOwnedSlots,
   soilTileRect,
   soilTileTier,
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
-  type SoilTileOrigin,
+  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import { soilTierDef } from "@/lib/stackacres/soil-tiers";
+import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
   MONK_HOUSE_FOOTPRINT,
   MONK_POST,
@@ -2864,22 +2868,22 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Places one tile under a world point, snapped to the lattice. Returns
-   * false when a tile is already there, so a shop can charge only on a
-   * purchase that actually landed.
+   * Buys one planting square under a world point, snapped to the lattice: a
+   * brand new one-square bed on bare ground, or the next square of the bed
+   * already there. Returns false for either refusal `addSoilSlot` can give
+   * (full, or a mismatched tier), so a shop can charge only on a purchase
+   * that actually landed.
    *
    * It does NOT check Gold, or the district, or whether the player has
-   * unlocked the ground. The scene draws; the shell decides what a tile
+   * unlocked the ground. The scene draws; the shell decides what a square
    * costs and where one may go, the same split `onGroundTap` already keeps.
+   * No `origin` parameter any more -- `addSoilSlot` always creates a
+   * `"purchased"` bed itself, and nothing ever called this with `"starter"`.
    */
-  placeSoilAt(x: number, y: number, origin: SoilTileOrigin = "purchased"): boolean {
+  placeSoilAt(x: number, y: number, tier: SoilTier = SOIL_DEFAULT_TIER): boolean {
     const { tx, ty } = soilTileAt(x, y);
-    const placed = placeSoilTile(this.soil, {
-      tx,
-      ty,
-      order: nextSoilOrder(this.soil),
-      origin,
-    });
+    const outcome = addSoilSlot(this.soil, { tx, ty }, tier);
+    const placed = outcome.kind === "created" || outcome.kind === "grown";
     if (placed) this.refreshSoil();
     return placed;
   }
@@ -3122,6 +3126,15 @@ export class StackAcresScene extends Phaser.Scene {
    *
    * The flat fill underneath stays, and is not dead code: it draws for the
    * frame or two before the file arrives, and forever if it never does.
+   *
+   * A BED BOUGHT ONE SQUARE AT A TIME skips all of the above until every
+   * `SOIL_SLOTS_PER_TILE` square is owned. Both the furrow lines and the
+   * whole-bed picture assume all twelve squares are tilled ground, which is
+   * not true of a bed still being filled in -- drawing either over an
+   * unbought square would show the player dirt they have not paid for. Such
+   * a bed instead gets the plain, unfurrowed fill (exactly what a full bed
+   * shows for the frame or two before its own picture loads) plus one small
+   * tilled square per owned slot, from `paintOwnedSlots` below.
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
@@ -3129,6 +3142,12 @@ export class StackAcresScene extends Phaser.Scene {
     const bed = this.textures.exists(bedKey);
     for (const tile of orderedSoilTiles(this.soil)) {
       const rect = soilTileRect(tile.tx, tile.ty);
+      const owned = soilTileOwnedSlots(tile);
+      if (owned < SOIL_SLOTS_PER_TILE) {
+        built.push(...this.paintAreaGround(rect, "soil", false));
+        built.push(...this.paintOwnedSlots(tile, owned));
+        continue;
+      }
       built.push(...this.paintAreaGround(rect, "soil", !bed, soilFurrowOffsets()));
       if (!bed) continue;
       // A square projects to a diamond twice as wide as it is tall, centred
@@ -3145,6 +3164,46 @@ export class StackAcresScene extends Phaser.Scene {
       const tint = soilTierDef(soilTileTier(tile)).tint;
       if (tint !== null) picture.setTint(tint);
       built.push(picture);
+    }
+    return built;
+  }
+
+  /**
+   * One small tilled square per OWNED planting square in a bed that has not
+   * been bought whole -- the honest picture of "these squares are dug, that
+   * ground is not" for a bed with no per-square art of its own (there is
+   * exactly one bed-sized picture in the repo, `soilBed`, sized for a whole
+   * tilled bed -- see `paintSoilTiles`'s own note). Graphics rather than a
+   * second picture, drawn at exactly the footprint `soilSlotPoint` already
+   * centres a plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units
+   * so neighbouring squares show a hairline gap instead of touching), so a
+   * plant standing on square `i` always stands inside the square drawn for
+   * it -- never on the edge of one or straddling two.
+   *
+   * `owned` is always in reading order starting from square 0
+   * (`soilTileOwnedSlots`'s own doc comment), so this never has to ask WHICH
+   * squares are owned, only how many.
+   */
+  private paintOwnedSlots(tile: SoilTileCoord, owned: number): Phaser.GameObjects.GameObject[] {
+    const built: Phaser.GameObjects.GameObject[] = [];
+    const ramp = rampHex("soil");
+    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    built.push(g);
+    const halfW = (SOIL_COL_PITCH - 2) / 2;
+    const halfH = (SOIL_ROW_PITCH - 2) / 2;
+    for (let slot = 0; slot < owned; slot += 1) {
+      const p = soilSlotPoint(tile, slot);
+      const corners = projectedCorners({ x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 });
+      g.fillStyle(ramp.top, 1);
+      g.beginPath();
+      g.moveTo(corners.n.x, corners.n.y);
+      g.lineTo(corners.e.x, corners.e.y);
+      g.lineTo(corners.s.x, corners.s.y);
+      g.lineTo(corners.w.x, corners.w.y);
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(1, ramp.rim, 0.6);
+      g.strokePath();
     }
     return built;
   }

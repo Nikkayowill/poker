@@ -35,15 +35,17 @@ Subsystem-specific gotchas moved out of this always-loaded file into where they 
 - Never leak service-role secrets or private aggregate state; preserve RLS.
 - Append migrations; preserve numbered CSS order.
 - `river_*` cookies/module names and Sentry slugs are legacy compatibility IDs; do not casually rename them.
-- Test changed rules/layout. Run: `npm test`, `npm run lint`, `npm run build`; use `npm run test:e2e` for flows/UI.
+- Test changed rules/layout. Run: `pnpm test`, `pnpm run lint`, `pnpm run build`; use `pnpm run test:e2e` for flows/UI.
 - Preserve unrelated work; `.claude/` may be locally untracked.
-- **This checkout is shared by several concurrent sessions. Do your work in your own worktree**
-  (`git worktree add -b <branch> .claude/worktrees/<name> origin/main`), never on a branch in the
-  primary tree. Branch-level and destructive git there (checkout/switch/merge/rebase, stash/reset/
-  clean/restore, `git add -A`, `git commit -a`) is refused by `.claude/hooks/guard-shared-worktree.sh`,
-  because those land under whoever else is mid-task rather than staying local. Reads are always fine;
-  `ALLOW_SHARED_TREE=1` in the command is the deliberate override.
-- **When running 10+ parallel Claude sessions:** Each agent must work in its own worktree to avoid merge conflicts and lost work. Coordinate task scope ahead of time to prevent overlapping file edits. Check `git worktree list` before starting new work — if another session is active on overlapping code, wait for it to finish or communicate explicitly. The shared-tree guard (rule above) will block branch-level operations, but only worktrees prevent concurrent edits to the same files.
+- **No `git worktree`, ever (2026-09-07 policy change).** Work directly in this checkout: plain
+  `git checkout -b <branch>` off `main` for new work, `git checkout main` to come back. `pnpm install`
+  in the repo root, never a per-worktree install — the old worktree-per-task habit was repeatedly
+  filling the session's temp disk with duplicate `node_modules` and crashing the shell. The guard hook
+  that used to block branch-level/destructive git in this shared checkout is deleted for the same
+  reason (was `.claude/hooks/guard-shared-worktree.sh`); nothing stops a branch switch here now. This
+  checkout is still shared by several concurrent sessions, so check `git status`/recent activity for
+  signs of another live session before a branch switch, stash, reset, or a sweeping `add -A`/
+  `commit -a` — nothing else will catch a collision, only you.
 - Commit messages and PR descriptions: short and plain, like a person telling a coworker what
   changed. No em-dashes, no comma-chained "did X, Y, and Z" example lists. Say what changed and why
   in a sentence or two, not an essay. New code comments get the same treatment: a short "why" where

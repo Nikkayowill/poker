@@ -83,7 +83,10 @@ import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tool
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import { HUD_VIEW_EXPANSION, growAreaBounds, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import {
+  SOIL_SLOTS_PER_TILE,
   soilTileAt,
+  soilTileOwnedSlots,
+  soilTileTier,
   soilTilesEqual,
   starterSoilTiles,
   type SoilTile,
@@ -2407,10 +2410,11 @@ export function StackAcresFarm() {
   const placeLocked = !isSectorUnlocked(place, sectors);
 
   /**
-   * The seed ring's one extra button for the Long Meadow: till empty ground
-   * into a bed, or lift a bed already there. Only ever set for `"meadow"" --
-   * soil is a Crop Fields concept everywhere else in this module, and every
-   * other zone's ring stays exactly what it was.
+   * The seed ring's one extra button for the Long Meadow: till one planting
+   * square of empty ground, add another square to a bed already started
+   * there, or lift a bed outright. Only ever set for `"meadow"" -- soil is a
+   * Crop Fields concept everywhere else in this module, and every other
+   * zone's ring stays exactly what it was.
    *
    * `mergedSoilTiles` (starter + purchased) is the same list the scene was
    * just handed, so "is there a tile here" never disagrees with what is
@@ -2425,7 +2429,7 @@ export function StackAcresFarm() {
       // ONE BUTTON PER TIER, generated from SOIL_TIER_DEFS rather than listed
       // here, so adding a tier to that table adds it to this ring and there is
       // no second place to forget. The label carries the tier's own name --
-      // "Till a Bed" would no longer say what is being bought.
+      // each button buys the bed's FIRST square, at that tier.
       // NO `cost` HERE any more: soil is paid for at Ray's shelf, so showing a
       // Gold price on this ring would read as a second charge. A tier with no
       // bags left is offered but disabled, which is what tells the player the
@@ -2443,7 +2447,27 @@ export function StackAcresFarm() {
       });
     }
     if (existing.origin === "purchased") {
+      const owned = soilTileOwnedSlots(existing);
+      const tier = soilTileTier(existing);
+      const held = soilStock[tier] ?? 0;
       return [
+        // ONLY the bed's OWN tier is ever offered here -- a bed already has
+        // a fixed tier (soil.ts's `addSoilSlot` refuses a mismatched one),
+        // so showing the other two tiers as if they could fill the same
+        // squares would offer a purchase the server is only going to bounce
+        // back with its bag refunded. Nothing at all once the bed is full --
+        // there is no square left to sell.
+        ...(owned < SOIL_SLOTS_PER_TILE
+          ? [
+              {
+                key: "add-soil-square",
+                label: `Add a Square (${held})`,
+                icon: "ico-plant" as PainterName,
+                disabledReason: held > 0 ? undefined : "None in the barn — buy from Ray",
+                onSelect: () => onPlaceSoilTile(tx, ty, tier),
+              },
+            ]
+          : []),
         {
           key: "remove-bed",
           label: "Remove Bed",

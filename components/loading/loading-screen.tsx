@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
-import { StackChipsMark } from "@/components/brand/stackchips-mark";
-import { DEALER_ART_SRC } from "@/lib/scene/table-dealer";
+import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 
 /**
@@ -12,40 +11,49 @@ import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
  * to render the lobby from (lobby.tsx's `!profile` branch), and anywhere
  * else a genuine "nothing to show yet" gap needs more than bare text.
  *
- * Modeled on PlayPokerGO's own loading screen at Kayo's request: their own
- * character, subtly animating, under moodier lighting than live play -- not
- * a generic spinner. This app already has exactly one house character for
- * that job, Claira (the 2.5D table's dealer, `DEALER_ART_SRC`); she has no
- * rig (the WebGL avatar system is disabled), so "subtly animating" here is a
- * slow CSS sway on her existing static cutout, not new art or a new pipeline.
- * Shares TableLoadingSplash's brand mark and flavor-line rotation rather
- * than inventing a second visual language for the same kind of moment.
+ * There's no real byte-level progress to report here (no asset manifest,
+ * just "is the profile back yet"), so the fill bar below is a fake-but-honest
+ * progress indicator: it eases toward 92% while still waiting and only
+ * completes to 100% once `active` actually goes false, the same trick most
+ * apps use for a load with no real progress events. The wordmark stands in
+ * for the old dealer cutout at Kayo's request -- no character art here now.
  */
 
-const FLAVOR_LINES = [
-  "Preparing your seat…",
-  "Shuffling up…",
-  "Racking your Gold…",
-  "Setting the table…",
-] as const;
-
-const FLAVOR_INTERVAL_MS = 1800;
 const MIN_VISIBLE_MS = 450;
 const FADE_MS = 350;
+const PROGRESS_TICK_MS = 120;
+const PROGRESS_CEILING = 92;
+const PROGRESS_EASE = 0.06;
 
 export function LoadingScreen({ active = true, error }: { active?: boolean; error?: string | null }) {
   const phase = useMinHoldFade(active, { minMs: MIN_VISIBLE_MS, fadeMs: FADE_MS });
-  const [flavorIndex, setFlavorIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const doneRef = useRef(false);
 
   useEffect(() => {
-    if (phase === "hidden") return;
+    if (phase === "hidden") {
+      doneRef.current = false;
+      const timer = window.setTimeout(() => setProgress(0), 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (!active) {
+      doneRef.current = true;
+      const timer = window.setTimeout(() => setProgress(100), 0);
+      return () => window.clearTimeout(timer);
+    }
+    doneRef.current = false;
     const timer = setInterval(() => {
-      setFlavorIndex((index) => (index + 1) % FLAVOR_LINES.length);
-    }, FLAVOR_INTERVAL_MS);
+      setProgress((current) => {
+        if (doneRef.current) return current;
+        return current + (PROGRESS_CEILING - current) * PROGRESS_EASE;
+      });
+    }, PROGRESS_TICK_MS);
     return () => clearInterval(timer);
-  }, [phase]);
+  }, [phase, active]);
 
   if (phase === "hidden") return null;
+
+  const displayProgress = Math.round(progress);
 
   return (
     <div
@@ -53,14 +61,17 @@ export function LoadingScreen({ active = true, error }: { active?: boolean; erro
       role="status"
       aria-live="polite"
     >
-      <div className="app-loading-dealer">
-        {/* A plain <img>, not next/image: one small already-sized cutout
-            reused from the table scene, not user content needing a CDN. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="app-loading-dealer-img" src={DEALER_ART_SRC} alt="" aria-hidden="true" draggable={false} />
+      <StackChipsLogo className="app-loading-logo" />
+      <div
+        className="app-loading-bar-track"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={displayProgress}
+      >
+        <div className="app-loading-bar-fill" style={{ width: `${progress}%` }} />
       </div>
-      <StackChipsMark size={56} />
-      <p className="app-loading-flavor">{FLAVOR_LINES[flavorIndex]}</p>
+      <p className="app-loading-percent">{displayProgress}%</p>
       {error && <p className="app-loading-error"><X size={14} aria-hidden="true" /> {error}</p>}
     </div>
   );

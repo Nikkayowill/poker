@@ -6,7 +6,7 @@ import { tapSound } from "@/lib/audio/ui-sounds";
 /**
  * The lobby's footer: quiet, always-there wayfinding to the pages that make
  * StackChips read as a real platform rather than a single-purpose app --
- * How to Play, Rewards, Help, About and the legal index.
+ * How to Play, Rewards, Help, About, Credits and the legal index.
  *
  * Lobby-only, mounted once at the bottom of the hub column rather than the
  * player menu (components/nav/menu.tsx). The menu is a verb list -- account
@@ -24,6 +24,7 @@ export function SiteFooter() {
         <Link href="/achievements" onClick={tapSound}>Achievements</Link>
         <Link href="/help" onClick={tapSound}>Help</Link>
         <Link href="/about" onClick={tapSound}>About</Link>
+        <Link href="/credits" onClick={tapSound}>Credits</Link>
         <Link href="/legal" onClick={tapSound}>Legal</Link>
       </nav>
       <p className="site-footer-meta">

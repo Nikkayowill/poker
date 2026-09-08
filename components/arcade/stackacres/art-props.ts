@@ -1,6 +1,6 @@
 // No Phaser here at all, not even a type: these are plain Canvas2D painters
 // (see the note at the top of stackacres-art.ts).
-import { ell, F, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
+import { blob, ell, F, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
 import { RAMPS } from "./art-palette";
 
 /**
@@ -40,7 +40,17 @@ export type PropPainterName =
   | "midnightMerchant"
   | "log"
   | "mushroom"
-  | "boulder";
+  | "boulder"
+  | "visitorBleep"
+  | "visitorGlimm"
+  | "visitorNib"
+  | "visitorPixl"
+  | "visitorSquee"
+  | "visitorDott"
+  | "visitorMira"
+  | "visitorZeph"
+  | "visitorKip"
+  | "visitorTavo";
 
 const TAU = Math.PI * 2;
 
@@ -110,6 +120,111 @@ function bloom(c: Ctx, x: number, y: number, r: number, petal: string, centre: s
   F(c, centre);
   ell(c, x - r * 0.55, y - r * 0.6, r * 0.5, r * 0.3, -0.7);
   F(c, "rgba(255,255,255,.35)");
+}
+
+type VisitorShape = "blob" | "robot" | "bug" | "shell" | "crystal" | "human";
+
+/**
+ * The ten stranded visitors' shared fallback (lib/stackacres/visitors.ts),
+ * shown only until each one's own already-generated PNG loads (see
+ * `spriteBacked` in stackacres-art.ts) -- rarely seen, since that art is
+ * already on disk and loads about as fast as anything on this map. One
+ * parametrized painter rather than ten hand-drawn ones: `shape` picks a
+ * distinct silhouette family so a fallback frame still reads as "a small
+ * robot" vs "a shelled creature" vs "a person" instead of one glyph worn by
+ * all ten, and `tint` is the one accent colour telling siblings of the same
+ * shape apart. Outlined in RIM, the same dark-edge convention every
+ * character on this map already carries.
+ */
+function visitorFallback(w: number, h: number, tint: string, shape: VisitorShape): Painter {
+  const mat = { top: tint, side: tint, rim: RIM };
+  return painter(w, h, (c) => {
+    const cx = w / 2;
+    switch (shape) {
+      case "blob":
+        // A squat, worried little mass with a cracked dome visor.
+        blob(c, cx, h * 0.62, w * 0.46, h * 0.34, mat);
+        ell(c, cx, h * 0.3, w * 0.34, h * 0.22);
+        F(c, RIM);
+        ell(c, cx, h * 0.3, w * 0.27, h * 0.17);
+        F(c, "rgba(210,235,255,.55)");
+        c.beginPath();
+        c.moveTo(cx - w * 0.06, h * 0.18);
+        c.lineTo(cx + w * 0.1, h * 0.34);
+        stroke(c, RIM, Math.max(0.6, w * 0.05));
+        break;
+      case "robot":
+        // A boxy hull on two short feet, one glowing eye.
+        rr(c, cx - w * 0.34, h * 0.32, w * 0.68, h * 0.5, w * 0.16);
+        F(c, RIM);
+        rr(c, cx - w * 0.27, h * 0.37, w * 0.54, h * 0.4, w * 0.12);
+        F(c, tint);
+        for (const dx of [-1, 1] as const) {
+          rr(c, cx + dx * w * 0.32 - w * 0.07, h * 0.78, w * 0.14, h * 0.2, w * 0.06);
+          F(c, RIM);
+        }
+        ell(c, cx, h * 0.56, w * 0.14, w * 0.14);
+        F(c, "#7be3ff");
+        break;
+      case "bug":
+        // Low and long, six legs suggested by short strokes either side.
+        blob(c, cx, h * 0.6, w * 0.48, h * 0.26, mat);
+        for (const side of [-1, 1] as const) {
+          for (const t of [-0.3, 0, 0.3]) {
+            c.beginPath();
+            c.moveTo(cx + side * w * 0.3, h * (0.58 + t * 0.14));
+            c.lineTo(cx + side * w * 0.5, h * (0.7 + t * 0.14));
+            stroke(c, RIM, Math.max(0.6, w * 0.045));
+          }
+        }
+        ell(c, cx, h * 0.34, w * 0.24, h * 0.18);
+        F(c, tint);
+        ell(c, cx, h * 0.34, w * 0.24, h * 0.18);
+        stroke(c, RIM, Math.max(0.6, w * 0.05));
+        break;
+      case "shell":
+        // A domed shell over a worried face peeking out the front.
+        ell(c, cx, h * 0.5, w * 0.48, h * 0.38);
+        F(c, RIM);
+        ell(c, cx, h * 0.46, w * 0.42, h * 0.32);
+        F(c, tint);
+        ell(c, cx, h * 0.72, w * 0.2, h * 0.16);
+        F(c, RIM);
+        ell(c, cx, h * 0.72, w * 0.15, h * 0.11);
+        F(c, "#e8dcc0");
+        break;
+      case "crystal":
+        // A faceted diamond with a glowing core.
+        poly(c, [[cx, h * 0.06], [w * 0.86, h * 0.5], [cx, h * 0.96], [w * 0.14, h * 0.5]]);
+        F(c, RIM);
+        poly(c, [[cx, h * 0.12], [w * 0.78, h * 0.5], [cx, h * 0.9], [w * 0.22, h * 0.5]]);
+        F(c, tint);
+        c.beginPath();
+        c.moveTo(cx, h * 0.12);
+        c.lineTo(cx, h * 0.9);
+        stroke(c, RIM, Math.max(0.5, w * 0.035));
+        ell(c, cx, h * 0.5, w * 0.12, w * 0.12);
+        F(c, "#ffd678");
+        break;
+      case "human":
+        // The same chibi proportions grandfatherRay uses just above: a
+        // third head, a stubby body, short limbs -- the one silhouette here
+        // built as a person rather than a creature.
+        rr(c, cx - w * 0.4, h * 0.56, w * 0.8, h * 0.42, w * 0.18);
+        F(c, RIM);
+        rr(c, cx - w * 0.33, h * 0.6, w * 0.66, h * 0.34, w * 0.14);
+        F(c, tint);
+        ell(c, cx, h * 0.32, w * 0.42, h * 0.28);
+        F(c, RIM);
+        ell(c, cx, h * 0.32, w * 0.35, h * 0.22);
+        F(c, "#8a5a3e");
+        for (const dx of [-1, 1] as const) {
+          rr(c, cx + dx * w * 0.42 - w * 0.09, h * 0.86, w * 0.18, h * 0.14, w * 0.06);
+          F(c, RIM);
+        }
+        break;
+    }
+  });
 }
 
 export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
@@ -839,4 +954,16 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     shape();
     stroke(c, "rgba(40,50,60,.3)", 0.6);
   }),
+
+  /* ---- the ten stranded visitors (lib/stackacres/visitors.ts) ---- */
+  visitorBleep: visitorFallback(13.75, 20, "#8fa9c9", "robot"),
+  visitorGlimm: visitorFallback(16.67, 20, "#8fd6a6", "blob"),
+  visitorNib: visitorFallback(10.5, 18, "#c9a86a", "human"),
+  visitorPixl: visitorFallback(18.79, 22, "#e0a23f", "crystal"),
+  visitorSquee: visitorFallback(13.5, 18, "#8a7fc9", "bug"),
+  visitorDott: visitorFallback(17.08, 20, "#7ac97a", "shell"),
+  visitorMira: visitorFallback(13.46, 38, "#3f8f8a", "human"),
+  visitorZeph: visitorFallback(17.42, 38, "#7a5fc9", "human"),
+  visitorKip: visitorFallback(15.71, 26, "#e0c23f", "human"),
+  visitorTavo: visitorFallback(17.42, 38, "#c96a3f", "human"),
 };

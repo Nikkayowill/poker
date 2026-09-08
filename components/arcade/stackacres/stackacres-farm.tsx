@@ -153,6 +153,9 @@ import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresVisitorGreeting } from "./stackacres-visitor-greeting";
+import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
+import type { PropKind } from "@/lib/stackacres/props";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import {
@@ -542,6 +545,14 @@ export function StackAcresFarm() {
         grantedKeepsake: KeepsakeId | null;
       };
   const [giftDialogue, setGiftDialogue] = useState<GiftDialogueState | null>(null);
+  /**
+   * One of the ten stranded visitors' greeting bubble -- opened by
+   * `onWorldVisitorTap`, closed by its own close button or the next world
+   * tap (`onViewMoved`), the same screen-anchored posture every other
+   * dialogue on this map takes. Placement + flavour dialogue only: there is
+   * no "result" phase because there is nothing here that answers.
+   */
+  const [visitorGreeting, setVisitorGreeting] = useState<{ id: VisitorId; at: TapPoint } | null>(null);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -1750,6 +1761,19 @@ export function StackAcresFarm() {
     setGiftDialogue({ npc: "ray", phase: "greeting", at, line: RAY_GIFT_LINES[Math.floor(Math.random() * RAY_GIFT_LINES.length)] });
   }, []);
 
+  /**
+   * A finger landed on one of the ten stranded visitors. `kind` is the
+   * `PropKind` the scene hit; `visitorForKind` resolves it back to a visitor
+   * id (name + line + portrait, all in lib/stackacres/visitors.ts). Nothing
+   * here calls the server -- a greeting has nothing to answer.
+   */
+  const onWorldVisitorTap = useCallback((kind: PropKind, at: TapPoint) => {
+    const id = visitorForKind(kind);
+    if (!id) return;
+    setRadial(null);
+    setVisitorGreeting({ id, at });
+  }, []);
+
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
    *  keepsake) only ever shows once the server confirms it, the same
@@ -1904,6 +1928,7 @@ export function StackAcresFarm() {
     setMonkDialogue(null);
     setFencePopup(null);
     setGiftDialogue(null);
+    setVisitorGreeting(null);
   }, []);
 
   /**
@@ -2557,6 +2582,7 @@ export function StackAcresFarm() {
               onMerchantTap={onWorldMerchantTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
+              onVisitorTap={onWorldVisitorTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
@@ -2706,6 +2732,16 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
+            />
+          )}
+
+          {/* One of the ten stranded visitors' greeting, same screen-anchored
+              treatment as the Pixel Pilgrim's and the gift dialogue above. */}
+          {visitorGreeting && (
+            <StackAcresVisitorGreeting
+              id={visitorGreeting.id}
+              at={visitorGreeting.at}
+              onClose={() => setVisitorGreeting(null)}
             />
           )}
 

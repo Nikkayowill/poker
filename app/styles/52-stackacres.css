@@ -1727,6 +1727,81 @@
 
 .sa-gift-dialogue-no:hover { filter: brightness(1.05); }
 
+/* ---- the ten stranded visitors' greeting ------------------------------
+ * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
+ * a single line and a portrait, no phases and no actions row, since this
+ * feature is placement + flavour dialogue only (no gifts, no quests). */
+.sa-visitor-greeting {
+  position: absolute;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-visitor-greeting-pin {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-sky, #8fa9d6);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-visitor-greeting-card {
+  position: absolute;
+  left: 16px;
+  top: -18px;
+  width: 240px;
+  padding: 12px 14px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  pointer-events: auto;
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+
+.sa-visitor-greeting-close {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sa-ink);
+  cursor: pointer;
+  opacity: .6;
+}
+
+.sa-visitor-greeting-close:hover { opacity: 1; }
+
+.sa-visitor-greeting-portrait {
+  display: block;
+  height: 64px;
+  width: auto;
+  margin: 0 0 8px;
+  image-rendering: pixelated;
+}
+
+.sa-visitor-greeting-name {
+  margin: 0 18px 6px 0;
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sa-visitor-greeting-line {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.35;
+}
+
 /* ---- the district drawer ---------------------------------------------
  * Travelling to a district (the signpost) IS the selection -- there is no plot
  * to tap any more -- so this is a drawer on the right edge rather than

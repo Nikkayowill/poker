@@ -43,7 +43,8 @@ import {
 } from "@/lib/stackacres/greenhouse";
 import { FARM_JUNCTIONS } from "@/lib/stackacres/path-junctions";
 import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter, type PropKind } from "@/lib/stackacres/props";
+import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import {
   scytheReachFor,
@@ -355,6 +356,16 @@ export interface StackAcresSceneCallbacks {
    * stackacres-farm.tsx's `onWorldRayTap`.
    */
   onRayTap: (at: TapPoint) => void;
+  /**
+   * A tap that landed on one of the ten stranded visitors (see
+   * lib/stackacres/visitors.ts) -- checked right after Grandfather Ray, the
+   * same "a person wins over the structure behind them" ordering, even
+   * though none of their footprints overlap the barn's either. `kind` is the
+   * `PropKind` the scene hit, which the shell resolves back to a visitor id
+   * through `visitorForKind`; this is only the cue to show that visitor's
+   * one-line greeting, nothing more.
+   */
+  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
   /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
@@ -2187,6 +2198,18 @@ export class StackAcresScene extends Phaser.Scene {
       }
       this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
     }
+    // The ten stranded visitors (lib/stackacres/visitors.ts) -- same shadow
+    // + `put(prop.kind, ...)` mechanism as YARD_PROPS above, over its own
+    // array rather than folded into it: YARD_PROPS is the hand-placed yard
+    // cluster and its own test holds it to "about a dozen", where these are
+    // scattered across five different districts.
+    for (const prop of VISITOR_PROPS) {
+      const pool = PROP_SHADOW[prop.kind];
+      this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
+        .setScale(pool.w / 33 / S, pool.h / 13 / S)
+        .setAlpha(0.8);
+      this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+    }
   }
 
   /**
@@ -3788,6 +3811,14 @@ export class StackAcresScene extends Phaser.Scene {
       // ordering the Pixel Pilgrim check above already documents.
       if (grandfatherRayHitAt(ground.x, ground.y)) {
         this.callbacks.onRayTap(local);
+        return;
+      }
+      // One of the ten stranded visitors -- checked right after Grandfather
+      // Ray, the same "a person wins over the structure behind them"
+      // ordering, even though none of their footprints overlap the barn's.
+      const visitorKind = visitorHitAt(ground.x, ground.y);
+      if (visitorKind) {
+        this.callbacks.onVisitorTap(visitorKind, local);
         return;
       }
       // The barn -- Ray's Museum's own entryway -- checked before the

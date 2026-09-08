@@ -3,7 +3,7 @@
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
+import type { GameSnapshot, PlayerAction, PreActionType } from "@/lib/game/types";
 import { applyOptimisticAction } from "@/lib/game/optimistic-action";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
@@ -141,6 +141,11 @@ export function PokerApp() {
   // queued a prediction settles, whether or not the request succeeded.
   const [optimisticGame, addOptimisticAction] = useOptimistic(game, applyOptimisticAction);
   const [, startActionTransition] = useTransition();
+  // A decision queued ahead of the player's own turn (act-in-advance, like
+  // "Check/Fold" on other poker apps). Lives here rather than in ActionBar
+  // because that component remounts on every game.version -- i.e. on every
+  // action anyone at the table takes -- and would lose it immediately.
+  const [armedPreAction, setArmedPreAction] = useState<PreActionType | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1041,6 +1046,67 @@ export function PokerApp() {
     }
   };
 
+  const armPreAction = (next: PreActionType | null) => setArmedPreAction(next);
+
+  // Fires a queued pre-action the moment the player's turn actually arrives,
+  // if it's still legal by then -- otherwise it just clears and leaves the
+  // decision to them, same as arming nothing at all.
+  //
+  // `myTurn` (not `game.legalActions` itself) is the dependency on purpose:
+  // ingest() always writes a brand-new snapshot object, including a brand-
+  // new `legalActions` object on every poll even when nothing changed, so
+  // keying off the object would refire every few seconds all through the
+  // player's own turn. `handledTurnRef` then collapses that boolean's own
+  // repeats down to the one real transition (not-my-turn -> my-turn).
+  const myTurn = Boolean(game?.legalActions);
+  const handledTurnRef = useRef(false);
+  useEffect(() => {
+    if (!myTurn) {
+      handledTurnRef.current = false;
+      return;
+    }
+    if (handledTurnRef.current) return;
+    handledTurnRef.current = true;
+    if (!armedPreAction) return;
+    // Deferred a tick, same reasoning as refreshPushState above: this is a
+    // reaction to the turn actually arriving, not state derived during
+    // render, and setArmedPreAction/act firing synchronously in the effect
+    // body is exactly the cascading-render shape react-hooks/set-state-in-
+    // effect flags.
+    const timer = window.setTimeout(() => {
+      const legal = game?.legalActions;
+      setArmedPreAction(null);
+      if (armedPreAction === "fold" && legal?.canFold) act({ type: "fold" });
+      else if (armedPreAction === "check" && legal?.canCheck) act({ type: "check" });
+      else if (armedPreAction === "call" && legal?.canCall) act({ type: "call" });
+      // Anything else (e.g. "Check" armed but someone bet in the meantime)
+      // is no longer legal -- already cleared above, action bar just waits
+      // for a manual decision like it always did.
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // `game?.legalActions` and `act` are deliberately left out of the
+    // dependency list: `myTurn` already captures the one transition this
+    // effect cares about (see the comment above it), and including the
+    // object/function themselves would only make it refire on every poll
+    // through the turn without changing what it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTurn, armedPreAction]);
+
+  // A pre-action only ever means "for the decision I'm about to face" -- it
+  // should not silently carry into a hand it was never armed for. Keyed on
+  // the table id too, not just the hand number: leaving one table and
+  // joining another whose hand counter happens to land on the same number
+  // as the old table's last hand would otherwise never see this change.
+  const handNumber = game?.handNumber;
+  const handKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const handKey = gameId !== undefined && handNumber !== undefined ? `${gameId}:${handNumber}` : null;
+    if (handKeyRef.current !== handKey) {
+      handKeyRef.current = handKey;
+      setArmedPreAction(null);
+    }
+  }, [gameId, handNumber]);
+
   const leave = () => {
     leftGameIdRef.current = game?.id ?? null;
     setGame(null);
@@ -1712,6 +1778,8 @@ export function PokerApp() {
             reactions={reactions}
             onSendReaction={sendReaction}
             reactionCooldown={reactionCooldown}
+            armedPreAction={armedPreAction}
+            onArmPreAction={armPreAction}
           />
         )
         : (

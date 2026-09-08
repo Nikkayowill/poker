@@ -6,7 +6,7 @@ import clsx from "clsx";
 import {
   Coins, Copy, Divide, DoorOpen, History, HelpCircle, Layers, LogIn, LogOut, Settings2, Sparkles, TimerReset, Trophy, UserPlus, Volume2, VolumeX, X,
 } from "lucide-react";
-import type { Card, GameSnapshot, PlayerAction } from "@/lib/game/types";
+import type { Card, GameSnapshot, PlayerAction, PreActionType } from "@/lib/game/types";
 import { betStyleLabel, type BetAnimationStyle } from "@/lib/scene/bet-style";
 import { betFlightKind, type BetFlight } from "@/lib/scene/chips/bet-flight";
 import type { ChipMoveKind } from "@/lib/scene/chips/chip-motion";
@@ -217,6 +217,8 @@ export function PokerTable({
   reactions,
   onSendReaction,
   reactionCooldown,
+  armedPreAction,
+  onArmPreAction,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -227,6 +229,9 @@ export function PokerTable({
   profile: PlayerProfile | null;
   /** The broke-player recovery top-up; see components/table/action-bar.tsx. */
   onClaimBackstop: () => void;
+  /** See components/table/action-bar.tsx's own doc on this pair. */
+  armedPreAction: PreActionType | null;
+  onArmPreAction: (next: PreActionType | null) => void;
   onCustomize: () => void;
   connectionState: ConnectionState;
   soundEnabled: boolean;
@@ -1528,6 +1533,8 @@ export function PokerTable({
             onLeave={onLeave}
             profile={profile}
             onClaimBackstop={onClaimBackstop}
+            armedPreAction={armedPreAction}
+            onArmPreAction={onArmPreAction}
           />
         </div>
       </section>

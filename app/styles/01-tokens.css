@@ -296,6 +296,17 @@
      launches short, and `bottom` is the one thing that resolves against it. */
   --vp-short: 0px;
 
+  /* The mirror image of --vp-short above: how much of 100dvh a mobile
+     BROWSER's own toolbar is holding out, written by
+     components/shell/browser-chrome-width.tsx and 0 everywhere except a
+     landscape browser tab that has measured a real shortfall (0 on an
+     installed PWA, which has no toolbar to measure). Only ever add this
+     into a 100dvh term that is being used to size a WIDTH
+     (--table-height-cap in 06-table.css, the short-landscape shell's width
+     formula in 12-responsive.css) -- never into one sizing an actual height,
+     where the toolbar really is covering that strip of screen. */
+  --browser-chrome-px: 0px;
+
   /* The lobby chrome's height, stated once because three other rules have to
      agree with it: .lobby-header is this tall, and .lobby and
      .account-entry-page are each `100svh` minus it. They used to be three

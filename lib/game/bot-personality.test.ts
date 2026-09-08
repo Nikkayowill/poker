@@ -82,8 +82,15 @@ function measureVpip(personality: BotPersonality, trials: number, seedBase: numb
 }
 
 describe("personality assignment", () => {
-  it("rolls MANIAC/ROCK/CALLING_STATION independently of seat, roughly 35/45/20", () => {
-    const tally: Record<BotPersonality, number> = { MANIAC: 0, ROCK: 0, CALLING_STATION: 0 };
+  it("rolls all six archetypes independently of seat, roughly 18/20/14/16/12/20", () => {
+    const tally: Record<BotPersonality, number> = {
+      MANIAC: 0,
+      ROCK: 0,
+      CALLING_STATION: 0,
+      LAG: 0,
+      NIT: 0,
+      TAG: 0,
+    };
     const trials = 2000;
     for (let trial = 0; trial < trials; trial += 1) {
       const game = createGame(crypto.randomUUID(), "Host");
@@ -95,14 +102,20 @@ describe("personality assignment", () => {
     const share = (personality: BotPersonality) => tally[personality] / total;
     // Generous absolute tolerance: this is a statistical draw, not a fixed
     // sequence, and the point is catching a badly broken weighting (e.g. an
-    // even 3-way split, or a personality that never appears), not pinning
-    // the exact percentages.
-    expect(share("MANIAC")).toBeGreaterThan(0.28);
-    expect(share("MANIAC")).toBeLessThan(0.42);
-    expect(share("ROCK")).toBeGreaterThan(0.37);
-    expect(share("ROCK")).toBeLessThan(0.53);
-    expect(share("CALLING_STATION")).toBeGreaterThan(0.14);
-    expect(share("CALLING_STATION")).toBeLessThan(0.26);
+    // even split, or an archetype that never appears), not pinning the
+    // exact percentages.
+    expect(share("MANIAC")).toBeGreaterThan(0.12);
+    expect(share("MANIAC")).toBeLessThan(0.24);
+    expect(share("ROCK")).toBeGreaterThan(0.14);
+    expect(share("ROCK")).toBeLessThan(0.26);
+    expect(share("CALLING_STATION")).toBeGreaterThan(0.09);
+    expect(share("CALLING_STATION")).toBeLessThan(0.19);
+    expect(share("LAG")).toBeGreaterThan(0.1);
+    expect(share("LAG")).toBeLessThan(0.22);
+    expect(share("NIT")).toBeGreaterThan(0.07);
+    expect(share("NIT")).toBeLessThan(0.17);
+    expect(share("TAG")).toBeGreaterThan(0.14);
+    expect(share("TAG")).toBeLessThan(0.26);
   });
 });
 
@@ -145,6 +158,27 @@ describe("preflop looseness by personality (VPIP)", () => {
     const whale = measureVpip("CALLING_STATION", TRIALS, 6_000);
     expect(whale).toBeGreaterThan(maniac);
     expect(maniac).toBeGreaterThan(rock);
+  }, VPIP_TEST_TIMEOUT_MS);
+
+  it("makes the Iron Vault (NIT) the tightest seat at the table", () => {
+    const nit = measureVpip("NIT", TRIALS, 7_000);
+    const rock = measureVpip("ROCK", TRIALS, 4_000);
+    expect(nit).toBeLessThan(0.2);
+    expect(rock).toBeGreaterThan(nit);
+  }, VPIP_TEST_TIMEOUT_MS);
+
+  it("makes the Live Wire (LAG) noticeably wider than the Table Captain", () => {
+    const lag = measureVpip("LAG", TRIALS, 8_000);
+    const rock = measureVpip("ROCK", TRIALS, 4_000);
+    expect(lag).toBeGreaterThan(rock);
+  }, VPIP_TEST_TIMEOUT_MS);
+
+  it("keeps the Straight Shooter (TAG) between the Iron Vault and the Live Wire", () => {
+    const nit = measureVpip("NIT", TRIALS, 7_000);
+    const tag = measureVpip("TAG", TRIALS, 9_000);
+    const lag = measureVpip("LAG", TRIALS, 8_000);
+    expect(tag).toBeGreaterThan(nit);
+    expect(lag).toBeGreaterThan(tag);
   }, VPIP_TEST_TIMEOUT_MS);
 });
 

@@ -14,6 +14,7 @@ import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/s
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
+import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { FRIENDSHIP_NPCS } from "@/lib/stackacres/friendship";
 import {
   activateStackAcresSynergyPerk,
@@ -47,6 +48,7 @@ import {
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
+  forgeStackAcresToolEnchantment,
   placeStackAcresPipeTile,
   removeStackAcresPipeTile,
   buyStackAcresSoil,
@@ -299,6 +301,16 @@ const bodySchema = z.discriminatedUnion("action", [
   // duplicated request safe for an action with no row of its own to
   // version-guard, exactly the category this one is in.
   z.object({ action: z.literal("prestige-reset"), confirm: z.literal(true) }),
+  // The Sunlight Forge: permanent tool enchantments. Spends Gold AND a
+  // processing-track material in one call -- see forge_stackacres_
+  // enchantment's own migration comment for why both are checked under
+  // lock before either is mutated. `itemId` is the bare catalogue key
+  // (FORGE_ENCHANTMENT_IDS), not the versioned `enchant_..._v1` wrapper --
+  // see lib/stackacres/forge.ts's own comment on forgeEnchantmentItemId.
+  z.object({
+    action: z.literal("forge-enchantment"),
+    itemId: z.enum(FORGE_ENCHANTMENT_IDS as unknown as [string, ...string[]]),
+  }),
   // The irrigation pipe network. `place-pipe` spends Gold -- a construction
   // sink, like `place-machine`, refunded only if the tile cannot land;
   // `remove-pipe` moves no Gold. Hydration itself is free (a hydrated pipe
@@ -464,6 +476,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyFromMidnightMerchant(token, action.itemId, now);
     case "prestige-reset":
       return prestigeResetStackAcres(token, now);
+    case "forge-enchantment":
+      return forgeStackAcresToolEnchantment(token, action.itemId, now);
     case "place-pipe":
       return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
     case "remove-pipe":

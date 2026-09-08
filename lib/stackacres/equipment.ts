@@ -285,8 +285,20 @@ export function rollHarvestCrit(
  * A harvest worth nothing (fully eaten by maintenance) crits for nothing.
  * That is deliberate: the crit multiplies a harvest, and there is no sensible
  * reading in which doubling zero is a reward.
+ *
+ * `bonusOverride` is optional and defaults to the tier's own base bonus --
+ * every existing call site is unaffected. It exists for the Sunlight
+ * Forge (lib/stackacres/forge.ts): a `crit_yield_bonus` enchantment raises
+ * `critBonus` past the bare tier number, and the caller computes that
+ * forged value and passes it straight in, the same "caller computes, this
+ * module just multiplies" split `chanceOverride` above already takes.
  */
-export function critGoldFor(harvestNet: number, tier: StackAcresToolTier): number {
+export function critGoldFor(
+  harvestNet: number,
+  tier: StackAcresToolTier,
+  bonusOverride?: number,
+): number {
   if (!Number.isFinite(harvestNet) || harvestNet <= 0) return 0;
-  return Math.max(0, Math.floor(harvestNet * STACKACRES_TOOL_TIER_DEFS[tier].critBonus));
+  const bonus = bonusOverride ?? STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
+  return Math.max(0, Math.floor(harvestNet * bonus));
 }

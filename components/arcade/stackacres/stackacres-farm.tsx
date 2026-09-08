@@ -2,10 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { ChevronLeft, Coins, HelpCircle, LocateFixed, Lock, X, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ChevronLeft,
+  Coins,
+  HelpCircle,
+  LocateFixed,
+  Lock,
+  RotateCcw,
+  Wand2,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
+import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
 import { useTightLandscape } from "@/components/use-tight-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
@@ -123,6 +135,14 @@ import {
 } from "@/lib/stackacres/friendship";
 import type { MachineItemId } from "@/lib/stackacres/machine-items";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
+import {
+  STACKACRES_PRESTIGE_BASE_MULTIPLIER,
+  STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
+  type StackAcresPrestigeResetResult,
+  type StackAcresPrestigeView,
+} from "@/lib/stackacres/prestige";
+import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
+import { PIPE_PLACE_COST, pipeTileAt, type PipeKind, type PipeNode } from "@/lib/stackacres/irrigation";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
@@ -131,6 +151,17 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import {
+  MythicBlueprintDashboard,
+  type BlueprintActionResult,
+  type BlueprintCardView,
+} from "./mythic-blueprint-dashboard";
+import type { BlueprintId } from "@/lib/stackacres/blueprints";
+import {
+  StackAcresPrestigeResetModal,
+  type StackAcresPrestigeActionResult,
+} from "./prestige-reset-modal";
+import { SunlightForgeTable, type ForgeActionResult } from "./SunlightForgeTable";
 import { SynergyOverlay } from "./SynergyOverlay";
 import {
   MidnightMerchantStorefront,
@@ -153,6 +184,9 @@ import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
+import { StackAcresVisitorGreeting } from "./stackacres-visitor-greeting";
+import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
+import type { PropKind } from "@/lib/stackacres/props";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import {
@@ -243,6 +277,20 @@ const RAY_GIFT_LINES: readonly string[] = [
   "You didn't have to bring me anything, but I won't say no.",
   "This old farm's given me plenty over the years. Nice to see a bit of it come back around.",
   "Whatever you've got, I expect I'll find a use for it.",
+];
+
+/** Rotates at the bottom of the boot-up loading screen (see `bootPhase`
+ *  below) -- short, concrete pointers to shipped mechanics, not flavor text.
+ *  Same "one at a time, on an interval" shape as PIXEL_PILGRIM_LINES/
+ *  RAY_GIFT_LINES above, just gated on the loading overlay instead of a
+ *  dialogue opening. */
+const STACKACRES_LOADING_TIPS: readonly string[] = [
+  "Ray's shop sells soil, tools, and land -- tap his sign to visit.",
+  "Better tools raise your odds of a critical harvest.",
+  "The Mill turns raw crops into higher-value goods for contracts.",
+  "Check the Synergy Tree to unlock perks for your loadout.",
+  "Bring Ray something new and he might add it to his Museum.",
+  "A farmhand can work your fields automatically once you unlock one.",
 ];
 
 interface StackAcresResponse {
@@ -392,6 +440,36 @@ interface StackAcresResponse {
   /** Set only by a successful `collect-drone-forage` response; every other
    *  action's answer leaves this undefined. */
   droneForage?: { droneId: string; reward: number };
+  /** The Prestige Reset Valve's own standing: how many times pulled, the
+   *  live multiplier, and gross production still needed before the next
+   *  pull. Always present on a current server, same as `upkeep`/`exchange`
+   *  above -- optional only so a bundle old enough to predate the feature
+   *  keeps working. See lib/stackacres/prestige.ts. */
+  prestige?: StackAcresPrestigeView;
+  /** Set only by a successful `prestige-reset` response; every other
+   *  action's answer leaves this undefined. `prestige` above already
+   *  carries the resulting standing -- this is only what THIS reset just
+   *  bought, for the modal's own confirmation line. */
+  prestigeReset?: StackAcresPrestigeResetResult;
+  /** The Sunlight Forge: catalogue ids (not the versioned wrapper) this
+   *  player has permanently forged. Always present on a current server,
+   *  same as `prestige` above -- optional only so a bundle old enough to
+   *  predate the feature keeps working. See lib/stackacres/forge.ts. */
+  forge?: readonly string[];
+  /** The irrigation pipe network, straight off `StackAcresView.irrigation`.
+   *  Always present on a current server, same as `prestige`/`forge` above --
+   *  optional only so a bundle old enough to predate the feature keeps
+   *  working, which `applyResponse` reads as "no pipes yet". See
+   *  lib/stackacres/irrigation.ts. */
+  irrigation?: readonly PipeNode[];
+  /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
+   *  present whether or not the player has started it, shaped identically to
+   *  `BlueprintCardView` (mythic-blueprint-dashboard.tsx's own client-local
+   *  type -- see that file's header for why this reads it structurally
+   *  rather than importing the server's `BlueprintView`). Always present on
+   *  a current server, optional only so a bundle old enough to predate the
+   *  feature keeps working. */
+  blueprints?: Record<BlueprintId, BlueprintCardView>;
 }
 
 /**
@@ -478,6 +556,34 @@ export function StackAcresFarm() {
   const [devotion, setDevotion] = useState<StackAcresDevotionView>(() =>
     devotionView(freshDevotion(), new Date()),
   );
+  // The Prestige Reset Valve. Seeded to a profile that has never pulled it --
+  // the same standing a brand-new farm's own first read comes back with.
+  const [prestige, setPrestige] = useState<StackAcresPrestigeView>({
+    prestigeCount: 0,
+    multiplier: STACKACRES_PRESTIGE_BASE_MULTIPLIER,
+    goldToNextPrestige: STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
+  });
+  const [showPrestige, setShowPrestige] = useState(false);
+  // What the last successful `prestige-reset` bought, read once by the modal
+  // through `onPrestigeReset`'s own return value -- the same sidecar-ref
+  // shape `lastMerchantPurchase` uses, for the same reason: `act`'s return
+  // type is the fixed `ContractActionResult` shared by every action, and
+  // this is the one extra field a reset's own answer carries beyond it.
+  const lastPrestigeReset = useRef<StackAcresPrestigeResetResult | null>(null);
+  // The Sunlight Forge. Seeded to "nothing forged yet" -- the same standing
+  // a brand-new farm's own first read comes back with.
+  const [forge, setForge] = useState<readonly string[]>([]);
+  const [showForge, setShowForge] = useState(false);
+  // The irrigation pipe network. Seeded empty -- the same standing a
+  // brand-new farm's own first read comes back with.
+  const [irrigation, setIrrigation] = useState<readonly PipeNode[]>([]);
+  // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
+  // from a player press well after mount, by which point the first poll has
+  // long since landed, the same posture `forge` above takes.
+  const [blueprints, setBlueprints] = useState<Record<BlueprintId, BlueprintCardView>>(
+    {} as Record<BlueprintId, BlueprintCardView>,
+  );
+  const [showBlueprints, setShowBlueprints] = useState(false);
   /**
    * His dialogue: opened by `onWorldMonkTap` (the "greeting" phase, a line
    * plus the "will you pray with me?" prompt), closed by "no", by the next
@@ -542,6 +648,14 @@ export function StackAcresFarm() {
         grantedKeepsake: KeepsakeId | null;
       };
   const [giftDialogue, setGiftDialogue] = useState<GiftDialogueState | null>(null);
+  /**
+   * One of the ten stranded visitors' greeting bubble -- opened by
+   * `onWorldVisitorTap`, closed by its own close button or the next world
+   * tap (`onViewMoved`), the same screen-anchored posture every other
+   * dialogue on this map takes. Placement + flavour dialogue only: there is
+   * no "result" phase because there is nothing here that answers.
+   */
+  const [visitorGreeting, setVisitorGreeting] = useState<{ id: VisitorId; at: TapPoint } | null>(null);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -596,6 +710,7 @@ export function StackAcresFarm() {
 
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
   /**
    * The intents with a request in the air right now, mirrored into render so
    * a button can grey out ITS OWN action while it settles -- and only its
@@ -1002,6 +1117,11 @@ export function StackAcresFarm() {
     if (data.midnightMerchantPurchase) {
       lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
     }
+    if (data.prestige) setPrestige(data.prestige);
+    if (data.prestigeReset) lastPrestigeReset.current = data.prestigeReset;
+    if (data.forge) setForge(data.forge);
+    if (data.irrigation) setIrrigation(data.irrigation);
+    if (data.blueprints) setBlueprints(data.blueprints);
     // Every response carries the FULL purchased list, not a diff, so a feed
     // or a water tap that never touched the soil still hands this a fresh
     // array from JSON. `soilTilesEqual` is what stops that from becoming a
@@ -1295,6 +1415,15 @@ export function StackAcresFarm() {
       const patch = predictStackAcresAction(body, buildPredictContext());
       const optimisticApplied = patch !== null;
       if (patch) applyResponse(patch);
+      // The unit resets instantly (above), but the payout itself is a dice
+      // roll this layer won't fake -- see predictStackAcresAction's header.
+      // A player who taps and hears/sees nothing until the round trip lands
+      // reads that gap as lag, so say the honest, numberless part out loud
+      // right away; the real toast overwrites this the moment the response
+      // is in, and a refusal below retracts it.
+      if (body.action === "collect" && optimisticApplied) {
+        setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
+      }
       // Set the moment this browser knows what became of the request. While it
       // is false the key survives, so the next press at the same thing is a
       // retry; once it is true the key is dropped and the next press is a new
@@ -1354,6 +1483,11 @@ export function StackAcresFarm() {
             });
           } else if (!data.round) {
             setError(data.error ?? "That did not go through.");
+          } else if (body.action === "collect") {
+            // Take back the "on its way" promise from above -- the round
+            // repainted silently because there was nothing to collect after
+            // all, and nothing is actually inbound.
+            setLastCollect(null);
           }
           // Re-read the allowance once this request has let go of the send
           // lock, so the window (and the standing notice) show the server's
@@ -1750,6 +1884,19 @@ export function StackAcresFarm() {
     setGiftDialogue({ npc: "ray", phase: "greeting", at, line: RAY_GIFT_LINES[Math.floor(Math.random() * RAY_GIFT_LINES.length)] });
   }, []);
 
+  /**
+   * A finger landed on one of the ten stranded visitors. `kind` is the
+   * `PropKind` the scene hit; `visitorForKind` resolves it back to a visitor
+   * id (name + line + portrait, all in lib/stackacres/visitors.ts). Nothing
+   * here calls the server -- a greeting has nothing to answer.
+   */
+  const onWorldVisitorTap = useCallback((kind: PropKind, at: TapPoint) => {
+    const id = visitorForKind(kind);
+    if (!id) return;
+    setRadial(null);
+    setVisitorGreeting({ id, at });
+  }, []);
+
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
    *  keepsake) only ever shows once the server confirms it, the same
@@ -1896,6 +2043,18 @@ export function StackAcresFarm() {
     panelSound();
     setRadial(null);
   }, []);
+  /** The scrim's own click: closes the menu, same as `closeRadial`, then
+   *  replays the very click that closed it against the scene underneath
+   *  (`StackAcresScene.tapAt`) -- a real DOM button sits over the canvas
+   *  while the menu is open, so that canvas never sees the click at all.
+   *  Without this, switching to a DIFFERENT patch took two taps: one that
+   *  only closed the old menu, and a second that finally landed on the new
+   *  spot. */
+  const onRadialScrimTap = useCallback((event: { clientX: number; clientY: number }) => {
+    panelSound();
+    setRadial(null);
+    world.current?.tapAt(event.clientX, event.clientY);
+  }, []);
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
   // both go away rather than drift off what they were opened on.
@@ -1904,6 +2063,7 @@ export function StackAcresFarm() {
     setMonkDialogue(null);
     setFencePopup(null);
     setGiftDialogue(null);
+    setVisitorGreeting(null);
   }, []);
 
   /**
@@ -2208,6 +2368,48 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /**
+   * The Prestige Reset Valve's own request, adapted from `act`'s fixed
+   * `ContractActionResult` shape to `StackAcresPrestigeActionResult` for the
+   * same reason `onBuyFromMerchant` above does -- `lastPrestigeReset` is
+   * where the extra field (what THIS reset just bought) lands.
+   */
+  const onPrestigeReset = useCallback(async (): Promise<StackAcresPrestigeActionResult> => {
+    const result = await act({ action: "prestige-reset", confirm: true });
+    if (!result.ok) return { ok: false, message: result.message };
+    if (!lastPrestigeReset.current) {
+      return { ok: false, message: "That did not go through. Nothing was reset." };
+    }
+    return { ok: true, result: lastPrestigeReset.current };
+  }, [act]);
+
+  /** The Sunlight Forge's own request. `act`'s fixed `ContractActionResult`
+   *  shape is already exactly `ForgeActionResult` -- there is no extra
+   *  field to adapt out of a sidecar the way `onPrestigeReset`/
+   *  `onBuyFromMerchant` need, since `forge` above already carries the
+   *  resulting owned-list on the same response. */
+  const onForgeEnchantment = useCallback(
+    (enchantmentId: string): Promise<ForgeActionResult> =>
+      act({ action: "forge-enchantment", itemId: enchantmentId }),
+    [act],
+  );
+
+  /** Ray's Mythic Blueprints. Same shape reuse as `onForgeEnchantment` above
+   *  -- `act`'s `ContractActionResult` is already a superset of
+   *  `BlueprintActionResult`, and `blueprints` in the response already
+   *  carries the resulting card, so there is nothing else to adapt. */
+  const onStartBlueprint = useCallback(
+    (structureId: BlueprintId): Promise<BlueprintActionResult> =>
+      act({ action: "start-blueprint", structureId }),
+    [act],
+  );
+
+  const onContributeBlueprint = useCallback(
+    (structureId: BlueprintId, itemId: MachineItemId, amount: number): Promise<BlueprintActionResult> =>
+      act({ action: "contribute-blueprint", structureId, itemId, amount }),
+    [act],
+  );
+
   const onClearSector = useCallback(
     (sector: SectorId) => {
       buySound();
@@ -2246,6 +2448,12 @@ export function StackAcresFarm() {
     (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
       buySound();
       setRadial(null);
+      // No optimistic bed appears until the response repaints `soilTiles`
+      // (see the comment above), so the sound alone left the press feeling
+      // like it did nothing for however long that round trip takes. This
+      // toast is the same numberless "it's happening" answer `collect` gives
+      // -- it never claims the bed is down yet, just that the ask landed.
+      setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       // The tier names WHICH bed; the server reads its price from
       // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
       void act({ action: "place-soil-tile", tx, ty, tier });
@@ -2259,7 +2467,35 @@ export function StackAcresFarm() {
     (tx: number, ty: number) => {
       buySound();
       setRadial(null);
+      setLastCollect({ text: "Clearing the bed…", nonce: Date.now() });
       void act({ action: "remove-soil-tile", tx, ty });
+    },
+    [act],
+  );
+
+  /** Placing a well or a length of pipe straight out of the radial ring.
+   *  Same "the response is the whole story" shape `onPlaceSoilTile` above
+   *  takes: no optimistic pipe appears until `irrigation` repaints through
+   *  `applyResponse`, which is what the scene's own `setIrrigation` (pushed
+   *  by StackAcresWorld on that prop's change) actually diffs against. */
+  const onPlacePipe = useCallback(
+    (tx: number, ty: number, kind: PipeKind) => {
+      buySound();
+      setRadial(null);
+      setLastCollect({ text: kind === "well" ? "Digging the well…" : "Laying pipe…", nonce: Date.now() });
+      void act({ action: "place-pipe", tx, ty, kind });
+    },
+    [act],
+  );
+
+  /** Removing a placed tile. Same shape as `onRemoveSoilTile` above -- not a
+   *  refund, a spent sink lifted for the room back. */
+  const onRemovePipe = useCallback(
+    (tx: number, ty: number) => {
+      buySound();
+      setRadial(null);
+      setLastCollect({ text: "Pulling the pipe…", nonce: Date.now() });
+      void act({ action: "remove-pipe", tx, ty });
     },
     [act],
   );
@@ -2366,7 +2602,25 @@ export function StackAcresFarm() {
   const dayCapped = exchange.remaining < 1;
   const capResetLabel = countdownLabel(Date.parse(exchange.resetsAt) - nowMs);
 
-  const onWorldReady = useCallback(() => setWorldReady(true), []);
+  // stackacres-scene.ts fires onReady synchronously once the scene is built
+  // and the camera framed -- before Phaser's own render loop has actually
+  // painted that frame to the canvas. Waiting two rAF ticks closes that gap
+  // so the loading overlay doesn't drop a beat before the world.
+  const onWorldReady = useCallback(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setWorldReady(true)));
+  }, []);
+
+  // Rotates independently of the flavor line above it; only runs while the
+  // overlay is actually up (bootPhase below gates rendering), so this never
+  // ticks a hidden timer for the life of the session.
+  const bootPhase = useMinHoldFade(!loaded || !worldReady, { minMs: 500, fadeMs: 320 });
+  useEffect(() => {
+    if (bootPhase === "hidden") return;
+    const timer = window.setInterval(() => {
+      setTipIndex((index) => (index + 1) % STACKACRES_LOADING_TIPS.length);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [bootPhase]);
 
   // After every hook above, same position poker-table.tsx gates its own
   // render at. A full replacement, not an overlay -- the farm itself never
@@ -2479,6 +2733,53 @@ export function StackAcresFarm() {
     return [];
   })();
 
+  /**
+   * The irrigation ring's own extra buttons -- offered in EVERY district,
+   * unlike `soilExtraActions` above (a Crop Fields-only concept): the pipe
+   * lattice is farm-wide (lib/stackacres/irrigation.ts's own header), so a
+   * tap anywhere has a tile under it worth offering. `irrigation` is the
+   * same array the scene was just handed, so "is there a pipe here" never
+   * disagrees with what is actually painted.
+   */
+  const pipeExtraActions = (() => {
+    if (!radial) return [];
+    const { tx, ty } = pipeTileAt(radial.world.x, radial.world.y);
+    const existing = irrigation.find((node) => node.tx === tx && node.ty === ty);
+    if (existing) {
+      return [
+        {
+          key: "remove-pipe",
+          label: existing.kind === "well" ? "Remove Well" : "Remove Pipe",
+          icon: "ico-clear" as PainterName,
+          onSelect: () => onRemovePipe(tx, ty),
+        },
+      ];
+    }
+    const hasWell = irrigation.some((node) => node.kind === "well");
+    return [
+      {
+        key: "place-pipe",
+        label: "Lay Pipe",
+        icon: "ico-plant" as PainterName,
+        cost: PIPE_PLACE_COST.pipe,
+        disabledReason: gold >= PIPE_PLACE_COST.pipe ? undefined : "Not enough Gold",
+        onSelect: () => onPlacePipe(tx, ty, "pipe"),
+      },
+      {
+        key: "place-well",
+        label: "Dig a Well",
+        icon: "ico-plant" as PainterName,
+        cost: PIPE_PLACE_COST.well,
+        disabledReason: hasWell
+          ? "This farm already has a well"
+          : gold >= PIPE_PLACE_COST.well
+            ? undefined
+            : "Not enough Gold",
+        onSelect: () => onPlacePipe(tx, ty, "well"),
+      },
+    ];
+  })();
+
   return (
     <main className="duel-shell ante-shell sa-shell">
       <header className="floor-bar">
@@ -2525,6 +2826,32 @@ export function StackAcresFarm() {
             onUnlock={onUnlockSynergyPerk}
             onActivate={onActivateSynergyPerk}
           />
+          {/* The Prestige Reset Valve's own entry point -- a standing badge
+              rather than a buried menu item, since the multiplier it shows
+              is worth seeing at a glance every session, not only when a
+              player goes looking for the valve itself. */}
+          <button
+            type="button"
+            className="sa-prestige-badge"
+            onClick={() => { panelSound(); setShowPrestige(true); }}
+            title="Prestige Reset Valve"
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            <strong>{prestige.multiplier.toFixed(4)}x</strong>
+          </button>
+          {/* The Sunlight Forge's own entry point -- same standing-badge
+              posture as the Prestige valve above it, since a forged
+              enchantment is also a permanent, session-spanning upgrade
+              worth a glance rather than a buried menu item. */}
+          <button
+            type="button"
+            className="sa-prestige-badge"
+            onClick={() => { panelSound(); setShowForge(true); }}
+            title="The Sunlight Forge"
+          >
+            <Wand2 size={13} aria-hidden="true" />
+            <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
+          </button>
           <StackAcresMusicToggle />
         </div>
       </header>
@@ -2557,32 +2884,54 @@ export function StackAcresFarm() {
               onMerchantTap={onWorldMerchantTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
+              onVisitorTap={onWorldVisitorTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}
               soilTiles={mergedSoilTiles}
+              irrigation={irrigation}
               onDroneForageCollected={onDroneForageCollected}
               api={world}
             />
           )}
-          {(!loaded || !worldReady) && (
-            <p className="sa-hint sa-loading">Walking the fences…</p>
+          {bootPhase !== "hidden" && (
+            <div className={clsx("sa-loading", bootPhase === "hiding" && "sa-loading-hiding")}>
+              {/* Ray's shop-welcome cutout, reused rather than new art -- see
+                  stackacres-ray-welcome.tsx for the other place it's drawn
+                  from. A plain <img>, not next/image: one small already-sized
+                  cutout, not user content needing a CDN. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="sa-loading-ray-img"
+                src="/stackacres/sprites/grandfather-ray.png"
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+              />
+              <p className="sa-hint sa-loading-text">Walking the fences…</p>
+              <div className="sa-loading-track skeleton-block" />
+              <p className="sa-hint sa-loading-tip">{STACKACRES_LOADING_TIPS[tipIndex]}</p>
+            </div>
           )}
 
           {/* The seed menu's dismissal layer, and its position in this file is
               the whole design: it covers the map but sits EARLIER than the
               toolbelt, the signpost and the camera buttons, which are
               positioned siblings with no z-index of their own and therefore
-              stack above it. So the next tap on the world closes the menu,
-              and the chrome stays live while it is open. */}
+              stack above it. So the next tap on the world closes the menu
+              and the chrome stays live while it is open -- and, since this
+              is a real DOM button the canvas underneath never sees the tap,
+              `onRadialScrimTap` replays that same click against the scene
+              once the menu is gone, so a tap on a different patch switches
+              straight to it instead of taking a second tap to land. */}
           {radial && (
             <button
               type="button"
               className="sa-radial-scrim"
               aria-label="Close the seed menu"
-              onClick={closeRadial}
+              onClick={onRadialScrimTap}
             />
           )}
 
@@ -2612,6 +2961,8 @@ export function StackAcresFarm() {
             onOpenContracts={() => { panelSound(); setShowContracts(true); }}
             contractPosted={processing.contract !== null}
             carrying={carrying}
+            onOpenBlueprints={() => { panelSound(); setShowBlueprints(true); }}
+            blueprintInProgress={Object.values(blueprints).some((b) => b.status === "in_progress")}
           />
 
           <div className="sa-camera" role="group" aria-label="Map view">
@@ -2645,12 +2996,14 @@ export function StackAcresFarm() {
               busy={
                 pendingByPrefix("stock") ||
                 pendingByPrefix("place-soil-tile") ||
-                pendingByPrefix("remove-soil-tile")
+                pendingByPrefix("remove-soil-tile") ||
+                pendingByPrefix("place-pipe") ||
+                pendingByPrefix("remove-pipe")
               }
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
-              extraActions={soilExtraActions}
+              extraActions={[...soilExtraActions, ...pipeExtraActions]}
             />
           )}
           {radial && radial.zone !== "meadow" && (
@@ -2658,10 +3011,15 @@ export function StackAcresFarm() {
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
-              busy={pendingByPrefix("stock")}
+              busy={
+                pendingByPrefix("stock") ||
+                pendingByPrefix("place-pipe") ||
+                pendingByPrefix("remove-pipe")
+              }
               onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
+              extraActions={pipeExtraActions}
             />
           )}
 
@@ -2706,6 +3064,16 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
+            />
+          )}
+
+          {/* One of the ten stranded visitors' greeting, same screen-anchored
+              treatment as the Pixel Pilgrim's and the gift dialogue above. */}
+          {visitorGreeting && (
+            <StackAcresVisitorGreeting
+              id={visitorGreeting.id}
+              at={visitorGreeting.at}
+              onClose={() => setVisitorGreeting(null)}
             />
           )}
 
@@ -3362,6 +3730,38 @@ export function StackAcresFarm() {
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
+        />
+      )}
+
+      {showBlueprints && (
+        <MythicBlueprintDashboard
+          blueprints={Object.values(blueprints)}
+          inventory={processing.inventory}
+          busy={pendingByPrefix("start-blueprint") || pendingByPrefix("contribute-blueprint")}
+          onStart={onStartBlueprint}
+          onContribute={onContributeBlueprint}
+          onClose={() => { panelSound(); setShowBlueprints(false); }}
+        />
+      )}
+
+      {showPrestige && (
+        <StackAcresPrestigeResetModal
+          prestige={prestige}
+          busy={isPending("prestige-reset")}
+          onReset={onPrestigeReset}
+          onClose={() => { panelSound(); setShowPrestige(false); }}
+        />
+      )}
+
+      {showForge && (
+        <SunlightForgeTable
+          toolTier={toolTier}
+          inventory={processing.inventory}
+          goldBalance={profile?.goldBalance ?? 0}
+          ownedEnchantmentIds={forge}
+          busy={isPending("forge-enchantment")}
+          onForge={onForgeEnchantment}
+          onClose={() => { panelSound(); setShowForge(false); }}
         />
       )}
       {/*

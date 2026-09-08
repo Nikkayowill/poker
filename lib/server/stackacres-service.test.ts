@@ -1880,6 +1880,7 @@ describe("the currency wall", () => {
       "donate-secret-item",
       "expand-capacity",
       "feed",
+      "forge-enchantment",
       "fulfill-contract",
       "give-gift",
       "midnight-merchant-buy",
@@ -1929,7 +1930,10 @@ describe("the currency wall", () => {
     // `high_yield_processing`'s Mill double-output chance) is a third payer
     // for the same reason the critical harvest above isn't one: both only
     // reshape a probability an existing roll inside `collect`/`work` already
-    // makes. `midnight-merchant-buy` spends too, via
+    // makes. `forge-enchantment` is the same shape again -- a pure sink
+    // (Gold plus a processing-track material, via forge_stackacres_
+    // enchantment) whose two crit-touching enchantments reshape the same
+    // roll `collect` already makes, never a new payer. `midnight-merchant-buy` spends too, via
     // `redeemMidnightMerchantItem`, which reaches `spend_gold_by_profile`
     // inside its own row-locked RPC (see
     // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)

@@ -439,6 +439,32 @@
   height: 20px;
 }
 
+/* The Prestige Reset Valve's HUD badge -- same paper pill as .sa-feed next
+   door, but a real button (it opens the valve's own sheet) rather than a
+   static readout. */
+.sa-prestige-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sa-prestige-badge:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
 .sa-music-toggle {
   display: inline-flex;
   align-items: center;
@@ -523,23 +549,83 @@
   flex: none;
 }
 
-/* The one line of text on this surface with nothing behind it -- it is painted
-   straight onto the lawn while the scene boots, so it is the one place the
-   chocolate ring earns its keep. Everything else here reads off a board, and a
-   ring on text that already has a board under it is noise. */
+/* The screen shown while the Phaser scene boots: Ray's cutout (reused from
+   stackacres-ray-welcome.tsx, not new art) swaying gently over the lawn,
+   with the "Walking the fences…" line, a skeleton-shimmer bar standing in
+   for real progress, and a rotating tip pinned to the bottom. Fills
+   .sa-field exactly, same as the old text-only version.
+   `bootPhase` (stackacres-farm.tsx, useMinHoldFade) holds this up for a
+   minimum beat and fades it out rather than swapping straight to the world
+   the instant onReady fires -- onReady lands before Phaser's own render
+   loop has actually painted a frame, so an abrupt swap could expose that
+   gap as a pop. The fade covers it. */
 .sa-loading {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+  padding: 24px 20px;
   margin: 0;
   background: var(--sa-grass);
+  opacity: 1;
+  transition: opacity 320ms ease;
+  pointer-events: none;
+}
+.sa-loading-hiding {
+  opacity: 0;
+}
+
+.sa-loading-ray-img {
+  width: min(30vw, 20vh, 150px);
+  height: auto;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25));
+  animation: sa-loading-sway 3600ms ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+@keyframes sa-loading-sway {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-5px) rotate(-1deg); }
+}
+
+/* The one line of text on this surface with nothing behind it -- painted
+   straight onto the lawn, so it is the one place the chocolate ring earns
+   its keep. Everything else here reads off a board, and a ring on text that
+   already has a board under it is noise. */
+.sa-loading-text {
+  margin: 0;
   color: var(--sa-cream);
   font-size: 19px;
   font-weight: 800;
   text-shadow: var(--sa-text-ring);
-  pointer-events: none;
+}
+
+.sa-loading-track {
+  width: min(60vw, 220px);
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Pinned to the bottom of the overlay rather than grouped with the sway/
+   text/track above it -- `margin-top: auto` pushes it down the flex column
+   without needing the rest of the overlay to know it's there. */
+.sa-loading-tip {
+  margin-top: auto;
+  margin-bottom: 0;
+  max-width: min(80vw, 360px);
+  color: var(--sa-cream);
+  opacity: .78;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  text-shadow: var(--sa-text-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-loading { transition: none; }
+  .sa-loading-ray-img { animation: none; }
 }
 
 /* ---- the pressable block ---------------------------------------------
@@ -1726,6 +1812,81 @@
 }
 
 .sa-gift-dialogue-no:hover { filter: brightness(1.05); }
+
+/* ---- the ten stranded visitors' greeting ------------------------------
+ * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
+ * a single line and a portrait, no phases and no actions row, since this
+ * feature is placement + flavour dialogue only (no gifts, no quests). */
+.sa-visitor-greeting {
+  position: absolute;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-visitor-greeting-pin {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-sky, #8fa9d6);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-visitor-greeting-card {
+  position: absolute;
+  left: 16px;
+  top: -18px;
+  width: 240px;
+  padding: 12px 14px 14px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+  pointer-events: auto;
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+
+.sa-visitor-greeting-close {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sa-ink);
+  cursor: pointer;
+  opacity: .6;
+}
+
+.sa-visitor-greeting-close:hover { opacity: 1; }
+
+.sa-visitor-greeting-portrait {
+  display: block;
+  height: 64px;
+  width: auto;
+  margin: 0 0 8px;
+  image-rendering: pixelated;
+}
+
+.sa-visitor-greeting-name {
+  margin: 0 18px 6px 0;
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sa-visitor-greeting-line {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.35;
+}
 
 /* ---- the district drawer ---------------------------------------------
  * Travelling to a district (the signpost) IS the selection -- there is no plot
@@ -3251,6 +3412,25 @@
   color: var(--sa-outline);
 }
 
+/* ---- Ray's Mythic Blueprints -------------------------------------------
+   Same non-travel-target posture as the town board right above it: cream
+   card, no district colour, opens the dashboard directly. */
+
+.sa-dest-blueprints {
+  position: relative;
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+.sa-dest-blueprints .sa-dest-swatch {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--sa-wood);
+  color: var(--sa-outline);
+}
+
 /* An order is up. A dot rather than a count: there is only ever one, and a
    number here would read as a promise of more. */
 .sa-dest-dot {
@@ -3316,6 +3496,13 @@
   background: var(--sa-paper-2);
   box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
   color: var(--sa-ink);
+}
+
+.sa-contracts-note.is-pending {
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  color: var(--sa-ink);
+  opacity: 0.8;
 }
 
 .sa-contracts-board {
@@ -4094,6 +4281,7 @@
 
   .sa-dest { min-height: 42px; padding: 4px 11px 4px 7px; }
   .sa-dest-board .sa-dest-swatch { width: 22px; height: 22px; }
+  .sa-dest-blueprints .sa-dest-swatch { width: 22px; height: 22px; }
   .sa-contract-head h3 { font-size: 15px; }
   .sa-contract-req { margin-top: 8px; }
   .sa-dest-name { font-size: 14px; }

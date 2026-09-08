@@ -131,7 +131,12 @@
      height at all -- which is how a nameplate ended up underneath the
      controls at 390x844. Naming the cap means an override can narrow the
      table without silently discarding its height limit. */
-  --table-height-cap: calc((100dvh - var(--safe-bottom) - var(--table-reserve)) * var(--table-aspect));
+  /* This is a WIDTH cap (fed into `width:` below, never a height), so
+     --browser-chrome-px belongs in its 100dvh term: a mobile browser's
+     toolbar shrinking 100dvh should not also pillarbox the table on a
+     screen whose actual width hasn't changed. See that property's own
+     comment in 01-tokens.css and components/shell/browser-chrome-width.tsx. */
+  --table-height-cap: calc((100dvh + var(--browser-chrome-px) - var(--safe-bottom) - var(--table-reserve)) * var(--table-aspect));
   /* Seats are sized from the table's measured width (SEAT_WIDTH_RATIO in
      poker-table.tsx), which arrives as an inline --seat-width on this element.
      Declared here rather than on .player-seat: a custom property set on the

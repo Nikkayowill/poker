@@ -3,6 +3,7 @@ import "./globals.css";
 // TEMPORARY -- see the mount at the bottom of this file.
 import { ViewportProbe } from "@/components/debug/viewport-probe";
 import { AppShell } from "@/components/shell/app-shell";
+import { BrowserChromeWidth } from "@/components/shell/browser-chrome-width";
 import { ViewportFit } from "@/components/shell/viewport-fit";
 
 /*
@@ -146,6 +147,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             a rotation. See the file for why this is not the reflow-forcing
             that was tried and reverted three times. */}
         <ViewportFit />
+        {/* Gives the table back the width a mobile browser's own toolbar
+            borrows from 100dvh in landscape, so a browser tab doesn't
+            pillarbox the short-landscape stage more narrowly than the
+            installed PWA does. See the file for why this is the mirror of
+            ViewportFit rather than a duplicate of it. */}
+        <BrowserChromeWidth />
       </body>
     </html>
   );

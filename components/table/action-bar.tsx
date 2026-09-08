@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useFuse, useFuseDigit } from "./use-fuse";
 import clsx from "clsx";
 import { Check, FoldVertical } from "lucide-react";
-import type { GameSnapshot, PlayerAction } from "@/lib/game/types";
+import type { GameSnapshot, PlayerAction, PreActionType } from "@/lib/game/types";
 import { isSeatRebuyEligible } from "@/lib/game/rebuy";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 import { backstopState } from "@/lib/profile/backstop";
@@ -83,6 +83,8 @@ export function ActionBar({
   onLeave,
   profile,
   onClaimBackstop,
+  armedPreAction,
+  onArmPreAction,
 }: {
   game: GameSnapshot;
   pending: boolean;
@@ -97,6 +99,13 @@ export function ActionBar({
    * ways out.
    */
   onClaimBackstop: () => void;
+  /**
+   * A decision queued ahead of your turn (poker-app.tsx owns the state,
+   * since this component remounts every game.version and would lose it
+   * otherwise). Null when nothing is armed.
+   */
+  armedPreAction: PreActionType | null;
+  onArmPreAction: (next: PreActionType | null) => void;
 }) {
   const legal = game.legalActions;
   const mySeat = game.seats.find((seat) => seat.isMine);
@@ -346,6 +355,11 @@ export function ActionBar({
 
   const myTurn = Boolean(legal);
   const passiveIsCall = Boolean(legal?.canCall);
+  // A spectator reaches this same branch (not seated, hand still playing)
+  // with `legal` null just like a seated player waiting their turn -- but
+  // they have no turn ever coming, so the pre-action rack below is only for
+  // an actual seat.
+  const canPreAct = game.isSeated;
 
   return (
     <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
@@ -365,27 +379,63 @@ export function ActionBar({
           costing width the three decisions could use instead. */}
 
       {/* Three permanent slots. An action you cannot take is disabled, never
-          absent, so nothing to its right slides across to fill the gap. */}
+          absent, so nothing to its right slides across to fill the gap.
+
+          Off your turn, the same three buttons double as a pre-action rack:
+          a tap arms a standing decision instead of dispatching one, and
+          poker-app.tsx fires it the instant your turn actually arrives (if
+          it's still legal then -- otherwise it just clears and waits for
+          you). Nothing here changes size or position between the two
+          states, only which handler a tap runs and a gold ring on whatever
+          is armed. */}
       <div className="action-slot-controls">
         <button
-          className={clsx("action-button-fold", pressedAction === "fold" && "action-pressed")}
-          disabled={!legal?.canFold || pending}
-          onClick={() => dispatch({ type: "fold" })}
+          className={clsx(
+            "action-button-fold",
+            pressedAction === "fold" && "action-pressed",
+            !myTurn && armedPreAction === "fold" && "action-armed",
+          )}
+          disabled={myTurn ? !legal?.canFold || pending : pending || !canPreAct}
+          onClick={() => {
+            if (myTurn) { dispatch({ type: "fold" }); return; }
+            onArmPreAction(armedPreAction === "fold" ? null : "fold");
+          }}
         >
-          <FoldVertical size={16} /> Fold
+          <span className="action-button-label">
+            <FoldVertical size={16} /> Fold
+          </span>
         </button>
 
         <button
           className={clsx(
-            passiveIsCall ? "action-button-call" : "action-button-check",
+            // Off your turn `passiveIsCall` is always false (nothing is
+            // legal yet), so what's actually armed decides the color
+            // instead -- otherwise "Call any" would sit on the gold Check
+            // gradient rather than the green Call one.
+            (myTurn ? passiveIsCall : armedPreAction === "call") ? "action-button-call" : "action-button-check",
             (pressedAction === "call" || pressedAction === "check") && "action-pressed",
+            !myTurn && (armedPreAction === "check" || armedPreAction === "call") && "action-armed",
           )}
-          disabled={!(legal?.canCheck || legal?.canCall) || pending}
-          onClick={() => dispatch({ type: passiveIsCall ? "call" : "check" })}
+          disabled={myTurn ? !(legal?.canCheck || legal?.canCall) || pending : pending || !canPreAct}
+          onClick={() => {
+            if (myTurn) { dispatch({ type: passiveIsCall ? "call" : "check" }); return; }
+            // Cycles through the two standing decisions this slot can hold,
+            // then off: Check (if it's still free when your turn comes) ->
+            // Call any (whatever the bet is by then) -> nothing armed.
+            onArmPreAction(
+              armedPreAction === "check" ? "call" : armedPreAction === "call" ? null : "check",
+            );
+          }}
         >
-          {passiveIsCall
-            ? <>Call <strong>{legal?.callAmount?.toLocaleString()}</strong></>
-            : <><Check size={17} /> Check</>}
+          <span className="action-button-label">
+            {myTurn
+              ? (passiveIsCall
+                ? <>Call <strong>{legal?.callAmount?.toLocaleString()}</strong></>
+                : <><Check size={17} /> Check</>)
+              : (armedPreAction === "call"
+                ? <>Call any</>
+                : <><Check size={17} /> Check</>)}
+          </span>
         </button>
 
         <button

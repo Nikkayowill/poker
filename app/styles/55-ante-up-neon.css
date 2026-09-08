@@ -8,6 +8,17 @@
  *   .duel-tier(-active/-custom) -- every wager/stake picker, StakePicker's own
  *                          markup (36-duels.css), shared by duels and Ante Up
  *   .puzzle-share-button  -- every puzzle's commit CTA (25-puzzles.css)
+ *   .duel-open            -- a duel lobby's own commit CTA -- Cribbage/chess/
+ *                          checkers/othello/trivia/word-race's "Open/Challenge
+ *                          a N Gold table", heads-up and Sit & Go's buy-in
+ *                          (36-duels.css). Always paired with .floor-play on
+ *                          the same element, but the gold recipe below used
+ *                          to key off `.floor-card .floor-play`, which only
+ *                          the arcade floor's own grid tiles satisfy -- so
+ *                          every duel lobby's actual commit button rendered
+ *                          in the neutral recipe instead, looking like an
+ *                          inert resting button next to Ante Up's gold "Ante
+ *                          up"/"Play".
  * Loads after 22/25/36/43 and narrows those classes; it adds no shape of its
  * own except the two Ante Up-only anchors kept at the bottom of this file.
  *
@@ -43,12 +54,18 @@
 }
 
 /* ==========================================================================
-   Shared button recipes -- .floor-play, .duel-tier(-active), .puzzle-share-button
+   Shared button recipes -- .floor-play, .duel-tier(-active), .puzzle-share-button,
+   .mshell-primary (the phone Play tab's own hero CTA, "Take a seat"),
+   .account-primary-action/.account-oauth-action/.account-email-toggle (the
+   sign-in screen's Google and Email buttons)
    ========================================================================== */
 
 .floor-play,
 .duel-tier,
-.puzzle-share-button {
+.puzzle-share-button,
+.mshell-primary,
+.account-oauth-action,
+.account-email-toggle {
   position: relative;
   border: 0;
   border-radius: 0;
@@ -59,7 +76,14 @@
   transform: translateY(0);
   transition: transform .1s ease, box-shadow .1s ease, background var(--duration-base) ease, color var(--duration-base) ease;
 }
-.puzzle-share-button {
+.puzzle-share-button,
+.mshell-primary,
+.account-primary-action {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  transform: translateY(0);
+  transition: transform .1s ease, box-shadow .1s ease, background var(--duration-base) ease, color var(--duration-base) ease;
   clip-path: polygon(
     var(--btn-cut-lg) 0, 100% 0, 100% calc(100% - var(--btn-cut-lg)),
     calc(100% - var(--btn-cut-lg)) 100%, 0 100%, 0 var(--btn-cut-lg)
@@ -72,7 +96,11 @@
    system (rest/hover/active x neutral/selected/gold), not one-off picks. */
 .floor-play::after,
 .duel-tier::after,
-.puzzle-share-button::after {
+.puzzle-share-button::after,
+.mshell-primary::after,
+.account-primary-action::after,
+.account-oauth-action::after,
+.account-email-toggle::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -80,6 +108,8 @@
   pointer-events: none;
 }
 .puzzle-share-button::after,
+.mshell-primary::after,
+.account-primary-action::after,
 .floor-card .floor-play:not(:disabled)::after,
 .duel-tier-active::after {
   /* Brighter on the gold/selected faces -- a glass highlight reads brighter
@@ -87,9 +117,11 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 42%);
 }
 
-/* ---- Neutral: resting .floor-play, unpicked .duel-tier ---- */
+/* ---- Neutral: resting .floor-play, unpicked .duel-tier, the sign-in screen's Email/secondary-Google buttons ---- */
 .floor-play,
-.duel-tier {
+.duel-tier,
+.account-oauth-action,
+.account-email-toggle {
   background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-ground));
   color: var(--neon-muted);
   box-shadow:
@@ -99,7 +131,9 @@
     0 6px 14px -6px rgba(0, 0, 0, .55);
 }
 .floor-play:hover:not(:disabled),
-.duel-tier:hover {
+.duel-tier:hover,
+.account-oauth-action:hover:not(:disabled),
+.account-email-toggle:hover:not(:disabled) {
   color: var(--neon-chalk);
   background: linear-gradient(165deg, var(--neon-ground-lift), var(--neon-purple-deep) 160%);
   box-shadow:
@@ -110,13 +144,17 @@
   transform: translateY(-1px);
 }
 .floor-play:active:not(:disabled),
-.duel-tier:active {
+.duel-tier:active,
+.account-oauth-action:active:not(:disabled),
+.account-email-toggle:active:not(:disabled) {
   transform: translateY(var(--btn-lip));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .05),
     inset 0 0 0 1px rgba(182, 166, 219, .18);
 }
-.floor-play:disabled {
+.floor-play:disabled,
+.account-oauth-action:disabled,
+.account-email-toggle:disabled {
   background: var(--neon-ground-lift);
   color: #6f7b92;
   box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .12);
@@ -157,9 +195,12 @@
 }
 .duel-tier-custom input { color: var(--neon-chalk); }
 
-/* ---- Gold: the commit CTA -- Ante up, a puzzle's Play, a floor card's filled Play ---- */
+/* ---- Gold: the commit CTA -- Ante up, a puzzle's Play, a floor card's filled Play, a duel lobby's Open/Challenge, the phone Play tab's Take a seat, sign-in's Continue with Google ---- */
 .puzzle-share-button,
-.floor-card .floor-play:not(:disabled) {
+.floor-card .floor-play:not(:disabled),
+.duel-open:not(:disabled),
+.mshell-primary:not(:disabled),
+.account-primary-action {
   background: linear-gradient(165deg, var(--neon-yellow-bright), var(--neon-yellow) 55%, #a8842f);
   color: var(--neon-ground);
   box-shadow:
@@ -169,7 +210,10 @@
     0 8px 18px -6px rgba(255, 210, 63, .55);
 }
 .puzzle-share-button:hover:not(:disabled),
-.floor-card .floor-play:not(:disabled):hover {
+.floor-card .floor-play:not(:disabled):hover,
+.duel-open:not(:disabled):hover,
+.mshell-primary:not(:disabled):hover,
+.account-primary-action:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .65),
@@ -178,11 +222,16 @@
     0 12px 24px -6px rgba(255, 210, 63, .75);
 }
 .puzzle-share-button:active:not(:disabled),
-.floor-card .floor-play:not(:disabled):active {
+.floor-card .floor-play:not(:disabled):active,
+.duel-open:not(:disabled):active,
+.mshell-primary:not(:disabled):active,
+.account-primary-action:active:not(:disabled) {
   transform: translateY(var(--btn-lip));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 1px rgba(255, 210, 63, .6);
 }
-.puzzle-share-button:disabled {
+.puzzle-share-button:disabled,
+.mshell-primary:disabled,
+.account-primary-action:disabled {
   background: var(--neon-ground-lift);
   color: var(--neon-muted-2);
   box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .16);
@@ -199,11 +248,20 @@
 }
 
 /* ==========================================================================
-   Ante Up-only: the pre-play card and its difficulty tiles. Cards stay
-   scoped -- only the button language above went app-wide.
+   The card skin: the same chamfered corner + gradient + gold readout line
+   every button above wears, now the app-wide card too -- .ante-lobby-card
+   (the Ante Up pre-play panel), .duel-panel (every duel lobby's own panel --
+   Cribbage's "Open a table", chess/checkers/othello/trivia/word race's
+   "Your stake", heads-up and Sit & Go), and .mshell-card (every tile/row on
+   the phone's Play and Profile tabs). This used to say "cards stay scoped --
+   only the button language went app-wide," which is exactly the gap Kayo
+   flagged: every one of those was still a plain rounded rect while Beat the
+   board's own pre-play card wore the real finish.
    ========================================================================== */
 
-.ante-lobby-card {
+.ante-lobby-card,
+.duel-panel,
+.mshell-card {
   position: relative;
   border: 0;
   border-radius: 0;
@@ -222,7 +280,9 @@
 /* The chamfer cuts the corner off the box-shadow ring too (clip-path crops
    the whole element), so the gold "readout" line has to be its own layer
    drawn to the same corners rather than a border side. */
-.ante-lobby-card::before {
+.ante-lobby-card::before,
+.duel-panel::before,
+.mshell-card::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -301,22 +361,6 @@
 .ante-difficulty-active strong::before { color: var(--neon-yellow); }
 
 .ante-lobby-card .ng-option input[type="checkbox"] { accent-color: var(--neon-purple-bright); }
-
-/* The arcade floor's "Beat the board" row: a distinct card finish, kept
-   scoped (arcade-floor.tsx passes variant="ante" only there) -- its own
-   .floor-play inside it already picked up the gold CTA recipe above via
-   the unscoped .floor-card .floor-play:not(:disabled) selector. */
-.floor-card-ante {
-  border-radius: 0;
-  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
-  background:
-    linear-gradient(160deg, rgba(155, 63, 240, .12), transparent 55%),
-    linear-gradient(160deg, var(--neon-purple-deep), var(--neon-ground-lift-2) 72%);
-  box-shadow: 0 0 0 1px rgba(255, 210, 63, .3), 0 20px 42px -22px rgba(155, 63, 240, .85);
-}
-.floor-card-ante:hover {
-  box-shadow: 0 0 0 1px rgba(255, 210, 63, .5), 0 0 30px -8px rgba(155, 63, 240, .9);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .ante-difficulty {

@@ -8,11 +8,13 @@ import { stackacresToolTierDef, type StackAcresToolTier } from "@/lib/stackacres
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
+import type { PropKind } from "@/lib/stackacres/props";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
+import type { PipeNode } from "@/lib/stackacres/irrigation";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
 
@@ -130,6 +132,11 @@ export interface StackAcresWorldApi {
    *  the shell because the shell owns the radial menu the preview belongs
    *  to -- the scene has no idea a ring is open. */
   previewSoilAt: (world: WorldPoint | null) => void;
+  /** Replays a tap's own hit-test chain against a point that never actually
+   *  reached the canvas -- see StackAcresScene's own `tapAt` for why the
+   *  seed menu's dismissal scrim needs this. `clientX`/`clientY` are CSS
+   *  pixels, the same space a `PointerEvent` carries. */
+  tapAt: (clientX: number, clientY: number) => void;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
    *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
    *  drives the day/night population swap (the shell's own `timeOfDay()`
@@ -182,6 +189,10 @@ export interface StackAcresWorldProps {
   /** A finger landed on Grandfather Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
+  /** A finger landed on one of the ten stranded visitors (see
+   *  lib/stackacres/visitors.ts) -- the cue to show that visitor's own
+   *  one-line greeting; see stackacres-farm.tsx's `onWorldVisitorTap`. */
+  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -230,6 +241,12 @@ export interface StackAcresWorldProps {
    *  only ever pushes what it is handed straight into the scene, the same
    *  "push, never rebuild" contract `sectors` above already follows. */
   soilTiles: readonly SoilTile[];
+  /** The irrigation pipe network, straight off `StackAcresView.irrigation` --
+   *  pushed straight through to the scene's own `setIrrigation`, the same
+   *  "push, never rebuild" contract `soilTiles` above already follows (the
+   *  scene diffs against what it already drew via `diffPipeGrid`, so a
+   *  reference that has not moved repaints nothing). */
+  irrigation: readonly PipeNode[];
   /** A patrolling drone just started its vacuum animation on a spawned
    *  drop -- see StackAcresSceneCallbacks.onDroneForageCollected's own doc
    *  comment for why this fires before the animation finishes. */
@@ -284,6 +301,7 @@ export function StackAcresWorld({
   onMerchantTap,
   onMonkTap,
   onRayTap,
+  onVisitorTap,
   onSecretZoneTap,
   onFenceSegmentTap,
   onLivestockDamaged,
@@ -291,6 +309,7 @@ export function StackAcresWorld({
   onLockedSectorTap,
   onViewMoved,
   soilTiles,
+  irrigation,
   onDroneForageCollected,
   api,
 }: StackAcresWorldProps) {
@@ -309,6 +328,7 @@ export function StackAcresWorld({
   const merchantTapRef = useRef(onMerchantTap);
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
+  const visitorTapRef = useRef(onVisitorTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const livestockDamagedRef = useRef(onLivestockDamaged);
@@ -342,6 +362,7 @@ export function StackAcresWorld({
     merchantTapRef.current = onMerchantTap;
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
+    visitorTapRef.current = onVisitorTap;
     secretZoneTapRef.current = onSecretZoneTap;
     fenceSegmentTapRef.current = onFenceSegmentTap;
     livestockDamagedRef.current = onLivestockDamaged;
@@ -360,10 +381,12 @@ export function StackAcresWorld({
   const unitsRef = useRef(sceneUnits);
   const sectorsRef = useRef(sectors);
   const soilTilesRef = useRef(soilTiles);
+  const irrigationRef = useRef(irrigation);
   useEffect(() => {
     unitsRef.current = sceneUnits;
     sectorsRef.current = sectors;
     soilTilesRef.current = soilTiles;
+    irrigationRef.current = irrigation;
   });
 
   useEffect(() => {
@@ -396,6 +419,7 @@ export function StackAcresWorld({
           onMerchantTap: () => merchantTapRef.current(),
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
+          onVisitorTap: (kind, at) => visitorTapRef.current(kind, at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
@@ -459,6 +483,7 @@ export function StackAcresWorld({
       // gap between boot and this call never shows a pen that is not there.
       scene.setSectors(sectorsRef.current);
       scene.setSoil(soilTilesRef.current);
+      scene.setIrrigation(irrigationRef.current);
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
@@ -531,6 +556,7 @@ export function StackAcresWorld({
       placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
+      tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
@@ -562,6 +588,14 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
+
+  // `setIrrigation` diffs against what the scene already drew (see its own
+  // doc comment), so handing it the same reference twice -- which every
+  // action response does whether or not the network actually moved -- is a
+  // harmless no-op, the same posture `setSectors` above takes.
+  useEffect(() => {
+    sceneRef.current?.setIrrigation(irrigation);
+  }, [irrigation]);
 
   // Keyed on the RUNG as well as the tool: buying an upgrade has to change what
   // is in the player's hand immediately, the same "push, never rebuild" reason

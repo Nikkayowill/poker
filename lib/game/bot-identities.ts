@@ -79,6 +79,29 @@ export const botProfiles: Array<{
   { name: "slowroll_sam", initials: "SR", accent: "#8ec4f0", avatarUrl: null, avatarPreset: "river" },
   { name: "zaravibes", initials: "ZV", accent: "#7fd8b4", avatarUrl: null, avatarPreset: "ace" },
   { name: "tiny_3bet", initials: "TN", accent: "#f5a0bd", avatarUrl: null, avatarPreset: "crown" },
+  // A third batch, leaning into shapes the first two didn't cover: short
+  // vowel-dropped "sweat" tags, a prefix worn like a title (dr_/mr_/im_/txx_),
+  // lowercase soft-focus aesthetic handles, Y2K-era hype-kid tags with a
+  // year or number tacked on, and the deliberately generic "system" handles
+  // (guest/static) people fall back to when their first pick's taken.
+  { name: "xvoltz", initials: "VZ", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "klloryn", initials: "KL", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "grimedout", initials: "GR", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "vexiaxo", initials: "VX", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+  { name: "dr_zaneq", initials: "ZQ", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace" },
+  { name: "mr_rhys", initials: "RH", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown" },
+  { name: "im_jordy", initials: "JD", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "txx_rook", initials: "RK", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "softlyash", initials: "SA", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "chilled_zo", initials: "CZ", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+  { name: "rainy_dayz", initials: "RD", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace" },
+  { name: "vibe_check04", initials: "VC", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown" },
+  { name: "swagstar2k", initials: "SW", accent: "#8fd6a8", avatarUrl: null, avatarPreset: "lucky" },
+  { name: "megazane12", initials: "MZ", accent: "#c08dff", avatarUrl: null, avatarPreset: "diamond" },
+  { name: "epicrho_x", initials: "ER", accent: "#ff9e78", avatarUrl: null, avatarPreset: "bolt" },
+  { name: "lucasgamerx", initials: "LG", accent: "#79c9ff", avatarUrl: null, avatarPreset: "river" },
+  { name: "guest_zed", initials: "GZ", accent: "#65d6a2", avatarUrl: null, avatarPreset: "ace" },
+  { name: "static_nx", initials: "SX", accent: "#f08ca7", avatarUrl: null, avatarPreset: "crown" },
 ];
 
 /** The pool's tags alone, so a test can pin the register Kayo asked for

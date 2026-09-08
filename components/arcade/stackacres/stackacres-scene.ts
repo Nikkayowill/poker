@@ -43,7 +43,8 @@ import {
 } from "@/lib/stackacres/greenhouse";
 import { FARM_JUNCTIONS } from "@/lib/stackacres/path-junctions";
 import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter } from "@/lib/stackacres/props";
+import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter, type PropKind } from "@/lib/stackacres/props";
+import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import {
   scytheReachFor,
@@ -118,8 +119,6 @@ import {
   removeSoilTile,
   SOIL_COL_PITCH,
   SOIL_ROW_PITCH,
-  SOIL_SLOTS_PER_TILE,
-  soilFurrowOffsets,
   soilSlotPoint,
   soilTileAt,
   soilTileDiamond,
@@ -129,7 +128,6 @@ import {
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
-  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
@@ -154,6 +152,7 @@ import {
   cropShadowScaleBlend,
   cropSpriteAlpha,
   cropStageSpriteBlend,
+  type CropArt,
   type CropStage,
 } from "@/lib/stackacres/crop-visuals";
 import {
@@ -178,11 +177,29 @@ import {
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
-import { CORE_SPRITE_NAMES, CROP_SPRITE_NAMES, SPRITE_ART, spriteLoadKey } from "./stackacres-sprites";
+import {
+  CORE_SPRITE_NAMES,
+  CROP_SPRITE_NAMES,
+  spriteLoadKey,
+  spriteUrl,
+  type SpriteName,
+} from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
 import { bakeYardMatTexture } from "./art-mud";
 import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
 import { bakePondTexture } from "./art-water";
+import { bakeIrrigation, FLOW_SEG_KEY, PIPE_ARM_ANGLE } from "./art-irrigation";
+import {
+  diffPipeGrid,
+  indexPipeNodes,
+  pipeFlowFrame,
+  pipeFrameKey,
+  pipeKey,
+  pipeTileCenter,
+  WELL_TEXTURE_KEY,
+  type PipeIndex,
+  type PipeNode,
+} from "@/lib/stackacres/irrigation";
 
 /**
  * The farm as a place you look around in.
@@ -349,6 +366,16 @@ export interface StackAcresSceneCallbacks {
    */
   onRayTap: (at: TapPoint) => void;
   /**
+   * A tap that landed on one of the ten stranded visitors (see
+   * lib/stackacres/visitors.ts) -- checked right after Grandfather Ray, the
+   * same "a person wins over the structure behind them" ordering, even
+   * though none of their footprints overlap the barn's either. `kind` is the
+   * `PropKind` the scene hit, which the shell resolves back to a visitor id
+   * through `visitorForKind`; this is only the cue to show that visitor's
+   * one-line greeting, nothing more.
+   */
+  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
+  /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
    * before the locked-sector/ground fallbacks, the same "structures win over
@@ -476,6 +503,24 @@ export interface StackAcresSceneOptions {
 export const DPR = typeof window === "undefined" ? 1 : Math.min(2, window.devicePixelRatio || 1);
 
 const S = ART_SCALE;
+
+/** The crop growth frames, as a set, for the boot bake to skip and
+ *  `ensureCropArt` to own. See `create`. */
+let cropArtNames: ReadonlySet<string> | null = null;
+
+/**
+ * Built on first ask, NOT at module evaluation. This module and
+ * stackacres-sprites.ts are in an import cycle, and a `const` here that reads
+ * `CROP_SPRITE_NAMES` while that module is still evaluating gets `undefined`
+ * -- which throws inside `new Set(...)`, rejects the dynamic import the whole
+ * world is behind, and leaves the farm on its loading screen for good with
+ * nothing logged. art-kit.ts's own header has the same warning; this is that
+ * trap, and this is the shape that avoids it.
+ */
+function isCropArtName(name: PainterName): boolean {
+  cropArtNames ??= new Set(CROP_SPRITE_NAMES);
+  return cropArtNames.has(name);
+}
 
 /** Chrome colours, as the canvas needs them. Same values as 01-tokens.css.
  *  Only the three a unit's own state ring still needs -- the old
@@ -1008,6 +1053,21 @@ interface DroneNode {
   dropSprite: Phaser.GameObjects.Image | null;
 }
 
+/**
+ * One placed irrigation tile's own Phaser picture. `body` is the connector
+ * (or well) sprite, always present; `flow` is one image per set arm bit,
+ * only ever populated while `node.hydrated` -- a dry pipe or a well shows
+ * no flow at all (see `pipeFlowFrame`'s own doc comment). Kept alongside
+ * the `PipeNode` it was built from purely so `setIrrigation`'s "changed"
+ * branch can tell a mask/hydration move from a no-op without re-deriving
+ * it from the sprites themselves.
+ */
+interface PipeSceneNode {
+  node: PipeNode;
+  body: Phaser.GameObjects.Image;
+  flow: Phaser.GameObjects.Image[];
+}
+
 /** Two fingers down: zoom by the gap between them, pan by their midpoint. */
 interface PinchGesture {
   kind: "pinch";
@@ -1160,6 +1220,22 @@ export class StackAcresScene extends Phaser.Scene {
   /** Baked once in `create()`; see `bakeDroneTexture`/`bakeForageDropTexture`. */
   private droneTextureKey: string | null = null;
   private forageDropTextureKey: string | null = null;
+  /**
+   * The irrigation pipe network's own live sprites, keyed by `pipeKey(tx,
+   * ty)` -- one `Phaser.GameObjects.Image` for the connector/well body, plus
+   * one flow-segment image per set arm bit (only for a hydrated pipe tile;
+   * a well or a dry pipe carries none). `pipeIndex` is the last grid handed
+   * to `setIrrigation`, kept so the NEXT call can diff against it via
+   * `diffPipeGrid` rather than tearing the whole layer down every time --
+   * see that function's own doc comment for the added/changed/removed
+   * contract this class follows exactly.
+   */
+  private pipeNodes = new Map<string, PipeSceneNode>();
+  private pipeIndex: PipeIndex | null = null;
+  /** Mirrors `pendingDroneIds`'s own role: a `setIrrigation` call that lands
+   *  before `create()` has baked the connector textures is held here and
+   *  applied once there is a scene to build sprites into. */
+  private pendingPipeNodes: readonly PipeNode[] | null = null;
   private created = false;
   private opened = false;
   private random = seededRandom(Date.now() % 100_000);
@@ -1175,6 +1251,10 @@ export class StackAcresScene extends Phaser.Scene {
   private unbindInput: (() => void) | null = null;
   /** Wall-clock time of the last scythe swish, throttling the cue. See `mowSegment`. */
   private lastSwishAt = 0;
+  /** The "what did this tap land on" chain a real pointer-up runs, reused by
+   *  `tapAt` below -- see that method's own doc comment for why. Assigned
+   *  once, in `bindInput`, and never rebound after. */
+  private dispatchTap: (clientX: number, clientY: number) => void = () => {};
 
   private grass: Phaser.GameObjects.TileSprite | null = null;
   /** The screen-pinned wash over everything: darker corners, warm sun corner. */
@@ -1403,9 +1483,31 @@ export class StackAcresScene extends Phaser.Scene {
    *  drawn version. */
   preload(): void {
     for (const name of CORE_SPRITE_NAMES) {
-      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+      this.load.image(spriteLoadKey(name), spriteUrl(name));
     }
     this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
+  }
+
+  /**
+   * Drops the raw preloaded files, now that every one of them has been baked.
+   *
+   * A sprite is loaded once as `sprite:<name>` and then drawn into a canvas
+   * texture under its painter's own name, so past this point the load key is
+   * a second full copy of pixels that already exist next to it -- decoded, and
+   * uploaded to the GPU besides. That duplicate was a large share of what the
+   * farm was holding on a phone and nothing reads it again.
+   *
+   * The three ground pictures are the exception and keep theirs, because they
+   * are not baked once: `paintOwnedSlots` re-reads `soilSlot` on every soil
+   * change, and the lawn and the pond re-read theirs when their own art is
+   * rebuilt.
+   */
+  private releaseSpriteSources(): void {
+    for (const name of CORE_SPRITE_NAMES) {
+      if (name === "grassTile" || name === "soilSlot" || name === "waterTile") continue;
+      const key = spriteLoadKey(name);
+      if (this.textures.exists(key)) this.textures.remove(key);
+    }
   }
 
   create(): void {
@@ -1415,11 +1517,28 @@ export class StackAcresScene extends Phaser.Scene {
     // picture `toolGhost` floats over a finger mid-mow, so all of PAINTERS
     // is baked now. The image sprites are baked from what `preload`
     // fetched; everything else from its painter.
+    // The crop frames are left out and baked in `ensureCropArt` instead, for
+    // two reasons that happen to be the same change. They are 66 of the 130
+    // painters here and a crop bakes BIG (see `cropBakeScale`), so baking the
+    // lot at boot cost a phone tens of megabytes for 21 crops it is not
+    // growing. And their files no longer exist yet at this point -- they load
+    // once the Meadow is in view -- so a bake here would cache the vector
+    // fallback under the crop's own key, and `bakeSpriteTexture` returns early
+    // on a key that already exists, which left the real art with no way in.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
+      if (isCropArtName(name)) continue;
       bakeArt(this, name);
     }
     bakeGrass(this);
     bakeFarmhandTexture(this);
+    bakeIrrigation(this);
+    // `bakeGrass` above and `bakePondTexture` are the last things that read a
+    // raw preloaded file, so from here every `sprite:*` entry is a second full
+    // copy of pixels that already exist in the baked canvas beside it. On a
+    // phone that duplicate was tens of megabytes of decoded image sitting
+    // there for the whole session. `soilSlot` is the exception and is kept:
+    // `paintOwnedSlots` re-reads it on every soil change, not just at boot.
+    this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
     // The whole farm's own outer edge, in tile space -- computed once here
@@ -1548,6 +1667,11 @@ export class StackAcresScene extends Phaser.Scene {
       const droneIds = this.pendingDroneIds;
       this.pendingDroneIds = null;
       this.setDroneHangar(droneIds);
+    }
+    if (this.pendingPipeNodes !== null) {
+      const nodes = this.pendingPipeNodes;
+      this.pendingPipeNodes = null;
+      this.setIrrigation(nodes);
     }
   }
 
@@ -2124,6 +2248,18 @@ export class StackAcresScene extends Phaser.Scene {
       }
       this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
     }
+    // The ten stranded visitors (lib/stackacres/visitors.ts) -- same shadow
+    // + `put(prop.kind, ...)` mechanism as YARD_PROPS above, over its own
+    // array rather than folded into it: YARD_PROPS is the hand-placed yard
+    // cluster and its own test holds it to "about a dozen", where these are
+    // scattered across five different districts.
+    for (const prop of VISITOR_PROPS) {
+      const pool = PROP_SHADOW[prop.kind];
+      this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
+        .setScale(pool.w / 33 / S, pool.h / 13 / S)
+        .setAlpha(0.8);
+      this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+    }
   }
 
   /**
@@ -2317,6 +2453,115 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Reconciles the live irrigation layer against `nodes` -- the server's own
+   * `StackAcresView.irrigation`, recomputed by `recalculatePipeConnections`
+   * on every action that could move it. Diffs via `diffPipeGrid` rather
+   * than tearing the layer down wholesale (the same "diff and reconcile"
+   * shape `setDroneHangar` above takes for its own set, sized down to one
+   * entity per changed tile instead of the whole fleet): `added` builds a
+   * fresh `PipeSceneNode`, `changed` re-textures the one already there, and
+   * `removed` destroys it. Called by stackacres-farm.tsx every time the
+   * array's own reference changes, not on every render tick.
+   */
+  setIrrigation(nodes: readonly PipeNode[]): void {
+    if (!this.created) {
+      this.pendingPipeNodes = nodes;
+      return;
+    }
+
+    const next = indexPipeNodes(nodes);
+    const diff = diffPipeGrid(this.pipeIndex, next);
+    this.pipeIndex = next;
+
+    for (const key of diff.removed) {
+      const sceneNode = this.pipeNodes.get(key);
+      if (!sceneNode) continue;
+      sceneNode.body.destroy();
+      for (const flow of sceneNode.flow) flow.destroy();
+      this.pipeNodes.delete(key);
+    }
+    for (const node of diff.added) {
+      this.pipeNodes.set(pipeKey(node.tx, node.ty), this.spawnPipeSceneNode(node));
+    }
+    for (const node of diff.changed) {
+      const key = pipeKey(node.tx, node.ty);
+      const sceneNode = this.pipeNodes.get(key);
+      if (!sceneNode) {
+        // Cannot happen given diffPipeGrid's own contract (a "changed" node
+        // was necessarily present in the previous index), but a stale
+        // lookup here must not throw over a rendering layer -- rebuild it
+        // as if it were newly added rather than crashing the scene.
+        this.pipeNodes.set(key, this.spawnPipeSceneNode(node));
+        continue;
+      }
+      this.restylePipeSceneNode(sceneNode, node);
+    }
+  }
+
+  /** Builds one tile's connector/well body and its (initially empty) flow
+   *  arms, then styles it -- shared with the "added" and the recovery
+   *  branch of the "changed" loop above so there is exactly one place a
+   *  fresh `PipeSceneNode` is assembled. */
+  private spawnPipeSceneNode(node: PipeNode): PipeSceneNode {
+    const centre = pipeTileCenter(node.tx, node.ty);
+    const at = isoProject(centre.x, centre.y);
+    const body = this.add
+      .image(at.x, at.y, node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask))
+      .setOrigin(0.5, 0.5)
+      .setScale(1 / S)
+      .setDepth(GROW_AREA_GROUND_DEPTH);
+    const sceneNode: PipeSceneNode = { node, body, flow: [] };
+    this.restylePipeSceneNode(sceneNode, node, true);
+    return sceneNode;
+  }
+
+  /** Re-textures an existing tile's body for a moved mask/kind/hydration,
+   *  and rebuilds its flow-arm images to match which bits are now set.
+   *  `fresh` skips the "did the body texture actually change" check
+   *  `spawnPipeSceneNode` doesn't need on its own first frame. */
+  private restylePipeSceneNode(sceneNode: PipeSceneNode, node: PipeNode, fresh = false): void {
+    if (fresh || sceneNode.node.mask !== node.mask || sceneNode.node.kind !== node.kind) {
+      sceneNode.body.setTexture(node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask));
+    }
+    sceneNode.node = node;
+
+    for (const flow of sceneNode.flow) flow.destroy();
+    sceneNode.flow = [];
+    // A well sources the network but shows no flow itself (see
+    // `pipeFlowFrame`'s own doc comment) -- only a hydrated PIPE tile grows
+    // arm images, one per set bit, each anchored at the hub (origin 0, 0.5)
+    // and rotated to the arm's own screen angle so the shared strip reads
+    // as flowing outward along whichever arms this tile actually has.
+    if (node.kind !== "pipe" || !node.hydrated) return;
+    const centre = pipeTileCenter(node.tx, node.ty);
+    const at = isoProject(centre.x, centre.y);
+    for (let bit = 0; bit < 4; bit += 1) {
+      if ((node.mask & (1 << bit)) === 0) continue;
+      const flow = this.add
+        .image(at.x, at.y, FLOW_SEG_KEY, 0)
+        .setOrigin(0, 0.5)
+        .setRotation(PIPE_ARM_ANGLE[bit])
+        .setScale(1 / S)
+        .setDepth(GROW_AREA_GROUND_DEPTH + 0.1)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      sceneNode.flow.push(flow);
+    }
+  }
+
+  /** Advances every hydrated pipe's flow animation one frame -- called from
+   *  `update()`. `pipeFlowFrame` offsets each tile's phase by its own BFS
+   *  distance from the nearest well, so water reads as travelling outward
+   *  one tile at a time rather than every arm pulsing in lockstep. */
+  private updatePipeFlow(time: number): void {
+    if (this.pipeNodes.size === 0) return;
+    for (const sceneNode of this.pipeNodes.values()) {
+      const frame = pipeFlowFrame(sceneNode.node, time);
+      if (frame === null) continue;
+      for (const flow of sceneNode.flow) flow.setFrame(frame);
+    }
+  }
+
   /** One freshly deployed drone's Phaser picture, parked at the ring tile
    *  nearest the barn (Ray's Museum -- the hangar it was bought from) and
    *  ready to start patrolling on the next `update()`. */
@@ -2498,7 +2743,7 @@ export class StackAcresScene extends Phaser.Scene {
       cropShadow = this.addLocal("cropShadow", 0, 0, container)
         .setScale(cropShadowScale(crop, stage) / S)
         .setAlpha(0.8);
-      sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
+      sprite = this.addLocal(this.ensureCropArt(crop, stage), 0, 0, container);
       // Read the frame's own transparency back now, while a node is being
       // built, so a tap never pays for it. Every stage of both crops warms
       // itself the first time one is drawn; see `alphaMaskFor`.
@@ -2620,7 +2865,7 @@ export class StackAcresScene extends Phaser.Scene {
     node.unit = unit;
     node.signature = signature;
     node.stage = to;
-    node.sprite.setTexture(`${crop}${to}` as PainterName, ART_FRAME);
+    node.sprite.setTexture(this.ensureCropArt(crop, to), ART_FRAME);
     this.alphaMaskFor(node.sprite.texture.key);
     node.sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
 
@@ -2896,6 +3141,27 @@ export class StackAcresScene extends Phaser.Scene {
    * No `origin` parameter any more -- `addSoilSlot` always creates a
    * `"purchased"` bed itself, and nothing ever called this with `"starter"`.
    */
+  /**
+   * Replays a real tap's own hit-test chain (`dispatchTap` in `bindInput`)
+   * against a point that never actually reached the canvas -- CSS client
+   * coordinates, the same space a `PointerEvent` carries.
+   *
+   * Exists for the seed menu's dismissal scrim (`.sa-radial-scrim` in
+   * stackacres-farm.tsx): that scrim is a real DOM button stacked over the
+   * canvas, so its own click never reaches this scene's `pointerdown`
+   * listener -- picking a DIFFERENT patch while the menu is open used to
+   * take two taps, one that only closed the menu and a second that finally
+   * landed on the new spot. The scrim now calls this with the same click
+   * once it has closed the menu, so one tap both switches and reopens.
+   *
+   * A no-op before the scene has ever bound its input (`dispatchTap`'s
+   * default), which cannot happen in practice -- the scrim only renders
+   * once a tap has already opened the menu it dismisses.
+   */
+  tapAt(clientX: number, clientY: number): void {
+    this.dispatchTap(clientX, clientY);
+  }
+
   placeSoilAt(x: number, y: number, tier: SoilTier = SOIL_DEFAULT_TIER): boolean {
     const { tx, ty } = soilTileAt(x, y);
     const outcome = addSoilSlot(this.soil, { tx, ty }, tier);
@@ -3123,103 +3389,94 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Every placed soil tile, drawn as its own tilled diamond.
+   * Every placed soil tile's flat, unfurrowed ground (`paintAreaGround`,
+   * always `furrowed: false` now -- furrows were a whole-bed picture's own
+   * texture, and there is no whole-bed picture any more), plus one
+   * `soilSlot` picture per OWNED planting square on top of it, from
+   * `paintOwnedSlots` below.
    *
-   * One picture per bed rather than a merged outline: the beds share a fill
-   * and a rim, so two adjacent ones already read as one patch of earth with
-   * no auto-tiling -- there is no seam between them to bitmask away, only a
-   * rim, and that rim is what makes a bed the player placed legible as a
-   * bed. Merging them would cost the edge that says where the player may
-   * plant.
-   *
-   * The picture is `soilBed`, drawn at its own diamond's screen size and
-   * centred on the bed. It is NOT baked through `bakeSpriteTexture` the way
-   * every painter-backed sprite is: that path exists to pad a texture to a
-   * power of two so WebGL1 will mipmap it (see `bakeTexture`), and this
-   * source is already 512x256 -- both powers of two -- so the padding would
-   * be a no-op and the extra canvas pure cost. It is also not a painter: it
-   * has no box and no anchor, it is a picture of one specific world square.
-   *
-   * The flat fill underneath stays, and is not dead code: it draws for the
-   * frame or two before the file arrives, and forever if it never does.
-   *
-   * A BED BOUGHT ONE SQUARE AT A TIME skips all of the above until every
-   * `SOIL_SLOTS_PER_TILE` square is owned. Both the furrow lines and the
-   * whole-bed picture assume all twelve squares are tilled ground, which is
-   * not true of a bed still being filled in -- drawing either over an
-   * unbought square would show the player dirt they have not paid for. Such
-   * a bed instead gets the plain, unfurrowed fill (exactly what a full bed
-   * shows for the frame or two before its own picture loads) plus one small
-   * tilled square per owned slot, from `paintOwnedSlots` below.
+   * The flat fill under a bed still bought whole is not dead weight: with a
+   * `SOIL_SLOT_INSET` gap between squares (see `paintOwnedSlots`'s own doc),
+   * it is what shows through as the hairline grout between them, the same
+   * job it already did for a bed still being filled in one square at a
+   * time -- which is why a full bed and a partial one now go through the
+   * exact same two calls instead of a fork between them.
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const bedKey = spriteLoadKey("soilBed");
-    const bed = this.textures.exists(bedKey);
     for (const tile of orderedSoilTiles(this.soil)) {
       const rect = soilTileRect(tile.tx, tile.ty);
-      const owned = soilTileOwnedSlots(tile);
-      if (owned < SOIL_SLOTS_PER_TILE) {
-        built.push(...this.paintAreaGround(rect, "soil", false));
-        built.push(...this.paintOwnedSlots(tile, owned));
-        continue;
-      }
-      built.push(...this.paintAreaGround(rect, "soil", !bed, soilFurrowOffsets()));
-      if (!bed) continue;
-      // A square projects to a diamond twice as wide as it is tall, centred
-      // on the square's own centre -- so the picture needs no anchoring
-      // beyond that, and its size follows the bed rather than a constant.
-      const centre = isoProject(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      const picture = this.add
-        .image(centre.x, centre.y, bedKey)
-        .setDisplaySize(rect.width * 2, rect.height)
-        .setDepth(GROW_AREA_GROUND_DEPTH);
-      // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
-      // why a tint and not a plate of its own. A null tint leaves the plain
-      // bed exactly as it was, so an untiered farm is pixel-identical.
-      const tint = soilTierDef(soilTileTier(tile)).tint;
-      if (tint !== null) picture.setTint(tint);
-      built.push(picture);
+      built.push(...this.paintAreaGround(rect, "soil", false));
+      built.push(...this.paintOwnedSlots(tile, soilTileOwnedSlots(tile)));
     }
     return built;
   }
 
   /**
-   * One small tilled square per OWNED planting square in a bed that has not
-   * been bought whole -- the honest picture of "these squares are dug, that
-   * ground is not" for a bed with no per-square art of its own (there is
-   * exactly one bed-sized picture in the repo, `soilBed`, sized for a whole
-   * tilled bed -- see `paintSoilTiles`'s own note). Graphics rather than a
-   * second picture, drawn at exactly the footprint `soilSlotPoint` already
-   * centres a plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units
-   * so neighbouring squares show a hairline gap instead of touching), so a
+   * One `soilSlot` picture per OWNED planting square -- the same picture
+   * whether the bed is still being filled in one square at a time or was
+   * bought whole, at exactly the footprint `soilSlotPoint` already centres a
+   * plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units so
+   * neighbouring squares show a hairline gap instead of touching), so a
    * plant standing on square `i` always stands inside the square drawn for
    * it -- never on the edge of one or straddling two.
+   *
+   * `soilSlot` is a single planting square's own art (stackacres-sprites.ts),
+   * not baked through `bakeSpriteTexture` the way every painter-backed
+   * sprite is -- that path pads a texture to a power of two so WebGL1 will
+   * mipmap it (see `bakeTexture`), and this source is already 256x128, both
+   * powers of two, so the padding would be a no-op. It is also not a
+   * painter: it has no box and no anchor, it is a picture of one specific
+   * world square. A vector square is the fallback for the frame or two
+   * before the file arrives, and forever if it never does -- the same
+   * "flat fill first, picture once it loads" contract `paintSoilTiles`
+   * used to keep for a whole bed.
    *
    * `owned` is always in reading order starting from square 0
    * (`soilTileOwnedSlots`'s own doc comment), so this never has to ask WHICH
    * squares are owned, only how many.
    */
-  private paintOwnedSlots(tile: SoilTileCoord, owned: number): Phaser.GameObjects.GameObject[] {
+  private paintOwnedSlots(tile: SoilTile, owned: number): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const ramp = rampHex("soil");
-    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
-    built.push(g);
     const halfW = (SOIL_COL_PITCH - 2) / 2;
     const halfH = (SOIL_ROW_PITCH - 2) / 2;
+    // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
+    // why a tint and not a plate of its own. A null tint leaves every slot
+    // exactly as it was, so an untiered farm is pixel-identical.
+    const tint = soilTierDef(soilTileTier(tile)).tint;
+    const slotKey = spriteLoadKey("soilSlot");
+    const hasArt = this.textures.exists(slotKey);
+    const ramp = rampHex("soil");
+    const g = hasArt ? null : this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    if (g) built.push(g);
     for (let slot = 0; slot < owned; slot += 1) {
       const p = soilSlotPoint(tile, slot);
-      const corners = projectedCorners({ x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 });
-      g.fillStyle(ramp.top, 1);
-      g.beginPath();
-      g.moveTo(corners.n.x, corners.n.y);
-      g.lineTo(corners.e.x, corners.e.y);
-      g.lineTo(corners.s.x, corners.s.y);
-      g.lineTo(corners.w.x, corners.w.y);
-      g.closePath();
-      g.fillPath();
-      g.lineStyle(1, ramp.rim, 0.6);
-      g.strokePath();
+      const rect = { x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 };
+      if (hasArt) {
+        // Any world rect projects to an exactly-2:1 diamond (see
+        // lib/stackacres/iso.ts's `isoProject`), the same shape `soilSlot`
+        // is drawn in, so its own centre and `(width + height)`/`/2` size
+        // need no per-square anchoring beyond that.
+        const centre = isoProject(p.x, p.y);
+        const picture = this.add
+          .image(centre.x, centre.y, slotKey)
+          .setDisplaySize(rect.width + rect.height, (rect.width + rect.height) / 2)
+          .setDepth(GROW_AREA_GROUND_DEPTH);
+        if (tint !== null) picture.setTint(tint);
+        built.push(picture);
+        continue;
+      }
+      const corners = projectedCorners(rect);
+      g!.fillStyle(ramp.top, 1);
+      g!.beginPath();
+      g!.moveTo(corners.n.x, corners.n.y);
+      g!.lineTo(corners.e.x, corners.e.y);
+      g!.lineTo(corners.s.x, corners.s.y);
+      g!.lineTo(corners.w.x, corners.w.y);
+      g!.closePath();
+      g!.fillPath();
+      g!.lineStyle(1, ramp.rim, 0.6);
+      g!.strokePath();
     }
     return built;
   }
@@ -3670,18 +3927,25 @@ export class StackAcresScene extends Phaser.Scene {
         this.mowSegment(at, at);
         return;
       }
-      // Every other tap is aimed at the farm itself. A unit's own picture
-      // first -- collecting, feeding and clearing happen where the finger
-      // landed now, not in a sidebar row -- and failing that, the fenced
-      // ground of whichever district it fell in, which is an offer to seed
-      // something there. A tap in the woods still does nothing.
-      const local = { x: event.clientX - this.hostOrigin.left, y: event.clientY - this.hostOrigin.top };
-      const hit = this.unitAt(event.clientX, event.clientY);
+      // Every other tap is aimed at the farm itself, through `dispatchTap`
+      // below -- the same chain `tapAt` replays for a tap that arrived via a
+      // DOM overlay instead of the canvas (see that method's own doc).
+      this.dispatchTap(event.clientX, event.clientY);
+    };
+
+    const dispatchTap = (clientX: number, clientY: number): void => {
+      // A unit's own picture first -- collecting, feeding and clearing
+      // happen where the finger landed now, not in a sidebar row -- and
+      // failing that, the fenced ground of whichever district it fell in,
+      // which is an offer to seed something there. A tap in the woods still
+      // does nothing.
+      const local = { x: clientX - this.hostOrigin.left, y: clientY - this.hostOrigin.top };
+      const hit = this.unitAt(clientX, clientY);
       if (hit) {
         this.callbacks.onUnitTap(hit, local);
         return;
       }
-      const ground = resolveWorld(event.clientX, event.clientY);
+      const ground = resolveWorld(clientX, clientY);
       // While stepped inside the Greenhouse, every tap resolves against its
       // own six-slot sub-grid instead of the open-world chain below -- see
       // `enterGreenhouse`. Checked before anything else in this chain, since
@@ -3725,6 +3989,14 @@ export class StackAcresScene extends Phaser.Scene {
       // ordering the Pixel Pilgrim check above already documents.
       if (grandfatherRayHitAt(ground.x, ground.y)) {
         this.callbacks.onRayTap(local);
+        return;
+      }
+      // One of the ten stranded visitors -- checked right after Grandfather
+      // Ray, the same "a person wins over the structure behind them"
+      // ordering, even though none of their footprints overlap the barn's.
+      const visitorKind = visitorHitAt(ground.x, ground.y);
+      if (visitorKind) {
+        this.callbacks.onVisitorTap(visitorKind, local);
         return;
       }
       // The barn -- Ray's Museum's own entryway -- checked before the
@@ -3782,6 +4054,7 @@ export class StackAcresScene extends Phaser.Scene {
       const zone = growAreaAt(ground.x, ground.y);
       if (zone) this.callbacks.onGroundTap(zone, local, { x: ground.x, y: ground.y });
     };
+    this.dispatchTap = dispatchTap;
 
     const onUp = (event: PointerEvent): void => up(event, false);
     const onCancel = (event: PointerEvent): void => up(event, true);
@@ -4121,6 +4394,55 @@ export class StackAcresScene extends Phaser.Scene {
    * an `<img>` rather than a canvas, a context that will not open, a browser
    * that refuses the read. None of those is worth failing a tap over.
    */
+  /**
+   * Bakes a crop's growth frames if they are not baked yet, and hands the
+   * asked-for frame's name back so a draw site can wrap a texture key in it
+   * inline.
+   *
+   * Crops are the one painter family `create` does not pre-bake (its own note
+   * has why), so this is where they come from. They bake the first time a
+   * plant of that crop is drawn, which for most farms is a few of the 21
+   * rather than all of them, and they re-bake for free after `dropCropArt`
+   * throws the fallbacks away.
+   *
+   * All three stages together rather than the one being asked for, because a
+   * plant that is drawn at all will grow through the other two, and doing the
+   * family at once is what lets the raw files go straight afterwards -- the
+   * same duplicate `releaseSpriteSources` clears for everything else, which
+   * this cannot join since a crop's file does not exist at boot.
+   */
+  private ensureCropArt(crop: CropArt, stage: CropStage): PainterName {
+    const frame = `${crop}${stage}` as PainterName;
+    if (this.textures.exists(frame)) return frame;
+    for (const at of [0, 1, 2] as const) {
+      bakeArt(this, `${crop}${at}` as PainterName);
+    }
+    // Only once every frame is baked: a source dropped after the first would
+    // leave the other two stages with nothing but the vector fallback.
+    for (const at of [0, 1, 2] as const) {
+      const key = spriteLoadKey(`${crop}${at}` as SpriteName);
+      if (this.textures.exists(key)) this.textures.remove(key);
+    }
+    return frame;
+  }
+
+  /**
+   * Throws away every crop frame baked before the crop files arrived.
+   *
+   * `bakeSpriteTexture` returns early on a key it has already baked, so
+   * without this a plant drawn during the gap between boot and the Meadow
+   * coming into view would hold its vector-fallback bake for the rest of the
+   * session -- the real photo has no way past a key that already exists. The
+   * masks go with them: a mask is keyed by texture and describes the shape
+   * that was baked, and the fallback's shape is not the sprite's.
+   */
+  private dropCropArt(): void {
+    for (const name of CROP_SPRITE_NAMES) {
+      if (this.textures.exists(name)) this.textures.remove(name);
+      this.alphaMasks.delete(name);
+    }
+  }
+
   private alphaMaskFor(key: string): AlphaMask | null {
     const cached = this.alphaMasks.get(key);
     if (cached !== undefined) return cached;
@@ -4526,10 +4848,13 @@ export class StackAcresScene extends Phaser.Scene {
     if (!overlaps) return;
     this.cropTexturesState = "loading";
     for (const name of CROP_SPRITE_NAMES) {
-      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+      this.load.image(spriteLoadKey(name), spriteUrl(name));
     }
     this.load.once(Phaser.Loader.Events.COMPLETE, () => {
       this.cropTexturesState = "loaded";
+      // Anything already drawn got the vector fallback baked under the crop's
+      // own key; drop those so `ensureCropArt` bakes the real frames below.
+      this.dropCropArt();
       // Every crop unit painted so far did so against the drawn painter
       // fallback (no sprite was here yet) -- this is the same rebuild
       // `refreshSoil` already does after a soil change, reused here to swap
@@ -5361,6 +5686,7 @@ export class StackAcresScene extends Phaser.Scene {
     const frenzySnapshot = this.frenzy.sample(time);
     this.frenzyFx?.setHeat(frenzySnapshot, time);
     this.animatePond(time);
+    this.updatePipeFlow(time);
     this.walkHerds(delta);
     this.regrowMeadow();
     if (this.blades) this.blades.rotation = time * WINDMILL_SPEED;

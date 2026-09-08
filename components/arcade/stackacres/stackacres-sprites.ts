@@ -53,10 +53,10 @@
  * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
  * stone in it. They are still painters.
  *
- * `grassTile`, `soilBed` and `waterTile` are in here but are not one of
+ * `grassTile`, `soilSlot` and `waterTile` are in here but are not one of
  * these: none is a painter, none has a box or an anchor, and none is ever
  * wrapped by `spriteBacked`. They ride this module only because this list is
- * what the scene's `preload` walks, and `bakeGrass`/`paintSoilTiles`/
+ * what the scene's `preload` walks, and `bakeGrass`/`paintOwnedSlots`/
  * `bakePondTexture` want them in hand before drawing rather than a frame
  * later.
  *
@@ -95,6 +95,7 @@
  */
 
 import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import { ART_SCALE } from "./art-kit";
 
 export const SPRITE_ART = {
   cow: "/stackacres/sprites/cow.png",
@@ -250,30 +251,89 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // ONE tilled bed, not a texture -- which is what the thing it replaced
-  // (`soilTile`, a repeating furrow texture masked to the whole district's
-  // diamond) had to be back when the Crop Fields were one district-sized
-  // box. They are a lattice of 64-unit beds now (lib/stackacres/soil.ts), and
-  // a 64-unit square projects to a 128x64 screen diamond, so this is that
-  // diamond drawn whole. Drawing it whole is what lets its three furrows land
-  // exactly on `soilFurrowOffsets()` -- the lines the plants stand on -- where
-  // a repeating texture put them wherever its tile scale happened to fall.
-  soilBed: "/stackacres/sprites/soil-bed.png",
+  // ONE planting square, not a whole bed -- replaced the old `soilBed`
+  // (one picture per 64-unit bed, all twelve of its squares baked into a
+  // single furrowed diamond) so a bed bought one square at a time and a bed
+  // bought whole draw through the same picture, at the same
+  // `SOIL_COL_PITCH`x`SOIL_ROW_PITCH` footprint `paintOwnedSlots` already
+  // draws squares at. Any world rect projects to an exactly-2:1 diamond
+  // (see lib/stackacres/iso.ts's `isoProject`), which is why one 256x128
+  // picture displays correctly at a square's own screen size with no
+  // stretch, whatever that size works out to.
+  soilSlot: "/stackacres/sprites/soil-slot.png",
   // The pond's surface grain, and only the grain -- the shore, the gradient,
   // the bank shadow and the glints stay drawn (art-water.ts). Composited
   // INSIDE the water's own ellipse at low alpha, so it is texture under the
   // gradient rather than a picture of a pond.
   waterTile: "/stackacres/sprites/water-tile.png",
+  // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
+  // tappable, already-generated pixel-art PNGs standing in a flat-vector
+  // world on purpose (the "art-style shock" greeting is the whole feature).
+  // Ordinary core sprites in every other respect: `CORE_SPRITE_NAMES` below
+  // picks them up automatically since they are not crop frames.
+  visitorBleep: "/stackacres/sprites/visitor-bleep.png",
+  visitorGlimm: "/stackacres/sprites/visitor-glimm.png",
+  visitorNib: "/stackacres/sprites/visitor-nib.png",
+  visitorPixl: "/stackacres/sprites/visitor-pixl.png",
+  visitorSquee: "/stackacres/sprites/visitor-squee.png",
+  visitorDott: "/stackacres/sprites/visitor-dott.png",
+  visitorMira: "/stackacres/sprites/visitor-mira.png",
+  visitorZeph: "/stackacres/sprites/visitor-zeph.png",
+  visitorKip: "/stackacres/sprites/visitor-kip.png",
+  visitorTavo: "/stackacres/sprites/visitor-tavo.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
 
+/**
+ * Phone-only stand-ins for the handful of sprites whose desktop file is
+ * baked to ART_SCALE 8 (see art-kit.ts's own header) but only ever gets
+ * drawn into a 4-per-unit canvas on a phone. `pine`/`pine2..8` and `tree1..3`
+ * are ~800px renders that a phone bakes down to ~400px either way, so the
+ * other half of every pixel was pure decode-and-upload cost paid before a
+ * single frame drew, never sampled again. `barn` joins them for the same
+ * reason at a smaller scale. Half linear size = a quarter of the pixels,
+ * generated at exactly the phone ART_SCALE target so nothing is ever
+ * upscaled: see the identical halving these dimensions get from the desktop
+ * ones in stackacres-art.ts's `pine`/`tree1..3`/`barn` painter boxes.
+ *
+ * Everything else here stays one file for both: the rest of the roster was
+ * never oversized for its box the way these eleven were (grass/scrub/weed
+ * plates and the crop frames are already a few hundred pixels at most), so a
+ * second copy of each would only be more files to keep in sync for a saving
+ * too small to chase.
+ */
+const PHONE_SPRITE_ART: Partial<Record<SpriteName, string>> = {
+  pine: "/stackacres/sprites/pine-phone.png",
+  pine2: "/stackacres/sprites/pine2-phone.png",
+  pine3: "/stackacres/sprites/pine3-phone.png",
+  pine4: "/stackacres/sprites/pine4-phone.png",
+  pine5: "/stackacres/sprites/pine5-phone.png",
+  pine6: "/stackacres/sprites/pine6-phone.png",
+  pine7: "/stackacres/sprites/pine7-phone.png",
+  pine8: "/stackacres/sprites/pine8-phone.png",
+  tree1: "/stackacres/sprites/tree1-phone.png",
+  tree2: "/stackacres/sprites/tree2-phone.png",
+  tree3: "/stackacres/sprites/tree3-phone.png",
+  barn: "/stackacres/sprites/barn-phone.png",
+};
+
+/** The URL a name's raw file actually loads from -- the phone-sized stand-in
+ *  above when ART_SCALE says this is a phone and one exists, `SPRITE_ART`'s
+ *  own desktop path otherwise. Every load site (this module's own
+ *  `loadSprite` and the scene's `preload`) goes through this rather than
+ *  reading `SPRITE_ART` directly, so a name never has two different files
+ *  loaded under it depending on who asked. */
+export function spriteUrl(name: SpriteName): string {
+  return (ART_SCALE === 4 && PHONE_SPRITE_ART[name]) || SPRITE_ART[name];
+}
+
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the three ground pictures -- `grassTile`/`soilBed`/`waterTile` have no painter
+ *  except the three ground pictures -- `grassTile`/`soilSlot`/`waterTile` have no painter
  *  behind them (a ground tile is a texture, not a thing with a box and an
  *  anchor), so they are the names here that `spriteBacked` and
  *  `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilBed" | "waterTile">;
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilSlot" | "waterTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 
@@ -310,33 +370,42 @@ export function spriteLoadKey(name: SpriteName): string {
 }
 
 const loaded = new Map<SpriteName, HTMLImageElement>();
+const requested = new Set<SpriteName>();
 const waiting = new Set<() => void>();
-let started = false;
 
 /**
- * Starts fetching every one of them. Safe to call from anywhere and any
- * number of times; a no-op on the server and after the first call.
+ * Starts fetching ONE sprite. Safe to call from anywhere and any number of
+ * times; a no-op on the server and after the first call for that name.
+ *
+ * One at a time, and only on ask, because this cache is the DOM side of the
+ * art -- the toolbelt, the seed strip, the splash -- and those between them
+ * reach a couple of dozen painters, not all 130. It used to fetch the lot the
+ * first time anything touched it, which meant opening a panel with a gold
+ * coin in it decoded every tree, every pine and all 66 crop frames into an
+ * `HTMLImageElement` that nothing was ever going to draw, and held them for
+ * the session. On a desktop that was invisible. On a phone it was tens of
+ * megabytes next to the ones Phaser was already holding, and the farm was
+ * running out of WebView before it finished booting.
  */
-export function loadSprites(): void {
-  if (started || typeof window === "undefined" || typeof Image === "undefined") return;
-  started = true;
-  for (const name of SPRITE_NAMES) {
-    const img = new Image();
-    img.decoding = "async";
-    img.onload = () => {
-      loaded.set(name, img);
-      for (const cb of [...waiting]) cb();
-    };
-    // A sprite that fails to load is not an error worth breaking the farm
-    // over: the painter it wraps is still there and still draws.
-    img.onerror = () => {};
-    img.src = SPRITE_ART[name];
-  }
+function loadSprite(name: SpriteName): void {
+  if (requested.has(name) || typeof window === "undefined" || typeof Image === "undefined") return;
+  requested.add(name);
+  const img = new Image();
+  img.decoding = "async";
+  img.onload = () => {
+    loaded.set(name, img);
+    for (const cb of [...waiting]) cb();
+  };
+  // A sprite that fails to load is not an error worth breaking the farm
+  // over: the painter it wraps is still there and still draws.
+  img.onerror = () => {};
+  img.src = spriteUrl(name);
 }
 
-/** The decoded image, or null while it is still coming. */
+/** The decoded image, or null while it is still coming. Asking is what starts
+ *  it coming. */
 export function spriteImage(name: SpriteName): HTMLImageElement | null {
-  loadSprites();
+  loadSprite(name);
   const img = loaded.get(name);
   return img && img.complete && img.naturalWidth > 0 ? img : null;
 }
@@ -346,12 +415,17 @@ export function spriteImage(name: SpriteName): HTMLImageElement | null {
  * painted the fallback can paint again. Returns its own unsubscribe.
  */
 export function onSpriteReady(cb: () => void): () => void {
-  loadSprites();
   waiting.add(cb);
   return () => waiting.delete(cb);
 }
 
-/** True once every sprite has arrived — lets a caller stop re-subscribing. */
+/**
+ * True once every sprite anything has ASKED for has arrived -- which is what
+ * a caller subscribing to `onSpriteReady` actually wants to know, since the
+ * only sprites that will ever arrive now are the ones something requested.
+ * False before the first request, so a canvas that has not painted yet keeps
+ * listening.
+ */
 export function allSpritesReady(): boolean {
-  return SPRITE_NAMES.every((n) => spriteImage(n) !== null);
+  return requested.size > 0 && [...requested].every((n) => spriteImage(n) !== null);
 }

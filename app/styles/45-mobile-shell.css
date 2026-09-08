@@ -297,16 +297,13 @@
     gap: 9px;
   }
 
-  /* The hub tile recipe, kept identical so the shell and the desktop grid are
-     visibly the same material. */
-  .mshell-card {
-    border-radius: var(--radius-card);
-    background-color: var(--brand-ink-lift);
-    background-image:
-      linear-gradient(148deg, rgba(18, 22, 31, .95) 0%, rgba(18, 22, 31, .76) 44%, rgba(18, 22, 31, .06) 100%),
-      linear-gradient(160deg, #2c1854, #1a0f36);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 2px 10px rgba(0, 0, 0, .3);
-  }
+  /* Shape/background/shadow come from 55-ante-up-neon.css's shared card
+     recipe (.ante-lobby-card/.duel-panel/.mshell-card) now, not the desktop
+     hub's own diagonal-scrim tile art: this used to match .hub-tile so the
+     shell and the desktop grid were "visibly the same material," but that
+     just meant the Play tab's own cards (Private table, Friends, the
+     StackAcres row, the whole Profile tab) were the one thing on these four
+     tabs still on the old lobby-tile look instead of Ante Up's. */
 
   .mshell-grid {
     display: grid;
@@ -403,10 +400,15 @@
 
   /* ---- the one saturated action --------------------------------------- */
 
-  /* Same filled-yellow recipe as .floor-card .floor-play:not(:disabled)
-     (22-arcade.css) -- a flat --neon-yellow fill and --neon-ground-lift-2
-     text, not a bespoke gradient/shadow, so the app's one full-width hero CTA
-     reads as the same button as every card's own loud CTA. */
+  /* Layout only -- shape (the chamfer), the gold gradient, the glass sheen
+     and the 3D lip all come from 55-ante-up-neon.css, which lists
+     .mshell-primary alongside .puzzle-share-button/.floor-card .floor-play/
+     .duel-open in its shared "gold: the commit CTA" recipe. This used to
+     carry its own flat --neon-yellow fill with plain rounded corners --
+     recoloured to match Ante Up's gold when the app-wide button pass landed,
+     but never actually given Ante Up's chamfered shape, so the app's one
+     full-width hero CTA read as a different, flatter button next to the
+     "Ante up"/"Play" buttons it was supposed to match. */
   .mshell-primary {
     display: flex;
     align-items: center;
@@ -414,30 +416,12 @@
     gap: 8px;
     width: 100%;
     height: 52px;
-    border: 0;
-    border-radius: var(--radius-control);
-    color: var(--neon-ground-lift-2);
     font: inherit;
     font-size: 16px;
     font-weight: 750;
-    background: var(--neon-yellow);
-    box-shadow: none;
     cursor: pointer;
     touch-action: manipulation;
   }
-
-  .mshell-primary:not(:disabled):hover {
-    background: var(--neon-yellow-bright);
-    box-shadow: 0 6px 16px -4px rgba(255, 210, 63, .6);
-  }
-
-  .mshell-primary:disabled {
-    opacity: .55;
-    box-shadow: none;
-    cursor: default;
-  }
-
-  .mshell-primary:not(:disabled):active { transform: scale(.985); }
 
   /* ---- rows and tiles -------------------------------------------------- */
 
@@ -567,7 +551,11 @@
   @media (hover: hover) {
     .mshell-tile:hover,
     .mshell-row:hover {
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 2px 10px rgba(0, 0, 0, .3), var(--accent-edge);
+      box-shadow:
+        0 0 0 1px rgba(155, 63, 240, .38),
+        0 0 34px -16px rgba(155, 63, 240, .7),
+        inset 0 1px 0 rgba(255, 255, 255, .04),
+        var(--accent-edge);
     }
   }
 

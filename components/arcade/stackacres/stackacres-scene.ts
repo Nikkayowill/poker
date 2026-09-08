@@ -183,8 +183,8 @@ import {
 import {
   CORE_SPRITE_NAMES,
   CROP_SPRITE_NAMES,
-  SPRITE_ART,
   spriteLoadKey,
+  spriteUrl,
   type SpriteName,
 } from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
@@ -1439,7 +1439,7 @@ export class StackAcresScene extends Phaser.Scene {
    *  drawn version. */
   preload(): void {
     for (const name of CORE_SPRITE_NAMES) {
-      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+      this.load.image(spriteLoadKey(name), spriteUrl(name));
     }
     this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
   }
@@ -4669,7 +4669,7 @@ export class StackAcresScene extends Phaser.Scene {
     if (!overlaps) return;
     this.cropTexturesState = "loading";
     for (const name of CROP_SPRITE_NAMES) {
-      this.load.image(spriteLoadKey(name), SPRITE_ART[name]);
+      this.load.image(spriteLoadKey(name), spriteUrl(name));
     }
     this.load.once(Phaser.Loader.Events.COMPLETE, () => {
       this.cropTexturesState = "loaded";

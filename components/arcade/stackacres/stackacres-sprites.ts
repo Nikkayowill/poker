@@ -95,6 +95,7 @@
  */
 
 import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import { ART_SCALE } from "./art-kit";
 
 export const SPRITE_ART = {
   cow: "/stackacres/sprites/cow.png",
@@ -283,6 +284,49 @@ export const SPRITE_ART = {
 
 export type SpriteName = keyof typeof SPRITE_ART;
 
+/**
+ * Phone-only stand-ins for the handful of sprites whose desktop file is
+ * baked to ART_SCALE 8 (see art-kit.ts's own header) but only ever gets
+ * drawn into a 4-per-unit canvas on a phone. `pine`/`pine2..8` and `tree1..3`
+ * are ~800px renders that a phone bakes down to ~400px either way, so the
+ * other half of every pixel was pure decode-and-upload cost paid before a
+ * single frame drew, never sampled again. `barn` joins them for the same
+ * reason at a smaller scale. Half linear size = a quarter of the pixels,
+ * generated at exactly the phone ART_SCALE target so nothing is ever
+ * upscaled: see the identical halving these dimensions get from the desktop
+ * ones in stackacres-art.ts's `pine`/`tree1..3`/`barn` painter boxes.
+ *
+ * Everything else here stays one file for both: the rest of the roster was
+ * never oversized for its box the way these eleven were (grass/scrub/weed
+ * plates and the crop frames are already a few hundred pixels at most), so a
+ * second copy of each would only be more files to keep in sync for a saving
+ * too small to chase.
+ */
+const PHONE_SPRITE_ART: Partial<Record<SpriteName, string>> = {
+  pine: "/stackacres/sprites/pine-phone.png",
+  pine2: "/stackacres/sprites/pine2-phone.png",
+  pine3: "/stackacres/sprites/pine3-phone.png",
+  pine4: "/stackacres/sprites/pine4-phone.png",
+  pine5: "/stackacres/sprites/pine5-phone.png",
+  pine6: "/stackacres/sprites/pine6-phone.png",
+  pine7: "/stackacres/sprites/pine7-phone.png",
+  pine8: "/stackacres/sprites/pine8-phone.png",
+  tree1: "/stackacres/sprites/tree1-phone.png",
+  tree2: "/stackacres/sprites/tree2-phone.png",
+  tree3: "/stackacres/sprites/tree3-phone.png",
+  barn: "/stackacres/sprites/barn-phone.png",
+};
+
+/** The URL a name's raw file actually loads from -- the phone-sized stand-in
+ *  above when ART_SCALE says this is a phone and one exists, `SPRITE_ART`'s
+ *  own desktop path otherwise. Every load site (this module's own
+ *  `loadSprite` and the scene's `preload`) goes through this rather than
+ *  reading `SPRITE_ART` directly, so a name never has two different files
+ *  loaded under it depending on who asked. */
+export function spriteUrl(name: SpriteName): string {
+  return (ART_SCALE === 4 && PHONE_SPRITE_ART[name]) || SPRITE_ART[name];
+}
+
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
  *  except the three ground pictures -- `grassTile`/`soilBed`/`waterTile` have no painter
  *  behind them (a ground tile is a texture, not a thing with a box and an
@@ -354,7 +398,7 @@ function loadSprite(name: SpriteName): void {
   // A sprite that fails to load is not an error worth breaking the farm
   // over: the painter it wraps is still there and still draws.
   img.onerror = () => {};
-  img.src = SPRITE_ART[name];
+  img.src = spriteUrl(name);
 }
 
 /** The decoded image, or null while it is still coming. Asking is what starts

@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { growAreaBounds } from "@/lib/stackacres/world";
 import { SOIL_TILE, SOIL_TILE_PRICE_GOLD, soilTileAt, starterSoilTiles } from "@/lib/stackacres/soil";
 import { SOIL_BAGS_PER_PURCHASE, soilTierPrice, type SoilTier } from "@/lib/stackacres/soil-tiers";
-import { STACKACRES_CATALOGUE } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import {
+  __resetStackAcresSeedStockForTest,
+  adjustStackAcresSeedStock,
+} from "./stackacres-seed-store";
 import {
   StackAcresRequestError,
   buyStackAcresSoil,
@@ -50,6 +54,9 @@ async function sowingFarm(gold = 500_000) {
   for (const sector of SECTOR_LADDER) {
     await recordStackAcresSectorCleared(profile.id, sector, T0);
   }
+  // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
+  // inventory pass. This file's own crop-sowing tests predate that gate.
+  for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
   return token;
 }
 
@@ -67,6 +74,7 @@ beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresSoilTilesForTest();
   __resetStackAcresSoilStockForTest();
+  __resetStackAcresSeedStockForTest();
   __resetStackAcresIntentsForTest();
 });
 

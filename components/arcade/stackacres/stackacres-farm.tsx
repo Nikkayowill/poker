@@ -34,7 +34,13 @@ import {
   travelSound,
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
-import { STACKACRES_FEED, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import {
+  STACKACRES_CATALOGUE,
+  STACKACRES_CROPS,
+  STACKACRES_FEED,
+  type SeedStock,
+  type StackAcresStock,
+} from "@/lib/stackacres/catalogue";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
@@ -137,6 +143,7 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
+import { StackAcresSeedStrip } from "./stackacres-seed-strip";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
 import type { FenceTier } from "@/lib/stackacres/wildlife";
@@ -337,6 +344,9 @@ interface StackAcresResponse {
   /** Unplaced bags per tier. Absent on a response predating Ray's soil shelf,
    *  which reads as an empty barn. */
   soilStock?: SoilStock;
+  /** Unplanted crop seeds per crop id. Absent on a response predating Ray's
+   *  seed shelf, which reads as an empty shelf. */
+  seedStock?: SeedStock;
   error?: string;
   round?: StackAcresUnitSnapshot[];
   /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
@@ -549,6 +559,11 @@ export function StackAcresFarm() {
   /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
    *  so a response can replace it wholesale. */
   const [soilStock, setSoilStock] = useState<SoilStock>({});
+  /** Crop seeds bought from Ray but not planted yet -- the ownership filter
+   *  that keeps the planting strip from ever offering a crop the player
+   *  isn't carrying, see StackAcresSeedStrip. Same plain-object shape as
+   *  `soilStock` and for the same reason. */
+  const [seedStock, setSeedStock] = useState<SeedStock>({});
   /** The Mechanical Forage Drone hangar: whether it is unlocked and every
    *  drone this profile owns. Starts closed/empty, same as every other
    *  gated feature here, until the first response confirms otherwise. */
@@ -993,6 +1008,7 @@ export function StackAcresFarm() {
       setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
     }
     if (data.soilStock) setSoilStock(data.soilStock);
+    if (data.seedStock) setSeedStock(data.seedStock);
     if (data.droneHangar) setDroneHangar(data.droneHangar);
   }, []);
 
@@ -1009,6 +1025,7 @@ export function StackAcresFarm() {
       units,
       feed,
       capacity,
+      seedStock,
       toolTier,
       sectors,
       upkeep,
@@ -1028,6 +1045,7 @@ export function StackAcresFarm() {
       units,
       feed,
       capacity,
+      seedStock,
       toolTier,
       sectors,
       upkeep,
@@ -1056,6 +1074,11 @@ export function StackAcresFarm() {
       profile,
       feed,
       capacity,
+      // Unlike soilStock (never optimistically touched -- buy-soil and
+      // place-soil-tile both wait for the real response), seedStock IS
+      // guessed at by the "stock" predictor above, so a refused or dropped
+      // planting has to be able to put the spent seed back.
+      seedStock,
       exchange,
       museum,
       museumSecrets,
@@ -1076,6 +1099,7 @@ export function StackAcresFarm() {
       profile,
       feed,
       capacity,
+      seedStock,
       exchange,
       museum,
       museumSecrets,
@@ -1098,6 +1122,7 @@ export function StackAcresFarm() {
     setProfile(snap.profile);
     setFeed(snap.feed);
     setCapacity(snap.capacity);
+    setSeedStock(snap.seedStock);
     setExchange(snap.exchange);
     setMuseum(snap.museum);
     setMuseumSecrets(snap.museumSecrets);
@@ -2581,10 +2606,17 @@ export function StackAcresFarm() {
               it. Rendered after the camera controls so it stacks over them,
               and inside .sa-field so its coordinates are the ones the scene
               reported the tap in. */}
-          {radial && (
-            <StackAcresRadialMenu
+          {/* The Long Meadow gets the scrollable seed strip -- 22 crops
+              cannot lay out on a ring (see StackAcresSeedStrip's own
+              header) -- and it filters to what the shelf actually holds.
+              Every other district still gets the ring: three livestock
+              kinds fit it fine, and livestock has no seed shelf to filter
+              against (see SeedStock's own doc comment). */}
+          {radial && radial.zone === "meadow" && (
+            <StackAcresSeedStrip
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
+              seedStock={seedStock}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
               busy={
                 pendingByPrefix("stock") ||
@@ -2595,6 +2627,17 @@ export function StackAcresFarm() {
               onClose={closeRadial}
               onManage={openPanel}
               extraActions={soilExtraActions}
+            />
+          )}
+          {radial && radial.zone !== "meadow" && (
+            <StackAcresRadialMenu
+              at={radial.at}
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
+              districtLabel={STACKACRES_ZONES[radial.zone].label}
+              busy={pendingByPrefix("stock")}
+              onSeed={onRadialSeed}
+              onClose={closeRadial}
+              onManage={openPanel}
             />
           )}
 
@@ -3032,6 +3075,38 @@ export function StackAcresFarm() {
                       onClick={() => {
                         buySound();
                         void act({ action: "buy-soil", tier, quantity: 1 });
+                      }}
+                    >
+                      Buy
+                    </button>
+                    <p className="sa-sheet-note">
+                      {held} in the barn
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <StoreShelf icon="ico-carrot">Seeds</StoreShelf>
+            <p className="sa-sheet-note">
+              Every crop is bought here first — the Long Meadow only ever offers what you&apos;re
+              already carrying seed for. Buy a few, then tap bare ground out there to plant.
+            </p>
+            <div className="sa-stock-cards">
+              {STACKACRES_CROPS.map((crop) => {
+                const def = STACKACRES_CATALOGUE[crop];
+                const held = seedStock[crop] ?? 0;
+                return (
+                  <div key={crop} className="sa-stock-card">
+                    <h3>{def.label}</h3>
+                    <p className="sa-stock-yield">{def.seedCost.toLocaleString()} Gold</p>
+                    <button
+                      type="button"
+                      className="sa-cta"
+                      disabled={isPending(`buy-seed:${crop}`) || gold < def.seedCost}
+                      onClick={() => {
+                        buySound();
+                        void act({ action: "buy-seed", crop, quantity: 1 });
                       }}
                     >
                       Buy

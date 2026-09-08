@@ -2,7 +2,11 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
-import { STACKACRES_CATALOGUE } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import {
+  __resetStackAcresSeedStockForTest,
+  adjustStackAcresSeedStock,
+} from "./stackacres-seed-store";
 import { pipeKey, pipeTileAt, PIPE_NEIGHBORS } from "@/lib/stackacres/irrigation";
 import {
   PIPE_PLACE_COST,
@@ -34,6 +38,9 @@ async function funded(gold = 500_000) {
   for (const sector of SECTOR_LADDER) {
     await recordStackAcresSectorCleared(profile.id, sector, T0);
   }
+  // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
+  // inventory pass. This file's own corn-sowing helper predates that gate.
+  for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
   return { token, id: profile.id };
 }
 
@@ -68,6 +75,7 @@ async function sowCropOnKnownTile(token: string) {
 beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresPipesForTest();
+  __resetStackAcresSeedStockForTest();
   __resetStackAcresIntentsForTest();
 });
 

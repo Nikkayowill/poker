@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { STACKACRES_FEED_IDS, STACKACRES_STOCK } from "@/lib/stackacres/catalogue";
+import {
+  STACKACRES_CROPS,
+  STACKACRES_FEED_IDS,
+  STACKACRES_SEED_BAGS_PER_PURCHASE,
+  STACKACRES_STOCK,
+} from "@/lib/stackacres/catalogue";
 import { ZONE_IDS } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
@@ -47,6 +52,7 @@ import {
   buyStackAcresSoil,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
+  buyStackAcresSeed,
   prayAtStackAcresShrine,
   giveStackAcresGift,
   sealStackAcresVat,
@@ -340,6 +346,15 @@ const bodySchema = z.discriminatedUnion("action", [
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // Ray's seed shelf. SPENDS Gold (crop's own seedCost x quantity, read from
+  // STACKACRES_CATALOGUE on the server) and plants nothing; `stock` above now
+  // spends one seed off this shelf for a crop instead of charging Gold
+  // directly, so a crop's seed costs the player exactly once, here.
+  z.object({
+    action: z.literal("buy-seed"),
+    crop: z.enum(STACKACRES_CROPS),
+    quantity: z.number().int().min(1).max(STACKACRES_SEED_BAGS_PER_PURCHASE),
+  }),
   // The Pixel Pilgrim's shrine. Moves no Gold and spends no row of the
   // caller's own -- only ever sent after the dialogue's own "yes" (see
   // stackacres-monk-dialogue.tsx), never from the tap itself, so a decline
@@ -459,6 +474,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyStackAcresSoil(token, { tier: action.tier, quantity: action.quantity }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "buy-seed":
+      return buyStackAcresSeed(token, { crop: action.crop, quantity: action.quantity }, now);
     case "pray":
       return prayAtStackAcresShrine(token, now);
     case "give-gift":

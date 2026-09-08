@@ -497,6 +497,15 @@
         ],
         "createdAt": "2026-09-07T04:01:23.019Z",
         "reason": "part of the button lift+sheen system: a graduated white-alpha highlight/sheen intensity across rest/hover/active states and three material recipes (neutral/selected/gold) -- a deliberate lighting scale, not one-off drift"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "var(--sa-bounce)",
+        "files": [
+          "app/styles/52-stackacres.css"
+        ],
+        "createdAt": "2026-09-08T00:16:02.540Z",
+        "reason": "matches existing StackAcres popup motion language (.sa-radial-btn, monk dialogue) already used consistently across this file, not new drift"
       }
     ]
   }

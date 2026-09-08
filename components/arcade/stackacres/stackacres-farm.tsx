@@ -1133,6 +1133,7 @@ export function StackAcresFarm() {
     if (data.soilStock) setSoilStock(data.soilStock);
     if (data.seedStock) setSeedStock(data.seedStock);
     if (data.droneHangar) setDroneHangar(data.droneHangar);
+    if (data.blueprints) setBlueprints(data.blueprints);
   }, []);
 
   /**

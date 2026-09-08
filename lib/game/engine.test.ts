@@ -682,7 +682,7 @@ describe("bot identity", () => {
     // Personality is rolled independently of identity (see pickBotPersonality),
     // so it's no longer a fixed sequence -- just a valid archetype per seat.
     game.seats.slice(1).forEach((seat) => {
-      expect(["MANIAC", "ROCK", "CALLING_STATION"]).toContain(seat.personality);
+      expect(["MANIAC", "ROCK", "CALLING_STATION", "LAG", "NIT", "TAG"]).toContain(seat.personality);
     });
     expect(game.seats.slice(1).every((seat) => !seat.isHuman)).toBe(true);
     // Every bot seat gets a visually distinct identity (no repeats among bots).
@@ -859,6 +859,153 @@ describe("bot identity", () => {
     game.pot = 2200;
 
     expect(chooseBotAction(game, 3, () => 0.5)).toEqual({ type: "fold" });
+  });
+
+  it("barrels a prior bluff more readily than it starts a fresh one, then gives up and resets", () => {
+    // Weak trash on a river that missed it entirely: never a real value bet,
+    // so every raise this test sees is chooseBotAction's own bluff logic.
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    // Button on the bot's own seat, the deterministic way to force late
+    // position (positionAdvantage gives the button seat 1.0 in a two-seat
+    // order) without depending on nextSeat's internal traversal.
+    game.buttonPosition = 3;
+    Object.assign(game.seats[3], {
+      holeCards: cards("7c 2d"),
+      stack: 1000,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+      personality: "MANIAC",
+    });
+    game.currentPlayer = 3;
+    game.street = "river";
+    game.community = cards("Ks Qd 4h 9c 2s");
+    game.currentBet = 0;
+    game.minRaise = game.bigBlind;
+    game.pot = 200;
+
+    // Seeded rather than a constant roll: chooseBotAction draws its equity
+    // simulation and its decision roll off the same random source, and a
+    // constant function degenerates that simulation (every draw picks the
+    // same relative card, which reads as a made hand instead of the trash
+    // this test needs). Seed 9 lands a roll that clears the barrel-
+    // continuation frequency at streak 1 but not the much lower fresh-bluff
+    // frequency at streak 0, exactly the contrast this test is after.
+    game.seats[3].bluffStreak = 0;
+    const fresh = chooseBotAction(game, 3, seededRandom(9));
+    expect(fresh.type).toBe("check");
+    expect(game.seats[3].bluffStreak).toBe(0);
+
+    // Same exact spot, but this bot already fired the flop and turn as a
+    // bluff this hand: barrelFrequency at streak 1 (32%) clears where the
+    // 5% fresh-bluff frequency didn't, and the streak should extend to 2.
+    game.seats[3].bluffStreak = 1;
+    const barrel = chooseBotAction(game, 3, seededRandom(9));
+    expect(barrel.type).toBe("raise");
+    expect(game.seats[3].bluffStreak).toBe(2);
+
+    // Seed 2 lands a roll that clears neither frequency: even mid-streak,
+    // that gives up the line instead of firing another street on nothing,
+    // and the streak resets -- the same "stop bluffing once it stops
+    // paying off" shape a real player's barrel gives up with.
+    game.seats[3].bluffStreak = 1;
+    const givesUp = chooseBotAction(game, 3, seededRandom(2));
+    expect(givesUp.type).toBe("check");
+    expect(game.seats[3].bluffStreak).toBe(0);
+  });
+
+  it("bluffs more readily against a human read who folds a lot to raises", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    game.seats[0].isHuman = true;
+    game.seats[0].ownerToken = "read-token";
+    game.buttonPosition = 3;
+    Object.assign(game.seats[3], {
+      holeCards: cards("7c 2d"),
+      stack: 1000,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+      bluffStreak: 0,
+      personality: "MANIAC",
+    });
+    game.currentPlayer = 3;
+    game.street = "river";
+    game.community = cards("Ks Qd 4h 9c 2s");
+    game.currentBet = 0;
+    game.minRaise = game.bigBlind;
+    game.pot = 200;
+
+    // Seed 30, same reasoning as the barrel test above: a real (seeded, not
+    // constant) equity simulation, at a roll that clears the read-adjusted
+    // bluff frequency but not the unadjusted one.
+    expect(chooseBotAction(game, 3, seededRandom(30)).type).toBe("check");
+
+    // Folded 8 of the last 10 raises they faced: readTilt pushes the
+    // adaptive bluff frequency from 5% to 14%, which the same seed's roll
+    // now clears where it didn't a moment ago.
+    game.opponentReads = {
+      "read-token": { hands: 20, vpipHands: 6, raisesFaced: 10, foldsToRaise: 8 },
+    };
+    expect(chooseBotAction(game, 3, seededRandom(30)).type).toBe("raise");
+  });
+
+  it("only trusts an opponent read once the raise sample clears the floor", () => {
+    const game = createGame(crypto.randomUUID(), "Host");
+    game.seats.forEach((seat, index) => {
+      seat.status = index === 0 || index === 3 ? "active" : "folded";
+    });
+    game.seats[0].isHuman = true;
+    game.seats[0].ownerToken = "thin-read-token";
+    game.buttonPosition = 3;
+    Object.assign(game.seats[3], {
+      holeCards: cards("7c 2d"),
+      stack: 1000,
+      streetBet: 0,
+      committed: 0,
+      acted: false,
+      actedAtBet: null,
+      bluffStreak: 0,
+      personality: "MANIAC",
+    });
+    game.currentPlayer = 3;
+    game.street = "river";
+    game.community = cards("Ks Qd 4h 9c 2s");
+    game.currentBet = 0;
+    game.minRaise = game.bigBlind;
+    game.pot = 200;
+    // Same 100% fold-to-raise rate as the test above, but only 3 raises
+    // faced -- below the 6-raise floor `chooseBotAction` requires before it
+    // trusts a read at all.
+    game.opponentReads = {
+      "thin-read-token": { hands: 5, vpipHands: 2, raisesFaced: 3, foldsToRaise: 3 },
+    };
+
+    expect(chooseBotAction(game, 3, seededRandom(30)).type).toBe("check");
+  });
+
+  it("prunes an opponent read once nobody at the table is wearing that token any more", () => {
+    const hostToken = crypto.randomUUID();
+    let game = createGame(hostToken, "Host");
+    // A leftover read for someone no longer seated anywhere -- the shape a
+    // player who left the table for good would leave behind.
+    game.opponentReads = {
+      [hostToken]: { hands: 10, vpipHands: 4, raisesFaced: 6, foldsToRaise: 3 },
+      "long-gone-token": { hands: 40, vpipHands: 20, raisesFaced: 15, foldsToRaise: 9 },
+    };
+    game.status = "complete";
+
+    game = applyPlayerAction(game, { type: "next-hand" }, hostToken);
+
+    expect(game.opponentReads?.[hostToken]).toBeDefined();
+    expect(game.opponentReads?.["long-gone-token"]).toBeUndefined();
   });
 });
 
@@ -1066,7 +1213,7 @@ describe("giving up a seat", () => {
     expect(restored.ownerToken).toBeNull();
     expect(restored.botIdentity).not.toBeNull();
     expect(restored.name).toBeTruthy();
-    expect(["MANIAC", "ROCK", "CALLING_STATION"]).toContain(restored.personality);
+    expect(["MANIAC", "ROCK", "CALLING_STATION", "LAG", "NIT", "TAG"]).toContain(restored.personality);
 
     game = vacateSeat(game, hostToken).state;
     expect(game.seats[0].isHuman).toBe(false);

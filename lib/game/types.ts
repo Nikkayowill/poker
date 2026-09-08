@@ -22,7 +22,7 @@ export type SeatStatus = "active" | "folded" | "all-in" | "out";
  * those guards.
  */
 export type GameStatus = "playing" | "complete" | "archived";
-export type BotPersonality = "MANIAC" | "ROCK" | "CALLING_STATION";
+export type BotPersonality = "MANIAC" | "ROCK" | "CALLING_STATION" | "LAG" | "NIT" | "TAG";
 
 export interface Seat {
   id: string;
@@ -142,6 +142,55 @@ export interface Seat {
    * the seat renders exactly like any other `"out"` seat in the meantime.
    */
   reseatEligibleAt: string | null;
+  /**
+   * Consecutive streets, this hand, that this bot has bet or raised with a
+   * hand chooseBotAction classified as a bluff rather than real equity.
+   * Zero for a human seat and for a bot that isn't mid-bluff.
+   *
+   * Lets a bot "remember" it fired the flop as air and lean into barreling
+   * the turn/river instead of every street rolling the bluff dice fresh --
+   * the same continuation-betting story a real bluffer tells. Reset to 0 at
+   * the top of every hand (setupHand) and the moment the bot gives up the
+   * line (checks, folds, or bets for genuine value instead). Optional so
+   * every existing Seat literal and persisted table keeps compiling and
+   * reads as "not bluffing" with no explicit backfill needed.
+   */
+  bluffStreak?: number;
+}
+
+/**
+ * A running read on one human across the hands they've played at this table,
+ * keyed by `ownerToken` (not `profileId`, so it also covers guests, and
+ * naturally resets if they leave and a different person takes the seat).
+ *
+ * Session-scoped and best-effort: it lives only inside this table's
+ * `GameState`, same as everything else here, and is never persisted
+ * separately or shared across tables. `chooseBotAction` reads it to nudge
+ * bluff frequency and value-bet sizing against a specific opponent once the
+ * sample is big enough to mean something; see `raisesFaced`'s own note for
+ * the threshold this is gated behind.
+ *
+ * `setupHand` prunes any entry whose token isn't seated anywhere at the
+ * table any more at the top of every hand, so this map never outlives the
+ * humans it describes -- a cash table that runs for months and sees many
+ * different players through it stays bounded at the seat count rather than
+ * growing by one entry per lifetime visitor.
+ */
+export interface OpponentRead {
+  /** Hands this player was dealt into, counted once each at the next deal. */
+  hands: number;
+  /** Of those, hands where they voluntarily put chips in preflop (their session VPIP numerator). */
+  vpipHands: number;
+  /**
+   * Times this player faced a real raise (not just the blind) and had to
+   * decide whether to continue. `chooseBotAction` only trusts the
+   * `foldsToRaise / raisesFaced` ratio once this clears a small floor --
+   * see its own `hasReliableRead` gate -- so an early session, or a player
+   * who has barely been raised, reads as no opinion rather than a wild one.
+   */
+  raisesFaced: number;
+  /** Of those, hands where they folded rather than call or raise. */
+  foldsToRaise: number;
 }
 
 /**
@@ -254,6 +303,13 @@ export interface GameState {
   updatedAt: string;
   /** Non-null exactly for a Sit & Go or heads-up table; see TournamentState. */
   tournament: TournamentState | null;
+  /**
+   * Per-human bot reads, keyed by `ownerToken`. Optional so every existing
+   * `GameState` literal and persisted table keeps compiling/loading; treat
+   * a missing entry as "no read yet" rather than backfilling an empty
+   * object onto every table that will never use it. See `OpponentRead`.
+   */
+  opponentReads?: Record<string, OpponentRead>;
 }
 
 export type PlayerAction =

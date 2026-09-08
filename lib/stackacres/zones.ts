@@ -164,12 +164,12 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "farmstead",
     label: "The Farmstead",
     blurb: "Home base -- the barn, the pond and the yard.",
-    bounds: { x: -716, y: -235, width: 420, height: 470 },
+    bounds: { x: -740, y: 356, width: 420, height: 470 },
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.
     swatchColor: 0x86c96e,
-    approach: { x: -512, y: -1 },
+    approach: { x: -536, y: 590 },
   },
 
   // North of the farm, first stop off the ring road. The Hen Coops, which
@@ -180,12 +180,13 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "henhaven",
     label: "Hen Haven",
     blurb: "Straw, low fences, and every Hen Coop you keep.",
-    // Same 240 square the 2026-09-07 re-lay sized it at (see that pass's own
-    // note on why 240 and not 200); only its position moved in the
-    // 2026-09-08 restructure, pulled south-east onto the tightened ring.
-    bounds: { x: -628, y: -515, width: 240, height: 240 },
+    // 240 rather than 200: at 200 the verge around its 128-unit grow area is
+    // 32 units, narrower than a spur's own body plus clearance, and there was
+    // literally nowhere to put the gate. The widening keeps the smallest
+    // inter-district gap on the map at 36.
+    bounds: { x: -628, y: -308, width: 240, height: 240 },
     swatchColor: 0xe0c96a,
-    approach: { x: -418, y: -315 },
+    approach: { x: -418, y: -132 },
   },
 
   // The middle of the map and the biggest district on it: the open field the
@@ -197,15 +198,12 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "meadow",
     label: "The Grand Farm",
     blurb: "The great open field, and every bed you have tilled in it.",
-    // Same 512 square as the 2026-09-07 re-lay; the 2026-09-08 restructure
-    // moved it to the centre of the map -- every other district now sits on
-    // a tightened ring around it, which is what actually shortened the road.
-    bounds: { x: -256, y: -256, width: 512, height: 512 },
+    bounds: { x: -192, y: -320, width: 512, height: 512 },
     swatchColor: 0x8fce66,
     // The field's north-west gate, not its centre: arriving at the gate and
     // seeing the field laid out beyond it reads as a place, where landing in
     // the dead middle reads as a teleport.
-    approach: { x: -222, y: -198 },
+    approach: { x: -158, y: -262 },
   },
 
   // South-west of the field, between the farm and Town Square. Heavy,
@@ -214,9 +212,9 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "oxfields",
     label: "Cattle Pasture",
     blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
-    bounds: { x: -628, y: 275, width: 300, height: 300 },
+    bounds: { x: -256, y: 320, width: 300, height: 300 },
     swatchColor: 0x7a5a34,
-    approach: { x: -360, y: 520 },
+    approach: { x: -230, y: 526 },
   },
 
   // East of the field. Wet, low and shaded: the mud wallow, a shade canopy,
@@ -232,9 +230,9 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "wallow",
     label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
-    bounds: { x: 296, y: -235, width: 220, height: 220 },
+    bounds: { x: 356, y: -360, width: 220, height: 220 },
     swatchColor: 0x54402c,
-    approach: { x: 310, y: -50 },
+    approach: { x: 562, y: -282 },
   },
 
   /* ---------------------------------------------------------------- */

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import clsx from "clsx";
 import { paintIcon, type PainterName } from "./stackacres-art";
-import { allSpritesReady, onSpriteReady } from "./stackacres-sprites";
+import { isSpriteName, onSpriteReady, spriteImage } from "./stackacres-sprites";
 
 /**
  * One of the StackAcres's vector painters, drawn into a small DOM canvas.
@@ -34,11 +34,16 @@ export function StackAcresIcon({ name, size = 24, className }: StackAcresIconPro
     const canvas = ref.current;
     if (!canvas) return;
     paintIcon(canvas, name, size);
-    // Four of the painters draw an image once it has arrived (the seed strip
-    // reaches two of them, `cow` and `hen`), so paint again when it does --
-    // otherwise the strip keeps the drawn cow while the world shows the
-    // generated one, which is exactly the kind of mismatch that gets noticed.
-    if (allSpritesReady()) return;
+    // Some of the painters draw an image once it has arrived (the seed strip
+    // reaches `cow` and `hen`), so paint again when it does -- otherwise the
+    // strip keeps the drawn cow while the world shows the generated one,
+    // which is exactly the kind of mismatch that gets noticed.
+    //
+    // Only for a painter that HAS a sprite, and only until that one sprite
+    // lands. An `ico-` badge is drawn shapes the whole way down and has
+    // nothing to wait for; subscribing it to every sprite in the game is what
+    // used to drag the entire image cache into memory behind a gold coin.
+    if (!isSpriteName(name) || spriteImage(name)) return;
     return onSpriteReady(() => paintIcon(canvas, name, size));
   }, [name, size]);
 

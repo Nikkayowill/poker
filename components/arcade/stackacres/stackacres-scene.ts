@@ -154,6 +154,7 @@ import {
   cropShadowScaleBlend,
   cropSpriteAlpha,
   cropStageSpriteBlend,
+  type CropArt,
   type CropStage,
 } from "@/lib/stackacres/crop-visuals";
 import {
@@ -178,7 +179,13 @@ import {
   bakeVignette,
   type PainterName,
 } from "./stackacres-art";
-import { CORE_SPRITE_NAMES, CROP_SPRITE_NAMES, SPRITE_ART, spriteLoadKey } from "./stackacres-sprites";
+import {
+  CORE_SPRITE_NAMES,
+  CROP_SPRITE_NAMES,
+  SPRITE_ART,
+  spriteLoadKey,
+  type SpriteName,
+} from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
 import { bakeYardMatTexture } from "./art-mud";
 import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
@@ -476,6 +483,24 @@ export interface StackAcresSceneOptions {
 export const DPR = typeof window === "undefined" ? 1 : Math.min(2, window.devicePixelRatio || 1);
 
 const S = ART_SCALE;
+
+/** The crop growth frames, as a set, for the boot bake to skip and
+ *  `ensureCropArt` to own. See `create`. */
+let cropArtNames: ReadonlySet<string> | null = null;
+
+/**
+ * Built on first ask, NOT at module evaluation. This module and
+ * stackacres-sprites.ts are in an import cycle, and a `const` here that reads
+ * `CROP_SPRITE_NAMES` while that module is still evaluating gets `undefined`
+ * -- which throws inside `new Set(...)`, rejects the dynamic import the whole
+ * world is behind, and leaves the farm on its loading screen for good with
+ * nothing logged. art-kit.ts's own header has the same warning; this is that
+ * trap, and this is the shape that avoids it.
+ */
+function isCropArtName(name: PainterName): boolean {
+  cropArtNames ??= new Set(CROP_SPRITE_NAMES);
+  return cropArtNames.has(name);
+}
 
 /** Chrome colours, as the canvas needs them. Same values as 01-tokens.css.
  *  Only the three a unit's own state ring still needs -- the old
@@ -1408,6 +1433,28 @@ export class StackAcresScene extends Phaser.Scene {
     this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
   }
 
+  /**
+   * Drops the raw preloaded files, now that every one of them has been baked.
+   *
+   * A sprite is loaded once as `sprite:<name>` and then drawn into a canvas
+   * texture under its painter's own name, so past this point the load key is
+   * a second full copy of pixels that already exist next to it -- decoded, and
+   * uploaded to the GPU besides. That duplicate was a large share of what the
+   * farm was holding on a phone and nothing reads it again.
+   *
+   * The three ground pictures are the exception and keep theirs, because they
+   * are not baked once: `paintSoilTiles` re-reads `soilBed` on every soil
+   * change, and the lawn and the pond re-read theirs when their own art is
+   * rebuilt.
+   */
+  private releaseSpriteSources(): void {
+    for (const name of CORE_SPRITE_NAMES) {
+      if (name === "grassTile" || name === "soilBed" || name === "waterTile") continue;
+      const key = spriteLoadKey(name);
+      if (this.textures.exists(key)) this.textures.remove(key);
+    }
+  }
+
   create(): void {
     // Every texture is drawn here, at boot. Most icons are still painted
     // straight into DOM canvases by stackacres-icon.tsx and never need a
@@ -1415,11 +1462,27 @@ export class StackAcresScene extends Phaser.Scene {
     // picture `toolGhost` floats over a finger mid-mow, so all of PAINTERS
     // is baked now. The image sprites are baked from what `preload`
     // fetched; everything else from its painter.
+    // The crop frames are left out and baked in `ensureCropArt` instead, for
+    // two reasons that happen to be the same change. They are 66 of the 130
+    // painters here and a crop bakes BIG (see `cropBakeScale`), so baking the
+    // lot at boot cost a phone tens of megabytes for 21 crops it is not
+    // growing. And their files no longer exist yet at this point -- they load
+    // once the Meadow is in view -- so a bake here would cache the vector
+    // fallback under the crop's own key, and `bakeSpriteTexture` returns early
+    // on a key that already exists, which left the real art with no way in.
     for (const name of Object.keys(PAINTERS) as PainterName[]) {
+      if (isCropArtName(name)) continue;
       bakeArt(this, name);
     }
     bakeGrass(this);
     bakeFarmhandTexture(this);
+    // `bakeGrass` above and `bakePondTexture` are the last things that read a
+    // raw preloaded file, so from here every `sprite:*` entry is a second full
+    // copy of pixels that already exist in the baked canvas beside it. On a
+    // phone that duplicate was tens of megabytes of decoded image sitting
+    // there for the whole session. `soilBed` is the exception and is kept:
+    // `paintSoilTiles` re-reads it on every soil change, not just at boot.
+    this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
     // The whole farm's own outer edge, in tile space -- computed once here
@@ -2498,7 +2561,7 @@ export class StackAcresScene extends Phaser.Scene {
       cropShadow = this.addLocal("cropShadow", 0, 0, container)
         .setScale(cropShadowScale(crop, stage) / S)
         .setAlpha(0.8);
-      sprite = this.addLocal(`${crop}${stage}` as PainterName, 0, 0, container);
+      sprite = this.addLocal(this.ensureCropArt(crop, stage), 0, 0, container);
       // Read the frame's own transparency back now, while a node is being
       // built, so a tap never pays for it. Every stage of both crops warms
       // itself the first time one is drawn; see `alphaMaskFor`.
@@ -2620,7 +2683,7 @@ export class StackAcresScene extends Phaser.Scene {
     node.unit = unit;
     node.signature = signature;
     node.stage = to;
-    node.sprite.setTexture(`${crop}${to}` as PainterName, ART_FRAME);
+    node.sprite.setTexture(this.ensureCropArt(crop, to), ART_FRAME);
     this.alphaMaskFor(node.sprite.texture.key);
     node.sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
 
@@ -4121,6 +4184,55 @@ export class StackAcresScene extends Phaser.Scene {
    * an `<img>` rather than a canvas, a context that will not open, a browser
    * that refuses the read. None of those is worth failing a tap over.
    */
+  /**
+   * Bakes a crop's growth frames if they are not baked yet, and hands the
+   * asked-for frame's name back so a draw site can wrap a texture key in it
+   * inline.
+   *
+   * Crops are the one painter family `create` does not pre-bake (its own note
+   * has why), so this is where they come from. They bake the first time a
+   * plant of that crop is drawn, which for most farms is a few of the 21
+   * rather than all of them, and they re-bake for free after `dropCropArt`
+   * throws the fallbacks away.
+   *
+   * All three stages together rather than the one being asked for, because a
+   * plant that is drawn at all will grow through the other two, and doing the
+   * family at once is what lets the raw files go straight afterwards -- the
+   * same duplicate `releaseSpriteSources` clears for everything else, which
+   * this cannot join since a crop's file does not exist at boot.
+   */
+  private ensureCropArt(crop: CropArt, stage: CropStage): PainterName {
+    const frame = `${crop}${stage}` as PainterName;
+    if (this.textures.exists(frame)) return frame;
+    for (const at of [0, 1, 2] as const) {
+      bakeArt(this, `${crop}${at}` as PainterName);
+    }
+    // Only once every frame is baked: a source dropped after the first would
+    // leave the other two stages with nothing but the vector fallback.
+    for (const at of [0, 1, 2] as const) {
+      const key = spriteLoadKey(`${crop}${at}` as SpriteName);
+      if (this.textures.exists(key)) this.textures.remove(key);
+    }
+    return frame;
+  }
+
+  /**
+   * Throws away every crop frame baked before the crop files arrived.
+   *
+   * `bakeSpriteTexture` returns early on a key it has already baked, so
+   * without this a plant drawn during the gap between boot and the Meadow
+   * coming into view would hold its vector-fallback bake for the rest of the
+   * session -- the real photo has no way past a key that already exists. The
+   * masks go with them: a mask is keyed by texture and describes the shape
+   * that was baked, and the fallback's shape is not the sprite's.
+   */
+  private dropCropArt(): void {
+    for (const name of CROP_SPRITE_NAMES) {
+      if (this.textures.exists(name)) this.textures.remove(name);
+      this.alphaMasks.delete(name);
+    }
+  }
+
   private alphaMaskFor(key: string): AlphaMask | null {
     const cached = this.alphaMasks.get(key);
     if (cached !== undefined) return cached;
@@ -4530,6 +4642,9 @@ export class StackAcresScene extends Phaser.Scene {
     }
     this.load.once(Phaser.Loader.Events.COMPLETE, () => {
       this.cropTexturesState = "loaded";
+      // Anything already drawn got the vector fallback baked under the crop's
+      // own key; drop those so `ensureCropArt` bakes the real frames below.
+      this.dropCropArt();
       // Every crop unit painted so far did so against the drawn painter
       // fallback (no sprite was here yet) -- this is the same rebuild
       // `refreshSoil` already does after a soil change, reused here to swap

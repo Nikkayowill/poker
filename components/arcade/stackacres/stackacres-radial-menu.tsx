@@ -135,6 +135,20 @@ export function StackAcresRadialMenu({
   // reads as a bolted-on afterthought.
   const slotCount = options.length + extraActions.length;
 
+  // Past this many, the fixed 100-degree arc has no room left between
+  // buttons and they render almost fully stacked on each other -- the exact
+  // failure the Long Meadow hit at 22 crops (see StackAcresSeedStrip's own
+  // header) and the Farmstead hit again the same way once it inherited the
+  // Crop Fields. A caller with that many options belongs on the seed strip,
+  // not here -- this is a loud dev-only signal so that mistake is caught at
+  // the call site instead of shipping as a pile of unreadable buttons.
+  if (process.env.NODE_ENV !== "production" && slotCount > 6) {
+    console.warn(
+      `StackAcresRadialMenu: ${slotCount} options for "${districtLabel}" won't fit the ring's fixed arc. ` +
+        "Use StackAcresSeedStrip (or otherwise cut this list down) instead.",
+    );
+  }
+
   useEffect(() => {
     // Deferred a tick for the same reason stackacres-farm.tsx defers its own
     // localStorage read: focusing synchronously in an effect body fights

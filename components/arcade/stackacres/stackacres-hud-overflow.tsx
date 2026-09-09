@@ -5,8 +5,12 @@ import clsx from "clsx";
 import { MoreHorizontal } from "lucide-react";
 
 /**
- * The HUD's overflow drawer, phone widths only (`usePhoneViewport`, the same
- * <=600px breakpoint the mobile lobby shell already turns on at).
+ * The HUD's overflow drawer, gated on `compactNav` (`useTightLandscape`,
+ * <=500px landscape *height*) in stackacres-farm.tsx -- not a width check.
+ * The farm only ever renders in landscape, where every phone's width is
+ * 700px+, so a width breakpoint (what shipped first) never actually fires;
+ * height is what separates a phone on its side from a tablet or a desktop
+ * window here.
  *
  * Gold and land-upkeep-owed stay in `.sa-hud` itself -- what a player needs
  * every glance -- while Feed, the Synergy badge, the Prestige badge, the

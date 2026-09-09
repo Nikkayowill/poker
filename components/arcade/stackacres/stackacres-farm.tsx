@@ -20,7 +20,6 @@ import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
-import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { useTightLandscape } from "@/components/use-tight-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
@@ -869,13 +868,10 @@ export function StackAcresFarm() {
   const landscape = useLandscape();
   // A short landscape phone collapses the signpost rail into the compass
   // quick-nav (stackacres-destinations.tsx) and hands the map the screen it
-  // used to cover (`viewExpansion`).
+  // used to cover (`viewExpansion`). Also doubles as the HUD's own overflow
+  // trigger below -- see that comment for why a width breakpoint doesn't
+  // work here.
   const compactNav = useTightLandscape();
-  // Same <=600px breakpoint the mobile lobby shell already turns on at. Below
-  // it the HUD's secondary badges (Feed, Synergy, Prestige, Forge, music)
-  // move behind StackAcresHudOverflow's own "More" button instead of all six
-  // pills fighting a phone's width at once.
-  const phoneHud = usePhoneViewport();
   /**
    * No `useArcadeSound` here any more.
    *
@@ -2814,8 +2810,8 @@ export function StackAcresFarm() {
 
   // Everything in .sa-hud besides Gold and the upkeep-owed pill -- see the
   // header's own comment for why this is one fragment referenced from either
-  // the inline row (desktop) or StackAcresHudOverflow's drawer (phoneHud),
-  // never both.
+  // the inline row (desktop/tablet landscape) or StackAcresHudOverflow's
+  // drawer (compactNav), never both.
   const secondaryHud = (
     <>
       <span className="sa-feed" title="Feed servings">
@@ -2873,14 +2869,22 @@ export function StackAcresFarm() {
             the rest of the app already shows is the whole story, and it keeps
             its usual place at the end of the row.
 
-            Below the phoneHud breakpoint, everything past Gold/upkeep moves
-            into StackAcresHudOverflow's own "More" drawer instead of laying
-            out inline -- six-plus pills was the actual complaint, not any one
-            pill's size. `secondaryHud` is declared once and referenced from
-            whichever branch is live, never both at once, so nothing here
-            mounts twice. */}
+            Below the compactNav tier, everything past Gold/upkeep moves into
+            StackAcresHudOverflow's own "More" drawer instead of laying out
+            inline -- six-plus pills was the actual complaint, not any one
+            pill's size. This is gated on `compactNav` (a landscape-phone
+            *height* under 500px) rather than a width breakpoint: the farm
+            never renders outside landscape (see the orientation gate above),
+            and every phone's width in landscape is 700px+ -- comfortably past
+            any width breakpoint that would ever fire, which is why the first
+            pass of this (`usePhoneViewport`, a portrait-width check borrowed
+            from the lobby shell) never actually collapsed anything. Height is
+            what actually separates a phone on its side from a tablet or a
+            desktop window here. `secondaryHud` is declared once and
+            referenced from whichever branch is live, never both at once, so
+            nothing here mounts twice. */}
         <div className="sa-hud">
-          {!phoneHud && secondaryHud}
+          {!compactNav && secondaryHud}
           {/* Only when something is actually owed. A land fee of zero is the
               normal state for a small farm, and a permanent "0" in the HUD
               would be a bill where there is no bill. */}
@@ -2902,7 +2906,7 @@ export function StackAcresFarm() {
                 fully funded account. */}
             <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
           </span>
-          {phoneHud && <StackAcresHudOverflow>{secondaryHud}</StackAcresHudOverflow>}
+          {compactNav && <StackAcresHudOverflow>{secondaryHud}</StackAcresHudOverflow>}
         </div>
       </header>
 

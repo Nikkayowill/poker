@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
+import { cropSpot, CROP_FIELD_BEDS, stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
@@ -18,6 +18,7 @@ import {
 } from "./stackacres-service";
 import {
   __resetStackAcresForTest,
+  recordStackAcresCropFieldsUnlocked,
   recordStackAcresSectorCleared,
 } from "./stackacres-store";
 import { __resetStackAcresPipesForTest } from "./stackacres-pipe-store";
@@ -38,6 +39,9 @@ async function funded(gold = 500_000) {
   for (const sector of SECTOR_LADDER) {
     await recordStackAcresSectorCleared(profile.id, sector, T0);
   }
+  // Corn is zoned to the Farmstead now (2026-09-08 district merge) and its
+  // real gate is the standalone Crop Fields unlock, not a sector.
+  await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
   // inventory pass. This file's own corn-sowing helper predates that gate.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
@@ -63,7 +67,7 @@ async function sowCropOnKnownTile(token: string) {
   const view = await stockStackAcres(token, { stock: "corn" }, T0);
   const unit = view.units.filter((u) => u.stock === "corn").at(-1);
   if (!unit) throw new Error("no corn unit");
-  const soil = createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), view.soilTiles));
+  const soil = createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, view.soilTiles));
   const spot = cropSpot(stockZone("corn"), unit.id, {
     soil,
     rank: 0,

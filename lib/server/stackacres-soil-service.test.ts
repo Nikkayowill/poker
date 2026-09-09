@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { growAreaBounds } from "@/lib/stackacres/world";
+import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
 import {
   SOIL_SLOTS_PER_TILE,
   SOIL_TILE,
@@ -23,7 +23,10 @@ import {
   removeStackAcresSoilTile,
   stockStackAcres,
 } from "./stackacres-service";
-import { __resetStackAcresForTest } from "./stackacres-store";
+import {
+  __resetStackAcresForTest,
+  recordStackAcresCropFieldsUnlocked,
+} from "./stackacres-store";
 import {
   __resetStackAcresSoilStockForTest,
   __resetStackAcresSoilTilesForTest,
@@ -41,6 +44,10 @@ async function funded(gold = 500_000) {
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
   if (delta !== 0) await adjustGold(profile.id, delta);
+  // The Crop Fields' own bed-tiling and crop-stocking routes are gated on the
+  // standalone unlock now (lib/stackacres/crop-fields.ts) -- this file's own
+  // tests all predate that gate and assume a farm ready to till/sow.
+  await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   return token;
 }
 
@@ -60,16 +67,19 @@ async function sowingFarm(gold = 500_000) {
   for (const sector of SECTOR_LADDER) {
     await recordStackAcresSectorCleared(profile.id, sector, T0);
   }
+  await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
   // inventory pass. This file's own crop-sowing tests predate that gate.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
   return token;
 }
 
-/** A tile comfortably inside the Long Meadow's own Crop Fields. */
-function meadowTile(offset = 0) {
-  const area = growAreaBounds("meadow");
-  const centre = soilTileAt(area.x + area.width / 2, area.y + area.height / 2);
+/** A tile comfortably inside the Crop Fields. */
+function cropFieldTile(offset = 0) {
+  const centre = soilTileAt(
+    CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
+    CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
+  );
   return { tx: centre.tx + offset, ty: centre.ty };
 }
 
@@ -96,7 +106,7 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
   it("lays a bed, takes one bag off the shelf, and moves no Gold", async () => {
     const token = await stocked("dirt", 2);
     const start = await balance(token);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
 
     const view = await placeStackAcresSoilTile(token, { tx, ty }, T0);
 
@@ -110,7 +120,7 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
 
   it("grows the same bed by one square per bag of the same tier", async () => {
     const token = await stocked("dirt", 2);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
 
     const view = await placeStackAcresSoilTile(token, { tx, ty }, T0);
@@ -123,7 +133,7 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
 
   it("returns the bag once a bed's squares are all bought", async () => {
     const token = await stocked("dirt", SOIL_SLOTS_PER_TILE + 1);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
     for (let i = 0; i < SOIL_SLOTS_PER_TILE; i += 1) {
       await placeStackAcresSoilTile(token, { tx, ty }, T0);
     }
@@ -143,7 +153,7 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
     const token = await funded();
     await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
     await buyStackAcresSoil(token, { tier: "enriched", quantity: 1 }, T0);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty, tier: "dirt" }, T0);
     const afterFirst = await balance(token);
 
@@ -163,7 +173,7 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
   it("refuses with an empty shelf and points at the shop", async () => {
     const token = await funded();
     const start = await balance(token);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
 
     await expect(placeStackAcresSoilTile(token, { tx, ty }, T0)).rejects.toThrow(/Ray/);
     expect(await balance(token)).toBe(start);
@@ -232,7 +242,7 @@ describe("buyStackAcresSoil — Ray's shelf", () => {
 describe("removeStackAcresSoilTile", () => {
   it("removes a purchased tile and refunds nothing", async () => {
     const token = await stocked("dirt", 1);
-    const { tx, ty } = meadowTile();
+    const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
     const afterPlace = await balance(token);
 
@@ -247,8 +257,10 @@ describe("removeStackAcresSoilTile", () => {
     // The two starter tiles are never persisted (see starterSoilTiles's own
     // header) -- there is no row here to remove at all, which is exactly the
     // refusal a client tapping a starter bed should get.
-    const area = growAreaBounds("meadow");
-    const starterish = soilTileAt(area.x + area.width / 2, area.y + area.height / 2);
+    const starterish = soilTileAt(
+      CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
+      CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
+    );
 
     await expect(
       removeStackAcresSoilTile(token, starterish, T0),
@@ -264,10 +276,9 @@ describe("removeStackAcresSoilTile", () => {
 });
 
 describe("SOIL_TILE lattice bounds check", () => {
-  it("accepts a tile fully inside the meadow and refuses one straddling its edge", async () => {
+  it("accepts a tile fully inside the Crop Fields and refuses one straddling its edge", async () => {
     const token = await stocked("dirt", 1);
-    const area = growAreaBounds("meadow");
-    const inside = soilTileAt(area.x + SOIL_TILE, area.y + SOIL_TILE);
+    const inside = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
     await expect(placeStackAcresSoilTile(token, inside, T0)).resolves.toBeTruthy();
   });
 });
@@ -277,7 +288,7 @@ describe("soil tiers", () => {
   // where the very first crop sown on a fresh farm lands. Derived rather than
   // written as a coordinate so it cannot drift from `starterSoilTiles`.
   const CELL_A = (() => {
-    const first = starterSoilTiles(growAreaBounds("meadow"))[0];
+    const first = starterSoilTiles(CROP_FIELD_BEDS)[0];
     return { tx: first.tx, ty: first.ty };
   })();
 

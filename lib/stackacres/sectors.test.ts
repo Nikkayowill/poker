@@ -5,6 +5,7 @@ import {
   SECTOR_IDS,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
+  cropFieldOvergrowth,
   isSectorUnlocked,
   lockedSectors,
   sectorClearCheck,
@@ -14,6 +15,7 @@ import {
   unlockedSectors,
   type SectorId,
 } from "./sectors";
+import { CROP_FIELD } from "./yard";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
 import { STACKACRES_CROPS, STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
@@ -74,17 +76,18 @@ describe("unlockedSectors", () => {
   });
 
   it("includes what was explicitly cleared", () => {
-    const open = unlockedSectors(["meadow"], []);
-    expect(open).toContain("meadow");
+    const open = unlockedSectors(["wallow"], []);
+    expect(open).toContain("wallow");
     expect(open).not.toContain("oxfields");
   });
 
   it("treats stock standing in a district as proof that district is yours", () => {
     // The live-farm clause: a player who already keeps cattle keeps Ox Fields
-    // without any backfill having to get it right.
+    // without any backfill having to get it right. Crops don't test this any
+    // more -- they're zoned to the Farmstead (a HOME sector) since the
+    // 2026-09-08 merge, so owning one proves nothing about a paid sector.
     expect(unlockedSectors([], owning("cattle"))).toContain("oxfields");
     expect(unlockedSectors([], owning("pig"))).toContain("wallow");
-    expect(unlockedSectors([], owning("carrot"))).toContain("meadow");
   });
 
   it("does not double-count a district both cleared and stocked", () => {
@@ -93,14 +96,14 @@ describe("unlockedSectors", () => {
   });
 
   it("returns a stable SECTOR_IDS order whatever order the inputs arrive in", () => {
-    const a = unlockedSectors(["oxfields", "meadow"], owning("pig"));
-    const b = unlockedSectors(["meadow", "oxfields"], owning("pig"));
+    const a = unlockedSectors(["oxfields", "wallow"], owning("pig"));
+    const b = unlockedSectors(["wallow", "oxfields"], owning("pig"));
     expect(a).toEqual(b);
     expect(a).toEqual(SECTOR_IDS.filter((id) => a.includes(id)));
   });
 
   it("splits cleanly against lockedSectors", () => {
-    const open = unlockedSectors(["meadow"], []);
+    const open = unlockedSectors(["wallow"], []);
     const shut = lockedSectors(open);
     expect([...open, ...shut].sort()).toEqual([...SECTOR_IDS].sort());
     for (const id of shut) expect(isSectorUnlocked(id, open)).toBe(false);
@@ -119,16 +122,16 @@ describe("sectorClearCheck", () => {
 
   it("quotes the price even when the requirements are not met yet", () => {
     // A player saving up needs the number before they qualify for it.
-    const check = sectorClearCheck("meadow", noUnits);
+    const check = sectorClearCheck("wallow", noUnits);
     expect(check.ok).toBe(false);
-    expect(check.cost).toBe(STACKACRES_SECTORS.meadow.clearCost);
+    expect(check.cost).toBe(STACKACRES_SECTORS.wallow.clearCost);
     expect(check.requirements.some((requirement) => !requirement.met)).toBe(true);
   });
 
   it("opens the first rung once enough stock is going", () => {
-    const check = sectorClearCheck("meadow", {
+    const check = sectorClearCheck("wallow", {
       unlocked: [HOME_SECTOR],
-      unitCount: STACKACRES_SECTORS.meadow.requiresUnits,
+      unitCount: STACKACRES_SECTORS.wallow.requiresUnits,
     });
     expect(check.ok).toBe(true);
     expect(check.requirements.every((requirement) => requirement.met)).toBe(true);
@@ -149,19 +152,24 @@ describe("sectorClearCheck", () => {
   });
 
   it("says how many units the player has, not just how many are wanted", () => {
-    const check = sectorClearCheck("meadow", { unlocked: [HOME_SECTOR], unitCount: 1 });
+    const check = sectorClearCheck("wallow", { unlocked: [HOME_SECTOR], unitCount: 1 });
     const line = check.requirements.find((requirement) => requirement.label.includes("going"));
     expect(line?.label).toContain("you have 1");
   });
 });
 
 describe("unlockedPlotCount", () => {
+  // `cropFieldsUnlocked: false` throughout except the one test that varies
+  // it on purpose -- see that function's own header on why the flag has to
+  // be passed at all: `farmstead` never leaves the unlocked list (it is a
+  // HOME sector), so every crop kind's slots would otherwise count against a
+  // farm that has never spent the Gold to unlock the Crop Fields.
   it("counts only slots standing on cleared ground", () => {
     // Home is the Hen Coop's own three free slots, which is exactly the free
     // base -- so a brand-new farm owes nothing. Those slots stand at Hen Haven
     // now rather than in the Farmstead's yard, so the count is over both home
     // sectors; the number it produces is unchanged.
-    const home = unlockedPlotCount([...HOME_SECTORS], {});
+    const home = unlockedPlotCount([...HOME_SECTORS], {}, false);
     expect(home).toBe(capFor(0));
     // Exactly the free base, so a brand-new farm owes nothing. The fee itself
     // now lives in ./upkeep.ts; upkeep.test.ts holds that half.
@@ -169,25 +177,38 @@ describe("unlockedPlotCount", () => {
   });
 
   it("grows as land is cleared", () => {
-    const home = unlockedPlotCount([...HOME_SECTORS], {});
-    const plusMeadow = unlockedPlotCount([...HOME_SECTORS, "meadow"], {});
-    // The Grand Farm holds all 22 crop kinds now, so it is worth 22 kinds'
-    // slots (STACKACRES_CROPS.length).
-    expect(plusMeadow).toBe(home + STACKACRES_CROPS.length * capFor(0));
+    const home = unlockedPlotCount([...HOME_SECTORS], {}, false);
+    const plusWallow = unlockedPlotCount([...HOME_SECTORS, "wallow"], {}, false);
+    // Only the pig is zoned to the Fold (wallow), so clearing it alone is
+    // worth exactly one stock kind's slots. The Crop Fields' own 22 kinds
+    // do not add to this at all while their own flag is unset, even though
+    // they stand inside the Farmstead (a HOME sector, already counted in
+    // `home`) -- see the next test.
+    expect(plusWallow).toBe(home + capFor(0));
   });
 
   it("grows as capacity is bought on cleared ground", () => {
-    const before = unlockedPlotCount([...HOME_SECTORS], {});
-    const after = unlockedPlotCount([...HOME_SECTORS], { hen: 2 });
+    const before = unlockedPlotCount([...HOME_SECTORS], {}, false);
+    const after = unlockedPlotCount([...HOME_SECTORS], { hen: 2 }, false);
     expect(after).toBe(before + 2);
   });
 
   it("ignores capacity bought for a kind whose land is still wild", () => {
     // Nothing stops a player having capacity rows from before the land was
     // gated; they must not be billed for slots they cannot reach.
-    expect(unlockedPlotCount([HOME_SECTOR], { cattle: 3 })).toBe(
-      unlockedPlotCount([HOME_SECTOR], {}),
+    expect(unlockedPlotCount([HOME_SECTOR], { cattle: 3 }, false)).toBe(
+      unlockedPlotCount([HOME_SECTOR], {}, false),
     );
+  });
+
+  it("counts the Crop Fields' own 22 kinds only once their standalone flag is set", () => {
+    // The regression this guards: the Farmstead is a HOME sector and never
+    // leaves the unlocked list, so a naive sector-only check would count
+    // every crop kind's slots against a farm that has never unlocked the
+    // Crop Fields at all (see ./crop-fields.ts).
+    const locked = unlockedPlotCount([...HOME_SECTORS], {}, false);
+    const unlocked = unlockedPlotCount([...HOME_SECTORS], {}, true);
+    expect(unlocked).toBe(locked + STACKACRES_CROPS.length * capFor(0));
   });
 });
 
@@ -199,11 +220,11 @@ describe("sectorOvergrowth", () => {
   });
 
   it("is deterministic, so panning away and back finds the same trees", () => {
-    expect(sectorOvergrowth("meadow")).toEqual(sectorOvergrowth("meadow"));
+    expect(sectorOvergrowth("wallow")).toEqual(sectorOvergrowth("wallow"));
   });
 
   it("gives each sector its own growth", () => {
-    expect(sectorOvergrowth("meadow")).not.toEqual(sectorOvergrowth("oxfields"));
+    expect(sectorOvergrowth("wallow")).not.toEqual(sectorOvergrowth("oxfields"));
   });
 
   it("stays inside the sector's own bounds", () => {
@@ -230,12 +251,42 @@ describe("sectorOvergrowth", () => {
   });
 
   it("mixes canopy, scrub and ground cover rather than one repeated tree", () => {
-    const kinds = new Set(sectorOvergrowth("meadow").map((item) => item.kind));
+    const kinds = new Set(sectorOvergrowth("oxfields").map((item) => item.kind));
     expect(kinds.size).toBeGreaterThan(4);
   });
 
   it("varies its heights, so a stand has a skyline", () => {
     const scales = new Set(sectorOvergrowth("wallow").map((item) => item.scale));
     expect(scales.size).toBeGreaterThan(10);
+  });
+});
+
+describe("cropFieldOvergrowth", () => {
+  it("is deterministic, so panning away and back finds the same trees", () => {
+    expect(cropFieldOvergrowth()).toEqual(cropFieldOvergrowth());
+  });
+
+  it("differs from an ordinary sector's growth", () => {
+    expect(cropFieldOvergrowth()).not.toEqual(sectorOvergrowth("wallow"));
+  });
+
+  it("stays inside the Crop Fields' own bounds", () => {
+    for (const item of cropFieldOvergrowth()) {
+      expect(item.x).toBeGreaterThanOrEqual(CROP_FIELD.x);
+      expect(item.x).toBeLessThanOrEqual(CROP_FIELD.x + CROP_FIELD.width);
+      expect(item.y).toBeGreaterThanOrEqual(CROP_FIELD.y);
+      expect(item.y).toBeLessThanOrEqual(CROP_FIELD.y + CROP_FIELD.height);
+    }
+  });
+
+  it("never grows over a road", () => {
+    for (const item of cropFieldOvergrowth()) {
+      expect(nearPath(item.x, item.y)).toBe(false);
+    }
+  });
+
+  it("mixes canopy, scrub and ground cover rather than one repeated tree", () => {
+    const kinds = new Set(cropFieldOvergrowth().map((item) => item.kind));
+    expect(kinds.size).toBeGreaterThan(4);
   });
 });

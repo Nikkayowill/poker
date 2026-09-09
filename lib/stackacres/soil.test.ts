@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { growthStage, cropRank, cropRanks, cropSpot, growAreaBounds, STACKACRES_TILE } from "./world";
+import { growthStage, cropRank, cropRanks, cropSpot, CROP_FIELD_BEDS, STACKACRES_TILE } from "./world";
 import {
   MEADOW_TILE,
   meadowBaseDensity,
@@ -48,7 +48,7 @@ import {
   type SoilTile,
 } from "./soil";
 
-const MEADOW = growAreaBounds("meadow");
+const MEADOW = CROP_FIELD_BEDS;
 
 function starterMap() {
   return createSoilMap(starterSoilTiles(MEADOW));
@@ -500,14 +500,14 @@ describe("cropSpot", () => {
   const soil = starterMap();
 
   it("puts a crop on the lattice when it is given a placement", () => {
-    const at = cropSpot("meadow", "unit-a", { soil, rank: 0 });
+    const at = cropSpot("farmstead", "unit-a", { soil, rank: 0 });
     expect(onSoil(soil, at.x, at.y)).toBe(true);
     expect(at).toEqual(soilSlotSpotForRank(soil, 0));
   });
 
   it("scatters when there is no placement -- a mucked animal's fallback", () => {
-    const at = cropSpot("meadow", "unit-a");
-    const area = growAreaBounds("meadow");
+    const at = cropSpot("farmstead", "unit-a");
+    const area = CROP_FIELD_BEDS;
     expect(at.x).toBeGreaterThanOrEqual(area.x);
     expect(at.x).toBeLessThanOrEqual(area.x + area.width);
     // And it is not on the lattice, which is the point of the split.
@@ -515,19 +515,19 @@ describe("cropSpot", () => {
   });
 
   it("scatters when a placement points at a farm with no soil", () => {
-    const at = cropSpot("meadow", "unit-a", { soil: createSoilMap(), rank: 0 });
-    expect(at).toEqual(cropSpot("meadow", "unit-a"));
+    const at = cropSpot("farmstead", "unit-a", { soil: createSoilMap(), rank: 0 });
+    expect(at).toEqual(cropSpot("farmstead", "unit-a"));
   });
 
   it("is stable for the same unit and rank", () => {
-    expect(cropSpot("meadow", "unit-a", { soil, rank: 3 })).toEqual(
-      cropSpot("meadow", "unit-a", { soil, rank: 3 }),
+    expect(cropSpot("farmstead", "unit-a", { soil, rank: 3 })).toEqual(
+      cropSpot("farmstead", "unit-a", { soil, rank: 3 }),
     );
   });
 
   it("gives two crops in the same bed different slots", () => {
-    const a = cropSpot("meadow", "unit-a", { soil, rank: 0 });
-    const b = cropSpot("meadow", "unit-b", { soil, rank: 1 });
+    const a = cropSpot("farmstead", "unit-a", { soil, rank: 0 });
+    const b = cropSpot("farmstead", "unit-b", { soil, rank: 1 });
     expect(a).not.toEqual(b);
   });
 });
@@ -577,7 +577,7 @@ describe("the farmhand's view of the field", () => {
   const ranks = cropRanks(units.map((u) => u.id));
   const crops = buildCropInstances(
     units,
-    (id) => cropSpot("meadow", id, { soil, rank: ranks.get(id)! }),
+    (id) => cropSpot("farmstead", id, { soil, rank: ranks.get(id)! }),
     growthStage,
     soil,
   );
@@ -770,7 +770,7 @@ describe("soilTilesEqual", () => {
   // while both flatten the tiles the same way, which is why the merge has one
   // owner.
   it("puts the starter beds ahead of purchased ones in the merged space", () => {
-    const area = growAreaBounds("meadow");
+    const area = CROP_FIELD_BEDS;
     const bought = { tx: 40, ty: 40, order: 0, origin: "purchased" as const };
     const merged = mergeSoilTiles(area, [bought]);
     expect(merged).toHaveLength(SOIL_STARTER_TILES + 1);

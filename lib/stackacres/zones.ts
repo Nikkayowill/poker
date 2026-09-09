@@ -66,6 +66,23 @@
  * x -740..-320, y 356..826; the pond spans x -844..-740, y 496..576.
  * `PEN_BLOCKS` below restates each stock district's own grow area (their real
  * definition is `GROW_AREA` in ./world.ts) for the same reason.
+ *
+ * 2026-09-08 MAP RESTRUCTURE. The paragraph above describes how the
+ * 2026-09-07 re-lay's numbers were derived; the numbers themselves moved
+ * again the next day, twice over. A first pass pulled the same nine
+ * districts onto a tighter ring around the Grand Farm, repositioning without
+ * resizing. A second, same-day pass went further and merged the Grand Farm
+ * into the Farmstead outright -- ZONE_IDS is down to eight, `meadow` is gone,
+ * and the Farmstead's own `bounds` below is now the union of the yard's
+ * footprint and ./yard.ts's `CROP_FIELD` (still the Grand Farm's own 512
+ * square, just no longer a district of its own). See ./yard.ts's
+ * `YARD_DELTA`/`CROP_FIELD` and ./crop-fields.ts for the rest of what that
+ * merge touched -- most load-bearingly, the Crop Fields kept their 15,000
+ * Gold + 2 units unlock, now a standalone flag decoupled from the
+ * district/sector system rather than a sector clear, since a HOME sector
+ * (which the Farmstead has always been) cannot also be a paid one. `FARM_ZONE`
+ * in ./world.ts is stale as a literal reference for the same reason it always
+ * was; read it from there directly.
  */
 
 import type { WorldPoint, WorldRect } from "./world";
@@ -79,11 +96,15 @@ import { nearPath } from "./paths";
 // A runtime leaf (it imports only TYPES back from ./world.ts), so this is a
 // plain value import with no cycle to work around -- see ./soil.ts's header.
 import { SOIL_EDGE_BAND, soilSignedDistance, type SoilMap } from "./soil";
+// ./yard.ts is a strict leaf (imports nothing), so a plain value import with
+// no cycle to work around. The Crop Fields' own ground, since the 2026-09-08
+// merge folded them into the Farmstead district -- see that constant's own
+// header.
+import { CROP_FIELD } from "./yard";
 
 export const ZONE_IDS = [
   "farmstead",
   "henhaven",
-  "meadow",
   "oxfields",
   "wallow",
   "townsquare",
@@ -156,54 +177,43 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // shows barns inside the pens instead. Sited where the village is so the
   // pond stays on its west verge exactly as it always has.
   //
-  // Its rect matches `FARM_ZONE` in ./world.ts exactly, because that is the
-  // rectangle wild scenery is already kept out of and two different answers
-  // to "where is the farm" would drift apart. Same 420x470 it has always
-  // been: holding the size is what makes the yard a rigid-body move.
+  // 2026-09-08: the Grand Farm merged into this district outright -- one
+  // district, one id, no fence between the yard and the Crop Fields. Its
+  // rect is the union of the yard's own footprint (still 420x470, still a
+  // rigid body -- yardRect(20, -60, 420, 470)) and ./yard.ts's own
+  // `CROP_FIELD` (512 square), restated as a literal for the same reason
+  // `FARM_ZONE` in ./world.ts always was: world.ts value-imports this
+  // module, so the reverse would read a constant before world.ts finished
+  // evaluating. Matches `FARM_ZONE` exactly -- zones.test.ts holds the two
+  // to each other, the same invariant it always held.
   farmstead: {
     id: "farmstead",
     label: "The Farmstead",
-    blurb: "Home base -- the barn, the pond and the yard.",
-    bounds: { x: -740, y: 356, width: 420, height: 470 },
+    blurb: "Home base -- the barn, the pond, the yard and the Crop Fields.",
+    bounds: { x: -700, y: -256, width: 956, height: 512 },
     // Matches --sa-grass: the farmstead's swatch defers to the grass
     // painter's own fill rather than naming a colour of its own, since it
     // paints no ground wash to have a colour for any more.
     swatchColor: 0x86c96e,
-    approach: { x: -536, y: 590 },
+    approach: { x: -320, y: 0 },
   },
 
   // North of the farm, first stop off the ring road. The Hen Coops, which
   // stood in the Farmstead's own yard until this pass. Never locked: the hen
   // is the only stock a new farm can afford, so gating it would leave a first
   // afternoon with no move in it.
+  // Same 240 square every re-lay has kept it at (see the 2026-09-07 pass's
+  // own note on why 240 and not 200). Pulled 25 further north on this pass:
+  // the Farmstead's own bounds grew by the merge (see its own comment above)
+  // and would otherwise leave under 5 units of woodland between the two,
+  // well under the ~24-unit gap every district shares with its neighbour.
   henhaven: {
     id: "henhaven",
     label: "Hen Haven",
     blurb: "Straw, low fences, and every Hen Coop you keep.",
-    // 240 rather than 200: at 200 the verge around its 128-unit grow area is
-    // 32 units, narrower than a spur's own body plus clearance, and there was
-    // literally nowhere to put the gate. The widening keeps the smallest
-    // inter-district gap on the map at 36.
-    bounds: { x: -628, y: -308, width: 240, height: 240 },
+    bounds: { x: -700, y: -524, width: 240, height: 240 },
     swatchColor: 0xe0c96a,
-    approach: { x: -418, y: -132 },
-  },
-
-  // The middle of the map and the biggest district on it: the open field the
-  // ring road runs around. Keeps the id `meadow` (a data migration to fix a
-  // caption is not worth doing) and is called The Grand Farm, which is what
-  // the proposal calls it and what it now actually is -- its grow area is
-  // 384x384, six soil beds a side, against the three it used to be.
-  meadow: {
-    id: "meadow",
-    label: "The Grand Farm",
-    blurb: "The great open field, and every bed you have tilled in it.",
-    bounds: { x: -192, y: -320, width: 512, height: 512 },
-    swatchColor: 0x8fce66,
-    // The field's north-west gate, not its centre: arriving at the gate and
-    // seeing the field laid out beyond it reads as a place, where landing in
-    // the dead middle reads as a teleport.
-    approach: { x: -158, y: -262 },
+    approach: { x: -580, y: -295 },
   },
 
   // South-west of the field, between the farm and Town Square. Heavy,
@@ -212,9 +222,12 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "oxfields",
     label: "Cattle Pasture",
     blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
-    bounds: { x: -256, y: 320, width: 300, height: 300 },
+    // South of the Farmstead now, sharing its own fence the same way Hen
+    // Haven shares the north one -- pulled 25 further south for the same
+    // reason Hen Haven was pulled north, see that entry's own comment.
+    bounds: { x: -700, y: 284, width: 300, height: 300 },
     swatchColor: 0x7a5a34,
-    approach: { x: -230, y: 526 },
+    approach: { x: -540, y: 305 },
   },
 
   // East of the field. Wet, low and shaded: the mud wallow, a shade canopy,
@@ -230,9 +243,10 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "wallow",
     label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
-    bounds: { x: 356, y: -360, width: 220, height: 220 },
+    // East of the Grand Farm now, sharing ITS fence rather than the yard's.
+    bounds: { x: 280, y: -110, width: 220, height: 220 },
     swatchColor: 0x54402c,
-    approach: { x: 562, y: -282 },
+    approach: { x: 300, y: 0 },
   },
 
   /* ---------------------------------------------------------------- */
@@ -246,43 +260,47 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
 
   // South-west, past the Cattle Pasture. The town the Contracts board, Ray's
   // store and the Museum are all posted from today without being anywhere.
+  // South of Cattle Pasture, sharing its own fence -- one hop further out
+  // from the yard than the districts that touch the Farmstead directly.
   townsquare: {
     id: "townsquare",
     label: "Town Square",
+    // Pulled 25 further south, following Cattle Pasture's own shift.
     blurb: "Wild ground. The town is still only a board you post to.",
-    bounds: { x: -384, y: 880, width: 240, height: 240 },
+    bounds: { x: -700, y: 608, width: 240, height: 240 },
     swatchColor: 0xa3a199,
-    approach: { x: -218, y: 930 },
+    approach: { x: -580, y: 628 },
   },
 
-  // Far north, at the head of its own spur off the ring.
+  // North of Hen Haven, sharing its own fence. Pulled 25 further north,
+  // following Hen Haven's own shift.
   mine: {
     id: "mine",
     label: "Mine Entrance",
     blurb: "Wild ground. A way in, and nothing on the other side of it yet.",
-    bounds: { x: -616, y: -776, width: 220, height: 220 },
+    bounds: { x: -700, y: -768, width: 220, height: 220 },
     swatchColor: 0x5c5851,
-    approach: { x: -436, y: -602 },
+    approach: { x: -590, y: -568 },
   },
 
-  // North-east, where the road meets the shore on the proposal.
+  // North of the Fold, sharing its own fence.
   coast: {
     id: "coast",
     label: "Coastal Market",
     blurb: "Wild ground. Stalls and a dock, once there is anything to trade.",
-    bounds: { x: 352, y: -832, width: 260, height: 260 },
+    bounds: { x: 280, y: -394, width: 260, height: 260 },
     swatchColor: 0x3fa6cc,
-    approach: { x: 486, y: -632 },
+    approach: { x: 410, y: -154 },
   },
 
-  // The far south-east corner, on its own at the end of the ring.
+  // East of the Fold, sharing its own fence.
   oak: {
     id: "oak",
     label: "The Ancestral Oak",
     blurb: "Wild ground. Something old stands here.",
-    bounds: { x: 952, y: -168, width: 220, height: 220 },
+    bounds: { x: 524, y: -110, width: 220, height: 220 },
     swatchColor: 0x439f57,
-    approach: { x: 992, y: -72 },
+    approach: { x: 544, y: 0 },
   },
 };
 
@@ -335,7 +353,12 @@ export function inOuterZone(x: number, y: number): boolean {
  */
 export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>> = {
   inspect: ZONE_IDS,
-  scythe: ["meadow"],
+  // The Crop Fields merged into the Farmstead district in the 2026-09-08
+  // restructure (see that district's own comment), so this is the coarse
+  // gate now: `meadowBaseDensity` below is the fine one, and it is the
+  // function that actually confines grass -- and the scythe -- to
+  // ./yard.ts's `CROP_FIELD`, not the whole of the Farmstead's own bounds.
+  scythe: ["farmstead"],
 };
 
 export type ZoneActionCheck =
@@ -420,12 +443,21 @@ export const ZONE_CHUNK = 160;
  * has to be mown tile by tile (see `meadowDensityAt`).
  */
 const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
+  // Always empty, and `zoneScenery` below hard-excludes it before this list
+  // is ever read (`id === "farmstead"`) -- the Farmstead has its own
+  // hand-placed dressing (props.ts's `YARD_PROPS`/`farmsteadClutter`)
+  // instead of ambient scatter. The Crop Fields' own clover/buttercup
+  // scatter (what "meadow" had here before the 2026-09-08 merge) did not
+  // carry over: it has no district of its own to key off any more, and
+  // scattering it across the whole of the Farmstead's now much bigger
+  // bounds -- yard and pond included -- would need a Crop-Fields-only
+  // filter this pass did not build. The Crop Fields still read as a real
+  // place from their soil, their beds and whatever is actually growing.
   farmstead: [],
   // The Hen Coops' own district. Left empty deliberately: it inherited the
   // Farmstead's yard, which has never scattered anything, and inventing hen
   // furniture is an art pass, not part of re-laying the map.
   henhaven: [],
-  meadow: ["clover", "clover", "buttercup", "buttercup", "clover"],
   // Furrows dominate: the ground itself is the content in a worked field,
   // and the posts and gear are what break it up.
   oxfields: ["furrow", "furrow", "furrow", "furrow", "hitchPost", "hayBale", "plough", "oxTrough"],
@@ -445,7 +477,6 @@ const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
 const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
   farmstead: 0,
   henhaven: 0,
-  meadow: 7,
   oxfields: 9,
   wallow: 6,
   townsquare: 0,
@@ -492,11 +523,13 @@ export const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
   // exclusion it exists for silently stopped covering the plot.
   //
   // The Farmstead and the four wild districts are absent on purpose: their
-  // scatter lists are empty, so there is nothing to exclude.
-  henhaven: { x: -576, y: -256, width: 128, height: 128 },
-  meadow: { x: -128, y: -256, width: 384, height: 384 },
-  oxfields: { x: -200, y: 376, width: 192, height: 192 },
-  wallow: { x: 404, y: -312, width: 128, height: 128 },
+  // scatter lists are empty, so there is nothing to exclude. (The Crop Fields'
+  // own bed lattice needs no entry here for the same reason `meadow`'s did
+  // before the 2026-09-08 merge stopped it existing as a district: nothing in
+  // `ZONE_SCATTER.farmstead` is there to exclude it from.)
+  henhaven: { x: -648, y: -472, width: 128, height: 128 },
+  oxfields: { x: -644, y: 340, width: 192, height: 192 },
+  wallow: { x: 328, y: -62, width: 128, height: 128 },
 };
 
 function inPenBlock(id: ZoneId, x: number, y: number): boolean {
@@ -610,14 +643,26 @@ export function meadowTileRect(tx: number, ty: number): WorldRect {
  * the meadow has grain to it before anyone has touched it -- and so a mown
  * swathe reads against something irregular rather than against a solid block.
  *
- * Returns 0 outside the meadow, which is what makes every other function
- * here safe to call anywhere.
+ * Returns 0 outside the Crop Fields' own ground (./yard.ts's `CROP_FIELD`),
+ * which is what makes every other function here safe to call anywhere. Used
+ * to be a `zoneAt(cx, cy) !== "meadow"` check, back when the Crop Fields were
+ * their own district -- the 2026-09-08 merge folded them into the Farmstead,
+ * whose bounds are now the yard AND the Crop Fields both, so the grass needs
+ * its own, tighter test to stay confined to the field rather than growing at
+ * the barn door.
  */
 export function meadowBaseDensity(tx: number, ty: number, soil: SoilMap = NO_SOIL): number {
   const rect = meadowTileRect(tx, ty);
   const cx = rect.x + MEADOW_TILE / 2;
   const cy = rect.y + MEADOW_TILE / 2;
-  if (zoneAt(cx, cy) !== "meadow") return 0;
+  if (
+    cx < CROP_FIELD.x ||
+    cx > CROP_FIELD.x + CROP_FIELD.width ||
+    cy < CROP_FIELD.y ||
+    cy > CROP_FIELD.y + CROP_FIELD.height
+  ) {
+    return 0;
+  }
   // Nothing grows on the lane through the field, so a stroke that follows the
   // road cuts nothing and the road stays visible through waist-high grass.
   if (nearPath(cx, cy)) return 0;

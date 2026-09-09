@@ -23,6 +23,7 @@ import {
   buyStackAcresStock,
   clearStackAcresSector,
   clearStackAcresUnit,
+  unlockStackAcresCropFields,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
@@ -79,11 +80,11 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * TWELVE ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry is
- * what keeps this safe. `expand-capacity`, `clear-sector`, `stock`,
- * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
- * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
- * `place-pipe` and `place-soil-tile` all spend; `collect` and
+ * FOURTEEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry
+ * is what keeps this safe. `expand-capacity`, `clear-sector`,
+ * `unlock-crop-fields`, `stock`, `buy-stock`, `buy-feed`, `clear`,
+ * `upgrade-tool`, `sow-wheat`, `place-machine`, `unlock-synergy-perk`,
+ * `midnight-merchant-buy`, `place-pipe` and `place-soil-tile` all spend; `collect` and
  * `fulfill-contract` pay, both under
  * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
  * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
@@ -169,6 +170,10 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("clear-sector"),
     sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
   }),
+  // No field, unlike `clear-sector`: there is only one such flag, not one
+  // per district. Gold, once, permanent -- see unlockStackAcresCropFields's
+  // own header on why this is not a `clear-sector` variant.
+  z.object({ action: z.literal("unlock-crop-fields") }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -406,6 +411,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return expandStackAcresCapacity(token, action.stock, now);
     case "clear-sector":
       return clearStackAcresSector(token, action.sector, now);
+    case "unlock-crop-fields":
+      return unlockStackAcresCropFields(token, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "build-greenhouse":

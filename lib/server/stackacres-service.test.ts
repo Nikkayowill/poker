@@ -63,6 +63,7 @@ import {
   readStackAcresSectors,
   readStackAcresToolTier,
   readStackAcresUpkeep,
+  recordStackAcresCropFieldsUnlocked,
   recordStackAcresSectorCleared,
   adjustStackAcresInfluence,
   reserveStackAcresExchange,
@@ -218,13 +219,25 @@ async function funded(
     land = [...SECTOR_LADDER],
     settled = true,
     museum = true,
-  }: { land?: SectorId[]; settled?: boolean; museum?: boolean } = {},
+    cropFieldsUnlocked = true,
+  }: {
+    land?: SectorId[];
+    settled?: boolean;
+    museum?: boolean;
+    /** The Crop Fields' bed-tiling and crop-stocking routes are gated on the
+     *  standalone unlock now (lib/stackacres/crop-fields.ts) -- this file's
+     *  own tests all predate that gate and assume a farm ready to sow, so it
+     *  defaults open. Pass `false` only for a test asking about milestone
+     *  progress itself, where a truly bare farm is the point. */
+    cropFieldsUnlocked?: boolean;
+  } = {},
 ) {
   const token = randomUUID();
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
   if (delta !== 0) await adjustGold(profile.id, delta);
   for (const sector of land) await recordStackAcresSectorCleared(profile.id, sector, T0);
+  if (cropFieldsUnlocked) await recordStackAcresCropFieldsUnlocked(profile.id, T0);
   if (settled) {
     await raiseStackAcresUpkeep(
       profile.id,
@@ -1075,9 +1088,10 @@ describe("Land Maintenance", () => {
    */
   const unpaid = (gold = 500_000) => funded(gold, { settled: false });
 
-  /** What a fully cleared farm with nothing bought owes for the day. */
+  /** What a fully cleared farm with nothing bought owes for the day. `unpaid`
+   *  goes through `funded`, whose own default unlocks the Crop Fields too. */
   const clearedFarmFee = () =>
-    stackacresUpkeepFee(unlockedPlotCount([...SECTOR_LADDER, HOME_SECTOR], {}));
+    stackacresUpkeepFee(unlockedPlotCount([...SECTOR_LADDER, HOME_SECTOR], {}, true));
 
   it("comes out of the first harvest of the day, once", async () => {
     const { token, id } = await unpaid();
@@ -1163,7 +1177,9 @@ describe("Land Maintenance", () => {
     }
     const view = await readStackAcres(token, HEN_READY);
     expect(view.units.every((u) => u.state === "mucked")).toBe(true);
-    expect(view.upkeep.plots).toBe(unlockedPlotCount(view.sectors, view.capacity));
+    expect(view.upkeep.plots).toBe(
+      unlockedPlotCount(view.sectors, view.capacity, view.cropFieldsUnlocked),
+    );
   });
 });
 
@@ -1266,7 +1282,7 @@ describe("feed shipments", () => {
   });
 
   it("sells the same shipment once the Fold is open", async () => {
-    const { token, id } = await funded(1_000_000, { land: ["meadow", "wallow"] });
+    const { token, id } = await funded(1_000_000, { land: ["wallow"] });
     const bulk = STACKACRES_FEED.bulk_shipment;
     const before = await balance(token);
 
@@ -1608,7 +1624,7 @@ describe("the equipment ladder", () => {
    * anything of the farm at all. See lib/stackacres/shop-locks.ts.
    */
   it("refuses a rung the farm has not reached, however much Gold is in the purse", async () => {
-    const { token, id } = await funded(5_000_000, { land: [] });
+    const { token, id } = await funded(5_000_000, { land: [], cropFieldsUnlocked: false });
 
     await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
 
@@ -1619,9 +1635,12 @@ describe("the equipment ladder", () => {
   });
 
   it("opens the first paid rung on one milestone and the top rung on three", async () => {
-    const { token, id } = await funded(5_000_000, { land: ["meadow"] });
+    const { token, id } = await funded(5_000_000, { land: [] });
+    // One milestone: unlocking the Crop Fields, same as the equipment ladder's
+    // own comment describes -- see lib/stackacres/equipment.ts.
+    await recordStackAcresCropFieldsUnlocked(id, T0);
 
-    // One district cleared: the Iron Shovel is reachable.
+    // One milestone earned: the Iron Shovel is reachable.
     await upgradeStackAcresTool(token, T0);
     expect(await readStackAcresToolTier(id)).toBe("iron-shovel");
 
@@ -1637,10 +1656,11 @@ describe("the equipment ladder", () => {
   });
 
   it("takes any three milestones, not one prescribed route to them", async () => {
-    // Two districts plus one town order is the same three as three districts.
-    // The top rung is gated on the farm running, not on a particular way of
-    // running it.
-    const { token, id } = await funded(5_000_000, { land: ["meadow", "wallow"] });
+    // The Crop Fields plus one district plus one town order is the same
+    // three as three districts. The top rung is gated on the farm running,
+    // not on a particular way of running it.
+    const { token, id } = await funded(5_000_000, { land: ["wallow"] });
+    await recordStackAcresCropFieldsUnlocked(id, T0);
     await upgradeStackAcresTool(token, T0);
     await expect(upgradeStackAcresTool(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
 
@@ -1899,6 +1919,7 @@ describe("the currency wall", () => {
       "stock",
       "tap-secret-zone",
       "trade-secret-item",
+      "unlock-crop-fields",
       "unlock-synergy-perk",
       "upgrade-tool",
       "water",
@@ -1922,7 +1943,9 @@ describe("the currency wall", () => {
     // reduces what the farm pays out today rather than adding a way in. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own. `unlock-synergy-perk` is a
+    // against -- never a Gold credit of their own. `unlock-crop-fields` is a
+    // pure sink too, same category as `clear-sector` (see
+    // lib/stackacres/crop-fields.ts). `unlock-synergy-perk` is a
     // pure sink, same category as `upgrade-tool`; `activate-synergy-perk`
     // moves no Gold at all, same category as `work`. Neither Synergy Tree
     // perk that touches a payout (`sunlight_harvester`'s crit chance,
@@ -2269,6 +2292,31 @@ describe("clearing land", () => {
   const FIRST = SECTOR_LADDER[0];
   const SECOND = SECTOR_LADDER[1];
 
+  /**
+   * Stocks `count` units split across hen and carrot (`STACKACRES_BASE_CAP`
+   * free slots each), so neither kind's own capacity ceiling blocks reaching
+   * a `requiresUnits` past 3 -- Wallow needs 4, Ox Fields needs 6, both above
+   * a single kind's own cap since the two-rung ladder replaced the old
+   * three-rung one (2026-09-08 district merge). Hen first, then carrot, in a
+   * fixed order so its exact Gold cost (`stockTowardCost`) stays predictable.
+   */
+  async function stockToward(token: string, count: number) {
+    const hens = Math.min(count, STACKACRES_BASE_CAP);
+    for (let i = 0; i < hens; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
+    const carrots = Math.max(0, count - hens);
+    for (let i = 0; i < carrots; i += 1) await stockStackAcres(token, { stock: "carrot" }, T0);
+  }
+
+  /** The exact Gold `stockToward` spends stocking `count` units. Livestock
+   *  (hen) spends Gold straight out of the purse; a crop (carrot) spends a
+   *  seed off Ray's shelf instead -- and `funded` grants that shelf directly,
+   *  so no Gold moves for the carrot half at all (see `stockStackAcres`'s own
+   *  comment on the two currencies). */
+  function stockTowardCost(count: number): number {
+    const hens = Math.min(count, STACKACRES_BASE_CAP);
+    return hens * HEN.seedCost;
+  }
+
   it("opens a new farm with home only", async () => {
     // Home is two sectors since the 2026-09-07 map re-lay: the hens moved out
     // of the Farmstead into Hen Haven, and gating the only animal a new farm
@@ -2279,10 +2327,14 @@ describe("clearing land", () => {
   });
 
   it("refuses to stock a kind whose land is still wild", async () => {
+    // Carrot no longer proves this: it's zoned to the Farmstead (a HOME
+    // sector) since the 2026-09-08 district merge, and `greenfield`'s own
+    // `funded` default unlocks the Crop Fields too. Cattle's own district,
+    // Ox Fields, is genuinely still wild here.
     const { token } = await greenfield();
     const before = await balance(token);
 
-    await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toBeInstanceOf(
+    await expect(stockStackAcres(token, { stock: "cattle" }, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     // Rule 1 in reverse: nothing was created, so nothing was paid for.
@@ -2328,9 +2380,7 @@ describe("clearing land", () => {
 
   it("sells the first rung once its requirements are met, and takes the Gold", async () => {
     const { token, id } = await greenfield();
-    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "hen" }, T0);
-    }
+    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
     const before = await balance(token);
 
     const view = await clearStackAcresSector(token, FIRST, T0);
@@ -2342,46 +2392,39 @@ describe("clearing land", () => {
 
   it("lets the land it just sold be stocked", async () => {
     const { token } = await greenfield();
-    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "hen" }, T0);
-    }
+    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
     await clearStackAcresSector(token, FIRST, T0);
 
-    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
-    expect(unitOf(view, "carrot").state).toBe("working");
+    // Pig is the Fold's (FIRST's) own stock -- proving the land just sold is
+    // genuinely usable, not just listed.
+    const view = await stockStackAcres(token, { stock: "pig" }, T0);
+    expect(unitOf(view, "pig").state).toBe("working");
   });
 
   it("holds a later rung shut until the one before it is cleared", async () => {
     // Requirements met on units, Gold in hand, and still refused: the ladder
-    // is the thing being tested, not the price.
+    // is the thing being tested, not the price. Two rungs since the
+    // 2026-09-08 district merge (see SECTOR_LADDER's own header) -- SECOND
+    // (Ox Fields) names FIRST (the Fold) in its own `requires`, so trying it
+    // first is refused until FIRST is actually cleared.
     const { token } = await greenfield();
-    for (let i = 0; i < STACKACRES_BASE_CAP; i += 1) {
-      await stockStackAcres(token, { stock: "hen" }, T0);
-    }
-    await clearStackAcresSector(token, FIRST, T0);
-    while (
-      (await readStackAcres(token, T0)).units.length < STACKACRES_SECTORS[SECOND].requiresUnits
-    ) {
-      await stockStackAcres(token, { stock: "carrot" }, T0);
-    }
+    await stockToward(token, STACKACRES_SECTORS[SECOND].requiresUnits);
 
-    const third = SECTOR_LADDER[2];
     const before = await balance(token);
-    await expect(clearStackAcresSector(token, third, T0)).rejects.toBeInstanceOf(
+    await expect(clearStackAcresSector(token, SECOND, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(before);
 
-    // The rung that IS next goes through.
+    // FIRST cleared, and now SECOND goes through.
+    await clearStackAcresSector(token, FIRST, T0);
     await clearStackAcresSector(token, SECOND, T0);
     expect((await readStackAcres(token, T0)).sectors).toContain(SECOND);
   });
 
   it("charges for the same land once, and refunds the tab that lost the race", async () => {
     const { token } = await greenfield();
-    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "hen" }, T0);
-    }
+    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
     const before = await balance(token);
 
     await clearStackAcresSector(token, FIRST, T0);
@@ -2397,11 +2440,9 @@ describe("clearing land", () => {
     // more. Seed costs Gold now, so "no money at all" would fail one step
     // earlier than the step under test.
     const { token, id } = await greenfield(
-      STACKACRES_SECTORS[FIRST].requiresUnits * HEN.seedCost,
+      stockTowardCost(STACKACRES_SECTORS[FIRST].requiresUnits),
     );
-    for (let i = 0; i < STACKACRES_SECTORS[FIRST].requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "hen" }, T0);
-    }
+    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
     expect(await balance(token)).toBe(0);
 
     await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
@@ -3314,14 +3355,18 @@ describe("hidden secrets", () => {
     });
 
     it("wipes today's owed Land Maintenance and spends the item", async () => {
-      // Land deliberately excludes "meadow": the Long Meadow alone now holds
-      // all 22 crop kinds (up from 2), so its free-base footprint (66 plots)
-      // pushes the default SECTOR_LADDER fixture's fee well past
-      // STACKACRES_DICE_UPKEEP_WIPE (5,000 Gold) -- a genuine balance
-      // question flagged for Kayo, not fixed here. Wallow+Ox Fields alone
-      // keep this test's actual point (one dice fully wipes a modest bill)
-      // true.
-      const { token, id } = await funded(500_000, { land: ["wallow", "oxfields"], settled: false });
+      // The Crop Fields stay locked here on purpose: they hold all 22 crop
+      // kinds now (up from the old Farmstead's 2), and `unlockedPlotCount`
+      // only counts their footprint once the standalone flag is set (see its
+      // own header on why the sector list alone can no longer answer this).
+      // Wallow+Ox Fields alone keep this test's actual point (one dice fully
+      // wipes a modest bill) true; unlocking the Crop Fields too would push
+      // the fee well past STACKACRES_DICE_UPKEEP_WIPE (5,000 Gold).
+      const { token, id } = await funded(500_000, {
+        land: ["wallow", "oxfields"],
+        settled: false,
+        cropFieldsUnlocked: false,
+      });
       await adjustStackAcresSecretLedger(id, DICE, 1);
       const day = stackacresExchangeDay(T0);
       const before = await readStackAcres(token, T0);
@@ -3681,12 +3726,14 @@ describe("prestigeResetStackAcres", () => {
   });
 
   it("prices the next harvest under the new multiplier", async () => {
-    // No extra land cleared: a reset wipes today's Land Maintenance payment
-    // right alongside the grid it was charged against, and re-clearing the
-    // whole ladder (funded()'s own default) would recompute a real bill the
-    // very next harvest has to pay off before this test's arithmetic could
-    // hold. A hen-only farm never leaves the free base regardless.
-    const { token, id } = await funded(500_000, { land: [] });
+    // No extra land cleared, and the Crop Fields left locked too: a reset
+    // wipes today's Land Maintenance payment right alongside the grid it was
+    // charged against, and re-clearing the whole ladder (funded()'s own
+    // default) -- or leaving the Crop Fields' 22 kinds unlocked -- would
+    // recompute a real bill the very next harvest has to pay off before this
+    // test's arithmetic could hold. A hen-only farm never leaves the free
+    // base regardless.
+    const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
     await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
     const { prestigeReset } = await prestigeResetStackAcres(token, T0);
     expect(prestigeReset.multiplier).toBeGreaterThan(STACKACRES_PRESTIGE_BASE_MULTIPLIER);

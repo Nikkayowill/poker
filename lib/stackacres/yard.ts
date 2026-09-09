@@ -54,19 +54,36 @@ export interface YardRect {
 }
 
 /**
- * How far the Farmstead's yard moved in the 2026-09-07 re-lay.
+ * How far the Farmstead's yard moved in the 2026-09-08 map restructure
+ * (Kayo's "Chore Efficiency" layout, imported from the StackAcres Map
+ * Restructure design project).
  *
  * Derived, not chosen: the yard's new rect is `FARM_ZONE` at
- * x -740, y 356, and its old one was x 20, y -60, so the delta is
- * (-740 - 20, 356 - (-60)) = (-760, 416). world.test.ts holds it to
+ * x -700, y -235, and its old one was x 20, y -60, so the delta is
+ * (-700 - 20, -235 - (-60)) = (-720, -175). world.test.ts holds it to
  * `FARM_ZONE` so the two cannot drift apart.
+ *
+ * WHY THE MAP MOVED AGAIN, TWICE. The 2026-09-07 re-lay spread nine districts
+ * (farmstead plus eight) across a roughly 1,900x1,950-unit world with a full
+ * ring road, straight off Kayo's hand-drawn plan-view map -- every district a
+ * real place, but a full chore circuit was a long drag of the camera. A first
+ * pass that day pulled everything onto a tighter ring (~1,490x1,630) and kept
+ * the ring topology. Kayo's follow-up asked for closer still, Farmville-
+ * close: districts sharing a fence line rather than a walk apart. This pass
+ * abandons the ring outright for a hub-and-spoke network radiating from the
+ * yard -- every district touches its neighbour with the same ~24-unit gap
+ * `zones.test.ts` holds as the floor -- which is what actually shrinks the
+ * footprint, not a shorter road. Same nine ids, same sizes throughout: only
+ * positions and the road graph connecting them changed. `WORLD_BOUND_MARGIN`
+ * and `STACKACRES_ZOOM_MIN` in ./world.ts were retuned alongside the first
+ * pass and hold for this one too.
  *
  * Both components are multiples of 8, which keeps every yard literal that was
  * on an 8-unit boundary on one afterwards. It is deliberately NOT a multiple
  * of `SOIL_TILE` (64), and it does not need to be: no soil bed has ever been
  * placeable in the Farmstead, so nothing on that lattice moves with the yard.
  */
-export const YARD_DELTA: YardPoint = { x: -760, y: 416 };
+export const YARD_DELTA: YardPoint = { x: -720, y: -175 };
 
 /** A yard literal, moved. Pass the number the yard was originally laid out
  *  with; the offset is applied here and nowhere else. */
@@ -85,3 +102,26 @@ export function yardRect(x: number, y: number, width: number, height: number): Y
 export function yardPoints<T extends YardPoint>(points: readonly T[]): T[] {
   return points.map((p) => ({ ...p, x: p.x + YARD_DELTA.x, y: p.y + YARD_DELTA.y }));
 }
+
+/**
+ * The Crop Fields' own ground -- what "the Grand Farm" was before the
+ * 2026-09-08 map restructure merged it into the Farmstead district outright
+ * (one district, one id, no fence between them; see ./zones.ts and
+ * ./world.ts's own headers). Kept exactly where the Grand Farm always sat
+ * (512 square, at the map's centre): expressed as a yard literal, the same
+ * as the barn or the pond, so it moves rigidly with the yard if the
+ * Farmstead is ever relaid again, rather than staying pinned to an absolute
+ * point the rest of the district has moved away from.
+ *
+ * A STRICT LEAF export, same as `YARD_DELTA` itself -- both world.ts and
+ * zones.ts value-import this constant directly (each restates `FARM_ZONE`/
+ * `STACKACRES_ZONES.farmstead.bounds` as the union of this rect and the
+ * yard's own `yardRect(20, -60, 420, 470)`, for the identical cross-module
+ * cycle reason `FARM_ZONE` was always restated as a literal in zones.ts --
+ * see that pair's own comments; zones.test.ts holds the two rects equal).
+ * Still gated: unlocking it costs Gold and requires units owned, exactly as
+ * clearing the old `meadow` sector did -- see ./crop-fields.ts, which is
+ * where that check now lives, decoupled from the district/sector system
+ * entirely now that the Crop Fields are not a district of their own.
+ */
+export const CROP_FIELD: YardRect = yardRect(464, -81, 512, 512);

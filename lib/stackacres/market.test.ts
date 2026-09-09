@@ -114,12 +114,13 @@ describe("districts", () => {
   it("gives the four farming districts something to sell, and only those", () => {
     // Was "every district sells something", which stopped being true with the
     // 2026-09-07 map re-lay and is worth stating as the new fact rather than
-    // loosening. The Farmstead sells nothing now that the hens have moved out
-    // to Hen Haven -- it is the house, the barn, the pond and the yard. The
-    // four districts the re-lay reserved (townsquare, mine, coast, oak) sell
-    // nothing because nothing is built on them yet.
+    // loosening. The Farmstead sells all 22 crop kinds again since the
+    // 2026-09-08 district merge folded the Crop Fields into it (see
+    // ./zones.ts's own header) -- the hens themselves stayed at Hen Haven.
+    // The four districts the re-lay reserved (townsquare, mine, coast, oak)
+    // sell nothing because nothing is built on them yet.
     const trading = ZONE_IDS.filter((zone) => stocksInZone(zone).length > 0);
-    expect(trading).toEqual(["henhaven", "meadow", "oxfields", "wallow"]);
+    expect(trading).toEqual(["farmstead", "henhaven", "oxfields", "wallow"]);
   });
 
   it("sell every stock in exactly one district", () => {
@@ -150,10 +151,12 @@ describe("districts", () => {
     // pens moved in; a mapping that ignores that would read as arbitrary.
     // Held so a future reshuffle has to be deliberate. The internal zone id
     // stays "wallow" even though the player-facing label is "The Fold" --
-    // see zones.ts.
+    // see zones.ts. Corn is zoned to "farmstead" now, not a separate
+    // "meadow" id -- the 2026-09-08 district merge folded the Crop Fields
+    // into the Farmstead outright.
     expect(stockZone("cattle")).toBe("oxfields");
     expect(stockZone("pig")).toBe("wallow");
-    expect(stockZone("corn")).toBe("meadow");
+    expect(stockZone("corn")).toBe("farmstead");
     expect(stockZone("hen")).toBe("henhaven");
   });
 });

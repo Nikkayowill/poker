@@ -117,11 +117,11 @@ describe("junction fillets", () => {
 
 describe("the farm's own junctions", () => {
   it("has one junction per path that forks off another, inside the trunk's own body", () => {
-    // TWO paths fork off nothing and so have no junction: `ring1`, the first
-    // leg of the ring, which every other leg chains from; and `lane`, the
-    // yard's own trunk, which starts at the barn door. Before the 2026-09-07
-    // re-lay there was one such trunk, and this read `length - 1`.
-    const trunks = ["ring1", "lane"];
+    // One path forks off nothing and so has no junction: `lane`, the yard's
+    // own trunk, which starts at the barn door. Every spoke of the
+    // hub-and-spoke road network (see paths.ts's own header) chains off it,
+    // directly or by way of another spoke.
+    const trunks = ["lane"];
     for (const key of trunks) {
       expect(FARM_JUNCTIONS.some((j) => j.key.startsWith(`${key}@`)), key).toBe(false);
     }
@@ -141,9 +141,6 @@ describe("the farm's own junctions", () => {
     expect(byKey("yardRoad@lane").shape).toBe("tee");
     // The dock spur leaves the lane's verge leg at right angles: also a tee.
     expect(byKey("dockSpur@lane").shape).toBe("tee");
-    // A ring leg picks up exactly where the one before it stopped, so the two
-    // read as one road carrying on rather than as a fork.
-    expect(byKey("ring2@ring1").shape).toBe("straight");
     // Every fork off a road is a tee; nothing on the farm is a crossroads.
     for (const j of FARM_JUNCTIONS) expect(["tee", "straight", "corner"]).toContain(j.shape);
   });
@@ -160,7 +157,7 @@ describe("the farm's own junctions", () => {
   });
 
   it("is derived from FARM_PATHS' order, not from a hand-written list", () => {
-    // Same two trunks as above: `ring1` and `lane` fork off nothing.
-    expect(findPathJunctions(FARM_PATHS).length).toBe(FARM_PATHS.length - 2);
+    // Same one trunk as above: `lane` forks off nothing.
+    expect(findPathJunctions(FARM_PATHS).length).toBe(FARM_PATHS.length - 1);
   });
 });

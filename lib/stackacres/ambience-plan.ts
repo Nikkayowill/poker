@@ -132,15 +132,18 @@ export function ambienceMix(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceMix {
 function zoneBed(zone: ZoneId): AmbienceMix {
   switch (zone) {
     case "farmstead":
-      // Buildings break the rustle up and the yard pump is the only water.
-      return { grass: 0.3, water: 0.16, insects: 0.5 };
+      // Buildings break the rustle up and the yard pump is the only water --
+      // pulled up from 0.3/0.16/0.5 by the 2026-09-08 district merge, which
+      // folded the old "meadow" bed (0.9/0/0.85, the loudest rustle on the
+      // map) into this same district. One bed for the whole Farmstead now,
+      // roughly halfway between the yard's own quiet and the Crop Fields'
+      // open grass, since `zoneBed` has no notion of a sub-area to blend
+      // between the two within a single district.
+      return { grass: 0.62, water: 0.1, insects: 0.68 };
     case "henhaven":
       // The coops' own district since the 2026-09-07 re-lay. Straw and open
       // grass with no standing water: the yard's bed without the yard pump.
       return { grass: 0.55, water: 0, insects: 0.6 };
-    case "meadow":
-      // Open grass, the loudest rustle on the map, no standing water.
-      return { grass: 0.9, water: 0, insects: 0.85 };
     case "oxfields":
       // Bare open ground with nothing standing on it to make a noise --
       // the quietest district on the map on purpose, now that there is no
@@ -214,16 +217,19 @@ export function ambienceCues(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceCue[
 
   switch (zone) {
     case "farmstead":
+      // The 2026-09-08 district merge folded the old "meadow" cues in here
+      // too: `crow-caw`/`owl-hoot` were the Crop Fields' own, unique to them
+      // on the old map, so they carry over as a Farmstead cue rather than
+      // being dropped outright.
       if (day) cues.push({ cue: "pigeon-coo", minGapMs: 14_000, maxGapMs: 38_000, gain: 0.3 });
       cues.push({ cue: "windmill-creak", minGapMs: 11_000, maxGapMs: 26_000, gain: 0.24 });
       cues.push({ cue: "gate-creak", minGapMs: 30_000, maxGapMs: 90_000, gain: 0.18 });
-      cues.push({ cue: "straw-rustle", minGapMs: 9_000, maxGapMs: 24_000, gain: 0.2 });
+      cues.push({ cue: "straw-rustle", minGapMs: 8_000, maxGapMs: 21_000, gain: 0.23 });
       cues.push({ cue: "water-drop", minGapMs: 4_000, maxGapMs: 12_000, gain: 0.22 });
-      if (dusk) cues.push({ cue: "farm-bell", minGapMs: 60_000, maxGapMs: 150_000, gain: 0.16 });
-      break;
-    case "meadow":
-      cues.push({ cue: "straw-rustle", minGapMs: 7_000, maxGapMs: 18_000, gain: 0.26 });
-      if (dusk) cues.push({ cue: "crow-caw", minGapMs: 16_000, maxGapMs: 44_000, gain: 0.26 });
+      if (dusk) {
+        cues.push({ cue: "farm-bell", minGapMs: 60_000, maxGapMs: 150_000, gain: 0.16 });
+        cues.push({ cue: "crow-caw", minGapMs: 16_000, maxGapMs: 44_000, gain: 0.26 });
+      }
       if (night) cues.push({ cue: "owl-hoot", minGapMs: 22_000, maxGapMs: 60_000, gain: 0.26 });
       break;
     case "oxfields":

@@ -41,7 +41,7 @@ import { soilSlotSpot, soilSlotSpotForRank, type SoilMap } from "./soil";
 // Another strict leaf (it imports nothing at all), so this is a plain value
 // import with no cycle to worry about. Holds the Farmstead yard's offset --
 // see ./yard.ts on why sixty literals are wrapped rather than rewritten.
-import { yardPoint, yardRect } from "./yard";
+import { CROP_FIELD, yardPoint, yardRect } from "./yard";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;
@@ -83,53 +83,54 @@ export interface WorldPoint {
 /* ------------------------------------------------------------------ */
 
 /**
- * Which district a stock kind belongs to. Four districts, one match each --
- * unchanged from the pen-zoning pass, just no longer routed through a plot
- * index to get there:
+ * Which district a stock kind belongs to.
  *
  *   hen                        -- Hen Haven (the cheap starter tier)
- *   all 22 crops               -- the Grand Farm ("Crop Fields"/the Long
- *                                  Meadow). The original two hand-vector crops
+ *   all 22 crops               -- the Farmstead, in the Crop Fields
+ *                                  (`CROP_FIELD`/`CROP_FIELD_BEDS` below).
+ *                                  The original two hand-vector crops
  *                                  (sprout, cash_crop) are gone; all 22
  *                                  CraftPix crops replace them at this same
  *                                  zone.
  *   pig                        -- the Fold (labelled Sheep Pens)
  *   cattle                     -- Cattle Pasture
  *
- * THE HENS LEFT HOME in the 2026-09-07 map re-lay. They were the Farmstead's
- * own stock from the pen-zoning pass until then, which is why `farmstead` no
- * longer appears here at all: it keeps the house, the barn, the pond, Ray, the
- * monk and the greenhouse, and no livestock. The four wild districts
- * (townsquare, mine, coast, oak) hold no stock either, and `stocksInZone`
- * returning an empty list for a district is now a real case rather than an
- * impossible one -- see `paintDistrictBoundary` in stackacres-scene.ts, which
- * had to grow a guard for it.
+ * THE HENS LEFT HOME in the 2026-09-07 map re-lay; THE CROP FIELDS CAME BACK
+ * in the 2026-09-08 restructure's district merge (see ./zones.ts's own
+ * header). Between those two passes `farmstead` appeared nowhere in this
+ * record at all -- it kept the house, the barn, the pond, Ray, the monk and
+ * the greenhouse, and no stock. It is back now because the Crop Fields are
+ * not a district of their own any more; `stocksInZone("farmstead")` is no
+ * longer the empty list `paintDistrictBoundary` (stackacres-scene.ts) grew a
+ * guard for -- that guard is now dead for `farmstead` specifically, though
+ * still live for the wild districts, which hold no stock either.
  */
 const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
   hen: "henhaven",
-  // All 22 crops: the Long Meadow -- the only zone with soil beds.
-  garlic: "meadow",
-  onion: "meadow",
-  beet: "meadow",
-  poppy: "meadow",
-  potato: "meadow",
-  carrot: "meadow",
-  cabbage: "meadow",
-  cucumber: "meadow",
-  pepper: "meadow",
-  brokoly: "meadow",
-  sunflower: "meadow",
-  sunflowe_broken: "meadow",
-  wheat1: "meadow",
-  tomato: "meadow",
-  corn: "meadow",
-  corn2: "meadow",
-  eggplant: "meadow",
-  grap: "meadow",
-  grap2: "meadow",
-  pumpkin: "meadow",
-  wheat2: "meadow",
-  artichoke: "meadow",
+  // All 22 crops: the Farmstead's own Crop Fields -- the only ground with
+  // soil beds.
+  garlic: "farmstead",
+  onion: "farmstead",
+  beet: "farmstead",
+  poppy: "farmstead",
+  potato: "farmstead",
+  carrot: "farmstead",
+  cabbage: "farmstead",
+  cucumber: "farmstead",
+  pepper: "farmstead",
+  brokoly: "farmstead",
+  sunflower: "farmstead",
+  sunflowe_broken: "farmstead",
+  wheat1: "farmstead",
+  tomato: "farmstead",
+  corn: "farmstead",
+  corn2: "farmstead",
+  eggplant: "farmstead",
+  grap: "farmstead",
+  grap2: "farmstead",
+  pumpkin: "farmstead",
+  wheat2: "farmstead",
+  artichoke: "farmstead",
   pig: "wallow",
   cattle: "oxfields",
 };
@@ -174,38 +175,59 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   // the yard's litter never piles up in the middle of it, and every consumer of
   // `growAreaBounds` is typed on a TOTAL record -- making it partial would
   // ripple into wildlife.ts's fence walk, the defense store and the scene for
-  // no gain. Nothing spawns here: `stocksInZone("farmstead")` is empty, so the
-  // scene's boundary painter returns before it draws a pen.
+  // no gain. UNCHANGED by the 2026-09-08 district merge that folded the Crop
+  // Fields into this same district: this box is still just the yard's own
+  // clutter exclusion, and stays that way on purpose rather than growing to
+  // also cover the Crop Fields -- see `CROP_FIELD_BEDS` below, which is that
+  // box now, kept separate so a stray hay bale can never spawn among the beds.
+  // `stocksInZone("farmstead")` is no longer empty since that merge (the 22
+  // crops moved here too), but nothing SPAWNS in this particular rect --
+  // `zoneScenery`'s own scatter still excludes `farmstead` outright.
   farmstead: yardRect(170, 200, 160, 160),
-  // The Hen Coops' own district now. 128 rather than the 160 they had in the
-  // yard: Hen Haven is a 200-unit district and a 160 box would leave a 20-unit
-  // verge, under the 16 the fence and its posts need.
-  henhaven: { x: -576, y: -256, width: 128, height: 128 },
-  // THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way.
-  // A bed is `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY
-  // inside this rect, so 160 -- two and a half beds across, and starting at
-  // 220, which is not a multiple of 64 -- left exactly TWO placeable cells on
-  // the whole farm, and `starterSoilTiles` hands out both. The shop had
-  // nowhere to sell a bed into.
-  //
-  // 2026-09-07: 192 (3 beds) became 384 (6 beds) with the re-lay, on the same
-  // lattice -- x -128, y -256 and 384 are all multiples of 64, so the 6x6 field
-  // tiles exactly with no bed overhanging the fence. soil.test.ts holds the
-  // divisibility so this cannot regress. This is where the extra buildable
-  // ground the re-lay was asked for actually lands: 36 placeable beds, up
-  // from 9.
-  meadow: { x: -128, y: -256, width: 384, height: 384 },
-  oxfields: { x: -200, y: 376, width: 192, height: 192 },
-  wallow: { x: 404, y: -312, width: 128, height: 128 },
+  // The Hen Coops' own district. Same 128 box as before the 2026-09-08
+  // restructure, offset by the same 52 units from its (moved) district
+  // corner -- only the district's position changed, not its own layout.
+  henhaven: { x: -648, y: -472, width: 128, height: 128 },
+  oxfields: { x: -644, y: 340, width: 192, height: 192 },
+  wallow: { x: 328, y: -62, width: 128, height: 128 },
   // The four wild districts. Nothing reads these until the pass that builds
   // each place: they are permanently locked (see ./sectors.ts's `wild` state),
   // and a locked district paints `sectorOvergrowth` instead of a grow area.
   // They exist so the record stays total, and they are centred so that whoever
   // builds one has a sane box to start from rather than a zero rect.
-  townsquare: { x: -304, y: 960, width: 80, height: 80 },
-  mine: { x: -546, y: -706, width: 80, height: 80 },
-  coast: { x: 442, y: -742, width: 80, height: 80 },
-  oak: { x: 1022, y: -98, width: 80, height: 80 },
+  townsquare: { x: -620, y: 688, width: 80, height: 80 },
+  mine: { x: -630, y: -698, width: 80, height: 80 },
+  coast: { x: 370, y: -304, width: 80, height: 80 },
+  oak: { x: 594, y: -40, width: 80, height: 80 },
+};
+
+/**
+ * THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way. A bed is
+ * `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY inside
+ * this rect, so 384 (6x6 = 36 beds) is deliberate -- x -192, y -192 and 384
+ * are all multiples of 64, so the field tiles exactly with no bed overhanging
+ * the fence. soil.test.ts holds the divisibility so this cannot regress.
+ *
+ * Used to be `GROW_AREA.meadow` -- the Crop Fields' own grow area, back when
+ * they were their own district. The 2026-09-08 merge folded that district
+ * into the Farmstead, but `GROW_AREA` (above) stays keyed one rect per
+ * `ZoneId` and the Farmstead's own entry there is still just the yard's Hen
+ * Coop remnant (see its own comment) -- so the bed lattice needed a home of
+ * its own, decoupled from the zone system entirely, the same way
+ * `WHEAT_FIELD` below already is. Every caller that used to read
+ * `growAreaBounds("meadow")` -- the starter-tile anchor, the soil-placement
+ * boundary check, the scene's own touches-the-field test -- reads this
+ * directly now.
+ *
+ * A fixed 64-unit inset from `CROP_FIELD`'s own corner (./yard.ts), which is
+ * the Crop Fields' full 512-square extent -- the same margin the district's
+ * own bounds always left around its beds.
+ */
+export const CROP_FIELD_BEDS: WorldRect = {
+  x: CROP_FIELD.x + 64,
+  y: CROP_FIELD.y + 64,
+  width: 384,
+  height: 384,
 };
 
 /**
@@ -335,9 +357,14 @@ export function growAreaInterior(zone: ZoneId): WorldRect {
  * that from halfway across the woods would put a Cattle Pen wherever the
  * finger happened to land.
  *
- * The four boxes do not overlap (world.test.ts holds that), so the first
- * match is the only match and no farmstead-last tie-break is needed here the
- * way `zoneAt` needs one.
+ * The boxes in `GROW_AREA` do not overlap (world.test.ts holds that), so the
+ * first match there is the only match and no farmstead-last tie-break is
+ * needed the way `zoneAt` needs one. `CROP_FIELD_BEDS` is checked separately,
+ * after that loop: it is not itself a `GROW_AREA` entry (see that constant's
+ * own header on why the Crop Fields' bed lattice needed a home of its own,
+ * decoupled from the district-keyed record), but a tap there has to answer
+ * `"farmstead"` all the same, or the Crop Fields would have no way to open
+ * the seed ring at all since the 2026-09-08 district merge.
  */
 export function growAreaAt(x: number, y: number): ZoneId | null {
   for (const id of Object.keys(GROW_AREA) as ZoneId[]) {
@@ -345,6 +372,14 @@ export function growAreaAt(x: number, y: number): ZoneId | null {
     if (x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height) {
       return id;
     }
+  }
+  if (
+    x >= CROP_FIELD_BEDS.x &&
+    x <= CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width &&
+    y >= CROP_FIELD_BEDS.y &&
+    y <= CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height
+  ) {
+    return "farmstead";
   }
   return null;
 }
@@ -367,8 +402,16 @@ export function powerOfTwoCeil(n: number): number {
   return 2 ** Math.ceil(Math.log2(n));
 }
 
-/** How far in and out the camera may go. */
-export const STACKACRES_ZOOM_MIN = 0.6;
+/** How far in and out the camera may go.
+ *
+ * 0.6 -> 0.65 with the 2026-09-08 map restructure, one of the two engine
+ * tuning knobs the design project flagged directly: a tighter world (see
+ * `WORLD_BOUND_MARGIN` below and ./yard.ts's `YARD_DELTA`) needs less room to
+ * zoom all the way out to. bounds.test.ts's own worst-case mobile-viewport
+ * check keeps its independent 0.6 literal -- that is a floor on how far this
+ * constant could ever fall, not a mirror of it, and 0.65 is comfortably above
+ * it. */
+export const STACKACRES_ZOOM_MIN = 0.65;
 export const STACKACRES_ZOOM_MAX = 5;
 
 export function clampZoom(zoom: number): number {
@@ -648,6 +691,15 @@ export interface CropPlacement {
  * walks inside `growAreaInterior` through `spawnCritter`/`stepCritter`. The
  * "crops on a grid, animals scattered" split lives at those two call sites
  * and is preserved by this function staying out of it.
+ *
+ * `zone` is `"farmstead"` for every crop, since the 2026-09-08 district
+ * merge -- see `STOCK_ZONE`'s own header. That is exactly why the fallback
+ * cannot simply be `growAreaInterior(zone)` any more: `GROW_AREA.farmstead`
+ * is the yard's own Hen Coop remnant, not the Crop Fields, and scattering an
+ * un-slotted crop there would park it at the barn door. `CROP_FIELD_BEDS` is
+ * the box that actually is the Crop Fields' own ground, so a crop with no
+ * placement falls back there specifically; every other zone still falls back
+ * to its own `growAreaInterior`, unchanged.
  */
 export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement): WorldPoint {
   if (placement) {
@@ -657,7 +709,9 @@ export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement
         : soilSlotSpot(placement.soil, placement.slot);
     if (at) return at;
   }
-  return pointWithin(growAreaInterior(zone), seededRandom(seedFromId(unitId)));
+  const random = seededRandom(seedFromId(unitId));
+  if (zone === "farmstead") return pointWithin(CROP_FIELD_BEDS, random);
+  return pointWithin(growAreaInterior(zone), random);
 }
 
 /**
@@ -771,26 +825,41 @@ export const HUD_VIEW_EXPANSION = 1.1;
 export const STACKACRES_CHUNK = 160;
 
 /** How far past the union of every district's own bounds the hard camera
- *  boundary sits (./bounds.ts), in world units -- about one and a half
- *  scenery chunks, so a ring or two of the woodland `chunkScenery` already
- *  thins into still stands between the outermost district and the wall,
- *  rather than the districts' own fences butting straight up against it. */
-export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1.5;
+ *  boundary sits (./bounds.ts), in world units -- one scenery chunk, so at
+ *  least one ring of the woodland `chunkScenery` already thins into still
+ *  stands between the outermost district and the wall, rather than the
+ *  districts' own fences butting straight up against it.
+ *
+ *  1.5 chunks (240) -> 1 chunk (160) with the 2026-09-08 map restructure, the
+ *  other engine tuning knob the design project flagged directly: the tighter
+ *  district layout (./yard.ts's `YARD_DELTA`) already leaves less open
+ *  woodland to cross between districts, and a full 1.5-chunk margin on top of
+ *  that padded the world with scenery nobody was walking through -- fewer
+ *  scenery chunks generated overall is the whole point of tightening the map. */
+export const WORLD_BOUND_MARGIN = STACKACRES_CHUNK * 1;
 
 /**
- * The rectangle kept clear of wild scenery: x 20..440, y -60..410. The Hen
- * Coop block (170..330, 200..360), the barn yard north of it (barn feet on
- * y 34, roof to -28, a stone wall at -50..-40), the pond, the lane down the
- * west verge with its lamps at x 26, and the mailbox at the lane's end
- * (y 402) -- with air around all of it, so a tree can never grow on the roof
- * or lean its canopy over the lane. The west edge moved 28 -> 20 when the
- * lane became a two-and-a-half-tile road (see ./roads.ts): its body now
- * reaches x 30 and its feathered rim past that.
+ * The rectangle kept clear of wild scenery. Its yard half is x 20..440,
+ * y -60..410 in the yard's own frame -- the Hen Coop block (170..330,
+ * 200..360), the barn yard north of it (barn feet on y 34, roof to -28, a
+ * stone wall at -50..-40), the pond, the lane down the west verge with its
+ * lamps at x 26, and the mailbox at the lane's end (y 402) -- with air
+ * around all of it, so a tree can never grow on the roof or lean its canopy
+ * over the lane. The west edge moved 28 -> 20 when the lane became a
+ * two-and-a-half-tile road (see ./roads.ts): its body now reaches x 30 and
+ * its feathered rim past that.
+ *
+ * SINCE THE 2026-09-08 DISTRICT MERGE, this is the union of that yard rect
+ * and ./yard.ts's `CROP_FIELD` -- the Crop Fields merged into the Farmstead
+ * outright (see ./zones.ts's own header), and the ground they stand on has
+ * to be as clear of wild scenery as the yard always was, for the identical
+ * reason: a tree growing through a soil bed is the same bug as one growing
+ * through the barn roof.
  *
  * Still has to equal `STACKACRES_ZONES.farmstead.bounds` in ./zones.ts
  * exactly -- zones.test.ts holds the two to each other.
  */
-export const FARM_ZONE: WorldRect = yardRect(20, -60, 420, 470);
+export const FARM_ZONE: WorldRect = { x: -700, y: -256, width: 956, height: 512 };
 
 export function inFarmZone(x: number, y: number): boolean {
   return (

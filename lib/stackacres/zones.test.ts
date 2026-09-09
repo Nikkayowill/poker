@@ -27,6 +27,7 @@ import {
   PEN_BLOCKS,
 } from "./zones";
 import { FARM_ZONE, chunkScenery, growAreaBounds, STACKACRES_CHUNK } from "./world";
+import { CROP_FIELD } from "./yard";
 
 const corners = (r: { x: number; y: number; width: number; height: number }) => [
   { x: r.x, y: r.y },
@@ -162,24 +163,27 @@ describe("zone tool policy", () => {
     }
   });
 
-  it("lets Look work anywhere and the scythe only in the meadow", () => {
+  it("lets Look work anywhere and the scythe only in the Farmstead", () => {
+    // The Crop Fields' own grass lives inside the Farmstead district now
+    // (2026-09-08 merge), so the scythe's own zone policy points there
+    // instead of a separate "meadow" id.
     expect(zoneToolPolicy.inspect).toEqual([...ZONE_IDS]);
-    expect(zoneToolPolicy.scythe).toEqual(["meadow"]);
+    expect(zoneToolPolicy.scythe).toEqual(["farmstead"]);
   });
 
   it("passes an action in its own district and names the right place when it refuses", () => {
-    const meadow = STACKACRES_ZONES.meadow.approach;
-    const ok = isActionValidInZone(meadow.x, meadow.y, "scythe");
-    expect(ok).toEqual({ ok: true, zone: "meadow" });
-
     const farm = STACKACRES_ZONES.farmstead.approach;
-    const no = isActionValidInZone(farm.x, farm.y, "scythe");
+    const ok = isActionValidInZone(farm.x, farm.y, "scythe");
+    expect(ok).toEqual({ ok: true, zone: "farmstead" });
+
+    const wallow = STACKACRES_ZONES.wallow.approach;
+    const no = isActionValidInZone(wallow.x, wallow.y, "scythe");
     expect(no.ok).toBe(false);
     if (no.ok) throw new Error("unreachable");
-    expect(no.zone).toBe("farmstead");
+    expect(no.zone).toBe("wallow");
     // The refusal has to say where it DOES work, or the player finds out by
     // walking the whole map.
-    expect(no.reason).toContain(STACKACRES_ZONES.meadow.label);
+    expect(no.reason).toContain(STACKACRES_ZONES.farmstead.label);
   });
 
   it("refuses out in the woodland, where there is no district at all", () => {
@@ -231,9 +235,16 @@ describe("the woodland yields to the districts", () => {
   });
 });
 
-describe("the Long Meadow's grass", () => {
-  const meadow = STACKACRES_ZONES.meadow;
-  const someTile = () => meadowTileAt(meadow.approach.x + 60, meadow.approach.y + 60);
+describe("the Crop Fields' grass", () => {
+  // The Crop Fields stopped being their own district (`meadow`) in the
+  // 2026-09-08 merge into the Farmstead -- see ./zones.ts's and ./yard.ts's
+  // own headers. Their ground is `CROP_FIELD` now, a fixed rect rather than a
+  // `STACKACRES_ZONES` entry, and `meadowBaseDensity` tests membership in it
+  // directly instead of asking `zoneAt` for a district id.
+  // Dead centre of the field, clear of both its edges and the lane that
+  // crosses its west side -- a corner offset landed on that lane instead.
+  const someTile = () =>
+    meadowTileAt(CROP_FIELD.x + CROP_FIELD.width / 2, CROP_FIELD.y + CROP_FIELD.height / 2);
 
   it("floor-divides tile coordinates, so negative world space does not fold two tiles into one", () => {
     expect(meadowTileAt(-1, -1)).toEqual({ tx: -1, ty: -1 });
@@ -242,9 +253,11 @@ describe("the Long Meadow's grass", () => {
     expect(meadowTileAt(MEADOW_TILE, 0).tx).toBe(1);
   });
 
-  it("grows only inside the meadow, and not on the lane through it", () => {
-    // In the yard, and out in open woodland: neither is the Grand Farm, so
-    // neither grows its grass.
+  it("grows only inside the Crop Fields, and not on the lane through it", () => {
+    // In the yard, and out in open woodland: neither is the Crop Fields, so
+    // neither grows its grass. The yard and the Crop Fields share the same
+    // `farmstead` zone id now, so this checks CROP_FIELD's own bounds rather
+    // than `zoneAt`.
     const home = STACKACRES_ZONES.farmstead.approach;
     const farm = meadowTileAt(home.x, home.y);
     expect(meadowBaseDensity(farm.tx, farm.ty)).toBe(0);
@@ -257,7 +270,12 @@ describe("the Long Meadow's grass", () => {
     if (!lane) throw new Error("no meadowSpur");
     for (const p of lane.points) {
       const t = meadowTileAt(p.x, p.y);
-      if (zoneAt(p.x, p.y) !== "meadow") continue;
+      const inField =
+        p.x >= CROP_FIELD.x &&
+        p.x <= CROP_FIELD.x + CROP_FIELD.width &&
+        p.y >= CROP_FIELD.y &&
+        p.y <= CROP_FIELD.y + CROP_FIELD.height;
+      if (!inField) continue;
       expect(nearPath(p.x, p.y)).toBe(true);
       expect(meadowBaseDensity(t.tx, t.ty), `grass on the lane at ${p.x},${p.y}`).toBe(0);
     }
@@ -265,7 +283,7 @@ describe("the Long Meadow's grass", () => {
 
   it("is not one uniform height -- a flat field reads as flat as a bare one", () => {
     const seen = new Set<number>();
-    const b = meadow.bounds;
+    const b = CROP_FIELD;
     for (let y = b.y; y < b.y + b.height; y += MEADOW_TILE) {
       for (let x = b.x; x < b.x + b.width; x += MEADOW_TILE) {
         const t = meadowTileAt(x + 1, y + 1);
@@ -329,11 +347,14 @@ describe("the scythe's stroke", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("cuts nothing outside the meadow, so a stroke that runs off the field just stops", () => {
+  it("cuts nothing outside the Crop Fields, so a stroke that runs off the field just stops", () => {
+    // West, into the Farmstead's own yard -- the same district id now, since
+    // the 2026-09-08 merge, but a different patch of ground with no grass of
+    // its own.
     const farm = STACKACRES_ZONES.farmstead.approach;
-    expect(mowStroke(farm, { x: farm.x + 120, y: farm.y })).toEqual([]);
-    // A stroke starting in the meadow and running north into the woods keeps
-    // only the meadow half.
+    expect(mowStroke(farm, { x: farm.x - 120, y: farm.y })).toEqual([]);
+    // A stroke starting in the Crop Fields and running north into the woods
+    // keeps only the field's own half.
     const out = mowStroke({ x: gate.x, y: gate.y }, { x: gate.x, y: gate.y - 400 });
     for (const t of out) {
       expect(meadowBaseDensity(t.tx, t.ty)).toBeGreaterThan(0);
@@ -425,7 +446,7 @@ describe("arriving", () => {
       // at a readable zoom.
       expect(frame.width).toBe(frame.height);
     }
-    expect(zoneFrame("meadow").width).toBe(zoneFrame("wallow").width);
+    expect(zoneFrame("oxfields").width).toBe(zoneFrame("wallow").width);
   });
 });
 

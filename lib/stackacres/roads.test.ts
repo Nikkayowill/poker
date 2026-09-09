@@ -45,10 +45,10 @@ describe("road tiers", () => {
     // forks off paints the junction the wrong way round.
     const arterial = FARM_PATHS.filter((p) => p.tier === "arterial").map((p) => p.key);
     expect(arterial).toEqual([
-      "ring1", "ring2", "ring3", "ring4", "ring5", "ring6", "ring7", "ring8",
-      "henhavenSpur", "meadowSpur", "oxfieldsSpur", "wallowSpur",
-      "townsquareSpur", "mineSpur", "oakSpur",
       "lane", "yardRoad",
+      "meadowSpur", "henhavenSpur", "oxfieldsSpur",
+      "wallowSpur", "mineSpur", "townsquareSpur",
+      "coastSpur", "oakSpur",
     ]);
     // The generated spurs are the narrowest thing on the map: one tile.
     for (const spur of ALL_FARM_PATHS.filter((p) => p.key.startsWith("spur-"))) {

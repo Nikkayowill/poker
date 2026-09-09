@@ -82,7 +82,12 @@ import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
-import { HUD_VIEW_EXPANSION, growAreaBounds, stockZone, type WorldPoint } from "@/lib/stackacres/world";
+import {
+  HUD_VIEW_EXPANSION,
+  CROP_FIELD_BEDS,
+  stockZone,
+  type WorldPoint,
+} from "@/lib/stackacres/world";
 import {
   SOIL_SLOTS_PER_TILE,
   soilTileAt,
@@ -153,6 +158,7 @@ import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
 import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
+import { StackAcresCropFieldsModal } from "./stackacres-crop-fields-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresVisitorGreeting } from "./stackacres-visitor-greeting";
 import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
@@ -342,6 +348,9 @@ interface StackAcresResponse {
    *  Absent only from a response old enough to predate the feature, which
    *  `applyResponse` reads as "not yet". */
   greenhouseBuilt?: boolean;
+  /** Whether the Crop Fields (lib/stackacres/crop-fields.ts) have been
+   *  unlocked. Same "absent means not yet" posture as `greenhouseBuilt`. */
+  cropFieldsUnlocked?: boolean;
   /** The Midnight Merchant's current visit, straight through from the
    *  server every response carries it on. `null` (not merely absent) means
    *  "confirmed no visit right now" -- see `MidnightMerchantManager.
@@ -619,6 +628,10 @@ export function StackAcresFarm() {
   }));
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
+  /** `clearing`'s own twin for the Crop Fields -- see
+   *  StackAcresCropFieldsModal's own header on why they need a separate
+   *  modal and a separate open flag since the 2026-09-08 district merge. */
+  const [cropFieldsModalOpen, setCropFieldsModalOpen] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
@@ -655,6 +668,7 @@ export function StackAcresFarm() {
   const [showContracts, setShowContracts] = useState(false);
   const [showGreenhouse, setShowGreenhouse] = useState(false);
   const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
+  const [cropFieldsUnlocked, setCropFieldsUnlocked] = useState(false);
   const [showMerchant, setShowMerchant] = useState(false);
   /** Owns this farm's entire Midnight Merchant render state -- see
    *  lib/stackacres/midnight-merchant.ts's own header. One instance per
@@ -1011,6 +1025,7 @@ export function StackAcresFarm() {
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
     if (typeof data.greenhouseBuilt === "boolean") setGreenhouseBuilt(data.greenhouseBuilt);
+    if (typeof data.cropFieldsUnlocked === "boolean") setCropFieldsUnlocked(data.cropFieldsUnlocked);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // meaningful answer here ("confirmed no visit"), and treating it like a
     // missing field would mean a visit that just expired could never be
@@ -1068,6 +1083,7 @@ export function StackAcresFarm() {
       secretDonations,
       merchantVisit: merchantSnapshot.visit,
       greenhouseBuilt,
+      cropFieldsUnlocked,
       nowMs: Date.now(),
     }),
     [
@@ -1088,6 +1104,7 @@ export function StackAcresFarm() {
       secretDonations,
       merchantSnapshot,
       greenhouseBuilt,
+      cropFieldsUnlocked,
     ],
   );
 
@@ -1123,6 +1140,7 @@ export function StackAcresFarm() {
       secrets,
       secretDonations,
       greenhouseBuilt,
+      cropFieldsUnlocked,
     }),
     [
       units,
@@ -1144,6 +1162,7 @@ export function StackAcresFarm() {
       secrets,
       secretDonations,
       greenhouseBuilt,
+      cropFieldsUnlocked,
     ],
   );
   type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
@@ -1167,6 +1186,7 @@ export function StackAcresFarm() {
     setSecrets(snap.secrets);
     setSecretDonations(snap.secretDonations);
     setGreenhouseBuilt(snap.greenhouseBuilt);
+    setCropFieldsUnlocked(snap.cropFieldsUnlocked);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -1212,7 +1232,7 @@ export function StackAcresFarm() {
    *  header) so it is recomputed here every time rather than read off any
    *  response, then handed down ahead of whatever this profile has bought. */
   const mergedSoilTiles = useMemo(
-    () => [...starterSoilTiles(growAreaBounds("meadow")), ...soilTiles],
+    () => [...starterSoilTiles(CROP_FIELD_BEDS), ...soilTiles],
     [soilTiles],
   );
 
@@ -1269,13 +1289,26 @@ export function StackAcresFarm() {
     world.current?.setMerchant(merchantRendered);
   }, [merchantRendered]);
 
+  // Whether a tap landed inside the Crop Fields' own bed lattice
+  // (`CROP_FIELD_BEDS`), rather than merely somewhere in the Farmstead --
+  // since the 2026-09-08 district merge, `radial.zone === "farmstead"` alone
+  // is true for the Farmstead's own yard too (its Hen Coop remnant grow
+  // area), and soil is only ever a Crop Fields concept.
+  const radialInCropFieldBeds =
+    !!radial &&
+    radial.zone === "farmstead" &&
+    radial.world.x >= CROP_FIELD_BEDS.x &&
+    radial.world.x <= CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width &&
+    radial.world.y >= CROP_FIELD_BEDS.y &&
+    radial.world.y <= CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height;
+
   // The bed outline follows the ring, because the ring is where a bed is
   // bought. Keyed on the radial state, which changes only on a tap, so this
   // pushes once per open and once per close rather than per frame -- and
   // every `setRadial(null)` site clears the outline without having to know
   // it exists. Only the Crop Fields can hold a bed (the service refuses
   // every other district), so no other zone draws one.
-  const radialSoilWorld = radial?.zone === "meadow" ? radial.world : null;
+  const radialSoilWorld = radialInCropFieldBeds && radial ? radial.world : null;
   useEffect(() => {
     world.current?.previewSoilAt(radialSoilWorld);
   }, [radialSoilWorld]);
@@ -2214,6 +2247,14 @@ export function StackAcresFarm() {
     setClearing(zone);
   }, []);
 
+  /** `onWorldLockedTap`'s own twin for the Crop Fields -- see
+   *  StackAcresCropFieldsModal's own header. */
+  const onWorldCropFieldsLockedTap = useCallback(() => {
+    panelSound();
+    setRadial(null);
+    setCropFieldsModalOpen(true);
+  }, []);
+
   /**
    * The town board's two actions, handed down as promises rather than as
    * fire-and-forget calls: the sheet debits its own shelf before either goes
@@ -2269,6 +2310,12 @@ export function StackAcresFarm() {
     },
     [act],
   );
+
+  const onUnlockCropFields = useCallback(() => {
+    buySound();
+    setCropFieldsModalOpen(false);
+    void act({ action: "unlock-crop-fields" });
+  }, [act]);
 
   /** Seeding straight out of the radial menu. Closes first: the menu's
    *  prices are about to move under it, and a second tap on a stale one
@@ -2400,15 +2447,15 @@ export function StackAcresFarm() {
 
   /**
    * What Ray's shelf is allowed to look at when it decides which rows are
-   * open -- the same three facts the SERVER reads before it takes any Gold
+   * open -- the same four facts the SERVER reads before it takes any Gold
    * (`readShopProgress` in lib/server/stackacres-service.ts), fed through the
    * same pure evaluator. That is the whole reason this is a struct and not
-   * three loose props: a greyed-out card and the refusal behind it have to be
+   * four loose props: a greyed-out card and the refusal behind it have to be
    * two renderings of one answer, never two answers.
    */
   const shopProgress = useMemo<StackAcresShopProgress>(
-    () => ({ sectors, influence, greenhouseBuilt }),
-    [sectors, influence, greenhouseBuilt],
+    () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
+    [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
 
   const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
@@ -2481,11 +2528,11 @@ export function StackAcresFarm() {
   const placeLocked = !isSectorUnlocked(place, sectors);
 
   /**
-   * The seed ring's one extra button for the Long Meadow: till one planting
+   * The seed ring's one extra button for the Crop Fields: till one planting
    * square of empty ground, add another square to a bed already started
-   * there, or lift a bed outright. Only ever set for `"meadow"" -- soil is a
-   * Crop Fields concept everywhere else in this module, and every other
-   * zone's ring stays exactly what it was.
+   * there, or lift a bed outright. Only ever set for `radialInCropFieldBeds`
+   * -- soil is a Crop Fields concept everywhere else in this module, and
+   * every other zone's ring stays exactly what it was.
    *
    * `mergedSoilTiles` (starter + purchased) is the same list the scene was
    * just handed, so "is there a tile here" never disagrees with what is
@@ -2493,7 +2540,7 @@ export function StackAcresFarm() {
    * soil.ts's own "the free starter beds are permanent" rule.
    */
   const soilExtraActions = (() => {
-    if (!radial || radial.zone !== "meadow") return [];
+    if (!radial || !radialInCropFieldBeds) return [];
     const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
     const existing = mergedSoilTiles.find((tile) => tile.tx === tx && tile.ty === ty);
     if (!existing) {
@@ -2632,7 +2679,9 @@ export function StackAcresFarm() {
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
+              cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}
+              onCropFieldsLockedTap={onWorldCropFieldsLockedTap}
               onViewMoved={onViewMoved}
               soilTiles={mergedSoilTiles}
               onDroneForageCollected={onDroneForageCollected}
@@ -2722,13 +2771,17 @@ export function StackAcresFarm() {
               it. Rendered after the camera controls so it stacks over them,
               and inside .sa-field so its coordinates are the ones the scene
               reported the tap in. */}
-          {/* The Long Meadow gets the scrollable seed strip -- 22 crops
+          {/* The Crop Fields get the scrollable seed strip -- 22 crops
               cannot lay out on a ring (see StackAcresSeedStrip's own
               header) -- and it filters to what the shelf actually holds.
-              Every other district still gets the ring: three livestock
-              kinds fit it fine, and livestock has no seed shelf to filter
-              against (see SeedStock's own doc comment). */}
-          {radial && radial.zone === "meadow" && (
+              Every other zone still gets the ring: three livestock kinds
+              fit it fine, and livestock has no seed shelf to filter against
+              (see SeedStock's own doc comment). Gated on
+              `radialInCropFieldBeds`, not `radial.zone === "farmstead"`
+              alone: since the 2026-09-08 district merge the Farmstead is
+              also the yard, and a tap on ITS own grow area (the Hen Coop
+              remnant, which holds no stock) is not a seed tap. */}
+          {radial && radialInCropFieldBeds && (
             <StackAcresSeedStrip
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
@@ -2745,7 +2798,7 @@ export function StackAcresFarm() {
               extraActions={soilExtraActions}
             />
           )}
-          {radial && radial.zone !== "meadow" && (
+          {radial && !radialInCropFieldBeds && (
             <StackAcresRadialMenu
               at={radial.at}
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
@@ -3431,6 +3484,19 @@ export function StackAcresFarm() {
           busy={pendingByPrefix("clear-sector")}
           onClear={onClearSector}
           onClose={() => { panelSound(); setClearing(null); }}
+        />
+      )}
+
+      {cropFieldsModalOpen && (
+        <StackAcresCropFieldsModal
+          unlocked={cropFieldsUnlocked}
+          unitCount={units.length}
+          goldBalance={profile?.goldBalance ?? null}
+          unlimitedGold={profile?.unlimitedGold === true}
+          upkeepOutstanding={upkeep.due}
+          busy={pendingByPrefix("unlock-crop-fields")}
+          onUnlock={onUnlockCropFields}
+          onClose={() => { panelSound(); setCropFieldsModalOpen(false); }}
         />
       )}
 

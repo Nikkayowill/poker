@@ -89,6 +89,7 @@ import {
   clampZoom,
   critterSpeed,
   cropRanks,
+  CROP_FIELD_BEDS,
   cropSpot,
   grandfatherRayHitAt,
   growAreaAt,
@@ -110,6 +111,10 @@ import {
   type WorldRect,
   YARD_MATS,
 } from "@/lib/stackacres/world";
+// A strict leaf (imports nothing), so a plain value import with no cycle to
+// work around. The Crop Fields' own ground, since the 2026-09-08 merge
+// folded them into the Farmstead district -- see that constant's own header.
+import { CROP_FIELD } from "@/lib/stackacres/yard";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
   addSoilSlot,
@@ -164,7 +169,13 @@ import {
 import { GameJuiceManager } from "./game-juice-manager";
 import { FENCE_BAY } from "@/lib/stackacres/fence";
 import { spawnGait, stepGait, type Gait } from "@/lib/stackacres/gait";
-import { SECTOR_FOG, sectorOvergrowth, type SectorId } from "@/lib/stackacres/sectors";
+import {
+  SECTOR_FOG,
+  sectorOvergrowth,
+  cropFieldOvergrowth,
+  type OvergrowthItem,
+  type SectorId,
+} from "@/lib/stackacres/sectors";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -384,6 +395,16 @@ export interface StackAcresSceneCallbacks {
    */
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   /**
+   * `onLockedSectorTap`'s own twin for the Crop Fields, which stopped being
+   * a `ZoneId`/`SectorId` in the 2026-09-08 district merge (see
+   * ./zones.ts's own header) and so cannot fire that callback at all --
+   * `this.locked` only ever holds outer districts. Fires on a tap anywhere
+   * within ./yard.ts's `CROP_FIELD` while `this.cropFieldsLocked` is true,
+   * the same "the whole field, not just a fenced box" posture
+   * `onLockedSectorTap` takes and for the identical reason.
+   */
+  onCropFieldsLockedTap: (at: TapPoint) => void;
+  /**
    * A tap that landed on the Greenhouse's own footprint while the camera is
    * OUTSIDE it -- the cue to step in. Checked after the barn (both are
    * structures; ordering between the two never matters since their
@@ -600,6 +621,30 @@ const FLICK_SPEED_MIN = 0.12;
 /** Per 16ms, so the coast is frame-rate independent. */
 const GLIDE_DECAY = 0.92;
 const GLIDE_STOP = 0.02;
+
+/**
+ * The elastic edge. Phaser's own `camera.setBounds()` is a hard clamp with no
+ * give in it -- a drag or a glide that reaches the world's own edge simply
+ * stops dead on the frame it gets there, which reads as hitting a wall. This
+ * is a soft one instead: `setBounds()` is called with the true world bounds
+ * padded out by `SOFT_BOUNDS_REACH` screen units (so Phaser's own hard stop
+ * only bites past that), a drag or a glide already past the TRUE bounds has
+ * its own delta scaled down the further past it goes (`edgeResistance`), and
+ * releasing the drag (or the glide decaying to a stop) while still past the
+ * true edge eases the camera back inside it (`springBackToBounds`) rather
+ * than leaving it parked in the padding. The true bounds themselves --
+ * `this.worldBounds` -- are untouched: every OTHER camera move (`focusZone`,
+ * `homeView`, the edge-nudge guides) still reasons about the real edge, not
+ * the padded one; only a player's own drag/glide ever sees the give.
+ */
+const SOFT_BOUNDS_REACH = 72;
+/** How much a drag/glide's own delta shrinks once it is `SOFT_BOUNDS_REACH`
+ *  units past the true edge -- 1 is no resistance at all (the old hard
+ *  clamp), 0 would refuse to move any further at all. Applied smoothly from
+ *  the true edge (multiplier 1) out to the padded one (multiplier this). */
+const EDGE_RESISTANCE_AT_REACH = 0.22;
+/** How long the spring-back eases over, in ms. */
+const SPRING_BACK_MS = 260;
 
 // The barn stands north of the Farmstead's own grow area with a yard
 // between: its feet are on y 34, and the lane and road (lib/stackacres/
@@ -1142,7 +1187,7 @@ export class StackAcresScene extends Phaser.Scene {
    * survive a reload -- see `setSoil`, which is the seam they will arrive
    * through.
    */
-  private soil: SoilMap = createSoilMap(starterSoilTiles(growAreaBounds("meadow")));
+  private soil: SoilMap = createSoilMap(starterSoilTiles(CROP_FIELD_BEDS));
   /**
    * Each crop's rank among its siblings, rebuilt once per `setUnits` rather
    * than derived per lookup: `unitAt` asks for every node's spot on every
@@ -1360,6 +1405,22 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private sectorArt = new Map<ZoneId, Phaser.GameObjects.GameObject[]>();
 
+  /**
+   * The Crop Fields' own lock state -- the same idea as `locked` above, but
+   * for ground that is not a `ZoneId` any more. Since the 2026-09-08 map
+   * restructure merged the Crop Fields into the Farmstead (a HOME sector,
+   * never wild), they needed their own flag: `this.locked` only ever holds
+   * outer districts. Starts locked for the identical reason `locked` starts
+   * with all three outer districts in it -- the shell pushes the real answer
+   * with `setCropFieldsUnlocked` as soon as its first read lands, and until
+   * then wild ground is the safe default to draw.
+   */
+  private cropFieldsLocked = true;
+
+  /** Everything currently standing on the Crop Fields because of their lock
+   *  state -- the `sectorArt` equivalent for `cropFieldsLocked`. */
+  private cropFieldArt: Phaser.GameObjects.GameObject[] = [];
+
   /** The pond's surface, built once in paintPond and walked by index in
    *  update() so a frame allocates nothing: the drifting glints, the lily
    *  pads with their resting y beside them, the flowers with the index of
@@ -1508,14 +1569,22 @@ export class StackAcresScene extends Phaser.Scene {
     this.grass.tileScaleX = 1 / GRASS_PX;
     this.grass.tileScaleY = 1 / GRASS_PX;
 
-    // The world's own hard edge, set before anything else about its shape:
-    // every later camera move (drag, glide, pinch-zoom, focusZone, the
-    // opening homeView() itself) is already written in this same projected
-    // screen space, so none of them need to know bounds exist -- Phaser
-    // clamps scrollX/scrollY against this rect on every frame regardless of
-    // which of them moved the camera there.
+    // The world's own true edge, set before anything else about its shape:
+    // every later camera move (pinch-zoom, focusZone, the opening homeView()
+    // itself, the edge-nudge guides) reasons about THIS rect, in the same
+    // projected screen space, so none of them need to know a softer one
+    // exists underneath. `this.worldBounds` stays the true edge -- only
+    // Phaser's own `setBounds()` gets the padded one (`SOFT_BOUNDS_REACH`
+    // wider on every side), so its per-frame hard clamp only bites past the
+    // give a drag or a glide already gets from `edgeResistance` /
+    // `springBackToBounds`. See the constant's own header.
     const bounds = worldBoundsScreenRect();
-    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    this.cameras.main.setBounds(
+      bounds.x - SOFT_BOUNDS_REACH,
+      bounds.y - SOFT_BOUNDS_REACH,
+      bounds.width + SOFT_BOUNDS_REACH * 2,
+      bounds.height + SOFT_BOUNDS_REACH * 2,
+    );
     this.worldBounds = bounds;
 
     // Mud before paths, paths before districts: a road is laid over the
@@ -1534,6 +1603,7 @@ export class StackAcresScene extends Phaser.Scene {
     // grow area) or the wild growth standing where that farm is not built
     // yet. Rebuilt per district by `setSectors` when land is cleared.
     for (const id of ZONE_IDS) this.paintSector(id);
+    this.paintCropField();
 
     // Just above the beds themselves, so the outline reads over a tile that
     // already has one, but still under the crops standing on it.
@@ -2825,9 +2895,27 @@ export class StackAcresScene extends Phaser.Scene {
    * everything standing in it.
    */
   private paintOvergrowth(zone: ZoneId): Phaser.GameObjects.GameObject[] {
+    return this.paintOvergrowthOver(STACKACRES_ZONES[zone].bounds, sectorOvergrowth(zone));
+  }
+
+  /** The Crop Fields' own locked overgrowth -- everything `paintOvergrowth`
+   *  says above, minus having a `ZoneId` to read bounds off of. The Crop
+   *  Fields stopped being a district (and so a sector) in the 2026-09-08 map
+   *  restructure's merge into the Farmstead; see `setCropFieldsUnlocked`. */
+  private paintCropFieldOvergrowth(): Phaser.GameObjects.GameObject[] {
+    return this.paintOvergrowthOver(CROP_FIELD, cropFieldOvergrowth());
+  }
+
+  /** The shared painter both `paintOvergrowth` and `paintCropFieldOvergrowth`
+   *  draw from -- a haze over one rectangle, plus whatever wild growth items
+   *  were generated for it. */
+  private paintOvergrowthOver(
+    bounds: WorldRect,
+    items: readonly OvergrowthItem[],
+  ): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
     const haze = this.add.graphics().setDepth(ZONE_GROUND_DEPTH);
-    const corners = projectedCorners(STACKACRES_ZONES[zone].bounds);
+    const corners = projectedCorners(bounds);
     haze.fillStyle(SECTOR_FOG.colour, SECTOR_FOG.alpha);
     haze.beginPath();
     haze.moveTo(corners.n.x, corners.n.y);
@@ -2838,7 +2926,7 @@ export class StackAcresScene extends Phaser.Scene {
     haze.fillPath();
     built.push(haze);
 
-    for (const item of sectorOvergrowth(zone)) {
+    for (const item of items) {
       if (castsShadow(item.kind)) {
         const [wide, tall] = sceneryShadowScale(item.kind);
         built.push(
@@ -2887,6 +2975,27 @@ export class StackAcresScene extends Phaser.Scene {
     if (!this.created) return;
     for (const id of changed) this.paintSector(id);
     this.dropChunks();
+  }
+
+  /**
+   * Whether the Crop Fields have been unlocked (lib/stackacres/crop-fields.ts)
+   * -- the `setSectors` equivalent for `cropFieldsLocked`. Called by the
+   * shell every time a read or an action lands, same posture as `setSectors`:
+   * a no-op when nothing changed, so it costs nothing on every ordinary poll.
+   */
+  setCropFieldsUnlocked(unlocked: boolean): void {
+    if (unlocked === !this.cropFieldsLocked) return;
+    this.cropFieldsLocked = !unlocked;
+    if (!this.created) return;
+    this.paintCropField();
+    this.dropChunks();
+  }
+
+  private paintCropField(): void {
+    for (const object of this.cropFieldArt) object.destroy();
+    this.cropFieldArt = this.cropFieldsLocked
+      ? this.paintCropFieldOvergrowth()
+      : [];
   }
 
   /** Which fence bay, if any, a ground point lands on -- only districts
@@ -3073,7 +3182,11 @@ export class StackAcresScene extends Phaser.Scene {
    *  the SDF now cuts differently, and every crop whose slot shifted. */
   private refreshSoil(): void {
     if (!this.created) return;
-    this.paintSector("meadow");
+    // Repaints the Crop Fields' own soil tiles. Used to be `paintSector`'s
+    // own "meadow" district; that district merged into the Farmstead in the
+    // 2026-09-08 restructure, and `paintDistrictBoundary("farmstead")`'s crop
+    // branch (`paintSoilTiles`) is what draws the beds now.
+    this.paintSector("farmstead");
     this.dropChunks();
     // Rebuild the units so each crop walks to its new slot. `setUnits`
     // rebuilds only nodes whose signature changed, and a slot move does not
@@ -3726,8 +3839,9 @@ export class StackAcresScene extends Phaser.Scene {
       }
       const cam = this.cameras.main;
       const zoom = this.zoomL();
-      cam.scrollX -= dx / zoom;
-      cam.scrollY -= dy / zoom;
+      const resisted = this.edgeResistance(-dx / zoom, -dy / zoom);
+      cam.scrollX += resisted.x;
+      cam.scrollY += resisted.y;
     };
 
     const up = (event: PointerEvent, cancelled: boolean): void => {
@@ -3752,6 +3866,12 @@ export class StackAcresScene extends Phaser.Scene {
       this.gesture = null;
       if (gesture.kind === "pan") {
         if (!cancelled) this.flick(gesture);
+        // A flick that actually threw a glide springs back once the glide
+        // itself decays to a stop (see `coast()`), not here -- easing back
+        // while the glide is still carrying the camera would fight its own
+        // momentum. A release with no flick (a slow drag let go) has no
+        // glide to do that, so it has to be checked right here instead.
+        if (!this.glide) this.springBackIfOutOfBounds();
         return;
       }
       if (gesture.kind === "mow") {
@@ -3881,6 +4001,23 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onLockedSectorTap(wild, local);
         return;
       }
+      // The Crop Fields' own twin of the check above: `zoneAt` answers
+      // "farmstead" here (they are the same district since the 2026-09-08
+      // merge), and the Farmstead itself is never in `this.locked` -- so a
+      // tap on the field's own wild growth needs its own check, against
+      // `this.cropFieldsLocked` and `CROP_FIELD`'s bounds directly, or it
+      // would fall through to the grow-area tap below and open the seed menu
+      // on ground that is still under trees.
+      if (
+        this.cropFieldsLocked &&
+        ground.x >= CROP_FIELD.x &&
+        ground.x <= CROP_FIELD.x + CROP_FIELD.width &&
+        ground.y >= CROP_FIELD.y &&
+        ground.y <= CROP_FIELD.y + CROP_FIELD.height
+      ) {
+        this.callbacks.onCropFieldsLockedTap(local);
+        return;
+      }
       // A fence bay -- checked right before the grow-area fallback, since a
       // bay sits ON a district's own boundary and would otherwise resolve
       // as a plain ground tap (an offer to seed). Only tested against
@@ -3975,12 +4112,81 @@ export class StackAcresScene extends Phaser.Scene {
     const step = Math.min(Math.max(delta, 1), 34);
     const cam = this.cameras.main;
     const zoom = this.zoomL();
-    cam.scrollX -= (glide.x * step) / zoom;
-    cam.scrollY -= (glide.y * step) / zoom;
+    const resisted = this.edgeResistance(-(glide.x * step) / zoom, -(glide.y * step) / zoom);
+    cam.scrollX += resisted.x;
+    cam.scrollY += resisted.y;
     const decay = Math.pow(GLIDE_DECAY, step / 16);
     glide.x *= decay;
     glide.y *= decay;
-    if (Math.hypot(glide.x, glide.y) < GLIDE_STOP) this.glide = null;
+    if (Math.hypot(glide.x, glide.y) < GLIDE_STOP) {
+      this.glide = null;
+      this.springBackIfOutOfBounds();
+    }
+  }
+
+  /** The true-bounds clamp range on each axis, in the same terms Phaser's
+   *  own `Camera.clampX`/`clampY` use internally -- reproduced against
+   *  `this.worldBounds` (the TRUE edge) rather than the camera's own,
+   *  currently-padded, `_bounds`. See `SOFT_BOUNDS_REACH`'s own header. */
+  private trueClampRange(): { bx: number; bw: number; by: number; bh: number } | null {
+    const bounds = this.worldBounds;
+    if (!bounds) return null;
+    const cam = this.cameras.main;
+    const dw = cam.displayWidth;
+    const dh = cam.displayHeight;
+    const bx = bounds.x + (dw - cam.width) / 2;
+    const bw = Math.max(bx, bx + bounds.width - dw);
+    const by = bounds.y + (dh - cam.height) / 2;
+    const bh = Math.max(by, by + bounds.height - dh);
+    return { bx, bw, by, bh };
+  }
+
+  /** Scales a proposed (scrollX, scrollY) delta down once the camera is
+   *  already past its TRUE bounds -- see `SOFT_BOUNDS_REACH`'s own header.
+   *  A delta that pushes further past the edge is damped smoothly from full
+   *  speed at the true edge to `EDGE_RESISTANCE_AT_REACH` at the padded one;
+   *  a delta that pulls back toward the true edge (or past it, back inside)
+   *  is never damped. */
+  private edgeResistance(dScrollX: number, dScrollY: number): { x: number; y: number } {
+    const range = this.trueClampRange();
+    if (!range) return { x: dScrollX, y: dScrollY };
+    const cam = this.cameras.main;
+    const damp = (scroll: number, delta: number, min: number, max: number): number => {
+      const clamped = Math.min(Math.max(scroll, min), max);
+      const overrun = scroll - clamped;
+      if (overrun === 0 || delta === 0 || Math.sign(delta) !== Math.sign(overrun)) return delta;
+      const depth = Math.min(Math.abs(overrun) / SOFT_BOUNDS_REACH, 1);
+      const factor = 1 - depth * (1 - EDGE_RESISTANCE_AT_REACH);
+      return delta * factor;
+    };
+    return {
+      x: damp(cam.scrollX, dScrollX, range.bx, range.bw),
+      y: damp(cam.scrollY, dScrollY, range.by, range.bh),
+    };
+  }
+
+  /** Eases the camera back inside its TRUE bounds if a drag or a glide left
+   *  it sitting in the soft padding -- see `SOFT_BOUNDS_REACH`'s own header.
+   *  A no-op already inside them. */
+  private springBackIfOutOfBounds(): void {
+    const range = this.trueClampRange();
+    if (!range) return;
+    const cam = this.cameras.main;
+    const targetX = Math.min(Math.max(cam.scrollX, range.bx), range.bw);
+    const targetY = Math.min(Math.max(cam.scrollY, range.by), range.bh);
+    if (targetX === cam.scrollX && targetY === cam.scrollY) return;
+    if (this.options.reducedMotion) {
+      cam.scrollX = targetX;
+      cam.scrollY = targetY;
+      return;
+    }
+    this.tweens.add({
+      targets: cam,
+      scrollX: targetX,
+      scrollY: targetY,
+      duration: SPRING_BACK_MS,
+      ease: "Sine.easeOut",
+    });
   }
 
   /* ---------------------------------------------------------------- */
@@ -4681,7 +4887,7 @@ export class StackAcresScene extends Phaser.Scene {
   private ensureCropTextures(): void {
     if (this.cropTexturesState !== "unloaded") return;
     const view = this.cameras.main.worldView;
-    const bounds = STACKACRES_ZONES.meadow.bounds;
+    const bounds = CROP_FIELD;
     const overlaps =
       view.x < bounds.x + bounds.width + CROP_LOAD_MARGIN &&
       view.x + view.width > bounds.x - CROP_LOAD_MARGIN &&
@@ -4998,7 +5204,7 @@ export class StackAcresScene extends Phaser.Scene {
     const keys: string[] = [];
     const x0 = cx * STACKACRES_CHUNK;
     const y0 = cy * STACKACRES_CHUNK;
-    const meadow = STACKACRES_ZONES.meadow.bounds;
+    const meadow = CROP_FIELD;
     // Nothing to do unless this chunk actually touches the meadow.
     if (
       x0 > meadow.x + meadow.width ||
@@ -5194,11 +5400,12 @@ export class StackAcresScene extends Phaser.Scene {
    * clock over and over and leave one square permanently bald.
    */
   private mowSegment(from: WorldPoint, to: WorldPoint): void {
-    // Nobody mows a field they have not bought. The Long Meadow's grass field
-    // is untouched while the land is locked -- waist-high uncut grass is
+    // Nobody mows a field they have not bought. The Crop Fields' grass is
+    // untouched while `cropFieldsLocked` is true -- waist-high uncut grass is
     // exactly the right picture of unworked ground, so there is nothing to
-    // hide, only a gesture to refuse.
-    if (this.locked.has("meadow")) return;
+    // hide, only a gesture to refuse. Used to check `this.locked.has("meadow")`
+    // before the 2026-09-08 district merge made the Crop Fields their own flag.
+    if (this.cropFieldsLocked) return;
     const wall = Date.now();
     let cut = false;
     for (const tile of mowStroke(from, to, scytheReachFor(this.options.toolTier), this.soil)) {
@@ -5335,7 +5542,15 @@ export class StackAcresScene extends Phaser.Scene {
     this.steppedInGreenhouse = false;
     const bounds = worldBoundsScreenRect();
     const cam = this.cameras.main;
-    cam.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    // The open world's elastic edge again, the same padded rect `create()`
+    // set -- see `SOFT_BOUNDS_REACH`'s own header. `this.worldBounds` stays
+    // the true edge either way.
+    cam.setBounds(
+      bounds.x - SOFT_BOUNDS_REACH,
+      bounds.y - SOFT_BOUNDS_REACH,
+      bounds.width + SOFT_BOUNDS_REACH * 2,
+      bounds.height + SOFT_BOUNDS_REACH * 2,
+    );
     this.worldBounds = bounds;
     const view = this.homeView();
     if (this.options.reducedMotion) {

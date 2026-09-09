@@ -89,6 +89,7 @@ declare global {
   var __riverRoomStackAcresInfluence: Map<string, number> | undefined;
   var __riverRoomStackAcresSecretLedger: Map<string, number> | undefined;
   var __riverRoomStackAcresGreenhouse: Set<string> | undefined;
+  var __riverRoomStackAcresCropFields: Set<string> | undefined;
   var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
   var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
   var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
@@ -194,6 +195,15 @@ globalThis.__riverRoomStackAcresSecretLedger = memoryStackAcresSecretLedger;
  *  per-district variant the way `memorySectors` needs one. */
 const memoryGreenhouse = globalThis.__riverRoomStackAcresGreenhouse ?? new Set<string>();
 globalThis.__riverRoomStackAcresGreenhouse = memoryGreenhouse;
+
+/** Whether a profile has unlocked the Crop Fields (lib/stackacres/crop-fields.ts).
+ *  Keyed by profileId alone, same posture as `memoryGreenhouse` and for the
+ *  same reason: unlocked or not is the whole state, one row, no per-district
+ *  variant now that the Crop Fields are not a district (see that module's
+ *  own header on the 2026-09-08 merge that made this its own flag rather
+ *  than an entry in `memorySectors`). */
+const memoryCropFields = globalThis.__riverRoomStackAcresCropFields ?? new Set<string>();
+globalThis.__riverRoomStackAcresCropFields = memoryCropFields;
 
 /** The Prestige Reset Valve's permanent state, keyed by profileId. A missing
  *  entry means "never reset" -- see STACKACRES_PRESTIGE_DEFAULT_STATE --
@@ -867,6 +877,59 @@ export async function recordStackAcresSectorCleared(
     )
     .select("sector");
   if (error) throw new Error(`Could not clear that land: ${error.message}`);
+  // `ignoreDuplicates` returns no row for a conflict, which is exactly the
+  // "somebody else got here first" signal the caller needs.
+  return (data ?? []).length > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The Crop Fields (lib/stackacres/crop-fields.ts)                     */
+/* ------------------------------------------------------------------ */
+
+/** Whether this player has unlocked the Crop Fields. Read-only; unlocking
+ *  them is `recordStackAcresCropFieldsUnlocked` below, the only writer. */
+export async function readStackAcresCropFieldsUnlocked(profileId: string): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) return memoryCropFields.has(profileId);
+
+  const { data, error } = await supabase
+    .from("homestead_crop_fields")
+    .select("profile_id")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your Crop Fields: ${error.message}`);
+  return data !== null;
+}
+
+/**
+ * Records the Crop Fields as unlocked, exactly once.
+ *
+ * Returns false when this player had already unlocked them, which the
+ * caller must treat as a lost race and REFUND on -- the same posture
+ * `recordStackAcresSectorCleared` takes, for the same reason: the thing
+ * being bought is permanent and the Gold has already left. The primary key
+ * on `homestead_crop_fields` is what makes that true; there is no
+ * read-then-write here to race against.
+ */
+export async function recordStackAcresCropFieldsUnlocked(
+  profileId: string,
+  unlockedAt: Date,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    if (memoryCropFields.has(profileId)) return false;
+    memoryCropFields.add(profileId);
+    return true;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_crop_fields")
+    .upsert(
+      { profile_id: profileId, unlocked_at: unlockedAt.toISOString() },
+      { onConflict: "profile_id", ignoreDuplicates: true },
+    )
+    .select("profile_id");
+  if (error) throw new Error(`Could not unlock the Crop Fields: ${error.message}`);
   // `ignoreDuplicates` returns no row for a conflict, which is exactly the
   // "somebody else got here first" signal the caller needs.
   return (data ?? []).length > 0;

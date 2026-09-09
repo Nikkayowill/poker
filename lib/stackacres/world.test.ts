@@ -13,6 +13,7 @@ import {
   forestDensityAt,
   clampZoom,
   cropSpot,
+  CROP_FIELD_BEDS,
   grandfatherRayHitAt,
   growAreaAt,
   growAreaBounds,
@@ -39,10 +40,12 @@ import { ZONE_IDS } from "./zones";
 describe("stock zoning", () => {
   it("gives every kind exactly the district it is kept in", () => {
     // The hens moved out of the Farmstead into Hen Haven in the 2026-09-07 map
-    // re-lay; everything else is where the pen-zoning pass put it.
+    // re-lay. Every crop moved the other way in the 2026-09-08 district
+    // merge -- "meadow" stopped being its own zone and every crop kind is
+    // zoned to "farmstead" now, which absorbed the Crop Fields outright.
     expect(stockZone("hen")).toBe("henhaven");
-    expect(stockZone("carrot")).toBe("meadow");
-    expect(stockZone("corn")).toBe("meadow");
+    expect(stockZone("carrot")).toBe("farmstead");
+    expect(stockZone("corn")).toBe("farmstead");
     expect(stockZone("pig")).toBe("wallow");
     expect(stockZone("cattle")).toBe("oxfields");
   });
@@ -437,13 +440,16 @@ describe("seedFromId", () => {
 
 describe("cropSpot", () => {
   it("is deterministic per unit id", () => {
-    expect(cropSpot("meadow", "crop-7")).toEqual(cropSpot("meadow", "crop-7"));
+    expect(cropSpot("farmstead", "crop-7")).toEqual(cropSpot("farmstead", "crop-7"));
   });
 
   it("lands inside the zone's own grow-area interior", () => {
     const ids = ["crop-1", "crop-2", "crop-3", "another-id", "yet-another"];
     for (const zone of ZONE_IDS) {
-      const interior = growAreaInterior(zone);
+      // The Farmstead is special-cased to the Crop Fields' own bed lattice
+      // (`CROP_FIELD_BEDS`), not its GROW_AREA entry (the tiny Hen Coop box)
+      // -- see cropSpot's own header, since the 2026-09-08 district merge.
+      const interior = zone === "farmstead" ? CROP_FIELD_BEDS : growAreaInterior(zone);
       for (const id of ids) {
         const spot = cropSpot(zone, id);
         expect(spot.x).toBeGreaterThanOrEqual(interior.x);

@@ -150,7 +150,7 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     const rung = sheet.locator(".sa-stock-card", { hasText: "Iron Shovel" });
     await expect(rung).toHaveClass(/is-locked/);
     await expect(rung.getByText(/Requires 1 farm milestone \(0 done\)/)).toBeVisible();
-    await expect(rung.getByText(/next: Clear the Long Meadow/)).toBeVisible();
+    await expect(rung.getByText(/next: Unlock the Crop Fields/)).toBeVisible();
     await expect(rung.getByRole("button", { name: "Locked" })).toBeDisabled();
   } finally {
     await farmerContext.close();

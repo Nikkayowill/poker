@@ -128,12 +128,13 @@ import {
   soilTileAt,
   soilTileDiamond,
   soilTileOwnedSlots,
-  soilTileRect,
   soilTileTier,
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
 } from "@/lib/stackacres/soil";
+import { createSoilGrid, SOIL_BED_TEXTURE_KEY } from "@/lib/stackacres/soil-grid";
+import type { SpriteFactory } from "@/lib/stackacres/isometric-grid-manager";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
   MONK_HOUSE_FOOTPRINT,
@@ -888,6 +889,41 @@ function bakeForageDropTexture(scene: Phaser.Scene): string {
   return FORAGE_DROP_TEXTURE;
 }
 
+/**
+ * Bakes one soil bed's flat ground diamond -- the exact fill and rim
+ * `paintAreaGround(rect, "soil", false)` used to draw per tile by hand,
+ * baked once so `IsometricGridManager.placeAsset` (lib/stackacres/soil-
+ * grid.ts) can hand every bed a real sprite instead of the inert stub it
+ * built before `paintSoilTiles` was its only scene consumer.
+ *
+ * 128x64: the exact screen size every bed's footprint projects to
+ * (soil-grid.test.ts holds the manager's own corners equal to
+ * `soilTileDiamond`'s), and already a power of two on both axes, so this
+ * needs no `powerOfTwoCeil` padding the way a sheet-sourced canvas does.
+ * The diamond is drawn so its south point sits at the bottom-centre pixel,
+ * matching the (0.5, 1) origin `placeAsset` sets on every sprite it makes.
+ */
+function bakeSoilBedTexture(scene: Phaser.Scene): string {
+  if (scene.textures.exists(SOIL_BED_TEXTURE_KEY)) return SOIL_BED_TEXTURE_KEY;
+  const width = 128;
+  const height = 64;
+  const ramp = rampHex("soil");
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(ramp.top, 1);
+  g.beginPath();
+  g.moveTo(width / 2, 0);
+  g.lineTo(width, height / 2);
+  g.lineTo(width / 2, height);
+  g.lineTo(0, height / 2);
+  g.closePath();
+  g.fillPath();
+  g.lineStyle(1, ramp.rim, 0.55);
+  g.strokePath();
+  g.generateTexture(SOIL_BED_TEXTURE_KEY, width, height);
+  g.destroy();
+  return SOIL_BED_TEXTURE_KEY;
+}
+
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -1620,6 +1656,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
+    bakeSoilBedTexture(this);
     // The whole farm's own outer edge, in tile space -- computed once here
     // since worldBoundsRect() never changes at runtime, and shared by
     // every drone rather than recomputed per drone.
@@ -3566,11 +3603,8 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Every placed soil tile's flat, unfurrowed ground (`paintAreaGround`,
-   * always `furrowed: false` now -- furrows were a whole-bed picture's own
-   * texture, and there is no whole-bed picture any more), plus one
-   * `soilSlot` picture per OWNED planting square on top of it, from
-   * `paintOwnedSlots` below.
+   * Every placed soil tile's flat ground, plus one `soilSlot` picture per
+   * OWNED planting square on top of it, from `paintOwnedSlots` below.
    *
    * The flat fill under a bed still bought whole is not dead weight: with a
    * `SOIL_SLOT_INSET` gap between squares (see `paintOwnedSlots`'s own doc),
@@ -3578,12 +3612,33 @@ export class StackAcresScene extends Phaser.Scene {
    * job it already did for a bed still being filled in one square at a
    * time -- which is why a full bed and a partial one now go through the
    * exact same two calls instead of a fork between them.
+   *
+   * The flat fill is a real `IsometricGridManager` placement now
+   * (lib/stackacres/soil-grid.ts's `createSoilGrid`) instead of a per-tile
+   * `paintAreaGround` diamond: one baked `soil-bed` sprite (see
+   * `bakeSoilBedTexture`) per owned tile, snapped and occupancy-tracked the
+   * same way any future placed asset would be. `soil.ts`'s `SoilMap` stays
+   * the actual record of what exists -- the grid is rebuilt from it fresh
+   * on every call, the same "repaint, don't diff" contract `setSoil`
+   * already keeps, so there is no second copy of placement state to fall
+   * out of sync.
+   *
+   * A bed's ground never needs to sort against anything standing on it --
+   * it is always furthest back, same as every other district's ground fill
+   * -- so `GROW_AREA_GROUND_DEPTH` is forced onto every bed sprite here
+   * rather than left at the near-over-far depth `placeAsset` assigns a
+   * standing "crop", which is for a plant, not the dirt under one.
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
+    const createSprite: SpriteFactory = (spec) => {
+      const sprite = this.add.sprite(spec.x, spec.y, spec.textureKey);
+      built.push(sprite);
+      return sprite;
+    };
+    const { grid } = createSoilGrid(this.soil, CROP_FIELD_BEDS, createSprite);
+    for (const asset of grid.assets) asset.sprite.setDepth(GROW_AREA_GROUND_DEPTH);
     for (const tile of orderedSoilTiles(this.soil)) {
-      const rect = soilTileRect(tile.tx, tile.ty);
-      built.push(...this.paintAreaGround(rect, "soil", false));
       built.push(...this.paintOwnedSlots(tile, soilTileOwnedSlots(tile)));
     }
     return built;

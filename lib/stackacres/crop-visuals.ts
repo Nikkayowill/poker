@@ -8,15 +8,15 @@
  * (components/arcade/stackacres/stackacres-scene.ts) is the only caller and
  * owns none of these decisions.
  *
- * WHY THE CROPS ARE DRAWN OVERSIZED. Every other thing on this map is drawn
- * at its painter's own size (`setScale(1 / ART_SCALE)`), and that reads
- * correctly for a barn or a cow. A carrot's ripe frame is a 12x16 unit box,
- * most of which is leaf: on a phone held in landscape, at the zoom the
- * opening shot uses, that is a few pixels of green and the player cannot
- * tell a row that is ready from one that was sown a minute ago. The crops
- * are therefore deliberately off-scale against the rest of the world -- a
- * ripe Cash Crop stands taller than the Hen Coop's hens -- because being
- * legible mid-thumb beats being proportionate.
+ * WHY A CROP GETS ANY BUMP AT ALL. Every other thing on this map is drawn at
+ * its painter's own size (`setScale(1 / ART_SCALE)`), and a crop mostly is
+ * too now -- the real art (the `hjm-all_crops_in_lines.png` sheet, see
+ * `scripts/prepare-stackacres-crops.py`) reads fine at its own trimmed box
+ * size. This used to blow crops up to 1.5x/2.5x/4x their box: that was a
+ * legibility hack from when the crop frames were tiny placeholder art and a
+ * ripe row was a few pixels of green on a phone. With real art in place that
+ * hack is gone; what is left is a small nudge so a mature plant still reads
+ * as slightly fuller than a seedling.
  *
  * The three frames are ./world.ts's `growthStage` output, not a separate
  * ladder: 0 seedling, 1 sprout, 2 mature/harvest-ready.
@@ -43,28 +43,24 @@ export function cropArtFor(stock: StackAcresStock): CropArt | null {
 /**
  * Sprite scale per frame, against the painter's own drawn size.
  *
- * Stage 1 (2.5x) and stage 2 (4x) are the two the mobile-legibility pass
- * actually specified. Stage 0 is 1.5x: a seedling has to stay clearly the
- * smallest of the three or the ramp stops reading as growth, but leaving it
- * at 1x next to a 2.5x sprout makes the first frame invisible and the second
- * one look like it teleported in.
+ * Stage 0 (seedling) is exactly 1x -- true box size, same as everything else
+ * on the map. Stages 1 and 2 get a small, deliberately modest bump (1.125x,
+ * 1.25x) so a mature plant still reads as fuller than a sprout, without
+ * reviving the old 1.5x/2.5x/4x blow-up (see this file's header) now that
+ * the frames are real art instead of tiny placeholders.
  *
- * EVERY VALUE HERE MUST LAND ON A WHOLE PIXEL for both crops' painter boxes,
- * because `bakeSpriteTexture` takes `Math.ceil(w * ART_SCALE * scale)` per
- * axis INDEPENDENTLY. Stage 0 was 1.6x, which is where that bites: a carrot's
- * 12x16 box gives 153.6 x 204.8, which ceils to 154 x 205 -- so the frame was
- * resampled by 1.6042x across and 1.6016x down, a NON-UNIFORM stretch, and
- * the seedling came out very slightly squashed as well as soft. At 1.5x all
- * four numbers are exact (carrot 144x192, corn 144x264); stages 1 and 2
- * already were. crop-visuals.test.ts holds the whole table to that rule so a
- * future retune cannot reintroduce a fractional rung.
- *
- * This is a ROUNDING fix, not a fix for crop softness in general. The crop
- * PNGs are ~5-6x upscales of 13-17 pixel source bands, so the frames are
- * starved of real detail that no scale here can restore -- that needs new art
- * at bake resolution. See `scripts/prepare-stackacres-crops.py`.
+ * EVERY VALUE HERE MUST LAND ON A WHOLE PIXEL for every crop's painter box,
+ * because `bakeSpriteTexture` (carrot/corn/corn2, the crops it actually
+ * bakes at scale) takes `Math.ceil(w * ART_SCALE * scale)` per axis
+ * INDEPENDENTLY -- a fractional product resamples a frame by a slightly
+ * different factor across than down, a non-uniform stretch on top of
+ * whatever softening the resize itself adds. ART_SCALE is 8, so any scale
+ * that is a multiple of 1/8 lands on a whole pixel for every box regardless
+ * of that box's own dimensions; 1, 1.125 (9/8) and 1.25 (10/8) all are.
+ * crop-visuals.test.ts holds the table to that rule so a future retune
+ * cannot reintroduce a fractional rung.
  */
-const STAGE_SCALE: Readonly<Record<CropStage, number>> = { 0: 1.5, 1: 2.5, 2: 4 };
+const STAGE_SCALE: Readonly<Record<CropStage, number>> = { 0: 1, 1: 1.125, 2: 1.25 };
 
 export function cropSpriteScale(stage: CropStage): number {
   return STAGE_SCALE[stage];
@@ -123,8 +119,8 @@ const FOOT_INSET: Readonly<Record<CropArt, Readonly<Record<CropStage, number>>>>
  *
  * A painter anchors at (0.5, 1) -- the bottom edge of its box -- and Phaser
  * scales about that origin, so a frame whose ink starts `d` units above the
- * box's bottom has that gap multiplied along with everything else: at 2.5x, a
- * 1-unit gap becomes 2.5, and the sprout hovers a unit and a half over the
+ * box's bottom has that gap multiplied along with everything else: at 1.25x,
+ * a 1-unit gap becomes 1.25, and the plant hovers a quarter unit over the
  * plot. Pushing the sprite down by the growth in that gap puts the ink back
  * exactly where it sat at 1x.
  *
@@ -140,9 +136,10 @@ export function cropGroundOffset(art: CropArt, stage: CropStage): number {
  * own fingertip pad.
  *
  * `CROP_FOOTPRINT_HALF` is what every crop used flat before the crops were
- * grown, and it is kept as a FLOOR rather than replaced: a seedling drawn at
- * 1.6x has a narrower footprint than that, and shrinking the target of the
- * hardest crop to see would be exactly the wrong way round. Above the floor
+ * grown, and it is kept as a FLOOR rather than replaced: several crops (a
+ * seedling especially, at its true 1x size) have a narrower footprint than
+ * that, and shrinking the target of the hardest crop to see would be exactly
+ * the wrong way round. Above the floor
  * the region tracks the sprite, so the mature frame a thumb is aiming at is
  * the mature frame it hits.
  */
@@ -204,8 +201,8 @@ export function cropSpriteAlpha(isWatered: boolean): number {
  *
  * Every other standee on the map (`isLivestock` branch, stackacres-scene.ts)
  * plants a fixed-size shadow under itself because livestock don't change
- * size. A crop does -- 1.6x to 4x across its three frames -- and a shadow
- * sized for the seedling would read as a puddle under the mature stalk,
+ * size. A crop does -- 1x to 1.25x across its three frames -- and a shadow
+ * sized for the seedling would read as undersized under the mature stalk,
  * while one sized for the mature stalk would swallow the seedling. So this
  * tracks `cropFootprintHalf`, the one number that already answers "how big
  * does this stage's plant actually read as", rather than a second hand-tuned
@@ -229,8 +226,8 @@ export function cropShadowScale(art: CropArt, stage: CropStage): number {
 /**
  * How long a plant takes to grow from one frame into the next, on screen.
  *
- * A crop's three frames are 1.6x, 2.5x and 4x, so crossing a boundary is a 56%
- * then a 60% jump in apparent size. Until this existed the scene answered that
+ * A crop's three frames are 1x, 1.125x and 1.25x, so crossing a boundary is a
+ * 12.5% then an 11.1% jump in apparent size. Until this existed the scene answered that
  * by destroying the node and building a new one (`signatureOf` counts the
  * stage, and `setUnits` rebuilds on a signature change), which put the whole
  * jump plus a texture swap plus a shadow resize into a single frame with no

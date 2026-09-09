@@ -30,10 +30,9 @@ describe("cropArtFor", () => {
 });
 
 describe("cropSpriteScale", () => {
-  // The two numbers the mobile-legibility pass actually specified.
-  it("draws a sprout at 2.5x and a mature crop at 4x its painted size", () => {
-    expect(cropSpriteScale(1)).toBe(2.5);
-    expect(cropSpriteScale(2)).toBe(4);
+  it("draws a sprout at 1.125x and a mature crop at 1.25x its painted size", () => {
+    expect(cropSpriteScale(1)).toBe(1.125);
+    expect(cropSpriteScale(2)).toBe(1.25);
   });
 
   it("grows strictly with the frame, so the three read as one ramp", () => {
@@ -82,9 +81,9 @@ describe("cropGroundOffset", () => {
 
 describe("cropFootprintHalf", () => {
   // carrot's real CraftPix box is 34 wide (crop-visuals.ts's CROP_BOX) --
-  // 17 either side of the stem, so a 4x sprite is 68 either side.
-  it("expands a mature crop's touch target with its 4x sprite", () => {
-    expect(cropFootprintHalf("carrot", 2)).toBe(68);
+  // 17 either side of the stem, so a 1.25x sprite is 21.25 either side.
+  it("expands a mature crop's touch target with its 1.25x sprite", () => {
+    expect(cropFootprintHalf("carrot", 2)).toBe(21.25);
   });
 
   it("grows monotonically, so a bigger crop is never a smaller target", () => {
@@ -96,7 +95,7 @@ describe("cropFootprintHalf", () => {
     for (const stage of STAGES) {
       expect(cropFootprintHalf("carrot", stage)).toBeGreaterThanOrEqual(CROP_FOOTPRINT_HALF);
     }
-    // Grapes are the narrowest box (14 units): 1.5x of a 7-unit half is 10.5,
+    // Grapes are the narrowest box (14 units): even at 1x a 7-unit half is
     // under the floor -- this is the case that would otherwise shrink.
     expect(cropFootprintHalf("grap", 0)).toBe(CROP_FOOTPRINT_HALF);
   });
@@ -140,25 +139,15 @@ describe("how big the grown footprint actually gets", () => {
    * stop resolving those purely by depth.
    *
    * carrot's real CraftPix box (34 wide) keeps a mature diamond comfortably
-   * under the field, same as the old hand-vector art this replaced.
-   *
-   * FLAGGED, NOT FIXED HERE: several of the 22 crops' real trimmed boxes are
-   * far wider than carrot's -- pumpkin (41), brokoly (39), cabbage (38) and
-   * wheat2 (37) -- and at the SAME 4x stage-2 scale ladder this file's own
-   * `cropSpriteScale` uses, their mature diamond (up to 164 units for
-   * pumpkin) actually exceeds the meadow's own 136-unit width. CROP_BOX is
-   * fixed at the real sprite's own trimmed pixel size (see crop-visuals.ts's
-   * own header) and is not the thing to change here; `cropSpriteScale`'s
-   * ladder was tuned against the old 12-unit hand-vector boxes and may need
-   * a per-crop cap or a gentler ladder for the widest crops -- a separate,
-   * follow-up scale-tuning pass, not part of the crop-roster swap.
+   * under the field, same as the old hand-vector art this replaced. At the
+   * gentler 1.25x stage-2 ladder even the widest crop (pumpkin, 41 units)
+   * stays well inside the meadow, so the wider-crops overflow this test used
+   * to flag against the old 4x ladder no longer applies.
    */
   it("keeps carrot's ripe diamond inside the meadow it has to share", () => {
     const MEADOW_W = 136;
     const diamond = cropFootprintHalf("carrot", 2) * 2;
-    expect(diamond).toBe(136);
-    // Six of them side by side would not fit, which is the whole point of the
-    // art-beats-ground tap rule -- but one must at least not span the field.
+    expect(diamond).toBe(42.5);
     expect(diamond).toBeLessThanOrEqual(MEADOW_W);
   });
 });
@@ -192,12 +181,13 @@ describe("bake scales land on whole pixels", () => {
     }
   });
 
-  // The ramp still has to read as growth, which is the reason stage 0 is not
-  // simply 1x.
+  // The ramp still has to read as growth. Stage 0 is exactly 1x now (true
+  // box size, same as everything else on the map); stages 1 and 2 carry the
+  // whole ramp.
   it("keeps the stage ramp strictly increasing", () => {
     expect(cropSpriteScale(0)).toBeLessThan(cropSpriteScale(1));
     expect(cropSpriteScale(1)).toBeLessThan(cropSpriteScale(2));
-    expect(cropSpriteScale(0)).toBeGreaterThan(1);
+    expect(cropSpriteScale(0)).toBe(1);
   });
 });
 

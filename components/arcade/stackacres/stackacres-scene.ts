@@ -3119,7 +3119,7 @@ export class StackAcresScene extends Phaser.Scene {
       // own (0.5, 1) anchor, so the pool sits centred exactly on the plant's
       // base rather than floating above or sinking below it. Scaled by
       // `cropShadowScale`, not fixed like a livestock shadow, because a crop
-      // swings 1.6x-4x across its three frames and one fixed size would
+      // swings 1x-1.25x across its three frames and one fixed size would
       // misfit two of them.
       cropShadow = this.addLocal("cropShadow", 0, 0, container)
         .setScale(cropShadowScale(crop, stage) / S)
@@ -3129,8 +3129,8 @@ export class StackAcresScene extends Phaser.Scene {
       // built, so a tap never pays for it. Every stage of both crops warms
       // itself the first time one is drawn; see `alphaMaskFor`.
       this.alphaMaskFor(sprite.texture.key);
-      // Crops -- and only crops -- are drawn well off the world's own scale,
-      // so a ripe row is findable on a phone. That enlargement is now BAKED
+      // Carrot, corn and corn2 are drawn a touch past the world's own scale
+      // (see crop-visuals.ts's own header). That enlargement is BAKED
       // into the crop's own texture (see `cropBakeScale` in
       // stackacres-art.ts), so `addLocal`'s own natural `1 / S` is already
       // the right scale here and is left alone; this only pushes the sprite

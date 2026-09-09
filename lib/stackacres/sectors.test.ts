@@ -3,6 +3,7 @@ import {
   HOME_SECTOR,
   HOME_SECTORS,
   SECTOR_IDS,
+  OVERGROWTH_SPACING,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
   cropFieldOvergrowth,
@@ -214,8 +215,14 @@ describe("unlockedPlotCount", () => {
 
 describe("sectorOvergrowth", () => {
   it("grows something on every locked sector", () => {
+    // Measured against the district's own size rather than a fixed count:
+    // the Grid Bench layout made a district its pen plus 16, so the Fold is
+    // 160 square now, and what "overgrown" means is that most of the
+    // lattice `overgrowthOver` walks actually grew something.
     for (const id of SECTOR_LADDER) {
-      expect(sectorOvergrowth(id).length).toBeGreaterThan(20);
+      const b = STACKACRES_ZONES[id].bounds;
+      const lattice = Math.ceil(b.width / OVERGROWTH_SPACING) * Math.ceil(b.height / OVERGROWTH_SPACING);
+      expect(sectorOvergrowth(id).length, id).toBeGreaterThan(lattice * 0.4);
     }
   });
 

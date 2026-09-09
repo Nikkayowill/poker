@@ -10,6 +10,16 @@
  * different when you arrive, has its own things standing in it, and can be
  * reached by a road that was already pointing at it.
  *
+ * THE PACKED GRID (2026-09-09). The layout below is Kayo's Grid Bench: every
+ * pen on a 32-unit cell lattice anchored on the Crop Fields' beds, one-cell
+ * roads between them (./paths.ts), and no woodland inside the cluster. A
+ * district is its pen plus 16 on each side, so neighbours meet on a road's
+ * centreline. The yard is the one block bigger than the bench drew it (its
+ * sixty hand-placed literals stay where they are, see ./yard.ts), so the
+ * north and south roads run just past its top and bottom edges rather than
+ * along them. The history below is how the map got here and is kept for
+ * the numbers it explains; the positions it names are gone.
+ *
  * NINE DISTRICTS, RE-LAID (2026-09-07). The map was four districts scattered
  * around the origin, each hung off one of the three roads that already left
  * the yard. It is now nine, laid out on Kayo's hand-drawn map proposal: a
@@ -198,40 +208,39 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     approach: { x: -320, y: 0 },
   },
 
-  // North of the farm, first stop off the ring road. The Hen Coops, which
-  // stood in the Farmstead's own yard until this pass. Never locked: the hen
-  // is the only stock a new farm can afford, so gating it would leave a first
-  // afternoon with no move in it.
-  // Same 240 square every re-lay has kept it at (see the 2026-09-07 pass's
-  // own note on why 240 and not 200). Pulled 25 further north on this pass:
-  // the Farmstead's own bounds grew by the merge (see its own comment above)
-  // and would otherwise leave under 5 units of woodland between the two,
-  // well under the ~24-unit gap every district shares with its neighbour.
+  // EVERY DISTRICT BELOW IS ITS PEN PLUS 16 (2026-09-09, the Grid Bench
+  // layout). The bench packs the pens on a 32-unit cell lattice with
+  // one-cell roads between them and nothing else, so a district's bounds
+  // here reach exactly to the centreline of the road on each side and
+  // neighbours meet there. The pens themselves are ./world.ts's `GROW_AREA`
+  // (restated in `PEN_BLOCKS` below); the roads are ./paths.ts. An
+  // `approach` is a point four units inside the pen on its road side.
+
+  // Hen Haven. On the north road (y -288..-256), over the beds' west third.
+  // Never locked: the hen is the only stock a new farm can afford, so gating
+  // it would leave a first afternoon with no move in it.
   henhaven: {
     id: "henhaven",
     label: "Hen Haven",
     blurb: "Straw, low fences, and every Hen Coop you keep.",
-    bounds: { x: -700, y: -524, width: 240, height: 240 },
+    bounds: { x: -208, y: -432, width: 160, height: 160 },
     swatchColor: 0xe0c96a,
-    approach: { x: -580, y: -295 },
+    approach: { x: -128, y: -292 },
   },
 
-  // South-west of the field, between the farm and Town Square. Heavy,
-  // rustic, worked: ploughed furrows, hitching posts, and the cattle.
+  // Cattle Pasture. On the south road (y 256..288), under the beds' east
+  // half. Heavy, rustic, worked: ploughed furrows, hitching posts, cattle.
   oxfields: {
     id: "oxfields",
     label: "Cattle Pasture",
     blurb: "Ploughed furrows, hitching posts, and the cattle you keep here.",
-    // South of the Farmstead now, sharing its own fence the same way Hen
-    // Haven shares the north one -- pulled 25 further south for the same
-    // reason Hen Haven was pulled north, see that entry's own comment.
-    bounds: { x: -700, y: 284, width: 300, height: 300 },
+    bounds: { x: -16, y: 272, width: 224, height: 224 },
     swatchColor: 0x7a5a34,
-    approach: { x: -540, y: 305 },
+    approach: { x: 96, y: 292 },
   },
 
-  // East of the field. Wet, low and shaded: the mud wallow, a shade canopy,
-  // and the Sheep Pens that live in it.
+  // The Fold. On the east road (x 256..288), level with the beds' top. Wet,
+  // low and shaded: the mud wallow, a shade canopy, and the Sheep Pens.
   //
   // The proposal calls this Hog Hollow and draws pigs in it. The label stays
   // "The Fold" until there is a pig: the stock is keyed `pig` but labelled
@@ -243,10 +252,9 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
     id: "wallow",
     label: "The Fold",
     blurb: "A shaded mud hollow, and the Sheep Pens that live in it.",
-    // East of the Grand Farm now, sharing ITS fence rather than the yard's.
-    bounds: { x: 280, y: -110, width: 220, height: 220 },
+    bounds: { x: 272, y: -272, width: 160, height: 160 },
     swatchColor: 0x54402c,
-    approach: { x: 300, y: 0 },
+    approach: { x: 292, y: -192 },
   },
 
   /* ---------------------------------------------------------------- */
@@ -258,49 +266,49 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // until the pass that builds each one. Their rects are here now precisely
   // so that pass does not have to move anything else.
 
-  // South-west, past the Cattle Pasture. The town the Contracts board, Ray's
-  // store and the Museum are all posted from today without being anywhere.
-  // South of Cattle Pasture, sharing its own fence -- one hop further out
-  // from the yard than the districts that touch the Farmstead directly.
+  // Town Square. On the south road, under the beds' west third, beside
+  // Cattle Pasture. The town the Contracts board, Ray's store and the Museum
+  // are all posted from today without being anywhere.
   townsquare: {
     id: "townsquare",
     label: "Town Square",
-    // Pulled 25 further south, following Cattle Pasture's own shift.
     blurb: "Wild ground. The town is still only a board you post to.",
-    bounds: { x: -700, y: 608, width: 240, height: 240 },
+    bounds: { x: -208, y: 272, width: 128, height: 128 },
     swatchColor: 0xa3a199,
-    approach: { x: -580, y: 628 },
+    approach: { x: -144, y: 292 },
   },
 
-  // North of Hen Haven, sharing its own fence. Pulled 25 further north,
-  // following Hen Haven's own shift.
+  // Mine Entrance. On the north road's west leg, above the yard, with Hen
+  // Haven to its east across a strip of commons.
   mine: {
     id: "mine",
     label: "Mine Entrance",
     blurb: "Wild ground. A way in, and nothing on the other side of it yet.",
-    bounds: { x: -700, y: -768, width: 220, height: 220 },
+    bounds: { x: -416, y: -400, width: 128, height: 128 },
     swatchColor: 0x5c5851,
-    approach: { x: -590, y: -568 },
+    approach: { x: -352, y: -292 },
   },
 
-  // North of the Fold, sharing its own fence.
+  // Coastal Market. The north-east corner: on the north road, straight above
+  // the Fold, meeting it on the road's centreline.
   coast: {
     id: "coast",
     label: "Coastal Market",
     blurb: "Wild ground. Stalls and a dock, once there is anything to trade.",
-    bounds: { x: 280, y: -394, width: 260, height: 260 },
+    bounds: { x: 272, y: -400, width: 128, height: 128 },
     swatchColor: 0x3fa6cc,
-    approach: { x: 410, y: -154 },
+    approach: { x: 336, y: -292 },
   },
 
-  // East of the Fold, sharing its own fence.
+  // The Ancestral Oak. On the east road under the Fold, the two split by the
+  // one-cell fold road (y -128..-96).
   oak: {
     id: "oak",
     label: "The Ancestral Oak",
     blurb: "Wild ground. Something old stands here.",
-    bounds: { x: 524, y: -110, width: 220, height: 220 },
+    bounds: { x: 272, y: -112, width: 128, height: 128 },
     swatchColor: 0x439f57,
-    approach: { x: 544, y: 0 },
+    approach: { x: 292, y: -48 },
   },
 };
 
@@ -527,9 +535,9 @@ export const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
   // own bed lattice needs no entry here for the same reason `meadow`'s did
   // before the 2026-09-08 merge stopped it existing as a district: nothing in
   // `ZONE_SCATTER.farmstead` is there to exclude it from.)
-  henhaven: { x: -648, y: -472, width: 128, height: 128 },
-  oxfields: { x: -644, y: 340, width: 192, height: 192 },
-  wallow: { x: 328, y: -62, width: 128, height: 128 },
+  henhaven: { x: -192, y: -416, width: 128, height: 128 },
+  oxfields: { x: 0, y: 288, width: 192, height: 192 },
+  wallow: { x: 288, y: -256, width: 128, height: 128 },
 };
 
 function inPenBlock(id: ZoneId, x: number, y: number): boolean {

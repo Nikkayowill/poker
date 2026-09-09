@@ -117,11 +117,12 @@ describe("junction fillets", () => {
 
 describe("the farm's own junctions", () => {
   it("has one junction per path that forks off another, inside the trunk's own body", () => {
-    // One path forks off nothing and so has no junction: `lane`, the yard's
-    // own trunk, which starts at the barn door. Every spoke of the
-    // hub-and-spoke road network (see paths.ts's own header) chains off it,
-    // directly or by way of another spoke.
-    const trunks = ["lane"];
+    // Two paths fork off nothing and so have no junction: `lane`, the yard's
+    // own trunk, which starts at the barn door, and `midRoad`, the grid's
+    // first road. Every other road starts on one already laid (see
+    // paths.ts's own header); `yardRoad` ENDS on the middle road, which is
+    // a crossing, not a fork, and gets no junction of its own.
+    const trunks = ["lane", "midRoad"];
     for (const key of trunks) {
       expect(FARM_JUNCTIONS.some((j) => j.key.startsWith(`${key}@`)), key).toBe(false);
     }
@@ -157,7 +158,7 @@ describe("the farm's own junctions", () => {
   });
 
   it("is derived from FARM_PATHS' order, not from a hand-written list", () => {
-    // Same one trunk as above: `lane` forks off nothing.
-    expect(findPathJunctions(FARM_PATHS).length).toBe(FARM_PATHS.length - 1);
+    // Same two trunks as above: `lane` and `midRoad` fork off nothing.
+    expect(findPathJunctions(FARM_PATHS).length).toBe(FARM_PATHS.length - 2);
   });
 });

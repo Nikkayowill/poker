@@ -44,12 +44,15 @@ describe("road tiers", () => {
     // repaint runs down this list, so a branch listed before the trunk it
     // forks off paints the junction the wrong way round.
     const arterial = FARM_PATHS.filter((p) => p.tier === "arterial").map((p) => p.key);
-    expect(arterial).toEqual([
-      "lane", "yardRoad",
-      "meadowSpur", "henhavenSpur", "oxfieldsSpur",
-      "wallowSpur", "mineSpur", "townsquareSpur",
-      "coastSpur", "oakSpur",
+    // Only the yard's own two are arterial now. The grid roads are one cell
+    // (32) wide on purpose, the bench's own road width, so they are tracks.
+    expect(arterial).toEqual(["lane", "yardRoad"]);
+    const tracks = FARM_PATHS.filter((p) => p.tier === "track").map((p) => p.key);
+    expect(tracks).toEqual([
+      "midRoad", "northRoadEast", "northRoadWest",
+      "southRoadEast", "southRoadWest", "eastRoad", "foldRoad", "meadowSpur",
     ]);
+    for (const spec of FARM_PATHS) if (spec.tier === "track") expect(spec.width).toBe(32);
     // The generated spurs are the narrowest thing on the map: one tile.
     for (const spur of ALL_FARM_PATHS.filter((p) => p.key.startsWith("spur-"))) {
       expect(spur.tier).toBe("service");

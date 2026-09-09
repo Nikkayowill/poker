@@ -23,8 +23,26 @@
  *     way" toast the instant this predictor applies, so the tap still gets
  *     an immediate answer -- it just never promises a figure it might have
  *     to walk back.
- *   - anything the client keeps no state for (blueprints, prestige,
- *     irrigation): there is nothing on screen to move.
+ *   - anything the client keeps no state for (blueprints, prestige): there
+ *     is nothing on screen to move.
+ *
+ * `place-pipe`/`remove-pipe` ARE predicted. Irrigation earned the exception
+ * once the pipe tool's own drag gesture (lib/stackacres/tools.ts's `pipe`)
+ * started firing one request per tile crossed: waiting on a round trip
+ * before the next tile could even be evaluated made a five-tile run feel
+ * like five separate button presses with a pause between each. The guess
+ * reruns `recalculatePipeConnections` against the tile just added or
+ * removed, so the mask/hydration/distance it shows are the real answer, not
+ * a placeholder -- both are pure functions of tile topology, not of the
+ * crops standing nearby, and this layer is never asked to predict which
+ * crop that changes.
+ *
+ * `place-soil-tile`/`remove-soil-tile` are predicted the same way now that a
+ * bed is one tile (./soil.ts's `SOIL_TILE`, one art unit): the outcome is
+ * deterministic (bare ground or already-occupied is all there is to check),
+ * so a soil-brush drag across N tiles gets the same one-request-per-tile
+ * responsiveness the pipe brush already has, instead of waiting on a round
+ * trip before the next tile in the stroke can even be evaluated.
  *
  * The patch is shaped as a subset of the component's own response type, so
  * the component applies it through the identical `applyResponse` path a real
@@ -54,6 +72,10 @@ import {
 } from "./synergy-perks";
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import type { StackAcresUpkeepState } from "./upkeep";
+import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
+import { createSoilMap, plantSoilTile, starterSoilTiles, type SoilTile } from "./soil";
+import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
+import { CROP_FIELD_BEDS } from "./world";
 import {
   optimisticallyFedUnit,
   optimisticallyRestartedUnit,
@@ -93,6 +115,17 @@ export interface FarmPredictContext {
    *  posture as `greenhouseBuilt`: a permanent flag, not a `SectorId`, since
    *  the 2026-09-08 district merge folded that district into the Farmstead. */
   cropFieldsUnlocked: boolean;
+  /** The irrigation pipe network, straight off the component's own state --
+   *  what `place-pipe`/`remove-pipe` recompute against. See ./irrigation.ts. */
+  irrigation: readonly PipeNode[];
+  /** Purchased soil beds only (not the starter pair -- see `starterSoilTiles`),
+   *  straight off the component's own state. What `place-soil-tile`/
+   *  `remove-soil-tile` add to or remove from. */
+  soilTiles: readonly SoilTile[];
+  /** Unplaced bags per tier, straight off the component's own state. What
+   *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
+   *  why a bag and Gold are never the same debit. */
+  soilStock: SoilStock;
   nowMs: number;
 }
 
@@ -113,6 +146,9 @@ export interface FarmStatePatch {
   influence?: number;
   greenhouseBuilt?: boolean;
   cropFieldsUnlocked?: boolean;
+  irrigation?: readonly PipeNode[];
+  soilTiles?: SoilTile[];
+  soilStock?: SoilStock;
   contract?: StackAcresContractRow | null;
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
@@ -340,6 +376,62 @@ export function predictStackAcresAction(
       if (ctx.greenhouseBuilt) return null;
       return { greenhouseBuilt: true };
     }
+    case "place-pipe": {
+      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
+      if (existing) return null;
+      // Only one well per farm (see stackacres-farm.tsx's `pipeExtraActions`
+      // `hasWell` check) -- a second dig here would guess a tile the server
+      // is certain to refuse.
+      if (body.kind === "well" && ctx.irrigation.some((node) => node.kind === "well")) return null;
+      const profile = debited(ctx, PIPE_PLACE_COST[body.kind]);
+      if (!profile) return null;
+      const tiles: PlacedPipe[] = [
+        ...ctx.irrigation.map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind })),
+        { tx: body.tx, ty: body.ty, kind: body.kind },
+      ];
+      // Crop-free on purpose: mask/hydration/distance are pure tile topology,
+      // and this predictor never guesses which crop that newly waters -- the
+      // server's own response settles that, same as every other unit field.
+      const grid = recalculatePipeConnections({ tiles, crops: [] });
+      return { irrigation: grid.nodes, profile };
+    }
+    case "remove-pipe": {
+      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
+      if (!existing) return null;
+      // No Gold moves here -- a placed tile is a spent sink, not a refundable
+      // one (see irrigation.ts's own `PIPE_PLACE_COST` doc comment).
+      const tiles: PlacedPipe[] = ctx.irrigation
+        .filter((node) => node.tx !== body.tx || node.ty !== body.ty)
+        .map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind }));
+      const grid = recalculatePipeConnections({ tiles, crops: [] });
+      return { irrigation: grid.nodes };
+    }
+    case "place-soil-tile": {
+      const tier = body.tier ?? SOIL_DEFAULT_TIER;
+      // Starter beds are never in `ctx.soilTiles` (they are synthesised, not
+      // persisted -- see ./soil.ts's `starterSoilTiles`), so an occupied
+      // starter tile has to be checked separately from a purchased one.
+      const onStarter = starterSoilTiles(CROP_FIELD_BEDS).some(
+        (t) => t.tx === body.tx && t.ty === body.ty,
+      );
+      if (onStarter) return null;
+      const held = ctx.soilStock[tier] ?? 0;
+      if (held < 1) return null;
+      const soil = createSoilMap(ctx.soilTiles);
+      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, tier);
+      if (result.kind !== "created") return null;
+      return {
+        soilTiles: [...ctx.soilTiles, result.tile],
+        soilStock: { ...ctx.soilStock, [tier]: held - 1 },
+      };
+    }
+    case "remove-soil-tile": {
+      const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);
+      if (!existing) return null;
+      // No bag comes back -- a placed tile is a spent sink, not a refundable
+      // one (see soil.ts's own `SOIL_TILE_PRICE_GOLD` doc comment).
+      return { soilTiles: ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty) };
+    }
     case "fulfill-contract": {
       if (!ctx.contract || ctx.contract.status !== "open") return null;
       if (!ctx.profile) return null;
@@ -355,9 +447,9 @@ export function predictStackAcresAction(
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
     // own Gold, `tap-secret-zone`, `request-contract`, `work`), or move
     // nothing the client keeps state for (`build-greenhouse`'s materials
-    // aside from the flag itself, blueprints, prestige, pipes, soil tiles --
-    // the scene mutates its own soil map directly off the response instead,
-    // see stackacres-farm.tsx). See this module's own header.
+    // aside from the flag itself, blueprints, prestige, soil tiles -- the
+    // scene mutates its own soil map directly off the response instead, see
+    // stackacres-farm.tsx). See this module's own header.
     default:
       return null;
   }

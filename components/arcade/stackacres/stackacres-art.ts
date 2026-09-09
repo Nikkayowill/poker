@@ -237,6 +237,7 @@ type CorePainterName =
   | "ico-harvest"
   | "ico-feed"
   | "ico-clear"
+  | "ico-pipe"
   | "ico-bushels"
   | "ico-gold"
   | "ico-egg"
@@ -1532,6 +1533,33 @@ const DRAWN: Record<PainterName, Painter> = {
       c.lineTo(x, 13.5);
       stroke(c, "#7d868c", 1.4);
     }
+  }),
+
+  // An L-shaped length of pipe carrying a drop, in the identical steel
+  // (art-irrigation.ts's PIPE_BODY/PIPE_RIM) the irrigation network itself
+  // bakes its own tiles in -- so the toolbelt button reads as the same
+  // material the ground tiles do, the same way ico-scythe's blade reads as
+  // the same steel the equipment ladder's rungs draw.
+  "ico-pipe": painter(24, 24, (c) => {
+    c.lineCap = "round";
+    c.beginPath();
+    c.moveTo(5, 20);
+    c.lineTo(5, 11);
+    c.quadraticCurveTo(5, 6, 10, 6);
+    c.lineTo(18, 6);
+    stroke(c, "#6f7f8b", 5.2);
+    c.beginPath();
+    c.moveTo(5, 19);
+    c.lineTo(5, 11);
+    c.quadraticCurveTo(5, 7.4, 9.6, 7.4);
+    c.lineTo(17, 7.4);
+    stroke(c, "#9fb0bd", 2.2);
+    c.beginPath();
+    c.moveTo(19, 10);
+    c.quadraticCurveTo(22.5, 14.5, 19, 17.5);
+    c.quadraticCurveTo(15.5, 14.5, 19, 10);
+    c.closePath();
+    F(c, "#63c8e8");
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

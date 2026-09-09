@@ -102,10 +102,7 @@ import {
   type WorldPoint,
 } from "@/lib/stackacres/world";
 import {
-  SOIL_SLOTS_PER_TILE,
   soilTileAt,
-  soilTileOwnedSlots,
-  soilTileTier,
   soilTilesEqual,
   starterSoilTiles,
   type SoilTile,
@@ -1168,6 +1165,13 @@ export function StackAcresFarm() {
       merchantVisit: merchantSnapshot.visit,
       greenhouseBuilt,
       cropFieldsUnlocked,
+      irrigation,
+      // Purchased tiles only, same posture as `irrigation` above -- a
+      // predictor's own "occupied" check reads `mergedSoilTiles` instead
+      // (see the place-soil-tile case), since a starter tile also blocks a
+      // placement but is never itself created or removed.
+      soilTiles,
+      soilStock,
       nowMs: Date.now(),
     }),
     [
@@ -1189,6 +1193,9 @@ export function StackAcresFarm() {
       merchantSnapshot,
       greenhouseBuilt,
       cropFieldsUnlocked,
+      irrigation,
+      soilTiles,
+      soilStock,
     ],
   );
 
@@ -1205,10 +1212,11 @@ export function StackAcresFarm() {
       profile,
       feed,
       capacity,
-      // Unlike soilStock (never optimistically touched -- buy-soil and
-      // place-soil-tile both wait for the real response), seedStock IS
-      // guessed at by the "stock" predictor above, so a refused or dropped
-      // planting has to be able to put the spent seed back.
+      // seedStock IS guessed at by the "stock" predictor above, so a
+      // refused or dropped planting has to be able to put the spent seed
+      // back. soilTiles/soilStock now join it: place-soil-tile spends a bag
+      // (soilStock) and adds a bed (soilTiles) optimistically, same as
+      // place-pipe does for irrigation below.
       seedStock,
       exchange,
       museum,
@@ -1225,6 +1233,9 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
+      irrigation,
+      soilTiles,
+      soilStock,
     }),
     [
       units,
@@ -1247,6 +1258,9 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
+      irrigation,
+      soilTiles,
+      soilStock,
     ],
   );
   type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
@@ -1270,7 +1284,10 @@ export function StackAcresFarm() {
     setSecrets(snap.secrets);
     setSecretDonations(snap.secretDonations);
     setGreenhouseBuilt(snap.greenhouseBuilt);
+    setSoilTiles(snap.soilTiles);
+    setSoilStock(snap.soilStock);
     setCropFieldsUnlocked(snap.cropFieldsUnlocked);
+    setIrrigation(snap.irrigation);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -2474,23 +2491,17 @@ export function StackAcresFarm() {
   );
 
   /**
-   * Tilling a bed straight out of the radial ring. No optimistic guess
-   * (`predictStackAcresAction`'s own default bucket -- see that module's
-   * header, soil tiles are grouped with pipes there): the response's own
-   * `soilTiles` reaches the scene through `applyResponse` -> the `soilTiles`
-   * state below -> the controlled prop `StackAcresWorld` already pushes on
-   * change, the same path a newly stocked unit's `units` field already
-   * takes. Nothing here talks to the scene directly.
+   * Tilling a bed straight out of the radial ring, or dragged across N tiles
+   * by the soil brush -- see optimistic-actions.ts's `place-soil-tile` case.
+   * The bed appears the instant this fires (deterministic: bare ground or
+   * occupied is all there is to guess now that a bed is one tile), the same
+   * posture `onPlacePipe` below already takes; the toast is flavour on top
+   * of that, not a stand-in for a picture that has not arrived yet.
    */
   const onPlaceSoilTile = useCallback(
     (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
       buySound();
       setRadial(null);
-      // No optimistic bed appears until the response repaints `soilTiles`
-      // (see the comment above), so the sound alone left the press feeling
-      // like it did nothing for however long that round trip takes. This
-      // toast is the same numberless "it's happening" answer `collect` gives
-      // -- it never claims the bed is down yet, just that the ask landed.
       setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       // The tier names WHICH bed; the server reads its price from
       // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
@@ -2499,8 +2510,8 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** Removing a purchased bed. Same "the response is the whole story" shape
-   *  as `onPlaceSoilTile` above. */
+  /** Removing a purchased bed. Same optimistic posture as `onPlaceSoilTile`
+   *  above -- the bed vanishes on the tap, not on the round trip. */
   const onRemoveSoilTile = useCallback(
     (tx: number, ty: number) => {
       buySound();
@@ -2512,10 +2523,10 @@ export function StackAcresFarm() {
   );
 
   /** Placing a well or a length of pipe straight out of the radial ring.
-   *  Same "the response is the whole story" shape `onPlaceSoilTile` above
-   *  takes: no optimistic pipe appears until `irrigation` repaints through
-   *  `applyResponse`, which is what the scene's own `setIrrigation` (pushed
-   *  by StackAcresWorld on that prop's change) actually diffs against. */
+   *  Unlike `onPlaceSoilTile` above, this one DOES get an optimistic guess --
+   *  see optimistic-actions.ts's own `place-pipe` case -- so the tile appears
+   *  the instant this fires; the toast is flavour on top of that, not a
+   *  stand-in for the missing picture it used to be. */
   const onPlacePipe = useCallback(
     (tx: number, ty: number, kind: PipeKind) => {
       buySound();
@@ -2527,13 +2538,58 @@ export function StackAcresFarm() {
   );
 
   /** Removing a placed tile. Same shape as `onRemoveSoilTile` above -- not a
-   *  refund, a spent sink lifted for the room back. */
+   *  refund, a spent sink lifted for the room back -- but, like `onPlacePipe`
+   *  above, WITH an optimistic guess now (see optimistic-actions.ts). */
   const onRemovePipe = useCallback(
     (tx: number, ty: number) => {
       buySound();
       setRadial(null);
       setLastCollect({ text: "Pulling the pipe…", nonce: Date.now() });
       void act({ action: "remove-pipe", tx, ty });
+    },
+    [act],
+  );
+
+  /**
+   * The pipe tool's own drag (or zero-length tap) gesture reached this tile
+   * -- see StackAcresSceneCallbacks.onPipeLayTile's own header for the full
+   * contract the scene already enforces (which tile, which half of the
+   * stroke, never a well). No radial, no toast, no sound here: a drag can
+   * cross a dozen tiles in under a second, and the same optimistic guess
+   * `onPlacePipe`/`onRemovePipe` lean on is what makes each one appear the
+   * instant this fires -- that IS the feedback, the same way the scythe's
+   * own cut needs no caption either.
+   */
+  const onPipeLayTile = useCallback(
+    (tx: number, ty: number, mode: "place" | "erase") => {
+      if (mode === "erase") {
+        void act({ action: "remove-pipe", tx, ty });
+        return;
+      }
+      void act({ action: "place-pipe", tx, ty, kind: "pipe" });
+    },
+    [act],
+  );
+
+  /**
+   * The soil tool's own drag (or zero-length tap) gesture reached this tile
+   * -- the soil tool's own twin of `onPipeLayTile` just above, see
+   * StackAcresSceneCallbacks.onSoilLayTile's own header for the full
+   * contract the scene already enforces (which tile, which half of the
+   * stroke). No radial, no toast, no sound here, for the identical reason
+   * `onPipeLayTile` has none: the optimistic guess `place-soil-tile`/
+   * `remove-soil-tile` get in optimistic-actions.ts is what makes each bed
+   * appear or vanish the instant this fires -- that IS the feedback.
+   * Always the DEFAULT tier on a place -- see tools.ts's own header on why
+   * Enriched/Hydro stay a deliberate radial choice.
+   */
+  const onSoilLayTile = useCallback(
+    (tx: number, ty: number, mode: "place" | "erase") => {
+      if (mode === "erase") {
+        void act({ action: "remove-soil-tile", tx, ty });
+        return;
+      }
+      void act({ action: "place-soil-tile", tx, ty, tier: SOIL_DEFAULT_TIER });
     },
     [act],
   );
@@ -2729,27 +2785,10 @@ export function StackAcresFarm() {
       });
     }
     if (existing.origin === "purchased") {
-      const owned = soilTileOwnedSlots(existing);
-      const tier = soilTileTier(existing);
-      const held = soilStock[tier] ?? 0;
+      // A bed is one tile, one plant now (soil.ts's `plantSoilTile`) -- there
+      // is no partial bed left to grow a square at, so a purchased tile ever
+      // only offers to come back out.
       return [
-        // ONLY the bed's OWN tier is ever offered here -- a bed already has
-        // a fixed tier (soil.ts's `addSoilSlot` refuses a mismatched one),
-        // so showing the other two tiers as if they could fill the same
-        // squares would offer a purchase the server is only going to bounce
-        // back with its bag refunded. Nothing at all once the bed is full --
-        // there is no square left to sell.
-        ...(owned < SOIL_SLOTS_PER_TILE
-          ? [
-              {
-                key: "add-soil-square",
-                label: `Add a Square (${held})`,
-                icon: "ico-plant" as PainterName,
-                disabledReason: held > 0 ? undefined : "None in the barn — buy from Ray",
-                onSelect: () => onPlaceSoilTile(tx, ty, tier),
-              },
-            ]
-          : []),
         {
           key: "remove-bed",
           label: "Remove Bed",
@@ -2941,6 +2980,8 @@ export function StackAcresFarm() {
               onVisitorTap={onWorldVisitorTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
+              onPipeLayTile={onPipeLayTile}
+              onSoilLayTile={onSoilLayTile}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}

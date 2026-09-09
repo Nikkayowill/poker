@@ -44,18 +44,9 @@ export interface SoilTierDef {
   label: string;
   blurb: string;
   /**
-   * Gold, PER PLANTING SQUARE, not per bed.
-   *
-   * Used to be the price of a whole `SOIL_SLOTS_PER_TILE`-square bed --
-   * `dirt` was a flat 2,000 for all twelve. That let a single purchase hand
-   * the player eleven squares they had not asked for and had no way to plant
-   * one at a time, which is not how a real garden bed gets dug: one square
-   * of ground is for one seed. Each tier's price is now that same total
-   * divided by `SOIL_SLOTS_PER_TILE` (2,000 -> 167, 8,000 -> 667,
-   * 20,000 -> 1,667, all rounded to the nearest Gold), so filling a whole
-   * bed still costs what it always did -- a player who wants to buy all
-   * twelve squares in one bed pays the same total as the old flat price,
-   * just twelve small purchases instead of one big one.
+   * Gold, PER BED. A bed is one tile, one plant now -- see ./soil.ts's own
+   * header on `SOIL_TILE` -- so this is simply what one planting square
+   * costs, with no per-bed multiplier left to apply.
    */
   price: number;
   /** Multiplies a crop's own `durationMs` at sow time. Strictly `0 < m <= 1`

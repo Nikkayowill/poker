@@ -2,13 +2,7 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import {
-  SOIL_SLOTS_PER_TILE,
-  SOIL_TILE,
-  SOIL_TILE_PRICE_GOLD,
-  soilTileAt,
-  starterSoilTiles,
-} from "@/lib/stackacres/soil";
+import { SOIL_TILE, SOIL_TILE_PRICE_GOLD, soilTileAt, starterSoilTiles } from "@/lib/stackacres/soil";
 import { SOIL_BAGS_PER_PURCHASE, soilTierPrice, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
@@ -118,38 +112,24 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
     ).toBe(true);
   });
 
-  it("grows the same bed by one square per bag of the same tier", async () => {
+  it("refuses a second bed on an occupied coordinate and returns the bag", async () => {
     const token = await stocked("dirt", 2);
     const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
-
-    const view = await placeStackAcresSoilTile(token, { tx, ty }, T0);
-
-    // One bed, not two -- the second bag grew the bed already there.
-    expect(view.soilTiles.filter((t) => t.tx === tx && t.ty === ty)).toHaveLength(1);
-    expect(view.soilTiles.find((t) => t.tx === tx && t.ty === ty)?.boughtSlots).toBe(2);
-    expect(view.soilStock.dirt).toBe(0);
-  });
-
-  it("returns the bag once a bed's squares are all bought", async () => {
-    const token = await stocked("dirt", SOIL_SLOTS_PER_TILE + 1);
-    const { tx, ty } = cropFieldTile();
-    for (let i = 0; i < SOIL_SLOTS_PER_TILE; i += 1) {
-      await placeStackAcresSoilTile(token, { tx, ty }, T0);
-    }
-    const afterFilling = await balance(token);
+    const afterFirst = await balance(token);
 
     await expect(placeStackAcresSoilTile(token, { tx, ty }, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
 
-    // The refused square must not eat the bag: SOIL_SLOTS_PER_TILE were spent
-    // filling the bed, the extra one is still on the shelf.
+    // One bed, not two -- the second bag never landed, and came back.
+    const view = await readStackAcres(token, T0);
+    expect(view.soilTiles.filter((t) => t.tx === tx && t.ty === ty)).toHaveLength(1);
     expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({ dirt: 1 });
-    expect(await balance(token)).toBe(afterFilling);
+    expect(await balance(token)).toBe(afterFirst);
   });
 
-  it("returns the bag when the bed already standing there is a different tier", async () => {
+  it("refuses a bed of a different tier on an occupied coordinate and returns that bag too", async () => {
     const token = await funded();
     await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
     await buyStackAcresSoil(token, { tier: "enriched", quantity: 1 }, T0);

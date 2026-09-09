@@ -6,11 +6,13 @@ import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /**
- * The dock: Look (the resting state) or hold the Scythe to mow the Long
- * Meadow. Down from six tools to two now that a plot tap is not how anything
- * gets done any more (see ./stackacres-district-panel.tsx) -- the scythe is
- * the one tool left whose target is the ground rather than a unit, so it's
- * the one thing still worth holding.
+ * The dock: Look (the resting state), or hold the Scythe, Pipe or Soil tool
+ * to drag across the ground. Down from six tools to a handful now that a
+ * plot tap is not how anything gets done any more (see
+ * ./stackacres-district-panel.tsx) -- inspect, scythe, pipe and soil are the
+ * tools left whose target is the ground rather than a unit, so they're the
+ * only things still worth holding. See lib/stackacres/tools.ts's own header
+ * for what each one does and why it exists.
  */
 
 export interface StackAcresToolbeltProps {

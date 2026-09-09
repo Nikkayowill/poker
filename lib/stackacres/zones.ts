@@ -354,10 +354,16 @@ export function inOuterZone(x: number, y: number): boolean {
 /* ------------------------------------------------------------------ */
 
 /**
- * Which districts each tool is allowed to act in. Down to two tools now
- * (./tools.ts) -- `inspect` is the resting state and has no target to gate;
- * the scythe alone is district-specific, because its target is the GROUND,
- * not a unit, and mowing has no reason to exist anywhere but the Long Meadow.
+ * Which districts each tool is allowed to act in. `inspect` is the resting
+ * state and has no target to gate; the scythe is district-specific, because
+ * its target is the GROUND, not a unit, and mowing has no reason to exist
+ * anywhere but the Long Meadow. `pipe` is farm-wide like `inspect` -- the
+ * irrigation lattice itself has no district boundary (see
+ * lib/stackacres/irrigation.ts's own header), so the fine gate on where a
+ * tile may actually land is the scene's own `pipeLayableWorldTile`, not this
+ * table. `soil` is district-specific like the scythe -- a bed only ever
+ * means anything inside the Crop Fields (`CROP_FIELD_BEDS`), which the
+ * scene's own `soilLayableWorldTile` is the fine gate for, same split.
  */
 export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>> = {
   inspect: ZONE_IDS,
@@ -367,6 +373,8 @@ export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>>
   // function that actually confines grass -- and the scythe -- to
   // ./yard.ts's `CROP_FIELD`, not the whole of the Farmstead's own bounds.
   scythe: ["farmstead"],
+  pipe: ZONE_IDS,
+  soil: ["farmstead"],
 };
 
 export type ZoneActionCheck =

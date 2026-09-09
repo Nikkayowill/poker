@@ -115,24 +115,22 @@ import {
 import { CROP_FIELD, yardPoint } from "@/lib/stackacres/yard";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
-  addSoilSlot,
   createSoilMap,
   hasSoilTile,
   orderedSoilTiles,
+  plantSoilTile,
   removeSoilTile,
-  SOIL_COL_PITCH,
-  SOIL_ROW_PITCH,
+  SOIL_TILE,
   soilSlotPoint,
   soilTileAt,
   soilTileDiamond,
-  soilTileOwnedSlots,
+  soilTileKey,
   soilTileTier,
   starterSoilTiles,
   type SoilMap,
   type SoilTile,
+  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import { createSoilGrid, SOIL_BED_TEXTURE_KEY } from "@/lib/stackacres/soil-grid";
-import type { SpriteFactory } from "@/lib/stackacres/isometric-grid-manager";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
   MONK_HOUSE_FOOTPRINT,
@@ -207,11 +205,14 @@ import { bakeIrrigation, FLOW_SEG_KEY, PIPE_ARM_ANGLE } from "./art-irrigation";
 import {
   diffPipeGrid,
   indexPipeNodes,
+  PIPE_TILE,
   pipeFlowFrame,
   pipeFrameKey,
   pipeKey,
+  pipeTileAt,
   pipeTileCenter,
   WELL_TEXTURE_KEY,
+  type PipeCoord,
   type PipeIndex,
   type PipeNode,
 } from "@/lib/stackacres/irrigation";
@@ -456,6 +457,32 @@ export interface StackAcresSceneCallbacks {
    * fall through to `onGroundTap`'s seed offer instead.
    */
   onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /**
+   * The pipe tool's own drag (or zero-length tap) gesture reached this tile,
+   * bypassing `onGroundTap`'s ring menu entirely -- see `pipeLaySegment` and
+   * lib/stackacres/tools.ts's own header on why the tool exists. `mode` is
+   * decided once per gesture (`DragGesture.startPipeLay`): `"place"` fires
+   * only for a tile that was empty when the stroke reached it, `"erase"`
+   * only for one that already had a pipe. Never fires for a well -- see
+   * `pipeLayMode`'s own doc in `bindInput`. The shell owns the actual
+   * network call (`place-pipe`/`remove-pipe`) and its optimistic guess, the
+   * same "the scene reports WHERE, the shell decides what it's worth"
+   * split every other tap callback here already takes.
+   */
+  onPipeLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
+  /**
+   * The soil tool's own drag (or zero-length tap) gesture reached this tile
+   * -- the soil tool's own twin of `onPipeLayTile`, see `soilLaySegment` and
+   * lib/stackacres/tools.ts's own header. `mode` is decided once per gesture
+   * (`DragGesture.startSoilLay`): `"place"` fires only for bare ground (no
+   * bed, starter or purchased, standing there yet), `"erase"` only for a
+   * tile that already has one. `"place"` always plants the DEFAULT tier --
+   * a drag never spends a costlier bag by accident, the same posture that
+   * keeps a well radial-only for pipes; Enriched or Hydro is still chosen
+   * one tile at a time through the ring. The shell owns the actual network
+   * call (`place-soil-tile`/`remove-soil-tile`) and its optimistic guess.
+   */
+  onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
   /**
    * Informational only, fired whenever the Wildlife Manager's own predator
    * simulation lowers a district's livestock health -- the shell's cue to
@@ -900,24 +927,37 @@ function bakeForageDropTexture(scene: Phaser.Scene): string {
   return FORAGE_DROP_TEXTURE;
 }
 
+/** Was lib/stackacres/soil-grid.ts's own export, back when that module's
+ *  `IsometricGridManager` placement was what handed a bed its sprite. Local
+ *  now that `paintSoilTiles` places bed sprites directly -- see that
+ *  module's deletion note on `paintSoilTiles`'s own doc comment. */
+const SOIL_BED_TEXTURE_KEY = "soil-bed";
+
 /**
  * Bakes one soil bed's flat ground diamond -- the exact fill and rim
  * `paintAreaGround(rect, "soil", false)` used to draw per tile by hand,
- * baked once so `IsometricGridManager.placeAsset` (lib/stackacres/soil-
- * grid.ts) can hand every bed a real sprite instead of the inert stub it
- * built before `paintSoilTiles` was its only scene consumer.
+ * baked once so `paintSoilTiles` can hand every bed a real sprite instead of
+ * redrawing a `Graphics` diamond per tile per repaint.
  *
- * 128x64: the exact screen size every bed's footprint projects to
- * (soil-grid.test.ts holds the manager's own corners equal to
- * `soilTileDiamond`'s), and already a power of two on both axes, so this
+ * 32x16: the exact screen size every bed's footprint projects to
+ * (`soilTileDiamond`), and already a power of two on both axes, so this
  * needs no `powerOfTwoCeil` padding the way a sheet-sourced canvas does.
- * The diamond is drawn so its south point sits at the bottom-centre pixel,
- * matching the (0.5, 1) origin `placeAsset` sets on every sprite it makes.
+ * Centred in its own box, matching the default (0.5, 0.5) origin
+ * `paintSoilTiles` places every bed sprite at.
+ *
+ * USED TO be 128x64 and placed through an `IsometricGridManager`
+ * (lib/stackacres/soil-grid.ts), back when a bed was a 2x2 footprint on a
+ * finer grid. That manager's own cell size is a fixed 32 world units, baked
+ * into its screen math (`ISO_TILE_WIDTH`/`HEIGHT`) rather than configurable
+ * -- once a bed shrank to one 16-unit tile it could no longer be even ONE
+ * whole cell of that grid, so `paintSoilTiles` now places this sprite
+ * directly off `soil.ts`'s own `SoilMap`, the same way `paintBedSlot`
+ * already places the plant picture on top of it.
  */
 function bakeSoilBedTexture(scene: Phaser.Scene): string {
   if (scene.textures.exists(SOIL_BED_TEXTURE_KEY)) return SOIL_BED_TEXTURE_KEY;
-  const width = 128;
-  const height = 64;
+  const width = 32;
+  const height = 16;
   const ramp = rampHex("soil");
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
   g.fillStyle(ramp.top, 1);
@@ -1050,14 +1090,16 @@ interface TrailPoint {
 
 /**
  * One finger down: a press until it has moved TAP_SLOP, then either a pan
- * (the map moves) or a mow (the scythe cuts a swathe across the Long
- * Meadow) -- decided once, at that moment, by whether the press began on
- * standing grass with the scythe held. There is no plot left for a drag to
- * sweep across instead (buying and tending a unit is the district sidebar's
- * job now), so every press that is not the scythe's own gesture simply pans.
+ * (the map moves), a mow (the scythe cuts a swathe across the Long Meadow),
+ * or a pipe-lay (the pipe tool paints or lifts a run of tiles) -- decided
+ * once, at that moment, by whether the press began on standing grass with
+ * the scythe held, or on a valid ground tile with the pipe tool held. There
+ * is no plot left for a drag to sweep across instead (buying and tending a
+ * unit is the district sidebar's job now), so every press that is neither of
+ * those two tools' own gesture simply pans.
  */
 interface DragGesture {
-  kind: "press" | "pan" | "mow";
+  kind: "press" | "pan" | "mow" | "pipe-lay" | "soil-lay";
   id: number;
   x: number;
   y: number;
@@ -1076,6 +1118,28 @@ interface DragGesture {
    * around: start the drag on a path or a cut patch.
    */
   startMow?: boolean;
+  /**
+   * Set when the press began on a tile the pipe tool could act on, to
+   * whichever half of the stroke that first tile committed it to: `"place"`
+   * if it was empty ground, `"erase"` if a pipe already stood there. Decided
+   * once, the same moment `startMow` is, and for the same reason -- a stroke
+   * that started laying pipe should never flip into lifting one just because
+   * it crossed a tile someone had already laid, and the reverse. `undefined`
+   * (not `false`, unlike `startMow`) both off the pipe tool and on a tile the
+   * tool cannot touch at all (a well, or anything `pipeLayableWorldTile`
+   * refuses) -- either way the drag falls through to an ordinary pan.
+   */
+  startPipeLay?: "place" | "erase";
+  /** Every tile this gesture has already asked the shell about, so a hand
+   *  that wobbles back across ground it just crossed never fires a second
+   *  request for the same square -- see `pipeLaySegment`. Built lazily; a
+   *  gesture that never lays pipe never allocates one. */
+  pipeTilesTouched?: Set<string>;
+  /** The soil tool's own twin of `startPipeLay` -- see `soilLayMode`'s doc
+   *  in `bindInput` and `onSoilLayTile`'s own header. */
+  startSoilLay?: "place" | "erase";
+  /** The soil tool's own twin of `pipeTilesTouched` -- see `soilLaySegment`. */
+  soilTilesTouched?: Set<string>;
 }
 
 
@@ -1562,6 +1626,22 @@ export class StackAcresScene extends Phaser.Scene {
    *  it repaints on every ring open. Drawn in WORLD space (it has to track
    *  the tile, not the screen), so it is not pinned like `toolGhost`. */
   private soilPreview: Phaser.GameObjects.Graphics | null = null;
+  /**
+   * Outline of the Crop Fields' own placeable ground (`CROP_FIELD_BEDS`),
+   * shown only while the soil tool is held -- see `setTool` and
+   * `paintSoilToolBoundary`. Drawn once at scene creation, since the area it
+   * traces never moves; only its visibility changes.
+   *
+   * A BOUNDARY, NOT A GRID: a farm-wide diamond lattice was tried and
+   * deleted (`paintSector`'s own note: "a translucent diamond grid over
+   * grass read as a patch of ugly brown squares"). This answers a different
+   * question than that one did -- not "is this exact tile free" (the single-
+   * tile `soilPreview` already answers that) but "where can I even drag at
+   * all" -- with one outline shape rather than one diamond per cell, so it
+   * cannot repeat that failure: the complaint was about repetition, not
+   * about showing a boundary at all.
+   */
+  private soilToolBoundary: Phaser.GameObjects.Graphics | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
@@ -1724,6 +1804,12 @@ export class StackAcresScene extends Phaser.Scene {
       .graphics()
       .setDepth(GROW_AREA_GROUND_DEPTH + 1)
       .setVisible(false);
+
+    this.soilToolBoundary = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH + 1)
+      .setVisible(false);
+    this.paintSoilToolBoundary();
 
     this.toolGhost = this.add
       .image(0, 0, this.toolIconName, ART_FRAME)
@@ -2695,6 +2781,143 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * The pipe tile at this world point, or `null` if something else would
+   * claim a tap there first.
+   *
+   * Deliberately walks the SAME priority `dispatchTap` climbs down to its own
+   * `onGroundTap` fallback (structures and characters, then a locked
+   * district or the Crop Fields' own locked box, then a fence bay), so the
+   * pipe tool's drag never paints somewhere a plain tap could not have
+   * opened the ring either. Replicated rather than called through
+   * `dispatchTap` itself: a drag tests this many times a second while
+   * panning, and `dispatchTap` fires real callbacks (`onBarnTap` and
+   * friends) that this test must never trigger as a side effect. `unitAt`'s
+   * own check is skipped on purpose -- it hit-tests a sprite in CLIENT space
+   * and this only ever has a WORLD point to test, and no unit stands still
+   * enough on a tile's exact centre for the gap to matter in practice.
+   */
+  private pipeLayableWorldTile(worldX: number, worldY: number): PipeCoord | null {
+    if (this.steppedInGreenhouse) return null;
+    if (this.merchantNode && midnightMerchantHitAt(worldX, worldY)) return null;
+    if (monkHitAt(worldX, worldY)) return null;
+    if (grandfatherRayHitAt(worldX, worldY)) return null;
+    if (visitorHitAt(worldX, worldY)) return null;
+    if (barnHitAt(worldX, worldY)) return null;
+    if (greenhouseHitAt(worldX, worldY)) return null;
+    if (hiddenZoneAt(worldX, worldY)) return null;
+    const wild = zoneAt(worldX, worldY);
+    if (wild !== null && this.locked.has(wild)) return null;
+    if (
+      this.cropFieldsLocked &&
+      worldX >= CROP_FIELD.x &&
+      worldX <= CROP_FIELD.x + CROP_FIELD.width &&
+      worldY >= CROP_FIELD.y &&
+      worldY <= CROP_FIELD.y + CROP_FIELD.height
+    ) {
+      return null;
+    }
+    if (this.fenceSegmentAt(worldX, worldY)) return null;
+    if (!growAreaAt(worldX, worldY)) return null;
+    return pipeTileAt(worldX, worldY);
+  }
+
+  /**
+   * Lays or lifts every pipe tile the stroke from `from` to `to` crosses,
+   * reporting each one to the shell through `onPipeLayTile` -- the pipe
+   * tool's own twin of `mowSegment`, sized down to one tile wide since a
+   * pipe run has no "reach" to widen.
+   *
+   * Sampled the same way `mowStroke` is (half a tile between samples,
+   * de-duplicated) so a fast drag cannot skip a tile between two pointer-move
+   * events, but the de-dupe here is against `gesture.pipeTilesTouched` --
+   * the WHOLE gesture, not just this one segment -- because a request already
+   * sent for a tile must never be sent again just because the hand wobbled
+   * back across it before lifting. `gesture.startPipeLay` fixes which half
+   * of the stroke this whole gesture is: `"place"` skips any tile that
+   * already has something on it (a pipe, or the one well), `"erase"` skips
+   * any tile that does not already have a plain pipe on it -- a stroke that
+   * started laying never starts lifting mid-drag, and the reverse.
+   */
+  private pipeLaySegment(gesture: DragGesture, from: WorldPoint, to: WorldPoint): void {
+    const mode = gesture.startPipeLay;
+    if (!mode) return;
+    const touched = gesture.pipeTilesTouched ?? new Set<string>();
+    gesture.pipeTilesTouched = touched;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(length / (PIPE_TILE / 2)));
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps;
+      const tile = this.pipeLayableWorldTile(from.x + dx * t, from.y + dy * t);
+      if (!tile) continue;
+      const key = pipeKey(tile.tx, tile.ty);
+      if (touched.has(key)) continue;
+      const existing = this.pipeIndex?.byKey.get(key);
+      if (mode === "place" && existing) continue;
+      if (mode === "erase" && (!existing || existing.kind !== "pipe")) continue;
+      touched.add(key);
+      this.callbacks.onPipeLayTile(tile.tx, tile.ty, mode);
+    }
+  }
+
+  /**
+   * Which soil-lattice tile this world point could act on, with the soil
+   * tool held -- the soil tool's own twin of `pipeLayableWorldTile`, bounded
+   * to the Crop Fields' own placeable ground (`CROP_FIELD_BEDS`) instead of
+   * the whole farm: a bed can never mean anything outside it (same rule
+   * `placeStackAcresSoilTile` enforces server-side).
+   */
+  private soilLayableWorldTile(worldX: number, worldY: number): SoilTileCoord | null {
+    if (this.cropFieldsLocked) return null;
+    if (this.steppedInGreenhouse) return null;
+    if (this.merchantNode && midnightMerchantHitAt(worldX, worldY)) return null;
+    if (monkHitAt(worldX, worldY)) return null;
+    if (grandfatherRayHitAt(worldX, worldY)) return null;
+    if (visitorHitAt(worldX, worldY)) return null;
+    if (hiddenZoneAt(worldX, worldY)) return null;
+    const area = CROP_FIELD_BEDS;
+    if (
+      worldX < area.x ||
+      worldX > area.x + area.width ||
+      worldY < area.y ||
+      worldY > area.y + area.height
+    ) {
+      return null;
+    }
+    return soilTileAt(worldX, worldY);
+  }
+
+  /**
+   * Plants or lifts every soil tile the stroke from `from` to `to` crosses,
+   * reporting each one to the shell through `onSoilLayTile` -- the soil
+   * tool's own twin of `pipeLaySegment`, sized to `SOIL_TILE` the same way
+   * that one is sized to `PIPE_TILE`.
+   */
+  private soilLaySegment(gesture: DragGesture, from: WorldPoint, to: WorldPoint): void {
+    const mode = gesture.startSoilLay;
+    if (!mode) return;
+    const touched = gesture.soilTilesTouched ?? new Set<string>();
+    gesture.soilTilesTouched = touched;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(length / (SOIL_TILE / 2)));
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps;
+      const tile = this.soilLayableWorldTile(from.x + dx * t, from.y + dy * t);
+      if (!tile) continue;
+      const key = soilTileKey(tile.tx, tile.ty);
+      if (touched.has(key)) continue;
+      const occupied = hasSoilTile(this.soil, tile.tx, tile.ty);
+      if (mode === "place" && occupied) continue;
+      if (mode === "erase" && !occupied) continue;
+      touched.add(key);
+      this.callbacks.onSoilLayTile(tile.tx, tile.ty, mode);
+    }
+  }
+
   /** One freshly deployed drone's Phaser picture, parked at the ring tile
    *  nearest the barn (Ray's Museum -- the hangar it was bought from) and
    *  ready to start patrolling on the next `update()`. */
@@ -3328,16 +3551,15 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Buys one planting square under a world point, snapped to the lattice: a
-   * brand new one-square bed on bare ground, or the next square of the bed
-   * already there. Returns false for either refusal `addSoilSlot` can give
-   * (full, or a mismatched tier), so a shop can charge only on a purchase
-   * that actually landed.
+   * Plants a bed under a world point, snapped to the lattice. Returns false
+   * when a bed already stands there (`plantSoilTile`'s only refusal now that
+   * a bed is one tile), so a shop can charge only on a purchase that
+   * actually landed.
    *
    * It does NOT check Gold, or the district, or whether the player has
-   * unlocked the ground. The scene draws; the shell decides what a square
+   * unlocked the ground. The scene draws; the shell decides what a bed
    * costs and where one may go, the same split `onGroundTap` already keeps.
-   * No `origin` parameter any more -- `addSoilSlot` always creates a
+   * No `origin` parameter any more -- `plantSoilTile` always creates a
    * `"purchased"` bed itself, and nothing ever called this with `"starter"`.
    */
   /**
@@ -3363,8 +3585,7 @@ export class StackAcresScene extends Phaser.Scene {
 
   placeSoilAt(x: number, y: number, tier: SoilTier = SOIL_DEFAULT_TIER): boolean {
     const { tx, ty } = soilTileAt(x, y);
-    const outcome = addSoilSlot(this.soil, { tx, ty }, tier);
-    const placed = outcome.kind === "created" || outcome.kind === "grown";
+    const placed = plantSoilTile(this.soil, { tx, ty }, tier).kind === "created";
     if (placed) this.refreshSoil();
     return placed;
   }
@@ -3424,6 +3645,26 @@ export class StackAcresScene extends Phaser.Scene {
     preview.fillPath();
     preview.strokePath();
     preview.setVisible(true);
+  }
+
+  /**
+   * Draws the Crop Fields' own placeable-ground outline -- see
+   * `soilToolBoundary`'s own doc for why this is a boundary and not a grid.
+   * Called once from `create`; `setTool` only ever toggles its visibility.
+   */
+  private paintSoilToolBoundary(): void {
+    const boundary = this.soilToolBoundary;
+    if (!boundary) return;
+    const corners = projectedCorners(CROP_FIELD_BEDS);
+    boundary.clear();
+    boundary.lineStyle(2, rampHex("soil").rim, 0.9);
+    boundary.beginPath();
+    boundary.moveTo(corners.n.x, corners.n.y);
+    boundary.lineTo(corners.e.x, corners.e.y);
+    boundary.lineTo(corners.s.x, corners.s.y);
+    boundary.lineTo(corners.w.x, corners.w.y);
+    boundary.closePath();
+    boundary.strokePath();
   }
 
   /** Redraws everything a soil change moves: the beds themselves, the grass
@@ -3569,11 +3810,12 @@ export class StackAcresScene extends Phaser.Scene {
    *  so they read as rows rather than as stripes painted over the top of it.
    *
    *  `offsets` are distances DOWN from the area's own top edge in world
-   *  units. A soil tile passes `soilFurrowOffsets()` so its furrows land on
-   *  exactly the lines its plants stand on -- a furrow bed whose rows and
-   *  whose plants disagree is worse than no furrows at all. Omitted, it
-   *  keeps the old six evenly-spaced rows, which is what every non-tile
-   *  caller still wants. */
+   *  units, or the old six evenly-spaced rows when omitted. UNREACHABLE
+   *  today -- `paintAreaGround`'s one caller never passes `furrowed: true`
+   *  (the Crop Fields draw their own ground per tile now, see
+   *  `paintSoilTiles`) -- kept rather than deleted alongside `paintAreaGround`'s
+   *  own `furrowed`/`furrowOffsets` params, which is a bigger cut than this
+   *  pass is making. */
   private paintFurrows(
     g: Phaser.GameObjects.Graphics,
     area: WorldRect,
@@ -3592,55 +3834,40 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Every placed soil tile's flat ground, plus one `soilSlot` picture per
-   * OWNED planting square on top of it, from `paintOwnedSlots` below.
+   * Every placed soil tile's flat ground, plus one `soilSlot` picture on top
+   * of it from `paintBedSlot` below -- a bed holds exactly one plant now, so
+   * there is no owned-square count to loop over.
    *
-   * The flat fill under a bed still bought whole is not dead weight: with a
-   * `SOIL_SLOT_INSET` gap between squares (see `paintOwnedSlots`'s own doc),
-   * it is what shows through as the hairline grout between them, the same
-   * job it already did for a bed still being filled in one square at a
-   * time -- which is why a full bed and a partial one now go through the
-   * exact same two calls instead of a fork between them.
+   * The flat fill under a bed is not dead weight even with one plant: it is
+   * what shows through as the hairline margin around the plant picture (see
+   * `paintBedSlot`'s own doc).
    *
-   * The flat fill is a real `IsometricGridManager` placement now
-   * (lib/stackacres/soil-grid.ts's `createSoilGrid`) instead of a per-tile
-   * `paintAreaGround` diamond: one baked `soil-bed` sprite (see
-   * `bakeSoilBedTexture`) per owned tile, snapped and occupancy-tracked the
-   * same way any future placed asset would be. `soil.ts`'s `SoilMap` stays
-   * the actual record of what exists -- the grid is rebuilt from it fresh
-   * on every call, the same "repaint, don't diff" contract `setSoil`
-   * already keeps, so there is no second copy of placement state to fall
-   * out of sync.
-   *
-   * A bed's ground never needs to sort against anything standing on it --
-   * it is always furthest back, same as every other district's ground fill
-   * -- so `GROW_AREA_GROUND_DEPTH` is forced onto every bed sprite here
-   * rather than left at the near-over-far depth `placeAsset` assigns a
-   * standing "crop", which is for a plant, not the dirt under one.
+   * ONE SPRITE PER TILE, placed directly off `isoProject`, NOT through an
+   * `IsometricGridManager` (lib/stackacres/soil-grid.ts's `createSoilGrid`,
+   * used here until this pass). That manager exists to track occupancy
+   * across MULTI-cell footprints, and its own cell size is a fixed 32 world
+   * units baked into its screen math -- useful back when a bed was a 2x2
+   * footprint on a finer grid, dead weight now that a bed is exactly one
+   * `SOIL_TILE` (16) and `soil.ts`'s own `SoilMap` already answers "is
+   * there a bed here" in O(1) with no grid needed at all.
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const createSprite: SpriteFactory = (spec) => {
-      const sprite = this.add.sprite(spec.x, spec.y, spec.textureKey);
-      built.push(sprite);
-      return sprite;
-    };
-    const { grid } = createSoilGrid(this.soil, CROP_FIELD_BEDS, createSprite);
-    for (const asset of grid.assets) asset.sprite.setDepth(GROW_AREA_GROUND_DEPTH);
+    const bedKey = bakeSoilBedTexture(this);
     for (const tile of orderedSoilTiles(this.soil)) {
-      built.push(...this.paintOwnedSlots(tile, soilTileOwnedSlots(tile)));
+      const p = soilSlotPoint(tile);
+      const centre = isoProject(p.x, p.y);
+      built.push(this.add.sprite(centre.x, centre.y, bedKey).setDepth(GROW_AREA_GROUND_DEPTH));
+      built.push(...this.paintBedSlot(tile));
     }
     return built;
   }
 
   /**
-   * One `soilSlot` picture per OWNED planting square -- the same picture
-   * whether the bed is still being filled in one square at a time or was
-   * bought whole, at exactly the footprint `soilSlotPoint` already centres a
-   * plant on (`SOIL_COL_PITCH` x `SOIL_ROW_PITCH`, inset by 2 units so
-   * neighbouring squares show a hairline gap instead of touching), so a
-   * plant standing on square `i` always stands inside the square drawn for
-   * it -- never on the edge of one or straddling two.
+   * The one `soilSlot` picture a bed holds -- its whole plant now, at
+   * exactly the footprint `soilSlotPoint` centres on the tile (inset by 2
+   * units so a neighbouring bed's own fill shows through as a hairline gap
+   * rather than the two touching).
    *
    * `soilSlot` is a single planting square's own art (stackacres-sprites.ts),
    * not baked through `bakeSpriteTexture` the way every painter-backed
@@ -3653,52 +3880,52 @@ export class StackAcresScene extends Phaser.Scene {
    * "flat fill first, picture once it loads" contract `paintSoilTiles`
    * used to keep for a whole bed.
    *
-   * `owned` is always in reading order starting from square 0
-   * (`soilTileOwnedSlots`'s own doc comment), so this never has to ask WHICH
-   * squares are owned, only how many.
+   * USED TO loop over `owned` squares (up to a dozen per bed, filled in
+   * reading order) -- gone along with the rest of the furrow lattice now
+   * that a bed holds exactly one.
    */
-  private paintOwnedSlots(tile: SoilTile, owned: number): Phaser.GameObjects.GameObject[] {
+  private paintBedSlot(tile: SoilTile): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const halfW = (SOIL_COL_PITCH - 2) / 2;
-    const halfH = (SOIL_ROW_PITCH - 2) / 2;
+    // A 2-unit margin so a bed shows a hairline of its own flat fill (from
+    // `paintSoilTiles`'s grid placement) around the plant picture, the same
+    // grout job the margin did back when a bed held up to a dozen of these.
+    const half = (SOIL_TILE - 4) / 2;
     // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
-    // why a tint and not a plate of its own. A null tint leaves every slot
+    // why a tint and not a plate of its own. A null tint leaves the slot
     // exactly as it was, so an untiered farm is pixel-identical.
     const tint = soilTierDef(soilTileTier(tile)).tint;
     const slotKey = spriteLoadKey("soilSlot");
     const hasArt = this.textures.exists(slotKey);
-    const ramp = rampHex("soil");
-    const g = hasArt ? null : this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
-    if (g) built.push(g);
-    for (let slot = 0; slot < owned; slot += 1) {
-      const p = soilSlotPoint(tile, slot);
-      const rect = { x: p.x - halfW, y: p.y - halfH, width: halfW * 2, height: halfH * 2 };
-      if (hasArt) {
-        // Any world rect projects to an exactly-2:1 diamond (see
-        // lib/stackacres/iso.ts's `isoProject`), the same shape `soilSlot`
-        // is drawn in, so its own centre and `(width + height)`/`/2` size
-        // need no per-square anchoring beyond that.
-        const centre = isoProject(p.x, p.y);
-        const picture = this.add
-          .image(centre.x, centre.y, slotKey)
-          .setDisplaySize(rect.width + rect.height, (rect.width + rect.height) / 2)
-          .setDepth(GROW_AREA_GROUND_DEPTH);
-        if (tint !== null) picture.setTint(tint);
-        built.push(picture);
-        continue;
-      }
-      const corners = projectedCorners(rect);
-      g!.fillStyle(ramp.top, 1);
-      g!.beginPath();
-      g!.moveTo(corners.n.x, corners.n.y);
-      g!.lineTo(corners.e.x, corners.e.y);
-      g!.lineTo(corners.s.x, corners.s.y);
-      g!.lineTo(corners.w.x, corners.w.y);
-      g!.closePath();
-      g!.fillPath();
-      g!.lineStyle(1, ramp.rim, 0.6);
-      g!.strokePath();
+    const p = soilSlotPoint(tile);
+    const rect = { x: p.x - half, y: p.y - half, width: half * 2, height: half * 2 };
+    if (hasArt) {
+      // Any world rect projects to an exactly-2:1 diamond (see
+      // lib/stackacres/iso.ts's `isoProject`), the same shape `soilSlot`
+      // is drawn in, so its own centre and `(width + height)`/`/2` size
+      // need no per-square anchoring beyond that.
+      const centre = isoProject(p.x, p.y);
+      const picture = this.add
+        .image(centre.x, centre.y, slotKey)
+        .setDisplaySize(rect.width + rect.height, (rect.width + rect.height) / 2)
+        .setDepth(GROW_AREA_GROUND_DEPTH);
+      if (tint !== null) picture.setTint(tint);
+      built.push(picture);
+      return built;
     }
+    const ramp = rampHex("soil");
+    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    built.push(g);
+    const corners = projectedCorners(rect);
+    g.fillStyle(ramp.top, 1);
+    g.beginPath();
+    g.moveTo(corners.n.x, corners.n.y);
+    g.lineTo(corners.e.x, corners.e.y);
+    g.lineTo(corners.s.x, corners.s.y);
+    g.lineTo(corners.w.x, corners.w.y);
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(1, ramp.rim, 0.6);
+    g.strokePath();
     return built;
   }
 
@@ -3978,6 +4205,34 @@ export class StackAcresScene extends Phaser.Scene {
       const key = meadowTileKey(tile.tx, tile.ty);
       return meadowDensityAt(tile.tx, tile.ty, this.mown.get(key) ?? null, Date.now(), this.soil) > 0;
     };
+    /**
+     * Which half of a pipe-lay stroke this finger would start, with the pipe
+     * tool held: `"place"` over ground the tool could break, `"erase"` over
+     * a pipe already down. `undefined` off the tool, off a valid ground
+     * tile, or over the one well -- a well is never touched by this gesture,
+     * see lib/stackacres/tools.ts's own header on why it stays a deliberate
+     * radial-only purchase.
+     */
+    const pipeLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
+      if (this.tool !== "pipe") return undefined;
+      const world = resolveWorld(clientX, clientY);
+      const tile = this.pipeLayableWorldTile(world.x, world.y);
+      if (!tile) return undefined;
+      const existing = this.pipeIndex?.byKey.get(pipeKey(tile.tx, tile.ty));
+      if (existing?.kind === "well") return undefined;
+      return existing ? "erase" : "place";
+    };
+    /**
+     * Which half of a soil-lay stroke this finger would start, with the
+     * soil tool held -- the soil tool's own twin of `pipeLayMode`.
+     */
+    const soilLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
+      if (this.tool !== "soil") return undefined;
+      const world = resolveWorld(clientX, clientY);
+      const tile = this.soilLayableWorldTile(world.x, world.y);
+      if (!tile) return undefined;
+      return hasSoilTile(this.soil, tile.tx, tile.ty) ? "erase" : "place";
+    };
     const oneFinger = (id: number, at: Finger, kind: "press" | "pan"): DragGesture => ({
       kind,
       id,
@@ -4017,6 +4272,8 @@ export class StackAcresScene extends Phaser.Scene {
       else {
         const gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
         gesture.startMow = mowable(event.clientX, event.clientY);
+        gesture.startPipeLay = pipeLayMode(event.clientX, event.clientY);
+        gesture.startSoilLay = soilLayMode(event.clientX, event.clientY);
         this.gesture = gesture;
       }
     };
@@ -4080,6 +4337,38 @@ export class StackAcresScene extends Phaser.Scene {
           this.moveToolGhost(here.x, here.y);
           return;
         }
+        // A drag that started on a tile the pipe tool could touch lays or
+        // lifts a run of them; the pipe tool's own twin of the scythe branch
+        // just above.
+        if (gesture.startPipeLay) {
+          gesture.kind = "pipe-lay";
+          const start = sceneAt(gesture.startX, gesture.startY);
+          this.showToolGhost(start.x, start.y);
+          this.pipeLaySegment(
+            gesture,
+            resolveWorld(gesture.startX, gesture.startY),
+            resolveWorld(event.clientX, event.clientY),
+          );
+          const here = sceneAt(event.clientX, event.clientY);
+          this.moveToolGhost(here.x, here.y);
+          return;
+        }
+        // A drag that started on a tile the soil tool could touch plants or
+        // lifts a run of beds; the soil tool's own twin of the two branches
+        // just above.
+        if (gesture.startSoilLay) {
+          gesture.kind = "soil-lay";
+          const start = sceneAt(gesture.startX, gesture.startY);
+          this.showToolGhost(start.x, start.y);
+          this.soilLaySegment(
+            gesture,
+            resolveWorld(gesture.startX, gesture.startY),
+            resolveWorld(event.clientX, event.clientY),
+          );
+          const here = sceneAt(event.clientX, event.clientY);
+          this.moveToolGhost(here.x, here.y);
+          return;
+        }
         // A press that was standing on a unit and has now become a pan is a
         // tap this map decided not to honour. Say so, once, at the point the
         // finger actually went down -- see `tapRejectRipple` for why only
@@ -4096,6 +4385,30 @@ export class StackAcresScene extends Phaser.Scene {
         // the segment, so a fast swipe leaves an unbroken swathe rather than
         // a dotted line of the tiles that happened to get a move event.
         this.mowSegment(
+          resolveWorld(prevX, prevY),
+          resolveWorld(event.clientX, event.clientY),
+        );
+        const here = sceneAt(event.clientX, event.clientY);
+        this.moveToolGhost(here.x, here.y);
+        return;
+      }
+      if (gesture.kind === "pipe-lay") {
+        // Same "from where the finger WAS" sampling `mow`'s own continuation
+        // takes just above, and for the same reason -- a fast swipe must not
+        // skip a tile between two move events.
+        this.pipeLaySegment(
+          gesture,
+          resolveWorld(prevX, prevY),
+          resolveWorld(event.clientX, event.clientY),
+        );
+        const here = sceneAt(event.clientX, event.clientY);
+        this.moveToolGhost(here.x, here.y);
+        return;
+      }
+      if (gesture.kind === "soil-lay") {
+        // Same "from where the finger WAS" sampling, for the same reason.
+        this.soilLaySegment(
+          gesture,
           resolveWorld(prevX, prevY),
           resolveWorld(event.clientX, event.clientY),
         );
@@ -4144,6 +4457,14 @@ export class StackAcresScene extends Phaser.Scene {
         this.hideToolGhost();
         return;
       }
+      if (gesture.kind === "pipe-lay") {
+        this.hideToolGhost();
+        return;
+      }
+      if (gesture.kind === "soil-lay") {
+        this.hideToolGhost();
+        return;
+      }
       // A cancel is a release that never taps.
       if (cancelled) return;
       // A tap with the scythe on standing grass cuts that spot -- the same
@@ -4153,6 +4474,22 @@ export class StackAcresScene extends Phaser.Scene {
       if (gesture.startMow) {
         const at = resolveWorld(event.clientX, event.clientY);
         this.mowSegment(at, at);
+        return;
+      }
+      // A tap with the pipe tool on a tile it can touch lays or lifts that
+      // one tile -- the pipe tool's own twin of the scythe branch just above,
+      // for the same reason: without this, a tap (rather than a drag) with
+      // the tool held would silently do nothing.
+      if (gesture.startPipeLay) {
+        const at = resolveWorld(event.clientX, event.clientY);
+        this.pipeLaySegment(gesture, at, at);
+        return;
+      }
+      // A tap with the soil tool on a tile it can touch plants or lifts that
+      // one bed -- the soil tool's own twin of the branch just above.
+      if (gesture.startSoilLay) {
+        const at = resolveWorld(event.clientX, event.clientY);
+        this.soilLaySegment(gesture, at, at);
         return;
       }
       // Every other tap is aimed at the farm itself, through `dispatchTap`
@@ -4469,16 +4806,19 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Which tool is held, by name.
+   * Which tool is held, by name (see lib/stackacres/tools.ts). `inspect`
+   * does nothing on the canvas at all; `scythe`, `pipe` and `soil` each
+   * target the GROUND rather than a unit -- there is no unit to carry the
+   * answer the way a plot's own `afford` field once did, so the scene has
+   * to ask the question itself. See `mowable`/`pipeLayMode`/`soilLayMode`
+   * in `bindInput`.
    *
-   * Down to two tools now (see lib/stackacres/tools.ts): `inspect`, which
-   * does nothing on the canvas at all, and `scythe`, whose target is the
-   * ground rather than a unit -- there is no unit to carry the answer the
-   * way a plot's own `afford` field once did, so the scene has to ask the
-   * question itself. See `mowable` in `bindInput`.
+   * Also toggles `soilToolBoundary`'s visibility -- shown only while `soil`
+   * is held, hidden the instant it is not.
    */
   setTool(tool: StackAcresTool): void {
     this.tool = tool;
+    this.soilToolBoundary?.setVisible(tool === "soil");
   }
 
   /**
@@ -4796,8 +5136,8 @@ export class StackAcresScene extends Phaser.Scene {
    * Only crops are masked, and that is not an arbitrary narrowing. A cow, a
    * hen and the barn are all drawn roughly box-filling and stand well apart;
    * their boxes barely overlap, so their extra corner costs nobody a tap. A
-   * ripe crop is drawn at 4x on a 14-unit column pitch (`SOIL_COL_PITCH`),
-   * which means several plants' boxes under one thumb is the ordinary case and
+   * ripe crop is drawn at 4x on a 16-unit bed pitch (`SOIL_TILE`), which
+   * means several plants' boxes under one thumb is the ordinary case and
    * more than half of each box is transparent.
    *
    * A point inside the fingertip pad but OUTSIDE the sprite's own bounds is
@@ -4840,7 +5180,7 @@ export class StackAcresScene extends Phaser.Scene {
     // centre the finger landed NEAREST.
     //
     // Nearest-centre replaced topmost-depth here when crops moved onto the
-    // soil lattice. At a 14-unit column pitch (`SOIL_COL_PITCH`) a mature
+    // soil lattice. At a 16-unit bed pitch (`SOIL_TILE`) a mature
     // plant overlaps most of its neighbour by design, so several art boxes
     // under one thumb is now the ordinary case rather than the crowded one,
     // and "whichever is drawn in front" stops answering the question the

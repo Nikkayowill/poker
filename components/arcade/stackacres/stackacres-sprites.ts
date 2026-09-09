@@ -251,15 +251,14 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // ONE planting square, not a whole bed -- replaced the old `soilBed`
-  // (one picture per 64-unit bed, all twelve of its squares baked into a
-  // single furrowed diamond) so a bed bought one square at a time and a bed
-  // bought whole draw through the same picture, at the same
-  // `SOIL_COL_PITCH`x`SOIL_ROW_PITCH` footprint `paintOwnedSlots` already
-  // draws squares at. Any world rect projects to an exactly-2:1 diamond
-  // (see lib/stackacres/iso.ts's `isoProject`), which is why one 256x128
-  // picture displays correctly at a square's own screen size with no
-  // stretch, whatever that size works out to.
+  // A bed's one plant -- replaced the old `soilBed` (one picture per
+  // 64-unit bed, all twelve of its squares baked into a single furrowed
+  // diamond) back when a bed could hold up to a dozen; a bed is one tile,
+  // one plant now (lib/stackacres/soil.ts), and `paintBedSlot` draws
+  // exactly one of these per placed bed. Any world rect projects to an
+  // exactly-2:1 diamond (see lib/stackacres/iso.ts's `isoProject`), which
+  // is why one 256x128 picture displays correctly at a bed's own screen
+  // size with no stretch, whatever that size works out to.
   soilSlot: "/stackacres/sprites/soil-slot.png",
   // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
   // tappable, already-generated pixel-art PNGs standing in a flat-vector

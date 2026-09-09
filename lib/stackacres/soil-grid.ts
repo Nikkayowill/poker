@@ -1,13 +1,14 @@
 /**
  * The Crop Fields as a cell grid.
  *
- * An IsometricGridManager laid over the meadow's grow area, rebuilt from the
- * soil map whenever it changes. A bed is SOIL_TILE (64) square and a cell is
- * half that, so every bed is a 2x2 footprint and a 32-unit square projects
- * under ./iso.ts's ISO_K = 1 to exactly one 64x32 diamond. The grid's origin
- * is the projected centre of the area's first cell, which keeps the manager's
- * cell math and the scene's `isoProject` landing on the same pixels;
- * soil-grid.test.ts holds the two together corner for corner.
+ * An IsometricGridManager laid over the Crop Fields' grow area
+ * (`CROP_FIELD_BEDS` in ./world.ts), rebuilt from the soil map whenever it
+ * changes. A bed is SOIL_TILE (64) square and a cell is half that, so every
+ * bed is a 2x2 footprint and a 32-unit square projects under ./iso.ts's
+ * ISO_K = 1 to exactly one 64x32 diamond. The grid's origin is the projected
+ * centre of the area's first cell, which keeps the manager's cell math and
+ * the scene's `isoProject` landing on the same pixels; soil-grid.test.ts
+ * holds the two together corner for corner.
  *
  * The grid is occupancy and snap only. Beds are still painted by the scene's
  * own soil painter, so the sprites the manager creates are inert stubs.
@@ -22,15 +23,12 @@ import {
   type PlacedAsset,
 } from "./isometric-grid-manager";
 import { SOIL_TILE, soilTileAt, soilTileKey, type SoilMap, type SoilTileCoord } from "./soil";
-import { growAreaBounds, type WorldPoint, type WorldRect } from "./world";
-import type { ZoneId } from "./zones";
+import { CROP_FIELD_BEDS, type WorldPoint, type WorldRect } from "./world";
 
 /** World units per grid cell: half a bed. */
 export const SOIL_GRID_CELL = SOIL_TILE / 2;
 /** A bed's footprint, in cells per side. */
 export const SOIL_BED_CELLS = SOIL_TILE / SOIL_GRID_CELL;
-/** The one district that can hold a bed (the service refuses every other). */
-export const SOIL_GRID_ZONE: ZoneId = "meadow";
 export const SOIL_BED_TEXTURE_KEY = "soil-bed";
 export const SOIL_GROUND_TEXTURE_KEY = "grass";
 
@@ -71,7 +69,7 @@ export function soilBedFootprint(area: WorldRect, tile: SoilTileCoord): Footprin
  * from before a re-lay) is skipped rather than thrown on: the grid answers
  * placement questions, it is not the record of what exists.
  */
-export function createSoilGrid(soil: SoilMap, area: WorldRect = growAreaBounds(SOIL_GRID_ZONE)): SoilGrid {
+export function createSoilGrid(soil: SoilMap, area: WorldRect = CROP_FIELD_BEDS): SoilGrid {
   const grid = new IsometricGridManager({
     columns: Math.floor(area.width / SOIL_GRID_CELL),
     rows: Math.floor(area.height / SOIL_GRID_CELL),

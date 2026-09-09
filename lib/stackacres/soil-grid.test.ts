@@ -5,15 +5,14 @@ import { SOIL_TILE, createSoilMap, soilTileDiamond, soilTileRect, type SoilTile 
 import {
   SOIL_BED_CELLS,
   SOIL_GRID_CELL,
-  SOIL_GRID_ZONE,
   createSoilGrid,
   soilBedFootprint,
   soilPlacementAt,
   soilTileCell,
 } from "./soil-grid";
-import { growAreaBounds } from "./world";
+import { CROP_FIELD_BEDS } from "./world";
 
-const AREA = growAreaBounds(SOIL_GRID_ZONE);
+const AREA = CROP_FIELD_BEDS;
 
 function tile(tx: number, ty: number, order: number): SoilTile {
   return { tx, ty, order, origin: "purchased" };
@@ -58,15 +57,15 @@ describe("the soil grid's cell", () => {
 
 describe("createSoilGrid", () => {
   it("marks every cell of each bed as crop, keyed by the tile", () => {
-    const soil = createSoilMap([tile(-2, -4, 1), tile(3, 1, 2)]);
+    const soil = createSoilMap([tile(-3, -3, 1), tile(2, 1, 2)]);
     const { grid } = createSoilGrid(soil);
-    const first = soilBedFootprint(AREA, { tx: -2, ty: -4 });
+    const first = soilBedFootprint(AREA, { tx: -3, ty: -3 });
     for (let y = first.y; y < first.y + first.height; y++) {
       for (let x = first.x; x < first.x + first.width; x++) {
-        expect(grid.getCell(x, y)).toEqual({ occupancy: "crop", textureKey: "soil-bed", assetId: "-2,-4" });
+        expect(grid.getCell(x, y)).toEqual({ occupancy: "crop", textureKey: "soil-bed", assetId: "-3,-3" });
       }
     }
-    expect(grid.assets.map((a) => a.id).sort()).toEqual(["-2,-4", "3,1"]);
+    expect(grid.assets.map((a) => a.id).sort()).toEqual(["-3,-3", "2,1"]);
     expect(grid.getCell(first.x + 2, first.y)).toEqual({ occupancy: "empty", textureKey: "grass", assetId: null });
   });
 
@@ -90,15 +89,18 @@ describe("soilPlacementAt", () => {
   });
 
   it("reports free ground inside the field, snapped to its tile", () => {
-    const p = soilPlacementAt(soilGrid, { x: -100, y: -250 });
-    expect(p).toMatchObject({ kind: "free", tile: { tx: -2, ty: -4 } });
+    const p = soilPlacementAt(soilGrid, { x: -150, y: -150 });
+    expect(p).toMatchObject({ kind: "free", tile: { tx: -3, ty: -3 } });
     expect(p.footprint).toEqual({ x: 0, y: 0, width: 2, height: 2 });
   });
 
   it("refuses the verge between the fence and the field", () => {
-    // Inside the meadow district's own bounds, outside its grow area.
-    expect(soilPlacementAt(soilGrid, { x: -150, y: 0 }).kind).toBe("outside");
-    expect(soilPlacementAt(soilGrid, { x: 0, y: 140 }).kind).toBe("outside");
+    // Inside the Farmstead's own fenced bounds, outside the Crop Fields'
+    // grow area (the two used to be separate districts; the 2026-09-08
+    // merge folded the Crop Fields into the Farmstead, but the beds still
+    // only root in their own 384-square patch of it).
+    expect(soilPlacementAt(soilGrid, { x: -250, y: 0 }).kind).toBe("outside");
+    expect(soilPlacementAt(soilGrid, { x: 0, y: 250 }).kind).toBe("outside");
   });
 
   it("agrees with the service's own inside-the-field rule for every nearby tile", () => {

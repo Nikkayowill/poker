@@ -60,6 +60,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     secretDonations: {} as FarmPredictContext["secretDonations"],
     merchantVisit: null,
     greenhouseBuilt: false,
+    cropFieldsUnlocked: false,
     nowMs: NOW.getTime(),
     ...overrides,
   };

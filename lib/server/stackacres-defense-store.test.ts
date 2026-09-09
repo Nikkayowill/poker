@@ -48,8 +48,8 @@ describe("fence segments (memory mode)", () => {
   });
 
   it("refuses a duplicate first-write race (expectedVersion 0 twice)", async () => {
-    const first = await writeFenceSegment(PROFILE, "meadow", 2, 0, "wire", FENCE_TIER_MAX_DURABILITY.wire);
-    const second = await writeFenceSegment(PROFILE, "meadow", 2, 0, "wire", FENCE_TIER_MAX_DURABILITY.wire);
+    const first = await writeFenceSegment(PROFILE, "farmstead", 2, 0, "wire", FENCE_TIER_MAX_DURABILITY.wire);
+    const second = await writeFenceSegment(PROFILE, "farmstead", 2, 0, "wire", FENCE_TIER_MAX_DURABILITY.wire);
     expect(first).not.toBeNull();
     expect(second).toBeNull();
   });

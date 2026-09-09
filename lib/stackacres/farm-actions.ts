@@ -30,6 +30,7 @@ import type { PipeKind } from "./irrigation";
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
   | { action: "clear-sector"; sector: SectorId }
+  | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
   | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean }
   | { action: "buy-stock"; stock: StackAcresStock }

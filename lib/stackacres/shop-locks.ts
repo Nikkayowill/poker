@@ -54,7 +54,7 @@ import type { SectorId } from "./sectors";
  * and "reach 40,000 lifetime Gold" is not something anybody can go and do.
  */
 export const STACKACRES_QUEST_FLAGS = [
-  "cleared_meadow",
+  "crop_fields_unlocked",
   "town_trusted",
   "cleared_wallow",
   "greenhouse_raised",
@@ -76,9 +76,15 @@ export function isStackAcresQuestFlag(value: unknown): value is StackAcresQuestF
  * out rather than pulled from `sectorLabel` on purpose: this module stays a
  * leaf with no runtime imports, and the three names are already fixed by
  * ./zones.ts's own labels (there is a test holding these two in step).
+ *
+ * `crop_fields_unlocked` was `cleared_meadow` before the 2026-09-08 map
+ * restructure merged that district into the Farmstead -- see
+ * ./crop-fields.ts's own header. Renamed along with the flag itself: "clear
+ * the Grand Farm" stopped being an accurate instruction the day the Grand
+ * Farm stopped being a place you clear.
  */
 export const STACKACRES_QUEST_LABELS: Readonly<Record<StackAcresQuestFlag, string>> = {
-  cleared_meadow: "Clear the Grand Farm",
+  crop_fields_unlocked: "Unlock the Crop Fields",
   town_trusted: "Fill an order for the town",
   cleared_wallow: "Clear the Fold",
   greenhouse_raised: "Raise the Greenhouse",
@@ -105,6 +111,9 @@ export interface StackAcresShopProgress {
    *  is what makes `town_trusted` safe to build on. */
   readonly influence: number;
   readonly greenhouseBuilt: boolean;
+  /** Whether the Crop Fields have been unlocked -- ./crop-fields.ts's own
+   *  standalone flag, not a sector any more (see that module's header). */
+  readonly cropFieldsUnlocked: boolean;
 }
 
 /** Every flag this farm has earned. */
@@ -112,7 +121,7 @@ export function stackacresQuestFlags(
   progress: StackAcresShopProgress,
 ): ReadonlySet<StackAcresQuestFlag> {
   const earned = new Set<StackAcresQuestFlag>();
-  if (progress.sectors.includes("meadow")) earned.add("cleared_meadow");
+  if (progress.cropFieldsUnlocked) earned.add("crop_fields_unlocked");
   if (progress.sectors.includes("wallow")) earned.add("cleared_wallow");
   if (progress.sectors.includes("oxfields")) earned.add("cleared_oxfields");
   if (progress.influence > 0) earned.add("town_trusted");

@@ -66,244 +66,57 @@ function path(spec: Omit<PathSpec, "width"> & { width: number }): PathSpec {
 /**
  * The paths.
  *
- * ONE RING AND ITS SPURS, since the 2026-09-07 map re-lay. The network used to
- * be three spokes off the farmyard, because there were three districts hanging
- * off the three roads that already left it. There are nine districts now, laid
- * out on Kayo's map proposal, and the shape that proposal draws is a single
- * ring road around the central field with a spur into every place.
+ * A HUB-AND-SPOKE NETWORK, not a ring, since the second 2026-09-08 pass at
+ * the map restructure (still Kayo's "Chore Efficiency" layout in spirit --
+ * see the StackAcres Map Restructure design project -- but pulled far closer
+ * than that document's own numbers, at Kayo's follow-up request: a farm-sim
+ * yard where every district shares a fence with its neighbour, not a walk
+ * apart). The ring shape survived the FIRST 2026-09-08 pass (which only
+ * tightened the same nine-districts-on-a-loop layout the 2026-09-07 re-lay
+ * used); it does not survive this one. Once every district sits flush
+ * against the one that leads to it, a loop connecting all nine is longer
+ * than the tree their actual adjacency already forms, and every leg is short
+ * enough now that the projected-bake-size problem the ring's own splits
+ * existed to solve (see git history on this file) does not come up again --
+ * every spec here is a straight or lightly bent run of a few hundred units
+ * at most.
  *
- * WHY THE RING IS EIGHT SPECS AND NOT ONE. `pathBounds` pads a spec's whole
- * polyline into one baked texture, and paths.test.ts holds that box's PROJECTED
- * footprint under 1024 units a side -- `isoProject` can grow a diagonal box by
- * up to sqrt(2)x, so the ceiling bites well before the raw world box does. The
- * ring is about 3,600 units around; carried on one polyline it would blow
- * through that ceiling several times over. The legs are cut as long as the
- * budget allows and no longer, with one extra rule: a leg ENDS on a vertex that
- * sits inside an outer district wherever it can, because zones.test.ts needs a
- * path ending in every district the signpost lists. That is why `ring3` stops
- * at the Coastal Market, and why the Market has no spur of its own -- the ring
- * itself is what arrives there.
+ * THE SHAPE: the yard is the root. `yardRoad` ends at a hub just outside the
+ * Farmstead's own east fence; `meadowSpur`, `henhavenSpur` and `oxfieldsSpur`
+ * fork from that hub to the three districts that touch the Farmstead
+ * directly. Each of those forks a second tier of its own: `wallowSpur` off
+ * the Grand Farm's own gate, `mineSpur` off Hen Haven's, `townsquareSpur` off
+ * Cattle Pasture's -- and the Fold forks twice more, `coastSpur` and
+ * `oakSpur`, to the two districts that only touch IT. A spur is always named
+ * for where it arrives and always listed after the leg (or spur) it forks
+ * off, so the renderer's junction repaint covers it, the same ordering rule
+ * the yard's own three already followed.
  *
- * The spurs are each listed AFTER the leg they fork off, so the renderer's
- * junction repaint covers them -- the same ordering rule the old `road` and
- * `track` followed against `lane`.
+ * THE GAPS ARE THE MAP'S OWN FLOOR, NOT A CHOICE PER PAIR. Every adjacent
+ * pair of districts sits ~24 units apart -- ./zones.ts's own non-overlap and
+ * "leaves woodland" tests hold every pair above 20, and 24 is the smallest
+ * margin that cleared both that floor and this file's own clearances with
+ * room to spare, checked (like the ring it replaced) by `pnpm test` rather
+ * than eyeballed. That is also why several spurs bend: a straight line
+ * between two adjacent districts' gates very often threads directly through
+ * a THIRD district's grow area sitting between them (the Grand Farm's own
+ * 384-square crop field is the worst offender, dead centre of the map), so a
+ * spur doglegs around whichever box is in its way rather than crossing it.
  *
  * THE YARD'S OWN THREE keep the literals they were drawn with, wrapped in
- * ./yard.ts's `yardPoint`. The Farmstead moved as a rigid body, so the lane
- * still runs past the same lamp posts to the same mailbox, and every number in
- * the comments below is still the number in the code. `yardRoad` replaces the
- * old `road`: it leaves the barn front east exactly as that did, and its last
- * vertex is `ring1`'s first, so the yard joins the ring as a T-junction rather
- * than stopping short of it.
- *
- * Every vertex below was fitted against the five invariants the tests hold --
- * projected bake size, no vertex or body in a grow area, a gate within 90 units
- * of a path vertex, a path ending in every outer district, and nothing in the
- * pond's open water -- and the fit was checked rather than eyeballed.
+ * ./yard.ts's `yardPoint`. The Farmstead moved as a rigid body again, so the
+ * lane still runs past the same lamp posts to the same mailbox in the yard's
+ * own frame, and every number in the comments below is still the number in
+ * the code. `yardRoad`'s last vertex is the hub `meadowSpur`, `henhavenSpur`
+ * and `oxfieldsSpur` all fork from, so the yard still joins the road network
+ * as a real junction rather than stopping short of it.
  */
 export const FARM_PATHS: readonly PathSpec[] = [
   /* ---------------------------------------------------------------- */
-  /* The ring                                                         */
-  /* ---------------------------------------------------------------- */
-  path({
-    // West of the Grand Farm, climbing north past Hen Haven's gate.
-    key: "ring1",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: -390, y: 422 },
-      { x: -444, y: 298 },
-      { x: -466, y: 174 },
-      { x: -438, y: 36 },
-      { x: -360, y: -96 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // North-west, between the field and the hills; the mine's spur leaves it.
-    key: "ring2",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: -360, y: -96 },
-      { x: -260, y: -234 },
-      { x: -154, y: -352 },
-      { x: -10, y: -446 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // North, out to the shore. Ends INSIDE the Coastal Market, which is
-    // why that district needs no spur of its own.
-    key: "ring3",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: -10, y: -446 },
-      { x: 152, y: -526 },
-      { x: 326, y: -602 },
-      { x: 486, y: -628 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // Down the coast road, south past the Fold.
-    key: "ring4",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: 486, y: -628 },
-      { x: 612, y: -558 },
-      { x: 706, y: -446 },
-      { x: 766, y: -284 },
-      { x: 796, y: -112 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // The eastern turn, past the Ancestral Oak's gate.
-    key: "ring5",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: 796, y: -112 },
-      { x: 734, y: 74 },
-      { x: 600, y: 248 },
-    ],
-    stones: 1,
-    stonesFrom: 60,
-  }),
-  path({
-    // South-east, back in toward the farm.
-    key: "ring6",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: 600, y: 248 },
-      { x: 424, y: 408 },
-      { x: 240, y: 554 },
-    ],
-    stones: 1,
-    stonesFrom: 60,
-  }),
-  path({
-    // The southern run, past Town Square's fork and the Cattle Pasture.
-    key: "ring7",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: 240, y: 554 },
-      { x: 54, y: 694 },
-      { x: -102, y: 754 },
-      { x: -222, y: 668 },
-      { x: -284, y: 522 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // The last leg, closing the loop where the yard road meets it.
-    key: "ring8",
-    tier: "arterial",
-    width: 44,
-    points: [
-      { x: -284, y: 522 },
-      { x: -390, y: 422 },
-    ],
-    stones: 0,
-  }),
-
-  /* ---------------------------------------------------------------- */
-  /* The spurs, each listed after the leg it forks off                */
-  /* ---------------------------------------------------------------- */
-  path({
-    // North-west off the ring to the Hen Coops' gate.
-    key: "henhavenSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: -360, y: -96 },
-      { x: -388, y: -114 },
-      { x: -418, y: -132 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // The short fork into the Grand Farm's own field.
-    key: "meadowSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: -200, y: -300 },
-      { x: -180, y: -280 },
-      { x: -158, y: -262 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // Off the southern run into the Cattle Pasture.
-    key: "oxfieldsSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: -274, y: 544 },
-      { x: -252, y: 536 },
-      { x: -230, y: 526 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // West off the coast road into the Fold.
-    key: "wallowSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: 742, y: -348 },
-      { x: 652, y: -316 },
-      { x: 562, y: -282 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // South off the ring, down to Town Square. Wild ground, but the road
-    // reaches it: a place you can walk to is what makes it a promise rather
-    // than an empty rectangle.
-    key: "townsquareSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: -102, y: 754 },
-      { x: -160, y: 842 },
-      { x: -218, y: 930 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // North off the ring, up to the mine's door. Wild ground.
-    key: "mineSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: -156, y: -350 },
-      { x: -296, y: -476 },
-      { x: -436, y: -602 },
-    ],
-    stones: 0,
-  }),
-  path({
-    // East off the ring's turn to the old tree. Wild ground.
-    key: "oakSpur",
-    tier: "arterial",
-    width: 26,
-    points: [
-      { x: 796, y: -112 },
-      { x: 894, y: -92 },
-      { x: 992, y: -72 },
-    ],
-    stones: 0,
-  }),
-
-  /* ---------------------------------------------------------------- */
-  /* The Farmstead's own yard, carried over by YARD_DELTA             */
+  /* The Farmstead's own yard, carried over by YARD_DELTA. Listed first: */
+  /* every spoke below forks off `yardRoad`, directly or by way of      */
+  /* another spoke, and a branch has to be listed after the trunk it    */
+  /* forks off.                                                         */
   /* ---------------------------------------------------------------- */
   path({
     // Out of the barn door as a wide apron, a short leg south, then west
@@ -325,9 +138,11 @@ export const FARM_PATHS: readonly PathSpec[] = [
   }),
   path({
     // East along the front of the barn yard (the barn's feet are on the
-    // north rim, which is how it has always been), out of the yard and onto the
-    // ring. Its last vertex IS ring1's first, so the two read as one
-    // T-junction rather than two roads that nearly touch.
+    // north rim, which is how it has always been), south around the
+    // scarecrow (props.ts's yardPoint(402, 110)) rather than straight past
+    // it, then out of the yard to the hub `meadowSpur`, `henhavenSpur` and
+    // `oxfieldsSpur` all fork from -- a real junction, not three roads that
+    // happen to end near each other.
     key: "yardRoad",
     tier: "arterial",
     width: 20,
@@ -336,8 +151,8 @@ export const FARM_PATHS: readonly PathSpec[] = [
       yardPoint(200, 60),
       yardPoint(300, 66),
       yardPoint(380, 74),
-      // Its last vertex IS ring1's first: a real T-junction, not a near miss.
-      { x: -390, y: 422 },
+      { x: -340, y: -180 },
+      { x: -260, y: 0 },
     ],
     stones: 0,
   }),
@@ -351,6 +166,158 @@ export const FARM_PATHS: readonly PathSpec[] = [
     points: [
       yardPoint(50, 118),
       yardPoint(26, 118),
+    ],
+    stones: 0,
+  }),
+
+  /* ---------------------------------------------------------------- */
+  /* First tier: off the yard hub, to the three districts touching the */
+  /* Farmstead directly                                                */
+  /* ---------------------------------------------------------------- */
+  path({
+    // The short hop east to the Grand Farm's own gate, right across the
+    // fence.
+    key: "meadowSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: -260, y: 0 },
+      { x: -230, y: 0 },
+    ],
+    stones: 0,
+  }),
+  path({
+    // North to Hen Haven's gate. The first leg bends south-west before
+    // turning north -- clear of both the Farmstead's own Hen Coop block and
+    // the scarecrow (props.ts's yardPoint(402, 110)), which the hub sits
+    // close enough to that a tighter bend clips it. The bend also keeps
+    // this fork's own angle off the yard hub's, so the junction reads as a
+    // real tee rather than a near-continuation of `yardRoad`'s own approach.
+    key: "henhavenSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: -260, y: 0 },
+      { x: -330, y: 20 },
+      { x: -380, y: -100 },
+      { x: -260, y: -260 },
+      // Pulled 25 further north, landing exactly on Hen Haven's own
+      // `approach` -- following that district's own -25 y shift when the
+      // 2026-09-08 merge grew the Farmstead (see zones.ts's own comment).
+      { x: -580, y: -295 },
+    ],
+    stones: 0,
+  }),
+  path({
+    // South to Cattle Pasture's gate, staying east of the Hen Coop block on
+    // the way down for the same reason `henhavenSpur` does.
+    key: "oxfieldsSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: -260, y: 0 },
+      { x: -260, y: 200 },
+      // Pulled 25 further south, landing exactly on Cattle Pasture's own
+      // `approach` -- following that district's own +25 y shift, same
+      // reason `henhavenSpur`'s last point moved.
+      { x: -540, y: 305 },
+    ],
+    stones: 0,
+  }),
+
+  /* ---------------------------------------------------------------- */
+  /* Second tier: one hop further out                                  */
+  /* ---------------------------------------------------------------- */
+  path({
+    // Off the Grand Farm's own gate, east to the Fold -- routed around the
+    // NORTH and EAST of the Grand Farm's own 384-square crop field (it sits
+    // dead centre between the two gates) rather than through it.
+    key: "wallowSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: -230, y: 0 },
+      { x: -230, y: -220 },
+      { x: 300, y: -220 },
+      { x: 300, y: 0 },
+    ],
+    stones: 0,
+  }),
+  path({
+    // Off Hen Haven's own gate, north to the mine's door. Wild ground. Bends
+    // WELL west of Hen Haven's own grow area (its gate sits inside the box's
+    // own x-span, so a due-north run heads straight through it) rather than
+    // east, which also keeps this fork's own angle off Hen Haven's gate's,
+    // for the same tee-not-cap reason `henhavenSpur` bends off the yard hub.
+    key: "mineSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      // Matches `henhavenSpur`'s own last point, both pulled 25 further
+      // north with Hen Haven's own shift.
+      { x: -580, y: -295 },
+      { x: -820, y: -280 },
+      { x: -820, y: -560 },
+      // Pulled 25 further north, landing exactly on the Mine's own
+      // `approach` -- following that district's own -25 y shift.
+      { x: -590, y: -568 },
+    ],
+    stones: 0,
+  }),
+  path({
+    // Off Cattle Pasture's own gate, south to Town Square. Wild ground, but
+    // the road reaches it: a place you can walk to is what makes it a
+    // promise rather than an empty rectangle. Dips north-west first, under
+    // Cattle Pasture's own grow area's south edge -- clear of the box, and
+    // off this fork's own angle from Cattle Pasture's gate's own, so the
+    // junction reads as a real tee.
+    key: "townsquareSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      // Matches `oxfieldsSpur`'s own last point, both pulled 25 further
+      // south with Cattle Pasture's own shift.
+      { x: -540, y: 305 },
+      { x: -560, y: 240 },
+      { x: -400, y: 300 },
+      { x: -400, y: 550 },
+      // Pulled 25 further south, landing exactly on Town Square's own
+      // `approach` -- following that district's own +25 y shift.
+      { x: -580, y: 628 },
+    ],
+    stones: 0,
+  }),
+
+  /* ---------------------------------------------------------------- */
+  /* Third tier: the two districts that only touch the Fold             */
+  /* ---------------------------------------------------------------- */
+  path({
+    // Off the Fold's own gate, north to the Coastal Market. Wild ground.
+    // Bends west of the Fold's own grow area first -- clear of the box, and
+    // off this fork's own angle from the Fold's gate's own (both would
+    // otherwise run due north), so the junction reads as a real tee.
+    key: "coastSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: 300, y: 0 },
+      { x: 270, y: -20 },
+      { x: 300, y: -90 },
+      { x: 410, y: -154 },
+    ],
+    stones: 0,
+  }),
+  path({
+    // Off the Fold's own gate, east to the old tree. Wild ground. Bends
+    // around the Fold's own grow area, the same reason `coastSpur` does.
+    key: "oakSpur",
+    tier: "arterial",
+    width: 26,
+    points: [
+      { x: 300, y: 0 },
+      { x: 300, y: 100 },
+      { x: 544, y: 100 },
+      { x: 544, y: 0 },
     ],
     stones: 0,
   }),

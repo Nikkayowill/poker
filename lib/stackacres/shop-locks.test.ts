@@ -19,6 +19,7 @@ const NEW_FARM: StackAcresShopProgress = {
   sectors: ["farmstead"],
   influence: 0,
   greenhouseBuilt: false,
+  cropFieldsUnlocked: false,
 };
 
 function farm(patch: Partial<StackAcresShopProgress>): StackAcresShopProgress {
@@ -35,8 +36,15 @@ describe("quest flags", () => {
     // The distinction that carries live farms: `sectors` here is whatever
     // `unlockedSectors` returned, which counts a district you keep stock in
     // whether or not you ever paid to clear it.
-    const flags = stackacresQuestFlags(farm({ sectors: ["farmstead", "meadow", "wallow"] }));
-    expect([...flags].sort()).toEqual(["cleared_meadow", "cleared_wallow"]);
+    const flags = stackacresQuestFlags(farm({ sectors: ["farmstead", "wallow"] }));
+    expect([...flags].sort()).toEqual(["cleared_wallow"]);
+  });
+
+  it("reads the Crop Fields off the standalone flag, not the sector list", () => {
+    // The Crop Fields stopped being a sector in the 2026-09-08 merge into the
+    // Farmstead -- see ./crop-fields.ts's own header.
+    const flags = stackacresQuestFlags(farm({ cropFieldsUnlocked: true }));
+    expect([...flags]).toEqual(["crop_fields_unlocked"]);
   });
 
   it("treats any Town Influence at all as the town's first order", () => {
@@ -67,7 +75,6 @@ describe("quest flags", () => {
     // renamed district fails here rather than shipping a hint that names a
     // place the map no longer has.
     const pairs = [
-      ["cleared_meadow", "meadow"],
       ["cleared_wallow", "wallow"],
       ["cleared_oxfields", "oxfields"],
     ] as const;
@@ -84,7 +91,10 @@ describe("the milestone count", () => {
     // The farm that makes the difference: all three districts open, but the
     // town never asked for anything. A leading-run count would call this
     // milestone 1 and lock it out of its own equipment.
-    const landOnly = farm({ sectors: ["farmstead", "meadow", "wallow", "oxfields"] });
+    const landOnly = farm({
+      sectors: ["farmstead", "wallow", "oxfields"],
+      cropFieldsUnlocked: true,
+    });
     expect(stackacresMilestone(landOnly)).toBe(3);
   });
 
@@ -92,12 +102,18 @@ describe("the milestone count", () => {
     let last = 0;
     const steps: StackAcresShopProgress[] = [
       NEW_FARM,
-      farm({ sectors: ["farmstead", "meadow"] }),
-      farm({ sectors: ["farmstead", "meadow"], influence: 4 }),
-      farm({ sectors: ["farmstead", "meadow", "wallow"], influence: 4 }),
-      farm({ sectors: ["farmstead", "meadow", "wallow"], influence: 4, greenhouseBuilt: true }),
+      farm({ cropFieldsUnlocked: true }),
+      farm({ cropFieldsUnlocked: true, influence: 4 }),
+      farm({ sectors: ["farmstead", "wallow"], cropFieldsUnlocked: true, influence: 4 }),
       farm({
-        sectors: ["farmstead", "meadow", "wallow", "oxfields"],
+        sectors: ["farmstead", "wallow"],
+        cropFieldsUnlocked: true,
+        influence: 4,
+        greenhouseBuilt: true,
+      }),
+      farm({
+        sectors: ["farmstead", "wallow", "oxfields"],
+        cropFieldsUnlocked: true,
         influence: 4,
         greenhouseBuilt: true,
       }),
@@ -111,12 +127,13 @@ describe("the milestone count", () => {
   });
 
   it("points at the first thing still undone, and at nothing on a finished farm", () => {
-    expect(nextStackAcresMilestone(NEW_FARM)).toBe("cleared_meadow");
-    expect(nextStackAcresMilestone(farm({ sectors: ["farmstead", "meadow"] }))).toBe("town_trusted");
+    expect(nextStackAcresMilestone(NEW_FARM)).toBe("crop_fields_unlocked");
+    expect(nextStackAcresMilestone(farm({ cropFieldsUnlocked: true }))).toBe("town_trusted");
     expect(
       nextStackAcresMilestone(
         farm({
-          sectors: ["farmstead", "meadow", "wallow", "oxfields"],
+          sectors: ["farmstead", "wallow", "oxfields"],
+          cropFieldsUnlocked: true,
           influence: 1,
           greenhouseBuilt: true,
         }),
@@ -140,7 +157,7 @@ describe("evaluating a shelf row", () => {
     const row = { requiredQuestFlag: "cleared_wallow" } as const;
     expect(evaluateStackAcresShopLock(row, NEW_FARM).isUnlocked).toBe(false);
     expect(
-      evaluateStackAcresShopLock(row, farm({ sectors: ["farmstead", "meadow", "wallow"] }))
+      evaluateStackAcresShopLock(row, farm({ sectors: ["farmstead", "wallow"] }))
         .isUnlocked,
     ).toBe(true);
   });
@@ -153,7 +170,7 @@ describe("evaluating a shelf row", () => {
   it("says how far along a milestone row is, and what to do next", () => {
     const state = evaluateStackAcresShopLock(
       { minimumMilestone: 3 },
-      farm({ sectors: ["farmstead", "meadow"] }),
+      farm({ cropFieldsUnlocked: true }),
     );
     expect(state.isUnlocked).toBe(false);
     expect(state.milestone).toBe(1);
@@ -166,7 +183,7 @@ describe("evaluating a shelf row", () => {
   it("ANDs the two conditions, and answers with the specific one first", () => {
     const row = { requiredQuestFlag: "greenhouse_raised", minimumMilestone: 2 } as const;
     // Milestone met, quest not: the quest is the more actionable answer.
-    const missingQuest = farm({ sectors: ["farmstead", "meadow", "wallow"] });
+    const missingQuest = farm({ sectors: ["farmstead", "wallow"], cropFieldsUnlocked: true });
     expect(evaluateStackAcresShopLock(row, missingQuest).lockHint).toBe(
       "Requires: Raise the Greenhouse",
     );
@@ -177,7 +194,7 @@ describe("evaluating a shelf row", () => {
     expect(state.lockHint).toContain("Requires 2 farm milestones");
     // Both met.
     expect(
-      evaluateStackAcresShopLock(row, farm({ sectors: ["farmstead", "meadow"], greenhouseBuilt: true }))
+      evaluateStackAcresShopLock(row, farm({ cropFieldsUnlocked: true, greenhouseBuilt: true }))
         .isUnlocked,
     ).toBe(true);
   });
@@ -230,8 +247,12 @@ describe("what Ray's shelf actually asks for", () => {
 
   it("opens the whole shelf to a farm that has cleared its three districts", () => {
     // The calibration claim, stated as a test: nothing here asks for a route
-    // through the game other than farming it. Land alone is milestone 3.
-    const worked = farm({ sectors: ["farmstead", "meadow", "wallow", "oxfields"] });
+    // through the game other than farming it. The Crop Fields plus both
+    // districts is milestone 3.
+    const worked = farm({
+      sectors: ["farmstead", "wallow", "oxfields"],
+      cropFieldsUnlocked: true,
+    });
     for (const row of [
       ...Object.values(STACKACRES_FEED),
       ...Object.values(STACKACRES_TOOL_TIER_DEFS),

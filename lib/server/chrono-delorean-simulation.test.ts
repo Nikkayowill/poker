@@ -22,11 +22,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *     cannot demonstrate the hunger-freeze mechanic at all. The pig
  *     scenario below uses `pig` (hunger 2h, duration 4h) instead, which
  *     genuinely goes hungry mid-cycle.
- *   * `clearStackAcresSector` refuses Meadow/Wallow/Ox Fields until the
- *     player already has enough working-or-mucked units elsewhere
- *     (`requiresUnits`, lib/stackacres/sectors.ts) -- Meadow needs 2, Wallow
- *     needs 4 AND Meadow already cleared. Both scenarios below stock cheap
- *     units first to satisfy this before attempting to clear land.
+ *   * `clearStackAcresSector` (Wallow, Ox Fields) and `unlockStackAcresCropFields`
+ *     (the Crop Fields' own standalone gate, since the 2026-09-08 merge into
+ *     the Farmstead) both refuse until the player already has enough
+ *     working-or-mucked units elsewhere (`requiresUnits`,
+ *     lib/stackacres/sectors.ts and lib/stackacres/crop-fields.ts) -- the Crop
+ *     Fields need 2, Wallow needs 4 of its own (no longer gated on the Crop
+ *     Fields being unlocked first). Both scenarios below stock cheap units
+ *     first to satisfy this before attempting to clear or unlock land.
  *
  * WHY EVERYTHING IS LOADED THROUGH ONE DYNAMIC IMPORT. `chrono-delorean.ts`'s
  * `CHRONO_DELOREAN_ENABLED` is a top-level const requiring
@@ -204,26 +207,33 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const t0 = await jumpTo(chrono, token, new Date("2026-09-10T12:00:00.000Z"));
     const day0 = exchange.stackacresExchangeDay(t0);
 
-    // Meadow requires 2 units already going; Wallow requires Meadow cleared
-    // PLUS 4 units. Two hens, then two sprouts (never watered or harvested --
-    // they only need to exist as rows for the unit-count gate), get there.
+    // The Crop Fields require 2 units already going, unlocked through their
+    // own standalone flag now rather than a sector clear (2026-09-08 merge
+    // into the Farmstead -- see lib/stackacres/crop-fields.ts). Wallow needs
+    // 4 units of its own but no longer needs the Crop Fields cleared first
+    // (see SECTOR_LADDER's own header on why `wallow.requires` is null now).
+    // Two hens satisfy the Crop Fields' own unit gate; two carrots (which
+    // need the Crop Fields unlocked to sow at all) bring the running total to
+    // four for Wallow.
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
-    await service.clearStackAcresSector(token, "meadow", t0);
+    await service.unlockStackAcresCropFields(token, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
 
-    const [clearedSectors, capacity] = await Promise.all([
+    const [clearedSectors, capacity, cropFieldsUnlocked] = await Promise.all([
       store.readStackAcresSectors(profile.id),
       store.readStackAcresCapacity(profile.id),
+      store.readStackAcresCropFieldsUnlocked(profile.id),
     ]);
     const unlocked = sectors.unlockedSectors(clearedSectors, afterWallow.units);
-    const plots = sectors.unlockedPlotCount(unlocked, capacity);
+    const plots = sectors.unlockedPlotCount(unlocked, capacity, cropFieldsUnlocked);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
-    console.log("Chrono-DeLorean simulation: plots after Meadow+Wallow ->", plots, "fee ->", expectedFee);
-    // Farmstead(hen) + Meadow(all 22 crops) + Wallow(pig) = 24 stock
-    // kinds x 3 free slots each = 72 plots, 69 chargeable past the free base.
+    console.log("Chrono-DeLorean simulation: plots after Crop Fields+Wallow ->", plots, "fee ->", expectedFee);
+    // Hen Haven(hen) + the Crop Fields(all 22 crops, inside the Farmstead) +
+    // Wallow(pig) = 24 stock kinds x 3 free slots each = 72 plots, 69
+    // chargeable past the free base.
     expect(plots).toBe(72);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
@@ -294,13 +304,14 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     // NOT asserted here any more: that day 0's ledger sum equals the full
     // fee. It did under the old 5-stock-kind economy, where a single pig's
     // ~450 Gold gross comfortably covered the whole day's Land Maintenance.
-    // The 22-crop roster swap (2026-09-07) grew the Meadow's own free-base
-    // footprint from 2 kinds to 22, and `stackacresUpkeepFee` is deliberately
-    // superlinear (see upkeep.test.ts's own header) -- so `expectedFee` here
-    // (a farm with Meadow AND Wallow cleared) is now far larger than two pig
-    // harvests can pay off in one simulated day. That is a real economy
-    // question (is Land Maintenance now too steep once Meadow is cleared?),
-    // flagged for Kayo rather than resolved by this test.
+    // The 22-crop roster swap (2026-09-07) grew the Crop Fields' own
+    // free-base footprint from 2 kinds to 22, and `stackacresUpkeepFee` is
+    // deliberately superlinear (see upkeep.test.ts's own header) -- so
+    // `expectedFee` here (a farm with the Crop Fields unlocked AND Wallow
+    // cleared) is now far larger than two pig harvests can pay off in one
+    // simulated day. That is a real economy question (is Land Maintenance now
+    // too steep once the Crop Fields are unlocked?), flagged for Kayo rather
+    // than resolved by this test.
     expect(harvestDay1.harvest.upkeep).toBe(expectedDay1Charge);
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(
       harvestDay0.harvest.upkeep + harvestSameDay.harvest.upkeep,

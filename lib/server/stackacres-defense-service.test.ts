@@ -59,8 +59,8 @@ describe("upgradeStackAcresFenceSegment", () => {
   });
 
   it("refuses a stale-version upgrade attempt and hands back the current segment", async () => {
-    await upgradeStackAcresFenceSegment(TOKEN, "meadow", 3, 0);
-    await expect(upgradeStackAcresFenceSegment(TOKEN, "meadow", 3, 0)).rejects.toMatchObject({
+    await upgradeStackAcresFenceSegment(TOKEN, "farmstead", 3, 0);
+    await expect(upgradeStackAcresFenceSegment(TOKEN, "farmstead", 3, 0)).rejects.toMatchObject({
       status: 409,
     });
   });

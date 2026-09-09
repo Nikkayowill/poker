@@ -56,8 +56,14 @@ import {
   unlockedSectors,
   type SectorId,
 } from "@/lib/stackacres/sectors";
+import { CROP_FIELDS_UNLOCK_COST_GOLD, cropFieldsUnlockCheck } from "@/lib/stackacres/crop-fields";
 import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
-import { cropRanks, cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
+import {
+  CROP_FIELD_BEDS,
+  cropRanks,
+  cropSpot,
+  stockZone,
+} from "@/lib/stackacres/world";
 import {
   PIPE_PLACE_COST,
   recalculatePipeConnections,
@@ -199,6 +205,8 @@ import {
   processStackAcresRecipe,
   readStackAcresGreenhouse,
   buildStackAcresGreenhouseRow,
+  readStackAcresCropFieldsUnlocked,
+  recordStackAcresCropFieldsUnlocked,
   countGreenhouseStackAcresUnits,
   readStackAcresPrestige,
   readStackAcresLifetimeGross,
@@ -540,6 +548,12 @@ export interface StackAcresView {
   /** Whether this player has built the Greenhouse (lib/stackacres/greenhouse.ts).
    *  Permanent once true; gates the `inGreenhouse` option on `stock`. */
   greenhouseBuilt: boolean;
+  /** Whether this player has unlocked the Crop Fields
+   *  (lib/stackacres/crop-fields.ts). Permanent once true; gates sowing any
+   *  crop and placing any soil bed. Used to be a `SectorId` ("meadow") in
+   *  `sectors` above -- see that module's own header on the 2026-09-08
+   *  district merge that made this a standalone flag instead. */
+  cropFieldsUnlocked: boolean;
   /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
    *  present whether or not the player has started it (see
    *  lib/server/stackacres-blueprint-service.ts's `blueprintsView`) --
@@ -679,7 +693,7 @@ function irrigationGridFor(
 
 /** The full slot space for one farm: the starter pair plus what was bought. */
 function soilMapFor(purchased: readonly SoilTile[]): SoilMap {
-  return createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), purchased));
+  return createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, purchased));
 }
 
 function parseUnitId(value: unknown): string {
@@ -766,6 +780,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     unlockedSynergies,
     activeSynergies,
     greenhouseBuilt,
+    cropFieldsUnlocked,
     blueprints,
     midnightMerchant,
     prestige,
@@ -803,6 +818,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     listUnlockedSynergyArchetypes(profile.id),
     listActiveSynergyArchetypes(profile.id),
     readStackAcresGreenhouse(profile.id),
+    readStackAcresCropFieldsUnlocked(profile.id),
     blueprintsView(profile.id),
     readMidnightMerchantVisit(profile.id, now),
     readStackAcresPrestige(profile.id),
@@ -856,7 +872,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
-    upkeep: upkeepState(unlockedPlotCount(sectors, capacity), upkeepPaid),
+    upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid),
     tool,
     wheatPlots: wheatRows.map((row) => toWheatPlotSnapshot(row, now)),
     machines: machineRows.map((row) => ({
@@ -880,6 +896,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       ).farmhandSpeed,
     },
     greenhouseBuilt,
+    cropFieldsUnlocked,
     blueprints,
     midnightMerchant,
     prestige: {
@@ -970,7 +987,7 @@ async function assignSoilSlot(
     listStackAcresSoilTiles(profileId),
     listStackAcresUnits(profileId),
   ]);
-  const soil = createSoilMap(mergeSoilTiles(growAreaBounds("meadow"), purchased));
+  const soil = createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, purchased));
   const taken = units
     .map((unit) => unit.soilSlot)
     .filter((slot): slot is number => slot !== null);
@@ -1209,12 +1226,13 @@ async function readLand(
  * afford, so there is exactly one place that derivation is written.
  */
 async function readShopProgress(profileId: string): Promise<StackAcresShopProgress> {
-  const [{ sectors }, influence, greenhouseBuilt] = await Promise.all([
+  const [{ sectors }, influence, greenhouseBuilt, cropFieldsUnlocked] = await Promise.all([
     readLand(profileId),
     readStackAcresInfluence(profileId),
     readStackAcresGreenhouse(profileId),
+    readStackAcresCropFieldsUnlocked(profileId),
   ]);
-  return { sectors, influence, greenhouseBuilt };
+  return { sectors, influence, greenhouseBuilt, cropFieldsUnlocked };
 }
 
 /**
@@ -1337,6 +1355,70 @@ export async function clearStackAcresSector(
     // theirs either way; this request must not have been charged for it.
     await refundGold(profile.id, def.clearCost);
     throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(debited, now);
+}
+
+/**
+ * Unlocks the Crop Fields, exactly once: the same shape as
+ * `clearStackAcresSector` immediately above (Gold leaves first, the
+ * permanent row is recorded, a lost race refunds), but against
+ * lib/stackacres/crop-fields.ts's standalone flag rather than a sector --
+ * see that module's own header on why the Crop Fields could not stay a
+ * `homestead_sectors` row once they merged into the Farmstead district.
+ */
+export async function unlockStackAcresCropFields(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+
+  const [unlocked, units] = await Promise.all([
+    readStackAcresCropFieldsUnlocked(profile.id),
+    listStackAcresUnits(profile.id),
+  ]);
+  const check = cropFieldsUnlockCheck({ unlocked, unitCount: units.length });
+  if (check.alreadyOpen) {
+    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (!check.ok) {
+    // The first thing still missing, worded exactly as the modal's own
+    // checklist words it -- both read the same `cropFieldsUnlockCheck`.
+    const missing = check.requirements.find((requirement) => !requirement.met);
+    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
+  // spendGoldByProfile is the authority.
+  const debited = await spendGoldByProfile(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
+  if (!debited) {
+    throw new StackAcresRequestError(
+      `Unlocking the Crop Fields costs ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold.`,
+      400,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresCropFieldsUnlocked(profile.id, now);
+  } catch (error) {
+    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
+    throw error;
+  }
+  if (!recorded) {
+    // Another tab unlocked it between the check above and now. The Crop
+    // Fields are theirs either way; this request must not have been charged
+    // for it.
+    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
+    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
@@ -1727,7 +1809,23 @@ export async function stockStackAcres(
   const inGreenhouse = input.inGreenhouse === true;
 
   const land = await readLand(profile.id);
-  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
+  const zone = stockZone(stock);
+  requireOpenSector(land.sectors, zone, `${def.label}s`);
+  // The Farmstead itself is a HOME sector -- always open -- so
+  // `requireOpenSector` above passes trivially for every crop (they are all
+  // zoned there since the 2026-09-08 district merge; see stockZone's own
+  // header). Their real gate is the standalone Crop Fields unlock
+  // (lib/stackacres/crop-fields.ts), checked here instead -- except inside
+  // the Greenhouse, which is its own separate, separately-gated growing
+  // space (`greenhouseBuilt`, checked below) that never touches
+  // `CROP_FIELD_BEDS` at all.
+  if (zone === "farmstead" && !inGreenhouse && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
+    throw new StackAcresRequestError(
+      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
 
   if (inGreenhouse && !isGreenhouseStock(stock)) {
     throw new StackAcresRequestError("The Greenhouse only houses crops.", 400, {
@@ -2387,12 +2485,13 @@ export async function tradeStackAcresSecretItemToRay(
   }
 
   const day = stackacresExchangeDay(now);
-  const [land, capacity, upkeepPaid] = await Promise.all([
+  const [land, capacity, upkeepPaid, cropFieldsUnlocked] = await Promise.all([
     readLand(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresUpkeep(profile.id, day),
+    readStackAcresCropFieldsUnlocked(profile.id),
   ]);
-  const fee = upkeepState(unlockedPlotCount(land.sectors, capacity), upkeepPaid).fee;
+  const fee = upkeepState(unlockedPlotCount(land.sectors, capacity, cropFieldsUnlocked), upkeepPaid).fee;
   const target = nextUpkeepPaidAfterDiceTrade(upkeepPaid, fee);
   if (target <= upkeepPaid) {
     throw new StackAcresRequestError("There is no Land Maintenance owed today to wipe.", 409, {
@@ -2576,18 +2675,23 @@ export async function harvestStackAcres(
   }
 
   const day = stackacresExchangeDay(now);
-  const [upkeepPaid, cleared, capacity, prestigeMultiplier] = await Promise.all([
+  const [upkeepPaid, cleared, capacity, prestigeMultiplier, cropFieldsUnlocked] = await Promise.all([
     readStackAcresUpkeep(profile.id, day),
     readStackAcresSectors(profile.id),
     readStackAcresCapacity(profile.id),
     getPrestigeMultiplier(profile.id),
+    readStackAcresCropFieldsUnlocked(profile.id),
   ]);
   // Charged on SLOTS ON CLEARED GROUND, not on what is standing in them.
   // Billing what is planted would let a player clear every district, leave it
   // empty and pay nothing for the room -- which is the one-way ratchet the fee
   // exists to prevent. See lib/stackacres/upkeep.ts.
   const upkeepDue = stackacresUpkeepDue(
-    unlockedPlotCount(unlockedSectors(cleared, toStackAcresUnitSnapshots(rows, now)), capacity),
+    unlockedPlotCount(
+      unlockedSectors(cleared, toStackAcresUnitSnapshots(rows, now)),
+      capacity,
+      cropFieldsUnlocked,
+    ),
     upkeepPaid,
   );
 
@@ -3939,11 +4043,15 @@ export async function removeStackAcresPipeTile(
  * (`stockStackAcres`), and hydration is resolved by `recomputeIrrigation`.
  * That split is why this function still moves nothing but a bag and one row.
  *
- * Bounded to the Long Meadow's own Crop Fields (`growAreaBounds("meadow")`)
- * -- never trust the client's tapped coordinate blindly, the same posture
- * `place-pipe`'s tile-lattice bounds take one layer up (there the bound is a
- * generous rectangle around the whole map; here it is the one district a
- * bed can ever mean anything in).
+ * Bounded to the Crop Fields' own ground (`CROP_FIELD_BEDS`) -- never trust
+ * the client's tapped coordinate blindly, the same posture `place-pipe`'s
+ * tile-lattice bounds take one layer up (there the bound is a generous
+ * rectangle around the whole map; here it is the one patch of ground a bed
+ * can ever mean anything in). Also refused while the Crop Fields themselves
+ * are not yet unlocked (lib/stackacres/crop-fields.ts) -- the field's own
+ * ground sits inside the Farmstead now (a HOME sector, always walkable), so
+ * the bounds check alone can no longer be the whole gate the way it could
+ * when `meadow` was still its own locked sector.
  */
 export async function placeStackAcresSoilTile(
   token: string,
@@ -3955,7 +4063,12 @@ export async function placeStackAcresSoilTile(
   const ty = Math.trunc(input.ty);
   const tier = toSoilTier(input.tier);
 
-  const area = growAreaBounds("meadow");
+  const cropFieldsUnlocked = await readStackAcresCropFieldsUnlocked(profile.id);
+  if (!cropFieldsUnlocked) {
+    throw new StackAcresRequestError("Unlock the Crop Fields first.", 400);
+  }
+
+  const area = CROP_FIELD_BEDS;
   const rect = soilTileRect(tx, ty);
   const inMeadow =
     rect.x >= area.x &&

@@ -43,6 +43,7 @@ import {
 import { stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import { sectorClearCheck, type SectorId } from "./sectors";
+import { cropFieldsUnlockCheck } from "./crop-fields";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
 import {
   SYNERGY_MAX_ACTIVE_SLOTS,
@@ -88,6 +89,10 @@ export interface FarmPredictContext {
   secretDonations: Record<SecretItemId, boolean>;
   merchantVisit: MidnightMerchantSnapshot | null;
   greenhouseBuilt: boolean;
+  /** Whether the Crop Fields (./crop-fields.ts) have been unlocked. Same
+   *  posture as `greenhouseBuilt`: a permanent flag, not a `SectorId`, since
+   *  the 2026-09-08 district merge folded that district into the Farmstead. */
+  cropFieldsUnlocked: boolean;
   nowMs: number;
 }
 
@@ -107,6 +112,7 @@ export interface FarmStatePatch {
   tool?: StackAcresToolTier;
   influence?: number;
   greenhouseBuilt?: boolean;
+  cropFieldsUnlocked?: boolean;
   contract?: StackAcresContractRow | null;
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
@@ -258,6 +264,16 @@ export function predictStackAcresAction(
       const profile = debited(ctx, check.cost);
       if (!profile) return null;
       return { sectors: [...ctx.sectors, body.sector], profile };
+    }
+    case "unlock-crop-fields": {
+      const check = cropFieldsUnlockCheck({
+        unlocked: ctx.cropFieldsUnlocked,
+        unitCount: ctx.units.length,
+      });
+      if (check.alreadyOpen || !check.ok) return null;
+      const profile = debited(ctx, check.cost);
+      if (!profile) return null;
+      return { cropFieldsUnlocked: true, profile };
     }
     case "unlock-synergy-perk": {
       if (ctx.synergyUnlocked.includes(body.archetype)) return null;

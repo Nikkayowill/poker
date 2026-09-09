@@ -180,8 +180,8 @@ describe("fence segment geometry", () => {
   });
 
   it("gives every segment a stable id within its zone", () => {
-    const segments = fenceSegmentsForZone("meadow");
-    const ids = segments.map((s) => fenceSegmentId("meadow", s.index));
+    const segments = fenceSegmentsForZone("farmstead");
+    const ids = segments.map((s) => fenceSegmentId("farmstead", s.index));
     expect(new Set(ids).size).toBe(ids.length);
   });
 

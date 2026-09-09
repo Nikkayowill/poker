@@ -2,12 +2,21 @@
  * Land you do not own yet, and what it costs to take it on.
  *
  * A SECTOR is a district (./zones.ts's `ZoneId`) seen through one extra
- * question: has this player cleared it? Same four places, same bounds, same
+ * question: has this player cleared it? Same places, same bounds, same
  * labels -- there is no second map here, and `SectorId` is deliberately
  * `ZoneId` itself rather than a parallel id space that could drift out of
  * step with it. What this module adds is the ladder: the Farmstead is home
- * and is never locked, and the other three are wild ground until Gold and a
+ * and is never locked, and the outer ones are wild ground until Gold and a
  * bit of farming clear them.
+ *
+ * WHY THE CROP FIELDS ARE NOT HERE ANY MORE. They were, as `meadow`, until
+ * the 2026-09-08 map restructure merged that district into the Farmstead
+ * (see ./zones.ts's own header). `SectorId = ZoneId` is exactly why they
+ * could not stay a sector once that happened: the Farmstead is a HOME
+ * sector, permanently unlocked, and a district cannot be both free to walk
+ * into and gated behind 15,000 Gold at the same time. Their own gate moved
+ * to ./crop-fields.ts instead -- same cost, same requirement, a standalone
+ * flag rather than a row in this ladder.
  *
  * THE VISUAL CONTRACT, and the reason `sectorOvergrowth` lives here rather
  * than in the scene: a locked sector must look like SOMEWHERE, not like a
@@ -38,6 +47,9 @@ import { nearPath } from "./paths";
 import type { StackAcresUnitSnapshot } from "./units";
 import { seededRandom, stockZone, type SceneryKind, type WorldRect } from "./world";
 import { STACKACRES_ZONES, type ZoneId } from "./zones";
+// A strict leaf (imports nothing), so a plain value import with no cycle to
+// work around. The Crop Fields' own ground, for `cropFieldOvergrowth`.
+import { CROP_FIELD } from "./yard";
 
 /** A sector IS a district. See the file header on why this is an alias and
  *  not a parallel id space. */
@@ -92,17 +104,25 @@ export const HOME_SECTOR: SectorId = "farmstead";
 export const WILD_SECTORS: readonly SectorId[] = ["townsquare", "mine", "coast", "oak"];
 
 /**
- * The order the three outer sectors are cleared in.
+ * The order the outer sectors are cleared in.
  *
  * NOT `zonesByDistance`'s order, and the difference is deliberate. The
  * signpost lists districts by how far the walk is, because that is what a
- * signpost is for. This ladder is a progression through STOCK TIERS -- crops,
- * then sheep, then cattle -- because what a player is really buying is access
- * to the next thing worth keeping, and the walk to it is beside the point.
- * So the Fold (farthest away, mid-tier animals) is cleared before Ox Fields
- * (nearer, and the most valuable animal in the game).
+ * signpost is for. This ladder is a progression through STOCK TIERS --
+ * sheep, then cattle -- because what a player is really buying is access to
+ * the next thing worth keeping, and the walk to it is beside the point.
+ *
+ * TWO RUNGS, NOT THREE, since the 2026-09-08 map restructure. Crops used to
+ * be the first rung here (`meadow`, 15,000 Gold, unlocked before the Fold);
+ * they still cost the same 15,000 Gold and still need to be unlocked before
+ * anything grows, but the district they lived in merged into the Farmstead
+ * (a HOME sector, never locked -- see ./zones.ts's own header on the merge),
+ * so that gate could not stay a SECTOR clear. It is its own standalone flag
+ * now -- see ./crop-fields.ts -- decoupled from this ladder entirely.
+ * `wallow` no longer names a `requires` sector because of it: nothing left
+ * in `SECTOR_IDS` is what used to come before it.
  */
-export const SECTOR_LADDER: readonly SectorId[] = ["meadow", "wallow", "oxfields"];
+export const SECTOR_LADDER: readonly SectorId[] = ["wallow", "oxfields"];
 
 export const SECTOR_IDS: readonly SectorId[] = [
   ...HOME_SECTORS,
@@ -168,21 +188,13 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     requiresUnits: 0,
     promise: "Yours already. Every Hen Coop you keep stands here.",
   },
-  meadow: {
-    id: "meadow",
-    state: "claimable",
-    clearCost: 15_000,
-    requires: null,
-    // Two hens. Enough that somebody has run a cycle and collected it, low
-    // enough that it is met on the first afternoon rather than farmed for.
-    requiresUnits: 2,
-    promise: "Cleared, this becomes your Crop Fields — Carrots, Corn, and everything between.",
-  },
   wallow: {
     id: "wallow",
     state: "claimable",
     clearCost: 45_000,
-    requires: "meadow",
+    // Used to be "meadow" -- see `SECTOR_LADDER`'s own header on why the
+    // Crop Fields' unlock is no longer a sector this can chain off.
+    requires: null,
     requiresUnits: 4,
     promise: "Cleared, this becomes your Sheep Pens.",
   },
@@ -368,16 +380,27 @@ export function sectorClearCheck(
  * be, so a slot is what the land fee is charged on. Only slots on cleared
  * ground count: a Cattle Pen slot at Ox Fields costs nothing while Ox Fields
  * is still a wood.
+ *
+ * CROPS NEED A SECOND CHECK, since the 2026-09-08 district merge. Every crop
+ * kind is zoned to `farmstead`, a HOME sector that is unconditionally
+ * "unlocked" -- so `isSectorUnlocked` alone would count all 22 crop kinds'
+ * slots against a brand-new farm that has never spent the 15,000 Gold to
+ * unlock the Crop Fields at all (see ./crop-fields.ts). `cropFieldsUnlocked`
+ * is the second gate that keeps a fresh account's free base at the Hen
+ * Coop's three slots and nothing more, the same shape it held back when the
+ * Crop Fields were still their own locked sector.
  */
 export function unlockedPlotCount(
   unlocked: readonly SectorId[],
   capacity: Readonly<Partial<Record<StackAcresStock, number>>>,
+  cropFieldsUnlocked: boolean,
 ): number {
-  return STACKACRES_STOCK.reduce(
-    (total, stock) =>
-      isSectorUnlocked(stockZone(stock), unlocked) ? total + capFor(capacity[stock] ?? 0) : total,
-    0,
-  );
+  return STACKACRES_STOCK.reduce((total, stock) => {
+    const zone = stockZone(stock);
+    if (!isSectorUnlocked(zone, unlocked)) return total;
+    if (zone === "farmstead" && !cropFieldsUnlocked) return total;
+    return total + capFor(capacity[stock] ?? 0);
+  }, 0);
 }
 
 /**
@@ -496,9 +519,29 @@ export const SECTOR_FOG = { colour: 0xcfe3ec, alpha: 0.16 } as const;
  * can go.
  */
 export function sectorOvergrowth(id: SectorId): OvergrowthItem[] {
-  const bounds: WorldRect = STACKACRES_ZONES[id].bounds;
+  return overgrowthOver(STACKACRES_ZONES[id].bounds, id.length);
+}
+
+/**
+ * The Crop Fields' own locked overgrowth -- everything `sectorOvergrowth`
+ * says above, minus having a `SectorId` to read bounds off of. The Crop
+ * Fields stopped being a district (and so a sector) in the 2026-09-08 map
+ * restructure's merge into the Farmstead; their own gate is a standalone
+ * flag now (./crop-fields.ts). Same contract as `sectorOvergrowth`: call
+ * this only while the flag is false, the same way callers only call
+ * `sectorOvergrowth` for a sector that is not yet unlocked.
+ */
+export function cropFieldOvergrowth(): OvergrowthItem[] {
+  return overgrowthOver(CROP_FIELD, "cropfields".length);
+}
+
+/** The shared generator both `sectorOvergrowth` and `cropFieldOvergrowth`
+ *  deal from -- one rectangle of wild growth, seeded by its own bounds and a
+ *  caller-supplied salt so two rects the same size and position (which never
+ *  actually happens on this map, but costs nothing to guard) still differ. */
+function overgrowthOver(bounds: WorldRect, salt: number): OvergrowthItem[] {
   const random = seededRandom(
-    (Math.round(bounds.x) * 374761393) ^ (Math.round(bounds.y) * 668265263) ^ (id.length * 0x9e3779b1),
+    (Math.round(bounds.x) * 374761393) ^ (Math.round(bounds.y) * 668265263) ^ (salt * 0x9e3779b1),
   );
   const items: OvergrowthItem[] = [];
   const cols = Math.max(1, Math.ceil(bounds.width / OVERGROWTH_SPACING));

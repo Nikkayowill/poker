@@ -37,7 +37,7 @@ describe("ambienceMix", () => {
     // pass. `WILD_SECTORS` is the same list, read from its one owner so this
     // cannot quietly cover a district that has since been built.
     const worked = ZONE_IDS.filter((zone) => !WILD_SECTORS.includes(zone));
-    expect(worked).toEqual(["farmstead", "henhaven", "meadow", "oxfields", "wallow"]);
+    expect(worked).toEqual(["farmstead", "henhaven", "oxfields", "wallow"]);
     for (const zone of worked) {
       for (const tod of TIMES) {
         const mix = ambienceMix(tod, zone);
@@ -47,11 +47,14 @@ describe("ambienceMix", () => {
     }
   });
 
-  it("makes the long meadow the grassiest district and the wallow the wettest", () => {
+  it("makes the farmstead the grassiest district and the wallow the wettest", () => {
     // The districts have to be TOLD APART by ear, which is the whole point of
-    // mixing per district rather than playing one farm bed everywhere.
+    // mixing per district rather than playing one farm bed everywhere. The
+    // Farmstead carries the top grass value now: the 2026-09-08 district
+    // merge folded the old "meadow" bed (the loudest rustle on the map) into
+    // it -- see zoneBed's own comment.
     const grass = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).grass }));
-    expect(grass.sort((a, b) => b.value - a.value)[0].zone).toBe("meadow");
+    expect(grass.sort((a, b) => b.value - a.value)[0].zone).toBe("farmstead");
 
     const water = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).water }));
     expect(water.sort((a, b) => b.value - a.value)[0].zone).toBe("wallow");
@@ -124,8 +127,8 @@ describe("ambienceCues", () => {
       expect(night, zone).not.toContain("bird-high");
       expect(night, zone).not.toContain("bird-low");
     }
-    expect(ambienceCues("day", "meadow").map((cue) => cue.cue)).not.toContain("owl-hoot");
-    expect(ambienceCues("night", "meadow").map((cue) => cue.cue)).toContain("owl-hoot");
+    expect(ambienceCues("day", "farmstead").map((cue) => cue.cue)).not.toContain("owl-hoot");
+    expect(ambienceCues("night", "farmstead").map((cue) => cue.cue)).toContain("owl-hoot");
   });
 
   it("puts the frogs and the water in the wallow", () => {

@@ -169,10 +169,19 @@ describe("yard props", () => {
       expect(distanceToPath(lamp.x, lamp.y, lane)).toBeLessThan(lane.width / 2 + PATH_CLEARANCE);
     }
     const ys = lamps.map((l) => l.y).sort((a, b) => a - b);
-    // Spread down the verge, well apart, none at the spur to the dock (y 118).
+    // Spread down the verge, well apart, none at the spur to the dock.
     expect(ys[1] - ys[0]).toBeGreaterThanOrEqual(80);
     expect(ys[2] - ys[1]).toBeGreaterThanOrEqual(80);
-    for (const y of ys) expect(Math.abs(y - 118)).toBeGreaterThan(20);
+    // The dock spur's own root, in absolute space -- not the bare yard-local
+    // literal (118) this used to compare against, which only ever worked by
+    // coincidence: it happened to sit far from every lamp under the old
+    // YARD_DELTA and would have missed a real collision under a new one, the
+    // same way it silently stopped meaning anything the moment the map
+    // restructure moved the yard again.
+    const dockSpur = FARM_PATHS.find((p) => p.key === "dockSpur");
+    expect(dockSpur).toBeDefined();
+    const dockY = dockSpur!.points[0].y;
+    for (const y of ys) expect(Math.abs(y - dockY)).toBeGreaterThan(20);
   });
 
   it("puts the mailbox at the lane's end and the signpost at the fork", () => {

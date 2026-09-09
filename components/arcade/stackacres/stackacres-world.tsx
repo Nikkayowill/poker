@@ -208,9 +208,17 @@ export interface StackAcresWorldProps {
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
+  /** Whether the Crop Fields have been unlocked (lib/stackacres/crop-fields.ts)
+   *  -- the `sectors` equivalent for ground that is not a `SectorId` any more
+   *  since the 2026-09-08 district merge folded it into the Farmstead. */
+  cropFieldsUnlocked: boolean;
   /** A finger landed anywhere on land that has not been cleared -- the offer
    *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
+  /** `onLockedSectorTap`'s own twin for the Crop Fields -- see
+   *  StackAcresSceneCallbacks' own doc comment on why they need a separate
+   *  callback since the 2026-09-08 district merge. */
+  onCropFieldsLockedTap: (at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
@@ -307,7 +315,9 @@ export function StackAcresWorld({
   onFenceSegmentTap,
   onLivestockDamaged,
   sectors,
+  cropFieldsUnlocked,
   onLockedSectorTap,
+  onCropFieldsLockedTap,
   onViewMoved,
   soilTiles,
   irrigation,
@@ -334,6 +344,7 @@ export function StackAcresWorld({
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
+  const cropFieldsLockedTapRef = useRef(onCropFieldsLockedTap);
   const viewMovedRef = useRef(onViewMoved);
   const droneForageCollectedRef = useRef(onDroneForageCollected);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
@@ -368,6 +379,7 @@ export function StackAcresWorld({
     fenceSegmentTapRef.current = onFenceSegmentTap;
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
+    cropFieldsLockedTapRef.current = onCropFieldsLockedTap;
     viewMovedRef.current = onViewMoved;
     droneForageCollectedRef.current = onDroneForageCollected;
     toolIconRef.current = toolGhostIcon(tool, toolTier);
@@ -381,11 +393,13 @@ export function StackAcresWorld({
   const sceneUnits = useMemo(() => toUnits(units), [units]);
   const unitsRef = useRef(sceneUnits);
   const sectorsRef = useRef(sectors);
+  const cropFieldsUnlockedRef = useRef(cropFieldsUnlocked);
   const soilTilesRef = useRef(soilTiles);
   const irrigationRef = useRef(irrigation);
   useEffect(() => {
     unitsRef.current = sceneUnits;
     sectorsRef.current = sectors;
+    cropFieldsUnlockedRef.current = cropFieldsUnlocked;
     soilTilesRef.current = soilTiles;
     irrigationRef.current = irrigation;
   });
@@ -425,6 +439,7 @@ export function StackAcresWorld({
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
+          onCropFieldsLockedTap: (at) => cropFieldsLockedTapRef.current(at),
           onViewMoved: () => viewMovedRef.current(),
           onDroneForageCollected: (droneId) => droneForageCollectedRef.current(droneId),
         },
@@ -483,6 +498,7 @@ export function StackAcresWorld({
       // own default is "all wild" (see its `locked` field) precisely so the
       // gap between boot and this call never shows a pen that is not there.
       scene.setSectors(sectorsRef.current);
+      scene.setCropFieldsUnlocked(cropFieldsUnlockedRef.current);
       scene.setSoil(soilTilesRef.current);
       scene.setIrrigation(irrigationRef.current);
       scene.setToolIcon(toolIconRef.current);
@@ -579,6 +595,10 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setSectors(sectors);
   }, [sectors]);
+
+  useEffect(() => {
+    sceneRef.current?.setCropFieldsUnlocked(cropFieldsUnlocked);
+  }, [cropFieldsUnlocked]);
 
   // `setSoil` repaints the beds, the grass collar around them and every
   // crop's slot -- not cheap on a snapshot that changed nothing about the

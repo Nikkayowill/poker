@@ -29,6 +29,7 @@
 import {
   BARN_FOOTPRINT,
   clampFrameMs,
+  CROP_FIELD_BEDS,
   forestDensityAt,
   growAreaBounds,
   inFarmZone,
@@ -334,7 +335,13 @@ export interface FenceSegmentGeometry {
  * for predator collision rather than rendering.
  */
 export function fenceSegmentsForZone(zone: ZoneId): FenceSegmentGeometry[] {
-  const bounds = growAreaBounds(zone);
+  // The Farmstead's own `GROW_AREA` entry is still just its Hen Coop
+  // remnant (world.ts's own comment on why that box stayed put through the
+  // 2026-09-08 district merge) -- no stock stands there, nothing to defend.
+  // The Crop Fields, which DO hold real stock since that merge, use
+  // `CROP_FIELD_BEDS` instead: the same fenced perimeter `growAreaBounds
+  // ("meadow")` gave them before they were folded into this district.
+  const bounds = zone === "farmstead" ? CROP_FIELD_BEDS : growAreaBounds(zone);
   const segments: FenceSegmentGeometry[] = [];
   let index = 0;
 

@@ -156,8 +156,9 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     reach: SCYTHE_REACH * 1.5,
     critChance: 0.12,
     critBonus: 0.75,
-    // One milestone: in practice the Long Meadow, which costs 15,000 Gold
-    // against this rung's 45,000. A gentle gate, and gentle is the point --
+    // One milestone: in practice unlocking the Crop Fields (./crop-fields.ts),
+    // which costs 15,000 Gold against this rung's 45,000. A gentle gate, and
+    // gentle is the point --
     // the first paid rung is where a player learns the ladder exists, so it
     // must not be the one that turns them away. What it stops is the case
     // this whole module was added for: arriving with a poker balance and

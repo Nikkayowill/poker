@@ -583,12 +583,12 @@ function paintPlantAt(c: Ctx, plant: Painter, x: number, y: number, scale: numbe
   c.restore();
 }
 
-/** How large one plant draws inside a shared 3x3 bed -- smaller than the
- *  scene's own scaled-up lone crops (crop-visuals.ts's `cropSpriteScale`),
- *  since nine of those side by side would blow straight through the bed's
- *  own furrow span; large enough that a front row's canopy still overlaps
- *  the row standing behind it, which is the one thing depth-sorting this
- *  loop exists to get right. */
+/** How large one plant draws inside a shared 3x3 bed -- its own fixed number,
+ *  not tied to the scene's per-unit `cropSpriteScale` (crop-visuals.ts):
+ *  nine plants at that scale side by side would blow straight through the
+ *  bed's own furrow span. Large enough that a front row's canopy still
+ *  overlaps the row standing behind it, which is the one thing
+ *  depth-sorting this loop exists to get right. */
 const CROP_FIELD_PLANT_SCALE = 1.35;
 
 /**
@@ -1215,7 +1215,7 @@ const DRAWN: Record<PainterName, Painter> = {
   // above or below it -- the crop sprite itself anchors at (0.5, 1), so the
   // two share that one point: the plant's own base. Scaled per stage by
   // `cropShadowScale` (crop-visuals.ts), not fixed like a livestock shadow,
-  // because a crop's own sprite scale swings 1.6x-4x across its three
+  // because a crop's own sprite scale swings 1x-1.25x across its three
   // frames and a shadow sized for one would misfit the other two.
   cropShadow: painter(
     16,
@@ -1990,19 +1990,19 @@ export const PAINTERS: Record<PainterName, Painter> = {
  * Falls back to painting the drawn version if the file never arrived.
  */
 /**
- * The two crops are drawn well past their native resolution -- 1.6x to 4x
- * their painter box, see crop-visuals.ts's `cropSpriteScale` -- and every
- * other `spriteBacked` name bakes its source PNG 1:1 at `ART_SCALE`, leaving
- * the enlargement to the scene's own `sprite.setScale(grown / S)`. That put
- * the whole stretch on the GPU sampler at render time, which is the crudest
- * available filter (plain bilinear) and the reason a ripe row read soft on
- * a phone. Baking the stretch in HERE instead, once, means it goes through
- * Canvas2D's own resampler with `imageSmoothingQuality` forced to `"high"`
- * (Chromium's high setting is a proper multi-tap filter, not bilinear) --
- * the same pixels are being invented either way, just by a better filter,
- * and it costs nothing extra at render time since the result is cached like
- * any other baked texture. The scene no longer needs its own extra scale for
- * these six names; see the render call site in stackacres-scene.ts.
+ * Carrot, corn and corn2 draw a touch past their native resolution -- 1x to
+ * 1.25x their painter box, see crop-visuals.ts's `cropSpriteScale` -- and
+ * every other `spriteBacked` name bakes its source PNG 1:1 at `ART_SCALE`,
+ * leaving any enlargement to the scene's own `sprite.setScale(grown / S)`.
+ * That would put the stretch on the GPU sampler at render time, the crudest
+ * available filter (plain bilinear). Baking the stretch in HERE instead,
+ * once, means it goes through Canvas2D's own resampler with
+ * `imageSmoothingQuality` forced to `"high"` (Chromium's high setting is a
+ * proper multi-tap filter, not bilinear) -- the same pixels are being
+ * invented either way, just by a better filter, and it costs nothing extra
+ * at render time since the result is cached like any other baked texture.
+ * The scene no longer needs its own extra scale for these crop names; see
+ * the render call site in stackacres-scene.ts.
  */
 function cropBakeScale(name: PainterSpriteName): number {
   const stage = name.endsWith("0") ? 0 : name.endsWith("1") ? 1 : name.endsWith("2") ? 2 : null;

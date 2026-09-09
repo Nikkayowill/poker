@@ -101,7 +101,6 @@ import {
 import {
   soilTileAt,
   soilTilesEqual,
-  starterSoilTiles,
   type SoilTile,
 } from "@/lib/stackacres/soil";
 import {
@@ -661,9 +660,9 @@ export function StackAcresFarm() {
    * a farm on land that might not be cleared is the wrong way to be wrong.
    */
   const [sectors, setSectors] = useState<SectorId[]>([HOME_SECTOR]);
-  /** Purchased soil beds only -- see `StackAcresResponse.soilTiles`'s own doc
-   *  comment for why the starter pair is never in here. Merged with
-   *  `starterSoilTiles` below, right before it reaches the scene. */
+  /** This profile's placed soil beds -- every one of it, since the free
+   *  starter grant was removed (see lib/stackacres/soil.ts's own "starter
+   *  kit" section). */
   const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
   /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
    *  so a response can replace it wholesale. */
@@ -1163,10 +1162,7 @@ export function StackAcresFarm() {
       greenhouseBuilt,
       cropFieldsUnlocked,
       irrigation,
-      // Purchased tiles only, same posture as `irrigation` above -- a
-      // predictor's own "occupied" check reads `mergedSoilTiles` instead
-      // (see the place-soil-tile case), since a starter tile also blocks a
-      // placement but is never itself created or removed.
+      // This profile's placed soil, same posture as `irrigation` above.
       soilTiles,
       soilStock,
       nowMs: Date.now(),
@@ -1326,13 +1322,11 @@ export function StackAcresFarm() {
 
   const liveUnits = useMemo(() => withLocalClock(units, nowMs), [units, nowMs]);
 
-  /** The starter pair is never persisted (see `starterSoilTiles`'s own
-   *  header) so it is recomputed here every time rather than read off any
-   *  response, then handed down ahead of whatever this profile has bought. */
-  const mergedSoilTiles = useMemo(
-    () => [...starterSoilTiles(CROP_FIELD_BEDS), ...soilTiles],
-    [soilTiles],
-  );
+  /** Kept as its own name -- readers below (`radialSoilTile`, the scene push)
+   *  don't need to change -- even though there is no longer a starter grant
+   *  to merge in. USED TO be `[...starterSoilTiles(CROP_FIELD_BEDS),
+   *  ...soilTiles]`; a farm's placed soil is now simply `soilTiles` itself. */
+  const mergedSoilTiles = soilTiles;
 
   // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
   // Pixel Pilgrim's own unlock tint should be showing -- both pure
@@ -1410,6 +1404,19 @@ export function StackAcresFarm() {
   useEffect(() => {
     world.current?.previewSoilAt(radialSoilWorld);
   }, [radialSoilWorld]);
+
+  // The bed actually standing at the tap, if any -- the one thing that
+  // decides both what the ring/strip offers (a crop needs an empty bed to
+  // land on; bare ground only ever offers to till one) and, via
+  // `onRadialSeed`, which tile a planting names. Null on bare ground, same
+  // as it is outside the Crop Fields entirely.
+  const radialSoilTile =
+    radial && radialInCropFieldBeds
+      ? (() => {
+          const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
+          return mergedSoilTiles.find((t) => t.tx === tx && t.ty === ty) ?? null;
+        })()
+      : null;
 
   // Same "push, never rebuild" contract: the scene diffs its own drone set
   // against this list (see StackAcresScene.setDroneHangar), so pushing on
@@ -2473,18 +2480,24 @@ export function StackAcresFarm() {
 
   /** Seeding straight out of the radial menu. Closes first: the menu's
    *  prices are about to move under it, and a second tap on a stale one
-   *  would be a purchase the player did not read. */
+   *  would be a purchase the player did not read.
+   *
+   *  Carries the tile the player actually tapped, when there's a bed to name
+   *  -- `radialSoilTile` is only non-null inside a real bed, which is the
+   *  one difference from `onSeed` below: that control has no tap to point
+   *  at, so it always plants on the lowest free slot, same as ever. */
   const onRadialSeed = useCallback(
     (stock: StackAcresStock) => {
       const at = radial?.at ?? null;
+      const tile = radialSoilTile ? { tx: radialSoilTile.tx, ty: radialSoilTile.ty } : null;
       setRadial(null);
       // The same seed going into the same ground as `onSeed`; the only
       // difference is which control asked for it.
       sowSound();
       tapAnchor.current = at;
-      void act({ action: "stock", stock });
+      void act({ action: "stock", stock, ...(tile ? { tx: tile.tx, ty: tile.ty } : {}) });
     },
-    [act, radial],
+    [act, radial, radialSoilTile],
   );
 
   /**
@@ -2793,15 +2806,14 @@ export function StackAcresFarm() {
    * -- soil is a Crop Fields concept everywhere else in this module, and
    * every other zone's ring stays exactly what it was.
    *
-   * `mergedSoilTiles` (starter + purchased) is the same list the scene was
-   * just handed, so "is there a tile here" never disagrees with what is
-   * actually painted. A starter tile answers with neither button, matching
-   * soil.ts's own "the free starter beds are permanent" rule.
+   * `radialSoilTile` (from `mergedSoilTiles`, the same list the scene was
+   * just handed) is what decides which of the two shows, so "is there a
+   * tile here" never disagrees with what is actually painted.
    */
   const soilExtraActions = (() => {
     if (!radial || !radialInCropFieldBeds) return [];
     const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
-    const existing = mergedSoilTiles.find((tile) => tile.tx === tx && tile.ty === ty);
+    const existing = radialSoilTile;
     if (!existing) {
       // ONE BUTTON PER TIER, generated from SOIL_TIER_DEFS rather than listed
       // here, so adding a tier to that table adds it to this ring and there is
@@ -3113,11 +3125,21 @@ export function StackAcresFarm() {
               `radialInCropFieldBeds`, not `radial.zone === "farmstead"`
               alone: since the 2026-09-08 district merge the Farmstead is
               also the yard, and a tap on ITS own grow area (the Hen Coop
-              remnant, which holds no stock) is not a seed tap. */}
+              remnant, which holds no stock) is not a seed tap.
+
+              Crops themselves are dropped from the shelf when the tapped
+              tile has no bed on it (`radialSoilTile`) -- a crop needs
+              ground to stand on, same reason the ring below drops every
+              crop everywhere it appears. `soilExtraActions` offers to till
+              one instead; any non-crop option (there is none in the Crop
+              Fields today, but the filter is the same one the ring uses)
+              stays regardless. */}
           {radial && radialInCropFieldBeds && (
             <StackAcresSeedStrip
               at={radial.at}
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity }).filter(
+                (option) => radialSoilTile !== null || !isStackAcresCrop(option.stock),
+              )}
               seedStock={seedStock}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
               busy={

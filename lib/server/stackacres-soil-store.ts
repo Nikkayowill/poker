@@ -18,12 +18,12 @@ import { adminClient } from "./supabase-admin";
  * fallback that enforces the same rules the DB does so dev behaves like
  * prod.
  *
- * ONLY PURCHASED TILES LIVE HERE. Starter tiles are derived fresh on every
- * load by `starterSoilTiles` (lib/stackacres/soil.ts) and never written --
- * see that function's own header for why they are deliberately not
- * persisted. This store's `origin` column exists only so `removeStackAcresSoilTile`
- * can refuse a row it did not create, but in practice every row here reads
- * `'purchased'`.
+ * ONLY PURCHASED TILES LIVE HERE. A free starter grant USED TO exist,
+ * derived fresh on every load rather than written here -- see
+ * lib/stackacres/soil.ts's "starter kit" section for why it was removed
+ * outright. This store's `origin` column exists only so
+ * `removeStackAcresSoilTile` can refuse a row it did not create, but in
+ * practice every row here reads `'purchased'`.
  */
 
 export type StoredSoilTile = SoilTile;

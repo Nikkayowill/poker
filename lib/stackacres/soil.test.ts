@@ -9,7 +9,6 @@ import {
 } from "./zones";
 import {
   SOIL_EDGE_BAND,
-  SOIL_STARTER_TILES,
   SOIL_TILE,
   SOIL_TILE_PRICE_GOLD,
   buildCropInstances,
@@ -25,6 +24,7 @@ import {
   removeSoilTile,
   soilCapacity,
   soilSignedDistance,
+  soilSlotForTile,
   soilSlotPoint,
   soilSlotSpotForRank,
   soilSlotSpot,
@@ -33,20 +33,36 @@ import {
   soilTileKey,
   soilTileRect,
   soilTileTier,
-  mergeSoilTiles,
   nextFreeSoilSlot,
   soilSlotTile,
   soilTileState,
   soilTilesEqual,
-  starterSoilTiles,
   type CropSource,
+  type SoilMap,
   type SoilTile,
 } from "./soil";
 
 const MEADOW = CROP_FIELD_BEDS;
 
-function starterMap() {
-  return createSoilMap(starterSoilTiles(MEADOW));
+/**
+ * A populated soil map for tests that just need "a farm with beds already
+ * standing" and do not care where. `starterSoilTiles` used to be the obvious
+ * source for that shape; it granted free tiles and was removed along with
+ * the feature (see ./soil.ts's "starter kit" section). A plain row of beds
+ * across the field serves every test below exactly as well -- none of them
+ * are asserting anything about WHICH cells a bed lands on, only that a bed
+ * is there.
+ */
+const FIXTURE_BED_COUNT = 24;
+function fixtureMap(count = FIXTURE_BED_COUNT): SoilMap {
+  const origin = soilTileAt(MEADOW.x, MEADOW.y);
+  const tiles: SoilTile[] = Array.from({ length: count }, (_, i) => ({
+    tx: origin.tx + i,
+    ty: origin.ty,
+    order: i,
+    origin: "purchased" as const,
+  }));
+  return createSoilMap(tiles);
 }
 
 /* ------------------------------------------------------------------ */
@@ -184,41 +200,9 @@ describe("the coordinate map tracks what was placed", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* The starter kit                                                     */
+/* The starter kit is gone -- see ./soil.ts's own "starter kit" section --   */
+/* so there is no describe block here for it any more.                 */
 /* ------------------------------------------------------------------ */
-
-describe("the starter kit", () => {
-  it("hands out exactly SOIL_STARTER_TILES tiles", () => {
-    expect(starterSoilTiles(MEADOW)).toHaveLength(SOIL_STARTER_TILES);
-    expect(SOIL_STARTER_TILES).toBe(24);
-  });
-
-  it("puts both of them wholly inside the Crop Fields", () => {
-    for (const tile of starterSoilTiles(MEADOW)) {
-      const r = soilTileRect(tile.tx, tile.ty);
-      expect(r.x).toBeGreaterThanOrEqual(MEADOW.x);
-      expect(r.y).toBeGreaterThanOrEqual(MEADOW.y);
-      expect(r.x + r.width).toBeLessThanOrEqual(MEADOW.x + MEADOW.width);
-      expect(r.y + r.height).toBeLessThanOrEqual(MEADOW.y + MEADOW.height);
-    }
-  });
-
-  it("is deterministic, so nothing has to persist it for a reload to match", () => {
-    expect(starterSoilTiles(MEADOW)).toEqual(starterSoilTiles(MEADOW));
-  });
-
-  it("gives them distinct coordinates and distinct orders", () => {
-    const tiles = starterSoilTiles(MEADOW);
-    expect(new Set(tiles.map((t) => soilTileKey(t.tx, t.ty))).size).toBe(tiles.length);
-    expect(new Set(tiles.map((t) => t.order)).size).toBe(tiles.length);
-    expect(tiles.every((t) => t.origin === "starter")).toBe(true);
-  });
-
-  it("returns only what fits rather than hanging a tile over the fence", () => {
-    // An area narrower than one tile can hold none.
-    expect(starterSoilTiles({ x: 0, y: 0, width: SOIL_TILE - 1, height: SOIL_TILE - 1 })).toEqual([]);
-  });
-});
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice                                                    */
@@ -235,15 +219,15 @@ describe("the slot lattice -- one plant per bed", () => {
   });
 
   it("fills beds in placement order, one plant each", () => {
-    const soil = starterMap();
+    const soil = fixtureMap();
     const tiles = orderedSoilTiles(soil);
     for (let rank = 0; rank < tiles.length; rank += 1) {
       const p = soilSlotSpotForRank(soil, rank);
       expect(p).not.toBeNull();
       expect(soilTileAt(p!.x, p!.y)).toEqual({ tx: tiles[rank].tx, ty: tiles[rank].ty });
     }
-    // Rank SOIL_STARTER_TILES has nowhere new to go -- it wraps back to the
-    // first bed rather than spilling past the last one.
+    // A rank past the bed count has nowhere new to go -- it wraps back to
+    // the first bed rather than spilling past the last one.
     expect(soilSlotSpotForRank(soil, tiles.length)).toEqual(soilSlotSpotForRank(soil, 0));
   });
 
@@ -253,12 +237,12 @@ describe("the slot lattice -- one plant per bed", () => {
   });
 
   it("capacity is exactly the bed count -- one plant per bed", () => {
-    const soil = starterMap();
-    expect(soilCapacity(soil)).toBe(SOIL_STARTER_TILES);
+    const soil = fixtureMap();
+    expect(soilCapacity(soil)).toBe(FIXTURE_BED_COUNT);
   });
 
   it("wraps a rank past capacity instead of losing the plant", () => {
-    const soil = starterMap();
+    const soil = fixtureMap();
     const capacity = soilCapacity(soil);
     // Two plants sharing a slot is worse-looking than a bigger farm, and
     // strictly better than one that is invisible and untappable.
@@ -266,7 +250,7 @@ describe("the slot lattice -- one plant per bed", () => {
   });
 
   it("keeps every placed crop standing on placed soil", () => {
-    const soil = starterMap();
+    const soil = fixtureMap();
     for (let rank = 0; rank < soilCapacity(soil); rank += 1) {
       const p = soilSlotSpotForRank(soil, rank)!;
       expect(onSoil(soil, p.x, p.y)).toBe(true);
@@ -352,12 +336,12 @@ describe("the soil signed distance", () => {
  * fails now.
  */
 describe("grass yields to placed soil", () => {
-  // ONE ISOLATED TILE, not `starterMap()`'s 24 -- with a bed now the same
-  // size as a meadow tile, 24 starter tiles clustered near the field's
-  // centre leave little to no bare ground immediately next to any one of
-  // them, so a "just outside the bed" probe would as often land on a
-  // NEIGHBOURING starter bed as on open ground. A single tile at the same
-  // centre `starterSoilTiles` picks first keeps every test below meaningful.
+  // ONE ISOLATED TILE, not `fixtureMap()`'s row of 24 -- with a bed now the
+  // same size as a meadow tile, a run of adjacent beds leaves little to no
+  // bare ground immediately next to any one of them, so a "just outside the
+  // bed" probe would as often land on a NEIGHBOURING bed as on open ground.
+  // A single tile at the field's own centre keeps every test below
+  // meaningful.
   const centreTile = soilTileAt(
     CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
     CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
@@ -425,7 +409,7 @@ describe("grass yields to placed soil", () => {
 /* ------------------------------------------------------------------ */
 
 describe("cropSpot", () => {
-  const soil = starterMap();
+  const soil = fixtureMap();
 
   it("puts a crop on the lattice when it is given a placement", () => {
     const at = cropSpot("farmstead", "unit-a", { soil, rank: 0 });
@@ -495,7 +479,7 @@ describe("cropRanks", () => {
 /* ------------------------------------------------------------------ */
 
 describe("the farmhand's view of the field", () => {
-  const soil = starterMap();
+  const soil = fixtureMap();
   const units: CropSource[] = [
     { id: "dry-far", stock: "carrot", state: "dry", progress: 0.5 },
     { id: "ripe-near", stock: "corn", state: "ready", progress: 1 },
@@ -680,16 +664,17 @@ describe("soilTilesEqual", () => {
     expect(soilSlotSpot(createSoilMap([]), 0)).toBeNull();
   });
 
-  // The server assigns a slot index and the client draws it; they only agree
-  // while both flatten the tiles the same way, which is why the merge has one
-  // owner.
-  it("puts the starter beds ahead of purchased ones in the merged space", () => {
-    const area = CROP_FIELD_BEDS;
-    const bought = { tx: 40, ty: 40, order: 0, origin: "purchased" as const };
-    const merged = mergeSoilTiles(area, [bought]);
-    expect(merged).toHaveLength(SOIL_STARTER_TILES + 1);
-    expect(merged.slice(0, SOIL_STARTER_TILES)).toEqual(starterSoilTiles(area));
-    expect(merged[merged.length - 1]).toEqual(bought);
+  // The inverse of soilSlotTile -- what a sow that names the tile the player
+  // actually tapped checks its slot against.
+  it("finds the slot a specific tile holds, or null off the lattice", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+    ]);
+    expect(soilSlotForTile(soil, 0, 0)).toBe(0);
+    expect(soilSlotForTile(soil, 1, 0)).toBe(1);
+    expect(soilSlotForTile(soil, 9, 9)).toBeNull();
+    expect(soilSlotForTile(createSoilMap(), 0, 0)).toBeNull();
   });
 });
 
@@ -697,10 +682,9 @@ describe("the Crop Fields can actually hold bought beds", () => {
   // THE BUG THIS EXISTS FOR. A bed is only placeable where it fits ENTIRELY
   // inside the grow area, so the field's origin AND its size both have to be
   // whole multiples of SOIL_TILE. At 160x160 starting at 220 (2.5 beds across,
-  // off-lattice) exactly two cells qualified -- and `starterSoilTiles` hands
-  // out two, so there was nowhere on the whole farm to buy a bed and the
-  // "Till a Bed" button never appeared. Any future move of this district has
-  // to keep both properties.
+  // off-lattice) not one cell qualified, so there was nowhere on the whole
+  // farm to buy a bed and the "Till a Bed" button never appeared. Any future
+  // move of this district has to keep both properties.
   it("is aligned to the bed lattice and a whole number of beds across", () => {
     // `Math.abs` because the field sits at a negative origin since the
     // 2026-09-07 map re-lay, and `-128 % 64` is -0 in JavaScript, which
@@ -712,7 +696,7 @@ describe("the Crop Fields can actually hold bought beds", () => {
     expect(Math.abs(MEADOW.height % SOIL_TILE)).toBe(0);
   });
 
-  it("leaves cells to buy after the starter beds take theirs", () => {
+  it("has a cell to buy for every tile of the field, with none hanging over the fence", () => {
     const placeable: string[] = [];
     const acrossX = MEADOW.width / SOIL_TILE;
     const acrossY = MEADOW.height / SOIL_TILE;
@@ -730,13 +714,6 @@ describe("the Crop Fields can actually hold bought beds", () => {
       }
     }
     expect(placeable).toHaveLength(acrossX * acrossY);
-
-    const taken = new Set(starterSoilTiles(MEADOW).map((t) => soilTileKey(t.tx, t.ty)));
-    const buyable = placeable.filter((key) => !taken.has(key));
-    expect(buyable.length).toBeGreaterThan(0);
-    // Every starter bed must itself sit on a placeable cell, or the free beds
-    // are drawn somewhere a bought one could never go.
-    for (const key of taken) expect(placeable).toContain(key);
   });
 });
 

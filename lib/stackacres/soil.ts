@@ -86,9 +86,11 @@ export interface SoilTileCoord {
   ty: number;
 }
 
-/** Where a tile came from, kept because the shop needs to tell a tile the
- *  player paid for apart from the two it was given. Nothing renders
- *  differently on it today. */
+/** Where a tile came from. `"starter"` no longer occurs -- free starter beds
+ *  were removed, see the file's "starter kit" section -- but the value stays
+ *  in the union rather than being narrowed away: a legacy in-memory tile
+ *  built before that removal, or a future free grant, should still type-check
+ *  as a `SoilTile`. Nothing renders differently by origin today either way. */
 export type SoilTileOrigin = "starter" | "purchased";
 
 export interface SoilTile extends SoilTileCoord {
@@ -101,9 +103,10 @@ export interface SoilTile extends SoilTileCoord {
   origin: SoilTileOrigin;
   /**
    * What the bed is made of (./soil-tiers.ts). OPTIONAL, and read through
-   * `soilTileTier` rather than directly: a starter tile has no stored tier at
-   * all (starter tiles are never persisted -- see `starterSoilTiles`), and
-   * every row written before the tier column existed has none either. Both
+   * `soilTileTier` rather than directly: a starter tile had no stored tier at
+   * all (starter tiles were never persisted, and are gone now -- see the
+   * file's "starter kit" section), and every row written before the tier
+   * column existed has none either. Both
    * cases mean `SOIL_DEFAULT_TIER`, which is what those beds have always
    * been. Left optional rather than defaulted at every construction site so
    * that the dozens of existing `{ tx, ty, order, origin }` literals -- most
@@ -290,20 +293,25 @@ export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): 
 }
 
 /* ------------------------------------------------------------------ */
-/* The starter kit                                                     */
+/* The starter kit -- SINCE REMOVED                                    */
 /* ------------------------------------------------------------------ */
 
 /**
- * How many tiles a new farm is given. Every tile after these is bought.
+ * A new farm USED TO open with 24 free beds (`SOIL_STARTER_TILES`),
+ * generated on the fly by a since-deleted `starterSoilTiles` from whichever
+ * tiles of an area sat nearest its centre. Removed outright: free ground
+ * undercut the whole point of a placeable, purchasable bed -- see the file
+ * header's complaint about the old hardcoded dirt box having "nothing to
+ * buy" -- and a garden should be something the player works up to, not
+ * something every save already has. Every farm, including ones already
+ * standing, opens as bare grass now: there was never a database row to
+ * migrate, since a starter tile was derived fresh on every load and never
+ * persisted (see lib/server/stackacres-soil-store.ts's own header).
  *
- * Raised from 2 to 24 the same day a bed shrank from 4 art units (holding up
- * to a dozen planting squares) down to 1 (holding exactly one plant): the
- * old two starter BEDS were free 2x12 = 24 planting squares, and this keeps
- * that same free starting capacity in the new one-tile-per-plant terms
- * rather than quietly handing new farms 1/12th of what they used to open
- * with.
+ * `mergeSoilTiles` went with it -- it only ever flattened the starter pair
+ * ahead of what a profile had bought, and a farm's placed soil is now simply
+ * its purchased tiles, with no merge step.
  */
-export const SOIL_STARTER_TILES = 24;
 
 /**
  * Gold cost of one PLAIN purchased bed -- `SOIL_DEFAULT_TIER`'s own price,
@@ -322,48 +330,6 @@ export const SOIL_STARTER_TILES = 24;
  * file reads a tier for anything but passing it along.
  */
 export const SOIL_TILE_PRICE_GOLD = 167;
-
-/**
- * The two free tiles a new save opens with, derived from the area crops
- * already stand in rather than hardcoded.
- *
- * Derived, because a hardcoded pair is exactly the drift `PEN_BLOCKS` fell
- * into two files over: it restated `GROW_AREA` by hand, the grow area moved,
- * and the grass exclusion quietly stopped covering the plot. Feeding this the
- * live rect means moving the Crop Fields moves the starter kit with them.
- *
- * The pair is chosen as the two fully-contained tiles nearest the area's
- * centre, walked in a stable order, so it is the same two tiles on every
- * device and every reload without anything being persisted. Fewer than two
- * may come back if the area cannot hold two whole tiles -- the caller gets
- * what fits rather than a tile hanging over the fence line.
- */
-export function starterSoilTiles(area: WorldRect): SoilTile[] {
-  const first = soilTileAt(area.x, area.y);
-  const last = soilTileAt(area.x + area.width, area.y + area.height);
-  const centre = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
-
-  const candidates: { tx: number; ty: number; d: number }[] = [];
-  for (let ty = first.ty; ty <= last.ty; ty += 1) {
-    for (let tx = first.tx; tx <= last.tx; tx += 1) {
-      const r = soilTileRect(tx, ty);
-      // Whole tiles only. A tile half over the fence would take grass off
-      // ground the field does not own and put a plant outside the plot.
-      const inside =
-        r.x >= area.x &&
-        r.y >= area.y &&
-        r.x + r.width <= area.x + area.width &&
-        r.y + r.height <= area.y + area.height;
-      if (!inside) continue;
-      const c = soilTileCentre(tx, ty);
-      candidates.push({ tx, ty, d: Math.hypot(c.x - centre.x, c.y - centre.y) });
-    }
-  }
-  candidates.sort((a, b) => a.d - b.d || a.ty - b.ty || a.tx - b.tx);
-  return candidates
-    .slice(0, SOIL_STARTER_TILES)
-    .map((c, i) => ({ tx: c.tx, ty: c.ty, order: i, origin: "starter" as const }));
-}
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice -- one plant per bed                               */
@@ -420,24 +386,6 @@ export function soilSlotSpotForRank(soil: SoilMap, rank: number): WorldPoint | n
 }
 
 /**
- * The starter pair ahead of whatever this profile has bought -- the full slot
- * space, in the one order both sides have to agree on.
- *
- * ONE OWNER, deliberately. The server assigns a crop's slot index and the
- * client renders it, and those two only line up while both flatten the tiles
- * the same way. Two hand-rolled spreads (there was one in the shell already)
- * is exactly the drift `PEN_BLOCKS`/`GROW_AREA` and the three copies of
- * `STAKES_TIERS` are cited for elsewhere in this codebase -- except here the
- * symptom would be a crop drawn on a bed that is not the one that sped it up.
- *
- * The area is a parameter rather than read from ./world.ts's `growAreaBounds`
- * because this module may not value-import that one (see the file header).
- */
-export function mergeSoilTiles(area: WorldRect, purchased: readonly SoilTile[]): SoilTile[] {
-  return [...starterSoilTiles(area), ...purchased];
-}
-
-/**
  * The world point for a crop holding a FIXED slot, or null when the slot
  * space is empty. Wraps a slot past capacity exactly as
  * `soilSlotSpotForRank` wraps a rank past it: selling off beds must not make
@@ -457,6 +405,20 @@ export function soilSlotTile(soil: SoilMap, slot: number): SoilTile | null {
   if (capacity <= 0) return null;
   const wrapped = ((slot % capacity) + capacity) % capacity;
   return orderedSoilTiles(soil)[wrapped] ?? null;
+}
+
+/**
+ * The slot a specific tile holds, or null when nothing is standing there.
+ * The inverse of `soilSlotTile` -- so a planting that names the tile the
+ * player actually tapped, rather than "whatever's free", can be checked
+ * against the same slot space `nextFreeSoilSlot` and the renderer both use.
+ *
+ * Unwrapped: this is a lookup into `orderedSoilTiles`, not a wrap-around
+ * index, so a tile past `soilCapacity` cannot exist to be found.
+ */
+export function soilSlotForTile(soil: SoilMap, tx: number, ty: number): number | null {
+  const index = orderedSoilTiles(soil).findIndex((tile) => tile.tx === tx && tile.ty === ty);
+  return index >= 0 ? index : null;
 }
 
 /**

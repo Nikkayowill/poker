@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import { SOIL_TILE, SOIL_TILE_PRICE_GOLD, soilTileAt, starterSoilTiles } from "@/lib/stackacres/soil";
+import { SOIL_TILE, SOIL_TILE_PRICE_GOLD, soilTileAt } from "@/lib/stackacres/soil";
 import { SOIL_BAGS_PER_PURCHASE, soilTierPrice, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
@@ -50,7 +50,9 @@ async function balance(token: string): Promise<number> {
 }
 
 /** A funded farm with every sector cleared, so `stockStackAcres` will sow.
- *  Its own soil layout is reset first, so each farm starts on bare starters. */
+ *  Its own soil layout is reset first, so each farm starts as bare grass --
+ *  there is no free starter grant any more (see lib/stackacres/soil.ts's
+ *  own "starter kit" section). */
 async function sowingFarm(gold = 500_000) {
   __resetStackAcresSoilTilesForTest();
   __resetStackAcresSoilStockForTest();
@@ -232,21 +234,6 @@ describe("removeStackAcresSoilTile", () => {
     expect(view.soilTiles.some((tile) => tile.tx === tx && tile.ty === ty)).toBe(false);
   });
 
-  it("refuses to remove a starter tile", async () => {
-    const token = await funded();
-    // The two starter tiles are never persisted (see starterSoilTiles's own
-    // header) -- there is no row here to remove at all, which is exactly the
-    // refusal a client tapping a starter bed should get.
-    const starterish = soilTileAt(
-      CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
-      CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
-    );
-
-    await expect(
-      removeStackAcresSoilTile(token, starterish, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-  });
-
   it("refuses a coordinate with nothing on it", async () => {
     const token = await funded();
     await expect(
@@ -264,13 +251,9 @@ describe("SOIL_TILE lattice bounds check", () => {
 });
 
 describe("soil tiers", () => {
-  // The tile that owns SLOT ZERO -- the first starter bed by `order`, which is
-  // where the very first crop sown on a fresh farm lands. Derived rather than
-  // written as a coordinate so it cannot drift from `starterSoilTiles`.
-  const CELL_A = (() => {
-    const first = starterSoilTiles(CROP_FIELD_BEDS)[0];
-    return { tx: first.tx, ty: first.ty };
-  })();
+  // The one bed each test in this block places, so its tier is the whole
+  // slot space and every sow in here lands on it.
+  const CELL_A = cropFieldTile();
 
   it("lays each tier onto the map with its tier recorded", async () => {
     for (const tier of ["dirt", "enriched", "hydro"] as const) {
@@ -307,7 +290,10 @@ describe("soil tiers", () => {
       .filter((u) => u.stock === "corn")
       .at(-1)!;
     expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
-    expect(plain.soilSlot).toBe(0);
+    // No bed placed at all -- there is nothing left to stand on since the
+    // free starter grant was removed, so this crop gets the plain multiplier
+    // and no fixed slot.
+    expect(plain.soilSlot).toBeNull();
 
     const richToken = await sowingFarm();
     await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
@@ -316,7 +302,7 @@ describe("soil tiers", () => {
       .filter((u) => u.stock === "corn")
       .at(-1)!;
 
-    // Slot 0 is CELL_A, which is now the enriched bed.
+    // The one bed on this farm, so slot 0 is CELL_A -- the enriched bed.
     expect(rich.soilSlot).toBe(0);
     expect(Date.parse(rich.readyAt) - T0.getTime()).toBe(Math.round(base * 0.8));
   });
@@ -345,5 +331,54 @@ describe("soil tiers", () => {
     );
     expect(still?.state).toBe("working");
     expect(still?.isWatered).toBe(true);
+  });
+});
+
+describe("stockStackAcres — plants the bed the player actually tapped", () => {
+  it("lands on the named tile rather than the lowest free slot", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 3 }, T0);
+    const bedA = cropFieldTile(0);
+    const bedB = cropFieldTile(1);
+    const bedC = cropFieldTile(2);
+    await placeStackAcresSoilTile(token, bedA, T0);
+    await placeStackAcresSoilTile(token, bedB, T0);
+    await placeStackAcresSoilTile(token, bedC, T0);
+
+    // Fills bed A the ordinary way -- no tile named, lowest free slot wins.
+    await stockStackAcres(token, { stock: "corn" }, T0);
+
+    // Bed C named directly. The lowest free slot left is bed B's -- this
+    // only proves anything if the crop lands on C, not B.
+    const view = await stockStackAcres(token, { stock: "corn", tile: bedC }, T0);
+    const named = view.units.filter((u) => u.stock === "corn").at(-1)!;
+    expect(named.soilSlot).toBe(2);
+  });
+
+  it("falls back to the lowest free slot when the named tile has no bed", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
+    await placeStackAcresSoilTile(token, cropFieldTile(), T0);
+
+    // FAR_AWAY names no bed at all -- a stale or bogus tap, not a refusal.
+    const view = await stockStackAcres(token, { stock: "corn", tile: FAR_AWAY }, T0);
+    const unit = view.units.filter((u) => u.stock === "corn").at(-1)!;
+    expect(unit.soilSlot).toBe(0);
+  });
+
+  it("falls back to the lowest free slot when the named tile is already standing on", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 2 }, T0);
+    const bedA = cropFieldTile(0);
+    const bedB = cropFieldTile(1);
+    await placeStackAcresSoilTile(token, bedA, T0);
+    await placeStackAcresSoilTile(token, bedB, T0);
+
+    await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
+    // Naming bed A again -- something is already growing there, so this has
+    // to fall through rather than double a crop onto one slot.
+    const view = await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
+    const second = view.units.filter((u) => u.stock === "corn").at(-1)!;
+    expect(second.soilSlot).toBe(1);
   });
 });

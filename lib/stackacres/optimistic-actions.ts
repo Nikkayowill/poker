@@ -73,9 +73,8 @@ import {
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import type { StackAcresUpkeepState } from "./upkeep";
 import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
-import { createSoilMap, plantSoilTile, starterSoilTiles, type SoilTile } from "./soil";
+import { createSoilMap, plantSoilTile, type SoilTile } from "./soil";
 import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
-import { CROP_FIELD_BEDS } from "./world";
 import {
   optimisticallyFedUnit,
   optimisticallyRestartedUnit,
@@ -118,9 +117,8 @@ export interface FarmPredictContext {
   /** The irrigation pipe network, straight off the component's own state --
    *  what `place-pipe`/`remove-pipe` recompute against. See ./irrigation.ts. */
   irrigation: readonly PipeNode[];
-  /** Purchased soil beds only (not the starter pair -- see `starterSoilTiles`),
-   *  straight off the component's own state. What `place-soil-tile`/
-   *  `remove-soil-tile` add to or remove from. */
+  /** This profile's placed soil beds, straight off the component's own state.
+   *  What `place-soil-tile`/`remove-soil-tile` add to or remove from. */
   soilTiles: readonly SoilTile[];
   /** Unplaced bags per tier, straight off the component's own state. What
    *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
@@ -408,13 +406,6 @@ export function predictStackAcresAction(
     }
     case "place-soil-tile": {
       const tier = body.tier ?? SOIL_DEFAULT_TIER;
-      // Starter beds are never in `ctx.soilTiles` (they are synthesised, not
-      // persisted -- see ./soil.ts's `starterSoilTiles`), so an occupied
-      // starter tile has to be checked separately from a purchased one.
-      const onStarter = starterSoilTiles(CROP_FIELD_BEDS).some(
-        (t) => t.tx === body.tx && t.ty === body.ty,
-      );
-      if (onStarter) return null;
       const held = ctx.soilStock[tier] ?? 0;
       if (held < 1) return null;
       const soil = createSoilMap(ctx.soilTiles);

@@ -69,6 +69,13 @@ export interface PlayerProfile {
    * do, only how the seat reads to everyone else at the table.
    */
   adminBadge: boolean;
+  /**
+   * ISO timestamp the spotlight onboarding tour finished (or was skipped),
+   * or null if it has never run. Server-side rather than localStorage so it
+   * survives an installed PWA, which is a separate storage context from the
+   * browser on iOS. See lib/onboarding/.
+   */
+  onboardingTourCompletedAt: string | null;
 }
 
 /**

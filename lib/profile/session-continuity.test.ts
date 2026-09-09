@@ -63,6 +63,7 @@ const profile: PlayerProfile = {
   isRegistered: true,
   stackacresAccess: false,
   adminBadge: false,
+  onboardingTourCompletedAt: null,
 };
 
 describe("the cached profile", () => {

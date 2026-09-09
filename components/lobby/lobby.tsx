@@ -21,6 +21,8 @@ import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
 import { FirstRunStrip } from "./first-run-strip";
+import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
+import { LOBBY_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import { ArcadePanel } from "./arcade-panel";
 import { BuyInModal } from "./buy-in-modal";
 import { MobileShell } from "./mobile-shell";
@@ -189,6 +191,12 @@ export function Lobby({
     && profile.lastDailyClaimAt === null
     && (profile.goldBalance !== 2000 || profile.updatedAt !== profile.createdAt),
   );
+  // Independent of FirstRunStrip above: that strip answers "what is this
+  // app" for a guest who hasn't picked a game yet, this spotlights specific
+  // controls for anyone (guest or registered) who hasn't seen them, and only
+  // once the hub has actually rendered its real tiles.
+  useOnboardingTour(profile, LOBBY_TOUR_STEPS, entryComplete && sessionReady);
+
   if (!entryComplete) {
     return (
       <main className="account-entry-page">
@@ -350,7 +358,7 @@ export function Lobby({
         {/* Tiles carry the real artwork, the same table plate the game
             renders and the chip/avatar art from public/, rather than a flat
             card with an icon dropped in it. */}
-        <div className="hub-grid">
+        <div className="hub-grid" data-tour="game-tiles">
           {/* Named for the game, not for the verb.
               "Join table" was unambiguous when a table was the only thing in
               this app; next to Blackjack, Word Stack and Connections it is
@@ -361,6 +369,7 @@ export function Lobby({
             type="button"
             className="hub-tile hub-tile-wide hub-tile-play"
             style={tileIndexStyle(0)}
+            data-tour="seat-row"
             disabled={loading || !sessionReady}
             onClick={() => { tapSound(); setBuyInMode("join"); }}
           >

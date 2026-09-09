@@ -45,6 +45,8 @@ import type { ReactionId } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import { ReactionButton } from "./table-reactions";
 import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
+import { TABLE_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
 import { LeaveGameConfirmModal } from "@/components/leave-game-confirm-modal";
 import { ActionBar } from "./action-bar";
@@ -258,6 +260,10 @@ export function PokerTable({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  // Seated with a hand actually running, not on an empty/spectator table --
+  // action-bar.tsx and this file's own .board-stack carry the data-tour
+  // targets. See lib/onboarding/ for the lobby half of this same tour.
+  useOnboardingTour(profile, TABLE_TOUR_STEPS, game.isSeated && game.status !== "complete");
   const activeRenderer = resolveTableRenderer();
   // Which of lib/scene/seat-art.ts's two hand-tuned tables applies to seat
   // art on the racetrack table; see useDesktopViewport's own note for why
@@ -1390,7 +1396,7 @@ export function PokerTable({
                     rather than printing "$0" over an empty spot on the felt:
                     there is nothing standing centre-table until the first
                     street closes and bets sweep in. */}
-                <div className="board-stack">
+                <div className="board-stack" data-tour="chip-stack">
                   {centerPotAmount > 0 && (
                     <div className="center-pot-amount" aria-hidden="true">
                       <span>Pot</span>

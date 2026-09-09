@@ -362,14 +362,16 @@ export function ActionBar({
   const canPreAct = game.isSeated;
 
   return (
-    <div className={clsx("action-bar", myTurn && "action-bar-your-turn")}>
+    <div className={clsx("action-bar", myTurn && "action-bar-your-turn")} data-tour="action-bar">
       {/* Only your own turn burns the bar. Passing nulls otherwise leaves the
           fuse properties unset, which is what makes the track sit empty
           rather than animating somebody else's clock under your controls. */}
-      <TurnProgressBar
-        startedAt={myTurn ? game.turnStartedAt : null}
-        deadlineAt={myTurn ? game.turnDeadlineAt : null}
-      />
+      <div data-tour="turn-timer">
+        <TurnProgressBar
+          startedAt={myTurn ? game.turnStartedAt : null}
+          deadlineAt={myTurn ? game.turnDeadlineAt : null}
+        />
+      </div>
 
       {/* No countdown here any more: the fuse burning around the seat on the
           clock carries it, right where the player is already looking. There

@@ -69,7 +69,7 @@ export function ArcadePanel({
         {/* The balance the floor's stakes will be checked against, stated on
             the way in. A player who cannot afford a 1,000 Gold round should
             find that out before they pick a machine, not after. */}
-        <span className="arcade-see-all-wallet">
+        <span className="arcade-see-all-wallet" data-tour="gold-balance">
           {wallet.unlimitedGold ? "Unlimited" : wallet.goldBalance.toLocaleString()} Gold
         </span>
       </Link>

@@ -108,6 +108,9 @@
    (.duel-tier) and 43 (.ante-difficulty) -- it only narrows classes those
    sheets already define. */
 @import "./styles/55-ante-up-neon.css";
+/* Overrides driver.js's own stylesheet for the spotlight onboarding tour.
+   Self-contained, so its number is just the next one free. */
+@import "./styles/56-onboarding-tour.css";
 /* Last, and it has to be: the canvas room's rules override the painted felt
    and rail from 06-table.css, and the cascade here is load order. Moved
    earlier, the room draws underneath the flat green ellipse it exists to

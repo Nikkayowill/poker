@@ -20,6 +20,7 @@ function profileWith(overrides: Partial<PlayerProfile>): PlayerProfile {
     isRegistered: true,
     stackacresAccess: false,
     adminBadge: false,
+    onboardingTourCompletedAt: null,
     ...overrides,
   };
 }

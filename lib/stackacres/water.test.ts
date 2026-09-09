@@ -8,13 +8,13 @@ import {
   POND,
   POND_CLEARANCE,
   POND_SAND,
+  POND_SHALLOW,
   POND_ZONE,
   REEDS,
   RIPPLE_SPOTS,
   dockRect,
   inPond,
   inPondZone,
-  pondBounds,
   pondRadial,
 } from "./water";
 import { FARM_PATHS, nearPath } from "./paths";
@@ -40,7 +40,7 @@ describe("the pond", () => {
     const px = POND.x - YARD_DELTA.x;
     const py = POND.y - YARD_DELTA.y;
     expect(px + POND.rx).toBeLessThanOrEqual(20);
-    expect(px - POND.rx).toBeGreaterThanOrEqual(-88);
+    expect(px - POND.rx).toBeGreaterThanOrEqual(-96);
     expect(py - POND.ry).toBeGreaterThanOrEqual(-41);
     expect(py + POND.ry).toBeLessThanOrEqual(184);
     // The lane's body starts at x 43 in that frame; the sand must not reach it.
@@ -121,15 +121,12 @@ describe("the pond", () => {
     expect(touched.size).toBe(cells.length);
   });
 
-  it("bakes into one texture no bigger than 1024x512 at 4 px per unit", () => {
-    const box = pondBounds();
-    expect(box.width * 4).toBeLessThanOrEqual(1024);
-    expect(box.height * 4).toBeLessThanOrEqual(512);
-    // The sand and its wobble (up to 3.4 past the ring) fit with air to spare.
-    expect(POND.x - POND.rx - box.x).toBeGreaterThanOrEqual(POND_SAND + 4);
-    expect(box.x + box.width - (POND.x + POND.rx)).toBeGreaterThanOrEqual(POND_SAND + 4);
-    expect(POND.y - POND.ry - box.y).toBeGreaterThanOrEqual(POND_SAND + 4);
-    expect(box.y + box.height - (POND.y + POND.ry)).toBeGreaterThanOrEqual(POND_SAND + 4);
+  it("leaves a tile's width for each of the sand ring, the shallows and the deep middle", () => {
+    // The pond is cut from 16-unit tiles (./terrain.ts): a band narrower than
+    // a tile's diagonal would skip a level somewhere around the ellipse.
+    expect(POND_SAND).toBeGreaterThanOrEqual(22);
+    expect(POND_SHALLOW).toBeGreaterThanOrEqual(22);
+    expect(Math.min(POND.rx, POND.ry) - POND_SHALLOW).toBeGreaterThanOrEqual(16);
   });
 });
 

@@ -39,6 +39,7 @@ import {
 } from "./world";
 import { nearPath } from "./paths";
 import { inPondZone } from "./water";
+import { inSea } from "./terrain";
 import { inOuterZone, type ZoneId } from "./zones";
 import { worldBoundsRect } from "./bounds";
 import { FENCE_BAY } from "./fence";
@@ -72,7 +73,7 @@ export function isWildlifeNight(tod: WildlifeTimeOfDay): boolean {
  * toward the farm on purpose -- see `nearestTargetPoint` below).
  */
 export function wildlifeBlocked(x: number, y: number): boolean {
-  return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y);
+  return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y) || inSea(x, y);
 }
 
 /** How many rejection-sampling attempts a spawn function tries before

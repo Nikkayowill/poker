@@ -18,6 +18,9 @@ import { adminClient } from "./supabase-admin";
  * could deal the same table twice.
  */
 
+/** A cribbage table's seat cap. Mirrors sit-and-go-store.ts's SIT_AND_GO_SEATS. */
+export const CRIBBAGE_MAX_SEATS = 4;
+
 export type CribbageTableStatus = "waiting" | "active" | "completed" | "cancelled";
 
 export interface StoredCribbageTable {
@@ -333,7 +336,7 @@ export async function claimCribbageSeat(
     if (seats.some((s) => s.playerId === playerId)) {
       throw new CribbageTableNotJoinable("You are already seated at that table.");
     }
-    if (seats.length >= 4) throw new CribbageTableNotJoinable("That table is full.");
+    if (seats.length >= CRIBBAGE_MAX_SEATS) throw new CribbageTableNotJoinable("That table is full.");
     // The lowest open seat, not the seated count: a seat vacated by an
     // earlier leave is a real gap. Assigning `seats.length` there would
     // collide with whoever already holds the highest seat number and

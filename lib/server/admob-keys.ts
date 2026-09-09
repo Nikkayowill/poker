@@ -56,8 +56,3 @@ export async function admobVerifierKey(keyId: number, now = Date.now()): Promise
   }
   return found?.pem ?? null;
 }
-
-/** Test seam only: forces the next call to refetch rather than serve the cache. */
-export function __resetAdmobKeyCacheForTest(): void {
-  cache.reset();
-}

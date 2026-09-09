@@ -8,6 +8,7 @@ import {
 } from "./heads-up-store";
 import {
   cancelEmptyCribbageTable,
+  CRIBBAGE_MAX_SEATS,
   getCribbageSeats,
   getCribbageTableById,
   getOpenCribbageTables,
@@ -22,9 +23,6 @@ import {
   SIT_AND_GO_SEATS,
 } from "./sit-and-go-store";
 import { creditGoldByProfile, getPublicProfilesByIds } from "./profile-store";
-
-/** claimCribbageSeat's own hardcoded cap (lib/server/cribbage-table-store.ts) -- that store exports no constant for it. */
-const CRIBBAGE_SEATS = 4;
 
 /**
  * Admin visibility + cleanup for the three "waiting" PvP lobbies (heads-up,
@@ -110,7 +108,7 @@ export async function listWaitingPvpTables(): Promise<WaitingPvpTableView[]> {
       stake: table.stake,
       label: "Cribbage",
       seatedCount: (await getCribbageSeats(table.id)).length,
-      capacity: CRIBBAGE_SEATS,
+      capacity: CRIBBAGE_MAX_SEATS,
       createdAt: table.createdAt,
     })),
     ...sitAndGo.map(async (table): Promise<WaitingPvpTableView> => ({

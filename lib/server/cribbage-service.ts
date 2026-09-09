@@ -13,6 +13,7 @@ import {
   cancelEmptyCribbageTable,
   claimCribbageSeat,
   createCribbageTableRow,
+  CRIBBAGE_MAX_SEATS,
   dealCribbageTable,
   getActiveCribbageTableFor,
   getCribbageSeats,
@@ -64,9 +65,9 @@ export class CribbageRequestError extends ArcadeRequestError<never> {
   readonly name = "CribbageRequestError";
 }
 
-/** Fewer than this and even the host cannot start early. The auto-start ceiling is always 4. */
+/** Fewer than this and even the host cannot start early. The auto-start ceiling is always CRIBBAGE_MAX_SEATS. */
 const MIN_SEATS_TO_START = 3;
-const MAX_SEATS = 4;
+const MAX_SEATS = CRIBBAGE_MAX_SEATS;
 
 // ---- wire shapes -----------------------------------------------------------
 

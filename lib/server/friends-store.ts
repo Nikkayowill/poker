@@ -305,6 +305,33 @@ async function withRecentOpponents(
   return { ...overview, recentOpponents: await recentOpponentsFor(profileId, known) };
 }
 
+/**
+ * Splits pending requests into incoming/outgoing, hydrates every list, and
+ * attaches each friend's duel record and recent opponents.
+ *
+ * Shared by both getFriendsOverview branches below, which differ only in
+ * where friendRows/pending came from (memory vs. Supabase) -- everything
+ * past that point was an identical copy of this same tail.
+ */
+async function buildFriendsOverview(
+  me: string,
+  friendRows: { profileId: string; since: string }[],
+  pending: Array<{ id: string; requesterId: string; addresseeId: string; createdAt: string }>,
+): Promise<FriendsOverview> {
+  const [friends, incoming, outgoing, records] = await Promise.all([
+    hydrate(friendRows),
+    hydrate(pending
+      .filter((row) => row.addresseeId === me)
+      .map((row) => ({ id: row.id, profileId: row.requesterId, createdAt: row.createdAt }))),
+    hydrate(pending
+      .filter((row) => row.requesterId === me)
+      .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
+    getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
+  ]);
+  for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
+  return withRecentOpponents(me, { friends, incoming, outgoing });
+}
+
 export async function getFriendsOverview(profileId: string): Promise<FriendsOverview> {
   const me = profileId.toLowerCase();
   const supabase = adminClient();
@@ -317,18 +344,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, FRIENDS_PAGE_SIZE);
 
-    const [friends, incoming, outgoing, records] = await Promise.all([
-      hydrate(friendRows),
-      hydrate(pending
-        .filter((row) => row.addresseeId === me)
-        .map((row) => ({ id: row.id, profileId: row.requesterId, createdAt: row.createdAt }))),
-      hydrate(pending
-        .filter((row) => row.requesterId === me)
-        .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-      getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
-    ]);
-    for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
-    return withRecentOpponents(me, { friends, incoming, outgoing });
+    return buildFriendsOverview(me, friendRows, pending);
   }
 
   // Still one round of parallel queries: the drawer opens on all of this
@@ -353,18 +369,7 @@ export async function getFriendsOverview(profileId: string): Promise<FriendsOver
     createdAt: String(row.created_at),
   }));
 
-  const [friends, incoming, outgoing, records] = await Promise.all([
-    hydrate(friendRows),
-    hydrate(pending
-      .filter((row) => row.addresseeId === me)
-      .map((row) => ({ id: row.id, profileId: row.requesterId, createdAt: row.createdAt }))),
-    hydrate(pending
-      .filter((row) => row.requesterId === me)
-      .map((row) => ({ id: row.id, profileId: row.addresseeId, createdAt: row.createdAt }))),
-    getHeadToHeadRecords(me, friendRows.map((row) => row.profileId)),
-  ]);
-  for (const friend of friends) friend.duelRecord = records.get(friend.profileId) ?? null;
-  return withRecentOpponents(me, { friends, incoming, outgoing });
+  return buildFriendsOverview(me, friendRows, pending);
 }
 
 /** Whether either party has blocked the other. Directionless: a block stops traffic both ways. */

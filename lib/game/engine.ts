@@ -25,6 +25,7 @@ import { DECK_TEMPLATE, makeDeck } from "./deck";
 import { isSeatRebuyEligible } from "./rebuy";
 import { blindLevelForHand, forfeitTournamentSeat, headsUpBlindLevelForElapsed } from "./tournament";
 import { botProfiles } from "./bot-identities";
+import { hashString } from "@/lib/seeded-random";
 
 const streetOrder: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 type TurnAction = Exclude<
@@ -82,25 +83,6 @@ function pickBotPersonality(): BotPersonality {
 }
 
 /**
- * A stable 32-bit hash (FNV-1a) of the string that identifies one replacement.
- *
- * Not Math.random. Two writers can reach a seat replacement for the same
- * hand (a human's action route and the server-timed advance), and only one
- * wins the version check. With a random draw the loser would recompute a
- * different name and the seat would appear to change identity again on
- * retry. Seeded on state both writers already agree about, they compute the
- * same answer and a retry is a no-op.
- */
-function identityHash(seed: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
-/**
  * An identity for a seat that is turning over, unique among the bots
  * currently sitting at this table: by tag (no two seats wearing the same
  * name), by avatarPreset (no two seats drawing the same icon, since the
@@ -126,7 +108,7 @@ function pickBotIdentity(state: GameState, position: number): number {
   const taken = new Set(others.map((seat) => seat.botIdentity));
   const takenPresets = new Set(others.map((seat) => botProfileFor(seat.botIdentity!).avatarPreset));
   const takenFaces = new Set(others.map((seat) => botAvatarFor(seat.botIdentity!)));
-  const offset = identityHash(`${state.id}:${state.handNumber}:${position}`);
+  const offset = hashString(`${state.id}:${state.handNumber}:${position}`);
   for (let step = 0; step < botProfiles.length; step += 1) {
     const candidate = (offset + step) % botProfiles.length;
     if (
@@ -828,15 +810,22 @@ export function createGame(
     ...botProfiles.slice(1, SEAT_COUNT).map((bot, index): Seat => ({
       id: randomUUID(),
       ...bot,
-      avatarCosmetic: botAvatarFor(index + 1),
-      cardBackCosmetic: botCardBackFor(index + 1),
-      chipDesigns: botChipDesignsFor(index + 1),
+      // avatarCosmetic/cardBackCosmetic/chipDesigns/botIdentity/personality
+      // are placeholders, not real values: the rotation loop right below
+      // this array (see its own comment) unconditionally calls
+      // restoreBotControl on every non-human seat, which overwrites every
+      // one of these fields for whatever identity it actually rotates in.
+      // Computing the real per-identity values here would be work for the
+      // wrong identity, thrown away a few lines later.
+      avatarCosmetic: DEFAULT_AVATAR_COSMETIC,
+      cardBackCosmetic: DEFAULT_CARD_BACK,
+      chipDesigns: {},
       position: index + 1,
       isHuman: false,
       ownerToken: null,
       profileId: null,
-      botIdentity: index + 1,
-      personality: pickBotPersonality(),
+      botIdentity: null,
+      personality: null,
       stack: randomBotStack(buyIn, config.bigBlind),
       status: "active",
       holeCards: [],

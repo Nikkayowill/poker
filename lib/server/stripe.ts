@@ -176,6 +176,39 @@ export interface ResolvedGoldTier {
 const resolvedGoldTierCache = new Map<string, Promise<ResolvedGoldTier>>();
 
 /**
+ * Retrieves and validates one Stripe Price + its Product: read live from
+ * Stripe rather than trusted from anything cached locally (a Price's amount
+ * can only be changed by creating a new Price, never edited in place),
+ * confirms it's from the same live/test mode as the secret key in use, and
+ * confirms the Product is not deleted or archived. `validateShape` adds
+ * whatever extra check the caller's own Price type needs beyond that shared
+ * baseline (Gold's "must be a fixed one-time Price", Support's "must match
+ * its billing option"), throwing its own message on failure. Shared by
+ * resolveGoldTier and resolveSupportPrice below, which used to each carry a
+ * byte-for-byte copy of this fetch-and-validate shape.
+ */
+async function fetchVerifiedPrice(
+  stripe: Stripe,
+  priceId: string,
+  mode: StripeMode,
+  label: string,
+  validateShape: (price: Stripe.Price) => void,
+): Promise<Stripe.Price> {
+  const price = await stripe.prices.retrieve(priceId);
+  if (price.livemode !== (mode === "live")) {
+    throw new Error(`The ${label} Price and secret key are from different modes.`);
+  }
+  validateShape(price);
+
+  const productId = typeof price.product === "string" ? price.product : price.product.id;
+  const product = await stripe.products.retrieve(productId);
+  if ("deleted" in product && product.deleted) throw new Error(`The ${label} Product has been deleted.`);
+  if (!("active" in product) || !product.active) throw new Error(`The ${label} Product is not active.`);
+
+  return price;
+}
+
+/**
  * Reads a tier's Price from Stripe rather than trusting anything stored
  * locally, same validation shape as resolveSupportPrice below. Cached per
  * mode+tier key so a burst of checkout requests does not hit the Stripe API
@@ -193,18 +226,11 @@ export function resolveGoldTier(key: string, mode: StripeMode = "live"): Promise
     const priceId = process.env[mode === "live" ? def.envVar : def.testEnvVar]?.trim();
     if (!stripe || !priceId) throw new Error("That Gold pack is not configured yet.");
 
-    const price = await stripe.prices.retrieve(priceId);
-    if (price.livemode !== (mode === "live")) {
-      throw new Error(`The ${key} Price and secret key are from different modes.`);
-    }
-    if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
-      throw new Error(`The ${key} Price must be an active, fixed one-time Price.`);
-    }
-
-    const productId = typeof price.product === "string" ? price.product : price.product.id;
-    const product = await stripe.products.retrieve(productId);
-    if ("deleted" in product && product.deleted) throw new Error(`The ${key} Product has been deleted.`);
-    if (!("active" in product) || !product.active) throw new Error(`The ${key} Product is not active.`);
+    const price = await fetchVerifiedPrice(stripe, priceId, mode, key, (price) => {
+      if (!price.active || price.type !== "one_time" || price.unit_amount === null) {
+        throw new Error(`The ${key} Price must be an active, fixed one-time Price.`);
+      }
+    });
 
     return {
       key: def.key,
@@ -212,7 +238,7 @@ export function resolveGoldTier(key: string, mode: StripeMode = "live"): Promise
       description: def.description,
       goldAmount: def.goldAmount,
       priceId,
-      unitAmount: price.unit_amount,
+      unitAmount: price.unit_amount!,
       currency: price.currency,
     };
   })();
@@ -232,6 +258,45 @@ export async function listGoldTiers(): Promise<ResolvedGoldTier[]> {
   return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 }
 
+/**
+ * The checkout-session validation both verifiedGoldSession and
+ * verifiedSupportSession run against Stripe's own record of a completed
+ * session, rather than trusting anything the client claims about what it
+ * paid: right mode, right currency/amount/Price/quantity, exactly one line
+ * item, the metadata.kind this purchase type expects, and a profile_id that
+ * matches both the session's client_reference_id and (when given) the
+ * caller's own expected profile. `extraMetadataCheck` covers whatever this
+ * purchase type validates beyond that shared baseline (Gold's gold_amount
+ * metadata match).
+ */
+function isValidPurchaseSession(
+  session: Stripe.Checkout.Session,
+  mode: StripeMode,
+  metadataKind: string,
+  price: { priceId: string; unitAmount: number; currency: string },
+  expectedProfileId: string | undefined,
+  extraMetadataCheck: (metadata: NonNullable<Stripe.Checkout.Session["metadata"]>) => boolean = () => true,
+): boolean {
+  const metadata = session.metadata ?? {};
+  const lineItems = session.line_items?.data ?? [];
+  const item = lineItems[0];
+  const itemPriceId = typeof item?.price === "string" ? item.price : item?.price?.id;
+  return (
+    session.mode === "payment"
+    && session.livemode === (mode === "live")
+    && session.currency === price.currency
+    && session.amount_total === price.unitAmount
+    && lineItems.length === 1
+    && item?.quantity === 1
+    && itemPriceId === price.priceId
+    && metadata.kind === metadataKind
+    && extraMetadataCheck(metadata)
+    && Boolean(metadata.profile_id)
+    && session.client_reference_id === metadata.profile_id
+    && (!expectedProfileId || metadata.profile_id === expectedProfileId)
+  );
+}
+
 export async function verifiedGoldSession(sessionId: string, expectedProfileId?: string, mode: StripeMode = "live") {
   const stripe = clientFor(mode);
   if (!stripe) throw new Error("Stripe payments are not configured yet.");
@@ -243,22 +308,13 @@ export async function verifiedGoldSession(sessionId: string, expectedProfileId?:
   if (!tierKey) throw new Error("Stripe session has no StackChips Gold tier metadata.");
   const tier = await resolveGoldTier(tierKey, mode);
 
-  const lineItems = session.line_items?.data ?? [];
-  const item = lineItems[0];
-  const itemPriceId = typeof item?.price === "string" ? item.price : item?.price?.id;
-  const valid = (
-    session.mode === "payment"
-    && session.livemode === (mode === "live")
-    && session.currency === tier.currency
-    && session.amount_total === tier.unitAmount
-    && lineItems.length === 1
-    && item?.quantity === 1
-    && itemPriceId === tier.priceId
-    && metadata.kind === "gold_purchase"
-    && metadata.gold_amount === String(tier.goldAmount)
-    && Boolean(metadata.profile_id)
-    && session.client_reference_id === metadata.profile_id
-    && (!expectedProfileId || metadata.profile_id === expectedProfileId)
+  const valid = isValidPurchaseSession(
+    session,
+    mode,
+    "gold_purchase",
+    tier,
+    expectedProfileId,
+    (meta) => meta.gold_amount === String(tier.goldAmount),
   );
   if (!valid) throw new Error("Stripe payment details did not match the requested Gold pack.");
   return { session, tier, profileId: metadata.profile_id! };
@@ -392,26 +448,19 @@ function resolveSupportPrice(envVar: string, billing: SupportBilling, tierKey: s
     const priceId = process.env[envVar]?.trim();
     if (!stripe || !priceId) throw new Error(`The ${tierKey} ${billing} price is not configured yet.`);
 
-    const price = await stripe.prices.retrieve(priceId);
-    if (price.livemode !== (mode === "live")) {
-      throw new Error(`The ${tierKey} ${billing} Price and secret key are from different modes.`);
-    }
-    if (!price.active || price.unit_amount === null) {
-      throw new Error(`The ${tierKey} ${billing} Price must be an active, fixed Price.`);
-    }
-    if (billing === "one_time" && price.type !== "one_time") {
-      throw new Error(`The ${tierKey} one-time Price must be a one_time Price.`);
-    }
-    if (billing === "monthly" && (price.type !== "recurring" || price.recurring?.interval !== "month")) {
-      throw new Error(`The ${tierKey} monthly Price must be a monthly recurring Price.`);
-    }
+    const price = await fetchVerifiedPrice(stripe, priceId, mode, `${tierKey} ${billing}`, (price) => {
+      if (!price.active || price.unit_amount === null) {
+        throw new Error(`The ${tierKey} ${billing} Price must be an active, fixed Price.`);
+      }
+      if (billing === "one_time" && price.type !== "one_time") {
+        throw new Error(`The ${tierKey} one-time Price must be a one_time Price.`);
+      }
+      if (billing === "monthly" && (price.type !== "recurring" || price.recurring?.interval !== "month")) {
+        throw new Error(`The ${tierKey} monthly Price must be a monthly recurring Price.`);
+      }
+    });
 
-    const productId = typeof price.product === "string" ? price.product : price.product.id;
-    const product = await stripe.products.retrieve(productId);
-    if ("deleted" in product && product.deleted) throw new Error(`The ${tierKey} ${billing} Product has been deleted.`);
-    if (!("active" in product) || !product.active) throw new Error(`The ${tierKey} ${billing} Product is not active.`);
-
-    return { priceId, unitAmount: price.unit_amount, currency: price.currency };
+    return { priceId, unitAmount: price.unit_amount!, currency: price.currency };
   })();
 
   resolvedPriceCache.set(cacheKey, work);
@@ -470,22 +519,7 @@ export async function verifiedSupportSession(
   const oneTime = await resolveSupportPrice(mode === "live" ? def.oneTimeEnvVar : def.oneTimeTestEnvVar, "one_time", def.key, mode);
   const tier: ResolvedSupportTier = { key: def.key, label: def.label, description: def.description, oneTime, monthly: null };
 
-  const lineItems = session.line_items?.data ?? [];
-  const item = lineItems[0];
-  const itemPriceId = typeof item?.price === "string" ? item.price : item?.price?.id;
-  const valid = (
-    session.mode === "payment"
-    && session.livemode === (mode === "live")
-    && session.currency === oneTime.currency
-    && session.amount_total === oneTime.unitAmount
-    && lineItems.length === 1
-    && item?.quantity === 1
-    && itemPriceId === oneTime.priceId
-    && metadata.kind === "support_one_time"
-    && Boolean(metadata.profile_id)
-    && session.client_reference_id === metadata.profile_id
-    && (!expectedProfileId || metadata.profile_id === expectedProfileId)
-  );
+  const valid = isValidPurchaseSession(session, mode, "support_one_time", oneTime, expectedProfileId);
   if (!valid) throw new Error("Stripe payment details did not match the requested support tier.");
   return { session, tier, profileId: metadata.profile_id! };
 }

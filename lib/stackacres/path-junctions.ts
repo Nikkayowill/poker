@@ -2,16 +2,13 @@
  * Where two paths meet, and what shape the meeting takes.
  *
  * A branch (the road, the track, a spur to a pen) starts inside the body of
- * the path it leaves. Drawn as two independent strips, the corner where
- * their edges cross is a hard, sharp notch -- exactly the pixel artifact a
- * tiled ground never shows, because a tile set carries a rounded corner
- * piece for every way its tiles can touch. This module is that tile set's
- * lookup for a strip world: each junction is reduced to a four-bit mask of
- * which compass directions a road leaves it in, the mask picks a shape from
- * `JUNCTION_SHAPES`, and the shape says how big a fillet to round each
- * concave corner with. The renderer (components/arcade/stackacres/
- * art-paths.ts's `bakeJunctionTexture`) bakes one rounded pad per junction
- * and lays it over both strips.
+ * the path it leaves. Each junction is reduced to a four-bit mask of which
+ * compass directions a road leaves it in, the mask picks a shape from
+ * `JUNCTION_SHAPES`, and the shape says how big a fillet each concave
+ * corner gets. The roads are drawn as terrain tiles now (./terrain.ts), and
+ * the tile set carries its own corner pieces, so no renderer reads the
+ * fillets any more; what still does is ./props.ts, which keeps the yard's
+ * clutter out of every junction's `reach`.
  *
  * Pure: polylines in, junction descriptors out, no renderer. path-
  * junctions.test.ts holds the mask arithmetic and the farm's own junctions.

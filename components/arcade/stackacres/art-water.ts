@@ -1,11 +1,4 @@
-// Types only: the Phaser runtime must not enter an art module (see the note
-// at the top of stackacres-art.ts).
-import type * as Phaser from "phaser";
-import { POND, POND_SAND, pondBounds, type Ellipse } from "@/lib/stackacres/water";
-import { powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import {
-  ART_FRAME,
-  GRASS_PX,
   ell,
   F,
   leaf,
@@ -18,287 +11,26 @@ import {
   type Painter,
 } from "./art-kit";
 import { RAMPS } from "./art-palette";
-import { spriteLoadKey } from "./stackacres-sprites";
 
 /**
- * The pond, and everything that lives on it.
+ * Everything that lives on the pond.
  *
- * Two kinds of picture. The pond itself is ground art like a path: one
- * texture baked at GRASS_PX (4) device pixels per unit covering the water,
- * its sand ring and the seam the sand feathers into the lawn with, placed
- * once at its world box just above the paths. Everything on the water --
- * the dock, the lily pads, the reeds, the glints the sun throws, the
- * ripples, the duck -- is an ordinary painter baked at ART_SCALE and placed
- * as a sprite, because those are the things that move or sort by depth.
+ * The pond itself -- its water, shallows and sand -- is terrain now, cut
+ * from the pack's tiles by lib/stackacres/terrain.ts and baked with the
+ * roads and the shore (art-terrain.ts). What is left here is what sits ON
+ * the water: the dock, the lily pads, the reeds, the glints the sun throws,
+ * the ripples, the duck -- each an ordinary painter baked at ART_SCALE and
+ * placed as a sprite, because those are the things that move or sort by
+ * depth.
  *
- * The look is FarmVille's, measured off the reference frames rather than
- * remembered: from the lawn inward it goes grass, a BRIGHT yellow sand ring
- * (not beige, not a mud ring), a thin dark wet line at the waterline, then
- * water that is deep teal in the middle and pale at the edge, with the bank
- * throwing a soft shadow onto the water along the sun side and white
- * lozenge glints on the same side. One sun, high and upper-left: every prop
- * here is lit there and shaded lower-right, and what sits on the water
- * throws its shadow onto it offset down and right.
+ * One sun, high and upper-left: every prop here is lit there and shaded
+ * lower-right, and what sits on the water throws its shadow onto it offset
+ * down and right.
  */
 
 export type WaterPainterName = "glint" | "ripple" | "lily" | "lilyFlower" | "reeds" | "dock" | "duck";
 
-/** The pond texture's key. Not a painter: it is baked by `bakePondTexture`
- *  at ground density, like the paths. */
-export const POND_TEXTURE_KEY = "pond";
-
-export interface PondBake {
-  key: string;
-  /** World position of the texture's top-left corner. */
-  x: number;
-  y: number;
-}
-
 const TAU = Math.PI * 2;
-
-/** A soft-edged ellipse: a radial fade from `inner` at the centre to `outer`
- *  at the rim, in the ellipse's own space so the fade follows both axes. */
-function softBlob(c: Ctx, x: number, y: number, rx: number, ry: number, rot: number, inner: string, outer: string): void {
-  c.save();
-  c.translate(x, y);
-  c.rotate(rot);
-  c.scale(rx, ry);
-  const g = c.createRadialGradient(0, 0, 0, 0, 0, 1);
-  g.addColorStop(0, inner);
-  g.addColorStop(1, outer);
-  c.beginPath();
-  c.arc(0, 0, 1, 0, TAU);
-  c.fillStyle = g;
-  c.fill();
-  c.restore();
-}
-
-/**
- * Paints the whole pond in world units: sand, wet line, water, and the
- * baked-in detail (bank shadow, depth, still glints). Deterministic: every
- * wobble and blotch comes from `r`.
- */
-function paintPond(
-  c: Ctx,
-  pond: Ellipse,
-  r: () => number,
-  grain: CanvasImageSource | null,
-): void {
-  const { x: cx, y: cy, rx, ry } = pond;
-  const sand = POND_SAND;
-
-  // The sand ring's outer edge: the water's ellipse pushed out by the ring's
-  // width, with a slow seeded wobble of up to about three units so it is a
-  // shore and not a drawn oval.
-  const phaseA = r() * TAU;
-  const phaseB = r() * TAU;
-  const phaseC = r() * TAU;
-  const wobble = (a: number) =>
-    1.6 * Math.sin(3 * a + phaseA) + 1.2 * Math.sin(5 * a + phaseB) + 0.6 * Math.sin(8 * a + phaseC);
-  const ring = () => {
-    c.beginPath();
-    const n = 96;
-    for (let i = 0; i < n; i += 1) {
-      const a = (i / n) * TAU;
-      const w = wobble(a);
-      const x = cx + (rx + sand + w) * Math.cos(a);
-      const y = cy + (ry + sand + w) * Math.sin(a);
-      if (i === 0) c.moveTo(x, y);
-      else c.lineTo(x, y);
-    }
-    c.closePath();
-  };
-
-  // 1. Sand, feathered into the lawn: a soft green-shadow halo under the
-  // ring's edge, then a faint seam over the edge itself, so the lawn reads
-  // as lapping over the sand rather than the sand being cut out of it.
-  c.save();
-  c.shadowColor = "rgba(60,90,20,.45)";
-  c.shadowBlur = 10;
-  ring();
-  F(c, "#f0d266");
-  c.restore();
-  ring();
-  stroke(c, "rgba(60,90,20,.18)", 3);
-
-  // Volume on the sand: lit at the upper-left, a shade darker lower-right,
-  // and speckled so it is grit rather than a flat yellow band.
-  ring();
-  c.save();
-  c.clip();
-  c.fillStyle = lin(c, cx - rx, cy - ry, cx + rx, cy + ry, [
-    [0, "rgba(255,250,225,.22)"],
-    [0.5, "rgba(255,250,225,0)"],
-    [1, "rgba(185,125,40,.18)"],
-  ]);
-  c.fillRect(cx - rx - sand - 6, cy - ry - sand - 6, (rx + sand + 6) * 2, (ry + sand + 6) * 2);
-  for (let i = 0; i < 70; i += 1) {
-    const a = r() * TAU;
-    const t = r();
-    const x = cx + (rx + 1.5 + t * (sand - 1.5)) * Math.cos(a);
-    const y = cy + (ry + 1.5 + t * (sand - 1.5)) * Math.sin(a);
-    const k = 0.3 + r() * 0.35;
-    ell(c, x, y, k, k * 0.8);
-    F(c, r() < 0.7 ? "rgba(160,120,50,.35)" : "rgba(255,255,240,.55)");
-  }
-  c.restore();
-
-  // 2. The waterline, inside the sand: a soft damp band, then the wet line.
-  ell(c, cx, cy, rx + 2.4, ry + 2.4);
-  stroke(c, "rgba(185,138,63,.26)", 3.4);
-  ell(c, cx, cy, rx + 0.9, ry + 0.9);
-  stroke(c, "rgba(185,138,63,.6)", 1.6);
-
-  // 3. Water. Deep in the middle, paler toward the shallows; the gradient is
-  // built in the ellipse's own space so it follows the shore on both axes.
-  ell(c, cx, cy, rx, ry);
-  c.save();
-  c.clip();
-  c.save();
-  c.translate(cx, cy);
-  c.scale(rx, ry);
-  const water = c.createRadialGradient(-0.06, 0.04, 0, 0, 0, 1);
-  water.addColorStop(0, "#2a6a85");
-  water.addColorStop(0.52, "#387b94");
-  water.addColorStop(0.88, "#5bb0b3");
-  water.addColorStop(1, "#78c6bf");
-  c.fillStyle = water;
-  c.fillRect(-1.1, -1.1, 2.2, 2.2);
-  c.restore();
-
-  // Surface grain, over the gradient and under everything else. The gradient
-  // alone gives the pond its depth but leaves it glassy, and a flat sheet of
-  // colour is the one thing on this map with no texture in it now that the
-  // lawn and the beds have theirs. Low alpha on purpose: this is the water's
-  // own ripple, not a second picture of a pond, and at full strength it
-  // flattens the deep-to-shallow ramp the gradient just drew. Skipped
-  // entirely until the file arrives, which costs nothing -- the gradient is
-  // what shipped before and is still complete on its own.
-  if (grain) {
-    const pattern = c.createPattern(grain, "repeat");
-    if (pattern) {
-      c.save();
-      c.globalAlpha = 0.28;
-      // The pattern is authored at GRASS_PX device pixels per unit, the same
-      // density as the lawn, and this context is already scaled to units --
-      // so it has to be scaled back down or one repeat covers 256 units of
-      // pond instead of 64.
-      c.scale(1 / GRASS_PX, 1 / GRASS_PX);
-      c.fillStyle = pattern;
-      c.fillRect(
-        (cx - rx - 2) * GRASS_PX,
-        (cy - ry - 2) * GRASS_PX,
-        (rx + 2) * 2 * GRASS_PX,
-        (ry + 2) * 2 * GRASS_PX,
-      );
-      c.restore();
-    }
-  }
-
-  // The pale shallows at the very edge.
-  ell(c, cx, cy, rx - 1, ry - 1);
-  stroke(c, "rgba(143,217,211,.85)", 2);
-  ell(c, cx, cy, rx - 2.8, ry - 2.8);
-  stroke(c, "rgba(143,217,211,.35)", 2);
-
-  // The bank's shadow on the water: the sun is upper-left, so the north-west
-  // shore shades the water just inside it. The crescent between the water's
-  // edge and the same ellipse shifted down-right, blurred inward.
-  c.save();
-  c.shadowColor = "rgba(15,45,65,.6)";
-  c.shadowBlur = 14;
-  c.beginPath();
-  c.rect(cx - rx - 6, cy - ry - 6, (rx + 6) * 2, (ry + 6) * 2);
-  c.ellipse(cx + 4, cy + 5.5, rx, ry, 0, 0, TAU);
-  c.fillStyle = "rgba(15,45,65,.38)";
-  c.fill("evenodd");
-  c.restore();
-
-  // The surface: a few pale streaks lying with the wind, mostly across the
-  // far half, so the water has a grain and not only a gradient.
-  for (let i = 0; i < 9; i += 1) {
-    const a = r() * TAU;
-    const t = 0.15 + Math.sqrt(r()) * 0.7;
-    const x = cx + rx * t * Math.cos(a);
-    const y = cy + ry * t * Math.sin(a) + 4;
-    const w = 5 + r() * 9;
-    ell(c, x, y, w, 0.5, (r() - 0.5) * 0.12);
-    F(c, "rgba(200,240,240,.16)");
-  }
-
-  // Depth: a few darker patches under the surface, soft-edged.
-  for (let i = 0; i < 5; i += 1) {
-    const a = r() * TAU;
-    const t = Math.sqrt(r()) * 0.6;
-    const x = cx + rx * t * Math.cos(a);
-    const y = cy + ry * t * Math.sin(a);
-    softBlob(c, x, y, 8 + r() * 7, 4 + r() * 3, (r() - 0.5) * 0.8, "rgba(40,95,119,.4)", "rgba(40,95,119,0)");
-  }
-
-  // The sky in the water: a faint paler wash across the far half.
-  softBlob(c, cx + rx * 0.22, cy + ry * 0.28, rx * 0.62, ry * 0.5, -0.25, "rgba(190,235,235,.11)", "rgba(190,235,235,0)");
-
-  // A bright rim where the sun catches the far shore's water.
-  ell(c, cx, cy, rx - 0.6, ry - 0.6);
-  c.strokeStyle = lin(c, cx - rx, cy - ry, cx + rx, cy + ry, [
-    [0, "rgba(255,255,255,0)"],
-    [0.55, "rgba(255,255,255,0)"],
-    [1, "rgba(255,255,255,.32)"],
-  ]);
-  c.lineWidth = 1;
-  c.stroke();
-
-  // Still glints on the sun side, under the drifting ones the scene adds.
-  for (let i = 0; i < 7; i += 1) {
-    const a = Math.PI * (0.95 + r() * 0.65);
-    const t = 0.3 + r() * 0.55;
-    const x = cx + rx * t * Math.cos(a);
-    const y = cy + ry * t * Math.sin(a);
-    ell(c, x, y, 2 + r() * 2.5, 0.6);
-    F(c, "rgba(223,248,255,.5)");
-  }
-  c.restore();
-}
-
-/**
- * Bakes the pond into one power-of-two texture at GRASS_PX and returns where
- * to place it. Returns null only if the bake would exceed 2048 px a side,
- * which water.test.ts rules out for POND.
- */
-export function bakePondTexture(scene: Phaser.Scene): PondBake | null {
-  const key = POND_TEXTURE_KEY;
-  const box = pondBounds();
-  if (scene.textures.exists(key)) return { key, x: box.x, y: box.y };
-  const wpx = Math.ceil(box.width * GRASS_PX);
-  const hpx = Math.ceil(box.height * GRASS_PX);
-  const texW = powerOfTwoCeil(wpx);
-  const texH = powerOfTwoCeil(hpx);
-  if (texW > 2048 || texH > 2048) {
-    console.warn(`stackacres: pond would bake at ${texW}x${texH}; skipped`);
-    return null;
-  }
-  const texture = scene.textures.createCanvas(key, texW, texH);
-  if (!texture) return null;
-  const c = texture.context;
-  c.save();
-  c.scale(GRASS_PX, GRASS_PX);
-  c.translate(-box.x, -box.y);
-  // Taken from the texture PHASER preloaded, not from stackacres-sprites'
-  // own DOM cache. Both hold the same file, but the DOM cache fills
-  // asynchronously and this runs in `create`, so `spriteImage` would come
-  // back null on most boots and the pond would silently bake without its
-  // grain. Phaser guarantees `preload` finished before `create` did, which
-  // is the same guarantee `bakeGrass` leans on for the lawn.
-  const grainKey = spriteLoadKey("waterTile");
-  const grain = scene.textures.exists(grainKey)
-    ? (scene.textures.get(grainKey).getSourceImage() as CanvasImageSource)
-    : null;
-  paintPond(c, POND, seededRandom(0x2a0b_77d1), grain);
-  c.restore();
-  texture.add(ART_FRAME, 0, 0, 0, wpx, hpx);
-  texture.refresh();
-  return { key, x: box.x, y: box.y };
-}
 
 /* ---- the things on the water ------------------------------------------ */
 

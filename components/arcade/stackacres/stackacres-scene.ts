@@ -41,8 +41,7 @@ import {
   greenhouseSlotAt,
   greenhouseSlotLayouts,
 } from "@/lib/stackacres/greenhouse";
-import { FARM_JUNCTIONS } from "@/lib/stackacres/path-junctions";
-import { ALL_FARM_PATHS } from "@/lib/stackacres/paths";
+import { SEA_EXPANSE_TILE, seaExpanseTiles, terrainChunks } from "@/lib/stackacres/terrain";
 import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter, type PropKind } from "@/lib/stackacres/props";
 import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -82,7 +81,6 @@ import {
 } from "@/lib/stackacres/zones";
 import {
   STACKACRES_CHUNK,
-  STACKACRES_MARGIN,
   WORLD_BOUND_MARGIN,
   barnHitAt,
   chunkScenery,
@@ -109,12 +107,12 @@ import {
   type SceneryKind,
   type WorldPoint,
   type WorldRect,
-  YARD_MATS,
+  STACKACRES_ZOOM_MIN,
 } from "@/lib/stackacres/world";
 // A strict leaf (imports nothing), so a plain value import with no cycle to
 // work around. The Crop Fields' own ground, since the 2026-09-08 merge
 // folded them into the Farmstead district -- see that constant's own header.
-import { CROP_FIELD } from "@/lib/stackacres/yard";
+import { CROP_FIELD, yardPoint } from "@/lib/stackacres/yard";
 import { hiddenZoneAt, type HiddenZoneId } from "@/lib/stackacres/secrets";
 import {
   addSoilSlot,
@@ -197,9 +195,14 @@ import {
   type SpriteName,
 } from "./stackacres-sprites";
 import { RAMPS, rampHex } from "./art-palette";
-import { bakeYardMatTexture } from "./art-mud";
-import { bakeJunctionTexture, bakePathTexture } from "./art-paths";
-import { bakePondTexture } from "./art-water";
+import {
+  SEA_TILE_KEY,
+  SEA_TILE_URL,
+  TERRAIN_ATLAS_KEY,
+  TERRAIN_ATLAS_URL,
+  TERRAIN_PX,
+  bakeTerrainChunk,
+} from "./art-terrain";
 import { bakeIrrigation, FLOW_SEG_KEY, PIPE_ARM_ANGLE } from "./art-irrigation";
 import {
   diffPipeGrid,
@@ -667,14 +670,19 @@ const EDGE_RESISTANCE_AT_REACH = 0.22;
 const SPRING_BACK_MS = 260;
 
 // The barn stands north of the Farmstead's own grow area with a yard
-// between: its feet are on y 34, and the lane and road (lib/stackacres/
-// paths.ts) run through that gap.
-const BARN_X = STACKACRES_MARGIN + 44;
-const BARN_Y = STACKACRES_MARGIN - 30;
+// between: its feet are on y 34 with its door centred on x 108, in the
+// yard's own frame, and the lane and road (lib/stackacres/paths.ts) run
+// through that gap. A yard literal like `BARN_FOOTPRINT` (world.ts), which
+// is the same box: until the 2026-09-09 terrain pass these two were still
+// the pre-relay numbers, and the barn, its silo and its hay were drawn in
+// the middle of the locked Crop Fields while its tap box sat in the yard.
+const BARN_AT = yardPoint(108, 34);
+const BARN_X = BARN_AT.x;
+const BARN_Y = BARN_AT.y;
 
 // Ground art sits just above the grass and well below anything with feet:
-// the paths at -1e8, the pond one above them so its sand paints over the
-// spur's end cap, and the water's surface (glints, ripples) one above that.
+// the terrain tiles at -1e8 and the water's surface (glints, ripples) two
+// above that.
 /** The always-behind-everything floor depth: a locked sector's haze sits
  *  here, under the paths, so a road still reads as laid ON the lawn above
  *  it. */
@@ -685,12 +693,15 @@ const ZONE_GROUND_DEPTH = -1e8 - 10;
  *  object in the scene, by the same always-behind-everything logic
  *  `ZONE_GROUND_DEPTH` itself uses. */
 const GROW_AREA_GROUND_DEPTH = ZONE_GROUND_DEPTH + 1;
-/** The muddy yard mats (`paintYardMats`) sit between the haze and a
- *  district's own floor: a Hen Pen's straw is laid ON its yard's mud, and a
- *  road runs OVER it, so a mat is under both. */
-const MUD_MAT_DEPTH = ZONE_GROUND_DEPTH + 0.5;
+/** The terrain tiles (`paintTerrain`): the roads, the pond, the shore and
+ *  the two worked yards, one layer. Above the haze and the pens' floors, so
+ *  a road reads as laid on the lawn and over a locked district's fog. */
 const PATH_DEPTH = -1e8;
-const POND_DEPTH = PATH_DEPTH + 1;
+/** The open sea, under the shore tiles that run out into it. */
+const SEA_DEPTH = PATH_DEPTH - 1;
+/** The Greenhouse's translucent plot outline sits ON its dirt yard rather
+ *  than under it. */
+const GREENHOUSE_GROUND_DEPTH = PATH_DEPTH + 0.5;
 const POND_SURFACE_DEPTH = PATH_DEPTH + 2;
 
 /** How many glints drift across the pond at once. */
@@ -1601,6 +1612,10 @@ export class StackAcresScene extends Phaser.Scene {
       this.load.image(spriteLoadKey(name), spriteUrl(name));
     }
     this.load.image(FARMHAND_SHEET_KEY, FARMHAND_SHEET_URL);
+    // The terrain pack: the tile atlas `paintTerrain` bakes its chunks from
+    // (and drops once it has), and the open-sea tile that stays.
+    this.load.image(TERRAIN_ATLAS_KEY, TERRAIN_ATLAS_URL);
+    this.load.image(SEA_TILE_KEY, SEA_TILE_URL);
   }
 
   /**
@@ -1612,14 +1627,13 @@ export class StackAcresScene extends Phaser.Scene {
    * uploaded to the GPU besides. That duplicate was a large share of what the
    * farm was holding on a phone and nothing reads it again.
    *
-   * The three ground pictures are the exception and keep theirs, because they
+   * The two ground pictures are the exception and keep theirs, because they
    * are not baked once: `paintOwnedSlots` re-reads `soilSlot` on every soil
-   * change, and the lawn and the pond re-read theirs when their own art is
-   * rebuilt.
+   * change, and the lawn re-reads its tile when its own art is rebuilt.
    */
   private releaseSpriteSources(): void {
     for (const name of CORE_SPRITE_NAMES) {
-      if (name === "grassTile" || name === "soilSlot" || name === "waterTile") continue;
+      if (name === "grassTile" || name === "soilSlot") continue;
       const key = spriteLoadKey(name);
       if (this.textures.exists(key)) this.textures.remove(key);
     }
@@ -1647,12 +1661,13 @@ export class StackAcresScene extends Phaser.Scene {
     bakeGrass(this);
     bakeFarmhandTexture(this);
     bakeIrrigation(this);
-    // `bakeGrass` above and `bakePondTexture` are the last things that read a
-    // raw preloaded file, so from here every `sprite:*` entry is a second full
-    // copy of pixels that already exist in the baked canvas beside it. On a
-    // phone that duplicate was tens of megabytes of decoded image sitting
-    // there for the whole session. `soilSlot` is the exception and is kept:
+    // `bakeGrass` above is the last thing that reads a raw preloaded sprite
+    // file, so from here every `sprite:*` entry is a second full copy of
+    // pixels that already exist in the baked canvas beside it. On a phone
+    // that duplicate was tens of megabytes of decoded image sitting there
+    // for the whole session. `soilSlot` is the exception and is kept:
     // `paintOwnedSlots` re-reads it on every soil change, not just at boot.
+    // (The terrain atlas is not a sprite; `paintTerrain` drops it itself.)
     this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
@@ -1686,10 +1701,9 @@ export class StackAcresScene extends Phaser.Scene {
     );
     this.worldBounds = bounds;
 
-    // Mud before paths, paths before districts: a road is laid over the
-    // barn's muddy yard, and a pen's straw floor is laid over its own.
-    this.paintYardMats();
-    this.paintPaths();
+    // The ground first -- the sea, the shore, the pond, the roads and the
+    // worked yards are one tile layer -- then what stands on the water.
+    this.paintTerrain();
     this.paintPond();
     this.paintBarn();
     this.paintGreenhouse();
@@ -1946,80 +1960,55 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * The dirt paths, as ground art just above the grass: lane, road, track,
-   * in that order, then whatever `generatePathwaysBetweenNodes` grew on top
-   * of them (`ALL_FARM_PATHS`, not `FARM_PATHS` alone -- see paths.ts).
-   * Phaser's depth sort is stable, so images at one depth draw in creation
-   * order, and each path after the first repaints the junction it shares
-   * with an earlier one (see bakePathTexture), which only works if the
-   * earlier one is underneath -- true for a generated spur exactly as it is
-   * for a hand-authored path, since `generatePathwaysBetweenNodes` always
-   * appends to the array a spur forks off of.
+   * The ground that is not lawn, as the terrain pack's tiles: the sea along
+   * the east edge, the pond, the dirt roads and the barn and Greenhouse
+   * yards (lib/stackacres/terrain.ts decides what is where; art-terrain.ts
+   * bakes it a chunk at a time, sharing a texture between chunks that came
+   * out identical). Under the tiles, one rotated sprite of open water fills
+   * everything east of the shore the camera can reach, so the sea has no
+   * edge. Every bake is placed directly in projected (screen) space, the
+   * same space isoProject's own output lives in -- no isoProject call here.
    */
-  // The baked texture is drawn directly in projected (sheared) space now --
-  // see bakePathTexture's own header -- so `bake.x`/`bake.y` are already
-  // screen-space coordinates, the same space isoProject's own output lives
-  // in. No isoProject call here: doing that would project an already-
-  // projected point a second time.
-  private paintPaths(): void {
-    ALL_FARM_PATHS.forEach((spec, i) => {
-      const bake = bakePathTexture(this, spec, ALL_FARM_PATHS.slice(0, i));
-      if (!bake) return;
-      this.add
-        .image(bake.x, bake.y, bake.key, ART_FRAME)
-        .setOrigin(0)
-        .setScale(1 / GRASS_PX)
-        .setDepth(PATH_DEPTH);
-    });
-    // The rounded pads over every junction, created after the strips so the
-    // stable depth sort puts them on top (see bakeJunctionTexture).
-    for (const junction of FARM_JUNCTIONS) {
-      const bake = bakeJunctionTexture(this, junction);
+  private paintTerrain(): void {
+    // The open sea: plain images of deep water over everything past the
+    // shore tiles that the camera can reach. That reach is the world's box
+    // plus whatever a view larger than the box overhangs it by at the
+    // minimum zoom (Phaser lets an oversized view hang past its bounds to
+    // the east and south rather than clamping it), plus the soft edge. Not
+    // one TileSprite: Phaser gives a TileSprite a backing canvas the size of
+    // the sprite, and this one would be tens of megabytes on a phone.
+    if (this.textures.exists(SEA_TILE_KEY) && this.worldBounds) {
+      const b = this.worldBounds;
+      const overW = Math.max(0, this.scale.width / STACKACRES_ZOOM_MIN - b.width);
+      const overH = Math.max(0, this.scale.height / STACKACRES_ZOOM_MIN - b.height);
+      const pad = SOFT_BOUNDS_REACH + SEA_EXPANSE_TILE;
+      const reach = { x: b.x - pad, y: b.y - pad, width: b.width + overW + pad * 2, height: b.height + overH + pad * 2 };
+      for (const at of seaExpanseTiles(reach)) {
+        // The tile is built at the lawn's density (four file pixels per unit).
+        this.add.image(at.x, at.y, SEA_TILE_KEY).setOrigin(0).setScale(1 / GRASS_PX).setDepth(SEA_DEPTH);
+      }
+    }
+    for (const chunk of terrainChunks()) {
+      const bake = bakeTerrainChunk(this, chunk);
       if (!bake) continue;
       this.add
         .image(bake.x, bake.y, bake.key, ART_FRAME)
         .setOrigin(0)
-        .setScale(1 / GRASS_PX)
+        .setScale(1 / TERRAIN_PX)
         .setDepth(PATH_DEPTH);
     }
-  }
-
-  /** The muddy yards under the barn, the Greenhouse and the Hen Pen
-   *  (lib/stackacres/world.ts's `YARD_MATS`), as ground art under the paths
-   *  -- see art-mud.ts. */
-  private paintYardMats(): void {
-    for (const mat of YARD_MATS) {
-      const bake = bakeYardMatTexture(this, mat);
-      if (!bake) continue;
-      this.add
-        .image(bake.x, bake.y, bake.key, ART_FRAME)
-        .setOrigin(0)
-        .setScale(1 / GRASS_PX)
-        .setDepth(MUD_MAT_DEPTH);
-    }
+    // Every chunk is baked; the atlas is a second copy of pixels now.
+    if (this.textures.exists(TERRAIN_ATLAS_KEY)) this.textures.remove(TERRAIN_ATLAS_KEY);
   }
 
   /**
-   * The pond on the west verge: the water and its sand as ground art just
-   * above the paths (so the shore paints over the spur's end cap), then the
-   * dock, the reeds and the lily pads sorted by their feet like everything
-   * else. The surface is a handful of sprites -- glints, ripples, a duck --
-   * kept in plain arrays for update() to move.
+   * What stands on the pond. The water and its sand are terrain tiles
+   * (`paintTerrain`); this places the dock, the reeds and the lily pads,
+   * sorted by their feet like everything else. The surface is a handful of
+   * sprites -- glints, ripples, a duck -- kept in plain arrays for update()
+   * to move.
    */
   private paintPond(): void {
-    const bake = bakePondTexture(this);
-    if (bake) {
-      // The paths were carrying this same trade-off until they were moved to
-      // a sheared bake (see art-paths.ts's bakePathTexture); the pond's own
-      // shore texture is still the flat top-down bake that leaves, only its
-      // anchor projected -- the same follow-up applies here, not done yet.
-      const s = isoProject(bake.x, bake.y);
-      this.add
-        .image(s.x, s.y, bake.key, ART_FRAME)
-        .setOrigin(0)
-        .setScale(1 / GRASS_PX)
-        .setDepth(POND_DEPTH);
-    }
     const still = this.options.reducedMotion;
 
     // Sun on the water. Five drift east to west across the sun side; under
@@ -2307,7 +2296,7 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private paintGreenhouse(): void {
     const ramp = rampHex("water");
-    const ground = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
+    const ground = this.add.graphics().setDepth(GREENHOUSE_GROUND_DEPTH);
     const groundCorners = projectedCorners(GREENHOUSE_PLOT);
     ground.fillStyle(ramp.top, 0.35);
     ground.beginPath();

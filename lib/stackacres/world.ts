@@ -31,6 +31,9 @@ import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
 // Same arrangement as ./paths: water.ts imports only types from here.
 import { inPondZone } from "./water";
+// Sits between this module and ./water.ts / ./paths.ts and value-imports
+// only those, so no cycle: see its own header.
+import { inSea } from "./terrain";
 // And again for ./zones, which grows the districts' own scenery in the same
 // chunks the woodland uses and so has to be able to say "not here".
 import { inOuterZone, type ZoneId } from "./zones";
@@ -752,71 +755,6 @@ export function wheatPlotSpot(plotId: string): WorldPoint {
   return pointWithin(WHEAT_FIELD, seededRandom(seedFromId(plotId)));
 }
 
-/* ------------------------------------------------------------------ */
-/* Muddy yards                                                         */
-/* ------------------------------------------------------------------ */
-
-/** A key building's own footprint on the ground, and the mud around it. */
-export type YardMatId = "barn" | "greenhouse" | "henPen";
-
-export interface YardMat {
-  id: YardMatId;
-  /** The ground the structure itself stands on, in world units. */
-  footprint: WorldRect;
-  /** The mat: the footprint plus a messy margin on every side. */
-  rect: WorldRect;
-}
-
-/** The least a mat reaches past its footprint on any side, in world units:
- *  half a tile, enough that the mud reads as a yard the building stands in
- *  rather than a shadow it casts. */
-export const YARD_MAT_MIN_SPREAD = 8;
-
-/** A mat around a footprint: `spread` past each side, or one number for all
- *  four. Sides are given in the order north, east, south, west. */
-export function yardMatFor(
-  id: YardMatId,
-  footprint: WorldRect,
-  spread: number | readonly [north: number, east: number, south: number, west: number],
-): YardMat {
-  const [n, e, s, w] = typeof spread === "number" ? [spread, spread, spread, spread] : spread;
-  return {
-    id,
-    footprint,
-    rect: { x: footprint.x - w, y: footprint.y - n, width: footprint.width + w + e, height: footprint.height + n + s },
-  };
-}
-
-/**
- * The muddy yard mats: wide, messy dirt under the barn, the Greenhouse and
- * the Hen Pen, each reaching well past the structure's own base so it sits
- * embedded in a working farmstead rather than floating on clean pasture.
- * Drawn by the scene below the paths and below every district's own ground
- * fill (`MUD_MAT_DEPTH` in stackacres-scene.ts), so a road runs over the
- * mud and a pen's straw floor sits on it.
- *
- * Footprints are restated literals, the same way every other cross-module
- * coordinate in this file is: the barn's ground band is its picture box's
- * feet (x 71..145, feet on y 34 -- `BARN_FOOTPRINT`, restated as ground
- * rather than picture); the Greenhouse is ./greenhouse.ts's
- * `GREENHOUSE_PLOT`; the Hen Pen is `GROW_AREA.farmstead`. world.test.ts
- * holds each to its source.
- *
- * Spreads are hand-fitted, not uniform: the Greenhouse stands eight units
- * off `FARM_ZONE`'s east edge and two off the wheat field's south edge, so
- * its mat reaches least on those sides; the Hen Pen's mat reaches furthest
- * north so the service spur from the road (./paths.ts's `henCoop` node at
- * y 180) ends in mud rather than on a strip of grass.
- */
-export const YARD_MATS: readonly YardMat[] = [
-  yardMatFor("barn", yardRect(71, 10, 74, 24), [16, 30, 20, 16]),
-  yardMatFor("greenhouse", yardRect(348, 330, 84, 64), [8, 8, 12, 12]),
-  // Restates GROW_AREA.farmstead, which is the same yardRect. The hens have
-  // moved to Hen Haven but the mat stays: it is the worn ground the coops left
-  // behind, and world.test.ts holds it equal to that rect either way.
-  yardMatFor("henPen", yardRect(170, 200, 160, 160), [24, 14, 14, 16]),
-];
-
 /**
  * How much further out the camera frames a district's arrival window once
  * the signpost has collapsed into the compass quick-nav (see
@@ -1043,7 +981,7 @@ const OPEN_BUSH_KINDS: readonly SceneryKind[] = ["bush", "bush2", "bush3"];
  * ground they paint for themselves.
  */
 function blocked(x: number, y: number): boolean {
-  return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y);
+  return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y) || inSea(x, y);
 }
 
 /** Keeps a jittered planting point inside its own chunk. Every piece of

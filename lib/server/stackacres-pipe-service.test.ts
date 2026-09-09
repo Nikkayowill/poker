@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cropSpot, CROP_FIELD_BEDS, stockZone } from "@/lib/stackacres/world";
+import { cropSpot, CROP_FIELD_BEDS, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
@@ -118,6 +118,27 @@ describe("placeStackAcresPipeTile — money ordering", () => {
       placeStackAcresPipeTile(token, { tx: 0, ty: 0, kind: "well" }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await balance(token)).toBe(10);
+  });
+
+  // Henhaven, Oxfields and Wallow are GROW_AREA entries the same as any
+  // other district, but irrigation stays out of a pen -- see
+  // stackacres-service.ts's own comment on `placeStackAcresPipeTile` for why
+  // this has to be an authoritative, pre-debit check rather than trusting
+  // the client's own `pipeLayableWorldTile`/`pipeExtraActions` gate.
+  it("refuses a pipe or a well inside a pen, and spends nothing", async () => {
+    const { token } = await funded(10_000);
+    const start = await balance(token);
+    const bounds = growAreaBounds("henhaven");
+    const tile = pipeTileAt(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+
+    await expect(
+      placeStackAcresPipeTile(token, { ...tile, kind: "pipe" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(
+      placeStackAcresPipeTile(token, { ...tile, kind: "well" }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(start);
   });
 });
 

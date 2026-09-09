@@ -210,6 +210,19 @@ export interface StackAcresWorldProps {
    *  StackAcresSceneCallbacks.onSoilLayTile's own doc for the full contract.
    *  Bypasses `onGroundTap`'s ring menu entirely while the soil tool is held. */
   onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
+  /** The Water tool's drag (or tap) gesture reached this unit -- see
+   *  StackAcresSceneCallbacks.onWaterLayUnit's own doc for the full contract. */
+  onWaterLayUnit: (unitId: string, at: TapPoint) => void;
+  /** The Water tool's own twin, for the Feed tool. */
+  onFeedLayUnit: (unitId: string, at: TapPoint) => void;
+  /** The Harvest tool's own twin -- dual-mode, see
+   *  StackAcresSceneCallbacks.onHarvestLayUnit's own doc. */
+  onHarvestLayUnit: (unitId: string, mode: "collect" | "clear", at: TapPoint) => void;
+  /** A pipe/well press or drag was refused for landing inside a pen -- see
+   *  StackAcresSceneCallbacks.onDropRejected's own doc. Optional the same
+   *  way `onFenceSegmentTap` is: a caller that never wires it just never
+   *  hears about a rejected drop. */
+  onDropRejected?: (message: string, at: TapPoint) => void;
   /** Informational: the Wildlife Manager's own predator simulation lowered
    *  a district's livestock health. The shell's cue to persist it. */
   onLivestockDamaged?: (zone: ZoneId, health: number) => void;
@@ -323,6 +336,10 @@ export function StackAcresWorld({
   onFenceSegmentTap,
   onPipeLayTile,
   onSoilLayTile,
+  onWaterLayUnit,
+  onFeedLayUnit,
+  onHarvestLayUnit,
+  onDropRejected,
   onLivestockDamaged,
   sectors,
   cropFieldsUnlocked,
@@ -354,6 +371,10 @@ export function StackAcresWorld({
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const pipeLayTileRef = useRef(onPipeLayTile);
   const soilLayTileRef = useRef(onSoilLayTile);
+  const waterLayUnitRef = useRef(onWaterLayUnit);
+  const feedLayUnitRef = useRef(onFeedLayUnit);
+  const harvestLayUnitRef = useRef(onHarvestLayUnit);
+  const dropRejectedRef = useRef(onDropRejected);
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
   const cropFieldsLockedTapRef = useRef(onCropFieldsLockedTap);
@@ -391,6 +412,10 @@ export function StackAcresWorld({
     fenceSegmentTapRef.current = onFenceSegmentTap;
     pipeLayTileRef.current = onPipeLayTile;
     soilLayTileRef.current = onSoilLayTile;
+    waterLayUnitRef.current = onWaterLayUnit;
+    feedLayUnitRef.current = onFeedLayUnit;
+    harvestLayUnitRef.current = onHarvestLayUnit;
+    dropRejectedRef.current = onDropRejected;
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     cropFieldsLockedTapRef.current = onCropFieldsLockedTap;
@@ -453,6 +478,10 @@ export function StackAcresWorld({
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onPipeLayTile: (tx, ty, mode) => pipeLayTileRef.current(tx, ty, mode),
           onSoilLayTile: (tx, ty, mode) => soilLayTileRef.current(tx, ty, mode),
+          onWaterLayUnit: (unitId, at) => waterLayUnitRef.current(unitId, at),
+          onFeedLayUnit: (unitId, at) => feedLayUnitRef.current(unitId, at),
+          onHarvestLayUnit: (unitId, mode, at) => harvestLayUnitRef.current(unitId, mode, at),
+          onDropRejected: (message, at) => dropRejectedRef.current?.(message, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onCropFieldsLockedTap: (at) => cropFieldsLockedTapRef.current(at),

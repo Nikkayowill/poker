@@ -238,6 +238,7 @@ type CorePainterName =
   | "ico-feed"
   | "ico-clear"
   | "ico-pipe"
+  | "ico-water"
   | "ico-bushels"
   | "ico-gold"
   | "ico-egg"
@@ -1560,6 +1561,28 @@ const DRAWN: Record<PainterName, Painter> = {
     c.quadraticCurveTo(15.5, 14.5, 19, 10);
     c.closePath();
     F(c, "#63c8e8");
+  }),
+
+  // The Water tool's own droplet, the same blue as the drop on ico-pipe's
+  // spout -- one held to fill a trough or a dry crop rather than lay a run
+  // of pipe, so it reads as the same liquid the irrigation tiles carry.
+  "ico-water": painter(24, 24, (c) => {
+    c.beginPath();
+    c.moveTo(12, 3);
+    c.quadraticCurveTo(19, 13.5, 19, 16.5);
+    c.quadraticCurveTo(19, 21, 12, 21);
+    c.quadraticCurveTo(5, 21, 5, 16.5);
+    c.quadraticCurveTo(5, 13.5, 12, 3);
+    F(c, lin(c, 5, 3, 19, 21, [[0, "#8fe0f5"], [1, "#3f9fc9"]]));
+    c.beginPath();
+    c.moveTo(12, 3);
+    c.quadraticCurveTo(19, 13.5, 19, 16.5);
+    c.quadraticCurveTo(19, 21, 12, 21);
+    c.quadraticCurveTo(5, 21, 5, 16.5);
+    c.quadraticCurveTo(5, 13.5, 12, 3);
+    stroke(c, "#2b7a9c", 1.8);
+    ell(c, 9.3, 15, 2.1, 3, -0.3);
+    F(c, "rgba(255,255,255,.55)");
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

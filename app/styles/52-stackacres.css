@@ -291,7 +291,7 @@
      guess, and guessing wrong still leaves a bare margin on the edge that
      had no notch. The canvas bleeding under a notch it can't see costs
      nothing (it's a picture); every overlay that actually needs protecting
-     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
+     -- .floor-bar, .sa-controls, .sa-destinations, .sa-side,
      .sa-district-panel, .sa-panel-tab -- reads
      var(--safe-left)/var(--safe-right) itself instead. */
   position: relative;
@@ -642,7 +642,6 @@
 .sa-music-toggle,
 .sa-tool,
 .sa-dest,
-.sa-camera-btn,
 .sa-panel-tab,
 .sa-panel-close,
 .sa-unit-action,
@@ -669,7 +668,6 @@
 .sa-music-toggle:active,
 .sa-tool:active,
 .sa-dest:active,
-.sa-camera-btn:active,
 .sa-panel-tab:active,
 .sa-panel-close:active,
 .sa-unit-action:not(:disabled):active,
@@ -693,7 +691,6 @@
 .sa-music-toggle:focus-visible,
 .sa-tool:focus-visible,
 .sa-dest:focus-visible,
-.sa-camera-btn:focus-visible,
 .sa-panel-tab:focus-visible,
 .sa-panel-close:focus-visible,
 .sa-unit-action:focus-visible,
@@ -727,15 +724,17 @@
 
 /* ---- the toolbelt ---------------------------------------------------- */
 
-/* Two keys -- Look, and hold the Scythe to mow the Long Meadow. It used to be
-   a column pinned to the top of the right edge, which is exactly where the
-   district drawer now needs to open from; it is a horizontal dock in the
-   bottom-left corner instead, under the left thumb of two hands wrapped
-   around a phone held sideways, and the whole right edge belongs to the
-   drawer. */
+/* Seven keys now -- Look and Scythe for the ground, Pipe and Soil for
+   laying/lifting, Water/Feed/Harvest for a unit. It used to dock bottom-left,
+   "under the left thumb"; it docks bottom-right now, under the RIGHT thumb --
+   the hand most players hold the phone and act with -- and it is the corner
+   the zoom/recentre buttons vacated when those went away entirely (nothing
+   else there any more). The district drawer still opens from the right edge
+   above it; the belt sits low enough (bottom: 10px) that the two never
+   overlap. */
 .sa-controls {
   position: absolute;
-  left: max(10px, var(--safe-left));
+  right: max(10px, var(--safe-right));
   bottom: 10px;
   display: flex;
   align-items: flex-end;
@@ -743,8 +742,18 @@
   pointer-events: none;
 }
 
+/* Seven tools at ~60px + 8px gap would run past a narrow phone's width
+   pinned to one corner (~476px), so the belt wraps into two rows there
+   instead of spilling off-screen; max-width leaves it the room between
+   both safe-area insets, not just the one it's anchored to -- a device
+   with an asymmetric notch (the reason --safe-left and --safe-right are
+   two separate tokens at all) would otherwise size this against the wrong
+   edge, or the right one twice. */
 .sa-toolbelt {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100vw - max(10px, var(--safe-right)) - max(10px, var(--safe-left)));
   gap: 8px;
   padding: 0;
   border: 0;
@@ -797,41 +806,6 @@
   background: var(--sa-corn);
   box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(255, 255, 255, .4), 0 1px 3px rgba(52, 34, 18, .35);
 }
-
-/* ---- zoom buttons ---------------------------------------------------- */
-
-/* For a mouse, which has no pinch. Bottom-right, and deliberately BELOW the
-   drawer's own bottom edge (see .sa-district-panel) so zoom and recentre stay
-   reachable while the drawer is open -- a player comparing what is on the map
-   with what the drawer says they own should not have to close one to move the
-   other. */
-.sa-camera {
-  position: absolute;
-  right: max(10px, var(--safe-right));
-  bottom: 10px;
-  z-index: 3;
-  display: flex;
-  gap: 6px;
-}
-
-.sa-camera-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--sa-tap);
-  height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
-  color: var(--sa-ink);
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
-}
-
-.sa-camera-btn:hover { filter: brightness(1.04); }
 
 /* ---- the signpost ---------------------------------------------------- */
 /* Top-left, right under the header. Five painted boards on the fence: four
@@ -1957,7 +1931,7 @@
   position: absolute;
   left: 50%;
   /* Clear of the toolbelt rather than beside it: .sa-controls is anchored
-     bottom-left at 10px and one tool tall, so a key on the centre line one
+     bottom-right at 10px and one tool tall, so a key on the centre line one
      tool-height above it never collides with the belt at any width. */
   bottom: calc(10px + var(--sa-tap) + 12px);
   transform: translateX(-50%);
@@ -4282,8 +4256,6 @@
   .sa-tool { min-width: 54px; min-height: 44px; padding: 4px 7px; }
   .sa-tool .sa-ico { width: 22px; height: 22px; }
   .sa-tool-label { font-size: 11px; }
-
-  .sa-camera-btn { width: 44px; height: 44px; }
 
   /* The drawer is the tallest thing on a short landscape phone. It gives back
      padding rather than width: a narrower drawer wraps every buy button onto

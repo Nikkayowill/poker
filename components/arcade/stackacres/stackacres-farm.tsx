@@ -6,13 +6,10 @@ import {
   ChevronLeft,
   Coins,
   HelpCircle,
-  LocateFixed,
   Lock,
   RotateCcw,
   Wand2,
   X,
-  ZoomIn,
-  ZoomOut,
 } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
@@ -147,7 +144,7 @@ import {
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
 import { PIPE_PLACE_COST, pipeTileAt, type PipeKind, type PipeNode } from "@/lib/stackacres/irrigation";
-import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
+import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
@@ -2594,6 +2591,48 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /**
+   * The Water tool's drag (or zero-length tap) gesture reached this unit --
+   * see StackAcresSceneCallbacks.onWaterLayUnit's own header. Routed
+   * straight through `onWorldUnitTap` rather than duplicated: that function
+   * already re-derives the exact action from the unit's live state via
+   * `tapActionFor`, plays the right sound, calls `act`, and floats a
+   * refusal toast for anything the scene let through on state alone but the
+   * player can't actually afford (an empty barn, say) -- the scene's own
+   * eligibility check only ever tests `unit.state`, not affordability, so
+   * this second gate still matters.
+   */
+  const onWaterLayUnit = useCallback(
+    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
+    [onWorldUnitTap],
+  );
+
+  /** The Water tool's own twin, for the Feed tool. */
+  const onFeedLayUnit = useCallback(
+    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
+    [onWorldUnitTap],
+  );
+
+  /**
+   * The Harvest tool's own twin. `mode` is dropped here on purpose:
+   * `onWorldUnitTap` re-derives the identical collect-or-clear choice from
+   * the unit's own state through `tapActionFor`, so there is nothing left
+   * for `mode` to decide by the time this fires.
+   */
+  const onHarvestLayUnit = useCallback(
+    (unitId: string, _mode: "collect" | "clear", at: TapPoint) => onWorldUnitTap(unitId, at),
+    [onWorldUnitTap],
+  );
+
+  /** A pipe/well drag or tap was refused for landing inside a pen -- the
+   *  scene has already shaken and flashed the held tool's ghost; this is
+   *  only the toast half, through the same `lastCollect`/`.sa-toast`
+   *  mechanism every other floated status line on this screen already
+   *  uses. */
+  const onDropRejected = useCallback((message: string) => {
+    setLastCollect({ text: message, nonce: Date.now() });
+  }, []);
+
   /** The ring's own way through to the deep end -- the same drawer the peg on
    *  the right edge opens, reached without having to go and find the peg. */
   const openPanel = useCallback(() => {
@@ -2810,6 +2849,14 @@ export function StackAcresFarm() {
    */
   const pipeExtraActions = (() => {
     if (!radial) return [];
+    // No pipe and no well inside a pen -- Henhaven, Oxfields and Wallow are
+    // grow areas the same as any district, so the ground tap that opens this
+    // ring fires there too, but irrigation belongs to the Crop Fields and the
+    // open farm, not inside a hen/ox/hog enclosure. The server holds this
+    // rule too (stackacres-service.ts's `placeStackAcresPipeTile`), so this
+    // is the polish half: hiding the offer rather than making the player
+    // choose it and get refused.
+    if (PEN_ZONE_IDS.includes(radial.zone)) return [];
     const { tx, ty } = pipeTileAt(radial.world.x, radial.world.y);
     const existing = irrigation.find((node) => node.tx === tx && node.ty === ty);
     if (existing) {
@@ -2982,6 +3029,10 @@ export function StackAcresFarm() {
               onFenceSegmentTap={onWorldFenceSegmentTap}
               onPipeLayTile={onPipeLayTile}
               onSoilLayTile={onSoilLayTile}
+              onWaterLayUnit={onWaterLayUnit}
+              onFeedLayUnit={onFeedLayUnit}
+              onHarvestLayUnit={onHarvestLayUnit}
+              onDropRejected={onDropRejected}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}
@@ -3001,9 +3052,9 @@ export function StackAcresFarm() {
 
           {/* The seed menu's dismissal layer, and its position in this file is
               the whole design: it covers the map but sits EARLIER than the
-              toolbelt, the signpost and the camera buttons, which are
-              positioned siblings with no z-index of their own and therefore
-              stack above it. So the next tap on the world closes the menu
+              toolbelt and the signpost, which are positioned siblings with no
+              z-index of their own and therefore stack above it. So the next
+              tap on the world closes the menu
               and the chrome stays live while it is open -- and, since this
               is a real DOM button the canvas underneath never sees the tap,
               `onRadialScrimTap` replays that same click against the scene
@@ -3048,22 +3099,11 @@ export function StackAcresFarm() {
             blueprintInProgress={Object.values(blueprints).some((b) => b.status === "in_progress")}
           />
 
-          <div className="sa-camera" role="group" aria-label="Map view">
-            <button type="button" className="sa-camera-btn" aria-label="Zoom in" onClick={() => { panelSound(); world.current?.zoomBy(1.3); }}>
-              <ZoomIn size={16} aria-hidden="true" />
-            </button>
-            <button type="button" className="sa-camera-btn" aria-label="Zoom out" onClick={() => { panelSound(); world.current?.zoomBy(1 / 1.3); }}>
-              <ZoomOut size={16} aria-hidden="true" />
-            </button>
-            <button type="button" className="sa-camera-btn" aria-label="Back to the farm" onClick={() => { panelSound(); setPlace("farmstead"); setRadial(null); world.current?.recenter(); }}>
-              <LocateFixed size={16} aria-hidden="true" />
-            </button>
-          </div>
-
           {/* The seed menu, on the canvas next to the finger that asked for
-              it. Rendered after the camera controls so it stacks over them,
-              and inside .sa-field so its coordinates are the ones the scene
-              reported the tap in. */}
+              it, inside .sa-field so its coordinates are the ones the scene
+              reported the tap in. Zoom/recentre used to be two buttons here;
+              they're gone (pinch and mouse-wheel already cover zoom, see
+              bindInput's onWheel), and there is nothing left to stack over. */}
           {/* The Crop Fields get the scrollable seed strip -- 22 crops
               cannot lay out on a ring (see StackAcresSeedStrip's own
               header) -- and it filters to what the shelf actually holds.

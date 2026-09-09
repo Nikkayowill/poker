@@ -35,7 +35,8 @@ import { adminClient } from "./supabase-admin";
  * world board and the friends board end up disagreeing about the same game.
  */
 
-export interface LeaderboardEntry {
+/** One game's own leaderboard row -- see GlobalLeaderboardEntry for the app-wide board's shape. */
+export interface GameLeaderboardEntry {
   profileId: string;
   rank: number;
   displayName: string;
@@ -283,14 +284,14 @@ async function allGameRows(gameId: string): Promise<ScoredRow[]> {
 // none of the three can drift on the fallback values by building the same
 // shape twice.
 
-async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<LeaderboardEntry[]> {
+async function decorateGameRows(gameId: string, rows: ScoredRow[]): Promise<GameLeaderboardEntry[]> {
   const contract = leaderboardGame(gameId);
   if (!contract) return [];
   return decorateRankedRows(rows, (row) => ({ stats: row.stats, cells: contract.formatRow(row.stats) }));
 }
 
 /** Top `limit` for one game, qualifying players only. Empty for an unknown game id. */
-export async function getGameLeaderboard(gameId: string, limit = 10): Promise<LeaderboardEntry[]> {
+export async function getGameLeaderboard(gameId: string, limit = 10): Promise<GameLeaderboardEntry[]> {
   if (!leaderboardGame(gameId)) return [];
   const sorted = sortDescendingByGoodness(await allGameRows(gameId));
   return decorateGameRows(gameId, sorted.slice(0, limit));
@@ -300,7 +301,7 @@ export async function getGameLeaderboard(gameId: string, limit = 10): Promise<Le
 export async function getGameStanding(
   gameId: string,
   profileId: string,
-): Promise<LeaderboardEntry | null> {
+): Promise<GameLeaderboardEntry | null> {
   if (!leaderboardGame(gameId)) return null;
   const sorted = sortDescendingByGoodness(await allGameRows(gameId));
   const index = sorted.findIndex((row) => row.profileId === profileId);
@@ -338,8 +339,8 @@ export async function getGameQualifyProgress(
 }
 
 export interface GameBoard {
-  entries: LeaderboardEntry[];
-  mine: LeaderboardEntry | null;
+  entries: GameLeaderboardEntry[];
+  mine: GameLeaderboardEntry | null;
   mineProgress: LeaderboardQualifyProgress | null;
 }
 

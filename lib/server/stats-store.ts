@@ -328,13 +328,12 @@ export async function getPlayerStanding(
     return { stats, rank };
   }
 
-  const table = scope === "lifetime" ? "player_stats" : "season_stats";
-  const filter = scope === "lifetime"
-    ? supabase.from(table).select("*").eq("profile_id", profileId)
-    : null;
-
   if (scope === "lifetime") {
-    const { data, error } = await filter!.maybeSingle();
+    const { data, error } = await supabase
+      .from("player_stats")
+      .select("*")
+      .eq("profile_id", profileId)
+      .maybeSingle();
     if (error) throw new Error(`Could not load player stats: ${error.message}`);
     if (!data) return null;
     const stats = rowToPlayerStats(data);

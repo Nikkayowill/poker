@@ -676,12 +676,6 @@ export async function claimBackstopGold(token: string, threshold: number): Promi
 }
 
 /**
- * Every profile, newest first: the closest thing this authless app has to a
- * "signups" list, since a profile is created the moment a new visitor's
- * session cookie is first seen (see ensureProfile). Used only by the admin
- * dashboard, so a flat cap replaces real pagination.
- */
-/**
  * Public profile fields for a batch of ids, keyed by id. Used to decorate a
  * leaderboard (built from player_stats/season_stats, which know nothing
  * about display names or avatars) without every reader needing to know the
@@ -732,6 +726,13 @@ const LIST_PROFILES_PAGE_SIZE = 1000;
 // what it has, far past anything this app has seen.
 const LIST_PROFILES_MAX_PAGES = 500;
 
+/**
+ * Every profile, newest first: the closest thing this authless app has to a
+ * "signups" list, since a profile is created the moment a new visitor's
+ * session cookie is first seen (see ensureProfile). Used only by the admin
+ * dashboard; drains the whole table via keyset pagination rather than a flat
+ * cap, up to LIST_PROFILES_MAX_PAGES as a safety backstop.
+ */
 export async function listProfiles(): Promise<AdminProfileSummary[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -786,24 +787,43 @@ export async function isBanned(token: string): Promise<boolean> {
   return Boolean(data?.banned);
 }
 
-/** Flags (or unflags) a profile so it can't join a table or act at one, for blocking toxic players. */
-export async function banProfile(profileId: string, banned: boolean): Promise<void> {
+/**
+ * Sets one boolean admin flag on a profile, in whichever store is live.
+ *
+ * Every caller below is otherwise a byte-for-byte copy of this shape (find
+ * the memory entry by id, write the field, or run the matching Supabase
+ * update) differing only in which field/column and which error text to use
+ * -- pulled into one place so a fix to the not-found/update-failed handling
+ * lands for all four instead of needing to be repeated a fifth time.
+ */
+async function setProfileFlag<K extends keyof StoredProfile>(
+  profileId: string,
+  memoryField: K,
+  value: StoredProfile[K],
+  column: string,
+  errorLabel: string,
+): Promise<void> {
   const supabase = adminClient();
   const now = new Date().toISOString();
   if (!supabase) {
     const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
     if (!entry) throw new Error("Profile not found.");
     const [token, current] = entry;
-    memoryProfiles.set(token, { ...current, banned, updatedAt: now });
+    memoryProfiles.set(token, { ...current, [memoryField]: value, updatedAt: now });
     return;
   }
   const { data, error } = await supabase
     .from("profiles")
-    .update({ banned, updated_at: now })
+    .update({ [column]: value, updated_at: now })
     .eq("id", profileId)
     .select("id");
-  if (error) throw new Error(`Could not update ban status: ${error.message}`);
+  if (error) throw new Error(`Could not update ${errorLabel}: ${error.message}`);
   if (!data || data.length === 0) throw new Error("Profile not found.");
+}
+
+/** Flags (or unflags) a profile so it can't join a table or act at one, for blocking toxic players. */
+export async function banProfile(profileId: string, banned: boolean): Promise<void> {
+  return setProfileFlag(profileId, "banned", banned, "banned", "ban status");
 }
 
 /**
@@ -828,42 +848,12 @@ export async function hasStackAcresAccess(token: string): Promise<boolean> {
 
 /** Lets a specific profile into (or back out of) the StackAcres while it is unreleased. */
 export async function setStackAcresAccess(profileId: string, allowed: boolean): Promise<void> {
-  const supabase = adminClient();
-  const now = new Date().toISOString();
-  if (!supabase) {
-    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
-    if (!entry) throw new Error("Profile not found.");
-    const [token, current] = entry;
-    memoryProfiles.set(token, { ...current, stackacresAccess: allowed, updatedAt: now });
-    return;
-  }
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ homestead_access: allowed, updated_at: now })
-    .eq("id", profileId)
-    .select("id");
-  if (error) throw new Error(`Could not update StackAcres access: ${error.message}`);
-  if (!data || data.length === 0) throw new Error("Profile not found.");
+  return setProfileFlag(profileId, "stackacresAccess", allowed, "homestead_access", "StackAcres access");
 }
 
 /** Puts the "Admin" tag above a profile's seat at the table, or takes it off. */
 export async function setAdminBadge(profileId: string, shown: boolean): Promise<void> {
-  const supabase = adminClient();
-  const now = new Date().toISOString();
-  if (!supabase) {
-    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
-    if (!entry) throw new Error("Profile not found.");
-    const [token, current] = entry;
-    memoryProfiles.set(token, { ...current, adminBadge: shown, updatedAt: now });
-    return;
-  }
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ admin_badge: shown, updated_at: now })
-    .eq("id", profileId)
-    .select("id");
-  if (error) throw new Error(`Could not update the admin tag: ${error.message}`);
-  if (!data || data.length === 0) throw new Error("Profile not found.");
+  return setProfileFlag(profileId, "adminBadge", shown, "admin_badge", "the admin tag");
 }
 
 /**
@@ -1073,20 +1063,5 @@ export async function creditGoldByProfile(
 
 /** Flags (or unflags) a profile so spendGold never actually deducts from it, for gifting a specific person free play. */
 export async function setUnlimitedGold(profileId: string, unlimited: boolean): Promise<void> {
-  const supabase = adminClient();
-  const now = new Date().toISOString();
-  if (!supabase) {
-    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
-    if (!entry) throw new Error("Profile not found.");
-    const [token, current] = entry;
-    memoryProfiles.set(token, { ...current, unlimitedGold: unlimited, updatedAt: now });
-    return;
-  }
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ unlimited_gold: unlimited, updated_at: now })
-    .eq("id", profileId)
-    .select("id");
-  if (error) throw new Error(`Could not update Gold flag: ${error.message}`);
-  if (!data || data.length === 0) throw new Error("Profile not found.");
+  return setProfileFlag(profileId, "unlimitedGold", unlimited, "unlimited_gold", "Gold flag");
 }

@@ -841,6 +841,22 @@ export async function getStoredGame(id: string): Promise<GameState | null> {
   return data?.state ? normalizeGameState(data.state as GameState) : null;
 }
 
+/**
+ * The memory-mode version guard every optimistic write below repeats:
+ * refuse a write whose state has fallen behind what's actually stored, same
+ * as the Supabase RPCs' own `p_expected_version` check. Returns whether the
+ * write landed -- each caller decides for itself whether a stale write is a
+ * thrown error (updateStoredGame, persistSeatClaim) or a plain `false`
+ * (persistTimedTurn, which a bot/timeout tick can just skip and retry next
+ * pass rather than fail loudly for).
+ */
+function tryWriteMemoryGame(state: GameState): boolean {
+  const current = memoryGames.get(state.id);
+  if (current && current.version !== state.version - 1) return false;
+  memoryGames.set(state.id, clone(state));
+  return true;
+}
+
 export async function updateStoredGame(
   state: GameState,
   action: PlayerAction,
@@ -848,11 +864,7 @@ export async function updateStoredGame(
 ): Promise<void> {
   const supabase = adminClient();
   if (!supabase) {
-    const current = memoryGames.get(state.id);
-    if (current && current.version !== state.version - 1) {
-      throw new Error("The table changed. Refresh and try again.");
-    }
-    memoryGames.set(state.id, clone(state));
+    if (!tryWriteMemoryGame(state)) throw new Error("The table changed. Refresh and try again.");
     return;
   }
 
@@ -881,11 +893,7 @@ export async function updateStoredGame(
 export async function persistSeatClaim(state: GameState, seatId: string): Promise<void> {
   const supabase = adminClient();
   if (!supabase) {
-    const current = memoryGames.get(state.id);
-    if (current && current.version !== state.version - 1) {
-      throw new Error("The table changed. Refresh and try again.");
-    }
-    memoryGames.set(state.id, clone(state));
+    if (!tryWriteMemoryGame(state)) throw new Error("The table changed. Refresh and try again.");
     return;
   }
 
@@ -919,14 +927,7 @@ async function persistTimedTurn(
   action: Exclude<PlayerAction, { type: "leave-seat" }>,
 ): Promise<boolean> {
   const supabase = adminClient();
-  if (!supabase) {
-    const current = memoryGames.get(state.id);
-    if (current && current.version !== state.version - 1) {
-      return false;
-    }
-    memoryGames.set(state.id, clone(state));
-    return true;
-  }
+  if (!supabase) return tryWriteMemoryGame(state);
 
   const previousVersion = state.version - 1;
   const { data, error } = await supabase.rpc("try_persist_timed_game_action", {

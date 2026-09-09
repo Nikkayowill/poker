@@ -1,6 +1,6 @@
 import "server-only";
 
-import { SOIL_SLOTS_PER_TILE, soilTileKey, soilTileOwnedSlots, type SoilTile, type SoilTileOrigin } from "@/lib/stackacres/soil";
+import { soilTileKey, type SoilTile, type SoilTileOrigin } from "@/lib/stackacres/soil";
 import {
   SOIL_DEFAULT_TIER,
   isSoilTier,
@@ -34,10 +34,9 @@ interface SoilTileDbRow {
   tile_order: number | string;
   origin: string;
   tier: string | null;
-  bought_slots: number | string | null;
 }
 
-const SOIL_TILE_COLUMNS = "tx, ty, tile_order, origin, tier, bought_slots";
+const SOIL_TILE_COLUMNS = "tx, ty, tile_order, origin, tier";
 
 function isSoilTileOrigin(value: string): value is SoilTileOrigin {
   return value === "starter" || value === "purchased";
@@ -53,12 +52,6 @@ function fromRow(row: SoilTileDbRow): StoredSoilTile {
     // Degrades to the plain bed rather than throwing: a row predating the
     // tier column reads null here, and that row IS a plain bed.
     tier: toSoilTier(row.tier),
-    // Same degrade as tier, for the same reason: a row predating per-square
-    // buying reads null here, and that row IS a whole, fully-owned bed --
-    // see soil.ts's `soilTileOwnedSlots` for where that default actually
-    // lives. Left undefined rather than defaulted to SOIL_SLOTS_PER_TILE
-    // here, so the one place that default is stated stays that function.
-    boughtSlots: row.bought_slots === null ? undefined : Number(row.bought_slots),
   };
 }
 
@@ -98,24 +91,21 @@ export async function listStackAcresSoilTiles(profileId: string): Promise<Stored
   return ((data ?? []) as SoilTileDbRow[]).map(fromRow);
 }
 
-/** What one call to `placeStackAcresSoilTile` actually did -- one purchase
- *  buys exactly one planting square, either a brand new one-square bed or
- *  the next square of the bed already standing at that coordinate. Mirrors
- *  `AddSoilSlotResult` in lib/stackacres/soil.ts (the pure version of this
- *  same decision), plus `raced` for the one failure mode that only exists
- *  once real concurrency is involved: a second request landing on the same
- *  bare coordinate a moment before this one's insert. */
+/** What one call to `placeStackAcresSoilTile` actually did. A bed is one
+ *  tile now (lib/stackacres/soil.ts's `plantSoilTile`, the pure version of
+ *  this same decision), so the only two outcomes left are a fresh bed or a
+ *  coordinate already spoken for -- plus `raced` for the one failure mode
+ *  that only exists once real concurrency is involved: a second request
+ *  landing on the same bare coordinate a moment before this one's insert. */
 export type PlaceSoilSlotOutcome =
-  | { kind: "created" | "grown"; tile: StoredSoilTile }
-  | { kind: "full" }
-  | { kind: "tier-mismatch"; tier: SoilTier }
+  | { kind: "created"; tile: StoredSoilTile }
+  | { kind: "occupied" }
   | { kind: "raced" };
 
 /**
- * Buys one planting square at `(tx, ty)`. A bare coordinate becomes a brand
- * new one-square bed of `tier`; a bed already standing there grows by one
- * square if `tier` matches what it already is, and refuses (never
- * overwrites, never mixes tiers into one row) otherwise. The caller treats
+ * Plants one bed at `(tx, ty)`, tiered. A bare coordinate becomes a bed;
+ * anything already standing there -- another bed, purchased or starter --
+ * refuses outright rather than overwriting or growing. The caller treats
  * every refusal kind exactly like a lost race and refunds the bag it already
  * spent -- see `placeStackAcresSoilTile` in stackacres-service.ts.
  */
@@ -129,28 +119,12 @@ export async function placeStackAcresSoilTile(
   if (!supabase) {
     const layout = memoryLayout(profileId);
     const key = soilTileKey(tx, ty);
-    const existing = layout.get(key);
-    if (!existing) {
-      let maxOrder = -1;
-      for (const tile of layout.values()) maxOrder = Math.max(maxOrder, tile.order);
-      const tile: StoredSoilTile = {
-        tx,
-        ty,
-        order: maxOrder + 1,
-        origin: "purchased",
-        tier,
-        boughtSlots: 1,
-      };
-      layout.set(key, tile);
-      return { kind: "created", tile: { ...tile } };
-    }
-    const existingTier = toSoilTier(existing.tier);
-    if (existingTier !== tier) return { kind: "tier-mismatch", tier: existingTier };
-    const owned = soilTileOwnedSlots(existing);
-    if (owned >= SOIL_SLOTS_PER_TILE) return { kind: "full" };
-    const grown: StoredSoilTile = { ...existing, boughtSlots: owned + 1 };
-    layout.set(key, grown);
-    return { kind: "grown", tile: { ...grown } };
+    if (layout.has(key)) return { kind: "occupied" };
+    let maxOrder = -1;
+    for (const t of layout.values()) maxOrder = Math.max(maxOrder, t.order);
+    const tile: StoredSoilTile = { tx, ty, order: maxOrder + 1, origin: "purchased", tier };
+    layout.set(key, tile);
+    return { kind: "created", tile: { ...tile } };
   }
 
   const { data, error } = await supabase.rpc("place_homestead_soil_tile", {
@@ -160,23 +134,14 @@ export async function placeStackAcresSoilTile(
     p_tier: tier,
   });
   if (error) {
-    // ST001/ST002 are the migration's own custom SQLSTATEs for the two
-    // refusals a plain insert-or-conflict never had to express: a bed
-    // already there that is not this tier (the mismatch message IS the
-    // bed's own tier, so this degrades through toSoilTier rather than
-    // trusting it), and a bed with nothing left to sell.
-    if (error.code === "ST001") return { kind: "tier-mismatch", tier: toSoilTier(error.message) };
-    if (error.code === "ST002") return { kind: "full" };
+    // ST003 is the migration's own custom SQLSTATE for a bed already
+    // standing at this coordinate.
+    if (error.code === "ST003") return { kind: "occupied" };
     if (error.code === "23505") return { kind: "raced" };
     throw new Error(`Could not place that soil tile: ${error.message}`);
   }
   if (!data) return { kind: "raced" };
-  const tile = fromRow(data as SoilTileDbRow);
-  // A freshly created bed's first square is always bought_slots = 1; growing
-  // an existing bed always moves it from >= 1 to >= 2. That is the whole
-  // difference, so the RPC does not need to say which happened -- this can
-  // always tell from the number alone.
-  return { kind: soilTileOwnedSlots(tile) === 1 ? "created" : "grown", tile };
+  return { kind: "created", tile: fromRow(data as SoilTileDbRow) };
 }
 
 /** Removes one purchased tile. Returns whether a row was actually deleted --

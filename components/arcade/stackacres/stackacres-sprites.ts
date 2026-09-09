@@ -53,12 +53,12 @@
  * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
  * stone in it. They are still painters.
  *
- * `grassTile`, `soilSlot` and `waterTile` are in here but are not one of
- * these: none is a painter, none has a box or an anchor, and none is ever
- * wrapped by `spriteBacked`. They ride this module only because this list is
- * what the scene's `preload` walks, and `bakeGrass`/`paintOwnedSlots`/
- * `bakePondTexture` want them in hand before drawing rather than a frame
- * later.
+ * `grassTile` and `soilSlot` are in here but are not one of these: neither
+ * is a painter, neither has a box or an anchor, and neither is ever wrapped
+ * by `spriteBacked`. They ride this module only because this list is what
+ * the scene's `preload` walks, and `bakeGrass`/`paintOwnedSlots` want them
+ * in hand before drawing rather than a frame later. (The terrain atlas and
+ * the open-sea tile are loaded by the scene itself -- see art-terrain.ts.)
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
  * carry gradients where the rest of the farm is flat, and they cannot be
@@ -251,21 +251,15 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // ONE planting square, not a whole bed -- replaced the old `soilBed`
-  // (one picture per 64-unit bed, all twelve of its squares baked into a
-  // single furrowed diamond) so a bed bought one square at a time and a bed
-  // bought whole draw through the same picture, at the same
-  // `SOIL_COL_PITCH`x`SOIL_ROW_PITCH` footprint `paintOwnedSlots` already
-  // draws squares at. Any world rect projects to an exactly-2:1 diamond
-  // (see lib/stackacres/iso.ts's `isoProject`), which is why one 256x128
-  // picture displays correctly at a square's own screen size with no
-  // stretch, whatever that size works out to.
+  // A bed's one plant -- replaced the old `soilBed` (one picture per
+  // 64-unit bed, all twelve of its squares baked into a single furrowed
+  // diamond) back when a bed could hold up to a dozen; a bed is one tile,
+  // one plant now (lib/stackacres/soil.ts), and `paintBedSlot` draws
+  // exactly one of these per placed bed. Any world rect projects to an
+  // exactly-2:1 diamond (see lib/stackacres/iso.ts's `isoProject`), which
+  // is why one 256x128 picture displays correctly at a bed's own screen
+  // size with no stretch, whatever that size works out to.
   soilSlot: "/stackacres/sprites/soil-slot.png",
-  // The pond's surface grain, and only the grain -- the shore, the gradient,
-  // the bank shadow and the glints stay drawn (art-water.ts). Composited
-  // INSIDE the water's own ellipse at low alpha, so it is texture under the
-  // gradient rather than a picture of a pond.
-  waterTile: "/stackacres/sprites/water-tile.png",
   // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
   // tappable, already-generated pixel-art PNGs standing in a flat-vector
   // world on purpose (the "art-style shock" greeting is the whole feature).
@@ -329,11 +323,11 @@ export function spriteUrl(name: SpriteName): string {
 }
 
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the three ground pictures -- `grassTile`/`soilSlot`/`waterTile` have no painter
+ *  except the two ground pictures -- `grassTile`/`soilSlot` have no painter
  *  behind them (a ground tile is a texture, not a thing with a box and an
  *  anchor), so they are the names here that `spriteBacked` and
  *  `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilSlot" | "waterTile">;
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilSlot">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

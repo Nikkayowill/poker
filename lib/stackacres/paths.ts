@@ -3,11 +3,10 @@
  *
  * Pure layout: a handful of polylines in world units, and the one question the open
  * world asks of them -- "is this point on or beside a path?" -- so wild
- * scenery never grows across the road. The renderer (components/arcade/
- * stackacres/art-paths.ts) smooths and wobbles these into the strips the
- * player sees; the polylines here are what the exclusion is measured from,
- * and a smoothed curve always stays inside its own polyline's corners, so a
- * margin on the polyline covers the drawn strip too.
+ * scenery never grows across the road. The renderer is ./terrain.ts: a
+ * point within `dirtReach` of a polyline is dirt, and the dirt is cut into
+ * the terrain pack's tiles with the rest of the ground; the polylines here
+ * are what both the exclusion and the tiles are measured from.
  *
  * Widths follow the tiers in ./roads.ts: a main road (the ring, its spurs and
  * the yard road) is never laid thinner than
@@ -28,7 +27,7 @@ import { roadWidth, type PathTier } from "./roads";
 // A strict leaf (./yard.ts imports nothing), so no cycle. Holds the offset
 // the Farmstead's yard moved by in the 2026-09-07 re-lay.
 import { yardPoint } from "./yard";
-import type { WorldPoint, WorldRect } from "./world";
+import type { WorldPoint } from "./world";
 
 export interface PathSpec {
   /** Texture key suffix and the seed for this path's wobble. */
@@ -77,12 +76,10 @@ function path(spec: Omit<PathSpec, "width"> & { width: number }): PathSpec {
  * there are no spurs into districts any more; a district's `approach` is
  * simply a point just inside its pen on the road side.
  *
- * The long roads are split at the middle road into east and west legs so
- * each spec's bake stays inside the projected 1024 px budget the renderer
- * has (paths.test.ts holds it), the same reason the old ring was split.
- * Roads that cross each other mid-body just overlap; the junction repaint
- * (./path-junctions.ts) covers a branch's START on an earlier road, and
- * every spec after `midRoad` starts on one.
+ * The long roads are split at the middle road into east and west legs, a
+ * habit from when each spec baked its own texture; the tiles do not care,
+ * and the split is kept because ./path-junctions.ts reads a branch's START
+ * on an earlier road, and every spec after `midRoad` starts on one.
  *
  * THE YARD'S OWN THREE keep the literals they were drawn with, wrapped in
  * ./yard.ts's `yardPoint`: the lane still runs past the same lamp posts to
@@ -142,14 +139,15 @@ export const FARM_PATHS: readonly PathSpec[] = [
   }),
   path({
     // A few steps west off the lane to the dock on the pond (see
-    // ./water.ts): it ends on the sand beside the dock's root, where the pond's
-    // own art paints over its end cap.
+    // ./water.ts): it ends on the sand beside the dock's root, where the
+    // ground turns from the road's dirt to the pond's own beach
+    // (./terrain.ts draws both).
     key: "dockSpur",
     tier: "service",
     width: 12,
     points: [
       yardPoint(50, 118),
-      yardPoint(26, 118),
+      yardPoint(14, 118),
     ],
     stones: 0,
   }),
@@ -348,9 +346,9 @@ export interface PathwayNode {
  * clearance `nearPath`'s own "off every grow area's corners and centre"
  * invariant holds every hand-authored path to, checked by hand against
  * `SERVICE_PATH_WIDTH` rather than left to come out right by luck:
- *   henCoop:    20 units clear of the Hen Coop's own north edge (y 200),
- *               and inside the coop's own muddy yard mat (world.ts's
- *               `YARD_MATS`), so the spur ends in mud rather than on grass.
+ *   henCoop:    20 units clear of the old Hen Coop block's north edge
+ *               (y 200). The block is plain lawn now that the hens live in
+ *               Hen Haven, so the spur simply ends on the grass there.
  *   wheatField: 20 units clear of the wheat field's own north edge (y 140),
  *               and clear of the scarecrow's footprint (x 392..412) on top.
  */
@@ -419,30 +417,3 @@ export const FARMSTEAD_PATHWAYS: readonly PathSpec[] = generatePathwaysBetweenNo
  *  that matters -- ground-cover exclusion, wild scenery, and the render. */
 export const ALL_FARM_PATHS: readonly PathSpec[] = [...FARM_PATHS, ...FARMSTEAD_PATHWAYS];
 
-/** Padding a path's bake needs around its polyline: the feathered mud
- *  margin, its blur and the parcel stones all sit outside the body, and the
- *  edge wobble adds a couple more. */
-export function pathBakePadding(spec: PathSpec): number {
-  return spec.width / 2 + 16;
-}
-
-/** The world rectangle a path's texture covers: its polyline's box, padded. */
-export function pathBounds(spec: PathSpec): WorldRect {
-  const pad = pathBakePadding(spec);
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const p of spec.points) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  return {
-    x: Math.floor(minX - pad),
-    y: Math.floor(minY - pad),
-    width: Math.ceil(maxX - minX + pad * 2),
-    height: Math.ceil(maxY - minY + pad * 2),
-  };
-}

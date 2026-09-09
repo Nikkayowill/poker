@@ -4021,13 +4021,11 @@ export async function removeStackAcresPipeTile(
 }
 
 /**
- * Spends one bag on the Crop Fields' own lattice: a brand new one-square bed
- * on bare ground, or the next square of the bed already standing at that
- * coordinate. Rule 1, in bags: the bag leaves before the outcome is known,
- * and anything that stops a square landing -- the bed is full, the bed is a
- * different tier, or (rarely) a race for a bare cell -- refunds it. See
- * `addSoilSlot` in lib/stackacres/soil.ts, the pure version of this same
- * decision, for why a purchase is one square rather than a whole bed.
+ * Spends one bag on the Crop Fields' own lattice: a brand new one-tile bed
+ * on bare ground. Rule 1, in bags: the bag leaves before the outcome is
+ * known, and anything that stops the bed landing -- it is already occupied,
+ * or (rarely) a race for a bare cell -- refunds it. See `plantSoilTile` in
+ * lib/stackacres/soil.ts, the pure version of this same decision.
  *
  * THE TIER SETS THE PRICE, and it is read from the tier table rather than
  * from the request: the client sends WHICH bag it is spending, never what
@@ -4098,22 +4096,17 @@ export async function placeStackAcresSoilTile(
     await refundSoilBag(profile.id, tier);
     throw error;
   }
-  if (outcome.kind === "created" || outcome.kind === "grown") {
+  if (outcome.kind === "created") {
     return view(profile, now);
   }
 
-  // Every other outcome spent nothing: refund the bag and tell the player
-  // which of the three ways a square can be refused actually happened,
-  // rather than the one flat "already a bed there" message a plain
-  // insert-or-conflict used to have to settle for.
+  // Every other outcome spent nothing: refund the bag. Both remaining
+  // outcomes ("occupied" and a lost race for the same bare cell) read as
+  // the same thing to the player -- there is already a bed there.
   await refundSoilBag(profile.id, tier);
-  const message =
-    outcome.kind === "full"
-      ? "This bed is already full. Till a new one."
-      : outcome.kind === "tier-mismatch"
-        ? `This bed is already ${soilTierDef(outcome.tier).label}; buy a matching bag or till new ground.`
-        : "There is already a bed there.";
-  throw new StackAcresRequestError(message, 409, { round: await snapshots(profile.id, now) });
+  throw new StackAcresRequestError("There is already a bed there.", 409, {
+    round: await snapshots(profile.id, now),
+  });
 }
 
 /**

@@ -2,8 +2,8 @@
  * The drawing shorthands every StackAcres art module paints with, and the
  * one light they all share.
  *
- * Split out of stackacres-art.ts so an area's own art module (art-paths.ts,
- * art-water.ts, art-props.ts) can import them without importing the file
+ * Split out of stackacres-art.ts so an area's own art module (art-water.ts,
+ * art-props.ts, art-zones.ts) can import them without importing the file
  * that imports it back: stackacres-art.ts spreads those modules' painter
  * records into PAINTERS, and a module cycle that reads a `const` at
  * evaluation time throws. Nothing here touches Phaser.

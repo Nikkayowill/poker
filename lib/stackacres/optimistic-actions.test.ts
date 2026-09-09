@@ -61,6 +61,9 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     merchantVisit: null,
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
+    irrigation: [],
+    soilTiles: [],
+    soilStock: {},
     nowMs: NOW.getTime(),
     ...overrides,
   };

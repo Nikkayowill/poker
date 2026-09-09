@@ -202,6 +202,14 @@ export interface StackAcresWorldProps {
    *  simply never opts into the fence hit-test at all (see
    *  StackAcresSceneCallbacks.onFenceSegmentTap's own doc). */
   onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
+  /** The pipe tool's own drag (or tap) gesture reached this tile -- see
+   *  StackAcresSceneCallbacks.onPipeLayTile's own doc for the full contract.
+   *  Bypasses `onGroundTap`'s ring menu entirely while the pipe tool is held. */
+  onPipeLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
+  /** The soil tool's own drag (or tap) gesture reached this tile -- see
+   *  StackAcresSceneCallbacks.onSoilLayTile's own doc for the full contract.
+   *  Bypasses `onGroundTap`'s ring menu entirely while the soil tool is held. */
+  onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
   /** Informational: the Wildlife Manager's own predator simulation lowered
    *  a district's livestock health. The shell's cue to persist it. */
   onLivestockDamaged?: (zone: ZoneId, health: number) => void;
@@ -313,6 +321,8 @@ export function StackAcresWorld({
   onVisitorTap,
   onSecretZoneTap,
   onFenceSegmentTap,
+  onPipeLayTile,
+  onSoilLayTile,
   onLivestockDamaged,
   sectors,
   cropFieldsUnlocked,
@@ -342,6 +352,8 @@ export function StackAcresWorld({
   const visitorTapRef = useRef(onVisitorTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
+  const pipeLayTileRef = useRef(onPipeLayTile);
+  const soilLayTileRef = useRef(onSoilLayTile);
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
   const cropFieldsLockedTapRef = useRef(onCropFieldsLockedTap);
@@ -377,6 +389,8 @@ export function StackAcresWorld({
     visitorTapRef.current = onVisitorTap;
     secretZoneTapRef.current = onSecretZoneTap;
     fenceSegmentTapRef.current = onFenceSegmentTap;
+    pipeLayTileRef.current = onPipeLayTile;
+    soilLayTileRef.current = onSoilLayTile;
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
     cropFieldsLockedTapRef.current = onCropFieldsLockedTap;
@@ -437,6 +451,8 @@ export function StackAcresWorld({
           onVisitorTap: (kind, at) => visitorTapRef.current(kind, at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
+          onPipeLayTile: (tx, ty, mode) => pipeLayTileRef.current(tx, ty, mode),
+          onSoilLayTile: (tx, ty, mode) => soilLayTileRef.current(tx, ty, mode),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
           onCropFieldsLockedTap: (at) => cropFieldsLockedTapRef.current(at),

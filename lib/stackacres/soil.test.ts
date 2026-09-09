@@ -8,15 +8,10 @@ import {
   meadowTileAt,
 } from "./zones";
 import {
-  SOIL_COL_PITCH,
   SOIL_EDGE_BAND,
-  SOIL_SLOTS_PER_TILE,
-  SOIL_SLOT_COLS,
-  SOIL_SLOT_ROWS,
   SOIL_STARTER_TILES,
   SOIL_TILE,
   SOIL_TILE_PRICE_GOLD,
-  addSoilSlot,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
@@ -26,6 +21,7 @@ import {
   onSoil,
   orderedSoilTiles,
   placeSoilTile,
+  plantSoilTile,
   removeSoilTile,
   soilCapacity,
   soilSignedDistance,
@@ -35,7 +31,6 @@ import {
   soilTileAt,
   soilTileDiamond,
   soilTileKey,
-  soilTileOwnedSlots,
   soilTileRect,
   soilTileTier,
   mergeSoilTiles,
@@ -66,12 +61,19 @@ function starterMap() {
  * restated `GROW_AREA` and silently drifted out of agreement with it.
  */
 describe("restated constants stay tied to their sources", () => {
-  it("a soil tile is four art units", () => {
-    expect(SOIL_TILE).toBe(STACKACRES_TILE * 4);
+  it("a soil tile is one art unit", () => {
+    expect(SOIL_TILE).toBe(STACKACRES_TILE);
   });
 
-  it("the stubble collar is a tile and a half of meadow", () => {
-    expect(SOIL_EDGE_BAND).toBe(MEADOW_TILE * 1.5);
+  it("the stubble collar is three quarters of a soil tile", () => {
+    expect(SOIL_EDGE_BAND).toBe(SOIL_TILE * 0.75);
+  });
+
+  it("reaches the nearest off-bed meadow tile's own centre", () => {
+    // Meadow tiles are SOIL_TILE wide too, so the nearest one off a bed has
+    // its centre exactly SOIL_TILE/2 from the bed's edge -- the band has to
+    // clear that or the collar can never fire. See SOIL_EDGE_BAND's header.
+    expect(SOIL_EDGE_BAND).toBeGreaterThan(SOIL_TILE / 2);
   });
 
   it("the collar cannot reach past one soil tile", () => {
@@ -186,9 +188,9 @@ describe("the coordinate map tracks what was placed", () => {
 /* ------------------------------------------------------------------ */
 
 describe("the starter kit", () => {
-  it("hands out exactly two tiles", () => {
+  it("hands out exactly SOIL_STARTER_TILES tiles", () => {
     expect(starterSoilTiles(MEADOW)).toHaveLength(SOIL_STARTER_TILES);
-    expect(SOIL_STARTER_TILES).toBe(2);
+    expect(SOIL_STARTER_TILES).toBe(24);
   });
 
   it("puts both of them wholly inside the Crop Fields", () => {
@@ -222,63 +224,27 @@ describe("the starter kit", () => {
 /* The slot lattice                                                    */
 /* ------------------------------------------------------------------ */
 
-describe("the slot lattice", () => {
+describe("the slot lattice -- one plant per bed", () => {
   const tile = { tx: 4, ty: 9 };
 
-  it("puts every slot inside its own tile", () => {
+  it("puts a bed's one slot dead centre of its own tile", () => {
     const r = soilTileRect(tile.tx, tile.ty);
-    for (let slot = 0; slot < SOIL_SLOTS_PER_TILE; slot += 1) {
-      const p = soilSlotPoint(tile, slot);
-      expect(p.x).toBeGreaterThan(r.x);
-      expect(p.x).toBeLessThan(r.x + r.width);
-      expect(p.y).toBeGreaterThan(r.y);
-      expect(p.y).toBeLessThan(r.y + r.height);
-    }
+    const p = soilSlotPoint(tile);
+    expect(p.x).toBeCloseTo(r.x + r.width / 2, 10);
+    expect(p.y).toBeCloseTo(r.y + r.height / 2, 10);
   });
 
-  it("gives every slot its own point", () => {
-    const seen = new Set<string>();
-    for (let slot = 0; slot < SOIL_SLOTS_PER_TILE; slot += 1) {
-      const p = soilSlotPoint(tile, slot);
-      seen.add(`${p.x},${p.y}`);
-    }
-    expect(seen.size).toBe(SOIL_SLOTS_PER_TILE);
-    expect(SOIL_SLOTS_PER_TILE).toBe(SOIL_SLOT_COLS * SOIL_SLOT_ROWS);
-  });
-
-  it("spaces columns at exactly the column pitch", () => {
-    const a = soilSlotPoint(tile, 0);
-    const b = soilSlotPoint(tile, 1);
-    expect(b.x - a.x).toBeCloseTo(SOIL_COL_PITCH, 10);
-    expect(b.y).toBeCloseTo(a.y, 10);
-  });
-
-  it("centres the columns, so an uneven fit has equal margins", () => {
-    const r = soilTileRect(tile.tx, tile.ty);
-    const first = soilSlotPoint(tile, 0);
-    const last = soilSlotPoint(tile, SOIL_SLOT_COLS - 1);
-    expect(first.x - r.x).toBeCloseTo(r.x + r.width - last.x, 10);
-  });
-
-  it("packs plants closer together than a mature plant is wide", () => {
-    // The whole point of the pitch: a ripe crop reads about 48 units across
-    // (a 12-unit painter box at 4x, see ./crop-visuals.ts), so neighbours
-    // overlap and the bed reads as dense rather than as spaced stickers.
-    expect(SOIL_COL_PITCH).toBeLessThan(48);
-  });
-
-  it("fills the first tile before starting the second", () => {
+  it("fills beds in placement order, one plant each", () => {
     const soil = starterMap();
     const tiles = orderedSoilTiles(soil);
-    const firstTileRect = soilTileRect(tiles[0].tx, tiles[0].ty);
-    for (let rank = 0; rank < SOIL_SLOTS_PER_TILE; rank += 1) {
+    for (let rank = 0; rank < tiles.length; rank += 1) {
       const p = soilSlotSpotForRank(soil, rank);
       expect(p).not.toBeNull();
-      expect(soilTileAt(p!.x, p!.y)).toEqual({ tx: tiles[0].tx, ty: tiles[0].ty });
+      expect(soilTileAt(p!.x, p!.y)).toEqual({ tx: tiles[rank].tx, ty: tiles[rank].ty });
     }
-    const spill = soilSlotSpotForRank(soil, SOIL_SLOTS_PER_TILE)!;
-    expect(soilTileAt(spill.x, spill.y)).toEqual({ tx: tiles[1].tx, ty: tiles[1].ty });
-    expect(soilTileRect(tiles[1].tx, tiles[1].ty)).not.toEqual(firstTileRect);
+    // Rank SOIL_STARTER_TILES has nowhere new to go -- it wraps back to the
+    // first bed rather than spilling past the last one.
+    expect(soilSlotSpotForRank(soil, tiles.length)).toEqual(soilSlotSpotForRank(soil, 0));
   });
 
   it("has no soil to offer when none is placed", () => {
@@ -286,10 +252,14 @@ describe("the slot lattice", () => {
     expect(soilCapacity(createSoilMap())).toBe(0);
   });
 
+  it("capacity is exactly the bed count -- one plant per bed", () => {
+    const soil = starterMap();
+    expect(soilCapacity(soil)).toBe(SOIL_STARTER_TILES);
+  });
+
   it("wraps a rank past capacity instead of losing the plant", () => {
     const soil = starterMap();
     const capacity = soilCapacity(soil);
-    expect(capacity).toBe(SOIL_STARTER_TILES * SOIL_SLOTS_PER_TILE);
     // Two plants sharing a slot is worse-looking than a bigger farm, and
     // strictly better than one that is invisible and untappable.
     expect(soilSlotSpotForRank(soil, capacity)).toEqual(soilSlotSpotForRank(soil, 0));
@@ -305,85 +275,33 @@ describe("the slot lattice", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Buying a bed one square at a time                                   */
+/* Buying a bed -- one tile, one plant                                 */
 /* ------------------------------------------------------------------ */
 
-describe("soilTileOwnedSlots", () => {
-  it("reads a missing boughtSlots as the whole bed, the same default tier gets", () => {
-    expect(soilTileOwnedSlots({ boughtSlots: undefined })).toBe(SOIL_SLOTS_PER_TILE);
-    expect(soilTileOwnedSlots({ boughtSlots: 1 })).toBe(1);
-    expect(soilTileOwnedSlots({ boughtSlots: 7 })).toBe(7);
-  });
-});
-
-describe("addSoilSlot", () => {
-  it("starts a brand new one-square bed on bare ground", () => {
+describe("plantSoilTile", () => {
+  it("plants a brand new bed on bare ground", () => {
     const soil = createSoilMap();
-    const result = addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
+    const result = plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt");
     expect(result.kind).toBe("created");
-    expect(result.kind === "created" && result.tile.boughtSlots).toBe(1);
+    expect(result.kind === "created" && result.tile.tier).toBe("dirt");
     expect(soilCapacity(soil)).toBe(1);
   });
 
-  it("grows the same bed by one square per call, up to the full lattice", () => {
+  it("refuses a second bed on an occupied coordinate, tier-blind", () => {
     const soil = createSoilMap();
-    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
-    for (let i = 2; i <= SOIL_SLOTS_PER_TILE; i += 1) {
-      const result = addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
-      expect(result.kind).toBe("grown");
-      expect(result.kind === "grown" && result.tile.boughtSlots).toBe(i);
-    }
-    expect(soilCapacity(soil)).toBe(SOIL_SLOTS_PER_TILE);
-  });
-
-  it("refuses once every square in a bed is owned", () => {
-    const soil = createSoilMap();
-    for (let i = 0; i < SOIL_SLOTS_PER_TILE; i += 1) addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
-    expect(addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({ kind: "full" });
-  });
-
-  it("refuses a tier that does not match the bed already standing there", () => {
-    const soil = createSoilMap();
-    addSoilSlot(soil, { tx: 0, ty: 0 }, "enriched");
-    expect(addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({
-      kind: "tier-mismatch",
-      tier: "enriched",
-    });
-    // The mismatch never touched the bed -- still one owned square, still
-    // its original tier.
+    plantSoilTile(soil, { tx: 0, ty: 0 }, "enriched");
+    expect(plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({ kind: "occupied" });
+    // The refusal never touched the bed standing there.
     expect(soilTileTier(soilSlotTile(soil, 0)!)).toBe("enriched");
     expect(soilCapacity(soil)).toBe(1);
   });
 
-  it("fills a partial bed's squares in reading order, matching soilSlotPoint", () => {
+  it("hands out orders in placement sequence across multiple beds", () => {
     const soil = createSoilMap();
-    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
-    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
-    addSoilSlot(soil, { tx: 2, ty: 5 }, "dirt");
-    // Three owned squares: slots 0, 1 and 2 all stand on this bed, slot 3
-    // does not exist yet -- capacity is exactly 3, not SOIL_SLOTS_PER_TILE.
-    expect(soilCapacity(soil)).toBe(3);
-    for (const slot of [0, 1, 2]) {
-      expect(soilSlotSpot(soil, slot)).toEqual(soilSlotPoint({ tx: 2, ty: 5 }, slot));
-    }
-  });
-
-  it("a rank/slot walk crosses correctly from a partial first bed into a full second one", () => {
-    const soil = createSoilMap();
-    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
-    addSoilSlot(soil, { tx: 0, ty: 0 }, "dirt");
-    const full: SoilTile = { tx: 1, ty: 0, order: 1, origin: "purchased" };
-    placeSoilTile(soil, full);
-
-    expect(soilCapacity(soil)).toBe(2 + SOIL_SLOTS_PER_TILE);
-    // Slots 0 and 1 are the two-square bed; slot 2 is the FIRST square of
-    // the full bed, not its own slot 2 -- a uniform "divide by
-    // SOIL_SLOTS_PER_TILE" would have misplaced this by landing it on the
-    // partial bed's own (nonexistent) slot 2 instead.
-    expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0 });
-    expect(soilSlotTile(soil, 1)).toMatchObject({ tx: 0, ty: 0 });
-    expect(soilSlotTile(soil, 2)).toMatchObject({ tx: 1, ty: 0 });
-    expect(soilSlotSpot(soil, 2)).toEqual(soilSlotPoint({ tx: 1, ty: 0 }, 0));
+    plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt");
+    plantSoilTile(soil, { tx: 1, ty: 0 }, "dirt");
+    expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0, order: 0 });
+    expect(soilSlotTile(soil, 1)).toMatchObject({ tx: 1, ty: 0, order: 1 });
   });
 });
 
@@ -434,7 +352,17 @@ describe("the soil signed distance", () => {
  * fails now.
  */
 describe("grass yields to placed soil", () => {
-  const soil = starterMap();
+  // ONE ISOLATED TILE, not `starterMap()`'s 24 -- with a bed now the same
+  // size as a meadow tile, 24 starter tiles clustered near the field's
+  // centre leave little to no bare ground immediately next to any one of
+  // them, so a "just outside the bed" probe would as often land on a
+  // NEIGHBOURING starter bed as on open ground. A single tile at the same
+  // centre `starterSoilTiles` picks first keeps every test below meaningful.
+  const centreTile = soilTileAt(
+    CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
+    CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
+  );
+  const soil = createSoilMap([{ ...centreTile, order: 0, origin: "starter" }]);
   const bed = orderedSoilTiles(soil)[0];
   const centre = {
     x: (bed.tx + 0.5) * SOIL_TILE,
@@ -650,30 +578,6 @@ describe("the farmhand's view of the field", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* The column count is a fencepost                                     */
-/* ------------------------------------------------------------------ */
-
-describe("columns fill the bed", () => {
-  it("fits every column that actually fits, not one fewer", () => {
-    // n columns span (n - 1) pitches. Dividing the usable width by the pitch
-    // counts gaps, so the count is that plus one -- the fencepost this got
-    // wrong once, which showed up as dead margin at both edges of every bed.
-    const usable = SOIL_TILE - 5 * 2;
-    expect((SOIL_SLOT_COLS - 1) * SOIL_COL_PITCH).toBeLessThanOrEqual(usable);
-    expect(SOIL_SLOT_COLS * SOIL_COL_PITCH).toBeGreaterThan(usable);
-  });
-
-  it("still leaves every slot inside the bed after the extra column", () => {
-    const r = soilTileRect(0, 0);
-    for (let slot = 0; slot < SOIL_SLOTS_PER_TILE; slot += 1) {
-      const p = soilSlotPoint({ tx: 0, ty: 0 }, slot);
-      expect(p.x).toBeGreaterThan(r.x);
-      expect(p.x).toBeLessThan(r.x + r.width);
-    }
-  });
-});
-
-/* ------------------------------------------------------------------ */
 /* Placing a purchased tile costs Gold, flat                          */
 /* ------------------------------------------------------------------ */
 
@@ -729,8 +633,15 @@ describe("soilTilesEqual", () => {
   });
 
   it("hands out the lowest free slot, and null once the soil is full", () => {
-    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    // Four beds, one plant each -- one slot per bed is the whole point now.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 2, ty: 0, order: 2, origin: "purchased" },
+      { tx: 3, ty: 0, order: 3, origin: "purchased" },
+    ]);
     const capacity = soilCapacity(soil);
+    expect(capacity).toBe(4);
 
     expect(nextFreeSoilSlot(soil, [])).toBe(0);
     // Lowest, not next-after-the-highest: a harvested crop frees its slot and
@@ -744,7 +655,10 @@ describe("soilTilesEqual", () => {
   // An out-of-range stored slot must block the cell it is actually DRAWN in,
   // or two crops silently stack there.
   it("normalises an out-of-range taken slot before blocking", () => {
-    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+    ]);
     const capacity = soilCapacity(soil);
     expect(nextFreeSoilSlot(soil, [capacity])).toBe(1);
   });
@@ -754,11 +668,11 @@ describe("soilTilesEqual", () => {
       { tx: 0, ty: 0, order: 0, origin: "purchased" },
       { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "enriched" },
     ]);
-    // Slot 0 is on the first bed; the first slot of the second bed is
-    // SOIL_SLOTS_PER_TILE along, and carries that bed's own tier.
+    // Slot 0 is the first bed; slot 1 is the second, and carries that bed's
+    // own tier -- one plant per bed, so the next bed is always one slot on.
     expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0 });
-    expect(soilSlotTile(soil, SOIL_SLOTS_PER_TILE)).toMatchObject({ tx: 1, ty: 0 });
-    expect(soilTileTier(soilSlotTile(soil, SOIL_SLOTS_PER_TILE)!)).toBe("enriched");
+    expect(soilSlotTile(soil, 1)).toMatchObject({ tx: 1, ty: 0 });
+    expect(soilTileTier(soilSlotTile(soil, 1)!)).toBe("enriched");
 
     // Wrapping, so selling ground never makes a crop invisible.
     const capacity = soilCapacity(soil);

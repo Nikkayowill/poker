@@ -45,7 +45,7 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
   poweredByHeader: false,
   // CRITICAL FIX: Unified allowedDevOrigins configuration into the primary NextConfig object structure.
   allowedDevOrigins: ["192.168.2.144:3000", "192.168.2.144"],

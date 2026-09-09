@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { projectedBounds } from "./iso";
 import {
   ALL_FARM_PATHS,
   FARM_PATHS,
@@ -9,8 +8,6 @@ import {
   distanceToPath,
   generatePathwaysBetweenNodes,
   nearPath,
-  pathBakePadding,
-  pathBounds,
 } from "./paths";
 import { FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
 import { YARD_DELTA } from "./yard";
@@ -243,27 +240,6 @@ describe("farm paths", () => {
     expect(FARM_ZONE.x).toBeLessThanOrEqual(lane.points[0].x - lane.width / 2 - PATH_CLEARANCE);
   });
 
-  it("bakes into a texture no bigger than 4096 px a side at 4 px per unit", () => {
-    // bakePathTexture bakes in the isometric camera's SHEARED space (see its
-    // own header), so it's the PROJECTED bbox that has to stay in budget --
-    // isoProject can grow a diagonal rect's footprint by up to sqrt(2)x, so
-    // this is a materially bigger number than the raw world box below.
-    for (const spec of FARM_PATHS) {
-      const box = pathBounds(spec);
-      const projected = projectedBounds(box);
-      expect(projected.width).toBeLessThanOrEqual(1024);
-      expect(projected.height).toBeLessThanOrEqual(1024);
-      const pad = pathBakePadding(spec);
-      // Room for the rim, its blur and the stones outside the body.
-      expect(pad).toBeGreaterThanOrEqual(spec.width / 2 + 7.5);
-      for (const p of spec.points) {
-        expect(p.x - box.x).toBeGreaterThanOrEqual(pad - 1);
-        expect(box.x + box.width - p.x).toBeGreaterThanOrEqual(pad - 1);
-        expect(p.y - box.y).toBeGreaterThanOrEqual(pad - 1);
-        expect(box.y + box.height - p.y).toBeGreaterThanOrEqual(pad - 1);
-      }
-    }
-  });
 });
 
 describe("generated Farmstead connectors", () => {

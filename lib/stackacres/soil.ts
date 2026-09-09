@@ -53,32 +53,32 @@ import type { WorldPoint, WorldRect } from "./world";
 /* ------------------------------------------------------------------ */
 
 /**
- * One soil tile's side, in world units: four of ./world.ts's art units.
+ * One soil tile's side, in world units: one of ./world.ts's art units --
+ * the same lattice ./irrigation.ts's `PIPE_TILE` and ./zones.ts's
+ * `MEADOW_TILE` already snap to.
  *
- * Projected through ./iso.ts this is a 128x64 screen diamond -- exactly 2:1,
+ * Projected through ./iso.ts this is a 32x16 screen diamond -- exactly 2:1,
  * which is not a coincidence to be re-checked but a consequence of
  * `isoProject` sending any square to a diamond twice as wide as it is tall.
  * `soilTileDiamond` below returns those corners rather than letting a call
  * site rebuild them, so there is one place the tile's screen shape is known.
  *
- * Chosen at 4 art units rather than 1 because a tile is a GRASS-EDGE and
- * WATERING unit, not a purchase unit -- see `addSoilSlot`'s own header for
- * what a purchase buys now. At one art unit every tile would be a single
- * plant's worth of grass to cut back and a single square to water, which is
- * more of both than this system needs to track; at 64 a tile holds a dozen
- * (`SOIL_SLOTS_PER_TILE`) planting squares under one grass collar and one
- * hydration answer, and reads as a garden bed even while some of its squares
- * are still unbought. It also has to stay strictly larger than
- * `SOIL_EDGE_BAND` for the 3x3 probe in `soilSignedDistance` to be
- * exhaustive -- see that function.
+ * ONE TILE, ONE PLANT, deliberately -- this USED TO be 4 art units holding a
+ * dozen planting squares under one furrowed bed (`addSoilSlot`, since
+ * deleted), bought and grown one square at a time. That indirection made
+ * dragging soil down feel like buying real estate rather than planting: a
+ * player wanted to drop a seed on the tile their thumb was over, not fill a
+ * bed's twelfth square. Matching the base lattice means a drag across N tiles
+ * plants N tiles, one placement per grid cell, the same way `place-pipe`
+ * already works one tile at a time.
  *
- * WRITTEN AS A LITERAL, not as `STACKACRES_TILE * 4`, for the cycle reason
- * on the import above. soil.test.ts holds it equal to four art units, so
- * this cannot drift the way `PEN_BLOCKS` drifted from `GROW_AREA` two files
- * over -- that one was restated by hand with no test, and the exclusion it
- * existed to provide silently stopped covering the plot.
+ * WRITTEN AS A LITERAL, not as `STACKACRES_TILE`, for the cycle reason on
+ * the import above. soil.test.ts holds the two equal, so this cannot drift
+ * the way `PEN_BLOCKS` drifted from `GROW_AREA` two files over -- that one
+ * was restated by hand with no test, and the exclusion it existed to provide
+ * silently stopped covering the plot.
  */
-export const SOIL_TILE = 64;
+export const SOIL_TILE = 16;
 
 /** A tile's place on the lattice. Integer coordinates, NOT world units. */
 export interface SoilTileCoord {
@@ -111,20 +111,6 @@ export interface SoilTile extends SoilTileCoord {
    * valid and keep meaning "a plain bed".
    */
   tier?: SoilTier;
-  /**
-   * How many of this bed's `SOIL_SLOTS_PER_TILE` planting squares have
-   * actually been bought, filled in reading order (see `soilSlotPoint`'s own
-   * col/row derivation -- slot 0 is the first square of the first furrow, so
-   * a partially-bought bed's owned squares are always its FIRST N, never a
-   * scatter). OPTIONAL, and read through `soilTileOwnedSlots` rather than
-   * directly, for the same reason `tier` is: a starter tile and every row
-   * written before per-square buying existed have no stored value at all,
-   * and both cases mean "every square in this bed is owned" -- a player who
-   * already paid for a whole bed under the old flat price keeps everything
-   * they paid for; only a bed placed AFTER this shipped starts at one owned
-   * square and grows from there.
-   */
-  boughtSlots?: number;
 }
 
 /** The tier of a bed, with the absent case resolved. Always use this rather
@@ -132,16 +118,6 @@ export interface SoilTile extends SoilTileCoord {
  *  `undefined` at a call site doing arithmetic with the multiplier. */
 export function soilTileTier(tile: Pick<SoilTile, "tier">): SoilTier {
   return toSoilTier(tile.tier);
-}
-
-/**
- * How many of a bed's planting squares are actually owned -- `SOIL_SLOTS_PER_TILE`
- * (every square) for a starter tile or any row written before per-square
- * buying existed, `tile.boughtSlots` otherwise. See that field's own doc
- * comment for why the absent case is "all of them", not zero.
- */
-export function soilTileOwnedSlots(tile: Pick<SoilTile, "boughtSlots">): number {
-  return tile.boughtSlots ?? SOIL_SLOTS_PER_TILE;
 }
 
 /**
@@ -249,63 +225,38 @@ export function nextSoilOrder(soil: SoilMap): number {
   return max + 1;
 }
 
-/** What `addSoilSlot` actually did, so the caller can tell a brand new bed
- *  from a bed that just grew by one square apart from the two ways it can
- *  refuse. */
-export type AddSoilSlotResult =
+/** What `plantSoilTile` actually did, so the caller can tell a fresh bed
+ *  from the one refusal a single tile can give now that a bed holds exactly
+ *  one plant -- there is nothing left to grow or fill. */
+export type PlantSoilTileResult =
   | { kind: "created"; tile: SoilTile }
-  | { kind: "grown"; tile: SoilTile }
-  /** Every square in this bed is already owned. */
-  | { kind: "full" }
-  /** A bed already stands here, and it is not the tier being bought -- a
-   *  bag of Hydro cannot fill a square in a Dirt bed. Carries the bed's own
-   *  tier so the caller can say which. */
-  | { kind: "tier-mismatch"; tier: SoilTier };
+  /** A bed already stands here -- created or starter, tier-blind. */
+  | { kind: "occupied" };
 
 /**
- * Buys one planting square: a brand new one-square bed if `coord` is bare
- * ground, or the next square of the bed already standing there.
+ * Buys one bed: a one-tile plot at `coord`, tier-priced
+ * (`SOIL_TILE_PRICE_GOLD`-scaled per tier), refused outright if a bed
+ * already stands there.
  *
- * ONE SQUARE PER CALL, deliberately -- the whole point of this module's
- * switch from selling a 12-square bed in one purchase to selling its
- * squares individually (each `SOIL_TILE_PRICE_GOLD`-per-tier-scaled bag now
- * buys exactly one). A bed's squares fill in reading order (`soilSlotPoint`
- * 0, 1, 2, ...), never a square the caller names, because nothing about
- * WHICH of the twelve a crop stands in is chosen today either (see
- * `soilSlotSpotForRank`'s own note on rank-hash assignment) -- there is
- * nothing yet for a player-chosen square to attach to.
- *
- * A bed's tier is fixed at whichever tier bought its first square: every
- * later square in the SAME bed must match it, both because a bed is one
- * `SoilTierDef` (one growth multiplier, one hydration answer) and because
- * mixing tiers in one row would mean this module inventing a per-square
- * tier column nothing downstream reads. `tier-mismatch` is the refusal for
- * that, and it is not a bug report -- the caller (the shop) already knows
- * the bed's tier before offering the bag, so this only fires against a body
- * that skipped the ring and named a mismatched tier directly.
+ * USED TO grow an existing bed by one more of its dozen planting squares
+ * (`addSoilSlot`, since deleted, when `SOIL_TILE` was 4 art units wide) --
+ * that whole "which square, which tier does this square already have to
+ * match" question does not exist once a bed IS one plant: the only two
+ * outcomes left are "bare ground, plant it" and "something is already
+ * standing here."
  */
-export function addSoilSlot(soil: SoilMap, coord: SoilTileCoord, tier: SoilTier): AddSoilSlotResult {
+export function plantSoilTile(soil: SoilMap, coord: SoilTileCoord, tier: SoilTier): PlantSoilTileResult {
   const key = soilTileKey(coord.tx, coord.ty);
-  const existing = soil.get(key);
-  if (!existing) {
-    const tile: SoilTile = {
-      tx: coord.tx,
-      ty: coord.ty,
-      order: nextSoilOrder(soil),
-      origin: "purchased",
-      tier,
-      boughtSlots: 1,
-    };
-    soil.set(key, tile);
-    return { kind: "created", tile };
-  }
-  const existingTier = soilTileTier(existing);
-  if (existingTier !== tier) return { kind: "tier-mismatch", tier: existingTier };
-  const owned = soilTileOwnedSlots(existing);
-  if (owned >= SOIL_SLOTS_PER_TILE) return { kind: "full" };
-  const grown: SoilTile = { ...existing, boughtSlots: owned + 1 };
-  soil.set(key, grown);
-  return { kind: "grown", tile: grown };
+  if (soil.has(key)) return { kind: "occupied" };
+  const tile: SoilTile = {
+    tx: coord.tx,
+    ty: coord.ty,
+    order: nextSoilOrder(soil),
+    origin: "purchased",
+    tier,
+  };
+  soil.set(key, tile);
+  return { kind: "created", tile };
 }
 
 /**
@@ -342,20 +293,26 @@ export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): 
 /* The starter kit                                                     */
 /* ------------------------------------------------------------------ */
 
-/** How many tiles a new farm is given. Every tile after these is bought. */
-export const SOIL_STARTER_TILES = 2;
+/**
+ * How many tiles a new farm is given. Every tile after these is bought.
+ *
+ * Raised from 2 to 24 the same day a bed shrank from 4 art units (holding up
+ * to a dozen planting squares) down to 1 (holding exactly one plant): the
+ * old two starter BEDS were free 2x12 = 24 planting squares, and this keeps
+ * that same free starting capacity in the new one-tile-per-plant terms
+ * rather than quietly handing new farms 1/12th of what they used to open
+ * with.
+ */
+export const SOIL_STARTER_TILES = 24;
 
 /**
- * Gold cost of one PLAIN purchased planting square -- `SOIL_DEFAULT_TIER`'s
- * own price, restated here because this constant predates tiers (and predates
- * per-square buying) and is what a plain square has always cost since the
- * ladder was repriced from a whole bed down to one square (2,000 / 12 -> 167,
- * see ./soil-tiers.ts's own note on that division). soil-tiers.test.ts holds
- * the two equal, so repricing the plain square in one place cannot drift from
- * the other.
+ * Gold cost of one PLAIN purchased bed -- `SOIL_DEFAULT_TIER`'s own price,
+ * restated here because this constant predates tiers. soil-tiers.test.ts
+ * holds the two equal, so repricing the plain bed in one place cannot drift
+ * from the other.
  *
- * Flat per square -- no ladder, no scaling with how many a player already
- * owns. A bed still does not gate how many crops can be grown (see the file
+ * Flat per bed -- no ladder, no scaling with how many a player already owns.
+ * A bed still does not gate how many crops can be grown (see the file
  * header), so there is no economy reason for a rising price the way land or
  * capacity have one. What a bed is no longer is purely cosmetic: since
  * ./soil-tiers.ts, the TIER a bed is bought at can shorten a crop's cycle and
@@ -409,144 +366,30 @@ export function starterSoilTiles(area: WorldRect): SoilTile[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* The slot lattice inside a tile                                      */
+/* The slot lattice -- one plant per bed                               */
 /* ------------------------------------------------------------------ */
 
 /**
- * Column pitch in world units: how far apart two plants stand along world +x.
+ * A bed's world point: dead centre, with no jitter at all.
  *
- * Deliberately far NARROWER than a plant. A mature Cash Crop is drawn at 4x a
- * 12-unit painter box (./crop-visuals.ts), so it reads about 48 units wide,
- * and at a 14-unit pitch each plant overlaps most of its neighbour. That
- * overlap is the whole point -- it is what makes a bed read as a dense row
- * rather than a line of separate stickers -- and it costs nothing to resolve,
- * because `isoDepthAt` already sorts the row front-to-back correctly.
+ * USED TO take a `slot` argument and place up to a dozen plants across a
+ * furrowed bed (`SOIL_COL_PITCH`/`SOIL_FURROW_ROWS`/`soilFurrowOffsets`,
+ * since deleted) -- gone along with the rest of the furrow lattice now that
+ * a bed IS one plant. The scatter this originally replaced rolled a random
+ * point per crop, which is what made a field read as spilled rather than
+ * planted; standing dead centre keeps that same "a row is exactly a row"
+ * property with nothing left to lay out.
  */
-export const SOIL_COL_PITCH = 14;
-
-/**
- * How many furrows a tile is tilled into, and therefore how many rows of
- * plants stand on it. Rows sit ON the furrow lines rather than between them,
- * which is why the row pitch is derived from this rather than picked: a
- * hand-picked pitch drifts off the furrows the moment either number moves.
- */
-export const SOIL_FURROW_ROWS = 3;
-
-/** World units between rows -- `SOIL_TILE / (SOIL_FURROW_ROWS + 1)`, so the
- *  three furrows land at 16, 32 and 48 across a 64-unit tile with a margin
- *  at each end rather than a furrow flush against the rim. */
-export const SOIL_ROW_PITCH = SOIL_TILE / (SOIL_FURROW_ROWS + 1);
-
-/** How far in from the rim a plant may stand, so a stem never sits on the
- *  tile's own stroked edge. */
-export const SOIL_SLOT_INSET = 5;
-
-export const SOIL_SLOT_ROWS = SOIL_FURROW_ROWS;
-
-/**
- * How many plants fit across a bed.
- *
- * `n` columns span `(n - 1)` pitches, NOT `n` -- the first plant stands at the
- * start of the run rather than a pitch into it. Dividing the usable width by
- * the pitch counts the GAPS, so the column count is that plus one; getting
- * this wrong shipped beds a full column short of what they hold, with the
- * missing column showing up as dead margin at both edges.
- */
-export const SOIL_SLOT_COLS = Math.max(
-  1,
-  Math.floor((SOIL_TILE - SOIL_SLOT_INSET * 2) / SOIL_COL_PITCH) + 1,
-);
-export const SOIL_SLOTS_PER_TILE = SOIL_SLOT_ROWS * SOIL_SLOT_COLS;
-
-/** Where the furrow lines run, as offsets from the tile's own origin. Shared
- *  by the slot lattice and by whatever draws the furrows, so a plant cannot
- *  end up standing between two of the lines it is meant to be standing on. */
-export function soilFurrowOffsets(): number[] {
-  return Array.from({ length: SOIL_FURROW_ROWS }, (_, r) => (r + 1) * SOIL_ROW_PITCH);
+export function soilSlotPoint(tile: SoilTileCoord): WorldPoint {
+  return soilTileCentre(tile.tx, tile.ty);
 }
 
-/**
- * Which furrow row fills `n`th, centre-out rather than top-down.
- *
- * A bed's first crop is slot 0, and slot 0 used to always land in furrow row
- * 0 -- the row nearest one edge of the tile, not the tile's middle. A single
- * crop standing alone in an otherwise-empty bed is the common case (most
- * beds hold one or two plants, not a full dozen), and top-down fill made that
- * common case read as "planted in the corner" rather than "planted in the
- * middle of the patch". Filling the centre furrow first fixes exactly that
- * case without touching the lattice itself: a bed with every square filled
- * still ends up with one plant standing on each of the `SOIL_SLOT_ROWS`
- * furrow lines, just filled in a different order.
- */
-function soilRowFillOrder(): readonly number[] {
-  const order: number[] = [];
-  const mid = Math.floor(SOIL_SLOT_ROWS / 2);
-  order.push(mid);
-  for (let d = 1; order.length < SOIL_SLOT_ROWS; d += 1) {
-    if (mid + d < SOIL_SLOT_ROWS) order.push(mid + d);
-    if (order.length < SOIL_SLOT_ROWS && mid - d >= 0) order.push(mid - d);
-  }
-  return order;
-}
-
-/**
- * A slot's world point: strictly on the lattice, with no jitter at all.
- *
- * The scatter this replaced rolled a random point per crop, and that is what
- * made a field read as spilled rather than planted. A row that is exactly a
- * row is the ask. Jitter would have to come back as a separate, deliberate
- * decision with a constant of its own -- it is not silently set to zero here.
- *
- * Columns are centred across the tile's usable width rather than started at
- * the inset, so a bed that does not divide evenly has equal margins instead
- * of a gap all down one side. Rows fill centre-out (`soilRowFillOrder`)
- * rather than top-down, so the first plant in a bed stands in the middle of
- * it rather than against one edge.
- */
-export function soilSlotPoint(tile: SoilTileCoord, slot: number): WorldPoint {
-  const r = soilTileRect(tile.tx, tile.ty);
-  const col = slot % SOIL_SLOT_COLS;
-  const fillRow = Math.floor(slot / SOIL_SLOT_COLS) % SOIL_SLOT_ROWS;
-  const row = soilRowFillOrder()[fillRow];
-  const span = (SOIL_SLOT_COLS - 1) * SOIL_COL_PITCH;
-  return {
-    x: r.x + SOIL_TILE / 2 - span / 2 + col * SOIL_COL_PITCH,
-    y: r.y + soilFurrowOffsets()[row],
-  };
-}
-
-/** How many plants the placed soil can hold -- the sum of what each bed
- *  actually owns (`soilTileOwnedSlots`), NOT `soil.size * SOIL_SLOTS_PER_TILE`.
- *  Those agree for every bed bought whole (a starter tile, or any row from
- *  before per-square buying existed), which is why this used to be that one
- *  multiply -- but a bed bought one square at a time contributes only the
- *  squares it has, not the twelve it could eventually hold. */
+/** How many plants the placed soil can hold -- one per bed, tier-blind.
+ *  USED TO sum each bed's own `soilTileOwnedSlots` (a bed could hold up to
+ *  a dozen, bought one square at a time); every bed now holds exactly one,
+ *  so this is just the bed count. */
 export function soilCapacity(soil: SoilMap): number {
-  let total = 0;
-  for (const tile of soil.values()) total += soilTileOwnedSlots(tile);
-  return total;
-}
-
-/**
- * Where global slot index `index` (already wrapped into `[0, capacity)`)
- * actually lands: which bed, and which of that bed's OWN owned squares.
- *
- * A cumulative walk rather than `Math.floor(index / SOIL_SLOTS_PER_TILE)`,
- * because that division only finds the right bed while every bed contributes
- * exactly `SOIL_SLOTS_PER_TILE` -- true for a bed bought whole, false the
- * moment one bed in the list owns fewer squares than another. Walking the
- * ordered beds and subtracting each one's own owned count is the one way to
- * find "which bed, which local square" that still works once beds disagree
- * on how many squares they have.
- */
-function locateSoilSlot(tiles: readonly SoilTile[], index: number): { tile: SoilTile; local: number } | null {
-  let remaining = index;
-  for (const tile of tiles) {
-    const owned = soilTileOwnedSlots(tile);
-    if (remaining < owned) return { tile, local: remaining };
-    remaining -= owned;
-  }
-  return null;
+  return soil.size;
 }
 
 /**
@@ -567,14 +410,13 @@ function locateSoilSlot(tiles: readonly SoilTile[], index: number): { tile: Soil
  *
  * Ranks past capacity wrap rather than vanish. A crop with nowhere to stand
  * would otherwise be invisible and untappable, which is strictly worse than
- * two plants sharing a slot until the player buys more ground.
+ * two plants sharing a bed until the player buys more ground.
  */
 export function soilSlotSpotForRank(soil: SoilMap, rank: number): WorldPoint | null {
   const capacity = soilCapacity(soil);
   if (capacity <= 0) return null;
   const wrapped = ((rank % capacity) + capacity) % capacity;
-  const found = locateSoilSlot(orderedSoilTiles(soil), wrapped);
-  return found && soilSlotPoint(found.tile, found.local);
+  return soilSlotPoint(orderedSoilTiles(soil)[wrapped]);
 }
 
 /**
@@ -605,8 +447,7 @@ export function soilSlotSpot(soil: SoilMap, slot: number): WorldPoint | null {
   const capacity = soilCapacity(soil);
   if (capacity <= 0) return null;
   const wrapped = ((slot % capacity) + capacity) % capacity;
-  const found = locateSoilSlot(orderedSoilTiles(soil), wrapped);
-  return found && soilSlotPoint(found.tile, found.local);
+  return soilSlotPoint(orderedSoilTiles(soil)[wrapped]);
 }
 
 /** Which tile a slot index falls on, or null when there is no soil. Same
@@ -615,7 +456,7 @@ export function soilSlotTile(soil: SoilMap, slot: number): SoilTile | null {
   const capacity = soilCapacity(soil);
   if (capacity <= 0) return null;
   const wrapped = ((slot % capacity) + capacity) % capacity;
-  return locateSoilSlot(orderedSoilTiles(soil), wrapped)?.tile ?? null;
+  return orderedSoilTiles(soil)[wrapped] ?? null;
 }
 
 /**
@@ -652,14 +493,19 @@ export function nextFreeSoilSlot(soil: SoilMap, taken: Iterable<number>): number
  * MUST stay under `SOIL_TILE`, and soil.test.ts holds it there. The probe in
  * `soilSignedDistance` only looks at the 3x3 block of tile coordinates around
  * the point, which is exhaustive exactly while the band cannot reach past one
- * tile -- widen this past 64 and the SDF starts missing tiles two coordinates
- * away and grass grows in a ring it should have cut.
+ * tile -- widen this past `SOIL_TILE` and the SDF starts missing tiles two
+ * coordinates away and grass grows in a ring it should have cut.
  *
- * A literal, and held to `MEADOW_TILE * 1.5` by soil.test.ts, for the same
- * cycle reason as `SOIL_TILE`: ./zones.ts (which owns `MEADOW_TILE`) imports
- * this module, so the constant cannot be read from there.
+ * Three quarters of a tile, not half. A meadow tile is `SOIL_TILE` wide too
+ * (both lattices are the same one art unit now), so every off-bed meadow
+ * tile's CENTRE -- what `meadowBaseDensity` actually measures against, see
+ * ./zones.ts -- sits at a distance that is an odd multiple of `SOIL_TILE / 2`
+ * from the bed's edge: 8, 24, 40, and so on. A band of exactly half a tile
+ * would make `d < SOIL_EDGE_BAND` false for the nearest one at distance 8,
+ * and the collar would never fire at all. Three quarters (12) clears that
+ * nearest centre while staying under `SOIL_TILE` for the reason above it.
  */
-export const SOIL_EDGE_BAND = 24;
+export const SOIL_EDGE_BAND = SOIL_TILE * 0.75;
 
 /**
  * Signed distance from a world point to the placed soil: negative on a tile,

@@ -24,16 +24,33 @@ WHAT IT MAKES, and what each one has to satisfy:
                    actually stand on. Furrows that disagree with the rows are
                    worse than no furrows.
 
-  water-tile.png   256x256, SEAMLESS. The pond's surface grain, and ONLY the
-                   grain. The pond is a hand-drawn ellipse with a sand ring,
-                   a gradient, a bank shadow and glints (art-water.ts), and
-                   the pack's water is a square-diamond COASTLINE set -- laying
-                   those over an ellipse would replace a smooth shore with a
-                   stair-stepped one, which is worse art, not newer art. So
-                   the shore stays drawn and this supplies what the drawn
-                   version has none of: actual water texture under the
-                   gradient, in the same lattice and at the same density as
-                   the lawn it sits in.
+  terrain-atlas.png 512x512, an 8x8 grid of the pack's 64x64 frames, in the
+                   order lib/stackacres/terrain.ts's `terrainFrame` expects
+                   (ATLAS_ROWS below is that order). Four material pairs,
+                   twelve transition frames each (straight, curve_in and
+                   curve_out at the four rotations) plus four plain plates of
+                   the pair's higher material: grass-beach, beach-shallow,
+                   shallow-deep, and grass-dirt -- the grass-beach set again
+                   with its sand tinted to the farm's road tan, so the dirt
+                   roads and the barn yard are cut from the same cloth as the
+                   shore. The scene draws these 1:1 into per-chunk canvases
+                   (art-terrain.ts), so nothing here is resampled.
+
+                   The grass-bearing frames have their soil rim erased: in
+                   the pack every diamond carries a dark 1-2 px rim along its
+                   two lower edges, meant to be hidden by the next row's
+                   blades. In the lawn it is (see `lattice`); a coast tile is
+                   drawn OVER the lawn with no row of its own below it, so the
+                   rim would stand as a dark zigzag along every grass edge.
+                   Only the grass side is touched -- sand has no rim.
+
+  deep-tile.png    512x512, SEAMLESS. Open sea: the scene lays it as a grid
+                   of plain images east of the coast tiles (art-terrain.ts),
+                   128 screen units each at the lawn's density, so it is
+                   made big to keep that grid short. The pack ships
+                   `ts_deep0` as one 640x320 diamond rather than a 64x64
+                   plate, so four 64x32 sub-diamonds are cut from its middle
+                   and stamped on the lawn's lattice like the grass is.
 
 SOURCES. Both packs are Kayo's own supply, unzipped next to this script:
 
@@ -288,17 +305,121 @@ def build_soil_bed() -> Image.Image:
     return out
 
 
-def build_water(size: int = 256) -> Image.Image:
-    """The pond's surface, seamless, at the lawn's own lattice density.
+ROTATIONS = ("45", "135", "225", "315")
 
-    Both depths in the mix. The pack ships `ts_deep0` as a 640x320 strip of
-    animation frames rather than as one plate -- the pond does not animate its
-    fill, so the first frame is taken and the rest ignored.
+# The road tan the dirt frames are tinted to. `tint` keeps the beach plate's
+# own light and dark and only moves the hue, the same as the soil bed; this
+# lands the plate's mean sand at about (212, 167, 104), a shade warmer and
+# darker than the shore so a road and a beach never read as the same ground.
+DIRT_TOP = (236, 186, 116)
+
+
+def diamond_mask() -> Image.Image:
+    """The 64x32 base diamond of a frame, at BASE_TOP, as an L mask."""
+    mask = Image.new("L", (TILE_W, 64), 0)
+    ImageDraw.Draw(mask).polygon(
+        [(TILE_W // 2, BASE_TOP), (TILE_W - 1, BASE_TOP + TILE_H // 2), (TILE_W // 2, BASE_TOP + TILE_H), (0, BASE_TOP + TILE_H // 2)],
+        fill=255,
+    )
+    return mask
+
+
+def deep_plates() -> list[Image.Image]:
+    """Four 64x64 frames cut from the middle of the pack's one big deep
+    diamond, each masked to the standard base diamond so it stamps exactly
+    like every other plate."""
+    big = plate("ts_deep0")
+    mask = diamond_mask()
+    out = []
+    for x0, y0 in ((224, 112), (288, 144), (352, 128), (256, 160)):
+        frame = Image.new("RGBA", (TILE_W, 64), (0, 0, 0, 0))
+        frame.paste(big.crop((x0, y0, x0 + TILE_W, y0 + TILE_H)), (0, BASE_TOP))
+        frame.putalpha(mask)
+        out.append(frame)
+    return out
+
+
+def erase_grass_rim(frame: Image.Image) -> Image.Image:
+    """Clears the pack's dark soil rim from a grass-bearing frame.
+
+    The rim sits two to four pixels above each lower edge of the diamond and
+    is the one dark, red-over-green colour in the frame: the grass itself is
+    green-dominant and the sand is bright. So the test is by colour, inside a
+    six-pixel band above the two lower edges, which leaves a sand edge (no
+    rim, bright) exactly as it was.
     """
-    deep = plate("ts_deep0").crop((0, 0, TILE_W, 64))
-    stamps = [plate("ts_shallow0"), deep, deep]
-    field = lattice(size, stamps, seed=20260909, scale=GRASS_SCALE)
-    bed = Image.new("RGBA", (size, size), (58, 116, 138, 255))
+    out = frame.copy()
+    px = out.load()
+    for x in range(TILE_W):
+        # y of the lower edge at this column: the SW edge on the left half,
+        # the SE edge on the right, both rising toward the tips.
+        edge = BASE_TOP + TILE_H // 2 + (x // 2 if x < TILE_W // 2 else (TILE_W - 1 - x) // 2)
+        for y in range(max(0, edge - 6), min(64, edge + 1)):
+            r, g, b, a = px[x, y]
+            if a and r > g and r < 110 and b < 70:
+                px[x, y] = (0, 0, 0, 0)
+    return out
+
+
+def tint_sand(frame: Image.Image, top: tuple[int, int, int]) -> Image.Image:
+    """`tint`, applied to the sand pixels only: anything bright and
+    red-over-green. The grass half of a grass-beach frame is left alone."""
+    out = frame.copy()
+    px = out.load()
+    for y in range(out.height):
+        for x in range(out.width):
+            r, g, b, a = px[x, y]
+            if a == 0 or r <= g or r < 120:
+                continue
+            k = (r * 299 + g * 587 + b * 114) / 1000 / 200.0
+            px[x, y] = (min(255, int(top[0] * k)), min(255, int(top[1] * k)), min(255, int(top[2] * k)), a)
+    return out
+
+
+def transition_frames(pair: str) -> list[Image.Image]:
+    """The pair's twelve transition frames, in atlas order: straight at the
+    four rotations, then curve_in, then curve_out."""
+    return [
+        Image.open(SRC / pair / shape / rot / "0.png").convert("RGBA")
+        for shape in ("straight", "curve_in", "curve_out")
+        for rot in ROTATIONS
+    ]
+
+
+def base_frames(name: str) -> list[Image.Image]:
+    return [plate(name, rot) for rot in ROTATIONS]
+
+
+def build_atlas() -> Image.Image:
+    """The 8x8 atlas. Pair p takes rows 2p and 2p+1: its straight and
+    curve_in frames fill row 2p, its curve_out frames the first half of row
+    2p+1 and the four plain plates of its higher material the second half.
+    lib/stackacres/terrain.ts indexes into this by the same arithmetic."""
+    grass_beach = [erase_grass_rim(f) for f in transition_frames("ts_grass-beach0")]
+    rows: list[list[Image.Image]] = [
+        grass_beach,
+        base_frames("ts_beach0"),
+        transition_frames("ts_beach-shallow0"),
+        base_frames("ts_shallow0"),
+        transition_frames("ts_shallow-deep0"),
+        deep_plates(),
+        [tint_sand(f, DIRT_TOP) for f in grass_beach],
+        [tint_sand(f, DIRT_TOP) for f in base_frames("ts_beach0")],
+    ]
+    atlas = Image.new("RGBA", (TILE_W * 8, 64 * 8), (0, 0, 0, 0))
+    for pair in range(4):
+        frames = rows[pair * 2] + rows[pair * 2 + 1]
+        assert len(frames) == 16, f"pair {pair} has {len(frames)} frames"
+        for i, frame in enumerate(frames):
+            assert frame.size == (TILE_W, 64), f"pair {pair} frame {i} is {frame.size}"
+            atlas.alpha_composite(frame, ((i % 8) * TILE_W, (pair * 2 + i // 8) * 64))
+    return atlas
+
+
+def build_deep(size: int = 512) -> Image.Image:
+    """Open sea, seamless, at the lawn's own lattice density."""
+    field = lattice(size, deep_plates(), seed=20260909, scale=GRASS_SCALE)
+    bed = Image.new("RGBA", (size, size), (48, 104, 148, 255))
     bed.alpha_composite(field)
     return bed
 
@@ -311,9 +432,12 @@ def main() -> None:
     bed = build_soil_bed()
     bed.save(OUT / "soil-bed.png")
     print(f"soil-bed.png {bed.size}")
-    water = build_water()
-    water.save(OUT / "water-tile.png")
-    print(f"water-tile.png {water.size}")
+    atlas = build_atlas()
+    atlas.save(OUT / "terrain-atlas.png")
+    print(f"terrain-atlas.png {atlas.size}")
+    deep = build_deep()
+    deep.save(OUT / "deep-tile.png")
+    print(f"deep-tile.png {deep.size}")
 
 
 if __name__ == "__main__":

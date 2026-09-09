@@ -1622,26 +1622,6 @@ export async function listStackAcresWheatPlots(profileId: string): Promise<Store
   return (data as WheatPlotDbRow[]).map(wheatPlotFromRow);
 }
 
-export async function getStackAcresWheatPlot(
-  profileId: string,
-  plotId: string,
-): Promise<StoredWheatPlot | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const found = memoryWheatPlots.get(plotId);
-    return found && found.profileId === profileId ? { ...found } : null;
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_wheat_plots")
-    .select(WHEAT_PLOT_COLUMNS)
-    .eq("id", plotId)
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not load that plot: ${error.message}`);
-  return data ? wheatPlotFromRow(data as WheatPlotDbRow) : null;
-}
-
 /** Sows one wheat plot. The database's own `homestead_wheat_plots_cap`
  *  trigger is the real cap guard (advisory-locked, same shape as
  *  `homestead_units_enforce_stock_shape`); the service checks the cap ahead
@@ -1904,26 +1884,6 @@ export async function listStackAcresMachines(profileId: string): Promise<StoredM
     .order("created_at", { ascending: true });
   if (error) throw new Error(`Could not load your machines: ${error.message}`);
   return (data as MachineDbRow[]).map(machineFromRow);
-}
-
-export async function getStackAcresMachine(
-  profileId: string,
-  machineId: string,
-): Promise<StoredMachine | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const found = memoryMachines.get(machineId);
-    return found && found.profileId === profileId ? { ...found } : null;
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_machines")
-    .select(MACHINE_COLUMNS)
-    .eq("id", machineId)
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not load that machine: ${error.message}`);
-  return data ? machineFromRow(data as MachineDbRow) : null;
 }
 
 /** Places a new machine, idle. The database's own `homestead_machines_cap`

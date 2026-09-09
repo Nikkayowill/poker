@@ -1,7 +1,6 @@
 import "server-only";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { hasStackAcresAccess } from "./profile-store";
-import { readSessionToken } from "./session";
 
 /**
  * Who may reach the StackAcres while it is on the floor but not open.
@@ -36,18 +35,6 @@ import { readSessionToken } from "./session";
 export async function tokenHasStackAcresAccess(token: string | null): Promise<boolean> {
   if (!token) return false;
   return hasStackAcresAccess(token);
-}
-
-/**
- * The same check for a route holding a NextRequest.
- *
- * Reads the session cookie WITHOUT minting one (readSessionToken, never
- * readOrCreateSessionToken): a fresh token has no profile behind it, so
- * minting here would both fail the check and leave a stranger holding an
- * identity they never asked for.
- */
-export async function requestHasStackAcresAccess(request: NextRequest): Promise<boolean> {
-  return tokenHasStackAcresAccess(readSessionToken(request));
 }
 
 /**

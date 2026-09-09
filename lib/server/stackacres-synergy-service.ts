@@ -11,7 +11,6 @@ import {
 } from "@/lib/stackacres/synergy-perks";
 import {
   activateStackAcresSessionPerk,
-  clearStackAcresSessionPerks,
   getActiveStackAcresSynergies,
   listOwnedStackAcresPerks,
   unlockStackAcresPerk,
@@ -78,11 +77,6 @@ export async function listUnlockedSynergyArchetypes(profileId: string): Promise<
     if (archetype) archetypes.push(archetype);
   }
   return archetypes;
-}
-
-/** Ends the current session's loadout early (sign-out, leaving the table). */
-export async function clearSynergyLoadout(profileId: string): Promise<void> {
-  await clearStackAcresSessionPerks(profileId);
 }
 
 /** Which archetypes are currently slotted (owned AND activated) for this

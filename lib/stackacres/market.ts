@@ -110,7 +110,3 @@ export interface StackAcresShelfItem {
   seedCost: number;
 }
 
-export function shelfItem(stock: StackAcresStock): StackAcresShelfItem {
-  const def = STACKACRES_CATALOGUE[stock];
-  return { stock, label: def.label, price: stackacresStockPrice(stock), seedCost: def.seedCost };
-}

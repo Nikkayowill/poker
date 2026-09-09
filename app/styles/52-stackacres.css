@@ -549,11 +549,15 @@
   flex: none;
 }
 
-/* The screen shown while the Phaser scene boots: Ray's cutout (reused from
-   stackacres-ray-welcome.tsx, not new art) swaying gently over the lawn,
-   with the "Walking the fences…" line, a skeleton-shimmer bar standing in
-   for real progress, and a rotating tip pinned to the bottom. Fills
-   .sa-field exactly, same as the old text-only version.
+/* The screen shown while the Phaser scene boots: just the wordmark, breathing
+   gently, over a solid dark ground -- no farm art, no flavor text, nothing
+   that hints at the layout underneath. `z-index` here is deliberate and
+   matters: everything else in .sa-field (toolbelt, signpost, camera buttons,
+   the district panel tab) carries its own z-index up to 5 for stacking
+   *among themselves*, and without a higher one here those later DOM siblings
+   painted on TOP of this overlay -- the very "you can see all the elements
+   while it's loading" bug this screen exists to prevent. Fills .sa-field
+   exactly, same box the old Ray-cutout version filled.
    `bootPhase` (stackacres-farm.tsx, useMinHoldFade) holds this up for a
    minimum beat and fades it out rather than swapping straight to the world
    the instant onReady fires -- onReady lands before Phaser's own render
@@ -562,14 +566,13 @@
 .sa-loading {
   position: absolute;
   inset: 0;
+  z-index: 10;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   padding: 24px 20px;
   margin: 0;
-  background: var(--sa-grass);
+  background: var(--sa-choc-rim);
   opacity: 1;
   transition: opacity 320ms ease;
   pointer-events: none;
@@ -578,54 +581,20 @@
   opacity: 0;
 }
 
-.sa-loading-ray-img {
-  width: min(30vw, 20vh, 150px);
+.sa-loading-logo {
+  width: min(46vw, 30vh, 240px);
   height: auto;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25));
-  animation: sa-loading-sway 3600ms ease-in-out infinite;
-  transform-origin: 50% 100%;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, .4));
+  animation: sa-loading-breathe 1800ms ease-in-out infinite;
 }
-@keyframes sa-loading-sway {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-5px) rotate(-1deg); }
-}
-
-/* The one line of text on this surface with nothing behind it -- painted
-   straight onto the lawn, so it is the one place the chocolate ring earns
-   its keep. Everything else here reads off a board, and a ring on text that
-   already has a board under it is noise. */
-.sa-loading-text {
-  margin: 0;
-  color: var(--sa-cream);
-  font-size: 19px;
-  font-weight: 800;
-  text-shadow: var(--sa-text-ring);
-}
-
-.sa-loading-track {
-  width: min(60vw, 220px);
-  height: 6px;
-  border-radius: 3px;
-}
-
-/* Pinned to the bottom of the overlay rather than grouped with the sway/
-   text/track above it -- `margin-top: auto` pushes it down the flex column
-   without needing the rest of the overlay to know it's there. */
-.sa-loading-tip {
-  margin-top: auto;
-  margin-bottom: 0;
-  max-width: min(80vw, 360px);
-  color: var(--sa-cream);
-  opacity: .78;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-  text-shadow: var(--sa-text-ring);
+@keyframes sa-loading-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .6; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sa-loading { transition: none; }
-  .sa-loading-ray-img { animation: none; }
+  .sa-loading-logo { animation: none; }
 }
 
 /* ---- the pressable block ---------------------------------------------
@@ -2552,13 +2521,6 @@
 }
 
 .sa-sheet-note strong { color: var(--sa-ink); font-weight: 800; }
-
-.sa-hint {
-  margin: 0;
-  color: var(--sa-ink-soft);
-  font-size: 14px;
-  font-weight: 700;
-}
 
 /* ---- the primary key -------------------------------------------------- */
 

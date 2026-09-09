@@ -13,7 +13,25 @@ import { readSupabasePublicKey, readSupabaseUrl } from "@/lib/supabase/public-en
  * request, a session would silently go stale for any player who only ever
  * renders Server Components.
  */
+/*
+ * Vercel assigns every project a stable *.vercel.app alias in addition to the
+ * per-deployment hash domains (poker-<hash>-<team>.vercel.app, used to review
+ * preview builds) and the real custom domain. Nobody legitimately visits this
+ * one -- players use www.stackchips.app -- but something (most likely an
+ * external uptime monitor pointed at it instead of the real domain) has been
+ * hitting its root path every 60 seconds around the clock, each one paying
+ * for a full page render plus the Supabase auth round-trip below. Short-
+ * circuit it before either cost is paid. This is scoped to this exact
+ * hostname on purpose -- it must never match the per-deployment preview
+ * domains, which still need the real app for review.
+ */
+const UNUSED_PROJECT_ALIAS_HOST = "poker-navy-six.vercel.app";
+
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.hostname === UNUSED_PROJECT_ALIAS_HOST) {
+    return new NextResponse("ok", { status: 200, headers: { "Cache-Control": "no-store" } });
+  }
+
   if (request.nextUrl.pathname.startsWith("/api/") && isCrossOriginMutation(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed." },

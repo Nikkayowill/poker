@@ -184,21 +184,30 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
   // crops moved here too), but nothing SPAWNS in this particular rect --
   // `zoneScenery`'s own scatter still excludes `farmstead` outright.
   farmstead: yardRect(170, 200, 160, 160),
-  // The Hen Coops' own district. Same 128 box as before the 2026-09-08
-  // restructure, offset by the same 52 units from its (moved) district
-  // corner -- only the district's position changed, not its own layout.
-  henhaven: { x: -648, y: -472, width: 128, height: 128 },
-  oxfields: { x: -644, y: 340, width: 192, height: 192 },
-  wallow: { x: 328, y: -62, width: 128, height: 128 },
-  // The four wild districts. Nothing reads these until the pass that builds
-  // each place: they are permanently locked (see ./sectors.ts's `wild` state),
-  // and a locked district paints `sectorOvergrowth` instead of a grow area.
-  // They exist so the record stays total, and they are centred so that whoever
-  // builds one has a sane box to start from rather than a zero rect.
-  townsquare: { x: -620, y: 688, width: 80, height: 80 },
-  mine: { x: -630, y: -698, width: 80, height: 80 },
-  coast: { x: 370, y: -304, width: 80, height: 80 },
-  oak: { x: 594, y: -40, width: 80, height: 80 },
+  // THE PACKED GRID (2026-09-09, Kayo's Grid Bench layout). Every pen below
+  // sits on a 32-unit cell lattice anchored on the Crop Fields' own beds
+  // (`CROP_FIELD_BEDS`, x -192..192, y -192..192, the bench's 12x12 block),
+  // and each one's edge IS the edge of a 32-wide road (./paths.ts): the
+  // north road runs y -288..-256, the south road y 256..288, the middle road
+  // x -288..-256 and the east road x 256..288. No district has open ground
+  // between its pen and the road any more; ./zones.ts's `bounds` are each
+  // pen plus 16, so neighbours meet on a road's centreline.
+  //
+  // Hen Haven, on the north road over the beds' west third. Same 128 pen.
+  henhaven: { x: -192, y: -416, width: 128, height: 128 },
+  // Cattle Pasture, on the south road under the beds' east half. Same 192.
+  oxfields: { x: 0, y: 288, width: 192, height: 192 },
+  // The Fold, on the east road level with the beds' top. Same 128.
+  wallow: { x: 288, y: -256, width: 128, height: 128 },
+  // The four wild districts, at the bench's 3x3 cells (96 square, up from
+  // an 80 box that sat on no lattice). Nothing reads these until the pass
+  // that builds each place: they are permanently locked (see ./sectors.ts's
+  // `wild` state), and a locked district paints `sectorOvergrowth` instead
+  // of a grow area. They exist so the record stays total.
+  townsquare: { x: -192, y: 288, width: 96, height: 96 },
+  mine: { x: -400, y: -384, width: 96, height: 96 },
+  coast: { x: 288, y: -384, width: 96, height: 96 },
+  oak: { x: 288, y: -96, width: 96, height: 96 },
 };
 
 /**

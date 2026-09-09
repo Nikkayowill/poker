@@ -441,7 +441,7 @@ export interface OvergrowthItem {
  * been panning across all along, which would make the sector invisible rather
  * than inviting.
  */
-const OVERGROWTH_SPACING = 30;
+export const OVERGROWTH_SPACING = 30;
 
 /** The mix. Trees carry the silhouette, scrub fills between them, and the
  *  ground layer is what stops the gaps reading as mown lawn. */

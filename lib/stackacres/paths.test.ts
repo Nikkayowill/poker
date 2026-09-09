@@ -14,7 +14,7 @@ import {
 } from "./paths";
 import { FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
 import { YARD_DELTA } from "./yard";
-import { ZONE_IDS, zoneAt } from "./zones";
+import { STACKACRES_ZONES, ZONE_IDS } from "./zones";
 
 /** Every district's own grow area -- the plots are gone; each district has
  *  one fixed rect where its units stand, and that is what a path must stay
@@ -38,13 +38,17 @@ const byKey = (key: string) => {
 };
 
 describe("farm paths", () => {
-  it("has the hub-and-spoke network and the yard's three, with unique keys, 12..48 wide", () => {
-    // No ring any more (see the module header): eight district spurs --
-    // three off the yard hub, three more one tier out, two off the Fold --
-    // plus the yard's own lane, road and dock spur.
+  it("has the grid roads and the yard's three, with unique keys, 12..48 wide", () => {
+    // The Grid Bench layout (see the module header): five grid roads, the
+    // two long ones split at the middle road, the short hop into the Crop
+    // Fields, plus the yard's own lane, road and dock spur. No spurs into
+    // districts: every pen sits on a road.
     const keys = FARM_PATHS.map((path) => path.key);
     expect(keys.filter((k) => k.startsWith("ring"))).toHaveLength(0);
-    expect(keys.filter((k) => k.endsWith("Spur"))).toHaveLength(9);
+    expect(keys.filter((k) => k.endsWith("Spur"))).toEqual(["dockSpur", "meadowSpur"]);
+    for (const road of ["midRoad", "northRoadEast", "northRoadWest", "southRoadEast", "southRoadWest", "eastRoad", "foldRoad"]) {
+      expect(keys).toContain(road);
+    }
     expect(FARM_PATHS.length).toBe(11);
     expect(new Set(FARM_PATHS.map((p) => p.key)).size).toBe(FARM_PATHS.length);
     for (const spec of FARM_PATHS) {
@@ -80,11 +84,13 @@ describe("farm paths", () => {
     }
   });
 
-  it("keeps every path's body and rim clear of the plot square", () => {
-    // A vertex test misses a leg crossing a cell; walk each segment instead
-    // and keep the swept strip (half the width plus a rim's worth) out.
+  it("keeps every path's body out of every pen", () => {
+    // A vertex test misses a leg crossing a pen; walk each segment instead
+    // and keep the swept body out. On the grid a pen's edge IS a road's
+    // edge, so the margin is the body alone (less a unit of slack), not the
+    // body plus a rim the way it was when roads kept their distance.
     for (const spec of FARM_PATHS) {
-      const margin = spec.width / 2 + 3;
+      const margin = spec.width / 2 - 1;
       for (let i = 1; i < spec.points.length; i += 1) {
         const a = spec.points[i - 1];
         const b = spec.points[i];
@@ -131,17 +137,26 @@ describe("farm paths", () => {
     expect(nearPath(off.x, off.y)).toBe(false);
   });
 
-  it("is off every grow area's corners and centre", () => {
+  it("is off every grow area's centre, and no road body reaches a pen's corner", () => {
+    // Pens sit flush on roads now, so a corner may be inside a rim's
+    // clearance; it may not be inside a body.
     for (const zone of ZONE_IDS) {
       const area = growAreaBounds(zone);
-      const points = [
+      const centre = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+      expect(nearPath(centre.x, centre.y), `${zone} centre`).toBe(false);
+      const corners = [
         { x: area.x, y: area.y },
         { x: area.x + area.width, y: area.y },
         { x: area.x, y: area.y + area.height },
         { x: area.x + area.width, y: area.y + area.height },
-        { x: area.x + area.width / 2, y: area.y + area.height / 2 },
       ];
-      for (const p of points) expect(nearPath(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
+      for (const p of corners) {
+        for (const spec of FARM_PATHS) {
+          expect(distanceToPath(p.x, p.y, spec), `${zone} corner ${p.x},${p.y} in ${spec.key}`).toBeGreaterThanOrEqual(
+            spec.width / 2 - 0.5,
+          );
+        }
+      }
     }
   });
 
@@ -179,35 +194,35 @@ describe("farm paths", () => {
         FARM_PATHS.findIndex((path) => path.key === "lane"),
       );
     }
-    // And the yard road actually reaches the hub: its last vertex IS
-    // `meadowSpur`'s first (and `henhavenSpur`'s, and `oxfieldsSpur`'s), so
-    // all four read as one junction rather than three near misses.
+    // And the yard road actually reaches the grid: its last vertex sits on
+    // the middle road's own centreline, and the hop into the Crop Fields
+    // starts on that centreline too.
+    const midRoad = byKey("midRoad");
     const last = yardRoad.points[yardRoad.points.length - 1];
-    expect(last).toEqual(byKey("meadowSpur").points[0]);
-    expect(last).toEqual(byKey("henhavenSpur").points[0]);
-    expect(last).toEqual(byKey("oxfieldsSpur").points[0]);
+    expect(distanceToPath(last.x, last.y, midRoad)).toBe(0);
+    const hop = byKey("meadowSpur").points[0];
+    expect(distanceToPath(hop.x, hop.y, midRoad)).toBe(0);
   });
 
-  it("lands every outer district's own spur inside it, forked off a path already in the network", () => {
-    // Every outer district gets exactly one spur ending inside it now that
-    // there is no ring for a leg to arrive by instead -- unlike the ring
-    // this replaced, nothing gets a free ride.
-    const spurs = FARM_PATHS.filter((path) => path.key.endsWith("Spur") && path.key !== "dockSpur");
-    expect(spurs.length).toBe(8);
-    for (const spur of spurs) {
-      const start = spur.points[0];
-      // The fork sits inside some OTHER path's own body already in the
-      // network -- yardRoad for the first tier, another Spur for the rest.
-      const onNetwork = FARM_PATHS.filter((path) => path.key !== spur.key).some(
-        (other) => distanceToPath(start.x, start.y, other) < other.width / 2,
-      );
-      expect(onNetwork, `${spur.key} does not fork off the network`).toBe(true);
-      // `meadowSpur` keeps its pre-merge name (see the Crop Fields' own
-      // header, ./zones.ts), but the ground it lands on resolves to
-      // "farmstead" now -- the district it was folded into.
-      const zone = spur.key === "meadowSpur" ? "farmstead" : spur.key.replace(/Spur$/, "");
-      const last = spur.points[spur.points.length - 1];
-      expect(zoneAt(last.x, last.y), `${spur.key} does not land in ${zone}`).toBe(zone);
+  it("lays every grid road off one already laid, and runs one along every outer district's pen", () => {
+    // No spurs into districts on the grid: a pen's edge is a road's edge.
+    // Every grid road after `midRoad` starts inside an earlier road's body
+    // (so the junction repaint covers the fork), and every outer district's
+    // gate sits a few units off some road.
+    const grid = FARM_PATHS.filter((path) => path.tier === "track" && path.key !== "midRoad");
+    expect(grid.length).toBe(7);
+    for (const road of grid) {
+      const start = road.points[0];
+      const earlier = FARM_PATHS.slice(0, FARM_PATHS.indexOf(road));
+      const onNetwork = earlier.some((other) => distanceToPath(start.x, start.y, other) < other.width / 2);
+      expect(onNetwork, `${road.key} does not fork off the network`).toBe(true);
+    }
+    const widest = Math.max(...FARM_PATHS.map((path) => path.width));
+    for (const zone of ZONE_IDS) {
+      if (zone === "farmstead") continue;
+      const gate = STACKACRES_ZONES[zone].approach;
+      const nearest = Math.min(...FARM_PATHS.map((path) => distanceToPath(gate.x, gate.y, path)));
+      expect(nearest, `${zone}'s gate is off the roads`).toBeLessThanOrEqual(widest / 2 + 8);
     }
   });
 
@@ -276,17 +291,22 @@ describe("generated Farmstead connectors", () => {
     }
   });
 
-  it("stays clear of every zone's grow area, the same clearance every hand-authored path holds to", () => {
+  it("stays out of every zone's grow area, the same rule every hand-authored path holds to", () => {
     for (const zone of ZONE_IDS) {
       const area = growAreaBounds(zone);
-      const points = [
+      const centre = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+      expect(nearPath(centre.x, centre.y), `${zone} centre`).toBe(false);
+      const corners = [
         { x: area.x, y: area.y },
         { x: area.x + area.width, y: area.y },
         { x: area.x, y: area.y + area.height },
         { x: area.x + area.width, y: area.y + area.height },
-        { x: area.x + area.width / 2, y: area.y + area.height / 2 },
       ];
-      for (const p of points) expect(nearPath(p.x, p.y), `${zone} at ${p.x},${p.y}`).toBe(false);
+      for (const p of corners) {
+        for (const spur of FARMSTEAD_PATHWAYS) {
+          expect(distanceToPath(p.x, p.y, spur), `${zone} corner in ${spur.key}`).toBeGreaterThanOrEqual(spur.width / 2);
+        }
+      }
     }
     // And the wheat field itself, which is not one of ZONE_IDS' grow areas.
     const wheatCentre = { x: WHEAT_FIELD.x + WHEAT_FIELD.width / 2, y: WHEAT_FIELD.y + WHEAT_FIELD.height / 2 };

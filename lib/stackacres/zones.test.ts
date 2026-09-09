@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FARM_PATHS, nearPath } from "./paths";
+import { FARM_PATHS, distanceToPath, nearPath } from "./paths";
 import { STACKACRES_TOOLS } from "./tools";
 import { POND, POND_ZONE } from "./water";
 import {
@@ -76,13 +76,22 @@ describe("the district map", () => {
     });
   });
 
-  it("leaves woodland between every district, so one is arrived at rather than blended into", () => {
-    const home = STACKACRES_ZONES.farmstead.bounds;
+  it("packs every district onto the grid: no gap wider than one road to the farm or a neighbour", () => {
+    // The Grid Bench layout: a district is its pen plus 16, neighbours meet
+    // on a road's centreline, and nothing sits a walk apart any more. The
+    // farm's own rect is 16 off the roads (its edge is a road's edge), so
+    // the nearest other block is never more than a road width away.
+    const gapBetween = (a: { x: number; y: number; width: number; height: number }, b: typeof a) => {
+      const gapX = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width));
+      const gapY = Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height));
+      return Math.max(gapX, gapY);
+    };
     for (const id of OUTER_ZONE_IDS) {
       const b = STACKACRES_ZONES[id].bounds;
-      const gapX = Math.max(home.x - (b.x + b.width), b.x - (home.x + home.width));
-      const gapY = Math.max(home.y - (b.y + b.height), b.y - (home.y + home.height));
-      expect(Math.max(gapX, gapY), `${id} is flush against the farm`).toBeGreaterThan(20);
+      const others = ZONE_IDS.filter((other) => other !== id).map((other) => STACKACRES_ZONES[other].bounds);
+      const nearest = Math.min(...others.map((other) => gapBetween(b, other)));
+      expect(nearest, `${id} overlaps something`).toBeGreaterThanOrEqual(0);
+      expect(nearest, `${id} is a walk from everything`).toBeLessThanOrEqual(32);
     }
   });
 
@@ -131,26 +140,21 @@ describe("the district map", () => {
 });
 
 describe("roads reach the districts", () => {
-  it("ends a path inside every outer district", () => {
-    const arrivals = new Set<ZoneId>();
-    for (const spec of FARM_PATHS) {
-      const last = spec.points[spec.points.length - 1];
-      const id = zoneAt(last.x, last.y);
-      if (id !== null && id !== "farmstead") arrivals.add(id);
-    }
-    for (const id of OUTER_ZONE_IDS) {
-      expect(arrivals.has(id), `no road ends in ${id}`).toBe(true);
-    }
-  });
-
-  it("puts every gate on or beside the road that serves it", () => {
-    // A gate the road does not reach is a waypoint, not an entrance.
+  it("runs a road along every outer district's pen, with the gate on it", () => {
+    // On the grid there are no spurs INTO a district: a pen's edge is a
+    // road's edge, and the gate is a point just inside the pen on that
+    // side. A gate more than a few units off a road body is a waypoint,
+    // not an entrance.
     for (const id of OUTER_ZONE_IDS) {
       const gate = STACKACRES_ZONES[id].approach;
-      const onRoad = FARM_PATHS.some((spec) =>
-        spec.points.some((p) => Math.hypot(p.x - gate.x, p.y - gate.y) < 90),
-      );
-      expect(onRoad, `${id}'s gate is nowhere near a road`).toBe(true);
+      const pen = growAreaBounds(id);
+      expect(gate.x).toBeGreaterThanOrEqual(pen.x);
+      expect(gate.x).toBeLessThanOrEqual(pen.x + pen.width);
+      expect(gate.y).toBeGreaterThanOrEqual(pen.y);
+      expect(gate.y).toBeLessThanOrEqual(pen.y + pen.height);
+      const nearest = Math.min(...FARM_PATHS.map((spec) => distanceToPath(gate.x, gate.y, spec)));
+      const widest = Math.max(...FARM_PATHS.map((spec) => spec.width));
+      expect(nearest, `${id}'s gate is nowhere near a road`).toBeLessThanOrEqual(widest / 2 + 8);
     }
   });
 });

@@ -44,6 +44,14 @@
  * responsiveness the pipe brush already has, instead of waiting on a round
  * trip before the next tile in the stroke can even be evaluated.
  *
+ * The processing track (`sow-wheat`, `place-machine`, `process`, `divert`)
+ * is predicted too: each is plain arithmetic on the shelf, a plot list or a
+ * machine row, and the Workshop sheet is a scrim over the map, so a press
+ * that waited on a round trip would have nothing else on screen to hide
+ * behind. `work` stays unpredicted (a Mill's double-output roll), and so do
+ * `seal-vat`/`collect-vat` -- the vat's own sheet awaits the answer and says
+ * so in its own note, the same way the town board does.
+ *
  * The patch is shaped as a subset of the component's own response type, so
  * the component applies it through the identical `applyResponse` path a real
  * response takes -- see stackacres-farm.tsx.
@@ -85,6 +93,27 @@ import {
 } from "./units";
 import { priceForNextPurchase, type MidnightMerchantSnapshot } from "./midnight-merchant";
 import type { Action } from "./farm-actions";
+import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { STACKACRES_YIELDS } from "./items";
+import { isMachineRawItem } from "./machine-items";
+import {
+  MACHINE_CAP,
+  MACHINE_CATALOGUE,
+  canStartMachine,
+  type StackAcresMachineSnapshot,
+} from "./machines";
+import { applyRecipeOptimistically } from "./optimistic-recipe";
+import { RECIPE_CATALOGUE, isInstantRecipe } from "./recipes";
+import {
+  WHEAT_DURATION_MS,
+  WHEAT_PLOT_CAP,
+  WHEAT_SEED_COST,
+  type StackAcresWheatPlotSnapshot,
+} from "./wheat-plot";
+
+/** A machine as the view carries it: the snapshot plus the server's own
+ *  "could start now" read of the shelf. */
+export type MachineView = StackAcresMachineSnapshot & { canStart: boolean };
 
 /** A read-only view of the farm the pure predictors compute against. Mirrors
  *  the component's live state; `goldBalance`/`unlimitedGold` come straight
@@ -124,6 +153,12 @@ export interface FarmPredictContext {
    *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
    *  why a bag and Gold are never the same debit. */
   soilStock: SoilStock;
+  /** The processing track, straight off the component's own `processing`
+   *  state. Always patched together with `contract` (see `processingPatch`)
+   *  because the component applies the four as one unit. */
+  inventory: StackAcresInventory;
+  wheatPlots: readonly StackAcresWheatPlotSnapshot[];
+  machines: readonly MachineView[];
   nowMs: number;
 }
 
@@ -148,6 +183,9 @@ export interface FarmStatePatch {
   soilTiles?: SoilTile[];
   soilStock?: SoilStock;
   contract?: StackAcresContractRow | null;
+  inventory?: StackAcresInventory;
+  wheatPlots?: StackAcresWheatPlotSnapshot[];
+  machines?: MachineView[];
   secrets?: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations?: Record<SecretItemId, boolean>;
   synergy?: {
@@ -176,6 +214,29 @@ let optimisticUnitSeq = 0;
 function newOptimisticUnitId(): string {
   optimisticUnitSeq += 1;
   return `sa-optimistic-${optimisticUnitSeq}`;
+}
+
+/**
+ * The processing track as one patch. The component only ever sets the four
+ * together (stackacres-farm.tsx's `applyResponse`: "all four move together
+ * or not at all", and a missing `contract` there reads as null), so a
+ * predictor that changed the shelf alone would silently drop the open
+ * contract. Every processing predictor goes through this.
+ */
+function processingPatch(
+  ctx: FarmPredictContext,
+  next: { inventory?: StackAcresInventory; wheatPlots?: StackAcresWheatPlotSnapshot[]; machines?: MachineView[] },
+): Pick<FarmStatePatch, "contract" | "inventory" | "wheatPlots" | "machines"> {
+  const inventory = next.inventory ?? ctx.inventory;
+  const machines = next.machines ?? [...ctx.machines];
+  return {
+    contract: ctx.contract,
+    inventory,
+    wheatPlots: next.wheatPlots ?? [...ctx.wheatPlots],
+    // `canStart` is the server's read of the shelf; re-derive it here so a
+    // Dairy key lights up the instant the milk it needs lands.
+    machines: machines.map((machine) => ({ ...machine, canStart: canStartMachine(inventory, machine.kind) })),
+  };
 }
 
 /**
@@ -423,6 +484,86 @@ export function predictStackAcresAction(
       // one (see soil.ts's own `SOIL_TILE_PRICE_GOLD` doc comment).
       return { soilTiles: ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty) };
     }
+    case "sow-wheat": {
+      if (ctx.wheatPlots.length >= WHEAT_PLOT_CAP) return null;
+      const profile = debited(ctx, WHEAT_SEED_COST);
+      if (!profile) return null;
+      const plot: StackAcresWheatPlotSnapshot = {
+        id: newOptimisticUnitId(),
+        startedAt: new Date(ctx.nowMs).toISOString(),
+        readyAt: new Date(ctx.nowMs + WHEAT_DURATION_MS).toISOString(),
+        ready: false,
+        progress: 0,
+      };
+      return { profile, ...processingPatch(ctx, { wheatPlots: [...ctx.wheatPlots, plot] }) };
+    }
+    case "place-machine": {
+      // One of each kind, and a flat cap -- the same two refusals the server
+      // makes (`homestead_machines_one_per_kind`, `MACHINE_CAP`).
+      if (ctx.machines.some((machine) => machine.kind === body.kind)) return null;
+      if (ctx.machines.length >= MACHINE_CAP) return null;
+      const profile = debited(ctx, MACHINE_CATALOGUE[body.kind].placeCost);
+      if (!profile) return null;
+      const machine: MachineView = {
+        id: newOptimisticUnitId(),
+        kind: body.kind,
+        status: "idle",
+        startedAt: null,
+        readyAt: null,
+        recipeId: null,
+        unitsProcessing: 0,
+        done: false,
+        progress: null,
+        canStart: false,
+      };
+      return { profile, ...processingPatch(ctx, { machines: [...ctx.machines, machine] }) };
+    }
+    case "process": {
+      const def = RECIPE_CATALOGUE[body.recipe];
+      const machine = ctx.machines.find((candidate) => candidate.kind === def.machine);
+      if (!machine || machine.status !== "idle") return null;
+      if (isInstantRecipe(body.recipe)) {
+        // One transaction on the server, one arithmetic step here.
+        const applied = applyRecipeOptimistically(ctx.inventory, body.recipe);
+        if (!applied.ok) return null;
+        return processingPatch(ctx, { inventory: applied.next });
+      }
+      // A queued run: the input leaves now, the output arrives when `work`
+      // collects it. The row itself becomes the queue entry, snapshotting
+      // the recipe and yield exactly as `startStackAcresMachine` does.
+      const inventory = removeFromInventory(ctx.inventory, def.input.item, def.input.quantity);
+      if (!inventory) return null;
+      const working: MachineView = {
+        ...machine,
+        status: "working",
+        startedAt: new Date(ctx.nowMs).toISOString(),
+        readyAt: new Date(ctx.nowMs + def.processingMs).toISOString(),
+        recipeId: body.recipe,
+        unitsProcessing: def.output.quantity,
+        done: false,
+        progress: 0,
+      };
+      return processingPatch(ctx, {
+        inventory,
+        machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
+      });
+    }
+    case "divert": {
+      const unit = ctx.units.find((candidate) => candidate.id === body.unitId);
+      if (!unit || unit.state !== "ready") return null;
+      const produce = STACKACRES_YIELDS[unit.stock];
+      if (!isMachineRawItem(produce.item)) return null;
+      // Same row treatment as `collect`: a permanent unit restarts, a
+      // one-cycle sowing is gone. Muck is a dice roll left to the server.
+      const kept = withoutStackAcresUnit(ctx.units, unit.id);
+      const units = unit.permanent ? [...kept, optimisticallyRestartedUnit(unit, ctx.nowMs)] : kept;
+      return {
+        units,
+        ...processingPatch(ctx, {
+          inventory: addToInventory(ctx.inventory, produce.item, unit.yieldQuantity),
+        }),
+      };
+    }
     case "fulfill-contract": {
       if (!ctx.contract || ctx.contract.status !== "open") return null;
       if (!ctx.profile) return null;
@@ -436,11 +577,10 @@ export function predictStackAcresAction(
       };
     }
     // The rest are dice rolls this browser cannot honestly guess (`collect`'s
-    // own Gold, `tap-secret-zone`, `request-contract`, `work`), or move
-    // nothing the client keeps state for (`build-greenhouse`'s materials
-    // aside from the flag itself, blueprints, prestige, soil tiles -- the
-    // scene mutates its own soil map directly off the response instead, see
-    // stackacres-farm.tsx). See this module's own header.
+    // own Gold, `tap-secret-zone`, `request-contract`, `work`), await their
+    // own sheet's answer (`seal-vat`, `collect-vat`), or move nothing the
+    // client keeps state for (`build-greenhouse`'s materials aside from the
+    // flag itself, blueprints, prestige). See this module's own header.
     default:
       return null;
   }

@@ -1043,10 +1043,9 @@
    tool pick, so it must not read as something to press. */
 .sa-tool-hint {
   position: absolute;
-  left: 50%;
+  left: 14px;
   bottom: 14px;
-  transform: translateX(-50%);
-  max-width: min(46%, 460px);
+  max-width: min(30%, 380px);
   margin: 0;
   padding: 6px 16px;
   border-radius: var(--sa-r-chip);
@@ -1055,7 +1054,7 @@
   color: var(--sa-cream);
   font-size: 14px;
   font-weight: 700;
-  text-align: center;
+  text-align: left;
   text-wrap: balance;
   pointer-events: none;
 }

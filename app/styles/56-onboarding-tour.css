@@ -1,0 +1,73 @@
+/*
+ * Overrides driver.js's own stylesheet (imported once, in
+ * lib/onboarding/use-onboarding-tour.ts) so the spotlight popover reads as
+ * StackChips chrome instead of driver.js's default white card. Chrome rule:
+ * no hairline borders -- --accent-edge/--accent-glow stand in for one, same
+ * as everywhere else in app/styles.
+ *
+ * Class names are driver.js's public, documented ones as of 1.3.x. If a
+ * driver.js upgrade changes them, this file goes quiet rather than erroring
+ * -- worth a visual check against the popover after any driver.js bump.
+ */
+
+.driver-popover {
+  background: var(--neon-ground-lift, #211141);
+  color: var(--ink);
+  border-radius: 14px;
+  box-shadow: var(--accent-edge), var(--accent-glow), 0 18px 40px -18px rgba(0, 0, 0, 0.75);
+  padding: 16px 18px;
+  max-width: 300px;
+  font-family: inherit;
+}
+
+.driver-popover-title {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.driver-popover-description {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.driver-popover-progress-text {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.driver-popover-footer {
+  border-top: none;
+  margin-top: 12px;
+  padding-top: 0;
+}
+
+.driver-popover-footer button {
+  background: var(--neon-purple, #9b3ff0);
+  color: var(--ink);
+  text-shadow: none;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.driver-popover-footer .driver-popover-next-btn {
+  background: var(--neon-yellow, #ffd23f);
+  color: var(--neon-ground, #150a2b);
+}
+
+.driver-popover-close-btn {
+  color: var(--muted);
+}
+
+.driver-popover-arrow {
+  border-color: var(--neon-ground-lift, #211141);
+}
+
+/* driver.js draws the dimmed backdrop as an SVG path; overlayColor is set
+   from the hook (matches --neon-ground) rather than overridden here, since
+   it's a fill attribute the library sets inline. */

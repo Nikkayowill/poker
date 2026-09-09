@@ -97,6 +97,7 @@ function publicProfile(profile: StoredProfile): PlayerProfile {
     isRegistered: profile.userId !== null,
     stackacresAccess: profile.stackacresAccess,
     adminBadge: profile.adminBadge,
+    onboardingTourCompletedAt: profile.onboardingTourCompletedAt,
   };
 }
 
@@ -135,6 +136,7 @@ function defaultProfile(displayName = "Player"): StoredProfile {
     stackacresAccess: false,
     adminBadge: false,
     lastBackstopAt: null,
+    onboardingTourCompletedAt: null,
   };
 }
 
@@ -159,6 +161,9 @@ function fromRow(row: Record<string, unknown>): StoredProfile {
     stackacresAccess: Boolean(row.homestead_access),
     adminBadge: Boolean(row.admin_badge),
     lastBackstopAt: row.last_backstop_at ? String(row.last_backstop_at) : null,
+    onboardingTourCompletedAt: row.onboarding_tour_completed_at
+      ? String(row.onboarding_tour_completed_at)
+      : null,
   };
 }
 
@@ -1059,6 +1064,35 @@ export async function creditGoldByProfile(
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
   return publicProfile(fromRow(row));
+}
+
+/**
+ * Marks the spotlight onboarding tour done for this session's profile, so it
+ * never fires again on any device. Token-keyed rather than profile-id-keyed:
+ * unlike the setProfileFlag callers below (admin-granted), this is the
+ * player finishing (or skipping) their own tour, the same "caller and
+ * profile are always the same person" shape spendGold/recordSeenIp use.
+ *
+ * Idempotent and never overwrites an earlier completion: a stale client
+ * finishing the tour a second time (a slow tab, a retried request) must not
+ * push the timestamp forward and re-open any future "seen before date X"
+ * check a v2 tour might add.
+ */
+export async function completeOnboardingTour(token: string): Promise<void> {
+  const supabase = adminClient();
+  const now = new Date().toISOString();
+  if (!supabase) {
+    const current = memoryProfiles.get(token);
+    if (!current) return;
+    if (current.onboardingTourCompletedAt) return;
+    memoryProfiles.set(token, { ...current, onboardingTourCompletedAt: now, updatedAt: now });
+    return;
+  }
+  await supabase
+    .from("profiles")
+    .update({ onboarding_tour_completed_at: now, updated_at: now })
+    .eq("session_token", token)
+    .is("onboarding_tour_completed_at", null);
 }
 
 /** Flags (or unflags) a profile so spendGold never actually deducts from it, for gifting a specific person free play. */

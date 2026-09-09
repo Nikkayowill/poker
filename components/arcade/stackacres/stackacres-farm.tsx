@@ -20,6 +20,7 @@ import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
+import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { useTightLandscape } from "@/components/use-tight-landscape";
 import { useAppShell } from "@/components/shell/app-shell";
 import {
@@ -180,6 +181,7 @@ import {
   type MidnightMerchantRenderSnapshot,
   type MidnightMerchantSnapshot,
 } from "@/lib/stackacres/midnight-merchant";
+import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
@@ -869,6 +871,11 @@ export function StackAcresFarm() {
   // quick-nav (stackacres-destinations.tsx) and hands the map the screen it
   // used to cover (`viewExpansion`).
   const compactNav = useTightLandscape();
+  // Same <=600px breakpoint the mobile lobby shell already turns on at. Below
+  // it the HUD's secondary badges (Feed, Synergy, Prestige, Forge, music)
+  // move behind StackAcresHudOverflow's own "More" button instead of all six
+  // pills fighting a phone's width at once.
+  const phoneHud = usePhoneViewport();
   /**
    * No `useArcadeSound` here any more.
    *
@@ -2805,6 +2812,54 @@ export function StackAcresFarm() {
     ];
   })();
 
+  // Everything in .sa-hud besides Gold and the upkeep-owed pill -- see the
+  // header's own comment for why this is one fragment referenced from either
+  // the inline row (desktop) or StackAcresHudOverflow's drawer (phoneHud),
+  // never both.
+  const secondaryHud = (
+    <>
+      <span className="sa-feed" title="Feed servings">
+        <StackAcresIcon name="ico-feed" size={16} />
+        <strong>{feed}</strong>
+        <span className="sa-sr">feed servings</span>
+      </span>
+      <SynergyOverlay
+        unlocked={synergyUnlocked}
+        active={synergyActive}
+        busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
+        onUnlock={onUnlockSynergyPerk}
+        onActivate={onActivateSynergyPerk}
+      />
+      {/* The Prestige Reset Valve's own entry point -- a standing badge
+          rather than a buried menu item, since the multiplier it shows is
+          worth seeing at a glance every session, not only when a player
+          goes looking for the valve itself. */}
+      <button
+        type="button"
+        className="sa-prestige-badge"
+        onClick={() => { panelSound(); setShowPrestige(true); }}
+        title="Prestige Reset Valve"
+      >
+        <RotateCcw size={13} aria-hidden="true" />
+        <strong>{prestige.multiplier.toFixed(4)}x</strong>
+      </button>
+      {/* The Sunlight Forge's own entry point -- same standing-badge posture
+          as the Prestige valve above it, since a forged enchantment is also
+          a permanent, session-spanning upgrade worth a glance rather than a
+          buried menu item. */}
+      <button
+        type="button"
+        className="sa-prestige-badge"
+        onClick={() => { panelSound(); setShowForge(true); }}
+        title="The Sunlight Forge"
+      >
+        <Wand2 size={13} aria-hidden="true" />
+        <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
+      </button>
+      <StackAcresMusicToggle />
+    </>
+  );
+
   return (
     <main className="duel-shell ante-shell sa-shell">
       <header className="floor-bar">
@@ -2816,13 +2871,16 @@ export function StackAcresFarm() {
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps
-            its usual place at the end of the row. */}
+            its usual place at the end of the row.
+
+            Below the phoneHud breakpoint, everything past Gold/upkeep moves
+            into StackAcresHudOverflow's own "More" drawer instead of laying
+            out inline -- six-plus pills was the actual complaint, not any one
+            pill's size. `secondaryHud` is declared once and referenced from
+            whichever branch is live, never both at once, so nothing here
+            mounts twice. */}
         <div className="sa-hud">
-          <span className="sa-feed" title="Feed servings">
-            <StackAcresIcon name="ico-feed" size={16} />
-            <strong>{feed}</strong>
-            <span className="sa-sr">feed servings</span>
-          </span>
+          {!phoneHud && secondaryHud}
           {/* Only when something is actually owed. A land fee of zero is the
               normal state for a small farm, and a permanent "0" in the HUD
               would be a bill where there is no bill. */}
@@ -2844,40 +2902,7 @@ export function StackAcresFarm() {
                 fully funded account. */}
             <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
           </span>
-          <SynergyOverlay
-            unlocked={synergyUnlocked}
-            active={synergyActive}
-            busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
-            onUnlock={onUnlockSynergyPerk}
-            onActivate={onActivateSynergyPerk}
-          />
-          {/* The Prestige Reset Valve's own entry point -- a standing badge
-              rather than a buried menu item, since the multiplier it shows
-              is worth seeing at a glance every session, not only when a
-              player goes looking for the valve itself. */}
-          <button
-            type="button"
-            className="sa-prestige-badge"
-            onClick={() => { panelSound(); setShowPrestige(true); }}
-            title="Prestige Reset Valve"
-          >
-            <RotateCcw size={13} aria-hidden="true" />
-            <strong>{prestige.multiplier.toFixed(4)}x</strong>
-          </button>
-          {/* The Sunlight Forge's own entry point -- same standing-badge
-              posture as the Prestige valve above it, since a forged
-              enchantment is also a permanent, session-spanning upgrade
-              worth a glance rather than a buried menu item. */}
-          <button
-            type="button"
-            className="sa-prestige-badge"
-            onClick={() => { panelSound(); setShowForge(true); }}
-            title="The Sunlight Forge"
-          >
-            <Wand2 size={13} aria-hidden="true" />
-            <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
-          </button>
-          <StackAcresMusicToggle />
+          {phoneHud && <StackAcresHudOverflow>{secondaryHud}</StackAcresHudOverflow>}
         </div>
       </header>
 

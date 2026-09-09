@@ -483,6 +483,36 @@
     box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
 }
 
+/* StackAcresHudOverflow's "More" drawer -- phoneHud widths only (see
+   stackacres-farm.tsx's own comment). The trigger reuses .sa-music-toggle's
+   plain 38px icon square rather than inventing a second one; .is-open only
+   adds the same pressed look .sa-prestige-badge:active already uses, so the
+   button visibly stays down while its own popover is up. */
+.sa-hud-more {
+  position: relative;
+}
+
+.sa-hud-more-btn.is-open {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+.sa-hud-more-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  padding: 8px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop);
+}
+
 /* Screen-reader-only. There is no shared utility for this in the codebase --
    every component inlines the pattern -- so it is inlined here too. */
 .sa-sr {
@@ -1217,7 +1247,7 @@
 .sa-radial-btn .sa-ico { width: 26px; height: 26px; }
 
 .sa-radial-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.15;
   text-align: center;
@@ -1229,7 +1259,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
   color: var(--sa-choc);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { STACKACRES_CATALOGUE, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { BuyOption } from "@/lib/stackacres/district-panel";
@@ -83,6 +83,16 @@ const ARC_END = -40;
  *  put half the menu off the map. */
 const HEADROOM = 118;
 
+/** The same accounting as HEADROOM, measured sideways instead of up: the
+ *  radius at the arc's widest (cos of 40 degrees) plus half a button's width,
+ *  rounded up with a little air. Below this on one side, .sa-field's own
+ *  `overflow: hidden` (52-stackacres.css) does not squeeze that side's
+ *  buttons, it clips them off entirely -- gone, not reachable, not just
+ *  cramped. Fixed by a nudge rather than a flip: the arc is already
+ *  symmetric left-right, so mirroring it (the way HEADROOM's `flip` does
+ *  vertically) would change nothing. */
+const SIDE_ROOM = 108;
+
 export interface StackAcresRadialMenuProps {
   /** Where the finger landed, in pixels inside .sa-field. */
   at: { x: number; y: number };
@@ -135,6 +145,18 @@ export function StackAcresRadialMenu({
   // reads as a bolted-on afterthought.
   const slotCount = options.length + extraActions.length;
 
+  // Read fresh on every open rather than threaded down from stackacres-farm.tsx
+  // as a prop: openPanel() (the ring's own "Manage" handoff) always closes the
+  // ring first, so .sa-field is never narrowed by the district drawer while
+  // this is up, and window.innerWidth is exactly .sa-field's own width, edge
+  // to edge, for as long as that holds.
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // Past this many, the fixed 100-degree arc has no room left between
   // buttons and they render almost fully stacked on each other -- the exact
   // failure the Long Meadow hit at 22 crops (see StackAcresSeedStrip's own
@@ -172,6 +194,13 @@ export function StackAcresRadialMenu({
   // Mirrored about the horizontal when there is no room overhead, which
   // negates every angle and puts the handoff pill above the pin instead.
   const flip = at.y < HEADROOM;
+  // How far to nudge the whole ring away from whichever edge is too close --
+  // the pin (.sa-radial-pin) is not part of this and stays exactly on the
+  // tap, since it is the one thing on screen promising "this is where you
+  // touched." At most one of these is ever positive; a viewport narrower than
+  // 2 * SIDE_ROOM would need both, but that is well below the smallest phone
+  // this app ships against.
+  const nudgeX = Math.max(0, SIDE_ROOM - at.x) - Math.max(0, at.x + SIDE_ROOM - viewportWidth);
 
   const place = districtLabel.replace(/^The /, "");
 
@@ -191,7 +220,7 @@ export function StackAcresRadialMenu({
               type="button"
               className="sa-radial-btn"
               style={{
-                left: `${Math.cos(angle) * RADIUS}px`,
+                left: `${Math.cos(angle) * RADIUS + nudgeX}px`,
                 top: `${Math.sin(angle) * RADIUS}px`,
               }}
               disabled={disabled}
@@ -228,7 +257,7 @@ export function StackAcresRadialMenu({
               type="button"
               className="sa-radial-btn"
               style={{
-                left: `${Math.cos(angle) * RADIUS}px`,
+                left: `${Math.cos(angle) * RADIUS + nudgeX}px`,
                 top: `${Math.sin(angle) * RADIUS}px`,
               }}
               disabled={disabled}
@@ -250,6 +279,7 @@ export function StackAcresRadialMenu({
       <button
         type="button"
         className={clsx("sa-radial-more", { "is-under-ring": flip })}
+        style={{ left: `${nudgeX}px` }}
         onClick={onManage}
       >
         Manage {place}

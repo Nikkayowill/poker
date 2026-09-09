@@ -5,10 +5,14 @@ import { stackacresStockPrice } from "./market";
 import { HOME_SECTOR } from "./sectors";
 import type { StackAcresUnitSnapshot } from "./units";
 import { SYNERGY_PERKS } from "./synergy-perks";
+import { MACHINE_CATALOGUE } from "./machines";
+import { RECIPE_CATALOGUE } from "./recipes";
+import { WHEAT_DURATION_MS, WHEAT_SEED_COST, type StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import {
   predictStackAcresAction,
   resolveOptimisticOutcome,
   type FarmPredictContext,
+  type MachineView,
 } from "./optimistic-actions";
 
 const NOW = new Date("2026-09-05T12:00:00.000Z");
@@ -64,10 +68,147 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     irrigation: [],
     soilTiles: [],
     soilStock: {},
+    inventory: {},
+    wheatPlots: [],
+    machines: [],
     nowMs: NOW.getTime(),
     ...overrides,
   };
 }
+
+function machine(overrides: Partial<MachineView> = {}): MachineView {
+  return {
+    id: "mill-1",
+    kind: "mill",
+    status: "idle",
+    startedAt: null,
+    readyAt: null,
+    recipeId: null,
+    unitsProcessing: 0,
+    done: false,
+    progress: null,
+    canStart: false,
+    ...overrides,
+  };
+}
+
+function wheatPlot(id: string): StackAcresWheatPlotSnapshot {
+  return {
+    id,
+    startedAt: NOW.toISOString(),
+    readyAt: new Date(NOW.getTime() + WHEAT_DURATION_MS).toISOString(),
+    ready: false,
+    progress: 0,
+  };
+}
+
+describe("predictStackAcresAction: the processing track", () => {
+  it("sows wheat: debits the seed and adds a plot due WHEAT_DURATION_MS out", () => {
+    const patch = predictStackAcresAction({ action: "sow-wheat" }, ctx({ profile: profile({ goldBalance: 100 }) }));
+    expect(patch?.profile?.goldBalance).toBe(100 - WHEAT_SEED_COST);
+    expect(patch?.wheatPlots).toHaveLength(1);
+    expect(Date.parse(patch!.wheatPlots![0].readyAt)).toBe(NOW.getTime() + WHEAT_DURATION_MS);
+    expect(patch?.contract).toBeNull();
+  });
+
+  it("refuses to sow past the plot cap or without the seed money", () => {
+    const full = ctx({ wheatPlots: [wheatPlot("a"), wheatPlot("b"), wheatPlot("c")] });
+    expect(predictStackAcresAction({ action: "sow-wheat" }, full)).toBeNull();
+    expect(
+      predictStackAcresAction({ action: "sow-wheat" }, ctx({ profile: profile({ goldBalance: WHEAT_SEED_COST - 1 }) })),
+    ).toBeNull();
+  });
+
+  it("places a machine: debits its price, adds an idle row, keeps the open contract", () => {
+    const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
+    const patch = predictStackAcresAction(
+      { action: "place-machine", kind: "dairy" },
+      ctx({ profile: profile({ goldBalance: 1000 }), contract, inventory: { milk: 3 } }),
+    );
+    expect(patch?.profile?.goldBalance).toBe(1000 - MACHINE_CATALOGUE.dairy.placeCost);
+    expect(patch?.machines?.map((m) => m.kind)).toEqual(["dairy"]);
+    // Re-derived off the shelf: three Milk is one Cheese batch.
+    expect(patch?.machines?.[0].canStart).toBe(true);
+    expect(patch?.contract).toBe(contract);
+  });
+
+  it("refuses a second machine of the same kind", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-machine", kind: "mill" },
+      ctx({ machines: [machine({ kind: "mill" })] }),
+    );
+    expect(patch).toBeNull();
+  });
+
+  it("runs an instant recipe through the shelf in one step", () => {
+    const patch = predictStackAcresAction(
+      { action: "process", recipe: "cheese" },
+      ctx({ machines: [machine({ id: "d1", kind: "dairy", canStart: true })], inventory: { milk: 4 } }),
+    );
+    expect(patch?.inventory).toEqual({ milk: 1, cheese: 1 });
+    expect(patch?.machines?.[0].status).toBe("idle");
+    expect(patch?.machines?.[0].canStart).toBe(false);
+  });
+
+  it("queues a Mill run: the wheat leaves now, the row becomes the queue entry", () => {
+    const patch = predictStackAcresAction(
+      { action: "process", recipe: "flour" },
+      ctx({ machines: [machine({ id: "m1", kind: "mill", canStart: true })], inventory: { wheat: 3 } }),
+    );
+    expect(patch?.inventory).toEqual({ wheat: 0 });
+    const mill = patch?.machines?.[0];
+    expect(mill?.status).toBe("working");
+    expect(mill?.recipeId).toBe("flour");
+    expect(mill?.unitsProcessing).toBe(RECIPE_CATALOGUE.flour.output.quantity);
+    expect(Date.parse(mill!.readyAt!)).toBe(NOW.getTime() + RECIPE_CATALOGUE.flour.processingMs);
+  });
+
+  it("refuses a recipe with no idle machine of its kind or too little input", () => {
+    expect(
+      predictStackAcresAction({ action: "process", recipe: "cheese" }, ctx({ inventory: { milk: 9 } })),
+    ).toBeNull();
+    const busy = machine({ id: "m1", kind: "mill", status: "working" });
+    expect(
+      predictStackAcresAction({ action: "process", recipe: "flour" }, ctx({ machines: [busy], inventory: { wheat: 9 } })),
+    ).toBeNull();
+    expect(
+      predictStackAcresAction(
+        { action: "process", recipe: "cloth" },
+        ctx({ machines: [machine({ id: "l1", kind: "loom" })], inventory: { wool: 3 } }),
+      ),
+    ).toBeNull();
+  });
+
+  it("diverts a ready cow: the row goes, the milk lands on the shelf, no Gold moves", () => {
+    const cow = unit({ id: "cow", stock: "cattle", state: "ready", yieldQuantity: 8 });
+    const patch = predictStackAcresAction({ action: "divert", unitId: cow.id }, ctx({ units: [cow] }));
+    expect(patch?.units).toEqual([]);
+    expect(patch?.inventory).toEqual({ milk: 8 });
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("restarts a bought-outright animal on divert, the same as collect does", () => {
+    const cow = unit({ id: "cow", stock: "cattle", state: "ready", yieldQuantity: 8, permanent: true });
+    const patch = predictStackAcresAction({ action: "divert", unitId: cow.id }, ctx({ units: [cow] }));
+    expect(patch?.units).toHaveLength(1);
+    expect(patch?.units?.[0].id).toBe(cow.id);
+    expect(patch?.units?.[0].state).toBe("working");
+  });
+
+  it("refuses to divert a hen (eggs feed no machine) or anything not ready", () => {
+    const hen = unit({ id: "hen", stock: "hen", state: "ready" });
+    expect(predictStackAcresAction({ action: "divert", unitId: hen.id }, ctx({ units: [hen] }))).toBeNull();
+    const growing = unit({ id: "cow", stock: "cattle", state: "working" });
+    expect(predictStackAcresAction({ action: "divert", unitId: growing.id }, ctx({ units: [growing] }))).toBeNull();
+  });
+
+  it("leaves work and the vat to the server", () => {
+    const vatCtx = ctx({ machines: [machine({ id: "v1", kind: "vat" })], inventory: { cheese: 4 } });
+    expect(predictStackAcresAction({ action: "work" }, vatCtx)).toBeNull();
+    expect(predictStackAcresAction({ action: "seal-vat" }, vatCtx)).toBeNull();
+    expect(predictStackAcresAction({ action: "collect-vat" }, vatCtx)).toBeNull();
+  });
+});
 
 describe("predictStackAcresAction: feed/water/clear", () => {
   it("feeds a hungry unit and spends one serving", () => {

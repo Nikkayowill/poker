@@ -113,8 +113,11 @@ import {
 
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
-import type { StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
+import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
+import type { VatContainer } from "@/lib/stackacres/aging";
+import type { RecipeId } from "@/lib/stackacres/recipes";
+import { workshopAttention } from "@/lib/stackacres/workshop";
 import {
   RELIC_CATALOGUE,
   devotionView,
@@ -133,7 +136,7 @@ import {
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import type { MachineItemId } from "@/lib/stackacres/machine-items";
+import type { MachineItemId, MachineProcessedItem, MachineRawItem } from "@/lib/stackacres/machine-items";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -151,6 +154,8 @@ import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
+import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
+import { FermentingVatModal, type VatActionResult } from "./FermentingVatModal";
 import {
   MythicBlueprintDashboard,
   type BlueprintActionResult,
@@ -191,11 +196,7 @@ import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
 import type { PropKind } from "@/lib/stackacres/props";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { useStackAcresMusic } from "./use-stackacres-music";
-import {
-  StackAcresWorld,
-  type StackAcresProcessing,
-  type StackAcresWorldApi,
-} from "./stackacres-world";
+import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
 import {
   STACKACRES_STARTING_TIER,
   nextToolTier,
@@ -214,6 +215,7 @@ import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actio
 import {
   predictStackAcresAction,
   type FarmPredictContext,
+  type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
 
 /**
@@ -281,6 +283,16 @@ const RAY_GIFT_LINES: readonly string[] = [
   "Whatever you've got, I expect I'll find a use for it.",
 ];
 
+/** The processing track as this component holds it. The full machine
+ *  snapshot (with the server's `canStart`), not the farmhand planner's
+ *  narrower Pick: the Workshop sheet draws timers and ids off these rows. */
+interface FarmProcessing {
+  contract: StackAcresContractRow | null;
+  inventory: StackAcresInventory;
+  machines: MachineView[];
+  wheatPlots: StackAcresWheatPlotSnapshot[];
+}
+
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
   /** Null for a cookie-less first visit: the read route never mints a session. */
@@ -339,6 +351,23 @@ interface StackAcresResponse {
   /** Only on a settled `fulfill-contract`, and only the amounts -- the purse
    *  itself comes back on `profile` like every other payer's does. */
   contractReward?: { gold: number; influence: number };
+  /** The Fermenting Vat's standing: null until one is placed. On every full
+   *  view, so `undefined` means an old bundle or an optimistic patch, never
+   *  "no vat". */
+  vat?: VatContainer | null;
+  /** What one Workshop call just did, each set only by its own action's
+   *  answer: `work` by the idle-worker pass, `processed` by `process`,
+   *  `diverted` by `divert`, `vatCollected` by `collect-vat`. The view itself
+   *  already carries the resulting state; these are the sheet's own
+   *  "here is what that press did" line. */
+  work?: { wheatCollected: number; machinesStarted: number; machinesCollected: number };
+  processed?: {
+    recipe: RecipeId;
+    produced: { item: MachineProcessedItem; quantity: number } | null;
+    readyAt: string | null;
+  };
+  diverted?: { item: MachineRawItem; quantity: number };
+  vatCollected?: { quantity: number; tier: 1 | 2 | 3; stars: 1 | 2 | 3; multiplier: number; gold: number };
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -690,12 +719,16 @@ export function StackAcresFarm() {
    * gone along with his walk (see MonkNode's own doc comment in
    * stackacres-scene.ts); this state stays for the UI's own sake.
    */
-  const [processing, setProcessing] = useState<Omit<StackAcresProcessing, "profileId">>(() => ({
+  const [processing, setProcessing] = useState<FarmProcessing>(() => ({
     contract: null,
     inventory: emptyInventory(),
     machines: [],
     wheatPlots: [],
   }));
+  /** The Fermenting Vat, or null until one is placed. Its own atom rather
+   *  than a fifth field on `processing`: no predictor moves it (the vat's
+   *  sheet awaits the server), so it never needs to ride the snapshot. */
+  const [vat, setVat] = useState<VatContainer | null>(null);
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
   /** `clearing`'s own twin for the Crop Fields -- see
@@ -735,6 +768,9 @@ export function StackAcresFarm() {
   const [showStore, setShowStore] = useState(false);
   const [showMuseum, setShowMuseum] = useState(false);
   const [showContracts, setShowContracts] = useState(false);
+  const [showWorkshop, setShowWorkshop] = useState(false);
+  /** The vat's own sheet, opened from inside the Workshop. */
+  const [showVat, setShowVat] = useState(false);
   const [showGreenhouse, setShowGreenhouse] = useState(false);
   const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
   const [cropFieldsUnlocked, setCropFieldsUnlocked] = useState(false);
@@ -773,6 +809,14 @@ export function StackAcresFarm() {
    *  used in this file. Read exactly once, synchronously, right after the
    *  `act` call that set it -- nothing else in this component writes it. */
   const lastMerchantPurchase = useRef<{ pricePaid: number } | null>(null);
+  /** Same sidecar for the Workshop and the vat: what the last processing
+   *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
+  const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "diverted" | "vatCollected"> | null>(null);
+  const takeProcessingDelta = useCallback(() => {
+    const delta = lastProcessing.current;
+    lastProcessing.current = null;
+    return delta;
+  }, []);
   /** Standing earned to date. Its own state rather than a fifth field on
    *  `processing`: nothing plans against it, it is a number the town board
    *  displays, and adding it there would widen an object whose whole point is
@@ -1115,6 +1159,17 @@ export function StackAcresFarm() {
     if (data.midnightMerchantPurchase) {
       lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
     }
+    // `!== undefined` for the same reason as the merchant above: null is the
+    // real "no vat placed" answer, and an optimistic patch carries no field.
+    if (data.vat !== undefined) setVat(data.vat);
+    if (data.work || data.processed || data.diverted || data.vatCollected) {
+      lastProcessing.current = {
+        work: data.work,
+        processed: data.processed,
+        diverted: data.diverted,
+        vatCollected: data.vatCollected,
+      };
+    }
     if (data.prestige) setPrestige(data.prestige);
     if (data.prestigeReset) lastPrestigeReset.current = data.prestigeReset;
     if (data.forge) setForge(data.forge);
@@ -1165,6 +1220,9 @@ export function StackAcresFarm() {
       // This profile's placed soil, same posture as `irrigation` above.
       soilTiles,
       soilStock,
+      inventory: processing.inventory,
+      wheatPlots: processing.wheatPlots,
+      machines: processing.machines,
       nowMs: Date.now(),
     }),
     [
@@ -1667,6 +1725,14 @@ export function StackAcresFarm() {
           goldSound();
           setLastCollect({
             text: `Order filled · +${data.contractReward.gold.toLocaleString()} Gold`,
+            nonce: Date.now(),
+          });
+        }
+        // The vat is the third Gold payer, and it answers like the other two.
+        if (body.action === "collect-vat" && data.vatCollected) {
+          goldSound();
+          setLastCollect({
+            text: `Vat opened · +${data.vatCollected.gold.toLocaleString()} Gold`,
             nonce: Date.now(),
           });
         }
@@ -2390,6 +2456,48 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /**
+   * The Workshop's actions, adapted from `act`'s fixed `ContractActionResult`
+   * shape the way `onBuyFromMerchant` below is: `lastProcessing` is where the
+   * answer's own "what this call just did" lands, taken once, right after
+   * the call that set it. Cleared first so a stale delta from an earlier
+   * call can never be read as this one's.
+   */
+  const workshopAct = useCallback(
+    async (body: Action): Promise<WorkshopActionResult> => {
+      takeProcessingDelta();
+      const result = await act(body);
+      if (!result.ok) return { ok: false, message: result.message };
+      const delta = takeProcessingDelta();
+      return { ok: true, work: delta?.work, processed: delta?.processed, diverted: delta?.diverted };
+    },
+    [act, takeProcessingDelta],
+  );
+  const onSowWheat = useCallback(() => workshopAct({ action: "sow-wheat" }), [workshopAct]);
+  const onPlaceMachine = useCallback(
+    (kind: MachineKind) => workshopAct({ action: "place-machine", kind }),
+    [workshopAct],
+  );
+  const onProcessRecipe = useCallback(
+    (recipe: RecipeId) => workshopAct({ action: "process", recipe }),
+    [workshopAct],
+  );
+  const onWork = useCallback(() => workshopAct({ action: "work" }), [workshopAct]);
+  const onDivert = useCallback((unitId: string) => workshopAct({ action: "divert", unitId }), [workshopAct]);
+
+  /** The vat's two actions, same adapter, its own result shape. */
+  const vatAct = useCallback(
+    async (body: Action): Promise<VatActionResult> => {
+      takeProcessingDelta();
+      const result = await act(body);
+      if (!result.ok) return { ok: false, message: result.message };
+      return { ok: true, collected: takeProcessingDelta()?.vatCollected };
+    },
+    [act, takeProcessingDelta],
+  );
+  const onSealVat = useCallback(() => vatAct({ action: "seal-vat" }), [vatAct]);
+  const onCollectVat = useCallback(() => vatAct({ action: "collect-vat" }), [vatAct]);
+
   /** The Synergy Tree's two actions, same "hand down as a promise" shape as
    *  the town board's above. */
   const onUnlockSynergyPerk = useCallback(
@@ -2726,6 +2834,18 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
+  /** Whether the Workshop has something waiting: ripe wheat, a finished Mill
+   *  run, a collectible vat. Feeds the signpost's dot. */
+  const workshopDue = useMemo(
+    () =>
+      workshopAttention({
+        plots: processing.wheatPlots,
+        machines: processing.machines,
+        vat,
+        nowMs,
+      }),
+    [processing.wheatPlots, processing.machines, vat, nowMs],
+  );
 
   /**
    * What Ray's shelf is allowed to look at when it decides which rows are
@@ -3109,6 +3229,8 @@ export function StackAcresFarm() {
             carrying={carrying}
             onOpenBlueprints={() => { panelSound(); setShowBlueprints(true); }}
             blueprintInProgress={Object.values(blueprints).some((b) => b.status === "in_progress")}
+            onOpenWorkshop={() => { panelSound(); setShowWorkshop(true); }}
+            workshopAttention={workshopDue}
           />
 
           {/* The seed menu, on the canvas next to the finger that asked for
@@ -3902,6 +4024,38 @@ export function StackAcresFarm() {
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
+        />
+      )}
+      {/* The vat's sheet replaces the Workshop while it is up rather than
+          stacking a second scrim over it, so one Escape closes one sheet;
+          closing the vat lands back in the Workshop. */}
+      {showWorkshop && !showVat && (
+        <WorkshopModal
+          inventory={processing.inventory}
+          wheatPlots={processing.wheatPlots}
+          machines={processing.machines}
+          vat={vat}
+          units={liveUnits}
+          goldBalance={profile?.goldBalance ?? 0}
+          unlimitedGold={profile?.unlimitedGold ?? false}
+          isPending={isPending}
+          onSowWheat={onSowWheat}
+          onPlaceMachine={onPlaceMachine}
+          onProcess={onProcessRecipe}
+          onWork={onWork}
+          onDivert={onDivert}
+          onOpenVat={() => { panelSound(); setShowVat(true); }}
+          onClose={() => { panelSound(); setShowWorkshop(false); }}
+        />
+      )}
+      {showWorkshop && showVat && (
+        <FermentingVatModal
+          vat={vat}
+          cheeseHeld={processing.inventory.cheese ?? 0}
+          busy={isPending("seal-vat") || isPending("collect-vat")}
+          onSeal={onSealVat}
+          onCollect={onCollectVat}
+          onClose={() => { panelSound(); setShowVat(false); }}
         />
       )}
 

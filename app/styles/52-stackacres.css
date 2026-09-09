@@ -3397,6 +3397,26 @@
   color: var(--sa-outline);
 }
 
+/* ---- The Workshop -------------------------------------------------------
+   Same non-travel-target posture as the two above: cream card, opens the
+   processing sheet directly. Leaf on the swatch, since what it holds is
+   grown and made rather than bought or built. */
+
+.sa-dest-workshop {
+  position: relative;
+  background: var(--sa-paper);
+  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+}
+
+.sa-dest-workshop .sa-dest-swatch {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--sa-leaf);
+  color: var(--sa-outline);
+}
+
 /* An order is up. A dot rather than a count: there is only ever one, and a
    number here would read as a promise of more. */
 .sa-dest-dot {
@@ -3831,6 +3851,134 @@
 
 .sa-vat-actions { margin-top: 12px; }
 .sa-vat-actions .sa-cta { width: 100%; }
+
+/* ---- the Workshop sheet (WorkshopModal.tsx) ----------------------------
+   The processing track in one sheet: the shelf, the wheat field, the four
+   machine cards and the animals that could be sent here. Rides the same
+   chrome as the town board (sa-contracts-note, sa-contract-bar) and the
+   supply store's cards (sa-stock-card) rather than growing its own. */
+
+/* The shelf: six counts in a row that wraps. A count is the number the
+   thumb is after, so it leads; the name confirms it. */
+.sa-workshop-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-workshop-shelf li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 2px solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sa-workshop-shelf strong {
+  color: var(--sa-ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-workshop-plots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-workshop-plot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.sa-workshop-plot.is-empty {
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  font-style: italic;
+}
+
+/* A ripe bed's bar turns corn: full, and worth pressing for. */
+.sa-workshop-plot.is-ripe .sa-contract-bar > span {
+  background: var(--sa-corn);
+  box-shadow: inset 0 -3px 0 var(--sa-corn-rim);
+}
+
+.sa-workshop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sa-workshop-actions .sa-cta {
+  flex: 1 1 180px;
+}
+
+/* A machine card: unbuilt reads as paper, running gets a leaf ring, done
+   gets the corn ring the posted contract uses for "press this". */
+.sa-workshop-machine.is-unbuilt h3 {
+  color: var(--sa-ink-soft);
+}
+
+.sa-workshop-machine.is-working {
+  box-shadow: inset 0 0 0 3px var(--sa-leaf), var(--sa-drop);
+}
+
+.sa-workshop-machine.is-done {
+  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+}
+
+.sa-workshop-machine .sa-contract-bar {
+  display: block;
+  margin-top: 8px;
+}
+
+.sa-workshop-divert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-workshop-divert li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: var(--sa-drop);
+  color: var(--sa-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sa-workshop-divert li > span {
+  flex: 1;
+}
+
+.sa-workshop-divert .sa-cta {
+  margin-top: 0;
+  min-height: 40px;
+  padding: 6px 14px;
+  font-size: 14px;
+}
 
 /* ---- the Synergy Tree ------------------------------------------------- */
 

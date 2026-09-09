@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { ChevronDown, Compass, Hammer, Lock, ScrollText } from "lucide-react";
+import { ChevronDown, Cog, Compass, Hammer, Lock, ScrollText } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
 import { STACKACRES_ZONES, zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
@@ -104,6 +104,12 @@ export interface StackAcresDestinationsProps {
    *  takes, since a fraction of stages complete would be a false promise of
    *  precision this rail was never built to show. */
   blueprintInProgress: boolean;
+  /** Opens the Workshop (wheat, machines, the vat). Same non-travel-target
+   *  posture as the town board: a machine has no position on the map. */
+  onOpenWorkshop: () => void;
+  /** Whether something in there is waiting on the player -- ripe wheat, a
+   *  finished Mill run, a collectible vat. Presence, not a count. */
+  workshopAttention: boolean;
 }
 
 export function StackAcresDestinations({
@@ -117,6 +123,8 @@ export function StackAcresDestinations({
   carrying,
   onOpenBlueprints,
   blueprintInProgress,
+  onOpenWorkshop,
+  workshopAttention,
 }: StackAcresDestinationsProps) {
   const [dropped, setOpen] = useState(false);
   const menuId = useId();
@@ -174,7 +182,7 @@ export function StackAcresDestinations({
           <span className="sa-quicknav-caret" aria-hidden="true">
             <ChevronDown size={14} />
           </span>
-          {(carrying > 0 || contractPosted || blueprintInProgress) && (
+          {(carrying > 0 || contractPosted || blueprintInProgress || workshopAttention) && (
             <span className="sa-dest-dot" aria-hidden="true" />
           )}
         </button>
@@ -280,6 +288,28 @@ export function StackAcresDestinations({
               </span>
             </span>
             {blueprintInProgress && <span className="sa-dest-dot" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="sa-dest sa-dest-workshop"
+            title="The Workshop: grow wheat, run the Mill, Dairy, Loom and Fermenting Vat."
+            aria-label={
+              workshopAttention
+                ? "Workshop — something is ready. Grow wheat and run the machines."
+                : "Workshop — grow wheat and run the machines."
+            }
+            onClick={pick(onOpenWorkshop)}
+          >
+            <span className="sa-dest-swatch" aria-hidden="true">
+              <Cog size={14} />
+            </span>
+            <span className="sa-dest-text">
+              <span className="sa-dest-name">Workshop</span>
+              <span className="sa-dest-way" aria-hidden="true">
+                {workshopAttention ? "ready" : "machines"}
+              </span>
+            </span>
+            {workshopAttention && <span className="sa-dest-dot" aria-hidden="true" />}
           </button>
         </div>
       )}

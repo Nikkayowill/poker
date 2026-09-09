@@ -7,9 +7,7 @@
  * of what an action IS -- and so `intentOf` is reachable by vitest, which
  * lib/ is and components/ is not.
  *
- * This is intents only: not every member here is wired to a control today
- * (`work` and `fulfill-contract` come from the automated farmhand, and a few
- * route actions have no UI yet), and the server's own discriminated union in
+ * This is intents only: the server's own discriminated union in
  * app/api/stackacres/actions/route.ts is the wire authority. `sell` is dead
  * -- the route stopped accepting it -- but kept in the union until the
  * component's last reference to it is gone.
@@ -23,6 +21,8 @@ import type { SynergyArchetype } from "./synergy-perks";
 import type { MidnightMerchantItemId } from "./midnight-merchant";
 import type { NpcId } from "./friendship";
 import type { MachineItemId } from "./machine-items";
+import type { MachineKind } from "./machines";
+import type { RecipeId } from "./recipes";
 import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { PipeKind } from "./irrigation";
@@ -44,9 +44,20 @@ export type Action =
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
   | { action: "upgrade-tool" }
+  // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
+  // `sow-wheat` and `place-machine` spend Gold; the rest move inventory only.
+  | { action: "sow-wheat" }
+  | { action: "place-machine"; kind: MachineKind }
+  // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
+  // collects it.
+  | { action: "process"; recipe: RecipeId }
+  // A ready animal's produce to the shelf instead of the harvest's Gold.
+  | { action: "divert"; unitId: string }
+  | { action: "seal-vat" }
+  | { action: "collect-vat" }
   // The idle-worker pass: settles every ripe wheat plot and every mill that
-  // has become startable or finished. Moves no Gold; the automated farmhand
-  // is what asks for it (see `farmhandHooks`).
+  // has become startable or finished. Moves no Gold. The Workshop sheet
+  // fires it when something is due and on its own "work the farm" key.
   | { action: "work" }
   // Asks the town to post an order. Moves nothing either. `fulfill-contract`
   // below is the one that pays, and it reserves against the same flat daily
@@ -154,6 +165,12 @@ export function intentOf(body: Action): string {
   if ("droneId" in body) return `${body.action}:${body.droneId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;
   if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
+  // Making cheese must never dedupe against or block weaving cloth, and
+  // building a Mill must never block building a Dairy. `place-pipe` carries
+  // `kind` too but is caught by the `tx` branch above, so this only ever
+  // sees `place-machine`.
+  if ("recipe" in body) return `${body.action}:${body.recipe}`;
+  if ("kind" in body) return `${body.action}:${body.kind}`;
   return body.action;
 }
 

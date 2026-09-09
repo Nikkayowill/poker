@@ -57,15 +57,17 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { CROP_FIELDS_UNLOCK_COST_GOLD, cropFieldsUnlockCheck } from "@/lib/stackacres/crop-fields";
-import { ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
+import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   CROP_FIELD_BEDS,
   cropRanks,
   cropSpot,
+  growAreaAt,
   stockZone,
 } from "@/lib/stackacres/world";
 import {
   PIPE_PLACE_COST,
+  pipeTileCenter,
   recalculatePipeConnections,
   type IrrigableCrop,
   type NetworkGrid,
@@ -3961,6 +3963,30 @@ export async function placeStackAcresPipeTile(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
   const cost = PIPE_PLACE_COST[input.kind];
+
+  // No pipe or well inside a pen -- Henhaven, Oxfields and Wallow are
+  // GROW_AREA entries the same as any other district, but irrigation
+  // belongs to the Crop Fields and the open farm, not inside a hen/ox/hog
+  // enclosure. The client already keeps a drag or a tap from reaching this
+  // far (stackacres-scene.ts's `pipeLayableWorldTile`, and the radial menu's
+  // own `pipeExtraActions`), so this is the authoritative backstop -- a
+  // forged or replayed request had nothing else stopping it, since this
+  // function otherwise never checked geography at all. Runs before the Gold
+  // debit below, unlike the cap/well checks further down: those need a
+  // store round trip and so debit-then-refund, but pen membership is a pure
+  // function of `tx`/`ty` with no race to guard against.
+  //
+  // `tx`/`ty` are pipe TILE indices, not world units -- `pipeTileCenter`
+  // converts back, the same way `soilTileRect` does for soil's own
+  // geography check just below.
+  const tileCentre = pipeTileCenter(tx, ty);
+  const zone = growAreaAt(tileCentre.x, tileCentre.y);
+  if (zone && PEN_ZONE_IDS.includes(zone)) {
+    throw new StackAcresRequestError(
+      `${input.kind === "well" ? "A well" : "Pipe"} cannot be laid inside a pen.`,
+      400,
+    );
+  }
 
   // Rule 1: the Gold leaves first. Null is "cannot afford", not an error.
   const debited = await spendGoldByProfile(profile.id, cost);

@@ -66,6 +66,7 @@ import { fenceSegmentsForZone, type FenceTier, type WildlifeTimeOfDay } from "@/
 import {
   MEADOW_TILE,
   OUTER_ZONE_IDS,
+  PEN_ZONE_IDS,
   STACKACRES_ZONES,
   ZONE_IDS,
   meadowBaseDensity,
@@ -242,12 +243,15 @@ import {
  * (what it is, what state it is in, how far along it is) from the React
  * shell, which reads that straight off lib/stackacres/units.ts. THERE IS NO
  * PLOT GRID ANY MORE (see 2026-09-03's CLAUDE.md entry -- "districts hold
- * stock, not plots"), but the farm IS tappable again: a tap that lands on a
- * unit's own picture collects, feeds or clears it where it stands, and a tap
- * on a district's empty fenced ground offers to seed something there. The
- * scene reports WHICH unit and WHERE (`onUnitTap`, `onGroundTap`) and
- * nothing else -- it still owns no rules, and lib/stackacres/tap-action.ts
- * is what decides whether that finger is worth a network call.
+ * stock, not plots"), but the farm IS tappable again: a tap (or a drag) that
+ * lands on a unit's own picture, WITH THE MATCHING TOOL HELD (Water/Feed/
+ * Harvest -- see lib/stackacres/tools.ts's own header), collects, feeds,
+ * waters or clears it where it stands; the wrong tool (or none) on a unit is
+ * a deliberate no-op now, not a fallthrough. A tap on a district's empty
+ * fenced ground offers to seed something there. The scene reports WHICH unit
+ * and WHERE (`onUnitTap`, `onGroundTap`) and nothing else -- it still owns no
+ * rules, and lib/stackacres/tap-action.ts is what decides whether that
+ * finger is worth a network call.
  *
  * The HUD, the toolbelt and the district sidebar are NOT in here. They stay
  * as DOM, pinned over the canvas by CSS, because a `<button>` is reachable by
@@ -483,6 +487,39 @@ export interface StackAcresSceneCallbacks {
    * call (`place-soil-tile`/`remove-soil-tile`) and its optimistic guess.
    */
   onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
+  /**
+   * The Water tool's drag (or zero-length tap) gesture reached this unit --
+   * the unit-targeted twin of `onPipeLayTile`, see `waterLaySegment` and
+   * lib/stackacres/tools.ts's own header. Only ever fires for a unit that
+   * was `"dry"` when the stroke reached it (`dispatchTap`'s own
+   * `unitTapEligible` gate applies the identical rule to a bare tap held
+   * with this tool, so the two paths can never disagree on what counts).
+   * `at` is the CSS-pixel point the shell needs to float a toast at, same as
+   * `onUnitTap`. The shell owns the actual network call and its optimistic
+   * guess -- in practice by calling its own `onWorldUnitTap` directly, since
+   * that already re-derives the exact action from the unit's state.
+   */
+  onWaterLayUnit: (unitId: string, at: TapPoint) => void;
+  /** The Feed tool's own twin of `onWaterLayUnit`, for a unit that was
+   *  `"hungry"` when the stroke reached it. See `feedLaySegment`. */
+  onFeedLayUnit: (unitId: string, at: TapPoint) => void;
+  /**
+   * The Harvest tool's own twin of `onWaterLayUnit` -- dual-mode the same
+   * way `onPipeLayTile` is place-or-erase: `mode` is `"collect"` for a unit
+   * that was `"ready"` when the stroke reached it, `"clear"` for one that
+   * was `"mucked"`, locked once per gesture by `DragGesture.startHarvestLay`.
+   * See `harvestLaySegment`.
+   */
+  onHarvestLayUnit: (unitId: string, mode: "collect" | "clear", at: TapPoint) => void;
+  /**
+   * A press with the pipe tool held landed specifically inside a pen --
+   * fired once, at press, alongside the scene's own shake-and-flash
+   * (`flashToolGhostDenied`); every other reason `pipeLayableWorldTile`
+   * silently refuses a tile (a structure, a locked district, a fence bay)
+   * stays silent, the same as it always has. `message` is written to be
+   * shown verbatim, e.g. as a toast.
+   */
+  onDropRejected?: (message: string, at: TapPoint) => void;
   /**
    * Informational only, fired whenever the Wildlife Manager's own predator
    * simulation lowers a district's livestock health -- the shell's cue to
@@ -1099,7 +1136,7 @@ interface TrailPoint {
  * those two tools' own gesture simply pans.
  */
 interface DragGesture {
-  kind: "press" | "pan" | "mow" | "pipe-lay" | "soil-lay";
+  kind: "press" | "pan" | "mow" | "pipe-lay" | "soil-lay" | "water-lay" | "feed-lay" | "harvest-lay";
   id: number;
   x: number;
   y: number;
@@ -1140,6 +1177,33 @@ interface DragGesture {
   startSoilLay?: "place" | "erase";
   /** The soil tool's own twin of `pipeTilesTouched` -- see `soilLaySegment`. */
   soilTilesTouched?: Set<string>;
+  /**
+   * Set when the press began on a unit the Water tool can act on (state
+   * `"dry"`). Unlike `startPipeLay`/`startSoilLay` there is no place/erase
+   * split -- watering is the only thing this tool ever does -- so a plain
+   * boolean is enough. `false` (not `undefined`) off the tool or off a unit
+   * this tool cannot touch, same posture `startMow` takes.
+   */
+  startWaterLay?: boolean;
+  /** Every unit this gesture has already watered -- the Water tool's own
+   *  twin of `pipeTilesTouched`. See `waterLaySegment`. */
+  waterUnitsTouched?: Set<string>;
+  /** The Water tool's own twin of `startWaterLay`, for the Feed tool. */
+  startFeedLay?: boolean;
+  /** The Feed tool's own twin of `waterUnitsTouched`. See `feedLaySegment`. */
+  feedUnitsTouched?: Set<string>;
+  /**
+   * Set when the press began on a unit the Harvest tool can act on, to
+   * whichever half of the stroke that first unit committed it to: `"collect"`
+   * for a ready unit, `"clear"` for a mucked one -- the harvest tool's own
+   * twin of `startPipeLay`'s place/erase split, decided the same way and for
+   * the same reason (a stroke that started collecting should never flip into
+   * clearing muck just because it crossed a mucked unit, and the reverse).
+   */
+  startHarvestLay?: "collect" | "clear";
+  /** Every unit this gesture has already acted on -- the Harvest tool's own
+   *  twin of `pipeTilesTouched`. See `harvestLaySegment`. */
+  harvestUnitsTouched?: Set<string>;
 }
 
 
@@ -1305,6 +1369,29 @@ interface UnitNode {
  *  used to spell this out and a fourth now depends on it agreeing with them. */
 function unitStage(unit: StackAcresSceneUnit): CropStage {
   return growthStage(unit.progress, unit.state === "ready");
+}
+
+/**
+ * The Water/Feed/Harvest tools' own "does this unit's state afford this
+ * tool" rule, each written exactly once so a bare tap (`dispatchTap`'s
+ * `unitTapEligible`) and a drag (`waterLaySegment` and friends) can never
+ * silently disagree about the same unit. `unitHarvestMode` is the one
+ * dual-valued rule -- `"collect"` for a ready unit, `"clear"` for a mucked
+ * one, mirroring the pipe tool's own place-or-erase split.
+ */
+function unitIsWaterable(state: StackAcresSceneUnit["state"]): boolean {
+  return state === "dry";
+}
+/** The Water tool's own twin, for the Feed tool. */
+function unitIsFeedable(state: StackAcresSceneUnit["state"]): boolean {
+  return state === "hungry";
+}
+/** Which half of the Harvest tool's dual mode this state affords, or
+ *  `undefined` for neither. */
+function unitHarvestMode(state: StackAcresSceneUnit["state"]): "collect" | "clear" | undefined {
+  if (state === "ready") return "collect";
+  if (state === "mucked") return "clear";
+  return undefined;
 }
 
 /**
@@ -2818,7 +2905,14 @@ export class StackAcresScene extends Phaser.Scene {
       return null;
     }
     if (this.fenceSegmentAt(worldX, worldY)) return null;
-    if (!growAreaAt(worldX, worldY)) return null;
+    const grow = growAreaAt(worldX, worldY);
+    if (!grow) return null;
+    // No pipe (or well) inside a pen -- Henhaven, Oxfields and Wallow are
+    // GROW_AREA entries the same as any other district, but irrigation
+    // belongs to the Crop Fields and the open farm, not inside a hen/ox/hog
+    // enclosure. See lib/stackacres/zones.ts's `PEN_ZONE_IDS` for why this
+    // reads GROW_AREA rather than the drift-prone `PEN_BLOCKS`.
+    if (PEN_ZONE_IDS.includes(grow)) return null;
     return pipeTileAt(worldX, worldY);
   }
 
@@ -2916,6 +3010,90 @@ export class StackAcresScene extends Phaser.Scene {
       touched.add(key);
       this.callbacks.onSoilLayTile(tile.tx, tile.ty, mode);
     }
+  }
+
+  /**
+   * The Water/Feed/Harvest tools' own shared stroke walk -- every one of
+   * them samples CLIENT points rather than world-space tiles (a unit's hit
+   * box is tested in screen space, see `unitAt`'s own doc on why) at half
+   * of `unitAt`'s own hit pad (`TAP_PAD`) since there is no tile lattice to
+   * key a step size to, skips anything already in `touched` the same
+   * de-dupe-per-gesture posture the tile tools use, and fires `onHit` once
+   * per newly-touched eligible unit. Factored out of what used to be three
+   * near-identical copies (`waterLaySegment`/`feedLaySegment`/
+   * `harvestLaySegment`) so the sampling itself -- including the step
+   * count, capped here rather than left to grow with the stroke's length --
+   * cannot drift between the three. The cap matters on a long fast swipe: a
+   * ~900px flick would otherwise sample 75+ points, each one an O(unit
+   * count) `unitAt` scan.
+   */
+  private sampleUnitsAlongSegment(
+    from: Finger,
+    to: Finger,
+    touched: Set<string>,
+    eligible: (state: StackAcresSceneUnit["state"]) => boolean,
+    onHit: (unitId: string) => void,
+  ): void {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    const steps = Math.min(60, Math.max(1, Math.ceil(length / (TAP_PAD / 2))));
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps;
+      const id = this.unitAt(from.x + dx * t, from.y + dy * t);
+      if (!id || touched.has(id)) continue;
+      const node = this.nodes.get(id);
+      if (!node || !eligible(node.unit.state)) continue;
+      touched.add(id);
+      onHit(id);
+    }
+  }
+
+  /** Waters every dry unit the stroke from `from` to `to` crosses, reporting
+   *  each one to the shell through `onWaterLayUnit`. See
+   *  `sampleUnitsAlongSegment`'s own doc for the walk itself. */
+  private waterLaySegment(gesture: DragGesture, from: Finger, to: Finger): void {
+    if (!gesture.startWaterLay) return;
+    const touched = gesture.waterUnitsTouched ?? new Set<string>();
+    gesture.waterUnitsTouched = touched;
+    const local = { x: to.x - this.hostOrigin.left, y: to.y - this.hostOrigin.top };
+    this.sampleUnitsAlongSegment(from, to, touched, unitIsWaterable, (id) =>
+      this.callbacks.onWaterLayUnit(id, local),
+    );
+  }
+
+  /** The Water tool's own twin, for the Feed tool -- every unit the stroke
+   *  crosses that is `"hungry"`. */
+  private feedLaySegment(gesture: DragGesture, from: Finger, to: Finger): void {
+    if (!gesture.startFeedLay) return;
+    const touched = gesture.feedUnitsTouched ?? new Set<string>();
+    gesture.feedUnitsTouched = touched;
+    const local = { x: to.x - this.hostOrigin.left, y: to.y - this.hostOrigin.top };
+    this.sampleUnitsAlongSegment(from, to, touched, unitIsFeedable, (id) =>
+      this.callbacks.onFeedLayUnit(id, local),
+    );
+  }
+
+  /**
+   * The Harvest tool's own twin -- dual-mode the same way `pipeLaySegment`
+   * is place-or-erase: `gesture.startHarvestLay` locks the stroke to either
+   * `"collect"` (every ready unit crossed) or `"clear"` (every mucked one),
+   * decided once at press and never re-evaluated mid-drag, so a stroke that
+   * started collecting can never flip into clearing muck partway through.
+   */
+  private harvestLaySegment(gesture: DragGesture, from: Finger, to: Finger): void {
+    const mode = gesture.startHarvestLay;
+    if (!mode) return;
+    const touched = gesture.harvestUnitsTouched ?? new Set<string>();
+    gesture.harvestUnitsTouched = touched;
+    const local = { x: to.x - this.hostOrigin.left, y: to.y - this.hostOrigin.top };
+    this.sampleUnitsAlongSegment(
+      from,
+      to,
+      touched,
+      (state) => unitHarvestMode(state) === mode,
+      (id) => this.callbacks.onHarvestLayUnit(id, mode, local),
+    );
   }
 
   /** One freshly deployed drone's Phaser picture, parked at the ring tile
@@ -4217,7 +4395,25 @@ export class StackAcresScene extends Phaser.Scene {
       if (this.tool !== "pipe") return undefined;
       const world = resolveWorld(clientX, clientY);
       const tile = this.pipeLayableWorldTile(world.x, world.y);
-      if (!tile) return undefined;
+      if (!tile) {
+        // Of every reason `pipeLayableWorldTile` silently refuses a tile,
+        // only "it's inside a pen" gets a shake and a toast -- every other
+        // exclusion (a structure, a locked district, a fence bay) stays as
+        // silent as it always was. Checked directly against `growAreaAt`
+        // rather than threading a reason back out of that function, the
+        // same "duplicate the cheap lookup rather than complicate the
+        // shared one" call that function's own doc already makes.
+        const zone = growAreaAt(world.x, world.y);
+        if (zone && PEN_ZONE_IDS.includes(zone)) {
+          const scene = sceneAt(clientX, clientY);
+          this.flashToolGhostDenied(scene.x, scene.y);
+          this.callbacks.onDropRejected?.(
+            `${STACKACRES_ZONES[zone].label} keeps its own irrigation out -- pipe and wells stay clear of the pen.`,
+            { x: clientX - this.hostOrigin.left, y: clientY - this.hostOrigin.top },
+          );
+        }
+        return undefined;
+      }
       const existing = this.pipeIndex?.byKey.get(pipeKey(tile.tx, tile.ty));
       if (existing?.kind === "well") return undefined;
       return existing ? "erase" : "place";
@@ -4232,6 +4428,51 @@ export class StackAcresScene extends Phaser.Scene {
       const tile = this.soilLayableWorldTile(world.x, world.y);
       if (!tile) return undefined;
       return hasSoilTile(this.soil, tile.tx, tile.ty) ? "erase" : "place";
+    };
+    /**
+     * Whether the unit under this finger is one the HELD tool can act on --
+     * the single rule both a bare tap (`dispatchTap`) and a Water/Feed/
+     * Harvest drag (`waterLaySegment` and friends) test, so the two paths
+     * can never disagree on what a tool is willing to touch. Client space,
+     * like `unitAt` itself: a unit's hit box is a screen-space thing, unlike
+     * the pipe/soil tools' world-space tile lattice.
+     */
+    const unitTapEligible = (unit: StackAcresSceneUnit): boolean => {
+      switch (this.tool) {
+        case "water":
+          return unitIsWaterable(unit.state);
+        case "feed":
+          return unitIsFeedable(unit.state);
+        case "harvest":
+          return unitHarvestMode(unit.state) !== undefined;
+        default:
+          return false;
+      }
+    };
+    /** Which half of a harvest-lay stroke this finger would start, with the
+     *  Harvest tool held: `"collect"` over a ready unit, `"clear"` over a
+     *  mucked one -- the harvest tool's own twin of `pipeLayMode`. */
+    const harvestLayMode = (clientX: number, clientY: number): "collect" | "clear" | undefined => {
+      if (this.tool !== "harvest") return undefined;
+      const hit = this.unitAt(clientX, clientY);
+      const node = hit ? this.nodes.get(hit) : undefined;
+      return node ? unitHarvestMode(node.unit.state) : undefined;
+    };
+    /** Whether the unit under this finger could be watered, with the Water
+     *  tool held -- the water tool's own twin of `pipeLayMode`, minus the
+     *  place/erase split (watering is the only thing this tool ever does). */
+    const waterLayMode = (clientX: number, clientY: number): boolean => {
+      if (this.tool !== "water") return false;
+      const hit = this.unitAt(clientX, clientY);
+      const node = hit ? this.nodes.get(hit) : undefined;
+      return !!node && unitIsWaterable(node.unit.state);
+    };
+    /** The water tool's own twin of `waterLayMode`, for the Feed tool. */
+    const feedLayMode = (clientX: number, clientY: number): boolean => {
+      if (this.tool !== "feed") return false;
+      const hit = this.unitAt(clientX, clientY);
+      const node = hit ? this.nodes.get(hit) : undefined;
+      return !!node && unitIsFeedable(node.unit.state);
     };
     const oneFinger = (id: number, at: Finger, kind: "press" | "pan"): DragGesture => ({
       kind,
@@ -4274,6 +4515,9 @@ export class StackAcresScene extends Phaser.Scene {
         gesture.startMow = mowable(event.clientX, event.clientY);
         gesture.startPipeLay = pipeLayMode(event.clientX, event.clientY);
         gesture.startSoilLay = soilLayMode(event.clientX, event.clientY);
+        gesture.startWaterLay = waterLayMode(event.clientX, event.clientY);
+        gesture.startFeedLay = feedLayMode(event.clientX, event.clientY);
+        gesture.startHarvestLay = harvestLayMode(event.clientX, event.clientY);
         this.gesture = gesture;
       }
     };
@@ -4369,6 +4613,52 @@ export class StackAcresScene extends Phaser.Scene {
           this.moveToolGhost(here.x, here.y);
           return;
         }
+        // A drag that started on a unit the Water tool could touch waters
+        // every dry unit the stroke crosses -- the unit-targeted twin of the
+        // ground-targeted branches just above. Client points, not world
+        // ones: see `waterLaySegment`'s own doc.
+        if (gesture.startWaterLay) {
+          gesture.kind = "water-lay";
+          const start = sceneAt(gesture.startX, gesture.startY);
+          this.showToolGhost(start.x, start.y);
+          this.waterLaySegment(
+            gesture,
+            { x: gesture.startX, y: gesture.startY },
+            { x: event.clientX, y: event.clientY },
+          );
+          const here = sceneAt(event.clientX, event.clientY);
+          this.moveToolGhost(here.x, here.y);
+          return;
+        }
+        // The Water tool's own twin, for the Feed tool.
+        if (gesture.startFeedLay) {
+          gesture.kind = "feed-lay";
+          const start = sceneAt(gesture.startX, gesture.startY);
+          this.showToolGhost(start.x, start.y);
+          this.feedLaySegment(
+            gesture,
+            { x: gesture.startX, y: gesture.startY },
+            { x: event.clientX, y: event.clientY },
+          );
+          const here = sceneAt(event.clientX, event.clientY);
+          this.moveToolGhost(here.x, here.y);
+          return;
+        }
+        // The Harvest tool's own twin -- dual-mode (collect or clear muck),
+        // locked to whichever `gesture.startHarvestLay` decided at press.
+        if (gesture.startHarvestLay) {
+          gesture.kind = "harvest-lay";
+          const start = sceneAt(gesture.startX, gesture.startY);
+          this.showToolGhost(start.x, start.y);
+          this.harvestLaySegment(
+            gesture,
+            { x: gesture.startX, y: gesture.startY },
+            { x: event.clientX, y: event.clientY },
+          );
+          const here = sceneAt(event.clientX, event.clientY);
+          this.moveToolGhost(here.x, here.y);
+          return;
+        }
         // A press that was standing on a unit and has now become a pan is a
         // tap this map decided not to honour. Say so, once, at the point the
         // finger actually went down -- see `tapRejectRipple` for why only
@@ -4412,6 +4702,27 @@ export class StackAcresScene extends Phaser.Scene {
           resolveWorld(prevX, prevY),
           resolveWorld(event.clientX, event.clientY),
         );
+        const here = sceneAt(event.clientX, event.clientY);
+        this.moveToolGhost(here.x, here.y);
+        return;
+      }
+      if (gesture.kind === "water-lay") {
+        // Same "from where the finger WAS" sampling, in client space (see
+        // `waterLaySegment`'s own doc on why this tool samples screen points
+        // rather than world tiles).
+        this.waterLaySegment(gesture, { x: prevX, y: prevY }, { x: event.clientX, y: event.clientY });
+        const here = sceneAt(event.clientX, event.clientY);
+        this.moveToolGhost(here.x, here.y);
+        return;
+      }
+      if (gesture.kind === "feed-lay") {
+        this.feedLaySegment(gesture, { x: prevX, y: prevY }, { x: event.clientX, y: event.clientY });
+        const here = sceneAt(event.clientX, event.clientY);
+        this.moveToolGhost(here.x, here.y);
+        return;
+      }
+      if (gesture.kind === "harvest-lay") {
+        this.harvestLaySegment(gesture, { x: prevX, y: prevY }, { x: event.clientX, y: event.clientY });
         const here = sceneAt(event.clientX, event.clientY);
         this.moveToolGhost(here.x, here.y);
         return;
@@ -4465,6 +4776,10 @@ export class StackAcresScene extends Phaser.Scene {
         this.hideToolGhost();
         return;
       }
+      if (gesture.kind === "water-lay" || gesture.kind === "feed-lay" || gesture.kind === "harvest-lay") {
+        this.hideToolGhost();
+        return;
+      }
       // A cancel is a release that never taps.
       if (cancelled) return;
       // A tap with the scythe on standing grass cuts that spot -- the same
@@ -4492,6 +4807,29 @@ export class StackAcresScene extends Phaser.Scene {
         this.soilLaySegment(gesture, at, at);
         return;
       }
+      // A tap with the Water tool on a unit it can touch waters that one
+      // unit -- the unit-targeted twin of the branches just above, for the
+      // identical reason: without this, a tap (rather than a drag) with the
+      // tool held would silently do nothing. Client point, not world --
+      // see `waterLaySegment`'s own doc.
+      if (gesture.startWaterLay) {
+        const at = { x: event.clientX, y: event.clientY };
+        this.waterLaySegment(gesture, at, at);
+        return;
+      }
+      // The Water tool's own twin, for the Feed tool.
+      if (gesture.startFeedLay) {
+        const at = { x: event.clientX, y: event.clientY };
+        this.feedLaySegment(gesture, at, at);
+        return;
+      }
+      // The Harvest tool's own twin -- collects or clears muck depending on
+      // which `gesture.startHarvestLay` locked in at press.
+      if (gesture.startHarvestLay) {
+        const at = { x: event.clientX, y: event.clientY };
+        this.harvestLaySegment(gesture, at, at);
+        return;
+      }
       // Every other tap is aimed at the farm itself, through `dispatchTap`
       // below -- the same chain `tapAt` replays for a tap that arrived via a
       // DOM overlay instead of the canvas (see that method's own doc).
@@ -4499,15 +4837,23 @@ export class StackAcresScene extends Phaser.Scene {
     };
 
     const dispatchTap = (clientX: number, clientY: number): void => {
-      // A unit's own picture first -- collecting, feeding and clearing
-      // happen where the finger landed now, not in a sidebar row -- and
-      // failing that, the fenced ground of whichever district it fell in,
-      // which is an offer to seed something there. A tap in the woods still
-      // does nothing.
+      // A unit's own picture first -- but ONLY while the matching tool is
+      // held (`unitTapEligible`, just above: Water/Feed/Harvest, see
+      // lib/stackacres/tools.ts's own header). Collecting, feeding, watering
+      // and clearing muck used to fire off a bare tap regardless of what was
+      // held; a wrong tool (or none) on a unit is a deliberate no-op now --
+      // the `return` below fires whether or not the tool matched, so a
+      // rejected unit tap never falls through to the ground/structure behind
+      // it. Failing a unit hit entirely, the fenced ground of whichever
+      // district it fell in, which is an offer to seed something there. A
+      // tap in the woods still does nothing.
       const local = { x: clientX - this.hostOrigin.left, y: clientY - this.hostOrigin.top };
       const hit = this.unitAt(clientX, clientY);
       if (hit) {
-        this.callbacks.onUnitTap(hit, local);
+        const node = this.nodes.get(hit);
+        if (node && unitTapEligible(node.unit)) {
+          this.callbacks.onUnitTap(hit, local);
+        }
         return;
       }
       const ground = resolveWorld(clientX, clientY);
@@ -4999,6 +5345,44 @@ export class StackAcresScene extends Phaser.Scene {
     this.toolGhostTween?.stop();
     this.toolGhostTween = null;
     this.toolGhost?.setAngle(0);
+  }
+
+  /**
+   * A held tool's own picture flashes red and shakes at the point it was
+   * just refused -- a pipe/well press landing inside a pen, so far the only
+   * case that fires this. `showToolGhost`'s idle wiggle reads as "this is
+   * what you're holding"; this reads as "not there" instead, the same tint
+   * `setFarmhandSecretUnlock` already uses elsewhere in this file for a
+   * different denial-adjacent case. Reduced motion gets the red flash
+   * without the shake, the same posture `showToolGhost` itself already
+   * takes on its own idle wiggle.
+   */
+  private flashToolGhostDenied(sceneX: number, sceneY: number): void {
+    const ghost = this.toolGhost;
+    if (!ghost) return;
+    ghost
+      .setTexture(this.toolIconName, ART_FRAME)
+      .setPosition(sceneX, sceneY - 16)
+      .setAngle(0)
+      .setTint(0xff4444)
+      .setVisible(true);
+    const settle = (): void => {
+      ghost.clearTint();
+      ghost.setVisible(false);
+    };
+    if (this.options.reducedMotion) {
+      this.time.delayedCall(220, settle);
+      return;
+    }
+    this.tweens.add({
+      targets: ghost,
+      x: { from: sceneX - 4, to: sceneX + 4 },
+      duration: 55,
+      yoyo: true,
+      repeat: 3,
+      ease: "Sine.easeInOut",
+      onComplete: settle,
+    });
   }
 
   /* ---------------------------------------------------------------- */

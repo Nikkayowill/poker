@@ -318,6 +318,17 @@ export const ZONE_LIST: readonly ZoneDef[] = ZONE_IDS.map((id) => STACKACRES_ZON
  *  that grow their own scenery and fence their own grow area. */
 export const OUTER_ZONE_IDS: readonly ZoneId[] = ZONE_IDS.filter((id) => id !== "farmstead");
 
+/** The three livestock pens -- each one IS its whole district's grow area
+ *  (see world.ts's `GROW_AREA`), unlike the Crop Fields, which is a bench of
+ *  beds inside the farmstead rather than a district of its own. The real,
+ *  authoritative "is this a pen" check is `growAreaAt(x, y)` returning one of
+ *  these -- not `PEN_BLOCKS` below, which is a separate, partial,
+ *  hand-maintained copy kept only for scenery placement and has drifted from
+ *  this list before. Used to keep the pipe tool (and the well it digs) out
+ *  of a pen, both client-side (stackacres-scene.ts's `pipeLayableWorldTile`)
+ *  and server-side (stackacres-service.ts's `placeStackAcresPipeTile`). */
+export const PEN_ZONE_IDS: readonly ZoneId[] = ["henhaven", "oxfields", "wallow"];
+
 function within(rect: WorldRect, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
@@ -357,13 +368,18 @@ export function inOuterZone(x: number, y: number): boolean {
  * Which districts each tool is allowed to act in. `inspect` is the resting
  * state and has no target to gate; the scythe is district-specific, because
  * its target is the GROUND, not a unit, and mowing has no reason to exist
- * anywhere but the Long Meadow. `pipe` is farm-wide like `inspect` -- the
- * irrigation lattice itself has no district boundary (see
- * lib/stackacres/irrigation.ts's own header), so the fine gate on where a
- * tile may actually land is the scene's own `pipeLayableWorldTile`, not this
- * table. `soil` is district-specific like the scythe -- a bed only ever
- * means anything inside the Crop Fields (`CROP_FIELD_BEDS`), which the
- * scene's own `soilLayableWorldTile` is the fine gate for, same split.
+ * anywhere but the Long Meadow. `pipe` is farm-wide EXCEPT its own pens --
+ * no well or run of irrigation belongs inside a hen/ox/hog enclosure, and
+ * every other district is fair game the same way `inspect` is; the fine
+ * gate on exactly where a tile may land is still the scene's own
+ * `pipeLayableWorldTile` (and, authoritatively, `placeStackAcresPipeTile`
+ * server-side), not this table -- this is the coarse, documentation-facing
+ * half. `soil` is district-specific like the scythe -- a bed only ever means
+ * anything inside the Crop Fields (`CROP_FIELD_BEDS`), which the scene's own
+ * `soilLayableWorldTile` is the fine gate for, same split. `water`/`feed`/
+ * `harvest` target a UNIT rather than the ground, so they follow wherever
+ * livestock or crops actually live: the three pens plus the Crop Fields'
+ * own farmstead.
  */
 export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>> = {
   inspect: ZONE_IDS,
@@ -373,8 +389,11 @@ export const zoneToolPolicy: Readonly<Record<StackAcresTool, readonly ZoneId[]>>
   // function that actually confines grass -- and the scythe -- to
   // ./yard.ts's `CROP_FIELD`, not the whole of the Farmstead's own bounds.
   scythe: ["farmstead"],
-  pipe: ZONE_IDS,
+  pipe: ZONE_IDS.filter((id) => !PEN_ZONE_IDS.includes(id)),
   soil: ["farmstead"],
+  water: ["farmstead", ...PEN_ZONE_IDS],
+  feed: ["farmstead", ...PEN_ZONE_IDS],
+  harvest: ["farmstead", ...PEN_ZONE_IDS],
 };
 
 export type ZoneActionCheck =

@@ -30,7 +30,7 @@ import {
   stocksInZone,
 } from "./world";
 import { yardPoint } from "./yard";
-import { ZONE_IDS } from "./zones";
+import { PEN_ZONE_IDS, ZONE_IDS } from "./zones";
 
 describe("stock zoning", () => {
   it("gives every kind exactly the district it is kept in", () => {
@@ -106,6 +106,26 @@ describe("grow areas", () => {
           two.y + two.height < one.y;
         expect(apart).toBe(true);
       }
+    }
+  });
+
+  // CROP_FIELD_BEDS is a separate rect from every GROW_AREA entry (world.ts's
+  // own header), checked by soil placement instead of a district lookup --
+  // so nothing above catches it drifting on top of a pen the way it catches
+  // two districts overlapping. Pipe/well placement refuses a pen outright
+  // (stackacres-scene.ts's `pipeLayableWorldTile`, stackacres-service.ts's
+  // `placeStackAcresPipeTile`); soil is safe only because these two rects
+  // happen not to overlap, which this test turns into a real guard rather
+  // than a one-time hand-check.
+  it("never lets the Crop Fields' own beds overlap a pen", () => {
+    for (const pen of PEN_ZONE_IDS) {
+      const bounds = growAreaBounds(pen);
+      const apart =
+        CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width < bounds.x ||
+        bounds.x + bounds.width < CROP_FIELD_BEDS.x ||
+        CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height < bounds.y ||
+        bounds.y + bounds.height < CROP_FIELD_BEDS.y;
+      expect(apart, `${pen} overlaps the Crop Fields' beds`).toBe(true);
     }
   });
 

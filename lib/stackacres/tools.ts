@@ -1,41 +1,33 @@
 /**
- * StackAcres's toolbelt: which tool is held. Down to two entries for a while
- * now that districts hold stock instead of plots -- see 2026-09-03's
- * CLAUDE.md entry.
+ * StackAcres's toolbelt: which tool is held.
  *
- * The old design was tool-first because the whole surface was a grid of
- * identical-looking cells and a held tool was how the grid told you what a
- * tap would do -- hold Plant, every plantable plot lights up. There is no
- * grid any more: every unit you own is already a labelled row in the
- * district sidebar (./district-panel.ts), with its own button. Plant,
- * Harvest, Feed and Clear are gone from here entirely, not renamed.
+ * `inspect`/`scythe`/`pipe`/`soil` target the GROUND, not a unit, and each
+ * wants a held-tool drag gesture across it (mow a swathe, lay or lift a run
+ * of pipe, till or lift a bed). `water`/`feed`/`harvest` target a UNIT
+ * instead -- collecting, feeding, watering and clearing muck used to be a
+ * free tap anywhere on the canvas regardless of which tool (if any) was
+ * held, back when districts were spread out enough that "whatever's under
+ * the finger" never landed on the wrong thing by accident. Once pens sat
+ * close together with different jobs (a hen's egg a tap away from a cow's
+ * trough a tap away from a bed of soil), a bare tap doing whatever a unit
+ * happened to afford stopped feeling like a farm and started feeling like a
+ * minefield -- see stackacres-scene.ts's `dispatchTap` for the gate this
+ * toolbelt now feeds. The fix is "right tool, right target": holding Water
+ * and tapping (or dragging across) a dry crop or trough waters it; holding
+ * anything else and tapping the same unit does nothing at all.
  *
- * What survives is the scythe, because mowing the Long Meadow was never a
- * plot action -- its target is the GROUND, not a unit, and it still wants a
- * held-tool gesture (drag across the field to cut a swathe). `inspect` stays
- * as the resting state alongside it, the same as it always was.
+ * `harvest` is dual-mode the same way `pipe` is place-or-erase: a press on a
+ * ready unit collects it, a press on a mucked one clears it instead, decided
+ * once per gesture by what's under the finger -- one basket, two outcomes,
+ * so this stays a 7-tool belt rather than 8.
  *
- * `pipe` is the newest entry, added once laying a multi-tile irrigation run
- * (lib/stackacres/irrigation.ts) turned out to feel like work through the
- * ground-tap radial menu alone: one tap to open the ring, one to pick "Lay
- * Pipe", per tile, with the round trip blocking the next tile. Its target is
- * also the GROUND rather than a unit, the same case the scythe already made
- * for a held tool -- so it gets the identical drag gesture, just laying (or,
- * dragged over pipe already down, lifting) a tile per square crossed instead
- * of cutting grass. A well stays a single, deliberate, radial-only purchase
- * (see stackacres-farm.tsx's `pipeExtraActions`) -- it is one per farm and
- * costly enough that a drag should never place one by accident.
- *
- * `soil` is `pipe`'s own twin for the Crop Fields, added once a bed shrank
- * to one tile (lib/stackacres/soil.ts's `SOIL_TILE`): the same "one request
- * per tile crossed, no round trip blocking the next" case applies, so it
- * gets the identical drag gesture. `"place"` always plants the DEFAULT tier
- * -- Enriched and Hydro stay a deliberate, one-tile-at-a-time radial choice
- * (stackacres-farm.tsx's `soilExtraActions`), the same split a well takes
- * from `pipe`, so a drag can never silently drain a costlier bag.
+ * Every ground- and unit-targeted tool shares the identical drag mechanism
+ * (lay/act on every tile or unit a stroke crosses, and a plain tap replays
+ * as a zero-length stroke) -- see `bindInput`'s `pipeLaySegment`/
+ * `soilLaySegment` and their water/feed/harvest twins.
  */
 
-export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil"] as const;
+export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil", "water", "feed", "harvest"] as const;
 
 export type StackAcresTool = (typeof STACKACRES_TOOLS)[number];
 
@@ -73,5 +65,20 @@ export const STACKACRES_TOOL_DEFS: Readonly<Record<StackAcresTool, StackAcresToo
     label: "Soil",
     hint: "Drag across the Crop Fields to till beds, or over beds already down to lift them. Enriched and Hydro are still bought from the ring menu.",
     icon: "ico-plant",
+  },
+  water: {
+    label: "Water",
+    hint: "Tap or drag over a dry crop or trough to water it.",
+    icon: "ico-water",
+  },
+  feed: {
+    label: "Feed",
+    hint: "Tap or drag over a hungry animal to feed it.",
+    icon: "ico-feed",
+  },
+  harvest: {
+    label: "Harvest",
+    hint: "Tap or drag a ready unit to collect it, or a mucked one to clear it.",
+    icon: "ico-harvest",
   },
 };

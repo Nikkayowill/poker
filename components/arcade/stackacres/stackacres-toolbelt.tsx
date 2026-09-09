@@ -6,13 +6,11 @@ import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /**
- * The dock: Look (the resting state), or hold the Scythe, Pipe or Soil tool
- * to drag across the ground. Down from six tools to a handful now that a
- * plot tap is not how anything gets done any more (see
- * ./stackacres-district-panel.tsx) -- inspect, scythe, pipe and soil are the
- * tools left whose target is the ground rather than a unit, so they're the
- * only things still worth holding. See lib/stackacres/tools.ts's own header
- * for what each one does and why it exists.
+ * The dock: Look (the resting state), Scythe/Pipe/Soil held to drag across
+ * the ground, Water/Feed/Harvest held to act on a unit -- a tap or a drag
+ * both work for every one of them, see lib/stackacres/tools.ts's own header
+ * for the ground-vs-unit split and why a unit action now needs the matching
+ * tool rather than firing off a bare tap.
  */
 
 export interface StackAcresToolbeltProps {

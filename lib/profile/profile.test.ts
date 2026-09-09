@@ -24,6 +24,7 @@ describe("profile appearance", () => {
       isRegistered: false,
       stackacresAccess: false,
       adminBadge: false,
+      onboardingTourCompletedAt: null,
     };
     const snapshot = toSnapshot(createGame(token, profile.displayName, profile), token);
     expect(snapshot.seats[0]).toMatchObject({

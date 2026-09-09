@@ -220,8 +220,15 @@ export const DRONE_RECHARGE_MS = 8_000;
 
 /** Flat Gold cost to deploy one drone. Debited before the drone entity
  *  exists -- see `deployStackAcresDrone` in the service file for the
- *  debit-then-create pairing this funds. */
-export const DRONE_DEPLOY_COST_GOLD = 2_500;
+ *  debit-then-create pairing this funds.
+ *
+ *  Priced as a late-game permanent buy, not a consumable. The hangar sits
+ *  behind a completed museum and every drone is a standing Gold faucet
+ *  (one forage claim of 15 to 60 Gold every 20 to 30 seconds the farm is
+ *  open, capped only by the shared daily ceiling), so a drone should take
+ *  hours of patrolling to pay itself off. The 2,500 it launched at earned
+ *  itself back in about half an hour. */
+export const DRONE_DEPLOY_COST_GOLD = 25_000;
 
 /* ------------------------------------------------------------------ */
 /* Drop spacing                                                        */

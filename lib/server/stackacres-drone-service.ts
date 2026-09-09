@@ -29,13 +29,13 @@ import {
  * has donated at least one item to every exhibit in
  * `MUSEUM_EXHIBIT_CATALOGUE`.
  *
- * COMPLIANCE MIRROR, NOT A SECOND LEDGER: both RPCs above ALSO write a
- * best-effort, write-only record into the confirmed-dead `homestead_inventory`
- * table (`drone_hangar_deploy_fee_mirror_gold` / `drone_forage_reward_mirror_gold`)
- * -- see the migration's own COMPLIANCE ADDENDUM for why. Nothing in this
- * file, or anywhere else in this codebase, ever reads either row back. If a
- * future change makes it look tempting to read one, don't -- add a real
- * column to `stackacres_drones` instead.
+ * NO INVENTORY MIRROR: the first drone migration also wrote each Gold
+ * movement into the dead `homestead_inventory` table as a write-only
+ * record. Its `quantity >= 0` check rejected the second deploy's negative
+ * delta and rolled the whole purchase back, so
+ * `20260908120000_stackacres_drone_drop_inventory_mirror.sql` removed both
+ * writes. Nothing ever read them. If a drone ever needs durable state
+ * beyond ownership, add a column to `stackacres_drones`.
  */
 
 /** Whether this profile has unlocked the drone hangar: at least one

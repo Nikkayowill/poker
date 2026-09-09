@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cropSpot, CROP_FIELD_BEDS, growAreaBounds, stockZone } from "@/lib/stackacres/world";
+import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
@@ -25,7 +25,7 @@ import { __resetStackAcresPipesForTest } from "./stackacres-pipe-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { SECTOR_LADDER } from "@/lib/stackacres/sectors";
 import { adjustGold, ensureProfile } from "./profile-store";
-import { createSoilMap, mergeSoilTiles } from "@/lib/stackacres/soil";
+import { createSoilMap } from "@/lib/stackacres/soil";
 
 const T0 = new Date("2026-08-31T12:00:00.000Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
@@ -67,7 +67,7 @@ async function sowCropOnKnownTile(token: string) {
   const view = await stockStackAcres(token, { stock: "corn" }, T0);
   const unit = view.units.filter((u) => u.stock === "corn").at(-1);
   if (!unit) throw new Error("no corn unit");
-  const soil = createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, view.soilTiles));
+  const soil = createSoilMap(view.soilTiles);
   const spot = cropSpot(stockZone("corn"), unit.id, {
     soil,
     rank: 0,

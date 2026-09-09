@@ -127,7 +127,6 @@ import {
   soilTileDiamond,
   soilTileKey,
   soilTileTier,
-  starterSoilTiles,
   type SoilMap,
   type SoilTile,
   type SoilTileCoord,
@@ -1420,17 +1419,15 @@ export class StackAcresScene extends Phaser.Scene {
   private nodes = new Map<string, UnitNode>();
   private units: StackAcresSceneUnit[] = [];
   /**
-   * The player's placed soil, seeded with the free starter beds.
-   *
-   * Seeded HERE, at field initialisation, rather than from a server payload,
-   * because nothing persists a soil tile yet: `starterSoilTiles` derives the
-   * same two coordinates from the live grow-area rect on every device and
-   * every reload, so a save that has never heard of soil still opens on the
-   * same two beds. Tiles bought from the shop need a table before they can
-   * survive a reload -- see `setSoil`, which is the seam they will arrive
+   * The player's placed soil. Empty until the first server payload arrives
+   * -- USED TO be seeded here with a free starter grant
+   * (`starterSoilTiles(CROP_FIELD_BEDS)`), removed along with the feature
+   * (see lib/stackacres/soil.ts's own "starter kit" section): every bed on
+   * the field is now one the player bought, so there is nothing to derive
+   * ahead of the response. See `setSoil`, the seam a bought tile arrives
    * through.
    */
-  private soil: SoilMap = createSoilMap(starterSoilTiles(CROP_FIELD_BEDS));
+  private soil: SoilMap = createSoilMap();
   /**
    * Each crop's rank among its siblings, rebuilt once per `setUnits` rather
    * than derived per lookup: `unitAt` asks for every node's spot on every

@@ -186,7 +186,18 @@ const bodySchema = z.discriminatedUnion("action", [
   // sending it true only ever narrows what is accepted (crops only, the
   // Greenhouse must already stand, a free slot must exist) -- it can never
   // let a request skip a check the plain `stock` action already enforces.
-  z.object({ action: z.literal("stock"), stock: stockSchema, inGreenhouse: z.boolean().optional() }),
+  // `tx`/`ty` are optional too, and just as harmless to trust: they name the
+  // bed the player tapped to open the seed menu, and `assignSoilSlot` only
+  // ever honours one that resolves to a real, unoccupied bed the player
+  // owns -- anything else (no soil there, someone else's slot, out of range)
+  // falls straight through to the ordinary lowest-free-slot pick.
+  z.object({
+    action: z.literal("stock"),
+    stock: stockSchema,
+    inGreenhouse: z.boolean().optional(),
+    tx: z.number().int().min(-512).max(512).optional(),
+    ty: z.number().int().min(-512).max(512).optional(),
+  }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
   // No `unitIds` at all means "bring in everything that is ready", which is
@@ -430,7 +441,15 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":
-      return stockStackAcres(token, { stock: action.stock, inGreenhouse: action.inGreenhouse }, now);
+      return stockStackAcres(
+        token,
+        {
+          stock: action.stock,
+          inGreenhouse: action.inGreenhouse,
+          tile: action.tx !== undefined && action.ty !== undefined ? { tx: action.tx, ty: action.ty } : null,
+        },
+        now,
+      );
     case "buy-stock":
       return buyStackAcresStock(token, { stock: action.stock }, now);
     case "retire":

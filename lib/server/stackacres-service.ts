@@ -87,8 +87,8 @@ import {
 } from "./stackacres-pipe-store";
 import {
   createSoilMap,
-  mergeSoilTiles,
   nextFreeSoilSlot,
+  soilSlotForTile,
   soilSlotTile,
   soilTileAt,
   soilTileKey,
@@ -96,6 +96,7 @@ import {
   soilTileTier,
   type SoilMap,
   type SoilTile,
+  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
 import {
   SOIL_BAGS_PER_PURCHASE,
@@ -584,10 +585,9 @@ export interface StackAcresView {
    *  renders straight off this; a crop a hydrated pipe waters is already
    *  reflected in `units` (its `isWatered`/`state`), not re-derived here. */
   irrigation: PipeNode[];
-  /** Purchased soil beds on the Crop Fields' own lattice (lib/stackacres/soil.ts).
-   *  Starter tiles are NOT in this list -- they are derived client-side by
-   *  `starterSoilTiles` and never persisted, see that function's own header.
-   *  The client merges the two before handing the result to the scene. */
+  /** This profile's soil beds on the Crop Fields' own lattice
+   *  (lib/stackacres/soil.ts) -- every one of it, since the free starter
+   *  grant was removed (see that file's own "starter kit" section). */
   soilTiles: SoilTile[];
   /** Bags of each soil tier bought from Ray but not laid down yet
    *  (`homestead_soil_stock`). A missing tier and 0 mean the same thing. */
@@ -693,9 +693,12 @@ function irrigationGridFor(
   };
 }
 
-/** The full slot space for one farm: the starter pair plus what was bought. */
+/** The full slot space for one farm: every tile it has bought. USED TO also
+ *  merge in a free starter pair (`mergeSoilTiles`, since deleted along with
+ *  the starter grant -- see lib/stackacres/soil.ts's own "starter kit"
+ *  section) -- a farm's placed soil is now simply what it purchased. */
 function soilMapFor(purchased: readonly SoilTile[]): SoilMap {
-  return createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, purchased));
+  return createSoilMap(purchased);
 }
 
 function parseUnitId(value: unknown): string {
@@ -972,14 +975,22 @@ async function refundGold(profileId: string, gold: number): Promise<void> {
  * purchase, and a null slot is exactly the pre-tier behaviour (the renderer
  * falls back to the rank hash and the crop wraps into a shared slot).
  *
- * The full slot space is the starter pair plus what has been bought, flattened
- * by `mergeSoilTiles` -- the SAME helper the shell hands the scene, which is
- * what makes the slot index this returns mean the same bed on both sides.
+ * `tile`, when given, is the bed the player actually tapped to open the
+ * seed menu -- honoured exactly when it names a real, unoccupied bed, so a
+ * planting lands where the player was looking rather than on whatever the
+ * lowest free slot happens to be. A stale tap (the bed filled a beat
+ * earlier, or names ground with no bed at all) falls straight through to
+ * the same "lowest free slot" pick every other sow uses, never a refusal.
+ *
+ * The full slot space is every tile this profile has bought, in the SAME
+ * order (`soilMapFor`) the shell hands the scene, which is what makes the
+ * slot index this returns mean the same bed on both sides.
  */
 async function assignSoilSlot(
   profileId: string,
   stock: StackAcresStock,
   inGreenhouse: boolean,
+  tile: SoilTileCoord | null = null,
 ): Promise<{ slot: number | null; growthMultiplier: number }> {
   const plain = { slot: null, growthMultiplier: 1 };
   if (inGreenhouse) return plain;
@@ -989,17 +1000,22 @@ async function assignSoilSlot(
     listStackAcresSoilTiles(profileId),
     listStackAcresUnits(profileId),
   ]);
-  const soil = createSoilMap(mergeSoilTiles(CROP_FIELD_BEDS, purchased));
+  const soil = soilMapFor(purchased);
   const taken = units
     .map((unit) => unit.soilSlot)
     .filter((slot): slot is number => slot !== null);
 
-  const slot = nextFreeSoilSlot(soil, taken);
+  let slot: number | null = null;
+  if (tile) {
+    const tapped = soilSlotForTile(soil, tile.tx, tile.ty);
+    if (tapped !== null && !taken.includes(tapped)) slot = tapped;
+  }
+  if (slot === null) slot = nextFreeSoilSlot(soil, taken);
   if (slot === null) return plain;
-  const tile = soilSlotTile(soil, slot);
-  if (!tile) return plain;
+  const tileRow = soilSlotTile(soil, slot);
+  if (!tileRow) return plain;
 
-  return { slot, growthMultiplier: soilGrowthMultiplier(soilTileTier(tile)) };
+  return { slot, growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) };
 }
 
 /**
@@ -1801,7 +1817,7 @@ export async function buyStackAcresStock(
  */
 export async function stockStackAcres(
   token: string,
-  input: { stock: string; inGreenhouse?: boolean },
+  input: { stock: string; inGreenhouse?: boolean; tile?: SoilTileCoord | null },
   now = new Date(),
 ): Promise<StackAcresView> {
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
@@ -1809,6 +1825,7 @@ export async function stockStackAcres(
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
   const inGreenhouse = input.inGreenhouse === true;
+  const tile = input.tile ?? null;
 
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
@@ -1901,7 +1918,7 @@ export async function stockStackAcres(
   // sub-grid instead, so both keep a null slot and the plain multiplier. The
   // two effects do not stack for the additional reason that they would
   // otherwise multiply into a cycle far shorter than either was tuned for.
-  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse);
+  let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
 
   try {
     // `assignSoilSlot` only reads; a second sow can read the same free slot
@@ -1946,7 +1963,9 @@ export async function stockStackAcres(
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
         soilAssignment =
-          attempt < 2 ? await assignSoilSlot(profile.id, stock, inGreenhouse) : { slot: null, growthMultiplier: 1 };
+          attempt < 2
+            ? await assignSoilSlot(profile.id, stock, inGreenhouse, tile)
+            : { slot: null, growthMultiplier: 1 };
       }
     }
   } catch (error) {

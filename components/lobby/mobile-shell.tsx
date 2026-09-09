@@ -88,6 +88,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { RankStrip } from "@/components/profile/rank-strip";
 import { InstallPrompt } from "@/components/install-prompt";
 import { LobbyNotices } from "./lobby-notices";
+import { FirstRunStrip } from "./first-run-strip";
 
 /**
  * The settle transition's duration at a full pane width of travel — matches
@@ -484,6 +485,14 @@ function PlayPane({
       <InstallPrompt />
 
       {error && <p className="form-error"><X size={14} /> {error}</p>}
+
+      {/* Same strip and the same retirement rule as the desktop hub -- see
+          first-run-strip.tsx. This pane is the phone's whole "Play" screen,
+          so it is the equivalent spot to the desktop hub-head: above the
+          hero, never inside it. Missing here meant a new guest on a phone,
+          which is most of this app's real traffic, never saw the app's only
+          onboarding at all. */}
+      <FirstRunStrip profile={profile} onTakeSeat={onOpenBuyIn} />
 
       {/* The real table plate from public/pokertable, the same art the desktop
           hero tile carries, dissolved into the card rather than sat on top of

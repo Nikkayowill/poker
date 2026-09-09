@@ -10,8 +10,12 @@
  * the scene's `isoProject` landing on the same pixels; soil-grid.test.ts
  * holds the two together corner for corner.
  *
- * The grid is occupancy and snap only. Beds are still painted by the scene's
- * own soil painter, so the sprites the manager creates are inert stubs.
+ * The grid owns occupancy, snapping, AND the bed sprites themselves once a
+ * caller hands it a real `SpriteFactory` (see `stackacres-scene.ts`'s
+ * `paintSoilTiles`, which bakes a `SOIL_BED_TEXTURE_KEY` texture and passes
+ * `phaserSpriteFactory`-equivalent closure). Left unset, `createSoilGrid`
+ * still defaults to inert stub sprites, which is all the manager's own
+ * tests need.
  */
 
 import { isoProject } from "./iso";
@@ -21,6 +25,7 @@ import {
   type Footprint,
   type GridCell,
   type PlacedAsset,
+  type SpriteFactory,
 } from "./isometric-grid-manager";
 import { SOIL_TILE, soilTileAt, soilTileKey, type SoilMap, type SoilTileCoord } from "./soil";
 import { CROP_FIELD_BEDS, type WorldPoint, type WorldRect } from "./world";
@@ -69,13 +74,17 @@ export function soilBedFootprint(area: WorldRect, tile: SoilTileCoord): Footprin
  * from before a re-lay) is skipped rather than thrown on: the grid answers
  * placement questions, it is not the record of what exists.
  */
-export function createSoilGrid(soil: SoilMap, area: WorldRect = CROP_FIELD_BEDS): SoilGrid {
+export function createSoilGrid(
+  soil: SoilMap,
+  area: WorldRect = CROP_FIELD_BEDS,
+  createSprite: SpriteFactory = (spec) => new StubSprite(spec),
+): SoilGrid {
   const grid = new IsometricGridManager({
     columns: Math.floor(area.width / SOIL_GRID_CELL),
     rows: Math.floor(area.height / SOIL_GRID_CELL),
     origin: isoProject(area.x + SOIL_GRID_CELL / 2, area.y + SOIL_GRID_CELL / 2),
     groundTextureKey: SOIL_GROUND_TEXTURE_KEY,
-    createSprite: (spec) => new StubSprite(spec),
+    createSprite,
   });
   for (const tile of soil.values()) {
     const f = soilBedFootprint(area, tile);

@@ -15,6 +15,7 @@ import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
+import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS } from "@/lib/stackacres/friendship";
 import {
   activateStackAcresSynergyPerk,
@@ -50,6 +51,8 @@ import {
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
   forgeStackAcresToolEnchantment,
+  plantStackAcresCrossbreedBed,
+  harvestStackAcresCrossbreedBed,
   placeStackAcresPipeTile,
   removeStackAcresPipeTile,
   buyStackAcresSoil,
@@ -327,6 +330,18 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("forge-enchantment"),
     itemId: z.enum(FORGE_ENCHANTMENT_IDS as unknown as [string, ...string[]]),
   }),
+  // The Crossbreeding Bed (lib/stackacres/crossbreeding.ts). `plant-crossbreed`
+  // pays the way `stock` does -- one seed off the shelf for a crop, Gold for
+  // livestock -- and is bounded to the fixed 4x4 grid here so a fabricated
+  // coordinate never reaches the store. `harvest-crossbreed` moves no Gold:
+  // a hybrid is inventory, credited only inside the settlement RPC.
+  z.object({
+    action: z.literal("plant-crossbreed"),
+    row: z.number().int().min(0).max(CROSSBREED_GRID_ROWS - 1),
+    col: z.number().int().min(0).max(CROSSBREED_GRID_COLS - 1),
+    stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
+  }),
+  z.object({ action: z.literal("harvest-crossbreed"), plotId: z.string().uuid() }),
   // The irrigation pipe network. `place-pipe` spends Gold -- a construction
   // sink, like `place-machine`, refunded only if the tile cannot land;
   // `remove-pipe` moves no Gold. Hydration itself is free (a hydrated pipe
@@ -504,6 +519,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return prestigeResetStackAcres(token, now);
     case "forge-enchantment":
       return forgeStackAcresToolEnchantment(token, action.itemId, now);
+    case "plant-crossbreed":
+      return plantStackAcresCrossbreedBed(token, { row: action.row, col: action.col, stock: action.stock }, now);
+    case "harvest-crossbreed":
+      return harvestStackAcresCrossbreedBed(token, action.plotId, now);
     case "place-pipe":
       return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
     case "remove-pipe":

@@ -4427,3 +4427,192 @@
   .sa-radial-name { font-size: 11px; }
   .sa-radial-cost { font-size: 11px; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* The Crossbreeding Bed sheet (crossbreed-bed-sheet.tsx)                 */
+/* ---------------------------------------------------------------------- */
+/* Same sheet/scrim chrome as .sa-forge-*, its own prefix for the same
+   reason that block gives. The bed is a fixed 4x4 of square cells, each a
+   button: soil-brown when planted, paper when empty, a leaf ring once ripe
+   and a corn ring when a ripe neighbour could cross with it. */
+
+.sa-xb-note {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sa-ink);
+}
+
+.sa-xb-note.is-paid {
+  background: var(--sa-leaf);
+  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+}
+
+.sa-xb-note.is-refused {
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+}
+
+.sa-xb-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 8px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+}
+
+.sa-xb-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 4px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-choc);
+  box-shadow: inset 0 -3px 0 var(--sa-choc-rim);
+  color: var(--sa-cream);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.sa-xb-cell:disabled { cursor: default; }
+
+.sa-xb-cell.is-empty {
+  background: var(--sa-paper);
+  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  color: var(--sa-ink-soft);
+}
+
+.sa-xb-cell.is-empty:not(:disabled):hover,
+.sa-xb-cell.is-picking {
+  color: var(--sa-ink);
+  box-shadow: inset 0 0 0 3px var(--sa-leaf), inset 0 -3px 0 var(--sa-cream-rim);
+}
+
+.sa-xb-cell.is-ripe {
+  box-shadow: inset 0 0 0 3px var(--sa-leaf), inset 0 -3px 0 var(--sa-choc-rim);
+}
+
+.sa-xb-cell.is-cross {
+  box-shadow: inset 0 0 0 3px var(--sa-corn), inset 0 -3px 0 var(--sa-choc-rim);
+}
+
+.sa-xb-cell-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-xb-sprite {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.sa-xb-picker {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+}
+
+.sa-xb-picker-title {
+  margin: 0 0 8px;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-xb-stock {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-xb-stock-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 6px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop);
+  color: var(--sa-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sa-xb-stock-btn:disabled { cursor: default; }
+.sa-xb-stock-btn.is-short { opacity: .55; }
+
+.sa-xb-stock-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-xb-h {
+  margin: 14px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.sa-xb-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-xb-pairs li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sa-xb-pairs li strong {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

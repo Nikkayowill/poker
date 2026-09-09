@@ -48,6 +48,7 @@ import {
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
 import {
+  isStackAcresCrop,
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
   STACKACRES_FEED,
@@ -3025,7 +3026,17 @@ export function StackAcresFarm() {
           {radial && !radialInCropFieldBeds && (
             <StackAcresRadialMenu
               at={radial.at}
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity })}
+              // `buyOptionsForZone` is zone-keyed, not bed-aware, so for the
+              // Farmstead it still returns all 22 crops even out here on the
+              // yard -- the ring's fixed arc has no room for that (see
+              // StackAcresSeedStrip's own header) and it has nowhere to
+              // plant them anyway (a crop needs a bed, and beds only exist
+              // inside `radialInCropFieldBeds`). Crops are dropped here for
+              // the same reason the seed strip above is the only place they
+              // ever appear.
+              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity }).filter(
+                (option) => !isStackAcresCrop(option.stock),
+              )}
               districtLabel={STACKACRES_ZONES[radial.zone].label}
               busy={
                 pendingByPrefix("stock") ||

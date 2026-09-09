@@ -14,6 +14,8 @@ import {
   expandStackAcresCapacity,
   feedStackAcres,
   harvestStackAcres,
+  harvestStackAcresCrossbreedBed,
+  plantStackAcresCrossbreedBed,
   readStackAcres,
   retireStackAcresStock,
   runStackAcresAction,
@@ -46,6 +48,7 @@ import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
+import { __resetStackAcresCrossbreedForTest } from "./stackacres-crossbreeding-store";
 import {
   __stackacresHarvestsForTest,
   __resetStackAcresForTest,
@@ -90,6 +93,7 @@ import {
 import {
   __resetStackAcresSeedStockForTest,
   adjustStackAcresSeedStock,
+  readStackAcresSeedStock,
 } from "./stackacres-seed-store";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
 import {
@@ -332,6 +336,7 @@ beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresBlueprintsForTest();
   __resetStackAcresSeedStockForTest();
+  __resetStackAcresCrossbreedForTest();
   resetStackAcresDroneStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
@@ -1903,10 +1908,12 @@ describe("the currency wall", () => {
       "forge-enchantment",
       "fulfill-contract",
       "give-gift",
+      "harvest-crossbreed",
       "midnight-merchant-buy",
       "place-machine",
       "place-pipe",
       "place-soil-tile",
+      "plant-crossbreed",
       "pray",
       "prestige-reset",
       "process",
@@ -1956,7 +1963,10 @@ describe("the currency wall", () => {
     // makes. `forge-enchantment` is the same shape again -- a pure sink
     // (Gold plus a processing-track material, via forge_stackacres_
     // enchantment) whose two crit-touching enchantments reshape the same
-    // roll `collect` already makes, never a new payer. `midnight-merchant-buy` spends too, via
+    // roll `collect` already makes, never a new payer. `plant-crossbreed` spends
+    // (a seed or Gold, the same split `stock` takes) and `harvest-crossbreed`
+    // moves no Gold at all: a hybrid is credited to its own inventory table
+    // inside the settlement RPC, never to the purse. `midnight-merchant-buy` spends too, via
     // `redeemMidnightMerchantItem`, which reaches `spend_gold_by_profile`
     // inside its own row-locked RPC (see
     // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
@@ -3629,6 +3639,118 @@ describe("Synergy Tree", () => {
  * multiplier -- the one seam prestige.test.ts and harvest.test.ts cannot see
  * on their own, since neither reaches across into the other's module.
  */
+describe("Crossbreeding Bed", () => {
+  /** The HTTP status a refused call carried, or a throw if it was not
+   *  refused at all. Duck-typed on `status` so this block needs no error
+   *  class import of its own. */
+  async function refusal(call: Promise<unknown>): Promise<number> {
+    try {
+      await call;
+    } catch (error) {
+      if (error instanceof Error && "status" in error && typeof error.status === "number") {
+        return error.status;
+      }
+      throw error;
+    }
+    throw new Error("expected a refusal");
+  }
+
+  const PIG = STACKACRES_CATALOGUE.pig;
+  const BOTH_RIPE = new Date(T0.getTime() + Math.max(HEN.durationMs, PIG.durationMs));
+
+  it("plants a crop off the seed shelf and livestock for Gold, and exposes both on the view", async () => {
+    const { token, id } = await funded();
+    const gold = await balance(token);
+    const seeds = (await readStackAcresSeedStock(id)).corn ?? 0;
+
+    const afterCorn = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "corn" }, T0);
+    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds - 1);
+    expect(await balance(token)).toBe(gold);
+    expect(afterCorn.crossbreed.plots).toHaveLength(1);
+    expect(afterCorn.crossbreed.plots[0]).toMatchObject({ row: 0, col: 0, stock: "corn", ready: false });
+    expect(afterCorn.crossbreedResult.planted.id).toBe(afterCorn.crossbreed.plots[0].id);
+
+    const afterHen = await plantStackAcresCrossbreedBed(token, { row: 0, col: 1, stock: "hen" }, T0);
+    expect(await balance(token)).toBe(gold - HEN.seedCost);
+    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds - 1);
+    expect(afterHen.crossbreed.plots).toHaveLength(2);
+    expect(afterHen.crossbreed.inventory).toEqual({});
+  });
+
+  it("refunds the stake when the cell is already planted, in whichever currency it took", async () => {
+    const { token, id } = await funded();
+    await plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "hen" }, T0);
+    const gold = await balance(token);
+    const seeds = (await readStackAcresSeedStock(id)).corn ?? 0;
+
+    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "hen" }, T0))).toBe(409);
+    expect(await balance(token)).toBe(gold);
+    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 1, col: 1, stock: "corn" }, T0))).toBe(409);
+    expect((await readStackAcresSeedStock(id)).corn).toBe(seeds);
+  });
+
+  it("refuses a cell off the bed, a crop with no seeds, and livestock it cannot afford, taking nothing", async () => {
+    const { token, id } = await funded(0);
+    await adjustStackAcresSeedStock(id, "corn", -1000);
+    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 4, col: 0, stock: "hen" }, T0))).toBe(400);
+    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "corn" }, T0))).toBe(400);
+    expect(await refusal(plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0))).toBe(400);
+    expect(await balance(token)).toBe(0);
+    expect((await readStackAcresSeedStock(id)).corn ?? 0).toBe(0);
+    expect((await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "carrot" }, T0)).crossbreed.plots).toHaveLength(1);
+  });
+
+  it("refuses to bring in a row that is not ripe yet", async () => {
+    const { token } = await funded();
+    const view = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
+    const plotId = view.crossbreed.plots[0].id;
+    expect(await refusal(harvestStackAcresCrossbreedBed(token, plotId, T0))).toBe(409);
+    expect((await readStackAcres(token, T0)).crossbreed.plots).toHaveLength(1);
+  });
+
+  it("a plain harvest clears only the tapped row and credits nothing", async () => {
+    const { token } = await funded();
+    const view = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
+    const plotId = view.crossbreed.plots[0].id;
+    const after = await harvestStackAcresCrossbreedBed(token, plotId, HEN_READY);
+    expect(after.crossbreedResult).toEqual({ clearedPlotIds: [plotId], hybridItem: null, hybridQuantity: null });
+    expect(after.crossbreed.plots).toHaveLength(0);
+    expect(after.crossbreed.inventory).toEqual({});
+    expect(await refusal(harvestStackAcresCrossbreedBed(token, plotId, HEN_READY))).toBe(409);
+  });
+
+  it("a cross clears both rows and credits the one hybrid, and a miss leaves the neighbour growing", async () => {
+    const { token } = await funded();
+    const planted = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, T0);
+    await plantStackAcresCrossbreedBed(token, { row: 0, col: 1, stock: "pig" }, T0);
+    const henId = planted.crossbreed.plots[0].id;
+
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.999);
+    try {
+      const missed = await harvestStackAcresCrossbreedBed(token, henId, BOTH_RIPE);
+      expect(missed.crossbreedResult).toEqual({ clearedPlotIds: [henId], hybridItem: null, hybridQuantity: null });
+      expect(missed.crossbreed.plots).toHaveLength(1);
+      expect(missed.crossbreed.plots[0].stock).toBe("pig");
+
+      const replanted = await plantStackAcresCrossbreedBed(token, { row: 0, col: 0, stock: "hen" }, BOTH_RIPE);
+      const secondHenId = replanted.crossbreedResult.planted.id;
+      random.mockReturnValue(0);
+      const hit = await harvestStackAcresCrossbreedBed(
+        token,
+        secondHenId,
+        new Date(BOTH_RIPE.getTime() + HEN.durationMs),
+      );
+      expect(hit.crossbreedResult.hybridItem).toBe("marbled_down");
+      expect(hit.crossbreedResult.hybridQuantity).toBe(1);
+      expect(hit.crossbreedResult.clearedPlotIds).toHaveLength(2);
+      expect(hit.crossbreed.plots).toHaveLength(0);
+      expect(hit.crossbreed.inventory).toEqual({ marbled_down: 1 });
+    } finally {
+      random.mockRestore();
+    }
+  });
+});
+
 async function giveLifetimeGross(profileId: string, gross: number): Promise<void> {
   await recordStackAcresHarvest({
     profileId,

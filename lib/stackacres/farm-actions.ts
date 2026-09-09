@@ -98,6 +98,11 @@ export type Action =
   // The Sunlight Forge: a permanent tool enchantment, catalogue id (not the
   // versioned wrapper). See lib/stackacres/forge.ts.
   | { action: "forge-enchantment"; itemId: string }
+  // The Crossbreeding Bed (./crossbreeding.ts). `plant-crossbreed` pays the
+  // way `stock` does -- a seed off the shelf for a crop, Gold for livestock;
+  // `harvest-crossbreed` moves no Gold, a hybrid is inventory not a payout.
+  | { action: "plant-crossbreed"; row: number; col: number; stock: StackAcresStock }
+  | { action: "harvest-crossbreed"; plotId: string }
   // The irrigation pipe network. `tx`/`ty` are STACKACRES_TILE lattice
   // coordinates (floor(worldX / PIPE_TILE)), not world units -- see
   // lib/stackacres/irrigation.ts's `pipeTileAt`. `place-pipe` spends Gold
@@ -120,6 +125,11 @@ export type Action =
  */
 export function intentOf(body: Action): string {
   if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  // One bed cell, not one stock kind: two presses planting hens in two
+  // different cells are two intents, and the generic "stock" branch below
+  // would collapse them onto one. Checked before it for that reason.
+  if (body.action === "plant-crossbreed") return `${body.action}:${body.row},${body.col}`;
+  if ("plotId" in body) return `${body.action}:${body.plotId}`;
   // Distinguished from an outdoor sow of the same crop: the two are
   // different intents (different slot cap, different growth clock), and
   // treating them as one would let a request in flight for one silently

@@ -5,6 +5,7 @@ import clsx from "clsx";
 import {
   ChevronLeft,
   Coins,
+  Dna,
   HelpCircle,
   Lock,
   RotateCcw,
@@ -162,6 +163,16 @@ import {
   type StackAcresPrestigeActionResult,
 } from "./prestige-reset-modal";
 import { SunlightForgeTable, type ForgeActionResult } from "./SunlightForgeTable";
+import {
+  CrossbreedBedSheet,
+  type CrossbreedActionResult,
+  type CrossbreedHarvestActionResult,
+} from "./crossbreed-bed-sheet";
+import {
+  emptyCrossbreedBedView,
+  type CrossbreedBedView,
+  type CrossbreedHarvestSettlement,
+} from "@/lib/stackacres/crossbreeding";
 import { SynergyOverlay } from "./SynergyOverlay";
 import {
   MidnightMerchantStorefront,
@@ -447,6 +458,18 @@ interface StackAcresResponse {
    *  same as `prestige` above -- optional only so a bundle old enough to
    *  predate the feature keeps working. See lib/stackacres/forge.ts. */
   forge?: readonly string[];
+  /** The Crossbreeding Bed, straight off `StackAcresView.crossbreed`. Always
+   *  present on a current server, same as `forge` above -- optional only so a
+   *  bundle old enough to predate the feature keeps working, which
+   *  `applyResponse` reads as "nothing planted". See
+   *  lib/stackacres/crossbreeding.ts. */
+  crossbreed?: CrossbreedBedView;
+  /** Set only by a `plant-crossbreed`/`harvest-crossbreed` response; every
+   *  other action's answer leaves this undefined. `crossbreed` above already
+   *  carries the resulting bed -- the harvest shape is the one the sheet
+   *  reads back for its own "what did this breed" line, the plant shape is
+   *  never read (the bed repainting IS its confirmation). */
+  crossbreedResult?: CrossbreedHarvestSettlement | { planted: unknown };
   /** The irrigation pipe network, straight off `StackAcresView.irrigation`.
    *  Always present on a current server, same as `prestige`/`forge` above --
    *  optional only so a bundle old enough to predate the feature keeps
@@ -565,6 +588,13 @@ export function StackAcresFarm() {
   // a brand-new farm's own first read comes back with.
   const [forge, setForge] = useState<readonly string[]>([]);
   const [showForge, setShowForge] = useState(false);
+  // The Crossbreeding Bed. Seeded empty -- the same standing a brand-new
+  // farm's own first read comes back with. `lastCrossbreedHarvest` is the
+  // same sidecar-ref shape `lastPrestigeReset` uses, for the same reason:
+  // `act`'s fixed return type has no room for what a harvest just bred.
+  const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
+  const [showCrossbreed, setShowCrossbreed] = useState(false);
+  const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
   // The irrigation pipe network. Seeded empty -- the same standing a
   // brand-new farm's own first read comes back with.
   const [irrigation, setIrrigation] = useState<readonly PipeNode[]>([]);
@@ -1118,6 +1148,10 @@ export function StackAcresFarm() {
     if (data.prestige) setPrestige(data.prestige);
     if (data.prestigeReset) lastPrestigeReset.current = data.prestigeReset;
     if (data.forge) setForge(data.forge);
+    if (data.crossbreed) setCrossbreed(data.crossbreed);
+    if (data.crossbreedResult && "hybridItem" in data.crossbreedResult) {
+      lastCrossbreedHarvest.current = data.crossbreedResult;
+    }
     if (data.irrigation) setIrrigation(data.irrigation);
     if (data.blueprints) setBlueprints(data.blueprints);
     // Every response carries the FULL purchased list, not a diff, so a feed
@@ -2447,6 +2481,24 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** The Crossbreeding Bed's two requests. A plant is answered by the bed
+   *  itself repainting off the response; a harvest also wants to say what it
+   *  bred, which rides the same sidecar ref `onPrestigeReset` uses. */
+  const onPlantCrossbreed = useCallback(
+    (row: number, col: number, stock: StackAcresStock): Promise<CrossbreedActionResult> =>
+      act({ action: "plant-crossbreed", row, col, stock }),
+    [act],
+  );
+  const onHarvestCrossbreed = useCallback(
+    async (plotId: string): Promise<CrossbreedHarvestActionResult> => {
+      lastCrossbreedHarvest.current = null;
+      const result = await act({ action: "harvest-crossbreed", plotId });
+      if (!result.ok) return result;
+      return { ok: true, settlement: lastCrossbreedHarvest.current };
+    },
+    [act],
+  );
+
   /** Ray's Mythic Blueprints. Same shape reuse as `onForgeEnchantment` above
    *  -- `act`'s `ContractActionResult` is already a superset of
    *  `BlueprintActionResult`, and `blueprints` in the response already
@@ -2949,6 +3001,20 @@ export function StackAcresFarm() {
       >
         <Wand2 size={13} aria-hidden="true" />
         <strong>{forge.length}/{Object.keys(FORGE_ENCHANTMENTS).length}</strong>
+      </button>
+      {/* The Crossbreeding Bed's own entry point -- same standing-badge
+          posture as the two above it. The count is hybrids bred to date,
+          the one number about the bed worth a glance every session. */}
+      <button
+        type="button"
+        className="sa-prestige-badge"
+        onClick={() => { panelSound(); setShowCrossbreed(true); }}
+        title="The Crossbreeding Bed"
+      >
+        <Dna size={13} aria-hidden="true" />
+        <strong>
+          {Object.values(crossbreed.inventory).reduce((sum, qty) => sum + (qty ?? 0), 0)}
+        </strong>
       </button>
       <StackAcresMusicToggle />
     </>
@@ -3934,6 +4000,20 @@ export function StackAcresFarm() {
           busy={isPending("forge-enchantment")}
           onForge={onForgeEnchantment}
           onClose={() => { panelSound(); setShowForge(false); }}
+        />
+      )}
+
+      {showCrossbreed && (
+        <CrossbreedBedSheet
+          bed={crossbreed}
+          seedStock={seedStock}
+          goldBalance={profile?.goldBalance ?? 0}
+          unlimitedGold={profile?.unlimitedGold ?? false}
+          cropFieldsUnlocked={cropFieldsUnlocked}
+          busy={pendingByPrefix("plant-crossbreed") || pendingByPrefix("harvest-crossbreed")}
+          onPlant={onPlantCrossbreed}
+          onHarvest={onHarvestCrossbreed}
+          onClose={() => { panelSound(); setShowCrossbreed(false); }}
         />
       )}
       {/*

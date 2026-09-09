@@ -304,6 +304,22 @@ import {
   listOwnedForgeEnchantmentIds,
 } from "./stackacres-forge-service";
 import { FORGE_ENCHANTMENTS, isForgeEnchantmentId } from "@/lib/stackacres/forge";
+import {
+  harvestCrossbreedBed,
+  plantCrossbreedBed,
+  type CrossbreedHarvestSettlement,
+  type StoredCrossbreedPlot,
+} from "./stackacres-crossbreeding-service";
+import {
+  listStackAcresCrossbreedPlots,
+  readStackAcresCrossbreedInventory,
+} from "./stackacres-crossbreeding-store";
+import {
+  isInCrossbreedGrid,
+  toCrossbreedPlotView,
+  type CrossbreedBedView,
+  type CrossbreedPlotView,
+} from "@/lib/stackacres/crossbreeding";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 import {
   emptySecretMuseumRegistry,
@@ -580,6 +596,11 @@ export interface StackAcresView {
    *  holds -- there is no per-tool-instance row, see lib/stackacres/
    *  forge.ts's own header for why that is deliberate. */
   forge: readonly string[];
+  /** The Crossbreeding Bed: every planted cell on its own fixed 4x4 grid,
+   *  readiness already derived by this server's clock, and the hybrids bred
+   *  so far. See lib/stackacres/crossbreeding.ts's own header for why this
+   *  is its own grid and not a revival of the dead plot grid. */
+  crossbreed: CrossbreedBedView;
   /** The irrigation pipe network: every placed tile with its recomputed
    *  connector frame and hydration (lib/stackacres/irrigation.ts). The scene
    *  renders straight off this; a crop a hydrated pipe waters is already
@@ -791,6 +812,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     prestige,
     lifetimeGross,
     forgedEnchantments,
+    crossbreedPlots,
+    crossbreedInventory,
     pipeRows,
     soilTiles,
     soilStock,
@@ -829,6 +852,8 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresPrestige(profile.id),
     readStackAcresLifetimeGross(profile.id),
     listOwnedForgeEnchantmentIds(profile.id),
+    listStackAcresCrossbreedPlots(profile.id),
+    readStackAcresCrossbreedInventory(profile.id),
     listStackAcresPipes(profile.id),
     listStackAcresSoilTiles(profile.id),
     readStackAcresSoilStock(profile.id),
@@ -910,6 +935,10 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       goldToNextPrestige: prestigeGoldRemaining(prestige, lifetimeGross),
     },
     forge: forgedEnchantments,
+    crossbreed: {
+      plots: crossbreedPlots.map((row) => toCrossbreedPlotView(row, now.getTime())),
+      inventory: crossbreedInventory,
+    },
     irrigation: [...irrigationGrid.nodes],
     soilTiles,
     soilStock,
@@ -1052,6 +1081,11 @@ export type StackAcresActionResult = StackAcresView & {
    *  -- never named `forge`, which is StackAcresView's own always-present
    *  owned-list and would collide with it in this intersection. */
   forgeResult?: unknown;
+  /** Set by `plantStackAcresCrossbreedBed`/`harvestStackAcresCrossbreedBed`
+   *  to what THIS call just did -- never named `crossbreed`, which is
+   *  StackAcresView's own always-present bed and would collide with it in
+   *  this intersection. */
+  crossbreedResult?: unknown;
   /** Set by `prayAtStackAcresShrine` to what THIS prayer just did -- never
    *  named `devotion`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
@@ -1106,6 +1140,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   }
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
   if (result.forgeResult !== undefined) delta.forgeResult = result.forgeResult;
+  if (result.crossbreedResult !== undefined) delta.crossbreedResult = result.crossbreedResult;
   if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
@@ -1718,6 +1753,119 @@ export async function forgeStackAcresToolEnchantment(
     ...(await view(profile, now)),
     forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
   };
+}
+
+/** Puts back whatever `plantStackAcresCrossbreedBed` took for `stock` (the
+ *  seed for a crop, the Gold for livestock) when the cell it paid for never
+ *  came to exist. Same split, same two calls, as stockStackAcres's own
+ *  refund branch. */
+async function refundCrossbreedStake(profileId: string, stock: StackAcresStock): Promise<void> {
+  if (isLivestock(stock)) {
+    await refundGold(profileId, STACKACRES_CATALOGUE[stock].seedCost);
+  } else {
+    await adjustStackAcresSeedStock(profileId, stock, 1).catch(() => null);
+  }
+}
+
+/**
+ * Plants one cell of the Crossbreeding Bed (lib/stackacres/crossbreeding.ts).
+ *
+ * Pays exactly the way `stockStackAcres` does, for the same reason: a crop
+ * spends one seed off Ray's shelf (its Gold already left at the shop), and
+ * livestock spends its seed cost in Gold since there is no "hen seed". Rule 1
+ * either way -- paid before the row exists, refunded if the cell turns out
+ * taken or the insert refuses. The bed has no capacity row of its own: the
+ * (profile, row, col) unique index IS the cap, so "already planted" is the
+ * store's own null here, never a count read ahead of the insert.
+ */
+export async function plantStackAcresCrossbreedBed(
+  token: string,
+  input: { row: number; col: number; stock: string },
+  now = new Date(),
+): Promise<StackAcresView & { crossbreedResult: { planted: CrossbreedPlotView } }> {
+  if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
+  if (!isInCrossbreedGrid(input.row, input.col)) {
+    throw new StackAcresRequestError("That cell is not on the bed.", 400);
+  }
+  const stock: StackAcresStock = input.stock;
+  const def = STACKACRES_CATALOGUE[stock];
+  const profile = await ensureProfile(token);
+
+  // The same land gates an open-air sow passes: the zone livestock lives in
+  // has to be cleared, and a crop needs the Crop Fields unlocked.
+  const land = await readLand(profile.id);
+  requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
+  if (!isLivestock(stock) && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
+    throw new StackAcresRequestError(
+      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  let debited: PlayerProfile;
+  if (isLivestock(stock)) {
+    const paid = await spendGoldByProfile(profile.id, def.seedCost);
+    if (!paid) {
+      throw new StackAcresRequestError(
+        `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    debited = paid;
+  } else {
+    const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
+    if (heldSeeds === null) {
+      throw new StackAcresRequestError(
+        `You have no ${def.label} seeds. Buy some from Ray's shop first.`,
+        400,
+        { round: await snapshots(profile.id, now) },
+      );
+    }
+    debited = profile;
+  }
+
+  let planted: StoredCrossbreedPlot | null;
+  try {
+    planted = await plantCrossbreedBed(profile.id, input.row, input.col, stock, now);
+  } catch (error) {
+    await refundCrossbreedStake(profile.id, stock);
+    throw error;
+  }
+  if (!planted) {
+    await refundCrossbreedStake(profile.id, stock);
+    throw new StackAcresRequestError("That cell is already planted.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return {
+    ...(await view(debited, now)),
+    crossbreedResult: { planted: toCrossbreedPlotView(planted, now.getTime()) },
+  };
+}
+
+/**
+ * Brings in one ripe cell of the Crossbreeding Bed. Moves no Gold: a plain
+ * harvest clears the row and yields nothing, a cross clears both rows and
+ * credits the one hybrid -- see harvestCrossbreedBed for the evaluate, roll,
+ * commit sequence and the RPC's own migration comment for the race it
+ * guards. A null settlement is a lost race or a not-yet-ripe tap, never
+ * "produced nothing".
+ */
+export async function harvestStackAcresCrossbreedBed(
+  token: string,
+  plotId: string,
+  now = new Date(),
+): Promise<StackAcresView & { crossbreedResult: CrossbreedHarvestSettlement }> {
+  const profile = await ensureProfile(token);
+  const settled = await harvestCrossbreedBed(profile.id, plotId, now);
+  if (!settled) {
+    throw new StackAcresRequestError("That row is not ripe yet, or was already brought in.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return { ...(await view(profile, now)), crossbreedResult: settled };
 }
 
 /**

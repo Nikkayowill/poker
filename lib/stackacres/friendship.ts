@@ -93,10 +93,6 @@ export const KEEPSAKE_ITEMS = ["carved_whistle", "pocket_ledger", "grandfathers_
 
 export type KeepsakeId = (typeof KEEPSAKE_ITEMS)[number];
 
-export function isKeepsakeId(value: string): value is KeepsakeId {
-  return (KEEPSAKE_ITEMS as readonly string[]).includes(value);
-}
-
 export interface KeepsakeDef {
   label: string;
   /** The "???" caption shown before it's ever been earned -- same

@@ -346,7 +346,9 @@ const FRENZY_EMBER_COUNT_AT_MAX = 14;
  * reasons. First, stackacres-scene.ts's own header states this codebase's
  * effects are "hand-built Graphics and tweens, no Phaser `ParticleEmitter`
  * (this codebase deliberately does not use one)" -- the one class that does
- * reach for a real emitter, game-juice-manager.ts, is unwired dead code, and
+ * reach for a real emitter, game-juice-manager.ts, only ever fires it per
+ * event too (see its own header) -- it is wired into stackacres-scene.ts for
+ * harvest-pop/crit/barn-absorb, not a continuously running stream -- and
  * every LIVE screen-space effect (weather-overlay-manager.ts's own tint and
  * pooled dust/rain sprites, this scene's `celebrateHarvest`) follows the
  * hand-built convention instead. Second, and more to the point of what this

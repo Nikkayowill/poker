@@ -1,6 +1,5 @@
 import "server-only";
-import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
-import { ensureProfile } from "./profile-store";
+import { ArcadeRequestError } from "./arcade-request";
 import {
   isMachineItem,
   machineItemLabel,
@@ -24,7 +23,6 @@ import {
 } from "./stackacres-blueprint-store";
 import { readStackAcresInventory } from "./stackacres-store";
 import { inventoryQuantity } from "@/lib/stackacres/inventory";
-import type { NextResponse } from "next/server";
 
 /**
  * Ray's Mythic Blueprints, the request layer. See lib/stackacres/blueprints.ts
@@ -157,13 +155,6 @@ export async function startBlueprintForProfile(profileId: string, structureId: s
   return toBlueprintView(state);
 }
 
-/** Session-cookie adapter, same shape as `contributeToBlueprintByToken`
- *  below. */
-export async function startBlueprint(token: string, structureId: string): Promise<BlueprintView> {
-  const profile = await ensureProfile(token);
-  return startBlueprintForProfile(profile.id, structureId);
-}
-
 /**
  * Delivers `amount` of `itemId` toward `structureId`'s current stage.
  *
@@ -270,27 +261,4 @@ export async function contributeToBlueprint(
 
   const after = await readStackAcresBlueprint(profileId, parsedStructure);
   return toBlueprintView(after);
-}
-
-/**
- * Session-cookie adapter for the action route, which (like every other
- * StackAcres action) carries a `token`, not a bare `profileId`. Thin on
- * purpose: `contributeToBlueprint` itself takes `profileId` directly so it
- * can be called from anywhere a profile is already resolved (an admin tool,
- * a future server-to-server caller) without dragging a session token along
- * for the ride -- this is the one place that resolves a token into that id.
- */
-export async function contributeToBlueprintByToken(
-  token: string,
-  structureId: string,
-  itemId: string,
-  amount: number,
-): Promise<BlueprintView> {
-  const profile = await ensureProfile(token);
-  return contributeToBlueprint(profile.id, structureId, itemId, amount);
-}
-
-/** Maps a thrown error to the response the blueprint routes send. */
-export function toBlueprintErrorResponse(error: unknown): NextResponse {
-  return toArcadeErrorResponse(error, "That could not be built.");
 }

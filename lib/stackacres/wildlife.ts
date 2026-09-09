@@ -33,8 +33,6 @@ import {
   forestDensityAt,
   growAreaBounds,
   inFarmZone,
-  seededRandom,
-  seedFromId,
   type Random,
   type WorldPoint,
   type WorldRect,
@@ -116,10 +114,6 @@ const FOREST_EDGE_DENSITY_MAX = 0.55;
 
 export const WILDLIFE_CREATURE_KINDS = ["squirrel", "bird"] as const;
 export type WildlifeCreatureKind = (typeof WILDLIFE_CREATURE_KINDS)[number];
-
-export function isWildlifeCreatureKind(value: string): value is WildlifeCreatureKind {
-  return (WILDLIFE_CREATURE_KINDS as readonly string[]).includes(value);
-}
 
 /** Walking speed in world units/second -- brisk; these are meant to dart
  *  and startle, not amble like a pen animal. */
@@ -553,12 +547,4 @@ export const LIVESTOCK_MAX_HEALTH = 100;
 
 export function applyPredatorDamage(health: number, damage: number): number {
   return Math.max(0, Math.min(LIVESTOCK_MAX_HEALTH, health - damage));
-}
-
-/** A stable per-session id for a creature/predator that doesn't need one
- *  from the server -- the same `seedFromId`-backed determinism `units.ts`
- *  already uses for a crop's fixed spot, reused here so a spawn seeded
- *  off e.g. `"wave:3:coyote:1"` reproduces identically in a test. */
-export function wildlifeSeed(id: string): Random {
-  return seededRandom(seedFromId(id));
 }

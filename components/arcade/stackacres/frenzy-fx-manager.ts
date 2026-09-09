@@ -37,9 +37,11 @@ import { RAMPS } from "./art-palette";
  * `Graphics`/`Image` objects thrown per event and torn down in their own
  * tween's `onComplete`, never a `Phaser.GameObjects.Particles.ParticleEmitter`
  * -- the one class in this codebase that does reach for a real emitter
- * (game-juice-manager.ts) is unwired dead code. `celebrateTap` below follows
- * the wired convention: a burst is thrown once, from the tap that earned it,
- * and nothing here runs a per-frame emission schedule.
+ * (game-juice-manager.ts) is wired into stackacres-scene.ts now, but only for
+ * harvest-pop/crit/barn-absorb, and even there each trigger fires once per
+ * event, never a running stream. `celebrateTap` below follows the same
+ * convention: a burst is thrown once, from the tap that earned it, and
+ * nothing here runs a per-frame emission schedule.
  *
  * SCREEN-SPACE IN FOR THE BURST, NOT WORLD-SPACE. `celebrateTap`'s `at` is
  * expected ALREADY PROJECTED -- the same convention this scene's own

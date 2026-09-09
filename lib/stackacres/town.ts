@@ -11,7 +11,3 @@
  * pass -- this module exists so the number has somewhere honest to live
  * before that design happens, not to pre-empt it.
  */
-
-export function influenceLabel(total: number): string {
-  return total.toLocaleString();
-}

@@ -617,7 +617,6 @@ export function zoneScenery(
 const NO_SOIL: SoilMap = new Map();
 
 export const MEADOW_TILE = 16;
-export const MEADOW_MAX_DENSITY = 3;
 
 /** Tile coordinates, floor-divided. Negative world coordinates have to floor
  *  rather than truncate or the tile at x -0.5 and the one at x 0.5 collapse

@@ -25,7 +25,7 @@ import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
-import type { PipeKind } from "./irrigation";
+import type { PipeFacing, PipeKind } from "./irrigation";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -120,6 +120,10 @@ export type Action =
   // (PIPE_PLACE_COST); `remove-pipe` moves none.
   | { action: "place-pipe"; tx: number; ty: number; kind: PipeKind }
   | { action: "remove-pipe"; tx: number; ty: number }
+  // Points a lone pipe tile one way (lib/stackacres/irrigation.ts's
+  // `PipeFacing`). Cosmetic, moves no Gold, and keyed on the tile by the
+  // `tx` branch of `intentOf` the same way place/remove are.
+  | { action: "aim-pipe"; tx: number; ty: number; facing: PipeFacing }
   // Ray's Mythic Blueprints. Neither moves Gold -- a stage is filled from
   // the processing inventory, same as a Town Contract. See
   // lib/server/stackacres-blueprint-service.ts's own header.

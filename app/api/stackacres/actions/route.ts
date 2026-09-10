@@ -53,6 +53,7 @@ import {
   forgeStackAcresToolEnchantment,
   plantStackAcresCrossbreedBed,
   harvestStackAcresCrossbreedBed,
+  aimStackAcresPipeTile,
   placeStackAcresPipeTile,
   removeStackAcresPipeTile,
   buyStackAcresSoil,
@@ -360,6 +361,15 @@ const bodySchema = z.discriminatedUnion("action", [
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // Points a lone pipe stub one way. Cosmetic -- moves no Gold, changes no
+  // hydration (lib/stackacres/irrigation.ts's `PipeFacing`) -- so the only
+  // thing worth bounding is the same coordinate range as place-pipe.
+  z.object({
+    action: z.literal("aim-pipe"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+    facing: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8)]),
+  }),
   // Placeable soil beds (lib/stackacres/soil.ts): the SOIL_TILE lattice
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
@@ -527,6 +537,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
     case "remove-pipe":
       return removeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "aim-pipe":
+      return aimStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, facing: action.facing }, now);
     case "place-soil-tile":
       return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty, tier: action.tier }, now);
     case "buy-soil":

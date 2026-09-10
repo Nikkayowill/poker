@@ -81,7 +81,7 @@ import {
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import type { StackAcresUpkeepState } from "./upkeep";
 import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
-import { createSoilMap, plantSoilTile, type SoilTile } from "./soil";
+import { createSoilMap, nextFreeSoilSlot, plantSoilTile, type SoilTile } from "./soil";
 import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
@@ -313,6 +313,18 @@ export function predictStackAcresAction(
       }
       const held = ctx.seedStock[body.stock] ?? 0;
       if (held < 1) return null;
+      // An open-air crop needs a free bed somewhere on the farm (2026-09-09,
+      // `stockStackAcres`'s own gate) -- the same "is there ANY free slot"
+      // question `assignSoilSlot` asks, since a tap that names no bed still
+      // plants on the lowest free one. A farm with nothing tilled would
+      // flash a sprout the server is about to refuse, so it guesses nothing.
+      // Greenhouse crops stand on the glasshouse's own sub-grid instead.
+      if (body.inGreenhouse !== true) {
+        const taken = ctx.units
+          .map((u) => u.soilSlot)
+          .filter((slot): slot is number => slot !== null);
+        if (nextFreeSoilSlot(createSoilMap(ctx.soilTiles), taken) === null) return null;
+      }
       return {
         units: [...ctx.units, unit],
         seedStock: { ...ctx.seedStock, [body.stock]: held - 1 },
@@ -444,8 +456,10 @@ export function predictStackAcresAction(
       if (body.kind === "well" && ctx.irrigation.some((node) => node.kind === "well")) return null;
       const profile = debited(ctx, PIPE_PLACE_COST[body.kind]);
       if (!profile) return null;
+      // `facing` carried through for every tile already down, so a recompute
+      // never silently un-aims a stub that is still lone after this lands.
       const tiles: PlacedPipe[] = [
-        ...ctx.irrigation.map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind })),
+        ...ctx.irrigation.map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind, facing: node.facing })),
         { tx: body.tx, ty: body.ty, kind: body.kind },
       ];
       // Crop-free on purpose: mask/hydration/distance are pure tile topology,
@@ -461,9 +475,22 @@ export function predictStackAcresAction(
       // one (see irrigation.ts's own `PIPE_PLACE_COST` doc comment).
       const tiles: PlacedPipe[] = ctx.irrigation
         .filter((node) => node.tx !== body.tx || node.ty !== body.ty)
-        .map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind }));
+        .map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind, facing: node.facing }));
       const grid = recalculatePipeConnections({ tiles, crops: [] });
       return { irrigation: grid.nodes };
+    }
+    case "aim-pipe": {
+      // Cosmetic and topology-free: no recompute, no Gold -- the one node's
+      // `facing` moves and nothing else does (see irrigation.ts's own
+      // `PipeFacing` doc). A well, or a coordinate with nothing on it, is a
+      // tap the server is certain to refuse, so nothing is guessed for it.
+      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
+      if (!existing || existing.kind !== "pipe") return null;
+      return {
+        irrigation: ctx.irrigation.map((node) =>
+          node === existing ? { ...node, facing: body.facing } : node,
+        ),
+      };
     }
     case "place-soil-tile": {
       const tier = body.tier ?? SOIL_DEFAULT_TIER;

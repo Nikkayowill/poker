@@ -4,9 +4,13 @@ import {
   PIPE_FLOW_FRAMES,
   PIPE_MAX_REACH,
   PIPE_TILE,
+  WELL_TEXTURE_KEY,
   diffPipeGrid,
+  pipeBodyTextureKey,
   pipeFlowFrame,
+  pipeFrameKey,
   pipeKey,
+  pipeStubKey,
   pipeSyncPayload,
   pipeTileAt,
   recalculatePipeConnections,
@@ -225,5 +229,60 @@ describe("pipeSyncPayload", () => {
         { tx: 0, ty: 0, mask: 0b1010, hydrated: true, distance: 1 },
       ]),
     );
+  });
+
+  it("never carries the aim -- it is not derived, and the sync must not clobber it", () => {
+    const grid = recalculatePipeConnections({
+      tiles: [{ tx: 0, ty: 0, kind: "pipe", facing: 4 }],
+      crops: [],
+    });
+    expect(pipeSyncPayload(grid)[0]).not.toHaveProperty("facing");
+  });
+});
+
+describe("facing — a cosmetic aim for a lone stub", () => {
+  it("is carried through the recompute for a pipe and always null for a well", () => {
+    const grid = recalculatePipeConnections({
+      tiles: [
+        { tx: 0, ty: 0, kind: "pipe", facing: 2 },
+        { tx: 5, ty: 5, kind: "pipe" },
+        { tx: 9, ty: 9, kind: "well", facing: 1 },
+      ],
+      crops: [],
+    });
+    expect(grid.byKey.get(pipeKey(0, 0))?.facing).toBe(2);
+    expect(grid.byKey.get(pipeKey(5, 5))?.facing).toBeNull();
+    expect(grid.byKey.get(pipeKey(9, 9))?.facing).toBeNull();
+  });
+
+  it("picks the body texture: buried connector once joined, aimed stub while lone", () => {
+    expect(pipeBodyTextureKey({ kind: "well", mask: 0, facing: null })).toBe(WELL_TEXTURE_KEY);
+    expect(pipeBodyTextureKey({ kind: "pipe", mask: 0, facing: null })).toBe(pipeFrameKey(0));
+    expect(pipeBodyTextureKey({ kind: "pipe", mask: 0, facing: 8 })).toBe(pipeStubKey(8));
+    // A joined tile shows its real arms whatever it was aimed at.
+    expect(pipeBodyTextureKey({ kind: "pipe", mask: 0b0011, facing: 8 })).toBe(pipeFrameKey(0b0011));
+  });
+
+  it("never touches hydration or the mask", () => {
+    const aimed = recalculatePipeConnections({
+      tiles: line(2).map((t) => (t.kind === "pipe" ? { ...t, facing: 4 as const } : t)),
+      crops: [],
+    });
+    const plain = recalculatePipeConnections({ tiles: line(2), crops: [] });
+    for (const node of aimed.nodes) {
+      const twin = plain.byKey.get(pipeKey(node.tx, node.ty))!;
+      expect([node.mask, node.hydrated, node.distance]).toEqual([twin.mask, twin.hydrated, twin.distance]);
+    }
+  });
+
+  it("counts as a change for the scene's diff, so the stub redraws", () => {
+    const before = recalculatePipeConnections({ tiles: [{ tx: 0, ty: 0, kind: "pipe" }], crops: [] });
+    const after = recalculatePipeConnections({
+      tiles: [{ tx: 0, ty: 0, kind: "pipe", facing: 1 }],
+      crops: [],
+    });
+    const diff = diffPipeGrid(before, after);
+    expect(diff.changed.map((n) => pipeKey(n.tx, n.ty))).toEqual([pipeKey(0, 0)]);
+    expect(diff.added).toHaveLength(0);
   });
 });

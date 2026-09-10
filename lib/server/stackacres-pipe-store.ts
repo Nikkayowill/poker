@@ -1,9 +1,11 @@
 import "server-only";
 
 import {
+  isPipeFacing,
   pipeKey,
   pipeSyncPayload,
   type NetworkGrid,
+  type PipeFacing,
   type PipeKind,
   type PlacedPipe,
 } from "@/lib/stackacres/irrigation";
@@ -27,13 +29,16 @@ import { adminClient } from "./supabase-admin";
  * `mask` / `hydrated` / `distance` are DERIVED. Nothing writes them by hand:
  * the service runs `recalculatePipeConnections` after every layout change
  * and hands the result to `syncStackAcresPipeNetwork`, which is the only
- * writer of those three columns.
+ * writer of those three columns. `facing` is NOT derived -- it is the
+ * player's own cosmetic aim for a lone stub (20260909140000), written only
+ * by `aimStackAcresPipe` below and never touched by the sync.
  */
 
 export interface StoredPipe extends PlacedPipe {
   readonly mask: number;
   readonly hydrated: boolean;
   readonly distance: number | null;
+  readonly facing: PipeFacing | null;
   readonly version: number;
 }
 
@@ -48,10 +53,11 @@ interface PipeDbRow {
   mask: number | string;
   hydrated: boolean;
   distance: number | string | null;
+  facing?: number | string | null;
   version: number | string;
 }
 
-const PIPE_COLUMNS = "tx, ty, kind, mask, hydrated, distance, version";
+const PIPE_COLUMNS = "tx, ty, kind, mask, hydrated, distance, facing, version";
 
 function isPipeKind(value: string): value is PipeKind {
   return value === "well" || value === "pipe";
@@ -59,6 +65,9 @@ function isPipeKind(value: string): value is PipeKind {
 
 function fromRow(row: PipeDbRow): StoredPipe {
   const kind = String(row.kind);
+  // Degrades to "no aim" rather than throwing: a row read before the column
+  // landed, or holding anything but one of the four bits, is a plain stub.
+  const facing = row.facing === null || row.facing === undefined ? null : Number(row.facing);
   return {
     tx: Number(row.tx),
     ty: Number(row.ty),
@@ -66,6 +75,7 @@ function fromRow(row: PipeDbRow): StoredPipe {
     mask: Number(row.mask),
     hydrated: Boolean(row.hydrated),
     distance: row.distance === null ? null : Number(row.distance),
+    facing: isPipeFacing(facing) ? facing : null,
     version: Number(row.version),
   };
 }
@@ -135,6 +145,7 @@ export async function placeStackAcresPipe(
       mask: 0,
       hydrated: false,
       distance: null,
+      facing: null,
       version: 1,
     };
     layout.set(key, pipe);
@@ -152,6 +163,36 @@ export async function placeStackAcresPipe(
     throw new Error(`Could not place that pipe: ${error.message}`);
   }
   return data ? fromRow(data as PipeDbRow) : null;
+}
+
+/**
+ * Points one lone stub. Returns whether a row was actually touched -- false
+ * for a coordinate with no pipe on it, for the well, and for a tile already
+ * aimed that way. Mirrors `aim_homestead_pipe`'s own scoping exactly.
+ */
+export async function aimStackAcresPipe(
+  profileId: string,
+  tx: number,
+  ty: number,
+  facing: PipeFacing,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const layout = memoryLayout(profileId);
+    const key = pipeKey(tx, ty);
+    const existing = layout.get(key);
+    if (!existing || existing.kind !== "pipe" || existing.facing === facing) return false;
+    layout.set(key, { ...existing, facing, version: existing.version + 1 });
+    return true;
+  }
+  const { data, error } = await supabase.rpc("aim_homestead_pipe", {
+    p_profile_id: profileId,
+    p_tx: tx,
+    p_ty: ty,
+    p_facing: facing,
+  });
+  if (error) throw new Error(`Could not aim that pipe: ${error.message}`);
+  return Number(data ?? 0) > 0;
 }
 
 /** Removes one tile. Returns whether a row was actually deleted. */

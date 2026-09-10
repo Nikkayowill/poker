@@ -206,12 +206,11 @@ import {
   diffPipeGrid,
   indexPipeNodes,
   PIPE_TILE,
+  pipeBodyTextureKey,
   pipeFlowFrame,
-  pipeFrameKey,
   pipeKey,
   pipeTileAt,
   pipeTileCenter,
-  WELL_TEXTURE_KEY,
   type PipeCoord,
   type PipeIndex,
   type PipeNode,
@@ -461,22 +460,27 @@ export interface StackAcresSceneCallbacks {
    */
   onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
   /**
-   * The pipe tool's own drag (or zero-length tap) gesture reached this tile,
-   * bypassing `onGroundTap`'s ring menu entirely -- see `pipeLaySegment` and
-   * lib/stackacres/tools.ts's own header on why the tool exists. `mode` is
-   * decided once per gesture (`DragGesture.startPipeLay`): `"place"` fires
-   * only for a tile that was empty when the stroke reached it, `"erase"`
-   * only for one that already had a pipe. Never fires for a well -- see
-   * `pipeLayMode`'s own doc in `bindInput`. The shell owns the actual
-   * network call (`place-pipe`/`remove-pipe`) and its optimistic guess, the
-   * same "the scene reports WHERE, the shell decides what it's worth"
-   * split every other tap callback here already takes.
+   * The pipe tool's own DRAG gesture crossed this tile, bypassing
+   * `onGroundTap`'s ring menu entirely -- see `pipeLaySegment` and
+   * lib/stackacres/tools.ts's own header on why the tool exists. A plain tap
+   * (no drag) no longer fires this; it falls through to `onGroundTap`
+   * instead, the same ring every other ground tap opens, so a tap can offer
+   * "Lay Pipe" with an angle choice rather than acting instantly (2026-09-09,
+   * see `pipeLayMode`'s own doc in `bindInput`). `mode` is decided once per
+   * gesture (`DragGesture.startPipeLay`): `"place"` fires only for a tile
+   * that was empty when the stroke reached it, `"erase"` only for one that
+   * already had a pipe. Never fires for a well, whether by drag or by the
+   * ring -- see `pipeLayMode`'s own doc. The shell owns the actual network
+   * call (`place-pipe`/`remove-pipe`) and its optimistic guess, the same
+   * "the scene reports WHERE, the shell decides what it's worth" split
+   * every other tap callback here already takes.
    */
   onPipeLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
   /**
-   * The soil tool's own drag (or zero-length tap) gesture reached this tile
-   * -- the soil tool's own twin of `onPipeLayTile`, see `soilLaySegment` and
-   * lib/stackacres/tools.ts's own header. `mode` is decided once per gesture
+   * The soil tool's own DRAG gesture crossed this tile -- the soil tool's
+   * own twin of `onPipeLayTile`, see `soilLaySegment` and lib/stackacres/
+   * tools.ts's own header. A plain tap falls through to `onGroundTap`'s ring
+   * instead, same as pipe (2026-09-09). `mode` is decided once per gesture
    * (`DragGesture.startSoilLay`): `"place"` fires only for bare ground (no
    * bed, starter or purchased, standing there yet), `"erase"` only for a
    * tile that already has one. `"place"` always plants the DEFAULT tier --
@@ -2809,8 +2813,13 @@ export class StackAcresScene extends Phaser.Scene {
   private spawnPipeSceneNode(node: PipeNode): PipeSceneNode {
     const centre = pipeTileCenter(node.tx, node.ty);
     const at = isoProject(centre.x, centre.y);
+    // `pipeBodyTextureKey` owns the joined-vs-lone-vs-aimed rule -- see its
+    // doc in lib/stackacres/irrigation.ts. Still GROW_AREA_GROUND_DEPTH: the
+    // "buried" read of a joined tile is in the baked art (a trench, no drop
+    // shadow -- art-irrigation.ts), not in the draw order, so a bed or a
+    // crop standing on the same square keeps painting over it as before.
     const body = this.add
-      .image(at.x, at.y, node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask))
+      .image(at.x, at.y, pipeBodyTextureKey(node))
       .setOrigin(0.5, 0.5)
       .setScale(1 / S)
       .setDepth(GROW_AREA_GROUND_DEPTH);
@@ -2819,13 +2828,18 @@ export class StackAcresScene extends Phaser.Scene {
     return sceneNode;
   }
 
-  /** Re-textures an existing tile's body for a moved mask/kind/hydration,
-   *  and rebuilds its flow-arm images to match which bits are now set.
+  /** Re-textures an existing tile's body for a moved mask/kind/hydration/
+   *  aim, and rebuilds its flow-arm images to match which bits are now set.
    *  `fresh` skips the "did the body texture actually change" check
    *  `spawnPipeSceneNode` doesn't need on its own first frame. */
   private restylePipeSceneNode(sceneNode: PipeSceneNode, node: PipeNode, fresh = false): void {
-    if (fresh || sceneNode.node.mask !== node.mask || sceneNode.node.kind !== node.kind) {
-      sceneNode.body.setTexture(node.kind === "well" ? WELL_TEXTURE_KEY : pipeFrameKey(node.mask));
+    if (
+      fresh ||
+      sceneNode.node.mask !== node.mask ||
+      sceneNode.node.kind !== node.kind ||
+      sceneNode.node.facing !== node.facing
+    ) {
+      sceneNode.body.setTexture(pipeBodyTextureKey(node));
     }
     sceneNode.node = node;
 
@@ -4386,7 +4400,9 @@ export class StackAcresScene extends Phaser.Scene {
      * a pipe already down. `undefined` off the tool, off a valid ground
      * tile, or over the one well -- a well is never touched by this gesture,
      * see lib/stackacres/tools.ts's own header on why it stays a deliberate
-     * radial-only purchase.
+     * radial-only purchase. Decided at press, but only ever ACTED on by a
+     * drag (`move` past `TAP_SLOP`) -- a plain tap with the tool held falls
+     * through to `dispatchTap` and the ring instead (see `up`).
      */
     const pipeLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
       if (this.tool !== "pipe") return undefined;
@@ -4417,7 +4433,8 @@ export class StackAcresScene extends Phaser.Scene {
     };
     /**
      * Which half of a soil-lay stroke this finger would start, with the
-     * soil tool held -- the soil tool's own twin of `pipeLayMode`.
+     * soil tool held -- the soil tool's own twin of `pipeLayMode`, drag-only
+     * in exactly the same way.
      */
     const soilLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
       if (this.tool !== "soil") return undefined;
@@ -4788,22 +4805,16 @@ export class StackAcresScene extends Phaser.Scene {
         this.mowSegment(at, at);
         return;
       }
-      // A tap with the pipe tool on a tile it can touch lays or lifts that
-      // one tile -- the pipe tool's own twin of the scythe branch just above,
-      // for the same reason: without this, a tap (rather than a drag) with
-      // the tool held would silently do nothing.
-      if (gesture.startPipeLay) {
-        const at = resolveWorld(event.clientX, event.clientY);
-        this.pipeLaySegment(gesture, at, at);
-        return;
-      }
-      // A tap with the soil tool on a tile it can touch plants or lifts that
-      // one bed -- the soil tool's own twin of the branch just above.
-      if (gesture.startSoilLay) {
-        const at = resolveWorld(event.clientX, event.clientY);
-        this.soilLaySegment(gesture, at, at);
-        return;
-      }
+      // No zero-length branch for the pipe or soil tool here any more
+      // (2026-09-09). A tap with either held used to lay or lift that one
+      // tile on the spot; it falls through to `dispatchTap` now, the same
+      // way a tap with nothing held always has, so the tile lights up and
+      // offers its ring (Lay Pipe with an angle, till a bed, lift either)
+      // instead of acting before the player has said which. Holding Pipe or
+      // Soil only changes what a DRAG does -- `gesture.startPipeLay`/
+      // `startSoilLay` are still decided at press, purely so `move` can turn
+      // a stroke past `TAP_SLOP` into a `pipe-lay`/`soil-lay` run.
+      //
       // A tap with the Water tool on a unit it can touch waters that one
       // unit -- the unit-targeted twin of the branches just above, for the
       // identical reason: without this, a tap (rather than a drag) with the

@@ -71,6 +71,7 @@ import {
   recalculatePipeConnections,
   type IrrigableCrop,
   type NetworkGrid,
+  type PipeFacing,
   type PipeKind,
   type PipeNode,
 } from "@/lib/stackacres/irrigation";
@@ -80,6 +81,7 @@ import {
 // comment on PIPE_PLACE_COST for why.
 export { PIPE_PLACE_COST } from "@/lib/stackacres/irrigation";
 import {
+  aimStackAcresPipe,
   listStackAcresPipes,
   placeStackAcresPipe,
   removeStackAcresPipe,
@@ -997,12 +999,13 @@ async function refundGold(profileId: string, gold: number): Promise<void> {
  * Picks the bed a crop about to be sown will stand in, and reports what that
  * bed does to its cycle.
  *
- * READ-ONLY, and called BEFORE the seed is debited on purpose: it moves
- * nothing and can only make the sow slower to answer, never wrong. A crop
- * with nowhere to stand gets `slot: null` and the plain multiplier rather
- * than a refusal -- running out of ground is not a reason to reject a
- * purchase, and a null slot is exactly the pre-tier behaviour (the renderer
- * falls back to the rank hash and the crop wraps into a shared slot).
+ * READ-ONLY: it moves nothing and can only make the sow slower to answer,
+ * never wrong. A crop with nowhere to stand gets `slot: null` and the plain
+ * multiplier -- and, since 2026-09-09, `stockStackAcres` treats that as a
+ * refusal for an open-air crop rather than sowing onto the rank-hash
+ * fallback (see its own comment at the call). The null answer itself is
+ * kept rather than thrown here so the Greenhouse and livestock cases, which
+ * are ALWAYS null and always fine, stay one plain return.
  *
  * `tile`, when given, is the bed the player actually tapped to open the
  * seed menu -- honoured exactly when it names a real, unoccupied bed, so a
@@ -2068,15 +2071,34 @@ export async function stockStackAcres(
   // otherwise multiply into a cycle far shorter than either was tuned for.
   let soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
 
+  // A crop needs a bed under it (2026-09-09). `assignSoilSlot` answers
+  // `slot: null` for "this farm has no free bed anywhere" -- it used to sow
+  // regardless, onto the hash-scatter fallback, which put vegetables in the
+  // grass with nothing tilled. That is a refusal now, not a fallback: the
+  // seed already spent above comes back, exactly as the insert failing
+  // below would return it. OPEN-AIR CROPS ONLY, same as the assignment
+  // itself -- a Greenhouse crop stands on the glasshouse's own sub-grid and
+  // `assignSoilSlot` always says null for it, so gating on that alone would
+  // refuse every Greenhouse sow; livestock never has a bed to need.
+  if (!inGreenhouse && isStackAcresCrop(stock) && soilAssignment.slot === null) {
+    await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
+    throw new StackAcresRequestError(
+      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
   try {
     // `assignSoilSlot` only reads; a second sow can read the same free slot
     // before this insert lands, and the database's own partial unique index
     // on (profile_id, soil_slot) is what actually catches that -- surfaced
     // here as `SoilSlotConflictError`. Re-picking a slot and trying again a
-    // couple of times resolves an honest race; past that, sow onto the
-    // wrapping rank-hash path (slot: null) rather than fail a purchase over
-    // ground contention -- the same "no ground is not a refusal" posture
-    // `assignSoilSlot` already takes when the farm is simply full.
+    // couple of times resolves an honest race; past that, the third loss
+    // still sows onto the wrapping rank-hash path (slot: null) rather than
+    // fail a purchase over pure contention -- the farm demonstrably HAD a
+    // free bed (the gate above passed), it just lost it to a racing sow, and
+    // that is not the "nothing tilled" case the gate refuses.
     for (let attempt = 0; ; attempt += 1) {
       // Snapshotted at stocking, never re-derived at collection -- the same
       // rule `yieldQuantity`/`stake` already follow. Outside the Greenhouse
@@ -4210,6 +4232,37 @@ export async function removeStackAcresPipeTile(
 
   await removeStackAcresPipe(profile.id, tx, ty);
   await recomputeIrrigation(profile.id, now, before.irrigatedUnitIds);
+  return view(profile, now);
+}
+
+/**
+ * Points one lone pipe stub -- lib/stackacres/irrigation.ts's `PipeFacing`,
+ * cosmetic only. No Gold moves and no recompute runs: the aim is not part
+ * of the network (`mask`/`hydrated`/`distance` never read it), so there is
+ * nothing for `recomputeIrrigation` to settle. Refuses a coordinate with no
+ * pipe on it (or the well) rather than silently doing nothing, so a stale
+ * tap gets told; a tile already aimed that way is a plain no-op success,
+ * since asking twice is not a mistake.
+ */
+export async function aimStackAcresPipeTile(
+  token: string,
+  input: { tx: number; ty: number; facing: PipeFacing },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+
+  const touched = await aimStackAcresPipe(profile.id, tx, ty, input.facing);
+  if (!touched) {
+    const pipes = await listStackAcresPipes(profile.id);
+    const existing = pipes.find((pipe) => pipe.tx === tx && pipe.ty === ty);
+    if (!existing || existing.kind !== "pipe") {
+      throw new StackAcresRequestError("There is no pipe there to aim.", 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+  }
   return view(profile, now);
 }
 

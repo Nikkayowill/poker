@@ -5553,14 +5553,29 @@ export class StackAcresScene extends Phaser.Scene {
     // A CSS pixel is this many scene units at the current zoom, which is what
     // keeps the pad a constant size under the thumb rather than under the map.
     const pad = TAP_PAD / this.zoomL();
-    // Water/Feed/Harvest touch one specific plant, not its neighbourhood.
-    // With one of those three held, a hit only counts on the unit's OWN
-    // tile (`soilTileAt`) -- never a neighbour's, merely because a mature
-    // crop's picture or ground diamond leans into it. Every other tool (or
-    // none -- picking a unit to open it, or the seed-menu case the
-    // ground-diamond comment below covers) keeps the looser box on purpose;
-    // that reach is what makes a big plant's own art tappable at all.
+    // Two separate tile clamps live in the loop below (`sowBlocked` and
+    // `groundBlocked`), because `onArt` and the ground diamond are wrong to
+    // reject in the same cases:
+    //
+    //   - Sowing (or any other non-interacting tool) right next to an
+    //     established crop used to land on the crop's own overhanging leaf
+    //     instead of the empty bed beside it, because `onArt` (real painted
+    //     pixels) won regardless of whose tile was actually tapped. Now a
+    //     tap that lands on a DIFFERENT, addressable bed than the crop's
+    //     own tile is never that crop's `onArt` hit -- it's aimed at that
+    //     square (`onGroundTap`'s seed offer) or whoever else's bed it is.
+    //   - Water/Feed/Harvest need the opposite: they touch a plant BY
+    //     touching its picture, and a mature crop's picture legitimately
+    //     overhangs its own tile, so `onArt` stays unclamped for those
+    //     three. Only the invisible ground-diamond fallback -- not real
+    //     pixels -- gets clamped to the unit's own tile for them, and more
+    //     strictly than sowing's clamp: even bare unclaimed ground with no
+    //     addressable bed of its own is rejected, because those three touch
+    //     one specific plant, not its neighbourhood, full stop.
     const interacting = this.tool === "water" || this.tool === "feed" || this.tool === "harvest";
+    // Loop-invariant: `at` (the tapped point) never changes per node, so
+    // the tile it lands on doesn't either.
+    const tapTile = soilTileAt(at.x, at.y);
     // Which of the two regions caught the finger, because that now has to
     // outrank depth. Growing the crops (lib/stackacres/crop-visuals.ts) took a
     // ripe crop's ground diamond from a 24-unit box to a 48-unit one, and the
@@ -5597,6 +5612,28 @@ export class StackAcresScene extends Phaser.Scene {
     for (const [id, node] of this.nodes) {
       const art = node.sprite.getBounds();
       const spot = this.unitWorldSpot(node);
+      // Livestock roams off the lattice (a critter spot, not a fixed tile),
+      // so neither block below ever applies to it -- it has no "own tile"
+      // to be off of. Everything else does, and the two regions are NOT
+      // blocked the same way:
+      //
+      // `onArt` is real painted pixels of THIS unit's own picture, and
+      // those stay tappable by any tool regardless of tile, UNLESS the
+      // tapped square is itself a distinct addressable bed and the tool
+      // is not one of Water/Feed/Harvest -- that's what makes sowing
+      // right next to an established crop land on the crop's overhanging
+      // leaf instead of the empty bed beside it, which `sowBlocked` below
+      // exists to stop. Water/Feed/Harvest are exempted from `sowBlocked`
+      // on purpose: they touch a plant by touching its actual picture, and
+      // a mature crop's picture legitimately overhangs its own tile (see
+      // `groundBlocked`'s own comment below for how those three are
+      // instead handled).
+      const ownTile = this.sameOwnTile(spot, at);
+      const sowBlocked =
+        !isLivestock(node.unit.stock) &&
+        !ownTile &&
+        !interacting &&
+        hasSoilTile(this.soil, tapTile.tx, tapTile.ty);
       // The box, then -- for a crop only -- the texture underneath it. A ripe
       // plant's box is half transparent, and an art hit outranks a
       // neighbour's ground hit, so without this second question the
@@ -5608,7 +5645,7 @@ export class StackAcresScene extends Phaser.Scene {
         at.y >= art.y - pad &&
         at.y <= art.bottom + pad &&
         !this.artHitIsAir(node, at.x, at.y) &&
-        (!interacting || isLivestock(node.unit.stock) || this.sameOwnTile(spot, at));
+        !sowBlocked;
       let hit = onArt;
       if (!hit) {
         const half = this.unitFootprintHalf(node.unit);
@@ -5625,21 +5662,21 @@ export class StackAcresScene extends Phaser.Scene {
           at.y <= ground.y + ground.height + pad;
         // The diamond above is sized off the crop's own art, not the bed --
         // a mature crop's is several times `SOIL_TILE` wide, so it can reach
-        // clean into a neighbouring bed's own square. With Water/Feed/
-        // Harvest held that's never a hit (see `interacting`, above) --
-        // those three touch one plant, not its neighbourhood. Otherwise
-        // it's still fine when the neighbour is bare lattice with nothing
-        // else to claim the tap, but wrong when the neighbour is itself an
-        // addressable, distinct bed: a tap that lands there is aimed at
-        // THAT square, not the crop leaning over into it, and needs to
-        // reach `onGroundTap`'s seed offer rather than being swallowed
-        // here. Livestock roams off the lattice (a critter spot, not a
-        // fixed tile), so this only tightens the diamond for anything
-        // actually planted on one.
-        if (hit && !isLivestock(node.unit.stock) && !this.sameOwnTile(spot, at)) {
-          const tapTile = soilTileAt(at.x, at.y);
-          if (interacting || hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) hit = false;
-        }
+        // clean into a neighbouring bed's own square. That's never a hit
+        // with Water/Feed/Harvest held (`interacting`, above) -- those three
+        // touch one plant, not its neighbourhood, even over bare unclaimed
+        // ground with nothing else to claim the tap. Otherwise (`sowBlocked`
+        // above already covers the interacting=false, real-art case) it's
+        // still fine when the neighbour is bare lattice, but wrong when the
+        // neighbour is itself an addressable, distinct bed: a tap that lands
+        // there is aimed at THAT square, not the crop leaning over into it,
+        // and needs to reach `onGroundTap`'s seed offer -- or whichever unit
+        // actually owns that square -- rather than being swallowed here.
+        const groundBlocked =
+          !isLivestock(node.unit.stock) &&
+          !ownTile &&
+          (interacting || hasSoilTile(this.soil, tapTile.tx, tapTile.ty));
+        if (hit && groundBlocked) hit = false;
       }
       if (!hit) continue;
       const depth = node.container.depth;

@@ -93,6 +93,7 @@ import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import { unitToolFor, type StackAcresDockSelection } from "@/lib/stackacres/dock";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
@@ -987,6 +988,15 @@ export function StackAcresFarm() {
     null,
   );
   /**
+   * The unit a bare tap picked out, and where the finger was. A tap that the
+   * held tool cannot act on used to be a dead no-op (see the scene's own
+   * `dispatchTap`); it selects the unit instead now, and the dock reads this
+   * to draw the three keys that unit can answer to. `at` is kept so pressing
+   * one of those keys can float its refusal back at the same spot the tap
+   * happened rather than at the dock.
+   */
+  const [selectedUnit, setSelectedUnit] = useState<{ id: string; at: TapPoint } | null>(null);
+  /**
    * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
    * at the finger the same way the ring is. Its own state rather than a
    * mode of `radial`: it opens AFTER the ring has closed (a "Lay Pipe" that
@@ -1567,6 +1577,23 @@ export function StackAcresFarm() {
           return mergedSoilTiles.find((t) => t.tx === tx && t.ty === ty) ?? null;
         })()
       : null;
+
+  /**
+   * What the dock is drawing keys for. A selected unit outranks a ground
+   * tap: the two handlers each clear the other, so they cannot both be set,
+   * and fixing the order here anyway means a stale one could never outrank a
+   * live one if that ever stopped being true. A unit that has since gone --
+   * collected, retired, sold out from under the selection -- falls back to
+   * the resting dock rather than leaving keys up for a ghost.
+   */
+  const dockSelection = useMemo<StackAcresDockSelection>(() => {
+    if (selectedUnit) {
+      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
+      if (unit) return { kind: "unit", state: unit.state };
+    }
+    if (radial) return { kind: "ground", hasBed: radialSoilTile !== null };
+    return { kind: "none" };
+  }, [liveUnits, radial, radialSoilTile, selectedUnit]);
 
   // Same "push, never rebuild" contract: the scene diffs its own drone set
   // against this list (see StackAcresScene.setDroneHangar), so pushing on
@@ -2229,12 +2256,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const pickTool = useCallback((next: StackAcresTool) => {
-    toolSound();
-    setTool(next);
-    setError(null);
-  }, []);
-
   const travel = useCallback(
     (zone: ZoneId) => {
       travelSound();
@@ -2332,6 +2353,10 @@ export function StackAcresFarm() {
       setRadial(null);
       const unit = liveUnits.find((candidate) => candidate.id === unitId);
       if (!unit) return;
+      // Stays selected through the action: the dock is showing this unit's
+      // keys, and they should re-light off whatever state the action leaves
+      // it in rather than the row emptying under the thumb.
+      setSelectedUnit({ id: unitId, at });
       world.current?.popUnit(unitId);
       // The sidebar follows the finger rather than gating it: whatever the
       // player is touching is what "here" means now.
@@ -2403,6 +2428,52 @@ export function StackAcresFarm() {
     [act, feed, gold, liveUnits, nowMs, triggerCascade],
   );
 
+  /**
+   * A finger landed on a unit that the held tool cannot act on -- which,
+   * since PR #448 made a unit action need its matching tool, is every bare
+   * tap on an animal or a crop. That used to be a silent no-op: the scene
+   * hit-tested the unit, found the tool did not match and swallowed the tap
+   * whole, so tapping a cow with nothing held did nothing and said nothing.
+   *
+   * It selects instead. The dock then draws the three keys a unit can answer
+   * to with the one it currently affords lit (lib/stackacres/dock.ts), and
+   * pressing that key runs the action through `onWorldUnitTap` above. Tap the
+   * cow, tap Feed. Nothing is sent from here -- selecting is not an action,
+   * and the farm is unchanged until a key is pressed.
+   */
+  const onWorldUnitSelect = useCallback((unitId: string, at: TapPoint) => {
+    panelSound();
+    setRadial(null);
+    setSelectedUnit({ id: unitId, at });
+    world.current?.popUnit(unitId);
+  }, []);
+
+  /**
+   * A dock key was pressed. Declared down here rather than up with the other
+   * callbacks because it reaches `onWorldUnitTap` above, and a dep array
+   * naming that from higher up the body would read it in its temporal dead
+   * zone.
+   *
+   * A key that is lit for the selected unit acts on it there and then, which
+   * is the whole point of a dock that follows the selection: tap the cow,
+   * tap Feed, the cow is fed, rather than arming a tool and going back for a
+   * second tap. The tool is held as well, so a drag across the rest of the
+   * pen carries on from the same press. Every other press just holds the
+   * tool the way it always did, `"inspect"` (the dock's own toggle-off)
+   * included.
+   */
+  const pickTool = useCallback(
+    (next: StackAcresTool) => {
+      toolSound();
+      setError(null);
+      setTool(next);
+      if (next === "inspect" || !selectedUnit) return;
+      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
+      if (unit && unitToolFor(unit.state) === next) onWorldUnitTap(selectedUnit.id, selectedUnit.at);
+    },
+    [liveUnits, onWorldUnitTap, selectedUnit],
+  );
+
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
@@ -2411,6 +2482,7 @@ export function StackAcresFarm() {
     // panel cue rather than one of the action voices.
     panelSound();
     setPlace(zone);
+    setSelectedUnit(null);
     setRadial({ zone, at, world: worldPt });
   }, []);
 
@@ -3335,6 +3407,7 @@ export function StackAcresFarm() {
               celebrate={celebrate}
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
+              onUnitSelect={onWorldUnitSelect}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
               onGreenhouseTap={onWorldGreenhouseTap}
@@ -3401,7 +3474,13 @@ export function StackAcresFarm() {
           )}
 
           <div className="sa-controls">
-            <StackAcresToolbelt tool={tool} onPick={pickTool} />
+            <StackAcresToolbelt
+              tool={tool}
+              onPick={pickTool}
+              selection={dockSelection}
+              onOpenShop={() => { panelSound(); setShowStore(true); }}
+              carrying={carrying}
+            />
           </div>
 
           <StackAcresDestinations

@@ -169,6 +169,10 @@ export interface StackAcresWorldProps {
   onReady: () => void;
   /** A finger landed on this unit's own picture. */
   onUnitTap: (unitId: string, at: TapPoint) => void;
+  /** A finger landed on this unit but the held tool cannot act on it -- an
+   *  offer to point at it rather than an action. See
+   *  StackAcresSceneCallbacks.onUnitSelect. */
+  onUnitSelect: (unitId: string, at: TapPoint) => void;
   /** A finger landed on this district's fenced ground, on nothing in
    *  particular -- an offer to seed something there. `world` is the same
    *  point in world units, alongside the CSS-pixel `at` -- see
@@ -329,6 +333,7 @@ export function StackAcresWorld({
   celebrate,
   onReady,
   onUnitTap,
+  onUnitSelect,
   onGroundTap,
   onBarnTap,
   onGreenhouseTap,
@@ -364,6 +369,7 @@ export function StackAcresWorld({
   // it was when the game booted.
   const readyRef = useRef(onReady);
   const unitTapRef = useRef(onUnitTap);
+  const unitSelectRef = useRef(onUnitSelect);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
   const greenhouseTapRef = useRef(onGreenhouseTap);
@@ -405,6 +411,7 @@ export function StackAcresWorld({
   useEffect(() => {
     readyRef.current = onReady;
     unitTapRef.current = onUnitTap;
+    unitSelectRef.current = onUnitSelect;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
     greenhouseTapRef.current = onGreenhouseTap;
@@ -471,6 +478,7 @@ export function StackAcresWorld({
         {
           onReady: () => readyRef.current(),
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
+          onUnitSelect: (unitId, at) => unitSelectRef.current(unitId, at),
           onGroundTap: (zone, at, world) => groundTapRef.current(zone, at, world),
           onBarnTap: () => barnTapRef.current(),
           onGreenhouseTap: () => greenhouseTapRef.current(),

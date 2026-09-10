@@ -342,6 +342,20 @@ export interface StackAcresSceneCallbacks {
    */
   onUnitTap: (unitId: string, at: TapPoint) => void;
   /**
+   * A tap that landed on an owned unit the HELD tool cannot act on -- which,
+   * since a unit action started needing its matching tool, is every bare tap
+   * on one. The scene used to swallow these whole: it hit-tested the unit,
+   * found the tool did not match and returned, so tapping an animal with
+   * nothing held did nothing and said nothing.
+   *
+   * It reports them now, and the shell selects the unit so its dock can
+   * offer the keys that unit answers to (lib/stackacres/dock.ts). Still not
+   * an action, and deliberately separate from `onUnitTap` rather than a flag
+   * on it: one of these changes the farm and the other only changes what is
+   * pointed at.
+   */
+  onUnitSelect: (unitId: string, at: TapPoint) => void;
+  /**
    * A tap on a district's own fenced ground that hit no unit -- an offer to
    * seed something there, answered by the radial menu in stackacres-farm.tsx.
    * `world` is the same point in world units (what `soilTileAt` and
@@ -4913,8 +4927,14 @@ export class StackAcresScene extends Phaser.Scene {
       const hit = this.unitAt(clientX, clientY);
       if (hit) {
         const node = this.nodes.get(hit);
-        if (node && unitTapEligible(node.unit)) {
-          this.callbacks.onUnitTap(hit, local);
+        if (node) {
+          // The matching tool acts; anything else (a wrong tool, or none at
+          // all) now SELECTS the unit rather than dropping the tap on the
+          // floor, so the dock can offer what this one actually wants. Either
+          // way the tap stops here and never falls through to the ground
+          // behind the animal.
+          if (unitTapEligible(node.unit)) this.callbacks.onUnitTap(hit, local);
+          else this.callbacks.onUnitSelect(hit, local);
         }
         return;
       }

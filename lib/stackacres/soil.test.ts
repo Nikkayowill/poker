@@ -26,7 +26,6 @@ import {
   soilSignedDistance,
   soilSlotForTile,
   soilSlotPoint,
-  soilSlotSpotForRank,
   soilSlotSpot,
   soilTileAt,
   soilTileDiamond,
@@ -221,18 +220,15 @@ describe("the slot lattice -- one plant per bed", () => {
   it("fills beds in placement order, one plant each", () => {
     const soil = fixtureMap();
     const tiles = orderedSoilTiles(soil);
-    for (let rank = 0; rank < tiles.length; rank += 1) {
-      const p = soilSlotSpotForRank(soil, rank);
+    for (let slot = 0; slot < tiles.length; slot += 1) {
+      const p = soilSlotSpot(soil, slot);
       expect(p).not.toBeNull();
-      expect(soilTileAt(p!.x, p!.y)).toEqual({ tx: tiles[rank].tx, ty: tiles[rank].ty });
+      expect(soilTileAt(p!.x, p!.y)).toEqual({ tx: tiles[slot].tx, ty: tiles[slot].ty });
     }
-    // A rank past the bed count has nowhere new to go -- it wraps back to
-    // the first bed rather than spilling past the last one.
-    expect(soilSlotSpotForRank(soil, tiles.length)).toEqual(soilSlotSpotForRank(soil, 0));
   });
 
   it("has no soil to offer when none is placed", () => {
-    expect(soilSlotSpotForRank(createSoilMap(), 0)).toBeNull();
+    expect(soilSlotSpot(createSoilMap(), 0)).toBeNull();
     expect(soilCapacity(createSoilMap())).toBe(0);
   });
 
@@ -241,18 +237,10 @@ describe("the slot lattice -- one plant per bed", () => {
     expect(soilCapacity(soil)).toBe(FIXTURE_BED_COUNT);
   });
 
-  it("wraps a rank past capacity instead of losing the plant", () => {
-    const soil = fixtureMap();
-    const capacity = soilCapacity(soil);
-    // Two plants sharing a slot is worse-looking than a bigger farm, and
-    // strictly better than one that is invisible and untappable.
-    expect(soilSlotSpotForRank(soil, capacity)).toEqual(soilSlotSpotForRank(soil, 0));
-  });
-
   it("keeps every placed crop standing on placed soil", () => {
     const soil = fixtureMap();
-    for (let rank = 0; rank < soilCapacity(soil); rank += 1) {
-      const p = soilSlotSpotForRank(soil, rank)!;
+    for (let slot = 0; slot < soilCapacity(soil); slot += 1) {
+      const p = soilSlotSpot(soil, slot)!;
       expect(onSoil(soil, p.x, p.y)).toBe(true);
     }
   });
@@ -411,10 +399,10 @@ describe("grass yields to placed soil", () => {
 describe("cropSpot", () => {
   const soil = fixtureMap();
 
-  it("puts a crop on the lattice when it is given a placement", () => {
-    const at = cropSpot("farmstead", "unit-a", { soil, rank: 0 });
+  it("puts a crop on the lattice when it is given a fixed slot", () => {
+    const at = cropSpot("farmstead", "unit-a", { soil, slot: 0 });
     expect(onSoil(soil, at.x, at.y)).toBe(true);
-    expect(at).toEqual(soilSlotSpotForRank(soil, 0));
+    expect(at).toEqual(soilSlotSpot(soil, 0));
   });
 
   it("scatters when there is no placement -- a mucked animal's fallback", () => {
@@ -423,23 +411,31 @@ describe("cropSpot", () => {
     expect(at.x).toBeGreaterThanOrEqual(area.x);
     expect(at.x).toBeLessThanOrEqual(area.x + area.width);
     // And it is not on the lattice, which is the point of the split.
-    expect(at).not.toEqual(soilSlotSpotForRank(soil, 0));
+    expect(at).not.toEqual(soilSlotSpot(soil, 0));
   });
 
-  it("scatters when a placement points at a farm with no soil", () => {
-    const at = cropSpot("farmstead", "unit-a", { soil: createSoilMap(), rank: 0 });
+  it("scatters, never guesses a tile, when a placement names no fixed slot", () => {
+    // The rank-hash fallback this used to fall through to is gone
+    // (2026-09-10): a crop with no slot stands off the lattice entirely
+    // rather than wrapping onto a tile it was never actually sown into.
+    const at = cropSpot("farmstead", "unit-a", { soil, slot: null });
     expect(at).toEqual(cropSpot("farmstead", "unit-a"));
   });
 
-  it("is stable for the same unit and rank", () => {
-    expect(cropSpot("farmstead", "unit-a", { soil, rank: 3 })).toEqual(
-      cropSpot("farmstead", "unit-a", { soil, rank: 3 }),
+  it("scatters when a placement points at a farm with no soil", () => {
+    const at = cropSpot("farmstead", "unit-a", { soil: createSoilMap(), slot: 0 });
+    expect(at).toEqual(cropSpot("farmstead", "unit-a"));
+  });
+
+  it("is stable for the same unit and slot", () => {
+    expect(cropSpot("farmstead", "unit-a", { soil, slot: 3 })).toEqual(
+      cropSpot("farmstead", "unit-a", { soil, slot: 3 }),
     );
   });
 
-  it("gives two crops in the same bed different slots", () => {
-    const a = cropSpot("farmstead", "unit-a", { soil, rank: 0 });
-    const b = cropSpot("farmstead", "unit-b", { soil, rank: 1 });
+  it("gives two crops with different slots different tiles", () => {
+    const a = cropSpot("farmstead", "unit-a", { soil, slot: 0 });
+    const b = cropSpot("farmstead", "unit-b", { soil, slot: 1 });
     expect(a).not.toEqual(b);
   });
 });
@@ -486,10 +482,12 @@ describe("the farmhand's view of the field", () => {
     { id: "busy", stock: "carrot", state: "working", progress: 0.2 },
     { id: "dry-near", stock: "carrot", state: "dry", progress: 0.9 },
   ];
-  const ranks = cropRanks(units.map((u) => u.id));
+  // Each unit gets its own fixed slot -- the concrete method every crop
+  // actually uses now, not a rank-hash guess.
+  const slots = new Map(units.map((u, index) => [u.id, index]));
   const crops = buildCropInstances(
     units,
-    (id) => cropSpot("farmstead", id, { soil, rank: ranks.get(id)! }),
+    (id) => cropSpot("farmstead", id, { soil, slot: slots.get(id)! }),
     growthStage,
     soil,
   );

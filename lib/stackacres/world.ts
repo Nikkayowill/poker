@@ -40,7 +40,7 @@ import { inOuterZone, type ZoneId } from "./zones";
 // ./soil.ts is a runtime LEAF -- it imports only types back from here -- so
 // unlike ./paths, ./water and ./zones above, this one is a plain value
 // import with no cycle to work around. See that file's header.
-import { soilSlotSpot, soilSlotSpotForRank, type SoilMap } from "./soil";
+import { soilSlotSpot, type SoilMap } from "./soil";
 // Another strict leaf (it imports nothing at all), so this is a plain value
 // import with no cycle to worry about. Holds the Farmstead yard's offset --
 // see ./yard.ts on why sixty literals are wrapped rather than rewritten.
@@ -631,16 +631,19 @@ export function seedFromId(id: string): number {
 
 /**
  * A crop's rank among its siblings: its position once the whole set is
- * sorted by a hash of each id, which is what `cropSpot` turns into a slot on
- * the placed soil.
+ * sorted by a hash of each id.
+ *
+ * NOT used by `cropSpot` any more (2026-09-10) -- a crop's world point comes
+ * only from its own fixed `soilSlot`, never a rank-hash guess at a tile; see
+ * `CropPlacement`'s own header for why that guessing let crops stack. This
+ * stays for whatever still wants a stable, order-independent ranking over a
+ * sibling set without touching soil at all -- e.g. the (currently inert)
+ * farmhand reference modules' own crop targeting.
  *
  * Sorted by HASH, never by the order the rows arrived, for the reason
- * `wheatPlotSpot` states directly below: crops are settled out from under
- * each other in a single sweep, and a rank taken from list position would
- * slide every surviving plant sideways the moment an earlier one was cashed.
- * A hash rank still moves survivors when a crop LEAVES the set (the bed
- * re-packs), which is a deliberate, documented trade -- see
- * `soilSlotSpotForRank` in ./soil.ts.
+ * `wheatPlotSpot` states directly below: a rank taken from list position
+ * would slide every surviving plant sideways the moment an earlier one was
+ * cashed.
  *
  * Ties on the hash fall back to the id itself, so the ordering is total and
  * two crops can never be handed the same rank.
@@ -662,23 +665,28 @@ export function cropRank(unitId: string, siblingIds: readonly string[]): number 
 }
 
 /** What `cropSpot` needs to put a crop on the player's own soil rather than
- *  scattering it: the placed tiles, and this crop's rank among its siblings
- *  (`cropRank`). Optional at the call site -- see `cropSpot`. */
+ *  scattering it: the placed tiles, and this crop's FIXED slot, when it has
+ *  one. Optional at the call site -- see `cropSpot`. */
 export interface CropPlacement {
   soil: SoilMap;
-  rank: number;
   /**
-   * This crop's FIXED slot, when it has one (`homestead_units.soil_slot`).
+   * This crop's fixed planting slot (`homestead_units.soil_slot`), or null
+   * when it has none.
    *
-   * Takes precedence over `rank` and is the whole difference between a bed
-   * that re-packs itself and one that does not. Null/undefined -- every crop
-   * sown before soil tiers shipped -- keeps the rank behaviour exactly as it
-   * was, which is why this needed no backfill: an old crop still shuffles up
-   * when a sibling is harvested, a new one stays on the bed it was sown into.
-   * That stability is what makes an Enriched bed's speed-up belong to the
-   * crop actually standing on it.
+   * THE ONLY WAY A CROP STANDS ON A TILE (2026-09-10). This used to be
+   * optional, with a rank-hash fallback (`soilSlotSpotForRank`, since
+   * deleted) standing in for a crop with no slot -- packing it onto
+   * whichever bed its hash landed on, wrapping past capacity rather than
+   * refusing. That is exactly how two, or five, crops ended up standing on
+   * the same three tiles: the fallback never asked whether the bed it
+   * guessed was already somebody's. `assignSoilSlot` in
+   * stackacres-service.ts now refuses to sow a crop with no free bed, so
+   * every crop sown from here on carries a real slot; a null one here means
+   * this crop genuinely has none (a row from before that gate shipped) and
+   * `cropSpot` scatters it off the lattice instead of guessing a tile for
+   * it.
    */
-  slot?: number | null;
+  slot: number | null;
 }
 
 /**
@@ -686,17 +694,20 @@ export interface CropPlacement {
  * point.
  *
  * TWO BEHAVIOURS, and which one you get is the whole point of this function.
- * Given `placement`, a crop stands in a slot on the player's placed soil:
- * strictly on the lattice, in rows, packed tight enough to overlap (see
- * ./soil.ts). Given nothing -- or given a farm with no soil placed yet -- it
- * falls back to the old hash-scatter inside the district's grow area.
+ * Given a `placement` naming a real `slot`, a crop stands dead centre of the
+ * one tile that slot owns (see ./soil.ts) -- never shared with another crop,
+ * because a slot is never handed out twice (`assignSoilSlot`'s own guard).
+ * Given nothing, a placement with no soil to stand on, or a placement whose
+ * `slot` is null, it falls back to the old hash-scatter inside the
+ * district's grow area.
  *
  * The fallback is not dead code and is not a deprecation path. It is what
  * still places a MUCKED unit, and a mucked unit may be LIVESTOCK: a hog that
  * has stopped wandering has to park somewhere, it has no soil tile of its
  * own, and scattering it inside the pen is exactly right for it. It is also
  * what every existing caller and test that has no soil map keeps getting,
- * which is why the parameter is optional rather than required.
+ * which is why the parameter is optional rather than required, and what a
+ * crop with no fixed slot at all now always gets -- see `CropPlacement.slot`.
  *
  * Note what this function is NOT doing: it is not deciding whether a unit is
  * an animal. A WANDERING animal never reaches here at all -- it spawns and
@@ -714,11 +725,8 @@ export interface CropPlacement {
  * to its own `growAreaInterior`, unchanged.
  */
 export function cropSpot(zone: ZoneId, unitId: string, placement?: CropPlacement): WorldPoint {
-  if (placement) {
-    const at =
-      placement.slot === null || placement.slot === undefined
-        ? soilSlotSpotForRank(placement.soil, placement.rank)
-        : soilSlotSpot(placement.soil, placement.slot);
+  if (placement && placement.slot !== null) {
+    const at = soilSlotSpot(placement.soil, placement.slot);
     if (at) return at;
   }
   const random = seededRandom(seedFromId(unitId));

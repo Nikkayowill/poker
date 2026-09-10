@@ -359,37 +359,24 @@ export function soilCapacity(soil: SoilMap): number {
 }
 
 /**
- * The world point for a crop holding rank `rank` among its siblings, or null
- * when there is no soil to stand on (the caller then falls back -- see
- * `cropSpot` in ./world.ts).
- *
- * WHAT RANK COSTS, stated plainly because it is the one real trade in this
- * module. The rank is a crop's position once its siblings are sorted by a
- * hash of their own ids (./world.ts's `cropRank`), NOT its index in whatever
- * order the rows arrived -- that much follows the rule `wheatPlotSpot`
- * already states, and it is what stops a repaint shuffling the bed. But a
- * rank is still relative to the set: harvest a crop and every sibling that
- * hashed above it moves up one slot. The bed re-packs itself tidily, which is
- * the FarmVille look and is arguably the nicer behaviour, but it IS movement
- * that a persisted slot column on `homestead_units` would remove. That is a
- * migration, so it is not done here; see the note in the PR body.
- *
- * Ranks past capacity wrap rather than vanish. A crop with nowhere to stand
- * would otherwise be invisible and untappable, which is strictly worse than
- * two plants sharing a bed until the player buys more ground.
- */
-export function soilSlotSpotForRank(soil: SoilMap, rank: number): WorldPoint | null {
-  const capacity = soilCapacity(soil);
-  if (capacity <= 0) return null;
-  const wrapped = ((rank % capacity) + capacity) % capacity;
-  return soilSlotPoint(orderedSoilTiles(soil)[wrapped]);
-}
-
-/**
  * The world point for a crop holding a FIXED slot, or null when the slot
- * space is empty. Wraps a slot past capacity exactly as
- * `soilSlotSpotForRank` wraps a rank past it: selling off beds must not make
- * a crop invisible and untappable.
+ * space is empty.
+ *
+ * THE ONLY WAY A CROP STANDS ON A BED. `soilSlotSpotForRank`, the rank-hash
+ * fallback this used to share the lattice with, is gone (2026-09-10): it
+ * packed a crop with no slot onto whichever tile its hash landed on, wrapping
+ * past capacity rather than refusing -- which is exactly what let two, or
+ * five, crops stand on the same three tiles. `assignSoilSlot` in
+ * stackacres-service.ts already refuses to sow a crop with no free bed, so
+ * every crop reaching here either carries a real slot or stands off the
+ * lattice entirely (`cropSpot` in ./world.ts falls back to the open-field
+ * scatter, the same one an unsoiled farm already uses) -- never a guess at
+ * which tile it meant.
+ *
+ * Wraps a slot past capacity so selling off beds cannot make an
+ * already-standing crop invisible and untappable; that is the one wrap left,
+ * and it only ever fires when a slot's own tile stops existing, never as a
+ * placement guess.
  */
 export function soilSlotSpot(soil: SoilMap, slot: number): WorldPoint | null {
   const capacity = soilCapacity(soil);

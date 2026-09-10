@@ -66,6 +66,13 @@ export function cropSpriteScale(stage: CropStage): number {
   return STAGE_SCALE[stage];
 }
 
+/** The scale a crop's frame is actually drawn at. Only carrot and the two
+ *  corns are baked enlarged per stage (stackacres-art.ts's `cropBakeScale`
+ *  reads this); every other crop's three frames share one box. */
+export function cropDrawnScale(art: CropArt, stage: CropStage): number {
+  return art === "carrot" || art === "corn" || art === "corn2" ? cropSpriteScale(stage) : 1;
+}
+
 /**
  * Where each crop's own root point sits in its frame, as an offset from the
  * bottom-centre of its canvas: `dx` right of centre, `dy` up from the bottom
@@ -141,7 +148,7 @@ const CROP_FOOT: Readonly<Record<CropArt, { readonly dx: number; readonly dy: nu
  * grow with it or a ripe plant sits higher off its bed than a seedling does.
  */
 export function cropGroundOffset(art: CropArt, stage: CropStage): number {
-  return CROP_FOOT[art].dy * cropSpriteScale(stage);
+  return CROP_FOOT[art].dy * cropSpriteScale(stage) * cropBedFit(art);
 }
 
 /**
@@ -154,7 +161,7 @@ export function cropGroundOffset(art: CropArt, stage: CropStage): number {
  * is.
  */
 export function cropFootShiftX(art: CropArt, stage: CropStage): number {
-  return -CROP_FOOT[art].dx * cropSpriteScale(stage);
+  return -CROP_FOOT[art].dx * cropSpriteScale(stage) * cropBedFit(art);
 }
 
 /**
@@ -202,6 +209,23 @@ const CROP_BOX: Readonly<Record<CropArt, { readonly w: number; readonly h: numbe
   wheat2: { w: 37, h: 36 },
 };
 
+/**
+ * The widest a ripe crop is drawn, in screen units. A bed's diamond is
+ * 2 * SOIL_TILE (32) across, so a plant this wide stands on its own square
+ * and only just meets its neighbours' leaves, instead of sprawling over two
+ * or three beds and hiding the ones behind it. A tap goes by square, so the
+ * square has to stay visible.
+ */
+export const CROP_BED_FIT_WIDTH = 30;
+
+/** How much a crop's whole picture is shrunk so its ripe frame, as actually
+ *  drawn, fits its bed. 1 for a crop that already fits; never grows one.
+ *  The foot corrections, heap, footprint and shadow in this file already
+ *  include it; the scene applies it to the plant sprite itself. */
+export function cropBedFit(art: CropArt): number {
+  return Math.min(1, CROP_BED_FIT_WIDTH / (CROP_BOX[art].w * cropDrawnScale(art, 2)));
+}
+
 /** One crop's own painted frame, in art units. Exported for the tests that
  *  hold the foot corrections inside it -- nothing in the app reads this
  *  directly, it reads the functions built on it below. */
@@ -222,7 +246,7 @@ export function cropBox(art: CropArt): { readonly w: number; readonly h: number 
  * bed it sits on.
  */
 export function cropCollarScale(art: CropArt, stage: CropStage): number {
-  return ((CROP_BOX[art].w * 0.55) / 16) * cropSpriteScale(stage);
+  return ((CROP_BOX[art].w * 0.55) / 16) * cropSpriteScale(stage) * cropBedFit(art);
 }
 
 /**
@@ -244,15 +268,14 @@ export function cropCollarBehind(art: CropArt): boolean {
 }
 
 export function cropFootprintHalf(art: CropArt, stage: CropStage): number {
-  return Math.max(CROP_FOOTPRINT_HALF, (CROP_BOX[art].w / 2) * cropSpriteScale(stage));
+  return Math.max(CROP_FOOTPRINT_HALF, (CROP_BOX[art].w / 2) * cropSpriteScale(stage) * cropBedFit(art));
 }
 
 /**
  * What a crop's sprite is drawn at when its soil has run dry: visibly faded,
  * not hidden. It is still the same plant standing in the same place -- the
- * fade is the map saying "this one has stopped", the same job the amber ring
- * does for a hungry animal, in the one channel a crop has that an animal's
- * silhouette does not.
+ * fade is the map saying "this one has stopped", alongside the water cue
+ * bubble the scene floats over it.
  */
 export const CROP_DRY_ALPHA = 0.55;
 
@@ -382,19 +405,3 @@ export function cropFootShiftXBlend(
   return a + (b - a) * growthProgress(t);
 }
 
-/**
- * The ground diamond's half-size at the same `t`.
- *
- * The gold "ready" ring is traced against this (`unitFootprintHalf` in
- * stackacres-scene.ts), and so is the fallback half of the tap test -- so a
- * ring left at the old frame's size for the length of the tween would sit
- * inside a plant that had already outgrown it, which is the exact "framed
- * rather than sitting inside it" complaint that sized the ring off the crop in
- * the first place. Driven off the same proxy as the plant and the shadow, for
- * the same reason they are.
- */
-export function cropFootprintHalfBlend(art: CropArt, from: CropStage, to: CropStage, t: number): number {
-  const a = cropFootprintHalf(art, from);
-  const b = cropFootprintHalf(art, to);
-  return a + (b - a) * growthProgress(t);
-}

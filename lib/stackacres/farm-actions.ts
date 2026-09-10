@@ -45,7 +45,7 @@ export type Action =
   // Fills the watering can at the well.
   | { action: "draw-water" }
   | { action: "clear"; unitId: string }
-  | { action: "buy-feed"; itemId: string }
+  | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. The baseline income path now that
   // harvest always credits inventory instead of Gold.

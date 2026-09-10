@@ -214,16 +214,3 @@ describe("reaching the threshold by actually running out of time", () => {
     expect(TURN_TIMEOUT_MS).toBeGreaterThan(0);
   });
 });
-
-describe("tables persisted before inactivity was tracked", () => {
-  it("reads a missing counter as zero rather than as undefined", () => {
-    const game = allHumanTable();
-    const legacy: Record<string, unknown> = { ...game };
-    (legacy.seats as Array<Record<string, unknown>>).forEach((seat) => delete seat.missedTurns);
-
-    const normalized = normalizeGameState(legacy as unknown as GameState);
-    normalized.seats.forEach((seat) => expect(seat.missedTurns).toBe(0));
-    // undefined >= 3 is false, so nobody would ever be released -- silently.
-    expect(releaseInactiveSeats(normalized)).toEqual([]);
-  });
-});

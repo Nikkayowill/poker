@@ -2,7 +2,7 @@ import clsx from "clsx";
 
 /**
  * The one shimmering-block primitive every loading skeleton in the app
- * composes from -- see 47-loading.css for the shimmer keyframe and its
+ * composes from -- see 54-loading.css for the shimmer keyframe and its
  * reduced-motion fallback (a static tone, no animation).
  *
  * Sizing is entirely up to the caller's className: a skeleton only earns its

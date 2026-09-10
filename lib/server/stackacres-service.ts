@@ -4,6 +4,7 @@ import {
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
   STACKACRES_FEED,
+  STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
@@ -22,6 +23,8 @@ import {
   isStackAcresUnitHungry,
   isStackAcresUnitReady,
   thirstyAtFor,
+  isUnwateredSeedRow,
+  seedClockOnFirstWater,
   toStackAcresUnitSnapshots,
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
@@ -736,6 +739,52 @@ function irrigationGridFor(
   };
 }
 
+/** Which of `rows` a pipe or hydro bed waters right now. Every readiness and
+ *  dryness check on the server has to be given this, or a piped crop reads as
+ *  dry: its `lastWateredAt` only moves on a layout change. */
+async function irrigatedUnitIdsFor(
+  profileId: string,
+  rows: readonly StoredStackAcresUnit[],
+): Promise<ReadonlySet<string>> {
+  const [pipes, purchasedSoil] = await Promise.all([
+    listStackAcresPipes(profileId),
+    listStackAcresSoilTiles(profileId),
+  ]);
+  return irrigationGridFor(rows, pipes, soilMapFor(purchasedSoil)).irrigatedUnitIds;
+}
+
+/**
+ * Marks watered, as of `now`, every working crop in `stampIds` whose soil
+ * reads dry, so pulling the water later starts the drought from here rather
+ * than retroactively. `ready_at` does not move: the water cost it no growing
+ * time. Seed that was never watered starts its growing clock here instead
+ * (`seedClockOnFirstWater`), so time it sat unwatered is never counted as
+ * growth. A lost version race is harmless: the next stamp settles it.
+ */
+async function stampIrrigatedCrops(
+  rows: readonly StoredStackAcresUnit[],
+  stampIds: ReadonlySet<string>,
+  now: Date,
+): Promise<void> {
+  await Promise.all(
+    rows
+      .filter((row) => row.status === "working" && stampIds.has(row.id) && isStackAcresUnitDry(row, now, false))
+      .map((row) => {
+        if (!isUnwateredSeedRow(row)) return waterStackAcresUnit(row, now, new Date(row.readyAt));
+        const clock = seedClockOnFirstWater(row, now.getTime());
+        return waterStackAcresUnit(row, now, clock.readyAt, clock.startedAt);
+      }),
+  );
+}
+
+/** A crop just sown onto a bed a pipe or hydro soil already reaches is
+ *  watered from the start, so a null `lastWateredAt` only ever means seed
+ *  nobody has watered. */
+async function waterIrrigatedCrops(profileId: string, now: Date): Promise<void> {
+  const rows = await listStackAcresUnits(profileId);
+  await stampIrrigatedCrops(rows, await irrigatedUnitIdsFor(profileId, rows), now);
+}
+
 /** The full slot space for one farm: every tile it has bought. USED TO also
  *  merge in a free starter pair (`mergeSoilTiles`, since deleted along with
  *  the starter grant -- see lib/stackacres/soil.ts's own "starter kit"
@@ -752,13 +801,8 @@ function parseUnitId(value: unknown): string {
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSnapshot[]> {
-  const [rows, pipes, purchasedSoil] = await Promise.all([
-    listStackAcresUnits(profileId),
-    listStackAcresPipes(profileId),
-    listStackAcresSoilTiles(profileId),
-  ]);
-  const grid = irrigationGridFor(rows, pipes, soilMapFor(purchasedSoil));
-  return toStackAcresUnitSnapshots(rows, now, grid.irrigatedUnitIds);
+  const rows = await listStackAcresUnits(profileId);
+  return toStackAcresUnitSnapshots(rows, now, await irrigatedUnitIdsFor(profileId, rows));
 }
 
 /** Every donation flag for a player, split into the two registries that ride
@@ -2102,8 +2146,8 @@ export async function buyStackAcresStock(
             now.getTime() + Math.round(def.durationMs * soilAssignment.growthMultiplier),
           ),
           lastFedAt: def.hungerMs === null ? null : now,
-          // Sowing waters the ground; an animal never runs dry.
-          lastWateredAt: def.thirstMs === null ? null : now,
+          // Dry seed until watered, same as the sow path.
+          lastWateredAt: null,
           permanent: true,
           soilSlot: soilAssignment.slot,
         });
@@ -2133,6 +2177,8 @@ export async function buyStackAcresStock(
     throw error;
   }
 
+  // A pipe or hydro bed under the new crop waters it from the start.
+  await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
 }
 
@@ -2303,8 +2349,8 @@ export async function stockStackAcres(
           readyAt: new Date(now.getTime() + durationMs),
           // An animal counts as fed the moment it arrives; a crop never eats.
           lastFedAt: def.hungerMs === null ? null : now,
-          // And a crop goes into watered ground; an animal has no soil to dry out.
-          lastWateredAt: def.thirstMs === null ? null : now,
+          // A crop goes in as dry seed and starts growing once it is watered.
+          lastWateredAt: null,
           permanent: false,
           housedIn: inGreenhouse ? "greenhouse" : null,
           soilSlot: soilAssignment.slot,
@@ -2340,6 +2386,8 @@ export async function stockStackAcres(
     throw error;
   }
 
+  // A pipe or hydro bed under the new crop waters it from the start.
+  await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
 }
 
@@ -2379,15 +2427,29 @@ export async function retireStackAcresStock(
   return view(profile, now);
 }
 
-/** Buys a shipment of feed. Pure sink: Gold out, servings in. */
+/** Buys shipments of feed. Pure sink: Gold out, servings in.
+ *
+ * Bulk, same as `buyStackAcresSoil`/`buyStackAcresSeed`: a `quantity` up to
+ * STACKACRES_FEED_SHIPMENTS_PER_PURCHASE moves in one request instead of one
+ * shipment per click, so a player mashing Buy no longer races the server's
+ * own round trip and gets back fewer shipments than presses. */
 export async function buyStackAcresFeed(
   token: string,
-  itemId: string,
+  input: { itemId?: unknown; quantity?: unknown },
   now = new Date(),
 ): Promise<StackAcresView> {
+  const itemId = typeof input.itemId === "string" ? input.itemId : "";
   const item = STACKACRES_FEED[itemId];
   if (!item) throw new StackAcresRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
+
+  const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > STACKACRES_FEED_SHIPMENTS_PER_PURCHASE) {
+    throw new StackAcresRequestError(
+      `Buy between 1 and ${STACKACRES_FEED_SHIPMENTS_PER_PURCHASE} shipments at a time.`,
+      400,
+    );
+  }
 
   // The shelf greys this row out, and that is presentation; this is the
   // check. `itemId` came off the wire, so a request naming the Bulk Shipment
@@ -2396,19 +2458,20 @@ export async function buyStackAcresFeed(
 
   // Town Favor discount -- see upgradeStackAcresTool's identical comment
   // and lib/stackacres/influence-tiers.ts.
-  const price = applyInfluenceDiscount(item.cost, await readStackAcresInfluence(profile.id));
+  const unitPrice = applyInfluenceDiscount(item.cost, await readStackAcresInfluence(profile.id));
+  const price = unitPrice * quantity;
 
   // Rule 1: the Gold leaves before the servings land.
   const debited = await spendGoldByProfile(profile.id, price);
   if (!debited) {
     throw new StackAcresRequestError(
-      `A ${item.label} costs ${price.toLocaleString()} Gold.`,
+      `${quantity} x ${item.label} costs ${price.toLocaleString()} Gold.`,
       400,
     );
   }
 
   try {
-    await adjustStackAcresFeed(profile.id, item.servings);
+    await adjustStackAcresFeed(profile.id, item.servings * quantity);
   } catch (error) {
     await refundGold(profile.id, price);
     throw error;
@@ -2648,13 +2711,27 @@ export async function waterStackAcres(
   //
   // Returning early rather than watering is what keeps the guard: nothing is
   // written, so the thirst clock is not reset and there is no free top-up to
-  // farm. No water is spent on this path either.
-  if (!isStackAcresUnitDry(unit, now)) return view(profile, now);
+  // farm. No water is spent on this path either. A crop a pipe or hydro bed
+  // waters is never dry, so watering it is the same no-op.
+  const rows = await listStackAcresUnits(profile.id);
+  const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
+  if (!isStackAcresUnitDry(unit, now, irrigated.has(unit.id))) return view(profile, now);
 
-  const driedAt = Date.parse(thirstyAt);
-  const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
-  const readyAt = Date.parse(unit.readyAt);
-  const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
+  let pushed: Date;
+  let restartedAt: Date | null = null;
+  if (isUnwateredSeedRow(unit)) {
+    // Seed's first water starts its clock from zero.
+    const clock = seedClockOnFirstWater(unit, now.getTime());
+    pushed = clock.readyAt;
+    restartedAt = clock.startedAt;
+  } else {
+    // Any other dry crop keeps its progress and has the dry spell added to
+    // ready_at.
+    const driedAt = Date.parse(thirstyAt);
+    const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+    const readyAt = Date.parse(unit.readyAt);
+    pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
+  }
 
   const remaining = await adjustStackAcresWater(profile.id, -1);
   if (remaining === null) {
@@ -2665,7 +2742,7 @@ export async function waterStackAcres(
 
   let watered: StoredStackAcresUnit | null;
   try {
-    watered = await waterStackAcresUnit(unit, now, pushed);
+    watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
   } catch (error) {
     await adjustStackAcresWater(profile.id, 1).catch(() => null);
     throw error;
@@ -3074,6 +3151,9 @@ export async function harvestStackAcres(
 ): Promise<StackAcresView & { harvest: StackAcresHarvestResult }> {
   const profile = await ensureProfile(token);
   const rows = await listStackAcresUnits(profile.id);
+  // A piped crop is never dry, so it ripens on its own clock; without this it
+  // read as dry and could not be brought in.
+  const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
 
   // A named set is the single-tap path; no set at all is "bring in everything
   // that is ready". Naming a unit that is not ready is answered with the
@@ -3085,30 +3165,30 @@ export async function harvestStackAcres(
       const row = rows.find((candidate) => candidate.id === unitId);
       if (!row || row.status !== "working") {
         throw new StackAcresRequestError("Nothing to collect here.", 404, {
-          round: toStackAcresUnitSnapshots(rows, now),
+          round: toStackAcresUnitSnapshots(rows, now, irrigated),
         });
       }
       if (isStackAcresUnitHungry(row, now)) {
         throw new StackAcresRequestError("Feed them first.", 409, {
-          round: toStackAcresUnitSnapshots(rows, now),
+          round: toStackAcresUnitSnapshots(rows, now, irrigated),
         });
       }
       // The client's clock is decoration; this is the answer that counts, and
       // the store's own ready_at guard backs it even if this check is raced.
-      if (!isStackAcresUnitReady(row, now)) {
+      if (!isStackAcresUnitReady(row, now, irrigated.has(row.id))) {
         throw new StackAcresRequestError("Not ready yet.", 409, {
-          round: toStackAcresUnitSnapshots(rows, now),
+          round: toStackAcresUnitSnapshots(rows, now, irrigated),
         });
       }
     }
   }
 
   const ready = rows.filter(
-    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now),
+    (row) => (!named || named.has(row.id)) && isStackAcresUnitReady(row, now, irrigated.has(row.id)),
   );
   if (ready.length === 0) {
     throw new StackAcresRequestError("Nothing is ready yet.", 409, {
-      round: toStackAcresUnitSnapshots(rows, now),
+      round: toStackAcresUnitSnapshots(rows, now, irrigated),
     });
   }
 
@@ -3160,10 +3240,14 @@ export async function harvestStackAcres(
   let mucked = 0;
   for (const row of ready) {
     const muckFee = row.permanent ? null : rollMuck(row.stock);
-    const restartReadyAt = row.permanent
-      ? new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs)
+    const restart = row.permanent
+      ? {
+          readyAt: new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs),
+          // A pipe or hydro bed waters the new cycle from its start.
+          wateredAt: irrigated.has(row.id) ? now : null,
+        }
       : null;
-    const done = await collectStackAcresUnit(row, now, muckFee, restartReadyAt);
+    const done = await collectStackAcresUnit(row, now, muckFee, restart);
     // Rule 2: a lost race did not happen here; whoever won it was credited instead.
     if (!done) continue;
     settled.push(row);
@@ -4294,17 +4378,7 @@ async function recomputeIrrigation(
   // for it to touch.
   await syncStackAcresPipeNetwork(profileId, grid);
 
-  const stampIds = new Set<string>([...grid.irrigatedUnitIds, ...alsoStamp]);
-  await Promise.all(
-    rows
-      .filter(
-        (row) =>
-          row.status === "working" &&
-          stampIds.has(row.id) &&
-          isStackAcresUnitDry(row, now, false),
-      )
-      .map((row) => waterStackAcresUnit(row, now, new Date(row.readyAt))),
-  );
+  await stampIrrigatedCrops(rows, new Set<string>([...grid.irrigatedUnitIds, ...alsoStamp]), now);
 
   return grid;
 }

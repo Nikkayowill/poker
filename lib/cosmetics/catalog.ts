@@ -62,10 +62,8 @@ export interface Cosmetic {
    * a positive price, so price stays null here same as the earned tier) and
    * never shown to a player without the badge -- filtered out of the
    * catalog payload in app/api/cosmetics/route.ts, so it never renders as a
-   * locked/preview card either. Also excluded from `botAvatarCosmetics` and
-   * from the random opponent-seat fallback pool
-   * (`lib/scene/seat-art.ts`'s `ADMIN_ONLY_CHARACTER_IDS`) -- a bot or a
-   * stranger's stale seat must never wear this face. Revoking the badge
+   * locked/preview card either. Also excluded from `botAvatarCosmetics`, so
+   * a bot never wears this face. Revoking the badge
    * does not un-equip an avatar already chosen; it only stops a future
    * equip from succeeding, the same posture every other admin flag here
    * takes.
@@ -725,10 +723,6 @@ export function normalizeEquipped(raw: unknown): EquippedCosmetics {
     const item = typeof value === "string" ? cosmeticById(value) : null;
     return item && item.slot === "avatar" ? item.id : fallback;
   };
-  // `avatar` is what this field was called before the now-deleted 3D room
-  // needed its own slot and this one picked up its "2d" suffix; a profile
-  // stored under the old name still resolves correctly.
-  const legacyAvatar = input.avatar;
   const rawChipDesigns = (input.chipDesigns ?? {}) as Record<string, unknown>;
   const chipDesigns: Partial<Record<ChipDesignDenomination, string>> = {};
   for (const denomination of CHIP_DESIGN_DENOMINATIONS) {
@@ -740,7 +734,7 @@ export function normalizeEquipped(raw: unknown): EquippedCosmetics {
     cardBack: cosmeticById(String(input.cardBack ?? ""))?.slot === "cardBack"
       ? String(input.cardBack)
       : DEFAULT_CARD_BACK,
-    avatar2d: pick(input.avatar2d ?? legacyAvatar, DEFAULT_AVATAR_COSMETIC),
+    avatar2d: pick(input.avatar2d, DEFAULT_AVATAR_COSMETIC),
     chipDesigns,
   };
 }

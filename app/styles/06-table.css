@@ -83,7 +83,7 @@
     border-radius: 18px;
     border-color: rgba(217, 184, 93, .16);
     box-shadow:
-      var(--elevation-4, 0 15px 35px rgba(0, 0, 0, .22)),
+      var(--elevation-4),
       0 0 46px rgba(217, 184, 93, .05);
   }
   .game-content .action-layer .action-bar.action-bar-your-turn {

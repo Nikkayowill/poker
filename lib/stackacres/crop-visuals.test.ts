@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_CROPS } from "./catalogue";
 import {
+  CROP_BED_FIT_WIDTH,
   CROP_DRY_ALPHA,
   CROP_FOOTPRINT_HALF,
   cropArtFor,
+  cropBedFit,
   cropBox,
+  cropDrawnScale,
   cropCollarBehind,
   cropCollarScale,
   cropFootShiftX,
@@ -126,7 +129,8 @@ describe("cropFootprintHalf", () => {
   // carrot's real CraftPix box is 34 wide (crop-visuals.ts's CROP_BOX) --
   // 17 either side of the stem, so a 1.25x sprite is 21.25 either side.
   it("expands a mature crop's touch target with its 1.25x sprite", () => {
-    expect(cropFootprintHalf("carrot", 2)).toBe(21.25);
+    // A ripe carrot is fitted to its bed, so its half-width is half the fit.
+    expect(cropFootprintHalf("carrot", 2)).toBeCloseTo(CROP_BED_FIT_WIDTH / 2);
   });
 
   it("grows monotonically, so a bigger crop is never a smaller target", () => {
@@ -190,7 +194,8 @@ describe("how big the grown footprint actually gets", () => {
   it("keeps carrot's ripe diamond inside the meadow it has to share", () => {
     const MEADOW_W = 136;
     const diamond = cropFootprintHalf("carrot", 2) * 2;
-    expect(diamond).toBe(42.5);
+    // Fitted to its own bed (`cropBedFit`), so exactly the fit width.
+    expect(diamond).toBeCloseTo(CROP_BED_FIT_WIDTH);
     expect(diamond).toBeLessThanOrEqual(MEADOW_W);
   });
 });
@@ -288,5 +293,25 @@ describe("growing between two frames", () => {
     // popUnit's own chain is 90 + 130 + 150 = 370ms.
     expect(CROP_GROWTH_TWEEN_MS).toBeLessThan(370);
     expect(CROP_GROWTH_TWEEN_MS).toBeGreaterThan(200);
+  });
+});
+
+describe("fitting a crop to its bed", () => {
+  it("draws every ripe crop no wider than its bed allows", () => {
+    for (const crop of STACKACRES_CROPS) {
+      const art = cropArtFor(crop);
+      if (!art) continue;
+      expect(cropBox(art).w * cropDrawnScale(art, 2) * cropBedFit(art)).toBeLessThanOrEqual(
+        CROP_BED_FIT_WIDTH + 1e-9,
+      );
+    }
+  });
+
+  it("never grows a crop that already fits", () => {
+    for (const crop of STACKACRES_CROPS) {
+      const art = cropArtFor(crop);
+      if (art) expect(cropBedFit(art)).toBeLessThanOrEqual(1);
+    }
+    expect(cropBedFit("grap")).toBe(1);
   });
 });

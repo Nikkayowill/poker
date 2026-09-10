@@ -111,6 +111,9 @@ export function StackAcresDragAffordance({
   const tokenRef = useRef<HTMLButtonElement>(null);
   const grab = useRef({ left: 0, top: 0, dx: 0, dy: 0 });
   const timer = useRef<number | null>(null);
+  /** Set by a press that starts on the scrim, so only a click that began
+   *  there closes it. See the scrim below. */
+  const scrimPressed = useRef(false);
   const [pos, setPos] = useState<TapPoint>(iconAt);
   const [phase, setPhase] = useState<Phase>("idle");
 
@@ -196,7 +199,23 @@ export function StackAcresDragAffordance({
 
   return (
     <div ref={rootRef} className={clsx("sa-drag", `is-${kind}`, `is-${phase}`)}>
-      <button type="button" className="sa-drag-scrim" aria-label="Put it down" onClick={onClose} />
+      {/* A click closes this only if the press also started here, or if it
+          came from a keyboard (detail 0). The tap that opened the overlay is
+          followed by a synthetic click that lands here with no press of its
+          own; on a phone that click used to shut the can the instant it
+          appeared. The scrim stays up to swallow it, so it can't fall through
+          to a button underneath either. */}
+      <button
+        type="button"
+        className="sa-drag-scrim"
+        aria-label="Put it down"
+        onPointerDown={() => {
+          scrimPressed.current = true;
+        }}
+        onClick={(event) => {
+          if (scrimPressed.current || event.detail === 0) onClose();
+        }}
+      />
       {arrow && (
         <svg className="sa-drag-arrow" aria-hidden="true">
           <path className="sa-drag-arrow-line" d={arrow.d} />

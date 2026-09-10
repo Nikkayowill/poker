@@ -19,17 +19,12 @@ const LANDSCAPE = { width: 844, height: 390 };
 /** The class the table wears only when the racetrack room is the one mounted. */
 const RACETRACK_CLASS = "scene-room-racetrack";
 
-async function seatWithRacetrackChosen(browser: Browser, size: { width: number; height: number }) {
+async function seatAtRacetrack(browser: Browser, size: { width: number; height: number }) {
   const context = await browser.newContext({ viewport: size });
   await context.request.post("/api/profile");
   const created = await context.request.post("/api/games", { data: TABLE });
   expect(created.ok()).toBe(true);
   const gameId = (await created.json()).game.id as string;
-  // Set before the first paint: poker-table.tsx holds a blank frame until the
-  // stored choice lands, then mounts exactly one room.
-  await context.addInitScript(() => {
-    window.localStorage.setItem("stackchips:table-renderer", "racetrack_2d5");
-  });
   const page = await context.newPage();
   await page.goto(`/?table=${gameId}`);
   await expect(page.locator(".poker-table-wrap")).toBeVisible({ timeout: 60_000 });
@@ -42,25 +37,20 @@ const roomClass = (page: Page) =>
 
 test("the 2.5D table returns after the portrait mobile fallback", async ({ browser }) => {
   test.setTimeout(120_000);
-  const { context, page } = await seatWithRacetrackChosen(browser, PORTRAIT);
+  const { context, page } = await seatAtRacetrack(browser, PORTRAIT);
   try {
     await expect(page.getByRole("status")).toContainText("Turn your phone sideways");
     await expect.poll(() => roomClass(page), { timeout: 20_000 }).not.toContain(RACETRACK_CLASS);
 
-    // Rotate. No reload, and that is the assertion: the preference was never
-    // rewritten, so the room comes back the moment the media query flips.
+    // Rotate. No reload, and that is the assertion: the room comes back the
+    // moment the media query flips.
     await page.setViewportSize(LANDSCAPE);
     await expect.poll(() => roomClass(page), { timeout: 20_000 }).toContain(RACETRACK_CLASS);
 
-    // ...and back, so the orientation gate returns without changing the
-    // stored 2.5D preference.
+    // ...and back, so the orientation gate returns.
     await page.setViewportSize(PORTRAIT);
     await expect(page.getByRole("status")).toContainText("Turn your phone sideways");
     await expect.poll(() => roomClass(page), { timeout: 20_000 }).not.toContain(RACETRACK_CLASS);
-
-    // The stored choice survived the whole trip untouched.
-    const stored = await page.evaluate(() => window.localStorage.getItem("stackchips:table-renderer"));
-    expect(stored).toBe("racetrack_2d5");
   } finally {
     await context.close();
   }

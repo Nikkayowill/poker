@@ -217,7 +217,6 @@
 .install-strip-dismiss:focus-visible { outline: 0; box-shadow: var(--brand-focus); }
 
 .admin-shell {
-  min-height: 100vh;
   min-height: 100svh;
   padding: 32px clamp(16px, 4vw, 48px) 64px;
   /* Same idiom as .bj-shell/.collection-shell -- a moderator opening this on

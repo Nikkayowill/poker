@@ -13,6 +13,7 @@ import {
   isoDepthAt,
   isoProject,
   isoUnproject,
+  UNIT_CUE_DEPTH,
   projectedBounds,
   projectedCorners,
   unprojectBoundsApprox,
@@ -135,6 +136,7 @@ import {
   removeSoilTile,
   SOIL_TILE,
   soilSlotPoint,
+  soilSlotTile,
   soilTileAt,
   soilTileDiamond,
   soilTileKey,
@@ -159,7 +161,6 @@ import {
   CROP_GROWTH_TWEEN_MS,
   cropArtFor,
   cropFootprintHalf,
-  cropFootprintHalfBlend,
   cropCollarBehind,
   cropCollarScale,
   cropFootShiftX,
@@ -168,6 +169,7 @@ import {
   cropGroundOffsetBlend,
   cropShadowScale,
   cropShadowScaleBlend,
+  cropBedFit,
   cropSpriteAlpha,
   cropStageSpriteBlend,
   type CropArt,
@@ -336,6 +338,9 @@ export interface StackAcresSceneUnit {
    *  `assignSoilSlot`'s early return for it), which is what scatters it
    *  inside its own zone instead of landing on top of a real meadow crop. */
   housedIn?: "greenhouse" | null;
+  /** Seed waiting for its first water; drawn as a sown heap. See
+   *  `StackAcresUnitSnapshot.seed`. */
+  seed: boolean;
 }
 
 /** Where a tap landed, in CSS pixels relative to the canvas host -- which is
@@ -640,13 +645,18 @@ function isCropArtName(name: PainterName): boolean {
   return cropArtNames.has(name);
 }
 
-/** Chrome colours, as the canvas needs them. Same values as 01-tokens.css.
- *  Only the three a unit's own state ring still needs -- the old
- *  `selected`/`blocked` colours (chalk, red) and the afford/progress accent
- *  (violet) went with the plot-tap system they existed for. */
+/** Chrome gold, as the canvas needs it. Same value as 01-tokens.css. */
 const GOLD = 0xffd23f;
-const AMBER = 0xff8a3d;
-const MUCK = 0x785830;
+/** How wide the icon inside a cue bubble is drawn, in world units, and how
+ *  far above the bubble's tail its centre sits. */
+const CUE_ICON_SIZE = 9.5;
+const CUE_ICON_RISE = 10.6;
+/** Gap between the top of a unit's picture and its cue's tail. */
+const CUE_GAP = 1.5;
+/** The whole cue drawn at this fraction of its painter's size: about a third
+ *  of a bed across, so a row of seedlings waiting for water is a row of small
+ *  drops rather than a wall of bubbles. */
+const CUE_SCALE = 0.62;
 /** The crit's own gold: a shade under `GOLD`, so a lucky harvest's sparks read
  *  as heavier metal beside the pale ring `celebrateHarvest` already throws
  *  rather than as more of the same. */
@@ -1312,10 +1322,13 @@ const COLLAR_DROP = -0.4;
 
 interface UnitNode {
   container: Phaser.GameObjects.Container;
-  /** State ring: ready, hungry, mucked. There is no "selected"/"afford"
-   *  ring any more -- a unit either shows what it is doing or it does not,
-   *  and nothing on the canvas is ever chosen or blocked. */
-  ring: Phaser.GameObjects.Graphics;
+  /** The bubble floating over a unit that needs something (water, feed,
+   *  collecting, clearing), or null when it needs nothing. Its own object at
+   *  `UNIT_CUE_DEPTH` rather than a child of `container`, so a plant drawn in
+   *  front can never cover it; `placeUnitCue` keeps it over the unit. */
+  cue: Phaser.GameObjects.Container | null;
+  /** The cue's gentle bob, held so it stops with the cue. */
+  cueBob: Phaser.Tweens.Tween | null;
   /** The unit's own picture: the animal, the crop, or (mucked) the mess
    *  standing in for either. */
   sprite: Phaser.GameObjects.Image;
@@ -1399,6 +1412,16 @@ function unitHarvestMode(state: StackAcresSceneUnit["state"]): "collect" | "clea
   if (state === "mucked") return "clear";
   return undefined;
 }
+/** The icon in a unit's cue bubble: the same four states a bare tap acts
+ *  on, or null when the unit needs nothing. */
+function unitCueIcon(state: StackAcresSceneUnit["state"]): PainterName | null {
+  if (unitIsWaterable(state)) return "ico-water";
+  if (unitIsFeedable(state)) return "ico-feed";
+  const harvest = unitHarvestMode(state);
+  if (harvest === "collect") return "ico-harvest";
+  if (harvest === "clear") return "ico-clear";
+  return null;
+}
 
 /**
  * Everything about a unit's picture EXCEPT which growth frame it is on.
@@ -1410,7 +1433,7 @@ function unitHarvestMode(state: StackAcresSceneUnit["state"]): "collect" | "clea
  * and a joined string cannot answer either.
  */
 function pictureSignature(unit: StackAcresSceneUnit): string {
-  return [unit.state, unit.stock, unit.permanent ? 1 : 0].join("|");
+  return [unit.state, unit.stock, unit.permanent ? 1 : 0, unit.seed ? "seed" : ""].join("|");
 }
 
 /** What a unit's own picture is signed by: only its state, kind, growth
@@ -3295,11 +3318,24 @@ export class StackAcresScene extends Phaser.Scene {
       const screen = isoProject(critter.x, critter.y);
       container.setPosition(screen.x, screen.y);
       container.setDepth(this.depthAt(critter.x, critter.y));
+    } else if (unit.seed) {
+      // Seed waiting for its first water: a sown heap on the bed and no plant
+      // yet. The water cue over it says what it needs.
+      const at = this.staticSpotFor(unit);
+      sprite = this.addLocal("seedMound", 0, 0, container);
+      sprite.y += COLLAR_DROP;
+      spot = at;
+      const screen = isoProject(at.x, at.y);
+      container.setPosition(screen.x, screen.y);
+      container.setDepth(this.depthAt(at.x, at.y));
     } else {
       const at = this.staticSpotFor(unit);
       const stage = unitStage(unit);
       // Non-null for every non-livestock kind, which is the branch we are in.
       const crop = cropArtFor(unit.stock) ?? "carrot";
+      // Shrinks the plant so its ripe frame fits its own bed. The shadow, heap
+      // and foot corrections below already carry the same fit.
+      const fit = cropBedFit(crop);
       // Grounding shadow, added before the plant so it paints underneath --
       // same order the isLivestock branch above uses for its own `shadow`.
       // Both anchor (0.5, 0.5) at this same local (0, 0), the crop sprite's
@@ -3327,7 +3363,7 @@ export class StackAcresScene extends Phaser.Scene {
         soilCollar.y += COLLAR_DROP;
       };
       if (cropCollarBehind(crop)) collar();
-      sprite = this.addLocal(this.ensureCropArt(crop, stage), 0, 0, container);
+      sprite = this.addLocal(this.ensureCropArt(crop, stage), 0, 0, container).setScale(fit / S);
       // Read the frame's own transparency back now, while a node is being
       // built, so a tap never pays for it. Every stage of both crops warms
       // itself the first time one is drawn; see `alphaMaskFor`.
@@ -3338,9 +3374,7 @@ export class StackAcresScene extends Phaser.Scene {
       // without the vertical half it floats above one.
       sprite.x += cropFootShiftX(crop, stage);
       sprite.y += cropGroundOffset(crop, stage);
-      // Dry soil reads as a faded plant. The ring says it too, but a ring is
-      // a thin outline on a small target and the fill is what carries at a
-      // glance.
+      // Dry soil reads as a faded plant, with the water cue floating over it.
       sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
       if (!cropCollarBehind(crop)) collar();
       spot = at;
@@ -3349,13 +3383,11 @@ export class StackAcresScene extends Phaser.Scene {
       container.setDepth(this.depthAt(at.x, at.y));
     }
 
-    const ring = this.add.graphics();
-    container.add(ring);
-
     const phase = this.random() * Math.PI * 2;
     const node: UnitNode = {
       container,
-      ring,
+      cue: null,
+      cueBob: null,
       sprite,
       critter,
       phase,
@@ -3370,9 +3402,9 @@ export class StackAcresScene extends Phaser.Scene {
       unit,
       spot,
     };
-    this.paintUnitRing(node, unit);
-    if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);
     this.nodes.set(unit.id, node);
+    this.paintUnitCue(node);
+    if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);
   }
 
   /**
@@ -3406,7 +3438,7 @@ export class StackAcresScene extends Phaser.Scene {
    * was replaced by a bigger one between two frames.
    *
    * ONE PROXY, EVERY PROPERTY. The plant's scale, its grounding shadow, its
-   * feet correction and the ready ring's radius are all read off a single
+   * feet correction and its soil heap are all read off a single
    * `{ t }` object tweened 0 -> 1, rather than four tweens with matching
    * durations. Matching durations are not lockstep: two tweens scheduled a
    * frame apart, or one surviving something the other did not, visibly detach a
@@ -3433,6 +3465,9 @@ export class StackAcresScene extends Phaser.Scene {
     if (unit.stock !== node.unit.stock) return false;
     if (unit.permanent !== node.unit.permanent) return false;
     if (unit.state === "mucked" || node.unit.state === "mucked") return false;
+    // Seed coming up is a different picture (a sown heap becoming a plant),
+    // not a bigger one.
+    if (unit.seed || node.unit.seed) return false;
     const shadow = node.cropShadow;
     if (shadow === null) return false;
     const from = node.stage;
@@ -3453,15 +3488,16 @@ export class StackAcresScene extends Phaser.Scene {
     node.sprite.setTexture(this.ensureCropArt(crop, to), ART_FRAME);
     this.alphaMaskFor(node.sprite.texture.key);
     node.sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
+    // The cue is the new state's from the first frame -- a plant reaching
+    // stage 2 is a plant going ready, and a basket arriving a third of a
+    // second after the crop is ripe would read as lag. It rides up with the
+    // plant as it grows.
+    this.paintUnitCue(node);
 
     const ease = { t: 0 };
-    // The ring's COLOUR is the new state's from the first frame -- a plant
-    // reaching stage 2 is a plant going ready, and a gold ring arriving a third
-    // of a second after the crop is ripe would read as lag. Only its radius
-    // eases, so it frames the plant the whole way up rather than snapping to
-    // the grown size around a plant that has not got there yet.
+    const fit = cropBedFit(crop);
     const apply = (t: number): void => {
-      node.sprite.setScale(cropStageSpriteBlend(from, to, t) / S);
+      node.sprite.setScale((cropStageSpriteBlend(from, to, t) * fit) / S);
       node.sprite.x = cropFootShiftXBlend(crop, from, to, t);
       node.sprite.y = cropGroundOffsetBlend(crop, from, to, t);
       shadow.setScale(cropShadowScaleBlend(crop, from, to, t) / S);
@@ -3470,7 +3506,6 @@ export class StackAcresScene extends Phaser.Scene {
       const collarFrom = cropCollarScale(crop, from);
       const collarTo = cropCollarScale(crop, to);
       node.soilCollar?.setScale((collarFrom + (collarTo - collarFrom) * t) / S);
-      this.paintUnitRing(node, unit, cropFootprintHalfBlend(crop, from, to, t));
     };
     apply(0);
 
@@ -3506,6 +3541,7 @@ export class StackAcresScene extends Phaser.Scene {
     for (const tween of node.tweens) tween.remove();
     this.cancelPop(node);
     this.cancelGrowth(node);
+    this.clearUnitCue(node);
     node.container.destroy(true);
   }
 
@@ -4117,8 +4153,8 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * How big a ring to trace around one unit -- half the diamond's own side
-   * length, derived from the painter's own box rather than a hand-kept
+   * The ground diamond an off-bed unit (livestock, a Greenhouse crop) is
+   * tapped by -- half the diamond's own side length, derived from the painter's own box rather than a hand-kept
    * table (the "drifted hand-written copies" trap this codebase has hit
    * before with STAKES_TIERS and the wager ladders). A mucked unit has no
    * single painter box to measure -- it is a small cluster -- so it gets a
@@ -4131,9 +4167,8 @@ export class StackAcresScene extends Phaser.Scene {
       return Math.max(box.w, box.h) / 2 + 6;
     }
     // A crop's ground diamond grows with the crop, so the thing a thumb is
-    // aiming at on a phone is the thing it lands on -- and so the gold ready
-    // ring frames the ripe sprite rather than sitting inside it. Never
-    // narrower than the flat half every crop used before they were grown.
+    // aiming at on a phone is the thing it lands on. Never narrower than the
+    // flat half every crop used before they were grown.
     // Non-null here: `unit.stock` is neither livestock (handled above) nor
     // mucked (handled above that), so it is one of the crop kinds.
     return cropFootprintHalf(
@@ -4142,62 +4177,53 @@ export class StackAcresScene extends Phaser.Scene {
     );
   }
 
-  /** Traces a diamond of the given half-size, centred on a unit's own
-   *  container origin (local (0, 0) -- `buildUnit` always positions the
-   *  container at the unit's true screen position, so a local-space diamond
-   *  here composes correctly with it exactly the way the old per-plot
-   *  `tracePlotDiamond` composed with a CellNode's own container). `inset`
-   *  shrinks (positive) or grows (negative) the traced edge, same
-   *  convention as before. */
-  private traceUnitDiamond(g: Phaser.GameObjects.Graphics, half: number, inset: number): void {
-    const h = half - inset;
-    const c = projectedCorners({ x: -h, y: -h, width: h * 2, height: h * 2 });
-    g.moveTo(c.n.x, c.n.y);
-    g.lineTo(c.e.x, c.e.y);
-    g.lineTo(c.s.x, c.s.y);
-    g.lineTo(c.w.x, c.w.y);
-    g.closePath();
+  /**
+   * The bubble over a unit that needs something: a droplet for dry soil and
+   * for seed waiting on its first water, a basket for anything ready, the
+   * feed pail for a hungry animal, the scraper for muck. A unit that is just
+   * getting on with it shows nothing. This replaced a diamond ring traced
+   * around the unit's whole footprint, which on a crop was several beds wide.
+   */
+  private paintUnitCue(node: UnitNode): void {
+    this.clearUnitCue(node);
+    const icon = unitCueIcon(node.unit.state);
+    if (icon === null) return;
+    const bubble = this.add
+      .image(0, 0, "cueBubble", ART_FRAME)
+      .setOrigin(PAINTERS.cueBubble.ax, PAINTERS.cueBubble.ay)
+      .setScale(1 / S);
+    const glyph = this.add
+      .image(0, -CUE_ICON_RISE, icon, ART_FRAME)
+      .setOrigin(0.5, 0.5)
+      .setScale(CUE_ICON_SIZE / PAINTERS[icon].w / S);
+    const inner = this.add.container(0, 0, [bubble, glyph]);
+    node.cue = this.add.container(0, 0, [inner]).setDepth(UNIT_CUE_DEPTH).setScale(CUE_SCALE);
+    this.placeUnitCue(node);
+    if (this.options.reducedMotion) return;
+    node.cueBob = this.tweens.add({
+      targets: inner,
+      y: -1.5,
+      duration: 650,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+      // Out of step with its neighbours, so a row of them does not bounce as one.
+      delay: (node.phase / (Math.PI * 2)) * 650,
+    });
   }
 
-  /**
-   * A unit's own state ring -- ready, hungry, mucked -- the one piece of the
-   * old `paintRings` that still means anything now that there is no
-   * afford/selected ring left to draw alongside it. Static once painted:
-   * unlike the old afford ring, nothing here pulses, so this normally only
-   * runs again when `setUnits` decides the unit's own signature changed.
-   *
-   * `half` overrides the radius `unitFootprintHalf` would derive, and exists
-   * for exactly one caller: `growCrop`, which redraws this every frame of a
-   * growth so the ring widens WITH the plant instead of jumping to the grown
-   * size around a crop that has not finished growing into it. A clear and eight
-   * `lineTo`s per frame for a third of a second is cheaper than the second
-   * Graphics object the alternative would need.
-   */
-  private paintUnitRing(node: UnitNode, unit: StackAcresSceneUnit, half?: number): void {
-    const ring = node.ring;
-    ring.clear();
-    const colour =
-      unit.state === "ready"
-        ? GOLD
-        : unit.state === "hungry"
-          ? AMBER
-          : unit.state === "dry"
-            ? WATER
-            : unit.state === "mucked"
-              ? MUCK
-              : null;
-    if (colour === null) return;
-    const radius = half ?? this.unitFootprintHalf(unit);
-    if (unit.state === "ready") {
-      ring.lineStyle(5, GOLD, 0.22);
-      ring.beginPath();
-      this.traceUnitDiamond(ring, radius, -1);
-      ring.strokePath();
-    }
-    ring.lineStyle(2.2, colour, 1);
-    ring.beginPath();
-    this.traceUnitDiamond(ring, radius, 1.5);
-    ring.strokePath();
+  private clearUnitCue(node: UnitNode): void {
+    node.cueBob?.remove();
+    node.cueBob = null;
+    node.cue?.destroy(true);
+    node.cue = null;
+  }
+
+  /** Keeps a unit's cue just over the top of its picture. Runs every frame
+   *  from `update`, and once when the cue is made. */
+  private placeUnitCue(node: UnitNode): void {
+    if (!node.cue) return;
+    node.cue.setPosition(node.container.x, node.sprite.getBounds().top - CUE_GAP);
   }
 
   /** A ripe crop hops gently in place, the way the old grid's plants did.
@@ -5318,12 +5344,13 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * The unit under a finger, or null.
    *
-   * Two regions, both in scene space and both padded by a fingertip. The
-   * unit's own ART is the first -- a cow's body is drawn well above the
-   * ground it stands on, and that body is what the player is aiming at. Its
-   * ground DIAMOND is the second, which is what makes the gold "ready" ring
-   * a target too, and what catches a crop whose ripe sprite is a few pixels
-   * of carrot top.
+   * A crop on a bed is hit on its bed's own square and nowhere else; see the
+   * top of the method. Everything off the bed lattice (livestock, Greenhouse
+   * crops) uses two regions, both in scene space and both padded by a
+   * fingertip. The unit's own ART is the first -- a cow's body is drawn well
+   * above the ground it stands on, and that body is what the player is aiming
+   * at. Its ground DIAMOND is the second, which catches a unit whose sprite is
+   * only a few pixels tall.
    *
    * The topmost hit wins, by the same depth the renderer sorts by, so a tap
    * where two pens overlap picks the one actually drawn in front.
@@ -5459,13 +5486,11 @@ export class StackAcresScene extends Phaser.Scene {
     return !alphaMaskCovers(mask, inside.u, inside.v);
   }
 
-  /** Whether `spot` (a unit's own world position) and `world` (a tapped
-   *  point) fall on the same soil square. `unitAt` uses it for both of its
-   *  hit regions so they agree on what "the crop's own tile" means. */
-  private sameOwnTile(spot: { x: number; y: number }, world: { x: number; y: number }): boolean {
-    const ownTile = soilTileAt(spot.x, spot.y);
-    const tapTile = soilTileAt(world.x, world.y);
-    return tapTile.tx === ownTile.tx && tapTile.ty === ownTile.ty;
+  /** The placed bed a crop's soil slot names, or null for anything off the
+   *  bed lattice (livestock, a Greenhouse crop, a crop with no slot). */
+  private bedOf(node: UnitNode): { tx: number; ty: number } | null {
+    if (node.critter || node.unit.soilSlot == null) return null;
+    return soilSlotTile(this.soil, node.unit.soilSlot);
   }
 
   private unitAt(clientX: number, clientY: number): string | null {
@@ -5478,15 +5503,37 @@ export class StackAcresScene extends Phaser.Scene {
     // A CSS pixel is this many scene units at the current zoom, which is what
     // keeps the pad a constant size under the thumb rather than under the map.
     const pad = TAP_PAD / this.zoomL();
-    // A tap that lands on a different, addressable bed than a crop's own
-    // tile is aimed at that bed, not at the crop leaning over into it. Both
-    // hit regions below enforce that (`otherBed`), so tapping one specific
-    // tile always reaches that tile's own crop or its seed offer. Nothing
-    // holds a Water/Feed/Harvest tool any more to loosen or tighten this; a
-    // bare tap does all three.
-    // Loop-invariant: `at` (the tapped point) never changes per node, so
-    // the tile it lands on doesn't either.
-    const tapTile = soilTileAt(at.x, at.y);
+    // A crop and its bed are one target: on a placed bed, the tap is that
+    // bed's own crop, or nobody's (so it falls through to the bed's seed
+    // offer), however far a neighbour's leaves or cue bubble reach over it.
+    // The square always decides; a bubble floats over the row behind, and
+    // letting it win there made the bed behind a seed untappable. `at` is in
+    // projected scene space and the lattice is in ground space, so the tap is
+    // unprojected before it is floored.
+    const ground = isoUnproject(at.x, at.y);
+    const tapTile = soilTileAt(ground.x, ground.y);
+    if (hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) {
+      for (const [id, node] of this.nodes) {
+        const bed = this.bedOf(node);
+        if (bed && bed.tx === tapTile.tx && bed.ty === tapTile.ty) return id;
+      }
+      return null;
+    }
+    // Off the beds, a cue bubble belongs to its own unit (a back-row crop's
+    // bubble over the grass, an animal's over its pen). Nearest centre wins
+    // where two bubbles overlap.
+    let cueHit: { id: string; dist: number } | null = null;
+    for (const [id, node] of this.nodes) {
+      if (!node.cue) continue;
+      const box = node.cue.getBounds();
+      if (at.x < box.x - pad || at.x > box.right + pad || at.y < box.y - pad || at.y > box.bottom + pad) continue;
+      const dist = Math.hypot(at.x - box.centerX, at.y - box.centerY);
+      if (!cueHit || dist < cueHit.dist) cueHit = { id, dist };
+    }
+    if (cueHit) return cueHit.id;
+    // Off the beds, a unit's picture is its target. A bed crop counts only by
+    // its real painted pixels (its leaves over the grass behind the field);
+    // everything off the bed lattice also has its ground diamond.
     // Which of the two regions caught the finger, because that now has to
     // outrank depth. Growing the crops (lib/stackacres/crop-visuals.ts) took a
     // ripe crop's ground diamond from a 24-unit box to a 48-unit one, and the
@@ -5521,15 +5568,9 @@ export class StackAcresScene extends Phaser.Scene {
     // for the mirror-image reason: it walks the ground.)
     let best: { id: string; onArt: boolean; dist: number; depth: number } | null = null;
     for (const [id, node] of this.nodes) {
+      const onBed = this.bedOf(node) !== null;
       const art = node.sprite.getBounds();
       const spot = this.unitWorldSpot(node);
-      // Livestock roams off the lattice (a critter spot, not a fixed tile),
-      // so this never applies to it. For anything planted, a tap on a
-      // different, addressable bed belongs to that bed, whether it caught
-      // this crop's art or its ground diamond.
-      const ownTile = this.sameOwnTile(spot, at);
-      const otherBed =
-        !isLivestock(node.unit.stock) && !ownTile && hasSoilTile(this.soil, tapTile.tx, tapTile.ty);
       // The box, then -- for a crop only -- the texture underneath it. A ripe
       // plant's box is half transparent, and an art hit outranks a
       // neighbour's ground hit, so without this second question the
@@ -5540,10 +5581,9 @@ export class StackAcresScene extends Phaser.Scene {
         at.x <= art.right + pad &&
         at.y >= art.y - pad &&
         at.y <= art.bottom + pad &&
-        !this.artHitIsAir(node, at.x, at.y) &&
-        !otherBed;
+        !this.artHitIsAir(node, at.x, at.y);
       let hit = onArt;
-      if (!hit) {
+      if (!hit && !onBed) {
         const half = this.unitFootprintHalf(node.unit);
         const ground = projectedBounds({
           x: spot.x - half,
@@ -5556,10 +5596,6 @@ export class StackAcresScene extends Phaser.Scene {
           at.x <= ground.x + ground.width + pad &&
           at.y >= ground.y - pad &&
           at.y <= ground.y + ground.height + pad;
-        // The diamond is sized off the crop's art, not its bed, so a mature
-        // crop's can reach into a neighbouring bed. A tap there belongs to
-        // that bed (`otherBed`, above).
-        if (hit && otherBed) hit = false;
       }
       if (!hit) continue;
       const depth = node.container.depth;
@@ -5596,7 +5632,7 @@ export class StackAcresScene extends Phaser.Scene {
    * On the CONTAINER, not the sprite: `update` rewrites a walking animal's
    * own sprite scale every frame for its gait and breathing, so a tween
    * there would be overwritten mid-bounce. The container's scale is nobody
-   * else's, and scaling it takes the shadow and the state ring along, which
+   * else's, and scaling it takes the shadow and the soil heap along, which
    * is what makes the whole unit react rather than just its outline.
    */
   popUnit(unitId: string): void {
@@ -6956,6 +6992,10 @@ export class StackAcresScene extends Phaser.Scene {
       const mirror = mirrorFor(STOCK_ART[stock], node.critter.facing);
       node.sprite.setScale((mirror * (1 - breath * 0.5)) / S, (1 + breath) / S);
     }
+
+    // Every cue rides its unit, whatever moved it this frame: a wandering
+    // animal, a growth, a tap's squash, a ripe crop's hop, a resync.
+    for (const node of this.nodes.values()) this.placeUnitCue(node);
 
     this.stepDrones(time, delta);
   }

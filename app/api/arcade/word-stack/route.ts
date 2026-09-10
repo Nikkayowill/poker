@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         token,
       );
     }
-    const parsed = startSchema.safeParse(await request.json().catch(() => ({})));
+    const parsed = startSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return withRequestSessionCookie(
         request,

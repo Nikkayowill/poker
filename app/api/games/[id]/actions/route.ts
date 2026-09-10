@@ -137,7 +137,12 @@ export async function POST(
       // Only after the departure is durably persisted -- crediting first
       // would pay out a player whose seat never actually got released.
       if (cashOutAmount > 0) {
-        profile = await creditGold(ownerToken, cashOutAmount).catch(() => profile);
+        // The seat is already released, so a failure here loses the player
+        // their chips. Keep the response, but make it greppable.
+        profile = await creditGold(ownerToken, cashOutAmount).catch((error) => {
+          console.error("games.cash_out_credit_failed", { gameId: updated.id, amount: cashOutAmount, error });
+          return profile;
+        });
       }
       // Awaited, not fired-and-forgotten: this credits real Gold, and a
       // serverless invocation is not guaranteed to keep running an
@@ -180,7 +185,10 @@ export async function POST(
       // the state transition means the player got nothing for it, so make
       // them whole rather than leaving a silent, unrecoverable loss.
       if (goldSpent > 0) {
-        profile = await creditGold(ownerToken, goldSpent).catch(() => profile);
+        profile = await creditGold(ownerToken, goldSpent).catch((error) => {
+          console.error("games.rebuy_refund_failed", { gameId: game.id, amount: goldSpent, error });
+          return profile;
+        });
       }
       throw applyError;
     }

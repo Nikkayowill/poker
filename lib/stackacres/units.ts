@@ -43,10 +43,9 @@ export interface StackAcresUnitRow {
   /**
    * Crops only. Null for livestock, which drink from their own trough.
    *
-   * Null on a CROP is not "never watered" -- it is a row written before this
-   * column existed, and it falls back to `startedAt` (sowing waters the
-   * ground). Treating it as bone dry instead would freeze every crop already
-   * in the field the moment this shipped.
+   * Null on a CROP means seed nobody has watered: sown onto a bed no pipe or
+   * hydro soil reaches, and not watered since. Its growing clock has not
+   * started yet (see `seedClockOnFirstWater`).
    */
   lastWateredAt: string | null;
   /** What clearing this unit costs while it is mucked. Null unless mucked. */
@@ -124,6 +123,10 @@ export interface StackAcresUnitSnapshot {
    * that has no soil.
    */
   isWatered: boolean;
+  /** Sown seed still waiting for its first water: drawn as a seed mound, and
+   *  its first water starts the growing clock. Set by the server from the
+   *  row's own `lastWateredAt` (`isUnwateredSeedRow`), never inferred. */
+  seed: boolean;
   /** The crop's fixed planting slot, or null when it has none. Passed
    *  straight through to the scene -- see `CropPlacement.slot`. */
   soilSlot: number | null;
@@ -172,19 +175,40 @@ export function hungryAtFor(row: Pick<StackAcresUnitRow, "stock" | "lastFedAt">)
 /**
  * When this row's crop next runs dry, or null if it never does.
  *
- * Falls back to `startedAt` when `lastWateredAt` is unset: sowing waters the
- * ground, and every crop row written before the column existed is one that
- * was watered when it went in. Livestock returns null -- an animal is tended
- * by feeding, and asking this of one is not a question with an answer.
+ * A crop with no `lastWateredAt` is seed that has not been watered yet, and
+ * its soil is dry from the moment it was sown. Livestock returns null -- an
+ * animal is tended by feeding, and asking this of one is not a question with
+ * an answer.
  */
 export function thirstyAtFor(
   row: Pick<StackAcresUnitRow, "stock" | "startedAt" | "lastWateredAt">,
 ): string | null {
   const def = STACKACRES_CATALOGUE[row.stock];
   if (def.thirstMs === null) return null;
-  const watered = Date.parse(row.lastWateredAt ?? row.startedAt);
+  if (row.lastWateredAt === null) return row.startedAt;
+  const watered = Date.parse(row.lastWateredAt);
   if (!Number.isFinite(watered)) return null;
   return new Date(watered + def.thirstMs).toISOString();
+}
+
+/** Whether a crop row is sown seed still waiting for its first water. Its
+ *  growing clock has not started; watering starts it. */
+export function isUnwateredSeedRow(row: Pick<StackAcresUnitRow, "stock" | "lastWateredAt">): boolean {
+  return STACKACRES_CATALOGUE[row.stock].thirstMs !== null && row.lastWateredAt === null;
+}
+
+/** Where a seed's clock lands once it is first watered: it starts now, with
+ *  the same snapshotted cycle length it was sown with. */
+export function seedClockOnFirstWater(
+  row: Pick<StackAcresUnitRow, "startedAt" | "readyAt">,
+  nowMs: number,
+): { startedAt: Date; readyAt: Date } {
+  const started = Date.parse(row.startedAt);
+  const ready = Date.parse(row.readyAt);
+  if (!Number.isFinite(started) || !Number.isFinite(ready) || ready < started) {
+    throw new Error(`Seed has an unreadable clock: ${row.startedAt} -> ${row.readyAt}`);
+  }
+  return { startedAt: new Date(nowMs), readyAt: new Date(nowMs + (ready - started)) };
 }
 
 /**
@@ -297,6 +321,7 @@ export function toStackAcresUnitSnapshots(
         hungryAt: null,
         thirstyAt: null,
         isWatered: true,
+        seed: false,
         muckFee: row.muckFee,
         permanent: row.permanent,
         housedIn: row.housedIn,
@@ -322,8 +347,11 @@ export function toStackAcresUnitSnapshots(
       readyAt: row.readyAt,
       progress: progressOf(row.startedAt, row.readyAt, readAtMs),
       hungryAt: hungryAtFor(row),
-      thirstyAt,
+      // A piped crop never dries, and the browser re-derives dryness from
+      // this alone, so it has to say "never" rather than a time that passes.
+      thirstyAt: irrigated ? null : thirstyAt,
       isWatered: !dry,
+      seed: dry && isUnwateredSeedRow(row),
       muckFee: null,
       permanent: row.permanent,
       housedIn: row.housedIn,
@@ -374,11 +402,24 @@ export function optimisticallyWateredUnit(
   unit: StackAcresUnitSnapshot,
   nowMs: number,
 ): StackAcresUnitSnapshot {
+  const thirstMs = STACKACRES_CATALOGUE[unit.stock].thirstMs;
+  if (unit.seed) {
+    const clock = seedClockOnFirstWater(unit, nowMs);
+    return {
+      ...unit,
+      state: "working",
+      startedAt: clock.startedAt.toISOString(),
+      readyAt: clock.readyAt.toISOString(),
+      progress: 0,
+      thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
+      isWatered: true,
+      seed: false,
+    };
+  }
   const driedAt = unit.thirstyAt ? Date.parse(unit.thirstyAt) : NaN;
   const dryMs = Number.isFinite(driedAt) ? Math.max(0, nowMs - driedAt) : 0;
   const readyAt = Date.parse(unit.readyAt);
   const pushed = (Number.isFinite(readyAt) ? readyAt : nowMs) + dryMs;
-  const thirstMs = STACKACRES_CATALOGUE[unit.stock].thirstMs;
   return {
     ...unit,
     readyAt: new Date(pushed).toISOString(),
@@ -391,8 +432,8 @@ export function optimisticallyWateredUnit(
  * -- computed the same way `stockStackAcres`/`buyStackAcresStock` compute it
  * server-side (see lib/server/stackacres-service.ts): the clock starts now,
  * `readyAt` is one duration out (0.7x it inside the Greenhouse, the same
- * `greenhouseDurationMs` the server snapshots), and the feed/thirst windows
- * open from now.
+ * `greenhouseDurationMs` the server snapshots), and an animal's feed window
+ * opens from now. A crop goes in as dry seed waiting for water.
  *
  * `id` is a throwaway the client mints -- the real row comes back with the
  * server's own id on the success response and replaces this one. A guess,
@@ -421,7 +462,6 @@ export function optimisticallyStockedUnit(input: {
   const durationMs = greenhouseDurationMs(input.stock, def.durationMs, input.inGreenhouse);
   return {
     id: input.id,
-    state: "working",
     stock: input.stock,
     // The catalogue's own one-cycle seed price, notionally -- what the ledger
     // records for a bought unit too (see `buyStackAcresStock`).
@@ -431,8 +471,9 @@ export function optimisticallyStockedUnit(input: {
     readyAt: new Date(input.nowMs + durationMs).toISOString(),
     progress: 0,
     hungryAt: def.hungerMs === null ? null : new Date(input.nowMs + def.hungerMs).toISOString(),
-    thirstyAt: def.thirstMs === null ? null : new Date(input.nowMs + def.thirstMs).toISOString(),
-    isWatered: true,
+    ...(def.thirstMs === null
+      ? { state: "working" as const, thirstyAt: null, isWatered: true, seed: false }
+      : { state: "dry" as const, thirstyAt: new Date(input.nowMs).toISOString(), isWatered: false, seed: true }),
     muckFee: null,
     permanent: input.permanent,
     housedIn: input.inGreenhouse ? "greenhouse" : null,
@@ -459,8 +500,8 @@ export function withoutStackAcresUnit(
  * lib/server/stackacres-store.ts): the clock restarts at `readyAt =
  * durationMs` from now (the catalogue's own duration, not the Greenhouse's --
  * a permanent unit is never Greenhouse-housed, `stockStackAcres` only sets
- * `permanent` on the outdoor path); `thirstyAt` restarts too, since a
- * restarted crop goes into watered ground; `hungryAt`/`lastFedAt` does NOT --
+ * `permanent` on the outdoor path); a crop comes back as seed, or watered on
+ * a piped bed; `hungryAt`/`lastFedAt` does NOT --
  * an animal can be fed at any moment, so carrying its feed clock across a
  * restart costs nothing extra.
  */
@@ -475,10 +516,12 @@ export function optimisticallyRestartedUnit(
     startedAt: new Date(nowMs).toISOString(),
     readyAt: new Date(nowMs + def.durationMs).toISOString(),
     progress: 0,
-    thirstyAt: unit.thirstyAt === null || def.thirstMs === null
-      ? null
-      : new Date(nowMs + def.thirstMs).toISOString(),
-    isWatered: true,
+    // A crop restarts as dry seed, the same as a fresh sowing. A piped one
+    // (the server sends it `thirstyAt: null`) restarts watered, as the server
+    // restarts it.
+    ...(def.thirstMs === null || unit.thirstyAt === null
+      ? { thirstyAt: null, isWatered: true, seed: false }
+      : { state: "dry" as const, thirstyAt: new Date(nowMs).toISOString(), isWatered: false, seed: true }),
     muckFee: null,
   };
 }

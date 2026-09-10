@@ -15,7 +15,6 @@ import {
   SCENE_ART,
   dealerExpression,
   dogArt,
-  dogArtReady,
   feltPrint,
 } from "./dealer-scene";
 
@@ -79,26 +78,11 @@ describe("dealerExpression", () => {
 });
 
 describe("the art manifest", () => {
-  /*
-   * These assert the SHAPE of "no asset yet", not that the assets are missing.
-   * When real files land, dogArt starts returning paths and dogArtReady flips
-   * to true -- at which point the two placeholder assertions below should be
-   * replaced by their opposites rather than deleted, because the thing worth
-   * guarding is that the manifest and the readiness predicate always agree.
-   */
-
   it("declares four expressions and no more", () => {
     // Four drawings per dog is the whole art order. A fifth needs a fifth pair
     // of files and a reason, which is a decision, not a default.
     expect(DEALER_EXPRESSIONS).toHaveLength(4);
     expect(new Set(DEALER_EXPRESSIONS).size).toBe(4);
-  });
-
-  it("keeps the readiness predicate honest about the manifest", () => {
-    const everyDogDrawn = DEALER_DOGS.every((dog) =>
-      DEALER_EXPRESSIONS.every((expression) => dogArt(dog.id, expression) !== null),
-    );
-    expect(dogArtReady()).toBe(everyDogDrawn);
   });
 
   it("keeps the rules off the artwork, where nothing could check them", () => {
@@ -119,17 +103,13 @@ describe("the art manifest", () => {
   });
 
   it("draws both dogs at every expression", () => {
-    // The opposite of the assertion this test replaced, which pinned that every
-    // dogArt() was null while the art was outstanding. It is kept rather than
-    // deleted because the thing worth guarding was never "there is no art" --
-    // it is that the manifest and dogArtReady() agree, and a hole here is the
-    // flat placeholder crop silently coming back in place of the real pair.
+    // DealerStage always draws the pair from these paths, so a hole here is
+    // a broken image on the felt.
     for (const dog of DEALER_DOGS) {
       for (const expression of DEALER_EXPRESSIONS) {
-        expect(dogArt(dog.id, expression), `${dog.id}/${expression}`).not.toBeNull();
+        expect(dogArt(dog.id, expression), `${dog.id}/${expression}`).toBeTruthy();
       }
     }
-    expect(dogArtReady()).toBe(true);
   });
 
   it("points every art path at a file that is actually on disk", () => {
@@ -137,15 +117,13 @@ describe("the art manifest", () => {
      * The one assertion that can tell a manifest entry from a 404, and the
      * reason it is worth reaching for the filesystem in a unit test: nothing
      * else in this repo can. A typo'd path type-checks, renders, and shows two
-     * broken images in the middle of the felt -- and dogArtReady() would be
-     * true, so not even the placeholder would come back to cover it.
+     * broken images in the middle of the felt.
      */
     for (const dog of DEALER_DOGS) {
       for (const expression of DEALER_EXPRESSIONS) {
         const src = dogArt(dog.id, expression);
-        expect(src, `${dog.id}/${expression}`).not.toBeNull();
         // Paths are web-absolute (`/dealer/...`) and served from public/.
-        const file = join(process.cwd(), "public", src as string);
+        const file = join(process.cwd(), "public", src);
         expect(existsSync(file), `${src} is missing from public/`).toBe(true);
       }
     }

@@ -388,9 +388,9 @@ export function predictStackAcresAction(
     case "buy-feed": {
       const item = STACKACRES_FEED[body.itemId];
       if (!item) return null;
-      const profile = debited(ctx, item.cost);
+      const profile = debited(ctx, item.cost * body.quantity);
       if (!profile) return null;
-      return { feed: ctx.feed + item.servings, profile };
+      return { feed: ctx.feed + item.servings * body.quantity, profile };
     }
     case "upgrade-tool": {
       const next = nextToolTier(ctx.toolTier);

@@ -25,30 +25,18 @@
 
 export type TableRenderer = "racetrack_2d5";
 
-export const TABLE_RENDERERS: readonly TableRenderer[] = ["racetrack_2d5"];
-
 /**
  * The 2.5D racetrack room -- a Canvas-2D table drawn from a real perspective
  * camera. The sole renderer this app ships.
  */
 export const RACETRACK_RENDERER: TableRenderer = "racetrack_2d5";
 
-export const DEFAULT_TABLE_RENDERER: TableRenderer = RACETRACK_RENDERER;
-
-/** Same `stackchips:` namespace as the sound, music and bet-style preferences. */
-export const TABLE_RENDERER_STORAGE_KEY = "stackchips:table-renderer";
-
-/** A stored or wire value, coerced to a real renderer. Anything else is the default. */
-export function normalizeTableRenderer(value: unknown): TableRenderer {
-  return value === RACETRACK_RENDERER ? RACETRACK_RENDERER : DEFAULT_TABLE_RENDERER;
-}
-
 /**
  * The renderer to actually mount. Kept as a function -- rather than every
- * caller reading `RACETRACK_RENDERER` directly -- so a stored preference and
- * a browser capability can still be threaded through here if a second
- * renderer is ever added again; today there is nothing to thread, since
- * there is only one renderer to resolve to.
+ * caller reading `RACETRACK_RENDERER` directly -- so a browser capability can
+ * still be threaded through here if a second renderer is ever added again;
+ * today there is nothing to thread, since there is only one renderer to
+ * resolve to.
  */
 export function resolveTableRenderer(): TableRenderer {
   return RACETRACK_RENDERER;

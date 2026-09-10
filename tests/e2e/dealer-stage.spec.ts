@@ -100,9 +100,7 @@ test("Loki and Finn appear exactly once on the page", async ({ page }) => {
   await openBlackjack(page);
 
   await expect(page.locator(".bj-dealer-pair")).toHaveCount(1);
-  // Whatever the dealers' layer is drawn with, no OTHER part of the page may
-  // draw them too. The hand row names them; it must not picture them.
-  await expect(page.locator(".bj-hand-head .dealer-avatar")).toHaveCount(0);
+  // The hand row names them; it must not picture them.
   await expect(page.locator(".bj-hand-label").first()).toHaveText("Loki & Finn");
   // Named somewhere, so two dogs in bow ties have an explanation attached.
   await expect(page.locator(".bj-dealer-names")).toContainText("Loki");

@@ -87,8 +87,6 @@ function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
 
 /**
  * Artwork for one item. Avatars are supplied images; card backs are drawn.
- * A missing image file falls back rather than showing a broken icon, so
- * catalog entries can ship before their artwork.
  *
  * `angle` only matters for an avatar backed by the seat-art roster: the
  * preview dialog passes the angle its own switcher has selected so a buyer
@@ -96,35 +94,26 @@ function acquisitionGroup(item: Cosmetic): AcquisitionGroup {
  * never passes one and always shows the 0deg plate.
  */
 function CosmeticArt({ item, angle }: { item: Cosmetic; angle?: number }) {
-  const [failed, setFailed] = useState(false);
-
   if (item.art) return <CardBackArt art={item.art} className="cosmetic-art" />;
 
   if (item.slot === "chipDesign" && item.chip) {
     return <ChipDesignArt material={item.chip} className="cosmetic-art cosmetic-art-chip" />;
   }
 
-  if (item.slot === "avatar" && !failed) {
-    // The same plate the seat-art bucket draws at the table, not a
-    // separately-sized "figure" derivative. This is the card someone
-    // decides to spend Gold on, and what they are buying is the exact
-    // character who'll sit at their seat.
-    return (
-      <Image
-        src={angle !== undefined ? seatArtSrc(item.id, angle) : avatarFigure(item.id)}
-        alt=""
-        fill
-        sizes="(max-width: 640px) 40vw, 160px"
-        className="cosmetic-art-image"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
+  if (item.slot !== "avatar") return null;
 
+  // The same plate the seat-art bucket draws at the table, not a
+  // separately-sized "figure" derivative. This is the card someone
+  // decides to spend Gold on, and what they are buying is the exact
+  // character who'll sit at their seat.
   return (
-    <div className="cosmetic-art cosmetic-art-fallback" aria-hidden="true">
-      <span>{item.name.slice(0, 2).toUpperCase()}</span>
-    </div>
+    <Image
+      src={angle !== undefined ? seatArtSrc(item.id, angle) : avatarFigure(item.id)}
+      alt=""
+      fill
+      sizes="(max-width: 640px) 40vw, 160px"
+      className="cosmetic-art-image"
+    />
   );
 }
 

@@ -396,9 +396,9 @@
   font-weight: 700;
   text-decoration: none;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
-    filter var(--duration-fast, .12s) ease;
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out),
+    filter var(--duration-fast) ease;
 }
 
 .sa-theme .floor-back:hover,
@@ -490,8 +490,8 @@
   color: var(--sa-ink);
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 /* StackAcresHudOverflow's "More" drawer -- phoneHud widths only (see
@@ -955,9 +955,9 @@
      button unable to travel. */
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
-    background var(--duration-fast, .12s) ease;
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out),
+    background var(--duration-fast) ease;
 }
 
 .sa-radial-btn:hover:not(:disabled) { filter: brightness(1.04); }
@@ -1025,8 +1025,8 @@
   white-space: nowrap;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-radial-more:hover { filter: brightness(1.05); }
@@ -1103,7 +1103,6 @@
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 .sa-seed-strip-row::-webkit-scrollbar { display: none; }
@@ -1125,9 +1124,9 @@
   color: var(--sa-ink);
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
-    background var(--duration-fast, .12s) ease;
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out),
+    background var(--duration-fast) ease;
 }
 
 .sa-seed-chip:hover:not(:disabled) { filter: brightness(1.04); }
@@ -1270,8 +1269,8 @@
   font-weight: 800;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-monk-dialogue-yes {
@@ -1375,8 +1374,8 @@
   font-weight: 800;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-fence-upgrade-yes {
@@ -1472,8 +1471,8 @@
   box-shadow: 0 2px 0 var(--sa-cream-rim), var(--sa-drop);
   color: var(--sa-ink);
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-gift-dialogue-errand:hover { filter: brightness(1.05); }
@@ -1514,8 +1513,8 @@
   background: var(--sa-cream, #fff7e6);
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-gift-dialogue-item:hover:not(:disabled) { filter: brightness(1.05); }
@@ -1572,8 +1571,8 @@
   box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
   color: var(--sa-ink-light);
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-gift-dialogue-no:hover { filter: brightness(1.05); }
@@ -1686,8 +1685,8 @@
   transform: translateX(calc(100% + 24px));
   visibility: hidden;
   transition:
-    transform var(--duration-slower, .25s) var(--sa-ease-out),
-    visibility var(--duration-slower, .25s);
+    transform var(--duration-slower) var(--sa-ease-out),
+    visibility var(--duration-slower);
 }
 
 /* The overshoot is spent on the way in only. */
@@ -1738,8 +1737,8 @@
   letter-spacing: -.005em;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 /* The squish above sets its own transform, which would drop the -50% centring
@@ -1804,8 +1803,8 @@
   cursor: pointer;
   transform: translateY(-50%);
   transition:
-    transform var(--duration-slower, .25s) var(--sa-bounce),
-    opacity var(--duration-fast, .12s) ease;
+    transform var(--duration-slower) var(--sa-bounce),
+    opacity var(--duration-fast) ease;
 }
 
 /* Its own press has to keep the centring transform, so it travels down its
@@ -1877,8 +1876,8 @@
   color: var(--sa-ink);
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-district-title {
@@ -2007,8 +2006,8 @@
   cursor: pointer;
   white-space: nowrap;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-unit-action.is-primary {
@@ -2144,8 +2143,8 @@
   cursor: pointer;
   text-align: left;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 .sa-buy-label {
@@ -2196,7 +2195,7 @@
   justify-content: center;
   padding: 10px;
   background: rgba(52, 34, 18, .55);
-  animation: sa-scrim var(--duration-base, .15s) ease-out both;
+  animation: sa-scrim var(--duration-base) ease-out both;
 }
 
 @keyframes sa-scrim {
@@ -2262,8 +2261,8 @@
   font-weight: 800;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 /* Shelf and section headings. A carved kicker rather than a heading: it labels
@@ -2332,9 +2331,9 @@
   letter-spacing: -.005em;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
-    filter var(--duration-fast, .12s) ease;
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out),
+    filter var(--duration-fast) ease;
 }
 
 .sa-cta:hover:not(:disabled) { filter: brightness(1.05); }
@@ -2388,6 +2387,38 @@
 }
 
 .sa-stock-card .sa-cta { margin-top: auto; }
+
+/* Bulk-buy row: soil bags, seed packets, and feed shipments each offer three
+   flat sizes (1x/10x/20x) instead of one "Buy" button, so restocking ten of
+   something is one tap instead of ten -- see stackacres-farm.tsx's
+   `BULK_BUY_QUANTITIES`. The row, not the individual buttons, is what gets
+   pushed to the card's bottom; this rule has to out-specificity (by coming
+   later in the file) the plain `.sa-cta { margin-top: auto }` above so a
+   button doesn't try to push itself within its own row. */
+.sa-stock-card .sa-buy-qty-row { margin-top: auto; }
+
+.sa-buy-qty-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sa-buy-qty-row .sa-cta {
+  flex: 1;
+  margin-top: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.sa-buy-qty-cost {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sa-ink-soft);
+}
 
 /* ---- a shelf row the farm has not unlocked yet ----------------------- */
 
@@ -2525,7 +2556,7 @@
   transform-origin: left center;
   background: var(--sa-corn);
   box-shadow: inset 0 -3px 0 var(--sa-corn-side);
-  transition: transform var(--duration-slow, .22s) var(--sa-ease-out);
+  transition: transform var(--duration-slow) var(--sa-ease-out);
 }
 
 /* ---- Ray ------------------------------------------------------------- */
@@ -3304,7 +3335,7 @@
   transform-origin: left center;
   background: var(--sa-leaf);
   box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
-  transition: transform var(--duration-slow, .22s) var(--sa-ease-out);
+  transition: transform var(--duration-slow) var(--sa-ease-out);
 }
 
 .sa-contract-count {
@@ -3736,8 +3767,8 @@
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
-    box-shadow var(--duration-fast, .12s) var(--sa-ease-out);
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
 /* A highlight only once at least one perk is actually contributing --

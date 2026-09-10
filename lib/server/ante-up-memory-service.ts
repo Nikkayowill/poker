@@ -129,12 +129,16 @@ export async function openAnteUpMemory(
       state,
     });
   } catch (error) {
-    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
+    if (wagerInput > 0) {
+      await creditGoldByProfile(profile.id, wagerInput).catch((refundError) => {
+        console.error("ante_up_memory.open_refund_failed", { profileId: profile.id, wager: wagerInput, error: refundError });
+      });
+    }
     if (error instanceof ActiveAnteUpAttemptExists) throw new AnteUpMemoryRequestError(error.message, 409);
     throw error;
   }
 
-  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, now).catch(() => null);
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, now);
 
   return { attempt: snapshot(stored), profile: debited };
 }

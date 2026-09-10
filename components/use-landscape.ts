@@ -34,9 +34,9 @@ function clientSnapshot(): boolean {
 
 /**
  * The server has no viewport. Landscape is the honest default: it is what
- * every desktop is, and the one consumer that could flicker on a wrong guess
- * -- the table -- is held behind `tableRendererSettled` until after the first
- * client commit, by which point this is the real measurement.
+ * every desktop is. The table, the one consumer that could flicker on a wrong
+ * guess, only mounts once a game has loaded after hydration, so it always
+ * reads the real measurement.
  */
 function serverSnapshot(): boolean {
   return true;

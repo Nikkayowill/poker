@@ -39,13 +39,9 @@ const MIN_VISIBLE_MS = 450;
 const FADE_MS = 350;
 
 /**
- * A backstop independent of PokerScene's own ~10s avatar-load timeout. That
- * timeout covers a slow/stuck fetch by presenting the room anyway; it does
- * nothing for a genuine scene failure, where `SceneBoundary` reports
- * `sceneReady = false` for good. Without this the splash would sit forever
- * over a DOM fallback table that is already working fine. Set past the
- * scene-side timeout so the natural path wins first whenever the room is
- * merely slow, not broken.
+ * A backstop for a racetrack scene that never reports ready. Without it the
+ * splash would sit forever over a table whose seats and HUD already work.
+ * Long enough that a merely slow first paint still ends the normal way.
  *
  * Implemented as a local override of `active` (see `effectiveActive` below)
  * rather than inside the phase hook -- the hook only knows hidden/visible/

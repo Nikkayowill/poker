@@ -25,6 +25,7 @@ import {
   type HeadsUpTableStatus,
   type StoredHeadsUpTable,
 } from "./heads-up-store";
+import { publicIdentity } from "./leaderboard-identity";
 import { recordDuelResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import {
@@ -109,17 +110,7 @@ export interface HeadsUpTableView {
 async function playerViews(seats: HeadsUpSeatRow[]): Promise<HeadsUpPlayerView[]> {
   if (seats.length === 0) return [];
   const profiles = await getPublicProfilesByIds(seats.map((s) => s.playerId));
-  return seats.map((s) => {
-    const profile = profiles.get(s.playerId);
-    return {
-      profileId: s.playerId,
-      seat: s.seat,
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
-      accent: profile?.accent ?? "#e7c66a",
-    };
-  });
+  return seats.map((s) => ({ profileId: s.playerId, seat: s.seat, ...publicIdentity(profiles.get(s.playerId)) }));
 }
 
 function seatOf(seats: HeadsUpSeatRow[], profileId: string): 0 | 1 | null {
@@ -186,7 +177,7 @@ async function dealHeadsUpTableIfReady(tableId: string): Promise<StoredHeadsUpTa
   // dealTableIfReady makes. `null` throughout: only the caller who triggered
   // the deal has a live session token here, and awardWager's Gold-crediting
   // path is keyed just as well by profile id.
-  await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake).catch(() => null)));
+  await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake)));
 
   return dealt;
 }
@@ -236,7 +227,9 @@ export async function openHeadsUpQuickPlay(
     const seats = await getHeadsUpSeats(created.id);
     return { table: await tableView(created, seats, profile.id), profile: debited };
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch(() => null);
+    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
+      console.error("heads_up.quick_play_refund_failed", { profileId: profile.id, stake, error: refundError });
+    });
     // A failure between createHeadsUpTableRow and claimHeadsUpSeat succeeding
     // would otherwise leave a host-less 'waiting' row sitting in front of
     // every later quick-play search at this tier forever -- the exact shape
@@ -283,7 +276,9 @@ export async function openHeadsUpInvite(
     table = await createHeadsUpTableRow(profile.id, tier, stake, friendProfileId);
     await claimHeadsUpSeat(table.id, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch(() => null);
+    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
+      console.error("heads_up.invite_refund_failed", { profileId: profile.id, stake, error: refundError });
+    });
     if (table) await cancelEmptyHeadsUpTable(table.id, profile.id).catch(() => null);
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
@@ -322,7 +317,9 @@ export async function joinHeadsUpTable(
   try {
     await claimHeadsUpSeat(tableId, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.stake).catch(() => null);
+    await creditGoldByProfile(profile.id, table.stake).catch((refundError) => {
+      console.error("heads_up.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
+    });
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
   }

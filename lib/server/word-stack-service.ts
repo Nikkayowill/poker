@@ -309,7 +309,11 @@ export async function startWordStackPuzzle(
     });
   } catch (error) {
     // The row never came into existence, so the player must not have paid for it.
-    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
+    if (wagerInput > 0) {
+      await creditGoldByProfile(profile.id, wagerInput).catch((refundError) => {
+        console.error("word_stack.open_refund_failed", { profileId: profile.id, wager: wagerInput, error: refundError });
+      });
+    }
     if (error instanceof DailyPuzzleAlreadyStarted) {
       // Lost a race with another tab. The board that won is the real one.
       const live = await getPuzzleRound<StoredWordStackRound>(profile.id, WORD_STACK_GAME, targetDay);
@@ -320,7 +324,7 @@ export async function startWordStackPuzzle(
 
   // Only a real wager earns XP; nothing was risked on a free attempt, the
   // same reasoning ante-up-service.ts's openAnteUpAttempt gives.
-  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date());
 
   return { ...view(stored, profile, clock, targetDay), resumed: false };
 }

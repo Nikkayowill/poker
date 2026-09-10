@@ -37,11 +37,7 @@ import { Capacitor } from "@capacitor/core";
 import { useStoredPreference } from "@/components/use-stored-preference";
 import { playSound, setSoundEnabled } from "@/lib/audio/sound-effects";
 import { setMenuMusicEnabled, startMenuMusic, stopMenuMusic } from "@/lib/audio/menu-music";
-import {
-  LEGACY_SOUND_STORAGE_KEY,
-  MUSIC_STORAGE_KEY,
-  SOUND_STORAGE_KEY,
-} from "@/lib/audio/sound-preference";
+import { MUSIC_STORAGE_KEY, SOUND_STORAGE_KEY } from "@/lib/audio/sound-preference";
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { LoadingScreen } from "@/components/loading/loading-screen";
@@ -116,7 +112,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   // can never move without a migration.
   const [soundEnabled, setSoundEnabledState] = useStoredPreference<boolean>({
     key: SOUND_STORAGE_KEY,
-    legacyKey: LEGACY_SOUND_STORAGE_KEY,
     fallback: true,
     parse: parseEnabledFlag,
     apply: (enabled, cause) => {

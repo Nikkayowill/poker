@@ -205,8 +205,9 @@ async function maybeSweepStaleInvites(): Promise<void> {
 
   try {
     await expireStaleTableInvites(new Date(now));
-  } catch {
+  } catch (error) {
     // Housekeeping only; see expireStaleTableInvites' comment.
+    console.error("table_invites.sweep_failed", { error });
   }
 }
 

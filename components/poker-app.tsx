@@ -43,12 +43,6 @@ import {
   normalizeBetStyle,
   type BetAnimationStyle,
 } from "@/lib/scene/bet-style";
-import {
-  DEFAULT_TABLE_RENDERER,
-  TABLE_RENDERER_STORAGE_KEY,
-  normalizeTableRenderer,
-  type TableRenderer,
-} from "@/lib/scene/table-renderer";
 import { parseStackInBigBlinds, STACK_DISPLAY_STORAGE_KEY } from "@/lib/scene/stack-display";
 import { tableSounds } from "@/lib/audio/table-sounds";
 import { Bell, BellOff, Coins, Gift, Layers, LogIn, LogOut, Music2, Settings2, Trophy, Video } from "lucide-react";
@@ -204,19 +198,6 @@ export function PokerApp() {
     fallback: false,
     parse: parseStackInBigBlinds,
   });
-  // Same shape as betStyle above, and deliberately with no `apply`: the
-  // consumer is a prop on <PokerTable>, not a module singleton, so there is
-  // nothing to push the value into outside React.
-  // The third member is the anti-flicker signal, kept from when this decided
-  // which of several renderers to MOUNT (acting on the fallback for a tick
-  // meant building and discarding a whole room) -- with one renderer left it
-  // never actually disagrees with the default, but the signal costs nothing
-  // to keep. See the note on `settled` in use-stored-preference.ts.
-  const [, , tableRendererSettled] = useStoredPreference<TableRenderer>({
-    key: TABLE_RENDERER_STORAGE_KEY,
-    fallback: DEFAULT_TABLE_RENDERER,
-    parse: normalizeTableRenderer,
-  });
   // The 2.5D table is landscape-only -- see `resolveTableRenderer`. Owned here
   // rather than in each consumer so the lobby's preselect and the table itself
   // can never disagree about which way up the device is.
@@ -360,9 +341,9 @@ export function PokerApp() {
       // visibly a claim.
       setGoldFlash(true);
       window.setTimeout(() => setGoldFlash(false), 900);
-    } catch {
-      // Best-effort, exactly as the old button was: the menu entry simply
-      // stays offered so it can be tried again.
+    } catch (caught) {
+      // The menu entry stays offered so it can be tried again.
+      setError(caught instanceof Error ? caught.message : "Could not claim your daily Gold.");
     } finally {
       setClaimingGold(false);
     }
@@ -1770,7 +1751,6 @@ export function PokerApp() {
             onCycleBetStyle={cycleBetStyle}
             stackInBigBlinds={stackInBigBlinds}
             onToggleStackInBigBlinds={toggleStackInBigBlinds}
-            tableRendererSettled={tableRendererSettled}
             landscape={landscape}
             tightLandscape={tightLandscape}
             onSignIn={() => void signIn()}

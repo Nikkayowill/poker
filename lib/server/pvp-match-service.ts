@@ -8,6 +8,7 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { isBlockedEitherWay } from "./friends-store";
+import { publicIdentity } from "./leaderboard-identity";
 import { recordDuelResult } from "./leaderboard-store";
 import {
   attachMatchToChallenge,
@@ -134,18 +135,12 @@ function seatOf(match: StoredPvpMatch, profileId: string): DuelSeat | null {
 
 async function playerViews(ids: [string, string]): Promise<[DuelPlayerView, DuelPlayerView]> {
   const profiles = await getPublicProfilesByIds(ids);
-  return ids.map((id) => {
-    const profile = profiles.get(id);
-    return {
-      profileId: id,
-      // A vanished profile leaves a seat labelled rather than blank. The FKs
-      // cascade, so this should only be reachable mid-deletion.
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
-      accent: profile?.accent ?? "#e7c66a",
-    };
-  }) as [DuelPlayerView, DuelPlayerView];
+  // A vanished profile leaves a seat labelled rather than blank. The FKs
+  // cascade, so this should only be reachable mid-deletion.
+  return ids.map((id) => ({ profileId: id, ...publicIdentity(profiles.get(id)) })) as [
+    DuelPlayerView,
+    DuelPlayerView,
+  ];
 }
 
 /**
@@ -341,7 +336,9 @@ export async function openDuelChallenge(
   } catch (error) {
     // The challenge never came into existence, so the player must not have
     // paid for it.
-    await creditGoldByProfile(profile.id, stake).catch(() => null);
+    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
+      console.error("pvp.challenge_refund_failed", { profileId: profile.id, stake, error: refundError });
+    });
     if (error instanceof OpenChallengeExists) {
       throw new DuelRequestError(error.message, 409);
     }
@@ -494,7 +491,14 @@ export async function acceptDuelChallenge(
   } catch (error) {
     // Neither player may pay for a match that does not exist: refund the
     // acceptor, and put the challenger's escrow back in the pool.
-    await creditGoldByProfile(profile.id, claimed.stake).catch(() => null);
+    await creditGoldByProfile(profile.id, claimed.stake).catch((refundError) => {
+      console.error("pvp.accept_refund_failed", {
+        challengeId: claimed.id,
+        profileId: profile.id,
+        stake: claimed.stake,
+        error: refundError,
+      });
+    });
     await reopenClaimedChallenge(claimed.id);
     if (error instanceof ActivePvpMatchExists) {
       throw new DuelRequestError(error.message, 409);
@@ -505,12 +509,12 @@ export async function acceptDuelChallenge(
   await attachMatchToChallenge(claimed.id, match.id);
 
   // Both players wagered, so both earn XP at the ordinary rate, the same
-  // parity argument hand-completion.ts makes about chips and Gold. Non-fatal
-  // by contract: a progression outage must not fail a match both players
+  // parity argument hand-completion.ts makes about chips and Gold. awardWager
+  // never throws, so a progression outage cannot fail a match both players
   // paid for.
   await Promise.all([
-    awardWager(claimed.challengerId, null, claimed.stake).catch(() => null),
-    awardWager(profile.id, token, claimed.stake).catch(() => null),
+    awardWager(claimed.challengerId, null, claimed.stake),
+    awardWager(profile.id, token, claimed.stake),
   ]);
 
   return { match: await matchView(game, match, 1, Date.now()), profile: debited };

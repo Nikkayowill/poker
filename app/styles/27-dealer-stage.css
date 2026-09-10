@@ -218,8 +218,6 @@
    * rail, not behind it -- push the pair deeper into the cloth and these want
    * moving up with it, or the dissolve happens where nobody can see it.
    */
-  -webkit-mask-image: linear-gradient(to bottom,
-    #000 0 40%, rgba(0,0,0,.82) 56%, rgba(0,0,0,.45) 68%, rgba(0,0,0,.15) 78%, transparent 88%);
   mask-image: linear-gradient(to bottom,
     #000 0 40%, rgba(0,0,0,.82) 56%, rgba(0,0,0,.45) 68%, rgba(0,0,0,.15) 78%, transparent 88%);
   /* Atmospheric perspective: air between here and there eats contrast and
@@ -234,22 +232,6 @@
 /* The taller dog stands a little further back, which is the cheapest way to
    give two cut-outs a depth relationship. */
 .bj-dealer-finn { transform: translateY(4%) scale(.96); }
-
-/* Painted: the flat 34px crop, enlarged. Deliberately the real drawing rather
-   than a grey box -- two dogs in bow ties is the correct picture at any
-   fidelity, so the felt reads as plain-but-finished while the art is
-   outstanding, not as broken. */
-.bj-dealer-placeholder .dealer-avatar {
-  /* Sized off the row it sits in (vh), not the viewport width, because the
-     airspace is a fraction of the felt's height -- scale this by width and it
-     overflows its own row on a wide short window. */
-  width: clamp(120px, 26vh, 248px);
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  overflow: hidden;
-  box-shadow: 0 14px 36px rgba(0,0,0,.55);
-}
 
 /* Their names and breeds, so two unexplained dogs on a gambling table have an
    explanation attached.
@@ -380,7 +362,6 @@
   /* Sunk proportionally, not by the desktop's pixel count: the pair are half
      the height here, so -44px would bury them to the ears. */
   .bj-dealer-pair { gap: 2px; margin-bottom: -22px; }
-  .bj-dealer-placeholder .dealer-avatar { width: clamp(88px, 17vh, 140px); }
 
   .bj-dealer-names { top: 8px; left: 10px; gap: 3px; }
   /* The breeds go first: at this width the corner label would run under the

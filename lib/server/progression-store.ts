@@ -229,7 +229,9 @@ export async function awardWager(
 
     const row = await readRow(profileId);
     return { levelUps, goldAwarded, xpAwarded: xp, progression: toSnapshot(row, now), profile };
-  } catch {
+  } catch (error) {
+    // Covers the level-up Gold credit too, so a lost milestone payout shows up here.
+    console.error("progression.award_wager_failed", { profileId, goldStaked, error });
     return null;
   }
 }

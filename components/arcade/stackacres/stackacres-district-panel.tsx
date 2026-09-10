@@ -9,7 +9,7 @@ import { StackAcresIcon } from "./stackacres-icon";
 
 /**
  * The district sidebar: the deep end of one district. Successor to
- * stackacres-grid.tsx's `StackAcresPlotList` + `StackAcresSeedStrip`.
+ * stackacres-grid.tsx's `StackAcresPlotList` + the old seed strip.
  *
  * It is no longer how the game is played. Collecting, feeding, clearing and
  * seeding all happen with a tap on the map itself now (see

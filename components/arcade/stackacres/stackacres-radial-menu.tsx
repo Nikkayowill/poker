@@ -37,8 +37,10 @@ import { StackAcresIcon } from "./stackacres-icon";
  */
 
 /** Which painter stands for a stock, matching the sidebar's own buy rows so
- *  the same thing is never two pictures. */
-const STOCK_ICON: Readonly<Record<StackAcresStock, PainterName>> = {
+ *  the same thing is never two pictures. Exported: stackacres-farm.tsx's own
+ *  Crop Fields gel dock reuses it for seed tokens rather than keeping a
+ *  second copy of the same 22-crop table. */
+export const STOCK_ICON: Readonly<Record<StackAcresStock, PainterName>> = {
   // All 22 crops.
   artichoke: "ico-artichoke",
   beet: "ico-beet",

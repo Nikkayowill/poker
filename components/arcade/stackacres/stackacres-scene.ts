@@ -97,7 +97,6 @@ import {
   chunkScenery,
   clampZoom,
   critterSpeed,
-  CROP_FIELD_BEDS,
   cropSpot,
   grandfatherRayHitAt,
   growAreaAt,
@@ -134,16 +133,13 @@ import {
   orderedSoilTiles,
   plantSoilTile,
   removeSoilTile,
-  SOIL_TILE,
   soilSlotPoint,
   soilSlotTile,
   soilTileAt,
   soilTileDiamond,
-  soilTileKey,
   soilTileTier,
   type SoilMap,
   type SoilTile,
-  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
@@ -223,13 +219,10 @@ import { bakeIrrigation, FLOW_SEG_KEY, PIPE_ARM_ANGLE } from "./art-irrigation";
 import {
   diffPipeGrid,
   indexPipeNodes,
-  PIPE_TILE,
   pipeBodyTextureKey,
   pipeFlowFrame,
   pipeKey,
-  pipeTileAt,
   pipeTileCenter,
-  type PipeCoord,
   type PipeIndex,
   type PipeNode,
 } from "@/lib/stackacres/irrigation";
@@ -507,46 +500,6 @@ export interface StackAcresSceneCallbacks {
    * fall through to `onGroundTap`'s seed offer instead.
    */
   onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
-  /**
-   * The pipe tool's own DRAG gesture crossed this tile, bypassing
-   * `onGroundTap`'s ring menu entirely -- see `pipeLaySegment` and
-   * lib/stackacres/tools.ts's own header on why the tool exists. A plain tap
-   * (no drag) no longer fires this; it falls through to `onGroundTap`
-   * instead, the same ring every other ground tap opens, so a tap can offer
-   * "Lay Pipe" with an angle choice rather than acting instantly (2026-09-09,
-   * see `pipeLayMode`'s own doc in `bindInput`). `mode` is decided once per
-   * gesture (`DragGesture.startPipeLay`): `"place"` fires only for a tile
-   * that was empty when the stroke reached it, `"erase"` only for one that
-   * already had a pipe. Never fires for a well, whether by drag or by the
-   * ring -- see `pipeLayMode`'s own doc. The shell owns the actual network
-   * call (`place-pipe`/`remove-pipe`) and its optimistic guess, the same
-   * "the scene reports WHERE, the shell decides what it's worth" split
-   * every other tap callback here already takes.
-   */
-  onPipeLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
-  /**
-   * The soil tool's own DRAG gesture crossed this tile -- the soil tool's
-   * own twin of `onPipeLayTile`, see `soilLaySegment` and lib/stackacres/
-   * tools.ts's own header. A plain tap falls through to `onGroundTap`'s ring
-   * instead, same as pipe (2026-09-09). `mode` is decided once per gesture
-   * (`DragGesture.startSoilLay`): `"place"` fires only for bare ground (no
-   * bed, starter or purchased, standing there yet), `"erase"` only for a
-   * tile that already has one. `"place"` always plants the DEFAULT tier --
-   * a drag never spends a costlier bag by accident, the same posture that
-   * keeps a well radial-only for pipes; Enriched or Hydro is still chosen
-   * one tile at a time through the ring. The shell owns the actual network
-   * call (`place-soil-tile`/`remove-soil-tile`) and its optimistic guess.
-   */
-  onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
-  /**
-   * A press with the pipe tool held landed specifically inside a pen --
-   * fired once, at press, alongside the scene's own shake-and-flash
-   * (`flashToolGhostDenied`); every other reason `pipeLayableWorldTile`
-   * silently refuses a tile (a structure, a locked district, a fence bay)
-   * stays silent, the same as it always has. `message` is written to be
-   * shown verbatim, e.g. as a toast.
-   */
-  onDropRejected?: (message: string, at: TapPoint) => void;
   /**
    * Informational only, fired whenever the Wildlife Manager's own predator
    * simulation lowers a district's livestock health -- the shell's cue to
@@ -1162,7 +1115,7 @@ interface StripeStroke {
 }
 
 interface DragGesture {
-  kind: "press" | "pan" | "mow" | "pipe-lay" | "soil-lay";
+  kind: "press" | "pan" | "mow";
   id: number;
   x: number;
   y: number;
@@ -1181,28 +1134,6 @@ interface DragGesture {
    * around: start the drag on a path or a cut patch.
    */
   startMow?: boolean;
-  /**
-   * Set when the press began on a tile the pipe tool could act on, to
-   * whichever half of the stroke that first tile committed it to: `"place"`
-   * if it was empty ground, `"erase"` if a pipe already stood there. Decided
-   * once, the same moment `startMow` is, and for the same reason -- a stroke
-   * that started laying pipe should never flip into lifting one just because
-   * it crossed a tile someone had already laid, and the reverse. `undefined`
-   * (not `false`, unlike `startMow`) both off the pipe tool and on a tile the
-   * tool cannot touch at all (a well, or anything `pipeLayableWorldTile`
-   * refuses) -- either way the drag falls through to an ordinary pan.
-   */
-  startPipeLay?: "place" | "erase";
-  /** Every tile this gesture has already asked the shell about, so a hand
-   *  that wobbles back across ground it just crossed never fires a second
-   *  request for the same square -- see `pipeLaySegment`. Built lazily; a
-   *  gesture that never lays pipe never allocates one. */
-  pipeTilesTouched?: Set<string>;
-  /** The soil tool's own twin of `startPipeLay` -- see `soilLayMode`'s doc
-   *  in `bindInput` and `onSoilLayTile`'s own header. */
-  startSoilLay?: "place" | "erase";
-  /** The soil tool's own twin of `pipeTilesTouched` -- see `soilLaySegment`. */
-  soilTilesTouched?: Set<string>;
 }
 
 
@@ -1784,22 +1715,6 @@ export class StackAcresScene extends Phaser.Scene {
    *  it repaints on every ring open. Drawn in WORLD space (it has to track
    *  the tile, not the screen), so it is not pinned like `toolGhost`. */
   private soilPreview: Phaser.GameObjects.Graphics | null = null;
-  /**
-   * Outline of the Crop Fields' own placeable ground (`CROP_FIELD_BEDS`),
-   * shown only while the soil tool is held -- see `setTool` and
-   * `paintSoilToolBoundary`. Drawn once at scene creation, since the area it
-   * traces never moves; only its visibility changes.
-   *
-   * A BOUNDARY, NOT A GRID: a farm-wide diamond lattice was tried and
-   * deleted (`paintSector`'s own note: "a translucent diamond grid over
-   * grass read as a patch of ugly brown squares"). This answers a different
-   * question than that one did -- not "is this exact tile free" (the single-
-   * tile `soilPreview` already answers that) but "where can I even drag at
-   * all" -- with one outline shape rather than one diamond per cell, so it
-   * cannot repeat that failure: the complaint was about repetition, not
-   * about showing a boundary at all.
-   */
-  private soilToolBoundary: Phaser.GameObjects.Graphics | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
@@ -1972,12 +1887,6 @@ export class StackAcresScene extends Phaser.Scene {
       .graphics()
       .setDepth(GROW_AREA_GROUND_DEPTH + 1)
       .setVisible(false);
-
-    this.soilToolBoundary = this.add
-      .graphics()
-      .setDepth(GROW_AREA_GROUND_DEPTH + 1)
-      .setVisible(false);
-    this.paintSoilToolBoundary();
 
     this.toolGhost = this.add
       .image(0, 0, this.toolIconName, ART_FRAME)
@@ -2988,134 +2897,6 @@ export class StackAcresScene extends Phaser.Scene {
    * and this only ever has a WORLD point to test, and no unit stands still
    * enough on a tile's exact centre for the gap to matter in practice.
    */
-  private pipeLayableWorldTile(worldX: number, worldY: number): PipeCoord | null {
-    if (this.steppedInGreenhouse) return null;
-    if (this.merchantNode && midnightMerchantHitAt(worldX, worldY)) return null;
-    if (monkHitAt(worldX, worldY)) return null;
-    if (grandfatherRayHitAt(worldX, worldY)) return null;
-    if (visitorHitAt(worldX, worldY)) return null;
-    if (barnHitAt(worldX, worldY)) return null;
-    if (greenhouseHitAt(worldX, worldY)) return null;
-    if (hiddenZoneAt(worldX, worldY)) return null;
-    const wild = zoneAt(worldX, worldY);
-    if (wild !== null && this.locked.has(wild)) return null;
-    if (
-      this.cropFieldsLocked &&
-      worldX >= CROP_FIELD.x &&
-      worldX <= CROP_FIELD.x + CROP_FIELD.width &&
-      worldY >= CROP_FIELD.y &&
-      worldY <= CROP_FIELD.y + CROP_FIELD.height
-    ) {
-      return null;
-    }
-    if (this.fenceSegmentAt(worldX, worldY)) return null;
-    const grow = growAreaAt(worldX, worldY);
-    if (!grow) return null;
-    // No pipe (or well) inside a pen -- Henhaven, Oxfields and Wallow are
-    // GROW_AREA entries the same as any other district, but irrigation
-    // belongs to the Crop Fields and the open farm, not inside a hen/ox/hog
-    // enclosure. See lib/stackacres/zones.ts's `PEN_ZONE_IDS` for why this
-    // reads GROW_AREA rather than the drift-prone `PEN_BLOCKS`.
-    if (PEN_ZONE_IDS.includes(grow)) return null;
-    return pipeTileAt(worldX, worldY);
-  }
-
-  /**
-   * Lays or lifts every pipe tile the stroke from `from` to `to` crosses,
-   * reporting each one to the shell through `onPipeLayTile` -- the pipe
-   * tool's own twin of `mowSegment`, sized down to one tile wide since a
-   * pipe run has no "reach" to widen.
-   *
-   * Sampled the same way `mowStroke` is (half a tile between samples,
-   * de-duplicated) so a fast drag cannot skip a tile between two pointer-move
-   * events, but the de-dupe here is against `gesture.pipeTilesTouched` --
-   * the WHOLE gesture, not just this one segment -- because a request already
-   * sent for a tile must never be sent again just because the hand wobbled
-   * back across it before lifting. `gesture.startPipeLay` fixes which half
-   * of the stroke this whole gesture is: `"place"` skips any tile that
-   * already has something on it (a pipe, or the one well), `"erase"` skips
-   * any tile that does not already have a plain pipe on it -- a stroke that
-   * started laying never starts lifting mid-drag, and the reverse.
-   */
-  private pipeLaySegment(gesture: DragGesture, from: WorldPoint, to: WorldPoint): void {
-    const mode = gesture.startPipeLay;
-    if (!mode) return;
-    const touched = gesture.pipeTilesTouched ?? new Set<string>();
-    gesture.pipeTilesTouched = touched;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const length = Math.hypot(dx, dy);
-    const steps = Math.max(1, Math.ceil(length / (PIPE_TILE / 2)));
-    for (let step = 0; step <= steps; step += 1) {
-      const t = step / steps;
-      const tile = this.pipeLayableWorldTile(from.x + dx * t, from.y + dy * t);
-      if (!tile) continue;
-      const key = pipeKey(tile.tx, tile.ty);
-      if (touched.has(key)) continue;
-      const existing = this.pipeIndex?.byKey.get(key);
-      if (mode === "place" && existing) continue;
-      if (mode === "erase" && (!existing || existing.kind !== "pipe")) continue;
-      touched.add(key);
-      this.callbacks.onPipeLayTile(tile.tx, tile.ty, mode);
-    }
-  }
-
-  /**
-   * Which soil-lattice tile this world point could act on, with the soil
-   * tool held -- the soil tool's own twin of `pipeLayableWorldTile`, bounded
-   * to the Crop Fields' own placeable ground (`CROP_FIELD_BEDS`) instead of
-   * the whole farm: a bed can never mean anything outside it (same rule
-   * `placeStackAcresSoilTile` enforces server-side).
-   */
-  private soilLayableWorldTile(worldX: number, worldY: number): SoilTileCoord | null {
-    if (this.cropFieldsLocked) return null;
-    if (this.steppedInGreenhouse) return null;
-    if (this.merchantNode && midnightMerchantHitAt(worldX, worldY)) return null;
-    if (monkHitAt(worldX, worldY)) return null;
-    if (grandfatherRayHitAt(worldX, worldY)) return null;
-    if (visitorHitAt(worldX, worldY)) return null;
-    if (hiddenZoneAt(worldX, worldY)) return null;
-    const area = CROP_FIELD_BEDS;
-    if (
-      worldX < area.x ||
-      worldX > area.x + area.width ||
-      worldY < area.y ||
-      worldY > area.y + area.height
-    ) {
-      return null;
-    }
-    return soilTileAt(worldX, worldY);
-  }
-
-  /**
-   * Plants or lifts every soil tile the stroke from `from` to `to` crosses,
-   * reporting each one to the shell through `onSoilLayTile` -- the soil
-   * tool's own twin of `pipeLaySegment`, sized to `SOIL_TILE` the same way
-   * that one is sized to `PIPE_TILE`.
-   */
-  private soilLaySegment(gesture: DragGesture, from: WorldPoint, to: WorldPoint): void {
-    const mode = gesture.startSoilLay;
-    if (!mode) return;
-    const touched = gesture.soilTilesTouched ?? new Set<string>();
-    gesture.soilTilesTouched = touched;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const length = Math.hypot(dx, dy);
-    const steps = Math.max(1, Math.ceil(length / (SOIL_TILE / 2)));
-    for (let step = 0; step <= steps; step += 1) {
-      const t = step / steps;
-      const tile = this.soilLayableWorldTile(from.x + dx * t, from.y + dy * t);
-      if (!tile) continue;
-      const key = soilTileKey(tile.tx, tile.ty);
-      if (touched.has(key)) continue;
-      const occupied = hasSoilTile(this.soil, tile.tx, tile.ty);
-      if (mode === "place" && occupied) continue;
-      if (mode === "erase" && !occupied) continue;
-      touched.add(key);
-      this.callbacks.onSoilLayTile(tile.tx, tile.ty, mode);
-    }
-  }
-
   /** One freshly deployed drone's Phaser picture, parked at the ring tile
    *  nearest the barn (Ray's Museum -- the hangar it was bought from) and
    *  ready to start patrolling on the next `update()`. */
@@ -3922,26 +3703,6 @@ export class StackAcresScene extends Phaser.Scene {
     preview.setVisible(true);
   }
 
-  /**
-   * Draws the Crop Fields' own placeable-ground outline -- see
-   * `soilToolBoundary`'s own doc for why this is a boundary and not a grid.
-   * Called once from `create`; `setTool` only ever toggles its visibility.
-   */
-  private paintSoilToolBoundary(): void {
-    const boundary = this.soilToolBoundary;
-    if (!boundary) return;
-    const corners = projectedCorners(CROP_FIELD_BEDS);
-    boundary.clear();
-    boundary.lineStyle(2, rampHex("soil").rim, 0.9);
-    boundary.beginPath();
-    boundary.moveTo(corners.n.x, corners.n.y);
-    boundary.lineTo(corners.e.x, corners.e.y);
-    boundary.lineTo(corners.s.x, corners.s.y);
-    boundary.lineTo(corners.w.x, corners.w.y);
-    boundary.closePath();
-    boundary.strokePath();
-  }
-
   /** Redraws everything a soil change moves: the beds themselves, the grass
    *  the SDF now cuts differently, and every crop whose slot shifted. */
   private refreshSoil(): void {
@@ -4420,55 +4181,6 @@ export class StackAcresScene extends Phaser.Scene {
       return this.grassAt(tile.tx, tile.ty, Date.now()) > 0;
     };
     /**
-     * Which half of a pipe-lay stroke this finger would start, with the pipe
-     * tool held: `"place"` over ground the tool could break, `"erase"` over
-     * a pipe already down. `undefined` off the tool, off a valid ground
-     * tile, or over the one well -- a well is never touched by this gesture,
-     * see lib/stackacres/tools.ts's own header on why it stays a deliberate
-     * radial-only purchase. Decided at press, but only ever ACTED on by a
-     * drag (`move` past `TAP_SLOP`) -- a plain tap with the tool held falls
-     * through to `dispatchTap` and the ring instead (see `up`).
-     */
-    const pipeLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
-      if (this.tool !== "pipe") return undefined;
-      const world = resolveWorld(clientX, clientY);
-      const tile = this.pipeLayableWorldTile(world.x, world.y);
-      if (!tile) {
-        // Of every reason `pipeLayableWorldTile` silently refuses a tile,
-        // only "it's inside a pen" gets a shake and a toast -- every other
-        // exclusion (a structure, a locked district, a fence bay) stays as
-        // silent as it always was. Checked directly against `growAreaAt`
-        // rather than threading a reason back out of that function, the
-        // same "duplicate the cheap lookup rather than complicate the
-        // shared one" call that function's own doc already makes.
-        const zone = growAreaAt(world.x, world.y);
-        if (zone && PEN_ZONE_IDS.includes(zone)) {
-          const scene = sceneAt(clientX, clientY);
-          this.flashToolGhostDenied(scene.x, scene.y);
-          this.callbacks.onDropRejected?.(
-            `${STACKACRES_ZONES[zone].label} keeps its own irrigation out -- pipe and wells stay clear of the pen.`,
-            { x: clientX - this.hostOrigin.left, y: clientY - this.hostOrigin.top },
-          );
-        }
-        return undefined;
-      }
-      const existing = this.pipeIndex?.byKey.get(pipeKey(tile.tx, tile.ty));
-      if (existing?.kind === "well") return undefined;
-      return existing ? "erase" : "place";
-    };
-    /**
-     * Which half of a soil-lay stroke this finger would start, with the
-     * soil tool held -- the soil tool's own twin of `pipeLayMode`, drag-only
-     * in exactly the same way.
-     */
-    const soilLayMode = (clientX: number, clientY: number): "place" | "erase" | undefined => {
-      if (this.tool !== "soil") return undefined;
-      const world = resolveWorld(clientX, clientY);
-      const tile = this.soilLayableWorldTile(world.x, world.y);
-      if (!tile) return undefined;
-      return hasSoilTile(this.soil, tile.tx, tile.ty) ? "erase" : "place";
-    };
-    /**
      * Whether a bare tap on this unit does something, with no tool held: true
      * when it is dry, hungry, ready or mucked. The shell turns water and feed
      * into a drag tool and acts on the rest straight away. `false` means the
@@ -4519,8 +4231,6 @@ export class StackAcresScene extends Phaser.Scene {
       else {
         const gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
         gesture.startMow = mowable(event.clientX, event.clientY);
-        gesture.startPipeLay = pipeLayMode(event.clientX, event.clientY);
-        gesture.startSoilLay = soilLayMode(event.clientX, event.clientY);
         this.gesture = gesture;
       }
     };
@@ -4594,38 +4304,6 @@ export class StackAcresScene extends Phaser.Scene {
           this.moveToolGhost(here.x, here.y);
           return;
         }
-        // A drag that started on a tile the pipe tool could touch lays or
-        // lifts a run of them; the pipe tool's own twin of the scythe branch
-        // just above.
-        if (gesture.startPipeLay) {
-          gesture.kind = "pipe-lay";
-          const start = sceneAt(gesture.startX, gesture.startY);
-          this.showToolGhost(start.x, start.y);
-          this.pipeLaySegment(
-            gesture,
-            resolveWorld(gesture.startX, gesture.startY),
-            resolveWorld(event.clientX, event.clientY),
-          );
-          const here = sceneAt(event.clientX, event.clientY);
-          this.moveToolGhost(here.x, here.y);
-          return;
-        }
-        // A drag that started on a tile the soil tool could touch plants or
-        // lifts a run of beds; the soil tool's own twin of the two branches
-        // just above.
-        if (gesture.startSoilLay) {
-          gesture.kind = "soil-lay";
-          const start = sceneAt(gesture.startX, gesture.startY);
-          this.showToolGhost(start.x, start.y);
-          this.soilLaySegment(
-            gesture,
-            resolveWorld(gesture.startX, gesture.startY),
-            resolveWorld(event.clientX, event.clientY),
-          );
-          const here = sceneAt(event.clientX, event.clientY);
-          this.moveToolGhost(here.x, here.y);
-          return;
-        }
         // A press that was standing on a unit and has now become a pan is a
         // tap this map decided not to honour. Say so, once, at the point the
         // finger actually went down -- see `tapRejectRipple` for why only
@@ -4648,30 +4326,6 @@ export class StackAcresScene extends Phaser.Scene {
         const from = resolveWorld(prevX, prevY);
         const to = resolveWorld(event.clientX, event.clientY);
         this.mowSegment(from, to, this.fingerCutStripe(from, to));
-        const here = sceneAt(event.clientX, event.clientY);
-        this.moveToolGhost(here.x, here.y);
-        return;
-      }
-      if (gesture.kind === "pipe-lay") {
-        // Same "from where the finger WAS" sampling `mow`'s own continuation
-        // takes just above, and for the same reason -- a fast swipe must not
-        // skip a tile between two move events.
-        this.pipeLaySegment(
-          gesture,
-          resolveWorld(prevX, prevY),
-          resolveWorld(event.clientX, event.clientY),
-        );
-        const here = sceneAt(event.clientX, event.clientY);
-        this.moveToolGhost(here.x, here.y);
-        return;
-      }
-      if (gesture.kind === "soil-lay") {
-        // Same "from where the finger WAS" sampling, for the same reason.
-        this.soilLaySegment(
-          gesture,
-          resolveWorld(prevX, prevY),
-          resolveWorld(event.clientX, event.clientY),
-        );
         const here = sceneAt(event.clientX, event.clientY);
         this.moveToolGhost(here.x, here.y);
         return;
@@ -4723,14 +4377,6 @@ export class StackAcresScene extends Phaser.Scene {
         this.finalizeStripe();
         return;
       }
-      if (gesture.kind === "pipe-lay") {
-        this.hideToolGhost();
-        return;
-      }
-      if (gesture.kind === "soil-lay") {
-        this.hideToolGhost();
-        return;
-      }
       // A cancel is a release that never taps.
       if (cancelled) return;
       // A tap with the scythe on standing grass cuts that spot -- the same
@@ -4748,15 +4394,11 @@ export class StackAcresScene extends Phaser.Scene {
         this.mowSegment(at, at);
         return;
       }
-      // No zero-length branch for the pipe or soil tool here any more
-      // (2026-09-09). A tap with either held used to lay or lift that one
-      // tile on the spot; it falls through to `dispatchTap` now, the same
-      // way a tap with nothing held always has, so the tile lights up and
-      // offers its ring (Lay Pipe with an angle, till a bed, lift either)
-      // instead of acting before the player has said which. Holding Pipe or
-      // Soil only changes what a DRAG does -- `gesture.startPipeLay`/
-      // `startSoilLay` are still decided at press, purely so `move` can turn
-      // a stroke past `TAP_SLOP` into a `pipe-lay`/`soil-lay` run.
+      // Pipe and soil have no held tool any more (2026-09-10): every tap
+      // falls through to `dispatchTap` below, the same way a tap with
+      // nothing held always has, so the tile lights up and offers its dock
+      // (Lay Pipe, Plant Soil, lift either) instead of acting before the
+      // player has said which.
       //
       // Every other tap is aimed at the farm itself, through `dispatchTap`
       // below -- the same chain `tapAt` replays for a tap that arrived via a
@@ -5099,18 +4741,13 @@ export class StackAcresScene extends Phaser.Scene {
 
   /**
    * Which tool is held, by name (see lib/stackacres/tools.ts). `inspect`
-   * does nothing on the canvas at all; `scythe`, `pipe` and `soil` each
-   * target the GROUND rather than a unit -- there is no unit to carry the
-   * answer the way a plot's own `afford` field once did, so the scene has
-   * to ask the question itself. See `mowable`/`pipeLayMode`/`soilLayMode`
-   * in `bindInput`.
-   *
-   * Also toggles `soilToolBoundary`'s visibility -- shown only while `soil`
-   * is held, hidden the instant it is not.
+   * does nothing on the canvas at all; only `scythe` targets the GROUND --
+   * there is no unit to carry the answer the way a plot's own `afford` field
+   * once did, so the scene has to ask the question itself. See `mowable` in
+   * `bindInput`.
    */
   setTool(tool: StackAcresTool): void {
     this.tool = tool;
-    this.soilToolBoundary?.setVisible(tool === "soil");
     if (tool !== "scythe") this.removeMower();
   }
 

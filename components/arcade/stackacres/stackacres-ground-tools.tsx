@@ -7,20 +7,21 @@ import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 
 /**
- * The three tools that only mean anything as a drag: Mow, Pipe and Soil.
+ * The one tool that only means anything as a drag: Mow.
  *
  * Water, feed and harvest have no key. Tapping a dry crop, a hungry pen or
- * a ready unit is enough on its own, and a single tile of pipe or soil is
- * already on the tap ring. What's left has no other way in. Cutting the
- * Long Meadow has no single-tile version, and laying a whole run in one
- * stroke is worth keeping, so something still has to arm the drag.
+ * a ready unit is enough on its own. Pipe and soil have no key either any
+ * more (2026-09-10): a single tile of either is reached entirely through the
+ * tap dock now (see stackacres-gel-dock.tsx), one at a time, with no
+ * multi-tile drag left to arm. Only cutting the Long Meadow still has no
+ * single-tile version, so it keeps the one key.
  *
- * Three small keys at the top left, on purpose nothing like the old
- * bottom-right dock. The Mow key shows the cutter in hand, and once the
- * player owns more than one, holding Mow opens a picker beside it to swap.
+ * One small key at the top left, on purpose nothing like the old
+ * bottom-right dock. It shows the cutter in hand, and once the player owns
+ * more than one, holding it opens a picker beside it to swap.
  */
 
-const GROUND_TOOLS = ["scythe", "pipe", "soil"] as const satisfies readonly StackAcresTool[];
+const GROUND_TOOLS = ["scythe"] as const satisfies readonly StackAcresTool[];
 
 export interface StackAcresGroundToolsProps {
   tool: StackAcresTool;

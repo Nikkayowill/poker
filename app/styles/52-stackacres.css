@@ -284,16 +284,31 @@
      that shared shell rather than just narrowing it. Positioned so
      .floor-bar below has something to pin itself to.
 
-     No left/right safe-area inset here, unlike top/bottom -- this game is
+     No safe-area inset on the shell itself, on any side -- this game is
      landscape-only, and landscape is exactly where a notch or the home
      indicator sits on a SIDE rather than top/bottom, on whichever edge
      depends on which way the phone is held. A blanket inset here can only
      guess, and guessing wrong still leaves a bare margin on the edge that
      had no notch. The canvas bleeding under a notch it can't see costs
      nothing (it's a picture); every overlay that actually needs protecting
+     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
      -- .floor-bar, .sa-ground-tools, .sa-side,
      .sa-district-panel, .sa-panel-tab -- reads
-     var(--safe-left)/var(--safe-right) itself instead. */
+     var(--safe-left)/var(--safe-right) itself instead.
+
+     --safe-top/--safe-bottom used to be in this padding too, which is what
+     leaves a green strip along the top and bottom edges on a notched
+     iPhone in landscape: env(safe-area-inset-bottom) does NOT go to 0
+     there -- it keeps reporting the home indicator's ~21px even though the
+     indicator itself is now sitting on a side edge, because WebKit reports
+     it against the CSS "bottom" of the viewport regardless of which way
+     the device is rotated. Padding the shell by that value reserved a real
+     band along the true bottom edge for a hazard that isn't there.
+     --safe-top is a harmless 0 in landscape, but it was still costing a
+     flat few px for nothing. Both are gone now, same call as the
+     left/right one above: nothing here needs protecting from the top or
+     bottom edges either, only from whichever side the notch and home
+     indicator actually land on. */
   position: relative;
   /* Layered as progressive enhancement, same as .app-root (02-app-shell.css)
      and .lobby (04-lobby.css): if `dvh` fails to parse -- an older WebKit, or
@@ -312,11 +327,7 @@
   overflow: hidden;
   width: 100%;
   margin: 0;
-  padding: calc(6px + var(--safe-top)) 0 var(--safe-bottom) 0;
-  /* The safe-area padding above leaves a band the field cannot reach, and the
-     app's own violet-black `body` was showing through it -- a 6px bruise along
-     the top of a farm. The shell takes the lawn's own colour so the band reads
-     as more grass rather than as the room the game is sitting in. */
+  padding: 0;
   background: var(--sa-grass);
   color: var(--sa-ink);
 

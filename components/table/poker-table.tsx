@@ -21,10 +21,9 @@ import {
 } from "@/lib/scene/table-anchors";
 import { clampBoardCardWidth } from "@/lib/scene/board-clearance";
 import {
-  pickSeatArtForSlot,
+  pickSeatArt,
   seatArtBox,
   seatArtCharacter,
-  seatArtCharacterForSlot,
   seatArtSlotFor,
   type SeatArtBox,
 } from "@/lib/scene/seat-art";
@@ -211,7 +210,6 @@ export function PokerTable({
   onCycleBetStyle,
   stackInBigBlinds,
   onToggleStackInBigBlinds,
-  tableRendererSettled,
   landscape,
   tightLandscape,
   onSignIn,
@@ -243,8 +241,6 @@ export function PokerTable({
   /** Whether a stack reads in raw chips or in big blinds; see lib/scene/stack-display.ts. */
   stackInBigBlinds: boolean;
   onToggleStackInBigBlinds: () => void;
-  /** Has the stored renderer choice arrived? See the render gate below. */
-  tableRendererSettled: boolean;
   /** Is the viewport wider than it is tall? The 2.5D table is landscape-only. */
   landscape: boolean;
   /** The tight mobile-landscape tier (see use-tight-landscape.ts) -- the live
@@ -411,8 +407,8 @@ export function PokerTable({
     // not all the way to the pot, so the button lands on visible felt
     // beside the player instead of stamped on their avatar.
     const seatStyle = getComputedStyle(seatEl);
-    const towardX = Number.parseFloat(seatStyle.getPropertyValue("--seat-dx")) || 0;
-    const towardY = Number.parseFloat(seatStyle.getPropertyValue("--seat-dy")) || 0;
+    const towardX = Number.parseFloat(seatStyle.getPropertyValue("--seat-dx"));
+    const towardY = Number.parseFloat(seatStyle.getPropertyValue("--seat-dy"));
     // A flat 46px pull inward cleared a desktop-sized avatar by only a few
     // pixels, and stamped the puck across it outright the moment a seat
     // rendered smaller than that, which a short-but-wide viewport does
@@ -570,10 +566,9 @@ export function PokerTable({
    * character its own occupant actually bought/equipped (`avatarCosmetic`,
    * already on every `PublicSeat`; humans via their equipped avatar, bots
    * via `botAvatarFor`), a real per-PLAYER pick rather than the old
-   * per-SEAT hash. `seatArtCharacterForSlot`'s hash pick survives as the
-   * fallback for a seat whose `avatarCosmetic` doesn't resolve to a roster
-   * character (a stale/legacy id); everyone at the table still agrees,
-   * since `avatarCosmetic` is already part of the snapshot every client has.
+   * per-SEAT hash. Every catalog avatar is a roster character, so this only
+   * misses on a stale id left in an old snapshot, and that seat draws no
+   * portrait.
    *
    * Keyed by seat rather than a flat list, and rendered as each seat's own
    * child (see `<PlayerSeat racetrackArt=...>`) rather than as siblings of
@@ -597,22 +592,21 @@ export function PokerTable({
       if (seat.isMine) return;
       const placed = racetrackLayout.seats[index];
       if (!placed) return;
-      const character = seatArtCharacter(seat.avatarCosmetic)
-        ?? seatArtCharacterForSlot(game.id, game.handNumber, placed.slot);
+      const character = seatArtCharacter(seat.avatarCosmetic);
       if (!character) return;
       // placed.slot is always a real six-max ring position (0-5), regardless
       // of how many seats this table actually has -- see seatSlots' own
       // comment and racetrack-scene.tsx's `slots` prop. SEAT_COUNT is the
       // ring this angle is measured against, not this table's own headcount.
       const offset = seatAngleDeg(placed.slot, SEAT_COUNT) - DEALER_ANGLE_DEG;
-      const pick = pickSeatArtForSlot(character, placed.slot, offset, isDesktopViewport);
+      const pick = pickSeatArt(character, offset);
       const slot = seatArtSlotFor(placed.slot, isDesktopViewport);
       const box = seatArtBox(placed, placed.hands, pick.aspect, pick.mirror, slot);
       if (!box) return;
       map.set(seat.id, { src: pick.src, mirror: pick.mirror, box });
     });
     return map;
-  }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport, game.id, game.handNumber]);
+  }, [isRacetrack, racetrackLayout, orderedSeats, isDesktopViewport]);
 
   /**
    * Where each seat actually goes.
@@ -1032,34 +1026,6 @@ export function PokerTable({
     onSignOut, onLeaveSeat, requestLeave,
   ]);
 
-  /* Render gate: nothing paints until the renderer choice is genuinely
-     known. The stored preference arrives a tick after the first commit (the
-     deferred set in use-stored-preference.ts), so without this a player
-     whose stored choice hasn't loaded yet would briefly mount whatever
-     DEFAULT_TABLE_RENDERER is, acquire a canvas context, paint, and get torn
-     down again the very next commit once the real preference arrives. A
-     blank hold is cheaper than a discarded room and reads as a load rather
-     than as a glitch.
-
-     This sits below the hooks, not at the top of the component, and that is
-     not a stylistic choice. Returning before the ~30 hooks above would give
-     this component two different hook sequences depending on a boolean that
-     flips on the second commit, which is precisely what React's rules of
-     hooks forbid; it would throw on the transition rather than fix a
-     flicker. The hooks all run, find their refs null, and no layout node is
-     created, which is what was actually asked for.
-
-     100dvh, not 100vh: on mobile browsers `vh` is the tallest the viewport
-     ever gets, chrome included, so a 100vh hold is visibly taller than the
-     table that replaces it and the whole page shifts on the swap. The rest
-     of this codebase uses dvh for the same reason. The colour is the Neon
-     Marquee ground (01-tokens.css's own html/body literal, #150a2b, stated
-     the same way there for the same reason), so the hold is indistinguishable
-     from the shell that follows it rather than a flash between two darks. */
-  if (!tableRendererSettled) {
-    return <div style={{ width: "100vw", height: "100dvh", backgroundColor: "#150a2b" }} />;
-  }
-
   if (!landscape) {
     return (
       <main className="game-shell orientation-gate-shell">
@@ -1317,8 +1283,8 @@ export function PokerTable({
             style={{
               "--seat-width": `${seatWidthFor(tableSize, orderedSeats.length)}px`,
               /* The board and the pot, where the racetrack's camera put them.
-                 Absent on every other table, where 06-table.css's own
-                 percentages are correct and these fall back to them. */
+                 Absent only until the first layout lands, when 06-table.css's
+                 own percentages hold the first frame. */
               ...(isRacetrack && racetrackLayout
                 ? {
                   "--board-x": `${racetrackLayout.board.x.toFixed(1)}px`,

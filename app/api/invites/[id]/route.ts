@@ -127,7 +127,12 @@ export async function POST(
         await persistSeatClaim(state, state.seats[seatIndex].id);
       }
     } catch (claimError) {
-      if (!alreadySeated) profile = await creditGold(token, buyIn).catch(() => profile);
+      if (!alreadySeated) {
+        profile = await creditGold(token, buyIn).catch((error) => {
+          console.error("invites.accept_refund_failed", { gameId: game.id, profileId: profile.id, buyIn, error });
+          return profile;
+        });
+      }
       const message = claimError instanceof Error ? claimError.message : "Could not take that seat.";
       return NextResponse.json({ error: message }, { status: 409 });
     }

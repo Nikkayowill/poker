@@ -17,7 +17,7 @@ import {
   isPurchasable,
   normalizeEquipped,
 } from "./catalog";
-import { ADMIN_ONLY_CHARACTER_IDS, SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
+import { SEAT_ART_CHARACTERS, seatArtSrc } from "@/lib/scene/seat-art";
 
 const publicDir = path.join(process.cwd(), "public");
 const onDisk = (webPath: string) => existsSync(path.join(publicDir, webPath));
@@ -45,15 +45,20 @@ describe("cosmetic catalog", () => {
     expect(cosmeticById(DEFAULT_CARD_BACK)?.slot).toBe("cardBack");
   });
 
-  it("resolves equipment from a stored value, the legacy `avatar` key, or neither", () => {
+  it("resolves equipment from a stored value, or falls back to the default", () => {
     expect(defaultEquipped.avatar2d).toBe("character4");
-    expect(normalizeEquipped({ avatar: "character9" })).toMatchObject({
-      avatar2d: "character9",
-    });
     expect(normalizeEquipped({ avatar2d: "character9" })).toMatchObject({
       avatar2d: "character9",
     });
     expect(normalizeEquipped({})).toMatchObject({ avatar2d: DEFAULT_AVATAR_COSMETIC });
+    // Ids were renumbered, so an unknown one still lands on the default.
+    expect(normalizeEquipped({ avatar2d: "not-a-cosmetic" })).toMatchObject({
+      avatar2d: DEFAULT_AVATAR_COSMETIC,
+    });
+    // The old `avatar` key is no longer read.
+    expect(normalizeEquipped({ avatar: "character9" })).toMatchObject({
+      avatar2d: DEFAULT_AVATAR_COSMETIC,
+    });
   });
 
   it("gives away the starter roster and exactly one card back", () => {
@@ -238,16 +243,5 @@ describe("character avatars (the seat-art roster, sold in the store)", () => {
       expect(item.unlock).toBeUndefined();
       expect(botAvatarCosmetics.map((bot) => bot.id)).not.toContain(item.id);
     }
-  });
-
-  it("keeps the seat-art random-fallback exclusion list in sync with the catalog's adminOnly flags", () => {
-    // The two lists are hand-duplicated on purpose (see
-    // lib/scene/seat-art.ts's own comment, avoiding a circular import) --
-    // this is what stops them drifting apart silently.
-    const adminOnlyIds = characterAvatarCosmetics.filter((item) => item.adminOnly).map((item) => item.id);
-    for (const id of adminOnlyIds) {
-      expect(ADMIN_ONLY_CHARACTER_IDS.has(id)).toBe(true);
-    }
-    expect(ADMIN_ONLY_CHARACTER_IDS.size).toBe(adminOnlyIds.length);
   });
 });

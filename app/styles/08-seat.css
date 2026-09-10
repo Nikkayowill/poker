@@ -25,18 +25,18 @@
    whole table: figures interleave by depth, and every plate sits above every
    figure. A name and a stack are information; a shoulder is atmosphere. */
 .seat-figure {
-  z-index: var(--seat-z, 4);
+  z-index: var(--seat-z);
   scale: 1;
   transition: filter .25s, scale .25s, translate .25s cubic-bezier(.2,.8,.3,1), opacity .2s;
 }
 
-.seat-cards { z-index: calc(var(--seat-z, 4) + 1); }
+.seat-cards { z-index: calc(var(--seat-z) + 1); }
 
-.seat-plate { z-index: calc(var(--seat-z, 4) + 2); }
+.seat-plate { z-index: calc(var(--seat-z) + 2); }
 
-/* The classic HUD uses a contained face marker, not the full character cutout
-   used by the room renderer. Capping it keeps the avatar from taking the same
-   vertical lane as the cards and nameplate on a phone. */
+/* A contained face marker. The racetrack draws the full character art
+   separately (.racetrack-seat-art). Capping it keeps the avatar out of the
+   vertical lane the cards and nameplate use on a phone. */
 .seat-figure {
   position: relative;
   width: clamp(40px, 72%, 78px);
@@ -74,31 +74,13 @@
   left: 50%;
   bottom: 1%;
   z-index: -1;
-  width: calc(58% + 14% * var(--seat-near, 1));
+  width: calc(58% + 14% * var(--seat-near));
   aspect-ratio: 3.6;
   translate: -50% 0;
   border-radius: 50%;
   background: radial-gradient(ellipse at center, rgba(0,0,0,.6), rgba(0,0,0,0) 70%);
-  opacity: calc(.3 + .5 * var(--seat-near, 1));
+  opacity: calc(.3 + .5 * var(--seat-near));
   pointer-events: none;
-}
-
-/* Shown until the artwork paints, and left underneath it forever after, so a
-   missing or slow file never leaves a hole where a player should be. */
-.seat-figure-fallback {
-  display: grid;
-  place-items: center;
-  width: 76%;
-  aspect-ratio: 1;
-  align-self: end;
-  margin-bottom: 0;
-  border: 2px solid var(--gold);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold-light), transparent 35%);
-  border-radius: 50%;
-  background: #16211c;
-  color: var(--seat-accent);
-  font: 800 13px/1 ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: .04em;
 }
 
 /* An uploaded photo is not a cut-out and cannot stand up as a body. */
@@ -142,7 +124,6 @@
    their nameplate remains crisp above the edge for quick table scanning. */
 .seat-far .seat-figure {
   mask-image: linear-gradient(to bottom, #000 0 68%, transparent 98%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0 68%, transparent 98%);
 }
 .seat-far .seat-plate { margin-top: -4%; }
 
@@ -230,8 +211,8 @@
      nameplate down onto the board and the pot. */
   --plate-h: 38px;
   --seat-outset: clamp(8px, calc(var(--seat-width) * .14), 14px);
-  margin-left: calc(var(--seat-width) / -2 + var(--seat-out-x, 0) * var(--seat-outset));
-  margin-top: calc((var(--seat-width) + var(--plate-h)) / -2 + var(--seat-out-y, 0) * var(--seat-outset));
+  margin-left: calc(var(--seat-width) / -2 + var(--seat-out-x) * var(--seat-outset));
+  margin-top: calc((var(--seat-width) + var(--plate-h)) / -2 + var(--seat-out-y) * var(--seat-outset));
 }
 
 /* Deal animations still need a direction to fly in from, derived from which
@@ -284,7 +265,7 @@
   text-transform: uppercase;
 }
 
-.seat-winner .seat-figure { z-index: calc(var(--seat-z, 4) + 1); }
+.seat-winner .seat-figure { z-index: calc(var(--seat-z) + 1); }
 
 /* One pulse, not two. It used to beat twice because this glow was the only
    thing marking a winning hand; M9 gives the five cards that actually won a
@@ -359,7 +340,7 @@
    and the ring simply sits full. That is the correct resting state for a seat
    whose turn it is not, and it is why there is no separate "no clock" rule. */
 .seat-timer-fuse {
-  stroke: var(--fuse-colour, #5cc98a);
+  stroke: var(--fuse-colour);
   animation: seat-fuse-burn var(--fuse-duration) linear var(--fuse-delay) forwards;
 }
 
@@ -391,7 +372,7 @@
 
 /* The countdown sits in the middle -- the black space inside the ring. */
 .seat-timer b {
-  color: var(--fuse-colour, #5cc98a);
+  color: var(--fuse-colour);
   font: 700 10px/1 Georgia, serif;
   font-variant-numeric: tabular-nums;
 }
@@ -462,7 +443,7 @@
 .seat-ring .seat-timer-pill svg { inset: 0; width: 100%; height: 100%; transform: none; }
 .seat-ring .seat-timer-pill rect { fill: none; stroke-width: 1.5; }
 .seat-ring .seat-timer-pill .seat-timer-track { stroke: rgba(255,255,255,.14); }
-.seat-ring .seat-timer-pill .seat-timer-fuse { stroke-width: 2; stroke: var(--fuse-colour, #5cc98a); }
+.seat-ring .seat-timer-pill .seat-timer-fuse { stroke-width: 2; stroke: var(--fuse-colour); }
 .seat-ring .seat-timer-pill b { position: absolute; right: 7px; font-size: 9px; }
 .seat-ring .seat-timer-pill .seat-status-label { padding-right: 12px; }
 
@@ -701,7 +682,7 @@
    own. Shrunk from .26 to .20: a small fanned pair beside the avatar, not a
    pair the size of the face itself. */
 .seat-cards:not(.own-cards) .playing-card {
-  width: calc(var(--seat-width) * .20 * var(--seat-depth, 1));
+  width: calc(var(--seat-width) * .20 * var(--seat-depth));
   border-radius: 3px;
   border-color: rgba(239, 217, 141, .55);
   box-shadow:
@@ -749,7 +730,7 @@
    already a fraction of --seat-width, which is already tuned per
    breakpoint. */
 .seat-cards:not(.own-cards) .playing-card:not(.card-back) {
-  width: calc(var(--seat-width) * .23 * var(--seat-depth, 1));
+  width: calc(var(--seat-width) * .23 * var(--seat-depth));
   border-radius: 4px;
   border-color: rgba(255, 246, 213, .82);
 }
@@ -765,10 +746,10 @@
     filter: drop-shadow(0 6px 10px rgba(0,0,0,.4));
   }
   .seat-cards:not(.own-cards) .playing-card {
-    width: calc(var(--seat-width) * .24 * var(--seat-depth, 1));
+    width: calc(var(--seat-width) * .24 * var(--seat-depth));
   }
   .seat-cards:not(.own-cards) .playing-card:not(.card-back) {
-    width: calc(var(--seat-width) * .27 * var(--seat-depth, 1));
+    width: calc(var(--seat-width) * .27 * var(--seat-depth));
   }
 }
 
@@ -877,8 +858,7 @@
   --bet-reach-y: 95px;
   /* The "beside, not on top of, the pile" nudge below -- shared with the
      racetrack room's own .table-bet overrides (42-racetrack-table.css),
-     which read it back with a fallback rather than carrying their own
-     copy of the number. */
+     which read it back rather than carrying their own copy of the number. */
   --bet-label-offset-x: 26px;
   position: absolute;
   left: 50%;
@@ -886,7 +866,7 @@
   z-index: 7;
   transform:
     translate(-50%, -50%)
-    translate(calc(var(--seat-dx, 0) * var(--bet-reach-x)), calc(var(--seat-dy, -1) * var(--bet-reach-y)))
+    translate(calc(var(--seat-dx) * var(--bet-reach-x)), calc(var(--seat-dy) * var(--bet-reach-y)))
     translate(var(--bet-label-offset-x), 0);
   padding: 2px 8px;
   border: 1px solid rgba(217, 184, 93, .32);
@@ -962,7 +942,7 @@
 .seat-challenge-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 60);
+  z-index: var(--z-modal);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -972,7 +952,7 @@
 }
 .seat-challenge-panel {
   width: min(300px, calc(100vw - 32px));
-  border-radius: var(--radius-2xl, 14px);
+  border-radius: var(--radius-2xl);
   background: #16121f;
   box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
   animation: modal-in .18s ease both;

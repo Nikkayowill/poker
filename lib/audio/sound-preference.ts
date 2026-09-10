@@ -10,23 +10,10 @@
  *
  * In lib/ rather than beside the component for the reason lib/arcade/games.ts
  * gives: vitest.config.ts collects only lib/ and app/, and a key that has
- * already caused one silent un-muting incident (see LEGACY_SOUND_STORAGE_KEY)
- * belongs somewhere `npm test` can see it.
+ * already caused one silent un-muting incident (the StackChips rename moved
+ * it without a migration) belongs somewhere `npm test` can see it.
  */
 
 export const SOUND_STORAGE_KEY = "stackchips:sound-enabled";
-
-/**
- * The pre-rename key, still read once so the rename doesn't silently reset
- * anyone's preference.
- *
- * `river-room:sound-enabled` is where every existing player's preference
- * lives. The StackChips rename moved the key without migrating it, and
- * because the default is "enabled unless the value is exactly false",
- * anyone who had muted the app got sound turned back on with no way to
- * tell why. Same class of legacy id as the `river_*` cookies: kept for
- * compatibility, not style.
- */
-export const LEGACY_SOUND_STORAGE_KEY = "river-room:sound-enabled";
 
 export const MUSIC_STORAGE_KEY = "stackchips:menu-music-enabled";

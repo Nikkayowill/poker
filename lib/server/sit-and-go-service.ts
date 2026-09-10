@@ -230,7 +230,7 @@ async function dealSitAndGoTableIfReady(tableId: string): Promise<StoredSitAndGo
     // dealTableIfReady makes. `null` throughout: only the caller who
     // triggered the deal has a live session token here, and awardWager's
     // Gold-crediting path is keyed just as well by profile id.
-    await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.entryFee).catch(() => null)));
+    await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.entryFee)));
 
     return recorded ?? dealt;
   } catch (error) {
@@ -270,7 +270,9 @@ export async function openSitAndGoTable(
     table = await createSitAndGoTableRow(profile.id, tier, entryFee);
     await claimSitAndGoSeat(table.id, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, entryFee).catch(() => null);
+    await creditGoldByProfile(profile.id, entryFee).catch((refundError) => {
+      console.error("sit_and_go.open_refund_failed", { profileId: profile.id, entryFee, error: refundError });
+    });
     // Same reasoning as cribbage's openCribbageTable: the table row can
     // persist even though seating the host in it fails right after, and a
     // host-less 'waiting' row would sit in the lobby list forever with no
@@ -404,7 +406,14 @@ export async function joinSitAndGoTable(
   try {
     await claimSitAndGoSeat(tableId, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.entryFee).catch(() => null);
+    await creditGoldByProfile(profile.id, table.entryFee).catch((refundError) => {
+      console.error("sit_and_go.join_refund_failed", {
+        tableId,
+        profileId: profile.id,
+        entryFee: table.entryFee,
+        error: refundError,
+      });
+    });
     if (error instanceof SitAndGoTableNotJoinable) throw new SitAndGoRequestError(error.message, 409);
     throw error;
   }

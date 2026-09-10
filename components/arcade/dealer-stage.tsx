@@ -3,11 +3,9 @@ import { DEALER_DOGS } from "@/lib/arcade/dealer";
 import {
   SCENE_ART,
   dogArt,
-  dogArtReady,
   feltPrint,
   type DealerExpression,
 } from "@/lib/arcade/dealer-scene";
-import { DealerAvatar } from "@/components/arcade/dealer-avatar";
 
 /**
  * The Blackjack room: casino, table, dealers, as separate 2D layers.
@@ -49,7 +47,7 @@ import { DealerAvatar } from "@/components/arcade/dealer-avatar";
  * Nothing here can fail to acquire a context, so unlike its predecessor
  * there's no state in which this component shows an empty room.
  *
- * Every layer is optional. lib/arcade/dealer-scene.ts holds each asset path
+ * The room and table layers are optional. lib/arcade/dealer-scene.ts holds each asset path
  * as `string | null`, and null means "not sourced yet" rather than "broken"
  * (the same convention as music-manifest.ts). A layer without a file is
  * painted in CSS instead, so the page is complete and correct before a
@@ -71,7 +69,6 @@ export function DealerStage({
 }) {
   const roomArt = SCENE_ART.room;
   const tableArt = SCENE_ART.table;
-  const dogsDrawn = dogArtReady();
 
   return (
     <>
@@ -120,45 +117,24 @@ export function DealerStage({
       </div>
 
       {/* Loki and Finn, sat behind the rail. */}
-      <div
-        className="bj-dealers"
-        data-expression={expression}
-        data-art={dogsDrawn ? "photo" : "painted"}
-      >
-        {dogsDrawn
-          ? (
-            <span
-              className="bj-dealer-pair"
-              role="img"
-              aria-label={`${DEALER_DOGS[0].name} and ${DEALER_DOGS[1].name}, the house dealers`}
-            >
-              {DEALER_DOGS.map((dog) => (
-                /* See the note on .bj-room-art above. */
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={dog.id}
-                  className={`bj-dealer bj-dealer-${dog.id}`}
-                  // Non-null because dogArtReady() is derived from exactly this
-                  // call over exactly this pair, so the two cannot disagree.
-                  src={dogArt(dog.id, expression) as string}
-                  alt=""
-                  aria-hidden="true"
-                />
-              ))}
-            </span>
-          )
-          : (
-            /*
-             * The placeholder, and it is the real drawing rather than a grey
-             * box: the same flat crop that sits beside the dealer's hand,
-             * enlarged. Two dogs in bow ties is the correct picture at any
-             * fidelity, so the page reads as finished-but-plain while the art
-             * is outstanding rather than reading as broken.
-             */
-            <span className="bj-dealer-pair bj-dealer-placeholder">
-              <DealerAvatar />
-            </span>
-          )}
+      <div className="bj-dealers" data-expression={expression}>
+        <span
+          className="bj-dealer-pair"
+          role="img"
+          aria-label={`${DEALER_DOGS[0].name} and ${DEALER_DOGS[1].name}, the house dealers`}
+        >
+          {DEALER_DOGS.map((dog) => (
+            /* See the note on .bj-room-art above. */
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={dog.id}
+              className={`bj-dealer bj-dealer-${dog.id}`}
+              src={dogArt(dog.id, expression)}
+              alt=""
+              aria-hidden="true"
+            />
+          ))}
+        </span>
 
         {bubble}
 

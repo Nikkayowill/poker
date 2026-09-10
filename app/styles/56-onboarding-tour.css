@@ -11,7 +11,7 @@
  */
 
 .driver-popover {
-  background: var(--neon-ground-lift, #211141);
+  background: var(--neon-ground-lift);
   color: var(--ink);
   border-radius: 14px;
   box-shadow: var(--accent-edge), var(--accent-glow), 0 18px 40px -18px rgba(0, 0, 0, 0.75);
@@ -45,7 +45,7 @@
 }
 
 .driver-popover-footer button {
-  background: var(--neon-purple, #9b3ff0);
+  background: var(--neon-purple);
   color: var(--ink);
   text-shadow: none;
   border: none;
@@ -56,8 +56,8 @@
 }
 
 .driver-popover-footer .driver-popover-next-btn {
-  background: var(--neon-yellow, #ffd23f);
-  color: var(--neon-ground, #150a2b);
+  background: var(--neon-yellow);
+  color: var(--neon-ground);
 }
 
 .driver-popover-close-btn {
@@ -65,7 +65,7 @@
 }
 
 .driver-popover-arrow {
-  border-color: var(--neon-ground-lift, #211141);
+  border-color: var(--neon-ground-lift);
 }
 
 /* driver.js draws the dimmed backdrop as an SVG path; overlayColor is set

@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "games:create", 10, 5 * 60 * 1000);
   if (limited) return limited;
   try {
-    const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+    const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: "Enter a name between 1 and 18 characters." }, { status: 400 });
     }
@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
       game = createGame(hostToken, profile.displayName, profile, { isPrivate: parsed.data.isPrivate, tier, buyIn });
       await createStoredGame(game);
     } catch (createError) {
-      profile = await creditGold(hostToken, buyIn).catch(() => profile);
+      profile = await creditGold(hostToken, buyIn).catch((error) => {
+        console.error("games.create_refund_failed", { profileId: profile.id, buyIn, error });
+        return profile;
+      });
       throw createError;
     }
 

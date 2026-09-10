@@ -207,17 +207,13 @@
   z-index: -1;
   display: block;
   background: linear-gradient(180deg, rgba(233, 216, 142, .85), rgba(94, 168, 130, .5));
-  -webkit-mask-image: url("/elements/spadehomepage-emblem.svg");
   mask-image: url("/elements/spadehomepage-emblem.svg");
-  -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  -webkit-mask-position: 50% 46%;
   mask-position: 50% 46%;
   /* Bigger than the table on purpose. At 62vh the spade was smaller than the
      plate that covers it, so the brand mark was painted entirely underneath
      the felt and never seen. Oversized, it reads as a mark on the room the
      table happens to stand on. */
-  -webkit-mask-size: min(128vh, 86vw);
   mask-size: min(128vh, 86vw);
   opacity: .055;
   pointer-events: none;

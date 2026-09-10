@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo } from "react";
 import clsx from "clsx";
 import Image from "next/image";
 import type { PublicSeat } from "@/lib/game/types";
@@ -12,7 +12,6 @@ import { reactionLabel } from "@/lib/game/reaction-channel";
 import type { SeatReaction } from "@/lib/game/use-table-reactions";
 import type { SeatArtBox } from "@/lib/scene/seat-art";
 import { formatStack } from "@/lib/scene/stack-display";
-import { missingArtwork } from "@/components/artwork-cache";
 import { ChallengeSeatControl } from "./challenge-seat-control";
 import { PlayingCard } from "./playing-card";
 import { SeatTimer } from "./seat-timer";
@@ -42,10 +41,6 @@ export function SeatFigure({
   turnDeadlineAt: string | null;
   reaction?: SeatReaction | null;
 }) {
-  const [, forceRerender] = useState(0);
-  const declared = seat.avatarCosmetic ? avatarFace(seat.avatarCosmetic) : null;
-  const artwork = declared && !missingArtwork.has(declared) ? declared : null;
-
   return (
     <div className={clsx("seat-figure", active && "seat-figure-active")}>
       {/* An uploaded photo has no cut-out to stand up, so it stays a disc
@@ -60,27 +55,13 @@ export function SeatFigure({
           />
         )
         : (
-          <>
-            {/* The monogram sits underneath and the figure lays over it, so a
-                file that is missing or still loading never leaves a hole where
-                a player should be. */}
-            <span className="seat-figure-fallback" aria-hidden={artwork ? "true" : undefined}>
-              {seat.initials}
-            </span>
-            {artwork && (
-              <Image
-                src={artwork}
-                alt=""
-                fill
-                sizes="180px"
-                className="seat-figure-art"
-                onError={() => {
-                  missingArtwork.add(artwork);
-                  forceRerender((n) => n + 1);
-                }}
-              />
-            )}
-          </>
+          <Image
+            src={avatarFace(seat.avatarCosmetic)}
+            alt=""
+            fill
+            sizes="180px"
+            className="seat-figure-art"
+          />
         )}
       {/* Opponents' turn clock rings their own portrait rather than sitting as
           a separate badge down in the nameplate: a fuse that laps the face

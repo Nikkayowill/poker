@@ -21,12 +21,7 @@ import { compareScores, describeHand, evaluateHand } from "./evaluator";
 import { TIER_CONFIG } from "./tiers";
 import type { Card, GameState, PlayerAction } from "./types";
 import type { PlayerProfile } from "@/lib/profile/types";
-import {
-  avatarCosmetics,
-  cosmeticById,
-  DEFAULT_CARD_BACK,
-  defaultEquipped,
-} from "@/lib/cosmetics/catalog";
+import { cosmeticById, defaultEquipped } from "@/lib/cosmetics/catalog";
 
 /**
  * Registered by default, because that is the case with something to check:
@@ -1418,57 +1413,6 @@ describe("stakes tiers and buy-ins", () => {
     // inheriting the bot's 1,750 would be redeemable free chips.
     const seat = game.seats[claimed.seatIndex];
     expect(seat.stack + seat.committed).toBe(1000);
-  });
-});
-
-describe("legacy state normalization", () => {
-  it("backfills seat avatars on tables dealt before avatars existed", () => {
-    const token = crypto.randomUUID();
-    const game = createGame(token, "Host");
-    // Exactly what a table persisted before avatars looks like coming back
-    // out of storage: every other field intact, no avatar on any seat.
-    game.seats.forEach((seat) => {
-      delete (seat as Partial<typeof seat>).avatarCosmetic;
-    });
-
-    const normalized = normalizeGameState(game);
-    normalized.seats.forEach((seat) => {
-      expect(seat.avatarCosmetic).toBeTruthy();
-    });
-    // Bots keep distinct faces rather than all collapsing to one default,
-    // which is most of what makes a table look occupied. Derived from the
-    // catalog size so adding or removing artwork never breaks this.
-    const botFaces = new Set(normalized.seats.slice(1).map((seat) => seat.avatarCosmetic));
-    expect(botFaces.size).toBe(Math.min(5, avatarCosmetics.length));
-  });
-
-  it("leaves an avatar that is already present untouched", () => {
-    const game = createGame(crypto.randomUUID(), "Host");
-    game.seats[0].avatarCosmetic = "character5";
-    expect(normalizeGameState(game).seats[0].avatarCosmetic).toBe("character5");
-  });
-
-  it("backfills card backs on tables dealt before they reached the felt", () => {
-    const game = createGame(crypto.randomUUID(), "Host");
-    game.seats.forEach((seat) => {
-      delete (seat as Partial<typeof seat>).cardBackCosmetic;
-    });
-
-    const normalized = normalizeGameState(game);
-    // undefined here reaches an SVG fill attribute and draws a blank
-    // rectangle where every hidden card should be -- on a table that was
-    // mid-hand when it was persisted.
-    normalized.seats.forEach((seat) => {
-      expect({ id: seat.id, back: cosmeticById(seat.cardBackCosmetic)?.slot })
-        .toEqual({ id: seat.id, back: "cardBack" });
-    });
-    expect(normalized.seats[0].cardBackCosmetic).toBe(DEFAULT_CARD_BACK);
-  });
-
-  it("leaves a card back that is already present untouched", () => {
-    const game = createGame(crypto.randomUUID(), "Host");
-    game.seats[0].cardBackCosmetic = "back-ivory";
-    expect(normalizeGameState(game).seats[0].cardBackCosmetic).toBe("back-ivory");
   });
 });
 

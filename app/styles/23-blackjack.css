@@ -13,7 +13,6 @@
  */
 
 .bj-shell {
-  min-height: 100vh;
   /* svh, not vh: on mobile Safari vh is the *largest* viewport, so the action
      bar sits under the URL bar until it collapses. The table shell in
      06-table.css already pairs these for the same reason. */
@@ -185,17 +184,13 @@
   text-overflow: ellipsis;
 }
 
-/* Both avatars sit in the same 34px footprint so the dealer's row and the
-   player's row line up. .profile-avatar brings its own sizing, hence the
-   override rather than a shared wrapper class. */
-.bj-hand-head .profile-avatar,
-.bj-hand-head .dealer-avatar {
+/* The player's avatar in the hand row. .profile-avatar brings its own sizing,
+   hence the override. */
+.bj-hand-head .profile-avatar {
   flex: none;
   width: 34px;
   height: 34px;
 }
-.dealer-avatar { display: block; border-radius: 50%; overflow: hidden; }
-.dealer-avatar svg { display: block; width: 100%; height: 100%; }
 
 .bj-hand-label {
   color: #e2ece4;
@@ -276,7 +271,6 @@
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 .bj-stakes::-webkit-scrollbar { display: none; }
 /* Practice mode is on: the tier ladder still shows what it was set to, but

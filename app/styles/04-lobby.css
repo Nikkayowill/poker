@@ -9,7 +9,6 @@
   /* Header height and top inset both, or the page runs exactly that far past
      the bottom of the screen. --lobby-header-h is the one place the number
      lives (01-tokens.css); env() is what .lobby-header adds to itself. */
-  height: calc(100vh - var(--lobby-header-h) - var(--safe-top));
   height: calc(100svh - var(--lobby-header-h) - var(--safe-top));
   overflow-y: auto;
   /* The y-axis being auto computes the x-axis to auto too, so any child
@@ -207,7 +206,6 @@ button:disabled { cursor: wait; opacity: .62; }
      rendered before that), so it owns the full viewport rather than the
      `100vh - header` arithmetic .lobby still needs. --safe-top used to be
      cleared by the header's own padding; this page clears it itself now. */
-  height: 100vh;
   /* Not --vp-short corrected; see .app-root in 02-app-shell.css for why a
      viewport-unit height is already right and adding the shortfall broke it. */
   height: 100svh;
@@ -508,7 +506,6 @@ button:disabled { cursor: wait; opacity: .62; }
 .entry-hero-side {
   height: 100%;
   object-position: bottom center;
-  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 90%);
   mask-image: linear-gradient(to bottom, black 60%, transparent 90%);
 }
 
@@ -713,27 +710,14 @@ button:disabled { cursor: wait; opacity: .62; }
    keeps a serif's thin strokes off a star, the far one is the shade the
    headline casts on the ceiling behind it -- together they do the job the
    glass pane used to do, and they are why this text stays readable if an orb
-   drifts behind it. The same pairing repeats on every line of type below.
-   Note this survives the background-clip below: a text-shadow paints under
-   the glyph, and the clipped fill is opaque, so only the halo shows. */
+   drifts behind it. The same pairing repeats on every line of type below. */
 .account-entry-card h1 {
   margin: 0;
-  color: #f7f4ff;
+  color: #fff;
   font: 700 clamp(26px, 3.9vw, 34px)/1.06 Georgia, "Times New Roman", serif;
   letter-spacing: -.03em;
   text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 6px 34px rgba(4, 6, 11, .95);
-}
-
-/* Guarded: without background-clip support, `color: transparent` would leave
-   the headline invisible rather than merely unstyled. */
-@supports (-webkit-background-clip: text) or (background-clip: text) {
-  .account-entry-card h1 {
-    color: #fff;
-    background: none;
-    -webkit-background-clip: initial;
-    background-clip: initial;
-  }
 }
 
 .account-entry-card > .entry-head > p:not(.account-entry-status) {

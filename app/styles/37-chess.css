@@ -179,7 +179,7 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  width: min(100%, calc(var(--chess-square, 56px) * 8));
+  width: min(100%, calc(var(--chess-square) * 8));
   padding: 6px 12px;
   border-radius: var(--radius-control);
   background: var(--brand-surface);

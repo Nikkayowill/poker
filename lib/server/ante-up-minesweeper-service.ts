@@ -192,7 +192,11 @@ export async function openAnteUpMinesweeper(
     });
   } catch (error) {
     // The attempt never came into existence, so the player must not have paid for it.
-    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
+    if (wagerInput > 0) {
+      await creditGoldByProfile(profile.id, wagerInput).catch((refundError) => {
+        console.error("ante_up_minesweeper.open_refund_failed", { profileId: profile.id, wager: wagerInput, error: refundError });
+      });
+    }
     if (error instanceof ActiveAnteUpAttemptExists) {
       throw new AnteUpMinesweeperRequestError(error.message, 409);
     }
@@ -200,7 +204,7 @@ export async function openAnteUpMinesweeper(
   }
 
   // Only a real wager earns XP; nothing was risked on a free attempt.
-  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, now).catch(() => null);
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, now);
 
   return { attempt: snapshot(stored, now), profile: debited };
 }

@@ -20,7 +20,7 @@ import {
   DEFAULT_AVATAR_COSMETIC,
   DEFAULT_CARD_BACK,
 } from "@/lib/cosmetics/catalog";
-import { CHEAPEST_TIER, clampBuyIn, isStakesTier, TIER_CONFIG, type StakesTier } from "./tiers";
+import { CHEAPEST_TIER, clampBuyIn, TIER_CONFIG, type StakesTier } from "./tiers";
 import { DECK_TEMPLATE, makeDeck } from "./deck";
 import { isSeatRebuyEligible } from "./rebuy";
 import { blindLevelForHand, forfeitTournamentSeat, headsUpBlindLevelForElapsed } from "./tournament";
@@ -125,9 +125,7 @@ function pickBotIdentity(state: GameState, position: number): number {
     const candidate = (offset + step) % botProfiles.length;
     if (!taken.has(candidate)) return candidate;
   }
-  // Unreachable while the pool is larger than SEAT_COUNT, but a table can
-  // never be left without an identity to hand out.
-  return offset % botProfiles.length;
+  throw new Error("Bot identity pool is smaller than the table.");
 }
 
 /**
@@ -624,7 +622,8 @@ export function setupHand(state: GameState, firstHand = false, now: number = Dat
   }
 
   if (!firstHand) {
-    state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0) ?? 0;
+    // At least two funded seats are checked above, so there's always a next one.
+    state.buttonPosition = nextSeat(state, state.buttonPosition, (seat) => seat.stack > 0)!;
     state.handNumber += 1;
   }
   // A Sit & Go escalates on a hand-count schedule; a heads-up match escalates
@@ -2097,103 +2096,16 @@ export function chooseBotAction(
 }
 
 /**
- * Makes aggregates created before turn clocks/time cards forward-compatible.
- * The normalized fields are persisted with the next ordinary state update.
+ * Enforces the seat rules every load relies on and rebuilds a missing turn
+ * clock. Stored rows from before these fields existed were backfilled in
+ * production on 2026-09-10, so this no longer fills in legacy fields.
  */
 export function normalizeGameState(state: GameState): GameState {
-  if (!isStakesTier(state.tier)) {
-    // Games created before stakes tiers existed (stale in-memory dev state,
-    // or Supabase rows persisted before this field was added) have no tier.
-    // Fall back to the cheapest tier rather than letting
-    // TIER_CONFIG[undefined] crash every reader downstream.
-    state.tier = CHEAPEST_TIER;
-  }
-  // Hands dealt before rake existed carry no rake figure; treat them as unraked.
-  if (!Number.isFinite(state.rake)) state.rake = 0;
-  // Every table persisted before Sit & Go existed has no such field at all;
-  // undefined must become null, not stay undefined, since every tournament
-  // branch below tests this with a plain truthiness check.
-  if (state.tournament === undefined) state.tournament = null;
-  // Tables persisted before continuous play carry no next-hand deadline. Null
-  // is the safe reading: the table waits for someone to press Deal, exactly
-  // as it did when that row was written.
-  if (typeof state.nextHandAt !== "string") state.nextHandAt = null;
-  // One pass backfilling every field below: they're independent migrations
-  // with no ordering requirement between them, just each seat visited once
-  // rather than three times.
   state.seats.forEach((seat) => {
-    // Seats persisted before inactivity was tracked have missed nothing
-    // that anyone recorded, so they start from zero rather than from
-    // undefined, which would make every comparison below NaN and release
-    // nobody, silently.
-    if (!Number.isInteger(seat.missedTurns) || seat.missedTurns < 0) seat.missedTurns = 0;
-    // Tables persisted before staggered bot re-entry existed carry no
-    // eligibility timestamp at all. Null reads as "immediately eligible,"
-    // which is exactly how every seat already behaved before this existed.
-    if (typeof seat.reseatEligibleAt !== "string") seat.reseatEligibleAt = null;
-    // Which identity this bot is wearing, for tables persisted before seats
-    // carried one. `position` is the right backfill and not merely a safe
-    // one: it is the identity that seat has been showing all along, so a
-    // table in flight keeps its cast across the deploy instead of renaming
-    // every bot at once under its players.
-    //
-    // Reading a persisted value here rather than recomputing from position
-    // is the whole mechanism. Deriving the face from the chair on every
-    // load instead would mean a rotated bot reverts to the old identity on
-    // the very next snapshot: the rotation would be real in memory and
-    // invisible in production.
-    if (seat.isHuman) {
-      seat.botIdentity = null;
-    } else if (!Number.isInteger(seat.botIdentity)) {
-      seat.botIdentity = seat.position;
-    }
-    // Seats persisted before profile ids existed carry undefined, which
-    // would reach the client as a missing key and read as "no id" anyway,
-    // but only by accident. Null is the same answer said on purpose.
-    //
-    // Forcing non-humans to null is the load-bearing half. Unlike
-    // botIdentity this is never re-derived, so the only way a bot seat
-    // could hold an id is if a release path failed to clear one; pinning it
-    // here means a stale id cannot survive a single round trip through the
-    // store.
-    if (!seat.isHuman || typeof seat.profileId !== "string") {
-      seat.profileId = null;
-    }
-    // Tables dealt before avatars existed have seats with no avatar at all,
-    // which reaches the renderer as undefined and takes the whole page down.
-    // Bots recover their own face from their identity rather than every seat
-    // collapsing to one default, which is most of what makes a table look
-    // occupied.
-    if (!seat.avatarCosmetic) {
-      seat.avatarCosmetic = seat.isHuman
-        ? DEFAULT_AVATAR_COSMETIC
-        : botAvatarFor(seat.botIdentity ?? seat.position);
-    }
-    // Same story for the deck: every table dealt before this milestone has
-    // seats with no card back, and an id of undefined reaches an SVG fill and
-    // draws nothing at all where a hidden card should be.
-    if (!seat.cardBackCosmetic) {
-      seat.cardBackCosmetic = seat.isHuman
-        ? DEFAULT_CARD_BACK
-        : botCardBackFor(seat.botIdentity ?? seat.position);
-    }
-    // Same story again: tables dealt before bot chip designs existed have
-    // bot seats with no chipDesigns at all, which read as the house default
-    // on every denomination -- the exact "all bots look generic" gap this
-    // backfills, same as the two checks above.
-    if (!seat.isHuman && !seat.chipDesigns) {
-      seat.chipDesigns = botChipDesignsFor(seat.botIdentity ?? seat.position);
-    }
-    // Hands in flight before VPIP existed have no opinion either way; treat
-    // as false rather than let `undefined` leak into a stats comparison.
-    seat.vpip = Boolean(seat.vpip);
-    // Covers both a stored NaN and forward compatibility for hands persisted
-    // before betting-reopening tracked the amount each player had already
-    // faced (actedAtBet undefined). A legitimate `null` (no bet faced yet
-    // this street) is left alone by the `!== null` guard.
-    if (seat.actedAtBet !== null && !Number.isFinite(seat.actedAtBet)) {
-      seat.actedAtBet = seat.acted ? seat.streetBet : null;
-    }
+    // Humans never wear a bot identity and bots never carry a profile id, so
+    // a release path that forgot to clear one can't survive a round trip.
+    if (seat.isHuman) seat.botIdentity = null;
+    if (!seat.isHuman || typeof seat.profileId !== "string") seat.profileId = null;
   });
   if (state.currentPlayer === null || state.status !== "playing") {
     state.turnStartedAt = null;

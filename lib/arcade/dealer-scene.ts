@@ -4,7 +4,7 @@ import {
   type BlackjackOutcome,
   type BlackjackPhase,
 } from "./blackjack";
-import { DEALER_DOGS, type DogId } from "./dealer";
+import type { DogId } from "./dealer";
 
 /**
  * The Blackjack room, as a stack of layers.
@@ -178,23 +178,10 @@ const DOG_ART: Partial<Record<`${DogId}-${DealerExpression}`, string>> = {};
  * Two files per expression per dog, kept apart rather than drawn as a pair, so
  * one of them can react while the other holds, and so the taller dog can be
  * moved a few pixels without re-rendering both. Falls back to the dog's
- * portrait, so this is null only for a dog with no art at all.
+ * portrait.
  */
-export function dogArt(dog: DogId, expression: DealerExpression): string | null {
-  return DOG_ART[`${dog}-${expression}`] ?? DOG_PORTRAIT[dog] ?? null;
-}
-
-/**
- * Whether the pair has real artwork, as opposed to the placeholder.
- *
- * The component needs this to decide between an <img> stack and the flat SVG
- * crop, and it is derived from the manifest rather than tracked separately so
- * the two cannot disagree about whether a file exists.
- */
-export function dogArtReady(): boolean {
-  return DEALER_DOGS.every((dog) =>
-    DEALER_EXPRESSIONS.every((expression) => dogArt(dog.id, expression) !== null),
-  );
+export function dogArt(dog: DogId, expression: DealerExpression): string {
+  return DOG_ART[`${dog}-${expression}`] ?? DOG_PORTRAIT[dog];
 }
 
 /* ------------------------------------------------------------------ *

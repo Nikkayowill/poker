@@ -33,15 +33,15 @@
 
 .app-menu-panel {
   position: absolute;
-  top: calc(100% + var(--space-4, 8px));
+  top: calc(100% + var(--space-4));
   right: 0;
-  z-index: var(--z-modal, 60);
+  z-index: var(--z-modal);
   min-width: 208px;
   display: flex;
   flex-direction: column;
-  padding: var(--space-3, 6px);
+  padding: var(--space-3);
   border: 0;
-  border-radius: var(--radius-2xl, 14px);
+  border-radius: var(--radius-2xl);
   background: #16121f;
   /* Carries its own separation now that the outline is gone. */
   box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
@@ -57,11 +57,11 @@
 .app-menu-item {
   display: flex;
   align-items: center;
-  gap: var(--space-5, 10px);
+  gap: var(--space-5);
   width: 100%;
-  padding: var(--space-5, 10px) var(--space-6, 12px);
+  padding: var(--space-5) var(--space-6);
   border: 0;
-  border-radius: var(--radius-md, 7px);
+  border-radius: var(--radius-md);
   background: transparent;
   color: #c6d2cb;
   font-size: 13px;
@@ -98,7 +98,7 @@
 
 .app-menu-separator {
   height: 1px;
-  margin: var(--space-3, 6px) var(--space-2, 4px);
+  margin: var(--space-3) var(--space-2);
   border: 0;
   background: var(--line);
 }
@@ -113,11 +113,11 @@
        menu state changed. Fixed positioning lets the menu escape that
        clipping while retaining the same header-relative placement. */
     position: fixed;
-    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h, 68px)) + var(--space-4, 8px));
+    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h)) + var(--space-4));
     min-width: min(260px, calc(100vw - 24px));
     right: max(0px, calc(0px - var(--safe-right)));
   }
-  .app-menu-item { padding: var(--space-6, 12px); font-size: 14px; }
+  .app-menu-item { padding: var(--space-6); font-size: 14px; }
 }
 
 /* A phone in landscape is short, not narrow -- the max-width breakpoint above
@@ -132,13 +132,13 @@
 @media (max-height: 500px) and (orientation: landscape) {
   .app-menu-panel {
     position: fixed;
-    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h, 42px)) + var(--space-4, 8px));
+    top: calc(var(--safe-top) + var(--menu-header-height, var(--lobby-header-h)) + var(--space-4));
     right: max(0px, calc(0px - var(--safe-right)));
     min-width: min(240px, calc(100vw - 24px));
-    max-height: calc(100dvh - var(--safe-top) - var(--menu-header-height, var(--lobby-header-h, 42px)) - var(--space-4, 8px) - max(var(--safe-bottom), 8px));
+    max-height: calc(100dvh - var(--safe-top) - var(--menu-header-height, var(--lobby-header-h)) - var(--space-4) - max(var(--safe-bottom), 8px));
     overflow-y: auto;
   }
-  .app-menu-item { padding: var(--space-4, 8px) var(--space-6, 12px); font-size: 13px; }
+  .app-menu-item { padding: var(--space-4) var(--space-6); font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -154,7 +154,7 @@
   width: 34px;
   height: 34px;
   border: 0;
-  border-radius: var(--radius-round, 50%);
+  border-radius: var(--radius-round);
   background: rgba(255, 255, 255, .07);
   color: #9c93b1;
 }
@@ -167,8 +167,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-6, 12px);
-  padding: 0 var(--space-12, 24px) var(--space-12, 24px);
+  gap: var(--space-6);
+  padding: 0 var(--space-12) var(--space-12);
   text-align: center;
 }
 
@@ -176,11 +176,11 @@
 
 .room-created-code {
   display: block;
-  padding: var(--space-5, 10px) var(--space-8, 16px);
+  padding: var(--space-5) var(--space-8);
   border: 0;
-  border-radius: var(--radius-2xl, 14px);
+  border-radius: var(--radius-2xl);
   background: linear-gradient(120deg, rgba(155, 63, 240, .22), rgba(255, 210, 63, .18));
-  color: var(--brand-gold-light, #ffe98a);
+  color: var(--brand-gold-light);
   font: 600 30px/1 Georgia, "Times New Roman", serif;
   /* Wide tracking so the code can be read aloud a character at a time. */
   letter-spacing: .22em;
@@ -191,14 +191,14 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--space-4, 8px);
+  gap: var(--space-4);
   width: 100%;
 }
 
 .room-created-actions button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3, 6px);
+  gap: var(--space-3);
   min-height: 44px;
 }
 

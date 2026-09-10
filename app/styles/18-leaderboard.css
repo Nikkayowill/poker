@@ -4,7 +4,6 @@
    table." */
 
 .leaderboard-shell {
-  min-height: 100vh;
   min-height: 100svh;
   max-width: 820px;
   margin: 0 auto;
@@ -212,7 +211,7 @@
   height: 30px;
   border-radius: 50%;
   border: 0;
-  background: color-mix(in srgb, var(--avatar-accent, var(--gold)), transparent 78%);
+  background: color-mix(in srgb, var(--avatar-accent), transparent 78%);
   color: var(--ink);
   font-size: 10px;
   font-weight: 750;

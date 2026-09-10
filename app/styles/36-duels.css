@@ -419,7 +419,7 @@
 }
 
 .duel-result-drew {
-  background: var(--brand-surface-2, var(--brand-surface));
+  background: var(--brand-surface-2);
 }
 
 .duel-result .floor-play {

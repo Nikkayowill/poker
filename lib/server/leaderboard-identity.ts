@@ -1,7 +1,24 @@
 import "server-only";
-import type { AvatarPreset } from "@/lib/profile/types";
+import type { AvatarPreset, PublicProfileSummary } from "@/lib/profile/types";
 import { DEFAULT_AVATAR_COSMETIC } from "@/lib/cosmetics/catalog";
 import { getPublicProfilesByIds } from "./profile-store";
+
+export type PublicIdentity = {
+  displayName: string;
+  initials: string;
+  avatarUrl: string | null;
+  accent: string;
+};
+
+/** Name, initials, avatar and accent for a profile, with the fallbacks used when it did not resolve. */
+export function publicIdentity(profile: PublicProfileSummary | undefined): PublicIdentity {
+  return {
+    displayName: profile?.displayName ?? "Player",
+    initials: profile?.initials ?? "??",
+    avatarUrl: profile?.avatarUrl ?? null,
+    accent: profile?.accent ?? "#e7c66a",
+  };
+}
 
 /** Rank plus public-profile identity, with the fallbacks every leaderboard uses for an unresolved profile. */
 export type RankedIdentity = {
@@ -39,12 +56,9 @@ export async function decorateRankedRows<Row extends { profileId: string }, Extr
     return {
       profileId: row.profileId,
       rank: index + 1,
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
+      ...publicIdentity(profile),
       avatarPreset: profile?.avatarPreset ?? "ace",
       avatarCosmetic: profile?.avatarCosmetic ?? DEFAULT_AVATAR_COSMETIC,
-      accent: profile?.accent ?? "#e7c66a",
       ...extra(row),
     };
   });

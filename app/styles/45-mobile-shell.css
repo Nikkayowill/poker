@@ -195,7 +195,7 @@
   }
 
   .mshell-track-settling {
-    transition: transform var(--duration-slower, .25s) var(--ease-decelerate, cubic-bezier(.2, .8, .3, 1));
+    transition: transform var(--duration-slower) var(--ease-decelerate);
   }
 
   .mshell-pane {
@@ -205,7 +205,6 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -323,7 +322,7 @@
     isolation: isolate;
     overflow: hidden;
     border: 0;
-    border-radius: var(--radius-2xl, 14px);
+    border-radius: var(--radius-2xl);
     padding: 0;
     text-align: left;
     background-color: var(--brand-ink-lift);
@@ -672,11 +671,11 @@
       0 4px 14px rgba(0, 0, 0, .35);
   }
 
-  @supports (backdrop-filter: blur(20px)) {
-    .mshell-nav {
-      backdrop-filter: blur(20px) saturate(1.7);
-      -webkit-backdrop-filter: blur(20px) saturate(1.7);
-    }
+  /* No @supports guard: iOS 16 and 17 only have the prefixed property, so a
+     check on the unprefixed one hid the blur there. */
+  .mshell-nav {
+    backdrop-filter: blur(20px) saturate(1.7);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
   }
 
   .mshell-nav-item {
@@ -698,7 +697,7 @@
     letter-spacing: .01em;
     cursor: pointer;
     touch-action: manipulation;
-    transition: color var(--duration-base, .15s) linear;
+    transition: color var(--duration-base) linear;
   }
 
   /* A soft highlight behind the icon on press, independent of the icon's own

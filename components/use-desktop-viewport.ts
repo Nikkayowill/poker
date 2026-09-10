@@ -11,8 +11,7 @@
  *
  * WHAT USES IT: `lib/scene/seat-art.ts`'s `SEAT_ART_OVERRIDES` /
  * `DESKTOP_SEAT_ART_OVERRIDES` are two separate hand-tuned tables, and
- * `seatArtSlotFor`/`pickSeatArtForSlot` need to be told which one applies --
- * they take an explicit `isDesktop` rather than checking `matchMedia`
+ * `seatArtSlotFor` needs to be told which one applies -- it takes an explicit `isDesktop` rather than checking `matchMedia`
  * themselves for the same reason `/dev/table-layout` needed one: a caller
  * that DOES know which frame it's drawing (this hook, for the live table)
  * should pass that, not have the function re-derive a possibly-wrong answer.
@@ -29,8 +28,7 @@ function clientSnapshot(): boolean {
 
 /** The server has no viewport. Desktop is the honest default for the same
  *  reason `useLandscape` picks landscape: it's what most first paints are,
- *  and the table is held behind `tableRendererSettled` until the real
- *  client measurement lands. */
+ *  and the table only mounts after hydration, so it reads the real value. */
 function serverSnapshot(): boolean {
   return true;
 }

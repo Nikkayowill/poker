@@ -7,7 +7,7 @@
    against, that launches short. So this already reaches the real bottom edge,
    and adding the shortfall to it made the box taller than the screen. On the
    sign-in page, which scrolls, that was immediately visible. */
-.app-root { min-height: 100vh; min-height: 100svh; overflow: hidden; }
+.app-root { min-height: 100svh; overflow: hidden; }
 
 /* Keep the room's paint continuous beneath the transparent lobby chrome. The
    signed-out room uses the same base as its fixed ceiling so the header does

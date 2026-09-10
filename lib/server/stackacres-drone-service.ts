@@ -1,6 +1,6 @@
 import "server-only";
 import { MUSEUM_EXHIBITS, MUSEUM_EXHIBIT_CATALOGUE } from "@/lib/stackacres/museum";
-import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
+import { DRONE_DEPLOY_COST_GOLD, DRONE_FORAGE_COOLDOWN_SECONDS } from "@/lib/stackacres/drone";
 import { STACKACRES_GOLD_CEILING, stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import { readStackAcresMuseum, releaseStackAcresExchange, reserveStackAcresExchange } from "./stackacres-store";
 import {
@@ -84,11 +84,13 @@ export async function listDrones(profileId: string): Promise<StoredDrone[]> {
 export const DRONE_FORAGE_MIN_GOLD = 15;
 export const DRONE_FORAGE_MAX_GOLD = 60;
 
-/** How long a single drone must wait between paid forage claims. Matches
- *  roughly one lap of a district-sized perimeter at `DRONE_SPEED`, so the
- *  cooldown is not the thing throttling a well-piloted patrol -- the ring's
- *  own geometry already is. */
-export const DRONE_FORAGE_COOLDOWN_SECONDS = 20;
+/** Re-exported from lib/stackacres/drone.ts, where it sits beside the rest
+ *  of the flight tuning: the scene has to hold a drone's next drop for the
+ *  same span this refuses a claim inside, or every drop it flies to is a
+ *  refusal waiting to happen. This file stays the authority -- the check
+ *  below runs in a locked transaction; the client copy only decides when to
+ *  bother asking. */
+export { DRONE_FORAGE_COOLDOWN_SECONDS };
 
 export type CollectDroneForageResult =
   | { success: true; reward: number; goldBalance: number | null }

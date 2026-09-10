@@ -20,6 +20,7 @@ import {
 } from "@/lib/stackacres/iso";
 import { worldBoundsRect, worldBoundsScreenRect } from "@/lib/stackacres/bounds";
 import {
+  DRONE_FORAGE_COOLDOWN_MS,
   DRONE_VACUUM_MS,
   DroneState,
   droneHoverOffset,
@@ -1272,15 +1273,25 @@ interface DroneNode {
   phaseSeed: number;
   /** The tile a drop is waiting to be swept from, or null while none is
    *  scheduled. Rolled fresh (`rollDropOffsetTiles` ahead of the drone's
-   *  CURRENT tile) the instant the previous one is collected or this drone
-   *  is first spawned, so there is always exactly one drop ahead of a
-   *  patrolling drone, never zero and never more than one. */
+   *  CURRENT tile) once `nextDropAtMs` has passed, so a patrolling drone has
+   *  at most one drop ahead of it and none at all while it is inside its own
+   *  forage cooldown. */
   dropTile: TileCoord | null;
   /** The drop's own sprite, or null while `dropTile` is null. Destroyed the
    *  instant the vacuum animation finishes, never reused -- a drop is a
    *  one-shot event, not a pooled effect, since it survives no longer than
    *  it takes the drone whose ring it sits on to walk one edge. */
   dropSprite: Phaser.GameObjects.Image | null;
+  /** Scene-clock time before which no new drop may be rolled for this drone.
+   *  The server pays one forage claim per drone per
+   *  `DRONE_FORAGE_COOLDOWN_MS` and refuses the rest; a drop rolled sooner
+   *  than that sends the drone flying to gold that cannot pay, so the claim
+   *  it fires on arrival comes back 409 and the animation has lied. Set to
+   *  one full cooldown ahead every time a drop is vacuumed, and pushed out
+   *  to the end of the UTC day by `holdDroneForage` when the farm has sent
+   *  out all the Gold it can. Zero on a fresh drone: the first drop is
+   *  immediate. */
+  nextDropAtMs: number;
 }
 
 /**
@@ -1479,6 +1490,10 @@ export class StackAcresScene extends Phaser.Scene {
    *  in `create()` (`worldBoundsRect()` does not change at runtime) rather
    *  than per drone, since every drone here shares one ring. */
   private droneGridBounds: GridBounds | null = null;
+  /** Scene-clock time before which NO drone rolls a drop, and the value a
+   *  drone spawned in the meantime starts at. Only ever moved by
+   *  `holdDroneForage`; zero the rest of the time. */
+  private droneForageHeldUntilMs = 0;
   /** Baked once in `create()`; see `bakeDroneTexture`/`bakeForageDropTexture`. */
   private droneTextureKey: string | null = null;
   private forageDropTextureKey: string | null = null;
@@ -2761,6 +2776,32 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
+   * Parks the whole fleet's forage for `durationMs` -- no new drops roll,
+   * for any drone, until it elapses.
+   *
+   * The one caller is a `day-capped` refusal (stackacres-farm.tsx): the farm
+   * has sent out every Gold piece its daily ceiling allows, so every claim
+   * from here to UTC midnight is refused. Without this the drones would keep
+   * dropping forage, keep vacuuming it, and keep firing a request a second
+   * that cannot pay -- a picture of a payout that is not coming, on top of a
+   * standing 409 the player never asked for.
+   *
+   * The drones keep flying. This stops the drops, not the patrol: a fleet
+   * frozen mid-air would read as a bug, where a fleet on a quiet lap reads
+   * as exactly what it is.
+   */
+  holdDroneForage(durationMs: number): void {
+    const until = this.created ? this.time.now + Math.max(0, durationMs) : Math.max(0, durationMs);
+    // Never pulls an existing hold in -- a second refusal landing later must
+    // not shorten the first one's wait.
+    if (until <= this.droneForageHeldUntilMs) return;
+    this.droneForageHeldUntilMs = until;
+    for (const node of this.droneNodes.values()) {
+      node.nextDropAtMs = Math.max(node.nextDropAtMs, until);
+    }
+  }
+
+  /**
    * Reconciles the live irrigation layer against `nodes` -- the server's own
    * `StackAcresView.irrigation`, recomputed by `recalculatePipeConnections`
    * on every action that could move it. Diffs via `diffPipeGrid` rather
@@ -3129,7 +3170,15 @@ export class StackAcresScene extends Phaser.Scene {
     // doc comment for why a fleet must not bob in lockstep.
     let phaseSeed = 0;
     for (let i = 0; i < id.length; i++) phaseSeed = (phaseSeed * 31 + id.charCodeAt(i)) % 6283;
-    return { drone, container, sprite, phaseSeed, dropTile: null, dropSprite: null };
+    return {
+      drone,
+      container,
+      sprite,
+      phaseSeed,
+      dropTile: null,
+      dropSprite: null,
+      nextDropAtMs: this.droneForageHeldUntilMs,
+    };
   }
 
   /** Rolls and places this drone's next drop, `DRONE_DROP_MIN_GAP_TILES` to
@@ -3174,6 +3223,11 @@ export class StackAcresScene extends Phaser.Scene {
     const drop = node.dropSprite;
     node.dropSprite = null;
     node.dropTile = null;
+    // Armed BEFORE the callback, not after: the request this fires is the
+    // one the cooldown is measured from, and the server starts counting the
+    // moment it lands. A slightly early local clock would put the next drop
+    // back inside the refusal window, which is the whole thing this closes.
+    node.nextDropAtMs = this.time.now + DRONE_FORAGE_COOLDOWN_MS;
     this.callbacks.onDroneForageCollected(node.drone.id);
     if (!drop) return;
     this.tweens.killTweensOf(drop);
@@ -6802,10 +6856,12 @@ export class StackAcresScene extends Phaser.Scene {
     const bounds = this.droneGridBounds;
     if (!bounds) return;
     for (const node of this.droneNodes.values()) {
-      // Exactly one drop ahead of a patrolling drone at all times -- rolled
-      // fresh the instant there is none (first spawn, or the previous one
-      // was just vacuumed).
-      if (!node.dropTile && node.drone.state !== DroneState.Locked) {
+      // At most one drop ahead of a patrolling drone, and none at all until
+      // this drone is back off its own forage cooldown -- see
+      // `nextDropAtMs`. A drone with no drop still flies its lap; it just
+      // has nothing to stop for, which is what a recharging magnet looks
+      // like.
+      if (!node.dropTile && node.drone.state !== DroneState.Locked && time >= node.nextDropAtMs) {
         this.scheduleDrop(node);
       }
 

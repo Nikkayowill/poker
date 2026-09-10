@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { MAX_AVATAR_DIMENSION, MAX_AVATAR_PIXELS, readImageDimensions } from "./image";
 
@@ -70,5 +72,32 @@ describe("readImageDimensions", () => {
 
   it("returns null for a truncated or malformed header", () => {
     expect(readImageDimensions(new Uint8Array(4), "image/png")).toBeNull();
+  });
+});
+
+/**
+ * sharp is excluded from every function trace except the avatar route, so the
+ * route gets it back through an outputFileTracingIncludes glob pinned to a
+ * version string. Bump sharp in package.json without bumping the glob and the
+ * pattern matches nothing: the build still succeeds, and the deployed route
+ * throws MODULE_NOT_FOUND the first time somebody uploads an avatar.
+ */
+describe("sharp file-tracing pin", () => {
+  const root = process.cwd();
+  const pinned = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).dependencies.sharp;
+  const config = readFileSync(join(root, "next.config.ts"), "utf8");
+
+  it("pins a plain version, since the glob cannot match a range", () => {
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("tracks the version package.json installs", () => {
+    expect(config).toContain(`node_modules/.pnpm/sharp@${pinned}*/node_modules/`);
+  });
+
+  it("includes the entry point extension, not just .js", () => {
+    for (const ext of ["cjs", "mjs", "node", "so.*"]) {
+      expect(config).toContain(`sharp@${pinned}*/node_modules/**/*.${ext}`);
+    }
   });
 });

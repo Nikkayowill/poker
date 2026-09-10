@@ -39,8 +39,9 @@
  *
  * `place-soil-tile`/`remove-soil-tile` are predicted the same way now that a
  * bed is one tile (./soil.ts's `SOIL_TILE`, one art unit): the outcome is
- * deterministic (bare ground or already-occupied is all there is to check),
- * so a soil-brush drag across N tiles gets the same one-request-per-tile
+ * deterministic (bare ground or already-occupied is all there is to check,
+ * plus whichever crop `soilSlotOnTile` says stands on a removed bed), so a
+ * soil-brush drag across N tiles gets the same one-request-per-tile
  * responsiveness the pipe brush already has, instead of waiting on a round
  * trip before the next tile in the stroke can even be evaluated.
  *
@@ -81,7 +82,7 @@ import {
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
 import type { StackAcresUpkeepState } from "./upkeep";
 import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
-import { createSoilMap, nextFreeSoilSlot, plantSoilTile, type SoilTile } from "./soil";
+import { createSoilMap, nextFreeSoilSlot, plantSoilTile, soilSlotOnTile, type SoilTile } from "./soil";
 import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
@@ -518,7 +519,20 @@ export function predictStackAcresAction(
       if (!existing) return null;
       // No bag comes back -- a placed tile is a spent sink, not a refundable
       // one (see soil.ts's own `SOIL_TILE_PRICE_GOLD` doc comment).
-      return { soilTiles: ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty) };
+      const soilTiles = ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty);
+      // A crop standing on the lifted bed goes with it -- the same
+      // `soilSlotOnTile` question stackacres-service.ts asks server-side
+      // before it deletes the occupant for real. Reads `ctx.soilTiles`
+      // (before the removal), same reason the service resolves occupancy
+      // before its own delete: the crop's slot names this tile by its
+      // position in the CURRENT lattice, which the removal is about to
+      // shrink. No refund of its seed cost either.
+      const soil = createSoilMap(ctx.soilTiles);
+      const occupant = ctx.units.find(
+        (unit) => unit.soilSlot !== null && soilSlotOnTile(soil, unit.soilSlot, body.tx, body.ty),
+      );
+      if (!occupant) return { soilTiles };
+      return { soilTiles, units: withoutStackAcresUnit(ctx.units, occupant.id) };
     }
     case "sow-wheat": {
       if (ctx.wheatPlots.length >= WHEAT_PLOT_CAP) return null;

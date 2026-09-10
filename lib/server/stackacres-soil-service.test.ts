@@ -240,6 +240,42 @@ describe("removeStackAcresSoilTile", () => {
       removeStackAcresSoilTile(token, FAR_AWAY, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
+
+  it("takes the crop standing on the bed with it, no refund of its seed", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
+    const { tx, ty } = cropFieldTile();
+    await placeStackAcresSoilTile(token, { tx, ty }, T0);
+    const crop = STACKACRES_CROPS[0];
+    const sown = await stockStackAcres(token, { stock: crop, tile: { tx, ty } }, T0);
+    const planted = sown.units.find((unit) => unit.stock === crop);
+    expect(planted?.soilSlot).not.toBeNull();
+    const afterSow = await balance(token);
+
+    const view = await removeStackAcresSoilTile(token, { tx, ty }, T0);
+
+    expect(view.soilTiles.some((tile) => tile.tx === tx && tile.ty === ty)).toBe(false);
+    expect(view.units.some((unit) => unit.id === planted?.id)).toBe(false);
+    // No Gold moves either way: the seed was already paid for at Ray's shop,
+    // and lifting the bed refunds nothing back.
+    expect(await balance(token)).toBe(afterSow);
+  });
+
+  it("leaves an unrelated crop alone when a different bed is lifted", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 2 }, T0);
+    const bedA = cropFieldTile(0);
+    const bedB = cropFieldTile(1);
+    await placeStackAcresSoilTile(token, bedA, T0);
+    await placeStackAcresSoilTile(token, bedB, T0);
+    const crop = STACKACRES_CROPS[0];
+    const sown = await stockStackAcres(token, { stock: crop, tile: bedA }, T0);
+    const planted = sown.units.find((unit) => unit.stock === crop);
+
+    const view = await removeStackAcresSoilTile(token, bedB, T0);
+
+    expect(view.units.some((unit) => unit.id === planted?.id)).toBe(true);
+  });
 });
 
 describe("SOIL_TILE lattice bounds check", () => {

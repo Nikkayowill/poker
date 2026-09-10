@@ -755,6 +755,37 @@ export async function retireStackAcresUnit(current: StoredStackAcresUnit): Promi
   return data ? fromRow(data as UnitDbRow) : null;
 }
 
+/**
+ * Deletes a unit row outright -- any status, permanent or not -- version-
+ * guarded. No refund: see `removeStackAcresSoilTile` in
+ * stackacres-service.ts, the only caller. Lifting the bed a crop stands on
+ * takes the crop with it, the same spent-sink rule the bed itself already
+ * follows (see `SOIL_TILE_PRICE_GOLD`'s own doc comment on soil.ts). A lost
+ * race -- the unit already moved on, harvested or cleared or retired out
+ * from under this -- returns null rather than throwing, the same contract
+ * `retireStackAcresUnit`/`clearStackAcresMuck` above already keep.
+ */
+export async function abandonStackAcresUnit(current: StoredStackAcresUnit): Promise<StoredStackAcresUnit | null> {
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const stored = memoryUnits.get(current.id);
+    if (!stored || stored.version !== current.version) return null;
+    memoryUnits.delete(current.id);
+    return clone(stored);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .delete()
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .select(UNIT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not remove that unit: ${error.message}`);
+  return data ? fromRow(data as UnitDbRow) : null;
+}
+
 /** Clears a mucked unit, once the fee is paid -- removes the row, freeing the
  *  capacity it held. There is no "back to empty" to return it to; buying
  *  fresh stock is a new `stock`/`buy-stock` request. */

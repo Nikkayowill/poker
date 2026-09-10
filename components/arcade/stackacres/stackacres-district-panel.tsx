@@ -66,7 +66,7 @@ function stateLine(unit: StackAcresUnitSnapshot, nowMs: number): string {
     case "hungry":
       return "Hungry -- feed to keep it going";
     case "dry":
-      return "Thirsty -- water to keep it growing";
+      return unit.seed ? "Seeds planted -- water to start them growing" : "Thirsty -- water to keep it growing";
     case "mucked":
       return `Weather-worn -- clear for ${(unit.muckFee ?? 0).toLocaleString()} Gold`;
     case "working":

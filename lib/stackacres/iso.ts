@@ -131,6 +131,16 @@ export function isoDepthAt(x: number, y: number, nudge = 0): number {
 }
 
 /**
+ * Depth of a unit's needs-something cue (stackacres-scene.ts `paintUnitCue`).
+ * Every unit's own depth is `isoDepthAt` of its feet, which stays under this
+ * across the whole world (bounds.test.ts holds that), so no plant in front can
+ * hide a cue. It also stays under the harvest bursts, toasts and crit text
+ * (8500 and up), so a new seed's water cue never covers the reward that just
+ * popped over the same bed.
+ */
+export const UNIT_CUE_DEPTH = 8400;
+
+/**
  * A sub-grid's own local point, projected as an offset from its world-space
  * origin -- what a fenced-off interior (a Greenhouse, a building's own floor
  * plan) uses to place a tile matrix authored in small, zero-based LOCAL

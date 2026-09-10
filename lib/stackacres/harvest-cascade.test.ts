@@ -16,6 +16,7 @@ function unit(id: string, stock: StackAcresStock, state: StackAcresUnitState): S
     hungryAt: null,
     thirstyAt: null,
     isWatered: true,
+    seed: false,
     muckFee: null,
     permanent: false,
     housedIn: null,

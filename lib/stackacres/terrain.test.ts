@@ -246,10 +246,17 @@ describe("the paving", () => {
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
 
-  it("paves the main roads", () => {
-    for (const key of ["lane", "yardRoad", "midRoad", "northRoadEast", "northRoadWest", "southRoadEast", "southRoadWest", "eastRoad", "foldRoad", "meadowSpur"]) {
+  it("paves the entrance lane", () => {
+    const at = on("lane");
+    expect(terrainMaterialAt(at.x, at.y)).toBe("cobble");
+  });
+
+  it("leaves every other road bare earth", () => {
+    // Measured on each road's own centreline, so the answer is that road's
+    // surface and not a neighbour's paving reaching over.
+    for (const key of ["yardRoad", "midRoad", "northRoadEast", "northRoadWest", "southRoadEast", "southRoadWest", "eastRoad", "foldRoad", "meadowSpur"]) {
       const at = on(key);
-      expect([key, terrainMaterialAt(at.x, at.y)]).toEqual([key, "cobble"]);
+      expect([key, terrainMaterialAt(at.x, at.y)]).toEqual([key, "dirt"]);
     }
   });
 
@@ -269,17 +276,18 @@ describe("the paving", () => {
   });
 
   it("cuts a paved cell from the grass-cobble pair and a bare one from grass-dirt", () => {
-    const paved = cellAt(on("midRoad").x, on("midRoad").y);
+    const paved = cellAt(on("lane").x, on("lane").y);
     const bare = cellAt(on("spur-henCoop").x, on("spur-henCoop").y);
     expect(pairOf(cellTile(paved.i, paved.j)!.frame)).toBe(PAIR_GRASS_COBBLE);
     expect(pairOf(cellTile(bare.i, bare.j)!.frame)).toBe(PAIR_GRASS_DIRT);
   });
 
-  it("keeps the stone where a bare spur runs into a paved road", () => {
-    // The meadow spur forks off the middle road, so the ground at its root
-    // has paving on one side and bare earth on the other. Stone wins, which
-    // keeps the road's edge a straight line rather than a bite out of it.
-    const root = nearestOnPath(-230, 0, spec("midRoad"));
+  it("keeps the stone where a bare spur runs into the paved lane", () => {
+    // The dock spur forks off the lane, so the ground at its root has paving
+    // on one side and bare earth on the other. Stone wins, which keeps the
+    // lane's edge a straight line rather than a bite out of it.
+    const [start] = spec("dockSpur").points;
+    const root = nearestOnPath(start.x, start.y, spec("lane"));
     expect(terrainMaterialAt(root.point.x, root.point.y)).toBe("cobble");
   });
 });
@@ -288,10 +296,9 @@ describe("the dirt", () => {
   it("takes in exactly the two lattice rows under a grid road", () => {
     // The middle road's body is x -288..-256; the rows either side of its
     // centreline are at -280 and -264, and the next ones out at -296 and
-    // -248 must stay grass. The middle road is paved, so its own two rows
-    // are stone; what this holds is the reach, not the surface.
-    expect(terrainMaterialAt(-280, 40)).toBe("cobble");
-    expect(terrainMaterialAt(-264, 40)).toBe("cobble");
+    // -248 must stay grass. What this holds is the reach, not the surface.
+    expect(terrainMaterialAt(-280, 40)).toBe("dirt");
+    expect(terrainMaterialAt(-264, 40)).toBe("dirt");
     expect(terrainMaterialAt(-296, 40)).toBe("grass");
     expect(terrainMaterialAt(-248, 40)).toBe("grass");
     const mid = FARM_PATHS.find((p) => p.key === "midRoad");

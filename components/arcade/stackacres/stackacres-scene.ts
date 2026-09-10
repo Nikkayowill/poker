@@ -5693,6 +5693,22 @@ export class StackAcresScene extends Phaser.Scene {
           at.x <= ground.x + ground.width + pad &&
           at.y >= ground.y - pad &&
           at.y <= ground.y + ground.height + pad;
+        // The diamond above is sized off the crop's own art, not the bed --
+        // a mature crop's is several times `SOIL_TILE` wide, so it can reach
+        // clean into a neighbouring bed's own square. That's fine when the
+        // neighbour is bare lattice with nothing else to claim the tap, but
+        // wrong when the neighbour is itself an addressable, distinct bed:
+        // a tap that lands there is aimed at THAT square, not the crop
+        // leaning over into it, and needs to reach `onGroundTap`'s seed
+        // offer rather than being swallowed here. Livestock roams off the
+        // lattice (a critter spot, not a fixed tile), so this only tightens
+        // the diamond for anything actually planted on one.
+        if (hit && !isLivestock(node.unit.stock)) {
+          const ownTile = soilTileAt(spot.x, spot.y);
+          const tapTile = soilTileAt(at.x, at.y);
+          const otherTile = tapTile.tx !== ownTile.tx || tapTile.ty !== ownTile.ty;
+          if (otherTile && hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) hit = false;
+        }
       }
       if (!hit) continue;
       const depth = node.container.depth;

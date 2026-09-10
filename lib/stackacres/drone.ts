@@ -218,6 +218,22 @@ export const DRONE_VACUUM_MS = 450;
 /** How long a drained drone sits parked before its battery is full again. */
 export const DRONE_RECHARGE_MS = 8_000;
 
+/**
+ * How long one drone must wait between paid forage claims. The server owns
+ * this -- `collectDroneForage` re-checks it inside its own locked
+ * transaction, and that check is the authority -- but it lives here, beside
+ * the rest of the flight tuning, because the SCENE has to honour it too.
+ *
+ * A drone whose next drop spawns sooner than this flies to gold that cannot
+ * pay: the claim it fires on arrival is refused, the animation lies to the
+ * player, and the farm takes a 409 (plus a reserve/release pair against the
+ * day's allowance) for nothing. Holding the next drop for a full cooldown
+ * before rolling it -- see `stepDrones` -- is what keeps the picture and the
+ * payout the same event.
+ */
+export const DRONE_FORAGE_COOLDOWN_SECONDS = 20;
+export const DRONE_FORAGE_COOLDOWN_MS = DRONE_FORAGE_COOLDOWN_SECONDS * 1000;
+
 /** Flat Gold cost to deploy one drone. Debited before the drone entity
  *  exists -- see `deployStackAcresDrone` in the service file for the
  *  debit-then-create pairing this funds.

@@ -153,6 +153,11 @@ export interface StackAcresWorldApi {
    *  render. Passing the unchanged list twice is a harmless no-op (the
    *  scene's own `setDroneHangar` diffs against what it already has). */
   setDroneHangar: (droneIds: string[]) => void;
+  /** Parks every drone's forage drops for `durationMs` -- they keep flying,
+   *  they just stop finding anything. Called when the server refuses a claim
+   *  with `day-capped`: the farm cannot pay another Gold piece today, so the
+   *  fleet has nothing to fetch until the allowance refills. */
+  holdDroneForage: (durationMs: number) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -624,6 +629,7 @@ export function StackAcresWorld({
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
       setDroneHangar: (droneIds) => sceneRef.current?.setDroneHangar(droneIds),
+      holdDroneForage: (durationMs) => sceneRef.current?.holdDroneForage(durationMs),
     }),
     [],
   );

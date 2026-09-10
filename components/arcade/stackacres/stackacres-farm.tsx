@@ -57,6 +57,7 @@ import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   exchangeState,
+  msUntilNextExchangeDay,
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
@@ -1671,6 +1672,12 @@ export function StackAcresFarm() {
           // in the same toast a good harvest answers in, and let the standing
           // notice by the Harvest key (below) carry the countdown.
           if (data.reason === "day-capped") {
+            // A capped farm refuses every drone claim too, and the drones
+            // ask on their own -- so park the fleet's drops until the day
+            // rolls over rather than let five patrols keep flying to gold
+            // that cannot pay and firing a refused request apiece every few
+            // seconds until midnight.
+            world.current?.holdDroneForage(msUntilNextExchangeDay(new Date()));
             setLastCollect({
               text: data.error ?? "The farm has sent out all the Gold it can today.",
               nonce: Date.now(),

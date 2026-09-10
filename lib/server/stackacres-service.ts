@@ -4632,6 +4632,13 @@ export async function collectStackAcresDroneForage(
           ? "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC."
           : "There is no such drone here.";
     throw new StackAcresRequestError(message, result.reason === "no_such_drone" ? 404 : 409, {
+      // Tagged so the client can park the whole fleet's drops until the day
+      // rolls over (`holdDroneForage`). A capped farm refuses every claim,
+      // and a drone that keeps flying to gold it cannot be paid for asks
+      // again every few seconds for the rest of the day. `cooling_down` is
+      // deliberately left untagged: it is one drone briefly out of step, not
+      // a reason to stop.
+      ...(result.reason === "day-capped" ? { reason: "day-capped" as const } : {}),
       round: await snapshots(profile.id, now),
     });
   }

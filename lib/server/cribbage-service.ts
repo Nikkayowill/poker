@@ -7,6 +7,7 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
+import { publicIdentity } from "./leaderboard-identity";
 import { recordMultiWayResult } from "./leaderboard-store";
 import {
   advanceCribbageTable,
@@ -115,17 +116,7 @@ export interface CribbageOpenTableView {
 async function playerViews(seats: CribbageSeatRow[]): Promise<CribbagePlayerView[]> {
   if (seats.length === 0) return [];
   const profiles = await getPublicProfilesByIds(seats.map((s) => s.playerId));
-  return seats.map((s) => {
-    const profile = profiles.get(s.playerId);
-    return {
-      profileId: s.playerId,
-      seat: s.seat,
-      displayName: profile?.displayName ?? "Player",
-      initials: profile?.initials ?? "??",
-      avatarUrl: profile?.avatarUrl ?? null,
-      accent: profile?.accent ?? "#e7c66a",
-    };
-  });
+  return seats.map((s) => ({ profileId: s.playerId, seat: s.seat, ...publicIdentity(profiles.get(s.playerId)) }));
 }
 
 function seatOf(seats: CribbageSeatRow[], profileId: string): CribbageSeat | null {
@@ -240,7 +231,7 @@ async function dealTableIfReady(
   // triggered the deal has a live session token here, and the
   // Gold-crediting path awardWager takes `token` for is keyed just as well
   // by profile id.
-  await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake).catch(() => null)));
+  await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake)));
 
   return dealt;
 }
@@ -273,7 +264,9 @@ export async function openCribbageTable(
     table = await createCribbageTableRow(profile.id, stake);
     await claimCribbageSeat(table.id, profile.id);
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch(() => null);
+    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
+      console.error("cribbage.open_refund_failed", { profileId: profile.id, stake, error: refundError });
+    });
     // The table row itself may have persisted even though seating the host
     // in it failed right after. A host-less, permanently-empty 'waiting'
     // row would otherwise sit in the open-table list forever, since nobody
@@ -380,7 +373,9 @@ export async function joinCribbageTable(
   try {
     await claimCribbageSeat(tableId, profile.id);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.stake).catch(() => null);
+    await creditGoldByProfile(profile.id, table.stake).catch((refundError) => {
+      console.error("cribbage.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
+    });
     if (error instanceof CribbageTableNotJoinable) throw new CribbageRequestError(error.message, 409);
     throw error;
   }

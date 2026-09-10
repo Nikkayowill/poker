@@ -6,7 +6,6 @@ import {
   claimSeat,
   createGame,
   NEXT_HAND_DELAY_MS,
-  normalizeGameState,
   scheduleNextHand,
   vacateSeat,
 } from "./engine";
@@ -259,19 +258,5 @@ describe("the browser clock between hands", () => {
       NOW,
     );
     expect(plan).toEqual({ kind: "advance-at", delayMs: 1_000, rank: 0 });
-  });
-});
-
-describe("tables persisted before continuous play", () => {
-  it("reads a missing deadline as null rather than dealing immediately", () => {
-    const game = foldToOneWinner(tableWithTwoHumans().game);
-    const legacy: Record<string, unknown> = { ...game };
-    delete legacy.nextHandAt;
-
-    const normalized = normalizeGameState(legacy as unknown as GameState);
-    expect(normalized.nextHandAt).toBeNull();
-    // And with no deadline, the timed advance leaves it exactly as it was.
-    expect(dealNextHandIfDue(normalized, Date.now() + 60_000).dealt).toBe(false);
-    expect(normalized.status).toBe("complete");
   });
 });

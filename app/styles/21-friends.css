@@ -21,10 +21,9 @@
   padding: 12px 19px;
   /* Scrollable, not scrollbar-drawn: this is a felt-dark overlay, and a
      platform scrollbar (light track on Windows/Firefox, or a persistent one
-     under `always show scrollbars`) cuts a bright seam down it. Firefox/IE
-     take the standard property; everything else takes the pseudo-element. */
+     under `always show scrollbars`) cuts a bright seam down it. Firefox
+     takes the standard property; everything else takes the pseudo-element. */
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 .friends-list::-webkit-scrollbar { display: none; }
 

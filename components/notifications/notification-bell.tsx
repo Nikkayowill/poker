@@ -298,6 +298,7 @@ function FriendRequestActions({
   onSettled: (notificationId: string, outcome: RowOutcome) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const id = fromProfileId.toLowerCase();
   const requestId = lookup.openRequests.get(id) ?? null;
 
@@ -305,6 +306,7 @@ function FriendRequestActions({
     if (!requestId || busy) return;
     selectSound();
     setBusy(true);
+    setError(null);
     try {
       const response = await fetch(`/api/friends/requests/${encodeURIComponent(requestId)}`, {
         method: "POST",
@@ -317,6 +319,7 @@ function FriendRequestActions({
       onSettled(notificationId, response.ok ? (action === "accept" ? "accepted" : "declined") : "stale");
     } catch {
       setBusy(false);
+      setError(action === "accept" ? "Could not accept that request." : "Could not decline that request.");
     }
   };
 
@@ -328,25 +331,28 @@ function FriendRequestActions({
   if (!requestId) return null;
 
   return (
-    <div className="notification-row-actions">
-      <button
-        type="button"
-        className="notification-row-accept"
-        disabled={busy}
-        onClick={() => void respond("accept")}
-        aria-label={`Accept ${fromDisplayName}`}
-      >
-        Accept
-      </button>
-      <button
-        type="button"
-        className="notification-row-decline"
-        disabled={busy}
-        onClick={() => void respond("decline")}
-        aria-label={`Decline ${fromDisplayName}`}
-      >
-        Decline
-      </button>
-    </div>
+    <>
+      <div className="notification-row-actions">
+        <button
+          type="button"
+          className="notification-row-accept"
+          disabled={busy}
+          onClick={() => void respond("accept")}
+          aria-label={`Accept ${fromDisplayName}`}
+        >
+          Accept
+        </button>
+        <button
+          type="button"
+          className="notification-row-decline"
+          disabled={busy}
+          onClick={() => void respond("decline")}
+          aria-label={`Decline ${fromDisplayName}`}
+        >
+          Decline
+        </button>
+      </div>
+      {error && <p className="notification-row-status" role="alert">{error}</p>}
+    </>
   );
 }

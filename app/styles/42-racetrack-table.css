@@ -62,9 +62,8 @@
   z-index: 4;
 }
 
-/* There is no portrait composition for this room yet. The client gates the
-   table before mounting it and asks the player to rotate, while the Classic
-   renderer remains available in the codebase for a future mobile decision. */
+/* There is no portrait composition for this room. The client gates the table
+   before mounting it and asks the player to rotate. */
 .orientation-gate-shell {
   display: grid;
   place-items: center;
@@ -107,9 +106,9 @@
   box-shadow: none;
   border: 0;
   border-radius: 0;
-  /* The felt clips the community cards to the cloth in the classic room. Here
-     the cloth is painted by the canvas and this box is the whole stage, so
-     clipping to it would only cut things off at the frame's edge. */
+  /* No clipping: the cloth is painted by the canvas and this box is the
+     whole stage, so clipping to it would only cut things off at the frame's
+     edge. */
   overflow: visible;
   transform: none;
   perspective: none;
@@ -117,16 +116,16 @@
 
 /* The board and the pot, on the cloth where the camera puts them.
    -------------------------------------------------------------------------
-   Both are percentage-positioned against the felt in the classic room, which
-   cannot work here: under perspective the middle of the cloth is not the
-   middle of its screen box. The scene projects both anchors and sets these. */
+   06-table.css positions both as percentages of the felt, which cannot work
+   here: under perspective the middle of the cloth is not the middle of its
+   screen box. The scene projects both anchors and sets these. */
 .scene-room-racetrack .board-stack {
   left: var(--board-x, 50%);
   top: var(--board-y, 48%);
-  /* `.board-stack` inherits `z-index: 7` from the classic ellipse room
-     (06-table.css), tuned for a felt where nothing above `.seat-plate`'s
-     `z-index: 6` exists. On this table `.player-seat` and its children start
-     at `var(--seat-z, 4)` and the dealer sits at 3 -- 7 lets a board wider
+  /* `.board-stack` inherits `z-index: 7` from 06-table.css, tuned for a
+     felt where nothing above `.seat-plate`'s `z-index: 6` exists. On this
+     table `.player-seat` and its children start at `--seat-z` (4 at the far
+     seats) and the dealer sits at 3 -- 7 lets a board wider
      than its own zone paint over either one. Pin it explicitly instead of
      trusting inheritance: above the canvas (0, `.table-scene`'s own base
      rule), below the dealer (3) and every seat (4+), matching the "furthest
@@ -154,7 +153,7 @@
   height: 100%;
 }
 
-/* The board itself: smaller and flat on the cloth, not the classic room's
+/* The board itself: smaller and flat on the cloth, not 06-table.css's
    floating placeholder pill.
    -------------------------------------------------------------------------
    06-table.css's `.community-cards` is a translucent pill sized for a
@@ -307,10 +306,9 @@
 }
 
 /* The dealer button. A real dealer stands at far centre on this table (the
-   rotating character art below); a "D" puck marking whose turn it would be
-   to deal is a fiction the classic ellipse still needs and this room does
-   not, so it never shows here at all -- not just below 900px, where
-   08-seat.css already hides it. */
+   rotating character art below), so a "D" puck marking whose turn it would
+   be to deal adds nothing. It never shows here at all, not just below 900px
+   where 08-seat.css already hides it. */
 .scene-room-racetrack .dealer-puck {
   display: none;
 }
@@ -342,7 +340,7 @@
    anchor -- the mound's own ground level, not its peak.
 
    THE OVERLAP BUG. A flat clearance past that ground level (this used to be
-   a classic-room-style `-6px`) is only enough to clear a one- or two-chip
+   a flat `-6px`) is only enough to clear a one- or two-chip
    pot. `syncPile` stacks a real pot up to nine chips in a column, and past a
    few big blinds the pile's peak rose right through that fixed 6px and the
    label sat on top of the chips it was supposed to be naming. Fixed by
@@ -396,12 +394,11 @@
 
 /* A seat's bet-amount pill, aimed at where its chips actually rest.
    -------------------------------------------------------------------------
-   `.table-bet` (08-seat.css) is built for the classic ellipse: it hangs off
-   the seat's own box and reaches for the pile using `--bet-reach-x/-y`
-   constants tuned against that room's `betSpot()`. This camera's pile lands
-   somewhere else entirely, so those constants would put the label beside an
-   empty patch of felt (or on top of a neighbour's chips) rather than beside
-   this seat's own pile.
+   `.table-bet` (08-seat.css) is the pre-scene fallback: it hangs off the
+   seat's own box and reaches for the pile using `--bet-reach-x/-y`
+   constants. This camera's pile lands somewhere else entirely, so those
+   constants would put the label beside an empty patch of felt (or on top of
+   a neighbour's chips) rather than beside this seat's own pile.
 
    `--bet-dx-px`/`--bet-dy-px` (poker-table.tsx) are the real projected pile
    position, already expressed as a delta from this seat's own crown -- the
@@ -409,10 +406,9 @@
    since its containing block is the seat box's own padding edge. `left: 50%`
    is that box's horizontal centre (the crown), so adding the delta lands
    exactly on the pile; `top: 0` is the box's top edge (the crown itself), so
-   the y delta alone reaches it. The trailing `translate(var(--bet-label-offset-x,
-   26px), 0)` is the same "beside, not on top of, the pile" clearance the
-   classic room uses -- read from 08-seat.css's `.table-bet`, with a literal
-   fallback only in case that rule hasn't loaded.
+   the y delta alone reaches it. The trailing
+   `translate(var(--bet-label-offset-x), 0)` is the same "beside, not on top
+   of, the pile" clearance, read from 08-seat.css's `.table-bet`.
 
    Not `.seat-mine`: that seat is deliberately off the projection (see its own
    block below and in this file's header) and anchored to the stage's bottom
@@ -421,7 +417,7 @@
 .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .table-bet {
   left: calc(50% + var(--bet-dx-px, 0px));
   top: var(--bet-dy-px, 0px);
-  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x, 26px), 0);
+  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x), 0);
 }
 
 /* An opponent's seat.
@@ -476,7 +472,7 @@
 .scene-room-racetrack .player-seat.seat-mine {
   left: 50%;
   top: auto;
-  bottom: max(var(--safe-bottom, 0px), calc(var(--seat-width) * .24));
+  bottom: max(var(--safe-bottom), calc(var(--seat-width) * .24));
   margin-left: calc(var(--seat-width) / -2);
   margin-top: 0;
 }
@@ -509,8 +505,8 @@
    unrelated (content-sized) height. */
 .scene-room-racetrack .player-seat.seat-mine .table-bet {
   left: calc(var(--bet-x-rel-px, 0px) + var(--seat-width) / 2);
-  top: calc(100% + var(--bet-y-rel-px, 0px) + max(var(--safe-bottom, 0px), calc(var(--seat-width) * .24)));
-  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x, 26px), 0);
+  top: calc(100% + var(--bet-y-rel-px, 0px) + max(var(--safe-bottom), calc(var(--seat-width) * .24)));
+  transform: translate(-50%, -50%) translate(var(--bet-label-offset-x), 0);
 }
 
 /* The dealer.
@@ -571,7 +567,7 @@
   position: absolute;
   left: calc(50% + var(--seat-art-dx, 0px));
   top: calc(var(--seat-art-crown-dy, 0px) - 18px);
-  z-index: calc(var(--seat-z, 4) + 2);
+  z-index: calc(var(--seat-z) + 2);
   transform: translateX(-50%);
   color: #ffffff;
   font: 700 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -615,7 +611,7 @@
   position: absolute;
   left: calc(50% + var(--seat-art-dx, 0px));
   top: var(--seat-art-crown-dy, 0px);
-  z-index: var(--seat-z, 4);
+  z-index: var(--seat-z);
   pointer-events: none;
   user-select: none;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .55));
@@ -656,7 +652,7 @@
   position: absolute;
   left: calc(50% + var(--seat-art-dx, 0px));
   top: calc(var(--seat-art-crown-dy, 0px) + var(--seat-art-h, 0px) * .46);
-  z-index: calc(var(--seat-z, 4) - 1);
+  z-index: calc(var(--seat-z) - 1);
   width: calc(var(--seat-art-w, 100px) * 1.9);
   height: calc(var(--seat-art-h, 100px) * 1.35);
   translate: -50% -50%;
@@ -678,7 +674,7 @@
   position: absolute;
   left: calc(50% + var(--seat-art-dx, 0px));
   top: calc(var(--seat-art-crown-dy, 0px) + var(--seat-art-h, 0px) * .48);
-  z-index: calc(var(--seat-z, 4) - 1);
+  z-index: calc(var(--seat-z) - 1);
   width: calc(var(--seat-art-w, 100px) * 1.05);
   height: calc(var(--seat-art-h, 100px) * .82);
   translate: -50% -50%;
@@ -729,11 +725,9 @@
    edge -- fighting the hole cards it was meant to sit beside for the same
    strip of felt.
 
-   Width, not height/orientation, is the right gate here, unlike
-   17-landscape.css's equivalent tier for the classic room: this renderer
-   never mounts in portrait at all (resolveTableRenderer sends that viewport
-   to canvas_2d before RacetrackScene ever draws), so there is no second axis
-   to gate on. 900px is the exact complement of 16-first-person.css's own
+   Width, not height/orientation, is the right gate here: this table never
+   mounts in portrait at all (PokerTable shows a rotate prompt instead), so
+   there is no second axis to gate on. 900px is the exact complement of 16-first-person.css's own
    901px, so the two tiers meet with no gap and no overlap. */
 @media (max-width: 900px) {
   .scene-room-racetrack .player-hud {
@@ -812,8 +806,7 @@
     bottom: 4px;
     margin-left: 0;
     transform: translateX(-50%) translateY(48%);
-    /* Keep the racetrack room consistent with the classic landscape room:
-       the lower half belongs below the phone's bottom edge. */
+    /* The lower half belongs below the phone's bottom edge. */
     clip-path: inset(0 -18px 35% -18px);
     z-index: 20;
   }
@@ -1043,7 +1036,7 @@
      the hands -- so the cards track the art at every seat, scale and camera
      fit rather than at one tuned breakpoint. */
   .scene-room-racetrack .player-seat.seat-racetrack:not(.seat-mine) .seat-cards {
-    z-index: calc(var(--seat-z, 4) - 1);
+    z-index: calc(var(--seat-z) - 1);
     top: calc(var(--seat-art-hands-dy, 0px) - 6px);
     left: calc(50% + var(--seat-art-dx, 0px));
     transform: translate(-50%, -100%);
@@ -1071,7 +1064,7 @@
      the thing this seat is showing off; nothing at this seat should still
      be drawing over it. */
   .scene-room-racetrack .player-seat.seat-racetrack.seat-winner:not(.seat-mine) .seat-cards:has(.playing-card:not(.card-back)) {
-    z-index: calc(var(--seat-z, 4) + 3);
+    z-index: calc(var(--seat-z) + 3);
     scale: 1.6;
     transform-origin: center;
   }

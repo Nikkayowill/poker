@@ -41,58 +41,11 @@ describe("readStoredPreference", () => {
     expect(value).toBe(false);
   });
 
-  it("carries a muted player's choice across a key rename", () => {
-    // The incident this exists for: the StackChips rename moved the key
-    // without the value, and "on unless exactly false" then un-muted everyone
-    // who had muted the app.
-    const storage = fakeStorage({ "river-room:sound-enabled": "false" });
-
-    const value = readStoredPreference(storage, {
-      key: "stackchips:sound-enabled",
-      legacyKey: "river-room:sound-enabled",
-      parse: parseEnabledFlag,
-    });
-
-    expect(value).toBe(false);
-    expect(storage.snapshot()).toEqual({ "stackchips:sound-enabled": "false" });
-  });
-
-  it("migrates once, then never looks at the legacy key again", () => {
-    const storage = fakeStorage({ "river-room:sound-enabled": "false" });
-    const options = {
-      key: "stackchips:sound-enabled",
-      legacyKey: "river-room:sound-enabled",
-      parse: parseEnabledFlag,
-    };
-
-    expect(readStoredPreference(storage, options)).toBe(false);
-    // A legacy key written again by some other tab must not resurrect and
-    // override the value the player has since chosen under the new key.
-    storage.setItem("stackchips:sound-enabled", "true");
-    storage.setItem("river-room:sound-enabled", "false");
-    expect(readStoredPreference(storage, options)).toBe(true);
-  });
-
-  it("prefers the current key when both exist", () => {
-    const storage = fakeStorage({
-      "stackchips:sound-enabled": "true",
-      "river-room:sound-enabled": "false",
-    });
-    expect(
-      readStoredPreference(storage, {
-        key: "stackchips:sound-enabled",
-        legacyKey: "river-room:sound-enabled",
-        parse: parseEnabledFlag,
-      }),
-    ).toBe(true);
-  });
-
-  it("leaves a player with neither key on the default", () => {
+  it("leaves a player with no stored value on the default, without writing", () => {
     const storage = fakeStorage();
     expect(
       readStoredPreference(storage, {
         key: "stackchips:sound-enabled",
-        legacyKey: "river-room:sound-enabled",
         parse: parseEnabledFlag,
       }),
     ).toBe(true);

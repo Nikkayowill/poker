@@ -39,7 +39,7 @@ import {
   type Vec3,
 } from "@/lib/scene/table-anchors";
 import { MAX_PIXEL_RATIO } from "@/lib/scene/scene-config";
-import { DESKTOP_BREAKPOINT_PX, pickSeatArtForSlot, seatArtCharacter, seatArtSlotFor } from "@/lib/scene/seat-art";
+import { DESKTOP_BREAKPOINT_PX, pickSeatArt, seatArtCharacter, seatArtSlotFor } from "@/lib/scene/seat-art";
 
 const MARKER_COLOR = {
   seat: "#6fd6ff",
@@ -446,7 +446,7 @@ export function TableAnchorsDebug({ frame, label, seatArt }: TableAnchorsDebugPr
     const plans = seated.map((person) => {
       if (character && person.slot !== null) {
         const offset = seatAngleDeg(person.slot) - DEALER_ANGLE_DEG;
-        const pick = pickSeatArtForSlot(character, person.slot, offset, isDesktop);
+        const pick = pickSeatArt(character, offset);
         const image = loadSeatArt(pick.src, () => setArtVersion((v) => v + 1));
         if (image) return { person, slot: person.slot, art: { image, pick } };
       }

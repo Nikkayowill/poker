@@ -2,7 +2,6 @@
    is a reference page, not another product surface to make players decode. */
 
 .legal-page {
-  min-height: 100vh;
   min-height: 100svh;
   width: min(820px, 100%);
   margin: 0 auto;

@@ -25,7 +25,7 @@
 .seat-mine.seat-ring {
   margin-top: calc(
     (var(--seat-width) + var(--plate-h)) / -2
-    + var(--seat-out-y, 1) * var(--seat-outset, 12px)
+    + var(--seat-out-y) * var(--seat-outset)
     + 22px
   );
 }
@@ -50,7 +50,7 @@
   .seat-mine.seat-ring {
     margin-top: calc(
       (var(--seat-width) + var(--plate-h)) / -2
-      + var(--seat-out-y, 1) * var(--seat-outset, 14px)
+      + var(--seat-out-y) * var(--seat-outset)
       + 100px
     );
   }

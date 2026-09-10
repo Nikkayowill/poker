@@ -4,14 +4,9 @@ import type { BlackjackOutcome, BlackjackPhase } from "./blackjack";
  * The house dealers.
  *
  * Loki and Finn, two dogs in dress shirts and black bow ties, who deal
- * Blackjack together. This file is everything about them that can be wrong in
- * words or in colour: their names, their breeds, their coats, the house
- * uniform, and what they say. The drawings are
- * components/arcade/dealer-stage.tsx (the layered scene on the felt) and
- * components/arcade/dealer-avatar.tsx (the 34px crop beside the hand), and both
- * read their colours from here rather than typing hex values in twice, since
- * two drawings of the same two dogs that disagree about what colour they are
- * is the exact drift that makes a mascot look like clip art.
+ * Blackjack together. This file is who they are in words: their names, their
+ * breeds, and what they say. The painted art is drawn by
+ * components/arcade/dealer-stage.tsx from the paths in dealer-scene.ts.
  *
  * The house used to be one human croupier called Vera. This file also
  * absorbed lib/arcade/dealer-rig.ts, which held the proportions, seat
@@ -22,8 +17,7 @@ import type { BlackjackOutcome, BlackjackPhase } from "./blackjack";
  * behind as a module nothing imports. Recover it with `git checkout 7d80251
  * -- lib/arcade/dealer-rig.ts lib/arcade/dealer-rig.test.ts
  * components/arcade/dealer-stage.tsx` if a real rigged model is ever sourced.
- * What survived is below: identity, which the flat crop and the 2D scene both
- * still need.
+ * What survived is below: identity, which the 2D scene still needs.
  *
  * The copy never uses a pronoun for the dealer: they/them for a pair needs
  * no establishing, and a croupier does not need one to say "push".
@@ -31,127 +25,25 @@ import type { BlackjackOutcome, BlackjackPhase } from "./blackjack";
 
 export type DogId = "loki" | "finn";
 
-/** A dog's colours. Six fields, because a seventh never survives at 34px. */
-export interface DogCoat {
-  /** The main coat. */
-  base: string;
-  /** The shadowed curls: under the ears, beneath the jaw, over the crown. */
-  saddle: string;
-  /** Muzzle, chest and shirt front: the light markings that give a face a centre. */
-  cream: string;
-  /** Nose leather. */
-  nose: string;
-  /** Iris. */
-  eye: string;
-  /** Tongue, for the open-mouthed line delivery. */
-  tongue: string;
-}
-
-/**
- * The house uniform: an ivory dress shirt, a black waistcoat and a black bow
- * tie. Sampled from the portraits in `public/dealer/`, not chosen, for the same
- * reason the brand palette was pulled off the logo PNG with ImageMagick: a
- * hex typed by eye beside a photograph drifts from it, and this file exists to
- * stop the flat crop and the real art disagreeing.
- *
- * An earlier version had a green croupier's visor and a gold bow tie, and
- * that was wrong: no such visor exists in the art and the tie is black. It
- * went unnoticed because the only drawing reading these values was the
- * placeholder, which stops rendering the moment real art lands, so the
- * drift was invisible on Blackjack and live on every other arcade game, all
- * five of which still draw the flat crop. Two drawings of the same two dogs
- * disagreeing about what they are wearing is the exact failure this file is
- * here to prevent.
- */
-export interface DogUniform {
-  /**
-   * The dress shirt, and the collar the bow tie sits on.
-   *
-   * Not decoration: the tie is near-black and the avatar's disc is dark green,
-   * so without the shirt behind it the one piece of uniform in that drawing is
-   * invisible at any size. The art solves it the same way, which is why this is
-   * a field rather than a shape hard-coded in the component.
-   */
-  shirt: string;
-  /** The waistcoat over that shirt. */
-  waistcoat: string;
-  /** Bow tie. Black, and it needs `shirt` behind it to read at all. */
-  tie: string;
-}
-
 export interface DealerDog {
   id: DogId;
   name: string;
   /** Said once on the page, so the wackiness has an explanation attached. */
   breed: string;
-  coat: DogCoat;
-  uniform: DogUniform;
-  /**
-   * How much the silhouette is broken up by coat, 0 to 1.
-   *
-   * The one proportion worth keeping from the deleted rig, because it is the
-   * only one the flat crop still draws: Loki is the shaggier of the two, with
-   * longer ear feathering, and Finn's curls sit tighter.
-   */
-  fluff: number;
 }
 
-/**
- * Loki: the apricot one, on the left.
- *
- * The coats below are the pair as they actually look, taken from the owner's
- * own reference sheet. An earlier version of this file had Loki as a blue
- * merle with blue eyes and Finn as a tall golden, both wrong, and wrong in a
- * way no test could catch, because a coat colour is only checkable against the
- * animal. Do not retune these by eye against a render; check them against a
- * photograph.
- */
+/** Loki: the apricot one, on the left. */
 const LOKI: DealerDog = {
   id: "loki",
   name: "Loki",
   breed: "Aussiedoodle · mid-size, apricot",
-  coat: {
-    base: "#d99b5c",
-    saddle: "#a96f38",
-    cream: "#f4e0c4",
-    nose: "#241c18",
-    eye: "#4a3225",
-    tongue: "#e0868f",
-  },
-  uniform: {
-    shirt: "#d6bda3",
-    waistcoat: "#1b1611",
-    tie: "#14100c",
-  },
-  fluff: 0.85,
 };
 
-/**
- * Finn: the black one, on the right.
- *
- * `base` is not #000. Finn is a black dog rendered against a dark casino and
- * an almost-black page, and a true black coat has no silhouette at all in
- * that picture: what reads as "black dog" on screen is a very dark warm grey
- * with the curls picked out lighter still.
- */
+/** Finn: the black one, on the right. */
 const FINN: DealerDog = {
   id: "finn",
   name: "Finn",
   breed: "Golden doodle · tall, Golden Retriever.",
-  coat: {
-    base: "#332e30",
-    saddle: "#1c1819",
-    cream: "#efe6dc",
-    nose: "#141112",
-    eye: "#4a3a2c",
-    tongue: "#e0868f",
-  },
-  uniform: {
-    shirt: "#d6bda3",
-    waistcoat: "#1b1611",
-    tie: "#14100c",
-  },
-  fluff: 0.62,
 };
 
 /**

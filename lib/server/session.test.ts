@@ -57,24 +57,25 @@ describe("session persistence preference", () => {
     expect(readSessionToken(valid)).toBe("123e4567-e89b-42d3-a456-426614174000");
   });
 
-  it("uses __Host cookies in production while accepting the migration cookie", () => {
+  it("uses __Host cookies in production and ignores the plain cookie name there", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(sessionCookieName()).toBe("__Host-river_session");
     expect(rememberCookieName()).toBe("__Host-river_remember");
 
-    const legacy = new NextRequest("https://stackchips.test/", {
-      headers: { cookie: "river_session=123e4567-e89b-42d3-a456-426614174000" },
+    const plain = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `river_session=${VALID_UUID}; river_remember=false` },
     });
-    expect(readSessionToken(legacy)).toBe("123e4567-e89b-42d3-a456-426614174000");
+    expect(readSessionToken(plain)).toBeNull();
+    expect(readSessionPersistence(plain)).toBe(true);
 
-    const response = withRequestSessionCookie(
-      legacy,
-      NextResponse.json({ ok: true }),
-      "123e4567-e89b-42d3-a456-426614174000",
-    );
+    const hosted = new NextRequest("https://stackchips.test/", {
+      headers: { cookie: `__Host-river_session=${VALID_UUID}` },
+    });
+    expect(readSessionToken(hosted)).toBe(VALID_UUID);
+
+    const response = withRequestSessionCookie(hosted, NextResponse.json({ ok: true }), VALID_UUID);
     expect(response.cookies.get("__Host-river_session")?.secure).toBe(true);
     expect(response.cookies.get("__Host-river_session")?.path).toBe("/");
-    expect(response.cookies.get("river_session")?.maxAge).toBe(0);
   });
 });
 
@@ -102,12 +103,12 @@ describe("session token signing (SESSION_SECRET)", () => {
     expect(readSessionToken(request)).toBe(VALID_UUID);
   });
 
-  it("still accepts a legacy unsigned cookie once SESSION_SECRET is set, so turning on signing cannot sign out an existing session", () => {
+  it("rejects an unsigned cookie once SESSION_SECRET is set", () => {
     vi.stubEnv("SESSION_SECRET", "test-secret");
-    const legacy = new NextRequest("https://stackchips.test/", {
+    const unsigned = new NextRequest("https://stackchips.test/", {
       headers: { cookie: `river_session=${VALID_UUID}` },
     });
-    expect(readSessionToken(legacy)).toBe(VALID_UUID);
+    expect(readSessionToken(unsigned)).toBeNull();
   });
 
   it("rejects a tampered signature", () => {

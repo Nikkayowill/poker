@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, "games:quick-play", 10, 60 * 1000);
   if (limited) return limited;
   try {
-    const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+    const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: "Enter a name between 1 and 18 characters." }, { status: 400 });
     }
@@ -70,7 +70,10 @@ export async function POST(request: NextRequest) {
         }
         joined = state;
       } catch {
-        profile = await creditGold(token, buyIn).catch(() => profile);
+        profile = await creditGold(token, buyIn).catch((error) => {
+          console.error("games.quick_play_claim_refund_failed", { profileId: profile.id, buyIn, error });
+          return profile;
+        });
         // Someone else claimed the last open seat, or the table filled between
         // our lookup and our claim; loop around and search again.
       }
@@ -83,7 +86,10 @@ export async function POST(request: NextRequest) {
         await createStoredGame(created);
         return created;
       } catch (createError) {
-        profile = await creditGold(token, buyIn).catch(() => profile);
+        profile = await creditGold(token, buyIn).catch((error) => {
+          console.error("games.quick_play_create_refund_failed", { profileId: profile.id, buyIn, error });
+          return profile;
+        });
         throw createError;
       }
     })();

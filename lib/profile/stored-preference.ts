@@ -31,19 +31,11 @@ export function parseEnabledFlag(raw: string | null): boolean {
 }
 
 /**
- * Reads a preference, migrating a superseded key exactly once on the way.
+ * Reads a preference. A missing key gets whatever `parse` makes of `null`.
  *
- * `legacyKey` exists because of a specific bug worth not repeating. The
- * StackChips rename (f7a7cbb) moved `river-room:sound-enabled` to
- * `stackchips:sound-enabled` without carrying the value over. Combined with the
- * default above (on unless exactly "false"), that silently un-muted every
- * player who had muted the app, with nothing on screen to explain it. A rename
- * of a persisted key is a data migration, not a find-and-replace.
- *
- * The migration is write-then-delete under a read of the new key, so it runs at
- * most once per browser: after the first load the new key exists and the legacy
- * branch is never entered again. A player who has neither key is untouched and
- * gets whatever `parse` makes of `null`.
+ * Renaming a persisted key is a data migration, not a find-and-replace. The
+ * StackChips rename (f7a7cbb) once moved the sound key without its value and
+ * un-muted every player who had muted the app.
  *
  * `storage` is nullable so a server render, or a browser refusing storage
  * access, is an ordinary case rather than a thrown exception. Both fall
@@ -51,20 +43,10 @@ export function parseEnabledFlag(raw: string | null): boolean {
  */
 export function readStoredPreference<T>(
   storage: PreferenceStorage | null,
-  options: { key: string; legacyKey?: string; parse: (raw: string | null) => T },
+  options: { key: string; parse: (raw: string | null) => T },
 ): T {
   if (!storage) return options.parse(null);
-
-  let stored = storage.getItem(options.key);
-  if (stored === null && options.legacyKey) {
-    const legacy = storage.getItem(options.legacyKey);
-    if (legacy !== null) {
-      stored = legacy;
-      storage.setItem(options.key, legacy);
-      storage.removeItem(options.legacyKey);
-    }
-  }
-  return options.parse(stored);
+  return options.parse(storage.getItem(options.key));
 }
 
 /** Persists a preference. A storage that is absent or throwing is not an error worth surfacing. */

@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import clsx from "clsx";
 import Image from "next/image";
 import { avatarFace, cosmeticById } from "@/lib/cosmetics/catalog";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { missingArtwork } from "@/components/artwork-cache";
 
 export type AvatarView = Pick<PlayerProfile, "displayName" | "initials" | "avatarUrl" | "avatarPreset" | "accent">
   & { avatarCosmetic: string };
@@ -17,12 +15,8 @@ export function ProfileAvatar({
   profile: AvatarView;
   className?: string;
 }) {
-  const [, forceRerender] = useState(0);
   // The head crop, not the figure: this is always drawn as a small circle.
-  const declared = cosmeticById(profile.avatarCosmetic) ? avatarFace(profile.avatarCosmetic) : null;
-  // Six seats can wear the same avatar, so remember a missing file once
-  // rather than firing a failed request per seat, per render.
-  const artwork = declared && !missingArtwork.has(declared) ? declared : null;
+  const artwork = cosmeticById(profile.avatarCosmetic) ? avatarFace(profile.avatarCosmetic) : null;
   return (
     <span
       className={clsx(
@@ -37,10 +31,9 @@ export function ProfileAvatar({
       role="img"
       aria-label={`${profile.displayName}'s avatar`}
     >
-      {/* An uploaded photo wins outright. Otherwise the monogram is always
-          rendered underneath and the artwork lays over it, so a file that is
-          missing, still loading, or slow never leaves an empty disc where a
-          player should be -- no dependency on an error firing in time. */}
+      {/* An uploaded photo wins outright. Otherwise the monogram sits
+          underneath and the artwork lays over it, so the disc is never empty
+          while the file loads or when there is no cosmetic to draw. */}
       {!profile.avatarUrl && (
         <>
           <span className="avatar-initials">{profile.initials}</span>
@@ -51,10 +44,6 @@ export function ProfileAvatar({
               fill
               sizes="72px"
               className="avatar-art"
-              onError={() => {
-                missingArtwork.add(artwork);
-                forceRerender((n) => n + 1);
-              }}
             />
           )}
         </>

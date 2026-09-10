@@ -55,12 +55,11 @@
   margin: 0 auto;
   overflow: auto;
   overscroll-behavior: contain;
-  border-radius: var(--radius-lg, 9px);
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--brand-ink) 55%, transparent);
   padding: 8px;
-  /* A panned board on a phone: momentum scrolling, and no browser-owned
-     pan/zoom stealing the drag that a long-press cross needs. */
-  -webkit-overflow-scrolling: touch;
+  /* A panned board on a phone: no browser-owned pan/zoom stealing the drag
+     that a long-press cross needs. */
   touch-action: pan-x pan-y;
   /* Room for the sticky gutters to sit against without the first clue kissing
      the frame edge, and a floor so a 5x5 board is not a postage stamp. */
@@ -320,7 +319,7 @@
    that says so without a label. */
 .ng-tools {
   display: inline-flex;
-  border-radius: var(--radius-md, 7px);
+  border-radius: var(--radius-md);
   /* A lift, not a darken: this is a control sitting on the room, where
      .ng-frame below it is a recess cut into it. */
   background: var(--brand-surface);
@@ -334,7 +333,7 @@
   gap: 5px;
   padding: 6px 10px;
   border: 0;
-  border-radius: var(--radius-sm, 5px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
@@ -364,7 +363,7 @@
   gap: 5px;
   padding: 7px 10px;
   border: 0;
-  border-radius: var(--radius-sm, 5px);
+  border-radius: var(--radius-sm);
   background: var(--brand-surface);
   color: var(--text-secondary);
   font-size: 12px;
@@ -395,7 +394,7 @@
   width: min(190px, 60vw);
   aspect-ratio: 1;
   margin: 2px auto 8px;
-  border-radius: var(--radius-sm, 5px);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: color-mix(in srgb, var(--brand-ink) 62%, transparent);
 }
@@ -440,7 +439,7 @@
   width: min(100%, 520px);
   margin: 0 auto;
   padding: 10px 12px;
-  border-radius: var(--radius-md, 7px);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--brand-ink) 45%, transparent);
   cursor: pointer;
 }

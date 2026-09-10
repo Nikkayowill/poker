@@ -275,7 +275,11 @@ export async function startConnectionsPuzzle(
       complete: false,
     });
   } catch (error) {
-    if (wagerInput > 0) await creditGoldByProfile(profile.id, wagerInput).catch(() => null);
+    if (wagerInput > 0) {
+      await creditGoldByProfile(profile.id, wagerInput).catch((refundError) => {
+        console.error("connections.open_refund_failed", { profileId: profile.id, wager: wagerInput, error: refundError });
+      });
+    }
     if (error instanceof DailyPuzzleAlreadyStarted) {
       const live = await getPuzzleRound<StoredConnectionsRound>(profile.id, CONNECTIONS_GAME, targetDay);
       if (live) return { ...view(live, profile, clock, targetDay), resumed: true };
@@ -283,7 +287,7 @@ export async function startConnectionsPuzzle(
     throw error;
   }
 
-  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date()).catch(() => null);
+  if (wagerInput > 0) await awardWager(profile.id, token, wagerInput, new Date());
 
   return { ...view(stored, profile, clock, targetDay), resumed: false };
 }

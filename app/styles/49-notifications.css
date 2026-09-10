@@ -47,7 +47,7 @@
 .notification-bell-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 60);
+  z-index: var(--z-modal);
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
@@ -60,7 +60,7 @@
   max-height: min(420px, calc(100vh - 100px));
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-2xl, 14px);
+  border-radius: var(--radius-2xl);
   background: #16121f;
   box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
   animation: modal-in .18s ease both;
@@ -104,7 +104,7 @@
   align-items: flex-start;
   gap: 10px;
   padding: 9px 8px;
-  border-radius: var(--radius-md, 7px);
+  border-radius: var(--radius-md);
 }
 .notification-row.is-unread { background: rgba(152, 63, 224, .12); }
 .notification-row-icon {
@@ -176,7 +176,7 @@
   position: fixed;
   top: max(10px, calc(var(--safe-top) + 6px));
   right: max(10px, var(--safe-right));
-  z-index: var(--z-modal, 60);
+  z-index: var(--z-modal);
   display: flex;
   flex-direction: column;
   align-items: flex-end;

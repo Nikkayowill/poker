@@ -176,7 +176,6 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    -ms-overflow-style: none;
     scrollbar-width: none;
     max-width: 60vw;
   }
@@ -387,7 +386,6 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    -ms-overflow-style: none;
     scrollbar-width: none;
     max-width: 46vw;
   }

@@ -244,7 +244,6 @@
    * drawing its header underneath the status bar while the lobby did not. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 
   /* The bottom inset is capped, and this is the fix for the long-running
@@ -275,11 +274,8 @@
      reports 0). REVISIT THIS NUMBER if Android edge-to-edge is ever turned
      on -- a 3-button nav bar is 48dp and would need the room.
 
-     A second declaration rather than folded into the one above, so a browser
-     without min() keeps the uncapped value instead of dropping --safe-bottom
-     entirely -- same progressive-enhancement shape as the `100vh` / `100svh`
-     pairs elsewhere. safe-area.spec.ts overrides the property wholesale, so
-     its own 34px case is unaffected either way. */
+     safe-area.spec.ts overrides the property wholesale, so its own 34px case
+     is unaffected. */
   --safe-bottom: min(env(safe-area-inset-bottom, 0px), 34px);
 
   /* How far short of the real screen the INITIAL CONTAINING BLOCK is, written
@@ -455,11 +451,11 @@
  * keyboard paging and programmatic scrollTo all work exactly as before.
  * That is also why this cannot be `overflow: hidden` anywhere.
  *
- * Both properties are needed and neither is redundant: Firefox and IE take
- * the standard `scrollbar-width` / `-ms-overflow-style`, and every WebKit and
- * Chromium browser takes the pseudo-element. `*` rather than a list of
+ * Both rules are needed and neither is redundant: Firefox takes the standard
+ * `scrollbar-width`, and every WebKit and Chromium browser takes the
+ * pseudo-element. `*` rather than a list of
  * containers, because a new scrollable panel must not have to remember. */
-* { scrollbar-width: none; -ms-overflow-style: none; }
+* { scrollbar-width: none; }
 *::-webkit-scrollbar { display: none; }
 
 /* The literal is the Neon Marquee violet-black ground, matching --brand-ink.

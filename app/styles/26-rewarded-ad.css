@@ -68,7 +68,7 @@
 
 .rewarded-ad-countdown {
   margin: 0;
-  color: var(--brand-gold, #ffd23f);
+  color: var(--brand-gold);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;

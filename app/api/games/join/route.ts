@@ -65,7 +65,12 @@ export async function POST(request: NextRequest) {
         await persistSeatClaim(state, state.seats[seatIndex].id);
       }
     } catch (claimError) {
-      if (!alreadySeated) profile = await creditGold(token, buyIn).catch(() => profile);
+      if (!alreadySeated) {
+        profile = await creditGold(token, buyIn).catch((error) => {
+          console.error("games.join_refund_failed", { gameId, profileId: profile.id, buyIn, error });
+          return profile;
+        });
+      }
       throw claimError;
     }
 

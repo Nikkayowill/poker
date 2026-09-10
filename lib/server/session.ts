@@ -46,22 +46,12 @@ function signToken(uuid: string): string {
 
 /**
  * Verifies a raw cookie value and returns the bare UUID identity it names,
- * or null. Accepts three shapes: a correctly-signed token; a bare UUID with
- * no SESSION_SECRET configured (signing is off); and, for as long as any
- * session minted before signing shipped is still alive, a bare UUID with no
- * signature even though a secret is configured now. Rejecting that last
- * shape the moment signing turns on would sign out, and for a guest orphan
- * the Gold balance of, every existing session in one deploy; accepting it
- * costs nothing signing itself was meant to close, since it is exactly
- * today's behavior for that one shape. New cookies are always signed (see
- * withSessionCookie), so this transition window closes itself as old
- * cookies expire or get overwritten, same as the __Host- cookie-name
- * migration above.
+ * or null. With SESSION_SECRET set only a correctly signed token passes.
+ * Without it signing is off and a bare UUID is the whole token.
  */
 function verifyToken(value: string): string | null {
-  if (UUID_PATTERN.test(value)) return value;
   const secret = process.env.SESSION_SECRET;
-  if (!secret) return null;
+  if (!secret) return UUID_PATTERN.test(value) ? value : null;
   const [uuid, signature, ...extra] = value.split(".");
   if (!uuid || !signature || extra.length > 0 || !UUID_PATTERN.test(uuid)) return null;
   return safeTextEqual(signature, sessionSignature(uuid, secret)) ? uuid : null;
@@ -98,14 +88,12 @@ function expireCookie(response: NextResponse, name: string): void {
 export function readSessionTokenFromCookies(
   get: (name: string) => string | undefined,
 ): string | null {
-  const raw = get(HOST_COOKIE_NAME) ?? get(LEGACY_COOKIE_NAME) ?? null;
+  const raw = get(sessionCookieName()) ?? null;
   return raw ? verifyToken(raw) : null;
 }
 
 export function readSessionToken(request: NextRequest): string | null {
-  const raw = request.cookies.get(HOST_COOKIE_NAME)?.value
-    ?? request.cookies.get(LEGACY_COOKIE_NAME)?.value
-    ?? null;
+  const raw = request.cookies.get(sessionCookieName())?.value ?? null;
   // Reject malformed bearer values before they reach a UUID comparison in
   // Postgres. This turns garbage-cookie probes into a cheap local miss rather
   // than a database error and keeps every session consumer on one contract.
@@ -120,9 +108,7 @@ export function readOrCreateSessionToken(request: NextRequest): string {
 }
 
 export function readSessionPersistence(request: NextRequest): boolean {
-  const value = request.cookies.get(HOST_REMEMBER_COOKIE_NAME)?.value
-    ?? request.cookies.get(LEGACY_REMEMBER_COOKIE_NAME)?.value;
-  return value !== "false";
+  return request.cookies.get(rememberCookieName())?.value !== "false";
 }
 
 export function withSessionCookie<T extends NextResponse>(
@@ -135,7 +121,6 @@ export function withSessionCookie<T extends NextResponse>(
   // app (game-store, profile-store, ...) reads/writes that value directly
   // and none of it changes. Only the cookie's stored bytes gain a signature.
   response.cookies.set(sessionCookieName(), signToken(token), cookieOptions(persistent));
-  if (sessionCookieName() !== LEGACY_COOKIE_NAME) expireCookie(response, LEGACY_COOKIE_NAME);
   return response;
 }
 
@@ -152,9 +137,6 @@ export function withSessionPreferenceCookie<T extends NextResponse>(
   persistent: boolean,
 ): T {
   response.cookies.set(rememberCookieName(), String(persistent), cookieOptions(persistent));
-  if (rememberCookieName() !== LEGACY_REMEMBER_COOKIE_NAME) {
-    expireCookie(response, LEGACY_REMEMBER_COOKIE_NAME);
-  }
   return response;
 }
 

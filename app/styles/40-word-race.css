@@ -10,10 +10,8 @@
  * with no borders anywhere a focus outline is the only thing that says where
  * the keyboard is pointed, and this board is nothing but a keyboard.
  *
- * Tokens carry a fallback (var(--text-primary, var(--ink))) on purpose: the
- * text roles are named by the newer chrome sheets but 01-tokens.css still
- * defines the concrete values as --ink / --muted, and a custom property with no
- * fallback resolves to nothing rather than to something sensible.
+ * The text roles (--text-primary, --text-muted) are set on .duel-shell in
+ * 36-duels.css, which wraps every board, so they need no fallback here.
  *
  * Sized for a 390px phone with the on-screen keyboard up: nothing is fixed to
  * the viewport, the tile row wraps rather than overflowing, and the input row
@@ -43,7 +41,7 @@
 
 .wr-round {
   font-size: 15px;
-  color: var(--text-primary, var(--ink));
+  color: var(--text-primary);
 }
 
 .wr-round small,
@@ -51,7 +49,7 @@
   font-size: 10px;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 .wr-score {
@@ -68,7 +66,7 @@
 
 .wr-score em {
   font-style: normal;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 /* ----------------------------------------------------------------- clock */
@@ -93,14 +91,14 @@
    hence the tabular figures above and the fixed min-width on the group. */
 .wr-seconds > span {
   font-size: 22px;
-  color: var(--text-primary, var(--ink));
+  color: var(--text-primary);
 }
 
 .wr-seconds small {
   font-size: 10px;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 .wr-bar {
@@ -153,10 +151,10 @@
   place-items: center;
   width: clamp(30px, 9.5vw, 52px);
   height: clamp(38px, 12vw, 62px);
-  border-radius: var(--radius-card, 8px);
-  background: var(--brand-surface-2, var(--brand-surface));
+  border-radius: var(--radius-card);
+  background: var(--brand-surface-2);
   box-shadow: var(--elevation-1);
-  color: var(--text-primary, var(--ink));
+  color: var(--text-primary);
   font-size: clamp(17px, 5vw, 26px);
   font-weight: 600;
   text-transform: uppercase;
@@ -172,7 +170,7 @@
   margin: 0;
   text-align: center;
   font-size: 13px;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 .wr-hint-length {
@@ -208,9 +206,9 @@
   min-width: 0;
   padding: 12px 14px;
   border: 0;
-  border-radius: var(--radius-control, 8px);
-  background: var(--brand-surface-2, var(--brand-surface));
-  color: var(--text-primary, var(--ink));
+  border-radius: var(--radius-control);
+  background: var(--brand-surface-2);
+  color: var(--text-primary);
   /* 16px or larger, or iOS Safari zooms the whole page on focus -- which on a
      board this wide reads as the layout breaking the moment you start typing. */
   font-size: 16px;
@@ -219,7 +217,7 @@
 }
 
 .wr-input::placeholder {
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
   letter-spacing: normal;
 }
 
@@ -245,7 +243,7 @@
   gap: 4px;
   width: 100%;
   padding: 14px 16px;
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: var(--brand-surface);
   text-align: center;
 }
@@ -254,12 +252,12 @@
   font-size: 24px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-primary, var(--ink));
+  color: var(--text-primary);
 }
 
 .wr-reveal span {
   font-size: 13px;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 /* Who took the round is carried by a tinted fill, never by a border colour --
@@ -291,7 +289,7 @@
 .wr-them {
   margin: 0;
   font-size: 12px;
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
 }
 
 .wr-them-locked {
@@ -312,7 +310,7 @@
   padding: 4px 9px;
   border-radius: 999px;
   background: var(--brand-surface);
-  color: var(--text-muted, var(--muted));
+  color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -339,12 +337,12 @@
   width: 26px;
   height: 4px;
   border-radius: 999px;
-  background: var(--brand-surface-2, var(--brand-surface));
+  background: var(--brand-surface-2);
 }
 
 .wr-pip-you { background: var(--brand-gold); }
 .wr-pip-them { background: var(--brand-red); }
-.wr-pip-push { background: var(--brand-surface-2, var(--brand-surface)); }
+.wr-pip-push { background: var(--brand-surface-2); }
 
 @media (max-width: 640px) {
   .wr-board {

@@ -229,7 +229,12 @@ export async function dealBlackjackRound(
   } catch (error) {
     // The hand never came into existence, so the player must not have paid
     // for it. Same make-them-whole shape as app/api/games/route.ts.
-    if (stake > 0) profile = await creditGold(token, stake).catch(() => profile);
+    if (stake > 0) {
+      profile = await creditGold(token, stake).catch((refundError) => {
+        console.error("blackjack.deal_refund_failed", { profileId: profile.id, stake, error: refundError });
+        return profile;
+      });
+    }
     if (error instanceof ActiveBlackjackRoundExists) {
       // Two deals raced and the other one won. Theirs is the real round.
       const live = await getActiveBlackjackRound(profile.id);
@@ -326,7 +331,12 @@ export async function actOnBlackjackRound(
   const stored = await advanceBlackjackRound(current, next);
   if (!stored) {
     // Rule 2: a lost race did not happen, so it neither pays nor charges.
-    if (doubleCharge > 0) profile = await creditGold(token, doubleCharge).catch(() => profile);
+    if (doubleCharge > 0) {
+      profile = await creditGold(token, doubleCharge).catch((error) => {
+        console.error("blackjack.double_refund_failed", { roundId: current.id, profileId: profile.id, doubleCharge, error });
+        return profile;
+      });
+    }
     const live = await getActiveBlackjackRound(profile.id);
     throw new BlackjackRequestError(
       "That round moved on. Here is where it actually stands.",

@@ -1066,6 +1066,22 @@ export function StackAcresFarm() {
       return next;
     });
   }, []);
+  /**
+   * One tile's outstanding `place-soil-tile` request, keyed by `tx,ty`.
+   *
+   * `onRadialSeed` awaits this before naming the same tile in a `stock`
+   * request -- a fast till-then-plant on one bed used to fire both at once,
+   * and when the plant's read of the soil table landed before the till's
+   * insert did, the server could not find the bed it was told to plant in.
+   * It never refuses over that (a stale tap falls through to the lowest
+   * free slot, deliberately -- see `assignSoilSlot`'s own header), so the
+   * crop grew on a different or absent bed while the till's own, slower
+   * response then overwrote the screen with the truth: the tapped tile's
+   * bed with nothing planted on it, and an orphaned crop with nowhere
+   * pinned. Waiting here makes the plant request always see the till's
+   * outcome, win or lose, before it asks.
+   */
+  const pendingSoilPlacements = useRef(new Map<string, Promise<ContractActionResult>>());
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -2655,7 +2671,14 @@ export function StackAcresFarm() {
       // difference is which control asked for it.
       sowSound();
       tapAnchor.current = at;
-      void act({ action: "stock", stock, ...(tile ? { tx: tile.tx, ty: tile.ty } : {}) });
+      // If this exact bed was just tilled and that request has not answered
+      // yet, wait for it -- see `pendingSoilPlacements`'s own header. Ignored
+      // either way: a refusal there just leaves this tile without a bed,
+      // which `assignSoilSlot` already handles by falling through to the
+      // lowest free slot, same as it always has.
+      const pending = tile ? pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`) : null;
+      const send = () => act({ action: "stock", stock, ...(tile ? { tx: tile.tx, ty: tile.ty } : {}) });
+      void (pending ? pending.catch(() => null).then(send) : send());
     },
     [act, radial, radialSoilTile],
   );
@@ -2675,7 +2698,17 @@ export function StackAcresFarm() {
       setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       // The tier names WHICH bed; the server reads its price from
       // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
-      void act({ action: "place-soil-tile", tx, ty, tier });
+      const key = `${tx},${ty}`;
+      const request = act({ action: "place-soil-tile", tx, ty, tier });
+      // Held only until this exact request settles -- see
+      // `pendingSoilPlacements`'s own header -- so `onRadialSeed` can wait
+      // out a till it just fired before planting the same bed.
+      pendingSoilPlacements.current.set(key, request);
+      void request.finally(() => {
+        if (pendingSoilPlacements.current.get(key) === request) {
+          pendingSoilPlacements.current.delete(key);
+        }
+      });
     },
     [act],
   );

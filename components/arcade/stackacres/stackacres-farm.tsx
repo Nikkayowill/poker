@@ -93,6 +93,7 @@ import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import { unitToolFor, type StackAcresDockSelection } from "@/lib/stackacres/dock";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
@@ -789,10 +790,6 @@ export function StackAcresFarm() {
   const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
-  /** Which of Water/Feed/Harvest is actively being dragged off the dock
-   *  right now, or `null` between drags -- see `toolHint` below and
-   *  stackacres-toolbelt.tsx's own `onDragToolChange`. */
-  const [dragHintTool, setDragHintTool] = useState<"water" | "feed" | "harvest" | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
   const [museumSecrets, setMuseumSecrets] = useState<SecretMuseumRegistry>(() =>
@@ -990,6 +987,15 @@ export function StackAcresFarm() {
   const [radial, setRadial] = useState<{ zone: ZoneId; at: TapPoint; world: WorldPoint } | null>(
     null,
   );
+  /**
+   * The unit a bare tap picked out, and where the finger was. A tap that the
+   * held tool cannot act on used to be a dead no-op (see the scene's own
+   * `dispatchTap`); it selects the unit instead now, and the dock reads this
+   * to draw the three keys that unit can answer to. `at` is kept so pressing
+   * one of those keys can float its refusal back at the same spot the tap
+   * happened rather than at the dock.
+   */
+  const [selectedUnit, setSelectedUnit] = useState<{ id: string; at: TapPoint } | null>(null);
   /**
    * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
    * at the finger the same way the ring is. Its own state rather than a
@@ -1571,6 +1577,23 @@ export function StackAcresFarm() {
           return mergedSoilTiles.find((t) => t.tx === tx && t.ty === ty) ?? null;
         })()
       : null;
+
+  /**
+   * What the dock is drawing keys for. A selected unit outranks a ground
+   * tap: the two handlers each clear the other, so they cannot both be set,
+   * and fixing the order here anyway means a stale one could never outrank a
+   * live one if that ever stopped being true. A unit that has since gone --
+   * collected, retired, sold out from under the selection -- falls back to
+   * the resting dock rather than leaving keys up for a ghost.
+   */
+  const dockSelection = useMemo<StackAcresDockSelection>(() => {
+    if (selectedUnit) {
+      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
+      if (unit) return { kind: "unit", state: unit.state };
+    }
+    if (radial) return { kind: "ground", hasBed: radialSoilTile !== null };
+    return { kind: "none" };
+  }, [liveUnits, radial, radialSoilTile, selectedUnit]);
 
   // Same "push, never rebuild" contract: the scene diffs its own drone set
   // against this list (see StackAcresScene.setDroneHangar), so pushing on
@@ -2233,12 +2256,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const pickTool = useCallback((next: StackAcresTool) => {
-    toolSound();
-    setTool(next);
-    setError(null);
-  }, []);
-
   const travel = useCallback(
     (zone: ZoneId) => {
       travelSound();
@@ -2321,24 +2338,25 @@ export function StackAcresFarm() {
   );
 
   /**
-   * A Water/Feed/Harvest drag off the toolbelt landed on this unit (see
-   * `onToolDrop` below, its only caller since 2026-09-10 -- a bare tap on
-   * a unit's own picture no longer reaches this at all). It pops
-   * immediately -- before anything has been sent, which is the whole
-   * point: the farm answers the drop, and the network answers a moment
-   * later. What happens next is `tapActionFor`'s call, off the same
-   * `unitRowAction` the sidebar's rows read, so the map and the list can
-   * never disagree.
+   * A finger landed on a unit's own picture. It pops immediately -- before
+   * anything has been sent, which is the whole point: the farm answers the
+   * touch, and the network answers a moment later. What happens next is
+   * `tapActionFor`'s call, off the same `unitRowAction` the sidebar's rows
+   * read, so the map and the list can never disagree.
    *
    * A refusal never leaves the browser. There is no room on a canvas for a
    * disabled button with a title attribute explaining itself, so the reason
-   * floats where the drop landed instead.
+   * floats where the finger was instead.
    */
   const onWorldUnitTap = useCallback(
     (unitId: string, at: TapPoint) => {
       setRadial(null);
       const unit = liveUnits.find((candidate) => candidate.id === unitId);
       if (!unit) return;
+      // Stays selected through the action: the dock is showing this unit's
+      // keys, and they should re-light off whatever state the action leaves
+      // it in rather than the row emptying under the thumb.
+      setSelectedUnit({ id: unitId, at });
       world.current?.popUnit(unitId);
       // The sidebar follows the finger rather than gating it: whatever the
       // player is touching is what "here" means now.
@@ -2410,6 +2428,52 @@ export function StackAcresFarm() {
     [act, feed, gold, liveUnits, nowMs, triggerCascade],
   );
 
+  /**
+   * A finger landed on a unit that the held tool cannot act on -- which,
+   * since PR #448 made a unit action need its matching tool, is every bare
+   * tap on an animal or a crop. That used to be a silent no-op: the scene
+   * hit-tested the unit, found the tool did not match and swallowed the tap
+   * whole, so tapping a cow with nothing held did nothing and said nothing.
+   *
+   * It selects instead. The dock then draws the three keys a unit can answer
+   * to with the one it currently affords lit (lib/stackacres/dock.ts), and
+   * pressing that key runs the action through `onWorldUnitTap` above. Tap the
+   * cow, tap Feed. Nothing is sent from here -- selecting is not an action,
+   * and the farm is unchanged until a key is pressed.
+   */
+  const onWorldUnitSelect = useCallback((unitId: string, at: TapPoint) => {
+    panelSound();
+    setRadial(null);
+    setSelectedUnit({ id: unitId, at });
+    world.current?.popUnit(unitId);
+  }, []);
+
+  /**
+   * A dock key was pressed. Declared down here rather than up with the other
+   * callbacks because it reaches `onWorldUnitTap` above, and a dep array
+   * naming that from higher up the body would read it in its temporal dead
+   * zone.
+   *
+   * A key that is lit for the selected unit acts on it there and then, which
+   * is the whole point of a dock that follows the selection: tap the cow,
+   * tap Feed, the cow is fed, rather than arming a tool and going back for a
+   * second tap. The tool is held as well, so a drag across the rest of the
+   * pen carries on from the same press. Every other press just holds the
+   * tool the way it always did, `"inspect"` (the dock's own toggle-off)
+   * included.
+   */
+  const pickTool = useCallback(
+    (next: StackAcresTool) => {
+      toolSound();
+      setError(null);
+      setTool(next);
+      if (next === "inspect" || !selectedUnit) return;
+      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
+      if (unit && unitToolFor(unit.state) === next) onWorldUnitTap(selectedUnit.id, selectedUnit.at);
+    },
+    [liveUnits, onWorldUnitTap, selectedUnit],
+  );
+
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
@@ -2418,6 +2482,7 @@ export function StackAcresFarm() {
     // panel cue rather than one of the action voices.
     panelSound();
     setPlace(zone);
+    setSelectedUnit(null);
     setRadial({ zone, at, world: worldPt });
   }, []);
 
@@ -2866,32 +2931,35 @@ export function StackAcresFarm() {
   );
 
   /**
-   * The toolbelt's own pick-up-and-drop drag (2026-09-10, see
-   * stackacres-toolbelt.tsx's own header) released over this client point
-   * with the Water, Feed or Harvest icon in hand. `world.current`'s own
-   * `unitDropTarget` is the read-only hit-test -- "is there a unit here this
-   * tool can actually touch" -- and a miss (empty ground, the wrong kind of
-   * unit) simply does nothing and reports back `false` so the toolbelt can
-   * spring the icon back to the dock instead of snapping it onto a target
-   * that never landed. A hit is routed straight through `onWorldUnitTap`
-   * rather than duplicated: that function already re-derives the exact
-   * action from the unit's live state via `tapActionFor`, plays the right
-   * sound, calls `act`, and floats a refusal toast for anything the scene
-   * let through on state alone but the player can't actually afford (an
-   * empty barn, say) -- the scene's own eligibility check only ever tests
-   * `unit.state`, not affordability, so this second gate still matters.
-   * Which of the three icons was dropped never changes what fires here:
-   * `onWorldUnitTap` derives collect/feed/water/clear from the unit itself,
-   * `unitDropTarget` is only what stops a Water drop from doing anything to
-   * a hungry hen.
+   * The Water tool's drag (or zero-length tap) gesture reached this unit --
+   * see StackAcresSceneCallbacks.onWaterLayUnit's own header. Routed
+   * straight through `onWorldUnitTap` rather than duplicated: that function
+   * already re-derives the exact action from the unit's live state via
+   * `tapActionFor`, plays the right sound, calls `act`, and floats a
+   * refusal toast for anything the scene let through on state alone but the
+   * player can't actually afford (an empty barn, say) -- the scene's own
+   * eligibility check only ever tests `unit.state`, not affordability, so
+   * this second gate still matters.
    */
-  const onToolDrop = useCallback(
-    (tool: "water" | "feed" | "harvest", clientX: number, clientY: number): boolean => {
-      const target = world.current?.unitDropTarget(tool, clientX, clientY);
-      if (!target) return false;
-      onWorldUnitTap(target.unitId, target.at);
-      return true;
-    },
+  const onWaterLayUnit = useCallback(
+    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
+    [onWorldUnitTap],
+  );
+
+  /** The Water tool's own twin, for the Feed tool. */
+  const onFeedLayUnit = useCallback(
+    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
+    [onWorldUnitTap],
+  );
+
+  /**
+   * The Harvest tool's own twin. `mode` is dropped here on purpose:
+   * `onWorldUnitTap` re-derives the identical collect-or-clear choice from
+   * the unit's own state through `tapActionFor`, so there is nothing left
+   * for `mode` to decide by the time this fires.
+   */
+  const onHarvestLayUnit = useCallback(
+    (unitId: string, _mode: "collect" | "clear", at: TapPoint) => onWorldUnitTap(unitId, at),
     [onWorldUnitTap],
   );
 
@@ -2972,14 +3040,8 @@ export function StackAcresFarm() {
   // a stat bump on it, not a second tool. Only say so once there is
   // something to explain: the Trowel already looks like the drawn scythe, so
   // its hint stays exactly what it always was.
-  // Water/Feed/Harvest have no persisted `tool` state any more -- the drag
-  // itself is the whole gesture (see stackacres-toolbelt.tsx's own header) --
-  // so `dragHintTool`, set for exactly as long as one of those three is
-  // actually being dragged, stands in for `tool` here instead. Checked
-  // first: a drag in flight always wins over whatever `tool` last held.
-  const toolHint = dragHintTool
-    ? STACKACRES_TOOL_DEFS[dragHintTool].hint
-    : tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
+  const toolHint =
+    tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
       ? `${STACKACRES_TOOL_DEFS.scythe.hint} That's your ${stackacresToolTierDef(toolTier).label} doing the cutting -- still the scythe, just upgraded.`
       : STACKACRES_TOOL_DEFS[tool].hint;
 
@@ -3344,6 +3406,8 @@ export function StackAcresFarm() {
               secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
+              onUnitTap={onWorldUnitTap}
+              onUnitSelect={onWorldUnitSelect}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
               onGreenhouseTap={onWorldGreenhouseTap}
@@ -3356,6 +3420,9 @@ export function StackAcresFarm() {
               onFenceSegmentTap={onWorldFenceSegmentTap}
               onPipeLayTile={onPipeLayTile}
               onSoilLayTile={onSoilLayTile}
+              onWaterLayUnit={onWaterLayUnit}
+              onFeedLayUnit={onFeedLayUnit}
+              onHarvestLayUnit={onHarvestLayUnit}
               onDropRejected={onDropRejected}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
@@ -3410,8 +3477,9 @@ export function StackAcresFarm() {
             <StackAcresToolbelt
               tool={tool}
               onPick={pickTool}
-              onToolDrop={onToolDrop}
-              onDragToolChange={setDragHintTool}
+              selection={dockSelection}
+              onOpenShop={() => { panelSound(); setShowStore(true); }}
+              carrying={carrying}
             />
           </div>
 

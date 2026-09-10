@@ -51,6 +51,13 @@ export interface StackAcresFriendshipDialogueProps {
   busy: boolean;
   onGift: (item: MachineItemId) => void;
   onClose: () => void;
+  /**
+   * Opens the supply store or Ray's Mythic Blueprints. Only passed for
+   * `npc === "ray"`. With the places list gone, tapping Ray is the way to
+   * reach both, so his greeting grew two buttons instead of being replaced.
+   */
+  onOpenShop?: () => void;
+  onOpenBlueprints?: () => void;
 }
 
 function friendshipProgressLine(friendship: StackAcresFriendshipView, npcLabel: string): string {
@@ -71,6 +78,8 @@ export function StackAcresFriendshipDialogue({
   busy,
   onGift,
   onClose,
+  onOpenShop,
+  onOpenBlueprints,
 }: StackAcresFriendshipDialogueProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
 
@@ -96,6 +105,20 @@ export function StackAcresFriendshipDialogue({
         <button type="button" className="sa-gift-dialogue-close" aria-label="Close" onClick={onClose}>
           ×
         </button>
+        {(onOpenShop || onOpenBlueprints) && (
+          <div className="sa-gift-dialogue-errands">
+            {onOpenShop && (
+              <button type="button" className="sa-gift-dialogue-errand" onClick={onOpenShop}>
+                Shop
+              </button>
+            )}
+            {onOpenBlueprints && (
+              <button type="button" className="sa-gift-dialogue-errand" onClick={onOpenBlueprints}>
+                Blueprints
+              </button>
+            )}
+          </div>
+        )}
         {result.phase === "greeting" ? (
           <>
             <p className="sa-gift-dialogue-line">{result.line}</p>

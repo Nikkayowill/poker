@@ -324,9 +324,9 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * import back the other way would be a cycle.
  *
  * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
- * `onWorldRayTap`) -- a DIFFERENT surface from tapping the barn just west of
- * him (`barnHitAt`, Ray's Museum) and from the signpost's "Buy from Ray"
- * (the supply store, opened by a UI button, never a map tap). His box does
+ * `onWorldRayTap`), which also carries his Shop and Blueprints buttons. That
+ * is a different surface from the barn just west of him (`barnHitAt`, Ray's
+ * Museum). His box does
  * not overlap the barn's (barn spans x 71..145; this spans roughly
  * x 165..191), so the two never compete for one tap.
  */
@@ -341,6 +341,70 @@ export function grandfatherRayHitAt(x: number, y: number): boolean {
     y >= GRANDFATHER_RAY_FOOTPRINT.y &&
     y <= GRANDFATHER_RAY_FOOTPRINT.y + GRANDFATHER_RAY_FOOTPRINT.height
   );
+}
+
+/**
+ * The signpost's footprint: the box `PROP_SIZE.signpost` gives (18 wide,
+ * 26 tall) at props.ts's `yardPoint(130, 84)`, restated here for the same
+ * import-cycle reason as Ray's box. The signpost used to be scenery. Now it
+ * is the Town Board's entryway, a fixed spot you walk up to instead of a
+ * floating button.
+ */
+const SIGNPOST_FOOTPRINT: WorldRect = yardRect(130 - 18 / 2, 84 - 26, 18, 26);
+
+/** Whether a tapped ground point lands on the signpost, the Town Board's
+ *  entryway. */
+export function signpostHitAt(x: number, y: number): boolean {
+  return (
+    x >= SIGNPOST_FOOTPRINT.x &&
+    x <= SIGNPOST_FOOTPRINT.x + SIGNPOST_FOOTPRINT.width &&
+    y >= SIGNPOST_FOOTPRINT.y &&
+    y <= SIGNPOST_FOOTPRINT.y + SIGNPOST_FOOTPRINT.height
+  );
+}
+
+/**
+ * The windmill's footprint: the box `PROP_SIZE.windmill` gives (30 wide,
+ * 70 tall) at props.ts's `yardPoint(330, 28)`, restated for the same
+ * import-cycle reason. In fiction it is the Mill the Workshop runs, so it
+ * doubles as the Workshop's entryway instead of a new building.
+ */
+const WINDMILL_FOOTPRINT: WorldRect = yardRect(330 - 30 / 2, 28 - 70, 30, 70);
+
+/** Whether a tapped ground point lands on the windmill, the Workshop's
+ *  entryway. */
+export function windmillHitAt(x: number, y: number): boolean {
+  return (
+    x >= WINDMILL_FOOTPRINT.x &&
+    x <= WINDMILL_FOOTPRINT.x + WINDMILL_FOOTPRINT.width &&
+    y >= WINDMILL_FOOTPRINT.y &&
+    y <= WINDMILL_FOOTPRINT.y + WINDMILL_FOOTPRINT.height
+  );
+}
+
+/**
+ * The yard's own well by the barn, where the watering can gets filled. The
+ * box `PROP_SIZE.well` gives (28 by 32) at props.ts's `yardPoint(238, 30)`,
+ * restated here for the same import-cycle reason as Ray's box above. Every
+ * farm has this well from the start, so nobody needs to dig one to water.
+ */
+const YARD_WELL_FOOTPRINT: WorldRect = yardRect(238 - 28 / 2, 30 - 32, 28, 32);
+
+/** Whether a tapped ground point lands on the yard's well. */
+export function yardWellHitAt(x: number, y: number): boolean {
+  return (
+    x >= YARD_WELL_FOOTPRINT.x &&
+    x <= YARD_WELL_FOOTPRINT.x + YARD_WELL_FOOTPRINT.width &&
+    y >= YARD_WELL_FOOTPRINT.y &&
+    y <= YARD_WELL_FOOTPRINT.y + YARD_WELL_FOOTPRINT.height
+  );
+}
+
+/** Where a pen's feed goes: the middle of its walkable ground. The scene
+ *  draws the trough here and the feed drag drops onto it. */
+export function penFeedSpot(zone: ZoneId): WorldPoint {
+  const r = growAreaInterior(zone);
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 }
 
 /** Where a district's units stand: the fenced boundary the scene draws once

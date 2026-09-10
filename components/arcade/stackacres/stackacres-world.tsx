@@ -158,6 +158,9 @@ export interface StackAcresWorldApi {
    *  with `day-capped`: the farm cannot pay another Gold piece today, so the
    *  fleet has nothing to fetch until the allowance refills. */
   holdDroneForage: (durationMs: number) => void;
+  /** A world point as pixels inside the field, for pointing a drag tool at a
+   *  fixed spot. Null until the scene has booted. */
+  fieldPointFor: (x: number, y: number) => TapPoint | null;
 }
 
 export interface StackAcresWorldProps {
@@ -180,6 +183,13 @@ export interface StackAcresWorldProps {
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
+  /** A finger landed on the signpost, the Town Board's entryway now that
+   *  the places list is gone. */
+  onSignpostTap: () => void;
+  /** A finger landed on the windmill, the Workshop's entryway. */
+  onWorkshopTap: () => void;
+  /** A finger landed on the yard's well. Fills the watering can. */
+  onWellTap: (at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
    *  the shell's cue to decide whether to open a build panel or call
    *  `enterGreenhouse` (see the api handle above). */
@@ -219,14 +229,6 @@ export interface StackAcresWorldProps {
    *  StackAcresSceneCallbacks.onSoilLayTile's own doc for the full contract.
    *  Bypasses `onGroundTap`'s ring menu entirely while the soil tool is held. */
   onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
-  /** The Water tool's drag (or tap) gesture reached this unit -- see
-   *  StackAcresSceneCallbacks.onWaterLayUnit's own doc for the full contract. */
-  onWaterLayUnit: (unitId: string, at: TapPoint) => void;
-  /** The Water tool's own twin, for the Feed tool. */
-  onFeedLayUnit: (unitId: string, at: TapPoint) => void;
-  /** The Harvest tool's own twin -- dual-mode, see
-   *  StackAcresSceneCallbacks.onHarvestLayUnit's own doc. */
-  onHarvestLayUnit: (unitId: string, mode: "collect" | "clear", at: TapPoint) => void;
   /** A pipe/well press or drag was refused for landing inside a pen -- see
    *  StackAcresSceneCallbacks.onDropRejected's own doc. Optional the same
    *  way `onFenceSegmentTap` is: a caller that never wires it just never
@@ -336,6 +338,9 @@ export function StackAcresWorld({
   onUnitSelect,
   onGroundTap,
   onBarnTap,
+  onSignpostTap,
+  onWorkshopTap,
+  onWellTap,
   onGreenhouseTap,
   onGreenhouseSlotTap,
   onMerchantTap,
@@ -346,9 +351,6 @@ export function StackAcresWorld({
   onFenceSegmentTap,
   onPipeLayTile,
   onSoilLayTile,
-  onWaterLayUnit,
-  onFeedLayUnit,
-  onHarvestLayUnit,
   onDropRejected,
   onLivestockDamaged,
   sectors,
@@ -372,6 +374,9 @@ export function StackAcresWorld({
   const unitSelectRef = useRef(onUnitSelect);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
+  const signpostTapRef = useRef(onSignpostTap);
+  const workshopTapRef = useRef(onWorkshopTap);
+  const wellTapRef = useRef(onWellTap);
   const greenhouseTapRef = useRef(onGreenhouseTap);
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
@@ -382,9 +387,6 @@ export function StackAcresWorld({
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const pipeLayTileRef = useRef(onPipeLayTile);
   const soilLayTileRef = useRef(onSoilLayTile);
-  const waterLayUnitRef = useRef(onWaterLayUnit);
-  const feedLayUnitRef = useRef(onFeedLayUnit);
-  const harvestLayUnitRef = useRef(onHarvestLayUnit);
   const dropRejectedRef = useRef(onDropRejected);
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
@@ -414,6 +416,9 @@ export function StackAcresWorld({
     unitSelectRef.current = onUnitSelect;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
+    signpostTapRef.current = onSignpostTap;
+    workshopTapRef.current = onWorkshopTap;
+    wellTapRef.current = onWellTap;
     greenhouseTapRef.current = onGreenhouseTap;
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
@@ -424,9 +429,6 @@ export function StackAcresWorld({
     fenceSegmentTapRef.current = onFenceSegmentTap;
     pipeLayTileRef.current = onPipeLayTile;
     soilLayTileRef.current = onSoilLayTile;
-    waterLayUnitRef.current = onWaterLayUnit;
-    feedLayUnitRef.current = onFeedLayUnit;
-    harvestLayUnitRef.current = onHarvestLayUnit;
     dropRejectedRef.current = onDropRejected;
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
@@ -481,6 +483,9 @@ export function StackAcresWorld({
           onUnitSelect: (unitId, at) => unitSelectRef.current(unitId, at),
           onGroundTap: (zone, at, world) => groundTapRef.current(zone, at, world),
           onBarnTap: () => barnTapRef.current(),
+          onSignpostTap: () => signpostTapRef.current(),
+          onWorkshopTap: () => workshopTapRef.current(),
+          onWellTap: (at) => wellTapRef.current(at),
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),
@@ -491,9 +496,6 @@ export function StackAcresWorld({
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onPipeLayTile: (tx, ty, mode) => pipeLayTileRef.current(tx, ty, mode),
           onSoilLayTile: (tx, ty, mode) => soilLayTileRef.current(tx, ty, mode),
-          onWaterLayUnit: (unitId, at) => waterLayUnitRef.current(unitId, at),
-          onFeedLayUnit: (unitId, at) => feedLayUnitRef.current(unitId, at),
-          onHarvestLayUnit: (unitId, mode, at) => harvestLayUnitRef.current(unitId, mode, at),
           onDropRejected: (message, at) => dropRejectedRef.current?.(message, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
@@ -638,6 +640,7 @@ export function StackAcresWorld({
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
       setDroneHangar: (droneIds) => sceneRef.current?.setDroneHangar(droneIds),
       holdDroneForage: (durationMs) => sceneRef.current?.holdDroneForage(durationMs),
+      fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
     }),
     [],
   );

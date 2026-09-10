@@ -6,7 +6,7 @@ import {
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   STACKACRES_STOCK,
 } from "@/lib/stackacres/catalogue";
-import { ZONE_IDS } from "@/lib/stackacres/zones";
+import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
@@ -30,6 +30,7 @@ import {
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
   feedStackAcres,
+  feedStackAcresPen,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
@@ -40,6 +41,7 @@ import {
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   waterStackAcres,
+  drawStackAcresWater,
   sowStackAcresWheat,
   placeStackAcresMachine,
   workStackAcres,
@@ -213,7 +215,14 @@ const bodySchema = z.discriminatedUnion("action", [
     unitIds: z.array(unitIdSchema).min(1).max(64).optional(),
   }),
   z.object({ action: z.literal("feed"), unitId: unitIdSchema }),
+  // A pen, not a unit: the server picks which animals in it are hungry.
+  z.object({
+    action: z.literal("feed-pen"),
+    zone: z.enum(PEN_ZONE_IDS as unknown as [ZoneId, ...ZoneId[]]),
+  }),
   z.object({ action: z.literal("water"), unitId: unitIdSchema }),
+  // Fills the watering can. Moves no Gold.
+  z.object({ action: z.literal("draw-water") }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -483,8 +492,12 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return harvestStackAcres(token, { unitIds: action.unitIds }, now);
     case "feed":
       return feedStackAcres(token, action.unitId, now);
+    case "feed-pen":
+      return feedStackAcresPen(token, action.zone, now);
     case "water":
       return waterStackAcres(token, action.unitId, now);
+    case "draw-water":
+      return drawStackAcresWater(token, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

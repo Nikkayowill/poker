@@ -93,11 +93,11 @@ import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
-import { unitToolFor, type StackAcresDockSelection } from "@/lib/stackacres/dock";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
   CROP_FIELD_BEDS,
+  penFeedSpot,
   stockZone,
   type WorldPoint,
 } from "@/lib/stackacres/world";
@@ -120,7 +120,6 @@ import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/ma
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
 import type { VatContainer } from "@/lib/stackacres/aging";
 import type { RecipeId } from "@/lib/stackacres/recipes";
-import { workshopAttention } from "@/lib/stackacres/workshop";
 import {
   RELIC_CATALOGUE,
   devotionView,
@@ -201,7 +200,6 @@ import {
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
-import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresSeedStrip } from "./stackacres-seed-strip";
 import { StackAcresPipeAim } from "./stackacres-pipe-aim";
@@ -215,7 +213,10 @@ import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresVisitorGreeting } from "./stackacres-visitor-greeting";
 import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
 import type { PropKind } from "@/lib/stackacres/props";
-import { StackAcresToolbelt } from "./stackacres-toolbelt";
+import { StackAcresGroundTools } from "./stackacres-ground-tools";
+import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
+import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
+import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
 import {
@@ -314,11 +315,20 @@ interface FarmProcessing {
   wheatPlots: StackAcresWheatPlotSnapshot[];
 }
 
+/** A drag tool on offer: what a good drop does, where the tool floats and
+ *  where it has to land. `key` remounts the overlay for each new offer. */
+type DragOffer =
+  | { key: string; kind: "water"; unitId: string; iconAt: TapPoint; targetAt: TapPoint }
+  | { key: string; kind: "feed-pen"; zone: ZoneId; iconAt: TapPoint; targetAt: TapPoint }
+  | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
+
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
   /** Null for a cookie-less first visit: the read route never mints a session. */
   profile: PlayerProfile | null;
   feed: number;
+  /** Water in the can. Absent from a response older than the can. */
+  water?: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   exchange: StackAcresExchangeState;
   museum: MuseumRegistry;
@@ -597,6 +607,12 @@ export function StackAcresFarm() {
   const [units, setUnits] = useState<StackAcresUnitSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
+  const [water, setWater] = useState(WATER_CAPACITY);
+  /** The drag tool floating on the map right now, if any: the watering can
+   *  over a dry crop, or the feed scoop over a hungry pen. */
+  const [dragOffer, setDragOffer] = useState<DragOffer | null>(null);
+  /** The map's own box, so a drag tool can be kept inside it. */
+  const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
   const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
   // The Synergy Tree. Seeded to "nothing unlocked, nothing active, speed 1"
@@ -988,15 +1004,6 @@ export function StackAcresFarm() {
     null,
   );
   /**
-   * The unit a bare tap picked out, and where the finger was. A tap that the
-   * held tool cannot act on used to be a dead no-op (see the scene's own
-   * `dispatchTap`); it selects the unit instead now, and the dock reads this
-   * to draw the three keys that unit can answer to. `at` is kept so pressing
-   * one of those keys can float its refusal back at the same spot the tap
-   * happened rather than at the dock.
-   */
-  const [selectedUnit, setSelectedUnit] = useState<{ id: string; at: TapPoint } | null>(null);
-  /**
    * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
    * at the finger the same way the ring is. Its own state rather than a
    * mode of `radial`: it opens AFTER the ring has closed (a "Lay Pipe" that
@@ -1183,6 +1190,7 @@ export function StackAcresFarm() {
     if (data.profile) setProfile(data.profile);
     if (data.units) setUnits(data.units);
     if (typeof data.feed === "number") setFeed(data.feed);
+    if (typeof data.water === "number") setWater(data.water);
     if (data.capacity) setCapacity(data.capacity);
     if (data.exchange) setExchange(data.exchange);
     if (data.museum) setMuseum(data.museum);
@@ -1279,6 +1287,7 @@ export function StackAcresFarm() {
       unlimitedGold: profile?.unlimitedGold ?? false,
       units,
       feed,
+      water,
       capacity,
       seedStock,
       toolTier,
@@ -1307,6 +1316,7 @@ export function StackAcresFarm() {
       profile,
       units,
       feed,
+      water,
       capacity,
       seedStock,
       toolTier,
@@ -1340,6 +1350,7 @@ export function StackAcresFarm() {
       units,
       profile,
       feed,
+      water,
       capacity,
       // seedStock IS guessed at by the "stock" predictor above, so a
       // refused or dropped planting has to be able to put the spent seed
@@ -1370,6 +1381,7 @@ export function StackAcresFarm() {
       units,
       profile,
       feed,
+      water,
       capacity,
       seedStock,
       exchange,
@@ -1397,6 +1409,7 @@ export function StackAcresFarm() {
     setUnits(snap.units);
     setProfile(snap.profile);
     setFeed(snap.feed);
+    setWater(snap.water);
     setCapacity(snap.capacity);
     setSeedStock(snap.seedStock);
     setExchange(snap.exchange);
@@ -1577,23 +1590,6 @@ export function StackAcresFarm() {
           return mergedSoilTiles.find((t) => t.tx === tx && t.ty === ty) ?? null;
         })()
       : null;
-
-  /**
-   * What the dock is drawing keys for. A selected unit outranks a ground
-   * tap: the two handlers each clear the other, so they cannot both be set,
-   * and fixing the order here anyway means a stale one could never outrank a
-   * live one if that ever stopped being true. A unit that has since gone --
-   * collected, retired, sold out from under the selection -- falls back to
-   * the resting dock rather than leaving keys up for a ghost.
-   */
-  const dockSelection = useMemo<StackAcresDockSelection>(() => {
-    if (selectedUnit) {
-      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
-      if (unit) return { kind: "unit", state: unit.state };
-    }
-    if (radial) return { kind: "ground", hasBed: radialSoilTile !== null };
-    return { kind: "none" };
-  }, [liveUnits, radial, radialSoilTile, selectedUnit]);
 
   // Same "push, never rebuild" contract: the scene diffs its own drone set
   // against this list (see StackAcresScene.setDroneHangar), so pushing on
@@ -2175,16 +2171,24 @@ export function StackAcresFarm() {
   const onFeed = useCallback(
     (unit: StackAcresUnitSnapshot) => {
       feedSound(unit.stock);
-      void act({ action: "feed", unitId: unit.id });
+      const zone = stockZone(unit.stock);
+      // Feeding is per pen now, so the side panel's Feed feeds the whole pen.
+      if (PEN_ZONE_IDS.includes(zone)) void act({ action: "feed-pen", zone });
+      else void act({ action: "feed", unitId: unit.id });
     },
     [act],
   );
   const onWater = useCallback(
     (unit: StackAcresUnitSnapshot) => {
+      if (water < 1) {
+        refusedSound();
+        setError("Your watering can is empty. Fill it at the well.");
+        return;
+      }
       waterSound();
       void act({ action: "water", unitId: unit.id });
     },
-    [act],
+    [act, water],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -2290,6 +2294,7 @@ export function StackAcresFarm() {
   // both go away rather than drift off what they were opened on.
   const onViewMoved = useCallback(() => {
     setRadial(null);
+    setDragOffer(null);
     setPipeAim(null);
     setMonkDialogue(null);
     setFencePopup(null);
@@ -2348,15 +2353,56 @@ export function StackAcresFarm() {
    * disabled button with a title attribute explaining itself, so the reason
    * floats where the finger was instead.
    */
+  /** Where to float a drag tool for a tap at `at`, kept inside the map. */
+  const offerIconAt = useCallback((at: TapPoint): TapPoint => {
+    const field = fieldRef.current;
+    return dragIconSpot(at, {
+      width: field?.clientWidth ?? window.innerWidth,
+      height: field?.clientHeight ?? window.innerHeight,
+    });
+  }, []);
+
+  /**
+   * A tap in a pen, or on one of its animals. Floats the feed scoop with an
+   * arrow to the pen's trough when anything there is hungry, and says why
+   * not otherwise. Feeding is per pen now, never per animal.
+   */
+  const openPenFeed = useCallback(
+    (zone: ZoneId, at: TapPoint) => {
+      const residents = liveUnits.filter((unit) => stockZone(unit.stock) === zone);
+      if (residents.length === 0) {
+        world.current?.floatAt(at, "Nothing lives here yet.", "deny");
+        return;
+      }
+      if (!residents.some((unit) => unit.state === "hungry")) {
+        world.current?.floatAt(at, "Nobody here is hungry.", "deny");
+        return;
+      }
+      if (feed < 1) {
+        refusedSound();
+        world.current?.floatAt(at, "No feed left in the barn.", "deny");
+        return;
+      }
+      const spot = penFeedSpot(zone);
+      const targetAt = world.current?.fieldPointFor(spot.x, spot.y);
+      if (!targetAt) return;
+      panelSound();
+      setDragOffer({
+        key: `feed-pen:${zone}:${Date.now()}`,
+        kind: "feed-pen",
+        zone,
+        iconAt: offerIconAt(at),
+        targetAt,
+      });
+    },
+    [feed, liveUnits, offerIconAt],
+  );
+
   const onWorldUnitTap = useCallback(
     (unitId: string, at: TapPoint) => {
       setRadial(null);
       const unit = liveUnits.find((candidate) => candidate.id === unitId);
       if (!unit) return;
-      // Stays selected through the action: the dock is showing this unit's
-      // keys, and they should re-light off whatever state the action leaves
-      // it in rather than the row emptying under the thumb.
-      setSelectedUnit({ id: unitId, at });
       world.current?.popUnit(unitId);
       // The sidebar follows the finger rather than gating it: whatever the
       // player is touching is what "here" means now.
@@ -2378,6 +2424,40 @@ export function StackAcresFarm() {
       // retry after a dropped connection, another tab).
       const tapIntent = action.kind === "collect" ? "collect" : `${action.kind}:${unitId}`;
       if (inFlight.current.has(tapIntent)) return;
+      // Watering and feeding are drag-and-drop: the tap floats the tool, and
+      // the drop sends the action (`onDragDrop`).
+      if (action.kind === "water") {
+        if (water < 1) {
+          refusedSound();
+          world.current?.floatAt(at, "Your watering can is empty. Fill it at the well.", "deny");
+          return;
+        }
+        panelSound();
+        setDragOffer({
+          key: `water:${unitId}:${Date.now()}`,
+          kind: "water",
+          unitId,
+          iconAt: offerIconAt(at),
+          targetAt: at,
+        });
+        return;
+      }
+      if (action.kind === "feed") {
+        const zone = stockZone(unit.stock);
+        if (PEN_ZONE_IDS.includes(zone)) {
+          openPenFeed(zone, at);
+          return;
+        }
+        panelSound();
+        setDragOffer({
+          key: `feed-unit:${unitId}:${Date.now()}`,
+          kind: "feed-unit",
+          unitId,
+          iconAt: offerIconAt(at),
+          targetAt: at,
+        });
+        return;
+      }
       // The farm's own voice for the gesture, chosen off the same `action`
       // that is about to be sent. This is the press the whole sound set was
       // written for and it was the last thing still answering with the app's
@@ -2386,18 +2466,11 @@ export function StackAcresFarm() {
       // the same three things -- had had their own sounds since the sound
       // pass landed. The tap path simply predated it.
       //
-      // Feed, water and clear speak on the PRESS because `act`'s own
-      // optimistic layer applies them locally the instant the request is
-      // sent, below: the farm has changed by the time the finger lifts, so a
-      // sound that waits for the network would be late for something that
-      // has visibly already happened. Collect is the deliberate exception
-      // and stays silent here -- it answers in `act`, where the response
-      // says which unit paid out, and it answers with that animal's own
-      // voice. A click in front of a hen clucking is a click in front of the
-      // best sound on the farm.
-      if (action.kind === "feed") feedSound(unit.stock);
-      else if (action.kind === "water") waterSound();
-      else if (action.kind === "clear") muckSound();
+      // Clear speaks on the PRESS because `act`'s optimistic layer applies it
+      // the instant the request is sent. Feed and water never get here; they
+      // speak on the drop, in `onDragDrop`. Collect stays silent here and
+      // answers in `act` with the voice of the animal that paid out.
+      if (action.kind === "clear") muckSound();
       tapAnchor.current = at;
       // Frenzy Heat Combo Engine: every accepted tap (a refused one already
       // returned above) counts as a hit for how fast the player is tapping.
@@ -2425,76 +2498,116 @@ export function StackAcresFarm() {
         void act({ action: action.kind, unitId });
       }
     },
-    [act, feed, gold, liveUnits, nowMs, triggerCascade],
+    [act, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, triggerCascade, water],
   );
 
   /**
-   * A finger landed on a unit that the held tool cannot act on -- which,
-   * since PR #448 made a unit action need its matching tool, is every bare
-   * tap on an animal or a crop. That used to be a silent no-op: the scene
-   * hit-tested the unit, found the tool did not match and swallowed the tap
-   * whole, so tapping a cow with nothing held did nothing and said nothing.
-   *
-   * It selects instead. The dock then draws the three keys a unit can answer
-   * to with the one it currently affords lit (lib/stackacres/dock.ts), and
-   * pressing that key runs the action through `onWorldUnitTap` above. Tap the
-   * cow, tap Feed. Nothing is sent from here -- selecting is not an action,
-   * and the farm is unchanged until a key is pressed.
+   * A tap on a unit with nothing to do yet: still growing, or idle and
+   * permanent. Retiring is never a tap (see tap-action.ts). The unit just
+   * pops so the tap isn't silently dropped. Nothing is sent.
    */
-  const onWorldUnitSelect = useCallback((unitId: string, at: TapPoint) => {
+  const onWorldUnitSelect = useCallback((unitId: string) => {
     panelSound();
     setRadial(null);
-    setSelectedUnit({ id: unitId, at });
     world.current?.popUnit(unitId);
   }, []);
 
   /**
-   * A dock key was pressed. Declared down here rather than up with the other
-   * callbacks because it reaches `onWorldUnitTap` above, and a dep array
-   * naming that from higher up the body would read it in its temporal dead
-   * zone.
-   *
-   * A key that is lit for the selected unit acts on it there and then, which
-   * is the whole point of a dock that follows the selection: tap the cow,
-   * tap Feed, the cow is fed, rather than arming a tool and going back for a
-   * second tap. The tool is held as well, so a drag across the rest of the
-   * pen carries on from the same press. Every other press just holds the
-   * tool the way it always did, `"inspect"` (the dock's own toggle-off)
-   * included.
+   * A Mow, Pipe or Soil key was pressed (`StackAcresGroundTools`). Water,
+   * feed and harvest have no key; tapping what needs them is enough.
+   * Pressing the held key again drops back to `"inspect"`.
    */
-  const pickTool = useCallback(
-    (next: StackAcresTool) => {
-      toolSound();
-      setError(null);
-      setTool(next);
-      if (next === "inspect" || !selectedUnit) return;
-      const unit = liveUnits.find((candidate) => candidate.id === selectedUnit.id);
-      if (unit && unitToolFor(unit.state) === next) onWorldUnitTap(selectedUnit.id, selectedUnit.at);
-    },
-    [liveUnits, onWorldUnitTap, selectedUnit],
-  );
+  const pickGroundTool = useCallback((next: StackAcresTool) => {
+    toolSound();
+    setError(null);
+    setTool((held) => (held === next ? "inspect" : next));
+  }, []);
 
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
-  const onWorldGroundTap = useCallback((zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
-    // A menu opening over the map, same as the barn and the locked-land
-    // sheets below -- not an action on the farm, so it takes the farm's
-    // panel cue rather than one of the action voices.
-    panelSound();
-    setPlace(zone);
-    setSelectedUnit(null);
-    setRadial({ zone, at, world: worldPt });
-  }, []);
+  const onWorldGroundTap = useCallback(
+    (zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
+      setPlace(zone);
+      // A pen's ground is for feeding what lives there, not for building.
+      // Stocking a pen is in the side panel.
+      if (PEN_ZONE_IDS.includes(zone)) {
+        setRadial(null);
+        openPenFeed(zone, at);
+        return;
+      }
+      // A menu opening over the map, same as the barn and the locked-land
+      // sheets below. Not an action on the farm, so it takes the farm's
+      // panel cue rather than one of the action voices.
+      panelSound();
+      setRadial({ zone, at, world: worldPt });
+    },
+    [openPenFeed],
+  );
 
-  /** A finger landed on the barn -- Ray's Museum's own entryway. Opens the
-   *  same way tapping "Buy from Ray" on the signpost opens the supply store:
-   *  a sound on the press, a sheet over the map, nothing sent to the server
-   *  (the museum registry already lives in this component's own state). */
+  /** A finger landed on the barn, Ray's Museum's entryway. A sound on the
+   *  press and a sheet over the map. Nothing goes to the server; the museum
+   *  registry already lives in this component's state. */
   const onWorldBarnTap = useCallback(() => {
     setRadial(null);
     panelSound();
     setShowMuseum(true);
   }, []);
+
+  /** A finger landed on the signpost, the Town Board's entryway now that
+   *  the places list is gone. Same shape as `onWorldBarnTap`. */
+  const onWorldSignpostTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowContracts(true);
+  }, []);
+
+  /** A finger landed on the windmill, the Workshop's entryway. Same shape
+   *  as `onWorldBarnTap`. */
+  const onWorldWorkshopTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowWorkshop(true);
+  }, []);
+
+  /** Fills the watering can. Tapping the yard's well does this, and so does
+   *  the ring on a well the player dug. */
+  const onWorldWellTap = useCallback(
+    (at: TapPoint) => {
+      setRadial(null);
+      if (water >= WATER_CAPACITY) {
+        world.current?.floatAt(at, "Your watering can is already full.", "deny");
+        return;
+      }
+      waterSound();
+      world.current?.floatAt(at, `+${WATER_CAPACITY - water} water`, "gain", "ico-water");
+      void act({ action: "draw-water" });
+    },
+    [act, water],
+  );
+
+  /** A drag tool landed on its target. The overlay plays the pour or
+   *  scatter itself; this sends the action and gives it a voice. */
+  const onDragDrop = useCallback(() => {
+    const offer = dragOffer;
+    if (!offer) return;
+    if (offer.kind === "water") {
+      waterSound();
+      world.current?.registerFrenzyTap(offer.unitId);
+      void act({ action: "water", unitId: offer.unitId });
+      return;
+    }
+    if (offer.kind === "feed-pen") {
+      const resident = liveUnits.find((unit) => stockZone(unit.stock) === offer.zone);
+      if (resident) feedSound(resident.stock);
+      void act({ action: "feed-pen", zone: offer.zone });
+      return;
+    }
+    const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
+    if (unit) feedSound(unit.stock);
+    void act({ action: "feed", unitId: offer.unitId });
+  }, [act, dragOffer, liveUnits]);
+
+  const closeDragOffer = useCallback(() => setDragOffer(null), []);
 
   /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
    *  (true only in the steady `"present"` state, see
@@ -2930,39 +3043,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /**
-   * The Water tool's drag (or zero-length tap) gesture reached this unit --
-   * see StackAcresSceneCallbacks.onWaterLayUnit's own header. Routed
-   * straight through `onWorldUnitTap` rather than duplicated: that function
-   * already re-derives the exact action from the unit's live state via
-   * `tapActionFor`, plays the right sound, calls `act`, and floats a
-   * refusal toast for anything the scene let through on state alone but the
-   * player can't actually afford (an empty barn, say) -- the scene's own
-   * eligibility check only ever tests `unit.state`, not affordability, so
-   * this second gate still matters.
-   */
-  const onWaterLayUnit = useCallback(
-    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
-    [onWorldUnitTap],
-  );
-
-  /** The Water tool's own twin, for the Feed tool. */
-  const onFeedLayUnit = useCallback(
-    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
-    [onWorldUnitTap],
-  );
-
-  /**
-   * The Harvest tool's own twin. `mode` is dropped here on purpose:
-   * `onWorldUnitTap` re-derives the identical collect-or-clear choice from
-   * the unit's own state through `tapActionFor`, so there is nothing left
-   * for `mode` to decide by the time this fires.
-   */
-  const onHarvestLayUnit = useCallback(
-    (unitId: string, _mode: "collect" | "clear", at: TapPoint) => onWorldUnitTap(unitId, at),
-    [onWorldUnitTap],
-  );
-
   /** A pipe/well drag or tap was refused for landing inside a pen -- the
    *  scene has already shaken and flashed the held tool's ghost; this is
    *  only the toast half, through the same `lastCollect`/`.sa-toast`
@@ -3052,18 +3132,9 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
-  /** Whether the Workshop has something waiting: ripe wheat, a finished Mill
-   *  run, a collectible vat. Feeds the signpost's dot. */
-  const workshopDue = useMemo(
-    () =>
-      workshopAttention({
-        plots: processing.wheatPlots,
-        machines: processing.machines,
-        vat,
-        nowMs,
-      }),
-    [processing.wheatPlots, processing.machines, vat, nowMs],
-  );
+  // The Workshop's "something is ready" dot lived on the deleted places list
+  // (`workshopAttention`, lib/stackacres/workshop.ts). If it comes back, it
+  // belongs on the windmill sprite as a glow.
 
   /**
    * What Ray's shelf is allowed to look at when it decides which rows are
@@ -3227,6 +3298,17 @@ export function StackAcresFarm() {
               },
             ]
           : []),
+        ...(existing.kind === "well"
+          ? [
+              {
+                key: "draw-water",
+                label: "Draw Water",
+                icon: "ico-water" as PainterName,
+                disabledReason: water >= WATER_CAPACITY ? "Your can is already full" : undefined,
+                onSelect: () => onWorldWellTap(at),
+              },
+            ]
+          : []),
         {
           key: "remove-pipe",
           label: existing.kind === "well" ? "Remove Well" : "Remove Pipe",
@@ -3280,6 +3362,14 @@ export function StackAcresFarm() {
         <StackAcresIcon name="ico-feed" size={16} />
         <strong>{feed}</strong>
         <span className="sa-sr">feed servings</span>
+      </span>
+      <span
+        className={clsx("sa-feed sa-water", { "is-empty": water < 1 })}
+        title="Water in your can. Fill it at the well."
+      >
+        <StackAcresIcon name="ico-water" size={16} />
+        <strong>{water}</strong>
+        <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
       <SynergyOverlay
         unlocked={synergyUnlocked}
@@ -3394,7 +3484,7 @@ export function StackAcresFarm() {
             give up the drawer's column while it is open -- five signs do not
             fit beside a 320px drawer on a phone, and the one that fell off the
             end was Ray's, which is the only way into the store. */}
-        <div className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
+        <div ref={fieldRef} className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
           {loaded && (
             <StackAcresWorld
               units={liveUnits}
@@ -3410,6 +3500,9 @@ export function StackAcresFarm() {
               onUnitSelect={onWorldUnitSelect}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
+              onSignpostTap={onWorldSignpostTap}
+              onWorkshopTap={onWorldWorkshopTap}
+              onWellTap={onWorldWellTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
@@ -3420,9 +3513,6 @@ export function StackAcresFarm() {
               onFenceSegmentTap={onWorldFenceSegmentTap}
               onPipeLayTile={onPipeLayTile}
               onSoilLayTile={onSoilLayTile}
-              onWaterLayUnit={onWaterLayUnit}
-              onFeedLayUnit={onFeedLayUnit}
-              onHarvestLayUnit={onHarvestLayUnit}
               onDropRejected={onDropRejected}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
@@ -3473,30 +3563,12 @@ export function StackAcresFarm() {
             </p>
           )}
 
-          <div className="sa-controls">
-            <StackAcresToolbelt
-              tool={tool}
-              onPick={pickTool}
-              selection={dockSelection}
-              onOpenShop={() => { panelSound(); setShowStore(true); }}
-              carrying={carrying}
-            />
-          </div>
-
-          <StackAcresDestinations
-            active={place}
-            compact={compactNav}
-            onTravel={travel}
-            unlocked={sectors}
-            onOpenStore={() => { panelSound(); setShowStore(true); }}
-            onOpenContracts={() => { panelSound(); setShowContracts(true); }}
-            contractPosted={processing.contract !== null}
-            carrying={carrying}
-            onOpenBlueprints={() => { panelSound(); setShowBlueprints(true); }}
-            blueprintInProgress={Object.values(blueprints).some((b) => b.status === "in_progress")}
-            onOpenWorkshop={() => { panelSound(); setShowWorkshop(true); }}
-            workshopAttention={workshopDue}
-          />
+          {/* The tool dock and the places list are gone. Tapping the world
+              offers what it needs right there, and Shop, Blueprints, Town
+              Board and Workshop are walked up to (Ray, the signpost, the
+              windmill). Mow, Pipe and Soil keep three small keys because a
+              drag-a-run gesture has nothing to tap first. */}
+          <StackAcresGroundTools tool={tool} onPick={pickGroundTool} />
 
           {/* The seed menu, on the canvas next to the finger that asked for
               it, inside .sa-field so its coordinates are the ones the scene
@@ -3585,6 +3657,25 @@ export function StackAcresFarm() {
             />
           )}
 
+          {/* The drag tool, floating next to whatever was tapped. */}
+          {dragOffer && (
+            <StackAcresDragAffordance
+              key={dragOffer.key}
+              kind={dragOffer.kind === "water" ? "water" : "feed"}
+              iconAt={dragOffer.iconAt}
+              targetAt={dragOffer.targetAt}
+              hint={
+                dragOffer.kind === "water"
+                  ? "Drag onto the soil"
+                  : dragOffer.kind === "feed-pen"
+                    ? "Drag into the trough"
+                    : "Drag onto the animal"
+              }
+              onDrop={onDragDrop}
+              onClose={closeDragOffer}
+            />
+          )}
+
           {/* The Pixel Pilgrim's dialogue, same screen-anchored treatment
               as the seed menu above. */}
           {monkDialogue && (
@@ -3626,6 +3717,22 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
+              onOpenShop={
+                giftDialogue.npc === "ray"
+                  ? () => {
+                      panelSound();
+                      setShowStore(true);
+                    }
+                  : undefined
+              }
+              onOpenBlueprints={
+                giftDialogue.npc === "ray"
+                  ? () => {
+                      panelSound();
+                      setShowBlueprints(true);
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -4305,6 +4412,8 @@ export function StackAcresFarm() {
           onSettle={onSettleContract}
           onRequest={onRequestContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
+          unlockedSectors={sectors}
+          onTravel={travel}
         />
       )}
       {/* The vat's sheet replaces the Workshop while it is up rather than

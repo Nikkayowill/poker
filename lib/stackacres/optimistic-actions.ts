@@ -93,6 +93,8 @@ import {
 } from "./units";
 import { priceForNextPurchase, type MidnightMerchantSnapshot } from "./midnight-merchant";
 import type { Action } from "./farm-actions";
+import { WATER_CAPACITY } from "./water-can";
+import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
 import { STACKACRES_YIELDS } from "./items";
 import { isMachineRawItem } from "./machine-items";
@@ -125,6 +127,8 @@ export interface FarmPredictContext {
   unlimitedGold: boolean;
   units: StackAcresUnitSnapshot[];
   feed: number;
+  /** Water left in the watering can. */
+  water: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   seedStock: SeedStock;
   toolTier: StackAcresToolTier;
@@ -171,6 +175,7 @@ export interface FarmStatePatch {
   units?: StackAcresUnitSnapshot[];
   profile?: PlayerProfile | null;
   feed?: number;
+  water?: number;
   capacity?: Partial<Record<StackAcresStock, number>>;
   seedStock?: SeedStock;
   sectors?: SectorId[];
@@ -258,13 +263,30 @@ export function predictStackAcresAction(
         feed: ctx.feed - 1,
       };
     }
-    case "water": {
-      const unit = ctx.units.find((u) => u.id === body.unitId);
-      if (!unit) return null;
+    case "feed-pen": {
+      // Same order the server feeds in: soonest-hungry first, as far as the
+      // feed goes.
+      const fed = ctx.units
+        .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
+        .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""))
+        .slice(0, Math.max(0, ctx.feed));
+      if (fed.length === 0) return null;
+      const ids = new Set(fed.map((u) => u.id));
       return {
-        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyWateredUnit(u, ctx.nowMs) : u)),
+        units: ctx.units.map((u) => (ids.has(u.id) ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
+        feed: ctx.feed - fed.length,
       };
     }
+    case "water": {
+      const unit = ctx.units.find((u) => u.id === body.unitId);
+      if (!unit || ctx.water < 1) return null;
+      return {
+        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyWateredUnit(u, ctx.nowMs) : u)),
+        water: ctx.water - 1,
+      };
+    }
+    case "draw-water":
+      return ctx.water >= WATER_CAPACITY ? null : { water: WATER_CAPACITY };
     case "clear": {
       const unit = ctx.units.find((u) => u.id === body.unitId);
       if (!unit || unit.muckFee === null) return null;

@@ -13,6 +13,7 @@ import {
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
   feedStackAcres,
+  feedStackAcresPen,
   harvestStackAcres,
   harvestStackAcresCrossbreedBed,
   plantStackAcresCrossbreedBed,
@@ -25,6 +26,7 @@ import {
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
   waterStackAcres,
+  drawStackAcresWater,
   sowStackAcresWheat,
   placeStackAcresMachine,
   workStackAcres,
@@ -62,6 +64,8 @@ import {
   readStackAcresSecretLedgerQty,
   readStackAcresExchanged,
   readStackAcresFeed,
+  readStackAcresWater,
+  adjustStackAcresWater,
   readStackAcresMuseum,
   readStackAcresSectors,
   readStackAcresToolTier,
@@ -102,6 +106,7 @@ import {
   readStackAcresSeedStock,
 } from "./stackacres-seed-store";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
+import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import {
   STACKACRES_STARTING_TIER,
   STACKACRES_TOOL_TIER_DEFS,
@@ -638,6 +643,115 @@ describe("hunger", () => {
     await adjustStackAcresFeed(id, 1);
     await feedStackAcres(token, unitId, new Date(hungryAt.getTime() + 5 * 60 * 60 * 1000));
     expect((await getStackAcresUnit(id, unitId))?.yieldQuantity).toBe(STACKACRES_YIELDS.cattle.quantity);
+  });
+});
+
+describe("feeding a whole pen", () => {
+  const hungryAt = new Date(T0.getTime() + (CATTLE.hungerMs ?? 0) + 1000);
+  const fedAt = new Date(hungryAt.getTime() + 60_000);
+  const cattleOf = async (id: string) =>
+    (await listStackAcresUnits(id)).filter((unit) => unit.stock === "cattle");
+
+  it("feeds every hungry animal in the pen, one serving each", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresFeed(id, 5);
+
+    await feedStackAcresPen(token, "oxfields", fedAt);
+
+    const cattle = await cattleOf(id);
+    expect(cattle).toHaveLength(2);
+    for (const unit of cattle) expect(unit.lastFedAt).toBe(fedAt.toISOString());
+    expect(await readStackAcresFeed(id)).toBe(3);
+  });
+
+  it("feeds as many as the feed covers, then stops without refusing", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresFeed(id, 1);
+
+    await feedStackAcresPen(token, "oxfields", fedAt);
+
+    const fed = (await cattleOf(id)).filter((unit) => unit.lastFedAt === fedAt.toISOString());
+    expect(fed).toHaveLength(1);
+    expect(await readStackAcresFeed(id)).toBe(0);
+  });
+
+  it("refuses when nobody in the pen is hungry, and spends nothing", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresFeed(id, 2);
+
+    await expect(feedStackAcresPen(token, "oxfields", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresFeed(id)).toBe(2);
+  });
+
+  it("only feeds the pen it was dropped on", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresFeed(id, 2);
+
+    await expect(feedStackAcresPen(token, "henhaven", fedAt)).rejects.toBeInstanceOf(StackAcresRequestError);
+    const [cow] = await cattleOf(id);
+    expect(cow?.lastFedAt).not.toBe(fedAt.toISOString());
+    expect(await readStackAcresFeed(id)).toBe(2);
+  });
+
+  it("refuses with an empty barn", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+
+    await expect(feedStackAcresPen(token, "oxfields", fedAt)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresFeed(id)).toBe(0);
+  });
+
+  it("refuses ground that is not a pen", async () => {
+    const { token } = await funded();
+    await expect(feedStackAcresPen(token, "farmstead", fedAt)).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+});
+
+describe("the watering can", () => {
+  const dryAt = new Date(T0.getTime() + (SPROUT.thirstMs ?? 0) + 1000);
+
+  it("starts full and spends one unit per watering", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    expect(view.water).toBe(WATER_CAPACITY);
+
+    await waterStackAcres(token, unitOf(view, "carrot").id, dryAt);
+    expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY - 1);
+  });
+
+  it("refuses from an empty can and leaves the crop dry", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    await adjustStackAcresWater(id, -WATER_CAPACITY);
+
+    await expect(waterStackAcres(token, unitOf(view, "carrot").id, dryAt)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(unitOf(await readStackAcres(token, dryAt), "carrot").state).toBe("dry");
+    expect(await readStackAcresWater(id)).toBe(0);
+  });
+
+  it("spends nothing on ground that is still wet", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
+
+    await waterStackAcres(token, unitOf(view, "carrot").id, new Date(T0.getTime() + 1000));
+    expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY);
+  });
+
+  it("fills back to the brim at the well", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresWater(id, -5);
+
+    const view = await drawStackAcresWater(token, T0);
+    expect(view.water).toBe(WATER_CAPACITY);
+    expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY);
   });
 });
 
@@ -1981,8 +2095,10 @@ describe("the currency wall", () => {
       "deploy-drone",
       "divert",
       "donate-secret-item",
+      "draw-water",
       "expand-capacity",
       "feed",
+      "feed-pen",
       "forge-enchantment",
       "fulfill-contract",
       "give-gift",
@@ -2019,7 +2135,9 @@ describe("the currency wall", () => {
     // "seal spends, collect pays" split `place-machine` and its own run take.
     // Everything else on that list either spends it or moves no money at all
     // -- `aim-pipe` included, a cosmetic turn of one pipe stub that touches
-    // nothing but its own row; `upgrade-tool` included,
+    // nothing but its own row; `feed-pen` and `draw-water` included, which
+    // spend feed servings and refill the watering can and never touch Gold;
+    // `upgrade-tool` included,
     // which is a pure sink, and the critical harvest it buys is paid BY
     // `collect` out of the same reservation rather than being a third payer;
     // `work`, `process`, `request-contract` and `build-greenhouse` included,

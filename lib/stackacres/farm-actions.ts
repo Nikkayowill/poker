@@ -12,6 +12,7 @@
  */
 
 import type { StackAcresCrop, StackAcresStock } from "./catalogue";
+import type { StackAcresBuyableCutter } from "./cutters";
 import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
@@ -50,6 +51,7 @@ export type Action =
   // harvest always credits inventory instead of Gold.
   | { action: "sell"; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
+  | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `sow-wheat` and `place-machine` spend Gold; the rest move inventory only.
   | { action: "sow-wheat" }

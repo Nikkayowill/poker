@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
-import { stackacresToolTierDef, type StackAcresToolTier } from "@/lib/stackacres/equipment";
+import { stackacresCutterDef, type StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
@@ -254,8 +254,8 @@ export interface StackAcresWorldProps {
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
-  /** The equipment rung held, which sets the scythe's swathe. */
-  toolTier: StackAcresToolTier;
+  /** The cutter in hand, which sets the mow swathe and how long it stays cut. */
+  cutter: StackAcresCutter;
   /** Which of the barn's two glow states should be showing, if either -- see
    *  lib/stackacres/museum-secrets.ts's `museumGlowTier`. */
   museumGlowTier: MuseumGlowTier;
@@ -295,20 +295,12 @@ export interface StackAcresWorldProps {
 }
 
 /**
- * The picture the mow-drag ghost shows.
- *
- * The scythe is the one tool with a canvas gesture, and it is also the one tool
- * the equipment ladder upgrades -- so while it is held, the ghost is the RUNG's
- * own art (`stackacresToolTierDef(tier).icon`, one sprite-backed painter per
- * rung) rather than the tool's generic icon. Every other tool keeps its own,
- * because no other tool has a rung to be at.
- *
- * This replaced a flat `STACKACRES_TOOL_DEFS[tool].icon`, which drew the same
- * scythe at every rung: a player who had bought the Golden Spade watched a
- * Trowel sweep the field.
+ * The picture the mow-drag ghost shows: the cutter in hand (Scythe or Mower)
+ * while mowing, the tool's own icon otherwise. It used to draw the spade
+ * ladder's rung, so a Golden Spade owner watched a spade mow the meadow.
  */
-function toolGhostIcon(tool: StackAcresTool, tier: StackAcresToolTier): PainterName {
-  const def = tool === "scythe" ? stackacresToolTierDef(tier) : STACKACRES_TOOL_DEFS[tool];
+function toolGhostIcon(tool: StackAcresTool, cutter: StackAcresCutter): PainterName {
+  const def = tool === "scythe" ? stackacresCutterDef(cutter) : STACKACRES_TOOL_DEFS[tool];
   return def.icon as PainterName;
 }
 
@@ -327,7 +319,7 @@ function toUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 export function StackAcresWorld({
   units,
   tool,
-  toolTier,
+  cutter,
   museumGlowTier,
   farmhandSpeedMultiplier,
   viewExpansion,
@@ -395,17 +387,17 @@ export function StackAcresWorld({
   const droneForageCollectedRef = useRef(onDroneForageCollected);
   // The tool's own picture, for the mow-drag ghost -- read at mount (before
   // the scene exists to push it to) and again on every change afterward.
-  const toolIconRef = useRef<PainterName>(toolGhostIcon(tool, toolTier));
+  const toolIconRef = useRef<PainterName>(toolGhostIcon(tool, cutter));
   // The tool itself, not just its picture: the scythe's target is ground
   // rather than a unit, so the scene has to know which tool is held to read a
   // drag correctly. See `setTool` in stackacres-scene.ts.
   const toolRef = useRef<StackAcresTool>(tool);
   // Read at mount for the same reason `toolRef` is: the scene does not exist
   // yet to be told, and it needs the right swathe on its very first stroke.
-  const toolTierRef = useRef<StackAcresToolTier>(toolTier);
-  // Read at mount for the same reason `toolTierRef` is.
+  const cutterRef = useRef<StackAcresCutter>(cutter);
+  // Read at mount for the same reason `cutterRef` is.
   const museumGlowTierRef = useRef<MuseumGlowTier>(museumGlowTier);
-  // Read at mount for the same reason `toolTierRef` is: the boot path needs
+  // Read at mount for the same reason `cutterRef` is: the boot path needs
   // the right walk speed on his very first step.
   const farmhandSpeedMultiplierRef = useRef(farmhandSpeedMultiplier);
   // Read at mount for the same reason: the opening shot is framed in create().
@@ -435,9 +427,9 @@ export function StackAcresWorld({
     cropFieldsLockedTapRef.current = onCropFieldsLockedTap;
     viewMovedRef.current = onViewMoved;
     droneForageCollectedRef.current = onDroneForageCollected;
-    toolIconRef.current = toolGhostIcon(tool, toolTier);
+    toolIconRef.current = toolGhostIcon(tool, cutter);
     toolRef.current = tool;
-    toolTierRef.current = toolTier;
+    cutterRef.current = cutter;
     museumGlowTierRef.current = museumGlowTier;
     farmhandSpeedMultiplierRef.current = farmhandSpeedMultiplier;
     viewExpansionRef.current = viewExpansion;
@@ -506,7 +498,7 @@ export function StackAcresWorld({
         {
           reducedMotion,
           host,
-          toolTier: toolTierRef.current,
+          cutter: cutterRef.current,
           museumGlowTier: museumGlowTierRef.current,
           farmhandSpeedMultiplier: farmhandSpeedMultiplierRef.current,
           viewExpansion: viewExpansionRef.current,
@@ -680,21 +672,19 @@ export function StackAcresWorld({
     sceneRef.current?.setIrrigation(irrigation);
   }, [irrigation]);
 
-  // Keyed on the RUNG as well as the tool: buying an upgrade has to change what
-  // is in the player's hand immediately, the same "push, never rebuild" reason
-  // `setToolTier` below exists rather than a remount.
+  // Keyed on the cutter as well as the tool: a swap has to change what is in
+  // the player's hand immediately, without a remount.
   useEffect(() => {
-    sceneRef.current?.setToolIcon(toolGhostIcon(tool, toolTier));
+    sceneRef.current?.setToolIcon(toolGhostIcon(tool, cutter));
     sceneRef.current?.setTool(tool);
-  }, [tool, toolTier]);
+  }, [tool, cutter]);
 
-  // Pushed rather than rebuilt: see `setToolTier` in stackacres-scene.ts for
-  // why buying an upgrade must not tear the scene down.
+  // Pushed rather than rebuilt: see `setCutter` in stackacres-scene.ts.
   useEffect(() => {
-    sceneRef.current?.setToolTier(toolTier);
-  }, [toolTier]);
+    sceneRef.current?.setCutter(cutter);
+  }, [cutter]);
 
-  // Same "push, never rebuild" reasoning as toolTier above -- see
+  // Same "push, never rebuild" reasoning as cutter above -- see
   // `setFarmhandSpeedMultiplier` in stackacres-scene.ts.
   useEffect(() => {
     sceneRef.current?.setFarmhandSpeedMultiplier(farmhandSpeedMultiplier);
@@ -705,7 +695,7 @@ export function StackAcresWorld({
     sceneRef.current?.setViewExpansion(viewExpansion);
   }, [viewExpansion]);
 
-  // Same "push, never rebuild" reasoning as toolTier above -- see
+  // Same "push, never rebuild" reasoning as cutter above -- see
   // `setMuseumGlowTier` in stackacres-scene.ts.
   useEffect(() => {
     sceneRef.current?.setMuseumGlowTier(museumGlowTier);

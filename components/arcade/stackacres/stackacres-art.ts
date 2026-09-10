@@ -2082,6 +2082,9 @@ export const PAINTERS: Record<PainterName, Painter> = {
   toolTrowel: spriteBacked("toolTrowel", DRAWN.toolTrowel),
   toolIronShovel: spriteBacked("toolIronShovel", DRAWN.toolIronShovel),
   toolGoldenSpade: spriteBacked("toolGoldenSpade", DRAWN.toolGoldenSpade),
+  // The Mower (lib/stackacres/cutters.ts). Same trade as the equipment ladder
+  // above, and the same sprite this scene now drives across the meadow.
+  cutterMower: spriteBacked("cutterMower", DRAWN.cutterMower),
   // The canopy. These five were the carve-out that kept the drawn trees while
   // the scrub around them came off the plant pack; that carve-out is reversed
   // (2026-09-06) and the whole wild flora is one pack now. See

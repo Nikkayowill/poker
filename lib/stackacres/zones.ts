@@ -737,6 +737,9 @@ export const MEADOW_REGROW_MS = 9 * 60 * 1000;
  * Regrowth is capped at the tile's own base density rather than at 3: a
  * thin patch stays a thin patch, so cutting the meadow flat and letting it
  * regrow does not quietly erase the grain `meadowBaseDensity` put there.
+ *
+ * `regrowMs` is how long one level takes after the blade that cut it. The
+ * Mower's is longer than the Scythe's (see ./cutters.ts).
  */
 export function meadowDensityAt(
   tx: number,
@@ -744,10 +747,11 @@ export function meadowDensityAt(
   cutAtMs: number | null,
   nowMs: number,
   soil: SoilMap = NO_SOIL,
+  regrowMs: number = MEADOW_REGROW_MS,
 ): number {
   const base = meadowBaseDensity(tx, ty, soil);
   if (base === 0 || cutAtMs === null) return base;
-  const grown = Math.floor(Math.max(0, nowMs - cutAtMs) / MEADOW_REGROW_MS);
+  const grown = Math.floor(Math.max(0, nowMs - cutAtMs) / Math.max(1, regrowMs));
   return Math.max(0, Math.min(base, grown));
 }
 
@@ -755,10 +759,7 @@ export function meadowDensityAt(
  *  line the finger drew. A little over a tile, so a single straight drag
  *  leaves an unbroken swathe rather than a dotted line.
  *
- *  The BASE reach, and what a player holding the starting Trowel cuts. The
- *  equipment ladder widens it -- see `scytheReachFor` in ./equipment.ts,
- *  whose own starting rung is defined as exactly this value so that shipping
- *  the ladder cannot nerf a player who buys nothing. */
+ *  The Scythe's reach. The Mower cuts a multiple of it -- see ./cutters.ts. */
 export const SCYTHE_REACH = 20;
 
 /**
@@ -777,7 +778,7 @@ export const SCYTHE_REACH = 20;
  *
  * `reach` defaults to the base swathe, so every existing caller and test is
  * unchanged; the scene passes the reach of whatever tool the player is
- * holding. It is only ever widened, never narrowed -- see ./equipment.ts.
+ * holding. It is only ever widened, never narrowed -- see ./cutters.ts.
  */
 export function mowStroke(
   from: WorldPoint,

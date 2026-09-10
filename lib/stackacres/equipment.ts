@@ -7,21 +7,14 @@
  * Spade is a fact about the account, so the store row's only two states are
  * "buy" and "owned", and there is no inventory of tools anywhere.
  *
- * TWO EFFECTS PER RUNG, and the split matters because only one of them is
- * server-authoritative:
+ * The rungs change harvest luck and nothing else. They used to widen the
+ * scythe's swathe too, which is how the Golden Spade ended up being the thing
+ * that mowed the meadow. Cutting grass moved to ./cutters.ts on 2026-09-10.
  *
- *   `reach` is COSMETIC-ADJACENT and lives entirely on the client. It widens
- *   the swathe one drag of the scythe cuts, so clearing an overgrown Long
- *   Meadow takes fewer strokes -- see `strokesToClearWidth` for that measured
- *   as taps rather than as world units. Nothing is at stake in it: the meadow
- *   is client-side scenery (`stackacres-scene.ts` holds the cut tiles in its
- *   own map and they are never persisted), so a tampered reach cuts imaginary
- *   grass faster and pays nothing.
- *
- *   `critChance`/`critBonus` DO pay, so they are rolled on the server, once,
- *   inside the guarded harvest write -- the same discipline `rollMuck` is
- *   held to in stackacres-service.ts, and for the same reason: anything
- *   reachable from a read can be re-rolled by pulling to refresh.
+ * `critChance`/`critBonus` pay, so they are rolled on the server, once,
+ * inside the guarded harvest write -- the same discipline `rollMuck` is held
+ * to in stackacres-service.ts, and for the same reason: anything reachable
+ * from a read can be re-rolled by pulling to refresh.
  *
  * THE CRIT PAYS BONUS INVENTORY NOW, NOT GOLD. A harvest never pays Gold at
  * all any more (see lib/server/stackacres-service.ts's own header), so there
@@ -42,7 +35,6 @@
  */
 
 import type { StackAcresShopLock } from "./shop-locks";
-import { SCYTHE_REACH } from "./zones";
 
 export const STACKACRES_TOOL_TIERS = ["trowel", "iron-shovel", "golden-spade"] as const;
 
@@ -56,8 +48,7 @@ export const STACKACRES_STARTING_TIER: StackAcresToolTier = "trowel";
  *
  * `StackAcresShopLock` is where `requiredQuestFlag`/`minimumMilestone` come
  * from -- see lib/stackacres/shop-locks.ts. The free rung carries neither and
- * must not: the Trowel is the game as it already plays, the same invariant
- * `reach` holds by importing SCYTHE_REACH rather than retyping it.
+ * must not: the Trowel is the game as it already plays.
  */
 export interface StackAcresToolTierDef extends StackAcresShopLock {
   /** What the shelf row says, and what a screen reader announces. */
@@ -76,18 +67,11 @@ export interface StackAcresToolTierDef extends StackAcresShopLock {
    * `PainterName` union). Kept a plain string for the same reason
    * StackAcresToolDef.icon is: this file stays free of a components/ import.
    *
-   * ONE PER RUNG, and it has to stay that way. All three used to name
-   * `ico-scythe`, which meant the ghost floating over a mow drag drew the same
-   * picture whatever had been bought -- the Golden Spade looked exactly like
-   * the Trowel in the player's hand, and the only thing 250,000 Gold visibly
-   * changed was the number of passes. Each rung now names its own sprite-backed
-   * painter, which fronts the same PNG `sprite` above points the store shelf at
-   * (the painter is the canvas route to that file, `sprite` the DOM one), and
-   * falls back to the drawn scythe only for the frames before it loads.
+   * One per rung: a sprite-backed painter fronting the same PNG `sprite` above
+   * points the store shelf at (the painter is the canvas route to that file,
+   * `sprite` the DOM one).
    */
   icon: string;
-  /** How far either side of the drag line one scythe stroke cuts, world units. */
-  reach: number;
   /** Odds a settled harvest pays a critical bonus, 0..1. */
   critChance: number;
   /**
@@ -100,18 +84,6 @@ export interface StackAcresToolTierDef extends StackAcresShopLock {
 /**
  * The ladder.
  *
- * The Trowel's `reach` is exactly `SCYTHE_REACH` on purpose, imported rather
- * than retyped: the starting rung must be the game as it already plays, or
- * shipping this ladder would be a nerf to every player who never buys
- * anything. The two paid rungs are the only behaviour change.
- *
- * The two paid reaches are written as MULTIPLES of the starting one rather
- * than as their own numbers, because the shelf copy quotes them: the Iron
- * Shovel's row says "half again the swathe" and the Golden Spade's says
- * "half the passes", and both are only true at exactly 1.5x and 2x.
- * equipment.test.ts holds the copy to the arithmetic, so a retune that moves
- * one has to move the other.
- *
  * Prices: the Iron Shovel sits above the dearest capacity slot (a cattle slot
  * is 40,000) and below a permanent Cattle Pen (60,000) -- a bigger commitment
  * than one more pen and a smaller one than an animal that pays forever. The
@@ -123,15 +95,13 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
 > = {
   trowel: {
     label: "Trowel",
-    blurb: "The one in your back pocket. Cuts a narrow swathe, and never gets lucky.",
+    blurb: "The one in your back pocket. Never gets lucky.",
     price: null,
     sprite: "/stackacres/sprites/tool-trowel.png",
     icon: "toolTrowel",
-    reach: SCYTHE_REACH,
     // ZERO, and deliberately so. The free rung is the game as it already
     // plays: a player who never buys anything must see no behaviour change at
-    // all from this feature shipping -- the same invariant `reach` holds by
-    // importing SCYTHE_REACH rather than retyping it. A lucky harvest is a
+    // all from this feature shipping. A lucky harvest is a
     // thing the ladder INTRODUCES, which also makes the first purchase legible
     // ("harvests can come up rich now") instead of a rate nudge nobody can
     // perceive. It has a practical half too: a non-zero chance here would make
@@ -142,11 +112,10 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
   },
   "iron-shovel": {
     label: "Iron Shovel",
-    blurb: "Half again the swathe, and harvests start coming up rich.",
+    blurb: "Harvests start coming up rich.",
     price: 45_000,
     sprite: "/stackacres/sprites/tool-iron-shovel.png",
     icon: "toolIronShovel",
-    reach: SCYTHE_REACH * 1.5,
     critChance: 0.12,
     critBonus: 0.75,
     // One milestone: in practice unlocking the Crop Fields (./crop-fields.ts),
@@ -160,11 +129,10 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
   },
   "golden-spade": {
     label: "Golden Spade",
-    blurb: "Clears the meadow in half the passes. A quarter of harvests pay double.",
+    blurb: "A quarter of harvests come in double.",
     price: 250_000,
     sprite: "/stackacres/sprites/tool-golden-spade.png",
     icon: "toolGoldenSpade",
-    reach: SCYTHE_REACH * 2,
     critChance: 0.25,
     critBonus: 1,
     // Three of the five. Deliberately reachable more than one way -- the
@@ -219,24 +187,6 @@ export function nextToolTier(tier: StackAcresToolTier): StackAcresToolTier | nul
 export function toolUpgradePrice(tier: StackAcresToolTier): number | null {
   const next = nextToolTier(tier);
   return next ? (STACKACRES_TOOL_TIER_DEFS[next].price ?? null) : null;
-}
-
-/** How far one scythe stroke reaches while holding `tier`, world units. */
-export function scytheReachFor(tier: StackAcresToolTier): number {
-  return STACKACRES_TOOL_TIER_DEFS[tier].reach;
-}
-
-/**
- * How many straight passes it takes to clear a band of overgrown ground
- * `widthWorld` wide -- the ladder's first effect stated as TAPS, which is
- * what the player actually experiences and what a test can assert against.
- *
- * One pass cuts `reach` either side of the line, so a pass is `reach * 2`
- * wide. Ceiling, not round: a band two and a half passes wide takes three.
- */
-export function strokesToClearWidth(widthWorld: number, tier: StackAcresToolTier): number {
-  if (!Number.isFinite(widthWorld) || widthWorld <= 0) return 0;
-  return Math.ceil(widthWorld / (scytheReachFor(tier) * 2));
 }
 
 /**

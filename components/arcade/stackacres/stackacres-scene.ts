@@ -47,10 +47,18 @@ import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter
 import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import {
-  scytheReachFor,
-  toolTierRank,
-  type StackAcresToolTier,
-} from "@/lib/stackacres/equipment";
+  cutterRank,
+  cutterReach,
+  cutterRegrowMs,
+  type StackAcresCutter,
+} from "@/lib/stackacres/cutters";
+import {
+  MOWER_REGRAB_REACH,
+  clampToMeadow,
+  mowerFacing,
+  mowerStripe,
+  stepMowerToward,
+} from "@/lib/stackacres/mower-drive";
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import {
   SPARKLE_MAX,
@@ -566,13 +574,13 @@ export interface StackAcresSceneCallbacks {
 
 export interface StackAcresSceneOptions {
   reducedMotion: boolean;
-  /** The equipment rung the player holds, which is what sets the scythe's
-   *  swathe. Mutable through `setToolTier` -- buying an upgrade must widen
-   *  the swathe without tearing the scene down and losing the mown map. */
-  toolTier: StackAcresToolTier;
+  /** The cutter in hand (Scythe or Mower), which sets how wide a mow stroke
+   *  cuts and how long it stays cut. Mutable through `setCutter` so swapping
+   *  does not tear the scene down and lose the mown map. */
+  cutter: StackAcresCutter;
   /** Which of the barn's two glow states should be showing, if either --
    *  see lib/stackacres/museum-secrets.ts's `museumGlowTier`. Mutable
-   *  through `setMuseumGlowTier` for the same reason `toolTier` is: a fresh
+   *  through `setMuseumGlowTier` for the same reason `cutter` is: a fresh
    *  find must restart or stop the barn's tween without rebuilding the
    *  scene. */
   museumGlowTier: MuseumGlowTier;
@@ -646,10 +654,43 @@ const DEEP_GOLD = 0xd99a1f;
 /** Sparks one crit throws. A tighter, denser ring than `celebrateHarvest`'s
  *  seven, over a shorter reach -- see `critSparkBurst`. */
 const CRIT_SPARK_COUNT = 12;
-/** Grass clippings one cut tile throws PER RUNG of the equipment ladder, so
- *  the Trowel throws 3, the Iron Shovel 6 and the Golden Spade 9. See
- *  `cutBurst`. */
+/** Grass clippings one cut tile throws per cutter rank, so the Scythe throws
+ *  3 and the Mower 6. See `cutBurst`. */
 const CUT_BURST_BITS_PER_RANK = 3;
+/** The rolling Mower's size against its 24px icon. */
+const MOWER_SPRITE_SCALE = 1.5;
+/** How wide the Mower's shadow pool sits under it, against the 36x16
+ *  `shadow` painter every other rolling/standing thing in the scene shares. */
+const MOWER_SHADOW_SCALE = 0.7;
+/** Lawn lines are redrawn at most this often while mowing. */
+const STRIPE_REDRAW_MS = 60;
+/**
+ * Lawn-line width in scene pixels, off the swath a pass actually cuts
+ * (`cutterReach * 2`, world units). `ISO_K` is 1 and a world-unit move
+ * projects to something between 1x and 2x itself in scene pixels depending
+ * on its screen direction (`isoProject`'s own shape) -- this is not exact
+ * for every drag angle, only close, which is fine for a translucent tint
+ * under sparse grass tufts rather than a hard-edged shape.
+ */
+const STRIPE_WIDTH_FACTOR = 1.3;
+/**
+ * The lawn lines tint the SAME grass grain rather than sit on it as a flat
+ * colour -- see `drawStripes`'s own header. Sampled off the base grass
+ * texture's own measured colour (~#436721): the light pass is a warm ADD
+ * highlight, the dark pass a neutral-grey MULTIPLY shade, so both keep the
+ * grain's own hue instead of introducing a foreign green.
+ */
+const STRIPE_LIGHT = 0xfff2c2;
+const STRIPE_LIGHT_ALPHA = 0.16;
+const STRIPE_DARK = 0xaab19c;
+const STRIPE_DARK_ALPHA = 0.55;
+/** A drive-camera constant is dearer than the default farm view but well
+ *  inside `STACKACRES_ZOOM_MAX` (5) -- grass fills the screen the way the
+ *  reference shot does, without the meadow's own tile grain going to mush. */
+const MOWER_DRIVE_ZOOM = 3.2;
+/** How closely the camera trails the Mower, 0..1 per frame -- Phaser's own
+ *  `startFollow` lerp. Low enough that a sharp turn doesn't whip the view. */
+const MOWER_CAM_LERP = 0.14;
 /** The dry-soil ring, off RAMPS.water.side -- a crop waiting for a drink is
  *  marked in the colour of the thing it is waiting for. */
 const WATER = 0x3fa6cc;
@@ -1101,6 +1142,15 @@ interface TrailPoint {
  * unit is the district sidebar's job now), so every press that is neither of
  * those two tools' own gesture simply pans.
  */
+/** One unbroken run of a mow pass in one direction -- see the scene's own
+ *  `currentStripe`/`strokes` fields for how a run starts, extends and ends. */
+interface StripeStroke {
+  points: WorldPoint[];
+  tone: 0 | 1;
+  startedAt: number;
+  regrowMs: number;
+}
+
 interface DragGesture {
   kind: "press" | "pan" | "mow" | "pipe-lay" | "soil-lay";
   id: number;
@@ -1527,14 +1577,58 @@ export class StackAcresScene extends Phaser.Scene {
   /**
    * When each meadow tile was last cut, by tile key. The one piece of world
    * state the player owns, and it is deliberately client-side and unsaved:
-   * cutting grass moves no Bushels, so there is nothing here worth a server
+   * cutting grass moves no Gold, so there is nothing here worth a server
    * round trip, a rate limit or a row. It resets on reload, which is the
-   * honest cost of that choice.
+   * honest cost of that choice. Each cut keeps the regrow time of the blade
+   * that made it, so a Mower's swathe stays down longer than a Scythe's.
    */
-  private mown = new Map<string, number>();
+  private mown = new Map<string, { at: number; regrowMs: number }>();
   /** Wall-clock of the last regrowth sweep, so the field is refreshed a few
    *  times a minute rather than every frame. */
   private lastRegrow = 0;
+  /** The Mower rolling on the meadow, or null while it is put away. Client
+   *  scenery like `mown`: never saved. `shadow` is its own image (the same
+   *  36x16 `shadow` painter every other rolling thing in the scene uses)
+   *  rather than a baked part of the sprite, so it moves and scales with the
+   *  Mower the way a real ground shadow does. */
+  private mower: {
+    sprite: Phaser.GameObjects.Image;
+    shadow: Phaser.GameObjects.Image;
+    at: WorldPoint;
+    target: WorldPoint;
+    facing: 1 | -1;
+    travelled: number;
+  } | null = null;
+  /** True while the chase camera has taken over from the player's own pan/
+   *  zoom -- see `enterMowerDrive`/`exitMowerDrive`. */
+  private driving = false;
+  /** The view `enterMowerDrive` interrupted, restored by `exitMowerDrive`. */
+  private savedView: { x: number; y: number; zoom: number } | null = null;
+
+  /**
+   * The lawn lines a mow pass leaves: one continuous stroke per unbroken run
+   * in one direction, not a fill per grass tile. A per-tile fill drew a
+   * staircase along the 16-unit grid -- ugly against grass that is a smooth
+   * painted grain, not a tile texture. A stroke follows the exact path the
+   * blade took, the same as the real thing does.
+   *
+   * `current` is the run in progress, extended point by point as the mower
+   * (or, off reduced motion, the finger) moves; it moves to `strokes` when
+   * the run ends (a release, a regrab, crossing off the meadow) or when the
+   * direction flips (a new tone). Both fade out and are dropped on the
+   * cutting blade's own regrow clock, same as `mown` -- see `drawStripes`.
+   */
+  private currentStripe: StripeStroke | null = null;
+  private strokes: StripeStroke[] = [];
+  /** ADD-blended (brightens) and MULTIPLY-blended (darkens) so the same
+   *  grass grain shows through tinted rather than painted over -- see
+   *  `drawStripes`'s own header on why two layers rather than one. */
+  private stripeLightLayer: Phaser.GameObjects.Graphics | null = null;
+  private stripeDarkLayer: Phaser.GameObjects.Graphics | null = null;
+  private lastStripeDraw = 0;
+  /** Whether the last `drawStripes()` actually drew anything -- lets an empty
+   *  meadow skip clearing already-empty layers on every throttled tick. */
+  private hadStrokesLastDraw = false;
 
   /** The districts' animals: the oxen in their furrows, the hogs in the mud.
    *  Driven by the same `stepCritter` the owned units use. */
@@ -1837,6 +1931,17 @@ export class StackAcresScene extends Phaser.Scene {
     // yet. Rebuilt per district by `setSectors` when land is cleared.
     for (const id of ZONE_IDS) this.paintSector(id);
     this.paintCropField();
+
+    // The Mower's lawn lines: on the ground, under every tuft, tinting the
+    // grass grain rather than sitting on top of it -- see `drawStripes`.
+    this.stripeLightLayer = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH - 0.5)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.stripeDarkLayer = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH - 0.4)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY);
 
     // Just above the beds themselves, so the outline reads over a tile that
     // already has one, but still under the crops standing on it.
@@ -4284,8 +4389,9 @@ export class StackAcresScene extends Phaser.Scene {
       if (this.tool !== "scythe") return false;
       const world = resolveWorld(clientX, clientY);
       const tile = meadowTileAt(world.x, world.y);
-      const key = meadowTileKey(tile.tx, tile.ty);
-      return meadowDensityAt(tile.tx, tile.ty, this.mown.get(key) ?? null, Date.now(), this.soil) > 0;
+      // The Mower can go back over cut ground to lay a fresh stripe.
+      if (this.mowerMode()) return meadowBaseDensity(tile.tx, tile.ty, this.soil) > 0;
+      return this.grassAt(tile.tx, tile.ty, Date.now()) > 0;
     };
     /**
      * Which half of a pipe-lay stroke this finger would start, with the pipe
@@ -4369,6 +4475,10 @@ export class StackAcresScene extends Phaser.Scene {
 
     const down = (event: PointerEvent): void => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      // A second finger while the chase camera is driving would start a
+      // pinch and fight `startFollow` -- ignored outright rather than
+      // tracked, so it can never become a gesture of its own.
+      if (this.driving && this.pts.size >= 1) return;
       // A third finger is not part of any gesture.
       if (this.pts.size >= 2) return;
       this.glide = null;
@@ -4438,12 +4548,22 @@ export class StackAcresScene extends Phaser.Scene {
         // to sweep across instead.
         if (gesture.startMow) {
           gesture.kind = "mow";
+          // With the Mower out, the finger steers it and it cuts under
+          // itself as it rolls (see `stepMower`), so no ghost and no cut here.
+          // A real DRAG, unlike a tap-to-reposition (see `up`), is what pulls
+          // the camera into the chase view -- a single tap has no sustained
+          // steering for it to follow.
+          if (this.mowerMode()) {
+            this.grabMower(resolveWorld(gesture.startX, gesture.startY));
+            this.enterMowerDrive();
+            this.steerMower(resolveWorld(event.clientX, event.clientY));
+            return;
+          }
           const start = sceneAt(gesture.startX, gesture.startY);
           this.showToolGhost(start.x, start.y);
-          this.mowSegment(
-            resolveWorld(gesture.startX, gesture.startY),
-            resolveWorld(event.clientX, event.clientY),
-          );
+          const from = resolveWorld(gesture.startX, gesture.startY);
+          const to = resolveWorld(event.clientX, event.clientY);
+          this.mowSegment(from, to, this.fingerCutStripe(from, to));
           const here = sceneAt(event.clientX, event.clientY);
           this.moveToolGhost(here.x, here.y);
           return;
@@ -4492,13 +4612,16 @@ export class StackAcresScene extends Phaser.Scene {
         gesture.kind = "pan";
       }
       if (gesture.kind === "mow") {
+        if (this.mowerMode()) {
+          this.steerMower(resolveWorld(event.clientX, event.clientY));
+          return;
+        }
         // Cut from where the finger WAS to where it is: `mowStroke` samples
         // the segment, so a fast swipe leaves an unbroken swathe rather than
         // a dotted line of the tiles that happened to get a move event.
-        this.mowSegment(
-          resolveWorld(prevX, prevY),
-          resolveWorld(event.clientX, event.clientY),
-        );
+        const from = resolveWorld(prevX, prevY);
+        const to = resolveWorld(event.clientX, event.clientY);
+        this.mowSegment(from, to, this.fingerCutStripe(from, to));
         const here = sceneAt(event.clientX, event.clientY);
         this.moveToolGhost(here.x, here.y);
         return;
@@ -4566,6 +4689,12 @@ export class StackAcresScene extends Phaser.Scene {
       }
       if (gesture.kind === "mow") {
         this.hideToolGhost();
+        // Eases the view back out if the chase camera was up; a no-op
+        // otherwise. Finalizing the stripe here (rather than only on a new
+        // tone) is what stops the NEXT drag's stripe from bridging back to
+        // wherever this one ended.
+        this.exitMowerDrive();
+        this.finalizeStripe();
         return;
       }
       if (gesture.kind === "pipe-lay") {
@@ -4584,6 +4713,12 @@ export class StackAcresScene extends Phaser.Scene {
       // sometimes does nothing reads as broken rather than as precise.
       if (gesture.startMow) {
         const at = resolveWorld(event.clientX, event.clientY);
+        // The Mower drives to a tapped spot instead.
+        if (this.mowerMode()) {
+          this.grabMower(at);
+          this.steerMower(at);
+          return;
+        }
         this.mowSegment(at, at);
         return;
       }
@@ -4771,6 +4906,8 @@ export class StackAcresScene extends Phaser.Scene {
     const onCancel = (event: PointerEvent): void => up(event, true);
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
+      // The chase camera owns the zoom while it is up.
+      if (this.driving) return;
       measure();
       this.glide = null;
       // A trackpad pinch arrives as a ctrl-held wheel: zoom that one finely,
@@ -4948,19 +5085,18 @@ export class StackAcresScene extends Phaser.Scene {
   setTool(tool: StackAcresTool): void {
     this.tool = tool;
     this.soilToolBoundary?.setVisible(tool === "soil");
+    if (tool !== "scythe") this.removeMower();
   }
 
   /**
-   * Which rung of the equipment ladder is held, which is what sets the
-   * swathe one scythe stroke cuts.
-   *
-   * A setter rather than a constructor-only option because buying an upgrade
-   * has to widen the swathe NOW: rebuilding the scene to pick it up would
-   * throw away `mown`, so the meadow the player just cleared would stand back
-   * up the instant they paid for a better tool.
+   * Which cutter is in hand. A setter rather than a constructor-only option
+   * because a swap has to take effect on the next stroke: rebuilding the
+   * scene would throw away `mown`, and the meadow the player just cleared
+   * would stand back up.
    */
-  setToolTier(tier: StackAcresToolTier): void {
-    this.options.toolTier = tier;
+  setCutter(cutter: StackAcresCutter): void {
+    this.options.cutter = cutter;
+    if (cutter !== "mower") this.removeMower();
   }
 
   /**
@@ -6037,7 +6173,7 @@ export class StackAcresScene extends Phaser.Scene {
         if (meadowBaseDensity(tx, ty, this.soil) === 0) continue;
         const key = meadowTileKey(tx, ty);
         if (this.grassTiles.has(key)) continue;
-        const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now(), this.soil);
+        const density = this.grassAt(tx, ty, Date.now());
         // A little off-centre per tile, so the field is grass rather than a
         // grid of identical tufts. Deterministic, so it does not jump when
         // the chunk regrows.
@@ -6060,9 +6196,15 @@ export class StackAcresScene extends Phaser.Scene {
     const key = meadowTileKey(tx, ty);
     const sprite = this.grassTiles.get(key);
     if (!sprite) return;
-    const density = meadowDensityAt(tx, ty, this.mown.get(key) ?? null, Date.now(), this.soil);
+    const density = this.grassAt(tx, ty, Date.now());
     sprite.setVisible(density > 0);
     if (density > 0) sprite.setTexture(grassArt(density), ART_FRAME);
+  }
+
+  /** A meadow tile's grass height now, given which blade cut it and when. */
+  private grassAt(tx: number, ty: number, wall: number): number {
+    const cut = this.mown.get(meadowTileKey(tx, ty));
+    return meadowDensityAt(tx, ty, cut?.at ?? null, wall, this.soil, cut?.regrowMs);
   }
 
   /** The world rectangle the camera can actually see. `scrollX` is the
@@ -6183,6 +6325,212 @@ export class StackAcresScene extends Phaser.Scene {
     return null;
   }
 
+  /* ---- The Mower ---------------------------------------------------- */
+
+  /** The Mower rolls on the canvas only with motion on. With reduced motion
+   *  it cuts under the finger like the Scythe, stripes and all. */
+  private mowerMode(): boolean {
+    return this.options.cutter === "mower" && !this.options.reducedMotion;
+  }
+
+  /** A finger-cut's lawn stripe: the Mower's under reduced motion, none for
+   *  the Scythe. */
+  private fingerCutStripe(from: WorldPoint, to: WorldPoint): 0 | 1 | null {
+    return this.options.cutter === "mower" ? mowerStripe(from, to) : null;
+  }
+
+  /**
+   * A press on the meadow with the Mower out. Near where it is parked it
+   * drives over; further away it pops up under the finger, since driving
+   * there would mow a line across the field the player never drew.
+   */
+  private grabMower(at: WorldPoint): void {
+    if (this.cropFieldsLocked) return;
+    const spot = clampToMeadow(at);
+    const parked = this.mower;
+    if (parked && Math.hypot(parked.at.x - spot.x, parked.at.y - spot.y) <= MOWER_REGRAB_REACH) {
+      parked.target = spot;
+      return;
+    }
+    // A fresh grab, near or far, is a new pass -- nothing should bridge back
+    // to wherever the last one left off.
+    this.finalizeStripe();
+    const sprite =
+      parked?.sprite ?? this.add.image(0, 0, "cutterMower", ART_FRAME).setOrigin(0.5, 0.92);
+    const shadow = parked?.shadow ?? this.add.image(0, 0, "shadow", ART_FRAME).setAlpha(0.75);
+    this.mower = { sprite, shadow, at: spot, target: spot, facing: parked?.facing ?? 1, travelled: 0 };
+    this.placeMower();
+    // The sprite and its shadow fade in to different final alphas (1 and
+    // 0.75), so each gets its own tween rather than sharing one target list.
+    sprite.setAlpha(0);
+    shadow.setAlpha(0);
+    this.tweens.add({ targets: sprite, alpha: 1, duration: 160 });
+    this.tweens.add({ targets: shadow, alpha: 0.75, duration: 160 });
+  }
+
+  private steerMower(at: WorldPoint): void {
+    if (this.mower) this.mower.target = clampToMeadow(at);
+  }
+
+  /** Put away with the Mow tool or the Mower: parked, it only means
+   *  something while it can be driven. Also drops the chase camera, in case
+   *  a switch happens mid-drag rather than on a clean release. */
+  private removeMower(): void {
+    this.mower?.sprite.destroy();
+    this.mower?.shadow.destroy();
+    this.mower = null;
+    this.exitMowerDrive();
+    this.finalizeStripe();
+  }
+
+  /**
+   * Pulls the camera into a close trail behind the Mower: zoomed in tight
+   * (`MOWER_DRIVE_ZOOM`, well inside `STACKACRES_ZOOM_MAX`) and following
+   * the sprite (Phaser's own `startFollow`, not a per-frame `centerOn` --
+   * the built-in lerp is the same mechanism a `cam.pan` tween already uses
+   * elsewhere in this file). The player's own pan/pinch/wheel are blocked
+   * for the duration by `mowerMode()`'s exclusive input branches and the
+   * driving guards in `down()`/`onWheel`.
+   *
+   * A no-op if already driving, so a second drag before the first has fully
+   * eased back out just keeps the current session going.
+   */
+  private enterMowerDrive(): void {
+    if (this.driving || !this.created) return;
+    this.driving = true;
+    this.glide = null;
+    const cam = this.cameras.main;
+    const mid = cam.midPoint;
+    this.savedView = { x: mid.x, y: mid.y, zoom: this.zoomL() };
+    cam.zoomTo(clampZoom(MOWER_DRIVE_ZOOM) * DPR, 400, "Sine.easeInOut");
+    if (this.mower) cam.startFollow(this.mower.sprite, false, MOWER_CAM_LERP, MOWER_CAM_LERP);
+  }
+
+  /** Eases the camera back to the view `enterMowerDrive` interrupted. A
+   *  no-op while not driving. */
+  private exitMowerDrive(): void {
+    if (!this.driving) return;
+    this.driving = false;
+    const cam = this.cameras.main;
+    cam.stopFollow();
+    const view = this.savedView;
+    this.savedView = null;
+    if (!view) return;
+    if (this.options.reducedMotion) {
+      this.setZoomL(view.zoom);
+      cam.centerOn(view.x, view.y);
+      return;
+    }
+    cam.zoomTo(clampZoom(view.zoom) * DPR, 500, "Sine.easeInOut");
+    cam.pan(view.x, view.y, 500, "Sine.easeInOut");
+  }
+
+  /** One frame of the Mower rolling toward the finger, cutting under itself. */
+  private stepMower(delta: number): void {
+    const mower = this.mower;
+    if (!mower) return;
+    const next = stepMowerToward(mower.at, mower.target, delta / 1000);
+    const moved = Math.hypot(next.x - mower.at.x, next.y - mower.at.y);
+    if (moved === 0) return;
+    this.mowSegment(mower.at, next, mowerStripe(mower.at, next));
+    mower.facing = mowerFacing(mower.at, next, mower.facing);
+    mower.travelled += moved;
+    mower.at = next;
+    this.placeMower();
+  }
+
+  /** The sprite at the Mower's spot, facing its way and rocking on its
+   *  wheels as it rolls, with its own ground shadow following underneath. */
+  private placeMower(): void {
+    const mower = this.mower;
+    if (!mower) return;
+    const p = isoProject(mower.at.x, mower.at.y);
+    const bob = Math.abs(Math.sin(mower.travelled * 0.3)) * 1.2;
+    mower.sprite
+      .setPosition(p.x, p.y - bob)
+      .setScale((mower.facing * MOWER_SPRITE_SCALE) / S, MOWER_SPRITE_SCALE / S)
+      .setRotation(Math.sin(mower.travelled * 0.45) * 0.04)
+      .setDepth(this.depthAt(mower.at.x, mower.at.y, 1));
+    mower.shadow
+      .setPosition(p.x, p.y + 1)
+      .setScale(MOWER_SHADOW_SCALE / S, (MOWER_SHADOW_SCALE * 0.6) / S)
+      .setDepth(this.depthAt(mower.at.x, mower.at.y, -0.5));
+  }
+
+  /**
+   * Extends the run in progress, or starts a new one -- see `currentStripe`/
+   * `strokes`'s own header. `tone` null (the Scythe, or ground the stroke
+   * ran off the meadow onto) ends whatever run was in progress without
+   * starting another.
+   */
+  private extendStripe(from: WorldPoint, to: WorldPoint, tone: 0 | 1 | null): void {
+    if (tone === null) {
+      this.finalizeStripe();
+      return;
+    }
+    const current = this.currentStripe;
+    if (current && current.tone === tone) {
+      current.points.push(to);
+      return;
+    }
+    this.finalizeStripe();
+    this.currentStripe = {
+      points: [from, to],
+      tone,
+      startedAt: Date.now(),
+      regrowMs: cutterRegrowMs(this.options.cutter),
+    };
+  }
+
+  /** Closes the run in progress, if any, onto `strokes` so it fades on its
+   *  own regrow clock instead of being silently overwritten. */
+  private finalizeStripe(): void {
+    if (this.currentStripe && this.currentStripe.points.length > 1) {
+      this.strokes.push(this.currentStripe);
+    }
+    this.currentStripe = null;
+  }
+
+  /**
+   * The lawn lines: two blended layers (see `stripeLightLayer`/
+   * `stripeDarkLayer`'s own header), one continuous stroke per pass. Redrawn
+   * on a throttle rather than only when something changes, since a fading
+   * stripe needs to visibly dim between cuts too -- cheap either way; this is
+   * a handful of strokes, not the hundreds of tile fills the old version drew.
+   */
+  private drawStripes(): void {
+    const light = this.stripeLightLayer;
+    const dark = this.stripeDarkLayer;
+    if (!light || !dark) return;
+    if (this.now - this.lastStripeDraw < STRIPE_REDRAW_MS) return;
+    this.lastStripeDraw = this.now;
+    const wall = Date.now();
+    this.strokes = this.strokes.filter((s) => wall - s.startedAt < s.regrowMs);
+    if (this.currentStripe && wall - this.currentStripe.startedAt >= this.currentStripe.regrowMs) {
+      this.currentStripe = null;
+    }
+    const all = this.currentStripe ? [...this.strokes, this.currentStripe] : this.strokes;
+    // Nothing to draw now, and nothing was drawn last time either -- skip
+    // the clear() so an empty meadow does not touch these layers every tick.
+    if (all.length === 0 && !this.hadStrokesLastDraw) return;
+    this.hadStrokesLastDraw = all.length > 0;
+    light.clear();
+    dark.clear();
+    const widthPx = cutterReach(this.options.cutter) * 2 * STRIPE_WIDTH_FACTOR;
+    for (const stroke of all) {
+      if (stroke.points.length < 2) continue;
+      const g = stroke.tone === 0 ? light : dark;
+      const colour = stroke.tone === 0 ? STRIPE_LIGHT : STRIPE_DARK;
+      const baseAlpha = stroke.tone === 0 ? STRIPE_LIGHT_ALPHA : STRIPE_DARK_ALPHA;
+      // Fades toward the end of its own regrow window rather than popping
+      // off the instant it expires.
+      const fade = Math.max(0, 1 - (wall - stroke.startedAt) / stroke.regrowMs);
+      const pts = stroke.points.map((p) => isoProject(p.x, p.y));
+      g.lineStyle(widthPx, colour, baseAlpha * fade);
+      g.strokePoints(pts, false, false);
+    }
+  }
+
   /**
    * Grass grows back. Swept a few times a minute rather than every frame,
    * and only over tiles that were actually cut -- an untouched meadow costs
@@ -6196,10 +6544,10 @@ export class StackAcresScene extends Phaser.Scene {
     if (this.mown.size === 0 || this.now - this.lastRegrow < 4_000) return;
     this.lastRegrow = this.now;
     const wall = Date.now();
-    for (const [key, cutAt] of this.mown) {
+    for (const key of this.mown.keys()) {
       const [tx, ty] = key.split(":").map(Number);
       const base = meadowBaseDensity(tx, ty, this.soil);
-      if (meadowDensityAt(tx, ty, cutAt, wall, this.soil) >= base) {
+      if (this.grassAt(tx, ty, wall) >= base) {
         this.mown.delete(key);
       }
       this.refreshGrass(tx, ty);
@@ -6207,27 +6555,35 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Cuts every meadow tile a stroke crossed, and shows it.
+   * Cuts every meadow tile a stroke crossed, and shows it, and extends the
+   * lawn line the stroke is drawing (`extendStripe`) when `stripe` names a
+   * tone -- always the raw (from, to) the caller asked for, not gated on
+   * which individual tiles happened to still have grass, so the line the
+   * Mower leaves matches the path it actually rolled rather than stopping
+   * short at whichever tile it last found something to cut.
    *
-   * The stroke's geometry is `mowStroke`'s (pure, tested); this only paints
-   * the result. A tile already cut is skipped rather than re-cut, so
+   * The stroke's own geometry (`mowStroke`, pure, tested) decides which
+   * tiles this paints. A tile already cut is skipped rather than re-cut, so
    * scrubbing the same patch back and forth does not restart its regrowth
    * clock over and over and leave one square permanently bald.
    */
-  private mowSegment(from: WorldPoint, to: WorldPoint): void {
+  private mowSegment(from: WorldPoint, to: WorldPoint, stripe: 0 | 1 | null = null): void {
     // Nobody mows a field they have not bought. The Crop Fields' grass is
     // untouched while `cropFieldsLocked` is true -- waist-high uncut grass is
     // exactly the right picture of unworked ground, so there is nothing to
     // hide, only a gesture to refuse. Used to check `this.locked.has("meadow")`
     // before the 2026-09-08 district merge made the Crop Fields their own flag.
     if (this.cropFieldsLocked) return;
+    const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const midTile = meadowTileAt(mid.x, mid.y);
+    this.extendStripe(from, to, meadowBaseDensity(midTile.tx, midTile.ty, this.soil) > 0 ? stripe : null);
     const wall = Date.now();
     let cut = false;
-    for (const tile of mowStroke(from, to, scytheReachFor(this.options.toolTier), this.soil)) {
+    const regrowMs = cutterRegrowMs(this.options.cutter);
+    for (const tile of mowStroke(from, to, cutterReach(this.options.cutter), this.soil)) {
       const key = meadowTileKey(tile.tx, tile.ty);
-      const cutAt = this.mown.get(key) ?? null;
-      if (meadowDensityAt(tile.tx, tile.ty, cutAt, wall, this.soil) === 0) continue;
-      this.mown.set(key, wall);
+      if (this.grassAt(tile.tx, tile.ty, wall) === 0) continue;
+      this.mown.set(key, { at: wall, regrowMs });
       cut = true;
       this.refreshGrass(tile.tx, tile.ty);
       if (!this.options.reducedMotion) this.cutBurst(tile.tx, tile.ty);
@@ -6249,20 +6605,14 @@ export class StackAcresScene extends Phaser.Scene {
    * as they fall. Short-lived and self-destroying -- there is no pool here
    * because a stroke cuts a handful of tiles at a time, not hundreds.
    *
-   * HOW MANY CLIPPINGS IS THE EQUIPMENT LADDER TALKING. Until this the burst
-   * was a flat three at every rung, so the only thing 250,000 Gold of Golden
-   * Spade changed about a stroke was how many strokes it took -- a real effect
-   * (`scytheReachFor`, used by `mowSegment` above) that the swing itself said
-   * nothing about. Three per rung -- 3, 6, 9 -- so the top of the ladder throws
-   * three times the debris of the free one and the middle rung is visibly
-   * between them. `toolTierRank` is the ladder's own 0-based position, so a
-   * fourth rung would scale itself with no number here to remember to move.
+   * The Mower throws twice the Scythe's clippings, so the bigger blade looks
+   * like it as well as cutting wider.
    */
   private cutBurst(tx: number, ty: number): void {
     const x = tx * MEADOW_TILE + MEADOW_TILE / 2;
     const y = ty * MEADOW_TILE + MEADOW_TILE / 2;
     const at = isoProject(x, y);
-    const clippings = CUT_BURST_BITS_PER_RANK * (toolTierRank(this.options.toolTier) + 1);
+    const clippings = CUT_BURST_BITS_PER_RANK * (cutterRank(this.options.cutter) + 1);
     for (let i = 0; i < clippings; i += 1) {
       const bit = this.add
         .image(at.x, at.y - 2, "grassStubble", ART_FRAME)
@@ -6538,6 +6888,10 @@ export class StackAcresScene extends Phaser.Scene {
     // crouch/idle pose must still change with motion off. Only the
     // sinusoidal lift inside stepMonkNode itself is suppressed there.
     this.stepMonkNode(delta, this.options.reducedMotion);
+    // The Mower only rolls with motion on, but its lawn lines are ground,
+    // not motion, so they are drawn either way.
+    this.stepMower(delta);
+    this.drawStripes();
     if (this.options.reducedMotion) return;
 
     this.animateSunlight(time, delta);

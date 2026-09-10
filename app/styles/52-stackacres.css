@@ -741,8 +741,26 @@
   left: calc(10px + var(--safe-left));
   z-index: 3;
   display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.sa-ground-tool-keys,
+.sa-cutter-picker {
+  display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* The Scythe/Mower swap, beside the Mow key while it is held. Wider than the
+   keys because each option carries its name. */
+.sa-ground-tool.sa-cutter-option {
+  grid-auto-flow: column;
+  gap: 6px;
+  width: auto;
+  padding-inline: 10px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .sa-ground-tool {

@@ -84,6 +84,8 @@ import {
   type SynergyArchetype,
 } from "./synergy-perks";
 import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equipment";
+import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
+import { applyInfluenceDiscount } from "./influence-tiers";
 import type { StackAcresUpkeepState } from "./upkeep";
 import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
 import { createSoilMap, nextFreeSoilSlot, plantSoilTile, soilSlotOnTile, type SoilTile } from "./soil";
@@ -135,6 +137,7 @@ export interface FarmPredictContext {
   capacity: Partial<Record<StackAcresStock, number>>;
   seedStock: SeedStock;
   toolTier: StackAcresToolTier;
+  cutters: readonly StackAcresCutter[];
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
   influence: number;
@@ -184,6 +187,7 @@ export interface FarmStatePatch {
   sectors?: SectorId[];
   upkeep?: StackAcresUpkeepState;
   tool?: StackAcresToolTier;
+  cutters?: StackAcresCutter[];
   influence?: number;
   greenhouseBuilt?: boolean;
   cropFieldsUnlocked?: boolean;
@@ -395,6 +399,13 @@ export function predictStackAcresAction(
       const profile = debited(ctx, price);
       if (!profile) return null;
       return { tool: next, profile };
+    }
+    case "buy-cutter": {
+      const price = stackacresCutterDef(body.cutter).price;
+      if (price === null || ctx.cutters.includes(body.cutter)) return null;
+      const profile = debited(ctx, applyInfluenceDiscount(price, ctx.influence));
+      if (!profile) return null;
+      return { cutters: ownedStackAcresCutters([...ctx.cutters, body.cutter]), profile };
     }
     case "clear-sector": {
       const check = sectorClearCheck(body.sector, {

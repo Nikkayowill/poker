@@ -25,6 +25,7 @@ import {
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
+  buyStackAcresCutter,
   waterStackAcres,
   drawStackAcresWater,
   sowStackAcresWheat,
@@ -70,6 +71,7 @@ import {
   readStackAcresMuseum,
   readStackAcresSectors,
   readStackAcresToolTier,
+  readStackAcresCutters,
   readStackAcresUpkeep,
   recordStackAcresCropFieldsUnlocked,
   recordStackAcresSectorCleared,
@@ -114,6 +116,7 @@ import {
   nextToolTier,
   toolUpgradePrice,
 } from "@/lib/stackacres/equipment";
+import { STACKACRES_CUTTER_DEFS } from "@/lib/stackacres/cutters";
 import {
   STACKACRES_GOLD_CEILING,
   stackacresExchangeDay,
@@ -1721,6 +1724,65 @@ describe("the daily allowance", () => {
   });
 });
 
+describe("grass cutters", () => {
+  const MOWER_PRICE = STACKACRES_CUTTER_DEFS.mower.price ?? 0;
+
+  it("starts every farm with only the Scythe", async () => {
+    const { token } = await funded();
+    expect((await readStackAcres(token, T0)).cutters).toEqual(["scythe"]);
+  });
+
+  it("sells the Mower at its price and leaves the spade ladder alone", async () => {
+    const { token, id } = await funded(1_000_000);
+    const before = await balance(token);
+
+    const view = await buyStackAcresCutter(token, "mower", T0);
+
+    expect(view.boughtCutter).toBe("mower");
+    expect(view.cutters).toEqual(["scythe", "mower"]);
+    expect(await balance(token)).toBe(before - MOWER_PRICE);
+    expect(await readStackAcresToolTier(id)).toBe(STACKACRES_STARTING_TIER);
+  });
+
+  it("refuses a second Mower and takes nothing for it", async () => {
+    const { token, id } = await funded(1_000_000);
+    await buyStackAcresCutter(token, "mower", T0);
+    const before = await balance(token);
+
+    await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(before);
+    expect(await readStackAcresCutters(id)).toEqual(["scythe", "mower"]);
+  });
+
+  it("refuses the Mower before the Crop Fields are unlocked, before any Gold moves", async () => {
+    const { token, id } = await funded(1_000_000, { cropFieldsUnlocked: false });
+
+    await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(1_000_000);
+    expect(await readStackAcresCutters(id)).toEqual(["scythe"]);
+  });
+
+  it("refuses a Mower the player cannot afford", async () => {
+    const { token, id } = await funded(MOWER_PRICE - 1);
+
+    await expect(buyStackAcresCutter(token, "mower", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(MOWER_PRICE - 1);
+    expect(await readStackAcresCutters(id)).toEqual(["scythe"]);
+  });
+
+  it("refuses anything Ray doesn't sell, the free Scythe included", async () => {
+    const { token } = await funded(1_000_000);
+
+    await expect(buyStackAcresCutter(token, "scythe", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(buyStackAcresCutter(token, "combine", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    expect(await balance(token)).toBe(1_000_000);
+  });
+});
+
 describe("the equipment ladder", () => {
   it("starts every farm on the free rung", async () => {
     const { token } = await funded();
@@ -2028,6 +2090,7 @@ describe("the currency wall", () => {
       "activate-synergy-perk",
       "aim-pipe",
       "build-greenhouse",
+      "buy-cutter",
       "buy-feed",
       "buy-seed",
       "buy-soil",

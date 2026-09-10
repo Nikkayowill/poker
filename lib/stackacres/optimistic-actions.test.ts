@@ -55,6 +55,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     capacity: {},
     seedStock: {},
     toolTier: "trowel",
+    cutters: ["scythe"],
     sectors: [HOME_SECTOR],
     upkeep: { plots: 0, fee: 0, paidToday: 0, due: 0 },
     influence: 0,
@@ -546,6 +547,22 @@ describe("predictStackAcresAction: the rest of the shop", () => {
       ctx({ profile: profile({ goldBalance: 1_000_000 }), toolTier: "golden-spade" }),
     );
     expect(atTop).toBeNull();
+  });
+
+  it("buys the Mower once and leaves the spade alone", () => {
+    const patch = predictStackAcresAction(
+      { action: "buy-cutter", cutter: "mower" },
+      ctx({ profile: profile({ goldBalance: 1_000_000 }) }),
+    );
+    expect(patch?.cutters).toEqual(["scythe", "mower"]);
+    expect(patch?.tool).toBeUndefined();
+    expect(patch?.profile?.goldBalance).toBeLessThan(1_000_000);
+
+    const again = predictStackAcresAction(
+      { action: "buy-cutter", cutter: "mower" },
+      ctx({ profile: profile({ goldBalance: 1_000_000 }), cutters: ["scythe", "mower"] }),
+    );
+    expect(again).toBeNull();
   });
 
   it("unlocks a synergy perk once, never twice", () => {

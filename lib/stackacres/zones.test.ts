@@ -316,6 +316,17 @@ describe("the Crop Fields' grass", () => {
     expect(meadowDensityAt(t.tx, t.ty, cut, cut + MEADOW_REGROW_MS * 99)).toBe(base);
   });
 
+  it("grows back on the cutting blade's own clock when one is given", () => {
+    // The Mower's cut stays down longer than the Scythe's.
+    const t = someTile();
+    const base = meadowBaseDensity(t.tx, t.ty);
+    const cut = 1_000_000;
+    const slow = MEADOW_REGROW_MS * 3;
+    expect(meadowDensityAt(t.tx, t.ty, cut, cut + MEADOW_REGROW_MS, undefined, slow)).toBe(0);
+    expect(meadowDensityAt(t.tx, t.ty, cut, cut + slow, undefined, slow)).toBe(Math.min(base, 1));
+    expect(meadowDensityAt(t.tx, t.ty, cut, cut + slow * 99, undefined, slow)).toBe(base);
+  });
+
   it("treats an untouched tile as its base height, and a clock that went backwards as just cut", () => {
     const t = someTile();
     const base = meadowBaseDensity(t.tx, t.ty);

@@ -12,29 +12,26 @@
  * tap with one of them held no longer acts instantly -- it falls through to
  * the same select-and-choose ring as a tap with nothing held, so the only
  * thing holding Pipe or Soil changes any more is what a drag does.
- * `water`/`feed`/`harvest` target a UNIT instead -- collecting, feeding,
- * watering and clearing muck used to be a free tap anywhere on the canvas
- * regardless of which tool (if any) was held, back when districts were
- * spread out enough that "whatever's under the finger" never landed on the
- * wrong thing by accident. Once pens sat close together with different jobs
- * (a hen's egg a tap away from a cow's trough a tap away from a bed of
- * soil), a bare tap doing whatever a unit happened to afford stopped
- * feeling like a farm and started feeling like a minefield. The fix is
- * "right tool, right target": holding Water and tapping (or dragging
- * across) a dry crop or trough waters it; holding anything else and tapping
- * the same unit does nothing at all.
+ * `water`/`feed`/`harvest` are not "held" at all any more (2026-09-10). They
+ * target a UNIT rather than ground, and holding one used to make a tap or a
+ * drag on the canvas itself act -- but whether that drag acted at all was
+ * decided at the exact pixel the finger first pressed, so missing a unit's
+ * hitbox by a hair silently turned the same gesture into a camera pan
+ * instead, with nothing telling the player why nothing happened. These
+ * three are pick-up-and-drop from the dock now, the way FarmVille's own
+ * watering can works: press the icon, drag it, release it ON the unit --
+ * see stackacres-toolbelt.tsx's own header. The hit-test only runs once, at
+ * the drop, which is what makes it predictable where the old one wasn't.
  *
- * `harvest` is dual-mode the same way `pipe` is place-or-erase: a press on a
- * ready unit collects it, a press on a mucked one clears it instead, decided
- * once per gesture by what's under the finger -- one basket, two outcomes,
- * so this stays a 7-tool belt rather than 8.
+ * `harvest` is dual-mode the same way `pipe` is place-or-erase: a drop on a
+ * ready unit collects it, a drop on a mucked one clears it instead, decided
+ * by what the drop landed on -- one basket, two outcomes, so this stays a
+ * 7-tool belt rather than 8.
  *
- * Every ground- and unit-targeted tool shares the identical drag mechanism
- * (lay/act on every tile or unit a stroke crosses past `TAP_SLOP`) -- see
- * `bindInput`'s `pipeLaySegment`/`soilLaySegment` and their water/feed/
- * harvest twins. Only a drag uses it now; a stroke that never leaves the
- * slop radius is a tap and goes through `dispatchTap` instead, whichever
- * tool is held.
+ * `pipe`/`soil` still share the identical ground-targeted drag mechanism
+ * (lay/act on every tile a stroke crosses past `TAP_SLOP`) -- see
+ * `bindInput`'s `pipeLaySegment`/`soilLaySegment`. A stroke that never
+ * leaves the slop radius is a tap and goes through `dispatchTap` instead.
  */
 
 export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil", "water", "feed", "harvest"] as const;
@@ -90,17 +87,17 @@ export const STACKACRES_TOOL_DEFS: Readonly<Record<StackAcresTool, StackAcresToo
   },
   water: {
     label: "Water",
-    hint: "Tap or drag over a dry crop or trough to water it.",
+    hint: "Drag onto a dry crop or trough to water it.",
     icon: "ico-water",
   },
   feed: {
     label: "Feed",
-    hint: "Tap or drag over a hungry animal to feed it.",
+    hint: "Drag onto a hungry animal to feed it.",
     icon: "ico-feed",
   },
   harvest: {
     label: "Harvest",
-    hint: "Tap or drag a ready unit to collect it, or a mucked one to clear it.",
+    hint: "Drag onto a ready unit to collect it, or a mucked one to clear it.",
     icon: "ico-harvest",
   },
 };

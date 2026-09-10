@@ -33,7 +33,10 @@ describe("Adsterra units", () => {
    * rule. Only the code can be searched for what the policy allows.
    */
   const configCode = config
-    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Whole-line block comments only. A bare `/*...*/` strip also matches the
+    // `/**` and `*/` inside the file-tracing glob literals, which swallows the
+    // policy itself and fails every assertion below for the wrong reason.
+    .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "")
     // Whole-line comments only. A general `//.*` strip eats the `//` in every
     // https:// URL in the policy, which is most of what these tests read.
     .replace(/^\s*\/\/.*$/gm, "");

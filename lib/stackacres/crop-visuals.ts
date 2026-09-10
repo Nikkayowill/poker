@@ -67,68 +67,94 @@ export function cropSpriteScale(stage: CropStage): number {
 }
 
 /**
- * How far above its own box's bottom edge each frame's ink actually begins,
- * in art units. All zero: every crop frame is now a generated sprite
- * (stackacres-art.ts's `spriteBacked`), and the FLUX prep pipeline
- * (~/.local/share/flux-sprite-test/task-crops/prep_crops.py, external to this
- * repo) fits every asset to its box HEIGHT and pastes it flush to the
- * canvas's own bottom edge -- the same "stand on its floor" convention
- * task-trees's prep script established. So the ink always starts exactly at
- * the box's bottom edge now, for every stage of both crops.
+ * Where each crop's own root point sits in its frame, as an offset from the
+ * bottom-centre of its canvas: `dx` right of centre, `dy` up from the bottom
+ * edge, both in art units.
  *
- * This table predates that: it used to be hand-read off the vector painters
- * these sprites replaced (a carrot's stem stroke started a few tenths of a
- * unit above the baseline), which is why it is kept as a table rather than
- * deleted outright -- a future crop whose art is NOT re-fit flush (or a
- * fallback path that draws the old vector shape) would need it non-zero
- * again, and this is where that number would go.
+ * WHY A TRIMMED SPRITE NEEDS THIS. Every frame is trimmed to its ink and
+ * pasted flush to the bottom of a shared canvas, so bottom-centre is the
+ * lowest pixel anywhere in the frame -- and on anything that sprawls that is
+ * a front leaf, not the point the plant grows out of. Anchoring there drew a
+ * cabbage up and back off its own bed, floating over the soil rather than
+ * standing in it.
  *
- * Anything nonzero here floats once the frame is scaled up, which is the
- * whole reason this table exists -- see `cropGroundOffset`.
+ * MEASURED, NOT TUNED, and the two halves are measured differently on
+ * purpose.
+ *
+ * `dy` is the model's own root point in 3D: `center_objects_at_origin` in
+ * scripts/render-stackacres-craftpix-crops.py puts each bbox centre on the
+ * world origin, so (0, 0, ground) is the plant's footprint at ground level,
+ * and `ground_anchor` projects it through the render's own camera. That is
+ * the number that carries DEPTH -- how far up the frame the ground is at the
+ * plant's base -- and it is what stops a sprawling rosette floating over its
+ * bed.
+ *
+ * `dx` is not that point. A model that leans (a bulb with its leaves fanning
+ * to one side) has its bbox centre away from the bulb, and anchoring
+ * sideways there hung onions and garlic off the edge of their own soil. So
+ * across the frame the anchor is where the plant's mass actually rests: the
+ * alpha-weighted centre of the bottom slice of the ink
+ * (`ground_band_centre` in scripts/trim-stackacres-craftpix-crops.py).
+ *
+ * Both come out of that trim script, which prints this table. Re-run the
+ * pair after a re-render rather than hand-editing a row -- the same rule
+ * `CROP_BOX` already carries.
+ *
+ * `dy` is clamped at zero by the trim script. A model whose projected root
+ * lands below its own lowest ink would otherwise be honoured by LIFTING the
+ * plant, which hung the carrot about three units over its own heap of soil.
+ * Sinking a plant into its bed is fine; hanging one above it is the bug this
+ * table exists to fix.
  */
-const FOOT_INSET: Readonly<Record<CropArt, Readonly<Record<CropStage, number>>>> = {
-  // All 22 crops are flush-bottom trimmed sprites, so every one of these is
-  // zero.
-  garlic: { 0: 0, 1: 0, 2: 0 },
-  onion: { 0: 0, 1: 0, 2: 0 },
-  beet: { 0: 0, 1: 0, 2: 0 },
-  poppy: { 0: 0, 1: 0, 2: 0 },
-  potato: { 0: 0, 1: 0, 2: 0 },
-  carrot: { 0: 0, 1: 0, 2: 0 },
-  cabbage: { 0: 0, 1: 0, 2: 0 },
-  cucumber: { 0: 0, 1: 0, 2: 0 },
-  pepper: { 0: 0, 1: 0, 2: 0 },
-  brokoly: { 0: 0, 1: 0, 2: 0 },
-  sunflower: { 0: 0, 1: 0, 2: 0 },
-  sunflowe_broken: { 0: 0, 1: 0, 2: 0 },
-  wheat1: { 0: 0, 1: 0, 2: 0 },
-  tomato: { 0: 0, 1: 0, 2: 0 },
-  corn: { 0: 0, 1: 0, 2: 0 },
-  corn2: { 0: 0, 1: 0, 2: 0 },
-  eggplant: { 0: 0, 1: 0, 2: 0 },
-  grap: { 0: 0, 1: 0, 2: 0 },
-  grap2: { 0: 0, 1: 0, 2: 0 },
-  pumpkin: { 0: 0, 1: 0, 2: 0 },
-  wheat2: { 0: 0, 1: 0, 2: 0 },
-  artichoke: { 0: 0, 1: 0, 2: 0 },
+const CROP_FOOT: Readonly<Record<CropArt, { readonly dx: number; readonly dy: number }>> = {
+  artichoke: { dx: 1.04, dy: 2.19 },
+  beet: { dx: 0.91, dy: 1.57 },
+  brokoly: { dx: 4.6, dy: 0.93 },
+  cabbage: { dx: 2.25, dy: 8.34 },
+  carrot: { dx: -0.67, dy: 0 },
+  corn: { dx: 0.79, dy: 0 },
+  corn2: { dx: 2.64, dy: 9.59 },
+  cucumber: { dx: 1.72, dy: 1.54 },
+  eggplant: { dx: -8.42, dy: 12.19 },
+  garlic: { dx: -1.71, dy: 4.84 },
+  grap: { dx: -0.57, dy: 1.36 },
+  grap2: { dx: 0.18, dy: 1.06 },
+  onion: { dx: 2.85, dy: 1.6 },
+  pepper: { dx: -1.15, dy: 2.94 },
+  poppy: { dx: -0.02, dy: 1.29 },
+  potato: { dx: -0.27, dy: 2.99 },
+  pumpkin: { dx: -13.91, dy: 7.27 },
+  sunflowe_broken: { dx: -3.04, dy: 0 },
+  sunflower: { dx: -0.99, dy: 2.89 },
+  tomato: { dx: 2.94, dy: 1.85 },
+  wheat1: { dx: -4.66, dy: 2.58 },
+  wheat2: { dx: -6.03, dy: 5.7 },
 };
 
 /**
- * How far DOWN in screen units to nudge a scaled crop so its feet land back
- * on the soil.
+ * How far DOWN in screen units to nudge a crop so its root point lands on the
+ * bed rather than its lowest leaf tip -- `CROP_FOOT`'s own `dy`, scaled.
  *
  * A painter anchors at (0.5, 1) -- the bottom edge of its box -- and Phaser
- * scales about that origin, so a frame whose ink starts `d` units above the
- * box's bottom has that gap multiplied along with everything else: at 1.25x,
- * a 1-unit gap becomes 1.25, and the plant hovers a quarter unit over the
- * plot. Pushing the sprite down by the growth in that gap puts the ink back
- * exactly where it sat at 1x.
- *
- * Zero for every frame already drawn to its own baseline, which is most of
- * them -- this is a correction, not a per-frame nudge to taste.
+ * scales about that origin, so a root point `dy` units above the bottom edge
+ * is `dy * scale` above it once the frame is grown. The correction has to
+ * grow with it or a ripe plant sits higher off its bed than a seedling does.
  */
 export function cropGroundOffset(art: CropArt, stage: CropStage): number {
-  return (cropSpriteScale(stage) - 1) * FOOT_INSET[art][stage];
+  return CROP_FOOT[art].dy * cropSpriteScale(stage);
+}
+
+/**
+ * The sideways half of the same correction: how far to slide a crop so its
+ * root point is over the middle of its bed, in screen units.
+ *
+ * Negative of `CROP_FOOT`'s `dx` for the obvious reason -- a root point drawn
+ * to the RIGHT of the canvas's centre has to move the sprite LEFT to land on
+ * the bed -- and scaled with the frame for the same reason `cropGroundOffset`
+ * is.
+ */
+export function cropFootShiftX(art: CropArt, stage: CropStage): number {
+  return -CROP_FOOT[art].dx * cropSpriteScale(stage);
 }
 
 /**
@@ -175,6 +201,47 @@ const CROP_BOX: Readonly<Record<CropArt, { readonly w: number; readonly h: numbe
   wheat1: { w: 23, h: 37 },
   wheat2: { w: 37, h: 36 },
 };
+
+/** One crop's own painted frame, in art units. Exported for the tests that
+ *  hold the foot corrections inside it -- nothing in the app reads this
+ *  directly, it reads the functions built on it below. */
+export function cropBox(art: CropArt): { readonly w: number; readonly h: number } {
+  return CROP_BOX[art];
+}
+
+/**
+ * How big to draw the heap of soil banked around a crop's stem
+ * (stackacres-art.ts's `soilCollar`), as a scale of that painter's own
+ * 16-unit box.
+ *
+ * Tracks the CROP'S OWN WIDTH rather than being one size for all 22: a heap
+ * sized for a garlic reads as a smudge beside a cabbage, which is what made
+ * the bigger crops look like they were standing next to their soil rather
+ * than in it. Just over half the frame's width, so the heap is wide enough
+ * to meet the plant's base on both sides and never so wide it outgrows the
+ * bed it sits on.
+ */
+export function cropCollarScale(art: CropArt, stage: CropStage): number {
+  return ((CROP_BOX[art].w * 0.55) / 16) * cropSpriteScale(stage);
+}
+
+/**
+ * Whether the heap of soil is drawn BEHIND the plant instead of over its
+ * foot.
+ *
+ * Over the foot is the rule and it is what makes a plant read as growing out
+ * of the ground rather than standing on it. It is wrong for the few crops
+ * that lie ACROSS their own base -- a cabbage's rosette, a pumpkin's vine --
+ * where a heap in front lands in the middle of the leaves as a brown lump.
+ *
+ * The tell is already measured: `CROP_FOOT`'s `dy` is how far up the frame
+ * the ground sits at the plant's base, so a big one means the plant's own
+ * ink hangs well below its footing, which is exactly what a sprawler does.
+ * No second table, and no per-crop taste.
+ */
+export function cropCollarBehind(art: CropArt): boolean {
+  return CROP_FOOT[art].dy >= 6;
+}
 
 export function cropFootprintHalf(art: CropArt, stage: CropStage): number {
   return Math.max(CROP_FOOTPRINT_HALF, (CROP_BOX[art].w / 2) * cropSpriteScale(stage));
@@ -288,12 +355,9 @@ export function cropShadowScaleBlend(art: CropArt, from: CropStage, to: CropStag
 /**
  * The feet correction at the same `t`.
  *
- * Zero at both ends for every frame shipping today (`FOOT_INSET` is all zero --
- * see its own note), so this currently interpolates nothing. It is here for
- * exactly the reason that table is kept rather than deleted: a crop whose art
- * is not re-fit flush needs a non-zero inset, and a growth tween that moved the
- * plant's size without moving its feet would slide it off the soil for 350ms
- * every time it grew.
+ * A growth that moved a plant's size without moving its feet would slide it
+ * off the soil for the whole 350ms every time it grew, which is exactly what
+ * `CROP_FOOT` is scaled per stage to avoid.
  */
 export function cropGroundOffsetBlend(
   art: CropArt,
@@ -303,6 +367,18 @@ export function cropGroundOffsetBlend(
 ): number {
   const a = cropGroundOffset(art, from);
   const b = cropGroundOffset(art, to);
+  return a + (b - a) * growthProgress(t);
+}
+
+/** `cropFootShiftX` at the same `t`, for the same reason. */
+export function cropFootShiftXBlend(
+  art: CropArt,
+  from: CropStage,
+  to: CropStage,
+  t: number,
+): number {
+  const a = cropFootShiftX(art, from);
+  const b = cropFootShiftX(art, to);
   return a + (b - a) * growthProgress(t);
 }
 

@@ -346,6 +346,22 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(patch?.units).toHaveLength(1);
   });
 
+  // Buying a crop outright plants it too, so the same bed rule applies.
+  it("guesses nothing for a crop bought outright when no bed is free", () => {
+    const price = stackacresStockPrice("corn");
+    const bare = predictStackAcresAction(
+      { action: "buy-stock", stock: "corn" },
+      ctx({ profile: profile({ goldBalance: price }) }),
+    );
+    expect(bare).toBeNull();
+
+    const patch = predictStackAcresAction(
+      { action: "buy-stock", stock: "corn" },
+      ctx({ profile: profile({ goldBalance: price }), soilTiles: ONE_BED }),
+    );
+    expect(patch?.units?.[0].permanent).toBe(true);
+  });
+
   it("retires a permanent unit with no refund", () => {
     const owned = unit({ id: "o1", permanent: true, state: "working" });
     const patch = predictStackAcresAction(

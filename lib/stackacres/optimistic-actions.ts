@@ -331,6 +331,15 @@ export function predictStackAcresAction(
       };
     }
     case "buy-stock": {
+      // Buying a crop outright plants it, so it needs a free bed the same way
+      // sowing does (`buyStackAcresStock`'s own gate). Nothing tilled means
+      // the server is about to refuse, so guess nothing.
+      if (!isLivestock(body.stock)) {
+        const taken = ctx.units
+          .map((u) => u.soilSlot)
+          .filter((slot): slot is number => slot !== null);
+        if (nextFreeSoilSlot(createSoilMap(ctx.soilTiles), taken) === null) return null;
+      }
       const profile = debited(ctx, stackacresStockPrice(body.stock));
       if (!profile) return null;
       const unit = optimisticallyStockedUnit({

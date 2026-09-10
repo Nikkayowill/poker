@@ -44,11 +44,50 @@ const csp = [
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
+// sharp is only reached by /api/profile/avatar (lib/profile/image.ts) and
+// @vercel/og only by app/opengraph-image.tsx (an edge route, so it is bundled
+// rather than traced), but Next traces both into every
+// page function: 18.6MB of libvips plus ~3MB of og assets copied into 45 page
+// bundles, about two thirds of this project's Vercel function storage. Vercel
+// optimizes images on its own infrastructure and never calls the sharp inside a
+// Lambda, so the page functions cannot use the copy they were carrying.
+//
+// The globs below list files, never directories. pnpm puts symlinked
+// directories inside the @img trees and Turbopack panics if a trace entry
+// resolves to one. The sharp include is pinned to the version package.json
+// pins, so it picks up one libvips rather than every copy the store holds.
+const sharpFiles = [
+  "node_modules/.pnpm/**/@img/**",
+  "node_modules/.pnpm/**/sharp/**",
+  "node_modules/.pnpm/@img+*/**",
+  "node_modules/.pnpm/sharp@*/**",
+];
+
+// sharp's entry point is dist/index.cjs, so a .js-only glob silently ships a
+// route that cannot require it. Extensions are listed rather than a bare ** on
+// the tree because pnpm symlinks @img directories in here too.
+const sharpRuntimeFiles = [
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.js",
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.cjs",
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.mjs",
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.json",
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.node",
+  "node_modules/.pnpm/sharp@0.35.3*/node_modules/**/*.so.*",
+];
+
+const ogFiles = ["node_modules/**/next/dist/compiled/@vercel/og/**"];
+
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   poweredByHeader: false,
   // CRITICAL FIX: Unified allowedDevOrigins configuration into the primary NextConfig object structure.
   allowedDevOrigins: ["192.168.2.144:3000", "192.168.2.144"],
+  outputFileTracingExcludes: {
+    "**": [...sharpFiles, ...ogFiles],
+  },
+  outputFileTracingIncludes: {
+    "/api/profile/avatar": sharpRuntimeFiles,
+  },
   async headers() {
     return [
       {

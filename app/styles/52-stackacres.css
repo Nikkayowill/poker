@@ -800,11 +800,59 @@
 
 /* Held. The key stays down: it is latched, not being pressed, so it keeps the
    travelled position rather than animating back up. Corn fill, because this is
-   the only toggle on the screen whose state changes what a drag does. */
+   the only toggle on the screen whose state changes what a drag does. Water/
+   Feed/Harvest reuse the identical look while their own drag is in flight --
+   see `.sa-tool-drag` below -- even though nothing there latches. */
 .sa-tool.is-held {
   transform: translateY(var(--sa-lift));
   background: var(--sa-corn);
   box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(255, 255, 255, .4), 0 1px 3px rgba(52, 34, 18, .35);
+}
+
+/* Water/Feed/Harvest: pick-up-and-drop, not click-to-hold (2026-09-10, see
+   stackacres-toolbelt.tsx's own header). `touch-action: none` stops a touch
+   browser from trying to scroll or refresh under a finger already dragging
+   the icon -- the broad `touch-action: manipulation` every other `.sa-tool`
+   gets (further up this sheet) only blocks double-tap zoom, not a pan. */
+.sa-tool-drag {
+  touch-action: none;
+}
+
+/* The dragged icon itself, centred exactly on the pointer -- `left`/`top`
+   are pushed inline from the live `clientX`/`clientY` React state tracks, so
+   this rule only ever supplies the offset that centres the block under
+   those coordinates rather than drawing it corner-first from them. Fixed,
+   not absolute: the drag can range anywhere over the canvas, well outside
+   the toolbelt's own box. */
+.sa-tool-ghost {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-corn);
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  box-shadow: var(--sa-drop);
+  pointer-events: none;
+}
+
+/* The brief spring-back a drop plays when it landed on nothing the tool
+   could touch -- a shake reading as "declined," not as the app having eaten
+   the gesture. Pure transform, the same "opacity never carries meaning here"
+   posture the dock's own entrance keeps -- see stackacres-scene.ts's own
+   note by the gel dock's specular sweep. */
+.sa-tool-ghost-reject {
+  animation: sa-tool-ghost-reject-shake 160ms ease-out;
+}
+
+@keyframes sa-tool-ghost-reject-shake {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  40% { transform: translate(-50%, -50%) scale(.82); }
+  100% { transform: translate(-50%, -50%) scale(.4); opacity: 0; }
 }
 
 /* ---- the signpost ---------------------------------------------------- */

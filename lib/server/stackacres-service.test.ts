@@ -445,6 +445,29 @@ describe("stocking", () => {
     expect(after.seedStock.carrot).toBe(seedsBefore);
   });
 
+  it("refuses a crop bought outright with nothing tilled, and the Gold comes back", async () => {
+    const { token } = await funded(500_000, { beds: false });
+    const before = await balance(token);
+
+    await expect(buyStackAcresStock(token, { stock: "carrot" }, T0)).rejects.toThrow(/bed/);
+
+    const after = await readStackAcres(token, T0);
+    expect(after.units.filter((u) => u.stock === "carrot")).toHaveLength(0);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("stands a crop bought outright in a real bed, not on the scatter fallback", async () => {
+    const { token } = await funded();
+    const view = await buyStackAcresStock(token, { stock: "carrot" }, T0);
+    expect(unitOf(view, "carrot").soilSlot).not.toBeNull();
+  });
+
+  it("still buys livestock outright with nothing tilled -- an animal has no bed to need", async () => {
+    const { token } = await funded(500_000, { beds: false });
+    const view = await buyStackAcresStock(token, { stock: "hen" }, T0);
+    expect(unitOf(view, "hen").state).toBe("working");
+  });
+
   it("still sows livestock and Greenhouse crops with nothing tilled -- neither stands on a bed", async () => {
     const { token } = await funded(500_000, { beds: false });
     const view = await stockStackAcres(token, { stock: "hen" }, T0);

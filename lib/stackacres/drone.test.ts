@@ -1,8 +1,14 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { STACKACRES_TILE } from "./world";
 import {
   DRONE_DROP_MAX_GAP_TILES,
   DRONE_DROP_MIN_GAP_TILES,
+  DRONE_FORAGE_COOLDOWN_MS,
+  DRONE_FORAGE_COOLDOWN_SECONDS,
   DRONE_MAX_CHARGE,
+  DRONE_SPEED,
   DroneState,
   calculatePerimeterWaypoint,
   isPerimeterTile,
@@ -217,5 +223,64 @@ describe("stepDrone", () => {
     const snapshot = { ...drone };
     stepDrone(drone, 500, null, SQUARE);
     expect(drone).toEqual(snapshot);
+  });
+});
+
+describe("forage cooldown vs. the drop cadence", () => {
+  // The bug this pins: a drone's SIMULATED pickup rate ran far ahead of the
+  // rate the server will actually pay one out at. Every extra pickup fired a
+  // request that came back 409 "still recharging its magnets", so a fleet of
+  // five drones sat there refusing a POST every couple of seconds, all day,
+  // and the vacuum animation showed gold being collected that nobody was
+  // ever paid for.
+  //
+  // The fix is the scene holding each drone's next drop for a full cooldown
+  // (`nextDropAtMs`) rather than rolling one the instant the last was swept.
+  // These two tests pin the two halves of why that hold is needed at all:
+  // the flight is short, and the cooldown is long.
+  it("cannot fly even its longest drop gap in one cooldown", () => {
+    const secondsPerTile = STACKACRES_TILE / DRONE_SPEED;
+    const longestFlightSeconds = DRONE_DROP_MAX_GAP_TILES * secondsPerTile;
+    expect(longestFlightSeconds).toBeLessThan(DRONE_FORAGE_COOLDOWN_SECONDS);
+  });
+
+  it("holds long enough that even the shortest gap lands outside the cooldown", () => {
+    // With the hold in place the real interval is cooldown + flight, so the
+    // tightest possible claim still clears the server's window rather than
+    // racing it.
+    const secondsPerTile = STACKACRES_TILE / DRONE_SPEED;
+    const shortestInterval =
+      DRONE_FORAGE_COOLDOWN_SECONDS + DRONE_DROP_MIN_GAP_TILES * secondsPerTile;
+    expect(shortestInterval).toBeGreaterThan(DRONE_FORAGE_COOLDOWN_SECONDS);
+    expect(DRONE_FORAGE_COOLDOWN_MS).toBe(DRONE_FORAGE_COOLDOWN_SECONDS * 1000);
+  });
+
+  it("is honoured by the scene, which vitest cannot run", () => {
+    // stackacres-scene.ts is Phaser and lives outside lib/, so the hold
+    // itself is asserted on the source: the gate on the drop roll, and the
+    // arming of it the moment a drop is vacuumed.
+    const SCENE = readFileSync(
+      join(process.cwd(), "components/arcade/stackacres/stackacres-scene.ts"),
+      "utf8",
+    );
+    expect(SCENE).toContain("time >= node.nextDropAtMs");
+    expect(SCENE).toContain("node.nextDropAtMs = this.time.now + DRONE_FORAGE_COOLDOWN_MS");
+  });
+
+  it("stops entirely once the farm is day-capped", () => {
+    // The other refusal a patrolling drone can walk into, and the worse one:
+    // a capped farm refuses EVERY claim until UTC midnight, so nothing about
+    // waiting one more cooldown helps. The server has to say which refusal
+    // it was, and the client has to park the fleet on hearing it.
+    const SERVICE = readFileSync(
+      join(process.cwd(), "lib/server/stackacres-service.ts"),
+      "utf8",
+    );
+    expect(SERVICE).toContain('result.reason === "day-capped" ? { reason: "day-capped" as const } : {}');
+    const FARM = readFileSync(
+      join(process.cwd(), "components/arcade/stackacres/stackacres-farm.tsx"),
+      "utf8",
+    );
+    expect(FARM).toContain("holdDroneForage(msUntilNextExchangeDay(new Date()))");
   });
 });

@@ -4,6 +4,10 @@ import {
   CROP_DRY_ALPHA,
   CROP_FOOTPRINT_HALF,
   cropArtFor,
+  cropBox,
+  cropCollarBehind,
+  cropCollarScale,
+  cropFootShiftX,
   cropFootprintHalf,
   cropGroundOffset,
   cropShadowScale,
@@ -45,37 +49,76 @@ describe("cropSpriteScale", () => {
   });
 });
 
-describe("cropGroundOffset", () => {
+describe("cropGroundOffset / cropFootShiftX", () => {
   /**
-   * The whole point of the offset. A painter anchors at its box's bottom edge
-   * and Phaser scales about that anchor, so ink sitting `d` above the edge
-   * ends up `scale * d` above it. Pushing the sprite down by the growth in
-   * that gap puts the ink back where it was at 1x -- and a frame already
-   * drawn to its own baseline needs no push at all.
-   *
-   * Every frame is zero now: all six are generated sprites, fit flush to
-   * their box's bottom edge by the FLUX prep pipeline (see FOOT_INSET's own
-   * doc comment in crop-visuals.ts), so none of them need a push.
+   * The whole point of the pair. A frame is trimmed to its ink and pasted
+   * flush to its canvas's bottom edge, so the anchor the scene places it by
+   * -- bottom centre -- is the lowest pixel anywhere in the frame, not the
+   * point the plant grows out of. `CROP_FOOT` carries the measured root
+   * point (see its own doc comment) and these two slide the sprite onto it.
    */
-  it("never pushes a frame further down than its own box is tall", () => {
-    // A correction bigger than the gap it corrects would bury the sprite. The
-    // insets are fractions of a unit, so every offset stays well inside the
-    // 16- and 22-unit boxes these frames are drawn in.
-    for (const art of ["carrot", "corn"] as const) {
-      for (const stage of STAGES) expect(cropGroundOffset(art, stage)).toBeLessThan(2);
+  const ARTS = STACKACRES_CROPS.map((crop) => cropArtFor(crop)).filter(
+    (art): art is NonNullable<ReturnType<typeof cropArtFor>> => art !== null,
+  );
+
+  it("keeps every correction inside the frame it is correcting", () => {
+    // A correction bigger than the frame would slide the plant off its own
+    // bed entirely, which is the failure this exists to fix, not cause.
+    for (const art of ARTS) {
+      for (const stage of STAGES) {
+        const box = cropBox(art);
+        const scale = cropSpriteScale(stage);
+        expect(Math.abs(cropGroundOffset(art, stage))).toBeLessThan(box.h * scale);
+        expect(Math.abs(cropFootShiftX(art, stage))).toBeLessThan((box.w / 2) * scale);
+      }
     }
   });
 
-  it("leaves alone every frame, all of which are already drawn to their own baseline", () => {
-    for (const art of ["carrot", "corn"] as const) {
-      for (const stage of STAGES) expect(cropGroundOffset(art, stage)).toBe(0);
+  it("grows the correction with the frame, so a ripe plant sits no higher than a seedling", () => {
+    // Phaser scales about the (0.5, 1) anchor, so the gap between the anchor
+    // and the root point is multiplied along with the plant.
+    for (const art of ["cabbage", "onion"] as const) {
+      expect(cropGroundOffset(art, 2)).toBeCloseTo(
+        cropGroundOffset(art, 0) * cropSpriteScale(2),
+        10,
+      );
+      expect(cropFootShiftX(art, 2)).toBeCloseTo(
+        cropFootShiftX(art, 0) * cropSpriteScale(2),
+        10,
+      );
     }
   });
 
-  it("pushes down, never up -- a correction can only ever reground", () => {
-    for (const art of ["carrot", "corn"] as const) {
+  it("pulls a sprawling crop back over its bed", () => {
+    // The cabbage is the case that named this bug: its lowest ink is a front
+    // leaf, so bottom-centre anchoring drew it up and back off the soil.
+    expect(cropGroundOffset("cabbage", 2)).toBeGreaterThan(0);
+    // The onion's root point is right of its canvas centre, so it moves left.
+    expect(cropFootShiftX("onion", 2)).toBeLessThan(0);
+  });
+
+  it("never lifts a plant off its own soil", () => {
+    // The trim script clamps `dy` at zero. A model whose projected root lands
+    // below its own lowest ink would otherwise be honoured by raising the
+    // sprite, which hung the carrot about three units over its heap.
+    for (const art of ARTS) {
       for (const stage of STAGES) expect(cropGroundOffset(art, stage)).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("banks a wider heap around a wider crop", () => {
+    // One heap size for all 22 read as a smudge beside the big crops, which
+    // is most of what made them look unattached.
+    expect(cropCollarScale("cabbage", 2)).toBeGreaterThan(cropCollarScale("garlic", 2));
+    expect(cropCollarScale("garlic", 2)).toBeGreaterThan(0);
+  });
+
+  it("puts the heap behind the crops that lie across their own base", () => {
+    // A heap in FRONT of a rosette lands in the middle of its leaves.
+    expect(cropCollarBehind("cabbage")).toBe(true);
+    expect(cropCollarBehind("pumpkin")).toBe(true);
+    expect(cropCollarBehind("carrot")).toBe(false);
+    expect(cropCollarBehind("onion")).toBe(false);
   });
 });
 

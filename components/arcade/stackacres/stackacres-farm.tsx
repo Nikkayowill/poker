@@ -57,6 +57,7 @@ import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   exchangeState,
+  msUntilNextExchangeDay,
   type StackAcresExchangeState,
 } from "@/lib/stackacres/exchange";
 import {
@@ -788,6 +789,10 @@ export function StackAcresFarm() {
   const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
+  /** Which of Water/Feed/Harvest is actively being dragged off the dock
+   *  right now, or `null` between drags -- see `toolHint` below and
+   *  stackacres-toolbelt.tsx's own `onDragToolChange`. */
+  const [dragHintTool, setDragHintTool] = useState<"water" | "feed" | "harvest" | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
   const [museumSecrets, setMuseumSecrets] = useState<SecretMuseumRegistry>(() =>
@@ -1671,6 +1676,12 @@ export function StackAcresFarm() {
           // in the same toast a good harvest answers in, and let the standing
           // notice by the Harvest key (below) carry the countdown.
           if (data.reason === "day-capped") {
+            // A capped farm refuses every drone claim too, and the drones
+            // ask on their own -- so park the fleet's drops until the day
+            // rolls over rather than let five patrols keep flying to gold
+            // that cannot pay and firing a refused request apiece every few
+            // seconds until midnight.
+            world.current?.holdDroneForage(msUntilNextExchangeDay(new Date()));
             setLastCollect({
               text: data.error ?? "The farm has sent out all the Gold it can today.",
               nonce: Date.now(),
@@ -2310,15 +2321,18 @@ export function StackAcresFarm() {
   );
 
   /**
-   * A finger landed on a unit's own picture. It pops immediately -- before
-   * anything has been sent, which is the whole point: the farm answers the
-   * touch, and the network answers a moment later. What happens next is
-   * `tapActionFor`'s call, off the same `unitRowAction` the sidebar's rows
-   * read, so the map and the list can never disagree.
+   * A Water/Feed/Harvest drag off the toolbelt landed on this unit (see
+   * `onToolDrop` below, its only caller since 2026-09-10 -- a bare tap on
+   * a unit's own picture no longer reaches this at all). It pops
+   * immediately -- before anything has been sent, which is the whole
+   * point: the farm answers the drop, and the network answers a moment
+   * later. What happens next is `tapActionFor`'s call, off the same
+   * `unitRowAction` the sidebar's rows read, so the map and the list can
+   * never disagree.
    *
    * A refusal never leaves the browser. There is no room on a canvas for a
    * disabled button with a title attribute explaining itself, so the reason
-   * floats where the finger was instead.
+   * floats where the drop landed instead.
    */
   const onWorldUnitTap = useCallback(
     (unitId: string, at: TapPoint) => {
@@ -2852,35 +2866,32 @@ export function StackAcresFarm() {
   );
 
   /**
-   * The Water tool's drag (or zero-length tap) gesture reached this unit --
-   * see StackAcresSceneCallbacks.onWaterLayUnit's own header. Routed
-   * straight through `onWorldUnitTap` rather than duplicated: that function
-   * already re-derives the exact action from the unit's live state via
-   * `tapActionFor`, plays the right sound, calls `act`, and floats a
-   * refusal toast for anything the scene let through on state alone but the
-   * player can't actually afford (an empty barn, say) -- the scene's own
-   * eligibility check only ever tests `unit.state`, not affordability, so
-   * this second gate still matters.
+   * The toolbelt's own pick-up-and-drop drag (2026-09-10, see
+   * stackacres-toolbelt.tsx's own header) released over this client point
+   * with the Water, Feed or Harvest icon in hand. `world.current`'s own
+   * `unitDropTarget` is the read-only hit-test -- "is there a unit here this
+   * tool can actually touch" -- and a miss (empty ground, the wrong kind of
+   * unit) simply does nothing and reports back `false` so the toolbelt can
+   * spring the icon back to the dock instead of snapping it onto a target
+   * that never landed. A hit is routed straight through `onWorldUnitTap`
+   * rather than duplicated: that function already re-derives the exact
+   * action from the unit's live state via `tapActionFor`, plays the right
+   * sound, calls `act`, and floats a refusal toast for anything the scene
+   * let through on state alone but the player can't actually afford (an
+   * empty barn, say) -- the scene's own eligibility check only ever tests
+   * `unit.state`, not affordability, so this second gate still matters.
+   * Which of the three icons was dropped never changes what fires here:
+   * `onWorldUnitTap` derives collect/feed/water/clear from the unit itself,
+   * `unitDropTarget` is only what stops a Water drop from doing anything to
+   * a hungry hen.
    */
-  const onWaterLayUnit = useCallback(
-    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
-    [onWorldUnitTap],
-  );
-
-  /** The Water tool's own twin, for the Feed tool. */
-  const onFeedLayUnit = useCallback(
-    (unitId: string, at: TapPoint) => onWorldUnitTap(unitId, at),
-    [onWorldUnitTap],
-  );
-
-  /**
-   * The Harvest tool's own twin. `mode` is dropped here on purpose:
-   * `onWorldUnitTap` re-derives the identical collect-or-clear choice from
-   * the unit's own state through `tapActionFor`, so there is nothing left
-   * for `mode` to decide by the time this fires.
-   */
-  const onHarvestLayUnit = useCallback(
-    (unitId: string, _mode: "collect" | "clear", at: TapPoint) => onWorldUnitTap(unitId, at),
+  const onToolDrop = useCallback(
+    (tool: "water" | "feed" | "harvest", clientX: number, clientY: number): boolean => {
+      const target = world.current?.unitDropTarget(tool, clientX, clientY);
+      if (!target) return false;
+      onWorldUnitTap(target.unitId, target.at);
+      return true;
+    },
     [onWorldUnitTap],
   );
 
@@ -2961,8 +2972,14 @@ export function StackAcresFarm() {
   // a stat bump on it, not a second tool. Only say so once there is
   // something to explain: the Trowel already looks like the drawn scythe, so
   // its hint stays exactly what it always was.
-  const toolHint =
-    tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
+  // Water/Feed/Harvest have no persisted `tool` state any more -- the drag
+  // itself is the whole gesture (see stackacres-toolbelt.tsx's own header) --
+  // so `dragHintTool`, set for exactly as long as one of those three is
+  // actually being dragged, stands in for `tool` here instead. Checked
+  // first: a drag in flight always wins over whatever `tool` last held.
+  const toolHint = dragHintTool
+    ? STACKACRES_TOOL_DEFS[dragHintTool].hint
+    : tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
       ? `${STACKACRES_TOOL_DEFS.scythe.hint} That's your ${stackacresToolTierDef(toolTier).label} doing the cutting -- still the scythe, just upgraded.`
       : STACKACRES_TOOL_DEFS[tool].hint;
 
@@ -3327,7 +3344,6 @@ export function StackAcresFarm() {
               secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
-              onUnitTap={onWorldUnitTap}
               onGroundTap={onWorldGroundTap}
               onBarnTap={onWorldBarnTap}
               onGreenhouseTap={onWorldGreenhouseTap}
@@ -3340,9 +3356,6 @@ export function StackAcresFarm() {
               onFenceSegmentTap={onWorldFenceSegmentTap}
               onPipeLayTile={onPipeLayTile}
               onSoilLayTile={onSoilLayTile}
-              onWaterLayUnit={onWaterLayUnit}
-              onFeedLayUnit={onFeedLayUnit}
-              onHarvestLayUnit={onHarvestLayUnit}
               onDropRejected={onDropRejected}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
@@ -3394,7 +3407,12 @@ export function StackAcresFarm() {
           )}
 
           <div className="sa-controls">
-            <StackAcresToolbelt tool={tool} onPick={pickTool} />
+            <StackAcresToolbelt
+              tool={tool}
+              onPick={pickTool}
+              onToolDrop={onToolDrop}
+              onDragToolChange={setDragHintTool}
+            />
           </div>
 
           <StackAcresDestinations

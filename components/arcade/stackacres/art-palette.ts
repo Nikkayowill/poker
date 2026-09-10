@@ -59,15 +59,21 @@ export const RAMPS = {
   /** Land nobody has cleared: darker and cooler, so owned land wins. */
   wild: { top: "#5e9b3a", side: "#487a2b", rim: "#33591d" },
   path: { top: "#f7d98c", side: "#dbb46a", rim: "#9f7c40" },
-  // The flat FILL colour worked ground draws when it has no picture over it
-  // -- the Ox Fields cattle ground (never textured at all), the hairline
-  // grout between soil squares (stackacres-scene.ts's `paintOwnedSlots`
-  // insets each `soilSlot` picture, and this shows through the gap), and
-  // any soil square before its own picture has loaded. Darkened 2026-09-08
-  // to match `soilSlot`'s own dark, realistic dirt tone (Kayo: "the soil
-  // needs to be dark like IRL") -- the old light tan read as a mismatch,
-  // both against the picture and against real soil.
+  // The flat FILL colour worked ground draws where nothing is standing on it
+  // -- the Ox Fields cattle ground (never textured at all) and the soil-tool
+  // boundary. Darkened 2026-09-08 to a dark, realistic dirt tone (Kayo: "the
+  // soil needs to be dark like IRL"); the old light tan read as a mismatch
+  // against real soil. A planted bed is `tilled` below, not this.
   soil: { top: "#332417", side: "#241a10", rim: "#1a130b" },
+  /** Worked planting earth: the raised bed a crop stands in (`soilBed`) and
+   *  the heap of loose soil banked around its stem (`soilCollar`). Its own
+   *  ramp rather than `soil`, which is the flat dark FILL under and around a
+   *  bed -- drawing the bed in the same three tones as its own surround left
+   *  it with no relief at all, which is what made a placed bed read as a
+   *  patch painted on the grass rather than earth with a top and sides.
+   *  Still dark ("the soil needs to be dark like IRL"): the relief comes from
+   *  the spread between these tones, not from lightening the ground. */
+  tilled: { top: "#4a3421", side: "#38271a", rim: "#241810" },
   straw: { top: "#efd98a", side: "#d4ba63", rim: "#a8913f" },
   muck: { top: "#7a5636", side: "#5c3f26", rim: "#3c2817" },
   wood: { top: "#dd9a4a", side: "#b8762c", rim: "#79491b" },

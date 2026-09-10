@@ -36,14 +36,16 @@ export type StackAcresProcessing = Omit<FarmhandPlanInput, "claimed"> & {
  *
  * Rendering is driven from props: `units` plus the held tool become the
  * scene's own units. THERE IS NO PLOT GRID (see 2026-09-03's CLAUDE.md entry
- * -- "districts hold stock, not plots"), but the farm is directly tappable:
- * `onUnitTap` fires when a finger lands on a unit's own picture and
- * `onGroundTap` when it lands on a district's empty fenced ground, both
- * carrying the tap point in CSS pixels relative to this host -- which is the
- * same box every DOM overlay on the screen is positioned in, so the shell can
- * drop a radial menu straight onto those numbers. `onBarnTap` fires when a
- * finger lands on the barn itself -- Ray's Museum's entryway -- and carries
- * no tap point, since it opens a modal rather than anchoring anything to the
+ * -- "districts hold stock, not plots"), and the farm's own units are no
+ * longer directly tappable at all (2026-09-10): `onGroundTap` still fires
+ * when a finger lands on a district's empty fenced ground, carrying the tap
+ * point in CSS pixels relative to this host -- which is the same box every
+ * DOM overlay on the screen is positioned in, so the shell can drop a radial
+ * menu straight onto those numbers -- but collecting, feeding, watering and
+ * clearing muck are drag-and-drop from the toolbelt now, through `api`'s own
+ * `unitDropTarget`, not a scene callback. `onBarnTap` fires when a finger
+ * lands on the barn itself -- Ray's Museum's entryway -- and carries no tap
+ * point, since it opens a modal rather than anchoring anything to the
  * screen. `onViewMoved` says the camera has shifted under anything so
  * pinned. The rest of the contract is
  * unchanged: `onReady` when the first frame is drawn, and, through `api`,
@@ -137,6 +139,17 @@ export interface StackAcresWorldApi {
    *  seed menu's dismissal scrim needs this. `clientX`/`clientY` are CSS
    *  pixels, the same space a `PointerEvent` carries. */
   tapAt: (clientX: number, clientY: number) => void;
+  /** Whether dropping the Water, Feed or Harvest icon at this client point
+   *  would land on a unit that tool can act on -- see StackAcresScene's own
+   *  `unitDropTarget`. The toolbelt's pick-up-and-drop drag calls this on
+   *  release; there is no scene callback for the action itself any more, the
+   *  toolbelt calls `onWorldUnitTap` (or its own equivalent) directly on a
+   *  hit. */
+  unitDropTarget: (
+    tool: "water" | "feed" | "harvest",
+    clientX: number,
+    clientY: number,
+  ) => { unitId: string; at: TapPoint } | null;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
    *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
    *  drives the day/night population swap (the shell's own `timeOfDay()`
@@ -153,6 +166,11 @@ export interface StackAcresWorldApi {
    *  render. Passing the unchanged list twice is a harmless no-op (the
    *  scene's own `setDroneHangar` diffs against what it already has). */
   setDroneHangar: (droneIds: string[]) => void;
+  /** Parks every drone's forage drops for `durationMs` -- they keep flying,
+   *  they just stop finding anything. Called when the server refuses a claim
+   *  with `day-capped`: the farm cannot pay another Gold piece today, so the
+   *  fleet has nothing to fetch until the allowance refills. */
+  holdDroneForage: (durationMs: number) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -162,8 +180,6 @@ export interface StackAcresWorldProps {
    *  the client-side twin of a confirmed collect. */
   celebrate: { unitId: string; nonce: number } | null;
   onReady: () => void;
-  /** A finger landed on this unit's own picture. */
-  onUnitTap: (unitId: string, at: TapPoint) => void;
   /** A finger landed on this district's fenced ground, on nothing in
    *  particular -- an offer to seed something there. `world` is the same
    *  point in world units, alongside the CSS-pixel `at` -- see
@@ -210,14 +226,6 @@ export interface StackAcresWorldProps {
    *  StackAcresSceneCallbacks.onSoilLayTile's own doc for the full contract.
    *  Bypasses `onGroundTap`'s ring menu entirely while the soil tool is held. */
   onSoilLayTile: (tx: number, ty: number, mode: "place" | "erase") => void;
-  /** The Water tool's drag (or tap) gesture reached this unit -- see
-   *  StackAcresSceneCallbacks.onWaterLayUnit's own doc for the full contract. */
-  onWaterLayUnit: (unitId: string, at: TapPoint) => void;
-  /** The Water tool's own twin, for the Feed tool. */
-  onFeedLayUnit: (unitId: string, at: TapPoint) => void;
-  /** The Harvest tool's own twin -- dual-mode, see
-   *  StackAcresSceneCallbacks.onHarvestLayUnit's own doc. */
-  onHarvestLayUnit: (unitId: string, mode: "collect" | "clear", at: TapPoint) => void;
   /** A pipe/well press or drag was refused for landing inside a pen -- see
    *  StackAcresSceneCallbacks.onDropRejected's own doc. Optional the same
    *  way `onFenceSegmentTap` is: a caller that never wires it just never
@@ -323,7 +331,6 @@ export function StackAcresWorld({
   secretSetComplete,
   celebrate,
   onReady,
-  onUnitTap,
   onGroundTap,
   onBarnTap,
   onGreenhouseTap,
@@ -336,9 +343,6 @@ export function StackAcresWorld({
   onFenceSegmentTap,
   onPipeLayTile,
   onSoilLayTile,
-  onWaterLayUnit,
-  onFeedLayUnit,
-  onHarvestLayUnit,
   onDropRejected,
   onLivestockDamaged,
   sectors,
@@ -358,7 +362,6 @@ export function StackAcresWorld({
   // The scene calls back into whatever the shell currently is, not whatever
   // it was when the game booted.
   const readyRef = useRef(onReady);
-  const unitTapRef = useRef(onUnitTap);
   const groundTapRef = useRef(onGroundTap);
   const barnTapRef = useRef(onBarnTap);
   const greenhouseTapRef = useRef(onGreenhouseTap);
@@ -371,9 +374,6 @@ export function StackAcresWorld({
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const pipeLayTileRef = useRef(onPipeLayTile);
   const soilLayTileRef = useRef(onSoilLayTile);
-  const waterLayUnitRef = useRef(onWaterLayUnit);
-  const feedLayUnitRef = useRef(onFeedLayUnit);
-  const harvestLayUnitRef = useRef(onHarvestLayUnit);
   const dropRejectedRef = useRef(onDropRejected);
   const livestockDamagedRef = useRef(onLivestockDamaged);
   const lockedTapRef = useRef(onLockedSectorTap);
@@ -399,7 +399,6 @@ export function StackAcresWorld({
   const viewExpansionRef = useRef(viewExpansion);
   useEffect(() => {
     readyRef.current = onReady;
-    unitTapRef.current = onUnitTap;
     groundTapRef.current = onGroundTap;
     barnTapRef.current = onBarnTap;
     greenhouseTapRef.current = onGreenhouseTap;
@@ -412,9 +411,6 @@ export function StackAcresWorld({
     fenceSegmentTapRef.current = onFenceSegmentTap;
     pipeLayTileRef.current = onPipeLayTile;
     soilLayTileRef.current = onSoilLayTile;
-    waterLayUnitRef.current = onWaterLayUnit;
-    feedLayUnitRef.current = onFeedLayUnit;
-    harvestLayUnitRef.current = onHarvestLayUnit;
     dropRejectedRef.current = onDropRejected;
     livestockDamagedRef.current = onLivestockDamaged;
     lockedTapRef.current = onLockedSectorTap;
@@ -465,7 +461,6 @@ export function StackAcresWorld({
       const scene = new SceneClass(
         {
           onReady: () => readyRef.current(),
-          onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onGroundTap: (zone, at, world) => groundTapRef.current(zone, at, world),
           onBarnTap: () => barnTapRef.current(),
           onGreenhouseTap: () => greenhouseTapRef.current(),
@@ -478,9 +473,6 @@ export function StackAcresWorld({
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onPipeLayTile: (tx, ty, mode) => pipeLayTileRef.current(tx, ty, mode),
           onSoilLayTile: (tx, ty, mode) => soilLayTileRef.current(tx, ty, mode),
-          onWaterLayUnit: (unitId, at) => waterLayUnitRef.current(unitId, at),
-          onFeedLayUnit: (unitId, at) => feedLayUnitRef.current(unitId, at),
-          onHarvestLayUnit: (unitId, mode, at) => harvestLayUnitRef.current(unitId, mode, at),
           onDropRejected: (message, at) => dropRejectedRef.current?.(message, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
           onLockedSectorTap: (zone, at) => lockedTapRef.current(zone, at),
@@ -619,11 +611,14 @@ export function StackAcresWorld({
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
+      unitDropTarget: (tool, clientX, clientY) =>
+        sceneRef.current?.unitDropTarget(tool, clientX, clientY) ?? null,
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
       setDroneHangar: (droneIds) => sceneRef.current?.setDroneHangar(droneIds),
+      holdDroneForage: (durationMs) => sceneRef.current?.holdDroneForage(durationMs),
     }),
     [],
   );

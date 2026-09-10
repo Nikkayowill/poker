@@ -51,6 +51,7 @@
 
 import type { MachineItemId } from "./machine-items";
 import { type StackAcresInventory, inventoryQuantity } from "./inventory";
+import { SCYTHE_REACH } from "./zones";
 
 /** The subset of a tool tier's numbers a forge enchantment can move. Each
  *  field is the value BEFORE any enchantment is applied -- e.g. `critChance`
@@ -58,11 +59,10 @@ import { type StackAcresInventory, inventoryQuantity } from "./inventory";
 export interface ForgeBaseStats {
   critChance: number;
   critBonus: number;
-  /** World units either side of a scythe drag one stroke cuts
-   *  (`STACKACRES_TOOL_TIER_DEFS[tier].reach`). Purely client-side scenery,
-   *  same as equipment.ts's own `reach` -- see that file's header for why
-   *  nothing is at stake in it. */
-  reach: number;
+  /** World units either side of a mow stroke. Defaults to the Scythe's: the
+   *  spade tiers stopped setting it when cutting moved to ./cutters.ts.
+   *  Display only; nothing is at stake in it. */
+  reach?: number;
 }
 
 export type ForgeEnchantmentKind = "crit_chance_window" | "crit_yield_bonus" | "forge_tempo";
@@ -164,6 +164,8 @@ export function isForgeEnchantmentId(value: string): value is keyof typeof FORGE
 export const FORGE_ENCHANTMENT_IDS = Object.keys(FORGE_ENCHANTMENTS);
 
 export interface StackAcresForgedStats extends ForgeBaseStats {
+  /** Always set once forged: the base's own, or the Scythe's. */
+  reach: number;
   /** Which enchantments actually contributed. Excludes any id in the input
    *  that isn't a known enchantment -- a stale/renamed item_id in an
    *  ownership row is ignored here rather than thrown, same posture
@@ -192,7 +194,7 @@ export function computeForgedToolStats(
 ): StackAcresForgedStats {
   let critChance = baseTool.critChance;
   let critBonus = baseTool.critBonus;
-  let reach = baseTool.reach;
+  let reach = baseTool.reach ?? SCYTHE_REACH;
   const applied: string[] = [];
 
   // De-duplicated defensively: a caller (or an ownership row written before

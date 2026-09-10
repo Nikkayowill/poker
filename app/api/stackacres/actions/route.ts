@@ -16,6 +16,7 @@ import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
+import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import {
@@ -41,6 +42,7 @@ import {
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
+  buyStackAcresCutter,
   waterStackAcres,
   drawStackAcresWater,
   sowStackAcresWheat,
@@ -90,10 +92,10 @@ export const runtime = "nodejs";
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
  * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
- * inventory, for every item, not just wheat/milk/wool. FOURTEEN ACTIONS SPEND
+ * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
  * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
- * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
+ * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`, `sow-wheat`,
  * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
  * `place-pipe` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -183,6 +185,7 @@ const bodySchema = z.discriminatedUnion("action", [
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
+  z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
   z.object({ action: z.literal("build-greenhouse") }),
@@ -477,6 +480,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return unlockStackAcresCropFields(token, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
+    case "buy-cutter":
+      return buyStackAcresCutter(token, action.cutter, now);
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":

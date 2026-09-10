@@ -7,23 +7,21 @@ import {
   isStackAcresToolTier,
   nextToolTier,
   rollHarvestCrit,
-  scytheReachFor,
   stackacresToolTierDef,
-  strokesToClearWidth,
   toStackAcresToolTier,
   toolTierRank,
   toolUpgradePrice,
   type StackAcresToolTier,
 } from "./equipment";
-import { SCYTHE_REACH } from "./zones";
 import { STACKACRES_CAPACITY_PRICE } from "./catalogue";
 
 describe("the ladder itself", () => {
-  it("starts where the game already plays", () => {
-    // THE regression guard on this whole feature. If the starting rung's
-    // reach ever drifts from SCYTHE_REACH, shipping the equipment shop is a
-    // silent nerf to every player who never buys anything.
-    expect(scytheReachFor(STACKACRES_STARTING_TIER)).toBe(SCYTHE_REACH);
+  it("has nothing to do with cutting grass", () => {
+    // The spades used to set the scythe's swathe, which is how the Golden
+    // Spade ended up mowing the meadow. That lives in ./cutters.ts now.
+    for (const tier of STACKACRES_TOOL_TIERS) {
+      expect(Object.keys(STACKACRES_TOOL_TIER_DEFS[tier]), tier).not.toContain("reach");
+    }
   });
 
   it("gives the starting rung away and charges for every other one", () => {
@@ -48,7 +46,6 @@ describe("the ladder itself", () => {
     for (let i = 1; i < STACKACRES_TOOL_TIERS.length; i += 1) {
       const lower = STACKACRES_TOOL_TIER_DEFS[STACKACRES_TOOL_TIERS[i - 1]];
       const upper = STACKACRES_TOOL_TIER_DEFS[STACKACRES_TOOL_TIERS[i]];
-      expect(upper.reach, `${i}: reach`).toBeGreaterThan(lower.reach);
       expect(upper.critChance, `${i}: critChance`).toBeGreaterThan(lower.critChance);
       expect(upper.critBonus, `${i}: critBonus`).toBeGreaterThanOrEqual(lower.critBonus);
       expect(upper.price ?? 0, `${i}: price`).toBeGreaterThan(lower.price ?? 0);
@@ -130,44 +127,6 @@ describe("toStackAcresToolTier", () => {
     expect(isStackAcresToolTier("golden-spade")).toBe(true);
     expect(isStackAcresToolTier("golden spade")).toBe(false);
     expect(isStackAcresToolTier(null)).toBe(false);
-  });
-});
-
-describe("strokesToClearWidth", () => {
-  it("takes strictly fewer passes as the ladder climbs", () => {
-    // The ladder's first effect, stated as TAPS -- which is what the player
-    // actually experiences when clearing an overgrown Long Meadow.
-    const band = 400;
-    const passes = STACKACRES_TOOL_TIERS.map((t) => strokesToClearWidth(band, t));
-    for (let i = 1; i < passes.length; i += 1) {
-      expect(passes[i], STACKACRES_TOOL_TIERS[i]).toBeLessThan(passes[i - 1]);
-    }
-  });
-
-  it("halves the passes between the free rung and the top one", () => {
-    // What the Golden Spade's own shelf copy promises ("clears the meadow in
-    // half the passes"). Held here so a retune of `reach` cannot quietly make
-    // the store lie.
-    const band = 1_000;
-    const trowel = strokesToClearWidth(band, "trowel");
-    const spade = strokesToClearWidth(band, "golden-spade");
-    expect(spade).toBeLessThanOrEqual(Math.ceil(trowel / 2));
-  });
-
-  it("gives the Iron Shovel half again the swathe, as its row claims", () => {
-    expect(scytheReachFor("iron-shovel")).toBeCloseTo(scytheReachFor("trowel") * 1.5, 6);
-  });
-
-  it("rounds up -- a band two and a half passes wide takes three", () => {
-    const reach = scytheReachFor("trowel");
-    expect(strokesToClearWidth(reach * 2 * 2.5, "trowel")).toBe(3);
-    expect(strokesToClearWidth(reach * 2, "trowel")).toBe(1);
-  });
-
-  it("asks for no passes over no ground", () => {
-    expect(strokesToClearWidth(0, "trowel")).toBe(0);
-    expect(strokesToClearWidth(-40, "trowel")).toBe(0);
-    expect(strokesToClearWidth(Number.NaN, "trowel")).toBe(0);
   });
 });
 

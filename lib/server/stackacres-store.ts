@@ -9,6 +9,11 @@ import {
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
 import {
+  ownedStackAcresCutters,
+  type StackAcresBuyableCutter,
+  type StackAcresCutter,
+} from "@/lib/stackacres/cutters";
+import {
   isMachineItem,
   isMachineProcessedItem,
   type MachineItemId,
@@ -75,6 +80,7 @@ declare global {
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
   var __riverRoomStackAcresTool: Map<string, StackAcresToolTier> | undefined;
+  var __riverRoomStackAcresCutters: Map<string, Set<StackAcresBuyableCutter>> | undefined;
   var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
@@ -116,6 +122,12 @@ globalThis.__riverRoomStackAcresWater = memoryWater;
  *  entry is zero extra slots. */
 const memoryTool = globalThis.__riverRoomStackAcresTool ?? new Map<string, StackAcresToolTier>();
 globalThis.__riverRoomStackAcresTool = memoryTool;
+
+/** Cutters each player has bought, keyed by profile id. A missing entry is
+ *  only the free Scythe. */
+const memoryCutters =
+  globalThis.__riverRoomStackAcresCutters ?? new Map<string, Set<StackAcresBuyableCutter>>();
+globalThis.__riverRoomStackAcresCutters = memoryCutters;
 
 /** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
 const memoryExchanges = globalThis.__riverRoomStackAcresExchanges ?? new Map<string, number>();
@@ -241,6 +253,7 @@ export function __resetStackAcresForTest(): void {
   memoryFeed.clear();
   memoryWater.clear();
   memoryTool.clear();
+  memoryCutters.clear();
   memoryExchanges.clear();
   memoryUpkeep.clear();
   memoryHarvests.length = 0;
@@ -1225,6 +1238,47 @@ export async function upgradeStackAcresToolTier(
   });
   if (error) throw new Error(`Could not update your equipment: ${error.message}`);
   return data === null ? null : toStackAcresToolTier(data);
+}
+
+/** Every cutter this player owns, Scythe first. No rows means only the Scythe. */
+export async function readStackAcresCutters(profileId: string): Promise<StackAcresCutter[]> {
+  const supabase = adminClient();
+  if (!supabase) return ownedStackAcresCutters([...(memoryCutters.get(profileId) ?? [])]);
+
+  const { data, error } = await supabase
+    .from("homestead_cutter")
+    .select("cutter")
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not read your cutters: ${error.message}`);
+  return ownedStackAcresCutters((data ?? []).map((row: { cutter: unknown }) => row.cutter));
+}
+
+/**
+ * Records a bought cutter. True when this call wrote it, false when the player
+ * already had it (a double tap, or another tab). The caller has already taken
+ * the Gold and refunds on false.
+ */
+export async function recordStackAcresCutter(
+  profileId: string,
+  cutter: StackAcresBuyableCutter,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const owned = memoryCutters.get(profileId) ?? new Set<StackAcresBuyableCutter>();
+    if (owned.has(cutter)) return false;
+    owned.add(cutter);
+    memoryCutters.set(profileId, owned);
+    return true;
+  }
+
+  // ON CONFLICT DO NOTHING returns no row when it was already there, which is
+  // the whole guard: exactly one of two racing buys gets a row back.
+  const { data, error } = await supabase
+    .from("homestead_cutter")
+    .upsert({ profile_id: profileId, cutter }, { onConflict: "profile_id,cutter", ignoreDuplicates: true })
+    .select("cutter");
+  if (error) throw new Error(`Could not record your ${cutter}: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 /* ------------------------------------------------------------------ */

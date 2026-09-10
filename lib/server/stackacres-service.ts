@@ -170,6 +170,8 @@ import {
   clearStackAcresMuck,
   readStackAcresToolTier,
   upgradeStackAcresToolTier,
+  readStackAcresCutters,
+  recordStackAcresCutter,
   collectStackAcresUnit,
   countOccupiedStackAcresUnits,
   createStackAcresUnit,
@@ -263,6 +265,12 @@ import {
   toolUpgradePrice,
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
+import {
+  isStackAcresBuyableCutter,
+  stackacresCutterDef,
+  type StackAcresBuyableCutter,
+  type StackAcresCutter,
+} from "@/lib/stackacres/cutters";
 import { machineItemLabel } from "@/lib/stackacres/machine-items";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -399,13 +407,14 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *
  * THE GOLD PATHS, and the asymmetry that is the whole safety story:
  *
- *   * EIGHT SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
+ *   * NINE SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
  *     buys stock outright, `stockStackAcres` buys a cycle's seed,
  *     `buyStackAcresFeed` buys a shipment, `clearStackAcresUnit` pays a muck
  *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder,
+ *     `buyStackAcresCutter` buys the Mower,
  *     `sowStackAcresWheat` buys wheat seed, `placeStackAcresMachine` buys a
  *     machine outright. All sinks. Land Maintenance (`assessStackAcresUpkeep`)
- *     is a ninth, standalone one -- see its own section below.
+ *     is a tenth, standalone one -- see its own section below.
  *   * THREE PAY, and all three are gated by `STACKACRES_GOLD_CEILING`, the
  *     SAME flat daily reservation, through the SAME `reserveStackAcresExchange`/
  *     `releaseStackAcresExchange` pair: `sellStackAcresItem`, the new baseline
@@ -555,6 +564,9 @@ export interface StackAcresView {
   /** The equipment rung this player holds. Never null -- a player who has
    *  bought nothing holds the free starting Trowel. */
   tool: StackAcresToolTier;
+  /** Grass cutters owned, Scythe first. Which one is in hand is the client's
+   *  choice; see lib/stackacres/cutters.ts. */
+  cutters: StackAcresCutter[];
   /** Wheat growing toward a Mill. See lib/stackacres/wheat-plot.ts's header
    *  for why this is not part of `units`. */
   wheatPlots: StackAcresWheatPlotSnapshot[];
@@ -876,6 +888,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     storedDevotion,
     storedFriendships,
     vatManifest,
+    cutters,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -920,6 +933,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // this array literal would widen every sibling element's inferred type.
     Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     readStackAcresVatManifest(profile.id),
+    readStackAcresCutters(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -961,6 +975,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // charge happens inside a harvest, netted out of what it pays.
     upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid),
     tool,
+    cutters,
     wheatPlots: wheatRows.map((row) => toWheatPlotSnapshot(row, now)),
     machines: machineRows.map((row) => ({
       ...toMachineSnapshot(row, now),
@@ -1774,6 +1789,59 @@ export async function upgradeStackAcresTool(
   }
 
   return { ...(await view(debited, now)), upgraded: { from: current, to: settled } };
+}
+
+/**
+ * Buys a cutter (the Mower), with Gold. Same order as the spade ladder above:
+ * the shop gate, then the debit, then a write guarded on the row not existing
+ * yet, refunding if it finds the cutter was already bought.
+ */
+export async function buyStackAcresCutter(
+  token: string,
+  cutterInput: string,
+  now = new Date(),
+): Promise<StackAcresView & { boughtCutter: StackAcresBuyableCutter }> {
+  if (!isStackAcresBuyableCutter(cutterInput)) {
+    throw new StackAcresRequestError("Ray doesn't sell that.", 400);
+  }
+  const cutter = cutterInput;
+  const def = stackacresCutterDef(cutter);
+  const listPrice = def.price;
+  if (listPrice === null) throw new StackAcresRequestError("Ray doesn't sell that.", 400);
+  const profile = await ensureProfile(token);
+
+  if ((await readStackAcresCutters(profile.id)).includes(cutter)) {
+    throw new StackAcresRequestError(`You already own the ${def.label}.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  await requireUnlockedShopEntry(def, profile.id, now);
+
+  // Town Favor applies here like every other Ray's-shop price.
+  const price = applyInfluenceDiscount(listPrice, await readStackAcresInfluence(profile.id));
+
+  // Rule 1: the Gold leaves first.
+  const debited = await spendGoldByProfile(profile.id, price);
+  if (!debited) {
+    throw new StackAcresRequestError(`The ${def.label} costs ${price.toLocaleString()} Gold.`, 400);
+  }
+
+  let recorded: boolean;
+  try {
+    recorded = await recordStackAcresCutter(profile.id, cutter);
+  } catch (error) {
+    await refundGold(profile.id, price);
+    throw error;
+  }
+  if (!recorded) {
+    // Another tab bought it between the read above and the write.
+    await refundGold(profile.id, price);
+    throw new StackAcresRequestError("That was already bought.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return { ...(await view(debited, now)), boughtCutter: cutter };
 }
 
 /**

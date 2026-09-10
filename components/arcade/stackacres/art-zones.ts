@@ -43,13 +43,20 @@ export type ZonePainterName =
   | "hog"
   // Chrome.
   | "ico-scythe"
+  // The bought cutter (lib/stackacres/cutters.ts). Drawn, no sprite.
+  | "ico-mower"
   // The equipment ladder's three rungs, drawn on the canvas as the ghost that
   // follows a mow drag. All three fall back to `ico-scythe`'s own drawing (see
   // TOOL_TIER_PAINTER below) -- they are sprite-backed names, and the fallback
   // only ever shows in the frames before a PNG lands.
   | "toolTrowel"
   | "toolIronShovel"
-  | "toolGoldenSpade";
+  | "toolGoldenSpade"
+  // The Mower's own real sprite (a FLUX render, not a vector drawing). Named
+  // apart from the tool tiers above because it is a cutter (lib/stackacres/
+  // cutters.ts), not a spade rung -- see that file's header for why the two
+  // ladders split. Falls back to `ico-mower`'s drawing, not `ico-scythe`'s.
+  | "cutterMower";
 
 /** One blade of grass: a tapering curve from a fixed root. Shared by the
  *  three meadow heights so a tile that has been cut and half-regrown is
@@ -102,6 +109,10 @@ const GRASS_LIGHT = "#79b34f";
  * `ZONE_PAINTERS` runs at DRAW time, long after both exist.
  */
 const TOOL_TIER_PAINTER: Painter = painter(24, 24, (c) => ZONE_PAINTERS["ico-scythe"](c), 0.5, 0.5);
+/** Same reasoning, `cutterMower`'s own fallback: `ico-mower`'s drawing
+ *  rather than the scythe's, since a Mower before its PNG lands should not
+ *  flash a different tool's picture. */
+const MOWER_TOOL_PAINTER: Painter = painter(24, 24, (c) => ZONE_PAINTERS["ico-mower"](c), 0.5, 0.5);
 
 export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
   /* ---- The Long Meadow ------------------------------------------------ */
@@ -434,6 +445,47 @@ export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
     0.5,
   ),
 
+  // A push mower in the same 24x24 box as the scythe: handle up and back,
+  // a red deck, two wheels.
+  "ico-mower": painter(
+    24,
+    24,
+    (c) => {
+      // Handle, with the grip bar across its top.
+      c.beginPath();
+      c.moveTo(4.6, 3.6);
+      c.lineTo(11.6, 13.6);
+      stroke(c, "#8d6738", 2.2);
+      c.beginPath();
+      c.moveTo(2.8, 4.8);
+      c.lineTo(6.6, 2.2);
+      stroke(c, "#3b3430", 2);
+      // Engine cap.
+      c.fillStyle = "#9aa3ab";
+      c.fillRect(13, 9.4, 4.6, 2.9);
+      // Deck: a low dome, lit from above.
+      c.beginPath();
+      c.moveTo(9, 18.2);
+      c.quadraticCurveTo(9.4, 11.8, 15.3, 11.6);
+      c.quadraticCurveTo(21.2, 11.8, 21.6, 18.2);
+      c.closePath();
+      F(c, lin(c, 9, 11.6, 9, 18.2, [[0, "#e45b4c"], [1, "#9c2f25"]]));
+      // Wheels, with a pale hub.
+      for (const x of [11, 19.6]) {
+        c.beginPath();
+        c.arc(x, 19.2, 2.7, 0, Math.PI * 2);
+        c.fillStyle = "#2f2a26";
+        c.fill();
+        c.beginPath();
+        c.arc(x, 19.2, 1, 0, Math.PI * 2);
+        c.fillStyle = "#b9b1a6";
+        c.fill();
+      }
+    },
+    0.5,
+    0.5,
+  ),
+
   /* ---- The equipment ladder ------------------------------------------- */
 
   // Three names, one drawing. Each rung is a `spriteBacked` name in
@@ -446,4 +498,5 @@ export const ZONE_PAINTERS: Record<ZonePainterName, Painter> = {
   toolTrowel: TOOL_TIER_PAINTER,
   toolIronShovel: TOOL_TIER_PAINTER,
   toolGoldenSpade: TOOL_TIER_PAINTER,
+  cutterMower: MOWER_TOOL_PAINTER,
 };

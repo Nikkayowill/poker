@@ -233,6 +233,17 @@ import {
   type StackAcresToolTier,
 } from "@/lib/stackacres/equipment";
 import {
+  STACKACRES_CUTTERS,
+  STACKACRES_STARTING_CUTTER,
+  heldStackAcresCutter,
+  isStackAcresBuyableCutter,
+  isStackAcresCutter,
+  ownedStackAcresCutters,
+  stackacresCutterDef,
+  type StackAcresBuyableCutter,
+  type StackAcresCutter,
+} from "@/lib/stackacres/cutters";
+import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
@@ -360,6 +371,10 @@ interface StackAcresResponse {
   /** The equipment rung held. Absent only from a response old enough to
    *  predate the ladder, which `toStackAcresToolTier` reads as the Trowel. */
   tool?: StackAcresToolTier;
+  /** Grass cutters owned, Scythe first. Absent from a response older than
+   *  cutters, which leaves the Scythe alone in hand. */
+  cutters?: StackAcresCutter[];
+  boughtCutter?: StackAcresBuyableCutter;
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   harvest?: {
     units: number;
@@ -636,6 +651,24 @@ export function StackAcresFarm() {
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
   const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
+  // Grass cutters owned, and the one last picked on this device. `cutter` is
+  // what is actually in hand: the pick while it is still owned, else the best.
+  const [cutters, setCutters] = useState<StackAcresCutter[]>([STACKACRES_STARTING_CUTTER]);
+  const [pickedCutter, setPickedCutter] = useState<StackAcresCutter | null>(null);
+  const cutter = heldStackAcresCutter(pickedCutter, cutters);
+  useEffect(() => {
+    // Deferred a tick, same as Ray's hello below: react-hooks/set-state-in-effect
+    // rejects a synchronous setState in the effect body.
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem("sa-cutter");
+        if (isStackAcresCutter(stored)) setPickedCutter(stored);
+      } catch {
+        // Blocked storage: the best cutter owned stays in hand.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   // The Synergy Tree. Seeded to "nothing unlocked, nothing active, speed 1"
   // -- the same state a brand-new farm's own first read answers with.
   const [synergyUnlocked, setSynergyUnlocked] = useState<SynergyArchetype[]>([]);
@@ -1234,6 +1267,7 @@ export function StackAcresFarm() {
     // Through toStackAcresToolTier rather than a cast, for the same reason the
     // store reads it that way: an unknown rung must degrade to a playable one.
     if (data.tool) setToolTier(toStackAcresToolTier(data.tool));
+    if (data.cutters) setCutters(ownedStackAcresCutters(data.cutters));
     if (data.synergy) {
       setSynergyUnlocked(data.synergy.unlocked);
       setSynergyActive(data.synergy.active);
@@ -1324,6 +1358,7 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       toolTier,
+      cutters,
       sectors,
       upkeep,
       influence,
@@ -1353,6 +1388,7 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       toolTier,
+      cutters,
       sectors,
       upkeep,
       influence,
@@ -1398,6 +1434,7 @@ export function StackAcresFarm() {
       upkeep,
       influence,
       toolTier,
+      cutters,
       synergyUnlocked,
       synergyActive,
       farmhandSpeedMultiplier,
@@ -1424,6 +1461,7 @@ export function StackAcresFarm() {
       upkeep,
       influence,
       toolTier,
+      cutters,
       synergyUnlocked,
       synergyActive,
       farmhandSpeedMultiplier,
@@ -1452,6 +1490,7 @@ export function StackAcresFarm() {
     setUpkeep(snap.upkeep);
     setInfluence(snap.influence);
     setToolTier(snap.toolTier);
+    setCutters(snap.cutters);
     setSynergyUnlocked(snap.synergyUnlocked);
     setSynergyActive(snap.synergyActive);
     setFarmhandSpeedMultiplier(snap.farmhandSpeedMultiplier);
@@ -1886,6 +1925,16 @@ export function StackAcresFarm() {
           goldSound();
           setLastCollect({
             text: `${stackacresToolTierDef(data.upgraded.to).label} in hand`,
+            nonce: Date.now(),
+          });
+        }
+        // A new cutter goes straight into your hand. The Scythe is one tap
+        // away in the picker beside the Mow key.
+        if (body.action === "buy-cutter" && data.boughtCutter) {
+          goldSound();
+          setPickedCutter(data.boughtCutter);
+          setLastCollect({
+            text: `${stackacresCutterDef(data.boughtCutter).label} in hand`,
             nonce: Date.now(),
           });
         }
@@ -2573,6 +2622,23 @@ export function StackAcresFarm() {
     setTool((held) => (held === next ? "inspect" : next));
   }, []);
 
+  /** Scythe or Mower, from the picker beside the Mow key or the shop. */
+  const pickCutter = useCallback((next: StackAcresCutter) => {
+    toolSound();
+    setPickedCutter(next);
+  }, []);
+
+  // Remembered on this device only. Which blade swings is client-side
+  // scenery, so there is nothing for the server to keep.
+  useEffect(() => {
+    if (!pickedCutter) return;
+    try {
+      window.localStorage.setItem("sa-cutter", pickedCutter);
+    } catch {
+      // Storage blocked. The pick still holds for this visit.
+    }
+  }, [pickedCutter]);
+
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback(
@@ -3181,17 +3247,10 @@ export function StackAcresFarm() {
     [place, liveUnits, gold, capacity],
   );
 
-  // The ghost drawn over a mow drag is whatever tier is owned (see
-  // toolGhostIcon in stackacres-world.tsx) -- deliberately, so 250,000 Gold
-  // buys something visibly different in hand. Without a caption that reads
-  // as "I'm holding a shovel and can't get my scythe back," when what's
-  // actually true is the scythe never left; the equipped tier is a skin and
-  // a stat bump on it, not a second tool. Only say so once there is
-  // something to explain: the Trowel already looks like the drawn scythe, so
-  // its hint stays exactly what it always was.
+  // Once there is a second cutter to swap to, say where the swap is.
   const toolHint =
-    tool === "scythe" && toolTier !== STACKACRES_STARTING_TIER
-      ? `${STACKACRES_TOOL_DEFS.scythe.hint} That's your ${stackacresToolTierDef(toolTier).label} doing the cutting -- still the scythe, just upgraded.`
+    tool === "scythe" && cutters.length > 1
+      ? `${STACKACRES_TOOL_DEFS.scythe.hint} Pick the Scythe or the Mower beside the key.`
       : STACKACRES_TOOL_DEFS[tool].hint;
 
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
@@ -3596,7 +3655,7 @@ export function StackAcresFarm() {
             <StackAcresWorld
               units={liveUnits}
               tool={tool}
-              toolTier={toolTier}
+              cutter={cutter}
               museumGlowTier={museumGlowTier}
               farmhandSpeedMultiplier={farmhandSpeedMultiplier}
               viewExpansion={compactNav ? HUD_VIEW_EXPANSION : 1}
@@ -3675,7 +3734,13 @@ export function StackAcresFarm() {
               Board and Workshop are walked up to (Ray, the signpost, the
               windmill). Mow, Pipe and Soil keep three small keys because a
               drag-a-run gesture has nothing to tap first. */}
-          <StackAcresGroundTools tool={tool} onPick={pickGroundTool} />
+          <StackAcresGroundTools
+            tool={tool}
+            onPick={pickGroundTool}
+            cutters={cutters}
+            cutter={cutter}
+            onPickCutter={pickCutter}
+          />
 
           {/* The seed menu, on the canvas next to the finger that asked for
               it, inside .sa-field so its coordinates are the ones the scene
@@ -4217,10 +4282,78 @@ export function StackAcresFarm() {
               );
             })()}
             <p className="sa-sheet-note">
-              A better tool cuts a wider swathe through the Long Meadow, and makes a harvest more
-              likely to come up rich — a critical harvest pays Bushels straight into your hand on
-              top of the produce.
+              A better spade makes a harvest more likely to come up rich, and a rich harvest brings
+              in extra produce on top.
             </p>
+
+            {/* Grass cutters, kept apart from the spades so a spade never
+                mows the meadow. An owned one gets a Use button, the same swap
+                the picker beside the Mow key offers. */}
+            <StoreShelf icon="ico-scythe">Mowing</StoreShelf>
+            <div className="sa-stock-cards">
+              {STACKACRES_CUTTERS.map((id) => {
+                const def = stackacresCutterDef(id);
+                const owned = cutters.includes(id);
+                const lock = evaluateStackAcresShopLock(def, shopProgress);
+                const listPrice = def.price ?? 0;
+                const price = applyInfluenceDiscount(listPrice, influence);
+                const affordable =
+                  (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+                const hintId = `sa-lock-hint-${id}`;
+                return (
+                  <div
+                    key={id}
+                    className={owned || lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}
+                  >
+                    <StackAcresIcon name={def.icon as PainterName} size={72} className="sa-tool-art" />
+                    <h3>{def.label}</h3>
+                    <p className="sa-stock-terms">{def.blurb}</p>
+                    {owned ? (
+                      <button
+                        type="button"
+                        className="sa-cta"
+                        disabled={cutter === id}
+                        onClick={() => pickCutter(id)}
+                      >
+                        {cutter === id ? "In hand" : "Use"}
+                      </button>
+                    ) : (
+                      <>
+                        <p className="sa-stock-yield">
+                          {price < listPrice ? (
+                            <>
+                              <span className="sa-stock-was">{listPrice.toLocaleString()}</span>{" "}
+                              {price.toLocaleString()} Gold
+                            </>
+                          ) : (
+                            `${price.toLocaleString()} Gold`
+                          )}
+                        </p>
+                        {lock.lockHint && (
+                          <p className="sa-lock-hint" id={hintId}>
+                            <Lock size={13} aria-hidden="true" />
+                            <span>{lock.lockHint}</span>
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          className="sa-cta"
+                          disabled={!lock.isUnlocked || isPending("buy-cutter") || !affordable}
+                          aria-describedby={lock.lockHint ? hintId : undefined}
+                          onClick={() => {
+                            if (!isStackAcresBuyableCutter(id)) return;
+                            buySound();
+                            void act({ action: "buy-cutter", cutter: id });
+                          }}
+                        >
+                          {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
             <StoreShelf icon="ico-plant">Soil</StoreShelf>
             <p className="sa-sheet-note">

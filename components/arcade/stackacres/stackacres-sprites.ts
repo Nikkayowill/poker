@@ -245,6 +245,13 @@ export const SPRITE_ART = {
   toolTrowel: "/stackacres/sprites/tool-trowel.png",
   toolIronShovel: "/stackacres/sprites/tool-iron-shovel.png",
   toolGoldenSpade: "/stackacres/sprites/tool-golden-spade.png",
+  // The Mower (lib/stackacres/cutters.ts), same "the shelf icon should be
+  // the thing you see in your hand" reasoning as the three tools above --
+  // this is also the sprite that rolls across the meadow while it is driven.
+  // FLUX-generated at the exact tool STYLE contract, with a baked drop-
+  // shadow masked out at prep time (see task-tools/prep_mower.py) in favour
+  // of a real one added in the scene, the same as every other world sprite.
+  cutterMower: "/stackacres/sprites/cutter-mower.png",
   // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
   // straight into its own 256-unit canvas. It rides this module only because
   // this is what the scene's `preload` walks, and a tile that arrived late

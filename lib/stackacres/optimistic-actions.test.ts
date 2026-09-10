@@ -294,10 +294,13 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(patch).toBeNull();
   });
 
+  /** One plain bed, so an open-air crop has ground to stand on. */
+  const ONE_BED = [{ tx: 0, ty: 0, order: 0, origin: "purchased" as const }];
+
   it("stocks a crop by spending a seed off the shelf, never Gold", () => {
     const patch = predictStackAcresAction(
       { action: "stock", stock: "corn" },
-      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 } }),
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 }, soilTiles: ONE_BED }),
     );
     expect(patch?.profile).toBeUndefined();
     expect(patch?.seedStock).toEqual({ corn: 1 });
@@ -308,9 +311,39 @@ describe("predictStackAcresAction: buying and selling stock", () => {
   it("refuses to stock a crop with no seed on the shelf", () => {
     const patch = predictStackAcresAction(
       { action: "stock", stock: "corn" },
-      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: {} }),
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: {}, soilTiles: ONE_BED }),
     );
     expect(patch).toBeNull();
+  });
+
+  // The server refuses a crop with no free bed anywhere (2026-09-09), so a
+  // sprout flashed here would only be yanked back a beat later.
+  it("guesses nothing for a crop when no bed is free", () => {
+    const bare = predictStackAcresAction(
+      { action: "stock", stock: "corn" },
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 } }),
+    );
+    expect(bare).toBeNull();
+
+    const standing = unit({ id: "c1", stock: "corn", state: "working", soilSlot: 0 });
+    const full = predictStackAcresAction(
+      { action: "stock", stock: "corn" },
+      ctx({
+        profile: profile({ goldBalance: 10_000 }),
+        seedStock: { corn: 2 },
+        soilTiles: ONE_BED,
+        units: [standing],
+      }),
+    );
+    expect(full).toBeNull();
+  });
+
+  it("still guesses a Greenhouse crop with no bed -- it stands on the glasshouse grid", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn", inGreenhouse: true },
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 }, greenhouseBuilt: true }),
+    );
+    expect(patch?.units).toHaveLength(1);
   });
 
   it("retires a permanent unit with no refund", () => {
@@ -327,6 +360,29 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     const sown = unit({ id: "s1", permanent: false, state: "working" });
     const patch = predictStackAcresAction({ action: "retire", unitId: sown.id }, ctx({ units: [sown] }));
     expect(patch).toBeNull();
+  });
+});
+
+describe("predictStackAcresAction: aiming a pipe stub", () => {
+  const stub = { tx: 2, ty: 3, kind: "pipe" as const, mask: 0, hydrated: false, distance: null, facing: null };
+  const well = { tx: 9, ty: 9, kind: "well" as const, mask: 0, hydrated: true, distance: 0, facing: null };
+
+  it("turns the one stub and touches nothing else -- no Gold, no recompute", () => {
+    const patch = predictStackAcresAction(
+      { action: "aim-pipe", tx: 2, ty: 3, facing: 8 },
+      ctx({ irrigation: [stub, well], profile: profile({ goldBalance: 0 }) }),
+    );
+    expect(patch?.profile).toBeUndefined();
+    expect(patch?.irrigation).toEqual([{ ...stub, facing: 8 }, well]);
+  });
+
+  it("guesses nothing for a well or for empty ground", () => {
+    expect(
+      predictStackAcresAction({ action: "aim-pipe", tx: 9, ty: 9, facing: 1 }, ctx({ irrigation: [stub, well] })),
+    ).toBeNull();
+    expect(
+      predictStackAcresAction({ action: "aim-pipe", tx: 0, ty: 0, facing: 1 }, ctx({ irrigation: [stub, well] })),
+    ).toBeNull();
   });
 });
 

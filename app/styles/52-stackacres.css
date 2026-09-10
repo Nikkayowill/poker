@@ -1239,6 +1239,27 @@
 
 .sa-radial-cost .sa-ico { width: 13px; height: 13px; }
 
+/* The pipe aim (stackacres-pipe-aim.tsx): four arrows around the tap, the
+   same pin, ring and pressable block as the seed ring, just squarer -- an
+   arrow needs no name under it, so the button is the tap target and nothing
+   more. `.is-held` is the stub's current aim: corn, the same "this one is
+   active" the toolbelt's held tool wears. */
+.sa-pipe-aim-btn {
+  width: var(--sa-tap);
+  min-height: var(--sa-tap);
+  padding: 0;
+}
+
+.sa-pipe-aim-btn.is-held {
+  background: var(--sa-corn);
+}
+
+.sa-pipe-aim-glyph {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 /* The way through to the drawer, under the ring rather than on it: it is not
    another thing to plant, it is the way out of planting. Wood, because it
    opens the same door the peg on the right edge does. */

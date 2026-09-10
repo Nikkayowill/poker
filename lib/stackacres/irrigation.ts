@@ -77,6 +77,25 @@ export type PipeKind = "well" | "pipe";
 /** A 4-bit connector index. Bit 0 N, bit 1 E, bit 2 S, bit 3 W. 0..15. */
 export type PipeMask = number;
 
+/**
+ * Which way a LONE pipe tile points -- purely cosmetic (2026-09-09). One of
+ * the four neighbour bits (N 1, E 2, S 4, W 8), or null for the default
+ * two-arm stub. Honoured ONLY while the tile's real `mask` is 0: the moment
+ * a neighbour lands, `mask` describes the real joins and this is ignored --
+ * kept rather than cleared, so lifting that neighbour again leaves the stub
+ * pointing where it did. Water never follows it: `hydrated`/`distance` and
+ * the flow arms all come off `mask` alone, so an aim can never draw a join
+ * that is not there. See `pipeBodyTextureKey`.
+ */
+export type PipeFacing = 1 | 2 | 4 | 8;
+
+/** The four aims, in the same N/E/S/W bit order as `PIPE_NEIGHBORS`. */
+export const PIPE_FACINGS: readonly PipeFacing[] = [1, 2, 4, 8];
+
+export function isPipeFacing(value: unknown): value is PipeFacing {
+  return value === 1 || value === 2 || value === 4 || value === 8;
+}
+
 export interface PipeCoord {
   readonly tx: number;
   readonly ty: number;
@@ -85,6 +104,9 @@ export interface PipeCoord {
 /** A tile exactly as the database stores it, before any recompute. */
 export interface PlacedPipe extends PipeCoord {
   readonly kind: PipeKind;
+  /** Optional so every `{ tx, ty, kind }` literal (most of them in tests
+   *  about topology, which an aim never touches) stays valid. */
+  readonly facing?: PipeFacing | null;
 }
 
 /**
@@ -122,6 +144,9 @@ export interface PipeNode extends PipeCoord {
   readonly mask: PipeMask;
   readonly hydrated: boolean;
   readonly distance: number | null;
+  /** Carried straight through from the placed tile; always null for a well.
+   *  Only `pipeBodyTextureKey` reads it, and only while `mask` is 0. */
+  readonly facing: PipeFacing | null;
 }
 
 /** The recompute's whole output. */
@@ -165,8 +190,26 @@ export function pipeFrameKey(mask: PipeMask): string {
   return `irrigation:pipe:${mask & 0b1111}`;
 }
 
+/** The baked-texture key for an aimed lone stub (art-irrigation.ts): the
+ *  exposed, above-ground look of `pipeFrameKey(0)`, pointed one way. */
+export function pipeStubKey(facing: PipeFacing): string {
+  return `irrigation:stub:${facing}`;
+}
+
 /** The well's own baked texture. */
 export const WELL_TEXTURE_KEY = "irrigation:well";
+
+/**
+ * Which baked body a tile shows -- the ONE place the mask-vs-facing rule
+ * lives, so the scene's spawn and restyle paths cannot disagree. A joined
+ * tile (`mask` != 0) always shows its real connector, buried; a lone one
+ * shows an exposed stub, aimed if the player aimed it.
+ */
+export function pipeBodyTextureKey(node: Pick<PipeNode, "kind" | "mask" | "facing">): string {
+  if (node.kind === "well") return WELL_TEXTURE_KEY;
+  if (node.mask !== 0) return pipeFrameKey(node.mask);
+  return node.facing ? pipeStubKey(node.facing) : pipeFrameKey(0);
+}
 
 const NO_UNITS: ReadonlySet<string> = new Set<string>();
 
@@ -255,6 +298,7 @@ export function recalculatePipeConnections(gridSnapshot: GridSnapshot): NetworkG
       mask,
       hydrated: reached !== undefined,
       distance: reached ?? null,
+      facing: tile.kind === "pipe" ? (tile.facing ?? null) : null,
     };
     nodes.push(node);
     byKey.set(key, node);
@@ -334,7 +378,7 @@ export function indexPipeNodes(nodes: readonly PipeNode[]): PipeIndex {
 /**
  * What changed between two recomputes, keyed by tile. The scene creates a
  * sprite for each `added`, calls `setTexture` for each `changed` (its mask,
- * hydration or distance moved), and destroys each `removed`.
+ * hydration, distance or aim moved), and destroys each `removed`.
  */
 export function diffPipeGrid(previous: PipeIndex | null, next: PipeIndex): PipeGridDiff {
   const added: PipeNode[] = [];
@@ -351,7 +395,8 @@ export function diffPipeGrid(previous: PipeIndex | null, next: PipeIndex): PipeG
       was.mask !== node.mask ||
       was.hydrated !== node.hydrated ||
       was.kind !== node.kind ||
-      was.distance !== node.distance
+      was.distance !== node.distance ||
+      was.facing !== node.facing
     ) {
       changed.push(node);
     }

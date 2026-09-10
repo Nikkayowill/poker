@@ -1,8 +1,8 @@
 /**
  * The irrigation network's textures: one connector shape per 4-bit
- * neighbour mask (0..15), the well head, and one 8-frame flow segment the
- * scene rotates once per arm so a hydrated pipe reads as water travelling
- * through it.
+ * neighbour mask (0..15), four aimed lone stubs, the well head, and one
+ * 8-frame flow segment the scene rotates once per arm so a hydrated pipe
+ * reads as water travelling through it.
  *
  * Baked, not loaded and not drawn per frame -- the same trade every picture
  * in stackacres-art.ts makes: a Canvas2D painter into one power-of-two
@@ -11,20 +11,33 @@
  * swaps which baked texture / frame it shows; nothing is re-rasterised as
  * the map pans.
  *
- * The painters draw in SCENE space (post-projection): a pipe lies flat on
- * the ground, so its hub is the tile's centre and its arms run along the
- * four projected diamond edges. `isoProject(dx, dy) = ((dx - dy), (dx + dy)
- * / 2)`, so the unit tile steps project to the four screen diagonals below.
+ * The painters draw in SCENE space (post-projection): a pipe lies along the
+ * ground, so its hub is the tile's centre and its arms run along the four
+ * projected diamond edges. `isoProject(dx, dy) = ((dx - dy), (dx + dy) /
+ * 2)`, so the unit tile steps project to the four screen diagonals below.
+ *
+ * TWO LOOKS (2026-09-09). A JOINED tile (mask 1..15) is drawn BURIED: a
+ * dark earth trench cut along each arm, the pipe sunk into it with no drop
+ * shadow, and only a small collar at the hub standing proud -- "once it's
+ * connected it goes into the ground". A LONE tile (mask 0) is the one piece
+ * still lying on the surface: the raised, shadowed stub it always was, so
+ * a freshly laid tile is visibly waiting to be joined up, and an aimed one
+ * (`pipeStubKey`) points that stub one way instead of showing the default
+ * two-arm elbow. Which of the two a tile gets is decided by
+ * lib/stackacres/irrigation.ts's `pipeBodyTextureKey`, not here.
  */
 
 import * as Phaser from "phaser";
 
 import { powerOfTwoCeil } from "@/lib/stackacres/world";
 import {
+  PIPE_FACINGS,
   PIPE_FLOW_FRAMES,
   PIPE_TILE,
   WELL_TEXTURE_KEY,
   pipeFrameKey,
+  pipeStubKey,
+  type PipeFacing,
   type PipeMask,
 } from "@/lib/stackacres/irrigation";
 import { ART_FRAME, ART_SCALE } from "./stackacres-art";
@@ -59,6 +72,12 @@ const FLOW_SEG_THICK = PIPE_TILE * 0.5;
 const PIPE_BODY = "#6f7f8b";
 const PIPE_RIM = "#9fb0bd";
 const PIPE_SHADOW = "rgba(22, 32, 39, 0.26)";
+/** The buried look: turned earth either side of the run, and a pipe a shade
+ *  darker than the surface stub since it sits below the light. */
+const TRENCH_EARTH = "rgba(74, 52, 34, 0.62)";
+const TRENCH_LIP = "rgba(139, 106, 74, 0.5)";
+const PIPE_BURIED = "#5c6b77";
+const PIPE_BURIED_RIM = "#8797a4";
 const WATER_CORE = "#2f9fe0";
 const WATER_HILITE = "#c6e9fb";
 const STONE_DARK = "#5a5147";
@@ -102,30 +121,34 @@ function strokeArms(
   }
 }
 
-/** The pipe body for a connector mask. Origin is the canvas top-left; the
- *  tile centre is (ART_W/2, ART_H/2). */
-function drawConnector(ctx: CanvasRenderingContext2D, mask: PipeMask): void {
+/**
+ * A LONE tile, lying on the surface: the raised, shadowed stub. `facing`
+ * points it one way (a single arm, reaching a little further so the
+ * direction reads at a distance); null is the default two-arm elbow an
+ * un-aimed tile has always shown. Origin is the canvas top-left; the tile
+ * centre is (ART_W/2, ART_H/2).
+ */
+function drawSurfaceStub(ctx: CanvasRenderingContext2D, facing: PipeFacing | null): void {
   const cx = ART_W / 2;
   const cy = ART_H / 2;
   const hub = PIPE_TILE * 0.34;
   const gauge = PIPE_TILE * 0.42;
+  const bodyMask: PipeMask = facing ?? 0b0011;
+  const reach = facing ? PIPE_TILE * 0.62 : PIPE_TILE * 0.42;
 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Contact shadow, offset down the screen.
+  // Contact shadow, offset down the screen -- this is the one piece that
+  // still casts one, since it is the one piece still above ground.
   ctx.save();
   ctx.translate(0, PIPE_TILE * 0.16);
   ctx.strokeStyle = PIPE_SHADOW;
   ctx.fillStyle = PIPE_SHADOW;
-  strokeArms(ctx, cx, cy, mask, gauge, ARM_REACH);
+  strokeArms(ctx, cx, cy, bodyMask, gauge, reach);
   circlePath(ctx, cx, cy, hub);
   ctx.fill();
   ctx.restore();
-
-  // An isolated tile still has to read as a pipe: a short capped stub.
-  const bodyMask = mask === 0 ? 0b0011 : mask;
-  const reach = mask === 0 ? PIPE_TILE * 0.42 : ARM_REACH;
 
   ctx.strokeStyle = PIPE_BODY;
   strokeArms(ctx, cx, cy, bodyMask, gauge, reach);
@@ -139,6 +162,59 @@ function drawConnector(ctx: CanvasRenderingContext2D, mask: PipeMask): void {
   ctx.fillStyle = PIPE_RIM;
   circlePath(ctx, cx, cy, hub * 0.44);
   ctx.fill();
+}
+
+/**
+ * A JOINED tile (mask 1..15), buried: a trench of turned earth along each
+ * real arm, the pipe sunk into it a shade darker and a touch narrower than
+ * the surface stub, no drop shadow (it is below the ground plane, not
+ * standing on it), and a small collar at the hub -- the one part left
+ * proud, so the flow arms the scene lays over it still have something to
+ * spring from. Same origin and centre as `drawSurfaceStub`.
+ */
+function drawBuriedConnector(ctx: CanvasRenderingContext2D, mask: PipeMask): void {
+  const cx = ART_W / 2;
+  const cy = ART_H / 2;
+  const hub = PIPE_TILE * 0.3;
+  const gauge = PIPE_TILE * 0.36;
+  const trench = PIPE_TILE * 0.7;
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // The cut: a wide dark band the arms sit in, with a lighter lip of thrown
+  // earth just outside it so the edge reads as a dug line, not a smear.
+  ctx.strokeStyle = TRENCH_LIP;
+  strokeArms(ctx, cx, cy, mask, trench + PIPE_TILE * 0.14, ARM_REACH);
+  circlePath(ctx, cx, cy, hub + PIPE_TILE * 0.16);
+  ctx.fillStyle = TRENCH_LIP;
+  ctx.fill();
+  ctx.strokeStyle = TRENCH_EARTH;
+  strokeArms(ctx, cx, cy, mask, trench, ARM_REACH);
+  circlePath(ctx, cx, cy, hub + PIPE_TILE * 0.08);
+  ctx.fillStyle = TRENCH_EARTH;
+  ctx.fill();
+
+  // The pipe, sunk in the cut.
+  ctx.strokeStyle = PIPE_BURIED;
+  strokeArms(ctx, cx, cy, mask, gauge, ARM_REACH);
+  ctx.strokeStyle = PIPE_BURIED_RIM;
+  strokeArms(ctx, cx, cy, mask, gauge * 0.32, ARM_REACH);
+
+  // The collar at the hub, the only piece above the soil line.
+  ctx.fillStyle = PIPE_BODY;
+  circlePath(ctx, cx, cy, hub);
+  ctx.fill();
+  ctx.fillStyle = PIPE_RIM;
+  circlePath(ctx, cx, cy, hub * 0.44);
+  ctx.fill();
+}
+
+/** The body for a connector mask: the surface stub for a lone tile, the
+ *  buried run for a joined one. */
+function drawConnector(ctx: CanvasRenderingContext2D, mask: PipeMask): void {
+  if (mask === 0) drawSurfaceStub(ctx, null);
+  else drawBuriedConnector(ctx, mask);
 }
 
 /**
@@ -254,9 +330,9 @@ function bake(scene: Phaser.Scene, spec: Bake): void {
   texture.refresh();
 }
 
-/** Bakes every irrigation texture: 16 connectors, the well, one flow
- *  segment. Call once in `create()`, after the other `bake*` calls.
- *  Idempotent. */
+/** Bakes every irrigation texture: 16 connectors, 4 aimed stubs, the well,
+ *  one flow segment. Call once in `create()`, after the other `bake*`
+ *  calls. Idempotent. */
 export function bakeIrrigation(scene: Phaser.Scene): void {
   for (let mask = 0; mask < 16; mask += 1) {
     bake(scene, {
@@ -265,6 +341,15 @@ export function bakeIrrigation(scene: Phaser.Scene): void {
       unitH: ART_H,
       frames: 1,
       paint: (ctx) => drawConnector(ctx, mask),
+    });
+  }
+  for (const facing of PIPE_FACINGS) {
+    bake(scene, {
+      key: pipeStubKey(facing),
+      unitW: ART_W,
+      unitH: ART_H,
+      frames: 1,
+      paint: (ctx) => drawSurfaceStub(ctx, facing),
     });
   }
   bake(scene, { key: WELL_TEXTURE_KEY, unitW: ART_W, unitH: ART_H, frames: 1, paint: drawWell });

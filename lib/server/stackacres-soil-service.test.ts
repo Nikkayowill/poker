@@ -285,15 +285,17 @@ describe("soil tiers", () => {
   it("shortens a crop's cycle when it is sown into an enriched bed", async () => {
     const base = STACKACRES_CATALOGUE.corn.durationMs;
 
+    // A plain dirt bed is the baseline -- a crop cannot be sown with no bed
+    // at all any more (see the refusal test just below), so the comparison
+    // is dirt against enriched rather than nothing against enriched.
     const plainToken = await sowingFarm();
+    await buyStackAcresSoil(plainToken, { tier: "dirt", quantity: 1 }, T0);
+    await placeStackAcresSoilTile(plainToken, { ...CELL_A, tier: "dirt" }, T0);
     const plain = (await stockStackAcres(plainToken, { stock: "corn" }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!;
     expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
-    // No bed placed at all -- there is nothing left to stand on since the
-    // free starter grant was removed, so this crop gets the plain multiplier
-    // and no fixed slot.
-    expect(plain.soilSlot).toBeNull();
+    expect(plain.soilSlot).toBe(0);
 
     const richToken = await sowingFarm();
     await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
@@ -307,13 +309,31 @@ describe("soil tiers", () => {
     expect(Date.parse(rich.readyAt) - T0.getTime()).toBe(Math.round(base * 0.8));
   });
 
+  // A crop needs a bed under it (2026-09-09): with nothing tilled anywhere
+  // the sow is refused outright, and the seed it would have spent stays on
+  // the shelf -- the same "a failed creation refunds" rule the insert path
+  // already follows, applied one step earlier.
+  it("refuses a crop with no bed anywhere, and keeps the seed", async () => {
+    const token = await sowingFarm();
+    const before = (await readStackAcres(token, T0)).seedStock.corn;
+
+    await expect(stockStackAcres(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
+
+    const after = await readStackAcres(token, T0);
+    expect(after.units.filter((u) => u.stock === "corn")).toHaveLength(0);
+    expect(after.seedStock.corn).toBe(before);
+  });
+
   // Hydro waters its own tile, feeding the same `irrigated` flag a pipe does.
   // No pipe is placed here at all: that is the point.
   it("keeps a crop on a hydro bed watered with no pipe anywhere", async () => {
     const thirstMs = STACKACRES_CATALOGUE.corn.thirstMs ?? 0;
     const wellPastThirst = new Date(T0.getTime() + thirstMs * 1.5);
 
+    // Dirt, so the dry half of this has a bed to stand on at all.
     const dryToken = await sowingFarm();
+    await buyStackAcresSoil(dryToken, { tier: "dirt", quantity: 1 }, T0);
+    await placeStackAcresSoilTile(dryToken, { ...CELL_A, tier: "dirt" }, T0);
     const dryId = (await stockStackAcres(dryToken, { stock: "corn" }, T0)).units
       .filter((u) => u.stock === "corn")
       .at(-1)!.id;

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
+import { CROP_FIELD_BEDS, cropSpot, growAreaBounds, stockZone } from "@/lib/stackacres/world";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
@@ -11,6 +11,7 @@ import { pipeKey, pipeTileAt, PIPE_NEIGHBORS } from "@/lib/stackacres/irrigation
 import {
   PIPE_PLACE_COST,
   StackAcresRequestError,
+  aimStackAcresPipeTile,
   placeStackAcresPipeTile,
   readStackAcres,
   removeStackAcresPipeTile,
@@ -22,10 +23,14 @@ import {
   recordStackAcresSectorCleared,
 } from "./stackacres-store";
 import { __resetStackAcresPipesForTest } from "./stackacres-pipe-store";
+import {
+  __resetStackAcresSoilTilesForTest,
+  placeStackAcresSoilTile as laySoilBed,
+} from "./stackacres-soil-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { SECTOR_LADDER } from "@/lib/stackacres/sectors";
 import { adjustGold, ensureProfile } from "./profile-store";
-import { createSoilMap } from "@/lib/stackacres/soil";
+import { SOIL_TILE, createSoilMap, soilTileAt } from "@/lib/stackacres/soil";
 
 const T0 = new Date("2026-08-31T12:00:00.000Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
@@ -45,6 +50,11 @@ async function funded(gold = 500_000) {
   // Ray's seed shelf gates planting a crop now -- see the 2026-09-07 seed
   // inventory pass. This file's own corn-sowing helper predates that gate.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
+  // A crop needs a bed under it now (2026-09-09) -- one plain bed, straight
+  // into the store (the service route would spend a bag, and nothing here is
+  // about bags), so `sowCropOnKnownTile` has ground to stand on.
+  const bed = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+  await laySoilBed(profile.id, bed.tx, bed.ty);
   return { token, id: profile.id };
 }
 
@@ -79,8 +89,54 @@ async function sowCropOnKnownTile(token: string) {
 beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresPipesForTest();
+  __resetStackAcresSoilTilesForTest();
   __resetStackAcresSeedStockForTest();
   __resetStackAcresIntentsForTest();
+});
+
+describe("aimStackAcresPipeTile — a cosmetic aim for a lone stub", () => {
+  /** A pipe tile well inside the Crop Fields, and the one east of it. */
+  const LONE = pipeTileAt(CROP_FIELD_BEDS.x + 120, CROP_FIELD_BEDS.y + 120);
+  const EAST = { tx: LONE.tx + 1, ty: LONE.ty };
+
+  it("points a lone stub, moves no Gold, and a joined tile carries but ignores it", async () => {
+    const { token } = await funded(10_000);
+    await placeStackAcresPipeTile(token, { ...LONE, kind: "pipe" }, T0);
+    const start = await balance(token);
+
+    const aimed = await aimStackAcresPipeTile(token, { ...LONE, facing: 4 }, T0);
+    expect(await balance(token)).toBe(start);
+    const stub = aimed.irrigation.find((n) => n.tx === LONE.tx && n.ty === LONE.ty)!;
+    expect(stub.facing).toBe(4);
+    expect(stub.mask).toBe(0);
+
+    // A neighbour lands: the real mask takes over, the aim is kept for the
+    // day the neighbour is lifted again, and hydration never read it.
+    const joined = await placeStackAcresPipeTile(token, { ...EAST, kind: "pipe" }, T0);
+    const now = joined.irrigation.find((n) => n.tx === LONE.tx && n.ty === LONE.ty)!;
+    expect(now.mask).toBe(0b0010);
+    expect(now.facing).toBe(4);
+    expect(now.hydrated).toBe(false);
+  });
+
+  it("refuses a coordinate with no pipe on it, and the well", async () => {
+    const { token } = await funded(10_000);
+    await expect(aimStackAcresPipeTile(token, { ...LONE, facing: 1 }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    await placeStackAcresPipeTile(token, { ...LONE, kind: "well" }, T0);
+    await expect(aimStackAcresPipeTile(token, { ...LONE, facing: 1 }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("is a plain success when asked for the aim it already has", async () => {
+    const { token } = await funded(10_000);
+    await placeStackAcresPipeTile(token, { ...LONE, kind: "pipe" }, T0);
+    await aimStackAcresPipeTile(token, { ...LONE, facing: 8 }, T0);
+    const again = await aimStackAcresPipeTile(token, { ...LONE, facing: 8 }, T0);
+    expect(again.irrigation.find((n) => n.tx === LONE.tx && n.ty === LONE.ty)?.facing).toBe(8);
+  });
 });
 
 describe("placeStackAcresPipeTile — money ordering", () => {

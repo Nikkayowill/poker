@@ -54,14 +54,30 @@ async function loadSimulation() {
   const service = await import("./stackacres-service");
   const store = await import("./stackacres-store");
   const seedStore = await import("./stackacres-seed-store");
+  const soilStore = await import("./stackacres-soil-store");
   const profileStore = await import("./profile-store");
   const chrono = await import("./chrono-delorean");
   const catalogue = await import("@/lib/stackacres/catalogue");
   const upkeep = await import("@/lib/stackacres/upkeep");
   const sectors = await import("@/lib/stackacres/sectors");
   const exchange = await import("@/lib/stackacres/exchange");
+  const world = await import("@/lib/stackacres/world");
+  const soil = await import("@/lib/stackacres/soil");
 
-  return { service, store, seedStore, profileStore, chrono, catalogue, upkeep, sectors, exchange };
+  return {
+    service,
+    store,
+    seedStore,
+    soilStore,
+    profileStore,
+    chrono,
+    catalogue,
+    upkeep,
+    sectors,
+    exchange,
+    world,
+    soil,
+  };
 }
 
 afterEach(() => {
@@ -188,8 +204,20 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
   });
 
   it("freezes a pig's clock while hungry, charges Land Maintenance once land is cleared, and re-assesses it independently on the next simulated UTC day", async () => {
-    const { service, store, seedStore, profileStore, chrono, catalogue, upkeep, sectors, exchange } =
-      await loadSimulation();
+    const {
+      service,
+      store,
+      seedStore,
+      soilStore,
+      profileStore,
+      chrono,
+      catalogue,
+      upkeep,
+      sectors,
+      exchange,
+      world,
+      soil,
+    } = await loadSimulation();
 
     const token = randomUUID();
     const profile = await profileStore.ensureProfile(token);
@@ -198,6 +226,15 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     // inventory pass. The two carrot sowings below (unit-count gates for
     // clearing Wallow) predate that gate.
     await seedStore.adjustStackAcresSeedStock(profile.id, "carrot", 2);
+    // And a crop needs a bed under it (2026-09-09) -- two plain beds, straight
+    // into the store, so those same two sowings have ground to stand on.
+    // Beds are not plots: nothing in the upkeep arithmetic below counts them.
+    const bed = soil.soilTileAt(
+      world.CROP_FIELD_BEDS.x + soil.SOIL_TILE,
+      world.CROP_FIELD_BEDS.y + soil.SOIL_TILE,
+    );
+    await soilStore.placeStackAcresSoilTile(profile.id, bed.tx, bed.ty);
+    await soilStore.placeStackAcresSoilTile(profile.id, bed.tx + 1, bed.ty);
 
     const pig = catalogue.STACKACRES_CATALOGUE.pig;
     expect(pig.hungerMs).not.toBeNull();

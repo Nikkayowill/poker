@@ -20,4 +20,9 @@ describe("intentOf: the processing track", () => {
   it("still keys a pipe on its tile, not on its kind", () => {
     expect(intentOf({ action: "place-pipe", tx: 3, ty: -2, kind: "well" })).toBe("place-pipe:3,-2");
   });
+
+  it("keys an aim on its tile too, never on the direction", () => {
+    expect(intentOf({ action: "aim-pipe", tx: 3, ty: -2, facing: 4 })).toBe("aim-pipe:3,-2");
+    expect(intentOf({ action: "aim-pipe", tx: 3, ty: -2, facing: 8 })).toBe("aim-pipe:3,-2");
+  });
 });

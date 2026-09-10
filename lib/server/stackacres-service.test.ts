@@ -81,6 +81,12 @@ import {
 } from "@/lib/stackacres/prestige";
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
+  __resetStackAcresSoilTilesForTest,
+  placeStackAcresSoilTile as laySoilBed,
+} from "./stackacres-soil-store";
+import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
+import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
+import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
@@ -217,6 +223,17 @@ const MAX_PLOTS = STACKACRES_STOCK.length * (STACKACRES_BASE_CAP + STACKACRES_MA
  * false`; the "Ray's Museum" block passes `museum: false`; both start where a
  * real farm starts.
  */
+/**
+ * How many beds `funded` tills: a 12 x 12 block, one per crop per slot with
+ * room to spare. Sized against the widest sow in this file -- "a farm full
+ * of stock" puts every one of the 22 crops in to its cap -- so no
+ * crop-sowing test ever runs the farm out of ground by accident. The Crop
+ * Fields' lattice is 24 x 24 (CROP_FIELD_BEDS at SOIL_TILE), so this fits
+ * with a margin on every side.
+ */
+const FUNDED_BEDS = 144;
+const FUNDED_BED_ROW = 12;
+
 async function funded(
   gold = 500_000,
   {
@@ -224,6 +241,7 @@ async function funded(
     settled = true,
     museum = true,
     cropFieldsUnlocked = true,
+    beds = true,
   }: {
     land?: SectorId[];
     settled?: boolean;
@@ -234,6 +252,11 @@ async function funded(
      *  defaults open. Pass `false` only for a test asking about milestone
      *  progress itself, where a truly bare farm is the point. */
     cropFieldsUnlocked?: boolean;
+    /** A crop needs a bed under it now (2026-09-09, `stockStackAcres`'s own
+     *  gate) -- every crop-sowing test here predates that too, so a funded
+     *  farm starts with `FUNDED_BEDS` plain beds already tilled. Pass `false`
+     *  only for the test about the gate itself. */
+    beds?: boolean;
   } = {},
 ) {
   const token = randomUUID();
@@ -258,6 +281,19 @@ async function funded(
   // predates that gate, so a funded farm starts carrying a deep shelf of
   // every crop rather than making each of those call sites buy seed first.
   for (const crop of STACKACRES_CROPS) await adjustStackAcresSeedStock(profile.id, crop, 1000);
+  if (beds) {
+    // Straight into the store, not through `placeStackAcresSoilTile`: that
+    // route spends a bag off Ray's shelf, and nothing here is about bags.
+    // A block of plain beds one tile in from the Crop Fields' own corner.
+    const origin = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+    for (let i = 0; i < FUNDED_BEDS; i += 1) {
+      await laySoilBed(
+        profile.id,
+        origin.tx + (i % FUNDED_BED_ROW),
+        origin.ty + Math.floor(i / FUNDED_BED_ROW),
+      );
+    }
+  }
   return { token, id: profile.id };
 }
 
@@ -336,6 +372,7 @@ beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresBlueprintsForTest();
   __resetStackAcresSeedStockForTest();
+  __resetStackAcresSoilTilesForTest();
   __resetStackAcresCrossbreedForTest();
   resetStackAcresDroneStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
@@ -395,6 +432,23 @@ describe("stocking", () => {
 
     await expect(stockStackAcres(token, { stock: "hen" }, T0)).rejects.toThrow("trigger said no");
     expect(await balance(token)).toBe(before);
+  });
+
+  it("refuses a crop with nothing tilled, and the seed comes back", async () => {
+    const { token } = await funded(500_000, { beds: false });
+    const seedsBefore = (await readStackAcres(token, T0)).seedStock.carrot;
+
+    await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toThrow(/bed/);
+
+    const after = await readStackAcres(token, T0);
+    expect(after.units.filter((u) => u.stock === "carrot")).toHaveLength(0);
+    expect(after.seedStock.carrot).toBe(seedsBefore);
+  });
+
+  it("still sows livestock and Greenhouse crops with nothing tilled -- neither stands on a bed", async () => {
+    const { token } = await funded(500_000, { beds: false });
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    expect(unitOf(view, "hen").state).toBe("working");
   });
 
   it("counts each kind against its own cap, independent of the others", async () => {
@@ -1888,6 +1942,7 @@ describe("the currency wall", () => {
     // way".
     expect(actions).toEqual([
       "activate-synergy-perk",
+      "aim-pipe",
       "build-greenhouse",
       "buy-feed",
       "buy-seed",
@@ -1940,7 +1995,8 @@ describe("the currency wall", () => {
     // `seal-vat` is not a fourth -- it spends Cheese, never Gold, the same
     // "seal spends, collect pays" split `place-machine` and its own run take.
     // Everything else on that list either spends it or moves no money at all
-    // -- `upgrade-tool` included,
+    // -- `aim-pipe` included, a cosmetic turn of one pipe stub that touches
+    // nothing but its own row; `upgrade-tool` included,
     // which is a pure sink, and the critical harvest it buys is paid BY
     // `collect` out of the same reservation rather than being a third payer;
     // `work`, `process`, `request-contract` and `build-greenhouse` included,

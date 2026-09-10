@@ -146,7 +146,14 @@ import {
   type StackAcresPrestigeView,
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
-import { PIPE_PLACE_COST, pipeTileAt, type PipeKind, type PipeNode } from "@/lib/stackacres/irrigation";
+import {
+  PIPE_NEIGHBORS,
+  PIPE_PLACE_COST,
+  pipeTileAt,
+  type PipeFacing,
+  type PipeKind,
+  type PipeNode,
+} from "@/lib/stackacres/irrigation";
 import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
@@ -195,6 +202,7 @@ import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { StackAcresDestinations } from "./stackacres-destinations";
 import { StackAcresRadialMenu } from "./stackacres-radial-menu";
 import { StackAcresSeedStrip } from "./stackacres-seed-strip";
+import { StackAcresPipeAim } from "./stackacres-pipe-aim";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
 import type { FenceTier } from "@/lib/stackacres/wildlife";
@@ -978,6 +986,15 @@ export function StackAcresFarm() {
     null,
   );
   /**
+   * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
+   * at the finger the same way the ring is. Its own state rather than a
+   * mode of `radial`: it opens AFTER the ring has closed (a "Lay Pipe" that
+   * landed somewhere lone, or an "Aim Pipe" on a stub already down), and
+   * closes on its own terms -- a pick, the scrim, the camera moving, or the
+   * stub joining a neighbour (the effect beside `radialSoilWorld` below).
+   */
+  const [pipeAim, setPipeAim] = useState<{ tx: number; ty: number; at: TapPoint } | null>(null);
+  /**
    * Where the finger that started the request in flight landed, so the reward
    * floats out of the thing that was tapped rather than out of the middle of
    * the screen. A ref, not state: nothing renders from it, and it must not be
@@ -1512,6 +1529,30 @@ export function StackAcresFarm() {
   useEffect(() => {
     world.current?.previewSoilAt(radialSoilWorld);
   }, [radialSoilWorld]);
+
+  // The stub being aimed, as the farm currently knows it. The aim only means
+  // anything while the tile is lone (irrigation.ts's `PipeFacing`), so the
+  // popover goes away the moment a neighbour joins it -- whether by this
+  // player's next drag or by a refresh that says so. A tile the farm does
+  // not know at all is NOT stale, only hidden: a ring "Lay Pipe" sets
+  // `pipeAim` in the same tap that fires the request, and the tile's own
+  // node only lands with the optimistic patch a beat later, so clearing on
+  // "missing" would throw the aim away before the stub ever appears. A
+  // lifted tile reads as missing the same way and simply stays hidden.
+  const pipeAimNode = pipeAim
+    ? (irrigation.find((node) => node.tx === pipeAim.tx && node.ty === pipeAim.ty) ?? null)
+    : null;
+  const pipeAimStale = pipeAimNode !== null && (pipeAimNode.kind !== "pipe" || pipeAimNode.mask !== 0);
+  useEffect(() => {
+    if (!pipeAimStale) return;
+    // Deferred a macrotask rather than set synchronously in the effect body
+    // -- the `window.setTimeout(fn, 0)` shape table-loading-splash.tsx and
+    // useMinHoldFade use, required by this codebase's react-hooks/
+    // set-state-in-effect lint. The render below already hides the popover
+    // for a stale tile, so the one-tick gap draws nothing.
+    const timer = window.setTimeout(() => setPipeAim(null), 0);
+    return () => window.clearTimeout(timer);
+  }, [pipeAimStale]);
 
   // The bed actually standing at the tap, if any -- the one thing that
   // decides both what the ring/strip offers (a crop needs an empty bed to
@@ -2221,6 +2262,7 @@ export function StackAcresFarm() {
   // both go away rather than drift off what they were opened on.
   const onViewMoved = useCallback(() => {
     setRadial(null);
+    setPipeAim(null);
     setMonkDialogue(null);
     setFencePopup(null);
     setGiftDialogue(null);
@@ -2753,6 +2795,18 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** Pointing a lone stub from the aim popover. No Gold and no toast: the
+   *  stub turns on the tap (optimistic-actions.ts's `aim-pipe` case) and
+   *  that IS the feedback, the same posture the drag tools take. */
+  const onAimPipe = useCallback(
+    (tx: number, ty: number, facing: PipeFacing) => {
+      panelSound();
+      setPipeAim(null);
+      void act({ action: "aim-pipe", tx, ty, facing });
+    },
+    [act],
+  );
+
   /**
    * The pipe tool's own drag (or zero-length tap) gesture reached this tile
    * -- see StackAcresSceneCallbacks.onPipeLayTile's own header for the full
@@ -3075,9 +3129,25 @@ export function StackAcresFarm() {
     // choose it and get refused.
     if (PEN_ZONE_IDS.includes(radial.zone)) return [];
     const { tx, ty } = pipeTileAt(radial.world.x, radial.world.y);
+    const at = radial.at;
     const existing = irrigation.find((node) => node.tx === tx && node.ty === ty);
     if (existing) {
       return [
+        // A lone stub can be pointed (irrigation.ts's `PipeFacing`); a joined
+        // one has real arms and nothing to aim, and a well never does.
+        ...(existing.kind === "pipe" && existing.mask === 0
+          ? [
+              {
+                key: "aim-pipe",
+                label: "Aim Pipe",
+                icon: "ico-pipe" as PainterName,
+                onSelect: () => {
+                  closeRadial();
+                  setPipeAim({ tx, ty, at });
+                },
+              },
+            ]
+          : []),
         {
           key: "remove-pipe",
           label: existing.kind === "well" ? "Remove Well" : "Remove Pipe",
@@ -3087,6 +3157,13 @@ export function StackAcresFarm() {
       ];
     }
     const hasWell = irrigation.some((node) => node.kind === "well");
+    // Whether the tile about to be laid will stand alone. Decided from the
+    // farm as it is right now, which is the same picture the optimistic
+    // `place-pipe` guess draws from -- a lone stub gets the aim offered
+    // straight away, a tile joining a run has arms already and needs none.
+    const lone = !PIPE_NEIGHBORS.some((step) =>
+      irrigation.some((node) => node.tx === tx + step.tx && node.ty === ty + step.ty),
+    );
     return [
       {
         key: "place-pipe",
@@ -3094,7 +3171,10 @@ export function StackAcresFarm() {
         icon: "ico-plant" as PainterName,
         cost: PIPE_PLACE_COST.pipe,
         disabledReason: gold >= PIPE_PLACE_COST.pipe ? undefined : "Not enough Gold",
-        onSelect: () => onPlacePipe(tx, ty, "pipe"),
+        onSelect: () => {
+          onPlacePipe(tx, ty, "pipe");
+          if (lone) setPipeAim({ tx, ty, at });
+        },
       },
       {
         key: "place-well",
@@ -3400,6 +3480,22 @@ export function StackAcresFarm() {
               onClose={closeRadial}
               onManage={openPanel}
               extraActions={pipeExtraActions}
+            />
+          )}
+
+          {/* The four-way aim for a lone pipe stub -- opened by the ring's
+              own "Lay Pipe"/"Aim Pipe" above, never by a bare tap. Gated on
+              `pipeAimNode` too, not just `pipeAim`: the effect beside
+              `radialSoilWorld` clears the state a render after the stub
+              joins or goes, and this keeps that one frame from showing an
+              aim for a tile that no longer wants one. */}
+          {pipeAim && pipeAimNode && !pipeAimStale && (
+            <StackAcresPipeAim
+              at={pipeAim.at}
+              facing={pipeAimNode.facing}
+              busy={pendingByPrefix("aim-pipe")}
+              onAim={(facing) => onAimPipe(pipeAim.tx, pipeAim.ty, facing)}
+              onClose={() => setPipeAim(null)}
             />
           )}
 

@@ -39,9 +39,9 @@ export interface PathSpec {
    * grass-edged tiles, so the two meet without a seam and a road can be
    * repaved by changing this one word.
    *
-   * The main roads are paved and the spurs are not: the lane, the yard road
-   * and the seven grid roads carry the farm's traffic, and a service spur
-   * out to a field or the dock is a track worn into the grass.
+   * Only the entrance lane is paved. It is the road a delivery truck comes
+   * up, so it gets the stone; the yard road, the grid roads and every spur
+   * are the farm's own tracks and stay bare earth.
    */
   surface: PathSurface;
   /** Which rung of the road hierarchy this is; sets the width floor. */
@@ -132,7 +132,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // the yard's east edge onto the middle road, which is the yard's way
     // onto the grid.
     key: "yardRoad",
-    surface: "cobble",
+    surface: "dirt",
     tier: "arterial",
     // Evaluates to the 2.5-tile arterial floor (40). This is the stretch
     // along the barn front past Grandfather Ray, and it is as wide as the
@@ -177,7 +177,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // body runs x -288..-256: flush with the wheat field's east edge, over
     // the Crop Fields' own west margin (which has no fence of its own).
     key: "midRoad",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -192,7 +192,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // corner on its near side. Split at the middle road so each leg's bake
     // stays inside the 1024 px budget (paths.test.ts).
     key: "northRoadEast",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -205,7 +205,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // The north road, west leg: over the yard's north wall with the Mine on
     // its far side, out to the yard's own west edge.
     key: "northRoadWest",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -217,7 +217,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
   path({
     // The south road, east leg: Town Square and Cattle Pasture sit on it.
     key: "southRoadEast",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -230,7 +230,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // The south road, west leg: under the yard, past the mailbox's end of
     // the lane, out to the yard's own west edge.
     key: "southRoadWest",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -244,7 +244,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     // on its far side. Starts inside the north road's body, so it forks
     // off it as a tee.
     key: "eastRoad",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -256,7 +256,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
   path({
     // The one-cell road splitting the Fold from the Oak.
     key: "foldRoad",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [
@@ -267,12 +267,9 @@ export const FARM_PATHS: readonly PathSpec[] = [
   }),
   path({
     // The short hop off the middle road into the Crop Fields, ending short
-    // of the beds. Keeps its pre-merge name (see ./zones.ts). Paved with the
-    // rest of the grid: it is a one-cell road like the others, and it is
-    // shorter than the middle road's own reach, so left bare all that shows
-    // of it is a two-cell nub of earth against the stone.
+    // of the beds. Keeps its pre-merge name (see ./zones.ts).
     key: "meadowSpur",
-    surface: "cobble",
+    surface: "dirt",
     tier: "track",
     width: 32,
     points: [

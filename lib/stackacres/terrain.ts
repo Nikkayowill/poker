@@ -1,7 +1,7 @@
 /**
  * The ground that is not lawn: the sea along the east edge, the pond, the
- * dirt roads and the two worked yards -- as one field of materials over the
- * world, cut into the terrain pack's tiles.
+ * roads -- cobbled or bare -- and the two worked yards, as one field of
+ * materials over the world, cut into the terrain pack's tiles.
  *
  * WHY ONE FIELD. The pack (see scripts/prepare-stackacres-terrain.py) is a
  * coastline set: plain plates for sand, shallow and deep water, and for each
@@ -73,14 +73,16 @@ export const TERRAIN_OVERHANG = 8;
 
 /* ---- the materials ------------------------------------------------------- */
 
-export type TerrainMaterial = "grass" | "dirt" | "sand" | "shallow" | "deep";
+export type TerrainMaterial = "grass" | "dirt" | "cobble" | "sand" | "shallow" | "deep";
 
 /** Ground rises out of the water in steps: only neighbouring steps have a
  *  transition tile between them. Dirt is sand's step (it IS the sand plate,
- *  tinted), so a road meets a beach with no transition at all. */
+ *  tinted) and cobble is the dirt frames paved, so a road meets a beach with
+ *  no transition at all and a paved road meets a dirt one the same way. */
 const LEVEL: Readonly<Record<TerrainMaterial, 0 | 1 | 2 | 3>> = {
   grass: 0,
   dirt: 1,
+  cobble: 1,
   sand: 1,
   shallow: 2,
   deep: 3,
@@ -177,7 +179,8 @@ export const DIRT_YARDS: readonly WorldRect[] = [
 ];
 
 /**
- * How far from a road's centreline the ground is dirt, in world units. Half
+ * How far from a road's centreline the ground is the road's own surface --
+ * paving or bare earth, whichever `spec.surface` says -- in world units. Half
  * the width plus six: for the grid's 32-wide roads, which run midway between
  * two lattice rows, that takes in exactly those two rows and no third, so
  * the road bakes two cells wide with a grass-edged cell either side --
@@ -192,11 +195,21 @@ function inRect(x: number, y: number, r: WorldRect): boolean {
   return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 }
 
-function onRoad(x: number, y: number): boolean {
+/**
+ * What a road lays down here, or null off every road: the paving if any road
+ * covering the point is cobbled (./paths.ts's `surface`), bare earth
+ * otherwise. Stone wins where a dirt spur runs into a paved road, so the
+ * junction is the spur ending at the road's edge rather than the paving
+ * thinning out into it.
+ */
+function roadSurfaceAt(x: number, y: number): "dirt" | "cobble" | null {
+  let surface: "dirt" | "cobble" | null = null;
   for (const spec of ALL_FARM_PATHS) {
-    if (distanceToPath(x, y, spec) <= dirtReach(spec)) return true;
+    if (distanceToPath(x, y, spec) > dirtReach(spec)) continue;
+    if (spec.surface === "cobble") return "cobble";
+    surface = "dirt";
   }
-  return false;
+  return surface;
 }
 
 /* ---- the field ------------------------------------------------------------ */
@@ -220,7 +233,8 @@ export function terrainMaterialAt(x: number, y: number): TerrainMaterial {
     if (pond < 0) return "shallow";
     return "sand";
   }
-  if (onRoad(x, y)) return "dirt";
+  const road = roadSurfaceAt(x, y);
+  if (road) return road;
   for (const yard of DIRT_YARDS) if (inRect(x, y, yard)) return "dirt";
   return "grass";
 }
@@ -230,7 +244,8 @@ export function terrainMaterialAt(x: number, y: number): TerrainMaterial {
 /**
  * The atlas: eight frames a row, 64x64 each, with the diamond's base at
  * y 30 (`prepare-stackacres-terrain.py`'s BASE_TOP). Pair p (0 grass-sand,
- * 1 sand-shallow, 2 shallow-deep, 3 grass-dirt) owns sixteen frames from
+ * 1 sand-shallow, 2 shallow-deep, 3 grass-dirt, 4 grass-cobble) owns
+ * sixteen frames from
  * 16p: straight, inside curve and outside curve at rotations 45, 135, 225,
  * 315 in that order, then four plates of the pair's higher material.
  */
@@ -243,6 +258,7 @@ const PAIR_GRASS_SAND = 0;
 const PAIR_SAND_SHALLOW = 1;
 const PAIR_SHALLOW_DEEP = 2;
 const PAIR_GRASS_DIRT = 3;
+const PAIR_GRASS_COBBLE = 4;
 
 const SHAPE_STRAIGHT = 0;
 const SHAPE_CURVE_IN = 1;
@@ -264,6 +280,8 @@ function plateOf(material: TerrainMaterial, variant: number): number | null {
       return null;
     case "dirt":
       return plateFrame(PAIR_GRASS_DIRT, variant);
+    case "cobble":
+      return plateFrame(PAIR_GRASS_COBBLE, variant);
     case "sand":
       return plateFrame(PAIR_GRASS_SAND, variant);
     case "shallow":
@@ -299,6 +317,24 @@ const CURVE_OUT: ReadonlyMap<number, number> = new Map([
   [0b0001, 2], // W
   [0b0010, 3], // S
 ]);
+
+/**
+ * Which level-one material a cell draws with, or null if it has none at a
+ * corner. Sand beats paving and paving beats dirt: a road running down to
+ * the water turns to shore, which is what a track to a beach does, and a
+ * dirt spur meeting a paved road is drawn as the paving rather than as a
+ * patch of earth cut into it.
+ *
+ * There is one such material per cell because level one only ever pairs
+ * with grass, so the choice is never between two transitions -- only over
+ * which of the three plates the cell is cut from.
+ */
+function groundLevelOne(corners: readonly TerrainMaterial[]): "sand" | "cobble" | "dirt" | null {
+  if (corners.some((m) => m === "sand")) return "sand";
+  if (corners.some((m) => m === "cobble")) return "cobble";
+  if (corners.some((m) => m === "dirt")) return "dirt";
+  return null;
+}
 
 function mod(n: number, m: number): number {
   return ((n % m) + m) % m;
@@ -349,17 +385,13 @@ export function cellTile(i: number, j: number): CellTile | null {
     terrainMaterialAt(o.x, y1),
   ];
   let levels: number[] = corners.map((m) => LEVEL[m]);
-  // Dirt only ever pairs with grass. Where a road runs into the beach the
-  // cell is drawn as sand -- the road turns to shore, which is what a track
-  // down to the water does.
-  const sandy = corners.some((m) => m === "sand");
-  const dirty = !sandy && corners.some((m) => m === "dirt");
+  const ground = groundLevelOne(corners);
   const lo = Math.min(...levels);
   let hi = Math.max(...levels);
   const variant = plateVariant(i, j);
 
   if (lo === hi) {
-    const plate = plateOf(dirty ? "dirt" : corners[0], variant);
+    const plate = plateOf(ground ?? corners[0], variant);
     return plate === null ? null : { frame: plate, resolution: "plain" };
   }
 
@@ -369,7 +401,10 @@ export function cellTile(i: number, j: number): CellTile | null {
     hi = lo + 1;
     resolution = "skip";
   }
-  const pair = lo === 0 && dirty ? PAIR_GRASS_DIRT : lo === 0 ? PAIR_GRASS_SAND : lo === 1 ? PAIR_SAND_SHALLOW : PAIR_SHALLOW_DEEP;
+  const pair =
+    lo === 0 ? (ground === "cobble" ? PAIR_GRASS_COBBLE : ground === "dirt" ? PAIR_GRASS_DIRT : PAIR_GRASS_SAND)
+    : lo === 1 ? PAIR_SAND_SHALLOW
+    : PAIR_SHALLOW_DEEP;
   const mask = (levels[0] === lo ? 8 : 0) | (levels[1] === lo ? 4 : 0) | (levels[2] === lo ? 2 : 0) | (levels[3] === lo ? 1 : 0);
   const straight = STRAIGHT.get(mask);
   if (straight !== undefined) return { frame: transitionFrame(pair, SHAPE_STRAIGHT, straight), resolution };
@@ -382,8 +417,8 @@ export function cellTile(i: number, j: number): CellTile | null {
   // which of the two the cell is mostly, and it draws as that plate.
   const centre = LEVEL[terrainMaterialAt(o.x + TERRAIN_CELL / 2, o.y + TERRAIN_CELL / 2)];
   const material: TerrainMaterial =
-    centre <= lo ? (lo === 0 ? "grass" : lo === 1 ? (dirty ? "dirt" : "sand") : lo === 2 ? "shallow" : "deep")
-    : hi === 1 ? (dirty ? "dirt" : "sand") : hi === 2 ? "shallow" : "deep";
+    centre <= lo ? (lo === 0 ? "grass" : lo === 1 ? (ground ?? "sand") : lo === 2 ? "shallow" : "deep")
+    : hi === 1 ? (ground ?? "sand") : hi === 2 ? "shallow" : "deep";
   const plate = plateOf(material, variant);
   return plate === null ? null : { frame: plate, resolution: "saddle" };
 }

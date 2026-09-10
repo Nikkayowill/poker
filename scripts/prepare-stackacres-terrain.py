@@ -24,17 +24,19 @@ WHAT IT MAKES, and what each one has to satisfy:
                    actually stand on. Furrows that disagree with the rows are
                    worse than no furrows.
 
-  terrain-atlas.png 512x512, an 8x8 grid of the pack's 64x64 frames, in the
+  terrain-atlas.png 512x640, an 8x10 grid of the pack's 64x64 frames, in the
                    order lib/stackacres/terrain.ts's `terrainFrame` expects
-                   (ATLAS_ROWS below is that order). Four material pairs,
+                   (`build_atlas` below is that order). Five material pairs,
                    twelve transition frames each (straight, curve_in and
                    curve_out at the four rotations) plus four plain plates of
                    the pair's higher material: grass-beach, beach-shallow,
-                   shallow-deep, and grass-dirt -- the grass-beach set again
-                   with its sand tinted to the farm's road tan, so the dirt
-                   roads and the barn yard are cut from the same cloth as the
-                   shore. The scene draws these 1:1 into per-chunk canvases
-                   (art-terrain.ts), so nothing here is resampled.
+                   shallow-deep, grass-dirt -- the grass-beach set again with
+                   its sand tinted to the farm's road tan, so the dirt roads
+                   and the barn yard are cut from the same cloth as the shore
+                   -- and grass-cobble, that dirt set again with its earth
+                   paved over (`cobble_frames`). The scene draws these 1:1
+                   into per-chunk canvases (art-terrain.ts), so nothing here
+                   is resampled.
 
                    The grass-bearing frames have their soil rim erased: in
                    the pack every diamond carries a dark 1-2 px rim along its
@@ -65,12 +67,17 @@ SOURCES. Both packs are Kayo's own supply, unzipped next to this script:
 The soil ramp is StackAcres' own (`art-palette.ts`'s RAMPS.soil), not the
 pack's: the beach tile supplies the GRAIN and the palette supplies the
 COLOUR, so a bed still sits in the farm's own paint rather than importing a
-second, unrelated one.
+second, unrelated one. The cobbles are the farm's own paint outright.
+
+RUNNING IT. `python3 scripts/prepare-stackacres-terrain.py` rebuilds all four
+files and needs the packs. `--cobble` rebuilds only the atlas's paving, off
+the atlas already in the repo, and needs nothing unzipped.
 """
 
 from __future__ import annotations
 
 import random
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -376,6 +383,146 @@ def tint_sand(frame: Image.Image, top: tuple[int, int, int]) -> Image.Image:
     return out
 
 
+# ---- the cobbled roads ------------------------------------------------------
+#
+# A main road is paved (lib/stackacres/paths.ts's `surface`) and its sixteen
+# frames are the grass-dirt set with the dirt swapped for stone: the same
+# diamonds, the same grass edge, and the same worn tan fringe where the two
+# blend, so a cobbled road meets the lawn exactly as a dirt one does and
+# joins a dirt road without a seam of its own.
+#
+# THE STONES ARE LAID IN WORLD SPACE, and the pattern repeats every cell --
+# CELL units, one diamond. That period is the whole trick: every frame, the
+# four plates and all twelve transitions, is cut from one infinite field at
+# one phase, so a stone running off the edge of any tile is picked up by
+# whatever tile lies beside it. It is also why the four plate "variants"
+# lib/stackacres/terrain.ts asks for are the same picture here -- varying
+# them is precisely what would break that.
+
+# StackAcres' own stone ramp (`art-palette.ts`'s RAMPS.stone), spread wider:
+# at nine device pixels a stone the difference between one cobble and the
+# next has to be its COLOUR, since there is no room to shade one.
+COBBLE_DARK = (118, 115, 108)
+COBBLE_LIGHT = (186, 183, 174)
+# The shaded underside every stone is set into, and what shows in the joints:
+# the road's own tan, well darkened. Grit, not mortar -- this is stone set
+# into a farm track, not a city pavement.
+COBBLE_SEAT = (88, 85, 79)
+COBBLE_JOINT = (78, 63, 47)
+
+# Mirrors lib/stackacres/terrain.ts's TERRAIN_CELL. One frame diamond is one
+# cell, so this is the paving's period in world units.
+CELL = 16
+# World units between stone centres before jitter. Four across a cell puts
+# eight across a 32-unit grid road, which is chunky enough to still read as
+# stone on a phone, where the whole bake is halved.
+STONE_PITCH = 4.0
+# How much of the pitch a stone's radius takes. Just over half, so
+# neighbours touch and the joint is the seat showing between them rather
+# than a gap of ground.
+STONE_RADIUS = 0.55
+# Copies of the period laid either side, enough to cover a whole frame.
+COBBLE_REPEATS = (-2 * CELL, -CELL, 0, CELL, 2 * CELL)
+
+
+def mix(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return (
+        round(a[0] + (b[0] - a[0]) * t),
+        round(a[1] + (b[1] - a[1]) * t),
+        round(a[2] + (b[2] - a[2]) * t),
+    )
+
+
+def cell_screen(wx: float, wy: float) -> tuple[float, float]:
+    """A world point in a cell's own frame -> its pixel in that cell's 64x64
+    frame. `isoProject` with the origin on the diamond's north tip: a cell is
+    CELL units square and its diamond is TILE_W x TILE_H at BASE_TOP, which
+    is two pixels per unit."""
+    return ((wx - wy) * 2 + TILE_W / 2, (wx + wy) + BASE_TOP)
+
+
+def cobble_stones(seed: int = 20260909) -> list[dict[str, float | bool]]:
+    """One period of paving: a jittered lattice of stones, every other row
+    shifted half a pitch so the courses stagger like laid stone instead of
+    lining up into a grid."""
+    n = round(CELL / STONE_PITCH)
+    pitch = CELL / n
+    rng = random.Random(seed)
+    stones: list[dict[str, float | bool]] = []
+    for row in range(n):
+        for col in range(n):
+            x = (col + 0.5 + rng.uniform(-0.22, 0.22)) * pitch + (pitch / 2 if row % 2 else 0)
+            stones.append({
+                "x": x % CELL,
+                "y": (row + 0.5 + rng.uniform(-0.22, 0.22)) * pitch,
+                "size": rng.uniform(0.82, 1.10),
+                "tone": rng.random(),
+                # A few stones are warmer or plainly darker than the rest,
+                # which is what stops the paving reading as one grey sheet.
+                "warm": rng.random() < 0.30,
+                "dark": rng.random() < 0.15,
+            })
+    return stones
+
+
+def cobble_field(seed: int = 20260909) -> Image.Image:
+    """The paving over a whole 64x64 frame, ready to be masked to whatever
+    part of a diamond is road. Drawn back to front across the copies of the
+    period so a stone in front overlaps the seat of the one behind it."""
+    art = Image.new("RGBA", (TILE_W, 64), COBBLE_JOINT + (255,))
+    pen = ImageDraw.Draw(art)
+    placed = [
+        (stone, dx, dy)
+        for stone in cobble_stones(seed)
+        for dx in COBBLE_REPEATS
+        for dy in COBBLE_REPEATS
+    ]
+    placed.sort(key=lambda p: (p[0]["x"] + p[1]) + (p[0]["y"] + p[2]))
+    for stone, dx, dy in placed:
+        cx, cy = cell_screen(stone["x"] + dx, stone["y"] + dy)
+        # A world circle projects to an ellipse twice as wide as it is tall.
+        r = STONE_PITCH * STONE_RADIUS * stone["size"]
+        rx, ry = r * 2.83, r * 1.41
+        face = mix(COBBLE_DARK, COBBLE_LIGHT, stone["tone"])
+        if stone["warm"]:
+            face = mix(face, (158, 134, 104), 0.32)
+        if stone["dark"]:
+            face = mix(face, (74, 72, 68), 0.45)
+        pen.ellipse([cx - rx, cy - ry + 0.9, cx + rx, cy + ry + 0.9], fill=COBBLE_SEAT + (255,))
+        pen.ellipse(
+            [cx - rx * 0.92, cy - ry * 0.92 - 0.3, cx + rx * 0.92, cy + ry * 0.92 - 0.3],
+            fill=face + (255,),
+        )
+    return art
+
+
+def pave(frame: Image.Image, field: Image.Image) -> Image.Image:
+    """One grass-dirt frame with its dirt paved over.
+
+    The dirt is the bright, red-over-green half of the frame -- `tint_sand`'s
+    own test, run again on what it produced. Everything else is left exactly
+    as it was: the grass, its blades, and the pixels along the boundary where
+    the two are blended, which stay as a thin tan verge between the stone and
+    the lawn.
+    """
+    mask = Image.new("L", frame.size, 0)
+    mp, fp = mask.load(), frame.load()
+    for y in range(frame.height):
+        for x in range(frame.width):
+            r, g, b, a = fp[x, y]
+            if a and r > g and r >= 120:
+                mp[x, y] = a
+    out = frame.copy()
+    out.paste(field, (0, 0), mask)
+    return out
+
+
+def cobble_frames(dirt: list[Image.Image]) -> list[Image.Image]:
+    """The grass-cobble block: the sixteen grass-dirt frames, paved."""
+    field = cobble_field()
+    return [pave(frame, field) for frame in dirt]
+
+
 def transition_frames(pair: str) -> list[Image.Image]:
     """The pair's twelve transition frames, in atlas order: straight at the
     four rotations, then curve_in, then curve_out."""
@@ -390,30 +537,68 @@ def base_frames(name: str) -> list[Image.Image]:
     return [plate(name, rot) for rot in ROTATIONS]
 
 
-def build_atlas() -> Image.Image:
-    """The 8x8 atlas. Pair p takes rows 2p and 2p+1: its straight and
-    curve_in frames fill row 2p, its curve_out frames the first half of row
-    2p+1 and the four plain plates of its higher material the second half.
+# How many material pairs the atlas holds, and so how many rows: pair p
+# takes rows 2p and 2p+1. lib/stackacres/terrain.ts's PAIR_ constants are
+# the same order.
+ATLAS_PAIRS = 5
+
+
+def pack_atlas(rows: list[list[Image.Image]]) -> Image.Image:
+    """Rows of frames -> the atlas. Pair p's straight and curve_in frames
+    fill row 2p, its curve_out frames the first half of row 2p+1 and the four
+    plain plates of its higher material the second half.
     lib/stackacres/terrain.ts indexes into this by the same arithmetic."""
-    grass_beach = [erase_grass_rim(f) for f in transition_frames("ts_grass-beach0")]
-    rows: list[list[Image.Image]] = [
-        grass_beach,
-        base_frames("ts_beach0"),
-        transition_frames("ts_beach-shallow0"),
-        base_frames("ts_shallow0"),
-        transition_frames("ts_shallow-deep0"),
-        deep_plates(),
-        [tint_sand(f, DIRT_TOP) for f in grass_beach],
-        [tint_sand(f, DIRT_TOP) for f in base_frames("ts_beach0")],
-    ]
-    atlas = Image.new("RGBA", (TILE_W * 8, 64 * 8), (0, 0, 0, 0))
-    for pair in range(4):
+    atlas = Image.new("RGBA", (TILE_W * 8, 64 * ATLAS_PAIRS * 2), (0, 0, 0, 0))
+    for pair in range(ATLAS_PAIRS):
         frames = rows[pair * 2] + rows[pair * 2 + 1]
         assert len(frames) == 16, f"pair {pair} has {len(frames)} frames"
         for i, frame in enumerate(frames):
             assert frame.size == (TILE_W, 64), f"pair {pair} frame {i} is {frame.size}"
             atlas.alpha_composite(frame, ((i % 8) * TILE_W, (pair * 2 + i // 8) * 64))
     return atlas
+
+
+def build_atlas() -> Image.Image:
+    """The whole atlas, from the pack."""
+    grass_beach = [erase_grass_rim(f) for f in transition_frames("ts_grass-beach0")]
+    dirt_edges = [tint_sand(f, DIRT_TOP) for f in grass_beach]
+    dirt_plates = [tint_sand(f, DIRT_TOP) for f in base_frames("ts_beach0")]
+    cobble = cobble_frames(dirt_edges + dirt_plates)
+    return pack_atlas([
+        grass_beach,
+        base_frames("ts_beach0"),
+        transition_frames("ts_beach-shallow0"),
+        base_frames("ts_shallow0"),
+        transition_frames("ts_shallow-deep0"),
+        deep_plates(),
+        dirt_edges,
+        dirt_plates,
+        cobble[:12],
+        cobble[12:],
+    ])
+
+
+def repave_atlas(atlas: Image.Image) -> Image.Image:
+    """The built atlas with its grass-cobble block rebuilt from its own
+    grass-dirt one.
+
+    The pack this script reads is Kayo's own supply and is not committed, so
+    the paving -- which needs nothing from it but the dirt frames already in
+    the atlas -- is re-runnable on its own. `--cobble` is that run.
+    """
+    def frame(index: int, pair: int) -> Image.Image:
+        x = (index % 8) * TILE_W
+        y = (pair * 2 + index // 8) * 64
+        return atlas.crop((x, y, x + TILE_W, y + 64))
+
+    rows: list[list[Image.Image]] = []
+    for pair in range(4):
+        rows.append([frame(i, pair) for i in range(12)])
+        rows.append([frame(i, pair) for i in range(12, 16)])
+    cobble = cobble_frames(rows[6] + rows[7])
+    rows.append(cobble[:12])
+    rows.append(cobble[12:])
+    return pack_atlas(rows)
 
 
 def build_deep(size: int = 512) -> Image.Image:
@@ -426,6 +611,12 @@ def build_deep(size: int = 512) -> Image.Image:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    if "--cobble" in sys.argv:
+        path = OUT / "terrain-atlas.png"
+        atlas = repave_atlas(Image.open(path).convert("RGBA"))
+        atlas.save(path)
+        print(f"terrain-atlas.png {atlas.size} (repaved)")
+        return
     grass = build_grass()
     grass.save(OUT / "grass-tile.png")
     print(f"grass-tile.png {grass.size}")

@@ -18,6 +18,14 @@ export const ROAD_TILE = 16;
 
 export type PathTier = "arterial" | "track" | "service";
 
+/**
+ * What a road is surfaced with. Bare earth, or stone: the farm's main roads
+ * are cobbled and its service spurs are not (./paths.ts's `surface` says
+ * which is which), and ./terrain.ts draws both from grass-edged tiles cut
+ * the same way, so the two meet without a seam.
+ */
+export type PathSurface = "dirt" | "cobble";
+
 /** Two and a half tiles: the floor every main road axis is held to. */
 export const ARTERIAL_ROAD_MIN_WIDTH = 2.5 * ROAD_TILE;
 

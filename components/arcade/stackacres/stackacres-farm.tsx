@@ -102,6 +102,8 @@ import {
   type WorldPoint,
 } from "@/lib/stackacres/world";
 import {
+  createSoilMap,
+  soilSlotOnTile,
   soilTileAt,
   soilTilesEqual,
   type SoilTile,
@@ -984,9 +986,21 @@ export function StackAcresFarm() {
    * and where to draw it -- pixels inside .sa-field, which is the same box
    * the scene reported the tap in.
    */
-  const [radial, setRadial] = useState<{ zone: ZoneId; at: TapPoint; world: WorldPoint } | null>(
-    null,
-  );
+  const [radial, setRadial] = useState<{
+    zone: ZoneId;
+    at: TapPoint;
+    world: WorldPoint;
+    /**
+     * The bed a "Remove Bed" tap on a PLANTED tile is one tap away from
+     * actually lifting -- see `soilExtraActions`. Set on the first tap,
+     * which only re-labels the same ring rather than firing anything;
+     * cleared on "Keep the bed", and gone for free on any confirm or close
+     * (every other `setRadial` call below replaces this whole object or
+     * drops it to null), so an armed confirm can never carry over onto a
+     * different tile or outlive the ring that raised it.
+     */
+    armedRemoveBed?: { tx: number; ty: number };
+  } | null>(null);
   /**
    * The unit a bare tap picked out, and where the finger was. A tap that the
    * held tool cannot act on used to be a dead no-op (see the scene's own
@@ -1463,6 +1477,27 @@ export function StackAcresFarm() {
    *  to merge in. USED TO be `[...starterSoilTiles(CROP_FIELD_BEDS),
    *  ...soilTiles]`; a farm's placed soil is now simply `soilTiles` itself. */
   const mergedSoilTiles = soilTiles;
+
+  const soilMapForTiles = useMemo(() => createSoilMap(mergedSoilTiles), [mergedSoilTiles]);
+
+  /**
+   * The crop standing on tile `(tx, ty)` right now, or null on bare or
+   * empty ground -- the same `soilSlotOnTile` question
+   * `removeStackAcresSoilTile` asks server-side before it deletes a bed's
+   * occupant. Used only to decide whether removing a bed needs a warning
+   * first; the server is the one that actually enforces the loss.
+   */
+  const cropOnTile = useCallback(
+    (tx: number, ty: number): StackAcresUnitSnapshot | null => {
+      for (const unit of liveUnits) {
+        if (unit.soilSlot !== null && soilSlotOnTile(soilMapForTiles, unit.soilSlot, tx, ty)) {
+          return unit;
+        }
+      }
+      return null;
+    },
+    [liveUnits, soilMapForTiles],
+  );
 
   // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
   // Pixel Pilgrim's own unlock tint should be showing -- both pure
@@ -2922,12 +2957,25 @@ export function StackAcresFarm() {
   const onSoilLayTile = useCallback(
     (tx: number, ty: number, mode: "place" | "erase") => {
       if (mode === "erase") {
+        // A planted bed does not come out under a drag stroke -- that would
+        // take its crop with it (see `removeStackAcresSoilTile`) with no
+        // chance to warn first. The brush skips it and says why; lifting a
+        // planted bed is only ever reachable through the ring's own
+        // arm/confirm below, one tile at a time.
+        const crop = cropOnTile(tx, ty);
+        if (crop) {
+          setLastCollect({
+            text: `That bed has a ${STACKACRES_CATALOGUE[crop.stock].label} on it -- use the ring to remove it.`,
+            nonce: Date.now(),
+          });
+          return;
+        }
         void act({ action: "remove-soil-tile", tx, ty });
         return;
       }
       void act({ action: "place-soil-tile", tx, ty, tier: SOIL_DEFAULT_TIER });
     },
-    [act],
+    [act, cropOnTile],
   );
 
   /**
@@ -3177,6 +3225,44 @@ export function StackAcresFarm() {
       // A bed is one tile, one plant now (soil.ts's `plantSoilTile`) -- there
       // is no partial bed left to grow a square at, so a purchased tile ever
       // only offers to come back out.
+      //
+      // A PLANTED bed takes one extra tap. The first arms this same ring
+      // item rather than firing anything (see `radial`'s own
+      // `armedRemoveBed`); only the second, re-labelled tap actually sends
+      // `remove-soil-tile`, which deletes the crop standing here with no
+      // refund of its seed cost -- see `removeStackAcresSoilTile`'s own doc
+      // comment.
+      const crop = cropOnTile(tx, ty);
+      if (crop) {
+        const armed = radial.armedRemoveBed?.tx === tx && radial.armedRemoveBed?.ty === ty;
+        if (armed) {
+          return [
+            {
+              key: "remove-bed-confirm",
+              label: `Confirm -- lose the ${STACKACRES_CATALOGUE[crop.stock].label}`,
+              icon: "ico-clear" as PainterName,
+              // Closes the whole ring, which is what actually sends the
+              // request -- no separate disarm needed, `setRadial(null)`
+              // inside `onRemoveSoilTile` takes `armedRemoveBed` with it.
+              onSelect: () => onRemoveSoilTile(tx, ty),
+            },
+            {
+              key: "remove-bed-cancel",
+              label: "Keep the bed",
+              icon: "ico-plant" as PainterName,
+              onSelect: () => setRadial({ ...radial, armedRemoveBed: undefined }),
+            },
+          ];
+        }
+        return [
+          {
+            key: "remove-bed",
+            label: "Remove Bed…",
+            icon: "ico-clear" as PainterName,
+            onSelect: () => setRadial({ ...radial, armedRemoveBed: { tx, ty } }),
+          },
+        ];
+      }
       return [
         {
           key: "remove-bed",

@@ -395,6 +395,19 @@ export function soilSlotTile(soil: SoilMap, slot: number): SoilTile | null {
 }
 
 /**
+ * Whether the crop holding `slot` is standing on tile `(tx, ty)` right now --
+ * the one predicate `removeStackAcresSoilTile` (should a bed's own crop go
+ * with it?), the client's remove-bed confirm, and the optimistic guess for
+ * `remove-soil-tile` all three ask. Kept here, on top of `soilSlotTile`,
+ * rather than restated at each call site, so "where does a crop stand" has
+ * one answer everywhere it is asked.
+ */
+export function soilSlotOnTile(soil: SoilMap, slot: number, tx: number, ty: number): boolean {
+  const tile = soilSlotTile(soil, slot);
+  return tile !== null && tile.tx === tx && tile.ty === ty;
+}
+
+/**
  * The slot a specific tile holds, or null when nothing is standing there.
  * The inverse of `soilSlotTile` -- so a planting that names the tile the
  * player actually tapped, rather than "whatever's free", can be checked

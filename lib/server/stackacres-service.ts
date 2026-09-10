@@ -90,6 +90,7 @@ import {
   createSoilMap,
   nextFreeSoilSlot,
   soilSlotForTile,
+  soilSlotOnTile,
   soilSlotTile,
   soilTileAt,
   soilTileKey,
@@ -159,6 +160,7 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
+  abandonStackAcresUnit,
   adjustStackAcresSecretLedger,
   readStackAcresSecretLedgerQty,
   adjustStackAcresCapacity,
@@ -4532,6 +4534,17 @@ export async function buyStackAcresSeed(
  * starter tile or a missing coordinate; the store's own `origin = 'purchased'`
  * guard is what makes that refusal unconditional rather than trusted from the
  * client's own idea of which tile it tapped.
+ *
+ * A crop standing on the bed goes with it. The client warns and makes the
+ * player confirm before this ever fires (stackacres-farm.tsx's remove-bed
+ * ring item), but that is a courtesy, not the authority -- this resolves the
+ * same `soilSlotOnTile` question itself and deletes the occupant
+ * (`abandonStackAcresUnit`) once the bed is actually gone, with no refund of
+ * whatever seed money already went into it. Occupancy is read BEFORE the
+ * removal, while the tile this crop's slot names still exists to be found;
+ * a lost race on the abandon (the crop was harvested or cleared a moment
+ * earlier) is left alone rather than retried -- there is nothing left to
+ * take.
  */
 export async function removeStackAcresSoilTile(
   token: string,
@@ -4542,10 +4555,24 @@ export async function removeStackAcresSoilTile(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
 
+  const [purchased, units] = await Promise.all([
+    listStackAcresSoilTiles(profile.id),
+    listStackAcresUnits(profile.id),
+  ]);
+  const soil = soilMapFor(purchased);
+  const occupant = units.find(
+    (unit) => unit.soilSlot !== null && soilSlotOnTile(soil, unit.soilSlot, tx, ty),
+  );
+
   const removed = await removeSoilTileRow(profile.id, tx, ty);
   if (!removed) {
     throw new StackAcresRequestError("That bed cannot be removed.", 400);
   }
+
+  if (occupant) {
+    await abandonStackAcresUnit(occupant);
+  }
+
   return view(profile, now);
 }
 

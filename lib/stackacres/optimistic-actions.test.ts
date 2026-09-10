@@ -379,6 +379,40 @@ describe("predictStackAcresAction: buying and selling stock", () => {
   });
 });
 
+describe("predictStackAcresAction: removing a soil tile", () => {
+  const bedA = { tx: 0, ty: 0, order: 0, origin: "purchased" as const };
+  const bedB = { tx: 1, ty: 0, order: 1, origin: "purchased" as const };
+
+  it("drops the tile and refuses on bare ground", () => {
+    const patch = predictStackAcresAction(
+      { action: "remove-soil-tile", tx: 0, ty: 0 },
+      ctx({ soilTiles: [bedA] }),
+    );
+    expect(patch?.soilTiles).toEqual([]);
+    expect(predictStackAcresAction({ action: "remove-soil-tile", tx: 9, ty: 9 }, ctx({ soilTiles: [bedA] }))).toBeNull();
+  });
+
+  it("takes the crop standing on that tile with it, and leaves an unrelated one alone", () => {
+    const onBedA = unit({ id: "crop-a", stock: "corn", soilSlot: 0 });
+    const onBedB = unit({ id: "crop-b", stock: "wheat1", soilSlot: 1 });
+    const patch = predictStackAcresAction(
+      { action: "remove-soil-tile", tx: 0, ty: 0 },
+      ctx({ soilTiles: [bedA, bedB], units: [onBedA, onBedB] }),
+    );
+    expect(patch?.soilTiles).toEqual([bedB]);
+    expect(patch?.units).toEqual([onBedB]);
+  });
+
+  it("does not touch the unit list when the lifted bed was bare", () => {
+    const elsewhere = unit({ id: "crop-b", stock: "wheat1", soilSlot: 1 });
+    const patch = predictStackAcresAction(
+      { action: "remove-soil-tile", tx: 0, ty: 0 },
+      ctx({ soilTiles: [bedA, bedB], units: [elsewhere] }),
+    );
+    expect(patch?.units).toBeUndefined();
+  });
+});
+
 describe("predictStackAcresAction: aiming a pipe stub", () => {
   const stub = { tx: 2, ty: 3, kind: "pipe" as const, mask: 0, hydrated: false, distance: null, facing: null };
   const well = { tx: 9, ty: 9, kind: "well" as const, mask: 0, hydrated: true, distance: 0, facing: null };

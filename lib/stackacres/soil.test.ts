@@ -25,6 +25,7 @@ import {
   soilCapacity,
   soilSignedDistance,
   soilSlotForTile,
+  soilSlotOnTile,
   soilSlotPoint,
   soilSlotSpot,
   soilTileAt,
@@ -673,6 +674,20 @@ describe("soilTilesEqual", () => {
     expect(soilSlotForTile(soil, 1, 0)).toBe(1);
     expect(soilSlotForTile(soil, 9, 9)).toBeNull();
     expect(soilSlotForTile(createSoilMap(), 0, 0)).toBeNull();
+  });
+
+  // What removeStackAcresSoilTile asks before it lifts a bed: is the crop
+  // holding this slot actually standing on the tile about to go?
+  it("says whether a slot's crop is standing on a specific tile", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+    ]);
+    expect(soilSlotOnTile(soil, 0, 0, 0)).toBe(true);
+    expect(soilSlotOnTile(soil, 0, 1, 0)).toBe(false);
+    expect(soilSlotOnTile(soil, 1, 1, 0)).toBe(true);
+    // No soil at all: nothing can be standing on anything.
+    expect(soilSlotOnTile(createSoilMap(), 0, 0, 0)).toBe(false);
   });
 });
 

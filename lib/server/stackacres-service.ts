@@ -4,6 +4,7 @@ import {
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
   STACKACRES_FEED,
+  STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
@@ -2358,15 +2359,29 @@ export async function retireStackAcresStock(
   return view(profile, now);
 }
 
-/** Buys a shipment of feed. Pure sink: Gold out, servings in. */
+/** Buys shipments of feed. Pure sink: Gold out, servings in.
+ *
+ * Bulk, same as `buyStackAcresSoil`/`buyStackAcresSeed`: a `quantity` up to
+ * STACKACRES_FEED_SHIPMENTS_PER_PURCHASE moves in one request instead of one
+ * shipment per click, so a player mashing Buy no longer races the server's
+ * own round trip and gets back fewer shipments than presses. */
 export async function buyStackAcresFeed(
   token: string,
-  itemId: string,
+  input: { itemId?: unknown; quantity?: unknown },
   now = new Date(),
 ): Promise<StackAcresView> {
+  const itemId = typeof input.itemId === "string" ? input.itemId : "";
   const item = STACKACRES_FEED[itemId];
   if (!item) throw new StackAcresRequestError("No such shipment.", 400);
   const profile = await ensureProfile(token);
+
+  const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > STACKACRES_FEED_SHIPMENTS_PER_PURCHASE) {
+    throw new StackAcresRequestError(
+      `Buy between 1 and ${STACKACRES_FEED_SHIPMENTS_PER_PURCHASE} shipments at a time.`,
+      400,
+    );
+  }
 
   // The shelf greys this row out, and that is presentation; this is the
   // check. `itemId` came off the wire, so a request naming the Bulk Shipment
@@ -2375,19 +2390,20 @@ export async function buyStackAcresFeed(
 
   // Town Favor discount -- see upgradeStackAcresTool's identical comment
   // and lib/stackacres/influence-tiers.ts.
-  const price = applyInfluenceDiscount(item.cost, await readStackAcresInfluence(profile.id));
+  const unitPrice = applyInfluenceDiscount(item.cost, await readStackAcresInfluence(profile.id));
+  const price = unitPrice * quantity;
 
   // Rule 1: the Gold leaves before the servings land.
   const debited = await spendGoldByProfile(profile.id, price);
   if (!debited) {
     throw new StackAcresRequestError(
-      `A ${item.label} costs ${price.toLocaleString()} Gold.`,
+      `${quantity} x ${item.label} costs ${price.toLocaleString()} Gold.`,
       400,
     );
   }
 
   try {
-    await adjustStackAcresFeed(profile.id, item.servings);
+    await adjustStackAcresFeed(profile.id, item.servings * quantity);
   } catch (error) {
     await refundGold(profile.id, price);
     throw error;

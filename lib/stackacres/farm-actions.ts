@@ -26,6 +26,7 @@ import type { RecipeId } from "./recipes";
 import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { PipeFacing, PipeKind } from "./irrigation";
+import type { ZoneId } from "./zones";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -39,7 +40,12 @@ export type Action =
   // Harvest key sends. A single id is what tapping one unit sends.
   | { action: "collect"; unitIds?: string[] }
   | { action: "feed"; unitId: string }
+  // Feeds the hungry animals in one pen, a serving each, as far as the feed
+  // goes. What dropping the feed scoop on a trough sends.
+  | { action: "feed-pen"; zone: ZoneId }
   | { action: "water"; unitId: string }
+  // Fills the watering can at the well.
+  | { action: "draw-water" }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
   | { action: "sell"; item: StackAcresItem; quantity: number }
@@ -178,6 +184,8 @@ export function intentOf(body: Action): string {
   // "collect-drone-forage" intent.
   if ("droneId" in body) return `${body.action}:${body.droneId}`;
   if ("archetype" in body) return `${body.action}:${body.archetype}`;
+  // Feeding one pen must never block feeding another.
+  if ("zone" in body) return `${body.action}:${body.zone}`;
   if ("tx" in body) return `${body.action}:${body.tx},${body.ty}`;
   // Making cheese must never dedupe against or block weaving cloth, and
   // building a Mill must never block building a Dairy. `place-pipe` carries

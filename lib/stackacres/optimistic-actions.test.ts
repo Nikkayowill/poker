@@ -4,6 +4,7 @@ import { STACKACRES_CATALOGUE } from "./catalogue";
 import { stackacresStockPrice } from "./market";
 import { HOME_SECTOR } from "./sectors";
 import type { StackAcresUnitSnapshot } from "./units";
+import { WATER_CAPACITY } from "./water-can";
 import { SYNERGY_PERKS } from "./synergy-perks";
 import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
@@ -50,6 +51,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     unlimitedGold: p?.unlimitedGold ?? false,
     units: [],
     feed: 5,
+    water: WATER_CAPACITY,
     capacity: {},
     seedStock: {},
     toolTier: "trowel",
@@ -233,6 +235,47 @@ describe("predictStackAcresAction: feed/water/clear", () => {
     const patch = predictStackAcresAction({ action: "water", unitId: crop.id }, ctx({ units: [crop] }));
     expect(patch?.units?.[0].id).toBe(crop.id);
     expect(patch?.profile).toBeUndefined();
+  });
+
+  it("spends one unit from the watering can", () => {
+    const crop = unit({ id: "c1", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const patch = predictStackAcresAction({ action: "water", unitId: crop.id }, ctx({ units: [crop], water: 4 }));
+    expect(patch?.water).toBe(3);
+  });
+
+  it("refuses to water from an empty can", () => {
+    const crop = unit({ id: "c1", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    expect(predictStackAcresAction({ action: "water", unitId: crop.id }, ctx({ units: [crop], water: 0 }))).toBeNull();
+  });
+
+  it("fills the can at the well, and guesses nothing for a can already full", () => {
+    expect(predictStackAcresAction({ action: "draw-water" }, ctx({ water: 2 }))?.water).toBe(WATER_CAPACITY);
+    expect(predictStackAcresAction({ action: "draw-water" }, ctx({ water: WATER_CAPACITY }))).toBeNull();
+  });
+
+  it("feeds a pen's hungry animals soonest-hungry first, one serving each", () => {
+    const early = unit({ id: "h1", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 10 * 60_000).toISOString() });
+    const late = unit({ id: "h2", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 60_000).toISOString() });
+    const fed = unit({ id: "h3", stock: "hen", state: "working" });
+    const cow = unit({ id: "c1", stock: "cattle", state: "hungry" });
+    const patch = predictStackAcresAction(
+      { action: "feed-pen", zone: "henhaven" },
+      ctx({ units: [late, fed, early, cow], feed: 1 }),
+    );
+    expect(patch?.feed).toBe(0);
+    const byId = new Map(patch!.units!.map((u) => [u.id, u]));
+    expect(Date.parse(byId.get("h1")!.hungryAt!)).toBeGreaterThan(NOW.getTime());
+    // Out of feed after the first, and the fed hen and the cow in another pen
+    // are left exactly as they were.
+    expect(byId.get("h2")).toBe(late);
+    expect(byId.get("h3")).toBe(fed);
+    expect(byId.get("c1")).toBe(cow);
+  });
+
+  it("guesses nothing for a pen with no feed left or nobody hungry", () => {
+    const hen = unit({ id: "h1", stock: "hen", state: "hungry" });
+    expect(predictStackAcresAction({ action: "feed-pen", zone: "henhaven" }, ctx({ units: [hen], feed: 0 }))).toBeNull();
+    expect(predictStackAcresAction({ action: "feed-pen", zone: "oxfields" }, ctx({ units: [hen], feed: 3 }))).toBeNull();
   });
 
   it("clears a mucked unit and debits its fee", () => {

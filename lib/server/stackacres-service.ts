@@ -179,6 +179,9 @@ import {
   readStackAcresCapacity,
   readStackAcresExchanged,
   readStackAcresFeed,
+  readStackAcresWater,
+  adjustStackAcresWater,
+  fillStackAcresWater,
   readStackAcresMuseum,
   raiseStackAcresUpkeep,
   readStackAcresSectors,
@@ -519,6 +522,8 @@ export interface StackAcresView {
   units: StackAcresUnitSnapshot[];
   profile: PlayerProfile;
   feed: number;
+  /** Water left in the watering can (lib/stackacres/water-can.ts). */
+  water: number;
   /** Purchased extra capacity slots, by stock kind. */
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Today's allowance: the flat ceiling, and what is left of it. */
@@ -790,6 +795,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   const [
     rows,
     feed,
+    water,
     capacity,
     exchanged,
     cleared,
@@ -825,6 +831,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
+    readStackAcresWater(profile.id),
     readStackAcresCapacity(profile.id),
     readStackAcresExchanged(profile.id, day),
     readStackAcresSectors(profile.id),
@@ -896,6 +903,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     units,
     profile,
     feed,
+    water,
     capacity,
     exchange: exchangeState(exchanged, now),
     museum,
@@ -2401,17 +2409,81 @@ export async function feedStackAcres(
 }
 
 /**
- * Waters a dry crop, spending nothing.
+ * Feeds the hungry animals in one pen, one serving each, soonest-hungry
+ * first, until the pen is fed or the feed runs out. What dropping the feed
+ * scoop on a pen's trough sends.
+ *
+ * Each serving is spent before the write it pays for and handed back if that
+ * one write fails, the same order `feedStackAcres` keeps, so one animal that
+ * moved on never costs the others their meal. Running out partway is not an
+ * error. Only feeding nobody at all is refused.
+ */
+export async function feedStackAcresPen(
+  token: string,
+  zone: ZoneId,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  if (!PEN_ZONE_IDS.includes(zone)) {
+    throw new StackAcresRequestError("That is not a pen.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const hungry = (await listStackAcresUnits(profile.id))
+    .filter((row) => stockZone(row.stock) === zone && isStackAcresUnitHungry(row, now))
+    .sort((a, b) => (hungryAtFor(a) ?? "").localeCompare(hungryAtFor(b) ?? ""));
+  if (hungry.length === 0) {
+    throw new StackAcresRequestError("Nobody in this pen is hungry.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let fedCount = 0;
+  for (const unit of hungry) {
+    const remaining = await adjustStackAcresFeed(profile.id, -1);
+    if (remaining === null) break;
+
+    const hungryAt = hungryAtFor(unit);
+    const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
+    const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, now.getTime() - hungrySince) : 0;
+    const readyAt = Date.parse(unit.readyAt);
+    const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + starvedMs);
+
+    let fed: StoredStackAcresUnit | null;
+    try {
+      fed = await feedStackAcresUnit(unit, now, pushed);
+    } catch (error) {
+      await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+      // The animals already fed stay fed. Only throw if nothing went through.
+      if (fedCount === 0) throw error;
+      break;
+    }
+    if (!fed) {
+      await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+      continue;
+    }
+    fedCount += 1;
+  }
+
+  if (fedCount === 0) {
+    throw new StackAcresRequestError("You are out of feed. Buy a shipment first.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(profile, now);
+}
+
+/**
+ * Waters a dry crop, spending one unit from the watering can.
  *
  * The mirror of `feedStackAcres` on the crop track, and the same guarantee:
  * ready_at moves forward by however long the soil stood dry, so neglected
  * time is never credited as work, and the yield is untouched.
  *
- * It is deliberately FREE. Every money-ordering rule at the top of this file
- * is about a debit and the thing it pays for, and watering has neither -- it
- * costs attention, which is the resource this loop is actually asking for.
- * That is why there is no spend to reverse when the guarded write loses its
- * race: a lost race here is just a 409, not a refund.
+ * The water is tipped out before the write it pays for and poured back if
+ * that write fails, the same order feed keeps. Pipes water for free and
+ * never come through here.
  *
  * Watering a crop that is not dry is refused rather than treated as a
  * top-up. Allowing it would let a player push ready_at forward by zero all
@@ -2448,7 +2520,7 @@ export async function waterStackAcres(
   //
   // Returning early rather than watering is what keeps the guard: nothing is
   // written, so the thirst clock is not reset and there is no free top-up to
-  // farm. It costs nothing to allow because watering costs nothing.
+  // farm. No water is spent on this path either.
   if (!isStackAcresUnitDry(unit, now)) return view(profile, now);
 
   const driedAt = Date.parse(thirstyAt);
@@ -2456,13 +2528,34 @@ export async function waterStackAcres(
   const readyAt = Date.parse(unit.readyAt);
   const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
 
-  const watered = await waterStackAcresUnit(unit, now, pushed);
+  const remaining = await adjustStackAcresWater(profile.id, -1);
+  if (remaining === null) {
+    throw new StackAcresRequestError("Your watering can is empty. Fill it at the well.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let watered: StoredStackAcresUnit | null;
+  try {
+    watered = await waterStackAcresUnit(unit, now, pushed);
+  } catch (error) {
+    await adjustStackAcresWater(profile.id, 1).catch(() => null);
+    throw error;
+  }
   if (!watered) {
+    await adjustStackAcresWater(profile.id, 1).catch(() => null);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
+  return view(profile, now);
+}
+
+/** Fills the watering can at the well. Free, and a no-op on a full can. */
+export async function drawStackAcresWater(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await fillStackAcresWater(profile.id);
   return view(profile, now);
 }
 

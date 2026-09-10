@@ -26,6 +26,7 @@ import {
   type StackAcresPrestigeState,
 } from "@/lib/stackacres/prestige";
 import type { NpcId } from "@/lib/stackacres/friendship";
+import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -93,6 +94,7 @@ declare global {
   var __riverRoomStackAcresPrestige: Map<string, StackAcresPrestigeState> | undefined;
   var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
   var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
+  var __riverRoomStackAcresWater: Map<string, number> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -104,6 +106,10 @@ globalThis.__riverRoomStackAcresCapacity = memoryCapacity;
 
 const memoryFeed = globalThis.__riverRoomStackAcresFeed ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresFeed = memoryFeed;
+
+/** Watering can levels. A missing entry is a full can, same as a missing row. */
+const memoryWater = globalThis.__riverRoomStackAcresWater ?? new Map<string, number>();
+globalThis.__riverRoomStackAcresWater = memoryWater;
 
 /** The equipment rung each player has bought up to, keyed by profile id. A
  *  missing entry is the free starting Trowel, exactly as a missing capacity
@@ -233,6 +239,7 @@ export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
   memoryCapacity.clear();
   memoryFeed.clear();
+  memoryWater.clear();
   memoryTool.clear();
   memoryExchanges.clear();
   memoryUpkeep.clear();
@@ -1262,6 +1269,63 @@ export async function adjustStackAcresFeed(profileId: string, delta: number): Pr
     throw new Error(`Could not update your feed store: ${error.message}`);
   }
   return data === null ? null : Number(data);
+}
+
+/** The watering can's level. No row yet means a full can. */
+export async function readStackAcresWater(profileId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) return memoryWater.get(profileId) ?? WATER_CAPACITY;
+
+  const { data, error } = await supabase
+    .from("homestead_water")
+    .select("level")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your watering can: ${error.message}`);
+  return data ? Math.min(WATER_CAPACITY, Number((data as { level: number | string }).level)) : WATER_CAPACITY;
+}
+
+/**
+ * Moves the can's level by `delta`, never past full. Returns the new level,
+ * or null when there was not enough water, which callers treat like a lost
+ * race.
+ */
+export async function adjustStackAcresWater(profileId: string, delta: number): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const next = (memoryWater.get(profileId) ?? WATER_CAPACITY) + delta;
+    if (next < 0) return null;
+    const level = Math.min(WATER_CAPACITY, next);
+    memoryWater.set(profileId, level);
+    return level;
+  }
+
+  const { data, error } = await supabase.rpc("adjust_homestead_water", {
+    p_profile_id: profileId,
+    p_delta: delta,
+    p_capacity: WATER_CAPACITY,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not update your watering can: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
+/** Fills the can to the brim. Returns the new level. */
+export async function fillStackAcresWater(profileId: string): Promise<number> {
+  const supabase = adminClient();
+  if (!supabase) {
+    memoryWater.set(profileId, WATER_CAPACITY);
+    return WATER_CAPACITY;
+  }
+
+  const { data, error } = await supabase.rpc("fill_homestead_water", {
+    p_profile_id: profileId,
+    p_capacity: WATER_CAPACITY,
+  });
+  if (error) throw new Error(`Could not fill your watering can: ${error.message}`);
+  return Number(data);
 }
 
 /* ------------------------------------------------------------------ */

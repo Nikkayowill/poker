@@ -43,11 +43,10 @@
  * for one roll would silently start driving a second one too, and every
  * unpinned harvest-balance assertion would go flaky. Folding both effects
  * into the same two numbers means the actual roll -- `rollHarvestCrit`/
- * `critGoldFor` in equipment.ts -- never changes shape at all; it just gets
- * handed forged numbers instead of the tier's bare ones. That is also what
- * keeps this safe under the one-faucet/one-ceiling rule those functions'
- * own comments describe: the crit still rides the SAME reservation a
- * harvest already took, forged or not.
+ * `critBonusQuantity` in equipment.ts -- never changes shape at all; it just
+ * gets handed forged numbers instead of the tier's bare ones. A crit pays
+ * bonus inventory now, not Gold, so a forged bonus never touches the daily
+ * Gold ceiling either way.
  */
 
 import type { MachineItemId } from "./machine-items";
@@ -180,10 +179,10 @@ export interface StackAcresForgedStats extends ForgeBaseStats {
  * this with that list.
  *
  * `critChance` is clamped to [0, 1] (a chance cannot exceed certainty).
- * `critBonus` is NOT clamped upward -- it is a multiplier a settled harvest
- * already reserves against before rolling (equipment.ts's own
- * `critGoldFor`/the harvest's optimistic reservation), so an arbitrarily
- * large bonus is still bounded by that reservation, never by this function.
+ * `critBonus` is NOT clamped upward -- it multiplies a settled line's bonus
+ * UNITS (equipment.ts's own `critBonusQuantity`), not Gold, so a large bonus
+ * only means more produce in the barn, which still has to go through Sell
+ * and its daily ceiling before it is worth any Gold.
  * `reach` composes multiplicatively, same as `applySynergyEffects` composes
  * `farmhandSpeed`.
  */
@@ -280,7 +279,7 @@ export function canAffordForge(
  *   - resolve a profile's owned enchantment ids from
  *     `stackacres_tool_enchantments` the same way
  *     `listOwnedStackAcresPerks` resolves `stackacres_perk_unlocks`;
- *   - and equipment.ts's `rollHarvestCrit`/`critGoldFor` call sites inside
+ *   - and equipment.ts's `rollHarvestCrit`/`critBonusQuantity` call sites inside
  *     `harvestStackAcres` would be handed `computeForgedToolStats(...)`'s
  *     `critChance`/`critBonus` instead of the bare tier numbers, stacked
  *     with (not instead of) whatever `applySynergyBuffs` already contributes

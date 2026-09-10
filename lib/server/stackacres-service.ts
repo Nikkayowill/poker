@@ -38,7 +38,6 @@ import {
   type HarvestCandidate,
   type HarvestSettlement,
 } from "@/lib/stackacres/harvest";
-import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import {
   stackacresUpkeepDay,
   stackacresUpkeepDue,
@@ -46,7 +45,7 @@ import {
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
 import { stackacresStockPrice } from "@/lib/stackacres/market";
-import { emptyMuseumRegistry, museumDiscoveryBonus, type MuseumRegistry } from "@/lib/stackacres/museum";
+import { emptyMuseumRegistry, museumDiscoveryBonusQuantity, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
   STACKACRES_SECTORS,
   isSectorUnlocked,
@@ -212,6 +211,7 @@ import {
   adjustStackAcresInventory,
   startStackAcresMachine,
   processStackAcresRecipe,
+  processStackAcresRecipeMulti,
   readStackAcresGreenhouse,
   buildStackAcresGreenhouseRow,
   readStackAcresCropFieldsUnlocked,
@@ -239,7 +239,7 @@ import {
   completeStackAcresIntent,
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
-import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import { creditGoldByProfile, ensureProfile, getProfileById, spendGoldByProfile } from "./profile-store";
 import {
   readMidnightMerchantVisit,
   redeemMidnightMerchantItem,
@@ -253,7 +253,7 @@ import {
   type MidnightMerchantSnapshot,
 } from "@/lib/stackacres/midnight-merchant";
 import {
-  critGoldFor,
+  critBonusQuantity,
   nextToolTier,
   rollHarvestCrit,
   stackacresToolTierDef,
@@ -344,10 +344,9 @@ import {
 } from "@/lib/stackacres/recipes";
 import {
   isMachineItem,
-  isMachineRawItem,
+  machineItemSellPrice,
   type MachineItemId,
   type MachineProcessedItem,
-  type MachineRawItem,
 } from "@/lib/stackacres/machine-items";
 import type { BlueprintId } from "@/lib/stackacres/blueprints";
 import {
@@ -381,13 +380,18 @@ import type { StoredDrone } from "./stackacres-drone-store";
  * along with the barn and the store shelf that stood between a crop and its
  * money.
  *
- * WHAT THE SECOND CURRENCY WAS ACTUALLY PROTECTING, and what still protects
- * it. The Bushel firewall let the farm's internal numbers be wrong cheaply. It
- * was never the thing that stopped the farm printing money -- that was, and
- * still is, **the flat daily ceiling on how much Gold one player may take out
- * of the farm**, mirrored as a hard limit inside `reserve_homestead_exchange`
- * and applied here to the harvest itself. Not a percentage, not scaled by
- * stock owned, not scaled by a Bountiful Harvest multiplier. See
+ * A HARVEST NO LONGER PAYS GOLD, TO ANYONE, FOR ANY ITEM (2026-09-10). It used
+ * to pay every collected unit's value directly, under a flat daily ceiling.
+ * That is gone: `harvestStackAcres` now always credits the shared processing
+ * inventory (./inventory.ts) -- the same door wheat, flour, milk and wool
+ * already used -- and the only ways an item there becomes Gold are the new
+ * `sellStackAcresItem` (any item, any time, at its own sell price) and a
+ * fulfilled Town Contract (`fulfillStackAcresTownContract`, a premium price
+ * for Flour/Cheese/Cloth specifically). This did not remove the safety
+ * property, it relocated it: **the flat daily ceiling on how much Gold one
+ * player may take out of the farm** is unchanged, mirrored as a hard limit
+ * inside `reserve_homestead_exchange`, and now gates Sell and a Contract
+ * instead of a harvest. Not a percentage, not scaled by stock owned. See
  * lib/stackacres/exchange.ts.
  *
  * THE GOLD PATHS, and the asymmetry that is the whole safety story:
@@ -397,49 +401,57 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *     `buyStackAcresFeed` buys a shipment, `clearStackAcresUnit` pays a muck
  *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder,
  *     `sowStackAcresWheat` buys wheat seed, `placeStackAcresMachine` buys a
- *     machine outright. All sinks.
- *   * TWO PAY, and both are gated by `STACKACRES_GOLD_CEILING`, the SAME flat
- *     daily reservation, through the SAME `reserveStackAcresExchange`/
- *     `releaseStackAcresExchange` pair: `harvestStackAcres`, net of Land
- *     Maintenance, and `fulfillStackAcresTownContract`, which trades
- *     processed goods for Gold and Town Influence. Nothing else here may
- *     credit Gold. A second payer is exactly the kind of change this comment
- *     exists to make a reviewer stop over -- see lib/stackacres/contracts.ts's
- *     own header for why routing it through the harvest's own ceiling, rather
- *     than inventing a second one, is what keeps it safe.
+ *     machine outright. All sinks. Land Maintenance (`assessStackAcresUpkeep`)
+ *     is a ninth, standalone one -- see its own section below.
+ *   * THREE PAY, and all three are gated by `STACKACRES_GOLD_CEILING`, the
+ *     SAME flat daily reservation, through the SAME `reserveStackAcresExchange`/
+ *     `releaseStackAcresExchange` pair: `sellStackAcresItem`, the new baseline
+ *     door from inventory to Gold; `fulfillStackAcresTownContract`, which
+ *     trades processed goods for a premium in Gold and Town Influence; and
+ *     `collectStackAcresVat`, the Fermenting Vat's own aged-Cheese payout
+ *     (lib/stackacres/aging.ts). Nothing else here may credit Gold. A fourth
+ *     payer is exactly the kind of change this comment exists to make a
+ *     reviewer stop over -- see lib/stackacres/contracts.ts's own header for
+ *     why routing a new payer through the SAME ceiling, rather than inventing
+ *     a second one, is what keeps it safe.
  *
- * THE CRITICAL HARVEST does not break that count, and the way it avoids
- * doing so is the point. The equipment ladder makes a sweep sometimes come up
- * rich, and that bonus is Gold -- but it is paid BY `harvestStackAcres`, from
- * inside the same reservation as the harvest carrying it, so it is bounded by
- * the same flat daily ceiling and adds no second faucet. The reservation is
- * taken optimistically (gross plus the most the held rung could add) and the
- * unused part handed straight back, which is the pattern step 4 already uses
- * for a unit that loses its race.
+ * THE CRITICAL HARVEST, RAY'S MUSEUM'S DISCOVERY BONUS and THE PRESTIGE RESET
+ * VALVE all used to ride inside the harvest's own Gold payout. None of them
+ * pay Gold any more, for the same reason harvest itself does not:
+ *
+ *   * A crit (`critBonusQuantity`, lib/stackacres/equipment.ts) now adds bonus
+ *     UNITS to a settled line, credited into the same inventory line as the
+ *     rest of that line's produce -- extra Eggs, not extra Gold.
+ *   * Ray's Museum's first-ever-discovery bonus (`museumDiscoveryBonusQuantity`,
+ *     lib/stackacres/museum.ts) is the identical shape: bonus units of the
+ *     item just discovered, folded into the same credit.
+ *   * The Prestige Reset Valve's permanent multiplier moved to
+ *     `sellStackAcresItem`, applied to the Gold a sale yields, before that
+ *     Gold is reserved against the ceiling -- see lib/stackacres/prestige.ts's
+ *     own header for why that ordering is load-bearing rather than cosmetic.
  *
  * Every refund goes through `refundGold` rather than calling
  * `creditGoldByProfile` directly, so that the credit function has exactly
- * THREE call sites in this file: the refund helper, the harvest payout, and
- * the contract payout. That is not a style preference -- it is what lets a
- * test state the real invariant ("Gold is credited only by a payer that
- * reserves against the ceiling first") instead of counting call sites that
- * grow with every new refund. A new direct `creditGoldByProfile` that does
- * NOT reserve first is the change to stop over.
+ * FOUR call sites in this file: the refund helper, and the three payers
+ * above. That is not a style preference -- it is what lets a test state the
+ * real invariant ("Gold is credited only by a payer that reserves against the
+ * ceiling first") instead of counting call sites that grow with every new
+ * refund. A new direct `creditGoldByProfile` that does NOT reserve first is
+ * the change to stop over.
  *
- * RAY'S MUSEUM rides inside that one payout rather than beside it. The first
- * time this player ever harvests a given item, `harvestStackAcres` folds a
- * one-time "New Discovery!" bonus into the SAME Gold figure the sweep already
- * pays -- see the museum section down there. It is bigger, not a second
- * payout, and it is reserved against the same daily ceiling as everything
- * else, so it does not reopen the "ONE PAYS" invariant this file is built
- * around.
+ * LAND MAINTENANCE is a standalone daily wallet debit now
+ * (`assessStackAcresUpkeep`), not something netted out of a harvest payout --
+ * a harvest produces no payout left to net it from. It runs as a best-effort
+ * side effect of `runStackAcresAction`, on every MUTATING action (never a
+ * bare read -- see readStackAcres and CLAUDE.md's "keep game reads
+ * write-free" rule), clamped at the wallet's own current balance so it can
+ * never go negative. Curve and reasoning unchanged in lib/stackacres/upkeep.ts.
  *
- * LAND. Three of the four districts start under wild growth and are cleared
- * once, with Gold, for good (`clearStackAcresSector`). Keeping cleared land
- * then costs a daily fee that compounds with the number of slots the player
- * keeps -- taken out of what a harvest pays and clamped at it, so it can
- * leave a harvest worth nothing and can never reach a balance. Curve and
- * reasoning in lib/stackacres/upkeep.ts.
+ * BOUNTIFUL HARVEST (mono-crop/crop-rotation sweep bonuses) IS RETIRED
+ * OUTRIGHT, not relocated -- a sweep-composition bonus has no clean meaning
+ * against "sum what was gathered into inventory," and re-deriving one for the
+ * new model was explicitly out of scope for this pass. `lib/stackacres/bounty.ts`
+ * is deleted.
  *
  * A StackAcres unit is a *guaranteed* win -- nothing here can lose your seed,
  * animals go hungry but never die -- so the ordering discipline every staked
@@ -447,8 +459,10 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *
  *   1. **The money leaves the purse before the thing it pays for exists.**
  *      Buying capacity, stock, seed or feed debits Gold before the write
- *      lands. Either write failing refunds.
- *   2. **Payment lands only after the version-guarded harvest write is
+ *      lands. Either write failing refunds. Selling reverses the direction
+ *      but keeps the same shape: the GOODS leave inventory before the Gold
+ *      they are worth is reserved.
+ *   2. **Payment lands only after the version-guarded settlement write is
  *      confirmed.** collectStackAcresUnit returns null on a lost race, a stale
  *      version, or a not-actually-ready row, and null must never pay: the
  *      writer that wins the race is the one that is paid.
@@ -459,16 +473,6 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *      agreement was made about it.
  *
  * There is no rule 4 (escrow released exactly once): no second party.
- *
- * ONE ORDERING HERE IS DELIBERATELY THE OTHER WAY ROUND, and it is worth
- * naming because it looks like a rule-2 violation. A harvest RESERVES against
- * the day's ceiling before it settles any unit, not after. Settling first
- * would mean a full day is discovered only once the crops are already gone,
- * consuming a harvest and paying nothing for it. The cost of reserving first
- * is that a sweep which then loses a race has over-reserved, so it hands the
- * difference back through `releaseStackAcresExchange`, and the payout is
- * capped at what was actually reserved so the ceiling can never be exceeded
- * in the other direction either.
  *
  * THE MUCK ROLL is the one thing here that is not a pure function of
  * timestamps, and it lives in exactly one place: rollMuck, called once per
@@ -987,11 +991,13 @@ export async function getPrestigeMultiplier(profileId: string): Promise<number> 
 /**
  * Hands back Gold that was just taken for something that then did not happen.
  *
- * THE ONLY REASON THIS EXISTS as a function rather than five inline calls: it
- * keeps `creditGoldByProfile` down to two call sites in this file -- this one
- * and the harvest payout -- so "there is exactly one way Gold is paid out of
- * StackAcres" is a claim a test can hold by reading the source, instead of a
- * count that has to be edited every time a refund is added. See the header.
+ * THE ONLY REASON THIS EXISTS as a function rather than several inline calls:
+ * it keeps `creditGoldByProfile` down to four call sites in this file -- this
+ * refund helper, `sellStackAcresItem`, `fulfillStackAcresTownContract` and
+ * `collectStackAcresVat` -- so "Gold is credited only by a payer that
+ * reserves against the ceiling first" is a claim a test can hold by reading
+ * the source, instead of a count that has to be edited every time a refund is
+ * added. See the header.
  *
  * Never throws. A refund is already the failure path; turning it into a
  * second failure would leave the player short AND looking at a different
@@ -1193,9 +1199,16 @@ export async function runStackAcresAction(
   run: () => Promise<StackAcresActionResult>,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
+  // Land Maintenance is assessed here, once per mutating action -- see
+  // assessStackAcresUpkeep's own header. Never runs off a bare read:
+  // readStackAcres calls view() directly and never reaches this function, so
+  // CLAUDE.md's "keep game reads write-free" rule holds. assessStackAcresUpkeep
+  // never throws, so this never turns the action riding on it into an error.
+  const profile = await ensureProfile(token);
+  await assessStackAcresUpkeep(profile.id, now);
+
   if (!key) return run();
 
-  const profile = await ensureProfile(token);
   const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
   if (claim.kind === "replay") return { ...(await view(profile, now)), ...(claim.result ?? {}) };
   if (claim.kind === "in-flight") return view(profile, now);
@@ -1270,6 +1283,53 @@ async function readLand(
     listStackAcresUnits(profileId),
   ]);
   return { sectors: unlockedSectors(cleared, units), units };
+}
+
+/**
+ * Land Maintenance: charges what is due, lazily, as a best-effort side
+ * effect of the next mutating farm action -- see `runStackAcresAction`, the
+ * one place this is called from, and lib/stackacres/upkeep.ts's own header
+ * for why this is a standalone wallet debit now rather than something netted
+ * out of a harvest payout (a harvest produces no payout left to net it from).
+ *
+ * Clamped at the wallet's own current balance, never more: tries the full
+ * bill first, and only falls back to "whatever the wallet holds" once that
+ * is refused, so a player who CAN afford it is never short-changed by a
+ * stale balance read. An unpaid remainder is not carried as debt --
+ * `stackacresUpkeepDue` (unchanged) simply re-reads the same still-due
+ * amount next time.
+ *
+ * NEVER THROWS. The caller rides this alongside whatever action it is
+ * assessing upkeep for, and a maintenance hiccup must not turn that action
+ * into an error response -- the same posture every other best-effort
+ * side-write in this file takes.
+ */
+export async function assessStackAcresUpkeep(profileId: string, now: Date): Promise<void> {
+  try {
+    const day = stackacresUpkeepDay(now);
+    const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked] = await Promise.all([
+      readStackAcresUpkeep(profileId, day),
+      readLand(profileId),
+      readStackAcresCapacity(profileId),
+      readStackAcresCropFieldsUnlocked(profileId),
+    ]);
+    const due = stackacresUpkeepDue(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid);
+    if (due <= 0) return;
+
+    let charged = (await spendGoldByProfile(profileId, due)) ? due : 0;
+    if (charged === 0) {
+      const profile = await getProfileById(profileId);
+      const balance = profile?.goldBalance ?? 0;
+      if (balance > 0) {
+        charged = (await spendGoldByProfile(profileId, balance)) ? balance : 0;
+      }
+    }
+    if (charged > 0) {
+      await raiseStackAcresUpkeep(profileId, day, upkeepPaid + charged);
+    }
+  } catch (error) {
+    console.error("stackacres.upkeep_assess_failed", { profileId, error });
+  }
 }
 
 /**
@@ -2878,28 +2938,25 @@ function rollMuck(stock: StackAcresStock): number | null {
 export interface StackAcresHarvestResult {
   /** How many fields and pens were brought in together. */
   units: number;
-  /** Produce gathered, summed per item. */
+  /** Produce actually credited to inventory, summed per item -- base yield
+   *  plus any crit bonus plus any Ray's Museum discovery bonus folded in.
+   *  See `critBonus`/`discoveries` below for what each contributed. */
   tally: { item: StackAcresItem; quantity: number }[];
-  /** Every unit's yield at today's value, before any synergy. */
+  /** Every settled unit's yield valued at today's sell price, before any
+   *  bonus -- a production figure for the ledger and Prestige eligibility,
+   *  not Gold paid (a harvest pays none) and not what landed in inventory
+   *  (see `tally` for that). */
   gross: number;
-  /** Which Bountiful Harvest applied, if any, and what it multiplied by. */
-  bounty: BountifulHarvest;
-  /** Gold the synergy added. Zero when none applied. */
-  bonus: number;
-  /** Land Maintenance taken out of this harvest. */
-  upkeep: number;
-  /** Gold a critical harvest added. Zero when the roll missed. Paid out of the
-   *  same reservation as the rest, so it is inside the daily ceiling. */
-  crit: number;
-  /** What actually landed in the player's balance. Includes any Ray's Museum
-   *  discovery bonus below, and any crit above -- there is no separate figure
-   *  for either. */
-  gold: number;
   /** How many of the settled units came up weather-worn. */
   mucked: number;
+  /** Whether this sweep rolled a critical harvest. */
+  crit: boolean;
+  /** Bonus units a crit added, summed per item. Empty when the roll missed. */
+  critBonus: { item: StackAcresItem; quantity: number }[];
   /** Items donated to Ray's Museum for the very first time in this sweep,
-   *  and what each paid. Empty when nothing here was new -- most harvests. */
-  discoveries: { item: StackAcresItem; bonus: number }[];
+   *  and the bonus UNITS each discovery added. Empty when nothing here was
+   *  new -- most harvests. */
+  discoveries: { item: StackAcresItem; bonusQuantity: number }[];
   /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
    *  null on the overwhelming majority of harvests. Pays no Gold -- see
    *  lib/stackacres/museum-secrets.ts's own header. */
@@ -2912,59 +2969,35 @@ export interface StackAcresHarvestResult {
 }
 
 /**
- * Brings in every ready field and pen at once, values the lot in Gold and pays
- * it in a single step.
+ * Brings in every ready field and pen at once and credits the lot to
+ * inventory. Pays no Gold at all -- see this file's own header.
  *
- * THIS IS THE WHOLE HARVEST LOOP NOW. It used to be three acts -- collect
- * produce into a barn, sell produce for Bushels at the store, queue at an
- * exchange window to turn Bushels into Gold -- and it is one. What a sweep is
- * worth is decided by `settleHarvest` in lib/stackacres/harvest.ts, which is
- * pure and where the arithmetic is tested.
- *
- * IT IS A SWEEP RATHER THAN A UNIT, and that is what makes a synergy possible
- * at all: Bountiful Harvest is a property of what was gathered TOGETHER, so it
- * cannot be expressed one row at a time. Tapping a single unit still works --
- * the client passes that one id -- and gets a one-unit sweep, which by
- * construction earns no synergy, because three is the fewest a bonus considers.
+ * THIS IS THE WHOLE HARVEST LOOP NOW, and it is a single credit rather than a
+ * priced payout. What a sweep brought in is tallied by `settleHarvest` in
+ * lib/stackacres/harvest.ts, which is pure and where the arithmetic is
+ * tested; this function's own job is the guarded settlement and the bonuses
+ * that ride on top of it.
  *
  * ALLOWED WHILE BANNED, same posture as resigning a duel: it only returns
  * produce already grown, and stranding a crop inside a suspended account's
  * farm forever is a punishment nobody designed.
  *
- * THE ORDER, which is deliberately not rule 2's:
+ * THE ORDER:
  *
- *   1. Price the sweep, net of the day's remaining Land Maintenance.
- *   2. **Reserve the net against today's flat ceiling, BEFORE settling
- *      anything.** A full day has to refuse while the crops are still
- *      standing; discovering it afterwards would consume a harvest and pay
- *      nothing for it. Nothing has been touched at this point, so a refusal
- *      costs the player only the tap.
- *   3. Settle each unit under its own version guard. A unit that loses its
- *      race is simply not in the sweep -- null never pays.
- *   4. Re-price against what actually settled, hand back the over-reservation,
- *      and cap the payout at what was reserved so the ceiling cannot be
- *      exceeded from the other direction either.
- *   5. Ray's Museum: fold in any first-ever discovery bonus, reserved against
- *      the same ceiling and dropped (never queued) if there is no room left.
- *   6. Credit once, record the maintenance, write the ledger.
- *
- * THE CRITICAL HARVEST rides inside that order rather than beside it. It is
- * rolled ONCE PER SWEEP, in step 3 alongside the muck roll and for the same
- * reason -- after the guarded writes, so a refetch cannot re-roll it -- and it
- * is paid out of the STEP-2 reservation, which is taken optimistically at the
- * most the held rung could add. So a crit can never push a player past the
- * daily ceiling, and the un-crit part of the reservation is handed back in
- * step 4 exactly as an unsettled unit's is.
- *
- * It differs from the museum bonus in step 5 on purpose: a discovery is
- * reserved separately and simply dropped when the day has no room, because it
- * is a one-time event that would otherwise be lost forever. A crit is a
- * multiplier on a harvest that is already being paid, so it rides that
- * harvest's own reservation and is capped with it.
- *
- * A sweep-level roll (not a per-unit one) is also the only shape that matches
- * this function: Bountiful Harvest is already a property of what was gathered
- * together.
+ *   1. Tally the sweep (no Gold, no reservation -- there is nothing left to
+ *      reserve against a ceiling that harvest no longer touches).
+ *   2. Settle each unit under its own version guard. A unit that loses its
+ *      race is simply not in the sweep -- null never credits.
+ *   3. Roll the crit ONCE for the sweep, alongside the muck roll and for the
+ *      same reason: after the guarded writes, so a refetch cannot re-roll
+ *      it. A crit adds bonus UNITS to each settled line (`critBonusQuantity`,
+ *      lib/stackacres/equipment.ts), not Gold.
+ *   4. Re-tally against what actually settled.
+ *   5. Ray's Museum: fold in any first-ever discovery's bonus units, off the
+ *      BASE tally (never the crit-inflated one) -- the same rate the old
+ *      Gold-denominated bonus paid, just in kind.
+ *   6. Credit inventory once per item (base + crit bonus + museum bonus),
+ *      write the ledger.
  */
 export async function harvestStackAcres(
   token: string,
@@ -3011,27 +3044,6 @@ export async function harvestStackAcres(
     });
   }
 
-  const day = stackacresExchangeDay(now);
-  const [upkeepPaid, cleared, capacity, prestigeMultiplier, cropFieldsUnlocked] = await Promise.all([
-    readStackAcresUpkeep(profile.id, day),
-    readStackAcresSectors(profile.id),
-    readStackAcresCapacity(profile.id),
-    getPrestigeMultiplier(profile.id),
-    readStackAcresCropFieldsUnlocked(profile.id),
-  ]);
-  // Charged on SLOTS ON CLEARED GROUND, not on what is standing in them.
-  // Billing what is planted would let a player clear every district, leave it
-  // empty and pay nothing for the room -- which is the one-way ratchet the fee
-  // exists to prevent. See lib/stackacres/upkeep.ts.
-  const upkeepDue = stackacresUpkeepDue(
-    unlockedPlotCount(
-      unlockedSectors(cleared, toStackAcresUnitSnapshots(rows, now)),
-      capacity,
-      cropFieldsUnlocked,
-    ),
-    upkeepPaid,
-  );
-
   const candidateOf = (row: StoredStackAcresUnit): HarvestCandidate => ({
     unitId: row.id,
     stock: row.stock,
@@ -3039,11 +3051,11 @@ export async function harvestStackAcres(
     yieldQuantity: row.yieldQuantity,
   });
 
-  const planned = settleHarvest(ready.map(candidateOf), upkeepDue, prestigeMultiplier);
+  const planned = settleHarvest(ready.map(candidateOf));
 
-  // The rung is read here, but the crit is not rolled here -- see step 3. All
-  // this decides is how much headroom to reserve, since a crit paid out of an
-  // under-reservation would be silently clipped by step 4's cap.
+  // Crit odds, read up front for the roll below. A crit pays bonus inventory
+  // now, not Gold, so there is no reservation to size ahead of it any more --
+  // see lib/stackacres/equipment.ts's own header.
   const tool = await readStackAcresToolTier(profile.id);
   // The Sunlight Forge's own permanent enchantments (lib/stackacres/forge.ts)
   // -- computed BEFORE the Synergy Tree's session buffs below, per that
@@ -3053,17 +3065,14 @@ export async function harvestStackAcres(
   const forgedStats = await forgedToolStatsFor(profile.id, stackacresToolTierDef(tool));
   // A consumed Lucky Poker Dice (lib/stackacres/secrets.ts) arms a one-shot
   // crit-CHANCE boost for the very next harvest -- it widens the odds, never
-  // the payout, so the reservation ceiling below (sized off critBonus alone)
-  // needs no change for it. This rides the harvest's existing single roll and
-  // reservation: no new Gold path, only a different probability fed into the
-  // one that already exists.
+  // the bonus itself.
   const diceBoostArmed =
     (await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY)) >= 1;
   // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
   // is the same shape of boost as the dice: it widens the odds, never the
-  // payout, so it layers on top here rather than touching `critCeiling`
-  // below -- same reasoning as the dice comment above, and additive with it
-  // for the same reason two flat bonuses always are.
+  // bonus, so it layers on top here -- same reasoning as the dice comment
+  // above, and additive with it for the same reason two flat bonuses always
+  // are.
   const critChance = (
     await applySynergyBuffs(
       {
@@ -3074,59 +3083,8 @@ export async function harvestStackAcres(
       profile.id,
     )
   ).harvestCritChance;
-  const critCeiling = critGoldFor(planned.net, tool, forgedStats.critBonus);
 
-  // Step 2. A sweep whose whole value is eaten by maintenance reserves
-  // nothing, and must not: the RPC raises on a non-positive amount on purpose,
-  // and there is genuinely no Gold leaving the farm to account for.
-  let reserved = 0;
-  // Optimistic: the sweep's net plus the most this rung's crit could add.
-  // Whatever the roll turns out to be, step 4 hands the remainder straight
-  // back, exactly as it does for a unit that lost its race.
-  //
-  // FALLING BACK TO THE BARE NET IS NOT AN OPTIMISATION, it is the difference
-  // between this being a bonus and being a penalty. Asking for the crit
-  // headroom and giving up when it does not fit would refuse a harvest the
-  // farm can perfectly well pay for -- a player with exactly one harvest's
-  // worth of allowance left would be told to come back tomorrow BECAUSE they
-  // own a better tool. So a refused optimistic reservation retries at the
-  // amount the harvest is actually worth, and that sweep simply cannot crit:
-  // step 4 caps the payout at what was reserved, and nothing was reserved for
-  // a crit. The ceiling is what bounds the day either way.
-  let wanted = planned.net > 0 ? planned.net + critCeiling : 0;
-  if (wanted > 0) {
-    let taken = await reserveStackAcresExchange(
-      profile.id,
-      day,
-      wanted,
-      STACKACRES_GOLD_CEILING,
-    );
-    if (taken === null && critCeiling > 0) {
-      wanted = planned.net;
-      taken = await reserveStackAcresExchange(
-        profile.id,
-        day,
-        wanted,
-        STACKACRES_GOLD_CEILING,
-      );
-    }
-    if (taken === null) {
-      // Hitting the ceiling is the feature working, not a fault, so it reads
-      // as a closing time rather than an error -- and nothing was settled, so
-      // every crop is still standing and still ready tomorrow.
-      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
-      throw new StackAcresRequestError(
-        state.remaining > 0
-          ? `This farm can send out ${state.remaining.toLocaleString()} more Gold today, and that harvest is worth ${planned.net.toLocaleString()}. Bring in less, or come back after midnight UTC.`
-          : "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC.",
-        409,
-        { reason: "day-capped", round: toStackAcresUnitSnapshots(rows, now) },
-      );
-    }
-    reserved = wanted;
-  }
-
-  // Step 3. Bought stock never mucks and never leaves: the animal stays and
+  // Step 2. Bought stock never mucks and never leaves: the animal stays and
   // starts its next cycle the moment you take what it made. Muck is the cost
   // of turning ground over between sowings, and there is no gap between
   // sowings here to charge for.
@@ -3138,34 +3096,33 @@ export async function harvestStackAcres(
       ? new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs)
       : null;
     const done = await collectStackAcresUnit(row, now, muckFee, restartReadyAt);
-    // Rule 2: a lost race did not happen here; whoever won it was paid instead.
+    // Rule 2: a lost race did not happen here; whoever won it was credited instead.
     if (!done) continue;
     settled.push(row);
     if (muckFee !== null) mucked += 1;
   }
 
   if (settled.length === 0) {
-    await releaseReservation(profile.id, day, reserved);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  // Step 3b. The crit, rolled ONCE for the sweep and only now -- after the
+  // Step 3. The crit, rolled ONCE for the sweep and only now -- after the
   // guarded writes, beside the muck roll, for the identical reason: anything
   // reachable from a read can be re-rolled by pulling to refresh. Rolled at
   // `critChance`, not the tool's own base chance, so an armed dice boost
   // actually applies.
   const critical = rollHarvestCrit(tool, Math.random, critChance);
 
-  // Step 3c. The Midnight Merchant: a second, independent roll riding the
+  // Step 3b. The Midnight Merchant: a second, independent roll riding the
   // SAME critical the secret-find roll (step 5b, below) piggybacks on --
   // never a second guarded write, and never gold- or streak-affecting on its
   // own (`spawnMidnightMerchantVisit` only ever seeds a fresh stock list at
   // zero purchases; it cannot pay out or spend anything by itself). Best-
   // effort and swallowed on failure for the same reason the dice-boost
-  // disarm above is: the harvest itself is already settled and paid, and an
-  // NPC failing to show up must not turn that into an error response.
+  // disarm below is: the harvest itself is already settled and credited, and
+  // an NPC failing to show up must not turn that into an error response.
   // Idempotent against a visit already in progress (`spawnMidnightMerchantVisit`
   // returns false rather than resetting one), so a player who is mid-visit
   // when a second critical lands simply keeps the visit they have.
@@ -3183,7 +3140,7 @@ export async function harvestStackAcres(
     // refunded on a miss, the same "you paid for a chance, not a guarantee"
     // rule every other crit-chance rung on the tool ladder already lives by.
     // Best-effort: the sweep is already durable by this point in the
-    // function, and a failure here must not turn a settled, paid harvest
+    // function, and a failure here must not turn a settled, credited harvest
     // into an error response.
     const disarmed = await adjustStackAcresSecretLedger(
       profile.id,
@@ -3195,58 +3152,58 @@ export async function harvestStackAcres(
     }
   }
 
-  // Step 4. Re-price against what actually settled. Capped at what was
-  // reserved: removing a unit can in principle change which synergy applies,
-  // and the ceiling must hold whichever way that lands.
+  // Step 4. Re-tally against what actually settled.
   const actual: HarvestSettlement =
-    settled.length === ready.length
-      ? planned
-      : settleHarvest(settled.map(candidateOf), upkeepDue, prestigeMultiplier);
-  // Valued off what actually settled, so a unit that lost its race pays no
-  // crit either. A missed roll releases the whole optimistic reservation on
-  // the next line, so the headroom is never held past this point.
-  const crit = critical ? critGoldFor(actual.net, tool, forgedStats.critBonus) : 0;
-  const produceGold = Math.min(actual.net + crit, reserved);
-  await releaseReservation(profile.id, day, reserved - produceGold);
+    settled.length === ready.length ? planned : settleHarvest(settled.map(candidateOf));
+
+  // Bonus units from a crit, one line at a time -- extra of whatever that
+  // line already brought in, credited into the same tally position as the
+  // rest of it. Valued off what actually settled, so a unit that lost its
+  // race gets no crit bonus either.
+  const critBonusTally = new Map<StackAcresItem, number>();
+  if (critical) {
+    for (const line of actual.lines) {
+      const bonus = critBonusQuantity(line.quantity, tool, forgedStats.critBonus);
+      if (bonus > 0) critBonusTally.set(line.item, (critBonusTally.get(line.item) ?? 0) + bonus);
+    }
+  }
+
+  const baseTally = harvestTally(actual);
 
   // Step 5. Ray's Museum: a first-ever donation is automatic, not a player
-  // action, and folds its "New Discovery!" bonus straight into this same
-  // Gold credit -- there is no second payout path here, only a bigger one,
-  // so ONE PAYS (see the module doc) still holds. markStackAcresDonated is
-  // the idempotency guard (the (profile, item) pair is a primary key), and
-  // only the call that actually donates an item for the first time ever pays
-  // for it; a later harvest of that same item, by this player or a replayed
-  // request, reports false and adds nothing. `quantity` is the item's total
-  // across the WHOLE sweep, since a sweep can bring several units of a
-  // freshly-discovered item home together. Reserved against today's ceiling
-  // exactly like the rest of the sweep, and simply dropped -- not queued,
-  // not partially paid -- when there is no room left: the discovery itself
-  // still registers, since that costs nothing, but the bonus is not owed to
-  // tomorrow. Best-effort like the ledger write below: the harvest itself is
-  // already settled and paid, and a museum hiccup must not turn that into an
-  // error response.
-  let museumBonus = 0;
-  const discoveries: { item: StackAcresItem; bonus: number }[] = [];
-  for (const { item, quantity } of harvestTally(actual)) {
+  // action, and folds bonus UNITS of the item just discovered into the same
+  // inventory credit -- there is no second credit path here, only a bigger
+  // one. markStackAcresDonated is the idempotency guard (the (profile, item)
+  // pair is a primary key), and only the call that actually donates an item
+  // for the first time ever adds the bonus; a later harvest of that same
+  // item, by this player or a replayed request, reports false and adds
+  // nothing. `quantity` is the item's total across the WHOLE sweep, since a
+  // sweep can bring several units of a freshly-discovered item home
+  // together. Off the BASE tally, not the crit-inflated one -- same rate the
+  // old Gold-denominated bonus paid it off, just in kind. Best-effort like
+  // the credit step below: the harvest itself is already settled, and a
+  // museum hiccup must not turn that into an error response.
+  const discoveries: { item: StackAcresItem; bonusQuantity: number }[] = [];
+  const museumBonusTally = new Map<StackAcresItem, number>();
+  for (const { item, quantity } of baseTally) {
     try {
       const firstDiscovery = await markStackAcresDonated(profile.id, item);
       if (!firstDiscovery) continue;
-      const bonus = museumDiscoveryBonus(item, quantity);
-      const afterBonus = await reserveStackAcresExchange(profile.id, day, bonus, STACKACRES_GOLD_CEILING);
-      if (afterBonus === null) continue;
-      museumBonus += bonus;
-      discoveries.push({ item, bonus });
+      const bonusQuantity = museumDiscoveryBonusQuantity(quantity);
+      if (bonusQuantity > 0) {
+        museumBonusTally.set(item, (museumBonusTally.get(item) ?? 0) + bonusQuantity);
+      }
+      discoveries.push({ item, bonusQuantity });
     } catch (error) {
       console.error("stackacres.museum_donation_failed", { profileId: profile.id, item, quantity, error });
     }
   }
 
   // Step 5b. Ray's Museum, secret wing: one roll for the sweep, off the SAME
-  // crit that already decided in step 3b -- a secret find piggybacks on a
+  // crit that already decided in step 3 -- a secret find piggybacks on a
   // critical harvest rather than adding a second dice roll to the guarded
-  // write. Pays no Gold at all (see rollSecretArtifact's own header), so
-  // this cannot touch the ceiling and does not need a reservation the way
-  // the discovery bonus above does.
+  // write. Pays no Gold and no inventory at all (see rollSecretArtifact's own
+  // header).
   const secretFind = rollSecretArtifact(tool, critical, Math.random);
   let secretSetJustCompleted = false;
   if (secretFind) {
@@ -3267,43 +3224,24 @@ export async function harvestStackAcres(
     }
   }
 
-  const gold = produceGold + museumBonus;
+  // Step 6. Credit inventory once per item -- base plus any crit bonus plus
+  // any museum bonus. Best-effort per item, same posture the old Gold credit
+  // took: the settlement above is already durable, and a credit hiccup here
+  // must not turn a settled harvest into an error response, only report less
+  // than what actually landed in the barn.
+  const finalTally = new Map<StackAcresItem, number>();
+  for (const { item, quantity } of baseTally) finalTally.set(item, quantity);
+  for (const [item, bonus] of critBonusTally) finalTally.set(item, (finalTally.get(item) ?? 0) + bonus);
+  for (const [item, bonus] of museumBonusTally) finalTally.set(item, (finalTally.get(item) ?? 0) + bonus);
 
-  // Step 6. The credit lands only after every guarded write above is durable,
-  // so this one never refunds -- a retry could pay twice, which is the one
-  // outcome worth avoiding more than a missing credit. Logged loudly, same
-  // reasoning as ante-up-service.ts's payOutWin.
-  let paid: PlayerProfile | null = null;
-  if (gold > 0) {
+  const credited: { item: StackAcresItem; quantity: number }[] = [];
+  for (const [item, quantity] of finalTally) {
     try {
-      paid = await creditGoldByProfile(profile.id, gold);
+      await adjustStackAcresInventory(profile.id, item, quantity);
+      credited.push({ item, quantity });
     } catch (error) {
-      console.error("stackacres.harvest_credit_failed", {
-        profileId: profile.id,
-        day,
-        units: settled.length,
-        gold,
-        error,
-      });
+      console.error("stackacres.harvest_credit_failed", { profileId: profile.id, item, quantity, error });
     }
-  }
-
-  // Recorded after the credit, and never allowed to throw: the harvest is
-  // already durable and already paid NET of this fee, so failing here must not
-  // turn it into an error response -- and leaving the day looking unpaid would
-  // bill the player for the same day twice.
-  // RAISE-TO, not add. The day's bill is not fixed when the day starts -- buy
-  // a capacity slot at noon and it goes up -- so the ledger holds what has
-  // been paid TOWARD today and each charge settles to a new total. Adding
-  // would double-charge the morning every afternoon. False is "another tab
-  // already got there", which is not an error: it settled the same day.
-  if (actual.upkeepCharged > 0) {
-    await raiseStackAcresUpkeep(profile.id, day, upkeepPaid + actual.upkeepCharged).catch(
-      (error) => {
-        console.error("stackacres.upkeep_record_failed", { profileId: profile.id, day, error });
-        return false;
-      },
-    );
   }
 
   for (const line of actual.lines) {
@@ -3314,9 +3252,9 @@ export async function harvestStackAcres(
       unitId: line.unitId,
       stock: line.stock,
       stake: row.stake,
-      // The line's own gross, before the sweep's synergy and before
-      // maintenance: what this unit grew, which is the question a per-unit
-      // ledger row is asked. The sweep's totals are in the response.
+      // The line's own value at today's sell price -- a production figure,
+      // not Gold paid (a harvest pays none). See lib/stackacres/harvest.ts's
+      // own header on why `homestead_harvests.payout` still reads this way.
       payout: line.gold,
       startedAt: row.startedAt,
       collectedAt: now.toISOString(),
@@ -3328,24 +3266,20 @@ export async function harvestStackAcres(
   }
 
   return {
-    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    ...(await view(profile, now)),
     harvest: {
       units: settled.length,
-      tally: harvestTally(actual),
+      tally: credited,
       gross: actual.gross,
-      bounty: actual.bounty,
-      bonus: actual.bonus,
-      upkeep: actual.upkeepCharged,
-      crit,
-      gold,
       mucked,
+      crit: critical,
+      critBonus: [...critBonusTally].map(([item, quantity]) => ({ item, quantity })),
       discoveries,
       secretFind,
       secretSetJustCompleted,
     },
   };
 }
-
 
 /**
  * Hands back allowance a sweep reserved and then did not use. Best-effort by
@@ -3693,15 +3627,30 @@ export async function workStackAcres(
       const recipe = recipesForMachine(machine.kind).find((id) => !isInstantRecipe(id));
       if (!recipe) continue;
       const def = RECIPE_CATALOGUE[recipe];
-      // Rule 1: the input leaves inventory first. `adjustStackAcresInventory`
-      // is the real, atomic guard -- a prior read of the inventory (in
-      // `view`) can be stale, but this call cannot be.
-      const afterDebit = await adjustStackAcresInventory(
-        profile.id,
-        def.input.item,
-        -def.input.quantity,
-      );
-      if (afterDebit === null) continue; // Not enough on hand; try next pass.
+      // Rule 1: every input leaves inventory before the run that consumes it
+      // exists. `adjustStackAcresInventory` is the real, atomic guard -- a
+      // prior read of the inventory (in `view`) can be stale, but this call
+      // cannot be. Looped rather than a single call: every queued recipe
+      // today (only the Mill's Flour) has exactly one input, but this works
+      // unchanged if a queued recipe ever needs more than one.
+      const debited: { item: MachineItemId; quantity: number }[] = [];
+      let short = false;
+      for (const input of def.inputs) {
+        const afterDebit = await adjustStackAcresInventory(profile.id, input.item, -input.quantity);
+        if (afterDebit === null) {
+          short = true;
+          break;
+        }
+        debited.push(input);
+      }
+      if (short) {
+        // Not enough on hand for every input; give back whatever already
+        // left before trying the next machine.
+        for (const input of debited) {
+          await adjustStackAcresInventory(profile.id, input.item, input.quantity).catch(() => null);
+        }
+        continue;
+      }
       const started = await startStackAcresMachine(
         machine,
         now,
@@ -3711,11 +3660,11 @@ export async function workStackAcres(
       );
       if (!started) {
         // Lost the race to start this exact machine (a concurrent call got
-        // there first): give the input back, exactly like `feedStackAcres`
+        // there first): give every input back, exactly like `feedStackAcres`
         // refunds a spent serving on a lost race.
-        await adjustStackAcresInventory(profile.id, def.input.item, def.input.quantity).catch(
-          () => null,
-        );
+        for (const input of def.inputs) {
+          await adjustStackAcresInventory(profile.id, input.item, input.quantity).catch(() => null);
+        }
         continue;
       }
       machinesStarted += 1;
@@ -3766,102 +3715,6 @@ export async function workStackAcres(
  *  not collide with the store's row type in this file's import list. */
 function isWheatPlotReadyRow(row: Pick<StoredWheatPlot, "readyAt">, now: Date): boolean {
   return Date.parse(row.readyAt) <= now.getTime();
-}
-
-/**
- * Sends one ready animal's produce to the processing inventory instead of to
- * the harvest's Gold payout.
- *
- * THIS IS NOT A NEW WAY GOLD ENTERS THE FARM -- it is a way Gold does NOT.
- * A cow is worth 8 Milk either way; taking it here means the harvest never
- * pays for it. That matters because it is what lets `milk`/`wool` name the
- * same physical produce in both item spaces without ever double-counting:
- * this calls the SAME version-guarded `collectStackAcresUnit` a harvest
- * calls, so the two race for one row and exactly one wins. A diverted cow is
- * not a row the sweep skips -- it is a row the sweep no longer finds ready,
- * which is why `harvestStackAcres` stays uniform (see
- * lib/stackacres/machine-items.ts's header).
- *
- * No ceiling reservation, because nothing is paid: the ceiling bounds Gold
- * leaving the farm, and the Gold this produce is eventually worth is bounded
- * by it later, at the contract that pays for the finished goods.
- *
- * Ordered the way every settlement here is: the guarded write first, and the
- * inventory credited only once it is confirmed. A lost race credits nothing.
- */
-export async function divertStackAcresUnit(
-  token: string,
-  unitId: string,
-  now = new Date(),
-): Promise<StackAcresView & { diverted: { item: MachineRawItem; quantity: number } }> {
-  const profile = await ensureProfile(token);
-  const rows = await listStackAcresUnits(profile.id);
-  const row = rows.find((candidate) => candidate.id === unitId);
-
-  if (!row || row.status !== "working") {
-    throw new StackAcresRequestError("Nothing to collect here.", 404, {
-      round: toStackAcresUnitSnapshots(rows, now),
-    });
-  }
-  const produce = STACKACRES_YIELDS[row.stock];
-  if (!isMachineRawItem(produce.item)) {
-    throw new StackAcresRequestError("No machine takes that.", 400, {
-      round: toStackAcresUnitSnapshots(rows, now),
-    });
-  }
-  if (isStackAcresUnitHungry(row, now)) {
-    throw new StackAcresRequestError("Feed them first.", 409, {
-      round: toStackAcresUnitSnapshots(rows, now),
-    });
-  }
-  if (!isStackAcresUnitReady(row, now)) {
-    throw new StackAcresRequestError("Not ready yet.", 409, {
-      round: toStackAcresUnitSnapshots(rows, now),
-    });
-  }
-
-  // Identical to what a harvest does to this row, deliberately: mucking and
-  // restarting are properties of taking the produce, not of where it goes.
-  const muckFee = row.permanent ? null : rollMuck(row.stock);
-  const restartReadyAt = row.permanent
-    ? new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs)
-    : null;
-  const settled = await collectStackAcresUnit(row, now, muckFee, restartReadyAt);
-  if (!settled) {
-    // Lost the race to a harvest or a second tab. Whoever won it took the
-    // produce; nothing is credited here.
-    throw new StackAcresRequestError("That moved on.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  // Rule 3: the yield snapshotted onto the row at stocking, never a re-read
-  // of the catalogue -- the same number a harvest would have valued.
-  //
-  // Credited only after the guarded write above is durable, and never
-  // retried: the settlement is already committed, and a retry that ran twice
-  // would credit twice, which is worse than a missing credit. Logged loudly
-  // and reported as nothing taken, the same posture `harvestStackAcres`'s own
-  // payout takes when its credit fails -- the response must not claim produce
-  // that is not in the inventory.
-  let credited = 0;
-  try {
-    await adjustStackAcresInventory(profile.id, produce.item, row.yieldQuantity);
-    credited = row.yieldQuantity;
-  } catch (error) {
-    console.error("stackacres.divert_credit_failed", {
-      profileId: profile.id,
-      unitId,
-      item: produce.item,
-      quantity: row.yieldQuantity,
-      error,
-    });
-  }
-
-  return {
-    ...(await view(profile, now)),
-    diverted: { item: produce.item, quantity: credited },
-  };
 }
 
 /**
@@ -3924,26 +3777,45 @@ export async function processRecipe(
 
   const shortfall = () =>
     new StackAcresRequestError(
-      `Not enough. One batch takes ${machineItemLabel(def.input.item, def.input.quantity)}.`,
+      `Not enough. One batch takes ${def.inputs
+        .map((input) => machineItemLabel(input.item, input.quantity))
+        .join(" + ")}.`,
       409,
     );
 
   if (isInstantRecipe(recipeId)) {
-    // One transaction: negative delta on the input under a row lock, then the
-    // positive delta on the byproduct. Null means the lock-guarded check
-    // refused and NOTHING was written.
-    const produced = await processStackAcresRecipe(profileId, def.input, def.output);
+    // One transaction: every input's negative delta under its own row lock,
+    // then the positive delta on the byproduct. Null means the lock-guarded
+    // check refused some input and NOTHING was written. Flour/Cheese/Cloth
+    // have exactly one input and use the single-input RPC; Cake has three
+    // and needs the multi one -- see lib/stackacres/recipes.ts's header.
+    const produced =
+      def.inputs.length === 1
+        ? await processStackAcresRecipe(profileId, def.inputs[0], def.output)
+        : await processStackAcresRecipeMulti(profileId, def.inputs, def.output);
     if (produced === null) throw shortfall();
     return { recipe: recipeId, produced: { ...def.output }, readyAt: null };
   }
 
-  // Rule 1: the input leaves inventory before the run that consumes it exists.
-  const afterDebit = await adjustStackAcresInventory(
-    profileId,
-    def.input.item,
-    -def.input.quantity,
-  );
-  if (afterDebit === null) throw shortfall();
+  // Rule 1: every input leaves inventory before the run that consumes it
+  // exists. Every queued recipe today has exactly one input (see
+  // workStackAcres's own comment on why this is looped anyway).
+  const debited: { item: MachineItemId; quantity: number }[] = [];
+  let short = false;
+  for (const input of def.inputs) {
+    const afterDebit = await adjustStackAcresInventory(profileId, input.item, -input.quantity);
+    if (afterDebit === null) {
+      short = true;
+      break;
+    }
+    debited.push(input);
+  }
+  if (short) {
+    for (const input of debited) {
+      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+    }
+    throw shortfall();
+  }
 
   const readyAt = new Date(now.getTime() + def.processingMs);
   const started = await startStackAcresMachine(
@@ -3954,10 +3826,10 @@ export async function processRecipe(
     def.output.quantity,
   );
   if (!started) {
-    // Lost the race to start this exact machine; give the input back.
-    await adjustStackAcresInventory(profileId, def.input.item, def.input.quantity).catch(
-      () => null,
-    );
+    // Lost the race to start this exact machine; give every input back.
+    for (const input of def.inputs) {
+      await adjustStackAcresInventory(profileId, input.item, input.quantity).catch(() => null);
+    }
     throw new StackAcresRequestError("That machine just started something else.", 409);
   }
 
@@ -4131,6 +4003,92 @@ export async function fulfillStackAcresTownContract(
   return {
     ...(await view(paid ?? (await ensureProfile(token)), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
+  };
+}
+
+/**
+ * Sells inventory for Gold, at any time, at that item's own sell price. The
+ * new baseline income path -- see this file's own header for why this,
+ * `fulfillStackAcresTownContract` and `collectStackAcresVat` are the only
+ * three functions here that may ever credit Gold.
+ *
+ * Ordered the same way `fulfillStackAcresTownContract` is, with the direction
+ * of rule 1 reversed (goods leave before Gold is reserved, rather than Gold
+ * leaving before goods exist):
+ *
+ *   1. The goods leave inventory first, under `adjustStackAcresInventory`'s
+ *      own row lock -- a sale can never leave the player owing more than they
+ *      held.
+ *   2. Gold, multiplied by the Prestige Reset Valve's permanent multiplier
+ *      (see lib/stackacres/prestige.ts's own header for why the multiplier
+ *      moved here from harvest), is reserved against the SAME flat daily
+ *      ceiling every other Gold-in path reserves against. A refusal here
+ *      refunds the goods -- Sell straddles two separate guarded writes (the
+ *      inventory RPC and the exchange-reservation RPC) that cannot share one
+ *      database transaction the way an instant recipe's debit-and-credit can,
+ *      so this is a compensating refund rather than a rollback.
+ *   3. Gold is credited only once step 2 is durable.
+ */
+export async function sellStackAcresItem(
+  token: string,
+  input: { item: string; quantity: number },
+  now = new Date(),
+): Promise<StackAcresView & { sold: { item: MachineItemId; quantity: number; gold: number } }> {
+  const profile = await ensureProfile(token);
+
+  if (!isMachineItem(input.item)) {
+    throw new StackAcresRequestError("That is not something you can sell.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const item: MachineItemId = input.item;
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
+    throw new StackAcresRequestError("Sell a positive amount.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Step 1: the goods leave first.
+  const afterDebit = await adjustStackAcresInventory(profile.id, item, -input.quantity);
+  if (afterDebit === null) {
+    throw new StackAcresRequestError("Not enough on hand.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Step 2: reserve the Gold, prestige-multiplied, against the daily ceiling.
+  const day = stackacresExchangeDay(now);
+  const basePrice = machineItemSellPrice(item) * input.quantity;
+  const prestigeMultiplier = await getPrestigeMultiplier(profile.id);
+  // FLOORED, same posture settleHarvest's own prestige step used to take: a
+  // multiplier may not invent a Gold piece out of a rounding rule.
+  const gold = Math.floor(basePrice * Math.max(1, prestigeMultiplier));
+  const reserved = await reserveStackAcresExchange(profile.id, day, gold, STACKACRES_GOLD_CEILING);
+  if (reserved === null) {
+    await adjustStackAcresInventory(profile.id, item, input.quantity).catch((error) => {
+      console.error("stackacres.sell_refund_failed", { profileId: profile.id, item, quantity: input.quantity, error });
+    });
+    const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
+    throw new StackAcresRequestError(
+      state.remaining > 0
+        ? `This farm can send out ${state.remaining.toLocaleString()} more Gold today, and that sale is worth ${gold.toLocaleString()}. Sell less, or come back after midnight UTC.`
+        : "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC.",
+      409,
+      { reason: "day-capped", round: await snapshots(profile.id, now) },
+    );
+  }
+
+  // Step 3: credit, only now that the reservation above is durable.
+  let paid: PlayerProfile | null = null;
+  try {
+    paid = await creditGoldByProfile(profile.id, gold);
+  } catch (error) {
+    console.error("stackacres.sell_credit_failed", { profileId: profile.id, item, quantity: input.quantity, gold, error });
+  }
+
+  return {
+    ...(await view(paid ?? (await ensureProfile(token)), now)),
+    sold: { item, quantity: input.quantity, gold },
   };
 }
 

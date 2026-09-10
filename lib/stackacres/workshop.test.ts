@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StackAcresMachineSnapshot } from "./machines";
-import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import {
-  divertableUnits,
   finishedMachineCount,
   machineOfKind,
   ripeWheatCount,
@@ -13,27 +11,6 @@ import {
 
 const NOW = Date.parse("2026-09-09T12:00:00.000Z");
 const MINUTE = 60 * 1000;
-
-function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSnapshot {
-  return {
-    id: "u1",
-    state: "ready",
-    stock: "cattle",
-    stake: 50,
-    yieldQuantity: 8,
-    startedAt: new Date(NOW - 20 * MINUTE).toISOString(),
-    readyAt: new Date(NOW - MINUTE).toISOString(),
-    progress: 1,
-    hungryAt: null,
-    thirstyAt: null,
-    isWatered: true,
-    muckFee: null,
-    permanent: false,
-    housedIn: null,
-    soilSlot: null,
-    ...overrides,
-  };
-}
 
 function plot(readyInMs: number): StackAcresWheatPlotSnapshot {
   return {
@@ -59,25 +36,6 @@ function machine(overrides: Partial<StackAcresMachineSnapshot> = {}): StackAcres
     ...overrides,
   };
 }
-
-describe("divertableUnits", () => {
-  it("lists ready cattle and sheep with the item a machine takes", () => {
-    const cow = unit({ id: "cow", stock: "cattle", yieldQuantity: 8 });
-    const sheep = unit({ id: "sheep", stock: "pig", yieldQuantity: 6 });
-    expect(divertableUnits([cow, sheep])).toEqual([
-      { unitId: "cow", stock: "cattle", item: "milk", quantity: 8 },
-      { unitId: "sheep", stock: "pig", item: "wool", quantity: 6 },
-    ]);
-  });
-
-  it("skips hens (eggs feed no machine), crops, and anything not ready", () => {
-    const hen = unit({ id: "hen", stock: "hen" });
-    const carrot = unit({ id: "carrot", stock: "carrot" });
-    const growing = unit({ id: "growing", stock: "cattle", state: "working" });
-    const hungry = unit({ id: "hungry", stock: "cattle", state: "hungry" });
-    expect(divertableUnits([hen, carrot, growing, hungry])).toEqual([]);
-  });
-});
 
 describe("machineOfKind", () => {
   it("finds the one machine of a kind and null otherwise", () => {

@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
-import {
-  canStartMachine,
-  canStartRecipe,
-  isMachineDone,
-  machineProgress,
-  rollMillDoubleOutput,
-} from "./machines";
-import { RECIPE_CATALOGUE } from "./recipes";
+import { canStartMachine, isMachineDone, machineProgress, rollMillDoubleOutput } from "./machines";
+import { RECIPE_CATALOGUE, canStartRecipe } from "./recipes";
 
 describe("canStartMachine", () => {
   it("requires the mill's full input batch, not just some of it", () => {
-    const def = RECIPE_CATALOGUE.flour;
-    expect(canStartMachine({ wheat: def.input.quantity - 1 }, "mill")).toBe(false);
-    expect(canStartMachine({ wheat: def.input.quantity }, "mill")).toBe(true);
-    expect(canStartMachine({ wheat: def.input.quantity + 5 }, "mill")).toBe(true);
+    const wheat = RECIPE_CATALOGUE.flour.inputs[0].quantity;
+    expect(canStartMachine({ wheat: wheat - 1 }, "mill")).toBe(false);
+    expect(canStartMachine({ wheat }, "mill")).toBe(true);
+    expect(canStartMachine({ wheat: wheat + 5 }, "mill")).toBe(true);
+  });
+
+  it("lets a Dairy start on whichever of its recipes the shelf covers", () => {
+    expect(canStartMachine({ eggs: 2, milk: 1, flour: 1 }, "dairy")).toBe(true);
+    expect(canStartMachine({ eggs: 2, flour: 1 }, "dairy")).toBe(false);
   });
 
   it("does not confuse one machine's input for another's", () => {
@@ -22,8 +21,8 @@ describe("canStartMachine", () => {
     // stopped filtering by the machine's own recipes.
     expect(canStartMachine({ milk: 99 }, "mill")).toBe(false);
     expect(canStartMachine({ wheat: 99 }, "dairy")).toBe(false);
-    expect(canStartMachine({ milk: RECIPE_CATALOGUE.cheese.input.quantity }, "dairy")).toBe(true);
-    expect(canStartMachine({ wool: RECIPE_CATALOGUE.cloth.input.quantity }, "loom")).toBe(true);
+    expect(canStartMachine({ milk: RECIPE_CATALOGUE.cheese.inputs[0].quantity }, "dairy")).toBe(true);
+    expect(canStartMachine({ wool: RECIPE_CATALOGUE.cloth.inputs[0].quantity }, "loom")).toBe(true);
   });
 });
 

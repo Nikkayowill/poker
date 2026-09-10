@@ -12,7 +12,7 @@ import {
   greenhouseSlotLayouts,
   type GreenhouseBuildCheck,
 } from "@/lib/stackacres/greenhouse";
-import { MACHINE_ITEM_CATALOGUE, machineItemLabel } from "@/lib/stackacres/machine-items";
+import { machineItemIcon, machineItemLabel } from "@/lib/stackacres/machine-items";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresIcon } from "./stackacres-icon";
@@ -121,7 +121,7 @@ function BuildScreen({
             className={line.met ? "sa-museum-item is-found" : "sa-museum-item is-unfound"}
           >
             <span className="sa-museum-item-badge" aria-hidden="true">
-              <StackAcresIcon name={MACHINE_ITEM_CATALOGUE[line.item].icon as PainterName} size={26} />
+              <StackAcresIcon name={machineItemIcon(line.item) as PainterName} size={26} />
             </span>
             <span className="sa-museum-item-name">
               {machineItemLabel(line.item, line.needed)}

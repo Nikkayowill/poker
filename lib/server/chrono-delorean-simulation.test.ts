@@ -192,11 +192,15 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     record("simulated clock reaches readyAt", view);
     expect(view.units.find((u) => u.id === unitId)?.state).toBe("ready");
 
+    const goldBefore = (await profileStore.getProfileById(profile.id))!.goldBalance;
     const harvested = await service.harvestStackAcres(token, { unitIds: [unitId] }, readyNow);
     record("harvested", harvested);
     expect(harvested.harvest.units).toBe(1);
-    expect(harvested.harvest.upkeep).toBe(0);
-    expect(harvested.harvest.gold).toBeGreaterThan(0);
+    // A harvest fills the barn and pays no Gold.
+    const eggs = harvested.harvest.tally.find((line) => line.item === "eggs")?.quantity ?? 0;
+    expect(eggs).toBeGreaterThan(0);
+    expect(harvested.inventory.eggs).toBe(eggs);
+    expect(harvested.profile.goldBalance).toBe(goldBefore);
     // Non-permanent: the collected row is gone outright, not merely mucked.
     expect(harvested.units.some((u) => u.id === unitId)).toBe(false);
 
@@ -280,80 +284,48 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     expect(wasHungryBeforeFeeding).toBe(true); // the freeze this test is about
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(0);
 
-    const harvestDay0 = await service.harvestStackAcres(token, { unitIds: [pigId] }, readyNow);
-    const expectedDay0Charge = Math.min(expectedFee, harvestDay0.harvest.gross + harvestDay0.harvest.bonus);
-    console.log("Chrono-DeLorean simulation: day0 pig harvest ->", {
-      day: day0,
-      gross: harvestDay0.harvest.gross,
-      bonus: harvestDay0.harvest.bonus,
-      upkeepCharged: harvestDay0.harvest.upkeep,
-      gold: harvestDay0.harvest.gold,
-    });
-    expect(harvestDay0.harvest.upkeep).toBe(expectedDay0Charge);
-    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(harvestDay0.harvest.upkeep);
+    const balance = async () => (await profileStore.getProfileById(profile.id))!.goldBalance;
 
-    // A second pig, harvested the SAME simulated day: if the first harvest
-    // already paid the full fee, this one must be charged nothing more --
+    // A harvest charges no upkeep any more; it only fills the barn.
+    const beforeHarvest = await balance();
+    const harvestDay0 = await service.harvestStackAcres(token, { unitIds: [pigId] }, readyNow);
+    expect(harvestDay0.harvest.tally.find((line) => line.item === "wool")?.quantity).toBeGreaterThan(0);
+    expect(await balance()).toBe(beforeHarvest);
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(0);
+
+    // Land Maintenance is a standalone wallet debit, assessed once per UTC day.
+    const beforeAssess = await balance();
+    await service.assessStackAcresUpkeep(profile.id, readyNow);
+    console.log("Chrono-DeLorean simulation: day0 upkeep assessed ->", { day: day0, charged: beforeAssess - (await balance()) });
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
+    expect(await balance()).toBe(beforeAssess - expectedFee);
+
+    // A second assessment the SAME simulated day charges nothing more:
     // stackacresUpkeepDue nets out what today's ledger already holds.
     await service.buyStackAcresFeed(token, feedItemId, readyNow);
     const pigTwo = await growPigToReady(service, chrono, token, pig, readyNow);
     expect(exchange.stackacresExchangeDay(pigTwo.readyNow)).toBe(day0);
-    const harvestSameDay = await service.harvestStackAcres(
-      token,
-      { unitIds: [pigTwo.pigId] },
-      pigTwo.readyNow,
-    );
-    console.log("Chrono-DeLorean simulation: same-day second pig harvest ->", {
-      upkeepCharged: harvestSameDay.harvest.upkeep,
-    });
-    if (harvestDay0.harvest.upkeep >= expectedFee) {
-      expect(harvestSameDay.harvest.upkeep).toBe(0);
-    }
+    await service.harvestStackAcres(token, { unitIds: [pigTwo.pigId] }, pigTwo.readyNow);
+    const beforeSecond = await balance();
+    await service.assessStackAcresUpkeep(profile.id, pigTwo.readyNow);
+    expect(await balance()).toBe(beforeSecond);
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
 
-    // Cross a simulated UTC day boundary. Land Maintenance is "assessed
-    // lazily, once per UTC day" (lib/stackacres/upkeep.ts's own header) --
-    // this is the one thing that requires an actual day-boundary crossing to
-    // prove at all, which is exactly what a real day of wall-clock time
-    // would otherwise cost to test.
+    // Cross a simulated UTC day boundary: the bill is re-assessed from zero.
     const t1 = await jumpTo(chrono, token, new Date(t0.getTime() + ONE_DAY_MS));
     const day1 = exchange.stackacresExchangeDay(t1);
     expect(day1).not.toBe(day0);
     expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(0);
 
-    await service.buyStackAcresFeed(token, feedItemId, t1);
-    const pigThree = await growPigToReady(service, chrono, token, pig, t1);
-    const harvestDay1 = await service.harvestStackAcres(
-      token,
-      { unitIds: [pigThree.pigId] },
-      pigThree.readyNow,
-    );
-    const expectedDay1Charge = Math.min(expectedFee, harvestDay1.harvest.gross + harvestDay1.harvest.bonus);
-    console.log("Chrono-DeLorean simulation: day1 pig harvest (fresh UTC day) ->", {
+    const beforeDay1 = await balance();
+    await service.assessStackAcresUpkeep(profile.id, t1);
+    console.log("Chrono-DeLorean simulation: day1 upkeep assessed (fresh UTC day) ->", {
       day: day1,
-      upkeepCharged: harvestDay1.harvest.upkeep,
+      charged: beforeDay1 - (await balance()),
     });
-
-    // Independently re-assessed, at the SAME fee shape -- day 1 is not a
-    // continuation of day 0's ledger. Day 0's own ledger holds the SUM of
-    // its two harvests, each capped at its own gross+bonus (never charged
-    // more than a harvest actually earned).
-    //
-    // NOT asserted here any more: that day 0's ledger sum equals the full
-    // fee. It did under the old 5-stock-kind economy, where a single pig's
-    // ~450 Gold gross comfortably covered the whole day's Land Maintenance.
-    // The 22-crop roster swap (2026-09-07) grew the Crop Fields' own
-    // free-base footprint from 2 kinds to 22, and `stackacresUpkeepFee` is
-    // deliberately superlinear (see upkeep.test.ts's own header) -- so
-    // `expectedFee` here (a farm with the Crop Fields unlocked AND Wallow
-    // cleared) is now far larger than two pig harvests can pay off in one
-    // simulated day. That is a real economy question (is Land Maintenance now
-    // too steep once the Crop Fields are unlocked?), flagged for Kayo rather
-    // than resolved by this test.
-    expect(harvestDay1.harvest.upkeep).toBe(expectedDay1Charge);
-    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(
-      harvestDay0.harvest.upkeep + harvestSameDay.harvest.upkeep,
-    );
-    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBeLessThanOrEqual(expectedFee);
-    expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(harvestDay1.harvest.upkeep);
+    expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(expectedFee);
+    expect(await balance()).toBe(beforeDay1 - expectedFee);
+    // Day 0's ledger is untouched by day 1's charge.
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
   });
 });

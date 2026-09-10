@@ -20,8 +20,8 @@
  * lib/server/stackacres-service.ts.
  */
 
-import { RECIPE_CATALOGUE, recipesForMachine, type RecipeId } from "./recipes";
-import { hasEnough, type StackAcresInventory } from "./inventory";
+import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
+import type { StackAcresInventory } from "./inventory";
 
 export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
@@ -89,16 +89,11 @@ export interface StackAcresMachineRow {
   version: number;
 }
 
-/** Whether the inventory holds enough to start `recipe`.
- *  Does not check any machine's status -- callers only start an idle one,
- *  and this is also how the sidebar shows "waiting on Milk" for a Dairy that
- *  is idle for some other reason. */
-export function canStartRecipe(inventory: StackAcresInventory, recipe: RecipeId): boolean {
-  const def = RECIPE_CATALOGUE[recipe];
-  return hasEnough(inventory, def.input.item, def.input.quantity);
-}
-
-/** Whether any recipe this machine kind runs could start right now. */
+/** Whether any recipe this machine kind runs could start right now. Does not
+ *  check any machine's status -- callers only start an idle one, and this is
+ *  also how the sidebar shows "waiting on Milk" for a Dairy that is idle for
+ *  some other reason. `canStartRecipe` itself lives in ./recipes.ts, next to
+ *  the catalogue it reads. */
 export function canStartMachine(inventory: StackAcresInventory, kind: MachineKind): boolean {
   return recipesForMachine(kind).some((recipe) => canStartRecipe(inventory, recipe));
 }

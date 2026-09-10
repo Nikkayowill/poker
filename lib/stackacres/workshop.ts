@@ -1,8 +1,8 @@
 /**
  * What the Workshop sheet (components/arcade/stackacres/WorkshopModal.tsx)
- * derives from the farm before it draws anything: which animals could be
- * sent to the shelf, whether the idle-worker pass has anything to settle,
- * and whether the signpost's entry deserves a dot.
+ * derives from the farm before it draws anything: whether the idle-worker
+ * pass has anything to settle, and whether the signpost's entry deserves a
+ * dot.
  *
  * Pure and clock-free, same posture as ./machines.ts and ./wheat-plot.ts:
  * every function takes `nowMs` rather than reading a clock, so the sheet's
@@ -11,38 +11,9 @@
  * and when it is worth asking.
  */
 
-import type { StackAcresStock } from "./catalogue";
-import { STACKACRES_YIELDS } from "./items";
-import { isMachineRawItem, type MachineRawItem } from "./machine-items";
 import { isMachineDone, type MachineKind, type StackAcresMachineSnapshot } from "./machines";
-import type { StackAcresUnitSnapshot } from "./units";
 import { isWheatPlotReady, type StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import type { VatContainer } from "./aging";
-
-/** One ready animal whose produce a machine takes, as the sheet lists it. */
-export interface DivertableUnit {
-  readonly unitId: string;
-  readonly stock: StackAcresStock;
-  readonly item: MachineRawItem;
-  readonly quantity: number;
-}
-
-/**
- * Ready units whose yield is a machine input (milk, fleece). Hens lay eggs,
- * which no machine takes, so they never appear here; nor does any crop.
- * `yieldQuantity` is the snapshot the server took at stocking, which is
- * exactly what `divertStackAcresUnit` credits.
- */
-export function divertableUnits(units: readonly StackAcresUnitSnapshot[]): DivertableUnit[] {
-  const out: DivertableUnit[] = [];
-  for (const unit of units) {
-    if (unit.state !== "ready") continue;
-    const produce = STACKACRES_YIELDS[unit.stock];
-    if (!isMachineRawItem(produce.item)) continue;
-    out.push({ unitId: unit.id, stock: unit.stock, item: produce.item, quantity: unit.yieldQuantity });
-  }
-  return out;
-}
 
 /** The one machine of `kind` the player has placed, or null. The database's
  *  `homestead_machines_one_per_kind` index is what makes "the one" true. */

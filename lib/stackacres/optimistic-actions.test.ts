@@ -181,27 +181,31 @@ describe("predictStackAcresAction: the processing track", () => {
     ).toBeNull();
   });
 
-  it("diverts a ready cow: the row goes, the milk lands on the shelf, no Gold moves", () => {
-    const cow = unit({ id: "cow", stock: "cattle", state: "ready", yieldQuantity: 8 });
-    const patch = predictStackAcresAction({ action: "divert", unitId: cow.id }, ctx({ units: [cow] }));
-    expect(patch?.units).toEqual([]);
-    expect(patch?.inventory).toEqual({ milk: 8 });
+  it("sells: the goods leave the shelf at once, the Gold waits for the server", () => {
+    const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
+    const patch = predictStackAcresAction(
+      { action: "sell", item: "eggs", quantity: 3 },
+      ctx({ inventory: { eggs: 5, milk: 2 }, contract }),
+    );
+    expect(patch?.inventory).toEqual({ eggs: 2, milk: 2 });
     expect(patch?.profile).toBeUndefined();
+    // Goes through the processing patch, so the open contract is kept.
+    expect(patch?.contract).toBe(contract);
   });
 
-  it("restarts a bought-outright animal on divert, the same as collect does", () => {
-    const cow = unit({ id: "cow", stock: "cattle", state: "ready", yieldQuantity: 8, permanent: true });
-    const patch = predictStackAcresAction({ action: "divert", unitId: cow.id }, ctx({ units: [cow] }));
-    expect(patch?.units).toHaveLength(1);
-    expect(patch?.units?.[0].id).toBe(cow.id);
-    expect(patch?.units?.[0].state).toBe("working");
+  it("refuses to sell more than the shelf holds", () => {
+    expect(
+      predictStackAcresAction({ action: "sell", item: "cake", quantity: 2 }, ctx({ inventory: { cake: 1 } })),
+    ).toBeNull();
+    expect(predictStackAcresAction({ action: "sell", item: "milk", quantity: 1 }, ctx())).toBeNull();
   });
 
-  it("refuses to divert a hen (eggs feed no machine) or anything not ready", () => {
-    const hen = unit({ id: "hen", stock: "hen", state: "ready" });
-    expect(predictStackAcresAction({ action: "divert", unitId: hen.id }, ctx({ units: [hen] }))).toBeNull();
-    const growing = unit({ id: "cow", stock: "cattle", state: "working" });
-    expect(predictStackAcresAction({ action: "divert", unitId: growing.id }, ctx({ units: [growing] }))).toBeNull();
+  it("bakes a Cake on an idle Dairy, spending every input at once", () => {
+    const patch = predictStackAcresAction(
+      { action: "process", recipe: "cake" },
+      ctx({ machines: [machine({ id: "d1", kind: "dairy" })], inventory: { eggs: 2, milk: 1, flour: 1 } }),
+    );
+    expect(patch?.inventory).toEqual({ eggs: 0, milk: 0, flour: 0, cake: 1 });
   });
 
   it("leaves work and the vat to the server", () => {

@@ -12,11 +12,11 @@ import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
-import { MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
+import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
 import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
-import { FRIENDSHIP_NPCS } from "@/lib/stackacres/friendship";
+import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
@@ -47,7 +47,7 @@ import {
   workStackAcres,
   requestStackAcresContract,
   fulfillStackAcresTownContract,
-  divertStackAcresUnit,
+  sellStackAcresItem,
   processStackAcresRecipeAction,
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
@@ -88,34 +88,31 @@ export const runtime = "nodejs";
  * instead of a `plotIndex`; buying land is gone, replaced by
  * `expand-capacity`, which buys room for one stock kind rather than a tile.
  *
- * FOURTEEN ACTIONS SPEND GOLD and exactly TWO PAY IT OUT, and that asymmetry
- * is what keeps this safe. `expand-capacity`, `clear-sector`,
- * `unlock-crop-fields`, `stock`, `buy-stock`, `buy-feed`, `clear`,
- * `upgrade-tool`, `sow-wheat`, `place-machine`, `unlock-synergy-perk`,
- * `midnight-merchant-buy`, `place-pipe` and `place-soil-tile` all spend; `collect` and
- * `fulfill-contract` pay, both under
- * the SAME flat per-player daily ceiling -- see `harvestStackAcres` and
- * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. There
- * is no second currency any more, so "which direction does this action move
- * Gold, and if it pays, does it reserve against the ceiling first" is the
- * question a new action has to answer, and a new payer that does not reserve
- * first is the change to stop over. `activate-synergy-perk` moves no Gold at
- * all -- see below. `midnight-merchant-buy` is worth reading twice: it
- * spends Gold but NEVER reserves against the daily payout ceiling, because
- * it is not a payout at all -- Gold only ever leaves the caller here,
- * through the same `spend_gold_by_profile` every other spend in this list
- * already uses.
+ * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
+ * inventory, for every item, not just wheat/milk/wool. FOURTEEN ACTIONS SPEND
+ * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
+ * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
+ * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `sow-wheat`,
+ * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
+ * `place-pipe` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
+ * and `collect-vat` pay, all three under the SAME flat per-player daily
+ * ceiling -- see `sellStackAcresItem`, `fulfillStackAcresTownContract` and
+ * `collectStackAcresVat` in lib/server/stackacres-service.ts. There is no
+ * second currency any more, so "which direction does this action move Gold,
+ * and if it pays, does it reserve against the ceiling first" is the question
+ * a new action has to answer, and a new payer that does not reserve first is
+ * the change to stop over. `activate-synergy-perk` moves no Gold at all --
+ * see below. `midnight-merchant-buy` is worth reading twice: it spends Gold
+ * but NEVER reserves against the daily payout ceiling, because it is not a
+ * payout at all -- Gold only ever leaves the caller here, through the same
+ * `spend_gold_by_profile` every other spend in this list already uses.
  *
- * `work`, `divert`, `process`, `request-contract`, `build-greenhouse`,
+ * `collect`, `work`, `process`, `request-contract`, `build-greenhouse`,
  * `remove-pipe` and `remove-soil-tile` move no Gold at all -- inventory only
  * (`build-greenhouse` spends processing-track Flour/Cloth; see
  * buildStackAcresGreenhouse's own header). Neither `remove-pipe` nor
  * `remove-soil-tile` is a refund: a placed irrigation tile or soil bed is a
- * spent sink, like a placed Mill. `divert` is worth reading twice: it takes
- * a ready animal's produce into the processing inventory INSTEAD of paying
- * for it, through the same version-guarded write `collect` uses, so it
- * reduces what the farm pays out today rather than adding to it. So do the
- * four hidden-secrets actions
+ * spent sink, like a placed Mill. So do the four hidden-secrets actions
  * (`tap-secret-zone`, `donate-secret-item`, `consume-secret-item`,
  * `trade-secret-item`): a discovered Lucky Poker Dice only ever reshapes a
  * probability (`consume-secret-item`, folded into `collect`'s own crit roll)
@@ -123,25 +120,25 @@ export const runtime = "nodejs";
  * (`trade-secret-item`) -- see lib/server/stackacres-service.ts's "Hidden
  * secrets" section.
  *
- * The equipment ladder's CRITICAL HARVEST is not a third payer: it is paid
- * by `collect` itself, inside the same reservation, so it is bounded by the
- * same daily ceiling as the harvest it rides on. See `harvestStackAcres`. The
- * Synergy Tree's `sunlight_harvester` (a crit-chance boost) and
- * `high_yield_processing` (a Mill double-output chance) are the same
- * non-payer shape: both only reshape a probability an existing roll already
- * makes, inside `collect` and `work` respectively, and neither is a fourth
- * or fifth way Gold can move.
+ * THE EQUIPMENT LADDER'S CRITICAL HARVEST PAYS BONUS INVENTORY NOW, NOT GOLD
+ * -- it is not a payer at all any more, and is folded into `collect` itself
+ * (see `critBonusQuantity`, lib/stackacres/equipment.ts). The Synergy Tree's
+ * `sunlight_harvester` (a crit-chance boost) and `high_yield_processing` (a
+ * Mill double-output chance) are the same non-payer shape: both only reshape
+ * a probability an existing roll already makes, inside `collect` and `work`
+ * respectively, and neither moves Gold.
  *
  * `clear-sector` is the one piece of land buying that came back: three of the
  * four districts start under wild growth, and clearing one is a permanent,
- * unrefunded Gold spend. Keeping cleared land then costs a daily fee, which no
- * action here asks for -- it comes off what a harvest pays, automatically (see
- * lib/stackacres/upkeep.ts).
+ * unrefunded Gold spend. Keeping cleared land then costs a daily fee, charged
+ * as a standalone wallet debit off every mutating action (see
+ * `assessStackAcresUpkeep`/`runStackAcresAction`, lib/server/
+ * stackacres-service.ts), not something any one action here asks for.
  *
- * `prestige-reset` moves no Gold either, and is not like `work`/`divert`'s
+ * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
  * "inventory only" either: it is the one action with no undo, trading the
  * whole grid and every stockpile riding on it for a permanent multiplier on
- * every future `collect`. See prestigeResetStackAcres's own header
+ * every future `sell`. See prestigeResetStackAcres's own header
  * (lib/server/stackacres-service.ts) for exactly what it sweeps.
  *
  * No `version` field in any action: each handler reads the live row itself
@@ -228,9 +225,20 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("buy-feed"),
     itemId: z.enum(STACKACRES_FEED_IDS as unknown as [string, ...string[]]),
   }),
-  // Processing: wheat, machines, Town Contracts. See
-  // lib/server/stackacres-service.ts's own header for the two actions here
-  // that move Gold -- `collect` above, and `fulfill-contract`.
+  // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
+  // that item's own sell price, any time. See lib/server/
+  // stackacres-service.ts's own header for the three actions here that move
+  // Gold -- this, `fulfill-contract`, and `collect-vat`.
+  z.object({
+    action: z.literal("sell"),
+    item: z.enum(ALL_MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
+    // Generous but not unbounded, the same posture every other body-supplied
+    // quantity in this file takes -- an inventory count this high is not
+    // reachable by ordinary play, and the real bound is what the player
+    // actually holds, checked server-side under a row lock.
+    quantity: z.number().int().min(1).max(9_999),
+  }),
+  // Processing: wheat, machines, Town Contracts. Move no Gold.
   z.object({ action: z.literal("sow-wheat") }),
   z.object({
     action: z.literal("place-machine"),
@@ -241,11 +249,6 @@ const bodySchema = z.discriminatedUnion("action", [
   // Gold; the client calls this on a short interval the same way the PvP
   // duel and cribbage shells run their own Realtime backup poll.
   z.object({ action: z.literal("work") }),
-  // Takes one ready animal's produce into the processing inventory instead of
-  // the harvest's Gold. Settles the SAME unit row a `collect` would, so the
-  // two race and exactly one wins -- it is not a second payout path, it is
-  // the absence of one. Moves no Gold.
-  z.object({ action: z.literal("divert"), unitId: unitIdSchema }),
   // One batch of a recipe. Instant for a Dairy or a Loom (one transaction, no
   // queue row); a Mill enqueues and `work` collects it. Moves no Gold.
   z.object({
@@ -428,7 +431,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("give-gift"),
     npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
-    item: z.enum(MACHINE_ITEM_IDS as unknown as [string, ...string[]]),
+    item: z.enum(GIFTABLE_ITEMS as unknown as [string, ...string[]]),
   }),
   // Mechanical Forage Drone: a flat-fee deploy, gated on the hangar's own
   // derived museum-donation unlock (see stackacres-drone-service.ts).
@@ -508,8 +511,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return placeStackAcresMachine(token, action.kind, now);
     case "work":
       return workStackAcres(token, now);
-    case "divert":
-      return divertStackAcresUnit(token, action.unitId, now);
+    case "sell":
+      return sellStackAcresItem(token, { item: action.item, quantity: action.quantity }, now);
     case "process":
       return processStackAcresRecipeAction(token, action.recipe, now);
     case "request-contract":
@@ -597,14 +600,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // EVERY action is gated on the ban now, `collect` included, and that is a
-    // deliberate change from "collecting stays open to a suspended account".
-    // That carve-out was written when collecting moved no money at all -- it
-    // put produce in a barn, and stranding a grown crop inside a suspended
-    // account forever was a punishment nobody designed. A harvest pays Gold
-    // directly now, so the carve-out had become the one way a suspended
-    // account could still earn. Nothing is lost by closing it: a ready unit
-    // stays ready indefinitely and is still there if the ban is lifted.
+    // EVERY action is gated on the ban, `collect` and `sell` included. A
+    // ready unit stays ready and inventory stays held indefinitely for a
+    // suspended account -- nothing here can rot -- so closing off `sell`
+    // costs a banned account no progress, only the ability to convert what
+    // it already grew into Gold until the ban lifts.
     if (await isBanned(token)) {
       return withRequestSessionCookie(
         request,

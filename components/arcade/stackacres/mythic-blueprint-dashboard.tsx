@@ -15,7 +15,7 @@ import { Check, Flame, Hammer, Lock, Sparkles } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import type { BlueprintId } from "@/lib/stackacres/blueprints";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
-import { MACHINE_ITEM_CATALOGUE, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
+import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -503,7 +503,7 @@ export function MythicBlueprintDashboard({
                       return (
                         <div className="sa-contract-req" key={requirement.item}>
                           <StackAcresIcon
-                            name={MACHINE_ITEM_CATALOGUE[requirement.item].icon as PainterName}
+                            name={machineItemIcon(requirement.item) as PainterName}
                             size={22}
                           />
                           <span className="sa-contract-bar" aria-hidden="true">

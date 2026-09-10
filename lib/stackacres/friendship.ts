@@ -71,6 +71,24 @@ export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
   },
 };
 
+/** What can be handed to an NPC: the processing track, not raw harvest. Eggs
+ *  and crops sit in the same inventory now, but they were never gifts, and
+ *  the route's own schema and the dialogue's picker both read this list so
+ *  the two can't drift apart. */
+export const GIFTABLE_ITEMS: readonly MachineItemId[] = [
+  "wheat",
+  "milk",
+  "wool",
+  "flour",
+  "cheese",
+  "cloth",
+  "cake",
+];
+
+export function isGiftableItem(item: MachineItemId): boolean {
+  return GIFTABLE_ITEMS.includes(item);
+}
+
 export function giftPreference(npc: NpcId, item: MachineItemId): GiftPreference {
   return NPC_GIFT_CATALOGUE[npc].preferences[item] ?? "neutral";
 }
@@ -84,10 +102,10 @@ export function giftPoints(npc: NpcId, item: MachineItemId): number {
  * ./devotion.ts's RELIC_ITEMS already sets and for the identical reason --
  * NEVER Gold-valued, never sold by Ray, never tradeable, never swept by a
  * harvest. `stackacres-service.ts` enforces a hard, test-pinned rule that
- * Gold leaves StackAcres from exactly three places (a refund helper and the
- * harvest/contract payouts -- see "the currency wall" in that file's own
- * test suite), and a friendship reward is not a fourth: it is a memento, the
- * same category a relic already is.
+ * Gold is credited from exactly four call sites (a refund helper, Sell, a
+ * fulfilled Town Contract and the Fermenting Vat -- see "the currency wall"
+ * in that file's own test suite), and a friendship reward is not a fifth: it
+ * is a memento, the same category a relic already is.
  */
 export const KEEPSAKE_ITEMS = ["carved_whistle", "pocket_ledger", "grandfathers_pocketwatch", "family_photograph"] as const;
 

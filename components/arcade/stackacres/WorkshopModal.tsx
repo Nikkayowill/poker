@@ -5,14 +5,13 @@ import clsx from "clsx";
 import { Cog, Coins, Lock } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { VAT_INPUT_ITEM, VAT_INPUT_QUANTITY, type VatContainer } from "@/lib/stackacres/aging";
-import { STACKACRES_CATALOGUE } from "@/lib/stackacres/catalogue";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
-  MACHINE_ITEM_CATALOGUE,
-  MACHINE_ITEM_IDS,
+  machineItemIcon,
   machineItemLabel,
+  machineItemSellPrice,
+  type MachineItemId,
   type MachineProcessedItem,
-  type MachineRawItem,
 } from "@/lib/stackacres/machine-items";
 import {
   MACHINE_CATALOGUE,
@@ -23,7 +22,7 @@ import {
 } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
 import { RECIPE_CATALOGUE, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
-import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
+import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
 import {
   WHEAT_PLOT_CAP,
   WHEAT_SEED_COST,
@@ -32,7 +31,7 @@ import {
   wheatPlotProgress,
   type StackAcresWheatPlotSnapshot,
 } from "@/lib/stackacres/wheat-plot";
-import { divertableUnits, machineOfKind, workDue } from "@/lib/stackacres/workshop";
+import { machineOfKind, workDue } from "@/lib/stackacres/workshop";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -56,11 +55,12 @@ import type { PainterName } from "./stackacres-art";
  * -- with a back-off, so a phone clock a second ahead of the server cannot
  * turn "still ripe by my clock" into a request every tick.
  *
- * Optimistic: `sow-wheat`, `place-machine`, `process` and `divert` are all
- * predicted in lib/stackacres/optimistic-actions.ts and rolled back by the
- * farm on a refusal, so a press answers before the round trip. `work` is a
- * dice roll (a Mill's double output) and waits for the real answer; the note
- * it leaves is what the server actually did.
+ * Optimistic: `sow-wheat`, `place-machine`, `process` and `sell`'s inventory
+ * half are all predicted in lib/stackacres/optimistic-actions.ts and rolled
+ * back by the farm on a refusal, so a press answers before the round trip.
+ * `sell`'s Gold and `work` both wait for the real answer -- a Mill's double
+ * output and the Prestige multiplier are both dice/state this sheet cannot
+ * honestly guess.
  *
  * Pointer containment: every handler is wrapped in `contain`, same as every
  * other StackAcres sheet. See TownContractsModal's header for why.
@@ -75,7 +75,7 @@ export type WorkshopActionResult =
         readonly produced: { readonly item: MachineProcessedItem; readonly quantity: number } | null;
         readonly readyAt: string | null;
       };
-      readonly diverted?: { readonly item: MachineRawItem; readonly quantity: number };
+      readonly sold?: { readonly item: MachineItemId; readonly quantity: number; readonly gold: number };
     }
   | { readonly ok: false; readonly message: string };
 
@@ -87,9 +87,6 @@ export interface WorkshopModalProps {
   machines: readonly MachineView[];
   /** Null until a Fermenting Vat is placed. */
   vat: VatContainer | null;
-  /** Every unit on the farm; the sheet picks out the ready animals a machine
-   *  could take. */
-  units: readonly StackAcresUnitSnapshot[];
   goldBalance: number;
   unlimitedGold: boolean;
   /** Whether a given intent is mid-flight -- the farm's own per-intent
@@ -99,7 +96,9 @@ export interface WorkshopModalProps {
   onPlaceMachine: (kind: MachineKind) => Promise<WorkshopActionResult>;
   onProcess: (recipe: RecipeId) => Promise<WorkshopActionResult>;
   onWork: () => Promise<WorkshopActionResult>;
-  onDivert: (unitId: string) => Promise<WorkshopActionResult>;
+  /** Sells everything currently held of `item` -- the shelf's own "Sell all"
+   *  button, one tap per item rather than a quantity stepper. */
+  onSell: (item: MachineItemId, quantity: number) => Promise<WorkshopActionResult>;
   /** Opens the vat's own sheet on top of this one. */
   onOpenVat: () => void;
   onClose: () => void;
@@ -125,15 +124,24 @@ function formatCountdown(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function icon(item: MachineRawItem | MachineProcessedItem): PainterName {
-  return MACHINE_ITEM_CATALOGUE[item].icon as PainterName;
+function icon(item: MachineItemId): PainterName {
+  return machineItemIcon(item) as PainterName;
 }
 
-/** "3 Wheat → 1 Flour · 20s" / "3 Milk → 1 Cheese · instant". */
+/** What the button says while making one batch of `recipe`. */
+const RECIPE_VERB: Record<RecipeId, string> = {
+  flour: "Mill",
+  cheese: "Make",
+  cloth: "Weave",
+  cake: "Bake",
+};
+
+/** "3 Wheat → 1 Flour · 20s" / "2 Eggs + 1 Milk + 1 Flour → 1 Cake · instant". */
 function recipeLine(recipe: RecipeId): string {
   const def = RECIPE_CATALOGUE[recipe];
   const pace = isInstantRecipe(recipe) ? "instant" : `${Math.round(def.processingMs / 1000)}s`;
-  return `${machineItemLabel(def.input.item, def.input.quantity)} → ${machineItemLabel(def.output.item, def.output.quantity)} · ${pace}`;
+  const inputs = def.inputs.map((input) => machineItemLabel(input.item, input.quantity)).join(" + ");
+  return `${inputs} → ${machineItemLabel(def.output.item, def.output.quantity)} · ${pace}`;
 }
 
 function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>["work"]>): string | null {
@@ -153,7 +161,6 @@ export function WorkshopModal({
   wheatPlots,
   machines,
   vat,
-  units,
   goldBalance,
   unlimitedGold,
   isPending,
@@ -161,12 +168,21 @@ export function WorkshopModal({
   onPlaceMachine,
   onProcess,
   onWork,
-  onDivert,
+  onSell,
   onOpenVat,
   onClose,
 }: WorkshopModalProps) {
   const [now, setNow] = useState(() => Date.now());
   const [note, setNote] = useState<Note | null>(null);
+  // Loom/Vat stay off the shelf by default (Pig/wool is out of active scope,
+  // and nothing in scope makes the Cheese a Vat ages) -- see
+  // lib/stackacres/scope.ts's own header. Already-built machines never hide,
+  // whatever their kind: a player who placed one keeps seeing its state.
+  const [showMoreMachines, setShowMoreMachines] = useState(false);
+  const visibleMachineKinds = MACHINE_KINDS.filter(
+    (kind) => showMoreMachines || isActiveMachine(kind) || machineOfKind(machines, kind) !== null,
+  );
+  const hiddenMachineKindCount = MACHINE_KINDS.length - visibleMachineKinds.length;
 
   const closeAll = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(closeAll);
@@ -185,7 +201,6 @@ export function WorkshopModal({
   const due = workDue(wheatPlots, machines, now);
   const ripeCount = wheatPlots.filter((plot) => isWheatPlotReady(plot, nowDate)).length;
   const affords = (cost: number) => unlimitedGold || goldBalance >= cost;
-  const divertable = divertableUnits(units);
 
   /** Runs one of the handed-down promises and answers in this sheet's own
    *  note -- the page's banner sits behind the scrim. */
@@ -230,14 +245,14 @@ export function WorkshopModal({
     () => run(onWork, (result) => (result.work ? workNote(result.work) ?? "Nothing was ready yet." : null)),
     [run, onWork],
   );
-  const handleDivert = useCallback(
-    (unitId: string) =>
+  const handleSell = useCallback(
+    (item: MachineItemId, quantity: number) =>
       run(
-        () => onDivert(unitId),
+        () => onSell(item, quantity),
         (result) =>
-          result.diverted ? `${machineItemLabel(result.diverted.item, result.diverted.quantity)} on the shelf.` : null,
+          result.sold ? `Sold ${machineItemLabel(result.sold.item, result.sold.quantity)} for ${result.sold.gold.toLocaleString()} Gold.` : null,
       ),
-    [run, onDivert],
+    [run, onSell],
   );
 
   // The automatic pass: once, the moment something falls due, and then not
@@ -286,8 +301,9 @@ export function WorkshopModal({
         </header>
 
         <p className="sa-sheet-note">
-          Grow wheat for the Mill, send milk and fleece here instead of selling them, and turn it
-          all into the goods the town board pays for.
+          Everything you gather lands here. Sell it as it is, or make it into something worth
+          more first. The Mill turns Wheat into Flour, and the Dairy bakes Eggs, Milk and Flour
+          into a Cake.
         </p>
 
         {note && (
@@ -298,13 +314,26 @@ export function WorkshopModal({
 
         <p className="sa-group-label">On the shelf</p>
         <ul className="sa-workshop-shelf">
-          {MACHINE_ITEM_IDS.map((item) => (
-            <li key={item}>
-              <StackAcresIcon name={icon(item)} size={20} />
-              <strong>{inventoryQuantity(inventory, item).toLocaleString()}</strong>
-              <span>{MACHINE_ITEM_CATALOGUE[item].plural}</span>
-            </li>
-          ))}
+          {STACKACRES_WORKSHOP_SHELF_ITEMS.map((item) => {
+            const quantity = inventoryQuantity(inventory, item);
+            const sellIntent = `sell:${item}:${quantity}`;
+            return (
+              <li key={item}>
+                <StackAcresIcon name={icon(item)} size={20} />
+                <span>{machineItemLabel(item, quantity)}</span>
+                {quantity > 0 && (
+                  <button
+                    type="button"
+                    className="sa-cta sa-workshop-sell"
+                    disabled={isPending(sellIntent)}
+                    onClick={contain(() => void handleSell(item, quantity))}
+                  >
+                    Sell · {(machineItemSellPrice(item) * quantity).toLocaleString()} Gold
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
 
         <p className="sa-group-label">Wheat field</p>
@@ -352,23 +381,29 @@ export function WorkshopModal({
 
         <p className="sa-group-label">Machines</p>
         <div className="sa-stock-cards sa-workshop-machines">
-          {MACHINE_KINDS.map((kind) => {
+          {visibleMachineKinds.map((kind) => {
             const def = MACHINE_CATALOGUE[kind];
             const machine = machineOfKind(machines, kind);
-            const recipe = recipesForMachine(kind)[0] ?? null;
+            const recipes = recipesForMachine(kind);
             const placeIntent = `place-machine:${kind}`;
 
             if (!machine) {
               return (
                 <article key={kind} className="sa-stock-card sa-workshop-machine is-unbuilt">
                   <h3>{def.label}</h3>
-                  <p className="sa-stock-terms">
-                    {kind === "vat"
-                      ? `Seal ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}, let it age, open it for Gold`
-                      : recipe
-                        ? recipeLine(recipe)
-                        : "Not built yet"}
-                  </p>
+                  {kind === "vat" ? (
+                    <p className="sa-stock-terms">
+                      Seal {machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}, let it age, open it for Gold
+                    </p>
+                  ) : recipes.length > 0 ? (
+                    recipes.map((recipe) => (
+                      <p className="sa-stock-terms" key={recipe}>
+                        {recipeLine(recipe)}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="sa-stock-terms">Not built yet</p>
+                  )}
                   <button
                     type="button"
                     className="sa-cta"
@@ -430,16 +465,21 @@ export function WorkshopModal({
             const done = isMachineDone(machine, nowDate);
             const progress = machineProgress(machine, nowDate);
             const running = machine.status === "working" && !done;
-            const input = recipe ? RECIPE_CATALOGUE[recipe].input : null;
-            const enough = recipe ? inventoryQuantity(inventory, RECIPE_CATALOGUE[recipe].input.item) >= RECIPE_CATALOGUE[recipe].input.quantity : false;
-            const verb = kind === "mill" ? "Mill" : kind === "dairy" ? "Make" : "Weave";
             return (
               <article
                 key={kind}
                 className={clsx("sa-stock-card sa-workshop-machine", { "is-working": running, "is-done": done })}
               >
                 <h3>{def.label}</h3>
-                <p className="sa-stock-terms">{recipe ? recipeLine(recipe) : "Idle"}</p>
+                {recipes.length > 0 ? (
+                  recipes.map((recipe) => (
+                    <p className="sa-stock-terms" key={recipe}>
+                      {recipeLine(recipe)}
+                    </p>
+                  ))
+                ) : (
+                  <p className="sa-stock-terms">Idle</p>
+                )}
                 {done && machine.recipeId && (
                   <p className="sa-stock-yield">
                     {machineItemLabel(RECIPE_CATALOGUE[machine.recipeId].output.item, machine.unitsProcessing)}
@@ -465,49 +505,44 @@ export function WorkshopModal({
                   <button type="button" className="sa-cta" disabled>
                     Running
                   </button>
-                ) : recipe && input ? (
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={isPending(`process:${recipe}`) || !enough}
-                    onClick={contain(() => void handleProcess(recipe))}
-                  >
-                    {enough
-                      ? `${verb} ${machineItemLabel(input.item, input.quantity)}`
-                      : `Needs ${machineItemLabel(input.item, input.quantity)}`}
-                  </button>
-                ) : null}
+                ) : (
+                  // One button per recipe this machine kind runs -- the
+                  // Dairy has two (Cheese, Cake), everything else has one.
+                  recipes.map((recipe) => {
+                    const recipeDef = RECIPE_CATALOGUE[recipe];
+                    const enough = recipeDef.inputs.every(
+                      (input) => inventoryQuantity(inventory, input.item) >= input.quantity,
+                    );
+                    const inputsLabel = recipeDef.inputs
+                      .map((input) => machineItemLabel(input.item, input.quantity))
+                      .join(" + ");
+                    return (
+                      <button
+                        key={recipe}
+                        type="button"
+                        className="sa-cta"
+                        disabled={isPending(`process:${recipe}`) || !enough}
+                        onClick={contain(() => void handleProcess(recipe))}
+                      >
+                        {enough
+                          ? `${RECIPE_VERB[recipe]} ${inputsLabel}`
+                          : `Needs ${inputsLabel}`}
+                      </button>
+                    );
+                  })
+                )}
               </article>
             );
           })}
         </div>
-
-        {divertable.length > 0 && (
-          <>
-            <p className="sa-group-label">Ready to send here</p>
-            <ul className="sa-workshop-divert">
-              {divertable.map((entry) => (
-                <li key={entry.unitId}>
-                  <StackAcresIcon name={icon(entry.item)} size={22} />
-                  <span>
-                    {STACKACRES_CATALOGUE[entry.stock].label} · {machineItemLabel(entry.item, entry.quantity)}
-                  </span>
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={isPending(`divert:${entry.unitId}`)}
-                    onClick={contain(() => void handleDivert(entry.unitId))}
-                  >
-                    To the shelf
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="sa-sheet-note">
-              Produce sent here is not sold: the harvest pays no Gold for it. It is the same
-              milk either way, so it is one or the other, never both.
-            </p>
-          </>
+        {hiddenMachineKindCount > 0 && (
+          <button
+            type="button"
+            className="sa-cta sa-workshop-more"
+            onClick={contain(() => setShowMoreMachines(true))}
+          >
+            More machines ({hiddenMachineKindCount})
+          </button>
         )}
       </section>
     </div>

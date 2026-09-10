@@ -131,9 +131,9 @@ describe("wheatStillNeeded", () => {
 
   it("asks for whole mill batches, since two thirds of a run makes no flour", () => {
     // Needs 4 flour, holds none: 4 batches of 3 wheat at 1 flour a batch.
-    expect(wheatStillNeeded(contract({ quantity: 4 }), {}, [])).toBe(4 * MILL.input.quantity);
+    expect(wheatStillNeeded(contract({ quantity: 4 }), {}, [])).toBe(4 * MILL.inputs[0].quantity);
     // One flour short is still a whole batch of wheat.
-    expect(wheatStillNeeded(contract({ quantity: 4 }), { flour: 3 }, [])).toBe(MILL.input.quantity);
+    expect(wheatStillNeeded(contract({ quantity: 4 }), { flour: 3 }, [])).toBe(MILL.inputs[0].quantity);
   });
 
   it("counts flour already held", () => {
@@ -144,7 +144,7 @@ describe("wheatStillNeeded", () => {
   it("counts raw wheat already in the barn against the batches it owes", () => {
     const needed = wheatStillNeeded(contract({ quantity: 2 }), { wheat: 4 }, []);
     // 2 flour wants 2 batches = 6 wheat; 4 are already held.
-    expect(needed).toBe(2 * MILL.input.quantity - 4);
+    expect(needed).toBe(2 * MILL.inputs[0].quantity - 4);
   });
 
   it("counts a running mill's batch as good as milled", () => {
@@ -152,12 +152,12 @@ describe("wheatStillNeeded", () => {
     expect(wheatStillNeeded(contract({ quantity: 1 }), {}, [machine("working")])).toBe(0);
     // An IDLE mill has taken nothing out of inventory, so it counts for nothing.
     expect(wheatStillNeeded(contract({ quantity: 1 }), {}, [machine("idle")])).toBe(
-      MILL.input.quantity,
+      MILL.inputs[0].quantity,
     );
   });
 
   it("is zero for a contract wheat cannot fill", () => {
-    // Cheese comes from diverting a ready cow, not from sowing anything, so
+    // Cheese comes from harvesting a ready cow, not from sowing anything, so
     // there is no plot for him to walk to. Without this he would plan a wheat
     // run against a contract wheat never reaches.
     expect(wheatStillNeeded(contract({ item: "cheese", quantity: 2 }), {}, [])).toBe(0);

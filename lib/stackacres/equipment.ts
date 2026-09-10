@@ -23,24 +23,17 @@
  *   held to in stackacres-service.ts, and for the same reason: anything
  *   reachable from a read can be re-rolled by pulling to refresh.
  *
- * HOW THE CRIT STAYS SAFE WHILE PAYING GOLD. The farm has one currency now
- * (the 2026-09-04 single-currency pass) and exactly one path that pays Gold
- * out: `harvestStackAcres`, under a flat per-player daily ceiling. A crit is
- * a genuine Gold payout, so the thing to protect is that count of one.
- *
- * It is protected by construction rather than by discipline: the crit is paid
- * BY the harvest, out of the SAME reservation the harvest already took
- * against the ceiling. `harvestStackAcres` reserves optimistically -- the
- * sweep's net plus the most `critGoldFor` could add at the held rung -- and
- * hands back whatever the roll did not use. So there is still one faucet,
- * still one ceiling, and a lucky player reaches the same daily wall as an
- * unlucky one, just sooner.
- *
- * An earlier draft of this file paid the crit in Bushels to avoid adding a
- * second faucet. That was the right call against the two-currency farm it was
- * written for and is simply obsolete now: there are no Bushels, and riding
- * inside the harvest's own reservation solves the same problem without
- * inventing a currency to launder through.
+ * THE CRIT PAYS BONUS INVENTORY NOW, NOT GOLD. A harvest never pays Gold at
+ * all any more (see lib/server/stackacres-service.ts's own header), so there
+ * is nothing left for a crit to multiply in Gold terms. `critBonusQuantity`
+ * multiplies the same LINE the sweep already tallies -- extra units of
+ * whatever was actually harvested, credited into the same inventory line as
+ * the rest of that line's produce. The ladder is exactly as meaningful as it
+ * was: a Golden Spade still doubles what a lucky sweep brings home, it just
+ * brings home more Eggs/Milk instead of more Gold. Since nothing here touches
+ * the daily Gold ceiling any more, the reservation dance an earlier version of
+ * this header described (optimistic reserve, hand back the unused part) is
+ * gone with it -- there is no ceiling for a bonus quantity to respect.
  *
  * The sprites are FLUX-generated (see the 2026-09-04 CLAUDE.md entry), keyed
  * by `sprite` here and loaded by `stackacres-sprites.ts` like every other
@@ -274,18 +267,19 @@ export function rollHarvestCrit(
 }
 
 /**
- * What a critical harvest pays on top, in Gold, given what the sweep was
- * already worth net of Land Maintenance.
+ * What a critical harvest pays on top, in extra UNITS of a line's own
+ * produce, given how many units that line already brought in.
  *
  * Floored rather than rounded, and never negative: a bonus is a bonus, and
- * Gold is counted in whole units everywhere else in the app. Called TWICE per
- * harvest with different arguments -- once on the planned net to size the
- * reservation, once on what actually settled to pay it -- so it has to be a
- * pure function of its input and nothing else.
+ * produce is counted in whole units everywhere else in the app. Called once
+ * per settled line -- a mono-crop sweep of three hens crits every line the
+ * same way a mixed sweep crits each of its lines independently, since the
+ * roll is one per SWEEP but the multiplier is a property of each line's own
+ * quantity.
  *
- * A harvest worth nothing (fully eaten by maintenance) crits for nothing.
- * That is deliberate: the crit multiplies a harvest, and there is no sensible
- * reading in which doubling zero is a reward.
+ * A line with nothing in it crits for nothing. That is deliberate: the crit
+ * multiplies a harvest, and there is no sensible reading in which doubling
+ * zero is a reward.
  *
  * `bonusOverride` is optional and defaults to the tier's own base bonus --
  * every existing call site is unaffected. It exists for the Sunlight
@@ -294,12 +288,12 @@ export function rollHarvestCrit(
  * forged value and passes it straight in, the same "caller computes, this
  * module just multiplies" split `chanceOverride` above already takes.
  */
-export function critGoldFor(
-  harvestNet: number,
+export function critBonusQuantity(
+  lineQuantity: number,
   tier: StackAcresToolTier,
   bonusOverride?: number,
 ): number {
-  if (!Number.isFinite(harvestNet) || harvestNet <= 0) return 0;
+  if (!Number.isFinite(lineQuantity) || lineQuantity <= 0) return 0;
   const bonus = bonusOverride ?? STACKACRES_TOOL_TIER_DEFS[tier].critBonus;
-  return Math.max(0, Math.floor(harvestNet * bonus));
+  return Math.max(0, Math.floor(lineQuantity * bonus));
 }

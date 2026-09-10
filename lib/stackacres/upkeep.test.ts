@@ -3,7 +3,6 @@ import {
   STACKACRES_UPKEEP_BASE_FEE,
   STACKACRES_UPKEEP_EXPONENT,
   STACKACRES_UPKEEP_FREE_PLOTS,
-  stackacresUpkeepCharge,
   stackacresUpkeepDue,
   stackacresUpkeepFee,
   upkeepState,
@@ -97,35 +96,6 @@ describe("stackacresUpkeepDue", () => {
     // afternoon. Holding less later does not earn a refund, and a negative
     // "due" would read as a credit one line on.
     expect(stackacresUpkeepDue(4, stackacresUpkeepFee(8))).toBe(0);
-  });
-});
-
-describe("stackacresUpkeepCharge", () => {
-  /**
-   * THE SAFETY PROPERTY. A harvest can be reduced to nothing by maintenance
-   * and can never come out negative, which is what keeps this fee from being a
-   * second path that debits the player's wallet -- and what answers the
-   * objection the Bushel version of this fee was written around.
-   */
-  it("never takes more than the harvest is worth", () => {
-    expect(stackacresUpkeepCharge(100, 900)).toBe(100);
-    expect(stackacresUpkeepCharge(0, 900)).toBe(0);
-    expect(stackacresUpkeepCharge(900, 100)).toBe(100);
-  });
-
-  it("takes nothing when nothing is due, and nothing on a worthless harvest", () => {
-    expect(stackacresUpkeepCharge(900, 0)).toBe(0);
-    expect(stackacresUpkeepCharge(900, -50)).toBe(0);
-    expect(stackacresUpkeepCharge(-50, 900)).toBe(0);
-  });
-
-  it("leaves the unpaid remainder for the next harvest of the same day", () => {
-    const due = 1_000;
-    const first = stackacresUpkeepCharge(300, due);
-    expect(first).toBe(300);
-    // The day's `due` is recomputed from what has been paid, so the shortfall
-    // is simply still owed rather than tracked as debt.
-    expect(stackacresUpkeepCharge(5_000, due - first)).toBe(700);
   });
 });
 

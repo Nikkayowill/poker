@@ -9,14 +9,14 @@
  * owns is purely the SHAPE of the collection: which exhibit an item sits in,
  * and how big the one-time "New Discovery!" bonus is.
  *
- * Priced in GOLD, same as everything else since StackAcres dropped Bushels
- * (see lib/stackacres/items.ts's own module doc) -- folded straight into a
- * harvest's own credit rather than a second Gold path, so
- * stackacres-service.ts's "ONE PAYS" invariant still holds a first-time
- * discovery inside it rather than beside it.
+ * PAID IN BONUS INVENTORY NOW, NOT GOLD. A harvest never pays Gold at all any
+ * more -- see lib/server/stackacres-service.ts's own header -- so a
+ * first-ever discovery folds bonus UNITS of the same item into the same
+ * inventory credit the sweep already makes, rather than a second Gold path.
+ * Half again as many units, the same rate the old Gold bonus used.
  */
 
-import { itemGoldValue, STACKACRES_ITEMS, type StackAcresItem } from "./items";
+import { STACKACRES_ITEMS, type StackAcresItem } from "./items";
 
 export const MUSEUM_EXHIBITS = ["rays-choice-crops", "exotic-livestock-wonders", "bountiful-forage"] as const;
 
@@ -108,24 +108,20 @@ export function emptyMuseumRegistry(): MuseumRegistry {
 }
 
 /**
- * The "New Discovery!" bonus for a first-time donation, in Gold.
+ * The "New Discovery!" bonus for a first-time donation: extra UNITS of the
+ * same item, folded into the same inventory credit a harvest already makes.
  *
- * Half of what that item's own share of the sweep was already worth -- a real
- * bonus, but bounded by the same catalogue value everything else here reads,
- * so a retune of item prices retunes this with it rather than drifting away
- * from it. Applies once per item per player, ever; a duplicate harvest earns
- * nothing extra (see harvestStackAcres -- the registry write is the guard).
- * `quantity` is the item's total across the whole sweep, not one unit's --
- * a sweep can bring several units of the same freshly-discovered item home
- * together, and the bonus is sized on all of it, once.
- *
- * Reserved against the day's flat ceiling exactly like the rest of a
- * harvest, and dropped (not queued, not partially paid) when there is no
- * room left for it today -- the discovery itself still registers, since that
- * costs nothing.
+ * Half again as many as the sweep actually brought home -- a real bonus, and
+ * the exact rate the old Gold-denominated bonus paid, just in kind now that a
+ * harvest has no Gold value to pay it out of. Applies once per item per
+ * player, ever; a duplicate harvest earns nothing extra (see
+ * harvestStackAcres -- the registry write is the guard). `quantity` is the
+ * item's total across the whole sweep, not one unit's -- a sweep can bring
+ * several units of the same freshly-discovered item home together, and the
+ * bonus is sized on all of it, once.
  */
 export const MUSEUM_DISCOVERY_BONUS_RATE = 0.5;
 
-export function museumDiscoveryBonus(item: StackAcresItem, quantity: number): number {
-  return Math.round(itemGoldValue(item) * quantity * MUSEUM_DISCOVERY_BONUS_RATE);
+export function museumDiscoveryBonusQuantity(quantity: number): number {
+  return Math.round(quantity * MUSEUM_DISCOVERY_BONUS_RATE);
 }

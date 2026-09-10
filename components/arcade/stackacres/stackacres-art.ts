@@ -277,6 +277,7 @@ type CorePainterName =
   | "ico-flour"
   | "ico-cheese"
   | "ico-cloth"
+  | "ico-cake"
   | "ico-drone";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
@@ -1916,6 +1917,33 @@ const DRAWN: Record<PainterName, Painter> = {
       ell(c, x, y, r, r * 0.75);
       F(c, "rgba(255,255,255,.75)");
     }
+  }),
+
+  // The Dairy's second recipe. Needs a painter for the same reason the ones
+  // below do: paintIcon dereferences the name without checking.
+  "ico-cake": painter(24, 24, (c) => {
+    // Plate first, so the cake sits on something rather than floating.
+    ell(c, 12, 19.5, 9, 1.8);
+    F(c, "#e9e2d6");
+    stroke(c, "#b9ad99", 1);
+    // Sponge, with a jam band through the middle.
+    rr(c, 5, 11, 14, 8, 1.6);
+    F(c, lin(c, 5, 11, 19, 19, [[0, "#f3d9a4"], [1, "#d9ae6a"]]));
+    stroke(c, "#a9762a", 1.3);
+    rr(c, 5, 14.2, 14, 1.6, 0.6);
+    F(c, "#e8a0a8");
+    // Frosting cap and two drips.
+    rr(c, 4.5, 9, 15, 3.6, 1.8);
+    F(c, "#fbf4ea");
+    stroke(c, "#c9b899", 1.1);
+    ell(c, 8, 12.6, 1, 1.4);
+    F(c, "#fbf4ea");
+    ell(c, 14.5, 12.9, 1, 1.7);
+    F(c, "#fbf4ea");
+    // A cherry, the one saturated mark, so it reads as cake at 24px.
+    ell(c, 12, 7.6, 1.9, 1.9);
+    F(c, "#c9364a");
+    stroke(c, "#8e1f30", 0.9);
   }),
 
   // The Dairy's and the Loom's outputs. Same reason the two above exist: the

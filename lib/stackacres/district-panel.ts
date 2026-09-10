@@ -30,6 +30,7 @@ import {
   type StackAcresStock,
 } from "./catalogue";
 import { stackacresStockPrice } from "./market";
+import { isActiveStock } from "./scope";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stocksInZone } from "./world";
 import type { ZoneId } from "./zones";
@@ -107,7 +108,10 @@ export function buyOptionsForZone(
   zone: ZoneId,
   context: { units: readonly StackAcresUnitSnapshot[]; gold: number; capacity: Readonly<Record<string, number>> },
 ): BuyOption[] {
-  return stocksInZone(zone).map((stock) => {
+  // Only what the active scope sells this pass (./scope.ts). A hidden kind a
+  // player already owns keeps working everywhere else -- this only stops the
+  // shelf offering more of it.
+  return stocksInZone(zone).filter(isActiveStock).map((stock) => {
     const def = STACKACRES_CATALOGUE[stock];
     const extraSlots = context.capacity[stock] ?? 0;
     const cap = STACKACRES_BASE_CAP + Math.max(0, Math.min(STACKACRES_MAX_EXTRA_CAP, extraSlots));

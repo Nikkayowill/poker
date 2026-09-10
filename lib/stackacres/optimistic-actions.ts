@@ -45,11 +45,15 @@
  * responsiveness the pipe brush already has, instead of waiting on a round
  * trip before the next tile in the stroke can even be evaluated.
  *
- * The processing track (`sow-wheat`, `place-machine`, `process`, `divert`)
- * is predicted too: each is plain arithmetic on the shelf, a plot list or a
- * machine row, and the Workshop sheet is a scrim over the map, so a press
- * that waited on a round trip would have nothing else on screen to hide
- * behind. `work` stays unpredicted (a Mill's double-output roll), and so do
+ * The processing track (`sow-wheat`, `place-machine`, `process`) is predicted
+ * too: each is plain arithmetic on the shelf, a plot list or a machine row,
+ * and the Workshop sheet is a scrim over the map, so a press that waited on a
+ * round trip would have nothing else on screen to hide behind. `sell`'s
+ * inventory debit is predicted the same way, but its Gold is not, for the
+ * identical reason `collect`'s Gold is not: the server applies the Prestige
+ * multiplier and the daily ceiling, and a guess that then corrected downward
+ * would be worse than showing nothing until the real number lands. `work`
+ * stays unpredicted (a Mill's double-output roll), and so do
  * `seal-vat`/`collect-vat` -- the vat's own sheet awaits the answer and says
  * so in its own note, the same way the town board does.
  *
@@ -96,9 +100,7 @@ import { priceForNextPurchase, type MidnightMerchantSnapshot } from "./midnight-
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { stockZone } from "./world";
-import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
-import { STACKACRES_YIELDS } from "./items";
-import { isMachineRawItem } from "./machine-items";
+import { removeFromInventory, type StackAcresInventory } from "./inventory";
 import {
   MACHINE_CAP,
   MACHINE_CATALOGUE,
@@ -602,9 +604,13 @@ export function predictStackAcresAction(
       }
       // A queued run: the input leaves now, the output arrives when `work`
       // collects it. The row itself becomes the queue entry, snapshotting
-      // the recipe and yield exactly as `startStackAcresMachine` does.
-      const inventory = removeFromInventory(ctx.inventory, def.input.item, def.input.quantity);
-      if (!inventory) return null;
+      // the recipe and yield exactly as `startStackAcresMachine` does. Every
+      // queued recipe today (only the Mill's Flour) has exactly one input.
+      let inventory: StackAcresInventory | null = ctx.inventory;
+      for (const input of def.inputs) {
+        inventory = removeFromInventory(inventory, input.item, input.quantity);
+        if (!inventory) return null;
+      }
       const working: MachineView = {
         ...machine,
         status: "working",
@@ -620,21 +626,14 @@ export function predictStackAcresAction(
         machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
       });
     }
-    case "divert": {
-      const unit = ctx.units.find((candidate) => candidate.id === body.unitId);
-      if (!unit || unit.state !== "ready") return null;
-      const produce = STACKACRES_YIELDS[unit.stock];
-      if (!isMachineRawItem(produce.item)) return null;
-      // Same row treatment as `collect`: a permanent unit restarts, a
-      // one-cycle sowing is gone. Muck is a dice roll left to the server.
-      const kept = withoutStackAcresUnit(ctx.units, unit.id);
-      const units = unit.permanent ? [...kept, optimisticallyRestartedUnit(unit, ctx.nowMs)] : kept;
-      return {
-        units,
-        ...processingPatch(ctx, {
-          inventory: addToInventory(ctx.inventory, produce.item, unit.yieldQuantity),
-        }),
-      };
+    case "sell": {
+      // Known-insufficient is a real refusal, not a guess -- refuse locally
+      // rather than optimistically show a sale that cannot happen.
+      const inventory = removeFromInventory(ctx.inventory, body.item, body.quantity);
+      if (!inventory) return null;
+      // Gold is not predicted -- see this module's own header on why `sell`
+      // takes the same posture `collect` always has.
+      return processingPatch(ctx, { inventory });
     }
     case "fulfill-contract": {
       if (!ctx.contract || ctx.contract.status !== "open") return null;

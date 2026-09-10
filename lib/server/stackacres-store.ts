@@ -1920,6 +1920,53 @@ export async function processStackAcresRecipe(
   return data === null ? null : Number(data);
 }
 
+/**
+ * `processStackAcresRecipe`'s multi-input sibling, for a recipe like Cake
+ * that eats more than one raw item. `process_homestead_recipe_multi` debits
+ * every input under its own row lock, in the SAME transaction as the single
+ * output credit, so a shortfall on the second or third ingredient rolls the
+ * whole batch back rather than leaving a partially-spent one -- see that
+ * migration's own comment.
+ *
+ * Memory mode checks every input's balance before writing any of them, for
+ * the identical reason `processStackAcresRecipe`'s memory branch checks the
+ * one input first: nothing yields between the check and the writes, so this
+ * is equivalent to the guarded transaction without needing one.
+ */
+export async function processStackAcresRecipeMulti(
+  profileId: string,
+  inputs: readonly { item: MachineItemId; quantity: number }[],
+  output: { item: MachineProcessedItem; quantity: number },
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    for (const input of inputs) {
+      const held = memoryInventory.get(`${profileId}:${input.item}`) ?? 0;
+      if (held < input.quantity) return null;
+    }
+    for (const input of inputs) {
+      const key = `${profileId}:${input.item}`;
+      memoryInventory.set(key, (memoryInventory.get(key) ?? 0) - input.quantity);
+    }
+    const outputKey = `${profileId}:${output.item}`;
+    const total = (memoryInventory.get(outputKey) ?? 0) + output.quantity;
+    memoryInventory.set(outputKey, total);
+    return total;
+  }
+
+  const { data, error } = await supabase.rpc("process_homestead_recipe_multi", {
+    p_profile_id: profileId,
+    p_inputs: inputs.map((input) => ({ item: input.item, quantity: input.quantity })),
+    p_output_item: output.item,
+    p_output_quantity: output.quantity,
+  });
+  if (error) {
+    if (error.code === "23514") return null;
+    throw new Error(`Could not run that recipe: ${error.message}`);
+  }
+  return data === null ? null : Number(data);
+}
+
 /* ------------------------------------------------------------------ */
 /* Machines                                                            */
 /* ------------------------------------------------------------------ */

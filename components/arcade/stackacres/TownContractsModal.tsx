@@ -19,7 +19,7 @@ import {
   type StackAcresInventory,
 } from "@/lib/stackacres/inventory";
 import {
-  MACHINE_ITEM_CATALOGUE,
+  machineItemIcon,
   machineItemLabel,
   type MachineItemId,
 } from "@/lib/stackacres/machine-items";
@@ -557,7 +557,7 @@ export function TownContractsModal({
                 return (
                   <div className="sa-contract-req" key={`${entry.id}-${requirement.item}`}>
                     <StackAcresIcon
-                      name={MACHINE_ITEM_CATALOGUE[requirement.item].icon as PainterName}
+                      name={machineItemIcon(requirement.item) as PainterName}
                       size={22}
                     />
                     <span className="sa-contract-bar" aria-hidden="true">

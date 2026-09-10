@@ -80,7 +80,6 @@ async function sowCropOnKnownTile(token: string) {
   const soil = createSoilMap(view.soilTiles);
   const spot = cropSpot(stockZone("corn"), unit.id, {
     soil,
-    rank: 0,
     slot: unit.soilSlot,
   });
   return { unitId: unit.id, tile: pipeTileAt(spot.x, spot.y), readyAt: unit.readyAt };

@@ -60,7 +60,6 @@ import { CROP_FIELDS_UNLOCK_COST_GOLD, cropFieldsUnlockCheck } from "@/lib/stack
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   CROP_FIELD_BEDS,
-  cropRanks,
   cropSpot,
   growAreaAt,
   stockZone,
@@ -91,6 +90,7 @@ import {
   createSoilMap,
   nextFreeSoilSlot,
   soilSlotForTile,
+  soilSlotOnTile,
   soilSlotTile,
   soilTileAt,
   soilTileKey,
@@ -160,6 +160,7 @@ import {
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
+  abandonStackAcresUnit,
   adjustStackAcresSecretLedger,
   readStackAcresSecretLedgerQty,
   adjustStackAcresCapacity,
@@ -657,14 +658,17 @@ export interface StackAcresView {
  * THE SOIL MAP IS REQUIRED, and passing it fixes a real mismatch rather than
  * only serving the tiers. This used to call `cropSpot(zone, row.id)` with no
  * placement, which is the hash-SCATTER fallback -- while the scene draws the
- * same crop through `cropSpot(..., { soil, rank, slot })`, i.e. on a bed. The
- * two disagreed, so a pipe's `PIPE_MAX_REACH` was measured from where the
- * crop ISN'T: a player could run a pipe right up to a plant and have it stay
+ * same crop through `cropSpot(..., { soil, slot })`, i.e. on a bed. The two
+ * disagreed, so a pipe's `PIPE_MAX_REACH` was measured from where the crop
+ * ISN'T: a player could run a pipe right up to a plant and have it stay
  * thirsty, or water one nowhere near the network. Resolving the spot the same
  * way the renderer does is what makes reach mean what the player sees.
  *
- * Ranks are computed over the same sibling set the scene uses (every crop it
- * is drawing), so a rank-based fallback lands on the same slot on both sides.
+ * `row.soilSlot` alone decides it now (2026-09-10) -- no rank-hash fallback
+ * to keep in step with the scene's own any more, since the scene does not
+ * have one either. A crop with no slot scatters on both sides identically,
+ * by the same per-id hash `cropSpot` always falls back to, so the two still
+ * never disagree.
  */
 function irrigableCrops(
   rows: readonly StoredStackAcresUnit[],
@@ -673,16 +677,11 @@ function irrigableCrops(
   const working = rows.filter(
     (row) => row.status === "working" && STACKACRES_CATALOGUE[row.stock].thirstMs !== null,
   );
-  const ranks = cropRanks(working.map((row) => row.id));
   const crops: IrrigableCrop[] = [];
   for (const row of working) {
     // Livestock is already excluded above: thirstMs === null means the
     // recompute would never mark it irrigated anyway, so skip the work.
-    const spot = cropSpot(stockZone(row.stock), row.id, {
-      soil,
-      rank: ranks.get(row.id) ?? 0,
-      slot: row.soilSlot,
-    });
+    const spot = cropSpot(stockZone(row.stock), row.id, { soil, slot: row.soilSlot });
     crops.push({ unitId: row.id, worldX: spot.x, worldY: spot.y });
   }
   return crops;
@@ -1983,10 +1982,19 @@ export async function buyStackAcresStock(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        soilAssignment =
-          attempt < 2
-            ? await assignSoilSlot(profile.id, stock, false, null)
-            : { slot: null, growthMultiplier: 1 };
+        if (attempt >= 2) {
+          // Three straight losses to a racing sow, not "nothing tilled" --
+          // the gate above already confirmed a free bed existed. Refusing
+          // here, instead of falling onto the wrapping rank-hash fallback,
+          // is what keeps a crop from ever landing on a tile another one
+          // already owns.
+          throw new StackAcresRequestError(
+            `${def.label}'s bed was just taken by another purchase. Try again.`,
+            409,
+            { round: await snapshots(profile.id, now) },
+          );
+        }
+        soilAssignment = await assignSoilSlot(profile.id, stock, false, null);
       }
     }
   } catch (error) {
@@ -2176,10 +2184,19 @@ export async function stockStackAcres(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        soilAssignment =
-          attempt < 2
-            ? await assignSoilSlot(profile.id, stock, inGreenhouse, tile)
-            : { slot: null, growthMultiplier: 1 };
+        if (attempt >= 2) {
+          // Same refusal `buyStackAcresStock` makes on the identical race:
+          // three losses in a row means another sow keeps taking the free
+          // bed out from under this one, not that there was never a bed.
+          // Refusing here is what keeps this crop from ever sharing a tile
+          // with the one that won it.
+          throw new StackAcresRequestError(
+            `${def.label}'s bed was just taken by another sow. Try again.`,
+            409,
+            { round: await snapshots(profile.id, now) },
+          );
+        }
+        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
       }
     }
   } catch (error) {
@@ -4610,6 +4627,17 @@ export async function buyStackAcresSeed(
  * starter tile or a missing coordinate; the store's own `origin = 'purchased'`
  * guard is what makes that refusal unconditional rather than trusted from the
  * client's own idea of which tile it tapped.
+ *
+ * A crop standing on the bed goes with it. The client warns and makes the
+ * player confirm before this ever fires (stackacres-farm.tsx's remove-bed
+ * ring item), but that is a courtesy, not the authority -- this resolves the
+ * same `soilSlotOnTile` question itself and deletes the occupant
+ * (`abandonStackAcresUnit`) once the bed is actually gone, with no refund of
+ * whatever seed money already went into it. Occupancy is read BEFORE the
+ * removal, while the tile this crop's slot names still exists to be found;
+ * a lost race on the abandon (the crop was harvested or cleared a moment
+ * earlier) is left alone rather than retried -- there is nothing left to
+ * take.
  */
 export async function removeStackAcresSoilTile(
   token: string,
@@ -4620,10 +4648,24 @@ export async function removeStackAcresSoilTile(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
 
+  const [purchased, units] = await Promise.all([
+    listStackAcresSoilTiles(profile.id),
+    listStackAcresUnits(profile.id),
+  ]);
+  const soil = soilMapFor(purchased);
+  const occupant = units.find(
+    (unit) => unit.soilSlot !== null && soilSlotOnTile(soil, unit.soilSlot, tx, ty),
+  );
+
   const removed = await removeSoilTileRow(profile.id, tx, ty);
   if (!removed) {
     throw new StackAcresRequestError("That bed cannot be removed.", 400);
   }
+
+  if (occupant) {
+    await abandonStackAcresUnit(occupant);
+  }
+
   return view(profile, now);
 }
 

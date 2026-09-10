@@ -52,17 +52,19 @@ export interface StackAcresUnitRow {
   /** What clearing this unit costs while it is mucked. Null unless mucked. */
   muckFee: number | null;
   /**
-   * Crops only, and only ones sown after soil tiers shipped: the fixed
-   * planting slot this crop holds in the flattened soil slot space (see
-   * `soilSlotPoint` in ./soil.ts).
+   * Crops only: the fixed planting slot this crop holds in the flattened
+   * soil slot space (see `soilSlotPoint` in ./soil.ts). This is the ONLY
+   * thing that puts a crop on a tile -- the renderer and the irrigation
+   * recompute both stand a crop dead centre of the tile this slot owns and
+   * nowhere else.
    *
-   * Null means "derive it from the rank hash", which is what every row
-   * written before this column existed does, and what livestock always does.
-   * The renderer honours a set slot and falls back to `soilSlotSpotForRank`
-   * for a null one, so an old crop keeps re-packing itself the way it always
-   * has while a new one stays put on the bed it was sown into. That stability
-   * is the whole point: it is what makes an Enriched bed's speed-up
-   * attributable to the crop actually standing on it.
+   * Null means this crop has no bed: livestock always, and a crop sown
+   * before `assignSoilSlot` started refusing a sow with no free bed
+   * (2026-09-09) whose farm was already full when it went in. Either way it
+   * scatters off the lattice (`cropSpot`'s own fallback) rather than landing
+   * on a tile another crop already owns -- the rank-hash repacking that used
+   * to stand it on one anyway is gone; see `CropPlacement.slot` in
+   * ./world.ts.
    */
   soilSlot: number | null;
   /**
@@ -122,8 +124,8 @@ export interface StackAcresUnitSnapshot {
    * that has no soil.
    */
   isWatered: boolean;
-  /** The crop's fixed planting slot, or null to derive it from the rank hash.
-   *  Passed straight through to the scene -- see `CropPlacement.slot`. */
+  /** The crop's fixed planting slot, or null when it has none. Passed
+   *  straight through to the scene -- see `CropPlacement.slot`. */
   soilSlot: number | null;
   /** What clearing this unit costs. Null unless mucked. */
   muckFee: number | null;

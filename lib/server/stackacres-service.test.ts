@@ -1451,7 +1451,7 @@ describe("feed shipments", () => {
     const before = await balance(token);
     const sack = STACKACRES_FEED.feed_sack;
 
-    await buyStackAcresFeed(token, "feed_sack", T0);
+    await buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0);
 
     expect(await balance(token)).toBe(before - sack.cost);
     expect(await readStackAcresFeed(id)).toBe(sack.servings);
@@ -1459,7 +1459,7 @@ describe("feed shipments", () => {
 
   it("refuses an unaffordable shipment and takes nothing", async () => {
     const { token, id } = await funded(1);
-    await expect(buyStackAcresFeed(token, "feed_sack", T0)).rejects.toBeInstanceOf(
+    await expect(buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(1);
@@ -1476,7 +1476,7 @@ describe("feed shipments", () => {
     // cycle. See lib/stackacres/shop-locks.ts.
     const { token, id } = await funded(1_000_000, { land: [] });
 
-    await expect(buyStackAcresFeed(token, "bulk_shipment", T0)).rejects.toBeInstanceOf(
+    await expect(buyStackAcresFeed(token, { itemId: "bulk_shipment", quantity: 1 }, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
 
@@ -1491,7 +1491,7 @@ describe("feed shipments", () => {
     const bulk = STACKACRES_FEED.bulk_shipment;
     const before = await balance(token);
 
-    await buyStackAcresFeed(token, "bulk_shipment", T0);
+    await buyStackAcresFeed(token, { itemId: "bulk_shipment", quantity: 1 }, T0);
 
     expect(await balance(token)).toBe(before - bulk.cost);
     expect(await readStackAcresFeed(id)).toBe(bulk.servings);
@@ -1506,7 +1506,7 @@ describe("feed shipments", () => {
     expect(discounted).toBeLessThan(sack.cost);
     const before = await balance(token);
 
-    await buyStackAcresFeed(token, "feed_sack", T0);
+    await buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0);
 
     expect(await balance(token)).toBe(before - discounted);
     expect(await readStackAcresFeed(id)).toBe(sack.servings);
@@ -2729,9 +2729,9 @@ describe("idempotency keys", () => {
     const key = randomUUID();
     const before = await balance(token);
 
-    await run(token, key, "buy-feed", () => buyStackAcresFeed(token, "feed_sack", T0));
+    await run(token, key, "buy-feed", () => buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0));
     const replay = await run(token, key, "buy-feed", () =>
-      buyStackAcresFeed(token, "feed_sack", T0),
+      buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0),
     );
 
     expect(replay.feed).toBe(STACKACRES_FEED.feed_sack.servings);
@@ -4084,7 +4084,7 @@ describe("prestigeResetStackAcres", () => {
     const { token, id } = await funded();
     await stockStackAcres(token, { stock: "carrot" }, T0);
     await sowStackAcresWheat(token, T0);
-    await buyStackAcresFeed(token, "feed_sack", T0);
+    await buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, T0);
     await createStackAcresMachine(id, MACHINE_KINDS[0]);
     await requestStackAcresContract(token, T0);
     await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);

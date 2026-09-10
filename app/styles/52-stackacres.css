@@ -2371,6 +2371,38 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
+/* Bulk-buy row: soil bags, seed packets, and feed shipments each offer three
+   flat sizes (1x/10x/20x) instead of one "Buy" button, so restocking ten of
+   something is one tap instead of ten -- see stackacres-farm.tsx's
+   `BULK_BUY_QUANTITIES`. The row, not the individual buttons, is what gets
+   pushed to the card's bottom; this rule has to out-specificity (by coming
+   later in the file) the plain `.sa-cta { margin-top: auto }` above so a
+   button doesn't try to push itself within its own row. */
+.sa-stock-card .sa-buy-qty-row { margin-top: auto; }
+
+.sa-buy-qty-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sa-buy-qty-row .sa-cta {
+  flex: 1;
+  margin-top: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.sa-buy-qty-cost {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sa-ink-soft);
+}
+
 /* ---- a shelf row the farm has not unlocked yet ----------------------- */
 
 /* Stock Ray is holding back, not a half-rendered card.

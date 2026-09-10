@@ -279,7 +279,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 
-    await service.buyStackAcresFeed(token, feedItemId, t0);
+    await service.buyStackAcresFeed(token, { itemId: feedItemId, quantity: 1 }, t0);
     const { pigId, readyNow, wasHungryBeforeFeeding } = await growPigToReady(service, chrono, token, pig, t0);
     expect(wasHungryBeforeFeeding).toBe(true); // the freeze this test is about
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(0);
@@ -302,7 +302,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
 
     // A second assessment the SAME simulated day charges nothing more:
     // stackacresUpkeepDue nets out what today's ledger already holds.
-    await service.buyStackAcresFeed(token, feedItemId, readyNow);
+    await service.buyStackAcresFeed(token, { itemId: feedItemId, quantity: 1 }, readyNow);
     const pigTwo = await growPigToReady(service, chrono, token, pig, readyNow);
     expect(exchange.stackacresExchangeDay(pigTwo.readyNow)).toBe(day0);
     await service.harvestStackAcres(token, { unitIds: [pigTwo.pigId] }, pigTwo.readyNow);

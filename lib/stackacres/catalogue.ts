@@ -282,6 +282,11 @@ export const STACKACRES_FEED: Readonly<Record<string, StackAcresFeedDef>> = {
 
 export const STACKACRES_FEED_IDS = Object.keys(STACKACRES_FEED);
 
+/** The most shipments one purchase may buy -- same ceiling-on-a-single-request
+ *  reasoning as SOIL_BAGS_PER_PURCHASE and STACKACRES_SEED_BAGS_PER_PURCHASE
+ *  above. */
+export const STACKACRES_FEED_SHIPMENTS_PER_PURCHASE = 20;
+
 /**
  * The cap is per KIND now, not per track. It used to be one shared budget of
  * 3 across all three livestock kinds -- an artifact of the single-grid era,

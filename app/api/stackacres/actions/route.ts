@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   STACKACRES_CROPS,
   STACKACRES_FEED_IDS,
+  STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   STACKACRES_STOCK,
 } from "@/lib/stackacres/catalogue";
@@ -224,6 +225,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("buy-feed"),
     itemId: z.enum(STACKACRES_FEED_IDS as unknown as [string, ...string[]]),
+    quantity: z.number().int().min(1).max(STACKACRES_FEED_SHIPMENTS_PER_PURCHASE),
   }),
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
   // that item's own sell price, any time. See lib/server/
@@ -504,7 +506,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":
-      return buyStackAcresFeed(token, action.itemId, now);
+      return buyStackAcresFeed(token, { itemId: action.itemId, quantity: action.quantity }, now);
     case "sow-wheat":
       return sowStackAcresWheat(token, now);
     case "place-machine":

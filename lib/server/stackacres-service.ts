@@ -60,7 +60,6 @@ import { CROP_FIELDS_UNLOCK_COST_GOLD, cropFieldsUnlockCheck } from "@/lib/stack
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   CROP_FIELD_BEDS,
-  cropRanks,
   cropSpot,
   growAreaAt,
   stockZone,
@@ -652,14 +651,17 @@ export interface StackAcresView {
  * THE SOIL MAP IS REQUIRED, and passing it fixes a real mismatch rather than
  * only serving the tiers. This used to call `cropSpot(zone, row.id)` with no
  * placement, which is the hash-SCATTER fallback -- while the scene draws the
- * same crop through `cropSpot(..., { soil, rank, slot })`, i.e. on a bed. The
- * two disagreed, so a pipe's `PIPE_MAX_REACH` was measured from where the
- * crop ISN'T: a player could run a pipe right up to a plant and have it stay
+ * same crop through `cropSpot(..., { soil, slot })`, i.e. on a bed. The two
+ * disagreed, so a pipe's `PIPE_MAX_REACH` was measured from where the crop
+ * ISN'T: a player could run a pipe right up to a plant and have it stay
  * thirsty, or water one nowhere near the network. Resolving the spot the same
  * way the renderer does is what makes reach mean what the player sees.
  *
- * Ranks are computed over the same sibling set the scene uses (every crop it
- * is drawing), so a rank-based fallback lands on the same slot on both sides.
+ * `row.soilSlot` alone decides it now (2026-09-10) -- no rank-hash fallback
+ * to keep in step with the scene's own any more, since the scene does not
+ * have one either. A crop with no slot scatters on both sides identically,
+ * by the same per-id hash `cropSpot` always falls back to, so the two still
+ * never disagree.
  */
 function irrigableCrops(
   rows: readonly StoredStackAcresUnit[],
@@ -668,16 +670,11 @@ function irrigableCrops(
   const working = rows.filter(
     (row) => row.status === "working" && STACKACRES_CATALOGUE[row.stock].thirstMs !== null,
   );
-  const ranks = cropRanks(working.map((row) => row.id));
   const crops: IrrigableCrop[] = [];
   for (const row of working) {
     // Livestock is already excluded above: thirstMs === null means the
     // recompute would never mark it irrigated anyway, so skip the work.
-    const spot = cropSpot(stockZone(row.stock), row.id, {
-      soil,
-      rank: ranks.get(row.id) ?? 0,
-      slot: row.soilSlot,
-    });
+    const spot = cropSpot(stockZone(row.stock), row.id, { soil, slot: row.soilSlot });
     crops.push({ unitId: row.id, worldX: spot.x, worldY: spot.y });
   }
   return crops;
@@ -1975,10 +1972,19 @@ export async function buyStackAcresStock(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        soilAssignment =
-          attempt < 2
-            ? await assignSoilSlot(profile.id, stock, false, null)
-            : { slot: null, growthMultiplier: 1 };
+        if (attempt >= 2) {
+          // Three straight losses to a racing sow, not "nothing tilled" --
+          // the gate above already confirmed a free bed existed. Refusing
+          // here, instead of falling onto the wrapping rank-hash fallback,
+          // is what keeps a crop from ever landing on a tile another one
+          // already owns.
+          throw new StackAcresRequestError(
+            `${def.label}'s bed was just taken by another purchase. Try again.`,
+            409,
+            { round: await snapshots(profile.id, now) },
+          );
+        }
+        soilAssignment = await assignSoilSlot(profile.id, stock, false, null);
       }
     }
   } catch (error) {
@@ -2168,10 +2174,19 @@ export async function stockStackAcres(
         break;
       } catch (error) {
         if (!(error instanceof SoilSlotConflictError)) throw error;
-        soilAssignment =
-          attempt < 2
-            ? await assignSoilSlot(profile.id, stock, inGreenhouse, tile)
-            : { slot: null, growthMultiplier: 1 };
+        if (attempt >= 2) {
+          // Same refusal `buyStackAcresStock` makes on the identical race:
+          // three losses in a row means another sow keeps taking the free
+          // bed out from under this one, not that there was never a bed.
+          // Refusing here is what keeps this crop from ever sharing a tile
+          // with the one that won it.
+          throw new StackAcresRequestError(
+            `${def.label}'s bed was just taken by another sow. Try again.`,
+            409,
+            { round: await snapshots(profile.id, now) },
+          );
+        }
+        soilAssignment = await assignSoilSlot(profile.id, stock, inGreenhouse, tile);
       }
     }
   } catch (error) {

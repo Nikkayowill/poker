@@ -88,7 +88,6 @@ import {
   chunkScenery,
   clampZoom,
   critterSpeed,
-  cropRanks,
   CROP_FIELD_BEDS,
   cropSpot,
   grandfatherRayHitAt,
@@ -315,16 +314,15 @@ export interface StackAcresSceneUnit {
    *  because it is part of what makes a unit's own picture change (see
    *  `signatureOf`), the same way it was on the old cell. */
   permanent: boolean;
-  /** The crop's fixed planting slot, or null to derive it from the rank hash
-   *  (see `CropPlacement.slot`). Null for livestock and for every crop sown
-   *  before soil tiers shipped. */
+  /** The crop's fixed planting slot, the only thing that puts it on a tile at
+   *  all (see `CropPlacement.slot`). Null for livestock, for a Greenhouse
+   *  crop, and for a crop sown before soil tiers shipped -- any of which
+   *  scatters off the lattice instead of standing on a bed. */
   soilSlot?: number | null;
   /** Set when this crop is standing in the built Greenhouse rather than out
    *  on the meadow's own soil. Always paired with a null `soilSlot` (see
-   *  `assignSoilSlot`'s early return for it) -- excluded from `cropRanks` for
-   *  that reason, so a Greenhouse crop scatters inside its own zone instead
-   *  of wrapping onto the outdoor bed lattice and landing on top of a real
-   *  meadow crop. */
+   *  `assignSoilSlot`'s early return for it), which is what scatters it
+   *  inside its own zone instead of landing on top of a real meadow crop. */
   housedIn?: "greenhouse" | null;
 }
 
@@ -1349,13 +1347,13 @@ interface UnitNode {
   /** The world point `container` was last positioned at via `staticSpotFor`
    *  (a crop's fixed spot, or a mucked unit's). `null` for working livestock,
    *  which is driven by `critter` instead. Held so `setUnits` can tell a
-   *  fixed spot has drifted -- a sibling harvested changes this unit's
-   *  `cropRanks` rank, or a soil-slot race resolves to a different slot --
-   *  even when nothing else about the unit's own signature changed, and
-   *  reposition the container without a full rebuild. Without this the
-   *  container silently kept its old screen position while `unitAt`'s hit
-   *  test (which recomputes `staticSpotFor` fresh every tap) moved on,
-   *  making the tap target drift away from the drawn sprite. */
+   *  fixed spot has drifted -- a soil-slot race resolves to a different slot
+   *  than the one this node was first built with -- even when nothing else
+   *  about the unit's own signature changed, and reposition the container
+   *  without a full rebuild. Without this the container silently kept its old
+   *  screen position while `unitAt`'s hit test (which recomputes
+   *  `staticSpotFor` fresh every tap) moved on, making the tap target drift
+   *  away from the drawn sprite. */
   spot: WorldPoint | null;
 }
 
@@ -1423,12 +1421,6 @@ export class StackAcresScene extends Phaser.Scene {
    * through.
    */
   private soil: SoilMap = createSoilMap();
-  /**
-   * Each crop's rank among its siblings, rebuilt once per `setUnits` rather
-   * than derived per lookup: `unitAt` asks for every node's spot on every
-   * tap, and ranking one crop costs the same sort as ranking all of them.
-   */
-  private cropRanks = new Map<string, number>();
   /**
    * One coarse alpha mask per crop texture, so `unitAt` can ask whether a
    * finger landed on the plant rather than on the transparent corner of its
@@ -2617,20 +2609,6 @@ export class StackAcresScene extends Phaser.Scene {
       return;
     }
     this.units = units;
-    // Before any `buildUnit` below, which reads it through `staticSpotFor`.
-    // Livestock are excluded: a wandering animal has no slot, and a MUCKED
-    // animal deliberately keeps the old scatter (see `cropSpot`). A mucked
-    // CROP stays in the ranking so it holds the bed it stopped in. A crop
-    // housed in the Greenhouse is excluded too: it always carries a null
-    // `soilSlot` (`assignSoilSlot` never gives the Greenhouse a bed slot),
-    // so it would otherwise wrap onto the outdoor lattice through the same
-    // rank fallback a legacy pre-soil-tiers crop uses, landing on -- and
-    // sharing a tap target with -- a real meadow crop.
-    this.cropRanks = cropRanks(
-      units
-        .filter((unit) => !isLivestock(unit.stock) && unit.housedIn !== "greenhouse")
-        .map((unit) => unit.id),
-    );
     const seen = new Set<string>();
     for (const unit of units) {
       seen.add(unit.id);
@@ -2639,13 +2617,12 @@ export class StackAcresScene extends Phaser.Scene {
       if (existing && existing.signature === signature) {
         existing.unit = unit;
         // The picture didn't change, but the FIXED POINT it stands at might
-        // have: harvesting any sibling crop reshuffles every rank in
-        // `cropRanks` above, and a soil-slot race (see `stockStackAcres`)
-        // can resolve to a different slot after this node was first built.
-        // Without this, the container would keep rendering at its old
-        // point while `unitAt`'s hit test (which recomputes the same spot
-        // fresh on every tap) moved on -- a tap landing where the crop now
-        // registers, not where it is drawn.
+        // have: a soil-slot race (see `stockStackAcres`) can resolve to a
+        // different slot after this node was first built. Without this, the
+        // container would keep rendering at its old point while `unitAt`'s
+        // hit test (which recomputes the same spot fresh on every tap) moved
+        // on -- a tap landing where the crop now registers, not where it is
+        // drawn.
         this.resyncStaticSpot(existing);
         continue;
       }
@@ -3247,18 +3224,16 @@ export class StackAcresScene extends Phaser.Scene {
    * the same way it stops a crop growing, so both settle at the same kind of
    * deterministic point a crop already uses; there is nothing left about a
    * mucked unit's own kind that needs representing once it has stopped.
+   *
+   * `unit.soilSlot` is the whole placement now -- `cropSpot` stands a crop on
+   * the exact tile that slot owns, or scatters it (livestock, a Greenhouse
+   * crop, or a crop with no slot at all) when there is none. See
+   * `CropPlacement.slot`'s own header for why a slot is never guessed any
+   * more.
    */
   private staticSpotFor(unit: StackAcresSceneUnit): WorldPoint {
-    const rank = this.cropRanks.get(unit.id);
-    // No rank means livestock (only ever here because it is mucked, with no
-    // soil tile of its own) or a Greenhouse crop (excluded from `cropRanks`
-    // in `setUnits` so it cannot wrap onto the outdoor bed lattice). Either
-    // way the scatter inside its own zone is the right answer, and `cropSpot`
-    // falls back to exactly that.
-    if (rank === undefined) return cropSpot(stockZone(unit.stock), unit.id);
     return cropSpot(stockZone(unit.stock), unit.id, {
       soil: this.soil,
-      rank,
       slot: unit.soilSlot ?? null,
     });
   }
@@ -3834,9 +3809,9 @@ export class StackAcresScene extends Phaser.Scene {
     return placed;
   }
 
-  /** Lifts a tile. Crops standing on it do not vanish -- they re-rank into
-   *  whatever soil is left, or fall back to the scatter if none is (see
-   *  `soilSlotSpotForRank`), which is why this repaints the units too. */
+  /** Lifts a tile. A crop whose own slot stood on it does not vanish -- its
+   *  slot wraps onto whatever soil is left (`soilSlotSpot`'s own clamp), or
+   *  the field scatter if none is, which is why this repaints the units too. */
   removeSoilAt(x: number, y: number): boolean {
     const { tx, ty } = soilTileAt(x, y);
     const removed = removeSoilTile(this.soil, tx, ty);
@@ -5557,6 +5532,17 @@ export class StackAcresScene extends Phaser.Scene {
     return !alphaMaskCovers(mask, inside.u, inside.v);
   }
 
+  /** Whether `spot` (a unit's own world position) and `world` (a tapped
+   *  point) fall on the same addressable soil square -- `unitAt`'s shared
+   *  test for both its regions, so the ground-diamond comment and the
+   *  Water/Feed/Harvest `interacting` gate never drift into two different
+   *  ideas of "the crop's own tile". */
+  private sameOwnTile(spot: { x: number; y: number }, world: { x: number; y: number }): boolean {
+    const ownTile = soilTileAt(spot.x, spot.y);
+    const tapTile = soilTileAt(world.x, world.y);
+    return tapTile.tx === ownTile.tx && tapTile.ty === ownTile.ty;
+  }
+
   private unitAt(clientX: number, clientY: number): string | null {
     if (this.nodes.size === 0) return null;
     const cam = this.cameras.main;
@@ -5567,6 +5553,14 @@ export class StackAcresScene extends Phaser.Scene {
     // A CSS pixel is this many scene units at the current zoom, which is what
     // keeps the pad a constant size under the thumb rather than under the map.
     const pad = TAP_PAD / this.zoomL();
+    // Water/Feed/Harvest touch one specific plant, not its neighbourhood.
+    // With one of those three held, a hit only counts on the unit's OWN
+    // tile (`soilTileAt`) -- never a neighbour's, merely because a mature
+    // crop's picture or ground diamond leans into it. Every other tool (or
+    // none -- picking a unit to open it, or the seed-menu case the
+    // ground-diamond comment below covers) keeps the looser box on purpose;
+    // that reach is what makes a big plant's own art tappable at all.
+    const interacting = this.tool === "water" || this.tool === "feed" || this.tool === "harvest";
     // Which of the two regions caught the finger, because that now has to
     // outrank depth. Growing the crops (lib/stackacres/crop-visuals.ts) took a
     // ripe crop's ground diamond from a 24-unit box to a 48-unit one, and the
@@ -5602,6 +5596,7 @@ export class StackAcresScene extends Phaser.Scene {
     let best: { id: string; onArt: boolean; dist: number; depth: number } | null = null;
     for (const [id, node] of this.nodes) {
       const art = node.sprite.getBounds();
+      const spot = this.unitWorldSpot(node);
       // The box, then -- for a crop only -- the texture underneath it. A ripe
       // plant's box is half transparent, and an art hit outranks a
       // neighbour's ground hit, so without this second question the
@@ -5612,10 +5607,10 @@ export class StackAcresScene extends Phaser.Scene {
         at.x <= art.right + pad &&
         at.y >= art.y - pad &&
         at.y <= art.bottom + pad &&
-        !this.artHitIsAir(node, at.x, at.y);
+        !this.artHitIsAir(node, at.x, at.y) &&
+        (!interacting || isLivestock(node.unit.stock) || this.sameOwnTile(spot, at));
       let hit = onArt;
       if (!hit) {
-        const spot = this.unitWorldSpot(node);
         const half = this.unitFootprintHalf(node.unit);
         const ground = projectedBounds({
           x: spot.x - half,
@@ -5630,19 +5625,20 @@ export class StackAcresScene extends Phaser.Scene {
           at.y <= ground.y + ground.height + pad;
         // The diamond above is sized off the crop's own art, not the bed --
         // a mature crop's is several times `SOIL_TILE` wide, so it can reach
-        // clean into a neighbouring bed's own square. That's fine when the
-        // neighbour is bare lattice with nothing else to claim the tap, but
-        // wrong when the neighbour is itself an addressable, distinct bed:
-        // a tap that lands there is aimed at THAT square, not the crop
-        // leaning over into it, and needs to reach `onGroundTap`'s seed
-        // offer rather than being swallowed here. Livestock roams off the
-        // lattice (a critter spot, not a fixed tile), so this only tightens
-        // the diamond for anything actually planted on one.
-        if (hit && !isLivestock(node.unit.stock)) {
-          const ownTile = soilTileAt(spot.x, spot.y);
+        // clean into a neighbouring bed's own square. With Water/Feed/
+        // Harvest held that's never a hit (see `interacting`, above) --
+        // those three touch one plant, not its neighbourhood. Otherwise
+        // it's still fine when the neighbour is bare lattice with nothing
+        // else to claim the tap, but wrong when the neighbour is itself an
+        // addressable, distinct bed: a tap that lands there is aimed at
+        // THAT square, not the crop leaning over into it, and needs to
+        // reach `onGroundTap`'s seed offer rather than being swallowed
+        // here. Livestock roams off the lattice (a critter spot, not a
+        // fixed tile), so this only tightens the diamond for anything
+        // actually planted on one.
+        if (hit && !isLivestock(node.unit.stock) && !this.sameOwnTile(spot, at)) {
           const tapTile = soilTileAt(at.x, at.y);
-          const otherTile = tapTile.tx !== ownTile.tx || tapTile.ty !== ownTile.ty;
-          if (otherTile && hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) hit = false;
+          if (interacting || hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) hit = false;
         }
       }
       if (!hit) continue;

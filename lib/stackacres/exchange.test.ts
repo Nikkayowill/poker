@@ -5,7 +5,6 @@ import {
   msUntilNextExchangeDay,
   stackacresExchangeDay,
 } from "./exchange";
-import { stackacresStockPrice } from "./market";
 import { MONO_CROP_MAX_MULTIPLIER } from "./bounty";
 import { STACKACRES_YIELDS } from "./items";
 import { settleHarvest } from "./harvest";
@@ -32,7 +31,7 @@ describe("the daily ceiling", () => {
     // the change that turns StackAcres back into a scaling faucet, and it
     // should have to delete this test to happen.
     expect(typeof STACKACRES_GOLD_CEILING).toBe("number");
-    expect(STACKACRES_GOLD_CEILING).toBe(50_000);
+    expect(STACKACRES_GOLD_CEILING).toBe(100_000);
   });
 
   it("stays inside what the farm can actually spend it on", () => {
@@ -40,12 +39,19 @@ describe("the daily ceiling", () => {
     // grant 2,500, rewarded ads 3,000 -- and it was the right test while the
     // farm had nothing to buy, because its output was pure addition to the
     // money supply. Now that Gold buys stock and capacity, the number that
-    // keeps this honest is the SINK on the other side: a single day's ceiling
-    // is less than the most expensive stock, so the farm is still a net sink.
-    // The ceiling was raised to 50,000 to let players afford cosmetics, but it
-    // still doesn't pay for a cattle pen in a single day.
+    // keeps this honest is the SINK on the other side.
+    //
+    // Up to 2026-09-05 that sink was "less than the priciest single stock
+    // (cattle)" -- true at a 50,000 ceiling, false at 100,000: cattle is
+    // 60,000, so the 2026-09-10 raise (Kayo's call) deliberately lets a day's
+    // allowance alone clear one Cattle Pen. That is an intended trade, not a
+    // gap this test should hide. What still has to hold, and what this test
+    // holds instead, is the sink against COSMETICS -- the reason the ceiling
+    // was raised in the first place: even the new ceiling doesn't buy the
+    // most expensive cosmetic in a single day, so the farm stays a net sink
+    // for the thing players are actually saving toward.
     expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(3_000);
-    expect(STACKACRES_GOLD_CEILING).toBeLessThan(stackacresStockPrice("cattle"));
+    expect(STACKACRES_GOLD_CEILING).toBeLessThan(350_000);
   });
 
   /**
@@ -54,7 +60,7 @@ describe("the daily ceiling", () => {
    * so the question a reviewer will ask is whether a synergy widened the
    * faucet. It cannot: the multiplier lands on a sweep's value, and the sweep
    * is still paid through this ceiling. A maxed estate can produce a healthy
-   * harvest with the best multiplier, but the ceiling (50k as of 2026-09-05) is
+   * harvest with the best multiplier, but the ceiling (100k as of 2026-09-10) is
    * still designed to be the valve, not the yields.
    */
   it("represents the designed daily limit even if some harvests don't exceed it", () => {
@@ -80,7 +86,7 @@ describe("the daily ceiling", () => {
       })),
     );
     // A typical maxed, balanced estate with the best multiplier. The ceiling
-    // was raised to 50,000 to let players afford cosmetics, and a normal
+    // was raised to 100,000 to let players afford cosmetics, and a normal
     // harvest is still well below that, which is the correct behavior -- the
     // farm is a net sink.
     expect(settled.bounty.kind).toBe("crop_rotation");

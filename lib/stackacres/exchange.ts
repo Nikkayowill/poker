@@ -38,14 +38,28 @@
  * synergy a sweep earned.
  *
  * Raised 5,000 -> 15,000 on 2026-09-03 (Kayo's call), then 15,000 -> 50,000 on
- * 2026-09-05 (Kayo's call) to let cosmetics be affordable. The original 5,000 was
- * sized purely against the other faucets -- the daily grant at 1,000 x up to a
- * 2.5 streak multiplier, rewarded ads at 500 x 6 = 3,000, the backstop at 1,000
- * per 12h -- because at the time the farm had nothing to spend Gold ON and its
- * output was pure addition to the money supply. That changed: a Cattle Pen is
- * 60,000 Gold and a maxed capacity ladder is far more, so the farm is a net SINK
- * for anyone building one. Cosmetics are expensive, so a higher ceiling lets
- * players yield enough to afford them within a reasonable play session.
+ * 2026-09-05 (Kayo's call) to let cosmetics be affordable, then 50,000 -> 100,000
+ * on 2026-09-10 (Kayo's call) for the same reason: cosmetics run up to 350,000
+ * and a bigger daily yield gets a player there in fewer sessions. The original
+ * 5,000 was sized purely against the other faucets -- the daily grant at 1,000 x
+ * up to a 2.5 streak multiplier, rewarded ads at 500 x 6 = 3,000, the backstop at
+ * 1,000 per 12h -- because at the time the farm had nothing to spend Gold ON and
+ * its output was pure addition to the money supply. That changed: cosmetics run
+ * up to 350,000 Gold and a maxed capacity ladder is far more, so the farm is
+ * still a net SINK overall for anyone building one out, even though the flat
+ * ceiling alone can now clear a single Cattle Pen (60,000) in one UTC day where
+ * it could not at 50,000 -- a deliberate trade, not an oversight; see
+ * exchange.test.ts for the invariant that survived the raise and the one that
+ * didn't.
+ *
+ * WHAT NEVER CHANGES WHEN THIS NUMBER DOES: the ceiling only throttles Gold
+ * actually credited to a player's spendable balance -- it never throttles the
+ * farm ITSELF. Crops keep growing, livestock keep producing, Town Contracts
+ * keep running, and a deployed drone keeps flying its patrol lap, all on their
+ * own clocks, whether or not today's allowance has room left. A capped player
+ * loses no progress; they just cannot convert today's excess into Gold until
+ * the day rolls over. That is what "investments keep accumulating" means here,
+ * and it needed no code change to stay true -- only this constant moved.
  *
  * IT SURVIVED THE SINGLE-CURRENCY CHANGE UNTOUCHED, on purpose. Every Bushel
  * price in the farm was multiplied by 2 -- the exact rate this window used to
@@ -54,7 +68,7 @@
  * on that number, never upward.
  *
  * The honest arithmetic, stated plainly so nobody has to rederive it: up to
- * ~18.3M a year for somebody who maxes it every single day. What bounds the
+ * ~36.5M a year for somebody who maxes it every single day. What bounds the
  * damage is that it is still FLAT and still per-player -- a thousand players
  * cannot each take more than one can, and no amount of farm makes any one of
  * them take more than another.
@@ -64,7 +78,7 @@
  * raising the farm's Gold faucet takes a deliberate migration. Keep the two in
  * step; the SQL one is the authority.
  */
-export const STACKACRES_GOLD_CEILING = 50_000;
+export const STACKACRES_GOLD_CEILING = 100_000;
 
 /**
  * The day a moment belongs to, as `YYYY-MM-DD` in UTC. Matches the daily Gold

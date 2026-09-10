@@ -218,6 +218,10 @@
   /* The touch floor. Mobile-first is the whole point of the surface: nothing
      interactive on this screen is allowed under it. */
   --sa-tap: 48px;
+  /* The dock's own outer height: one key, plus the capsule's padding and its
+     outline top and bottom. Anything pinned above the dock clears it by
+     reading this rather than adding the three up again itself. */
+  --sa-dock-h: calc(var(--sa-tap) + 20px);
 
   /* Overshoot on the way in, none on the way out. A drawer that bounces shut
      is a drawer that argues with you. */
@@ -724,8 +728,8 @@
 
 /* ---- the toolbelt ---------------------------------------------------- */
 
-/* Seven keys now -- Look and Scythe for the ground, Pipe and Soil for
-   laying/lifting, Water/Feed/Harvest for a unit. It used to dock bottom-left,
+/* The dock's anchor. What sits in it is now only the keys the selection can
+   answer to, plus Ray (see .sa-dock below). It used to dock bottom-left,
    "under the left thumb"; it docks bottom-right now, under the RIGHT thumb --
    the hand most players hold the phone and act with -- and it is the corner
    the zoom/recentre buttons vacated when those went away entirely (nothing
@@ -742,23 +746,91 @@
   pointer-events: none;
 }
 
-/* Seven tools at ~60px + 8px gap would run past a narrow phone's width
-   pinned to one corner (~476px), so the belt wraps into two rows there
-   instead of spilling off-screen; max-width leaves it the room between
-   both safe-area insets, not just the one it's anchored to -- a device
-   with an asymmetric notch (the reason --safe-left and --safe-right are
-   two separate tokens at all) would otherwise size this against the wrong
-   edge, or the right one twice. */
-.sa-toolbelt {
+/* ---- the dock -------------------------------------------------------
+
+   One capsule now, not a loose row of keys, and it holds only the tools the
+   current selection can answer to (lib/stackacres/dock.ts) plus Ray at the
+   far end past a divider.
+
+   THE GEL, AND WHY IT IS STILL FARM-LEGAL. This sheet's own header sets the
+   rule: surfaces here carry three real pixels of --sa-outline, radii are the
+   farm's own two, and nothing reaches for the app's neon. The gel keeps all
+   of that. What it adds is wetness, and it adds it the same way the sprites
+   would: a block's top plane catches the light, so the capsule and every key
+   on it carry a light-to-side gradient down their face, a bright specular
+   sweep across the top half (the ::before below), and a soft inner rim where
+   the light wraps the edge. It is the same lit cartoon material the world is
+   painted in, with a gloss coat on -- not a pane of frosted glass, which is
+   what would have made it a settings panel someone left open over a game.
+
+   The press is the other half. A key still travels DOWN onto its own rim
+   face by --sa-lift, exactly as before, and now also squishes: gel gives
+   before it moves, so the block scales in slightly on the way down and
+   overshoots back on release (--sa-bounce). Nothing here animates size
+   alone; the travel is what reads, the squish is what sells the material. */
+
+.sa-dock {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: stretch;
+  gap: 10px;
   max-width: calc(100vw - max(10px, var(--safe-right)) - max(10px, var(--safe-left)));
+  padding: 7px 9px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  /* The capsule's own lit face: brightest at the top where the light lands,
+     falling to the material's side tone at the bottom. */
+  background: linear-gradient(180deg, #fffaf0 0%, var(--sa-paper) 46%, var(--sa-paper-2) 100%);
+  /* Its rim face, then the ambient shadow that sits it on the grass, then the
+     inner wrap of light along the top edge. Same three-part construction
+     every pressable block on this screen already uses. */
+  box-shadow:
+    0 var(--sa-lift-lg) 0 var(--sa-cream-rim),
+    var(--sa-drop-lg),
+    inset 0 2px 0 rgba(255, 255, 255, .9),
+    inset 0 -3px 6px rgba(185, 168, 126, .35);
+  pointer-events: auto;
+  position: relative;
+  isolation: isolate;
+}
+
+/* The specular sweep. Sits over the capsule's fill and under its keys, and
+   is deliberately only the top half: a highlight that ran the whole face
+   would read as a flat white wash rather than as light on a curved surface. */
+.sa-dock::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px auto;
+  height: 48%;
+  border-radius: calc(var(--sa-r-panel) - 4px) calc(var(--sa-r-panel) - 4px) 60% 60% / 
+                 calc(var(--sa-r-panel) - 4px) calc(var(--sa-r-panel) - 4px) 22px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .72), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: -1;
+}
+
+.sa-dock-tools {
+  display: flex;
+  align-items: stretch;
   gap: 8px;
   padding: 0;
   border: 0;
   background: none;
-  pointer-events: auto;
+  min-width: 0;
+}
+
+/* The divider. Ray is not a seventh tool and must never read as one, so the
+   gap on either side of this is wider than the gap between the keys -- the
+   line alone would be a decoration; the space around it is what actually
+   separates the two halves. Drawn as the material's own rim tone with a
+   light edge beside it, the way a seam between two blocks would be. */
+.sa-dock-sep {
+  flex: none;
+  width: 2px;
+  align-self: stretch;
+  margin: 2px 1px;
+  border-radius: 2px;
+  background: var(--sa-cream-rim);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, .75);
 }
 
 .sa-tool {
@@ -774,13 +846,19 @@
   padding: 5px 8px;
   border: var(--sa-outline-w) solid var(--sa-outline);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  /* Every key is its own smaller bead of the same gel. */
+  background: linear-gradient(180deg, #fffdf6 0%, var(--sa-paper) 52%, var(--sa-paper-2) 100%);
+  box-shadow:
+    0 var(--sa-lift) 0 var(--sa-cream-rim),
+    var(--sa-drop),
+    inset 0 2px 0 rgba(255, 255, 255, .85);
   color: var(--sa-ink);
   cursor: pointer;
   transition:
-    transform var(--duration-fast, .12s) var(--sa-ease-out),
+    transform var(--duration-fast, .12s) var(--sa-bounce),
     box-shadow var(--duration-fast, .12s) var(--sa-ease-out),
+    filter var(--duration-fast, .12s) ease,
+    opacity var(--duration-fast, .12s) ease,
     background var(--duration-fast, .12s) ease;
 }
 
@@ -798,13 +876,131 @@
 
 .sa-tool:hover { filter: brightness(1.04); }
 
+/* The squish. Gel gives before it travels, so the key scales in a little on
+   the way down onto its own rim face and springs back past its resting size
+   on release, which is what --sa-bounce on the transform above is for. */
+.sa-tool:active {
+  transform: translateY(var(--sa-lift)) scale(.94);
+  box-shadow:
+    0 0 0 var(--sa-outline),
+    inset 0 3px 0 rgba(255, 255, 255, .4),
+    0 1px 3px rgba(52, 34, 18, .35);
+}
+
+/* Idle: this tool belongs to what is selected but has nothing to do to it
+   right now -- a fed cow's Feed key. Dimmed rather than dropped, so the row
+   keeps the same three keys in the same order whatever state the animal is
+   in and the thumb never has to go looking (see dock.ts's own header). Still
+   pressable: holding a tool arms its drag, which works on whatever the
+   stroke crosses rather than on what happens to be selected. */
+.sa-tool.is-idle {
+  opacity: .55;
+  filter: saturate(.45);
+  box-shadow:
+    0 var(--sa-lift) 0 var(--sa-cream-rim),
+    inset 0 2px 0 rgba(255, 255, 255, .5);
+}
+
+.sa-tool.is-idle:hover { opacity: .78; filter: saturate(.7) brightness(1.04); }
+
 /* Held. The key stays down: it is latched, not being pressed, so it keeps the
    travelled position rather than animating back up. Corn fill, because this is
    the only toggle on the screen whose state changes what a drag does. */
 .sa-tool.is-held {
   transform: translateY(var(--sa-lift));
-  background: var(--sa-corn);
-  box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(255, 255, 255, .4), 0 1px 3px rgba(52, 34, 18, .35);
+  background: linear-gradient(180deg, #ffe391 0%, var(--sa-corn) 52%, var(--sa-corn-side) 100%);
+  box-shadow: 0 0 0 var(--sa-outline), inset 0 3px 0 rgba(255, 255, 255, .55), 0 1px 3px rgba(52, 34, 18, .35);
+  opacity: 1;
+  filter: none;
+}
+
+/* Ray, at the far end past the divider. Wood rather than paper: it is the
+   one key here that opens a sheet instead of arming a tool, and the signpost
+   already taught this screen that Ray's own board is the wooden one. */
+.sa-dock-shop {
+  background: linear-gradient(180deg, #f0b471 0%, var(--sa-wood) 52%, var(--sa-wood-side) 100%);
+  box-shadow:
+    0 var(--sa-lift) 0 var(--sa-wood-rim),
+    var(--sa-drop),
+    inset 0 2px 0 rgba(255, 255, 255, .6);
+  color: var(--sa-ink);
+}
+
+.sa-dock-shop:active {
+  box-shadow:
+    0 0 0 var(--sa-outline),
+    inset 0 3px 0 rgba(255, 255, 255, .35),
+    0 1px 3px rgba(52, 34, 18, .35);
+}
+
+/* His own portrait, the same one the signpost's entry carries -- the shop is
+   "Buy from Ray" everywhere else on this screen and a shopping-cart glyph
+   here would be a second name for one place. */
+.sa-dock-shop-portrait {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  border: 2px solid var(--sa-choc-rim);
+  background: var(--sa-cream);
+}
+
+/* Unsold produce waiting in the barn. Same badge the signpost hangs on his
+   entry, in the same roof red, so the two can never disagree about what the
+   number means. */
+.sa-dock-shop-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  padding: 0 4px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-roof);
+  color: var(--sa-cream);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The reflow. When the selection changes the dock swaps which keys it is
+   holding, and they settle in rather than snapping: the group is keyed on
+   the kind of selection in stackacres-toolbelt.tsx, so this replays only
+   when the row actually changes shape, never when a cow simply goes from
+   hungry to fed under the same three keys. */
+@keyframes sa-dock-settle {
+  from { transform: translateY(6px) scale(.86); }
+  to { transform: translateY(0) scale(1); }
+}
+
+/* Transform only, and deliberately NOT opacity. `both` holds the from-frame
+   through the stagger delay below, so anything that stops this animation
+   running -- a paint the browser throttled, a frame dropped mid-reflow --
+   leaves the key wearing that first frame. A key that is merely a few pixels
+   low and a hair small is a key you can still see and press; one held at
+   `opacity: 0` would be a tool silently missing from the dock, which is the
+   exact complaint this whole pass exists to fix. */
+.sa-dock-tools .sa-tool {
+  animation: sa-dock-settle var(--duration-slow, .26s) var(--sa-bounce) both;
+}
+
+/* Staggered a frame apart each, so the row pours in from the left rather
+   than every key popping at once. Four is the most the dock ever draws. */
+.sa-dock-tools .sa-tool:nth-child(2) { animation-delay: .03s; }
+.sa-dock-tools .sa-tool:nth-child(3) { animation-delay: .06s; }
+.sa-dock-tools .sa-tool:nth-child(4) { animation-delay: .09s; }
+
+/* A held key is latched DOWN, and the settle animation ends at translateY(0)
+   -- without this the animation would win on the frame it runs and lift a
+   held key back up mid-reflow. */
+.sa-dock-tools .sa-tool.is-held { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-dock-tools .sa-tool { animation: none; }
+  .sa-tool:active { transform: translateY(var(--sa-lift)); }
 }
 
 /* ---- the signpost ---------------------------------------------------- */
@@ -1950,10 +2146,12 @@
 .sa-harvest-all {
   position: absolute;
   left: 50%;
-  /* Clear of the toolbelt rather than beside it: .sa-controls is anchored
-     bottom-right at 10px and one tool tall, so a key on the centre line one
-     tool-height above it never collides with the belt at any width. */
-  bottom: calc(10px + var(--sa-tap) + 12px);
+  /* Clear of the dock rather than beside it: .sa-controls is anchored
+     bottom-right at 10px and --sa-dock-h tall, so a key on the centre line
+     one dock-height above it never collides at any width. The dock is a
+     capsule now and stands taller than the bare key it used to be, which is
+     why this reads the token instead of --sa-tap. */
+  bottom: calc(10px + var(--sa-dock-h) + 12px);
   transform: translateX(-50%);
   z-index: 3;
   display: inline-flex;

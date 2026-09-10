@@ -42,12 +42,16 @@ export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil", "water", "
 export type StackAcresTool = (typeof STACKACRES_TOOLS)[number];
 
 /**
- * The tools the dock actually draws a button for -- every one of
- * `STACKACRES_TOOLS` except `inspect`, which has no button any more (see
- * this file's own header) but stays in the full list above because it is
- * still a real `StackAcresTool` value: the default a session starts in and
- * the one every tool button toggles back to on a second press
- * (`StackAcresToolbelt`'s own `onPick`).
+ * Every tool that can have a button -- all of `STACKACRES_TOOLS` except
+ * `inspect`, which has none any more (see this file's own header) but stays
+ * in the full list above because it is still a real `StackAcresTool` value:
+ * the default a session starts in and the one every tool button toggles back
+ * to on a second press (`StackAcresToolbelt`'s own `onPick`).
+ *
+ * Which of these the dock draws at any moment is a narrower question, and
+ * ./dock.ts answers it: the dock follows the selection now and shows only the
+ * keys that can act on whatever was last tapped. This stays the full set of
+ * what is drawable, which is what ./dock.test.ts holds its output against.
  */
 export const STACKACRES_SELECTABLE_TOOLS = STACKACRES_TOOLS.filter(
   (id): id is Exclude<StackAcresTool, "inspect"> => id !== "inspect",

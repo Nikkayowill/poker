@@ -35,6 +35,7 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
     hungryAt: new Date(NOW.getTime() - 60 * 1000).toISOString(),
     thirstyAt: null,
     isWatered: true,
+    seed: false,
     muckFee: null,
     permanent: false,
     housedIn: null,

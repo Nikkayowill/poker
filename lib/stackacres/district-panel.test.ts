@@ -15,6 +15,7 @@ function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSn
     hungryAt: null,
     thirstyAt: null,
     isWatered: true,
+    seed: false,
     muckFee: null,
     permanent: false,
     housedIn: null,

@@ -17,7 +17,8 @@ import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/
 import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
 import { ISO_K } from "@/lib/stackacres/iso";
 import { SOIL_TILE } from "@/lib/stackacres/soil";
-import { cropSpriteScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
+import { cropDrawnScale, cropSpriteScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
+import { isStackAcresCrop } from "@/lib/stackacres/catalogue";
 import {
   ART_FRAME,
   ART_SCALE,
@@ -226,6 +227,8 @@ type CorePainterName =
   | "cropShadow"
   | "soilBed"
   | "soilCollar"
+  | "seedMound"
+  | "cueBubble"
   | "cropField"
   | "hen"
   | "sheep"
@@ -575,6 +578,19 @@ const BED_COLLAR_CLODS = [
   [12.8, 4.1, 1],
   [8.6, 2.3, 0.9],
 ] as const;
+
+/** The heap of loose earth `soilCollar` and `seedMound` both draw: the
+ *  overlapping masses in the bed's side tone, then their lit crowns. */
+function paintBedHeap(c: Ctx): void {
+  for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
+    ell(c, x, y, rx, ry);
+    F(c, RAMPS.tilled.side);
+  }
+  for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
+    ell(c, x - rx * 0.16, y - ry * 0.34, rx * 0.76, ry * 0.66);
+    F(c, BED_CROWN);
+  }
+}
 
 /** A point inside the bed's square, in the painter's own box coordinates --
  *  the same 2:1 projection `isoProject` uses, with the origin moved to the
@@ -1400,14 +1416,7 @@ const DRAWN: Record<PainterName, Painter> = {
       // and not one clean outlined ellipse (that reads as a lid laid on the
       // bed). Three overlapping masses with the light on their upper left,
       // no outline: the occlusion of the plant's own foot is what sells it.
-      for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
-        ell(c, x, y, rx, ry);
-        F(c, RAMPS.tilled.side);
-      }
-      for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
-        ell(c, x - rx * 0.16, y - ry * 0.34, rx * 0.76, ry * 0.66);
-        F(c, BED_CROWN);
-      }
+      paintBedHeap(c);
       for (const [x, y, r] of BED_COLLAR_CLODS) {
         ell(c, x, y, r, r * 0.6);
         F(c, RAMPS.tilled.rim);
@@ -1417,6 +1426,59 @@ const DRAWN: Record<PainterName, Painter> = {
     },
     0.5,
     0.5,
+  ),
+
+  // Sown seed before its first water: a lower heap than `soilCollar` with a
+  // few seeds lying in the top of it. Same box and anchor as the collar, so
+  // it sits on the bed exactly where the plant will come up.
+  seedMound: painter(
+    16,
+    8,
+    (c) => {
+      c.save();
+      c.translate(8, 4.4);
+      c.scale(0.82, 0.7);
+      c.translate(-8, -4);
+      paintBedHeap(c);
+      c.restore();
+      for (const [x, y, rot] of [[6.1, 3.5, -0.5], [8.2, 2.9, 0.3], [10.1, 3.7, 0.9]] as const) {
+        ell(c, x, y, 0.82, 0.5, rot);
+        F(c, "#6b4a26");
+        ell(c, x - 0.1, y - 0.12, 0.62, 0.34, rot);
+        F(c, "#e8d3a0");
+      }
+    },
+    0.5,
+    0.5,
+  ),
+
+  // The bubble a unit's cue icon sits in: a cream disc with a short tail
+  // pointing down at the unit. Anchored on the tail's tip.
+  cueBubble: painter(
+    16,
+    19,
+    (c) => {
+      const r = 7.2;
+      const left = (112 * Math.PI) / 180;
+      const right = (68 * Math.PI) / 180;
+      const outline = (dx: number, dy: number) => {
+        c.beginPath();
+        c.moveTo(8 + dx, 18.6 + dy);
+        c.lineTo(8 + dx + r * Math.cos(left), 8 + dy + r * Math.sin(left));
+        c.arc(8 + dx, 8 + dy, r, left, right + Math.PI * 2);
+        c.closePath();
+      };
+      outline(0.5, 0.7);
+      F(c, "rgba(30,20,10,.22)");
+      outline(0, 0);
+      F(c, lin(c, 0, 1, 0, 18, [[0, "#fffdf6"], [1, "#efe2c6"]]));
+      outline(0, 0);
+      stroke(c, "rgba(70,48,24,.45)", 0.6);
+      ell(c, 5.2, 4.8, 2.2, 1.2, -0.6);
+      F(c, "rgba(255,255,255,.75)");
+    },
+    0.5,
+    1,
   ),
 
   cropShadow: painter(
@@ -2256,9 +2318,10 @@ export const PAINTERS: Record<PainterName, Painter> = {
  * the render call site in stackacres-scene.ts.
  */
 function cropBakeScale(name: PainterSpriteName): number {
-  const stage = name.endsWith("0") ? 0 : name.endsWith("1") ? 1 : name.endsWith("2") ? 2 : null;
-  if (stage === null || !(name.startsWith("carrot") || name.startsWith("corn"))) return 1;
-  return cropSpriteScale(stage as CropStage);
+  const art = name.slice(0, -1);
+  const stage = Number(name.slice(-1));
+  if (!isStackAcresCrop(art) || !(stage === 0 || stage === 1 || stage === 2)) return 1;
+  return cropDrawnScale(art, stage);
 }
 
 export function bakeSpriteTexture(scene: Phaser.Scene, name: PainterSpriteName): string {

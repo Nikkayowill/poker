@@ -12,10 +12,12 @@ import {
   PIPE_PLACE_COST,
   StackAcresRequestError,
   aimStackAcresPipeTile,
+  harvestStackAcres,
   placeStackAcresPipeTile,
   readStackAcres,
   removeStackAcresPipeTile,
   stockStackAcres,
+  waterStackAcres,
 } from "./stackacres-service";
 import {
   __resetStackAcresForTest,
@@ -30,7 +32,7 @@ import {
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { SECTOR_LADDER } from "@/lib/stackacres/sectors";
 import { adjustGold, ensureProfile } from "./profile-store";
-import { SOIL_TILE, createSoilMap, soilTileAt } from "@/lib/stackacres/soil";
+import { SOIL_TILE, createSoilMap, soilTileAt, soilTileCentre } from "@/lib/stackacres/soil";
 
 const T0 = new Date("2026-08-31T12:00:00.000Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
@@ -233,5 +235,59 @@ describe("irrigation keeps a connected crop growing", () => {
     // ready_at STILL never jumped: irrigation credited nothing, and the
     // drought clock only started when the pipe left.
     expect(driedCrop?.readyAt).toBe(readyAt);
+  });
+});
+
+describe("a crop on a piped bed", () => {
+  /** The pipe tile over the one bed `funded` lays, known before anything is sown. */
+  const knownBedPipeTile = () => {
+    const bed = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+    const centre = soilTileCentre(bed.tx, bed.ty);
+    return pipeTileAt(centre.x, centre.y);
+  };
+  /** A well one tile north of `tile` and a pipe on `tile` itself. */
+  const pipeTo = async (token: string, tile: { tx: number; ty: number }, when: Date) => {
+    const wellTile = { tx: tile.tx + PIPE_NEIGHBORS[0].tx, ty: tile.ty + PIPE_NEIGHBORS[0].ty };
+    await placeStackAcresPipeTile(token, { ...wellTile, kind: "well" }, when);
+    await placeStackAcresPipeTile(token, { tx: tile.tx, ty: tile.ty, kind: "pipe" }, when);
+  };
+
+  it("is watered from the moment it is sown and comes in on its own clock", async () => {
+    const { token } = await funded();
+    await pipeTo(token, knownBedPipeTile(), T0);
+    const { unitId, readyAt } = await sowCropOnKnownTile(token);
+
+    const sown = (await readStackAcres(token, T0)).units.find((u) => u.id === unitId);
+    expect(sown?.seed).toBe(false);
+    expect(sown?.state).toBe("working");
+
+    // Past the 90 min thirst window with no drink: the pipe kept it growing.
+    await expect(
+      harvestStackAcres(token, { unitIds: [unitId] }, new Date(Date.parse(readyAt))),
+    ).resolves.toBeDefined();
+  });
+
+  it("spends no water when watered, since the pipe already keeps it wet", async () => {
+    const { token } = await funded();
+    await pipeTo(token, knownBedPipeTile(), T0);
+    const { unitId, readyAt } = await sowCropOnKnownTile(token);
+
+    const before = await readStackAcres(token, at(120 * MIN));
+    const after = await waterStackAcres(token, unitId, at(120 * MIN));
+    expect(after.water).toBe(before.water);
+    expect(after.units.find((u) => u.id === unitId)?.readyAt).toBe(readyAt);
+  });
+
+  it("starts a seed's clock when a pipe first reaches it, not when it was sown", async () => {
+    const { token } = await funded();
+    const { unitId, tile } = await sowCropOnKnownTile(token);
+    const durationMin = STACKACRES_CATALOGUE.corn.durationMs / MIN;
+
+    await pipeTo(token, tile, at(60 * MIN));
+
+    const piped = (await readStackAcres(token, at(60 * MIN))).units.find((u) => u.id === unitId);
+    expect(piped?.startedAt).toBe(at(60 * MIN).toISOString());
+    expect(piped?.readyAt).toBe(at((60 + durationMin) * MIN).toISOString());
+    expect(piped?.progress).toBe(0);
   });
 });

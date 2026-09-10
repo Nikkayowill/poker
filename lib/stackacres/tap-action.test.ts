@@ -22,6 +22,7 @@ function unit(
     hungryAt: null,
     thirstyAt: null,
     isWatered: true,
+    seed: false,
     muckFee: state === "mucked" ? 22 : null,
     permanent: false,
     housedIn: null,

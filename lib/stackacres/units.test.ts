@@ -6,7 +6,10 @@ import {
   isStackAcresUnitHungry,
   isStackAcresUnitReady,
   optimisticallyFedUnit,
+  optimisticallyRestartedUnit,
+  optimisticallyStockedUnit,
   optimisticallyWateredUnit,
+  seedClockOnFirstWater,
   thirstyAtFor,
   toStackAcresUnitSnapshots,
   type StackAcresUnitRow,
@@ -169,14 +172,93 @@ describe("thirstyAtFor", () => {
     expect(Date.parse(at ?? "")).toBe(sown + THIRST);
   });
 
-  it("falls back to sowing for a row written before the column existed", () => {
+  it("counts seed that was never watered as dry from the moment it was sown", () => {
     const sown = NOW.getTime() - 60_000;
-    expect(Date.parse(thirstyAtFor(crop(60_000, { lastWateredAt: null })) ?? "")).toBe(sown + THIRST);
+    expect(Date.parse(thirstyAtFor(crop(60_000, { lastWateredAt: null })) ?? "")).toBe(sown);
   });
 
   it("has no answer for livestock, which is tended by feeding instead", () => {
     expect(thirstyAtFor(row({ stock: "cattle" }))).toBeNull();
     expect(thirstyAtFor(row({ stock: "hen" }))).toBeNull();
+  });
+});
+
+describe("sown seed", () => {
+  const seed = () => toStackAcresUnitSnapshots([crop(60_000, { lastWateredAt: null })], NOW)[0];
+
+  it("is flagged seed only while it waits for its first water", () => {
+    expect(seed().seed).toBe(true);
+    // Dried mid-cycle: dry, but it was watered and has grown.
+    expect(toStackAcresUnitSnapshots([crop(THIRST + 1000)], NOW)[0].seed).toBe(false);
+    expect(toStackAcresUnitSnapshots([row()], NOW)[0].seed).toBe(false);
+  });
+
+  it("refuses to start a clock it cannot read", () => {
+    expect(() => seedClockOnFirstWater(crop(60_000, { readyAt: "not a date" }), NOW.getTime())).toThrow();
+  });
+
+  it("starts the clock at the first water with the cycle it was sown with", () => {
+    const at = NOW.getTime() + 5_000;
+    const clock = seedClockOnFirstWater(crop(60_000, { lastWateredAt: null }), at);
+    expect(clock.startedAt.getTime()).toBe(at);
+    expect(clock.readyAt.getTime() - at).toBe(CARROT.durationMs);
+  });
+
+  it("predicts a sown crop as seed and an animal as working", () => {
+    const base = { id: "n", permanent: false, inGreenhouse: false, nowMs: NOW.getTime() };
+    const carrot = optimisticallyStockedUnit({ ...base, stock: "carrot" });
+    expect(carrot.seed).toBe(true);
+    expect(carrot.state).toBe("dry");
+    expect(carrot.isWatered).toBe(false);
+    const hen = optimisticallyStockedUnit({ ...base, stock: "hen" });
+    expect(hen.state).toBe("working");
+    expect(hen.thirstyAt).toBeNull();
+  });
+
+  it("predicts watering a seed as a fresh cycle starting now", () => {
+    const at = NOW.getTime() + 30_000;
+    const watered = optimisticallyWateredUnit(seed(), at);
+    expect(watered.state).toBe("working");
+    expect(watered.progress).toBe(0);
+    expect(Date.parse(watered.startedAt)).toBe(at);
+    expect(Date.parse(watered.readyAt) - at).toBe(CARROT.durationMs);
+  });
+
+  it("predicts a bought crop restarting as seed", () => {
+    const stocked = optimisticallyStockedUnit({
+      id: "n",
+      stock: "carrot",
+      permanent: true,
+      inGreenhouse: false,
+      nowMs: NOW.getTime(),
+    });
+    const restarted = optimisticallyRestartedUnit(
+      { ...stocked, state: "ready", progress: 1, isWatered: true },
+      NOW.getTime() + 1000,
+    );
+    expect(restarted.seed).toBe(true);
+  });
+
+  it("predicts a bought crop on a piped bed restarting watered", () => {
+    const stocked = optimisticallyStockedUnit({
+      id: "n",
+      stock: "carrot",
+      permanent: true,
+      inGreenhouse: false,
+      nowMs: NOW.getTime(),
+    });
+    const restarted = optimisticallyRestartedUnit(
+      { ...stocked, state: "ready", progress: 1, isWatered: true, thirstyAt: null, seed: false },
+      NOW.getTime() + 1000,
+    );
+    expect(restarted.seed).toBe(false);
+    expect(restarted.state).toBe("working");
+    expect(restarted.thirstyAt).toBeNull();
+  });
+
+  it("tells the browser a piped crop never dries", () => {
+    const piped = toStackAcresUnitSnapshots([crop(60_000, { id: "p" })], NOW, new Set(["p"]))[0];
+    expect(piped.thirstyAt).toBeNull();
   });
 });
 

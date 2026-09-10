@@ -417,8 +417,8 @@ export async function createStackAcresUnit(
     startedAt: Date;
     readyAt: Date;
     lastFedAt: Date | null;
-    /** Crops only: sowing waters the ground, so a new crop starts wet. Null
-     *  for livestock, which never runs dry. */
+    /** Null for a crop sown as dry seed, and for livestock, which never runs
+     *  dry. Set only when a pipe or hydro bed already waters the crop. */
     lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
@@ -544,11 +544,15 @@ export async function feedStackAcresUnit(
  * contract -- because it is the same freeze-and-resume mechanic on the other
  * track. It differs in one way only, and the difference is upstream: watering
  * spends nothing, so a caller has nothing to refund when this returns null.
+ *
+ * `newStartedAt` is set only for a seed's first water, which starts its
+ * growing clock from zero.
  */
 export async function waterStackAcresUnit(
   current: StoredStackAcresUnit,
   wateredAt: Date,
   newReadyAt: Date,
+  newStartedAt: Date | null = null,
 ): Promise<StoredStackAcresUnit | null> {
   const supabase = adminClient();
   const version = current.version + 1;
@@ -558,6 +562,7 @@ export async function waterStackAcresUnit(
     if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
     const updated: StoredStackAcresUnit = {
       ...stored,
+      ...(newStartedAt ? { startedAt: newStartedAt.toISOString() } : {}),
       lastWateredAt: wateredAt.toISOString(),
       readyAt: newReadyAt.toISOString(),
       version,
@@ -569,6 +574,7 @@ export async function waterStackAcresUnit(
   const { data, error } = await supabase
     .from("homestead_units")
     .update({
+      ...(newStartedAt ? { started_at: newStartedAt.toISOString() } : {}),
       last_watered_at: wateredAt.toISOString(),
       ready_at: newReadyAt.toISOString(),
       version,
@@ -586,18 +592,18 @@ export async function waterStackAcresUnit(
  * Settles a ready unit, exactly once. THREE OUTCOMES, decided by the caller
  * and passed in rather than derived here:
  *
- *   * `restartReadyAt` set -- bought outright with Gold. The animal does not
+ *   * `restart` set -- bought outright with Gold. The animal does not
  *     leave when you take the milk, so the row stays working, keeps its
  *     stock, stake and yield, and simply starts its next cycle now.
  *     `last_fed_at` is deliberately NOT touched: a cow collected at the end
  *     of a 24h cycle is already hours past its last feed and should be
  *     hungry immediately. Resetting it would hand out a free serving on
  *     every collection and quietly delete the feed sink.
- *   * `restartReadyAt === null && muckFee === null` -- sown with Bushels and
+ *   * `restart === null && muckFee === null` -- sown with Bushels and
  *     came back clean. Its seed was consumed by its own harvest, so the row
  *     is DELETED: there is no "empty" state to return it to any more, and
  *     the capacity it freed is simply room for a fresh purchase.
- *   * `restartReadyAt === null && muckFee !== null` -- sown with Bushels and
+ *   * `restart === null && muckFee !== null` -- sown with Bushels and
  *     needs maintenance. The row stays, marked mucked, until `clearStackAcresMuck`
  *     pays the fee.
  *
@@ -609,33 +615,26 @@ export async function collectStackAcresUnit(
   current: StoredStackAcresUnit,
   now: Date,
   muckFee: number | null,
-  restartReadyAt: Date | null = null,
+  restart: { readyAt: Date; wateredAt: Date | null } | null,
 ): Promise<StoredStackAcresUnit | null> {
   const supabase = adminClient();
   const version = current.version + 1;
 
-  if (restartReadyAt) {
-    // A re-sown crop goes into watered ground, exactly as a freshly stocked
-    // one does. `last_fed_at` deliberately does NOT get this treatment (see
-    // the doc comment above) and the asymmetry is the point: an animal can be
-    // fed at any time, so being hungry the moment it restarts costs the
-    // player a serving and nothing else. A crop cannot be watered until it is
-    // actually dry, so carrying the old cycle's watering across would restart
-    // it dry at progress 0 AND make the only available fix -- one Water tap --
-    // add the whole stale gap to ready_at, turning a 15-minute cycle into
-    // however long the unit sat ripe before anyone collected it.
-    //
-    // Keyed off the row's own value rather than the catalogue, so this needs
-    // no import: livestock is null and stays null. A legacy crop row still
-    // null here is correct either way, since `thirstyAtFor` falls back to
-    // startedAt, which this branch has just reset to `now`.
-    const restartWatered = current.lastWateredAt === null ? null : now.toISOString();
+  if (restart) {
+    // A re-sown crop goes back in as dry seed (`wateredAt` null) exactly as a
+    // freshly stocked one does, and its first water restarts the clock from
+    // there (see `seedClockOnFirstWater`), so the time it sat ripe is never
+    // charged. The caller passes `wateredAt` only when a pipe or hydro bed
+    // already waters it. `last_fed_at` deliberately does NOT get reset (see
+    // the doc comment above): an animal can be fed at any time, so being
+    // hungry the moment it restarts costs the player a serving and nothing
+    // else.
     const next: StoredStackAcresUnit = {
       ...current,
       status: "working",
       startedAt: now.toISOString(),
-      readyAt: restartReadyAt.toISOString(),
-      lastWateredAt: restartWatered,
+      readyAt: restart.readyAt.toISOString(),
+      lastWateredAt: restart.wateredAt === null ? null : restart.wateredAt.toISOString(),
       muckFee: null,
       version,
     };

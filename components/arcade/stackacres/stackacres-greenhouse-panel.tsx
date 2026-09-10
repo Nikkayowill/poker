@@ -48,6 +48,8 @@ export type GreenhouseSlotView =
       readonly unitId: string;
       readonly stock: StackAcresStock;
       readonly progress: number;
+      /** Dry soil, including seed waiting for its first water. */
+      readonly thirsty: boolean;
     }
   | { readonly kind: "ready"; readonly unitId: string; readonly stock: StackAcresStock };
 
@@ -62,7 +64,13 @@ export function slotsFor(units: readonly StackAcresUnitSnapshot[]): GreenhouseSl
     const unit = housed[index];
     if (!unit) return { kind: "empty" };
     if (unit.state === "ready") return { kind: "ready", unitId: unit.id, stock: unit.stock };
-    return { kind: "growing", unitId: unit.id, stock: unit.stock, progress: unit.progress ?? 0 };
+    return {
+      kind: "growing",
+      unitId: unit.id,
+      stock: unit.stock,
+      progress: unit.progress ?? 0,
+      thirsty: unit.state === "dry",
+    };
   });
 }
 
@@ -179,7 +187,9 @@ function SlotCard({
     return (
       <li className="sa-museum-item is-found">
         <span className="sa-museum-item-name">{def.label}</span>
-        <span className="sa-museum-item-status">{Math.round(slot.progress * 100)}% grown</span>
+        <span className="sa-museum-item-status">
+          {slot.thirsty ? "Needs water" : `${Math.round(slot.progress * 100)}% grown`}
+        </span>
       </li>
     );
   }

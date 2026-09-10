@@ -16,6 +16,7 @@ import {
 import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/world";
 import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
 import { ISO_K } from "@/lib/stackacres/iso";
+import { SOIL_TILE } from "@/lib/stackacres/soil";
 import { cropSpriteScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
 import {
   ART_FRAME,
@@ -33,6 +34,7 @@ import {
   painter,
   poly,
   rr,
+  slab,
   stroke,
   type Ctx,
   type Paint,
@@ -222,6 +224,8 @@ type CorePainterName =
   | "wheat21"
   | "wheat22"
   | "cropShadow"
+  | "soilBed"
+  | "soilCollar"
   | "cropField"
   | "hen"
   | "sheep"
@@ -490,6 +494,92 @@ export interface CropFieldPlant {
   col: 0 | 1 | 2;
   art: CropArt;
   stage: CropStage;
+}
+
+/* ---- a placed soil bed -------------------------------------------------- */
+
+/** The bed's own world square. A bed is exactly one `SOIL_TILE` and is drawn
+ *  edge to edge across it: the flat picture this replaced was inset two units
+ *  so a hairline of the fill underneath showed between neighbours, and the
+ *  slab's own `rim` outline does that separating now. */
+const BED_SQUARE = SOIL_TILE;
+/** The square's projected diamond. `isoProject` sends any world square to a
+ *  diamond twice as wide as it is tall, so a side of n is 2n across. */
+const BED_WIDTH = BED_SQUARE * 2;
+/** How far the worked earth stands proud of the grass around it, in units.
+ *  A HAIRLINE on purpose. A bed is ground that has been dug over, not a
+ *  planter: anything with a real wall reads as a tray set down on the lawn,
+ *  which is what two earlier passes of this painter looked like. The height
+ *  in a bed comes from the heap in the middle, not from its edge. */
+const BED_THICK = 0.9;
+/** How far the bed's own shadow spreads below its near faces. Without this
+ *  the same slab reads as hovering: side faces with clean lawn right up
+ *  against them is what a floating object looks like. */
+const BED_SHADOW_DROP = 2.2;
+/** The shadow itself, and the crumbs of earth spilled onto the grass around
+ *  the bed -- both jobs the old flat picture had no way to do. */
+const BED_SHADOW = "rgba(28, 40, 14, 0.34)";
+/** The three tilled ridges, as distances down the bed's own square. The
+ *  middle one runs through the plant's spot, so a crop stands on a ridge
+ *  rather than in the trough between two. */
+const BED_FURROWS = [BED_SQUARE * 0.25, BED_SQUARE * 0.5, BED_SQUARE * 0.75] as const;
+/** A ridge's sunlit crown and the shadow in the trough beside it. Both sit
+ *  inside `RAMPS.tilled`'s own spread, so the relief never lightens the bed
+ *  overall -- the earth stays dark, it just stops being flat. */
+const BED_RIDGE = "#5b4028";
+const BED_TROUGH = "#221710";
+/** Freshly turned earth, one step up from a ridge's crown: the heap banked
+ *  around a stem is soil that has just been moved, and reads as loose only
+ *  if it is lighter than the bed it came off. */
+const BED_CROWN = "#6b4c30";
+/** Clods, as (across, down, radius) in the bed's own square. Fixed rather
+ *  than random: a painter bakes once, and a hand-placed scatter can be kept
+ *  off the ridges and away from the middle where the plant lands. */
+const BED_CLODS = [
+  [3.4, 2.6, 1.5],
+  [11.8, 3.2, 1.2],
+  [6.2, 6.1, 1.1],
+  [13.2, 7.4, 1.4],
+  [2.6, 9.8, 1.3],
+  [9.4, 11.2, 1.2],
+  [5.1, 13.4, 1.5],
+  [12.4, 13.8, 1.1],
+] as const;
+/** Crumbs sitting on the bed's own outline, as (across, down, radius) in its
+ *  square. What keeps the silhouette from being four ruled edges: a dug bed
+ *  has a broken rim, not a cut one. */
+const BED_RIM_CRUMBS = [
+  [0, 4.4, 1.4],
+  [0, 11.2, 1.1],
+  [4.6, 0, 1.2],
+  [11.6, 0, 1.3],
+  [16, 5.2, 1.2],
+  [16, 12.4, 1.4],
+  [4.2, 16, 1.5],
+  [12.2, 16, 1.2],
+] as const;
+
+/** The masses the heap around a stem is built from, as (x, y, rx, ry) in
+ *  `soilCollar`'s own 16x8 box -- three of them, overlapping and each a
+ *  different size, so the heap has a broken outline instead of the one clean
+ *  ellipse that reads as a lid. */
+const BED_COLLAR_MASSES = [
+  [7.4, 3.4, 5.2, 2.3],
+  [10.2, 3.9, 4, 1.9],
+  [5, 4.1, 3.4, 1.7],
+] as const;
+/** Clods sitting on that heap, same box. */
+const BED_COLLAR_CLODS = [
+  [3.4, 4.2, 1.1],
+  [12.8, 4.1, 1],
+  [8.6, 2.3, 0.9],
+] as const;
+
+/** A point inside the bed's square, in the painter's own box coordinates --
+ *  the same 2:1 projection `isoProject` uses, with the origin moved to the
+ *  diamond's west corner. */
+function bedPoint(wx: number, wy: number): readonly [number, number] {
+  return [BED_SQUARE + (wx - wy), (wx + wy) / 2];
 }
 
 const CROP_FIELD_ROWS = 3;
@@ -1218,6 +1308,116 @@ const DRAWN: Record<PainterName, Painter> = {
   // `cropShadowScale` (crop-visuals.ts), not fixed like a livestock shadow,
   // because a crop's own sprite scale swings 1x-1.25x across its three
   // frames and a shadow sized for one would misfit the other two.
+  /* ---- the bed a crop stands in ---------------------------------------- */
+
+  // Everything from here to `cropShadow` is one bed: the worked earth itself
+  // and the heap banked around whatever is planted in it.
+
+  soilBed: painter(
+    BED_WIDTH,
+    BED_SQUARE + BED_THICK + BED_SHADOW_DROP,
+    (c) => {
+      // The shadow the bed sits in, before the bed itself. A slab with
+      // visible side faces and clean lawn hard against them reads as a tray
+      // hovering over the grass, which is exactly how the first pass of this
+      // painter looked.
+      poly(c, [
+        bedPoint(-1, 0),
+        bedPoint(BED_SQUARE, -1),
+        bedPoint(BED_SQUARE + 1, BED_SQUARE),
+        bedPoint(0, BED_SQUARE + 1),
+      ].map(([x, y]) => [x, y + BED_THICK + BED_SHADOW_DROP * 0.55] as const));
+      F(c, BED_SHADOW);
+
+      // The earth: a real slab with two near faces, not a diamond painted on
+      // the lawn. This is the whole point of the painter -- a bed used to be
+      // one flat picture (`soil-slot.png`, deleted with this) and read as a
+      // table top with a plant standing on it.
+      slab(c, BED_SQUARE, BED_SQUARE / 2, BED_WIDTH, BED_THICK, RAMPS.tilled);
+
+      // Tilled ridges, each a trough with its sunlit crown above it.
+      for (const wy of BED_FURROWS) {
+        const [ax, ay] = bedPoint(2.4, wy);
+        const [bx, by] = bedPoint(BED_SQUARE - 2.4, wy);
+        c.beginPath();
+        c.moveTo(ax, ay);
+        c.lineTo(bx, by);
+        stroke(c, BED_TROUGH, 1.2);
+        c.beginPath();
+        c.moveTo(ax, ay - 0.9);
+        c.lineTo(bx, by - 0.9);
+        stroke(c, BED_RIDGE, 0.7);
+      }
+
+      // Broken earth. Without these the ridges read as three ruled lines.
+      for (const [wx, wy, r] of BED_CLODS) {
+        const [x, y] = bedPoint(wx, wy);
+        ell(c, x, y, r, r * 0.55);
+        F(c, RAMPS.tilled.side);
+        ell(c, x - r * 0.18, y - r * 0.22, r * 0.68, r * 0.36);
+        F(c, BED_RIDGE);
+      }
+
+      // Crumbs straddling the rim, so the bed's own edge is broken rather
+      // than cut. Drawn after the top's outline on purpose: they sit ON the
+      // line, which is what makes the edge read as earth.
+      for (const [wx, wy, r] of BED_RIM_CRUMBS) {
+        const [x, y] = bedPoint(wx, wy);
+        ell(c, x, y, r, r * 0.6);
+        F(c, RAMPS.tilled.side);
+        ell(c, x - r * 0.2, y - r * 0.3, r * 0.62, r * 0.34);
+        F(c, RAMPS.tilled.top);
+      }
+
+      // No mound of the bed's own in the middle: `soilCollar` banks the
+      // heap over the plant's own foot instead, and two of them on one bed
+      // stack into a ring with a hole in the centre. An empty bed is meant
+      // to read as worked, level ground -- it is the planting that raises
+      // earth, not the tilling.
+    },
+    0.5,
+    BED_SQUARE / 2 / (BED_SQUARE + BED_THICK + BED_SHADOW_DROP),
+  ),
+
+  // The soil heaped against a stem, drawn OVER the plant's own foot (see the
+  // scene's crop branch) rather than under it: that overlap is the whole
+  // difference between earth holding a plant and a plant set down on earth.
+  // Anchored dead centre, on the same base point the crop sprite (0.5, 1)
+  // and its shadow (0.5, 0.5) already share.
+  soilCollar: painter(
+    16,
+    8,
+    (c) => {
+      // Anchored dead centre, so y = 4 in this box IS the plant's own base
+      // point. The heap's mass sits ABOVE that line, banked over the foot:
+      // soil drawn under the base line is just more ground, and leaves the
+      // plant standing on top of it again.
+      //
+      // A LUMPY LOW HEAP, and neither of the two things it should not be.
+      // Not a ring around a drawn hole (an earlier pass gave the stem a dark
+      // throat to enter and every bed came out looking like a baking tin),
+      // and not one clean outlined ellipse (that reads as a lid laid on the
+      // bed). Three overlapping masses with the light on their upper left,
+      // no outline: the occlusion of the plant's own foot is what sells it.
+      for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
+        ell(c, x, y, rx, ry);
+        F(c, RAMPS.tilled.side);
+      }
+      for (const [x, y, rx, ry] of BED_COLLAR_MASSES) {
+        ell(c, x - rx * 0.16, y - ry * 0.34, rx * 0.76, ry * 0.66);
+        F(c, BED_CROWN);
+      }
+      for (const [x, y, r] of BED_COLLAR_CLODS) {
+        ell(c, x, y, r, r * 0.6);
+        F(c, RAMPS.tilled.rim);
+        ell(c, x - r * 0.2, y - r * 0.28, r * 0.66, r * 0.36);
+        F(c, BED_RIDGE);
+      }
+    },
+    0.5,
+    0.5,
+  ),
+
   cropShadow: painter(
     16,
     8,

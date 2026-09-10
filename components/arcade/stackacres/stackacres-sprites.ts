@@ -53,11 +53,10 @@
  * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
  * stone in it. They are still painters.
  *
- * `grassTile` and `soilSlot` are in here but are not one of these: neither
- * is a painter, neither has a box or an anchor, and neither is ever wrapped
- * by `spriteBacked`. They ride this module only because this list is what
- * the scene's `preload` walks, and `bakeGrass`/`paintOwnedSlots` want them
- * in hand before drawing rather than a frame later. (The terrain atlas and
+ * `grassTile` is in here but is not one of these: it is not a painter, it has
+ * no box and no anchor, and it is never wrapped by `spriteBacked`. It rides
+ * this module only because this list is what the scene's `preload` walks, and
+ * `bakeGrass` wants it in hand before drawing rather than a frame later. (The terrain atlas and
  * the open-sea tile are loaded by the scene itself -- see art-terrain.ts.)
  *
  * WHAT THEY COST, so nobody has to rediscover it: they are off `RAMPS`, they
@@ -251,15 +250,6 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // A bed's one plant -- replaced the old `soilBed` (one picture per
-  // 64-unit bed, all twelve of its squares baked into a single furrowed
-  // diamond) back when a bed could hold up to a dozen; a bed is one tile,
-  // one plant now (lib/stackacres/soil.ts), and `paintBedSlot` draws
-  // exactly one of these per placed bed. Any world rect projects to an
-  // exactly-2:1 diamond (see lib/stackacres/iso.ts's `isoProject`), which
-  // is why one 256x128 picture displays correctly at a bed's own screen
-  // size with no stretch, whatever that size works out to.
-  soilSlot: "/stackacres/sprites/soil-slot.png",
   // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
   // tappable, already-generated pixel-art PNGs standing in a flat-vector
   // world on purpose (the "art-style shock" greeting is the whole feature).
@@ -323,11 +313,11 @@ export function spriteUrl(name: SpriteName): string {
 }
 
 /** The sprites that stand in FRONT OF A PAINTER, which is every one of them
- *  except the two ground pictures -- `grassTile`/`soilSlot` have no painter
- *  behind them (a ground tile is a texture, not a thing with a box and an
- *  anchor), so they are the names here that `spriteBacked` and
- *  `bakeSpriteTexture` must never be handed. */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "soilSlot">;
+ *  except `grassTile` -- a ground tile is a texture, not a thing with a box
+ *  and an anchor, so it is the one name here that `spriteBacked` and
+ *  `bakeSpriteTexture` must never be handed. (`soilSlot` was the other, until
+ *  a bed became the `soilBed` painter and its picture was deleted.) */
+export type PainterSpriteName = Exclude<SpriteName, "grassTile">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

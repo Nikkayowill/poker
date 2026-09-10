@@ -1925,26 +1925,62 @@ export async function buyStackAcresStock(
     });
   }
 
+  // Buying a crop outright puts a plant in the ground exactly like sowing
+  // one does, so it needs a bed the same way (`stockStackAcres`'s own gate).
+  // Without this the Buy outright button was the way around it: it never
+  // asked for a slot, so a crop bought on an untilled farm stood in the
+  // grass on the rank-hash fallback. Livestock has no bed to need.
+  let soilAssignment = await assignSoilSlot(profile.id, stock, false, null);
+  if (isStackAcresCrop(stock) && soilAssignment.slot === null) {
+    await refundGold(profile.id, price);
+    throw new StackAcresRequestError(
+      `${def.label} needs a bed to go into. Till some soil in the Crop Fields first.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
   const produce = STACKACRES_YIELDS[stock];
   try {
-    await createStackAcresUnit(profile.id, {
-      stock,
-      // The one-cycle seed cost is what lands in `stake`, notionally: nothing
-      // was paid at that price here. The column is required for a working row
-      // and carries `check (stake > 0)`, so writing the catalogue's own figure
-      // keeps the ledger describing what is standing there, and `permanent`
-      // below is what tells a dashboard the difference. The outright price is
-      // deliberately NOT stored: it is spent, gone, and re-derivable from the
-      // stock whenever it is needed.
-      stake: def.seedCost,
-      yieldQuantity: produce.quantity,
-      startedAt: now,
-      readyAt: new Date(now.getTime() + def.durationMs),
-      lastFedAt: def.hungerMs === null ? null : now,
-      // Sowing waters the ground; an animal never runs dry.
-      lastWateredAt: def.thirstMs === null ? null : now,
-      permanent: true,
-    });
+    // Same race the sow path runs: the slot was only read, so a concurrent
+    // sow can take it before this insert lands and the partial unique index
+    // catches it. Two re-picks, then stand on the fallback rather than fail
+    // a purchase over contention -- the farm did have a free bed.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await createStackAcresUnit(profile.id, {
+          stock,
+          // The one-cycle seed cost is what lands in `stake`, notionally: nothing
+          // was paid at that price here. The column is required for a working row
+          // and carries `check (stake > 0)`, so writing the catalogue's own figure
+          // keeps the ledger describing what is standing there, and `permanent`
+          // below is what tells a dashboard the difference. The outright price is
+          // deliberately NOT stored: it is spent, gone, and re-derivable from the
+          // stock whenever it is needed.
+          stake: def.seedCost,
+          yieldQuantity: produce.quantity,
+          startedAt: now,
+          // Snapshotted here for good, the same as the sow path: the bed's
+          // growth multiplier is baked into `ready_at` once and never
+          // re-derived at collection.
+          readyAt: new Date(
+            now.getTime() + Math.round(def.durationMs * soilAssignment.growthMultiplier),
+          ),
+          lastFedAt: def.hungerMs === null ? null : now,
+          // Sowing waters the ground; an animal never runs dry.
+          lastWateredAt: def.thirstMs === null ? null : now,
+          permanent: true,
+          soilSlot: soilAssignment.slot,
+        });
+        break;
+      } catch (error) {
+        if (!(error instanceof SoilSlotConflictError)) throw error;
+        soilAssignment =
+          attempt < 2
+            ? await assignSoilSlot(profile.id, stock, false, null)
+            : { slot: null, growthMultiplier: 1 };
+      }
+    }
   } catch (error) {
     // The database refused (the trigger's own cap/ceiling race) or threw for
     // any other reason, and nothing came into existence, so the player must

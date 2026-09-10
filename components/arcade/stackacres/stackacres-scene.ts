@@ -149,6 +149,10 @@ import {
   cropArtFor,
   cropFootprintHalf,
   cropFootprintHalfBlend,
+  cropCollarBehind,
+  cropCollarScale,
+  cropFootShiftX,
+  cropFootShiftXBlend,
   cropGroundOffset,
   cropGroundOffsetBlend,
   cropShadowScale,
@@ -982,54 +986,6 @@ function bakeForageDropTexture(scene: Phaser.Scene): string {
   return FORAGE_DROP_TEXTURE;
 }
 
-/** Was lib/stackacres/soil-grid.ts's own export, back when that module's
- *  `IsometricGridManager` placement was what handed a bed its sprite. Local
- *  now that `paintSoilTiles` places bed sprites directly -- see that
- *  module's deletion note on `paintSoilTiles`'s own doc comment. */
-const SOIL_BED_TEXTURE_KEY = "soil-bed";
-
-/**
- * Bakes one soil bed's flat ground diamond -- the exact fill and rim
- * `paintAreaGround(rect, "soil", false)` used to draw per tile by hand,
- * baked once so `paintSoilTiles` can hand every bed a real sprite instead of
- * redrawing a `Graphics` diamond per tile per repaint.
- *
- * 32x16: the exact screen size every bed's footprint projects to
- * (`soilTileDiamond`), and already a power of two on both axes, so this
- * needs no `powerOfTwoCeil` padding the way a sheet-sourced canvas does.
- * Centred in its own box, matching the default (0.5, 0.5) origin
- * `paintSoilTiles` places every bed sprite at.
- *
- * USED TO be 128x64 and placed through an `IsometricGridManager`
- * (lib/stackacres/soil-grid.ts), back when a bed was a 2x2 footprint on a
- * finer grid. That manager's own cell size is a fixed 32 world units, baked
- * into its screen math (`ISO_TILE_WIDTH`/`HEIGHT`) rather than configurable
- * -- once a bed shrank to one 16-unit tile it could no longer be even ONE
- * whole cell of that grid, so `paintSoilTiles` now places this sprite
- * directly off `soil.ts`'s own `SoilMap`, the same way `paintBedSlot`
- * already places the plant picture on top of it.
- */
-function bakeSoilBedTexture(scene: Phaser.Scene): string {
-  if (scene.textures.exists(SOIL_BED_TEXTURE_KEY)) return SOIL_BED_TEXTURE_KEY;
-  const width = 32;
-  const height = 16;
-  const ramp = rampHex("soil");
-  const g = scene.make.graphics({ x: 0, y: 0 }, false);
-  g.fillStyle(ramp.top, 1);
-  g.beginPath();
-  g.moveTo(width / 2, 0);
-  g.lineTo(width, height / 2);
-  g.lineTo(width / 2, height);
-  g.lineTo(0, height / 2);
-  g.closePath();
-  g.fillPath();
-  g.lineStyle(1, ramp.rim, 0.55);
-  g.strokePath();
-  g.generateTexture(SOIL_BED_TEXTURE_KEY, width, height);
-  g.destroy();
-  return SOIL_BED_TEXTURE_KEY;
-}
-
 /** A Phaser packed colour, lightened (positive) or darkened (negative) by a
  *  flat channel amount. The one-sun shading every isometric structure below
  *  uses: a roof lit from directly above, a left wall toward the light, a
@@ -1333,6 +1289,12 @@ interface PinchGesture {
 
 type Gesture = DragGesture | PinchGesture;
 
+/** How far the heap sits from the plant's own base point, in screen units.
+ *  UP, by a hair: the painter already puts the heap's mass above its own
+ *  centre line, and this lifts it a little further so it clearly overlaps
+ *  the base rather than meeting it edge to edge. */
+const COLLAR_DROP = -0.4;
+
 interface UnitNode {
   container: Phaser.GameObjects.Container;
   /** State ring: ready, hungry, mucked. There is no "selected"/"afford"
@@ -1378,6 +1340,10 @@ interface UnitNode {
    *  growth can drive it off the same proxy as the plant -- see
    *  `cropShadowScaleBlend`. */
   cropShadow: Phaser.GameObjects.Image | null;
+  /** The soil banked over a crop's own foot, null for anything that is not an
+   *  open-air crop. Kept a reference for the same reason `cropShadow` is: a
+   *  growth drives it off the same proxy as the plant. */
+  soilCollar: Phaser.GameObjects.Image | null;
   signature: string;
   unit: StackAcresSceneUnit;
   /** The world point `container` was last positioned at via `staticSpotFor`
@@ -1824,13 +1790,13 @@ export class StackAcresScene extends Phaser.Scene {
    * uploaded to the GPU besides. That duplicate was a large share of what the
    * farm was holding on a phone and nothing reads it again.
    *
-   * The two ground pictures are the exception and keep theirs, because they
-   * are not baked once: `paintOwnedSlots` re-reads `soilSlot` on every soil
-   * change, and the lawn re-reads its tile when its own art is rebuilt.
+   * The one ground picture is the exception and keeps its source, because it
+   * is not baked once: the lawn re-reads its tile whenever its own art is
+   * rebuilt.
    */
   private releaseSpriteSources(): void {
     for (const name of CORE_SPRITE_NAMES) {
-      if (name === "grassTile" || name === "soilSlot") continue;
+      if (name === "grassTile") continue;
       const key = spriteLoadKey(name);
       if (this.textures.exists(key)) this.textures.remove(key);
     }
@@ -1862,13 +1828,12 @@ export class StackAcresScene extends Phaser.Scene {
     // file, so from here every `sprite:*` entry is a second full copy of
     // pixels that already exist in the baked canvas beside it. On a phone
     // that duplicate was tens of megabytes of decoded image sitting there
-    // for the whole session. `soilSlot` is the exception and is kept:
-    // `paintOwnedSlots` re-reads it on every soil change, not just at boot.
+    // for the whole session. `grassTile` is the exception and is kept: the
+    // lawn re-reads it whenever its own art is rebuilt, not just at boot.
     // (The terrain atlas is not a sprite; `paintTerrain` drops it itself.)
     this.releaseSpriteSources();
     this.droneTextureKey = bakeDroneTexture(this);
     this.forageDropTextureKey = bakeForageDropTexture(this);
-    bakeSoilBedTexture(this);
     // The whole farm's own outer edge, in tile space -- computed once here
     // since worldBoundsRect() never changes at runtime, and shared by
     // every drone rather than recomputed per drone.
@@ -3331,6 +3296,7 @@ export class StackAcresScene extends Phaser.Scene {
     let sprite: Phaser.GameObjects.Image;
     let critter: Critter | null = null;
     let cropShadow: Phaser.GameObjects.Image | null = null;
+    let soilCollar: Phaser.GameObjects.Image | null = null;
     // Working livestock is driven by `critter` every frame and has no fixed
     // spot of its own; both other branches below set this before falling
     // through. See `spot`'s own doc comment on `UnitNode`.
@@ -3381,24 +3347,38 @@ export class StackAcresScene extends Phaser.Scene {
       cropShadow = this.addLocal("cropShadow", 0, 0, container)
         .setScale(cropShadowScale(crop, stage) / S)
         .setAlpha(0.8);
+      // The bed's earth banked up at the plant's foot. Added BEFORE the
+      // sprite for the few crops that lie across their own base (see
+      // `cropCollarBehind`) and after it for the rest -- container order is
+      // paint order, and for everything with a stem or a bulb that overlap
+      // is the whole point: a heap behind the plant is just more ground, and
+      // the plant goes back to standing on the bed like a thing on a table.
+      // Open-air crops only; a Greenhouse crop stands on the glasshouse's
+      // own grid, with no bed of worked earth under it to bank.
+      const collar = (): void => {
+        if (unit.housedIn === "greenhouse") return;
+        soilCollar = this.addLocal("soilCollar", 0, 0, container).setScale(
+          cropCollarScale(crop, stage) / S,
+        );
+        soilCollar.y += COLLAR_DROP;
+      };
+      if (cropCollarBehind(crop)) collar();
       sprite = this.addLocal(this.ensureCropArt(crop, stage), 0, 0, container);
       // Read the frame's own transparency back now, while a node is being
       // built, so a tap never pays for it. Every stage of both crops warms
       // itself the first time one is drawn; see `alphaMaskFor`.
       this.alphaMaskFor(sprite.texture.key);
-      // Carrot, corn and corn2 are drawn a touch past the world's own scale
-      // (see crop-visuals.ts's own header). That enlargement is BAKED
-      // into the crop's own texture (see `cropBakeScale` in
-      // stackacres-art.ts), so `addLocal`'s own natural `1 / S` is already
-      // the right scale here and is left alone; this only pushes the sprite
-      // back down by however much scaling lifted its feet off the soil.
-      // Both numbers come from lib/stackacres/crop-visuals.ts, which is
-      // where the reasoning and the tests for them live.
+      // Onto its own root point, not the bottom-centre of its canvas -- see
+      // `CROP_FOOT` in crop-visuals.ts. Without the sideways half of this a
+      // sprawling crop (cabbage, pumpkin) is drawn beside its bed, and
+      // without the vertical half it floats above one.
+      sprite.x += cropFootShiftX(crop, stage);
       sprite.y += cropGroundOffset(crop, stage);
       // Dry soil reads as a faded plant. The ring says it too, but a ring is
       // a thin outline on a small target and the fill is what carries at a
       // glance.
       sprite.setAlpha(cropSpriteAlpha(unit.state !== "dry"));
+      if (!cropCollarBehind(crop)) collar();
       spot = at;
       const screen = isoProject(at.x, at.y);
       container.setPosition(screen.x, screen.y);
@@ -3421,6 +3401,7 @@ export class StackAcresScene extends Phaser.Scene {
       growth: null,
       stage: unitStage(unit),
       cropShadow,
+      soilCollar,
       signature,
       unit,
       spot,
@@ -3517,8 +3498,14 @@ export class StackAcresScene extends Phaser.Scene {
     // the grown size around a plant that has not got there yet.
     const apply = (t: number): void => {
       node.sprite.setScale(cropStageSpriteBlend(from, to, t) / S);
+      node.sprite.x = cropFootShiftXBlend(crop, from, to, t);
       node.sprite.y = cropGroundOffsetBlend(crop, from, to, t);
       shadow.setScale(cropShadowScaleBlend(crop, from, to, t) / S);
+      // The heap of earth grows with the plant it holds, on the same eased
+      // t, so the two never disagree mid-growth.
+      const collarFrom = cropCollarScale(crop, from);
+      const collarTo = cropCollarScale(crop, to);
+      node.soilCollar?.setScale((collarFrom + (collarTo - collarFrom) * t) / S);
       this.paintUnitRing(node, unit, cropFootprintHalfBlend(crop, from, to, t));
     };
     apply(0);
@@ -4091,13 +4078,17 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * Every placed soil tile's flat ground, plus one `soilSlot` picture on top
-   * of it from `paintBedSlot` below -- a bed holds exactly one plant now, so
-   * there is no owned-square count to loop over.
+   * Every placed soil tile's own bed: one `soilBed` painter per tile, which
+   * is a slab of worked earth with two near faces and a heap banked up in
+   * the middle where the plant goes.
    *
-   * The flat fill under a bed is not dead weight even with one plant: it is
-   * what shows through as the hairline margin around the plant picture (see
-   * `paintBedSlot`'s own doc).
+   * USED TO be two flat sprites -- a baked diamond of `RAMPS.soil` with
+   * `soil-slot.png` inset on top of it -- and that is what a bed looked
+   * like: a patch painted on the lawn, with a crop standing on it the way a
+   * thing stands on a table. A painter puts the earth's own top and sides in
+   * the same three tones as everything else in the farm, and `soilCollar`
+   * (the crop branch of `buildUnitNode`) banks the rest of it over the
+   * plant's foot.
    *
    * ONE SPRITE PER TILE, placed directly off `isoProject`, NOT through an
    * `IsometricGridManager` (lib/stackacres/soil-grid.ts's `createSoilGrid`,
@@ -4110,79 +4101,23 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private paintSoilTiles(): Phaser.GameObjects.GameObject[] {
     const built: Phaser.GameObjects.GameObject[] = [];
-    const bedKey = bakeSoilBedTexture(this);
-    for (const tile of orderedSoilTiles(this.soil)) {
+    // Painted back to front, NOT in `orderedSoilTiles`'s purchase order: a
+    // bed has thickness now (`soilBed`), so a bed nearer the camera has to
+    // draw over the near face of the one behind it. Every bed shares one
+    // ground depth, so the order they are added in is the order they paint.
+    const beds = [...orderedSoilTiles(this.soil)].sort(
+      (a, b) => a.tx + a.ty - (b.tx + b.ty) || a.tx - b.tx,
+    );
+    for (const tile of beds) {
       const p = soilSlotPoint(tile);
-      const centre = isoProject(p.x, p.y);
-      built.push(this.add.sprite(centre.x, centre.y, bedKey).setDepth(GROW_AREA_GROUND_DEPTH));
-      built.push(...this.paintBedSlot(tile));
+      const bed = this.put("soilBed", p.x, p.y, GROW_AREA_GROUND_DEPTH);
+      // One shared painter, recoloured per tier -- see `SoilTierDef.tint`
+      // for why a tint and not a plate of its own. A null tint leaves the
+      // bed exactly as painted, which is what plain dirt is.
+      const tint = soilTierDef(soilTileTier(tile)).tint;
+      if (tint !== null) bed.setTint(tint);
+      built.push(bed);
     }
-    return built;
-  }
-
-  /**
-   * The one `soilSlot` picture a bed holds -- its whole plant now, at
-   * exactly the footprint `soilSlotPoint` centres on the tile (inset by 2
-   * units so a neighbouring bed's own fill shows through as a hairline gap
-   * rather than the two touching).
-   *
-   * `soilSlot` is a single planting square's own art (stackacres-sprites.ts),
-   * not baked through `bakeSpriteTexture` the way every painter-backed
-   * sprite is -- that path pads a texture to a power of two so WebGL1 will
-   * mipmap it (see `bakeTexture`), and this source is already 256x128, both
-   * powers of two, so the padding would be a no-op. It is also not a
-   * painter: it has no box and no anchor, it is a picture of one specific
-   * world square. A vector square is the fallback for the frame or two
-   * before the file arrives, and forever if it never does -- the same
-   * "flat fill first, picture once it loads" contract `paintSoilTiles`
-   * used to keep for a whole bed.
-   *
-   * USED TO loop over `owned` squares (up to a dozen per bed, filled in
-   * reading order) -- gone along with the rest of the furrow lattice now
-   * that a bed holds exactly one.
-   */
-  private paintBedSlot(tile: SoilTile): Phaser.GameObjects.GameObject[] {
-    const built: Phaser.GameObjects.GameObject[] = [];
-    // A 2-unit margin so a bed shows a hairline of its own flat fill (from
-    // `paintSoilTiles`'s grid placement) around the plant picture, the same
-    // grout job the margin did back when a bed held up to a dozen of these.
-    const half = (SOIL_TILE - 4) / 2;
-    // One shared texture, recoloured per tier -- see `SoilTierDef.tint` for
-    // why a tint and not a plate of its own. A null tint leaves the slot
-    // exactly as it was, so an untiered farm is pixel-identical.
-    const tint = soilTierDef(soilTileTier(tile)).tint;
-    const slotKey = spriteLoadKey("soilSlot");
-    const hasArt = this.textures.exists(slotKey);
-    const p = soilSlotPoint(tile);
-    const rect = { x: p.x - half, y: p.y - half, width: half * 2, height: half * 2 };
-    if (hasArt) {
-      // Any world rect projects to an exactly-2:1 diamond (see
-      // lib/stackacres/iso.ts's `isoProject`), the same shape `soilSlot`
-      // is drawn in, so its own centre and `(width + height)`/`/2` size
-      // need no per-square anchoring beyond that.
-      const centre = isoProject(p.x, p.y);
-      const picture = this.add
-        .image(centre.x, centre.y, slotKey)
-        .setDisplaySize(rect.width + rect.height, (rect.width + rect.height) / 2)
-        .setDepth(GROW_AREA_GROUND_DEPTH);
-      if (tint !== null) picture.setTint(tint);
-      built.push(picture);
-      return built;
-    }
-    const ramp = rampHex("soil");
-    const g = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH);
-    built.push(g);
-    const corners = projectedCorners(rect);
-    g.fillStyle(ramp.top, 1);
-    g.beginPath();
-    g.moveTo(corners.n.x, corners.n.y);
-    g.lineTo(corners.e.x, corners.e.y);
-    g.lineTo(corners.s.x, corners.s.y);
-    g.lineTo(corners.w.x, corners.w.y);
-    g.closePath();
-    g.fillPath();
-    g.lineStyle(1, ramp.rim, 0.6);
-    g.strokePath();
     return built;
   }
 

@@ -8,13 +8,10 @@
  * lib/ is and components/ is not.
  *
  * This is intents only: the server's own discriminated union in
- * app/api/stackacres/actions/route.ts is the wire authority. `sell` is dead
- * -- the route stopped accepting it -- but kept in the union until the
- * component's last reference to it is gone.
+ * app/api/stackacres/actions/route.ts is the wire authority.
  */
 
 import type { StackAcresCrop, StackAcresStock } from "./catalogue";
-import type { StackAcresItem } from "./items";
 import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
@@ -48,7 +45,10 @@ export type Action =
   | { action: "draw-water" }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string }
-  | { action: "sell"; item: StackAcresItem; quantity: number }
+  // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
+  // that item's own sell price, any time. The baseline income path now that
+  // harvest always credits inventory instead of Gold.
+  | { action: "sell"; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `sow-wheat` and `place-machine` spend Gold; the rest move inventory only.
@@ -57,8 +57,6 @@ export type Action =
   // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
   // collects it.
   | { action: "process"; recipe: RecipeId }
-  // A ready animal's produce to the shelf instead of the harvest's Gold.
-  | { action: "divert"; unitId: string }
   | { action: "seal-vat" }
   | { action: "collect-vat" }
   // The idle-worker pass: settles every ripe wheat plot and every mill that

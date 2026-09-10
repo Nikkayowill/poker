@@ -28,6 +28,7 @@
 
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { RECIPE_CATALOGUE, type RecipeId } from "./recipes";
+import type { MachineItemId } from "./machine-items";
 
 export interface OptimisticRecipeApplied {
   ok: true;
@@ -40,7 +41,11 @@ export interface OptimisticRecipeApplied {
 
 export interface OptimisticRecipeRefused {
   ok: false;
-  /** How many more of the input the player needs. Always positive. */
+  /** Which input came up short first, in catalogue order -- for a recipe
+   *  with more than one input (Cake), this is the first one checked, not
+   *  necessarily the only one that is short. */
+  item: MachineItemId;
+  /** How many more of `item` the player needs. Always positive. */
   shortfall: number;
 }
 
@@ -49,31 +54,33 @@ export type OptimisticRecipeResult = OptimisticRecipeApplied | OptimisticRecipeR
 /**
  * Runs one batch of `recipe` against a local inventory.
  *
- * Refuses locally when the player plainly does not have enough, so an
- * obviously-doomed tap never becomes a request -- the server would refuse it
- * anyway, and this keeps the button honest. A local pass is not a promise:
- * the server checks again, under a lock.
+ * Refuses locally when the player plainly does not have enough of some
+ * input, so an obviously-doomed tap never becomes a request -- the server
+ * would refuse it anyway, and this keeps the button honest. A local pass is
+ * not a promise: the server checks again, under a lock, for every input.
  */
 export function applyRecipeOptimistically(
   inventory: StackAcresInventory,
   recipe: RecipeId,
 ): OptimisticRecipeResult {
   const def = RECIPE_CATALOGUE[recipe];
-  const held = inventoryQuantity(inventory, def.input.item);
-  if (held < def.input.quantity) {
-    return { ok: false, shortfall: def.input.quantity - held };
+
+  for (const input of def.inputs) {
+    const held = inventoryQuantity(inventory, input.item);
+    if (held < input.quantity) {
+      return { ok: false, item: input.item, shortfall: input.quantity - held };
+    }
   }
 
   // Captured by value, not by reference: the caller's own state object may be
   // replaced between the tap and the refusal, and rollback has to restore
   // what was on screen when the tap happened.
   const snapshot: StackAcresInventory = { ...inventory };
-  const next: StackAcresInventory = {
-    ...inventory,
-    [def.input.item]: held - def.input.quantity,
-    [def.output.item]:
-      inventoryQuantity(inventory, def.output.item) + def.output.quantity,
-  };
+  const next: StackAcresInventory = { ...inventory };
+  for (const input of def.inputs) {
+    next[input.item] = inventoryQuantity(next, input.item) - input.quantity;
+  }
+  next[def.output.item] = inventoryQuantity(next, def.output.item) + def.output.quantity;
 
   return { ok: true, next, rollback: () => ({ ...snapshot }) };
 }

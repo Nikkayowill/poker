@@ -1,5 +1,5 @@
 /**
- * Town Contracts: the only door from a processed good back to Gold.
+ * Town Contracts: a premium door from a processed good back to Gold.
  *
  * ONE OPEN CONTRACT AT A TIME, deliberately. A board of several would let a
  * player bank up processed goods against whichever contract paid best,
@@ -8,14 +8,19 @@
  * this in SQL with a partial unique index on `(profile_id) where status =
  * 'open'`, so the single-contract rule holds even against two racing tabs.
  *
- * FULFILLING A CONTRACT PAYS GOLD THROUGH THE SAME FLAT DAILY CEILING A
- * HARVEST DOES (`STACKACRES_GOLD_CEILING`, ./exchange.ts) -- see
- * `fulfillStackAcresContract` in lib/server/stackacres-service.ts. This is
- * not incidental: a contract is a second way Gold enters the farm, and the
- * ceiling is the one invariant every path in is required to respect (see
- * ./catalogue.ts's own header on why that ceiling, not a second currency, is
- * what keeps this feature safe). A contract that paid outside it would be
- * exactly the shape of bug this file exists to avoid repeating.
+ * NOT THE ONLY DOOR ANY MORE. `sellStackAcresItem` (lib/server/
+ * stackacres-service.ts) can turn any inventory item, including Flour/
+ * Cheese/Cloth, into Gold at any time, at that item's own (lower) sell
+ * price -- see ./machine-items.ts's own header on why a contract still pays
+ * a 1.3x premium over Sell for exactly these three goods. FULFILLING A
+ * CONTRACT PAYS GOLD THROUGH THE SAME FLAT DAILY CEILING SELL AND THE
+ * FERMENTING VAT DO (`STACKACRES_GOLD_CEILING`, ./exchange.ts) -- see
+ * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. This
+ * is not incidental: the ceiling is the one invariant every Gold-in path is
+ * required to respect (see that file's own header on why that ceiling, not a
+ * second currency, is what keeps this feature safe). A payer that paid
+ * outside it would be exactly the shape of bug this file exists to avoid
+ * repeating.
  *
  * Town Influence (./town.ts) rides the same fulfillment, uncapped -- it is
  * progression, not currency, and spends nowhere, so it carries none of the

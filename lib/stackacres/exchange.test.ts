@@ -5,7 +5,6 @@ import {
   msUntilNextExchangeDay,
   stackacresExchangeDay,
 } from "./exchange";
-import { MONO_CROP_MAX_MULTIPLIER } from "./bounty";
 import { STACKACRES_YIELDS } from "./items";
 import { settleHarvest } from "./harvest";
 import {
@@ -55,24 +54,12 @@ describe("the daily ceiling", () => {
   });
 
   /**
-   * THE PROPERTY THE WHOLE SINGLE-CURRENCY REWRITE HAD TO PRESERVE. A harvest
-   * pays Gold directly now, and a Bountiful Harvest multiplies what it pays --
-   * so the question a reviewer will ask is whether a synergy widened the
-   * faucet. It cannot: the multiplier lands on a sweep's value, and the sweep
-   * is still paid through this ceiling. A maxed estate can produce a healthy
-   * harvest with the best multiplier, but the ceiling (100k as of 2026-09-10) is
-   * still designed to be the valve, not the yields.
+   * A harvest pays no Gold now; Sell is the door, and it reserves against
+   * this ceiling. A maxed estate's whole sweep, sold at list price, still
+   * sits under the ceiling, so the valve is the ceiling and not the yields.
    */
-  it("represents the designed daily limit even if some harvests don't exceed it", () => {
+  it("is larger than a maxed estate's whole sweep sold at list price", () => {
     const perKind = STACKACRES_BASE_CAP + STACKACRES_MAX_EXTRA_CAP;
-    // Crop Rotation is a property of the crop/livestock SPLIT, not of how
-    // many distinct crop kinds are in the sweep (see bounty.ts's own header)
-    // -- so a balanced estate maxes out every LIVESTOCK kind plus a matching
-    // number of crop units from a couple of crop kinds, rather than every one
-    // of the 22 crop kinds StackAcres now grows (that skew -- 22 crop kinds
-    // against 3 livestock kinds -- would itself blow the 1/3 minimum share
-    // Crop Rotation needs, which is the real bug an earlier version of this
-    // test would have missed).
     const estate = [
       ...STACKACRES_LIVESTOCK.flatMap((stock) => Array.from({ length: perKind }, () => stock)),
       ...Array.from({ length: perKind }, () => "carrot" as const),
@@ -85,22 +72,11 @@ describe("the daily ceiling", () => {
         yieldQuantity: STACKACRES_YIELDS[stock].quantity,
       })),
     );
-    // A typical maxed, balanced estate with the best multiplier. The ceiling
-    // was raised to 100,000 to let players afford cosmetics, and a normal
-    // harvest is still well below that, which is the correct behavior -- the
-    // farm is a net sink.
-    expect(settled.bounty.kind).toBe("crop_rotation");
-    expect(settled.net).toBeGreaterThan(0);
-    expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(settled.net);
+    expect(settled.gross).toBeGreaterThan(0);
+    expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(settled.gross);
   });
 
-  it("is not something the best synergy can widen", () => {
-    // The multiplier lands on a sweep's value; the sweep is then paid THROUGH
-    // this ceiling. So the largest number a bonus can produce is irrelevant to
-    // how much leaves the farm, and the only thing worth asserting is that the
-    // ceiling is not built from it.
-    expect(MONO_CROP_MAX_MULTIPLIER).toBeGreaterThan(1);
-    expect(STACKACRES_GOLD_CEILING % MONO_CROP_MAX_MULTIPLIER).not.toBe(0);
+  it("is what the client is told, whatever was sold", () => {
     expect(exchangeState(0, new Date()).ceiling).toBe(STACKACRES_GOLD_CEILING);
   });
 });

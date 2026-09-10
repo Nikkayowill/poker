@@ -1,16 +1,14 @@
 /**
  * Land Maintenance: what holding cleared ground costs, per UTC day, in Gold.
  *
- * WHAT THIS REPLACED. The sectors pass shipped this as a Bushel fee living in
- * ./sectors.ts, with a comment arguing that Gold would be "the first thing in
- * this subsystem that takes real value out of a player's balance on a timer".
- * That objection was right about the danger and is answered by the shape here
- * rather than by the currency: **the fee is netted out of what a harvest pays
- * and clamped at it** (`stackacresUpkeepCharge`), so it can leave a harvest
- * worth nothing and can never reach the balance. Nothing is taken on a timer;
- * nothing is taken from a farm that is not being harvested. That keeps the
- * Gold-path asymmetry in stackacres-service.ts intact -- one credit, and this
- * only makes it smaller.
+ * A STANDALONE WALLET DEBIT NOW, not netted out of a harvest payout -- a
+ * harvest no longer produces one to net it from (see
+ * lib/server/stackacres-service.ts's own header). `assessStackAcresUpkeep`
+ * charges what is due, lazily, as a best-effort side effect of the next
+ * mutating farm action (never a bare read -- see `runStackAcresAction`),
+ * clamped at the wallet's own current balance so it can never go negative and
+ * never turns into debt: an unpaid remainder is not carried forward, the next
+ * assessment simply re-reads the same still-due amount.
  *
  * WHAT IT KEPT from that pass, because both were better than what I had:
  *
@@ -90,19 +88,6 @@ export function stackacresUpkeepFee(plots: number): number {
  */
 export function stackacresUpkeepDue(plots: number, paidToday: number): number {
   return Math.max(0, stackacresUpkeepFee(plots) - Math.max(0, paidToday));
-}
-
-/**
- * What a harvest worth `harvestGold` actually pays toward a `due` fee.
- *
- * CLAMPED AT THE HARVEST, and that clamp is the safety property: a harvest can
- * be reduced to nothing by maintenance but can never come out negative, so
- * this function can never turn a collection into a debit. The unpaid remainder
- * is not carried as debt -- the next harvest of the same day re-reads the same
- * still-unpaid `due` and takes what it can.
- */
-export function stackacresUpkeepCharge(harvestGold: number, due: number): number {
-  return Math.max(0, Math.min(Math.max(0, due), Math.max(0, harvestGold)));
 }
 
 /**

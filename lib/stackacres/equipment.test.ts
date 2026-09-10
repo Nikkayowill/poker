@@ -3,7 +3,7 @@ import {
   STACKACRES_STARTING_TIER,
   STACKACRES_TOOL_TIERS,
   STACKACRES_TOOL_TIER_DEFS,
-  critGoldFor,
+  critBonusQuantity,
   isStackAcresToolTier,
   nextToolTier,
   rollHarvestCrit,
@@ -194,43 +194,42 @@ describe("rollHarvestCrit", () => {
   });
 });
 
-describe("critGoldFor", () => {
-  it("pays more the further up the ladder, for the same harvest", () => {
-    const paid = STACKACRES_TOOL_TIERS.map((t) => critGoldFor(400, t));
-    for (let i = 1; i < paid.length; i += 1) {
-      expect(paid[i], STACKACRES_TOOL_TIERS[i]).toBeGreaterThanOrEqual(paid[i - 1]);
+describe("critBonusQuantity", () => {
+  it("adds more units the further up the ladder, for the same line", () => {
+    const bonus = STACKACRES_TOOL_TIERS.map((t) => critBonusQuantity(8, t));
+    for (let i = 1; i < bonus.length; i += 1) {
+      expect(bonus[i], STACKACRES_TOOL_TIERS[i]).toBeGreaterThanOrEqual(bonus[i - 1]);
     }
-    expect(paid[paid.length - 1]).toBeGreaterThan(paid[0]);
+    expect(bonus[bonus.length - 1]).toBeGreaterThan(bonus[0]);
   });
 
-  it("doubles the harvest at the top rung", () => {
-    expect(critGoldFor(440, "golden-spade")).toBe(440);
+  it("doubles the line at the top rung", () => {
+    expect(critBonusQuantity(8, "golden-spade")).toBe(8);
   });
 
-  it("only ever pays whole Gold", () => {
+  it("only ever adds whole units", () => {
     for (const tier of STACKACRES_TOOL_TIERS) {
       for (const value of [1, 3, 7, 9, 13, 111]) {
-        expect(Number.isInteger(critGoldFor(value, tier)), `${tier}/${value}`).toBe(true);
+        expect(Number.isInteger(critBonusQuantity(value, tier)), `${tier}/${value}`).toBe(true);
       }
     }
   });
 
-  it("never pays anything on a harvest worth nothing", () => {
-    // A sweep fully eaten by Land Maintenance crits for nothing: the crit
-    // multiplies a harvest, and doubling zero is not a reward.
+  it("adds nothing to a line with nothing in it", () => {
     for (const tier of STACKACRES_TOOL_TIERS) {
-      expect(critGoldFor(0, tier), tier).toBe(0);
-      expect(critGoldFor(-100, tier), tier).toBe(0);
-      expect(critGoldFor(Number.NaN, tier), tier).toBe(0);
+      expect(critBonusQuantity(0, tier), tier).toBe(0);
+      expect(critBonusQuantity(-100, tier), tier).toBe(0);
+      expect(critBonusQuantity(Number.NaN, tier), tier).toBe(0);
     }
   });
 
-  it("can never ask for more than the harvest itself at any rung", () => {
-    // What makes the optimistic reservation safe to size off the top rung:
-    // no rung's crit exceeds 1x, so `net + critGoldFor(net)` is at most
-    // double, and the ceiling still bounds it.
+  it("never adds more than the line itself at any rung", () => {
     for (const tier of STACKACRES_TOOL_TIERS) {
-      expect(critGoldFor(1_000, tier), tier).toBeLessThanOrEqual(1_000);
+      expect(critBonusQuantity(1_000, tier), tier).toBeLessThanOrEqual(1_000);
     }
+  });
+
+  it("takes a forged bonus over the tier's own", () => {
+    expect(critBonusQuantity(10, "iron-shovel", 1.5)).toBe(15);
   });
 });

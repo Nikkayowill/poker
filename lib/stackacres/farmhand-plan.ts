@@ -86,17 +86,19 @@ export function wheatStillNeeded(
   const line = recipeFor(contract.item);
   if (!line) return 0;
 
-  // HE ONLY CUTS WHEAT. A Cheese or Cloth contract is fed by diverting a
+  // HE ONLY CUTS WHEAT. A Cheese or Cloth contract is fed by harvesting a
   // ready animal, not by sowing anything -- there is no plot for him to walk
-  // to, so the honest answer is that cutting advances nothing. Without this
-  // he would plan a wheat run against a contract wheat cannot fill.
-  if (line.input.item !== "wheat") return 0;
+  // to, so the honest answer is that cutting advances nothing. Same for any
+  // recipe that needs more than wheat alone: cutting cannot finish it. Without
+  // this he would plan a wheat run against a contract wheat cannot fill.
+  const wheat = line.inputs.length === 1 && line.inputs[0].item === "wheat" ? line.inputs[0] : null;
+  if (!wheat) return 0;
 
   // Batches are indivisible: two thirds of a mill run makes no flour at all,
   // so a shortfall of one flour still costs a whole batch of wheat.
   const batches = Math.ceil(short / line.output.quantity);
-  const rawWanted = batches * line.input.quantity;
-  const rawHeld = inventoryQuantity(inventory, line.input.item);
+  const rawWanted = batches * wheat.quantity;
+  const rawHeld = inventoryQuantity(inventory, wheat.item);
   return Math.max(0, rawWanted - rawHeld);
 }
 

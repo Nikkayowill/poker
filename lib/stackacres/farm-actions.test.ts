@@ -9,8 +9,13 @@ describe("intentOf: the processing track", () => {
     expect(intentOf({ action: "place-machine", kind: "dairy" })).toBe("place-machine:dairy");
   });
 
-  it("keys a divert on the one animal, and the field-wide passes on the action alone", () => {
-    expect(intentOf({ action: "divert", unitId: "cow-1" })).toBe("divert:cow-1");
+  it("keys a sale on its item and quantity, so selling eggs never blocks selling milk", () => {
+    expect(intentOf({ action: "sell", item: "eggs", quantity: 4 })).toBe("sell:eggs:4");
+    expect(intentOf({ action: "sell", item: "milk", quantity: 4 })).toBe("sell:milk:4");
+    expect(intentOf({ action: "sell", item: "cake", quantity: 1 })).toBe("sell:cake:1");
+  });
+
+  it("keys the field-wide passes on the action alone", () => {
     expect(intentOf({ action: "sow-wheat" })).toBe("sow-wheat");
     expect(intentOf({ action: "work" })).toBe("work");
     expect(intentOf({ action: "seal-vat" })).toBe("seal-vat");

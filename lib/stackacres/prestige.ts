@@ -24,17 +24,16 @@
  * the daily ceiling and rewards the thing a prestige mechanic is supposed to
  * reward: how much farm was actually built before it was traded in.
  *
- * ORDER OF APPLICATION IN A HARVEST. `settleHarvest` in ./harvest.ts takes
- * this multiplier as a parameter (never reads it itself -- that function
- * stays a pure function of its own inputs, the same reason it takes
- * `upkeepDue` as a parameter rather than a profile id) and applies it to
- * GROSS, multiplicatively alongside the Bountiful Harvest synergy, BEFORE
- * Land Maintenance is netted out. That is not the only defensible ordering,
- * and it is the one this feature commits to for one reason: applying it
- * after upkeep would let a permanent, ever-growing account-wide multiplier
- * bypass the one sink every other Gold path in StackAcres is subject to.
- * Applying it to gross keeps the money-ordering invariant intact -- nothing
- * here opens a second, unmetered route to Gold.
+ * ORDER OF APPLICATION MOVED FROM HARVEST TO SELL. A harvest no longer pays
+ * Gold at all -- see lib/server/stackacres-service.ts's own header -- so
+ * there is nothing left in `settleHarvest` (./harvest.ts) for this multiplier
+ * to apply to. `sellStackAcresItem` applies it instead, to the Gold one sale
+ * yields, BEFORE that Gold is reserved against the daily ceiling. Same
+ * reasoning as before, just relocated: applying it after the reservation
+ * would let a permanent, ever-growing account-wide multiplier bypass the one
+ * sink every Gold path in StackAcres is subject to. Applying it before the
+ * ceiling keeps the money-ordering invariant intact -- a prestiged player
+ * still cannot out-earn the flat daily cap, they just reach it faster.
  */
 
 /**
@@ -83,11 +82,7 @@ export const STACKACRES_PRESTIGE_BASE_MULTIPLIER = 1;
  * Multipliers are built from a square root of a division, which in binary
  * floating point lands on values like 1.9999999999999998. Rounded to four
  * places so the number that reaches a test, a database column and a piece of
- * UI copy is the one a person would actually write down -- the identical
- * rounding lib/stackacres/bounty.ts's own `round4` exists for, kept as a
- * separate small function here rather than imported: that one is not
- * exported, and duplicating four lines is cheaper than widening bounty.ts's
- * surface for a helper with no domain connection to synergies.
+ * UI copy is the one a person would actually write down.
  */
 function round4(value: number): number {
   return Math.round(value * 10_000) / 10_000;

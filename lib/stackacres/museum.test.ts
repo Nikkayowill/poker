@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { STACKACRES_ITEMS, STACKACRES_ITEM_CATALOGUE } from "./items";
+import { STACKACRES_ITEMS } from "./items";
 import {
+  MUSEUM_DISCOVERY_BONUS_RATE,
   MUSEUM_EXHIBITS,
   MUSEUM_EXHIBIT_CATALOGUE,
   emptyMuseumRegistry,
   exhibitForItem,
   isMuseumExhibit,
-  museumDiscoveryBonus,
+  museumDiscoveryBonusQuantity,
 } from "./museum";
 
 describe("exhibit groupings", () => {
@@ -42,14 +43,15 @@ describe("a fresh registry", () => {
 });
 
 describe("the discovery bonus", () => {
-  it("is half of what the harvest is worth in Gold, rounded", () => {
-    for (const item of STACKACRES_ITEMS) {
-      const goldValue = STACKACRES_ITEM_CATALOGUE[item].goldValue;
-      expect(museumDiscoveryBonus(item, 4)).toBe(Math.round(goldValue * 4 * 0.5));
-    }
+  it("is half again the units the sweep brought home, rounded", () => {
+    expect(MUSEUM_DISCOVERY_BONUS_RATE).toBe(0.5);
+    expect(museumDiscoveryBonusQuantity(4)).toBe(2);
+    expect(museumDiscoveryBonusQuantity(8)).toBe(4);
+    expect(museumDiscoveryBonusQuantity(3)).toBe(Math.round(3 * 0.5));
   });
 
-  it("scales with quantity, the same way the harvest ledger's own payout does", () => {
-    expect(museumDiscoveryBonus("carrot", 6)).toBe(museumDiscoveryBonus("carrot", 3) * 2);
+  it("scales with quantity and is nothing for nothing", () => {
+    expect(museumDiscoveryBonusQuantity(12)).toBe(museumDiscoveryBonusQuantity(6) * 2);
+    expect(museumDiscoveryBonusQuantity(0)).toBe(0);
   });
 });

@@ -1,53 +1,65 @@
 /**
- * The processing track: raw materials a machine eats, and the goods it makes.
+ * The whole inventory item space: everything a harvest, a Wheat Plot or a
+ * machine can put in a player's shelf, and what each sells for.
  *
- * DELIBERATELY A SEPARATE ITEM SPACE FROM ./items.ts. `STACKACRES_ITEMS`
- * (carrot, corn, eggs, wool, milk) are valued and paid in Gold the instant
- * they are harvested -- see items.ts's own header for why that collapsed from
- * a three-step Bushel economy to one atomic step, and exchange.ts for the
- * flat daily ceiling that makes it safe. Nothing here touches that: an item
- * sitting in this space never carries a Gold value of its own and is never
- * swept into `harvestStackAcres`. It sits in an inventory instead
- * (./inventory.ts) and the only door back to Gold is a fulfilled Contract
- * (./contracts.ts), which reserves against the exact same ceiling a harvest
- * does.
+ * THIS USED TO BE A SEPARATE ITEM SPACE FROM ./items.ts, on purpose: harvest
+ * used to pay Gold automatically, and an item sitting here never carried a
+ * Gold value of its own. Harvest no longer pays Gold at all -- see
+ * lib/server/stackacres-service.ts's `harvestStackAcres` -- so every
+ * `StackAcresItem` (eggs, wool, milk, all 22 crops) IS an inventory item now,
+ * and the two spaces are one. `StackAcresItem` stays the narrower type where
+ * a module only ever deals with what a unit yields (./harvest.ts,
+ * ./museum.ts); `MachineItemId` below is the wider one a recipe, the
+ * inventory itself, or the Sell action needs.
  *
- * That is also why wheat is not a `StackAcresStock` (./catalogue.ts). A
- * `homestead_units` row is guaranteed to be swept into a harvest's Gold
- * payout the moment it is ready -- `harvestStackAcres` treats every ready row
- * uniformly, and there is no "this one does not pay" branch to give it.
- * Growing wheat needed its own row, its own table, its own ready/collect
- * pair -- see ./wheat-plot.ts -- specifically so it could not be reached by
- * that sweep.
+ * WHEAT IS THE ONE ITEM THAT IS NEITHER. It is not a `StackAcresItem` (it is
+ * grown on its own Wheat Plot table, not a stocked unit -- see
+ * ./wheat-plot.ts's header for why that stayed a separate system) and it is
+ * not a `MachineProcessedItem` (nothing makes it; the Mill consumes it).
+ * `MACHINE_RAW_ITEMS` is exactly that one leftover id.
  *
- * `milk` AND `wool` DELIBERATELY NAME THE SAME PHYSICAL THING AS ./items.ts's
- * OWN `milk`/`wool`, AND THAT OVERLAP IS THE FEATURE. A ready cow is worth
- * either 8 Milk of Gold or 8 Milk in this inventory -- never both, and never
- * half of each. `divertStackAcresUnit` (lib/server/stackacres-service.ts)
- * settles the unit through the SAME version-guarded write `harvestStackAcres`
- * uses, so the two paths race for one row and exactly one wins. That is what
- * keeps the sweep uniform: a diverted cow is not a row the harvest skips, it
- * is a row the harvest no longer finds ready.
- *
- * The cost of the overlap is that `isStackAcresItem("milk")` and
- * `isMachineRawItem("milk")` are BOTH true, and `"milk"` satisfies both
- * `StackAcresItem` and `MachineRawItem`, so the compiler will not catch a
- * value crossing between the two tracks. The rule that keeps that honest:
- * anything reaching `itemGoldValue` is Gold-track produce; anything reaching
- * `adjustStackAcresInventory` is processing-track stock. Wheat, flour, cheese
- * and cloth exist in one space only, so they are the shapes a test can pin.
+ * The only door from a crafted good back to Gold used to be a fulfilled
+ * Contract (./contracts.ts). That is still true for Flour/Cheese/Cloth, and
+ * Contracts still pay a premium over the flat Sell price below for exactly
+ * that reason -- but every item here, crafted or raw, can now also be sold
+ * directly at any time through `sellStackAcresItem`, reserved against the
+ * same daily ceiling a harvest used to be.
  */
 
-export const MACHINE_RAW_ITEMS = ["wheat", "milk", "wool"] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth"] as const;
+import {
+  STACKACRES_ITEMS,
+  STACKACRES_ITEM_CATALOGUE,
+  itemLabel,
+  itemSellPrice as stackAcresItemSellPrice,
+  isStackAcresItem,
+  type StackAcresItem,
+} from "./items";
+
+/** The one raw item that is neither a harvested `StackAcresItem` nor a
+ *  crafted good -- see this file's header. */
+export const MACHINE_RAW_ITEMS = ["wheat"] as const;
+export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
-export type MachineItemId = MachineRawItem | MachineProcessedItem;
+
+/** Every item that can sit in the shared inventory: what a unit yields, plus
+ *  wheat, plus whatever a recipe makes. */
+export type MachineItemId = StackAcresItem | MachineRawItem | MachineProcessedItem;
 
 export const MACHINE_ITEM_IDS: readonly MachineItemId[] = [
   ...MACHINE_RAW_ITEMS,
   ...MACHINE_PROCESSED_ITEMS,
+];
+
+/** Every `MachineItemId` there is: every `StackAcresItem` plus `MACHINE_ITEM_IDS`.
+ *  For schema validation that has to accept the WHOLE inventory space (the
+ *  Sell action) -- existing narrower call sites (gifts, blueprint
+ *  contributions) keep using `MACHINE_ITEM_IDS` itself, since raw crops and
+ *  eggs were never valid there. */
+export const ALL_MACHINE_ITEM_IDS: readonly MachineItemId[] = [
+  ...STACKACRES_ITEMS,
+  ...MACHINE_ITEM_IDS,
 ];
 
 export function isMachineRawItem(value: string): value is MachineRawItem {
@@ -58,8 +70,10 @@ export function isMachineProcessedItem(value: string): value is MachineProcessed
   return (MACHINE_PROCESSED_ITEMS as readonly string[]).includes(value);
 }
 
+/** Whether `value` is any inventory item at all: a harvested StackAcresItem,
+ *  wheat, or a crafted good. */
 export function isMachineItem(value: string): value is MachineItemId {
-  return (MACHINE_ITEM_IDS as readonly string[]).includes(value);
+  return isStackAcresItem(value) || isMachineRawItem(value) || isMachineProcessedItem(value);
 }
 
 export interface MachineItemDef {
@@ -69,23 +83,57 @@ export interface MachineItemDef {
    *  StackAcresItemDef.icon in ./items.ts -- kept a plain string so this file
    *  stays free of a components/ import. */
   icon: string;
+  /**
+   * What one sells for, in Gold, through the Sell action.
+   *
+   * PRICED BELOW WHAT A CONTRACT PAYS, DELIBERATELY, for every crafted good a
+   * contract can also ask for (Flour/Cheese/Cloth) -- see ./contracts.ts's
+   * `CONTRACT_RUNGS`, still the better outlet. Wheat is priced low enough
+   * that milling it into Flour and selling THAT stays strictly better per
+   * unit of wheat than selling it raw, so Sell never undercuts the Mill loop:
+   *
+   *   Wheat alone:        4 Gold/unit.
+   *   Flour (3 Wheat -> 1 Flour, sells 40): ~13.3 Gold-equivalent/wheat.
+   *
+   * Cheese and Cloth sit above what selling their raw milk/wool would fetch
+   * (recipeRawGoldValue in ./recipes.ts), so crafting is never a strict loss
+   * against just selling the raw material, and below their contract rate, so
+   * a contract is still the better trade when one is open. Cake has no
+   * contract at all -- Sell is its only door to Gold -- so it is priced at
+   * roughly 1.3x its own forgone raw value (2 Eggs + 1 Milk + 1 Flour), the
+   * same premium a contract rung pays.
+   */
+  sellPrice: number;
 }
 
-export const MACHINE_ITEM_CATALOGUE: Readonly<Record<MachineItemId, MachineItemDef>> = {
-  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat" },
-  flour: { label: "Flour", plural: "Flour", icon: "ico-flour" },
-  // Shares ./items.ts's own label and painter on purpose: the player is
-  // looking at the same milk either way, and a second name for it would read
-  // as a second resource.
-  milk: { label: "Milk", plural: "Milk", icon: "ico-milk" },
-  wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece" },
-  cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese" },
-  cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth" },
+export const MACHINE_ITEM_CATALOGUE: Readonly<
+  Record<MachineRawItem | MachineProcessedItem, MachineItemDef>
+> = {
+  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
+  flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
+  cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
+  cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
+  cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 400 },
 };
 
-/** "3 Wheat", "1 Flour" -- same pluralisation contract as items.ts's own
- *  `itemLabel`. */
+/** What one of `item` sells for, whatever space it started in. */
+export function machineItemSellPrice(item: MachineItemId): number {
+  if (isStackAcresItem(item)) return stackAcresItemSellPrice(item);
+  return MACHINE_ITEM_CATALOGUE[item].sellPrice;
+}
+
+/** The painter name for `item`, whatever space it started in -- the same
+ *  delegation `machineItemLabel` takes for a StackAcresItem. */
+export function machineItemIcon(item: MachineItemId): string {
+  if (isStackAcresItem(item)) return STACKACRES_ITEM_CATALOGUE[item].icon;
+  return MACHINE_ITEM_CATALOGUE[item].icon;
+}
+
+/** "3 Wheat", "1 Flour" -- delegates to items.ts's own `itemLabel` for
+ *  whatever `item` is a StackAcresItem, so there is exactly one place either
+ *  pluralisation rule is written. */
 export function machineItemLabel(item: MachineItemId, quantity: number): string {
+  if (isStackAcresItem(item)) return itemLabel(item, quantity);
   const def = MACHINE_ITEM_CATALOGUE[item];
   return `${quantity.toLocaleString()} ${quantity === 1 ? def.label : def.plural}`;
 }

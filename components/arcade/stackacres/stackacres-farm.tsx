@@ -62,7 +62,8 @@ import {
 } from "@/lib/stackacres/exchange";
 import {
   STACKACRES_YIELDS,
-  itemGoldValue,
+  itemLabel,
+  itemSellPrice,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
 import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
@@ -89,7 +90,6 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
-import type { BountifulHarvest } from "@/lib/stackacres/bounty";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
@@ -140,7 +140,7 @@ import {
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import type { MachineItemId, MachineProcessedItem, MachineRawItem } from "@/lib/stackacres/machine-items";
+import type { MachineItemId, MachineProcessedItem } from "@/lib/stackacres/machine-items";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -348,21 +348,25 @@ interface StackAcresResponse {
   collected?: { stock: StackAcresStock; item: StackAcresItem; quantity: number; mucked: boolean };
   harvest?: {
     units: number;
+    /** Produce actually credited to inventory -- base yield plus any crit
+     *  bonus plus any Ray's Museum discovery bonus. Pays no Gold at all;
+     *  see lib/server/stackacres-service.ts's own header. */
     tally: { item: StackAcresItem; quantity: number }[];
+    /** Every settled unit's yield at today's sell price, before any bonus --
+     *  a production figure, not Gold paid (a harvest pays none). */
     gross: number;
-    bounty: BountifulHarvest;
-    bonus: number;
-    upkeep: number;
-    /** Gold a critical harvest added, inside the same daily ceiling. */
-    crit: number;
-    gold: number;
     mucked: number;
+    /** Whether this sweep rolled a critical harvest. */
+    crit: boolean;
+    /** Bonus units a crit added, summed per item. Empty when the roll missed. */
+    critBonus: { item: StackAcresItem; quantity: number }[];
     /** Items donated to Ray's Museum for the very first time in this sweep,
-     *  and what each paid -- already folded into `gold` above. */
-    discoveries: { item: StackAcresItem; bonus: number }[];
+     *  and the bonus UNITS each discovery added -- already folded into
+     *  `tally` above. */
+    discoveries: { item: StackAcresItem; bonusQuantity: number }[];
     /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
-     *  null on the overwhelming majority of harvests. Never folded into
-     *  `gold` -- a secret find pays no Gold at all. */
+     *  null on the overwhelming majority of harvests. Pays no Gold and no
+     *  inventory. */
     secretFind: SecretMuseumItemId | null;
     /** True only on the harvest whose find just completed the core hidden
      *  set for the first time ever. */
@@ -390,7 +394,7 @@ interface StackAcresResponse {
   vat?: VatContainer | null;
   /** What one Workshop call just did, each set only by its own action's
    *  answer: `work` by the idle-worker pass, `processed` by `process`,
-   *  `diverted` by `divert`, `vatCollected` by `collect-vat`. The view itself
+   *  `sold` by `sell`, `vatCollected` by `collect-vat`. The view itself
    *  already carries the resulting state; these are the sheet's own
    *  "here is what that press did" line. */
   work?: { wheatCollected: number; machinesStarted: number; machinesCollected: number };
@@ -399,7 +403,7 @@ interface StackAcresResponse {
     produced: { item: MachineProcessedItem; quantity: number } | null;
     readyAt: string | null;
   };
-  diverted?: { item: MachineRawItem; quantity: number };
+  sold?: { item: MachineItemId; quantity: number; gold: number };
   vatCollected?: { quantity: number; tier: 1 | 2 | 3; stars: 1 | 2 | 3; multiplier: number; gold: number };
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
@@ -869,7 +873,7 @@ export function StackAcresFarm() {
   const lastMerchantPurchase = useRef<{ pricePaid: number } | null>(null);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
-  const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "diverted" | "vatCollected"> | null>(null);
+  const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
   const takeProcessingDelta = useCallback(() => {
     const delta = lastProcessing.current;
     lastProcessing.current = null;
@@ -1051,7 +1055,7 @@ export function StackAcresFarm() {
    * by `triggerCascade`, which is the only thing that ever calls it -- see
    * that function's own header for the rest of the contract.
    */
-  const lastHarvestRef = useRef<{ crit: number; units: StackAcresUnitSnapshot[] } | null>(null);
+  const lastHarvestRef = useRef<{ crit: boolean; units: StackAcresUnitSnapshot[] } | null>(null);
   /**
    * The idempotency key for each action whose fate this browser does not know.
    *
@@ -1258,11 +1262,11 @@ export function StackAcresFarm() {
     // `!== undefined` for the same reason as the merchant above: null is the
     // real "no vat placed" answer, and an optimistic patch carries no field.
     if (data.vat !== undefined) setVat(data.vat);
-    if (data.work || data.processed || data.diverted || data.vatCollected) {
+    if (data.work || data.processed || data.sold || data.vatCollected) {
       lastProcessing.current = {
         work: data.work,
         processed: data.processed,
-        diverted: data.diverted,
+        sold: data.sold,
         vatCollected: data.vatCollected,
       };
     }
@@ -1777,44 +1781,40 @@ export function StackAcresFarm() {
             : unitsRef.current.find((candidate) => candidate.state === "ready");
           if (sounded) collectSound(sounded.stock);
           if (single) setCelebrate({ unitId: single, nonce: Date.now() });
-          // The toast leads with the money, because that is what a harvest is
-          // now -- the produce is the reason, not the reward. The synergy and
-          // the fee each get a clause only when they actually applied. Ray's
-          // Museum rides on the same toast rather than a second one stacked
-          // on top of it -- its bonus is already folded into `harvest.gold`,
-          // so this clause is purely what it was FOR, not a separate figure.
-          const bonusPart = harvest.bounty.label
-            ? ` · ${harvest.bounty.label} +${harvest.bonus.toLocaleString()}`
-            : "";
-          const upkeepPart =
-            harvest.upkeep > 0 ? ` · upkeep -${harvest.upkeep.toLocaleString()}` : "";
-          const discoveryTotal = harvest.discoveries.reduce((sum, d) => sum + d.bonus, 0);
+          // The toast leads with what went into the barn, because that is
+          // what a harvest is now -- it pays no Gold, and selling is a
+          // separate choice made at the Workshop. Ray's Museum rides on the
+          // same toast; its bonus units are already folded into `tally`.
+          const tallyText = harvest.tally
+            .map((line) => itemLabel(line.item, line.quantity))
+            .join(", ");
           const discoveryPart =
             harvest.discoveries.length > 0
-              ? ` · ${harvest.discoveries.length === 1 ? "New Discovery!" : "New Discoveries!"} +${discoveryTotal.toLocaleString()}`
+              ? ` · ${harvest.discoveries.length === 1 ? "New Discovery!" : "New Discoveries!"}`
               : "";
           setLastCollect({
-            text: `+${harvest.gold.toLocaleString()} Gold${bonusPart}${upkeepPart}${discoveryPart}`,
+            text: `+${tallyText} to the barn${discoveryPart}`,
             nonce: Date.now(),
           });
           if (anchor) {
             // A one-unit sweep floats its produce, which is what a tap on that
-            // animal was asking about. A whole-farm sweep floats the money:
+            // animal was asking about. A whole-farm sweep floats a count:
             // naming five kinds of produce over one thumb is unreadable.
             const float =
               single && harvest.tally.length === 1
                 ? collectFloat(harvest.tally[0].item, harvest.tally[0].quantity)
-                : { text: `+${harvest.gold.toLocaleString()} Gold`, icon: "ico-gold" };
+                : { text: `+${harvest.units} brought in`, icon: "ico-harvest" };
             world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
           }
-          // A critical harvest gets its own line rather than being folded
-          // into the payout float: the Gold total already moved, and a
-          // player who cannot see WHY it was bigger than usual has not
-          // really been told the ladder is working.
-          if (harvest.crit > 0) {
+          // A critical harvest gets its own line: a player who cannot see WHY
+          // the haul was bigger than usual has not really been told the
+          // ladder is working.
+          if (harvest.crit && harvest.critBonus.length > 0) {
             goldSound();
             setLastCollect({
-              text: `Rich pickings! +${harvest.crit.toLocaleString()} Gold`,
+              text: `Rich pickings! +${harvest.critBonus
+                .map((line) => itemLabel(line.item, line.quantity))
+                .join(", ")}`,
               nonce: Date.now(),
             });
             // And the world's own answer to it, on the unit that got lucky:
@@ -2359,7 +2359,7 @@ export function StackAcresFarm() {
     async (originUnitId: string, originStock: StackAcresStock) => {
       const result = lastHarvestRef.current;
       lastHarvestRef.current = null;
-      if (!result || result.crit <= 0) return;
+      if (!result || !result.crit) return;
       const targets = findCascadeTargets(
         result.units,
         stockZone(originStock),
@@ -2517,7 +2517,7 @@ export function StackAcresFarm() {
       // settles for -- see lib/stackacres/frenzy.ts's own header.
       const baseYieldGold =
         action.kind === "collect"
-          ? STACKACRES_YIELDS[unit.stock].quantity * itemGoldValue(STACKACRES_YIELDS[unit.stock].item)
+          ? STACKACRES_YIELDS[unit.stock].quantity * itemSellPrice(STACKACRES_YIELDS[unit.stock].item)
           : undefined;
       world.current?.registerFrenzyTap(unitId, baseYieldGold);
       // A tap is a one-unit sweep. It earns no synergy by construction --
@@ -2788,7 +2788,7 @@ export function StackAcresFarm() {
       const result = await act(body);
       if (!result.ok) return { ok: false, message: result.message };
       const delta = takeProcessingDelta();
-      return { ok: true, work: delta?.work, processed: delta?.processed, diverted: delta?.diverted };
+      return { ok: true, work: delta?.work, processed: delta?.processed, sold: delta?.sold };
     },
     [act, takeProcessingDelta],
   );
@@ -2802,7 +2802,13 @@ export function StackAcresFarm() {
     [workshopAct],
   );
   const onWork = useCallback(() => workshopAct({ action: "work" }), [workshopAct]);
-  const onDivert = useCallback((unitId: string) => workshopAct({ action: "divert", unitId }), [workshopAct]);
+  const onSell = useCallback(
+    (item: MachineItemId, quantity: number) => {
+      sellSound();
+      return workshopAct({ action: "sell", item, quantity });
+    },
+    [workshopAct],
+  );
 
   /** The vat's two actions, same adapter, its own result shape. */
   const vatAct = useCallback(
@@ -4234,37 +4240,46 @@ export function StackAcresFarm() {
               })}
             </div>
 
-            <StoreShelf icon="ico-carrot">Seeds</StoreShelf>
-            <p className="sa-sheet-note">
-              Every crop is bought here first — the Long Meadow only ever offers what you&apos;re
-              already carrying seed for. Buy a few, then tap bare ground out there to plant.
-            </p>
-            <div className="sa-stock-cards">
-              {STACKACRES_CROPS.map((crop) => {
-                const def = STACKACRES_CATALOGUE[crop];
-                const held = seedStock[crop] ?? 0;
-                return (
-                  <div key={crop} className="sa-stock-card">
-                    <h3>{def.label}</h3>
-                    <p className="sa-stock-yield">{def.seedCost.toLocaleString()} Gold</p>
-                    <button
-                      type="button"
-                      className="sa-cta"
-                      disabled={isPending(`buy-seed:${crop}`) || gold < def.seedCost}
-                      onClick={() => {
-                        buySound();
-                        void act({ action: "buy-seed", crop, quantity: 1 });
-                      }}
-                    >
-                      Buy
-                    </button>
-                    <p className="sa-sheet-note">
-                      {held} in the barn
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Crops are out of the active scope this pass (lib/stackacres/
+                scope.ts) -- the loop is Hens, the Wheat field and Cattle. The
+                shelf stays reachable behind one disclosure rather than
+                vanishing, so seed a player already bought is never stranded,
+                but it no longer fills the store with 22 rows by default. */}
+            <details className="sa-store-more">
+              <summary>
+                <StoreShelf icon="ico-carrot">More crops ({STACKACRES_CROPS.length})</StoreShelf>
+              </summary>
+              <p className="sa-sheet-note">
+                Not part of the starter loop yet. Buy a few, then tap bare ground in the Long
+                Meadow to plant.
+              </p>
+              <div className="sa-stock-cards">
+                {STACKACRES_CROPS.map((crop) => {
+                  const def = STACKACRES_CATALOGUE[crop];
+                  const held = seedStock[crop] ?? 0;
+                  return (
+                    <div key={crop} className="sa-stock-card">
+                      <h3>{def.label}</h3>
+                      <p className="sa-stock-yield">{def.seedCost.toLocaleString()} Gold</p>
+                      <button
+                        type="button"
+                        className="sa-cta"
+                        disabled={isPending(`buy-seed:${crop}`) || gold < def.seedCost}
+                        onClick={() => {
+                          buySound();
+                          void act({ action: "buy-seed", crop, quantity: 1 });
+                        }}
+                      >
+                        Buy
+                      </button>
+                      <p className="sa-sheet-note">
+                        {held} in the barn
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
 
             <StoreShelf icon="ico-feed">Feed</StoreShelf>
             <p className="sa-sheet-note">
@@ -4511,7 +4526,6 @@ export function StackAcresFarm() {
           wheatPlots={processing.wheatPlots}
           machines={processing.machines}
           vat={vat}
-          units={liveUnits}
           goldBalance={profile?.goldBalance ?? 0}
           unlimitedGold={profile?.unlimitedGold ?? false}
           isPending={isPending}
@@ -4519,7 +4533,7 @@ export function StackAcresFarm() {
           onPlaceMachine={onPlaceMachine}
           onProcess={onProcessRecipe}
           onWork={onWork}
-          onDivert={onDivert}
+          onSell={onSell}
           onOpenVat={() => { panelSound(); setShowVat(true); }}
           onClose={() => { panelSound(); setShowWorkshop(false); }}
         />

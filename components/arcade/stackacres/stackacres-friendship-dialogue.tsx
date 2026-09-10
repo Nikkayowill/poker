@@ -4,12 +4,13 @@ import { useEffect, useRef } from "react";
 import {
   KEEPSAKE_CATALOGUE,
   giftPreference,
+  isGiftableItem,
   type GiftOutcome,
   type KeepsakeId,
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import { MACHINE_ITEM_CATALOGUE, type MachineItemId } from "@/lib/stackacres/machine-items";
+import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
@@ -96,7 +97,9 @@ export function StackAcresFriendshipDialogue({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const heldItems = (Object.keys(inventory) as MachineItemId[]).filter((item) => (inventory[item] ?? 0) > 0);
+  const heldItems = (Object.keys(inventory) as MachineItemId[]).filter(
+    (item) => isGiftableItem(item) && (inventory[item] ?? 0) > 0,
+  );
 
   return (
     <div className="sa-gift-dialogue" style={{ left: `${at.x}px`, top: `${at.y}px` }}>
@@ -131,7 +134,6 @@ export function StackAcresFriendshipDialogue({
                 <p className="sa-gift-dialogue-prompt">Give him something?</p>
                 <ul className="sa-gift-dialogue-items">
                   {heldItems.map((item) => {
-                    const def = MACHINE_ITEM_CATALOGUE[item];
                     const preference = giftPreference(npc, item);
                     return (
                       <li key={item}>
@@ -143,9 +145,11 @@ export function StackAcresFriendshipDialogue({
                           ref={item === heldItems[0] ? firstRef : undefined}
                         >
                           <span className="sa-gift-dialogue-item-badge" aria-hidden="true">
-                            <StackAcresIcon name={def.icon as PainterName} size={22} />
+                            <StackAcresIcon name={machineItemIcon(item) as PainterName} size={22} />
                           </span>
-                          <span className="sa-gift-dialogue-item-name">{def.plural}</span>
+                          <span className="sa-gift-dialogue-item-name">
+                            {machineItemLabel(item, inventory[item] ?? 0)}
+                          </span>
                           <span className={`sa-gift-dialogue-item-pref is-${preference}`}>
                             {preference === "loved" ? "❤ Loved" : preference === "liked" ? "🙂 Liked" : ""}
                           </span>

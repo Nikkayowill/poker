@@ -8,7 +8,6 @@ import {
   stackacresStockPrice,
 } from "./market";
 import { STACKACRES_CATALOGUE, STACKACRES_STOCK } from "./catalogue";
-import { MONO_CROP_MAX_MULTIPLIER } from "./bounty";
 import { yieldValue } from "./items";
 import { stockZone, stocksInZone } from "./world";
 import { ZONE_IDS } from "./zones";
@@ -22,10 +21,6 @@ import { ZONE_IDS } from "./zones";
  * is sharper for it: buying a tier outright and taking its very first harvest
  * must return less Gold than the animal cost, on every tier -- otherwise the
  * shelf is a faucet with no cooldown on it at all.
- *
- * It is also checked against the largest Bountiful Harvest multiplier a sweep
- * can earn, which is new: a synergy must not be able to push a single cycle
- * past its own purchase price either.
  *
  * Everything else here is shape: prices derive from one rule, capacity has a
  * Gold price for every kind, every stock lives in exactly one district.
@@ -68,16 +63,6 @@ describe("the round trip", () => {
   it("always loses, on every tier", () => {
     for (const stock of STACKACRES_STOCK) {
       expect(goldStockRoundTrip(stock)).toBeLessThan(1);
-    }
-  });
-
-  it("still loses at the best synergy a sweep can earn", () => {
-    // Bountiful Harvest multiplies what a harvest pays, so it has to be inside
-    // this check rather than beside it: a bonus that could carry one cycle
-    // past its own purchase price would be exactly the sharp edge this test
-    // exists to rule out.
-    for (const stock of STACKACRES_STOCK) {
-      expect(goldStockRoundTrip(stock, MONO_CROP_MAX_MULTIPLIER)).toBeLessThan(1);
     }
   });
 

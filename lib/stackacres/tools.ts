@@ -7,20 +7,23 @@
  * hungry pen or a ready unit offers its own drag tool (see
  * stackacres-scene.ts's `dispatchTap`).
  *
- * `scythe`, `pipe` and `soil` are the only three with a button
- * (`StackAcresGroundTools`), because they are the only three still held for
- * a drag with no single-tile version: mowing the Long Meadow, or laying or
- * lifting a whole run of pipe or beds. One tile of pipe or soil is also on
- * the tap ring with nothing held. A plain tap with one of these held still
- * opens the ring; only a drag does anything different.
+ * `scythe` is the only one with a button (`StackAcresGroundTools`), because
+ * cutting the Long Meadow has no single-tile version -- a drag has to be
+ * armed by something. The cutter in hand (Scythe or Mower) is a separate
+ * pick layered on top of this one, see lib/stackacres/cutters.ts.
  *
- * `water`, `feed` and `harvest` have no button. They stay tool values, and
- * keep their defs below for the icons and copy, but nothing ever holds one.
+ * `pipe` and `soil` used to have their own held-and-dragged keys too, laying
+ * or lifting a whole run of tiles in one stroke. That gesture is gone
+ * (2026-09-10): laying a single pipe tile or bed is now reached entirely
+ * through the tap ring/dock, one tile at a time, so nothing ever holds
+ * either value any more. They keep their defs below purely for the icon and
+ * copy the dock still reads off `STACKACRES_TOOL_DEFS.pipe`/`.soil`, the
+ * same reuse `water`/`feed`/`harvest` -- also never held -- already relied
+ * on.
  *
- * Every ground tool shares one drag mechanism, acting on every tile a stroke
- * crosses past `TAP_SLOP` (see `bindInput`'s `pipeLaySegment`,
- * `soilLaySegment` and the scythe's `mowSegment`). A stroke that never leaves
- * the slop radius is a tap and goes through `dispatchTap`.
+ * A stroke past `TAP_SLOP` with the scythe held cuts (`bindInput`'s
+ * `mowSegment`); a stroke that never leaves the slop radius is a tap and
+ * goes through `dispatchTap` regardless of what's held.
  */
 
 export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil", "water", "feed", "harvest"] as const;
@@ -54,12 +57,12 @@ export const STACKACRES_TOOL_DEFS: Readonly<Record<StackAcresTool, StackAcresToo
   },
   pipe: {
     label: "Pipe",
-    hint: "Drag across the ground to lay a run of pipe, or over pipe already down to lift it. Tap one square instead to choose it from the ring, angle included.",
+    hint: "Lay a run of pipe, or pull one up, one tile at a time from the ring.",
     icon: "ico-pipe",
   },
   soil: {
     label: "Soil",
-    hint: "Drag across the Crop Fields to till a run of beds, or over beds already down to lift them. Tap one square instead to choose it from the ring.",
+    hint: "Till a bed, or lift one already down, one tile at a time from the ring.",
     icon: "ico-plant",
   },
   water: {

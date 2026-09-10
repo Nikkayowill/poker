@@ -205,8 +205,8 @@ import {
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
-import { StackAcresRadialMenu } from "./stackacres-radial-menu";
-import { StackAcresSeedStrip } from "./stackacres-seed-strip";
+import { StackAcresRadialMenu, STOCK_ICON } from "./stackacres-radial-menu";
+import { StackAcresGelDock, type StackAcresGelDockItem } from "./stackacres-gel-dock";
 import { StackAcresPipeAim } from "./stackacres-pipe-aim";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
@@ -807,8 +807,8 @@ export function StackAcresFarm() {
    *  so a response can replace it wholesale. */
   const [soilStock, setSoilStock] = useState<SoilStock>({});
   /** Crop seeds bought from Ray but not planted yet -- the ownership filter
-   *  that keeps the planting strip from ever offering a crop the player
-   *  isn't carrying, see StackAcresSeedStrip. Same plain-object shape as
+   *  that keeps the gel dock from ever offering a crop the player isn't
+   *  carrying, see `cropFieldGelItems`. Same plain-object shape as
    *  `soilStock` and for the same reason. */
   const [seedStock, setSeedStock] = useState<SeedStock>({});
   /** The Mechanical Forage Drone hangar: whether it is unlocked and every
@@ -1060,7 +1060,7 @@ export function StackAcresFarm() {
     world: WorldPoint;
     /**
      * The bed a "Remove Bed" tap on a PLANTED tile is one tap away from
-     * actually lifting -- see `soilExtraActions`. Set on the first tap,
+     * actually lifting -- see `cropFieldGelItems`. Set on the first tap,
      * which only re-labels the same ring rather than firing anything;
      * cleared on "Keep the bed", and gone for free on any confirm or close
      * (every other `setRadial` call below replaces this whole object or
@@ -1068,6 +1068,15 @@ export function StackAcresFarm() {
      * different tile or outlive the ring that raised it.
      */
     armedRemoveBed?: { tx: number; ty: number };
+    /**
+     * Which step of the Crop Fields' own bare-ground dock is showing: the
+     * root Lay Pipe/Plant Soil choice, or one branch's own follow-on
+     * (soil tiers, or Pipe vs. Well when no well exists yet). Lives on
+     * `radial` for the same reason `armedRemoveBed` does -- a fresh tap on
+     * any tile replaces the whole object, so a stale step can never survive
+     * onto a different tile. `undefined` reads as `"root"`.
+     */
+    gelStep?: "root" | "pipe" | "soil";
   } | null>(null);
   /**
    * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
@@ -3121,72 +3130,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /**
-   * The pipe tool's own drag (or zero-length tap) gesture reached this tile
-   * -- see StackAcresSceneCallbacks.onPipeLayTile's own header for the full
-   * contract the scene already enforces (which tile, which half of the
-   * stroke, never a well). No radial, no toast, no sound here: a drag can
-   * cross a dozen tiles in under a second, and the same optimistic guess
-   * `onPlacePipe`/`onRemovePipe` lean on is what makes each one appear the
-   * instant this fires -- that IS the feedback, the same way the scythe's
-   * own cut needs no caption either.
-   */
-  const onPipeLayTile = useCallback(
-    (tx: number, ty: number, mode: "place" | "erase") => {
-      if (mode === "erase") {
-        void act({ action: "remove-pipe", tx, ty });
-        return;
-      }
-      void act({ action: "place-pipe", tx, ty, kind: "pipe" });
-    },
-    [act],
-  );
-
-  /**
-   * The soil tool's own drag (or zero-length tap) gesture reached this tile
-   * -- the soil tool's own twin of `onPipeLayTile` just above, see
-   * StackAcresSceneCallbacks.onSoilLayTile's own header for the full
-   * contract the scene already enforces (which tile, which half of the
-   * stroke). No radial, no toast, no sound here, for the identical reason
-   * `onPipeLayTile` has none: the optimistic guess `place-soil-tile`/
-   * `remove-soil-tile` get in optimistic-actions.ts is what makes each bed
-   * appear or vanish the instant this fires -- that IS the feedback.
-   * Always the DEFAULT tier on a place -- see tools.ts's own header on why
-   * Enriched/Hydro stay a deliberate radial choice.
-   */
-  const onSoilLayTile = useCallback(
-    (tx: number, ty: number, mode: "place" | "erase") => {
-      if (mode === "erase") {
-        // A planted bed does not come out under a drag stroke -- that would
-        // take its crop with it (see `removeStackAcresSoilTile`) with no
-        // chance to warn first. The brush skips it and says why; lifting a
-        // planted bed is only ever reachable through the ring's own
-        // arm/confirm below, one tile at a time.
-        const crop = cropOnTile(tx, ty);
-        if (crop) {
-          setLastCollect({
-            text: `That bed has a ${STACKACRES_CATALOGUE[crop.stock].label} on it -- use the ring to remove it.`,
-            nonce: Date.now(),
-          });
-          return;
-        }
-        void act({ action: "remove-soil-tile", tx, ty });
-        return;
-      }
-      void act({ action: "place-soil-tile", tx, ty, tier: SOIL_DEFAULT_TIER });
-    },
-    [act, cropOnTile],
-  );
-
-  /** A pipe/well drag or tap was refused for landing inside a pen -- the
-   *  scene has already shaken and flashed the held tool's ghost; this is
-   *  only the toast half, through the same `lastCollect`/`.sa-toast`
-   *  mechanism every other floated status line on this screen already
-   *  uses. */
-  const onDropRejected = useCallback((message: string) => {
-    setLastCollect({ text: message, nonce: Date.now() });
-  }, []);
-
   /** The ring's own way through to the deep end -- the same drawer the peg on
    *  the right edge opens, reached without having to go and find the peg. */
   const openPanel = useCallback(() => {
@@ -3337,98 +3280,197 @@ export function StackAcresFarm() {
   const placeLocked = !isSectorUnlocked(place, sectors);
 
   /**
-   * The seed ring's one extra button for the Crop Fields: till one planting
-   * square of empty ground, add another square to a bed already started
-   * there, or lift a bed outright. Only ever set for `radialInCropFieldBeds`
-   * -- soil is a Crop Fields concept everywhere else in this module, and
-   * every other zone's ring stays exactly what it was.
+   * The Crop Fields' own gel dock, Crop-Fields-only the same way
+   * `soilExtraActions` used to be -- every other zone's ground tap still
+   * gets `StackAcresRadialMenu` and `pipeExtraActions` below, untouched.
+   * Checked in this fixed order, since a tile is never more than one of
+   * these three at once:
    *
-   * `radialSoilTile` (from `mergedSoilTiles`, the same list the scene was
-   * just handed) is what decides which of the two shows, so "is there a
-   * tile here" never disagrees with what is actually painted.
+   * 1. A pipe or well already standing here -- management tokens (Aim, Draw
+   *    Water, Remove), the same items `pipeExtraActions`'s own "existing"
+   *    branch computes, just reshaped for `onCommit` instead of `onSelect`.
+   * 2. A bed already standing here -- owned seed tokens to plant, plus
+   *    Remove Bed (armed/confirm, via `radial.armedRemoveBed`, unchanged).
+   * 3. Bare ground -- the root Lay Pipe/Plant Soil choice, or whichever
+   *    branch's own follow-on `radial.gelStep` says is showing (soil tiers;
+   *    or Pipe vs. Well, only reachable when no well exists yet).
    */
-  const soilExtraActions = (() => {
+  const cropFieldGelItems: StackAcresGelDockItem[] = (() => {
     if (!radial || !radialInCropFieldBeds) return [];
     const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
-    const existing = radialSoilTile;
-    if (!existing) {
-      // ONE BUTTON PER TIER, generated from SOIL_TIER_DEFS rather than listed
-      // here, so adding a tier to that table adds it to this ring and there is
-      // no second place to forget. The label carries the tier's own name --
-      // each button buys the bed's FIRST square, at that tier.
-      // NO `cost` HERE any more: soil is paid for at Ray's shelf, so showing a
-      // Gold price on this ring would read as a second charge. A tier with no
-      // bags left is offered but disabled, which is what tells the player the
-      // shop is where to go -- hiding it would make the ring silently shrink.
+    const { tx: ptx, ty: pty } = pipeTileAt(radial.world.x, radial.world.y);
+    const at = radial.at;
+
+    const existingPipe = irrigation.find((node) => node.tx === ptx && node.ty === pty);
+    if (existingPipe) {
+      return [
+        ...(existingPipe.kind === "pipe" && existingPipe.mask === 0
+          ? [
+              {
+                key: "aim-pipe",
+                label: "Aim Pipe",
+                icon: "ico-pipe" as PainterName,
+                onCommit: () => {
+                  closeRadial();
+                  setPipeAim({ tx: ptx, ty: pty, at });
+                },
+              },
+            ]
+          : []),
+        ...(existingPipe.kind === "well"
+          ? [
+              {
+                key: "draw-water",
+                label: "Draw Water",
+                icon: "ico-water" as PainterName,
+                disabledReason: water >= WATER_CAPACITY ? "Your can is already full" : undefined,
+                onCommit: () => onWorldWellTap(at),
+              },
+            ]
+          : []),
+        {
+          key: "remove-pipe",
+          label: existingPipe.kind === "well" ? "Remove Well" : "Remove Pipe",
+          icon: "ico-clear" as PainterName,
+          onCommit: () => onRemovePipe(ptx, pty),
+        },
+      ];
+    }
+
+    if (radialSoilTile) {
+      const crop = cropOnTile(tx, ty);
+      const armed = radial.armedRemoveBed?.tx === tx && radial.armedRemoveBed?.ty === ty;
+      if (crop && armed) {
+        return [
+          {
+            key: "remove-bed-confirm",
+            label: `Confirm -- lose the ${STACKACRES_CATALOGUE[crop.stock].label}`,
+            icon: "ico-clear",
+            onCommit: () => onRemoveSoilTile(tx, ty),
+          },
+          {
+            key: "remove-bed-cancel",
+            label: "Keep the bed",
+            icon: "ico-plant",
+            keepOpen: true,
+            onCommit: () => setRadial({ ...radial, armedRemoveBed: undefined }),
+          },
+        ];
+      }
+      // `seedStock` is keyed by crop only -- `heldSeed` is the same guard the
+      // old seed strip used to keep a livestock stock (never in this list to
+      // begin with, but the type is the broader StackAcresStock) from ever
+      // reaching an unsafe index into it.
+      const heldSeed = (stock: StackAcresStock): number => (isStackAcresCrop(stock) ? seedStock[stock] ?? 0 : 0);
+      const seedItems: StackAcresGelDockItem[] = buyOptionsForZone(radial.zone, {
+        units: liveUnits,
+        gold,
+        capacity,
+      })
+        .filter((option) => heldSeed(option.stock) > 0)
+        .map((option) => ({
+          key: option.stock,
+          label: option.label,
+          icon: STOCK_ICON[option.stock],
+          qty: heldSeed(option.stock),
+          disabledReason: option.atCap ? `${option.owned}/${option.cap} full` : undefined,
+          onCommit: () => onRadialSeed(option.stock),
+        }));
+      return [
+        ...seedItems,
+        {
+          key: "remove-bed",
+          label: crop ? "Remove Bed…" : "Remove Bed",
+          icon: "ico-clear" as PainterName,
+          keepOpen: Boolean(crop),
+          onCommit: crop
+            ? () => setRadial({ ...radial, armedRemoveBed: { tx, ty } })
+            : () => onRemoveSoilTile(tx, ty),
+        },
+      ];
+    }
+
+    // Bare ground: nothing stands here yet. `gelStep` is undefined until the
+    // root choice fires once (see `radial`'s own doc), so it reads as root.
+    const step = radial.gelStep ?? "root";
+    if (step === "soil") {
+      // ONE TOKEN PER TIER, generated from SOIL_TIER_DEFS rather than listed
+      // here, so adding a tier to that table adds it here with no second
+      // place to forget. NO `cost`: soil is paid for at Ray's shelf, so a
+      // Gold price here would read as a second charge -- a tier with no bags
+      // left is offered disabled instead, which is what points at the shop.
       return SOIL_TIERS.map((tier) => {
         const def = soilTierDef(tier);
         const held = soilStock[tier] ?? 0;
         return {
           key: `till-bed-${tier}`,
-          label: `${def.label} (${held})`,
+          label: def.label,
           icon: "ico-plant" as PainterName,
+          qty: held,
           disabledReason: held > 0 ? undefined : "None in the barn — buy from Ray",
-          onSelect: () => onPlaceSoilTile(tx, ty, tier),
+          onCommit: () => onPlaceSoilTile(tx, ty, tier),
         };
       });
     }
-    if (existing.origin === "purchased") {
-      // A bed is one tile, one plant now (soil.ts's `plantSoilTile`) -- there
-      // is no partial bed left to grow a square at, so a purchased tile ever
-      // only offers to come back out.
-      //
-      // A PLANTED bed takes one extra tap. The first arms this same ring
-      // item rather than firing anything (see `radial`'s own
-      // `armedRemoveBed`); only the second, re-labelled tap actually sends
-      // `remove-soil-tile`, which deletes the crop standing here with no
-      // refund of its seed cost -- see `removeStackAcresSoilTile`'s own doc
-      // comment.
-      const crop = cropOnTile(tx, ty);
-      if (crop) {
-        const armed = radial.armedRemoveBed?.tx === tx && radial.armedRemoveBed?.ty === ty;
-        if (armed) {
-          return [
-            {
-              key: "remove-bed-confirm",
-              label: `Confirm -- lose the ${STACKACRES_CATALOGUE[crop.stock].label}`,
-              icon: "ico-clear" as PainterName,
-              // Closes the whole ring, which is what actually sends the
-              // request -- no separate disarm needed, `setRadial(null)`
-              // inside `onRemoveSoilTile` takes `armedRemoveBed` with it.
-              onSelect: () => onRemoveSoilTile(tx, ty),
-            },
-            {
-              key: "remove-bed-cancel",
-              label: "Keep the bed",
-              icon: "ico-plant" as PainterName,
-              onSelect: () => setRadial({ ...radial, armedRemoveBed: undefined }),
-            },
-          ];
-        }
-        return [
-          {
-            key: "remove-bed",
-            label: "Remove Bed…",
-            icon: "ico-clear" as PainterName,
-            onSelect: () => setRadial({ ...radial, armedRemoveBed: { tx, ty } }),
-          },
-        ];
-      }
+    const lone = !PIPE_NEIGHBORS.some((n) =>
+      irrigation.some((node) => node.tx === ptx + n.tx && node.ty === pty + n.ty),
+    );
+    if (step === "pipe") {
       return [
         {
-          key: "remove-bed",
-          label: "Remove Bed",
-          icon: "ico-clear" as PainterName,
-          onSelect: () => onRemoveSoilTile(tx, ty),
+          key: "place-pipe",
+          label: "Lay Pipe",
+          icon: "ico-pipe",
+          cost: PIPE_PLACE_COST.pipe,
+          disabledReason: gold >= PIPE_PLACE_COST.pipe ? undefined : "Not enough Gold",
+          onCommit: () => {
+            onPlacePipe(ptx, pty, "pipe");
+            if (lone) setPipeAim({ tx: ptx, ty: pty, at });
+          },
+        },
+        {
+          key: "place-well",
+          label: "Dig a Well",
+          icon: "ico-plant",
+          cost: PIPE_PLACE_COST.well,
+          disabledReason: gold >= PIPE_PLACE_COST.well ? undefined : "Not enough Gold",
+          onCommit: () => onPlacePipe(ptx, pty, "well"),
         },
       ];
     }
-    return [];
+    const hasWell = irrigation.some((node) => node.kind === "well");
+    return [
+      {
+        key: "choose-pipe",
+        label: "Lay Pipe",
+        icon: "ico-pipe",
+        disabledReason: hasWell && gold < PIPE_PLACE_COST.pipe ? "Not enough Gold" : undefined,
+        // A well already down leaves nothing to choose (a second well is
+        // never offered), so this branch fires straight away instead of
+        // opening a one-item follow-on -- same posture the old ring took.
+        keepOpen: !hasWell,
+        onCommit: () => {
+          if (hasWell) {
+            onPlacePipe(ptx, pty, "pipe");
+            if (lone) setPipeAim({ tx: ptx, ty: pty, at });
+            return;
+          }
+          setRadial({ ...radial, gelStep: "pipe" });
+        },
+      },
+      {
+        key: "choose-soil",
+        label: "Plant Soil",
+        icon: "ico-plant",
+        keepOpen: true,
+        onCommit: () => setRadial({ ...radial, gelStep: "soil" }),
+      },
+    ];
   })();
 
   /**
    * The irrigation ring's own extra buttons -- offered in EVERY district,
-   * unlike `soilExtraActions` above (a Crop Fields-only concept): the pipe
+   * unlike `cropFieldGelItems` above (a Crop Fields-only concept): the pipe
    * lattice is farm-wide (lib/stackacres/irrigation.ts's own header), so a
    * tap anywhere has a tile under it worth offering. `irrigation` is the
    * same array the scene was just handed, so "is there a pipe here" never
@@ -3677,9 +3719,6 @@ export function StackAcresFarm() {
               onVisitorTap={onWorldVisitorTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
-              onPipeLayTile={onPipeLayTile}
-              onSoilLayTile={onSoilLayTile}
-              onDropRejected={onDropRejected}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}
@@ -3747,43 +3786,34 @@ export function StackAcresFarm() {
               reported the tap in. Zoom/recentre used to be two buttons here;
               they're gone (pinch and mouse-wheel already cover zoom, see
               bindInput's onWheel), and there is nothing left to stack over. */}
-          {/* The Crop Fields get the scrollable seed strip -- 22 crops
-              cannot lay out on a ring (see StackAcresSeedStrip's own
-              header) -- and it filters to what the shelf actually holds.
-              Every other zone still gets the ring: three livestock kinds
-              fit it fine, and livestock has no seed shelf to filter against
-              (see SeedStock's own doc comment). Gated on
-              `radialInCropFieldBeds`, not `radial.zone === "farmstead"`
-              alone: since the 2026-09-08 district merge the Farmstead is
-              also the yard, and a tap on ITS own grow area (the Hen Coop
-              remnant, which holds no stock) is not a seed tap.
-
-              Crops themselves are dropped from the shelf when the tapped
-              tile has no bed on it (`radialSoilTile`) -- a crop needs
-              ground to stand on, same reason the ring below drops every
-              crop everywhere it appears. `soilExtraActions` offers to till
-              one instead; any non-crop option (there is none in the Crop
-              Fields today, but the filter is the same one the ring uses)
-              stays regardless. */}
+          {/* The Crop Fields get the gel dock (stackacres-gel-dock.tsx):
+              anchored at the tap rather than a screen edge, and every token
+              in it has to be DRAGGED into the circle pinned on the tapped
+              tile, same physical gesture water/feed already use. Every other
+              zone still gets the plain tap-to-fire ring: three livestock
+              kinds fit its fixed arc fine, and livestock has no seed shelf or
+              pipe/soil concept to drag in from (see SeedStock's own doc
+              comment). Gated on `radialInCropFieldBeds`, not
+              `radial.zone === "farmstead"` alone: since the 2026-09-08
+              district merge the Farmstead is also the yard, and a tap on ITS
+              own grow area (the Hen Coop remnant, which holds no stock) is
+              not a seed tap. */}
           {radial && radialInCropFieldBeds && (
-            <StackAcresSeedStrip
+            <StackAcresGelDock
               at={radial.at}
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity }).filter(
-                (option) => radialSoilTile !== null || !isStackAcresCrop(option.stock),
-              )}
-              seedStock={seedStock}
-              districtLabel={STACKACRES_ZONES[radial.zone].label}
+              items={cropFieldGelItems}
+              label={`${STACKACRES_ZONES[radial.zone].label.replace(/^The /, "")}`}
               busy={
                 pendingByPrefix("stock") ||
                 pendingByPrefix("place-soil-tile") ||
                 pendingByPrefix("remove-soil-tile") ||
                 pendingByPrefix("place-pipe") ||
-                pendingByPrefix("remove-pipe")
+                pendingByPrefix("remove-pipe") ||
+                pendingByPrefix("aim-pipe") ||
+                pendingByPrefix("draw-water")
               }
-              onSeed={onRadialSeed}
               onClose={closeRadial}
               onManage={openPanel}
-              extraActions={[...soilExtraActions, ...pipeExtraActions]}
             />
           )}
           {radial && !radialInCropFieldBeds && (
@@ -3792,10 +3822,10 @@ export function StackAcresFarm() {
               // `buyOptionsForZone` is zone-keyed, not bed-aware, so for the
               // Farmstead it still returns all 22 crops even out here on the
               // yard -- the ring's fixed arc has no room for that (see
-              // StackAcresSeedStrip's own header) and it has nowhere to
+              // stackacres-gel-dock.tsx's own header) and it has nowhere to
               // plant them anyway (a crop needs a bed, and beds only exist
               // inside `radialInCropFieldBeds`). Crops are dropped here for
-              // the same reason the seed strip above is the only place they
+              // the same reason the gel dock above is the only place they
               // ever appear.
               options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity }).filter(
                 (option) => !isStackAcresCrop(option.stock),

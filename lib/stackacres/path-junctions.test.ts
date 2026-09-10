@@ -15,6 +15,7 @@ import {
 
 const spec = (key: string, width: number, points: { x: number; y: number }[]): PathSpec => ({
   key,
+  surface: "dirt",
   tier: "service",
   width,
   points,

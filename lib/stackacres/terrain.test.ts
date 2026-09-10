@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { worldBoundsRect } from "./bounds";
 import { GREENHOUSE_PLOT } from "./greenhouse";
 import { isoProject, isoUnproject, projectedBounds } from "./iso";
-import { FARM_PATHS } from "./paths";
+import { ALL_FARM_PATHS, FARM_PATHS, nearestOnPath } from "./paths";
 import {
   DIRT_YARDS,
   SEA_EXPANSE_TILE,
@@ -30,7 +30,7 @@ import {
   tileFrameOffset,
 } from "./terrain";
 import { POND, POND_SAND, POND_SHALLOW, POND_ZONE } from "./water";
-import { BARN_FOOTPRINT, FARM_ZONE, STACKACRES_CHUNK, WHEAT_FIELD, chunkScenery } from "./world";
+import { BARN_FOOTPRINT, FARM_ZONE, STACKACRES_CHUNK, WHEAT_FIELD, chunkScenery, type WorldPoint } from "./world";
 import { ZONE_LIST } from "./zones";
 
 describe("the lattice", () => {
@@ -228,13 +228,70 @@ describe("the pond", () => {
   });
 });
 
+describe("the paving", () => {
+  /** The frames of pair p: 16p to 16p + 15 (see the atlas's own header). */
+  const pairOf = (frame: number): number => Math.floor(frame / 16);
+  const PAIR_GRASS_DIRT = 3;
+  const PAIR_GRASS_COBBLE = 4;
+
+  const spec = (key: string) => {
+    const found = ALL_FARM_PATHS.find((p) => p.key === key);
+    if (!found) throw new Error(`no path ${key}`);
+    return found;
+  };
+
+  /** The middle of a spec's first leg, on its own centreline. */
+  const on = (key: string): WorldPoint => {
+    const [a, b] = spec(key).points;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  };
+
+  it("paves the main roads", () => {
+    for (const key of ["lane", "yardRoad", "midRoad", "northRoadEast", "northRoadWest", "southRoadEast", "southRoadWest", "eastRoad", "foldRoad", "meadowSpur"]) {
+      const at = on(key);
+      expect([key, terrainMaterialAt(at.x, at.y)]).toEqual([key, "cobble"]);
+    }
+  });
+
+  it("leaves a service spur bare where it runs clear of the road it forks off", () => {
+    // Measured out along a spur rather than at its middle: the dock spur is
+    // shorter than the reach of the lane it forks off, so every point on it
+    // is inside the lane's own paving and it reads as the stone fanning out
+    // at the junction.
+    const henCoop = on("spur-henCoop");
+    expect(terrainMaterialAt(henCoop.x, henCoop.y)).toBe("dirt");
+  });
+
+  it("never paves a connector the pathway walk grew", () => {
+    const grown = ALL_FARM_PATHS.filter((p) => p.key.startsWith("spur-"));
+    expect(grown.length).toBeGreaterThan(0);
+    for (const s of grown) expect(s.surface).toBe("dirt");
+  });
+
+  it("cuts a paved cell from the grass-cobble pair and a bare one from grass-dirt", () => {
+    const paved = cellAt(on("midRoad").x, on("midRoad").y);
+    const bare = cellAt(on("spur-henCoop").x, on("spur-henCoop").y);
+    expect(pairOf(cellTile(paved.i, paved.j)!.frame)).toBe(PAIR_GRASS_COBBLE);
+    expect(pairOf(cellTile(bare.i, bare.j)!.frame)).toBe(PAIR_GRASS_DIRT);
+  });
+
+  it("keeps the stone where a bare spur runs into a paved road", () => {
+    // The meadow spur forks off the middle road, so the ground at its root
+    // has paving on one side and bare earth on the other. Stone wins, which
+    // keeps the road's edge a straight line rather than a bite out of it.
+    const root = nearestOnPath(-230, 0, spec("midRoad"));
+    expect(terrainMaterialAt(root.point.x, root.point.y)).toBe("cobble");
+  });
+});
+
 describe("the dirt", () => {
   it("takes in exactly the two lattice rows under a grid road", () => {
     // The middle road's body is x -288..-256; the rows either side of its
     // centreline are at -280 and -264, and the next ones out at -296 and
-    // -248 must stay grass.
-    expect(terrainMaterialAt(-280, 40)).toBe("dirt");
-    expect(terrainMaterialAt(-264, 40)).toBe("dirt");
+    // -248 must stay grass. The middle road is paved, so its own two rows
+    // are stone; what this holds is the reach, not the surface.
+    expect(terrainMaterialAt(-280, 40)).toBe("cobble");
+    expect(terrainMaterialAt(-264, 40)).toBe("cobble");
     expect(terrainMaterialAt(-296, 40)).toBe("grass");
     expect(terrainMaterialAt(-248, 40)).toBe("grass");
     const mid = FARM_PATHS.find((p) => p.key === "midRoad");

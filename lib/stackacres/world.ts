@@ -1091,15 +1091,27 @@ const OPEN_BUSH_KINDS: readonly SceneryKind[] = ["bush", "bush2", "bush3"];
  * that a tree or a bush planted just OUTSIDE the farm zone, even well past
  * it, still visually reaches the roof and the chimney: the drawn sprite
  * reads far taller than its flat ground box, the same "art bigger than
- * footprint" gap `monkHouse`'s own header describes, and the first pass here
- * (110 north) still left a bush sitting on the chimney. Padded 220 north of
- * the footprint, 30 every other side.
+ * footprint" gap `monkHouse`'s own header describes.
+ *
+ * The first pass (110 north, 30 every other side) still left a bush sitting
+ * on the chimney, and the 220-north/30-side pass after it *still* wasn't
+ * enough: this is not a distance problem alone, it is a depth-sort one --
+ * `paintRayHouse`'s own nudge only pushes the roof's draw order ahead of
+ * scenery sorted by the literal, un-nudged `isoDepthAt(x, y)` of ITS OWN
+ * feet, and that crossover point is not a clean line at any fixed y. Logged
+ * culprits sitting just past the 220/30 box (a `bush2` at (-766,-465), a
+ * plain `bush` at (-505,-461), several `tree2`/`tree3` between y -580 and
+ * -503) all came out with a depth in front of the roof's -319.5, some barely
+ * ten world units past the old north edge, others past the old side edges
+ * with no north component to explain it at all. Padded 400 north, 60 south,
+ * 120 every other side -- wide enough to clear every logged culprit with
+ * margin, confirmed against a live screenshot rather than guessed.
  */
 const RAY_HOUSE_CLEARANCE: WorldRect = {
-  x: RAY_HOUSE_FOOTPRINT.x - 30,
-  y: RAY_HOUSE_FOOTPRINT.y - 220,
-  width: RAY_HOUSE_FOOTPRINT.width + 60,
-  height: RAY_HOUSE_FOOTPRINT.height + 250,
+  x: RAY_HOUSE_FOOTPRINT.x - 120,
+  y: RAY_HOUSE_FOOTPRINT.y - 400,
+  width: RAY_HOUSE_FOOTPRINT.width + 240,
+  height: RAY_HOUSE_FOOTPRINT.height + 480,
 };
 
 function nearRayHouse(x: number, y: number): boolean {

@@ -402,8 +402,8 @@ def tint_sand(frame: Image.Image, top: tuple[int, int, int]) -> Image.Image:
 # StackAcres' own stone ramp (`art-palette.ts`'s RAMPS.stone), spread wider:
 # at nine device pixels a stone the difference between one cobble and the
 # next has to be its COLOUR, since there is no room to shade one.
-COBBLE_DARK = (118, 115, 108)
-COBBLE_LIGHT = (186, 183, 174)
+COBBLE_DARK = (108, 105, 98)
+COBBLE_LIGHT = (196, 193, 183)
 # The shaded underside every stone is set into, and what shows in the joints:
 # the road's own tan, well darkened. Grit, not mortar -- this is stone set
 # into a farm track, not a city pavement.
@@ -413,14 +413,22 @@ COBBLE_JOINT = (78, 63, 47)
 # Mirrors lib/stackacres/terrain.ts's TERRAIN_CELL. One frame diamond is one
 # cell, so this is the paving's period in world units.
 CELL = 16
-# World units between stone centres before jitter. Four across a cell puts
-# eight across a 32-unit grid road, which is chunky enough to still read as
-# stone on a phone, where the whole bake is halved.
-STONE_PITCH = 4.0
-# How much of the pitch a stone's radius takes. Just over half, so
-# neighbours touch and the joint is the seat showing between them rather
-# than a gap of ground.
-STONE_RADIUS = 0.55
+# World units between stone centres before jitter. Five across a cell puts
+# ten across a 32-unit grid road: small enough that each stone still reads as
+# its own paver rather than one grey slab, at the size the whole bake gets
+# halved to on a phone.
+STONE_PITCH = 3.2
+# How much of the pitch a stone's radius takes. Well under half, so a gap of
+# joint colour survives between every neighbour instead of the ellipses
+# tiling edge-to-edge into one continuous grey mass.
+STONE_RADIUS = 0.42
+# How far the face ellipse insets from the seat ellipse under it, as a
+# fraction of the seat's own radius. Left uninset the seat never shows, so
+# every stone read as a flat disc with no border between it and the next;
+# a real inset leaves a ring of seat colour -- the joint's own shade, in
+# miniature -- around each stone, which is what makes them read as
+# separate laid pavers rather than a mottled pour.
+STONE_FACE_INSET = 0.80
 # Copies of the period laid either side, enough to cover a whole frame.
 COBBLE_REPEATS = (-2 * CELL, -CELL, 0, CELL, 2 * CELL)
 
@@ -490,7 +498,12 @@ def cobble_field(seed: int = 20260909) -> Image.Image:
             face = mix(face, (74, 72, 68), 0.45)
         pen.ellipse([cx - rx, cy - ry + 0.9, cx + rx, cy + ry + 0.9], fill=COBBLE_SEAT + (255,))
         pen.ellipse(
-            [cx - rx * 0.92, cy - ry * 0.92 - 0.3, cx + rx * 0.92, cy + ry * 0.92 - 0.3],
+            [
+                cx - rx * STONE_FACE_INSET,
+                cy - ry * STONE_FACE_INSET - 0.3,
+                cx + rx * STONE_FACE_INSET,
+                cy + ry * STONE_FACE_INSET - 0.3,
+            ],
             fill=face + (255,),
         )
     return art

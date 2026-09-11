@@ -166,6 +166,32 @@ export const FARM_PATHS: readonly PathSpec[] = [
     ],
     stones: 0,
   }),
+  path({
+    // Ray's house (./world.ts's RAY_HOUSE_FOOTPRINT, x 63..153, y -76..-32)
+    // sits directly behind the barn's own roof (BARN_FOOTPRINT, x 71..145,
+    // y -28..34) with only a few units of air between the two, so there is
+    // no straight shot from the house to the yard: every gap along the
+    // barn's own two sides is already spoken for, the west one by the
+    // barn's built-in barrel (stackacres-scene.ts's `paintBarn`, x 51..69,
+    // y 0..20). The only corridor with room to spare is further west of
+    // that, past x 42 -- clear of the barrel's own edge by PATH_CLEARANCE
+    // (`paths.test.ts` holds this against both footprints along the whole
+    // body, not just at the endpoints). So the drive forks off the lane at
+    // the same corner `yardRoad` does, runs north up that corridor, then
+    // angles in to the house's south-west corner -- the one side of the
+    // building the barn does not block.
+    key: "rayHouseDrive",
+    surface: "dirt",
+    tier: "service",
+    width: 12,
+    points: [
+      yardPoint(50, 58),
+      yardPoint(36, 40),
+      yardPoint(36, -20),
+      yardPoint(52, -28),
+    ],
+    stones: 0,
+  }),
 
   /* ---------------------------------------------------------------- */
   /* The grid roads: straight, one cell (32) wide, every pen's edge on  */

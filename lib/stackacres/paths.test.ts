@@ -9,8 +9,9 @@ import {
   generatePathwaysBetweenNodes,
   nearPath,
 } from "./paths";
-import { FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
-import { YARD_DELTA } from "./yard";
+import { BARN_FOOTPRINT, FARM_ZONE, RAY_HOUSE_FOOTPRINT, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
+import { YARD_DELTA, yardRect } from "./yard";
+import type { WorldPoint } from "./world";
 import { STACKACRES_ZONES, ZONE_IDS } from "./zones";
 
 /** Every district's own grow area -- the plots are gone; each district has
@@ -38,15 +39,15 @@ describe("farm paths", () => {
   it("has the grid roads and the yard's three, with unique keys, 12..48 wide", () => {
     // The Grid Bench layout (see the module header): five grid roads, the
     // two long ones split at the middle road, the short hop into the Crop
-    // Fields, plus the yard's own lane, road and dock spur. No spurs into
-    // districts: every pen sits on a road.
+    // Fields, plus the yard's own lane, road, dock spur and Ray's house
+    // drive. No spurs into districts: every pen sits on a road.
     const keys = FARM_PATHS.map((path) => path.key);
     expect(keys.filter((k) => k.startsWith("ring"))).toHaveLength(0);
     expect(keys.filter((k) => k.endsWith("Spur"))).toEqual(["dockSpur", "meadowSpur"]);
     for (const road of ["midRoad", "northRoadEast", "northRoadWest", "southRoadEast", "southRoadWest", "eastRoad", "foldRoad"]) {
       expect(keys).toContain(road);
     }
-    expect(FARM_PATHS.length).toBe(11);
+    expect(FARM_PATHS.length).toBe(12);
     expect(new Set(FARM_PATHS.map((p) => p.key)).size).toBe(FARM_PATHS.length);
     for (const spec of FARM_PATHS) {
       expect(spec.points.length).toBeGreaterThanOrEqual(2);
@@ -186,7 +187,11 @@ describe("farm paths", () => {
     // after the lane so the renderer paints it over the lane.
     const spur = byKey("dockSpur");
     expect(distanceToPath(spur.points[0].x, spur.points[0].y, lane)).toBeLessThan(lane.width / 2);
-    for (const branch of ["yardRoad", "dockSpur"]) {
+    // Ray's house drive forks off the same corner, one stop further down
+    // the lane's own west leg (see the drive's own header comment).
+    const drive = byKey("rayHouseDrive");
+    expect(distanceToPath(drive.points[0].x, drive.points[0].y, lane)).toBeLessThan(lane.width / 2);
+    for (const branch of ["yardRoad", "dockSpur", "rayHouseDrive"]) {
       expect(FARM_PATHS.findIndex((path) => path.key === branch)).toBeGreaterThan(
         FARM_PATHS.findIndex((path) => path.key === "lane"),
       );
@@ -199,6 +204,42 @@ describe("farm paths", () => {
     expect(distanceToPath(last.x, last.y, midRoad)).toBe(0);
     const hop = byKey("meadowSpur").points[0];
     expect(distanceToPath(hop.x, hop.y, midRoad)).toBe(0);
+  });
+
+  it("routes Ray's house drive around the barn and its barrel, not through them", () => {
+    // The drive's whole reason to bend west before turning back in is the
+    // barn (x 71..145, y -28..34) and its built-in barrel (x 51..69,
+    // y 0..20, see stackacres-scene.ts's `paintBarn`) -- both must stay
+    // outside the drive's body the entire way, not just at its endpoints.
+    const drive = byKey("rayHouseDrive");
+    const barn = BARN_FOOTPRINT;
+    const barrel = yardRect(51, 0, 18, 20);
+    // Sampled right out to each footprint's own true edge plus the same
+    // PATH_CLEARANCE margin every other path is held to (props.ts's own
+    // header: "nothing stands on a path body"), not a bespoke number.
+    const samples: WorldPoint[] = [];
+    for (let x = barn.x - PATH_CLEARANCE; x <= barn.x + barn.width + PATH_CLEARANCE; x += 2) {
+      for (let y = barn.y - PATH_CLEARANCE; y <= barn.y + barn.height + PATH_CLEARANCE; y += 2) {
+        samples.push({ x, y });
+      }
+    }
+    for (let x = barrel.x - PATH_CLEARANCE; x <= barrel.x + barrel.width + PATH_CLEARANCE; x += 2) {
+      for (let y = barrel.y - PATH_CLEARANCE; y <= barrel.y + barrel.height + PATH_CLEARANCE; y += 2) {
+        samples.push({ x, y });
+      }
+    }
+    for (const p of samples) {
+      expect(distanceToPath(p.x, p.y, drive)).toBeGreaterThanOrEqual(drive.width / 2);
+    }
+    // And it actually reaches the house: its last vertex lands just outside
+    // RAY_HOUSE_FOOTPRINT's own south-west corner, not inside it.
+    const house = RAY_HOUSE_FOOTPRINT;
+    const end = drive.points[drive.points.length - 1];
+    expect(end.x).toBeLessThan(house.x);
+    expect(end.y).toBeGreaterThan(house.y + house.height);
+    // Close enough to read as "arrives at the house", not a spur that trails
+    // off into open ground short of it.
+    expect(Math.hypot(end.x - house.x, end.y - (house.y + house.height))).toBeLessThan(20);
   });
 
   it("lays every grid road off one already laid, and runs one along every outer district's pen", () => {

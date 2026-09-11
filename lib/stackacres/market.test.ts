@@ -7,7 +7,7 @@ import {
   stackacresCapacityPrice,
   stackacresStockPrice,
 } from "./market";
-import { STACKACRES_CATALOGUE, STACKACRES_STOCK } from "./catalogue";
+import { STACKACRES_CATALOGUE, STACKACRES_LIVESTOCK, STACKACRES_STOCK } from "./catalogue";
 import { yieldValue } from "./items";
 import { stockZone, stocksInZone } from "./world";
 import { ZONE_IDS } from "./zones";
@@ -87,8 +87,8 @@ describe("the round trip", () => {
 });
 
 describe("capacity prices", () => {
-  it("give every stock kind a positive Gold price", () => {
-    for (const stock of STACKACRES_STOCK) {
+  it("give every livestock kind a positive Gold price -- crops have no cap to expand", () => {
+    for (const stock of STACKACRES_LIVESTOCK) {
       expect(STACKACRES_CAPACITY_PRICE[stock]).toBeGreaterThan(0);
       expect(stackacresCapacityPrice(stock)).toBe(STACKACRES_CAPACITY_PRICE[stock]);
     }

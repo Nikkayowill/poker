@@ -297,13 +297,23 @@ export const STACKACRES_FEED_SHIPMENTS_PER_PURCHASE = 20;
  * whether a Hen Coop is buyable at the Farmstead. Every kind gets its own
  * free base of 3, same number as the old shared cap, extendable by Gold.
  *
+ * LIVESTOCK ONLY, since 2026-09-11: a pen is a physical enclosure, so it
+ * still makes sense to bound how many hens/pigs/cattle occupy one. A crop bed
+ * is not -- there was never a real reason a farmer could run three tomato
+ * plants and not a fourth, and the cap only ever forced a Gold purchase
+ * (`STACKACRES_CAPACITY_PRICE`) to lift a ceiling nobody asked for. Crops are
+ * uncapped now; `isLivestock` is the switch everywhere this used to apply
+ * uniformly.
+ *
  * Mirrored by a BEFORE INSERT trigger on homestead_units (advisory-locked, so
  * two racing stockings cannot squeeze past it), reading the purchased slots
- * from homestead_capacity.
+ * from homestead_capacity. The trigger skips the check entirely for crop
+ * stocks now, same split as here.
  */
 export const STACKACRES_BASE_CAP = 3;
 
-/** How many extra slots Gold can buy for one kind, on top of the free base. */
+/** How many extra slots Gold can buy for one livestock kind, on top of the
+ *  free base. Crops have nothing to buy here any more -- see above. */
 export const STACKACRES_MAX_EXTRA_CAP = 3;
 
 export function capFor(extraSlots: number): number {
@@ -339,37 +349,19 @@ export const STACKACRES_MUCK_CHANCE = 0.2;
  * can still all be read in one place. Still sunk, never returned: capacity is
  * progression, not principal, and it buys ROOM rather than income -- the cap
  * itself bounds how much can run at once.
+ *
+ * LIVESTOCK ONLY, since 2026-09-11: crops dropped out of `STACKACRES_BASE_CAP`
+ * entirely, so there is no ceiling left for Gold to lift there. The 22 crop
+ * entries this table used to carry (flat 5,000 each) are gone with it rather
+ * than left as dead purchase options nobody can ever hit "already full" to
+ * see.
  */
-export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresStock, number>> = {
-  // All 22 crops: flat 5,000 across every tier -- capacity is priced by
-  // track, not by tier.
-  garlic: 5_000,
-  onion: 5_000,
-  beet: 5_000,
-  poppy: 5_000,
-  potato: 5_000,
-  carrot: 5_000,
-  cabbage: 5_000,
-  cucumber: 5_000,
-  pepper: 5_000,
-  brokoly: 5_000,
-  sunflower: 5_000,
-  sunflowe_broken: 5_000,
-  wheat1: 5_000,
-  tomato: 5_000,
-  corn: 5_000,
-  corn2: 5_000,
-  eggplant: 5_000,
-  grap: 5_000,
-  grap2: 5_000,
-  pumpkin: 5_000,
-  wheat2: 5_000,
-  artichoke: 5_000,
+export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresLivestock, number>> = {
   hen: 2_000,
   pig: 15_000,
   cattle: 40_000,
 };
 
-export function stackacresCapacityPrice(stock: StackAcresStock): number {
+export function stackacresCapacityPrice(stock: StackAcresLivestock): number {
   return STACKACRES_CAPACITY_PRICE[stock];
 }

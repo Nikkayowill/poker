@@ -146,4 +146,17 @@ describe("buyOptionsForZone", () => {
     const [full] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {} });
     expect(full.seedReason).toMatch(/full/);
   });
+
+  it("a crop has no cap at all, no matter how many are already planted", () => {
+    // "farmstead" is where every crop kind lives (lib/stackacres/world.ts).
+    const units = Array.from({ length: 40 }, (_, i) => unit({ id: `c${i}`, stock: "carrot" }));
+    const [carrot] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} })
+      .filter((o) => o.stock === "carrot");
+    expect(carrot.owned).toBe(40);
+    expect(carrot.cap).toBeNull();
+    expect(carrot.atCap).toBe(false);
+    expect(carrot.expand).toBeNull();
+    expect(carrot.seedAfford).toBe(true);
+    expect(carrot.seedReason).toBeNull();
+  });
 });

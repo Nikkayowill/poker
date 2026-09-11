@@ -298,10 +298,9 @@ export function barnHitAt(x: number, y: number): boolean {
 
 /**
  * Where the Midnight Merchant stands when a visit is live -- a fixed spot in
- * the yard, off to the barn's east side, clear of both the barn footprint
- * (x 71..145) and Grandfather Ray's own spot (props.ts's `{ x: 178, y: 20 }`,
- * whose 25.125-wide box spans roughly x 165..191). The Merchant is a
- * TEMPORARY visitor and has no `PropPlacement` entry in props.ts's
+ * the yard, off to the barn's east side, clear of the barn footprint
+ * (x 71..145). The Merchant is a TEMPORARY visitor and has no
+ * `PropPlacement` entry in props.ts's
  * `YARD_PROPS` -- that array is for permanent scenery only, painted once at
  * boot; the scene's own `setMerchant` (stackacres-scene.ts) adds and removes
  * this one picture at runtime, the same reconciled-node mechanism `setUnits`
@@ -312,11 +311,12 @@ export function barnHitAt(x: number, y: number): boolean {
  */
 export const MIDNIGHT_MERCHANT_SPOT: WorldPoint = yardPoint(230, 20);
 
-/** Same box `PROP_SIZE.grandfatherRay` uses (25.125 wide, 40 tall) --
- *  restated here rather than imported from props.ts, since that module's
- *  `PROP_SIZE` is keyed by `PropKind` and the Merchant, being temporary, is
- *  deliberately not a member of that closed set (see the doc comment
- *  above). */
+/** The same 25.125x40 box every standing chibi character on this map shares
+ *  (props.ts's `STANDING_CHARACTER_SHADOW` sizes its shadow off the same
+ *  build) -- restated here rather than imported from props.ts, since that
+ *  module's `PROP_SIZE` is keyed by `PropKind` and the Merchant, being
+ *  temporary, is deliberately not a member of that closed set (see the doc
+ *  comment above). */
 const MIDNIGHT_MERCHANT_FOOTPRINT: WorldRect = {
   x: MIDNIGHT_MERCHANT_SPOT.x - 25.125 / 2,
   y: MIDNIGHT_MERCHANT_SPOT.y - 40,
@@ -341,30 +341,44 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
 }
 
 /**
- * Grandfather Ray's own footprint -- the same box `PROP_SIZE.grandfatherRay`
- * gives (25.125 wide, 40 tall) at his fixed spot (props.ts's
- * `{ x: 178, y: 20 }`), restated here rather than imported from props.ts for
- * the identical reason `MIDNIGHT_MERCHANT_FOOTPRINT` restates it: props.ts
- * imports FROM this module (`BARN_FOOTPRINT`, `growAreaBounds`), so an
- * import back the other way would be a cycle.
+ * Ray's house -- a proper building now rather than a standing figure (see
+ * stackacres-sprites.ts's `rayHouse`/`rayHouseOpen`), and a big one: Kayo's
+ * call was close to the barn, bigger than his old standing spot, not exiled
+ * out toward the windmill. It stands directly behind the barn and silo,
+ * spanning both their width (barn 71..145, silo centred `BARN_X + 40` = 148)
+ * -- the one gap in the yard both close enough and open enough for a
+ * building this size: every gap AT the barn's own east side (where
+ * Grandfather Ray's old, much smaller footprint -- props.ts's former
+ * `{ x: 178, y: 20 }` -- used to sit, between the silo and the crates,
+ * the log pile and the Midnight Merchant's spot) is too narrow for anything
+ * bigger than his old 25-wide box; north of the barn, over its own roofline,
+ * is the only stretch wide AND clear.
  *
  * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
- * `onWorldRayTap`), which also carries his Shop and Blueprints buttons. That
- * is a different surface from the barn just west of him (`barnHitAt`, Ray's
- * Museum). His box does
- * not overlap the barn's (barn spans x 71..145; this spans roughly
- * x 165..191), so the two never compete for one tap.
+ * `onWorldRayTap`), which also carries his Shop and Blueprints buttons -- the
+ * same callback the standing figure used to answer for. That is a different
+ * surface from the barn (`barnHitAt`, Ray's Museum). This box does not
+ * overlap the barn's, the silo's, the field wall's (props.ts's `stoneWall`
+ * entries at y -46) or any other `YARD_PROPS` entry (x 63..153, y -76..-32 --
+ * see world-entryways.test.ts, which checks it against every one of those,
+ * and world.test.ts).
+ *
+ * Exported, unlike the signpost's or the windmill's own footprints: the
+ * scene's `paintRayHouse` reads it directly for where to stand the sprite
+ * (the same "footprint is the one source of truth, the scene paints off it"
+ * shape `MONK_HOUSE_FOOTPRINT` already uses), rather than restating its
+ * corner as a second literal the two could drift apart from.
  */
-const GRANDFATHER_RAY_FOOTPRINT: WorldRect = yardRect(178 - 25.125 / 2, 20 - 40, 25.125, 40);
+export const RAY_HOUSE_FOOTPRINT: WorldRect = yardRect(108 - 90 / 2, -32 - 44, 90, 44);
 
-/** Whether a tapped ground point lands on Grandfather Ray himself, as
- *  opposed to the barn behind him -- same shape as `midnightMerchantHitAt`. */
-export function grandfatherRayHitAt(x: number, y: number): boolean {
+/** Whether a tapped ground point lands on Ray's house, as opposed to the barn
+ *  well west of it -- same shape as `midnightMerchantHitAt`. */
+export function rayHouseHitAt(x: number, y: number): boolean {
   return (
-    x >= GRANDFATHER_RAY_FOOTPRINT.x &&
-    x <= GRANDFATHER_RAY_FOOTPRINT.x + GRANDFATHER_RAY_FOOTPRINT.width &&
-    y >= GRANDFATHER_RAY_FOOTPRINT.y &&
-    y <= GRANDFATHER_RAY_FOOTPRINT.y + GRANDFATHER_RAY_FOOTPRINT.height
+    x >= RAY_HOUSE_FOOTPRINT.x &&
+    x <= RAY_HOUSE_FOOTPRINT.x + RAY_HOUSE_FOOTPRINT.width &&
+    y >= RAY_HOUSE_FOOTPRINT.y &&
+    y <= RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height
   );
 }
 
@@ -1069,16 +1083,47 @@ const OPEN_SCRUB_KINDS: readonly SceneryKind[] = [
 const OPEN_BUSH_KINDS: readonly SceneryKind[] = ["bush", "bush2", "bush3"];
 
 /**
+ * A generous halo around Ray's house, wider than `RAY_HOUSE_FOOTPRINT` itself
+ * and reaching well past `FARM_ZONE`'s own edge to its north. `blocked`
+ * already refuses the whole farm zone, which ordinarily is exactly enough
+ * clearance for a `YARD_PROPS` entry or a building's own footprint -- but
+ * this house's footprint sits close enough to that edge (see its own header)
+ * that a tree or a bush planted just OUTSIDE the farm zone, even well past
+ * it, still visually reaches the roof and the chimney: the drawn sprite
+ * reads far taller than its flat ground box, the same "art bigger than
+ * footprint" gap `monkHouse`'s own header describes, and the first pass here
+ * (110 north) still left a bush sitting on the chimney. Padded 220 north of
+ * the footprint, 30 every other side.
+ */
+const RAY_HOUSE_CLEARANCE: WorldRect = {
+  x: RAY_HOUSE_FOOTPRINT.x - 30,
+  y: RAY_HOUSE_FOOTPRINT.y - 220,
+  width: RAY_HOUSE_FOOTPRINT.width + 60,
+  height: RAY_HOUSE_FOOTPRINT.height + 250,
+};
+
+function nearRayHouse(x: number, y: number): boolean {
+  return (
+    x >= RAY_HOUSE_CLEARANCE.x &&
+    x <= RAY_HOUSE_CLEARANCE.x + RAY_HOUSE_CLEARANCE.width &&
+    y >= RAY_HOUSE_CLEARANCE.y &&
+    y <= RAY_HOUSE_CLEARANCE.y + RAY_HOUSE_CLEARANCE.height
+  );
+}
+
+/**
  * One chunk of the open world's scenery, deterministic by chunk coordinate
  * so the same chunk regrows the same trees every time the camera returns to
  * it. Anything `blocked` refuses -- the farm zone, a path, the pond's
- * clearing, or one of ./zones.ts's districts -- is dropped rather than
- * shifted, so the farm's own edge stays exactly where it is, the road out
- * stays a road, no tree stands in the water, and the districts keep the
- * ground they paint for themselves.
+ * clearing, one of ./zones.ts's districts, or Ray's house's own halo -- is
+ * dropped rather than shifted, so the farm's own edge stays exactly where it
+ * is, the road out stays a road, no tree stands in the water, and the
+ * districts keep the ground they paint for themselves.
  */
 function blocked(x: number, y: number): boolean {
-  return inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y) || inSea(x, y);
+  return (
+    inFarmZone(x, y) || nearPath(x, y) || inPondZone(x, y) || inOuterZone(x, y) || inSea(x, y) || nearRayHouse(x, y)
+  );
 }
 
 /** Keeps a jittered planting point inside its own chunk. Every piece of

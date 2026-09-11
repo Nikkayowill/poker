@@ -8,14 +8,7 @@
  * they buy a silhouette the painters were not getting -- the cow and the hen
  * especially, which were circles with rounded-rect legs. `sheep`, `ox` and
  * `hog` are the same trade for the same reason (see the FLUX bake-off Kayo
- * signed off on); `grandfatherRay` is not an animal at all but is drawn the
- * identical way, since he is a character sprite standing in the world, not a
- * UI portrait.
- *
- * Ray was re-rolled at CHIBI proportions on 2026-09-04 -- one head in three
- * rather than one in six -- because looking DOWN at a figure on an isometric
- * grid foreshortens its body away to almost nothing, and a small head then
- * leaves nothing to read at all. See his painter in art-props.ts.
+ * signed off on).
  *
  * `tree1/2/3`, `pine` and `bush` joined them on 2026-09-04, and they are the
  * reason this comment no longer opens by holding the trees up as the model
@@ -111,7 +104,17 @@ export const SPRITE_ART = {
   // most "shrine", least "cottage" silhouette in the set.
   monkHouse: "/stackacres/sprites/monk-house.png",
   windmill: "/stackacres/sprites/windmill.png",
-  grandfatherRay: "/stackacres/sprites/grandfather-ray.png",
+  // Ray's house: two states of one supplied isometric cottage, chroma-keyed
+  // off a solid magenta backing and cropped to the same canvas so the two
+  // line up in place. `rayHouse` is idle; `rayHouseOpen` (door open, window
+  // boxes out, a fold-down step, a scatter of petals) is what the scene
+  // swaps to for as long as a finger is down on the house, the same
+  // press-and-release feel a FarmVille building gives -- see
+  // `paintRayHouse`/`setRayHousePressed` in stackacres-scene.ts. Grandfather
+  // Ray himself no longer stands here as a sprite; he is being redrawn at a
+  // proper isometric scale to stand beside the house once that art is ready.
+  rayHouse: "/stackacres/sprites/ray-house.png",
+  rayHouseOpen: "/stackacres/sprites/ray-house-open.png",
   // The canopy. Off the isometric plant pack like everything below it since
   // 2026-09-06 -- see scripts/prepare-stackacres-plants.py.
   tree1: "/stackacres/sprites/tree1.png",

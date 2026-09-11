@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { YARD_PROPS, propRect, type PropKind } from "./props";
 import {
   barnHitAt,
-  grandfatherRayHitAt,
   growAreaInterior,
   penFeedSpot,
+  rayHouseHitAt,
   signpostHitAt,
   windmillHitAt,
   yardWellHitAt,
@@ -31,13 +31,13 @@ describe("the yard's entryways", () => {
       expect(hits[kind](at.x, at.y)).toBe(true);
     });
 
-    it(`keeps the ${kind} clear of the others, the barn and Ray`, () => {
+    it(`keeps the ${kind} clear of the others, the barn and Ray's house`, () => {
       const at = centreOf(kind);
       for (const other of kinds) {
         if (other !== kind) expect(hits[other](at.x, at.y)).toBe(false);
       }
       expect(barnHitAt(at.x, at.y)).toBe(false);
-      expect(grandfatherRayHitAt(at.x, at.y)).toBe(false);
+      expect(rayHouseHitAt(at.x, at.y)).toBe(false);
     });
   }
 });

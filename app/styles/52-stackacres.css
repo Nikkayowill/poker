@@ -1115,15 +1115,25 @@
    of the map, not a fixed piece of farmhouse furniture, and it is the one
    surface asked to carry the same frosted, tinted-glass material as
    `.sa-drag-token` (the water can / feed scoop's own floating token) further
-   down this file.
+   down this file -- same formula (a real translucent fill under the blur,
+   not just the blur on its own), just cooler and heavier. An earlier pass
+   here tried near-zero fill (`rgba(255,255,255,.03)`) on the theory that
+   `backdrop-filter` alone would carry the whole look, but this map renders
+   through Phaser/WebGL (`stackacres-world.tsx`'s `Phaser.AUTO`), and how
+   reliably a browser can sample a WebGL canvas through a backdrop filter
+   varies -- with nothing but a hairline of white behind it, the shell read
+   as flat black wherever that sampling came up short instead of glass.
+   `.sa-drag-token` never had that problem because it never dropped its own
+   real fill; this row doesn't either.
 
-   The fill itself is almost nothing (a bare `rgba(255, 255, 255, .03)`) --
-   the "Liquid Glass" read comes from `backdrop-filter` doing nearly all the
-   work (heavy blur + saturation boost, so whatever's under the shell reads
-   through it warped and intensified rather than dimmed) plus the `::before`
-   lens edge below standing in for a real border: a 1px ring built from a
-   gradient and `mask-composite`, since a flat `border` on glass this
-   transparent reads as a hard seam rather than a refracted edge. */
+   No `border` here -- separation from the map comes from shadow and the
+   soft 1px glow folded into `box-shadow` below, the same borderless-chrome
+   instinct `app/styles/CLAUDE.md` calls for elsewhere, rather than a hard
+   line boxing in the whole shell (including the close button riding on top
+   of it). `.sa-gel-token` below keeps its own thin border -- each token
+   still has to read as a separate pressable capsule packed next to its
+   neighbours in the scroll strip, which shadow alone doesn't sell at this
+   size. */
 .sa-gel-row {
   position: absolute;
   translate: -50% 0;
@@ -1133,35 +1143,18 @@
   padding: 7px 32px 7px 10px;
   border: none;
   border-radius: var(--sa-r-chip);
-  background: rgba(255, 255, 255, .03);
-  -webkit-backdrop-filter: blur(30px) saturate(1.9);
-  backdrop-filter: blur(30px) saturate(1.9);
+  background:
+    radial-gradient(120% 140% at 20% 10%, rgba(255, 255, 255, .4) 0%, rgba(255, 255, 255, .14) 38%, rgba(255, 255, 255, 0) 60%),
+    rgba(255, 255, 255, .16);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
   box-shadow:
-    inset 0 -6px 12px rgba(122, 86, 54, .1),
-    inset 0 2px 4px rgba(255, 255, 255, .18),
-    0 12px 26px rgba(52, 34, 18, .3);
+    inset 0 -6px 12px rgba(18, 22, 32, .14),
+    inset 0 1.5px 3px rgba(255, 255, 255, .6),
+    0 12px 26px rgba(14, 14, 22, .32),
+    0 0 0 1px rgba(255, 255, 255, .3);
   pointer-events: auto;
   animation: sa-gel-in 240ms var(--sa-bounce) backwards;
-}
-
-/* The lens edge: a 1px ring cut from a gradient using mask-composite rather
-   than a plain `border`, so the rim itself looks like light catching the lip
-   of a clear fluid lens (brighter along the top-left, thinning out) instead
-   of a flat painted line. Shared by the row shell and each token below --
-   both need `position: relative` (the row already gets it from `position:
-   absolute`) and a border-radius for `inherit` to pick up. */
-.sa-gel-row::before,
-.sa-gel-token::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(155deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .12) 45%, rgba(255, 255, 255, .5));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
 }
 
 /* The scrollable strip inside the shell above -- split out from `.sa-gel-row`
@@ -1236,20 +1229,24 @@
 
 .sa-gel-empty p { margin: 0; }
 
-/* One token: a drop of the same near-invisible glass `.sa-gel-row` is made
-   of, pooled into a small capsule. `.sa-gel-token` still joins the shared
+/* One token: a drop of the same glass `.sa-gel-row` is made of, pooled into
+   a small capsule -- same real-fill-under-the-blur formula as the row (see
+   its own comment above for why), just with a real thin border back in,
+   since a small capsule packed edge-to-edge against its neighbours in the
+   scroll strip needs that line to read as its own separate piece the way
+   the row's single shell doesn't. `.sa-gel-token` still joins the shared
    pressable-block family further up this file for its font, tap highlight
    and focus ring, but every rule that used to draw it as a flat outlined
    block is overridden below -- glass reads as a material in its own right,
    not a paper block that happens to be see-through.
 
-   Blur is capped below the row's own 30px on purpose: up to VISIBLE_TOKENS-
+   Blur is capped below the row's own 24px on purpose: up to VISIBLE_TOKENS-
    and-then-some tokens can be mounted at once in `.sa-gel-scroll` (the Long
    Meadow alone holds 22 crops -- only 3 are ever clipped into view, but the
    rest still sit in the DOM off to the side, each carrying its own
-   `backdrop-filter`), and stacking a 30px blur across that many composited
+   `backdrop-filter`), and stacking a heavy blur across that many composited
    layers is a real scroll-jank risk on mobile Safari, which is where this
-   dock actually lives. 18px still reads as heavy glass without paying for
+   dock actually lives. 16px still reads as heavy glass without paying for
    every off-screen token at the row's own cost.
 
    `.is-live` is the fixed-position "picked up" state: while a drag holds a
@@ -1272,15 +1269,17 @@
   gap: 1px;
   padding: 7px 5px;
   overflow: hidden;
-  border: none;
+  border: 1.5px solid rgba(255, 255, 255, .6);
   border-radius: 20px;
-  background: rgba(255, 255, 255, .05);
-  -webkit-backdrop-filter: blur(18px) saturate(1.75);
-  backdrop-filter: blur(18px) saturate(1.75);
+  background:
+    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .18) 40%, rgba(255, 255, 255, 0) 60%),
+    rgba(255, 255, 255, .2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.7);
+  backdrop-filter: blur(16px) saturate(1.7);
   box-shadow:
-    inset 0 -5px 10px rgba(122, 86, 54, .16),
-    inset 0 1.5px 3px rgba(255, 255, 255, .8),
-    0 4px 10px rgba(52, 34, 18, .22);
+    inset 0 -5px 10px rgba(18, 22, 32, .16),
+    inset 0 1.5px 3px rgba(255, 255, 255, .75),
+    0 4px 10px rgba(14, 14, 22, .24);
   color: var(--sa-ink);
   cursor: grab;
   /* Horizontal panning stays native (the row scrolls under a thumb same as
@@ -1293,17 +1292,17 @@
 
 .sa-gel-token:hover:not(:disabled) { filter: brightness(1.05) saturate(1.1); }
 .sa-gel-token .sa-ico {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .2));
 }
 
 .sa-gel-token:not(:disabled):active {
   transform: scale(.92, 1.06);
   box-shadow:
-    inset 0 -3px 8px rgba(122, 86, 54, .22),
+    inset 0 -3px 8px rgba(18, 22, 32, .22),
     inset 0 1.5px 3px rgba(255, 255, 255, .85),
-    0 2px 6px rgba(52, 34, 18, .24);
+    0 2px 6px rgba(14, 14, 22, .26);
   transition: none;
 }
 
@@ -1324,9 +1323,9 @@
   cursor: grabbing;
   animation: sa-gel-pickup 220ms var(--sa-bounce);
   box-shadow:
-    inset 0 -5px 10px rgba(122, 86, 54, .16),
+    inset 0 -5px 10px rgba(18, 22, 32, .16),
     inset 0 1.5px 3px rgba(255, 255, 255, .85),
-    0 16px 28px rgba(28, 44, 64, .3);
+    0 16px 28px rgba(14, 14, 22, .32);
 }
 
 .sa-gel-token.is-live.is-hot {

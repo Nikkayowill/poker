@@ -91,6 +91,7 @@ import {
   type ZoneId,
 } from "@/lib/stackacres/zones";
 import {
+  CROP_FIELD_BEDS,
   STACKACRES_CHUNK,
   WORLD_BOUND_MARGIN,
   barnHitAt,
@@ -137,6 +138,7 @@ import {
   removeSoilTile,
   soilSlotPoint,
   soilSlotTile,
+  SOIL_TILE,
   soilTileAt,
   soilTileDiamond,
   soilTileGroup,
@@ -1755,10 +1757,16 @@ export class StackAcresScene extends Phaser.Scene {
    *  marks a placement candidate but held up for the whole hold-tap, not just
    *  one frame -- see `startSoilLift`. */
   private soilLiftPreview: Phaser.GameObjects.Graphics | null = null;
+  /** Every tile a lifted group could legally land on, lit up for the whole
+   *  hold so the second tap has somewhere to aim -- see `startSoilLift` and
+   *  `validSoilLiftDestinations`. Drawn under `soilLiftPreview`'s own
+   *  outline, same as `soilPreview` is, so the group's current spot still
+   *  reads as distinct from where it could go. */
+  private soilLiftGrid: Phaser.GameObjects.Graphics | null = null;
   /** The pending hold-tap relocation, or null when nothing is lifted and
    *  every tap resolves through the ordinary `dispatchTap` chain below. Set
    *  by `startSoilLift`, cleared by `cancelSoilLift`/`commitSoilLift`. */
-  private soilLift: { anchor: SoilTileCoord; group: SoilTileCoord[] } | null = null;
+  private soilLift: { anchor: SoilTileCoord; group: SoilTileCoord[]; destinations: SoilTileCoord[] } | null = null;
   /** The lifted group's own bob tweens, one per crop container standing on
    *  it, alongside the container's resting `y` -- torn down the same moment
    *  `soilLift` clears so a stale tween never outlives the lift it was
@@ -1941,6 +1949,14 @@ export class StackAcresScene extends Phaser.Scene {
     this.soilPreview = this.add
       .graphics()
       .setDepth(GROW_AREA_GROUND_DEPTH + 1)
+      .setVisible(false);
+
+    // Between `soilPreview` and the lift's own outline: the whole set of
+    // legal drop tiles, so it reads under the lifted group's origin but over
+    // an ordinary bed's flat soil.
+    this.soilLiftGrid = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH + 1.5)
       .setVisible(false);
 
     // One depth above `soilPreview`: a lift can be up while the seed ring
@@ -3780,8 +3796,11 @@ export class StackAcresScene extends Phaser.Scene {
     const group = soilTileGroup(this.soil, tx, ty);
     if (group.length === 0) return;
     this.teardownSoilLiftVisuals();
-    this.soilLift = { anchor: { tx, ty }, group };
+    const anchor = { tx, ty };
+    const destinations = this.validSoilLiftDestinations(anchor);
+    this.soilLift = { anchor, group, destinations };
     this.drawSoilLiftOutline(group);
+    this.drawSoilLiftGrid(destinations);
     if (this.options.reducedMotion) return;
     const groupKeys = new Set(group.map((tile) => `${tile.tx},${tile.ty}`));
     for (const [, node] of this.nodes) {
@@ -3803,14 +3822,22 @@ export class StackAcresScene extends Phaser.Scene {
 
   /** Draws the lifted group's own outline -- every tile in the group gets
    *  the same diamond `previewSoilAt` draws for one placement candidate,
-   *  since a lift can cover more than the single tile that started it. */
+   *  since a lift can cover more than the single tile that started it.
+   *
+   *  Uses the "gold" ramp, not "soil" -- a dark-on-dark soil-toned fill sat
+   *  almost invisibly over an actual bed's own already-dark dirt, leaving the
+   *  bob tween (crops only, and off entirely under `reducedMotion`) as the
+   *  sole cue that anything was picked up. Gold is otherwise unused as a
+   *  scene UI colour here, so it can't be mistaken for `soilLiftGrid`'s blue
+   *  "valid destination" tiles or for any ground material already on the
+   *  farm. */
   private drawSoilLiftOutline(group: readonly SoilTileCoord[]): void {
     const preview = this.soilLiftPreview;
     if (!preview) return;
     preview.clear();
-    const ramp = rampHex("soil");
-    preview.fillStyle(ramp.top, 0.35);
-    preview.lineStyle(2, ramp.rim, 0.95);
+    const ramp = rampHex("gold");
+    preview.fillStyle(ramp.top, 0.4);
+    preview.lineStyle(2.5, ramp.rim, 1);
     for (const tile of group) {
       const corners = soilTileDiamond(tile.tx, tile.ty);
       preview.beginPath();
@@ -3825,6 +3852,64 @@ export class StackAcresScene extends Phaser.Scene {
     preview.setVisible(true);
   }
 
+  /**
+   * Every tile in `CROP_FIELD_BEDS` the lifted group could legally land on,
+   * judged the exact way the drop tap itself will judge it -- one
+   * `planSoilGroupRelocation` call per candidate, kept only on `"ok"`. Static
+   * for the whole hold: nothing else can touch `this.soil` while a lift is
+   * up (any soil change that did would cancel the lift outright, see
+   * `refreshSoil`), so this only has to run once, at lift-start, rather than
+   * on every pointer move.
+   *
+   * The anchor's own tile is excluded for free -- translating it onto itself
+   * is a `"no-op"`, not an `"ok"`, in `planSoilGroupRelocation` -- so it never
+   * fights with `drawSoilLiftOutline`'s own outline over the group's current
+   * spot.
+   */
+  private validSoilLiftDestinations(anchor: SoilTileCoord): SoilTileCoord[] {
+    const minTx = Math.floor(CROP_FIELD_BEDS.x / SOIL_TILE) - 1;
+    const maxTx = Math.ceil((CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width) / SOIL_TILE);
+    const minTy = Math.floor(CROP_FIELD_BEDS.y / SOIL_TILE) - 1;
+    const maxTy = Math.ceil((CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height) / SOIL_TILE);
+    const destinations: SoilTileCoord[] = [];
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      for (let ty = minTy; ty <= maxTy; ty++) {
+        const plan = planSoilGroupRelocation(this.soil, anchor.tx, anchor.ty, tx, ty, soilTileInCropFieldBeds);
+        if (plan.kind === "ok") destinations.push({ tx, ty });
+      }
+    }
+    return destinations;
+  }
+
+  /** Lights up every legal drop tile while a group is lifted -- the same
+   *  diamond shape as `previewSoilAt`/`drawSoilLiftOutline`, but in the
+   *  "valid" water tone and at a fraction of the alpha, since this can be
+   *  dozens of tiles at once rather than one candidate or one group. */
+  private drawSoilLiftGrid(destinations: readonly SoilTileCoord[]): void {
+    const grid = this.soilLiftGrid;
+    if (!grid) return;
+    grid.clear();
+    if (destinations.length === 0) {
+      grid.setVisible(false);
+      return;
+    }
+    const ramp = rampHex("water");
+    grid.fillStyle(ramp.top, 0.14);
+    grid.lineStyle(1, ramp.rim, 0.5);
+    for (const tile of destinations) {
+      const corners = soilTileDiamond(tile.tx, tile.ty);
+      grid.beginPath();
+      grid.moveTo(corners.n.x, corners.n.y);
+      grid.lineTo(corners.e.x, corners.e.y);
+      grid.lineTo(corners.s.x, corners.s.y);
+      grid.lineTo(corners.w.x, corners.w.y);
+      grid.closePath();
+      grid.fillPath();
+      grid.strokePath();
+    }
+    grid.setVisible(true);
+  }
+
   /** Tears down the lift's own visuals -- the outline and every bob tween,
    *  each container put back exactly where it rested -- without touching
    *  `this.soilLift` itself, so `cancelSoilLift` and `commitSoilLift` can
@@ -3837,6 +3922,8 @@ export class StackAcresScene extends Phaser.Scene {
     this.soilLiftTweens = [];
     this.soilLiftPreview?.clear();
     this.soilLiftPreview?.setVisible(false);
+    this.soilLiftGrid?.clear();
+    this.soilLiftGrid?.setVisible(false);
   }
 
   /** Puts a lifted group back down unmoved -- tapping its own spot again, a

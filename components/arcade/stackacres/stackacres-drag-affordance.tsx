@@ -67,7 +67,7 @@ type Phase = "idle" | "dragging" | "returning" | "settling";
  * throw rather than a ruler line. Both ends are pulled in so the token and
  * the target ring sit over clean ends instead of over the line.
  */
-function arrowGeometry(from: TapPoint, to: TapPoint): { d: string; head: string } | null {
+export function arrowGeometry(from: TapPoint, to: TapPoint): { d: string; head: string } | null {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len = Math.hypot(dx, dy);

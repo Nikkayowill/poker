@@ -2150,6 +2150,7 @@ describe("the currency wall", () => {
       "buy-seed",
       "buy-soil",
       "buy-stock",
+      "catch-fish",
       "clear",
       "clear-sector",
       "collect",
@@ -2204,6 +2205,9 @@ describe("the currency wall", () => {
     // -- `aim-pipe` included, a cosmetic turn of one pipe stub that touches
     // nothing but its own row; `feed-pen` and `draw-water` included, which
     // spend feed servings and refill the watering can and never touch Gold;
+    // `catch-fish` included too, same category as `collect`: it credits
+    // inventory (one of the three catchable fish) and never Gold directly --
+    // selling a catch is `sell`'s job, not a new payer of its own;
     // `upgrade-tool` included, which is a pure sink, and the critical harvest
     // it buys is bonus produce inside `collect`, never Gold;
     // `work`, `process`, `request-contract` and `build-greenhouse` included,

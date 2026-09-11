@@ -69,7 +69,7 @@ import {
   sparkleScale,
   type Sparkle,
 } from "@/lib/stackacres/sunlight";
-import { DOCK, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
+import { DOCK, dockHitAt, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import { WeatherOverlayManager } from "./weather-overlay-manager";
 import { WildlifeManager } from "./wildlife-manager";
 import { fenceSegmentsForZone, type FenceTier, type WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
@@ -404,6 +404,10 @@ export interface StackAcresSceneCallbacks {
   /** A tap that landed on the yard's well, where the watering can gets
    *  filled. Same priority as the windmill. */
   onWellTap: (at: TapPoint) => void;
+  /** A tap that landed on the pond's dock, where a line gets cast. Same
+   *  priority as the well -- both are fixed utility fixtures, checked right
+   *  after it. */
+  onDockTap: (at: TapPoint) => void;
   /**
    * A tap that landed on the Midnight Merchant, ONLY while `setMerchant` has
    * him actually standing on the lot -- see that method's own header. Fired
@@ -4921,6 +4925,11 @@ export class StackAcresScene extends Phaser.Scene {
       // The yard's well, where the watering can is filled.
       if (yardWellHitAt(ground.x, ground.y)) {
         this.callbacks.onWellTap(local);
+        return;
+      }
+      // The pond's dock, where a line gets cast.
+      if (dockHitAt(ground.x, ground.y)) {
+        this.callbacks.onDockTap(local);
         return;
       }
       // The Greenhouse's own entryway -- checked right after the barn, the

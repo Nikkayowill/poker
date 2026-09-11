@@ -143,7 +143,8 @@ import {
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import type { MachineItemId, MachineProcessedItem } from "@/lib/stackacres/machine-items";
+import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
+import type { FishSpecies } from "@/lib/stackacres/fishing";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -222,6 +223,8 @@ import { StackAcresGroundTools } from "./stackacres-ground-tools";
 import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
 import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
+import { FISHING_SPOT } from "@/lib/stackacres/water";
+import { StackAcresFishingAffordance } from "./stackacres-fishing-affordance";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
 import {
@@ -350,6 +353,16 @@ type DragOffer =
   | { key: string; kind: "feed-pen"; zone: ZoneId; iconAt: TapPoint; targetAt: TapPoint }
   | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
 
+/** The fishing rod floating at the dock, mid-cast. Its own state, not a
+ *  `DragOffer`: a cast is a two-stage gesture (drag in, wait for a bite,
+ *  drag back out), not the single drop the water can/feed scoop settle on --
+ *  see stackacres-fishing-affordance.tsx. */
+interface FishingOffer {
+  key: string;
+  iconAt: TapPoint;
+  targetAt: TapPoint;
+}
+
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
   /** Null for a cookie-less first visit: the read route never mints a session. */
@@ -435,6 +448,11 @@ interface StackAcresResponse {
   };
   sold?: { item: MachineItemId; quantity: number; gold: number };
   vatCollected?: { quantity: number; tier: 1 | 2 | 3; stars: 1 | 2 | 3; multiplier: number; gold: number };
+  /** Set by a successful `catch-fish` response; every other action's answer
+   *  leaves this undefined. Which fish is the server's own dice roll --
+   *  `inventory` above already carries the resulting count, this is only
+   *  the cast's own "here is what you landed" line. */
+  fishCaught?: { species: FishSpecies };
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -647,6 +665,8 @@ export function StackAcresFarm() {
   /** The drag tool floating on the map right now, if any: the watering can
    *  over a dry crop, or the feed scoop over a hungry pen. */
   const [dragOffer, setDragOffer] = useState<DragOffer | null>(null);
+  /** The rod mid-cast at the dock, if any. See `FishingOffer`'s own header. */
+  const [fishingOffer, setFishingOffer] = useState<FishingOffer | null>(null);
   /** The map's own box, so a drag tool can be kept inside it. */
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
@@ -1976,6 +1996,15 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
+        // A cast pays no Gold -- it fills the shelf, same as a harvest. The
+        // reel-out animation already played on the press; this is the actual
+        // catch, once the server's dice roll is in.
+        if (body.action === "catch-fish" && data.fishCaught) {
+          const label = machineItemLabel(data.fishCaught.species, 1);
+          waterSound();
+          setLastCollect({ text: `Caught a ${label}!`, nonce: Date.now() });
+          if (anchor) world.current?.floatAt(anchor, `+1 ${label}`, "gain");
+        }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
         // dispatch itself). This is the SECOND, more celebratory beat --
@@ -2720,6 +2749,30 @@ export function StackAcresFarm() {
     },
     [act, water],
   );
+
+  /** A finger landed on the dock. Floats the rod for a cast -- unless one is
+   *  already out, in which case the tap does nothing rather than stacking a
+   *  second line on top of the first. */
+  const onWorldDockTap = useCallback(
+    (at: TapPoint) => {
+      setRadial(null);
+      if (fishingOffer) return;
+      const targetAt = world.current?.fieldPointFor(FISHING_SPOT.x, FISHING_SPOT.y);
+      if (!targetAt) return;
+      panelSound();
+      setFishingOffer({ key: `fish:${Date.now()}`, iconAt: offerIconAt(at), targetAt });
+    },
+    [fishingOffer, offerIconAt],
+  );
+
+  /** A cast landed a fish. The overlay plays its own splash; this sends the
+   *  action and gives it a voice once the server confirms which fish. */
+  const onFishCaught = useCallback(() => {
+    tapAnchor.current = fishingOffer?.targetAt ?? null;
+    void act({ action: "catch-fish" });
+  }, [act, fishingOffer]);
+
+  const closeFishingOffer = useCallback(() => setFishingOffer(null), []);
 
   /** A drag tool landed on its target. The overlay plays the pour or
    *  scatter itself; this sends the action and gives it a voice. */
@@ -3742,6 +3795,7 @@ export function StackAcresFarm() {
               onSignpostTap={onWorldSignpostTap}
               onWorkshopTap={onWorldWorkshopTap}
               onWellTap={onWorldWellTap}
+              onDockTap={onWorldDockTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
@@ -3906,6 +3960,17 @@ export function StackAcresFarm() {
               }
               onDrop={onDragDrop}
               onClose={closeDragOffer}
+            />
+          )}
+
+          {/* The dock's own rod, mid-cast. */}
+          {fishingOffer && (
+            <StackAcresFishingAffordance
+              key={fishingOffer.key}
+              iconAt={fishingOffer.iconAt}
+              targetAt={fishingOffer.targetAt}
+              onCatch={onFishCaught}
+              onClose={closeFishingOffer}
             />
           )}
 

@@ -281,7 +281,11 @@ type CorePainterName =
   | "ico-cheese"
   | "ico-cloth"
   | "ico-cake"
-  | "ico-drone";
+  | "ico-drone"
+  | "ico-rod"
+  | "ico-fish-bluegill"
+  | "ico-fish-trout"
+  | "ico-fish-catfish";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -1907,6 +1911,83 @@ const DRAWN: Record<PainterName, Painter> = {
     stroke(c, "#2b7a9c", 1.8);
     ell(c, 9.3, 15, 2.1, 3, -0.3);
     F(c, "rgba(255,255,255,.55)");
+  }),
+
+  // The rod the dock's drag token holds: a plain taper from a hand grip to
+  // a sagging line and a red-and-white bobber, the same layered-stroke
+  // technique ico-pipe's steel body/rim uses for its own roundness.
+  "ico-rod": painter(24, 24, (c) => {
+    c.lineCap = "round";
+    c.beginPath();
+    c.moveTo(5, 21);
+    c.lineTo(19, 4);
+    stroke(c, "#7a5432", 2.6);
+    c.beginPath();
+    c.moveTo(5.6, 20.4);
+    c.lineTo(18.6, 4.6);
+    stroke(c, "#b8895a", 1.1);
+    rr(c, 3.2, 18.4, 4.2, 4.6, 1.6);
+    F(c, "#4a3320");
+    c.beginPath();
+    c.moveTo(19, 4);
+    c.quadraticCurveTo(17, 13, 13.5, 17.5);
+    stroke(c, "rgba(255,255,255,.85)", 1);
+    ell(c, 13.5, 18.6, 2.3, 2.3);
+    F(c, "#e0453a");
+    ell(c, 13.5, 20.1, 2.3, 1);
+    F(c, "#fff");
+  }),
+
+  // The pond's three catches, all built on the same body/tail/fin shape so
+  // they read as one family -- see machine-items.ts's MACHINE_ITEM_CATALOGUE
+  // for the label/sell-price side. Common bluegill is the plain one; trout
+  // gets speckles, catfish gets whiskers, the two traits an angler would
+  // actually use to tell them apart.
+  "ico-fish-bluegill": painter(24, 24, (c) => {
+    poly(c, [[8, 13], [2, 7.5], [4.4, 13], [2, 18.5]]);
+    F(c, "#2a5a94");
+    ell(c, 13.5, 13, 7, 4.6);
+    F(c, lin(c, 13.5, 8.4, 13.5, 17.6, [[0, "#5b9bdb"], [1, "#2f6bab"]]));
+    ell(c, 13.5, 15.6, 5.8, 2.2);
+    F(c, "#bfe3f5");
+    poly(c, [[12, 8.6], [15.5, 8.6], [13.7, 5.4]]);
+    F(c, "#3f7fc4");
+    ell(c, 18.3, 11.6, 1, 1);
+    F(c, "#12233a");
+  }),
+
+  "ico-fish-trout": painter(24, 24, (c) => {
+    poly(c, [[8, 13], [2, 7.5], [4.4, 13], [2, 18.5]]);
+    F(c, "#4a6a38");
+    ell(c, 13.5, 13, 7, 4.6);
+    F(c, lin(c, 13.5, 8.4, 13.5, 17.6, [[0, "#7a9c5c"], [1, "#526f3a"]]));
+    ell(c, 13.5, 15.6, 5.8, 2.2);
+    F(c, "#e9c8c2");
+    for (const [x, y] of [[11, 11], [15, 10.4], [17, 13.2], [12.5, 14.6]] as const) {
+      ell(c, x, y, 0.6, 0.6);
+      F(c, "#33421f");
+    }
+    poly(c, [[12, 8.6], [15.5, 8.6], [13.7, 5.4]]);
+    F(c, "#5c7e42");
+    ell(c, 18.3, 11.6, 1, 1);
+    F(c, "#1c2413");
+  }),
+
+  "ico-fish-catfish": painter(24, 24, (c) => {
+    poly(c, [[8, 13], [2, 8], [4.4, 13], [2, 18]]);
+    F(c, "#5b544a");
+    ell(c, 13, 13, 7.6, 4.2);
+    F(c, lin(c, 13, 8.8, 13, 17.2, [[0, "#8b8375"], [1, "#5b544a"]]));
+    ell(c, 13, 15.2, 6.2, 2);
+    F(c, "#c9c2b0");
+    c.beginPath();
+    c.moveTo(19.5, 12.4);
+    c.quadraticCurveTo(22.5, 11, 22.8, 9.4);
+    c.moveTo(19.5, 13.6);
+    c.quadraticCurveTo(22.5, 15, 22.8, 16.6);
+    stroke(c, "#3f3a32", 0.9);
+    ell(c, 19.3, 12, 0.9, 0.9);
+    F(c, "#161310");
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

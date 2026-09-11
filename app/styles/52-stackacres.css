@@ -4622,6 +4622,217 @@
   .sa-drag-token { transition: none; }
 }
 
+/* ---- fishing --------------------------------------------------------
+   The dock's own drag overlay -- see stackacres-fishing-affordance.tsx's
+   header for the two-stage cast/reel this plays out. Deliberately its own
+   block rather than a third `.sa-drag` variant: the extra `waiting`/`biting`
+   phases and the red bite cue don't exist on the can/scoop's single drop. */
+
+.sa-fish {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.sa-fish-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+  pointer-events: auto;
+}
+
+.sa-fish-arrow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1.5px rgba(40, 24, 10, .45));
+}
+
+.sa-fish-arrow-line {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 1 11;
+  animation: sa-drag-march .7s linear infinite;
+  opacity: .35;
+}
+
+.sa-fish-arrow-head { fill: #fff; opacity: .35; }
+
+.sa-fish-target {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border: 3px dashed rgba(255, 255, 255, .92);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(40, 24, 10, .25), inset 0 0 14px rgba(255, 255, 255, .3);
+  pointer-events: none;
+  animation: sa-drag-pulse 1.2s ease-in-out infinite;
+  transition: border-color .2s var(--sa-ease-out), background-color .2s var(--sa-ease-out);
+}
+
+.sa-fish.is-waiting .sa-fish-target,
+.sa-fish.is-biting .sa-fish-target { animation: none; }
+
+/* The bite: the ring flips red and pulses hard, the one cue the whole
+   gesture hangs on -- it has to read from across the field, not just up
+   close on the token itself. */
+.sa-fish.is-biting .sa-fish-target {
+  border-style: solid;
+  border-color: #ff4a3d;
+  background-color: rgba(255, 74, 61, .22);
+  box-shadow: 0 0 0 2px rgba(120, 10, 6, .35), 0 0 18px rgba(255, 74, 61, .65);
+  animation: sa-fish-bite .5s ease-in-out infinite;
+}
+
+.sa-fish.is-settling .sa-fish-target { opacity: 0; transition: opacity .3s var(--sa-ease-out); }
+
+@keyframes sa-fish-bite {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+
+.sa-fish-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, .75);
+  border-radius: 50%;
+  background:
+    radial-gradient(110% 80% at 30% 18%, rgba(255, 255, 255, .9) 0%, rgba(255, 255, 255, .28) 34%, rgba(255, 255, 255, 0) 56%),
+    radial-gradient(circle at 72% 86%, rgba(120, 78, 32, .5) 0%, transparent 62%),
+    linear-gradient(160deg, rgba(224, 195, 150, .82), rgba(160, 118, 62, .55));
+  box-shadow:
+    inset 0 -7px 14px rgba(0, 0, 0, .16),
+    inset 0 2px 5px rgba(255, 255, 255, .8),
+    0 12px 24px rgba(28, 44, 64, .34),
+    0 0 0 5px rgba(255, 255, 255, .16);
+  -webkit-backdrop-filter: blur(8px) saturate(1.6);
+  backdrop-filter: blur(8px) saturate(1.6);
+  transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) scale(var(--grow, 1)) rotate(var(--tilt, 0deg));
+  transition: transform .26s cubic-bezier(.34, 1.56, .64, 1);
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sa-fish-token:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
+.sa-fish-token .sa-ico {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
+  transform-origin: 78% 78%;
+  animation: sa-fish-rod-idle 1.8s ease-in-out infinite;
+}
+
+/* The rod animation the drop and the tap both play: an idle bob while
+   nothing's happening, a slower dip once the line goes quiet, and a sharp
+   jerk once something is actually on the hook. */
+@keyframes sa-fish-rod-idle {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-4deg); }
+}
+
+@keyframes sa-fish-rod-wait {
+  0%, 100% { transform: rotate(2deg); }
+  50% { transform: rotate(-2deg); }
+}
+
+@keyframes sa-fish-rod-bite {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-11deg); }
+  40% { transform: rotate(7deg); }
+  60% { transform: rotate(-9deg); }
+  80% { transform: rotate(5deg); }
+}
+
+.sa-fish.is-waiting .sa-fish-token .sa-ico { animation: sa-fish-rod-wait 2.4s ease-in-out infinite; }
+.sa-fish.is-biting .sa-fish-token .sa-ico { animation: sa-fish-rod-bite .5s ease-in-out infinite; }
+.sa-fish.is-dragging .sa-fish-token .sa-ico { animation: none; }
+
+.sa-fish-token:focus-visible {
+  outline: 3px solid var(--sa-corn);
+  outline-offset: 3px;
+}
+
+.sa-fish.is-dragging .sa-fish-token {
+  --grow: 1.12;
+  transition: none;
+  cursor: grabbing;
+}
+
+.sa-fish.is-settling .sa-fish-token {
+  --tilt: -50deg;
+  transition: transform .22s var(--sa-ease-out);
+  animation: sa-drag-fade .62s ease-in forwards;
+}
+
+.sa-fish-hint {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: var(--sa-r-chip);
+  background: rgba(52, 34, 18, .74);
+  color: var(--sa-cream);
+  font-family: var(--sa-font);
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sa-fish.is-biting .sa-fish-hint {
+  background: rgba(120, 10, 6, .8);
+}
+
+.sa-fish-burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-fish-splash {
+  position: absolute;
+  left: -26px;
+  top: -26px;
+  width: 52px;
+  height: 52px;
+  border: 3px solid #6fc6f2;
+  border-radius: 50%;
+  opacity: 0;
+  animation: sa-drag-ring .5s ease-out .1s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-fish-arrow-line,
+  .sa-fish-target,
+  .sa-fish-token .sa-ico { animation: none; }
+  .sa-fish-token { transition: none; }
+}
+
 /* ---- landscape phones (MUST STAY LAST) -------------------------------
    Height is the scarce axis here: at 844x390 every band of chrome above the
    map comes straight out of the map. The layout is the same fixed column as

@@ -276,6 +276,7 @@ import {
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
 import { machineItemLabel } from "@/lib/stackacres/machine-items";
+import { pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   WHEAT_DURATION_MS,
@@ -1198,6 +1199,9 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `collectStackAcresDroneForage` on a successful claim; every
    *  other action leaves this undefined. */
   droneForage?: { droneId: string; reward: number };
+  /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
+   *  other action leaves this undefined. */
+  fishCaught?: { species: FishSpecies };
 };
 
 /**
@@ -1223,6 +1227,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.prayer !== undefined) delta.prayer = result.prayer;
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
+  if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -2775,6 +2780,24 @@ export async function drawStackAcresWater(token: string, now = new Date()): Prom
   const profile = await ensureProfile(token);
   await fillStackAcresWater(profile.id);
   return view(profile, now);
+}
+
+/**
+ * A completed cast at the dock. Which fish it lands is decided HERE, never
+ * by the client -- the drag-in/wait/drag-out gesture only decides when a
+ * cast is complete, same separation `harvestStackAcres` keeps between "the
+ * tap happened" and "here is what it was worth". Free: a cast costs nothing
+ * to make, so there is nothing to refund on the rare chance the inventory
+ * write itself fails.
+ */
+export async function catchStackAcresFish(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const species: FishSpecies = pickCaughtFish();
+  await adjustStackAcresInventory(profile.id, species, 1);
+  return { ...(await view(profile, now)), fishCaught: { species } };
 }
 
 /** Pays the maintenance fee on a mucked unit, clearing it -- see

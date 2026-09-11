@@ -103,6 +103,28 @@ export function dockRect(): WorldRect {
   return { x: DOCK.x - DOCK_LENGTH, y: DOCK.y - DOCK_DEPTH, width: DOCK_LENGTH, height: DOCK_DEPTH };
 }
 
+/** Whether a tapped ground point lands on the dock -- padded a few units
+ *  past the bare deck box so a finger near its edge still catches it, the
+ *  same forgiving margin the yard's well hit-test does not need (it is
+ *  drawn wider to begin with). */
+const DOCK_HIT_PAD = 6;
+
+export function dockHitAt(x: number, y: number): boolean {
+  const rect = dockRect();
+  return (
+    x >= rect.x - DOCK_HIT_PAD &&
+    x <= rect.x + rect.width + DOCK_HIT_PAD &&
+    y >= rect.y - DOCK_HIT_PAD &&
+    y <= rect.y + rect.height + DOCK_HIT_PAD
+  );
+}
+
+/** Where a cast lands: open water off the dock's end, past the shallows so
+ *  the ripple reads as a real cast rather than a splash at your own feet.
+ *  `pondRadial` here is under .4 -- inside the deep middle, well short of
+ *  the waterline at 1. */
+export const FISHING_SPOT: WorldPoint = yardPoint(-28, 118);
+
 /** How close to the dock a lily pad may float. */
 export const LILY_DOCK_CLEARANCE = 14;
 

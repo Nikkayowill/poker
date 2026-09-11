@@ -90,7 +90,9 @@ export interface BuyOption {
   stock: StackAcresStock;
   label: string;
   owned: number;
-  cap: number;
+  /** Null for a crop: crops are uncapped, so there is no ceiling to show or
+   *  hit. Only livestock (hen/pig/cattle) still carries a real number here. */
+  cap: number | null;
   atCap: boolean;
   /** Gold, buys ONE cycle. A fiftieth of `outrightCost`. */
   seedCost: number;
@@ -98,7 +100,8 @@ export interface BuyOption {
   seedReason: string | null;
   /** Gold, buys the animal/crop outright and permanently. */
   outrightCost: number;
-  /** Null once capacity is already maxed -- there is nothing left to buy. */
+  /** Null once capacity is already maxed, or for a crop, which never has
+   *  anything to expand. */
   expand: { cost: number } | null;
 }
 
@@ -114,9 +117,13 @@ export function buyOptionsForZone(
   return stocksInZone(zone).filter(isActiveStock).map((stock) => {
     const def = STACKACRES_CATALOGUE[stock];
     const extraSlots = context.capacity[stock] ?? 0;
-    const cap = STACKACRES_BASE_CAP + Math.max(0, Math.min(STACKACRES_MAX_EXTRA_CAP, extraSlots));
+    // Crops have no ceiling (catalogue.ts's STACKACRES_BASE_CAP header) --
+    // only livestock still runs a pen that can fill up.
+    const cap = isLivestock(stock)
+      ? STACKACRES_BASE_CAP + Math.max(0, Math.min(STACKACRES_MAX_EXTRA_CAP, extraSlots))
+      : null;
     const owned = occupiedCountFor(context.units, stock);
-    const atCap = owned >= cap;
+    const atCap = cap !== null && owned >= cap;
     return {
       stock,
       label: def.label,
@@ -126,17 +133,19 @@ export function buyOptionsForZone(
       seedCost: def.seedCost,
       seedAfford: !atCap && context.gold >= def.seedCost,
       seedReason: atCap
-        ? isLivestock(stock)
-          ? "This pen is already full."
-          : "This field is already full."
+        ? "This pen is already full."
         : context.gold < def.seedCost
           ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`
           : null,
       outrightCost: stackacresStockPrice(stock),
       // Only worth showing once the base cap is actually the thing in the
       // way -- offering to expand a kind you have room in already would be
-      // a Gold button for a problem you do not have.
-      expand: atCap && extraSlots < STACKACRES_MAX_EXTRA_CAP ? { cost: stackacresCapacityPrice(stock) } : null,
+      // a Gold button for a problem you do not have. Never shown for a crop:
+      // isLivestock(stock) is false whenever cap/atCap already are.
+      expand:
+        isLivestock(stock) && atCap && extraSlots < STACKACRES_MAX_EXTRA_CAP
+          ? { cost: stackacresCapacityPrice(stock) }
+          : null,
     };
   });
 }

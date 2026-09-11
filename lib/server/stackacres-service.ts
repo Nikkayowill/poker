@@ -15,6 +15,7 @@ import {
   isStackAcresStock,
   type SeedStock,
   type StackAcresCrop,
+  type StackAcresLivestock,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import {
@@ -1299,8 +1300,10 @@ export async function readStackAcres(token: string, now = new Date()): Promise<S
 
 /** How many of `stock` this player may OCCUPY a slot with at once right now
  *  (working or mucked -- see `countOccupiedStackAcresUnits`'s own comment
- *  for why mucked still counts). */
+ *  for why mucked still counts). Crops have no ceiling any more (catalogue.ts
+ *  STACKACRES_BASE_CAP's header) -- only livestock still runs a bounded pen. */
 async function capacityFor(profileId: string, stock: StackAcresStock): Promise<number> {
+  if (!isLivestock(stock)) return Number.POSITIVE_INFINITY;
   const capacity = await readStackAcresCapacity(profileId);
   return capFor(capacity[stock] ?? 0);
 }
@@ -1670,6 +1673,10 @@ export async function buildStackAcresGreenhouse(
  * Buys one extra capacity slot for a kind, at the flat per-kind price, IN ANY
  * ORDER -- there is nothing to unlock first, the same reasoning that
  * flattened the old plot ladder. Replaces `buyStackAcresPlot`.
+ *
+ * LIVESTOCK ONLY: a crop has no cap to raise (catalogue.ts's
+ * STACKACRES_BASE_CAP header), so there is nothing this can sell it. Rejected
+ * up front rather than silently charging Gold for a no-op.
  */
 export async function expandStackAcresCapacity(
   token: string,
@@ -1677,7 +1684,10 @@ export async function expandStackAcresCapacity(
   now = new Date(),
 ): Promise<StackAcresView> {
   if (!isStackAcresStock(stockInput)) throw new StackAcresRequestError("Not a real stock.", 400);
-  const stock: StackAcresStock = stockInput;
+  if (!isLivestock(stockInput)) {
+    throw new StackAcresRequestError("Crops have no capacity to expand -- there is no ceiling to raise.", 400);
+  }
+  const stock: StackAcresLivestock = stockInput;
   const def = STACKACRES_CATALOGUE[stock];
   const profile = await ensureProfile(token);
 

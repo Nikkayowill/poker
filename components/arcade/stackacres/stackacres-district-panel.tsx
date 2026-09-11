@@ -244,7 +244,7 @@ export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright
               {option.label}
             </span>
             <span className="sa-buy-cap" aria-hidden="true">
-              {option.owned} / {option.cap}
+              {option.cap === null ? `${option.owned} planted` : `${option.owned} / ${option.cap}`}
             </span>
           </div>
           <div className="sa-buy-actions">

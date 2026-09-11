@@ -495,6 +495,18 @@ describe("stocking", () => {
     expect(view.units).toHaveLength(STACKACRES_BASE_CAP + 2);
   });
 
+  it("a crop has no cap at all -- past the old 6-unit ceiling keeps sowing", async () => {
+    // funded() already shelves 1000 of every crop's seed (this file's own
+    // header), so there is nothing extra to buy here.
+    const { token } = await funded();
+    const ceiling = STACKACRES_BASE_CAP + STACKACRES_MAX_EXTRA_CAP; // the old cap, 6
+    for (let i = 0; i < ceiling + 3; i += 1) {
+      await stockStackAcres(token, { stock: "carrot" }, T0);
+    }
+    const view = await readStackAcres(token, T0);
+    expect(view.units.filter((u) => u.stock === "carrot")).toHaveLength(ceiling + 3);
+  });
+
   it("stocks a crop by spending a seed off the shelf, never Gold", async () => {
     const { token, id } = await funded();
     await adjustStackAcresSeedStock(id, "carrot", -1000);
@@ -1577,6 +1589,16 @@ describe("expanding capacity", () => {
     const before = await balance(token);
 
     await expect(expandStackAcresCapacity(token, "cattle", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("refuses for a crop -- there is no cap left to raise", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+
+    await expect(expandStackAcresCapacity(token, "carrot", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(before);

@@ -381,6 +381,9 @@ export function predictStackAcresAction(
       return { units: [...ctx.units, unit], profile };
     }
     case "expand-capacity": {
+      // Crops have no capacity to expand -- the server refuses it outright,
+      // so guess nothing rather than flash a spend that never happens.
+      if (!isLivestock(body.stock)) return null;
       const profile = debited(ctx, stackacresCapacityPrice(body.stock));
       if (!profile) return null;
       return { capacity: { ...ctx.capacity, [body.stock]: (ctx.capacity[body.stock] ?? 0) + 1 }, profile };

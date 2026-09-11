@@ -3353,6 +3353,16 @@ export class StackAcresScene extends Phaser.Scene {
     this.nodes.set(unit.id, node);
     this.paintUnitCue(node);
     if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);
+    // A freshly sown seed mound is the one build with no `previous` node AND
+    // no growth history to ease from -- it just materializes, unlike every
+    // other tap-driven action, which already gets `popUnit`'s "heard you"
+    // bounce inside the same event handler that fired it (see
+    // onWorldUnitTap/onRadialSeed's call sites in stackacres-farm.tsx). The
+    // optimistic snapshot already lands this unit before the network answers
+    // (see optimistic-actions.ts's "stock" case); what was missing was this
+    // node getting the same bounce once it actually appears, instead of the
+    // tap feeling unanswered until the plant just showed up.
+    if (previous === undefined && unit.seed) this.popUnit(unit.id);
   }
 
   /**

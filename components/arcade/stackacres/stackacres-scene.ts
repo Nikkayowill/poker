@@ -125,7 +125,7 @@ import {
   penFeedSpot,
   powerOfTwoCeil,
   RAY_HOUSE_FOOTPRINT,
-  rayHouseHitAt,
+  rayHouseTapAt,
   scrollToKeepUnderPointer,
   seededRandom,
   signpostHitAt,
@@ -850,6 +850,44 @@ const BARN_Y = BARN_AT.y;
  *  burst's own brief pop, short enough that back-to-back deliveries don't
  *  leave the barn looking permanently ajar. */
 const BARN_OPEN_HOLD_MS = 700;
+
+/** How much bigger than its base painter box the barn sprite draws --
+ *  landmark scenery Kayo wants reading as visibly the biggest building in
+ *  the yard, ahead of Ray's house (whose own art, at 150 painter units,
+ *  otherwise draws close to double the barn's 74). Applied as an extra
+ *  scale on top of `put()`'s own `1/S`, from the same bottom-centre anchor,
+ *  so the barn grows up and outward from its feet rather than shifting off
+ *  `BARN_AT`. */
+const BARN_SCALE_BOOST = 1.35;
+
+/**
+ * How much SMALLER than its base painter box Ray's house sprite draws.
+ * `rayHouse`'s art is baked at 150 painter units on a footprint only 90
+ * wide -- already flagged as oversized in `paintRayHouse`'s own header --
+ * and at full size it reads as the bigger of the two buildings even after
+ * `BARN_SCALE_BOOST`. Shrunk from the same bottom-centre anchor `put()`
+ * already uses, so the house's position, footprint and hit zones are
+ * unaffected; only the drawn picture gets smaller and, as a side effect,
+ * closer to its own footprint's actual proportions.
+ */
+const RAY_HOUSE_SCALE = 0.6;
+
+/**
+ * How far north (away from the barn) `paintRayHouse` draws the house's
+ * picture and shadow from `RAY_HOUSE_FOOTPRINT`'s own true south edge --
+ * `RAY_HOUSE_FOOTPRINT` itself, `rayHouseHitAt`, pathing and wild-growth
+ * exclusion are all untouched. The footprint's own header already
+ * documents the two buildings sitting a bare 4 units apart; at full size
+ * their drawn art visibly overlapped at the roofline (confirmed on a live
+ * screenshot) -- the same "art bigger than footprint" gap this file's
+ * other comments describe, just finally wide enough to see. Moving the
+ * footprint itself risks the pathing/wild-growth-exclusion guarantees its
+ * own header describes; nudging only the picture does not.
+ */
+const RAY_HOUSE_VISUAL_NUDGE = -30;
+
+/** Same hold as `BARN_OPEN_HOLD_MS`, for `pulseRayHouseOpen`. */
+const RAY_HOUSE_OPEN_HOLD_MS = 700;
 
 // Ground art sits just above the grass and well below anything with feet:
 // the terrain tiles at -1e8 and the water's surface (glints, ripples) two
@@ -1757,6 +1795,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  about a finger being down on the house, not about what the gesture
    *  turns out to mean. See `setRayHousePressed`. */
   private rayHousePressPointerId: number | null = null;
+  /** The pending revert from `pulseRayHouseOpen`'s open frame back to
+   *  `rayHouse` -- the same one-at-a-time discipline `barnOpenRevertTimer`
+   *  documents, and for the same reason: a tap can resolve while the press
+   *  visual is still mid-flight, and the timer is what keeps the open frame
+   *  showing through that instead of snapping shut before the dialogue even
+   *  opens. */
+  private rayHouseOpenRevertTimer: Phaser.Time.TimerEvent | null = null;
 
   /**
    * True while the camera is bounded to the Greenhouse's own interior (see
@@ -2246,13 +2291,16 @@ export class StackAcresScene extends Phaser.Scene {
    * Ray's house: a straight-on elevation placed flat at `RAY_HOUSE_FOOTPRINT`'s
    * own bottom-centre, the same convention `paintBarn` anchors its own
    * structure with, so the hit-test box (`rayHouseHitAt`) and the drawn
-   * picture agree on where the house actually stands. Captured on
-   * `this.rayHouseSprite` so a press has a real target to swap the texture
-   * of -- see `setRayHousePressed`.
+   * picture agree on where the house actually stands -- nudged north by
+   * `RAY_HOUSE_VISUAL_NUDGE` for the DRAWN picture only (see that constant's
+   * own header); the footprint `rayHouseHitAt`, pathing and wild-growth
+   * exclusion all key off is untouched. Captured on `this.rayHouseSprite` so
+   * a press has a real target to swap the texture of -- see
+   * `setRayHousePressed`.
    */
   private paintRayHouse(): void {
     const cx = RAY_HOUSE_FOOTPRINT.x + RAY_HOUSE_FOOTPRINT.width / 2;
-    const feetY = RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height;
+    const feetY = RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height + RAY_HOUSE_VISUAL_NUDGE;
     this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
       .setScale(84 / 33 / S, 28 / 13 / S)
       .setAlpha(0.85);
@@ -2269,6 +2317,7 @@ export class StackAcresScene extends Phaser.Scene {
     // forward enough to reliably beat anything standing near the footprint's
     // own north edge.
     this.rayHouseSprite = this.put("rayHouse", cx, feetY, this.depthAt(cx, feetY, 90));
+    this.rayHouseSprite.setScale((1 / S) * RAY_HOUSE_SCALE);
   }
 
   /**
@@ -2288,6 +2337,29 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private setRayHousePressed(pressed: boolean): void {
     this.rayHouseSprite?.setTexture(pressed ? "rayHouseOpen" : "rayHouse", ART_FRAME);
+  }
+
+  /**
+   * The house's own acknowledgement of an actual tap, called from
+   * `dispatchTap` -- the same `pulseBarnOpen` shape, timed rather than
+   * press-driven. Without this, a tap's own release un-presses the house
+   * (`setRayHousePressed(false)`, fired unconditionally on every release
+   * -- see `rayHousePressPointerId`'s own header) before the gift dialogue
+   * even has a chance to open, so the open frame either never reads at all
+   * on a quick tap or looks like it got cut off right as the dialogue
+   * appears. This runs right after that revert, in the same synchronous
+   * handler, and holds the open frame past it for `RAY_HOUSE_OPEN_HOLD_MS`
+   * -- long enough to still be showing once the dialogue is up.
+   */
+  private pulseRayHouseOpen(): void {
+    const sprite = this.rayHouseSprite;
+    if (!sprite) return;
+    sprite.setTexture("rayHouseOpen", ART_FRAME);
+    this.rayHouseOpenRevertTimer?.remove();
+    this.rayHouseOpenRevertTimer = this.time.delayedCall(RAY_HOUSE_OPEN_HOLD_MS, () => {
+      sprite.setTexture("rayHouse", ART_FRAME);
+      this.rayHouseOpenRevertTimer = null;
+    });
   }
 
   /** The Pixel Pilgrim himself, posted by the pond from boot. A no-op (no
@@ -2616,14 +2688,19 @@ export class StackAcresScene extends Phaser.Scene {
    * isometric volume, matching the mockup this pass was previewed against.
    */
   private paintBarn(): void {
+    // Scaled up to match `BARN_SCALE_BOOST`'s own footprint on the ground --
+    // a bigger building casts a bigger contact shadow, not the same one.
     this.put("shadow", BARN_X, BARN_Y + 1, this.depthAt(BARN_X, BARN_Y, -100))
-      .setScale(3.4 / S, 1.6 / S)
+      .setScale((3.4 / S) * BARN_SCALE_BOOST, (1.6 / S) * BARN_SCALE_BOOST)
       .setAlpha(0.9);
 
     // Same depth nudge the combined structure used before the barn became a
     // flat sprite, so it keeps sorting against nearby world objects the way
-    // the approved mockup did.
+    // the approved mockup did. Scaled up from its own bottom-centre anchor
+    // (see `BARN_SCALE_BOOST`) so the roofline grows taller without the
+    // barn's feet leaving `BARN_AT`.
     this.barnSprite = this.put("barn", BARN_X, BARN_Y, this.depthAt(BARN_X, BARN_Y + 17));
+    this.barnSprite.setScale((1 / S) * BARN_SCALE_BOOST);
     this.applyMuseumGlowTier();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseBarnGlow, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseBarnGlow, this);
@@ -2656,7 +2733,9 @@ export class StackAcresScene extends Phaser.Scene {
 
     this.put("hay", BARN_X + 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
     this.put("hay", BARN_X + 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
-    this.put("barrel", BARN_X - 48, BARN_Y - 14, this.depthAt(BARN_X - 48, BARN_Y - 14));
+    // Nudged out from -48 to clear the barn's own wider silhouette now that
+    // `BARN_SCALE_BOOST` grows it from the same bottom-centre anchor.
+    this.put("barrel", BARN_X - 55, BARN_Y - 14, this.depthAt(BARN_X - 55, BARN_Y - 14));
   }
 
   /**
@@ -4920,7 +4999,7 @@ export class StackAcresScene extends Phaser.Scene {
         // `setRayHousePressed`'s own header for why this is a plain texture
         // swap and not a tween.
         const houseGround = resolveWorld(event.clientX, event.clientY);
-        if (rayHouseHitAt(houseGround.x, houseGround.y)) {
+        if (rayHouseTapAt(houseGround.x, houseGround.y)) {
           this.rayHousePressPointerId = event.pointerId;
           this.setRayHousePressed(true);
         }
@@ -5279,6 +5358,11 @@ export class StackAcresScene extends Phaser.Scene {
       // BARN_FOOTPRINT's own doc comment), so the two never compete for the
       // same tap, but a unit always wins over the structure behind it.
       if (barnHitAt(ground.x, ground.y)) {
+        // The door-open/hay-bursting frame on a tap, not just a delivery
+        // arrival (`pulseBarnOpen`'s other caller, `onBarnArrive`) -- a tap
+        // is the barn's own "something happened here" moment too, and the
+        // Museum sheet opening a beat later is no reason to skip it.
+        this.pulseBarnOpen();
         this.callbacks.onBarnTap();
         return;
       }
@@ -5286,8 +5370,12 @@ export class StackAcresScene extends Phaser.Scene {
       // rather than in front of the barn's own. Checked right after the
       // barn, the same "structure wins over ground" priority, and its box
       // does not overlap the barn's, the silo's or the Merchant's spot
-      // either (see RAY_HOUSE_FOOTPRINT's own doc comment).
-      if (rayHouseHitAt(ground.x, ground.y)) {
+      // either (see RAY_HOUSE_FOOTPRINT's own doc comment). Tested against
+      // the wider `rayHouseTapAt`, not the tight `rayHouseHitAt`, so a tap
+      // anywhere on the visible house -- not just its narrow ground box --
+      // lands here; see that function's own header.
+      if (rayHouseTapAt(ground.x, ground.y)) {
+        this.pulseRayHouseOpen();
         this.callbacks.onRayTap(local);
         return;
       }

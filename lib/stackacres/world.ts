@@ -383,6 +383,44 @@ export function rayHouseHitAt(x: number, y: number): boolean {
 }
 
 /**
+ * A more forgiving box than `RAY_HOUSE_FOOTPRINT` for deciding whether a tap
+ * landed "on the house", the same MONK_TAP_ZONE-over-a-footprint idea this
+ * file already uses elsewhere. The footprint itself has to stay a tight,
+ * literal ground box -- pathing and wild-growth exclusion (`nearRayHouse`)
+ * both key off it, and moving it needs the same care `RAY_HOUSE_FOOTPRINT`'s
+ * own header describes. But `rayHouse`'s art is baked at 150 units tall over
+ * a footprint only 44 deep, so a tap anywhere on the visible roof or upper
+ * storey -- most of what a player actually sees and aims at -- lands well
+ * outside that ground box and simply does nothing, which reads as a bad
+ * hitbox rather than as "you missed the building."
+ *
+ * Extended north only (the open, clear direction `RAY_HOUSE_CLEARANCE`
+ * already relies on 400 units of) so the footprint's own south edge, four
+ * units from the barn's roofline, is untouched -- widened modestly east/west
+ * for the same reason. This only changes what counts as a tap; the sprite,
+ * the footprint, and every other rule against it are unchanged.
+ */
+const RAY_HOUSE_TAP_ZONE: WorldRect = {
+  x: RAY_HOUSE_FOOTPRINT.x - 20,
+  y: RAY_HOUSE_FOOTPRINT.y - 100,
+  width: RAY_HOUSE_FOOTPRINT.width + 40,
+  height: RAY_HOUSE_FOOTPRINT.height + 100,
+};
+
+/** Whether a tapped ground point lands anywhere a player would reasonably
+ *  aim at Ray's house -- used for the tap itself and for the press-feedback
+ *  texture swap; `rayHouseHitAt`'s own tight box stays the one pathing and
+ *  wild-growth exclusion key off. */
+export function rayHouseTapAt(x: number, y: number): boolean {
+  return (
+    x >= RAY_HOUSE_TAP_ZONE.x &&
+    x <= RAY_HOUSE_TAP_ZONE.x + RAY_HOUSE_TAP_ZONE.width &&
+    y >= RAY_HOUSE_TAP_ZONE.y &&
+    y <= RAY_HOUSE_TAP_ZONE.y + RAY_HOUSE_TAP_ZONE.height
+  );
+}
+
+/**
  * The signpost's footprint: the box `PROP_SIZE.signpost` gives (18 wide,
  * 26 tall) at props.ts's `yardPoint(130, 84)`, restated here for the same
  * import-cycle reason as Ray's box. The signpost used to be scenery. Now it

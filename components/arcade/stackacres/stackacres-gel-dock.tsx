@@ -344,6 +344,7 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
                     "is-live": live,
                     "is-hot": live && isHot,
                     "is-returning": live && phase === "returning",
+                    "is-settling": live && phase === "settling",
                   })}
                   style={live ? { left: `${dragClient.x}px`, top: `${dragClient.y}px` } : undefined}
                   disabled={disabled}

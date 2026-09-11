@@ -1322,6 +1322,13 @@
   translate: -50% -50%;
   cursor: grabbing;
   animation: sa-gel-pickup 220ms var(--sa-bounce);
+  /* Softens every left/top update from a live pointermove into a short
+     chase instead of a hard per-frame teleport -- the same trailing-spring
+     feel `.sa-drag-token` gets for free from its own always-on `transform`
+     transition (water can / feed scoop). `.is-returning` below still wins
+     this property at the same specificity (declared later in the file), so
+     the spring-back keeps its own slower, bouncier timing. */
+  transition: left 90ms var(--sa-ease-out), top 90ms var(--sa-ease-out);
   box-shadow:
     inset 0 -5px 10px rgba(18, 22, 32, .16),
     inset 0 1.5px 3px rgba(255, 255, 255, .85),

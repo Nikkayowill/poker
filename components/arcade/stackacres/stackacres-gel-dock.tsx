@@ -12,6 +12,7 @@ import {
 import { isDragDrop } from "@/lib/stackacres/drag-affordance";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
+import { arrowGeometry } from "./stackacres-drag-affordance";
 import type { TapPoint } from "./stackacres-scene";
 
 /**
@@ -37,6 +38,16 @@ import type { TapPoint } from "./stackacres-scene";
  * That only works if a touch on a token can still turn into a horizontal
  * scroll instead of always yanking it into a drag; see the `pending` ref and
  * `INTENT_SLOP` below.
+ *
+ * Carries the same three cues `StackAcresDragAffordance`'s water can and feed
+ * scoop already give a drag: a marching arrow from the dock to the circle
+ * (`arrowGeometry`, imported rather than reimplemented), a text hint under
+ * it, and a burst of droplets radiating from the circle on a good drop
+ * instead of the plain fade a token used to just play in place. `commit`
+ * below also snaps the live token to the circle's exact centre before that
+ * fade starts, so a drop a few px short of dead centre still reads as
+ * landing IN the circle rather than fading wherever the finger happened to
+ * let go.
  */
 
 export interface StackAcresGelDockItem {
@@ -73,6 +84,18 @@ export interface StackAcresGelDockProps {
 
 /** How long the settle pulse plays before the dock closes on its own. */
 const SETTLE_MS = 420;
+/** The little burst of droplets a good drop plays, radiating out from the
+ *  circle -- same read as `sa-drag-burst`'s spray in stackacres-drag-
+ *  affordance.tsx, just symmetric in every direction instead of a
+ *  directional pour, since nothing here tips over like a watering can. */
+const BURST_PARTICLES: readonly { dx: number; dy: number; delay: number }[] = [
+  { dx: 0, dy: -26, delay: 0 },
+  { dx: 22, dy: -14, delay: 30 },
+  { dx: 24, dy: 14, delay: 60 },
+  { dx: 0, dy: 26, delay: 20 },
+  { dx: -24, dy: 14, delay: 80 },
+  { dx: -22, dy: -14, delay: 50 },
+];
 /** How long a missed drop takes springing back to its row slot. */
 const RETURN_MS = 220;
 /** How far below (or, flipped, above) the tap the row sits -- clear of the
@@ -181,6 +204,11 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
 
   const commit = (item: StackAcresGelDockItem) => {
     setPhase("settling");
+    // Snap the live token dead-centre on the circle rather than leaving it
+    // wherever the pointer let go (isDragDrop allows some slop): the settle
+    // fade and burst below both read off this position, and a fade a few
+    // px off-centre looked like the token missed rather than landing.
+    setDragClient(targetClient());
     item.onCommit();
     timer.current = window.setTimeout(() => {
       if (item.keepOpen) {
@@ -290,15 +318,42 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   const flip = at.y + ROW_OFFSET + ESTIMATED_MENU_HEIGHT > viewportHeight;
   const nudgeX = Math.max(0, SIDE_ROOM - at.x) - Math.max(0, at.x + SIDE_ROOM - viewportWidth);
   const rowTop = at.y + (flip ? -ROW_OFFSET : ROW_OFFSET);
+  // The arrow's tail sits on whichever edge of the row is actually closest
+  // to the circle -- the top edge when the row sits below the tap, the
+  // (estimated) bottom edge when flipped above it -- same local `.sa-field`
+  // coordinate space `at`/`sa-gel-target` already use, so it needs no client
+  // rect to draw. Its own resting position, not wherever a token happens to
+  // be: the row can hold a dozen tokens, and the hint has to point at the
+  // dock as a whole, not any one of them.
+  const arrowFrom: TapPoint = { x: at.x + nudgeX, y: flip ? rowTop + ESTIMATED_MENU_HEIGHT : rowTop };
+  const arrow = arrowGeometry(arrowFrom, at);
+  const hintTop = flip ? rowTop - 24 : rowTop + ESTIMATED_MENU_HEIGHT + 8;
 
   return (
-    <div ref={rootRef} className="sa-gel">
+    <div ref={rootRef} className={clsx("sa-gel", `is-${phase}`)}>
       <span className="sa-gel-pin" style={{ left: `${at.x}px`, top: `${at.y}px` }} aria-hidden="true" />
+      {arrow && items.length > 0 && (
+        <svg className="sa-gel-arrow" aria-hidden="true">
+          <path className="sa-gel-arrow-line" d={arrow.d} />
+          <polygon className="sa-gel-arrow-head" points={arrow.head} />
+        </svg>
+      )}
       <span
         className={clsx("sa-gel-target", { "is-hot": isHot, "is-settling": phase === "settling" })}
         style={{ left: `${at.x}px`, top: `${at.y}px` }}
         aria-hidden="true"
       />
+      {phase === "settling" && dragKey && (
+        <span className="sa-gel-burst" style={{ left: `${at.x}px`, top: `${at.y}px` }} aria-hidden="true">
+          <span className="sa-gel-splash" />
+          {BURST_PARTICLES.map((p, index) => (
+            <i
+              key={index}
+              style={{ "--dx": `${p.dx}px`, "--dy": `${p.dy}px`, "--d": `${p.delay}ms` } as CSSProperties}
+            />
+          ))}
+        </span>
+      )}
       <div
         className="sa-gel-row"
         role="group"
@@ -370,6 +425,15 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
           </div>
         )}
       </div>
+      {items.length > 0 && (phase === "idle" || phase === "returning") && (
+        <span
+          className="sa-gel-hint"
+          style={{ left: `${at.x + nudgeX}px`, top: `${hintTop}px` }}
+          aria-hidden="true"
+        >
+          Drag into the circle
+        </span>
+      )}
     </div>
   );
 }

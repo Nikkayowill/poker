@@ -14,12 +14,13 @@ import {
   clampZoom,
   cropSpot,
   CROP_FIELD_BEDS,
-  grandfatherRayHitAt,
   growAreaAt,
   growAreaBounds,
   growAreaInterior,
   inFarmZone,
   powerOfTwoCeil,
+  RAY_HOUSE_FOOTPRINT,
+  rayHouseHitAt,
   scrollToKeepUnderPointer,
   seedFromId,
   seededRandom,
@@ -174,15 +175,18 @@ describe("the barn's tap target", () => {
   });
 });
 
-describe("Grandfather Ray's tap target", () => {
-  it("hits his own spot, and never the same point that hits the barn", () => {
-    const ray = yardPoint(178, 0);
-    expect(grandfatherRayHitAt(ray.x, ray.y)).toBe(true);
-    // His box is clear of the barn's on both axes -- a tap can never land on
+describe("Ray's house tap target", () => {
+  it("hits its own spot, and never the same point that hits the barn", () => {
+    const centre = {
+      x: RAY_HOUSE_FOOTPRINT.x + RAY_HOUSE_FOOTPRINT.width / 2,
+      y: RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height / 2,
+    };
+    expect(rayHouseHitAt(centre.x, centre.y)).toBe(true);
+    // Its box is clear of the barn's on both axes -- a tap can never land on
     // both, which is what keeps the two an unambiguous choice for the scene.
     for (let x = BARN_FOOTPRINT.x; x <= BARN_FOOTPRINT.x + BARN_FOOTPRINT.width; x += 5) {
       for (let y = BARN_FOOTPRINT.y; y <= BARN_FOOTPRINT.y + BARN_FOOTPRINT.height; y += 5) {
-        expect(grandfatherRayHitAt(x, y)).toBe(false);
+        expect(rayHouseHitAt(x, y)).toBe(false);
       }
     }
   });
@@ -191,7 +195,7 @@ describe("Grandfather Ray's tap target", () => {
     for (const zone of ZONE_IDS) {
       const bounds = growAreaBounds(zone);
       const mid = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-      expect(grandfatherRayHitAt(mid.x, mid.y)).toBe(false);
+      expect(rayHouseHitAt(mid.x, mid.y)).toBe(false);
     }
   });
 });

@@ -2,8 +2,8 @@
  * Where the farm's fixed props stand.
  *
  * Pure layout: the windmill, the well, the clutter by the silo, the lamps
- * down the lane, Grandfather Ray and the rest, each as a kind and the world
- * point its feet are on. The renderer (components/arcade/stackacres/
+ * down the lane and the rest, each as a kind and the world point its feet
+ * are on. The renderer (components/arcade/stackacres/
  * art-props.ts) paints them; the scene places each one by its feet with a
  * soft ground shadow under it and sorts it by that y like everything else
  * with height.
@@ -56,7 +56,6 @@ export type PropKind =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
-  | "grandfatherRay"
   // The ten stranded visitors (see ./visitors.ts) -- static, tappable, and
   // placed by VISITOR_PROPS there rather than here, the same "kind lives
   // where the rest of a prop's shape lives, placement lives beside its own
@@ -125,9 +124,6 @@ export const YARD_PROPS: readonly PropPlacement[] = [
 
   // Watching the first row of fields from the east verge.
   { kind: "scarecrow", ...yardPoint(402, 110) },
-
-  // Grandfather Ray, at his post beside the barn door -- the front desk.
-  { kind: "grandfatherRay", ...yardPoint(178, 20) },
 ];
 
 /**
@@ -159,11 +155,11 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBed: { w: 28, h: 12 },
   stoneWall: { w: 32, h: 10 },
   scarecrow: { w: 20, h: 36 },
-  grandfatherRay: { w: 25.125, h: 40 },
   // Sized off each visitor's own real PNG aspect (width/288 tall) at a world
   // height picked for their lore -- small alien/robot/bug/shell/crystal kinds
-  // at 18-22, the adult humans at 38 (grandfatherRay's own height), the child
-  // at 26. Width = height * (pngWidth/288), never picked independently, so
+  // at 18-22, the adult humans at 38 (a standing adult's read height at this
+  // zoom -- see STANDING_CHARACTER_SHADOW below), the child at 26. Width =
+  // height * (pngWidth/288), never picked independently, so
   // `spriteBacked`'s stretch-to-box `drawImage` never distorts the art.
   visitorBleep: { w: 13.75, h: 20 },
   visitorGlimm: { w: 16.67, h: 20 },
@@ -195,7 +191,6 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBed: { w: 30, h: 6 },
   stoneWall: { w: 34, h: 5 },
   scarecrow: { w: 24, h: 7 },
-  grandfatherRay: { w: 27, h: 8 },
   visitorBleep: { w: 16, h: 6 },
   visitorGlimm: { w: 19, h: 6 },
   visitorNib: { w: 13, h: 5 },
@@ -207,6 +202,17 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   visitorKip: { w: 18, h: 6 },
   visitorTavo: { w: 20, h: 7 },
 };
+
+/**
+ * The shadow pool a standing chibi character reads at (the forty-unit build
+ * every `PropSize`-height-38 human on this map shares -- see `PROP_SIZE`'s
+ * own comment above): the Pixel Pilgrim and the Midnight Merchant both stand
+ * on this exact pool rather than each owning a slightly different one, since
+ * neither is a `PropKind` of its own (see MIDNIGHT_MERCHANT_SPOT's doc
+ * comment in ./world.ts for why a temporary NPC and a shrine's own character
+ * both fall outside `PROP_SHADOW`'s closed set).
+ */
+export const STANDING_CHARACTER_SHADOW: PropSize = { w: 27, h: 8 };
 
 /**
  * Props that stand on a path's verge, right beside the body: a lamp, a

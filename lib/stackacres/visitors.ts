@@ -7,22 +7,21 @@
  * here.
  *
  * Kept out of ./props.ts on purpose: that file is the shape every OTHER prop
- * (a windmill, a lamp post, Grandfather Ray) is measured against, hand-placed
+ * (a windmill, a lamp post, a scarecrow) is measured against, hand-placed
  * one at a time against the yard's own fixed geometry. Ten new characters
  * with their own names, lines and portraits are a different kind of content
  * -- this module owns all of it, and only pulls `PropKind`/`PROP_SIZE` back
  * from ./props.ts for the placement geometry a `PropPlacement` still needs.
  *
- * `visitorHitAt` lives HERE rather than in ./world.ts, where
- * `grandfatherRayHitAt`'s own doc comment says a tap-target function like
- * this belongs: ./world.ts cannot import ./props.ts (./props.ts imports
- * ./world.ts, and the reverse would be a cycle -- see props.ts's own header),
- * so any hit-test that needs `PROP_SIZE`'s real box sizes for ten different
- * kinds has to live somewhere that can see both, and restating ten boxes as
- * bare literals (the way `GRANDFATHER_RAY_FOOTPRINT` restates one) is exactly
- * the duplication a single generic hit-test is supposed to avoid. This
- * module already sits downstream of both ./props.ts and ./world.ts, so it is
- * the natural home.
+ * `visitorHitAt` lives HERE rather than in ./world.ts, where `barnHitAt`'s
+ * own doc comment says a tap-target function like this belongs: ./world.ts
+ * cannot import ./props.ts (./props.ts imports ./world.ts, and the reverse
+ * would be a cycle -- see props.ts's own header), so any hit-test that needs
+ * `PROP_SIZE`'s real box sizes for ten different kinds has to live somewhere
+ * that can see both, and restating ten boxes as bare literals (the way
+ * `RAY_HOUSE_FOOTPRINT` restates one) is exactly the duplication a single
+ * generic hit-test is supposed to avoid. This module already sits downstream
+ * of both ./props.ts and ./world.ts, so it is the natural home.
  */
 
 import { PROP_SIZE, YARD_PROPS, type PropKind, type PropPlacement } from "./props";
@@ -214,8 +213,8 @@ export const VISITOR_PROPS: readonly PropPlacement[] = (() => {
 /**
  * Whether a tapped ground point lands on one of the ten visitors, and if so
  * which -- one generic hit-test over `VISITOR_PROPS` rather than ten bespoke
- * functions, the same box math `grandfatherRayHitAt` (./world.ts) uses for
- * its own single character.
+ * functions, the same box math `rayHouseHitAt` (./world.ts) uses for its own
+ * single building.
  */
 export function visitorHitAt(x: number, y: number): PropKind | null {
   for (const prop of VISITOR_PROPS) {

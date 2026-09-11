@@ -235,6 +235,8 @@ type CorePainterName =
   | "cow"
   | "barn"
   | "monkHouse"
+  | "rayHouse"
+  | "rayHouseOpen"
   | "silo"
   | "hay"
   | "barrel"
@@ -1708,6 +1710,95 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, RAMPS.muck.rim);
   }, 0.5, 367 / 400),
 
+  // Ray's house, real art in stackacres-sprites.ts's `rayHouse` -- this is
+  // only what shows before that PNG arrives (or if it never does). A cosy
+  // two-gable cottage, drawn at 1.5x the box the first pass used (100 -> 150)
+  // so it reads as the biggest, most prominent building in the yard -- Kayo's
+  // own "bigger" call, once it stood close to the barn rather than out by the
+  // windmill. `c.scale(1.5, 1.5)` up front keeps every coordinate below
+  // exactly what the 100-box pass drew, just larger, rather than a second
+  // hand-tuned set of numbers to keep in sync with `rayHouseOpen`'s own.
+  rayHouse: painter(150, 150, (c) => {
+    c.scale(1.5, 1.5);
+    // The porch deck, a shade darker than the wall so it reads as ground
+    // rather than a second wall.
+    rr(c, 14, 88, 72, 8, 1.5);
+    F(c, RAMPS.wood.side);
+    // The walls.
+    rr(c, 20, 52, 60, 38, 3);
+    F(c, RAMPS.cream.top);
+    rr(c, 20, 84, 60, 6, 0);
+    F(c, RAMPS.cream.side);
+    // The gable roof, one ridge running left to right, lit on the left slope
+    // and shaded on the right the same way `barn`'s own gable end does.
+    poly(c, [[10, 52], [50, 14], [90, 52]]);
+    F(c, RAMPS.roof.top);
+    poly(c, [[10, 52], [50, 14], [50, 52]]);
+    F(c, "rgba(255,240,230,.12)");
+    poly(c, [[50, 14], [90, 52], [50, 52]]);
+    F(c, "rgba(20,8,8,.2)");
+    // The chimney, with a soft puff of smoke.
+    rr(c, 66, 18, 8, 14, 1);
+    F(c, RAMPS.stone.side);
+    ell(c, 70, 14, 4, 3);
+    F(c, "rgba(255,255,255,.5)");
+    ell(c, 71, 9, 3, 2.4);
+    F(c, "rgba(255,255,255,.35)");
+    // The door, dead centre, closed.
+    rr(c, 44, 66, 12, 22, 1.5);
+    F(c, "#2b3a4a");
+    rr(c, 45, 67, 10, 20, 1.2);
+    F(c, "#38495c");
+    // Two lit windows, one either side of the door.
+    rr(c, 26, 66, 10, 10, 1.2);
+    F(c, RAMPS.wood.rim);
+    glass(c, 27.2, 67.2, 7.6, 7.6);
+    rr(c, 64, 66, 10, 10, 1.2);
+    F(c, RAMPS.wood.rim);
+    glass(c, 65.2, 67.2, 7.6, 7.6);
+  }),
+
+  // Ray's house, mid-press: the same cottage with the door standing open and
+  // a couple of petals kicked up off the porch -- the fallback's own version
+  // of the instant feedback `rayHouse`'s real art gives when a finger is
+  // down on the house. See stackacres-scene.ts's `setRayHousePressed`.
+  rayHouseOpen: painter(150, 150, (c) => {
+    c.scale(1.5, 1.5);
+    rr(c, 14, 88, 72, 8, 1.5);
+    F(c, RAMPS.wood.side);
+    rr(c, 20, 52, 60, 38, 3);
+    F(c, RAMPS.cream.top);
+    rr(c, 20, 84, 60, 6, 0);
+    F(c, RAMPS.cream.side);
+    poly(c, [[10, 52], [50, 14], [90, 52]]);
+    F(c, RAMPS.roof.top);
+    poly(c, [[10, 52], [50, 14], [50, 52]]);
+    F(c, "rgba(255,240,230,.12)");
+    poly(c, [[50, 14], [90, 52], [50, 52]]);
+    F(c, "rgba(20,8,8,.2)");
+    rr(c, 66, 18, 8, 14, 1);
+    F(c, RAMPS.stone.side);
+    ell(c, 70, 14, 4, 3);
+    F(c, "rgba(255,255,255,.55)");
+    ell(c, 71, 8, 3.4, 2.6);
+    F(c, "rgba(255,255,255,.4)");
+    // The open doorway: dark inside, spilling warm light onto the porch.
+    rr(c, 44, 66, 12, 22, 1.5);
+    F(c, "#1a1410");
+    rr(c, 44, 66, 12, 22, 1.5);
+    F(c, "rgba(255,206,120,.28)");
+    rr(c, 26, 66, 10, 10, 1.2);
+    F(c, RAMPS.wood.rim);
+    glass(c, 27.2, 67.2, 7.6, 7.6);
+    rr(c, 64, 66, 10, 10, 1.2);
+    F(c, RAMPS.wood.rim);
+    glass(c, 65.2, 67.2, 7.6, 7.6);
+    for (const [x, y] of [[18, 92], [82, 90], [8, 96]] as const) {
+      ell(c, x, y, 1.6, 1.1);
+      F(c, "rgba(255,170,190,.7)");
+    }
+  }),
+
   silo: painter(22, 62, (c) => {
     rr(c, 3, 12, 16, 50, 3.5);
     F(c, lin(c, 3, 0, 19, 0, [[0, "#f1ebe0"], [0.5, "#d3cabc"], [0.82, "#a89f92"], [1, "#857c70"]]));
@@ -2253,7 +2344,8 @@ export const PAINTERS: Record<PainterName, Painter> = {
   barn: spriteBacked("barn", DRAWN.barn),
   monkHouse: spriteBacked("monkHouse", DRAWN.monkHouse),
   windmill: spriteBacked("windmill", DRAWN.windmill),
-  grandfatherRay: spriteBacked("grandfatherRay", DRAWN.grandfatherRay),
+  rayHouse: spriteBacked("rayHouse", DRAWN.rayHouse),
+  rayHouseOpen: spriteBacked("rayHouseOpen", DRAWN.rayHouseOpen),
   // The ten stranded visitors (lib/stackacres/visitors.ts) -- already-
   // generated pixel-art PNGs standing in for the moment before them; see
   // `visitorFallback` in art-props.ts for the drawn version each wraps.

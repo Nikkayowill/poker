@@ -36,7 +36,6 @@ export type PropPainterName =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
-  | "grandfatherRay"
   | "midnightMerchant"
   | "log"
   | "mushroom"
@@ -207,9 +206,10 @@ function visitorFallback(w: number, h: number, tint: string, shape: VisitorShape
         F(c, "#ffd678");
         break;
       case "human":
-        // The same chibi proportions grandfatherRay uses just above: a
-        // third head, a stubby body, short limbs -- the one silhouette here
-        // built as a person rather than a creature.
+        // The same one-head-in-three chibi proportions `midnightMerchant`
+        // uses below (see its own header for why): a third head, a stubby
+        // body, short limbs -- the one silhouette here built as a person
+        // rather than a creature.
         rr(c, cx - w * 0.4, h * 0.56, w * 0.8, h * 0.42, w * 0.18);
         F(c, RIM);
         rr(c, cx - w * 0.33, h * 0.6, w * 0.66, h * 0.34, w * 0.14);
@@ -740,82 +740,30 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, "rgba(255,255,255,.35)");
   }),
 
-  // Grandfather Ray's fallback, drawn only until his own generated portrait
-  // loads (see spriteBacked in stackacres-art.ts): straw hat, tan shirt,
-  // brown bib overalls, boots -- tall and slender rather than square, the
-  // one silhouette here built as a person rather than scenery.
   /*
-   * Grandfather Ray: the map's one person, CHIBI, drawn to the box his own
-   * generated art measures out.
+   * The Midnight Merchant: the map's one standing person drawn as a Canvas2D
+   * volume (everyone else who once stood here, Grandfather Ray included, is
+   * either a real generated sprite now or, in Ray's case, being redrawn at an
+   * isometric scale to stand beside his own house rather than as this chibi
+   * figure at all), CHIBI, drawn to a fixed 25.125x40 box.
    *
    * The proportions are not a style preference. Looking DOWN at a figure on an
    * isometric grid foreshortens its body away to almost nothing, so the head
    * is most of what survives -- and at the opening shot these are thirteen
-   * pixels tall. The first cast was rendered at real human proportions, about
-   * one head in six, and read as a lanky stick with no face. This is one head
-   * in three: the head is a third of the figure, the body is compact and the
-   * limbs are short and thick.
+   * pixels tall. Real human proportions, about one head in six, read as a
+   * lanky stick with no face at that size. This is one head in three: the
+   * head is a third of the figure, the body is compact and the limbs are
+   * short and thick.
    *
    * He carries a dark rim, and that is not decoration either: the map's grass
    * is a mid-green of about his own value, and a shape whose edge is only a
-   * darker shade of itself dissolves into it. `RIM` here is the same tone
-   * prep_chibi.py paints round the generated art.
+   * darker shade of itself dissolves into it.
+   *
+   * A temporary second person on the map, cloaked traveler in cool indigo,
+   * carrying the one warm note on the whole map: a lit lantern, the same glow
+   * `lampPost` already throws, so a player's eye finds the light before it
+   * finds the figure.
    */
-
-  grandfatherRay: painter(25.125, 40, (c) => {
-    for (const x of [7.6, 15.4]) {
-      rr(c, x, 33.4, 6.2, 6.6, 2.2);
-      F(c, RIM);
-      rr(c, x + 0.5, 33.9, 5.2, 5.6, 1.8);
-      F(c, "#4a3324");
-    }
-    // Overalls: one short stubby barrel of a body, legs included. A chibi has
-    // no waist to speak of, so drawing hips and thighs separately just puts a
-    // seam across him.
-    rr(c, 6.4, 21.4, 12.4, 14.4, 3.4);
-    F(c, RIM);
-    rr(c, 7, 22, 11.2, 13.2, 3);
-    F(c, "#6b4a30");
-    rr(c, 9.4, 23.6, 6.4, 5.4, 1.6);
-    F(c, "#7a563a");
-    // Sleeves either side, cream, ending in bare hands.
-    for (const x of [4.2, 17.1]) {
-      rr(c, x, 20.4, 4.4, 9.2, 2);
-      F(c, RIM);
-      rr(c, x + 0.5, 20.9, 3.4, 6.4, 1.6);
-      F(c, "#e8dcc0");
-      ell(c, x + 2.2, 28.4, 1.9, 1.9);
-      F(c, "#8a5a3e");
-    }
-    for (const x of [8.8, 14.6]) {
-      rr(c, x, 20.6, 1.6, 3.4, 0.6);
-      F(c, "#5a3d26");
-    }
-    // The head: a third of him, which is the whole point.
-    ell(c, 12.5, 12.6, 8.2, 8);
-    F(c, RIM);
-    ell(c, 12.5, 12.6, 7.4, 7.2);
-    F(c, "#8a5a3e");
-    // The straw hat, wider than he is -- the one shape carrying "Ray" at
-    // thirteen pixels tall, where a face is long gone.
-    ell(c, 12.5, 7.2, 12.4, 3.4);
-    F(c, RIM);
-    ell(c, 12.5, 7.1, 11.6, 2.8);
-    F(c, "#d8b866");
-    rr(c, 7.4, 0.8, 10.2, 7, 3);
-    F(c, RIM);
-    rr(c, 7.9, 1.3, 9.2, 6, 2.6);
-    F(c, "#e6c878");
-  }),
-
-  // The Midnight Merchant: a temporary second person on the map, drawn to
-  // the SAME box and proportions as Grandfather Ray (one head in three --
-  // see his own header just above for why) so the two read as the same kind
-  // of thing at the same zoom, never as a person standing next to a prop.
-  // Where Ray is warm daylight tan and straw, this is a cloaked traveler in
-  // cool indigo, carrying the one warm note on the whole map: a lit lantern,
-  // the same glow `lampPost` already throws, so a player's eye finds the
-  // light before it finds the figure.
   midnightMerchant: painter(25.125, 40, (c) => {
     // Boots, in shadow under the cloak's hem -- barely more than a hint,
     // since a full-length cloak leaves almost nothing of them showing.
@@ -824,7 +772,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
       F(c, "#1c1428");
     }
     // The cloak: one long triangle from shoulder to hem, wider at the feet
-    // than grandfatherRay's overalls are, since there is no waist to
+    // than a chibi body's own overalls would be, since there is no waist to
     // silhouette under it at all.
     poly(c, [[12.5, 14.6], [3.4, 36.8], [21.6, 36.8]]);
     F(c, "#161022");

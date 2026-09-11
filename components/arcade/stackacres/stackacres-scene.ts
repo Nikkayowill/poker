@@ -44,7 +44,15 @@ import {
   greenhouseSlotLayouts,
 } from "@/lib/stackacres/greenhouse";
 import { SEA_EXPANSE_TILE, seaExpanseTiles, terrainChunks } from "@/lib/stackacres/terrain";
-import { PROP_SHADOW, WINDMILL_HUB, WINDMILL_SPEED, YARD_PROPS, farmsteadClutter, type PropKind } from "@/lib/stackacres/props";
+import {
+  PROP_SHADOW,
+  STANDING_CHARACTER_SHADOW,
+  WINDMILL_HUB,
+  WINDMILL_SPEED,
+  YARD_PROPS,
+  farmsteadClutter,
+  type PropKind,
+} from "@/lib/stackacres/props";
 import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import {
@@ -99,7 +107,6 @@ import {
   clampZoom,
   critterSpeed,
   cropSpot,
-  grandfatherRayHitAt,
   growAreaAt,
   growAreaBounds,
   growAreaInterior,
@@ -108,6 +115,8 @@ import {
   midnightMerchantHitAt,
   penFeedSpot,
   powerOfTwoCeil,
+  RAY_HOUSE_FOOTPRINT,
+  rayHouseHitAt,
   scrollToKeepUnderPointer,
   seededRandom,
   signpostHitAt,
@@ -431,20 +440,21 @@ export interface StackAcresSceneCallbacks {
    */
   onMonkTap: (at: TapPoint) => void;
   /**
-   * A tap that landed on Grandfather Ray himself, as opposed to the barn
-   * just west of him -- a DIFFERENT structure/character split from
-   * `onMonkTap`'s own: he stands right beside his own Museum's entryway, so
-   * he is checked before `onBarnTap` the same "a person wins over the
-   * structure behind them" ordering already gives the Midnight Merchant and
-   * the Pixel Pilgrim, even though (like theirs) his footprint does not
-   * actually overlap the barn's. Opens the friendship gift dialogue; see
-   * stackacres-farm.tsx's `onWorldRayTap`.
+   * A tap that landed on Ray's house, checked right after the barn the same
+   * "structure wins over ground" ordering `onBarnTap` documents -- his house
+   * is a permanent structure now, not a character standing beside the barn,
+   * so it sits with the other entryways rather than among the Midnight
+   * Merchant/Pixel Pilgrim "a person wins over the structure behind them"
+   * group. Its box does not overlap the barn's, the silo's or the Merchant's
+   * spot either. Opens the friendship gift dialogue, the same callback the
+   * standing figure used to answer for; see stackacres-farm.tsx's
+   * `onWorldRayTap`.
    */
   onRayTap: (at: TapPoint) => void;
   /**
    * A tap that landed on one of the ten stranded visitors (see
-   * lib/stackacres/visitors.ts) -- checked right after Grandfather Ray, the
-   * same "a person wins over the structure behind them" ordering, even
+   * lib/stackacres/visitors.ts) -- checked right after the Pixel Pilgrim,
+   * the same "a person wins over the structure behind them" ordering, even
    * though none of their footprints overlap the barn's either. `kind` is the
    * `PropKind` the scene hit, which the shell resolves back to a visitor id
    * through `visitorForKind`; this is only the cue to show that visitor's
@@ -1649,6 +1659,18 @@ export class StackAcresScene extends Phaser.Scene {
    *  `toolGhostTween` holds. */
   private barnGlowTween: Phaser.Tweens.Tween | null = null;
 
+  /** Ray's house, captured off `paintRayHouse` so a press has a real target
+   *  to swap the texture of -- see `setRayHousePressed`. Null until `create`
+   *  has run. */
+  private rayHouseSprite: Phaser.GameObjects.Image | null = null;
+  /** The finger currently pressing Ray's house, or null. Set the instant a
+   *  touch lands on the house (`down`, below) and cleared on every release
+   *  or cancel for that same pointer, regardless of whether the gesture goes
+   *  on to resolve as a tap, a pan, or nothing at all -- the visual press is
+   *  about a finger being down on the house, not about what the gesture
+   *  turns out to mean. See `setRayHousePressed`. */
+  private rayHousePressPointerId: number | null = null;
+
   /**
    * True while the camera is bounded to the Greenhouse's own interior (see
    * `enterGreenhouse`/`exitGreenhouse`) rather than the open world. Read by
@@ -1938,6 +1960,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintBarn();
     this.paintGreenhouse();
     this.paintMonkHouse();
+    this.paintRayHouse();
     this.paintProps();
     this.paintFarmsteadClutter();
     this.spawnHerds();
@@ -2163,17 +2186,67 @@ export class StackAcresScene extends Phaser.Scene {
     this.put("monkHouse", cx, feetY, this.depthAt(cx, feetY));
   }
 
+  /**
+   * Ray's house: a straight-on elevation placed flat at `RAY_HOUSE_FOOTPRINT`'s
+   * own bottom-centre, the same convention `paintMonkHouse`/`paintBarn` anchor
+   * their own structures with, so the hit-test box (`rayHouseHitAt`) and the
+   * drawn picture agree on where the house actually stands. Captured on
+   * `this.rayHouseSprite` so a press has a real target to swap the texture
+   * of -- see `setRayHousePressed`.
+   */
+  private paintRayHouse(): void {
+    const cx = RAY_HOUSE_FOOTPRINT.x + RAY_HOUSE_FOOTPRINT.width / 2;
+    const feetY = RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height;
+    this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
+      .setScale(84 / 33 / S, 28 / 13 / S)
+      .setAlpha(0.85);
+    // A depth nudge, not just `depthAt(cx, feetY)` -- the same fix `paintBarn`
+    // needed (its own depth reads `BARN_Y + 17`, not its true anchor). Every
+    // other building here is close to 1:1, art size to footprint depth (the
+    // barn is exactly that; even monkHouse's mismatch is modest), so sorting
+    // by the literal feet y is enough. This house is not: `rayHouse`'s art is
+    // baked at 150 units tall over a footprint only 44 deep (RAY_HOUSE_FOOTPRINT),
+    // so the roof reads far further north on screen than its feet's own depth
+    // implies -- wild scenery just past the footprint's own edge (its
+    // clearance halo keeps anything from growing inside the footprint itself,
+    // see `nearRayHouse`) still sorted in front of the roof rather than behind
+    // it, the "bushes poking through" Kayo's own screenshot showed. Nudged
+    // forward enough to reliably beat anything standing near the footprint's
+    // own north edge.
+    this.rayHouseSprite = this.put("rayHouse", cx, feetY, this.depthAt(cx, feetY, 90));
+  }
+
+  /**
+   * Swaps Ray's house between its idle and pressed textures -- the same
+   * FarmVille-style feel a tap gives an interactive building: the door
+   * opens, a stray petal kicks up, the instant a finger touches it, and it
+   * is back to normal the instant that finger lifts, whether or not the
+   * touch went on to resolve as an actual tap. Called from `down` the
+   * moment a touch lands on the house and from `up`/`onCancel` for that same
+   * pointer on release -- see `rayHousePressPointerId`'s own header.
+   *
+   * A plain `setTexture`, not a tween: the same "the texture swaps
+   * immediately" choice `growCrop` documents for a crop's own stage change.
+   * Both textures share one box (`PAINTERS.rayHouse`/`rayHouseOpen` are both
+   * baked at the same size), so nothing needs to ease -- there is no size or
+   * position for a tween to animate between the two states.
+   */
+  private setRayHousePressed(pressed: boolean): void {
+    this.rayHouseSprite?.setTexture(pressed ? "rayHouseOpen" : "rayHouse", ART_FRAME);
+  }
+
   /** The Pixel Pilgrim himself, posted at his shrine from boot. A no-op (no
    *  sprite drawn) if his sheet never baked -- see `bakeFarmhandTexture` --
    *  but the shrine and his tap target exist regardless, see
-   *  `paintMonkHouse`/`monkHitAt`. The shadow pool is Grandfather Ray's own:
-   *  they are drawn to the same forty-unit build (see FARMHAND_SIZE), so a
-   *  second set of numbers here would only be a second set to drift from
-   *  his. A light tint marks him as not of this world. */
+   *  `paintMonkHouse`/`monkHitAt`. The shadow pool is the standard standing-
+   *  chibi one every forty-unit-tall character on this map shares (see
+   *  `STANDING_CHARACTER_SHADOW`'s own header), so a second set of numbers
+   *  here would only be a second set to drift from theirs. A light tint
+   *  marks him as not of this world. */
   private spawnMonkNode(): void {
     if (!this.textures.exists(FARMHAND_TEXTURE)) return;
     const state = spawnMonk();
-    const pool = PROP_SHADOW.grandfatherRay;
+    const pool = STANDING_CHARACTER_SHADOW;
     const shadow = this.put("shadow", MONK_POST.x, MONK_POST.y + 1, 0)
       .setAlpha(0.8)
       .setScale(pool.w / 33 / S, pool.h / 13 / S);
@@ -2785,10 +2858,10 @@ export class StackAcresScene extends Phaser.Scene {
 
     const { x, y } = MIDNIGHT_MERCHANT_SPOT;
     // Same shadow-pool math paintProps() uses for every static prop, off the
-    // identical pool grandfatherRay's own PROP_SHADOW entry already sizes --
-    // see MIDNIGHT_MERCHANT_SPOT's own doc comment for why the Merchant
-    // shares Ray's box rather than owning a PropKind entry of his own.
-    const pool = PROP_SHADOW.grandfatherRay;
+    // standard standing-chibi pool (see `STANDING_CHARACTER_SHADOW`'s own
+    // header) -- see MIDNIGHT_MERCHANT_SPOT's own doc comment for why the
+    // Merchant shares that box rather than owning a PropKind entry of his own.
+    const pool = STANDING_CHARACTER_SHADOW;
     const shadow = this.put("shadow", x, y + 1, this.depthAt(x, y, -0.5))
       .setScale(pool.w / 33 / S, pool.h / 13 / S)
       .setAlpha(0.8);
@@ -4577,6 +4650,15 @@ export class StackAcresScene extends Phaser.Scene {
         gesture.startMow = mowable(event.clientX, event.clientY);
         this.gesture = gesture;
         armSoilLift(event.clientX, event.clientY, event.pointerId);
+        // Ray's house presses instantly on touch, independent of whatever
+        // this gesture turns out to be (a tap, a pan, a mow) -- see
+        // `setRayHousePressed`'s own header for why this is a plain texture
+        // swap and not a tween.
+        const houseGround = resolveWorld(event.clientX, event.clientY);
+        if (rayHouseHitAt(houseGround.x, houseGround.y)) {
+          this.rayHousePressPointerId = event.pointerId;
+          this.setRayHousePressed(true);
+        }
       }
     };
 
@@ -4698,6 +4780,18 @@ export class StackAcresScene extends Phaser.Scene {
     const up = (event: PointerEvent, cancelled: boolean): void => {
       if (!this.pts.has(event.pointerId)) return;
       this.pts.delete(event.pointerId);
+      // Ray's house un-presses on ANY release of the finger that pressed it
+      // -- a genuine tap, a drag away that became a pan, or a cancel -- never
+      // only on the tap outcome below, the same "the visual is about the
+      // finger being down, not about what the gesture resolves to" reasoning
+      // `rayHousePressPointerId`'s own header gives. Before the early
+      // `!gesture` return further down, since a press with no gesture object
+      // (there should not be one, but nothing here guarantees it) must still
+      // un-press.
+      if (this.rayHousePressPointerId === event.pointerId) {
+        this.rayHousePressPointerId = null;
+        this.setRayHousePressed(false);
+      }
       // A release that beat the hold timer to it (an ordinary tap) means the
       // hold never gets to mean anything, whether or not it would have
       // landed on a bed.
@@ -4888,15 +4982,8 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onMonkTap(local);
         return;
       }
-      // Grandfather Ray himself -- checked right before the barn just west
-      // of him, the same "a person wins over the structure behind them"
-      // ordering the Pixel Pilgrim check above already documents.
-      if (grandfatherRayHitAt(ground.x, ground.y)) {
-        this.callbacks.onRayTap(local);
-        return;
-      }
-      // One of the ten stranded visitors -- checked right after Grandfather
-      // Ray, the same "a person wins over the structure behind them"
+      // One of the ten stranded visitors -- checked right after the Pixel
+      // Pilgrim, the same "a person wins over the structure behind them"
       // ordering, even though none of their footprints overlap the barn's.
       const visitorKind = visitorHitAt(ground.x, ground.y);
       if (visitorKind) {
@@ -4909,6 +4996,15 @@ export class StackAcresScene extends Phaser.Scene {
       // same tap, but a unit always wins over the structure behind it.
       if (barnHitAt(ground.x, ground.y)) {
         this.callbacks.onBarnTap();
+        return;
+      }
+      // Ray's house -- his own entryway now that he stands a proper building
+      // rather than in front of the barn's own. Checked right after the
+      // barn, the same "structure wins over ground" priority, and its box
+      // does not overlap the barn's, the silo's or the Merchant's spot
+      // either (see RAY_HOUSE_FOOTPRINT's own doc comment).
+      if (rayHouseHitAt(ground.x, ground.y)) {
+        this.callbacks.onRayTap(local);
         return;
       }
       // The signpost, the Town Board's entryway now that the places list is

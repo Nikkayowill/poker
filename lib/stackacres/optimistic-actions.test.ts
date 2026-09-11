@@ -254,6 +254,37 @@ describe("predictStackAcresAction: feed/water/clear", () => {
     expect(predictStackAcresAction({ action: "water", unitId: crop.id }, ctx({ units: [crop], water: 0 }))).toBeNull();
   });
 
+  it("waters a whole group in one patch when unitIds names more than one", () => {
+    const a = unit({ id: "c1", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const b = unit({ id: "c2", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const c = unit({ id: "c3", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const patch = predictStackAcresAction(
+      { action: "water", unitId: a.id, unitIds: [a.id, b.id, c.id] },
+      ctx({ units: [a, b, c], water: 10 }),
+    );
+    expect(patch?.water).toBe(7);
+    // All three moved past their old, already-dry thirstyAt.
+    for (const before of [a, b, c]) {
+      const after = patch?.units?.find((u) => u.id === before.id);
+      expect(Date.parse(after?.thirstyAt ?? "")).toBeGreaterThan(NOW.getTime());
+    }
+  });
+
+  it("clamps a group water to however much water is actually left", () => {
+    const a = unit({ id: "c1", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const b = unit({ id: "c2", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const c = unit({ id: "c3", stock: "carrot", state: "dry", thirstyAt: new Date(NOW.getTime() - 1000).toISOString() });
+    const patch = predictStackAcresAction(
+      { action: "water", unitId: a.id, unitIds: [a.id, b.id, c.id] },
+      ctx({ units: [a, b, c], water: 2 }),
+    );
+    expect(patch?.water).toBe(0);
+    // A watered crop's thirstyAt moves into the future; only 2 of the 3
+    // targets actually got poured on before the can ran dry.
+    const stillDue = patch?.units?.filter((u) => Date.parse(u.thirstyAt ?? "") <= NOW.getTime()) ?? [];
+    expect(stillDue).toHaveLength(1);
+  });
+
   it("fills the can at the well, and guesses nothing for a can already full", () => {
     expect(predictStackAcresAction({ action: "draw-water" }, ctx({ water: 2 }))?.water).toBe(WATER_CAPACITY);
     expect(predictStackAcresAction({ action: "draw-water" }, ctx({ water: WATER_CAPACITY }))).toBeNull();

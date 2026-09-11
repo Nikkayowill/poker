@@ -45,7 +45,12 @@ export type Action =
   // Feeds the hungry animals in one pen, a serving each, as far as the feed
   // goes. What dropping the feed scoop on a trough sends.
   | { action: "feed-pen"; zone: ZoneId }
-  | { action: "water"; unitId: string }
+  // unitId is always the tapped crop -- kept as the intent key so a re-press
+  // mid-flight still dedupes to the same gesture. unitIds is set only when
+  // the drop landed on a >=2x2 block of thirsty crops (the water can's own
+  // drag gesture, see stackacres-farm.tsx's `onWorldUnitTap`), naming the
+  // whole block to water in one request; absent it, this waters unitId alone.
+  | { action: "water"; unitId: string; unitIds?: string[] }
   // Fills the watering can at the well.
   | { action: "draw-water" }
   // The dock's cast, completed: which fish it lands is the server's own

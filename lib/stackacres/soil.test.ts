@@ -48,6 +48,7 @@ import {
   soilTilesEqual,
   moveSoilTileGroup,
   planSoilGroupRelocation,
+  thirstyTileGroup,
   type CropSource,
   type SoilMap,
   type SoilTile,
@@ -776,6 +777,71 @@ describe("hold-tap relocation: soilTileGroup", () => {
       { tx: 1, ty: 1, order: 1, origin: "purchased" },
     ]);
     expect(soilTileGroup(soil, 0, 0)).toEqual([{ tx: 0, ty: 0 }]);
+  });
+});
+
+describe("group-watering: thirstyTileGroup", () => {
+  /** A 2x2 block, all four tiles thirsty, plus an unrelated dry tile two
+   *  away that must never be swept in. */
+  const block2x2 = () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 0, ty: 1, order: 2, origin: "purchased" },
+      { tx: 1, ty: 1, order: 3, origin: "purchased" },
+      { tx: 5, ty: 5, order: 4, origin: "purchased" },
+    ]);
+    const dry: Record<string, string> = {
+      "0,0": "a",
+      "1,0": "b",
+      "0,1": "c",
+      "1,1": "d",
+      "5,5": "e",
+    };
+    const occupantAt = (tx: number, ty: number) => dry[`${tx},${ty}`] ?? null;
+    return { soil, occupantAt };
+  };
+
+  it("is empty when the seed tile has no soil, or no dry crop", () => {
+    const { soil } = block2x2();
+    expect(thirstyTileGroup(soil, 5, 5, () => null)).toEqual([]);
+    // Soil, but the crop on it is not dry (occupantAt says so).
+    expect(thirstyTileGroup(soil, 0, 0, () => null)).toEqual([]);
+  });
+
+  it("returns all four ids for a full 2x2 block, seed tile first", () => {
+    const { soil, occupantAt } = block2x2();
+    expect(thirstyTileGroup(soil, 0, 0, occupantAt)).toEqual(
+      expect.arrayContaining(["a", "b", "c", "d"]),
+    );
+    expect(thirstyTileGroup(soil, 0, 0, occupantAt)).toHaveLength(4);
+  });
+
+  it("falls back to empty for a run narrower than 2x2, even at 4+ tiles", () => {
+    // A straight line of four thirsty tiles is not a square block.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 2, ty: 0, order: 2, origin: "purchased" },
+      { tx: 3, ty: 0, order: 3, origin: "purchased" },
+    ]);
+    const dry = new Set(["0,0", "1,0", "2,0", "3,0"]);
+    const occupantAt = (tx: number, ty: number) => (dry.has(`${tx},${ty}`) ? "x" : null);
+    expect(thirstyTileGroup(soil, 0, 0, occupantAt)).toEqual([]);
+  });
+
+  it("stops at a wet tile -- the group only ever includes dry ground", () => {
+    // A 2x2 block where one corner is not dry: only 3 tiles qualify, still
+    // under the 4-tile floor, so no group triggers.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 0, ty: 1, order: 2, origin: "purchased" },
+      { tx: 1, ty: 1, order: 3, origin: "purchased" },
+    ]);
+    const dry: Record<string, string> = { "0,0": "a", "1,0": "b", "0,1": "c" };
+    const occupantAt = (tx: number, ty: number) => dry[`${tx},${ty}`] ?? null;
+    expect(thirstyTileGroup(soil, 0, 0, occupantAt)).toEqual([]);
   });
 });
 

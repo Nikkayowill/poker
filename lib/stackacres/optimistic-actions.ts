@@ -294,11 +294,19 @@ export function predictStackAcresAction(
       };
     }
     case "water": {
-      const unit = ctx.units.find((u) => u.id === body.unitId);
-      if (!unit || ctx.water < 1) return null;
+      // A group-water names every unit in the block; a lone tap falls back
+      // to just `unitId`, same shape `collect`'s `unitIds` takes. Clamped to
+      // however much water is actually left, same "as far as it goes" rule
+      // `feed-pen` above already follows -- a can that runs out partway still
+      // waters what it can, it just does not promise the whole block.
+      const ids = body.unitIds && body.unitIds.length > 1 ? body.unitIds : [body.unitId];
+      const targets = ctx.units.filter((u) => ids.includes(u.id));
+      if (targets.length === 0 || ctx.water < 1) return null;
+      const wateredCount = Math.min(targets.length, ctx.water);
+      const watered = new Set(targets.slice(0, wateredCount).map((u) => u.id));
       return {
-        units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyWateredUnit(u, ctx.nowMs) : u)),
-        water: ctx.water - 1,
+        units: ctx.units.map((u) => (watered.has(u.id) ? optimisticallyWateredUnit(u, ctx.nowMs) : u)),
+        water: ctx.water - wateredCount,
       };
     }
     case "draw-water":

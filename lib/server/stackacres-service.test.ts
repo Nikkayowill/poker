@@ -27,6 +27,7 @@ import {
   upgradeStackAcresTool,
   buyStackAcresCutter,
   waterStackAcres,
+  waterStackAcresGroup,
   drawStackAcresWater,
   sowStackAcresWheat,
   placeStackAcresMachine,
@@ -767,6 +768,62 @@ describe("the watering can", () => {
     const view = await drawStackAcresWater(token, T0);
     expect(view.water).toBe(WATER_CAPACITY);
     expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY);
+  });
+});
+
+describe("group-watering a >=2x2 block", () => {
+  const dryAt = new Date(T0.getTime() + (SPROUT.thirstMs ?? 0) + 1000);
+
+  const sowThree = async (token: string) => {
+    let view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    return view.units.filter((u) => u.stock === "carrot").map((u) => u.id);
+  };
+
+  it("waters every named unit and spends one unit of water each", async () => {
+    const { token, id } = await funded();
+    const ids = await sowThree(token);
+
+    const view = await waterStackAcresGroup(token, ids, dryAt);
+    for (const unitId of ids) {
+      expect(view.units.find((u) => u.id === unitId)?.state).not.toBe("dry");
+    }
+    expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY - 3);
+  });
+
+  it("waters as far as the can goes, and does not error on running out", async () => {
+    const { token, id } = await funded();
+    const ids = await sowThree(token);
+    await adjustStackAcresWater(id, -(WATER_CAPACITY - 2));
+
+    const view = await waterStackAcresGroup(token, ids, dryAt);
+    const stillDry = ids.filter((unitId) => view.units.find((u) => u.id === unitId)?.state === "dry");
+    expect(stillDry).toHaveLength(1);
+    expect(await readStackAcresWater(id)).toBe(0);
+  });
+
+  it("skips names that are not actually dry rather than erroring", async () => {
+    const { token } = await funded();
+    const ids = await sowThree(token);
+    // Watered at the same instant the group request lands: its thirstyAt is
+    // now in the future, so it is not dry when the group call checks it.
+    await waterStackAcres(token, ids[0], dryAt);
+
+    const view = await waterStackAcresGroup(token, ids, dryAt);
+    expect(view.units.find((u) => u.id === ids[0])?.state).not.toBe("dry");
+    expect(view.units.find((u) => u.id === ids[1])?.state).not.toBe("dry");
+    expect(view.units.find((u) => u.id === ids[2])?.state).not.toBe("dry");
+  });
+
+  it("refuses when nothing named is actually waterable", async () => {
+    const { token, id } = await funded();
+    const ids = await sowThree(token);
+    for (const unitId of ids) await waterStackAcres(token, unitId, T0);
+
+    // Still T0, before any of the three would dry out again.
+    await expect(waterStackAcresGroup(token, ids, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY - 3);
   });
 });
 

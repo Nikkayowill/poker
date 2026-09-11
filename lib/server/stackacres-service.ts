@@ -2775,6 +2775,84 @@ export async function waterStackAcres(
   return view(profile, now);
 }
 
+/**
+ * Waters every named unit that is still dry at write time, one serving each,
+ * stopping early once the can runs dry -- the mirror of `feedStackAcresPen`
+ * on the crop track. What dropping the water can on a >=2x2 block of thirsty
+ * crops sends; a lone tile still goes through `waterStackAcres` above.
+ *
+ * The group is never trusted as a shape -- it is only how the client decided
+ * to ask. Each named id is watered only if it is still dry right now, same
+ * posture `harvestStackAcres`'s named set takes toward its own list. Running
+ * out partway, or a few names having moved on, is not an error; watering
+ * nobody at all is.
+ */
+export async function waterStackAcresGroup(
+  token: string,
+  unitIdsInput: readonly string[],
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const named = new Set(unitIdsInput.map((id) => parseUnitId(id)));
+
+  const rows = await listStackAcresUnits(profile.id);
+  const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
+  const dry = rows.filter(
+    (row) =>
+      named.has(row.id) &&
+      row.status === "working" &&
+      thirstyAtFor(row) !== null &&
+      isStackAcresUnitDry(row, now, irrigated.has(row.id)),
+  );
+  if (dry.length === 0) {
+    throw new StackAcresRequestError("Nothing here to water.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let wateredCount = 0;
+  for (const unit of dry) {
+    const remaining = await adjustStackAcresWater(profile.id, -1);
+    if (remaining === null) break;
+
+    let pushed: Date;
+    let restartedAt: Date | null = null;
+    if (isUnwateredSeedRow(unit)) {
+      const clock = seedClockOnFirstWater(unit, now.getTime());
+      pushed = clock.readyAt;
+      restartedAt = clock.startedAt;
+    } else {
+      const thirstyAt = thirstyAtFor(unit);
+      const driedAt = thirstyAt ? Date.parse(thirstyAt) : NaN;
+      const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+      const readyAt = Date.parse(unit.readyAt);
+      pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
+    }
+
+    let watered: StoredStackAcresUnit | null;
+    try {
+      watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
+    } catch (error) {
+      await adjustStackAcresWater(profile.id, 1).catch(() => null);
+      // Whatever already went through stays watered. Only throw if nothing did.
+      if (wateredCount === 0) throw error;
+      break;
+    }
+    if (!watered) {
+      await adjustStackAcresWater(profile.id, 1).catch(() => null);
+      continue;
+    }
+    wateredCount += 1;
+  }
+
+  if (wateredCount === 0) {
+    throw new StackAcresRequestError("Your watering can is empty. Fill it at the well.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(profile, now);
+}
+
 /** Fills the watering can at the well. Free, and a no-op on a full can. */
 export async function drawStackAcresWater(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);

@@ -215,10 +215,10 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
 
 /**
  * THE ONE BOX SIZED IN WHOLE SOIL BEDS, and it has to stay that way. A bed is
- * `SOIL_TILE` (64) square and only placeable where it fits ENTIRELY inside
- * this rect, so 384 (6x6 = 36 beds) is deliberate -- x -192, y -192 and 384
- * are all multiples of 64, so the field tiles exactly with no bed overhanging
- * the fence. soil.test.ts holds the divisibility so this cannot regress.
+ * `SOIL_TILE` (16) square and only placeable where it fits ENTIRELY inside
+ * this rect, so both `CROP_FIELD`'s corner and its 512 extent have to stay
+ * multiples of 16 for the field to tile exactly with no bed overhanging the
+ * fence. soil.test.ts holds the divisibility so this cannot regress.
  *
  * Used to be `GROW_AREA.meadow` -- the Crop Fields' own grow area, back when
  * they were their own district. The 2026-09-08 merge folded that district
@@ -231,15 +231,24 @@ const GROW_AREA: Readonly<Record<ZoneId, WorldRect>> = {
  * boundary check, the scene's own touches-the-field test -- reads this
  * directly now.
  *
- * A fixed 64-unit inset from `CROP_FIELD`'s own corner (./yard.ts), which is
- * the Crop Fields' full 512-square extent -- the same margin the district's
- * own bounds always left around its beds.
+ * SAME RECT AS `CROP_FIELD` (./yard.ts) now, edge to edge. This used to be a
+ * 64-unit inset, leaving a bare grass collar around the beds; Kayo wanted
+ * that collar plantable too (2026-09-11), and nothing else was actually
+ * drawing a fence or scattering clutter along it (`paintDistrictBoundary`
+ * paints no boundary for the Crop Fields, and `farmsteadClutter` scatters a
+ * different box entirely -- the yard's Hen Coop remnant, not this one), so
+ * the inset was purely decorative headroom nobody asked for. Widening this
+ * to the full field is a one-line change precisely because it was the only
+ * thing gating placement: `placeStackAcresSoilTile` (server) reads this rect
+ * directly, and `soilTileInCropFieldBeds` below -- the `inBounds` every
+ * `planSoilGroupRelocation` call passes in, client and server alike -- is
+ * just this same rect's own "does this tile fit entirely inside" check.
  */
 export const CROP_FIELD_BEDS: WorldRect = {
-  x: CROP_FIELD.x + 64,
-  y: CROP_FIELD.y + 64,
-  width: 384,
-  height: 384,
+  x: CROP_FIELD.x,
+  y: CROP_FIELD.y,
+  width: CROP_FIELD.width,
+  height: CROP_FIELD.height,
 };
 
 /** Whether an entire soil TILE (not just a point) sits inside

@@ -41,15 +41,17 @@
  * two ids used to occupy. There is no more sprout->carrot / cash_crop->corn
  * indirection anywhere in the stock system; every id below is both the stock
  * kind and its own art id. Three tiers by seed cost/duration/yield -- see each
- * tier's own comment below. `carrot` and `corn` land on tier 1 and tier 3
- * respectively at the exact numbers `sprout`/`cash_crop` used to carry, on
- * purpose -- that continuity is why those two rungs read like restatements.
+ * tier's own comment below. `corn` still lands on tier 3 at the exact numbers
+ * `cash_crop` used to carry. `carrot` no longer does: TIER1 was retuned
+ * 2026-09-11 for early-game pacing (see TIER1 below), so tier 1 has moved on
+ * from those original numbers on purpose.
  */
 
 import type { StackAcresShopLock } from "./shop-locks";
 
 export const STACKACRES_CROPS = [
-  // Tier 1 (fast/cheap): 20 seed / 15m / 8m thirst / 32 muck.
+  // Tier 1 (fast/cheap): 1 seed / 15s / 8m thirst (unreachable at 15s -- see
+  // TIER1 below) / 2 muck.
   "garlic",
   "onion",
   "beet",
@@ -144,7 +146,9 @@ export interface StackAcresStockDef {
    * Both numbers sit UNDER their kind's own `durationMs` on purpose, unlike
    * the Hen Coop's deliberately-unreachable hunger window: watering is the
    * crop track's whole tending loop, so a crop that could finish a cycle
-   * without ever needing a drink would have no loop at all.
+   * without ever needing a drink would have no loop at all. TIER1's own
+   * `thirstMs` is now the one crop exception, unreachable since TIER1's
+   * `durationMs` dropped to 15s -- see TIER1's comment below.
    */
   thirstMs: number | null;
   /**
@@ -155,11 +159,28 @@ export interface StackAcresStockDef {
    * is a test asserting exactly that.
    */
   muckFee: number;
+  /**
+   * Whether Gold can buy this kind outright and permanently (./market.ts).
+   * False on tier 1 since 2026-09-11: its seed is 1 Gold, so the market's one
+   * multiplier would price a permanent one at 50 Gold, and a permanent unit
+   * pays no seed and never mucks. Tier 1 is the tier you work by hand.
+   */
+  ownableOutright: boolean;
 }
 
-const TIER1 = { seedCost: 20, durationMs: 15 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, muckFee: 32 } as const;
-const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, muckFee: 90 } as const;
-const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, muckFee: 200 } as const;
+/**
+ * Retuned 2026-09-11 from the original 20 seed / 15m / 32 muck: tier 1 was
+ * the new player's first several minutes, and a 15-minute wait with one
+ * watering touchpoint read as "nothing to do but look around" rather than
+ * constant management. Growth dropped to a 15-second, arcade-fast cycle;
+ * `thirstMs` (8m) is left as-is and is now unreachable within one cycle --
+ * an accepted trade-off, not an oversight (see items.ts for the matching
+ * seedCost/sellPrice/quantity retune, kept as whole Gold throughout since
+ * nothing in this economy handles fractional currency).
+ */
+const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, muckFee: 2, ownableOutright: false } as const;
+const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, muckFee: 90, ownableOutright: true } as const;
+const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, muckFee: 200, ownableOutright: true } as const;
 
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
@@ -173,8 +194,8 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   beet: { label: "Beet", ...TIER1 },
   poppy: { label: "Poppy", ...TIER1 },
   potato: { label: "Potato", ...TIER1 },
-  // Same numbers `sprout` used to carry -- deliberate continuity, not a
-  // coincidence. See the file header.
+  // No longer `sprout`'s old numbers -- TIER1 was retuned 2026-09-11, see
+  // its own comment above.
   carrot: { label: "Carrot", ...TIER1 },
   cabbage: { label: "Cabbage", ...TIER1 },
 
@@ -219,6 +240,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     hungerMs: 45 * 60 * 1000,
     thirstMs: null,
     muckFee: 44,
+    ownableOutright: true,
   },
   pig: {
     // Labelled a sheep, keyed as a pig. The tile pack has no pig and a pink
@@ -232,6 +254,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     hungerMs: 2 * 60 * 60 * 1000,
     thirstMs: null,
     muckFee: 312,
+    ownableOutright: true,
   },
   cattle: {
     label: "Cattle Pen",
@@ -240,6 +263,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     hungerMs: 8 * 60 * 60 * 1000,
     thirstMs: null,
     muckFee: 1_120,
+    ownableOutright: true,
   },
 };
 

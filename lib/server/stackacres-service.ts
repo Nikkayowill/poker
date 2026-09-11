@@ -48,7 +48,7 @@ import {
   upkeepState,
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
-import { stackacresStockPrice } from "@/lib/stackacres/market";
+import { stackacresStockOwnableOutright, stackacresStockPrice } from "@/lib/stackacres/market";
 import { emptyMuseumRegistry, museumDiscoveryBonusQuantity, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
   STACKACRES_SECTORS,
@@ -2136,6 +2136,11 @@ export async function buyStackAcresStock(
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
   const stock: StackAcresStock = input.stock;
   const def = STACKACRES_CATALOGUE[stock];
+  // Tier 1 is worked by hand, not owned: it is off this shelf entirely. Refused
+  // here rather than only hidden on the client, and before any Gold moves.
+  if (!stackacresStockOwnableOutright(stock)) {
+    throw new StackAcresRequestError(`${def.label} is sown from seed, never bought outright.`, 400);
+  }
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
 

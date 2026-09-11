@@ -454,17 +454,31 @@ describe("stocking", () => {
     const { token } = await funded(500_000, { beds: false });
     const before = await balance(token);
 
-    await expect(buyStackAcresStock(token, { stock: "carrot" }, T0)).rejects.toThrow(/bed/);
+    await expect(buyStackAcresStock(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
 
     const after = await readStackAcres(token, T0);
-    expect(after.units.filter((u) => u.stock === "carrot")).toHaveLength(0);
+    expect(after.units.filter((u) => u.stock === "corn")).toHaveLength(0);
     expect(await balance(token)).toBe(before);
   });
 
   it("stands a crop bought outright in a real bed, not on the scatter fallback", async () => {
     const { token } = await funded();
-    const view = await buyStackAcresStock(token, { stock: "carrot" }, T0);
-    expect(unitOf(view, "carrot").soilSlot).not.toBeNull();
+    const view = await buyStackAcresStock(token, { stock: "corn" }, T0);
+    expect(unitOf(view, "corn").soilSlot).not.toBeNull();
+  });
+
+  it("never sells a tier-1 crop outright, and takes nothing for trying", async () => {
+    // Tier 1 is the hand-worked tier -- seed only, at any purse size.
+    const { token } = await funded();
+    const before = await balance(token);
+
+    await expect(buyStackAcresStock(token, { stock: "carrot" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+
+    const after = await readStackAcres(token, T0);
+    expect(after.units.filter((u) => u.stock === "carrot")).toHaveLength(0);
+    expect(await balance(token)).toBe(before);
   });
 
   it("still buys livestock outright with nothing tilled -- an animal has no bed to need", async () => {
@@ -573,9 +587,13 @@ describe("buyStackAcresSeed — Ray's shelf", () => {
   it("refuses when Gold is short and shelves nothing", async () => {
     const { token, id } = await funded(10);
     await adjustStackAcresSeedStock(id, "carrot", -1000);
+    // One bag stopped being enough to overdraw 10 Gold once tier 1's seed
+    // dropped to 1 Gold, so order the most one purchase allows.
+    const quantity = STACKACRES_SEED_BAGS_PER_PURCHASE;
+    expect(STACKACRES_CATALOGUE.carrot.seedCost * quantity).toBeGreaterThan(10);
 
     await expect(
-      buyStackAcresSeed(token, { crop: "carrot", quantity: 1 }, T0),
+      buyStackAcresSeed(token, { crop: "carrot", quantity }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(10);
@@ -828,25 +846,40 @@ describe("group-watering a >=2x2 block", () => {
 });
 
 describe("thirst", () => {
-  const THIRST = SPROUT.thirstMs ?? 0;
-  /** A carrot sown and given its first water at T0, so its clock starts
-   *  there and its first drought is at T0 + THIRST. */
+  // Corn, not the carrot this block used to sow: tier 1 ripens in 15s now,
+  // long before its 8m thirst window, so it can no longer go dry mid-cycle.
+  // Corn's cycle outlasts two of its thirst windows, so a test that needs it
+  // to reach the finish line waters it through each drought.
+  const CROP = STACKACRES_CATALOGUE.corn;
+  const THIRST = CROP.thirstMs ?? 0;
+  /** Corn sown and given its first water at T0, so its clock starts there
+   *  and its first drought is at T0 + THIRST. */
   const stackacresSprout = async (token: string) => {
-    const sown = await stockStackAcres(token, { stock: "carrot" }, T0);
-    return waterStackAcres(token, unitOf(sown, "carrot").id, T0);
+    const sown = await stockStackAcres(token, { stock: "corn" }, T0);
+    return waterStackAcres(token, unitOf(sown, "corn").id, T0);
   };
   const dryAt = new Date(T0.getTime() + THIRST + 1000);
+  /** Waters at every drought after `lastWatered` until the unit's finish
+   *  line, each exactly as the ground dries so none of them adds time.
+   *  Returns that finish line. */
+  const waterUntilRipe = async (token: string, id: string, unitId: string, lastWatered: Date) => {
+    const readyAt = Date.parse((await getStackAcresUnit(id, unitId))?.readyAt ?? "");
+    for (let drink = lastWatered.getTime() + THIRST; drink < readyAt; drink += THIRST) {
+      await waterStackAcres(token, unitId, new Date(drink));
+    }
+    return readyAt;
+  };
 
   it("freezes a field past its watering window instead of letting it finish", async () => {
     const { token } = await funded();
-    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
-    const unitId = unitOf(view, "carrot").id;
+    const view = await stockStackAcres(token, { stock: "corn" }, T0);
+    const unitId = unitOf(view, "corn").id;
 
     // Well past readiness, but the soil went dry long before that.
-    const wayLater = new Date(T0.getTime() + SPROUT.durationMs + 60_000);
+    const wayLater = new Date(T0.getTime() + CROP.durationMs + 60_000);
     const later = await readStackAcres(token, wayLater);
-    expect(unitOf(later, "carrot").state).toBe("dry");
-    expect(unitOf(later, "carrot").isWatered).toBe(false);
+    expect(unitOf(later, "corn").state).toBe("dry");
+    expect(unitOf(later, "corn").isWatered).toBe(false);
 
     await expect(collectOne(token, unitId, wayLater)).rejects.toBeInstanceOf(
       StackAcresRequestError,
@@ -859,7 +892,7 @@ describe("thirst", () => {
     const view = await stackacresSprout(token);
     const spentOnSeed = startingGold - (await balance(token));
 
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
     const before = await getStackAcresUnit(id, unitId);
     const wateredAt = new Date(dryAt.getTime() + 60_000);
     await waterStackAcres(token, unitId, wateredAt);
@@ -878,27 +911,28 @@ describe("thirst", () => {
   });
 
   it("lets the field finish once watered, on the pushed-out clock", async () => {
-    const { token } = await funded();
+    const { token, id } = await funded();
     const view = await stackacresSprout(token);
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
 
     const wateredAt = new Date(dryAt.getTime() + 60_000);
     const resumed = await waterStackAcres(token, unitId, wateredAt);
-    expect(unitOf(resumed, "carrot").state).toBe("working");
-    expect(unitOf(resumed, "carrot").isWatered).toBe(true);
+    expect(unitOf(resumed, "corn").state).toBe("working");
+    expect(unitOf(resumed, "corn").isWatered).toBe(true);
 
     // Ready at its own pushed-out clock -- the time the field stood dry was
-    // ADDED to the cycle, not credited to it. Read exactly there: a Sprout
-    // Row's thirst window is under its own cycle length, so waiting long past
-    // this would simply find it dry again, which is the loop working.
-    const done = await readStackAcres(token, new Date(Date.parse(unitOf(resumed, "carrot").readyAt)));
-    expect(unitOf(done, "carrot").state).toBe("ready");
+    // ADDED to the cycle, not credited to it. Each later drought is watered
+    // right as it lands, so none of them moves that clock again.
+    const readyAt = await waterUntilRipe(token, id, unitId, wateredAt);
+    expect(readyAt).toBe(Date.parse(unitOf(resumed, "corn").readyAt));
+    const done = await readStackAcres(token, new Date(readyAt));
+    expect(unitOf(done, "corn").state).toBe("ready");
   });
 
   it("preserves the time REMAINING across a drought, which is what freezing means", async () => {
     const { token, id } = await funded();
     const view = await stackacresSprout(token);
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
 
     // What was left to do at the moment the ground dried...
     const before = await getStackAcresUnit(id, unitId);
@@ -916,7 +950,7 @@ describe("thirst", () => {
   it("writes nothing when the ground is still wet, so the thirst clock cannot be reset for free", async () => {
     const { token, id } = await funded();
     const view = await stackacresSprout(token);
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
     const before = await getStackAcresUnit(id, unitId);
 
     // A no-op rather than a refusal -- a phone whose clock runs fast paints
@@ -935,39 +969,37 @@ describe("thirst", () => {
   it("still harvests a crop that ripened before its ground dried", async () => {
     const { token, id } = await funded();
     const view = await stackacresSprout(token);
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
 
-    // Water once late in the cycle, so the crop finishes at its own clock and
-    // the ground only gives out afterwards.
-    const wateredAt = new Date(T0.getTime() + THIRST + 1000);
-    await waterStackAcres(token, unitId, wateredAt);
-    const readyAt = Date.parse((await getStackAcresUnit(id, unitId))?.readyAt ?? "");
+    // Water through each drought, so the crop finishes at its own clock and
+    // the ground only gives out after that last drink runs dry.
+    const readyAt = await waterUntilRipe(token, id, unitId, T0);
 
     // Long after both the finish line and the next drought.
     const muchLater = new Date(readyAt + 12 * 60 * 60 * 1000);
     const late = await readStackAcres(token, muchLater);
-    expect(unitOf(late, "carrot").state).toBe("ready");
+    expect(unitOf(late, "corn").state).toBe("ready");
 
     // And it actually yields -- a drought after the harvest was made takes
     // nothing away from it.
     const before = await balance(token);
     const paid = await collectOne(token, unitId, muchLater);
     expect(paid.harvest.tally).toEqual([
-      { item: STACKACRES_YIELDS.carrot.item, quantity: STACKACRES_YIELDS.carrot.quantity },
+      { item: STACKACRES_YIELDS.corn.item, quantity: STACKACRES_YIELDS.corn.quantity },
     ]);
-    expect(paid.inventory.carrot).toBe(STACKACRES_YIELDS.carrot.quantity);
+    expect(paid.inventory.corn).toBe(STACKACRES_YIELDS.corn.quantity);
     expect(await balance(token)).toBe(before);
   });
 
   it("restarts a bought crop as seed, and its first water starts a fresh cycle", async () => {
     const { token, id } = await funded();
-    await buyStackAcresStock(token, { stock: "carrot" }, T0);
-    const unitId = unitOf(await readStackAcres(token, T0), "carrot").id;
+    await buyStackAcresStock(token, { stock: "corn" }, T0);
+    const unitId = unitOf(await readStackAcres(token, T0), "corn").id;
 
-    // First water at T0, then once more through its one drought so it
-    // actually reaches the finish line.
+    // First water at T0, then through every drought so it actually reaches
+    // the finish line.
     await waterStackAcres(token, unitId, T0);
-    await waterStackAcres(token, unitId, new Date(T0.getTime() + THIRST + 1000));
+    await waterUntilRipe(token, id, unitId, T0);
 
     // Collected a full day after it ripened -- the realistic case for a
     // permanent unit, which sits ready until someone comes back for it.
@@ -977,7 +1009,7 @@ describe("thirst", () => {
     // Back in as seed waiting for water...
     const restarted = await getStackAcresUnit(id, unitId);
     expect(restarted?.lastWateredAt).toBeNull();
-    const fresh = unitOf(await readStackAcres(token, collectedAt), "carrot");
+    const fresh = unitOf(await readStackAcres(token, collectedAt), "corn");
     expect(fresh.state).toBe("dry");
     expect(fresh.progress).toBe(0);
 
@@ -987,26 +1019,26 @@ describe("thirst", () => {
     await waterStackAcres(token, unitId, wateredAt);
     const growing = await getStackAcresUnit(id, unitId);
     expect(growing?.startedAt).toBe(wateredAt.toISOString());
-    expect(Date.parse(growing?.readyAt ?? "")).toBe(wateredAt.getTime() + SPROUT.durationMs);
+    expect(Date.parse(growing?.readyAt ?? "")).toBe(wateredAt.getTime() + CROP.durationMs);
   });
 
   it("sows seed that waits for water, then grows on a cycle started by its first water", async () => {
     const { token, id } = await funded();
-    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
-    const unitId = unitOf(view, "carrot").id;
+    const view = await stockStackAcres(token, { stock: "corn" }, T0);
+    const unitId = unitOf(view, "corn").id;
 
     // An hour on, still seed: nothing grew while it sat unwatered.
     const anHourOn = new Date(T0.getTime() + 60 * 60 * 1000);
-    const waiting = unitOf(await readStackAcres(token, anHourOn), "carrot");
+    const waiting = unitOf(await readStackAcres(token, anHourOn), "corn");
     expect(waiting.state).toBe("dry");
     expect(waiting.progress).toBe(0);
 
-    const watered = unitOf(await waterStackAcres(token, unitId, anHourOn), "carrot");
+    const watered = unitOf(await waterStackAcres(token, unitId, anHourOn), "corn");
     expect(watered.state).toBe("working");
     expect(watered.progress).toBe(0);
     const row = await getStackAcresUnit(id, unitId);
     expect(row?.startedAt).toBe(anHourOn.toISOString());
-    expect(Date.parse(row?.readyAt ?? "")).toBe(anHourOn.getTime() + SPROUT.durationMs);
+    expect(Date.parse(row?.readyAt ?? "")).toBe(anHourOn.getTime() + CROP.durationMs);
   });
 
   it("refuses to water livestock, which has no soil", async () => {
@@ -1020,20 +1052,20 @@ describe("thirst", () => {
 
   it("never lets neglect cost produce: the snapshotted yield is untouched by watering", async () => {
     const { token, id } = await funded();
-    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
-    const unitId = unitOf(view, "carrot").id;
+    const view = await stockStackAcres(token, { stock: "corn" }, T0);
+    const unitId = unitOf(view, "corn").id;
     await waterStackAcres(token, unitId, new Date(dryAt.getTime() + 6 * 60 * 60 * 1000));
     expect((await getStackAcresUnit(id, unitId))?.yieldQuantity).toBe(
-      STACKACRES_YIELDS.carrot.quantity,
+      STACKACRES_YIELDS.corn.quantity,
     );
   });
 
   it("waters a crop stocked with Gold the same way, and still moves no Gold", async () => {
     const { token, id } = await funded();
-    await buyStackAcresStock(token, { stock: "carrot" }, T0);
+    await buyStackAcresStock(token, { stock: "corn" }, T0);
     const goldAfterBuying = await balance(token);
     const view = await readStackAcres(token, T0);
-    const unitId = unitOf(view, "carrot").id;
+    const unitId = unitOf(view, "corn").id;
 
     await waterStackAcres(token, unitId, new Date(dryAt.getTime() + 60_000));
     expect(await balance(token)).toBe(goldAfterBuying);
@@ -1686,8 +1718,6 @@ describe("expanding capacity", () => {
  * lines getting there would be testing the fixture.
  */
 describe("the daily allowance", () => {
-  const CROP_READY = new Date(T0.getTime() + SPROUT.durationMs);
-
   const EGG = itemSellPrice("eggs");
 
   it("records a sale against today's allowance", async () => {
@@ -1821,7 +1851,7 @@ describe("the daily allowance", () => {
     const { token, id } = await funded();
     await stockStackAcres(token, { stock: "hen" }, T0);
 
-    await harvestStackAcres(token, {}, CROP_READY);
+    await harvestStackAcres(token, {}, HEN_READY);
 
     expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(0);
     expect((await readStackAcres(token, T0)).exchange.remaining).toBe(STACKACRES_GOLD_CEILING);

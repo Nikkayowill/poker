@@ -145,20 +145,24 @@ describe("toStackAcresUnitSnapshots", () => {
 /* Soil watering                                                       */
 /* ------------------------------------------------------------------ */
 
-const CARROT = STACKACRES_CATALOGUE.carrot;
-const THIRST = CARROT.thirstMs ?? 0;
+// Tier 2, not tier 1: these tests exercise the thirst-freeze mechanic, which
+// needs thirstMs under durationMs. Tier 1's own thirstMs sits OVER its 15s
+// durationMs since the 2026-09-11 pacing retune (see catalogue.ts's TIER1
+// comment), so it can no longer stand in for "a crop that can go dry".
+const THIRSTY_CROP = STACKACRES_CATALOGUE.cucumber;
+const THIRST = THIRSTY_CROP.thirstMs ?? 0;
 
-/** A Sprout Row sown `agoMs` before NOW and watered at sowing, unless
+/** A crop sown `agoMs` before NOW and watered at sowing, unless
  *  `lastWateredAt` says otherwise. Its whole cycle fits inside the window
  *  these tests move NOW around in. */
 function crop(agoMs: number, overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
   const sown = NOW.getTime() - agoMs;
   return row({
-    stock: "carrot",
-    stake: CARROT.seedCost,
+    stock: "cucumber",
+    stake: THIRSTY_CROP.seedCost,
     yieldQuantity: 3,
     startedAt: new Date(sown).toISOString(),
-    readyAt: new Date(sown + CARROT.durationMs).toISOString(),
+    readyAt: new Date(sown + THIRSTY_CROP.durationMs).toISOString(),
     lastFedAt: null,
     lastWateredAt: new Date(sown).toISOString(),
     ...overrides,
@@ -201,15 +205,15 @@ describe("sown seed", () => {
     const at = NOW.getTime() + 5_000;
     const clock = seedClockOnFirstWater(crop(60_000, { lastWateredAt: null }), at);
     expect(clock.startedAt.getTime()).toBe(at);
-    expect(clock.readyAt.getTime() - at).toBe(CARROT.durationMs);
+    expect(clock.readyAt.getTime() - at).toBe(THIRSTY_CROP.durationMs);
   });
 
   it("predicts a sown crop as seed and an animal as working", () => {
     const base = { id: "n", permanent: false, inGreenhouse: false, nowMs: NOW.getTime() };
-    const carrot = optimisticallyStockedUnit({ ...base, stock: "carrot" });
-    expect(carrot.seed).toBe(true);
-    expect(carrot.state).toBe("dry");
-    expect(carrot.isWatered).toBe(false);
+    const cropUnit = optimisticallyStockedUnit({ ...base, stock: "cucumber" });
+    expect(cropUnit.seed).toBe(true);
+    expect(cropUnit.state).toBe("dry");
+    expect(cropUnit.isWatered).toBe(false);
     const hen = optimisticallyStockedUnit({ ...base, stock: "hen" });
     expect(hen.state).toBe("working");
     expect(hen.thirstyAt).toBeNull();
@@ -221,13 +225,13 @@ describe("sown seed", () => {
     expect(watered.state).toBe("working");
     expect(watered.progress).toBe(0);
     expect(Date.parse(watered.startedAt)).toBe(at);
-    expect(Date.parse(watered.readyAt) - at).toBe(CARROT.durationMs);
+    expect(Date.parse(watered.readyAt) - at).toBe(THIRSTY_CROP.durationMs);
   });
 
   it("predicts a bought crop restarting as seed", () => {
     const stocked = optimisticallyStockedUnit({
       id: "n",
-      stock: "carrot",
+      stock: "cucumber",
       permanent: true,
       inGreenhouse: false,
       nowMs: NOW.getTime(),
@@ -242,7 +246,7 @@ describe("sown seed", () => {
   it("predicts a bought crop on a piped bed restarting watered", () => {
     const stocked = optimisticallyStockedUnit({
       id: "n",
-      stock: "carrot",
+      stock: "cucumber",
       permanent: true,
       inGreenhouse: false,
       nowMs: NOW.getTime(),
@@ -280,13 +284,15 @@ describe("isStackAcresUnitDry", () => {
 });
 
 describe("a crop that beat the drought to its own finish line", () => {
-  // Watered late in the cycle, so it ripens at durationMs and the ground only
-  // dries afterwards.
+  // Sown two cycles ago, so it ripened one cycle ago. Watered late enough in
+  // that cycle that the ground only dries half a thirst window after it
+  // ripens, which is still well before NOW.
+  const CYCLE = THIRSTY_CROP.durationMs;
   const lateWatered = () =>
     crop(0, {
-      startedAt: new Date(NOW.getTime() - 30 * 60 * 1000).toISOString(),
-      readyAt: new Date(NOW.getTime() - 15 * 60 * 1000).toISOString(),
-      lastWateredAt: new Date(NOW.getTime() - 20 * 60 * 1000).toISOString(),
+      startedAt: new Date(NOW.getTime() - 2 * CYCLE).toISOString(),
+      readyAt: new Date(NOW.getTime() - CYCLE).toISOString(),
+      lastWateredAt: new Date(NOW.getTime() - CYCLE - THIRST / 2).toISOString(),
     });
 
   it("is never dry, however long the ground has been dry since", () => {
@@ -310,9 +316,9 @@ describe("a crop that beat the drought to its own finish line", () => {
     // Same row, but the watering is early enough that the soil gives out
     // first -- this is the case the freeze exists for.
     const row = crop(0, {
-      startedAt: new Date(NOW.getTime() - 30 * 60 * 1000).toISOString(),
-      readyAt: new Date(NOW.getTime() - 15 * 60 * 1000).toISOString(),
-      lastWateredAt: new Date(NOW.getTime() - 30 * 60 * 1000).toISOString(),
+      startedAt: new Date(NOW.getTime() - 2 * CYCLE).toISOString(),
+      readyAt: new Date(NOW.getTime() - CYCLE).toISOString(),
+      lastWateredAt: new Date(NOW.getTime() - 2 * CYCLE).toISOString(),
     });
     expect(isStackAcresUnitDry(row, NOW)).toBe(true);
     expect(isStackAcresUnitReady(row, NOW)).toBe(false);
@@ -321,7 +327,7 @@ describe("a crop that beat the drought to its own finish line", () => {
 
 describe("growth pauses while a crop goes unwatered", () => {
   // Sown long enough ago that the timer alone would have finished the cycle.
-  const wellPastReady = CARROT.durationMs + 60 * 60 * 1000;
+  const wellPastReady = THIRSTY_CROP.durationMs + 60 * 60 * 1000;
 
   it("refuses readiness for a dry crop however long its timer says it has run", () => {
     const dry = crop(wellPastReady);
@@ -349,7 +355,7 @@ describe("growth pauses while a crop goes unwatered", () => {
     // fraction of the cycle that had actually been worked by then.
     expect(frozen.state).toBe("dry");
     expect(frozen.isWatered).toBe(false);
-    expect(frozen.progress).toBeCloseTo(THIRST / CARROT.durationMs, 6);
+    expect(frozen.progress).toBeCloseTo(THIRST / THIRSTY_CROP.durationMs, 6);
     expect(frozen.progress).toBeLessThan(1);
   });
 

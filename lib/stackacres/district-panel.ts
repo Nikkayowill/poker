@@ -29,7 +29,7 @@ import {
   stackacresCapacityPrice,
   type StackAcresStock,
 } from "./catalogue";
-import { stackacresStockPrice } from "./market";
+import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import { isActiveStock } from "./scope";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stocksInZone } from "./world";
@@ -98,8 +98,10 @@ export interface BuyOption {
   seedCost: number;
   seedAfford: boolean;
   seedReason: string | null;
-  /** Gold, buys the animal/crop outright and permanently. */
-  outrightCost: number;
+  /** Gold, buys the animal/crop outright and permanently. Null for a kind
+   *  that is never sold outright (tier-1 crops), which shows no Buy button at
+   *  all rather than a disabled one. */
+  outrightCost: number | null;
   /** Null once capacity is already maxed, or for a crop, which never has
    *  anything to expand. */
   expand: { cost: number } | null;
@@ -137,7 +139,7 @@ export function buyOptionsForZone(
         : context.gold < def.seedCost
           ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`
           : null,
-      outrightCost: stackacresStockPrice(stock),
+      outrightCost: stackacresStockOwnableOutright(stock) ? stackacresStockPrice(stock) : null,
       // Only worth showing once the base cap is actually the thing in the
       // way -- offering to expand a kind you have room in already would be
       // a Gold button for a problem you do not have. Never shown for a crop:

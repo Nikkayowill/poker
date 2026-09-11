@@ -468,6 +468,16 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(patch?.units?.[0].permanent).toBe(true);
   });
 
+  it("guesses nothing for a tier-1 crop, which is never sold outright", () => {
+    // A free bed and Gold to spare, so neither of those is what refuses it --
+    // tier 1 is simply off the outright shelf, and the server says so.
+    const patch = predictStackAcresAction(
+      { action: "buy-stock", stock: "carrot" },
+      ctx({ profile: profile({ goldBalance: 100_000 }), soilTiles: ONE_BED }),
+    );
+    expect(patch).toBeNull();
+  });
+
   it("retires a permanent unit with no refund", () => {
     const owned = unit({ id: "o1", permanent: true, state: "working" });
     const patch = predictStackAcresAction(

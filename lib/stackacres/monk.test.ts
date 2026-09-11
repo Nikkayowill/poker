@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   MONK_BOW_MS,
-  MONK_HOUSE_FOOTPRINT,
   MONK_POST,
+  MONK_TAP_ZONE,
   monkHitAt,
   spawnMonk,
   startMonkBow,
@@ -11,13 +11,14 @@ import {
 } from "./monk";
 import { FARMHAND_WORK_MS } from "./farmhand";
 import { nearPath } from "./paths";
-import { inPondZone } from "./water";
-import { BARN_FOOTPRINT, FARM_ZONE, barnHitAt, growAreaAt, inFarmZone } from "./world";
+import { DOCK, LILY_PADS, REEDS, RIPPLE_SPOTS, inPond, inPondZone } from "./water";
+import { barnHitAt, growAreaAt } from "./world";
+import { worldBoundsRect } from "./bounds";
 
-/** The footprint's four corners -- what every geometry check below sweeps,
- *  the same way farmhand.test.ts proves a single point. */
+/** The box's four corners -- what every geometry check below sweeps, the
+ *  same way farmhand.test.ts proves a single point. */
 function corners(): Array<{ x: number; y: number }> {
-  const { x, y, width, height } = MONK_HOUSE_FOOTPRINT;
+  const { x, y, width, height } = MONK_TAP_ZONE;
   return [
     { x, y },
     { x: x + width, y },
@@ -26,81 +27,84 @@ function corners(): Array<{ x: number; y: number }> {
   ];
 }
 
+/** The pond's own fixed decor, all in one list so a "how far is the nearest
+ *  piece" check does not have to name each one. */
+function pondDecor(): Array<{ x: number; y: number }> {
+  return [...REEDS, ...LILY_PADS, ...RIPPLE_SPOTS, DOCK];
+}
+
 describe("MONK_POST", () => {
-  // The same six constraints farmhand.test.ts holds FARMHAND_BASE to --
-  // this is that exact point, reused (see monk.ts's doc comment).
-  it("stands on the farm, clear of everything already there", () => {
+  it("stands clear of the barn, every path and any worked ground", () => {
     const { x, y } = MONK_POST;
-    expect(inFarmZone(x, y)).toBe(true);
     expect(barnHitAt(x, y)).toBe(false);
     expect(nearPath(x, y)).toBe(false);
-    expect(inPondZone(x, y)).toBe(false);
     expect(growAreaAt(x, y)).toBeNull();
   });
 
-  it("is inside the camera's own world bounds", () => {
-    expect(MONK_POST.x).toBeGreaterThan(FARM_ZONE.x);
-    expect(MONK_POST.x).toBeLessThan(FARM_ZONE.x + FARM_ZONE.width);
-    expect(MONK_POST.y).toBeGreaterThan(FARM_ZONE.y);
-    expect(MONK_POST.y).toBeLessThan(FARM_ZONE.y + FARM_ZONE.height);
+  it("is near the water -- inside the pond's own clearing, not standing in it", () => {
+    expect(inPondZone(MONK_POST.x, MONK_POST.y)).toBe(true);
+    expect(inPond(MONK_POST.x, MONK_POST.y)).toBe(false);
   });
 
-  it("does not stand on top of Grandfather Ray's own post", () => {
-    // Ray is a static prop at (175, 20) and is 20 units wide.
-    expect(Math.hypot(MONK_POST.x - 175, MONK_POST.y - 20)).toBeGreaterThan(20);
-    expect(MONK_POST.y).toBeGreaterThan(BARN_FOOTPRINT.y + BARN_FOOTPRINT.height);
+  it("is inside the camera's own world bounds", () => {
+    const bounds = worldBoundsRect();
+    expect(MONK_POST.x).toBeGreaterThan(bounds.x);
+    expect(MONK_POST.x).toBeLessThan(bounds.x + bounds.width);
+    expect(MONK_POST.y).toBeGreaterThan(bounds.y);
+    expect(MONK_POST.y).toBeLessThan(bounds.y + bounds.height);
+  });
+
+  it("stands well clear of the pond's own fixed decor", () => {
+    for (const spot of pondDecor()) {
+      expect(Math.hypot(MONK_POST.x - spot.x, MONK_POST.y - spot.y)).toBeGreaterThan(40);
+    }
   });
 });
 
-describe("MONK_HOUSE_FOOTPRINT", () => {
-  it("clears the barn, every path, the pond and the Farmstead fence at every corner", () => {
+describe("MONK_TAP_ZONE", () => {
+  it("clears the barn, every path and any worked ground at every corner", () => {
     for (const { x, y } of corners()) {
       expect(barnHitAt(x, y)).toBe(false);
       expect(nearPath(x, y)).toBe(false);
-      expect(inPondZone(x, y)).toBe(false);
       expect(growAreaAt(x, y)).toBeNull();
     }
   });
 
+  it("never dips into the water itself, even at its own north edge", () => {
+    for (const { x, y } of corners()) {
+      expect(inPond(x, y)).toBe(false);
+    }
+  });
+
+  it("sits entirely inside the pond's own clearing, so wild scenery never grows over him", () => {
+    // Load-bearing, not decoration: `blocked()` (./world.ts) refuses wild
+    // growth wherever `inPondZone` is true, and a placement that left even
+    // one corner outside it once grew a wall of procedurally-planted pine
+    // right in front of him -- see MONK_POST's own header.
+    for (const { x, y } of corners()) {
+      expect(inPondZone(x, y)).toBe(true);
+    }
+  });
+
   it("sits inside the camera's own world bounds", () => {
+    const bounds = worldBoundsRect();
     for (const { x, y } of corners()) {
-      expect(x).toBeGreaterThan(FARM_ZONE.x);
-      expect(x).toBeLessThan(FARM_ZONE.x + FARM_ZONE.width);
-      expect(y).toBeGreaterThan(FARM_ZONE.y);
-      expect(y).toBeLessThan(FARM_ZONE.y + FARM_ZONE.height);
+      expect(x).toBeGreaterThan(bounds.x);
+      expect(x).toBeLessThan(bounds.x + bounds.width);
+      expect(y).toBeGreaterThan(bounds.y);
+      expect(y).toBeLessThan(bounds.y + bounds.height);
     }
   });
 
-  it("does not swallow Grandfather Ray's own post", () => {
-    for (const { x, y } of corners()) {
-      expect(Math.hypot(x - 175, y - 20)).toBeGreaterThan(20);
-    }
-  });
-
-  it("sits north of MONK_POST -- he stands in front of his own door", () => {
-    expect(MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height).toBeLessThanOrEqual(MONK_POST.y);
-  });
-
-  // The gap the six-constraint proof above never covered: `growAreaAt`
-  // returning null only proves the footprint doesn't OVERLAP the Hen Coop's
-  // rectangle, not that it stands any real distance off it -- a shrine
-  // wedged right up against the pen fence still passes every check above.
-  // That is exactly the bug a screenshot caught after the first placement
-  // (74..140, 300..346) shipped ~30 units off the pen's west edge and read
-  // as leaning on the fence. This restates the Hen Coop block as a literal
-  // for the same import-cycle reason every other coordinate in this file
-  // is (see world.ts's own GROW_AREA.farmstead).
-  it("stands meaningfully clear of the Hen Coop, not just outside its rectangle", () => {
-    const HEN_COOP = { x: 170, y: 200, width: 160, height: 160 };
-    const dx = Math.max(HEN_COOP.x - (MONK_HOUSE_FOOTPRINT.x + MONK_HOUSE_FOOTPRINT.width), 0);
-    const dy = Math.max(HEN_COOP.y - (MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height), 0);
-    expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(40);
+  it("is anchored with its feet at MONK_POST", () => {
+    expect(MONK_TAP_ZONE.x + MONK_TAP_ZONE.width / 2).toBe(MONK_POST.x);
+    expect(MONK_TAP_ZONE.y + MONK_TAP_ZONE.height).toBe(MONK_POST.y);
   });
 });
 
 describe("monkHitAt", () => {
-  it("is true inside the footprint, false just outside it", () => {
-    const { x, y, width, height } = MONK_HOUSE_FOOTPRINT;
+  it("is true inside the tap zone, false just outside it", () => {
+    const { x, y, width, height } = MONK_TAP_ZONE;
     expect(monkHitAt(x + width / 2, y + height / 2)).toBe(true);
     expect(monkHitAt(x - 1, y)).toBe(false);
     expect(monkHitAt(x, y - 1)).toBe(false);

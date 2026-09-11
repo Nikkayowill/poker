@@ -111,7 +111,7 @@ export type Action =
   // instead of charging Gold directly once the crop it names is a crop
   // rather than livestock. See stockStackAcres's own header.
   | { action: "buy-seed"; crop: StackAcresCrop; quantity: number }
-  // The Pixel Pilgrim's shrine. Only ever sent from his dialogue's own
+  // The Pixel Pilgrim's prayer. Only ever sent from his dialogue's own
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
   | { action: "pray" }

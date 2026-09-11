@@ -234,7 +234,7 @@ type CorePainterName =
   | "sheep"
   | "cow"
   | "barn"
-  | "monkHouse"
+  | "barnOpen"
   | "rayHouse"
   | "rayHouseOpen"
   | "silo"
@@ -874,6 +874,79 @@ function fenceBay(c: Ctx, xa: number, xb: number): void {
   fencePost(c, xa, ya);
   fencePost(c, xb, yb);
 }
+
+// The barn: volume without changing the silhouette. The wall is lit from
+// the left and falls into shade on the right, the eave throws a band of
+// shadow onto it, the door is recessed, and the gable's two slopes are lit
+// unequally with a bright ridge cap between them.
+//
+// This is only what shows before the real art arrives (or if it never
+// does) -- `PAINTERS.barn`/`barnOpen` are both sprite-backed now (see
+// stackacres-sprites.ts), and share this one fallback: `barnOpen`'s door-
+// open/hay-bursting frame is a brief, timed swap the scene drives
+// (stackacres-scene.ts's `pulseBarnOpen`), not a second drawn painter, so
+// there is nothing distinct to fall back to if its own PNG fails to load.
+// The box is 74x70, not the square 74x62 this painter was originally drawn
+// at: `c.scale` stretches the drawing below (unchanged, still authored
+// against a 62-tall canvas) to fill the new height rather than redrawing
+// every coordinate, since this fallback is rarely if ever seen.
+const BARN_FALLBACK = painter(74, 70, (c) => {
+  c.save();
+  c.scale(1, 70 / 62);
+  rr(c, 6, 58, 62, 4, 1.2);
+  F(c, RAMPS.wood.rim);
+  rr(c, 7, 26, 60, 35, 3);
+  F(c, RAMPS.roof.top);
+  for (const y of [35, 43, 51]) {
+    rr(c, 7, y, 60, 0.7, 0.3);
+    F(c, "rgba(80,15,8,.16)");
+  }
+  rr(c, 7, 26, 60, 8, 0);
+  F(c, tint(RAMPS.roof.rim, 0.3));
+  rr(c, 7, 26, 60, 2.2, 0);
+  F(c, RAMPS.cream.top);
+  rr(c, 29, 38, 16, 23, 2);
+  F(c, RAMPS.wood.rim);
+  rr(c, 29, 38, 16, 4.5, 0);
+  F(c, "rgba(0,0,0,.28)");
+  c.beginPath();
+  c.moveTo(30, 39);
+  c.lineTo(44, 60);
+  c.moveTo(44, 39);
+  c.lineTo(30, 60);
+  stroke(c, "#f7efe6", 1.2);
+  rr(c, 29, 38, 16, 23, 2);
+  stroke(c, "#f7efe6", 1);
+  for (const x of [12, 52]) {
+    rr(c, x, 34, 10, 8, 1.5);
+    F(c, RAMPS.cream.top);
+    glass(c, x + 1.2, 35.2, 7.6, 5.6);
+    rr(c, x, 42, 10, 1.6, 0.6);
+    F(c, "rgba(40,8,4,.28)");
+  }
+  poly(c, [[1, 28], [37, 3], [73, 28]]);
+  F(c, RAMPS.cream.top);
+  poly(c, [[1, 28], [37, 3], [37, 28]]);
+  F(c, "rgba(255,240,230,.12)");
+  poly(c, [[37, 3], [73, 28], [37, 28]]);
+  F(c, "rgba(20,8,8,.2)");
+  for (const t of [0.28, 0.52, 0.76]) {
+    c.beginPath();
+    c.moveTo(1 + 36 * t, 28 - 25 * t);
+    c.lineTo(73 - 36 * t, 28 - 25 * t);
+    stroke(c, "rgba(0,0,0,.16)", 0.6, "butt");
+  }
+  poly(c, [[35.4, 3.8], [37, 2.4], [38.6, 3.8], [37, 5]]);
+  F(c, "rgba(255,255,255,.4)");
+  rr(c, 0, 26.5, 74, 3, 1.4);
+  F(c, RAMPS.cream.side);
+  rr(c, 0, 29.5, 74, 1.4, 0.7);
+  F(c, "rgba(0,0,0,.22)");
+  rr(c, 33, 12, 8, 7, 1.5);
+  F(c, RAMPS.cream.top);
+  glass(c, 34.2, 13.2, 5.6, 4.6);
+  c.restore();
+});
 
 /** Every painter, by name, as drawn code. A record literal rather than a
  *  table built by mutation, so a name added to `PainterName` without a
@@ -1623,92 +1696,12 @@ const DRAWN: Record<PainterName, Painter> = {
 
   /* ---- the yard ---- */
 
-  // Volume without changing the silhouette: the wall is lit from the left
-  // and falls into shade on the right, the eave throws a band of shadow onto
-  // it, the door is recessed, and the gable's two slopes are lit unequally
-  // with a bright ridge cap between them.
-  barn: painter(74, 62, (c) => {
-    rr(c, 6, 58, 62, 4, 1.2);
-    F(c, RAMPS.wood.rim);
-    rr(c, 7, 26, 60, 35, 3);
-    F(c, RAMPS.roof.top);
-    for (const y of [35, 43, 51]) {
-      rr(c, 7, y, 60, 0.7, 0.3);
-      F(c, "rgba(80,15,8,.16)");
-    }
-    rr(c, 7, 26, 60, 8, 0);
-    F(c, tint(RAMPS.roof.rim, 0.3));
-    rr(c, 7, 26, 60, 2.2, 0);
-    F(c, RAMPS.cream.top);
-    rr(c, 29, 38, 16, 23, 2);
-    F(c, RAMPS.wood.rim);
-    rr(c, 29, 38, 16, 4.5, 0);
-    F(c, "rgba(0,0,0,.28)");
-    c.beginPath();
-    c.moveTo(30, 39);
-    c.lineTo(44, 60);
-    c.moveTo(44, 39);
-    c.lineTo(30, 60);
-    stroke(c, "#f7efe6", 1.2);
-    rr(c, 29, 38, 16, 23, 2);
-    stroke(c, "#f7efe6", 1);
-    for (const x of [12, 52]) {
-      rr(c, x, 34, 10, 8, 1.5);
-      F(c, RAMPS.cream.top);
-      glass(c, x + 1.2, 35.2, 7.6, 5.6);
-      rr(c, x, 42, 10, 1.6, 0.6);
-      F(c, "rgba(40,8,4,.28)");
-    }
-    poly(c, [[1, 28], [37, 3], [73, 28]]);
-    F(c, RAMPS.cream.top);
-    poly(c, [[1, 28], [37, 3], [37, 28]]);
-    F(c, "rgba(255,240,230,.12)");
-    poly(c, [[37, 3], [73, 28], [37, 28]]);
-    F(c, "rgba(20,8,8,.2)");
-    for (const t of [0.28, 0.52, 0.76]) {
-      c.beginPath();
-      c.moveTo(1 + 36 * t, 28 - 25 * t);
-      c.lineTo(73 - 36 * t, 28 - 25 * t);
-      stroke(c, "rgba(0,0,0,.16)", 0.6, "butt");
-    }
-    poly(c, [[35.4, 3.8], [37, 2.4], [38.6, 3.8], [37, 5]]);
-    F(c, "rgba(255,255,255,.4)");
-    rr(c, 0, 26.5, 74, 3, 1.4);
-    F(c, RAMPS.cream.side);
-    rr(c, 0, 29.5, 74, 1.4, 0.7);
-    F(c, "rgba(0,0,0,.22)");
-    rr(c, 33, 12, 8, 7, 1.5);
-    F(c, RAMPS.cream.top);
-    glass(c, 34.2, 13.2, 5.6, 4.6);
-  }),
-
-  // The Pixel Pilgrim's shrine, real art in stackacres-sprites.ts's
-  // `monkHouse` -- this is only what shows before that PNG arrives (or if
-  // it never does). A small spired chapel rather than a barn in miniature,
-  // so the two never read as the same building at a glance. Sized to read
-  // as a real building next to the barn (74x62), not a garden shed --
-  // 100x112 was the second pass, after Kayo's own "not big enough" on the
-  // first. The origin is custom (see the sprite-backed call below): the
-  // supplied PNG carries ~8% of empty canvas under the house's own visible
-  // base, and anchoring at the box's bare bottom edge floated the real
-  // sprite that much above the ground it should be standing on.
-  monkHouse: painter(100, 112, (c) => {
-    rr(c, 18, 60, 64, 49, 3.5);
-    F(c, RAMPS.cream.top);
-    rr(c, 18, 98, 64, 10, 0);
-    F(c, RAMPS.cream.side);
-    poly(c, [[7, 60], [50, 7], [93, 60]]);
-    F(c, "#8a7bb0");
-    poly(c, [[7, 60], [50, 7], [50, 60]]);
-    F(c, "#6f5f96");
-    poly(c, [[50, 7], [93, 60], [50, 60]]);
-    F(c, "#a494c4");
-    rr(c, 21, 39, 14, 14, 2.6);
-    F(c, RAMPS.cream.top);
-    glass(c, 23, 40.5, 10, 10);
-    rr(c, 43, 80, 14, 28, 5);
-    F(c, RAMPS.muck.rim);
-  }, 0.5, 367 / 400),
+  // See `BARN_FALLBACK`'s own header just above this table: `barnOpen`
+  // shares it rather than getting a second drawn painter, since its own
+  // door-open/hay-bursting frame is a scene-driven texture swap, not a
+  // separate structure.
+  barn: BARN_FALLBACK,
+  barnOpen: BARN_FALLBACK,
 
   // Ray's house, real art in stackacres-sprites.ts's `rayHouse` -- this is
   // only what shows before that PNG arrives (or if it never does). A cosy
@@ -2342,7 +2335,7 @@ export const PAINTERS: Record<PainterName, Painter> = {
   ox: spriteBacked("ox", DRAWN.ox),
   hog: spriteBacked("hog", DRAWN.hog),
   barn: spriteBacked("barn", DRAWN.barn),
-  monkHouse: spriteBacked("monkHouse", DRAWN.monkHouse),
+  barnOpen: spriteBacked("barnOpen", DRAWN.barnOpen),
   windmill: spriteBacked("windmill", DRAWN.windmill),
   rayHouse: spriteBacked("rayHouse", DRAWN.rayHouse),
   rayHouseOpen: spriteBacked("rayHouseOpen", DRAWN.rayHouseOpen),

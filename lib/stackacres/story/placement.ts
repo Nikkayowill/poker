@@ -34,7 +34,7 @@ import {
 } from "../world";
 import { CROP_FIELD, yardRect } from "../yard";
 import { GREENHOUSE_PLOT } from "../greenhouse";
-import { MONK_HOUSE_FOOTPRINT, MONK_POST } from "../monk";
+import { MONK_POST, MONK_TAP_ZONE } from "../monk";
 import { STACKACRES_ZONES, zoneAt, type ZoneId } from "../zones";
 import { nearPath } from "../paths";
 import { FARM_JUNCTIONS } from "../path-junctions";
@@ -100,7 +100,7 @@ function travelerBox(id: TravelerId, x: number, y: number): WorldRect {
 const FARMSTEAD_KEEP_OUT: readonly WorldRect[] = [
   BARN_FOOTPRINT,
   RAY_HOUSE_FOOTPRINT,
-  MONK_HOUSE_FOOTPRINT,
+  MONK_TAP_ZONE,
   GREENHOUSE_PLOT,
   WHEAT_FIELD,
   growAreaBounds("farmstead"),

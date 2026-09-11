@@ -96,13 +96,13 @@ export const SPRITE_ART = {
   ox: "/stackacres/sprites/ox.png",
   hog: "/stackacres/sprites/hog.png",
   barn: "/stackacres/sprites/barn.png",
-  // The Pixel Pilgrim's shrine -- one of five isometric cottages from a
-  // supplied "Houses Pack 3" asset set (its own painted grass/stone plate
-  // included, same "straight-on elevation, placed flat" treatment the barn
-  // gets), replacing the hand-drawn Graphics volume the shrine shipped with
-  // at first. Picked for its chapel-like spire over the other four -- the
-  // most "shrine", least "cottage" silhouette in the set.
-  monkHouse: "/stackacres/sprites/monk-house.png",
+  // The barn's own second frame: door swung open, hay bursting out, for the
+  // brief acknowledgement `arriveAtBarn` (game-juice-manager.ts) plays when
+  // a collected item lands. Same canvas as `barn`, chroma-keyed off the
+  // same magenta backing so the two line up in place -- the `rayHouse`/
+  // `rayHouseOpen` pattern, just triggered by a delivery arriving rather
+  // than a press.
+  barnOpen: "/stackacres/sprites/barn-open.png",
   windmill: "/stackacres/sprites/windmill.png",
   // Ray's house: two states of one supplied isometric cottage, chroma-keyed
   // off a solid magenta backing and cropped to the same canvas so the two
@@ -288,11 +288,12 @@ export type SpriteName = keyof typeof SPRITE_ART;
  * drawn into a 4-per-unit canvas on a phone. `pine`/`pine2..8` and `tree1..3`
  * are ~800px renders that a phone bakes down to ~400px either way, so the
  * other half of every pixel was pure decode-and-upload cost paid before a
- * single frame drew, never sampled again. `barn` joins them for the same
- * reason at a smaller scale. Half linear size = a quarter of the pixels,
- * generated at exactly the phone ART_SCALE target so nothing is ever
- * upscaled: see the identical halving these dimensions get from the desktop
- * ones in stackacres-art.ts's `pine`/`tree1..3`/`barn` painter boxes.
+ * single frame drew, never sampled again. `barn`/`barnOpen` join them for
+ * the same reason at a smaller scale. Half linear size = a quarter of the
+ * pixels, generated at exactly the phone ART_SCALE target so nothing is
+ * ever upscaled: see the identical halving these dimensions get from the
+ * desktop ones in stackacres-art.ts's `pine`/`tree1..3`/`barn` painter
+ * boxes.
  *
  * Everything else here stays one file for both: the rest of the roster was
  * never oversized for its box the way these eleven were (grass/scrub/weed
@@ -313,6 +314,7 @@ const PHONE_SPRITE_ART: Partial<Record<SpriteName, string>> = {
   tree2: "/stackacres/sprites/tree2-phone.png",
   tree3: "/stackacres/sprites/tree3-phone.png",
   barn: "/stackacres/sprites/barn-phone.png",
+  barnOpen: "/stackacres/sprites/barn-open-phone.png",
 };
 
 /** The URL a name's raw file actually loads from -- the phone-sized stand-in

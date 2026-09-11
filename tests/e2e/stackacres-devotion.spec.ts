@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * The Pixel Pilgrim: tapping his shrine opens his dialogue, declining costs
+ * The Pixel Pilgrim: tapping him opens his dialogue, declining costs
  * nothing, and saying "yes" advances the devotion streak.
  *
  * Same tap-hook approach as stackacres-museum.spec.ts's own header: he has
@@ -11,7 +11,7 @@ import { expect, test } from "@playwright/test";
  * there.
  */
 
-const MONK_WORLD_POINT = { x: 107, y: 323 }; // Inside lib/stackacres/monk.ts's MONK_HOUSE_FOOTPRINT.
+const MONK_WORLD_POINT = { x: -826, y: -11 }; // Centre of lib/stackacres/monk.ts's MONK_TAP_ZONE.
 
 async function grantAndOpenStackAcres(
   context: import("@playwright/test").BrowserContext,

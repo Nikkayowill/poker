@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PROP_SHADOW, PROP_SIZE, YARD_PROPS, farmsteadClutter, propRect } from "../props";
 import { BARN_FOOTPRINT, RAY_HOUSE_FOOTPRINT, rayHouseHitAt } from "../world";
 import { GREENHOUSE_PLOT } from "../greenhouse";
-import { MONK_HOUSE_FOOTPRINT, monkHitAt } from "../monk";
+import { MONK_TAP_ZONE, monkHitAt } from "../monk";
 import { nearPath } from "../paths";
 import { inPondZone } from "../water";
 import { zoneAt } from "../zones";
@@ -67,7 +67,7 @@ describe("traveler placement", () => {
   });
 
   it("keeps every Farmstead traveler's feet out of the buildings and the worked ground", () => {
-    const keepOut = [BARN_FOOTPRINT, RAY_HOUSE_FOOTPRINT, MONK_HOUSE_FOOTPRINT, GREENHOUSE_PLOT, CROP_FIELD];
+    const keepOut = [BARN_FOOTPRINT, RAY_HOUSE_FOOTPRINT, MONK_TAP_ZONE, GREENHOUSE_PLOT, CROP_FIELD];
     for (const prop of TRAVELER_PROPS) {
       if (TRAVELER_CATALOGUE[prop.traveler].zone !== "farmstead") continue;
       for (const rect of keepOut) expect(inside(prop.x, prop.y, rect), prop.traveler).toBe(false);
@@ -116,7 +116,7 @@ describe("travelerHitAt", () => {
     expect(travelerHitAt(0, 0)).toBeNull();
   });
 
-  it("never claims a tap that belongs to Ray's house or the shrine", () => {
+  it("never claims a tap that belongs to Ray's house or the Pixel Pilgrim", () => {
     for (const prop of TRAVELER_PROPS) {
       const box = propRect(prop);
       // Ray stands right beside his house, so his picture's far corner may

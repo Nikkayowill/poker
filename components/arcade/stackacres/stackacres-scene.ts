@@ -167,7 +167,6 @@ import {
 } from "@/lib/stackacres/soil";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
-  MONK_HOUSE_FOOTPRINT,
   MONK_POST,
   monkHitAt,
   spawnMonk,
@@ -461,7 +460,7 @@ export interface StackAcresSceneCallbacks {
    */
   onTruckTap: () => void;
   /**
-   * A tap that landed on the Pixel Pilgrim's own shrine -- a character
+   * A tap that landed on the Pixel Pilgrim himself -- a character
    * target, so it is checked right after the Midnight Merchant (another
    * character) and before the barn, the same "a person wins over the
    * permanent structure behind them" ordering `onMerchantTap` already
@@ -845,6 +844,12 @@ const SPRING_BACK_MS = 260;
 const BARN_AT = yardPoint(108, 34);
 const BARN_X = BARN_AT.x;
 const BARN_Y = BARN_AT.y;
+
+/** How long `pulseBarnOpen` holds the door-open/hay-bursting frame before
+ *  reverting to `barn` -- long enough to actually read past the shard
+ *  burst's own brief pop, short enough that back-to-back deliveries don't
+ *  leave the barn looking permanently ajar. */
+const BARN_OPEN_HOLD_MS = 700;
 
 // Ground art sits just above the grass and well below anything with feet:
 // the terrain tiles at -1e8 and the water's surface (glints, ripples) two
@@ -1719,8 +1724,8 @@ export class StackAcresScene extends Phaser.Scene {
   private herds: HerdSprite[] = [];
 
   /** The Pixel Pilgrim. Null until `create` has run (or forever, if his
-   *  sheet never loaded -- see `bakeFarmhandTexture`; his shrine and tap
-   *  target exist either way, see `paintMonkHouse`/`monkHitAt`). */
+   *  sheet never loaded -- see `bakeFarmhandTexture`; his tap target exists
+   *  either way, see `monkHitAt`). */
   private monk: MonkNode | null = null;
   /** Set once, the moment `setFarmhandSecretUnlock(true)` first fires -- a
    *  reused sprite sheet has no second image to swap to (see that method's
@@ -1736,6 +1741,10 @@ export class StackAcresScene extends Phaser.Scene {
    *  (never layered) whenever the tier changes, the same discipline
    *  `toolGhostTween` holds. */
   private barnGlowTween: Phaser.Tweens.Tween | null = null;
+  /** The pending revert from `pulseBarnOpen`'s door-open frame back to
+   *  `barn`, exactly one at a time -- a second arrival before the first has
+   *  reverted restarts the clock rather than layering two reverts. */
+  private barnOpenRevertTimer: Phaser.Time.TimerEvent | null = null;
 
   /** Ray's house, captured off `paintRayHouse` so a press has a real target
    *  to swap the texture of -- see `setRayHousePressed`. Null until `create`
@@ -2037,7 +2046,6 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintPond();
     this.paintBarn();
     this.paintGreenhouse();
-    this.paintMonkHouse();
     this.paintRayHouse();
     this.paintProps();
     this.paintFarmsteadClutter();
@@ -2115,6 +2123,7 @@ export class StackAcresScene extends Phaser.Scene {
       barnPoint: { x: BARN_X, y: BARN_Y },
       reducedMotion: this.options.reducedMotion,
       fontFamily: window.getComputedStyle(this.options.host).fontFamily || undefined,
+      onBarnArrive: () => this.pulseBarnOpen(),
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseJuice, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseJuice, this);
@@ -2233,52 +2242,11 @@ export class StackAcresScene extends Phaser.Scene {
     }
   }
 
-  /* ---------------------------------------------------------------- */
-  /* The Pixel Pilgrim                                                  */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * The shrine: a hand-drawn isometric volume, exactly the treatment
-   * `paintGreenhouse` gives a structure with no supplied art yet -- a real,
-   * tappable place at a real world position, not a coloured rectangle
-   * standing in for one. Swappable for a real PNG later the same way the
-   * barn's own silo would be, without moving `MONK_HOUSE_FOOTPRINT` or
-   * touching `monkHitAt`.
-   *
-   * Painted unconditionally, independent of whether the sprite sheet ever
-   * bakes: the shrine and the tap it answers to are the feature, and must
-   * both work even on the (pure decoration) chance `spawnMonkNode` finds no
-   * texture to draw him with.
-   */
-  /**
-   * The shrine -- a straight-on elevation, placed flat, exactly the
-   * treatment `paintBarn` gives the barn's own generated sprite. Not a
-   * hand-drawn Graphics volume any more: the first pass drew one (the same
-   * placeholder-now-real-art-later posture `paintGreenhouse` still uses),
-   * and it read as a plain box with no supplied art to fit it to. Real art
-   * exists now (`PAINTERS.monkHouse`, backed by a supplied PNG -- see
-   * stackacres-sprites.ts), so this reduces to a `put()` call like every
-   * other flat structure sprite on this map.
-   *
-   * Placed at `MONK_HOUSE_FOOTPRINT`'s own bottom-centre -- its feet, in the
-   * same convention `BARN_X`/`BARN_Y` anchor the barn to its own footprint's
-   * bottom edge -- so the hit-test box (`monkHitAt`) and the drawn picture
-   * agree on where the shrine actually stands.
-   */
-  private paintMonkHouse(): void {
-    const cx = MONK_HOUSE_FOOTPRINT.x + MONK_HOUSE_FOOTPRINT.width / 2;
-    const feetY = MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height;
-    this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
-      .setScale(60 / 33 / S, 20 / 13 / S)
-      .setAlpha(0.85);
-    this.put("monkHouse", cx, feetY, this.depthAt(cx, feetY));
-  }
-
   /**
    * Ray's house: a straight-on elevation placed flat at `RAY_HOUSE_FOOTPRINT`'s
-   * own bottom-centre, the same convention `paintMonkHouse`/`paintBarn` anchor
-   * their own structures with, so the hit-test box (`rayHouseHitAt`) and the
-   * drawn picture agree on where the house actually stands. Captured on
+   * own bottom-centre, the same convention `paintBarn` anchors its own
+   * structure with, so the hit-test box (`rayHouseHitAt`) and the drawn
+   * picture agree on where the house actually stands. Captured on
    * `this.rayHouseSprite` so a press has a real target to swap the texture
    * of -- see `setRayHousePressed`.
    */
@@ -2289,10 +2257,9 @@ export class StackAcresScene extends Phaser.Scene {
       .setScale(84 / 33 / S, 28 / 13 / S)
       .setAlpha(0.85);
     // A depth nudge, not just `depthAt(cx, feetY)` -- the same fix `paintBarn`
-    // needed (its own depth reads `BARN_Y + 17`, not its true anchor). Every
-    // other building here is close to 1:1, art size to footprint depth (the
-    // barn is exactly that; even monkHouse's mismatch is modest), so sorting
-    // by the literal feet y is enough. This house is not: `rayHouse`'s art is
+    // needed (its own depth reads `BARN_Y + 17`, not its true anchor). The
+    // barn is close to 1:1, art size to footprint depth, so sorting by the
+    // literal feet y is enough there. This house is not: `rayHouse`'s art is
     // baked at 150 units tall over a footprint only 44 deep (RAY_HOUSE_FOOTPRINT),
     // so the roof reads far further north on screen than its feet's own depth
     // implies -- wild scenery just past the footprint's own edge (its
@@ -2323,14 +2290,13 @@ export class StackAcresScene extends Phaser.Scene {
     this.rayHouseSprite?.setTexture(pressed ? "rayHouseOpen" : "rayHouse", ART_FRAME);
   }
 
-  /** The Pixel Pilgrim himself, posted at his shrine from boot. A no-op (no
+  /** The Pixel Pilgrim himself, posted by the pond from boot. A no-op (no
    *  sprite drawn) if his sheet never baked -- see `bakeFarmhandTexture` --
-   *  but the shrine and his tap target exist regardless, see
-   *  `paintMonkHouse`/`monkHitAt`. The shadow pool is the standard standing-
-   *  chibi one every forty-unit-tall character on this map shares (see
-   *  `STANDING_CHARACTER_SHADOW`'s own header), so a second set of numbers
-   *  here would only be a second set to drift from theirs. A light tint
-   *  marks him as not of this world. */
+   *  but his tap target exists regardless, see `monkHitAt`. The shadow pool
+   *  is the standard standing-chibi one every forty-unit-tall character on
+   *  this map shares (see `STANDING_CHARACTER_SHADOW`'s own header), so a
+   *  second set of numbers here would only be a second set to drift from
+   *  theirs. A light tint marks him as not of this world. */
   private spawnMonkNode(): void {
     if (!this.textures.exists(FARMHAND_TEXTURE)) return;
     const state = spawnMonk();
@@ -2691,6 +2657,28 @@ export class StackAcresScene extends Phaser.Scene {
     this.put("hay", BARN_X + 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
     this.put("hay", BARN_X + 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
     this.put("barrel", BARN_X - 48, BARN_Y - 14, this.depthAt(BARN_X - 48, BARN_Y - 14));
+  }
+
+  /**
+   * The barn's own small acknowledgement of an arrival, on top of
+   * `GameJuiceManager`'s shard burst (`arriveAtBarn`, which calls this via
+   * `onBarnArrive`): a plain texture swap to the door-open/hay-bursting
+   * frame, held for `BARN_OPEN_HOLD_MS` then swapped back -- the same
+   * instant-swap shape `setRayHousePressed` uses, just timed rather than
+   * press-driven, since nothing here holds a finger down to release. A
+   * second arrival before the first has reverted restarts the hold rather
+   * than stacking two reverts (see `barnOpenRevertTimer`'s own field
+   * comment).
+   */
+  private pulseBarnOpen(): void {
+    const sprite = this.barnSprite;
+    if (!sprite) return;
+    sprite.setTexture("barnOpen", ART_FRAME);
+    this.barnOpenRevertTimer?.remove();
+    this.barnOpenRevertTimer = this.time.delayedCall(BARN_OPEN_HOLD_MS, () => {
+      sprite.setTexture("barn", ART_FRAME);
+      this.barnOpenRevertTimer = null;
+    });
   }
 
   /**
@@ -5263,11 +5251,11 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onTruckTap();
         return;
       }
-      // The Pixel Pilgrim's shrine -- checked right after the Midnight
+      // The Pixel Pilgrim himself -- checked right after the Midnight
       // Merchant (another character) and before the barn, the same "a
       // person wins over the structure behind them" ordering, even though
-      // his footprint does not overlap the barn's either. Checked against
-      // the house geometry alone, never against whether his sprite drew --
+      // his tap zone does not overlap the barn's either. Checked against
+      // his own geometry alone, never against whether his sprite drew --
       // praying works even on the (pure decoration) chance the sheet never
       // baked. Fires no bow and reaches no server by itself: this is only
       // the cue to open his dialogue (he talks, then asks); `playMonkPrayer`

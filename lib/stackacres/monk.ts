@@ -2,25 +2,22 @@
  * The Pixel Pilgrim: StackAcres' first interactable character.
  *
  * He does not walk anywhere and he answers to nobody's queue -- he is posted
- * at his own shrine, tucked in the Farmstead's own far corner rather than
- * the barnyard, and the only thing that ever moves is his bow. A tap on him
- * is not itself a prayer: stackacres-farm.tsx opens a dialogue first (his
- * own lines, then "will you pray with me?"), and only a "yes" there calls
- * startMonkBow and sends the server's `pray` action -- see
- * lib/stackacres/devotion.ts for what that earns. Declining costs nothing
- * and asks nothing; there is no penalty for walking away.
+ * at his own spot, tucked by the pond rather than the barnyard, and the only
+ * thing that ever moves is his bow. A tap on him is not itself a prayer:
+ * stackacres-farm.tsx opens a dialogue first (his own lines, then "will you
+ * pray with me?"), and only a "yes" there calls startMonkBow and sends the
+ * server's `pray` action -- see lib/stackacres/devotion.ts for what that
+ * earns. Declining costs nothing and asks nothing; there is no penalty for
+ * walking away.
  *
- * His shrine is real art now, one of five houses from a supplied "Houses
- * Pack 3" asset set (see stackacres-sprites.ts's `monkHouse`), not the
- * hand-drawn Graphics volume the first pass shipped with -- see
- * `paintMonkHouse` in stackacres-scene.ts. His post used to be the
- * farmhand's own former `FARMHAND_BASE`, right beside the barn; Kayo moved
- * him out to the Farmstead's own perimeter once the shrine had real art, on
- * the reasoning that a visitor "not from this world" standing shoulder to
- * shoulder with the well and the hay bales undercut the whole point.
- * `MONK_POST`/`MONK_HOUSE_FOOTPRINT` carry the same six-constraint proof
- * `FARMHAND_BASE` did (clear of the barn, every path, the pond, and the
- * Farmstead's fence, inside the camera's world bounds) -- see monk.test.ts.
+ * He has no shrine any more. The "Houses Pack 3" cottage that used to stand
+ * behind him (`paintMonkHouse` in stackacres-scene.ts, `monkHouse` in
+ * stackacres-sprites.ts) is gone -- Kayo's call, once the barn's own art
+ * refresh made a second borrowed house next to it read as clutter -- and he
+ * was moved out to the pond's own south-west bank rather than re-planted
+ * where the barnyard's shrine used to stand. `MONK_POST` is now his own tap
+ * target directly (`MONK_TAP_ZONE`, a standing-character box, not a
+ * building's footprint); see monk.test.ts.
  *
  * His animation is not new art -- Kayo pointed at the exact frame to reuse:
  * the farmhand's own crouch/"work" pose (RANGER_FRAME.work in
@@ -39,52 +36,60 @@ import type { WorldPoint, WorldRect } from "./world";
 // with no cycle to work around. Carries the Farmstead yard's offset: the
 // literals below are the numbers the yard was originally laid out with, and
 // every doc comment here that names one is still true.
-import { yardPoint, yardRect } from "./yard";
+import { yardPoint } from "./yard";
 
 /**
- * Where he stands and bows -- the open ground between the barn and the Hen
- * Coop, well clear of the barnyard clutter, the road, and the pen fence
- * itself. The first cut of this post (74..140, 300..346) put him only ~30
- * units off the Hen Coop's own west edge (170..360), close enough that the
- * shrine visibly leaned on the pen fence in-game -- Kayo caught it from a
- * screenshot after the PR had already landed. None of the existing
- * constraints below actually guarded against that: they clear the barn, the
- * paths, the pond and Ray's own post, but nothing here ever measured
- * distance to the Hen Coop block itself (`./world.ts`'s
- * `GROW_AREA.farmstead`, x 170..330, y 200..360), so a placement that leaned
- * on the pen passed every existing check. This post sits ~74 units north of
- * the pen's own top edge instead -- also clear of the generated `henCoop`
- * path spur (`./paths.ts`'s `FARMSTEAD_PATH_NODES`, a straight connector
- * from the road down to (280, 180)), which the old spot never had to share
- * space with either. Still inside `FARM_ZONE` and still `farmstead`'s own
- * territory (`zoneAt` returns null here, same as `FARMHAND_BASE` used to).
+ * Where he stands and bows: the pond's own south-west bank, on the sand past
+ * the waterline rather than in the barnyard. (-106, 184) sits south-west of
+ * the pond's centre (./water.ts's `POND`, local (-44, 120)) -- clear of the
+ * dock, the lily pads, the reeds and the ripple spots (25+ units from the
+ * nearest of any, monk.test.ts holds the whole `MONK_TAP_ZONE` box to it,
+ * not just this point) and clear of `nearPath`.
+ *
+ * NOT required to clear `inPondZone` -- the opposite, in fact: standing near
+ * the water is the point now, not a violation of it, so the whole
+ * `MONK_TAP_ZONE` box is deliberately INSIDE `inPondZone`. That is load-
+ * bearing, not decoration: `chunkScenery` (./world.ts) refuses to grow wild
+ * trees and bushes anywhere `blocked()` is true, and `blocked()` treats
+ * `inPondZone` as one of its own reasons to refuse -- the same clearance a
+ * grown tree gets near the water. The first placement (south of the pond,
+ * clear of the water but also clear of `inPondZone`) sat in ordinary
+ * unblocked ground instead, and a screenshot caught it standing behind a
+ * wall of procedurally-planted pine. He still has to clear the water
+ * itself -- the box's own north edge (40 units back from his feet, the same
+ * "extends back into the screen" convention `BARN_FOOTPRINT`/
+ * `MIDNIGHT_MERCHANT_FOOTPRINT` anchor a standing figure's box with) never
+ * dips below `inPond`'s own waterline, at any corner.
  */
-export const MONK_POST: WorldPoint = yardPoint(170, 140);
+export const MONK_POST: WorldPoint = yardPoint(-106, 184);
 
 /**
- * The shrine's footprint, in the same feet-anchored ground-rect convention
- * `BARN_FOOTPRINT`/`GROW_AREA` use (x/y is the top-left corner in world
- * units). Sits just north of `MONK_POST` -- he stands in front of his own
- * door -- small enough to clear the barn, the lane/road/spur paths, the
- * pond, the Farmstead fence and (see `MONK_POST`'s own comment) the Hen
- * Coop's pen itself at every corner; monk.test.ts holds all of it the same
- * way farmhand.test.ts holds `FARMHAND_BASE`. Its north edge moved 80 -> 88
- * when the road became two and a half tiles wide (./roads.ts): the road's
- * body reaches y 78 now and its scenery clearance y 84.
+ * His own tap target: a standing-character box anchored above his feet, the
+ * same shape `MIDNIGHT_MERCHANT_FOOTPRINT` (./world.ts) uses for a figure
+ * with no building of his own -- 26 wide (a person, not a house) by 40 tall
+ * (extending back from `MONK_POST` the same "feet at the box's own south
+ * edge" convention every standing figure here anchors with). Replaces the
+ * old `MONK_HOUSE_FOOTPRINT`, which was sized for the shrine that used to
+ * stand behind him; now that there is no building, the box is sized to him
+ * alone.
  */
-export const MONK_HOUSE_FOOTPRINT: WorldRect = yardRect(140, 88, 66, 46);
+export const MONK_TAP_ZONE: WorldRect = {
+  x: MONK_POST.x - 13,
+  y: MONK_POST.y - 40,
+  width: 26,
+  height: 40,
+};
 
-/** Whether a tapped ground point lands on the shrine -- the Pixel Pilgrim's
- *  own tap target, same shape as `barnHitAt` in ./world.ts. Checked against
- *  the footprint independent of whether his sprite ever baked, so praying
- *  still works if the sheet fails to load (see stackacres-scene.ts's
- *  `spawnMonkNode`). */
+/** Whether a tapped ground point lands on the Pixel Pilgrim -- his own tap
+ *  target, same shape as `barnHitAt` in ./world.ts. Checked independent of
+ *  whether his sprite ever baked, so praying still works if the sheet fails
+ *  to load (see stackacres-scene.ts's `spawnMonkNode`). */
 export function monkHitAt(x: number, y: number): boolean {
   return (
-    x >= MONK_HOUSE_FOOTPRINT.x &&
-    x <= MONK_HOUSE_FOOTPRINT.x + MONK_HOUSE_FOOTPRINT.width &&
-    y >= MONK_HOUSE_FOOTPRINT.y &&
-    y <= MONK_HOUSE_FOOTPRINT.y + MONK_HOUSE_FOOTPRINT.height
+    x >= MONK_TAP_ZONE.x &&
+    x <= MONK_TAP_ZONE.x + MONK_TAP_ZONE.width &&
+    y >= MONK_TAP_ZONE.y &&
+    y <= MONK_TAP_ZONE.y + MONK_TAP_ZONE.height
   );
 }
 

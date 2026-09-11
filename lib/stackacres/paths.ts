@@ -136,11 +136,10 @@ export const FARM_PATHS: readonly PathSpec[] = [
     tier: "arterial",
     // Evaluates to the 2.5-tile arterial floor (40). This is the stretch
     // along the barn front past Grandfather Ray, and it is as wide as the
-    // yard allows: the monk's shrine (monk.ts's MONK_HOUSE_FOOTPRINT) stands
-    // 27.6 units south of the centreline and the signpost 25.5 off it, so
-    // anything past ~42 puts one of them inside the road's clearance band
-    // (props.test.ts, monk.test.ts). A truck up to about two tiles parks on
-    // it; a bigger one means moving the shrine, not widening the road.
+    // yard allows: the signpost stands 25.5 units off the centreline, so
+    // anything past ~42 puts it inside the road's clearance band
+    // (props.test.ts). A truck up to about two tiles parks on it; a bigger
+    // one means moving the signpost, not widening the road.
     width: 20,
     points: [
       yardPoint(108, 58),

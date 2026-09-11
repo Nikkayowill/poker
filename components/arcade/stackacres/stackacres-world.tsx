@@ -194,6 +194,8 @@ export interface StackAcresWorldProps {
   onWorkshopTap: () => void;
   /** A finger landed on the yard's well. Fills the watering can. */
   onWellTap: (at: TapPoint) => void;
+  /** A finger landed on the pond's dock. Casts a line. */
+  onDockTap: (at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
    *  the shell's cue to decide whether to open a build panel or call
    *  `enterGreenhouse` (see the api handle above). */
@@ -326,6 +328,7 @@ export function StackAcresWorld({
   onSignpostTap,
   onWorkshopTap,
   onWellTap,
+  onDockTap,
   onGreenhouseTap,
   onGreenhouseSlotTap,
   onMerchantTap,
@@ -360,6 +363,7 @@ export function StackAcresWorld({
   const signpostTapRef = useRef(onSignpostTap);
   const workshopTapRef = useRef(onWorkshopTap);
   const wellTapRef = useRef(onWellTap);
+  const dockTapRef = useRef(onDockTap);
   const greenhouseTapRef = useRef(onGreenhouseTap);
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
@@ -400,6 +404,7 @@ export function StackAcresWorld({
     signpostTapRef.current = onSignpostTap;
     workshopTapRef.current = onWorkshopTap;
     wellTapRef.current = onWellTap;
+    dockTapRef.current = onDockTap;
     greenhouseTapRef.current = onGreenhouseTap;
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
@@ -466,6 +471,7 @@ export function StackAcresWorld({
           onSignpostTap: () => signpostTapRef.current(),
           onWorkshopTap: () => workshopTapRef.current(),
           onWellTap: (at) => wellTapRef.current(at),
+          onDockTap: (at) => dockTapRef.current(at),
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),

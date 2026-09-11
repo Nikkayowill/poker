@@ -12,11 +12,13 @@
  * ./museum.ts); `MachineItemId` below is the wider one a recipe, the
  * inventory itself, or the Sell action needs.
  *
- * WHEAT IS THE ONE ITEM THAT IS NEITHER. It is not a `StackAcresItem` (it is
- * grown on its own Wheat Plot table, not a stocked unit -- see
+ * WHEAT WAS THE ONE ITEM THAT WAS NEITHER. It is not a `StackAcresItem` (it
+ * is grown on its own Wheat Plot table, not a stocked unit -- see
  * ./wheat-plot.ts's header for why that stayed a separate system) and it is
- * not a `MachineProcessedItem` (nothing makes it; the Mill consumes it).
- * `MACHINE_RAW_ITEMS` is exactly that one leftover id.
+ * not a `MachineProcessedItem` (nothing makes it; the Mill consumes it). The
+ * pond's three catchable fish (./fishing.ts) joined it there for the same
+ * reason: caught off the dock, not grown or crafted, with nothing consuming
+ * them either. `MACHINE_RAW_ITEMS` is that leftover-id bucket now.
  *
  * The only door from a crafted good back to Gold used to be a fulfilled
  * Contract (./contracts.ts). That is still true for Flour/Cheese/Cloth, and
@@ -34,10 +36,11 @@ import {
   isStackAcresItem,
   type StackAcresItem,
 } from "./items";
+import { FISH_SPECIES } from "./fishing";
 
-/** The one raw item that is neither a harvested `StackAcresItem` nor a
- *  crafted good -- see this file's header. */
-export const MACHINE_RAW_ITEMS = ["wheat"] as const;
+/** Wheat, plus the pond's three catchable fish: nothing crafted, nothing
+ *  harvested off a stocked unit either -- see this file's header. */
+export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES] as const;
 export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
@@ -110,6 +113,11 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   Record<MachineRawItem | MachineProcessedItem, MachineItemDef>
 > = {
   wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
+  // Common/uncommon/rare, same feel as the Vat's aging tiers -- see
+  // ./fishing.ts's FISH_WEIGHTS for the odds these prices are tuned against.
+  bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
+  trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 45 },
+  catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 130 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

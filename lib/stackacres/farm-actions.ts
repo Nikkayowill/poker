@@ -48,6 +48,9 @@ export type Action =
   | { action: "water"; unitId: string }
   // Fills the watering can at the well.
   | { action: "draw-water" }
+  // The dock's cast, completed: which fish it lands is the server's own
+  // dice roll, same posture as `collect`'s Gold.
+  | { action: "catch-fish" }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at

@@ -45,6 +45,7 @@ import {
   buyStackAcresCutter,
   waterStackAcres,
   drawStackAcresWater,
+  catchStackAcresFish,
   sowStackAcresWheat,
   placeStackAcresMachine,
   workStackAcres,
@@ -225,6 +226,9 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("water"), unitId: unitIdSchema }),
   // Fills the watering can. Moves no Gold.
   z.object({ action: z.literal("draw-water") }),
+  // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
+  // no Gold. Which fish is the server's own dice roll.
+  z.object({ action: z.literal("catch-fish") }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -522,6 +526,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return waterStackAcres(token, action.unitId, now);
     case "draw-water":
       return drawStackAcresWater(token, now);
+    case "catch-fish":
+      return catchStackAcresFish(token, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

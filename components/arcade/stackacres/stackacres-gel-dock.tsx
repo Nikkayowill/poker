@@ -29,6 +29,13 @@ import type { TapPoint } from "./stackacres-scene";
  * management tokens (Aim, Draw Water, Remove) on a tile that already has
  * pipe or a bed. This component only knows how to lay a row out and turn a
  * drag on one of its items into that item's own `onCommit`.
+ *
+ * The row itself only ever shows `VISIBLE_TOKENS` at a time (52-stackacres.css's
+ * `.sa-gel-scroll`, masked to a soft fade past the edge) and scrolls the rest
+ * in -- a real affordance now that Crop Fields can hold two dozen seed types.
+ * That only works if a touch on a token can still turn into a horizontal
+ * scroll instead of always yanking it into a drag; see the `pending` ref and
+ * `INTENT_SLOP` below.
  */
 
 export interface StackAcresGelDockItem {
@@ -75,14 +82,33 @@ const ROW_OFFSET = 92;
  *  row needs before it has to flip below the tap or nudge off an edge. */
 const HEADROOM = 150;
 const SIDE_ROOM = 150;
+/** How many tokens the wheel shows before it fades into a scrollable edge --
+ *  see `.sa-gel-scroll`'s own width in 52-stackacres.css, sized to match. */
+const VISIBLE_TOKENS = 3;
+/** Finger travel, in px, before a touch on a token commits to being either a
+ *  horizontal scroll of the row or the drag-out-and-drop gesture. Below this
+ *  it is still just a press. */
+const INTENT_SLOP = 8;
 
 type Phase = "idle" | "dragging" | "returning" | "settling";
+/** A pointerdown on a token that hasn't yet decided what it is: the finger
+ *  could still turn into a scroll of the row (the common case, now that the
+ *  row holds more tokens than fit) or the drag-out gesture. Kept in a ref,
+ *  not state -- it is read and cleared entirely inside event handlers, and
+ *  never needs to trigger a render on its own. */
+interface PendingIntent {
+  key: string;
+  pointerId: number;
+  x: number;
+  y: number;
+}
 
 export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }: StackAcresGelDockProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const timer = useRef<number | null>(null);
   const homeClient = useRef<TapPoint>({ x: 0, y: 0 });
+  const pending = useRef<PendingIntent | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dragClient, setDragClient] = useState<TapPoint>({ x: 0, y: 0 });
   const [phase, setPhase] = useState<Phase>("idle");
@@ -158,7 +184,37 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     event.stopPropagation();
     if (phase === "settling" || busy || item.disabledReason) return;
     if (timer.current !== null) window.clearTimeout(timer.current);
+    // Captured up front so the gesture keeps reporting to THIS token no
+    // matter where the finger wanders -- but nothing about the drag starts
+    // yet. Capture only retargets script events; it does not stop the
+    // browser's own touch-action panning, so a horizontal move from here
+    // still scrolls `.sa-gel-scroll` natively until `onTokenPointerMove`
+    // below decides otherwise.
     event.currentTarget.setPointerCapture(event.pointerId);
+    pending.current = { key: item.key, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+  };
+
+  const onTokenPointerMove = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (phase === "dragging" && dragKey === item.key) {
+      event.stopPropagation();
+      const at = { x: event.clientX, y: event.clientY };
+      setDragClient(at);
+      setIsHot(isDragDrop(at, targetClient()));
+      return;
+    }
+    const intent = pending.current;
+    if (!intent || intent.key !== item.key || intent.pointerId !== event.pointerId) return;
+    const dx = event.clientX - intent.x;
+    const dy = event.clientY - intent.y;
+    if (Math.hypot(dx, dy) < INTENT_SLOP) return;
+    pending.current = null;
+    // Ties, and anything closer to sideways than up, are a scroll -- pulling
+    // a seed out to plant it is a reach UP toward the tapped tile, not a
+    // sideways flick, so the row only has to give up a couple of degrees off
+    // dead-horizontal before it's confident this is a browse, not a drag.
+    if (Math.abs(dy) <= Math.abs(dx) + 4) return;
+    event.stopPropagation();
+    event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     homeClient.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     setDragKey(item.key);
@@ -166,15 +222,8 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     setPhase("dragging");
   };
 
-  const onTokenPointerMove = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (phase !== "dragging" || dragKey !== item.key) return;
-    event.stopPropagation();
-    const at = { x: event.clientX, y: event.clientY };
-    setDragClient(at);
-    setIsHot(isDragDrop(at, targetClient()));
-  };
-
   const onTokenPointerUp = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pending.current?.key === item.key) pending.current = null;
     if (phase !== "dragging" || dragKey !== item.key) return;
     event.stopPropagation();
     setIsHot(false);
@@ -183,6 +232,7 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   };
 
   const onTokenPointerCancel = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pending.current?.key === item.key) pending.current = null;
     if (phase !== "dragging" || dragKey !== item.key) return;
     event.stopPropagation();
     springBack();
@@ -226,39 +276,44 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
             )}
           </div>
         ) : (
-          items.map((item, index) => {
-            const live = dragKey === item.key && phase !== "idle";
-            const disabled = busy || Boolean(item.disabledReason);
-            return (
-              <button
-                key={item.key}
-                ref={index === 0 ? firstRef : undefined}
-                type="button"
-                className={clsx("sa-gel-token", {
-                  "is-live": live,
-                  "is-returning": live && phase === "returning",
-                })}
-                style={live ? { left: `${dragClient.x}px`, top: `${dragClient.y}px` } : undefined}
-                disabled={disabled}
-                title={item.disabledReason}
-                onPointerDown={(event) => onTokenPointerDown(item, event)}
-                onPointerMove={(event) => onTokenPointerMove(item, event)}
-                onPointerUp={(event) => onTokenPointerUp(item, event)}
-                onPointerCancel={(event) => onTokenPointerCancel(item, event)}
-                onKeyDown={(event) => onTokenKeyDown(item, event)}
-              >
-                <StackAcresIcon name={item.icon} size={24} />
-                <span className="sa-gel-name">{item.label}</span>
-                {typeof item.cost === "number" && (
-                  <span className="sa-gel-cost">
-                    <StackAcresIcon name="ico-gold" size={12} />
-                    {item.cost.toLocaleString()}
-                  </span>
-                )}
-                {typeof item.qty === "number" && <span className="sa-gel-qty">×{item.qty}</span>}
-              </button>
-            );
-          })
+          <div
+            className={clsx("sa-gel-scroll", { "is-scrollable": items.length > VISIBLE_TOKENS })}
+          >
+            {items.map((item, index) => {
+              const live = dragKey === item.key && phase !== "idle";
+              const disabled = busy || Boolean(item.disabledReason);
+              return (
+                <button
+                  key={item.key}
+                  ref={index === 0 ? firstRef : undefined}
+                  type="button"
+                  className={clsx("sa-gel-token", {
+                    "is-live": live,
+                    "is-hot": live && isHot,
+                    "is-returning": live && phase === "returning",
+                  })}
+                  style={live ? { left: `${dragClient.x}px`, top: `${dragClient.y}px` } : undefined}
+                  disabled={disabled}
+                  title={item.disabledReason}
+                  onPointerDown={(event) => onTokenPointerDown(item, event)}
+                  onPointerMove={(event) => onTokenPointerMove(item, event)}
+                  onPointerUp={(event) => onTokenPointerUp(item, event)}
+                  onPointerCancel={(event) => onTokenPointerCancel(item, event)}
+                  onKeyDown={(event) => onTokenKeyDown(item, event)}
+                >
+                  <StackAcresIcon name={item.icon} size={24} />
+                  <span className="sa-gel-name">{item.label}</span>
+                  {typeof item.cost === "number" && (
+                    <span className="sa-gel-cost">
+                      <StackAcresIcon name="ico-gold" size={12} />
+                      {item.cost.toLocaleString()}
+                    </span>
+                  )}
+                  {typeof item.qty === "number" && <span className="sa-gel-qty">×{item.qty}</span>}
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

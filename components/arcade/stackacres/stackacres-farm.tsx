@@ -1744,6 +1744,34 @@ export function StackAcresFarm() {
     world.current?.setDroneHangar(droneHangar.drones.map((drone) => drone.droneId));
   }, [droneHangar.drones]);
 
+  /** Whether the truck exists at all is a plain function of whether a Town
+   *  Contract is open -- see lib/stackacres/delivery-truck.ts's own module
+   *  doc for why the truck holds no opinion of its own about that fact.
+   *  `truckKnownRef` skips the drive-in animation exactly once: the very
+   *  first time this effect runs, so a player who opens the farm with a
+   *  contract already posted sees the truck simply standing at its dock
+   *  rather than replaying an eleven-second arrival on every page load.
+   *  Every later transition -- a fresh request, or a fulfilled contract
+   *  clearing -- plays the real drive, because by then the ref is already
+   *  true. */
+  const truckKnownRef = useRef(false);
+  const truckWanted = processing.contract !== null;
+  useEffect(() => {
+    // `world.current` is null until the scene has actually booted -- and the
+    // first response (with the first `truckWanted` value it ever carries)
+    // routinely lands before that: `refresh()` fires on mount, the same
+    // frame `<StackAcresWorld>` starts mounting, and a same-machine fetch
+    // resolves well inside Phaser's own boot time. Depending on `worldReady`
+    // too, and guarding the whole body on `world.current` rather than just
+    // optional-chaining the call, is what turns that from "the truck's first
+    // real state change is silently dropped" into "try again once the world
+    // exists" -- optional-chaining alone still marks `truckKnownRef` done
+    // and never gets a second chance.
+    if (!world.current) return;
+    world.current.setTruckPresent(truckWanted, truckWanted && !truckKnownRef.current);
+    truckKnownRef.current = true;
+  }, [truckWanted, worldReady]);
+
   /**
    * Answers what became of one action, for the callers that have to undo
    * something of their own when it did not land -- today that is the town
@@ -2751,6 +2779,18 @@ export function StackAcresFarm() {
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. Same shape as `onWorldBarnTap`. */
   const onWorldSignpostTap = useCallback(() => {
+    setRadial(null);
+    panelSound();
+    setShowContracts(true);
+  }, []);
+
+  /** A finger landed on the parked delivery truck -- a second door to the
+   *  same Town Contracts sheet `onWorldSignpostTap` opens, not a different
+   *  feature. The truck only exists in the scene at all while a contract is
+   *  open (see `setTruckPresent` below), so tapping it can only ever mean
+   *  "I'm here for the order," the exact same intent as walking up to the
+   *  signpost. */
+  const onWorldTruckTap = useCallback(() => {
     setRadial(null);
     panelSound();
     setShowContracts(true);
@@ -3848,6 +3888,7 @@ export function StackAcresFarm() {
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}
+              onTruckTap={onWorldTruckTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onVisitorTap={onWorldVisitorTap}

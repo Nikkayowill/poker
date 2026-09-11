@@ -260,21 +260,24 @@ export const SPRITE_ART = {
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
   grassTile: "/stackacres/sprites/grass-tile.png",
-  // The ten stranded visitors (lib/stackacres/visitors.ts) -- static,
-  // tappable, already-generated pixel-art PNGs standing in a flat-vector
-  // world on purpose (the "art-style shock" greeting is the whole feature).
-  // Ordinary core sprites in every other respect: `CORE_SPRITE_NAMES` below
-  // picks them up automatically since they are not crop frames.
-  visitorBleep: "/stackacres/sprites/visitor-bleep.png",
-  visitorGlimm: "/stackacres/sprites/visitor-glimm.png",
-  visitorNib: "/stackacres/sprites/visitor-nib.png",
-  visitorPixl: "/stackacres/sprites/visitor-pixl.png",
-  visitorSquee: "/stackacres/sprites/visitor-squee.png",
-  visitorDott: "/stackacres/sprites/visitor-dott.png",
-  visitorMira: "/stackacres/sprites/visitor-mira.png",
-  visitorZeph: "/stackacres/sprites/visitor-zeph.png",
-  visitorKip: "/stackacres/sprites/visitor-kip.png",
-  visitorTavo: "/stackacres/sprites/visitor-tavo.png",
+  // The eleven story travelers (lib/stackacres/story/): ten true pixel-art
+  // PNGs standing in a flat-vector world on purpose (they are not from
+  // here, and the art says so), and Great-Grandpa Ray's spirit, the one
+  // smooth render among them because he IS from here. The same files the
+  // dialogue bubbles show as portraits (TRAVELER_PORTRAIT). Ordinary core
+  // sprites in every other respect: `CORE_SPRITE_NAMES` below picks them up
+  // automatically since they are not crop frames.
+  travelerRay: "/stackacres/sprites/traveler-ray.png",
+  travelerPierre: "/stackacres/sprites/traveler-pierre.png",
+  travelerMiles: "/stackacres/sprites/traveler-miles.png",
+  travelerSkye: "/stackacres/sprites/traveler-skye.png",
+  travelerBarnaby: "/stackacres/sprites/traveler-barnaby.png",
+  travelerArthur: "/stackacres/sprites/traveler-arthur.png",
+  travelerBrayden: "/stackacres/sprites/traveler-brayden.png",
+  travelerIvy: "/stackacres/sprites/traveler-ivy.png",
+  travelerWes: "/stackacres/sprites/traveler-wes.png",
+  travelerBea: "/stackacres/sprites/traveler-bea.png",
+  travelerLeo: "/stackacres/sprites/traveler-leo.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;

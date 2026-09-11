@@ -2346,19 +2346,21 @@ export const PAINTERS: Record<PainterName, Painter> = {
   windmill: spriteBacked("windmill", DRAWN.windmill),
   rayHouse: spriteBacked("rayHouse", DRAWN.rayHouse),
   rayHouseOpen: spriteBacked("rayHouseOpen", DRAWN.rayHouseOpen),
-  // The ten stranded visitors (lib/stackacres/visitors.ts) -- already-
-  // generated pixel-art PNGs standing in for the moment before them; see
-  // `visitorFallback` in art-props.ts for the drawn version each wraps.
-  visitorBleep: spriteBacked("visitorBleep", DRAWN.visitorBleep),
-  visitorGlimm: spriteBacked("visitorGlimm", DRAWN.visitorGlimm),
-  visitorNib: spriteBacked("visitorNib", DRAWN.visitorNib),
-  visitorPixl: spriteBacked("visitorPixl", DRAWN.visitorPixl),
-  visitorSquee: spriteBacked("visitorSquee", DRAWN.visitorSquee),
-  visitorDott: spriteBacked("visitorDott", DRAWN.visitorDott),
-  visitorMira: spriteBacked("visitorMira", DRAWN.visitorMira),
-  visitorZeph: spriteBacked("visitorZeph", DRAWN.visitorZeph),
-  visitorKip: spriteBacked("visitorKip", DRAWN.visitorKip),
-  visitorTavo: spriteBacked("visitorTavo", DRAWN.visitorTavo),
+  // The eleven story travelers (lib/stackacres/story/placement.ts) --
+  // pixel-art PNGs, plus Ray's spirit, standing in for the moment before
+  // them; see `travelerFallback` in art-props.ts for the drawn version each
+  // wraps.
+  travelerRay: spriteBacked("travelerRay", DRAWN.travelerRay),
+  travelerPierre: spriteBacked("travelerPierre", DRAWN.travelerPierre),
+  travelerMiles: spriteBacked("travelerMiles", DRAWN.travelerMiles),
+  travelerSkye: spriteBacked("travelerSkye", DRAWN.travelerSkye),
+  travelerBarnaby: spriteBacked("travelerBarnaby", DRAWN.travelerBarnaby),
+  travelerArthur: spriteBacked("travelerArthur", DRAWN.travelerArthur),
+  travelerBrayden: spriteBacked("travelerBrayden", DRAWN.travelerBrayden),
+  travelerIvy: spriteBacked("travelerIvy", DRAWN.travelerIvy),
+  travelerWes: spriteBacked("travelerWes", DRAWN.travelerWes),
+  travelerBea: spriteBacked("travelerBea", DRAWN.travelerBea),
+  travelerLeo: spriteBacked("travelerLeo", DRAWN.travelerLeo),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,
   // one silhouette, and the woodland pass below multiplied it by about three,

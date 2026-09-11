@@ -218,9 +218,14 @@ import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresCropFieldsModal } from "./stackacres-crop-fields-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
-import { StackAcresVisitorGreeting } from "./stackacres-visitor-greeting";
-import { visitorForKind, type VisitorId } from "@/lib/stackacres/visitors";
-import type { PropKind } from "@/lib/stackacres/props";
+import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
+import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
+import { storyEventsForAction } from "@/lib/stackacres/story/predict";
+import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
+import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
+import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
+import type { StoryCues } from "./stackacres-scene";
 import { StackAcresGroundTools } from "./stackacres-ground-tools";
 import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
 import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
@@ -599,6 +604,19 @@ interface StackAcresResponse {
    *  a current server, optional only so a bundle old enough to predate the
    *  feature keeps working. */
   blueprints?: Record<BlueprintId, BlueprintCardView>;
+  /** The travelers' story, straight off `StackAcresView.story`. Always
+   *  present on a current server, same as `forge`/`prestige` above --
+   *  optional only so a bundle old enough to predate the feature keeps
+   *  working, which leaves every traveler's bubble unreachable rather than
+   *  wrong. See lib/stackacres/story/. */
+  story?: StackAcresStoryView;
+  /** Set only by a `story-meet`/`story-turn-in` response; every other
+   *  action's answer leaves this undefined. `story` above already carries
+   *  the resulting standing -- this is only what THIS call just did, so the
+   *  dialogue's own "hello" -> "progress" or "done" -> "home" switch can
+   *  fire off the same response that produced it rather than waiting for
+   *  the next node derivation. */
+  storyResult?: { traveler: TravelerId; outcome: "met" | "already-met" | "advanced" | "completed"; granted: string | null };
 }
 
 /**
@@ -811,13 +829,13 @@ export function StackAcresFarm() {
       };
   const [giftDialogue, setGiftDialogue] = useState<GiftDialogueState | null>(null);
   /**
-   * One of the ten stranded visitors' greeting bubble -- opened by
-   * `onWorldVisitorTap`, closed by its own close button or the next world
-   * tap (`onViewMoved`), the same screen-anchored posture every other
-   * dialogue on this map takes. Placement + flavour dialogue only: there is
-   * no "result" phase because there is nothing here that answers.
+   * The travelers' story: the server's own view (Ray plus the ten travelers,
+   * lib/stackacres/story/). Fed by every response's `story` field, same
+   * "full state, not a diff" posture every other server-owned slice here
+   * takes -- `useStackAcresStory` (below) is what turns this into the open
+   * bubble and its optimistic tick.
    */
-  const [visitorGreeting, setVisitorGreeting] = useState<{ id: VisitorId; at: TapPoint } | null>(null);
+  const [storyView, setStoryView] = useState<StackAcresStoryView | null>(null);
   // Seeded from the same pure helper the server uses, so the window's terms are
   // right on the first paint rather than blank until the read lands.
   const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
@@ -1381,6 +1399,7 @@ export function StackAcresFarm() {
     if (data.seedStock) setSeedStock(data.seedStock);
     if (data.droneHangar) setDroneHangar(data.droneHangar);
     if (data.blueprints) setBlueprints(data.blueprints);
+    if (data.story) setStoryView(data.story);
   }, []);
 
   /**
@@ -1773,6 +1792,17 @@ export function StackAcresFarm() {
   }, [truckWanted, worldReady]);
 
   /**
+   * The travelers' story controller, reached from inside `act` before the
+   * hook that owns it exists -- `useStackAcresStory`'s own `submit` prop is
+   * a function that calls `act`, and `act`'s own body calls the
+   * controller's `noteEvent`, so one of the two has to go through a ref
+   * rather than a closure. Kept current by a plain assignment right after
+   * the hook call below (no effect needed: this only ever matters inside a
+   * later event handler, never during the render that sets it).
+   */
+  const storyRef = useRef<StackAcresStoryController | null>(null);
+
+  /**
    * Answers what became of one action, for the callers that have to undo
    * something of their own when it did not land -- today that is the town
    * board, whose optimistic debit has to go back on the shelf on any refusal
@@ -1806,6 +1836,13 @@ export function StackAcresFarm() {
       const patch = predictStackAcresAction(body, buildPredictContext());
       const optimisticApplied = patch !== null;
       if (patch) applyResponse(patch);
+      // The travelers' story ticks the instant this request is sent, not
+      // when it lands -- see storyRef's own header. Every event this action
+      // WOULD produce on success, replayed against whichever bubble happens
+      // to be open right now; `noteEvent` is a no-op if none is.
+      for (const event of storyEventsForAction(body, { units: unitsRef.current })) {
+        storyRef.current?.noteEvent(event);
+      }
       // The unit resets instantly (above), but the payout itself is a dice
       // roll this layer won't fake -- see predictStackAcresAction's header.
       // A player who taps and hears/sees nothing until the round trip lands
@@ -2106,6 +2143,22 @@ export function StackAcresFarm() {
             });
           }
         }
+        // The travelers' story. Unlike the prayer and gift dialogues above,
+        // there is no separate "phase" state to flip here -- the bubble's
+        // node is derived straight off `storyView` (see `dialogueNodeFor`),
+        // and `data.story`, already applied a few lines up, is what moves
+        // it from "hello" to "progress" or from "done" to "home" on its
+        // own. This block is only the toast for a traveler's line finishing.
+        if (body.action === "story-turn-in" && data.storyResult) {
+          if (data.storyResult.outcome === "advanced") panelSound();
+          if (data.storyResult.outcome === "completed") {
+            goldSound();
+            if (typeof data.storyResult.granted === "string" && isStoryItemId(data.storyResult.granted)) {
+              const item = STORY_ITEM_CATALOGUE[data.storyResult.granted];
+              setLastCollect({ text: `${item.icon} ${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you the ${item.label}`, nonce: Date.now() });
+            }
+          }
+        }
         // A drone's own vacuum animation already played (the scene's local-
         // optimistic half, see `onDroneForageCollected`); this is only the
         // confirmed amount, once the server's own cooldown/ceiling check
@@ -2155,6 +2208,46 @@ export function StackAcresFarm() {
       buildPredictContext,
     ],
   );
+
+  /**
+   * The travelers' story. `submit` posts the one intent a committing choice
+   * in the bubble sends, through the exact same `act` (and so the exact
+   * same optimistic/rollback/retry machinery) every other action here uses;
+   * a refusal there rejects, and the hook leaves the bubble on its current
+   * node either way (see the hook's own header). Rejecting on `!ok` rather
+   * than swallowing it is what lets a "You do not have everything he
+   * asked for" refusal reach `act`'s own error banner instead of vanishing.
+   */
+  const storySubmit = useCallback(
+    async (intent: StoryIntent) => {
+      const result = await act(
+        intent.action === "story-meet"
+          ? { action: "story-meet", traveler: intent.traveler }
+          : { action: "story-turn-in", traveler: intent.traveler },
+      );
+      if (!result.ok) throw new Error(result.message);
+    },
+    [act],
+  );
+  const story = useStackAcresStory({ view: storyView, submit: storySubmit });
+  useEffect(() => {
+    storyRef.current = story;
+  });
+
+  // Hangs a quest badge over every traveler the story view says has one --
+  // "!" to offer, "?" ready to hand in, nothing while locked, mid-quest, or
+  // done. Same "push, never rebuild" contract `setMerchant` keeps: an
+  // unchanged cue set is a no-op on the scene's own side.
+  useEffect(() => {
+    if (!story.view) return;
+    const cues: Record<string, "available" | "ready"> = {};
+    for (const [id, traveler] of Object.entries(story.view.travelers)) {
+      if (!traveler.unlocked || traveler.done) continue;
+      if (!traveler.met) cues[id] = "available";
+      else if (traveler.ready) cues[id] = "ready";
+    }
+    world.current?.setStoryCues(cues as StoryCues);
+  }, [story.view]);
 
   // No effect needed to disarm the retire confirmation on district change:
   // StackAcresUnitRows only ever renders the current district's own units
@@ -2316,17 +2409,19 @@ export function StackAcresFarm() {
   }, []);
 
   /**
-   * A finger landed on one of the ten stranded visitors. `kind` is the
-   * `PropKind` the scene hit; `visitorForKind` resolves it back to a visitor
-   * id (name + line + portrait, all in lib/stackacres/visitors.ts). Nothing
-   * here calls the server -- a greeting has nothing to answer.
+   * A finger landed on one of the eleven story travelers. `at` is already
+   * the point over their head (the scene computed it), not the finger --
+   * see stackacres-scene.ts's `travelerHeadPoint`. Nothing here calls the
+   * server; `story.open` only decides which node to show, and only a
+   * committing button inside the bubble ever reaches `storySubmit` below.
    */
-  const onWorldVisitorTap = useCallback((kind: PropKind, at: TapPoint) => {
-    const id = visitorForKind(kind);
-    if (!id) return;
-    setRadial(null);
-    setVisitorGreeting({ id, at });
-  }, []);
+  const onWorldTravelerTap = useCallback(
+    (traveler: TravelerId, at: TapPoint) => {
+      setRadial(null);
+      story.open(traveler, at);
+    },
+    [story],
+  );
 
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
@@ -2498,8 +2593,8 @@ export function StackAcresFarm() {
     setMonkDialogue(null);
     setFencePopup(null);
     setGiftDialogue(null);
-    setVisitorGreeting(null);
-  }, []);
+    story.close();
+  }, [story]);
 
   /**
    * Critical Harvest Cascade: a solo tap that just crit chains into other
@@ -3891,7 +3986,7 @@ export function StackAcresFarm() {
               onTruckTap={onWorldTruckTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
-              onVisitorTap={onWorldVisitorTap}
+              onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
@@ -4126,13 +4221,18 @@ export function StackAcresFarm() {
             />
           )}
 
-          {/* One of the ten stranded visitors' greeting, same screen-anchored
-              treatment as the Pixel Pilgrim's and the gift dialogue above. */}
-          {visitorGreeting && (
-            <StackAcresVisitorGreeting
-              id={visitorGreeting.id}
-              at={visitorGreeting.at}
-              onClose={() => setVisitorGreeting(null)}
+          {/* One of the eleven story travelers' dialogue, same screen-anchored
+              treatment as the Pixel Pilgrim's and the gift dialogue above --
+              anchored over their head, not the finger (see the scene's own
+              `travelerHeadPoint`). */}
+          {story.dialogue && (
+            <StackAcresStoryDialogue
+              traveler={story.dialogue.traveler}
+              at={story.dialogue.at}
+              node={story.dialogue.node}
+              busy={story.busy}
+              onChoose={(choice) => void story.choose(choice)}
+              onClose={story.close}
             />
           )}
 

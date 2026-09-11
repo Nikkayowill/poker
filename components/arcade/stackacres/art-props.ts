@@ -41,16 +41,17 @@ export type PropPainterName =
   | "log"
   | "mushroom"
   | "boulder"
-  | "visitorBleep"
-  | "visitorGlimm"
-  | "visitorNib"
-  | "visitorPixl"
-  | "visitorSquee"
-  | "visitorDott"
-  | "visitorMira"
-  | "visitorZeph"
-  | "visitorKip"
-  | "visitorTavo";
+  | "travelerRay"
+  | "travelerPierre"
+  | "travelerMiles"
+  | "travelerSkye"
+  | "travelerBarnaby"
+  | "travelerArthur"
+  | "travelerBrayden"
+  | "travelerIvy"
+  | "travelerWes"
+  | "travelerBea"
+  | "travelerLeo";
 
 const TAU = Math.PI * 2;
 
@@ -122,21 +123,20 @@ function bloom(c: Ctx, x: number, y: number, r: number, petal: string, centre: s
   F(c, "rgba(255,255,255,.35)");
 }
 
-type VisitorShape = "blob" | "robot" | "bug" | "shell" | "crystal" | "human";
+type TravelerShape = "blob" | "robot" | "bug" | "shell" | "crystal" | "human";
 
 /**
- * The ten stranded visitors' shared fallback (lib/stackacres/visitors.ts),
- * shown only until each one's own already-generated PNG loads (see
- * `spriteBacked` in stackacres-art.ts) -- rarely seen, since that art is
- * already on disk and loads about as fast as anything on this map. One
- * parametrized painter rather than ten hand-drawn ones: `shape` picks a
- * distinct silhouette family so a fallback frame still reads as "a small
- * robot" vs "a shelled creature" vs "a person" instead of one glyph worn by
- * all ten, and `tint` is the one accent colour telling siblings of the same
- * shape apart. Outlined in RIM, the same dark-edge convention every
- * character on this map already carries.
+ * The story travelers' shared fallback (lib/stackacres/story/placement.ts),
+ * shown only until each one's own PNG loads (see `spriteBacked` in
+ * stackacres-art.ts) -- rarely seen, since that art is already on disk and
+ * loads about as fast as anything on this map. One parametrized painter
+ * rather than eleven hand-drawn ones: `shape` picks a silhouette family
+ * (every traveler today is "human"; the other families are kept for a cast
+ * that is not) and `tint` is the one accent colour telling them apart.
+ * Outlined in RIM, the same dark-edge convention every character on this
+ * map already carries.
  */
-function visitorFallback(w: number, h: number, tint: string, shape: VisitorShape): Painter {
+function travelerFallback(w: number, h: number, tint: string, shape: TravelerShape): Painter {
   const mat = { top: tint, side: tint, rim: RIM };
   return painter(w, h, (c) => {
     const cx = w / 2;
@@ -1007,15 +1007,19 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     stroke(c, "rgba(40,50,60,.3)", 0.6);
   }),
 
-  /* ---- the ten stranded visitors (lib/stackacres/visitors.ts) ---- */
-  visitorBleep: visitorFallback(13.75, 20, "#8fa9c9", "robot"),
-  visitorGlimm: visitorFallback(16.67, 20, "#8fd6a6", "blob"),
-  visitorNib: visitorFallback(10.5, 18, "#c9a86a", "human"),
-  visitorPixl: visitorFallback(18.79, 22, "#e0a23f", "crystal"),
-  visitorSquee: visitorFallback(13.5, 18, "#8a7fc9", "bug"),
-  visitorDott: visitorFallback(17.08, 20, "#7ac97a", "shell"),
-  visitorMira: visitorFallback(13.46, 38, "#3f8f8a", "human"),
-  visitorZeph: visitorFallback(17.42, 38, "#7a5fc9", "human"),
-  visitorKip: visitorFallback(15.71, 26, "#e0c23f", "human"),
-  visitorTavo: visitorFallback(17.42, 38, "#c96a3f", "human"),
+  /* ---- the eleven story travelers (lib/stackacres/story/placement.ts) ---- */
+  // Boxes match PROP_SIZE in lib/stackacres/props.ts exactly; the tint is
+  // each traveler's own dominant colour so a fallback frame still reads as
+  // "the chef" or "the knight" rather than one grey figure worn by all.
+  travelerRay: travelerFallback(19.75, 40, "#c9d8ec", "human"),
+  travelerPierre: travelerFallback(19.79, 38, "#d93a3a", "human"),
+  travelerMiles: travelerFallback(17.42, 38, "#b08a5a", "human"),
+  travelerSkye: travelerFallback(16.25, 30, "#f0b21f", "human"),
+  travelerBarnaby: travelerFallback(17.42, 38, "#5f8f5a", "human"),
+  travelerArthur: travelerFallback(26.13, 38, "#8fa2b8", "human"),
+  travelerBrayden: travelerFallback(22.96, 38, "#c98a3f", "human"),
+  travelerIvy: travelerFallback(19.38, 30, "#c9463f", "human"),
+  travelerWes: travelerFallback(14.25, 38, "#7a5a34", "human"),
+  travelerBea: travelerFallback(21.38, 38, "#e8d27a", "human"),
+  travelerLeo: travelerFallback(22.96, 38, "#dfe6f0", "human"),
 };

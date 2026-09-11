@@ -75,17 +75,25 @@ mid-wave). Lower priority than M1-M4 for the marketing push, but should land bef
 release since a player losing defense progress on reload is a real regression once anyone
 notices.
 
-## M6 — Visitor Quest pipeline (10-quest system)
+## M6 — Traveler Quest pipeline — DONE (2026-09-11)
 
-Currently art + one-shot greeting only — `lib/stackacres/visitors.ts` says this outright in
-its own header. `docs/stackacres-visitor-quest-design.md` is an honest design doc (explicitly
-labels its new mechanics "PROPOSED, NOT BUILT"), not a false claim like some past briefs.
-This is a from-scratch build: quest state machine, dialogue branching, gift/turn-in economy,
-gating across the three acts. Biggest single item in this track — treat as its own
-multi-migration milestone (state per visitor per profile, gift turn-ins, reward grants
-following the same idempotent-settlement rule as everything else) rather than trying to land
-it in one PR. Do last unless Kayo specifically wants the visitor cast in the recorded
-gameplay.
+Superseded and built. Kayo replaced the ten stranded visitors (art + one-shot greeting only,
+no quests) with an 11-character multiverse story — Great-Grandpa Ray plus ten dimension
+travelers, each with a short quest line, dialogue, and a keepsake reward. `lib/stackacres/
+visitors.ts` is deleted; `docs/stackacres-visitor-quest-design.md` was rewritten for the new
+cast and is now an as-built doc, not a proposal.
+
+Shipped in full: `lib/stackacres/story/` (cast, quests, dialogue, state reducers, placement,
+client hook, predictor), a `homestead_story` migration + two guarded RPCs
+(`write_homestead_story`/`turn_in_homestead_story_quest`), the `story-meet`/`story-turn-in`
+actions wired into `stackacres-service.ts` with `applyStoryEvent` calls inside every action
+the quest table listens to, scene placement + hit-testing + quest badges
+(`stackacres-scene.ts`'s `paintTravelers`/`setStoryCues`), and a screen-anchored dialogue
+bubble (`StackAcresStoryDialogue`) with the client-side optimistic tick. Ten pixel-art
+sprites cut from Kayo's own reference renders and three FLUX generations; Ray is a
+translucent spirit sprite standing beside his house, not pixel art (he's not from another
+dimension). Rewards are story items, never Gold — the currency wall stays at four credit
+sites.
 
 ## Minor/cosmetic, no milestone needed
 

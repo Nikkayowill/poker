@@ -8,10 +8,10 @@ import { stackacresCutterDef, type StackAcresCutter } from "@/lib/stackacres/cut
 import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
-import type { PropKind } from "@/lib/stackacres/props";
+import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
-import type { StackAcresScene, StackAcresSceneUnit, TapPoint } from "./stackacres-scene";
+import type { StackAcresScene, StackAcresSceneUnit, StoryCues, TapPoint } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
 import type { PipeNode } from "@/lib/stackacres/irrigation";
@@ -117,6 +117,11 @@ export interface StackAcresWorldApi {
    *  prop because it is closer in shape to `popUnit`/`floatAt` (a command
    *  fired from an event) than to a value the scene must always reflect. */
   setMerchant: (present: boolean) => void;
+  /** Hangs a quest badge ("!" to offer, "?" ready to hand in) over each
+   *  traveler named, and takes down the rest. Same "push, never rebuild"
+   *  contract as `setMerchant`: stackacres-farm.tsx calls this whenever its
+   *  story view changes, and an unchanged badge is a no-op. */
+  setStoryCues: (cues: StoryCues) => void;
   /** Placed soil beds (lib/stackacres/soil.ts), passed straight through to
    *  the scene's own methods of the same name -- see stackacres-scene.ts's
    *  "the seam the shop will arrive through" section for what each does.
@@ -225,10 +230,11 @@ export interface StackAcresWorldProps {
   /** A finger landed on Grandfather Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
-  /** A finger landed on one of the ten stranded visitors (see
-   *  lib/stackacres/visitors.ts) -- the cue to show that visitor's own
-   *  one-line greeting; see stackacres-farm.tsx's `onWorldVisitorTap`. */
-  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
+  /** A finger landed on one of the eleven story travelers (see
+   *  lib/stackacres/story/placement.ts). `at` is the point over their head,
+   *  where the dialogue bubble hangs; see stackacres-farm.tsx's
+   *  `onWorldTravelerTap`. */
+  onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   /** A finger landed on one of the three hidden discovery spots (see
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
@@ -346,7 +352,7 @@ export function StackAcresWorld({
   onTruckTap,
   onMonkTap,
   onRayTap,
-  onVisitorTap,
+  onTravelerTap,
   onSecretZoneTap,
   onFenceSegmentTap,
   onLivestockDamaged,
@@ -382,7 +388,7 @@ export function StackAcresWorld({
   const truckTapRef = useRef(onTruckTap);
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
-  const visitorTapRef = useRef(onVisitorTap);
+  const travelerTapRef = useRef(onTravelerTap);
   const secretZoneTapRef = useRef(onSecretZoneTap);
   const fenceSegmentTapRef = useRef(onFenceSegmentTap);
   const livestockDamagedRef = useRef(onLivestockDamaged);
@@ -424,7 +430,7 @@ export function StackAcresWorld({
     truckTapRef.current = onTruckTap;
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
-    visitorTapRef.current = onVisitorTap;
+    travelerTapRef.current = onTravelerTap;
     secretZoneTapRef.current = onSecretZoneTap;
     fenceSegmentTapRef.current = onFenceSegmentTap;
     livestockDamagedRef.current = onLivestockDamaged;
@@ -492,7 +498,7 @@ export function StackAcresWorld({
           onTruckTap: () => truckTapRef.current(),
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
-          onVisitorTap: (kind, at) => visitorTapRef.current(kind, at),
+          onTravelerTap: (traveler, at) => travelerTapRef.current(traveler, at),
           onSecretZoneTap: (zoneId, at) => secretZoneTapRef.current(zoneId, at),
           onFenceSegmentTap: (zone, segmentIndex, at) => fenceSegmentTapRef.current?.(zone, segmentIndex, at),
           onLivestockDamaged: (zone, health) => livestockDamagedRef.current?.(zone, health),
@@ -626,6 +632,7 @@ export function StackAcresWorld({
       exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
       setMerchant: (present) => sceneRef.current?.setMerchant(present),
+      setStoryCues: (cues) => sceneRef.current?.setStoryCues(cues),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
       placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,

@@ -1815,11 +1815,16 @@
 
 .sa-gift-dialogue-no:hover { filter: brightness(1.05); }
 
-/* ---- the ten stranded visitors' greeting ------------------------------
- * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
- * a single line and a portrait, no phases and no actions row, since this
- * feature is placement + flavour dialogue only (no gifts, no quests). */
-.sa-visitor-greeting {
+/* ---- the travelers' story dialogue -------------------------------------
+ * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above,
+ * anchored over the traveler's head rather than the finger (see
+ * stackacres-scene.ts's `travelerHeadPoint`). A portrait + name header the
+ * monk/gift dialogues don't carry (they draw their own character in the
+ * canvas; a traveler's true pixel art next to the flat-vector world is the
+ * whole point of showing it again here), then the line and however many
+ * choices the current node has -- one for a locked/home beat that only
+ * closes, two for hello/turn-in beats where one commits. */
+.sa-story-dialogue {
   position: absolute;
   z-index: 5;
   width: 0;
@@ -1827,7 +1832,7 @@
   pointer-events: none;
 }
 
-.sa-visitor-greeting-pin {
+.sa-story-dialogue-pin {
   position: absolute;
   left: -6px;
   top: -6px;
@@ -1839,11 +1844,11 @@
   box-shadow: var(--sa-drop);
 }
 
-.sa-visitor-greeting-card {
+.sa-story-dialogue-card {
   position: absolute;
   left: 16px;
   top: -18px;
-  width: 240px;
+  width: 250px;
   padding: 12px 14px 14px;
   border: var(--sa-outline-w) solid var(--sa-outline);
   border-radius: var(--sa-r-block);
@@ -1854,7 +1859,7 @@
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
 }
 
-.sa-visitor-greeting-close {
+.sa-story-dialogue-close {
   position: absolute;
   right: 8px;
   top: 6px;
@@ -1867,28 +1872,71 @@
   opacity: .6;
 }
 
-.sa-visitor-greeting-close:hover { opacity: 1; }
+.sa-story-dialogue-close:hover { opacity: 1; }
 
-.sa-visitor-greeting-portrait {
+.sa-story-dialogue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 18px 8px 0;
+}
+
+.sa-story-dialogue-portrait {
   display: block;
-  height: 64px;
+  height: 48px;
   width: auto;
-  margin: 0 0 8px;
+  flex: 0 0 auto;
   image-rendering: pixelated;
 }
 
-.sa-visitor-greeting-name {
-  margin: 0 18px 6px 0;
+.sa-story-dialogue-name {
+  margin: 0;
   font-size: 13.5px;
   font-weight: 800;
 }
 
-.sa-visitor-greeting-line {
-  margin: 0;
+.sa-story-dialogue-line {
+  margin: 0 0 10px;
   font-size: 12.5px;
   font-style: italic;
   line-height: 1.35;
 }
+
+.sa-story-dialogue-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sa-story-dialogue-yes,
+.sa-story-dialogue-no {
+  flex: 1;
+  min-height: var(--sa-tap);
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
+}
+
+.sa-story-dialogue-yes {
+  background: var(--sa-corn);
+  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  color: var(--sa-ink);
+}
+
+.sa-story-dialogue-no {
+  background: var(--sa-wood);
+  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
+  color: var(--sa-ink-light);
+}
+
+.sa-story-dialogue-yes:hover:not(:disabled),
+.sa-story-dialogue-no:hover { filter: brightness(1.05); }
+
+.sa-story-dialogue-yes:disabled { opacity: .6; cursor: default; }
 
 /* ---- the district drawer ---------------------------------------------
  * Travelling to a district (the signpost) IS the selection -- there is no plot

@@ -54,14 +54,15 @@ import {
 import { SEA_EXPANSE_TILE, seaExpanseTiles, terrainChunks } from "@/lib/stackacres/terrain";
 import {
   PROP_SHADOW,
+  PROP_SIZE,
   STANDING_CHARACTER_SHADOW,
   WINDMILL_HUB,
   WINDMILL_SPEED,
   YARD_PROPS,
   farmsteadClutter,
-  type PropKind,
 } from "@/lib/stackacres/props";
-import { VISITOR_PROPS, visitorHitAt } from "@/lib/stackacres/visitors";
+import { TRAVELER_PROPS, travelerHitAt, travelerSpot } from "@/lib/stackacres/story/placement";
+import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import {
   cutterRank,
@@ -367,6 +368,20 @@ export interface TapPoint {
   y: number;
 }
 
+/** What a traveler's badge says: a quest to offer, or one ready to hand in. */
+export type StoryCue = "available" | "ready";
+
+/** One badge per traveler that has one; a missing key means none. */
+export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
+
+interface TravelerNode {
+  image: Phaser.GameObjects.Image;
+  cue: Phaser.GameObjects.Container | null;
+  cueBob: Phaser.Tweens.Tween | null;
+  /** The badge currently drawn, so `setStoryCues` can skip an unchanged one. */
+  shown: StoryCue | null;
+}
+
 export interface StackAcresSceneCallbacks {
   /** Fired once the first frame with units on it has been drawn. */
   onReady: () => void;
@@ -471,15 +486,16 @@ export interface StackAcresSceneCallbacks {
    */
   onRayTap: (at: TapPoint) => void;
   /**
-   * A tap that landed on one of the ten stranded visitors (see
-   * lib/stackacres/visitors.ts) -- checked right after the Pixel Pilgrim,
-   * the same "a person wins over the structure behind them" ordering, even
-   * though none of their footprints overlap the barn's either. `kind` is the
-   * `PropKind` the scene hit, which the shell resolves back to a visitor id
-   * through `visitorForKind`; this is only the cue to show that visitor's
-   * one-line greeting, nothing more.
+   * A tap that landed on one of the eleven story travelers (see
+   * lib/stackacres/story/placement.ts) -- checked right after the Pixel
+   * Pilgrim, the same "a person wins over the structure behind them"
+   * ordering, even though none of their footprints overlap the barn's
+   * either. `at` is NOT the finger: it is the point just over that
+   * traveler's head, so the shell's bubble hangs where a speech bubble
+   * belongs. Fires no request by itself -- the shell opens the dialogue, and
+   * only a committing button there ever reaches the server.
    */
-  onVisitorTap: (kind: PropKind, at: TapPoint) => void;
+  onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   /**
    * A tap that landed on one of the three hidden discovery spots (see
    * lib/stackacres/secrets.ts's `HIDDEN_ZONES`) -- checked after the barn and
@@ -653,6 +669,11 @@ function isCropArtName(name: PainterName): boolean {
 
 /** Chrome gold, as the canvas needs it. Same value as 01-tokens.css. */
 const GOLD = 0xffd23f;
+
+/** How solid Great-Grandpa Ray's spirit is drawn: see-through enough to
+ *  read as a ghost, solid enough that his face still reads. His drift
+ *  dips a little below this at the bottom of each breath. */
+const RAY_SPIRIT_ALPHA = 0.78;
 /** How wide the icon inside a cue bubble is drawn, in world units, and how
  *  far above the bubble's tail its centre sits. */
 const CUE_ICON_SIZE = 9.5;
@@ -1498,6 +1519,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  own snapshot arrives, which can race the scene's boot) is held here and
    *  applied once there is a scene to add an image to. */
   private pendingMerchant: boolean | null = null;
+  /** The eleven travelers' own pictures, by id, with whatever quest badge
+   *  each is showing -- see `paintTravelers` and `setStoryCues`. */
+  private travelerNodes = new Map<TravelerId, TravelerNode>();
+  /** Mirrors `pendingMerchant`'s own role for `setStoryCues`: a call that
+   *  lands before `create()` has run is held here and applied once there
+   *  is a picture to hang a badge over. */
+  private pendingStoryCues: StoryCues | null = null;
   /**
    * The delivery truck's own live state and picture, or null while it is off
    * the map entirely (no open contract, or one that has not yet been asked
@@ -2132,6 +2160,11 @@ export class StackAcresScene extends Phaser.Scene {
       this.pendingMerchant = null;
       this.setMerchant(present);
     }
+    if (this.pendingStoryCues !== null) {
+      const cues = this.pendingStoryCues;
+      this.pendingStoryCues = null;
+      this.setStoryCues(cues);
+    }
     if (this.pendingDroneIds !== null) {
       const droneIds = this.pendingDroneIds;
       this.pendingDroneIds = null;
@@ -2747,18 +2780,117 @@ export class StackAcresScene extends Phaser.Scene {
       }
       this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
     }
-    // The ten stranded visitors (lib/stackacres/visitors.ts) -- same shadow
-    // + `put(prop.kind, ...)` mechanism as YARD_PROPS above, over its own
-    // array rather than folded into it: YARD_PROPS is the hand-placed yard
-    // cluster and its own test holds it to "about a dozen", where these are
-    // scattered across five different districts.
-    for (const prop of VISITOR_PROPS) {
+    this.paintTravelers();
+  }
+
+  /**
+   * The eleven story travelers (lib/stackacres/story/placement.ts) -- the
+   * same shadow + `put(prop.kind, ...)` mechanism as YARD_PROPS above, over
+   * their own array rather than folded into it: YARD_PROPS is the
+   * hand-placed yard cluster and its own test holds it to "about a dozen",
+   * where these stand across six districts. Each picture is kept by id so
+   * `setStoryCues` can hang a quest badge over it.
+   *
+   * Ray is drawn as what he is: a spirit. Translucent, on a fainter shadow
+   * than a body casts, drifting a couple of units up and down beside his
+   * own house. The ten travelers stand still -- they are pixel art in a
+   * flat-vector world, and holding perfectly still is part of the read.
+   */
+  private paintTravelers(): void {
+    for (const prop of TRAVELER_PROPS) {
       const pool = PROP_SHADOW[prop.kind];
+      const spirit = prop.traveler === "ray";
       this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
         .setScale(pool.w / 33 / S, pool.h / 13 / S)
-        .setAlpha(0.8);
-      this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+        .setAlpha(spirit ? 0.35 : 0.8);
+      const image = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+      if (spirit) {
+        image.setAlpha(RAY_SPIRIT_ALPHA);
+        if (!this.options.reducedMotion) {
+          this.tweens.add({
+            targets: image,
+            y: "-=2.5",
+            alpha: RAY_SPIRIT_ALPHA - 0.14,
+            duration: 2600,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          });
+        }
+      }
+      this.travelerNodes.set(prop.traveler, { image, cue: null, cueBob: null, shown: null });
     }
+  }
+
+  /**
+   * Hangs, moves or removes the quest badge over each traveler: "!" for one
+   * with a quest to offer, "?" for one whose active quest is ready to hand
+   * in, nothing otherwise -- the RPG convention, so a player who has seen
+   * one of these games reads the map without a legend. Same "push, never
+   * rebuild" contract `setMerchant` keeps: the shell calls this whenever
+   * its story view changes, and an unchanged badge is a no-op.
+   *
+   * Drawn with the same speech-bubble plate a ripe crop's cue uses (see
+   * `paintUnitCue`), with a letter where that one has an icon, so the two
+   * kinds of "something to do here" share one visual language.
+   */
+  setStoryCues(cues: StoryCues): void {
+    if (!this.created) {
+      this.pendingStoryCues = cues;
+      return;
+    }
+    for (const [id, node] of this.travelerNodes) {
+      const cue = cues[id] ?? null;
+      if (cue === node.shown) continue;
+      node.cueBob?.remove();
+      node.cueBob = null;
+      node.cue?.destroy(true);
+      node.cue = null;
+      node.shown = cue;
+      if (cue === null) continue;
+
+      this.displayFont ??= window.getComputedStyle(this.options.host).fontFamily || "system-ui";
+      const bubble = this.add
+        .image(0, 0, "cueBubble", ART_FRAME)
+        .setOrigin(PAINTERS.cueBubble.ax, PAINTERS.cueBubble.ay)
+        .setScale(1 / S);
+      // Rasterised at twice the art scale and scaled back, so the glyph
+      // stays crisp when the camera is zoomed all the way in.
+      const glyph = this.add
+        .text(0, -CUE_ICON_RISE, cue === "ready" ? "?" : "!", {
+          fontFamily: this.displayFont,
+          fontSize: `${Math.round(CUE_ICON_SIZE * S * 2)}px`,
+          fontStyle: "800",
+          color: RAMPS.gold.top,
+          stroke: RAMPS.pine.rim,
+          strokeThickness: 3 * S,
+        })
+        .setOrigin(0.5, 0.5)
+        .setScale(1 / (S * 2));
+      const inner = this.add.container(0, 0, [bubble, glyph]);
+      const spot = travelerSpot(id);
+      node.cue = this.add
+        .container(node.image.x, node.image.y - PROP_SIZE[spot.kind].h - CUE_GAP, [inner])
+        .setDepth(UNIT_CUE_DEPTH)
+        .setScale(CUE_SCALE);
+      if (this.options.reducedMotion) continue;
+      node.cueBob = this.tweens.add({
+        targets: inner,
+        y: -1.5,
+        duration: 650,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
+  }
+
+  /** The CSS-pixel point just over a traveler's head, in the same space a
+   *  `TapPoint` is reported in: where their speech bubble hangs. */
+  private travelerHeadPoint(id: TravelerId): TapPoint {
+    const spot = travelerSpot(id);
+    const feet = this.fieldPointFor(spot.x, spot.y);
+    return { x: feet.x, y: feet.y - (PROP_SIZE[spot.kind].h * this.cameras.main.zoom) / DPR };
   }
 
   /**
@@ -5144,12 +5276,14 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onMonkTap(local);
         return;
       }
-      // One of the ten stranded visitors -- checked right after the Pixel
+      // One of the eleven story travelers -- checked right after the Pixel
       // Pilgrim, the same "a person wins over the structure behind them"
       // ordering, even though none of their footprints overlap the barn's.
-      const visitorKind = visitorHitAt(ground.x, ground.y);
-      if (visitorKind) {
-        this.callbacks.onVisitorTap(visitorKind, local);
+      // Hands back the point over their head, not `local`: the bubble is
+      // theirs, not the finger's.
+      const traveler = travelerHitAt(ground.x, ground.y);
+      if (traveler !== null) {
+        this.callbacks.onTravelerTap(traveler, this.travelerHeadPoint(traveler));
         return;
       }
       // The barn -- Ray's Museum's own entryway -- checked before the

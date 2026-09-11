@@ -12,13 +12,15 @@ import {
 import { isMachineItem } from "./machine-items";
 
 describe("isActiveStock", () => {
-  it("is true for exactly hens and cattle this pass", () => {
-    expect(STACKACRES_STOCK.filter(isActiveStock).sort()).toEqual(["cattle", "hen"]);
+  it("is true for every crop plus hens and cattle this pass", () => {
+    expect(STACKACRES_STOCK.filter(isActiveStock).sort()).toEqual(
+      [...STACKACRES_CROPS, "cattle", "hen"].sort(),
+    );
     expect([...STACKACRES_ACTIVE_LIVESTOCK].sort()).toEqual(["cattle", "hen"]);
   });
 
-  it("hides every crop and the sheep pen", () => {
-    for (const crop of STACKACRES_CROPS) expect(isActiveStock(crop), crop).toBe(false);
+  it("shows every crop, hides the pig pen", () => {
+    for (const crop of STACKACRES_CROPS) expect(isActiveStock(crop), crop).toBe(true);
     expect(isActiveStock("pig")).toBe(false);
   });
 });
@@ -45,11 +47,11 @@ describe("buyOptionsForZone under the active scope", () => {
     }
   });
 
-  it("offers hens at Hen Haven, cattle at the Ox Fields, and nothing at the Farmstead or the Fold", () => {
+  it("offers hens at Hen Haven, cattle at the Ox Fields, every crop at the Farmstead, and nothing at the Fold", () => {
     const ctx = { units: [], gold: 1_000_000, capacity: {} };
     expect(buyOptionsForZone("henhaven", ctx).map((o) => o.stock)).toEqual(["hen"]);
     expect(buyOptionsForZone("oxfields", ctx).map((o) => o.stock)).toEqual(["cattle"]);
-    expect(buyOptionsForZone("farmstead", ctx)).toEqual([]);
+    expect(buyOptionsForZone("farmstead", ctx).map((o) => o.stock).sort()).toEqual([...STACKACRES_CROPS].sort());
     expect(buyOptionsForZone("wallow", ctx)).toEqual([]);
   });
 });

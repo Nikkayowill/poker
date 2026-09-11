@@ -11,10 +11,11 @@
  * what lets scope shrink and grow later without a migration or a stranded
  * unit.
  *
- * Only livestock is scoped. The Wheat Plot (./wheat-plot.ts) is a separate,
- * already inventory-only system that was never gated by `STACKACRES_CROPS`
- * and needs no entry here; every one of the 22 `STACKACRES_CROPS` stays
- * hidden until scope widens again.
+ * Crops were hidden for one pass while the base gather-craft-sell loop got
+ * proven out with just Hen/Wheat Plot/Cattle; that's done, so all 22
+ * `STACKACRES_CROPS` are back on the shelf. Livestock stays scoped -- only
+ * `STACKACRES_ACTIVE_LIVESTOCK` is buyable; Pig/wool is still out until that
+ * list widens too.
  */
 
 import type { MachineKind } from "./machines";
@@ -28,8 +29,9 @@ export const STACKACRES_ACTIVE_LIVESTOCK: readonly StackAcresLivestock[] = ["hen
  *  active scope's loop actually produces: Eggs (Hens), Milk (Cattle), Wheat
  *  and Flour (the Mill), Cake (the Dairy's second recipe). Wool/Cheese/Cloth
  *  stay held and sellable (nothing here changes what a player can DO with
- *  them) but are left off this display list, the same declutter the shop's
- *  own `isActiveStock` does for hidden crops. */
+ *  them) but are left off this display list -- crop produce isn't on it
+ *  either yet; this shelf list is unrelated to `isActiveStock` and wasn't
+ *  part of the crop gate that just lifted. */
 export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
   "eggs",
   "milk",
@@ -47,7 +49,7 @@ export const STACKACRES_ACTIVE_MACHINES: readonly MachineKind[] = ["mill", "dair
 
 /** Whether `stock` is buyable/plantable in this pass. */
 export function isActiveStock(stock: StackAcresStock): boolean {
-  if (isStackAcresCrop(stock)) return false;
+  if (isStackAcresCrop(stock)) return true;
   return (STACKACRES_ACTIVE_LIVESTOCK as readonly string[]).includes(stock);
 }
 

@@ -2146,6 +2146,7 @@ describe("the currency wall", () => {
       "give-gift",
       "harvest-crossbreed",
       "midnight-merchant-buy",
+      "move-soil-tile-group",
       "place-machine",
       "place-pipe",
       "place-soil-tile",
@@ -2224,7 +2225,10 @@ describe("the currency wall", () => {
     // the cell is taken. So soil costs the player exactly once, at Ray's
     // shelf, and a mis-tap on the map can never cost Gold. `remove-soil-tile`
     // moves neither Gold nor a bag: a laid bed is spent, matching
-    // `remove-pipe`. `give-gift` moves no Gold
+    // `remove-pipe`. `move-soil-tile-group` moves no Gold either -- a
+    // hold-tap relocation only rewrites tx/ty on rows that already exist
+    // (see moveStackAcresSoilTileGroup's own header), nothing is spent and
+    // nothing is refunded. `give-gift` moves no Gold
     // either way: it spends a processing-track item (never a purse) and its
     // ladder pays a keepsake, never Gold -- see
     // lib/stackacres/friendship.ts's own header for why that reward is not

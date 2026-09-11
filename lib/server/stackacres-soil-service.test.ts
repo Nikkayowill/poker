@@ -12,6 +12,7 @@ import {
 import {
   StackAcresRequestError,
   buyStackAcresSoil,
+  moveStackAcresSoilTileGroup,
   placeStackAcresSoilTile,
   readStackAcres,
   removeStackAcresSoilTile,
@@ -275,6 +276,106 @@ describe("removeStackAcresSoilTile", () => {
     const view = await removeStackAcresSoilTile(token, bedB, T0);
 
     expect(view.units.some((unit) => unit.id === planted?.id)).toBe(true);
+  });
+});
+
+describe("moveStackAcresSoilTileGroup", () => {
+  it("moves a bed to a bare coordinate and refunds/spends nothing", async () => {
+    const token = await stocked("dirt", 1);
+    const from = cropFieldTile();
+    await placeStackAcresSoilTile(token, from, T0);
+    const afterPlace = await balance(token);
+    const to = { tx: from.tx + 1, ty: from.ty };
+
+    const view = await moveStackAcresSoilTileGroup(token, { tx: from.tx, ty: from.ty, toTx: to.tx, toTy: to.ty }, T0);
+
+    expect(view.soilTiles.some((tile) => tile.tx === from.tx && tile.ty === from.ty)).toBe(false);
+    expect(view.soilTiles.some((tile) => tile.tx === to.tx && tile.ty === to.ty)).toBe(true);
+    expect(await balance(token)).toBe(afterPlace);
+  });
+
+  it("carries the bed's crop with it -- same unit, same soilSlot, no removal", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
+    const from = cropFieldTile();
+    await placeStackAcresSoilTile(token, from, T0);
+    const crop = STACKACRES_CROPS[0];
+    const sown = await stockStackAcres(token, { stock: crop, tile: from }, T0);
+    const planted = sown.units.find((unit) => unit.stock === crop);
+    expect(planted?.soilSlot).not.toBeNull();
+    const to = { tx: from.tx + 2, ty: from.ty + 3 };
+
+    const view = await moveStackAcresSoilTileGroup(token, { tx: from.tx, ty: from.ty, toTx: to.tx, toTy: to.ty }, T0);
+
+    const stillThere = view.units.find((unit) => unit.id === planted?.id);
+    expect(stillThere).toBeDefined();
+    // Same unit row, same slot -- moveStackAcresSoilTileGroup never touches
+    // a unit at all, only the tile's own tx/ty (see its own header).
+    expect(stillThere?.soilSlot).toBe(planted?.soilSlot);
+  });
+
+  it("moves the whole contiguous group by the same offset, not just the tapped tile", async () => {
+    const token = await stocked("dirt", 2);
+    const anchor = cropFieldTile();
+    const neighbour = { tx: anchor.tx + 1, ty: anchor.ty };
+    await placeStackAcresSoilTile(token, anchor, T0);
+    await placeStackAcresSoilTile(token, neighbour, T0);
+    const dx = 0;
+    const dy = 4;
+
+    const view = await moveStackAcresSoilTileGroup(
+      token,
+      { tx: anchor.tx, ty: anchor.ty, toTx: anchor.tx + dx, toTy: anchor.ty + dy },
+      T0,
+    );
+
+    expect(view.soilTiles.some((t) => t.tx === anchor.tx && t.ty === anchor.ty)).toBe(false);
+    expect(view.soilTiles.some((t) => t.tx === neighbour.tx && t.ty === neighbour.ty)).toBe(false);
+    expect(view.soilTiles.some((t) => t.tx === anchor.tx + dx && t.ty === anchor.ty + dy)).toBe(true);
+    expect(view.soilTiles.some((t) => t.tx === neighbour.tx + dx && t.ty === neighbour.ty + dy)).toBe(true);
+  });
+
+  it("refuses a seed coordinate with no bed", async () => {
+    const token = await funded();
+    await expect(
+      moveStackAcresSoilTileGroup(token, { tx: FAR_AWAY.tx, ty: FAR_AWAY.ty, toTx: FAR_AWAY.tx + 1, toTy: FAR_AWAY.ty }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("refuses a destination already held by another bed", async () => {
+    const token = await stocked("dirt", 2);
+    // Three tiles apart, deliberately NOT touching -- adjacent beds would
+    // form one contiguous group (see the "moves the whole contiguous group"
+    // test above), and this test wants two genuinely separate ones.
+    const bedA = cropFieldTile(0);
+    const bedB = cropFieldTile(3);
+    await placeStackAcresSoilTile(token, bedA, T0);
+    await placeStackAcresSoilTile(token, bedB, T0);
+
+    await expect(
+      moveStackAcresSoilTileGroup(token, { tx: bedA.tx, ty: bedA.ty, toTx: bedB.tx, toTy: bedB.ty }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    // Nothing moved -- both beds are exactly where they started.
+    const view = await readStackAcres(token, T0);
+    expect(view.soilTiles.some((t) => t.tx === bedA.tx && t.ty === bedA.ty)).toBe(true);
+    expect(view.soilTiles.some((t) => t.tx === bedB.tx && t.ty === bedB.ty)).toBe(true);
+  });
+
+  it("refuses a destination outside the Crop Fields", async () => {
+    const token = await stocked("dirt", 1);
+    const from = cropFieldTile();
+    await expect(
+      moveStackAcresSoilTileGroup(token, { tx: from.tx, ty: from.ty, toTx: FAR_AWAY.tx, toTy: FAR_AWAY.ty }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("refuses tapping the same spot as the destination", async () => {
+    const token = await stocked("dirt", 1);
+    const from = cropFieldTile();
+    await placeStackAcresSoilTile(token, from, T0);
+    await expect(
+      moveStackAcresSoilTileGroup(token, { tx: from.tx, ty: from.ty, toTx: from.tx, toTy: from.ty }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 });
 

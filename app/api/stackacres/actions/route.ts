@@ -64,6 +64,7 @@ import {
   buyStackAcresSoil,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
+  moveStackAcresSoilTileGroup,
   buyStackAcresSeed,
   prayAtStackAcresShrine,
   giveStackAcresGift,
@@ -416,6 +417,19 @@ const bodySchema = z.discriminatedUnion("action", [
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
   }),
+  // Hold-tap lift, tap-to-drop. `(tx, ty)` names the bed picked up (and,
+  // through it, the whole contiguous group touching it -- see
+  // stackacres-service.ts's `moveStackAcresSoilTileGroup`); `(toTx, toTy)` is
+  // where the tapped bed lands. Same generous-but-bounded coordinate range as
+  // place-soil-tile -- the Crop Fields rect is what actually confines it.
+  // Moves no Gold either way.
+  z.object({
+    action: z.literal("move-soil-tile-group"),
+    tx: z.number().int().min(-512).max(512),
+    ty: z.number().int().min(-512).max(512),
+    toTx: z.number().int().min(-512).max(512),
+    toTy: z.number().int().min(-512).max(512),
+  }),
   // Ray's seed shelf. SPENDS Gold (crop's own seedCost x quantity, read from
   // STACKACRES_CATALOGUE on the server) and plants nothing; `stock` above now
   // spends one seed off this shelf for a crop instead of charging Gold
@@ -568,6 +582,12 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return buyStackAcresSoil(token, { tier: action.tier, quantity: action.quantity }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
+    case "move-soil-tile-group":
+      return moveStackAcresSoilTileGroup(
+        token,
+        { tx: action.tx, ty: action.ty, toTx: action.toTx, toTy: action.toTy },
+        now,
+      );
     case "buy-seed":
       return buyStackAcresSeed(token, { crop: action.crop, quantity: action.quantity }, now);
     case "pray":

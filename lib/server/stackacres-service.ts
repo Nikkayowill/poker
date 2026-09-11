@@ -64,6 +64,7 @@ import {
   CROP_FIELD_BEDS,
   cropSpot,
   growAreaAt,
+  soilTileInCropFieldBeds,
   stockZone,
 } from "@/lib/stackacres/world";
 import {
@@ -91,6 +92,7 @@ import {
 import {
   createSoilMap,
   nextFreeSoilSlot,
+  planSoilGroupRelocation,
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotTile,
@@ -118,6 +120,7 @@ import {
   type SoilStock,
   placeStackAcresSoilTile as placeSoilTileRow,
   removeStackAcresSoilTile as removeSoilTileRow,
+  moveStackAcresSoilTiles as moveSoilTileGroupRow,
 } from "./stackacres-soil-store";
 import { adjustStackAcresSeedStock, readStackAcresSeedStock } from "./stackacres-seed-store";
 import {
@@ -4599,6 +4602,78 @@ export async function placeStackAcresSoilTile(
   throw new StackAcresRequestError("There is already a bed there.", 409, {
     round: await snapshots(profile.id, now),
   });
+}
+
+/**
+ * Slides an already-placed bed -- and every bed touching it, one contiguous
+ * group -- to a new spot on the same lattice, whatever crop stands on it
+ * carried along for free. Hold-tap lift, tap-to-drop on the client
+ * (stackacres-scene.ts); nothing is spent and nothing is refunded, since
+ * this only ever moves ground the player already bought.
+ *
+ * NEVER remove-then-place. A crop's position is `soilSlot`, an index into
+ * `orderedSoilTiles` (lib/stackacres/soil.ts), not a coordinate -- as long
+ * as a tile keeps its own `tile_order` while its tx/ty change, every crop
+ * standing on it keeps resolving to the same bed with no unit-row write at
+ * all. Removing and reinserting would hand out a NEW order, reshuffle every
+ * later tile's slot index, and (per `removeStackAcresSoilTile` above) delete
+ * the bed's own occupant outright.
+ *
+ * The group and its legality are recomputed HERE from a fresh read, never
+ * trusted from the client: `planSoilGroupRelocation` is the identical pure
+ * function the client's own optimistic guess runs, so the two only disagree
+ * when the client's guess is stale -- which the store's own exists-check
+ * (ST005) catches, same posture `place_homestead_soil_tile`'s exists-check
+ * takes for a fresh placement.
+ */
+export async function moveStackAcresSoilTileGroup(
+  token: string,
+  input: { tx: number; ty: number; toTx: number; toTy: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  const toTx = Math.trunc(input.toTx);
+  const toTy = Math.trunc(input.toTy);
+
+  const cropFieldsUnlocked = await readStackAcresCropFieldsUnlocked(profile.id);
+  if (!cropFieldsUnlocked) {
+    throw new StackAcresRequestError("Unlock the Crop Fields first.", 400);
+  }
+
+  const purchased = await listStackAcresSoilTiles(profile.id);
+  const soil = soilMapFor(purchased);
+  const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, soilTileInCropFieldBeds);
+
+  if (plan.kind === "empty") {
+    throw new StackAcresRequestError("There is no bed there to move.", 400);
+  }
+  if (plan.kind === "no-op") {
+    throw new StackAcresRequestError("Pick a different spot to move it to.", 400);
+  }
+  if (plan.kind === "out-of-bounds") {
+    throw new StackAcresRequestError("A bed can only be moved within the Crop Fields.", 400);
+  }
+  if (plan.kind === "blocked") {
+    throw new StackAcresRequestError("There is already a bed there.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const outcome = await moveSoilTileGroupRow(profile.id, plan.moves);
+  if (outcome.kind === "stale") {
+    throw new StackAcresRequestError("That layout just changed -- try again.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (outcome.kind === "blocked") {
+    throw new StackAcresRequestError("There is already a bed there.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
 }
 
 /**

@@ -40,7 +40,7 @@ import { inOuterZone, type ZoneId } from "./zones";
 // ./soil.ts is a runtime LEAF -- it imports only types back from here -- so
 // unlike ./paths, ./water and ./zones above, this one is a plain value
 // import with no cycle to work around. See that file's header.
-import { soilSlotSpot, type SoilMap } from "./soil";
+import { soilSlotSpot, soilTileRect, type SoilMap } from "./soil";
 // Another strict leaf (it imports nothing at all), so this is a plain value
 // import with no cycle to worry about. Holds the Farmstead yard's offset --
 // see ./yard.ts on why sixty literals are wrapped rather than rewritten.
@@ -241,6 +241,22 @@ export const CROP_FIELD_BEDS: WorldRect = {
   width: 384,
   height: 384,
 };
+
+/** Whether an entire soil TILE (not just a point) sits inside
+ *  `CROP_FIELD_BEDS` -- the same rect-fully-inside check
+ *  `placeStackAcresSoilTile` inlines for a fresh bed, reused here so a
+ *  relocated bed is held to the identical boundary rather than a second,
+ *  hand-copied version of it. */
+export function soilTileInCropFieldBeds(tx: number, ty: number): boolean {
+  const rect = soilTileRect(tx, ty);
+  const area = CROP_FIELD_BEDS;
+  return (
+    rect.x >= area.x &&
+    rect.y >= area.y &&
+    rect.x + rect.width <= area.x + area.width &&
+    rect.y + rect.height <= area.y + area.height
+  );
+}
 
 /**
  * The barn's own picture box, in the same feet-anchored convention

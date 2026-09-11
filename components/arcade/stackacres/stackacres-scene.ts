@@ -110,6 +110,7 @@ import {
   scrollToKeepUnderPointer,
   seededRandom,
   signpostHitAt,
+  soilTileInCropFieldBeds,
   spawnCritter,
   stepCritter,
   stockZone,
@@ -131,15 +132,18 @@ import {
   createSoilMap,
   hasSoilTile,
   orderedSoilTiles,
+  planSoilGroupRelocation,
   plantSoilTile,
   removeSoilTile,
   soilSlotPoint,
   soilSlotTile,
   soilTileAt,
   soilTileDiamond,
+  soilTileGroup,
   soilTileTier,
   type SoilMap,
   type SoilTile,
+  type SoilTileCoord,
 } from "@/lib/stackacres/soil";
 import { SOIL_DEFAULT_TIER, soilTierDef, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import {
@@ -528,6 +532,20 @@ export interface StackAcresSceneCallbacks {
    * still lose to.
    */
   onDroneForageCollected: (droneId: string) => void;
+  /**
+   * A hold-tap relocation just landed: the contiguous group of beds touching
+   * `(tx, ty)` was tapped to move so that tile lands on `(toTx, toTy)`. The
+   * scene has already torn down its own lift visuals by the time this fires
+   * (`commitSoilLift`) -- this is only the cue for the shell to call the
+   * `move-soil-tile-group` action (stackacres-farm.tsx's
+   * `onMoveSoilTileGroup`), which re-derives and re-validates the same group
+   * server-side rather than trusting either coordinate pair blindly.
+   *
+   * Optional for the same reason `onFenceSegmentTap` is: a fixture building
+   * `StackAcresSceneCallbacks` by hand for an unrelated test should not have
+   * to grow a new field it never exercises.
+   */
+  onSoilMoveCommitted?: (tx: number, ty: number, toTx: number, toTy: number) => void;
 }
 
 export interface StackAcresSceneOptions {
@@ -675,6 +693,16 @@ const WATER = 0x3fa6cc;
  * something to show for itself -- see `tapRejectRipple`.
  */
 const TAP_SLOP = 12;
+
+/**
+ * How long a press has to hold still, in milliseconds, over an already-
+ * placed bed before it lifts for a hold-tap relocation. Long enough that an
+ * ordinary tap (open the bed's own ring) never accidentally lifts it, short
+ * enough that it does not read as the press having done nothing. Cancelled
+ * the instant the press crosses `TAP_SLOP` -- see `bindInput`'s `down`.
+ */
+const SOIL_LIFT_HOLD_MS = 250;
+
 /**
  * Shortest gap between two scythe swishes. A little under the cue's own
  * length, so a continuous sweep overlaps into one sustained cut rather than
@@ -1134,6 +1162,14 @@ interface DragGesture {
    * around: start the drag on a path or a cut patch.
    */
   startMow?: boolean;
+  /**
+   * Set mid-press by `bindInput`'s hold timer once this same, still-unmoved
+   * press has lifted a bed group (`startSoilLift`). Tells `up` not to treat
+   * the release that follows as an ordinary tap -- the hold already did its
+   * one job, and the DROP is a separate, later tap (see `dispatchTap`'s own
+   * lift interception).
+   */
+  liftedThisPress?: boolean;
 }
 
 
@@ -1715,6 +1751,25 @@ export class StackAcresScene extends Phaser.Scene {
    *  it repaints on every ring open. Drawn in WORLD space (it has to track
    *  the tile, not the screen), so it is not pinned like `toolGhost`. */
   private soilPreview: Phaser.GameObjects.Graphics | null = null;
+  /** The lifted origin group's own outline, drawn the same way `soilPreview`
+   *  marks a placement candidate but held up for the whole hold-tap, not just
+   *  one frame -- see `startSoilLift`. */
+  private soilLiftPreview: Phaser.GameObjects.Graphics | null = null;
+  /** The pending hold-tap relocation, or null when nothing is lifted and
+   *  every tap resolves through the ordinary `dispatchTap` chain below. Set
+   *  by `startSoilLift`, cleared by `cancelSoilLift`/`commitSoilLift`. */
+  private soilLift: { anchor: SoilTileCoord; group: SoilTileCoord[] } | null = null;
+  /** The lifted group's own bob tweens, one per crop container standing on
+   *  it, alongside the container's resting `y` -- torn down the same moment
+   *  `soilLift` clears so a stale tween never outlives the lift it was
+   *  decorating, and so the container is put back exactly where it rested
+   *  rather than wherever mid-bob `stop()` caught it. */
+  private soilLiftTweens: { tween: Phaser.Tweens.Tween; container: Phaser.GameObjects.Container; baseY: number }[] =
+    [];
+  /** The hold timer armed on press-down over a placed bed (`bindInput`'s
+   *  `down`), cancelled the moment the press crosses `TAP_SLOP` or lets go
+   *  before `SOIL_LIFT_HOLD_MS`. */
+  private soilLiftTimer: ReturnType<typeof setTimeout> | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
@@ -1886,6 +1941,14 @@ export class StackAcresScene extends Phaser.Scene {
     this.soilPreview = this.add
       .graphics()
       .setDepth(GROW_AREA_GROUND_DEPTH + 1)
+      .setVisible(false);
+
+    // One depth above `soilPreview`: a lift can be up while the seed ring
+    // is also open on a neighbouring tile, and the lift's own outline should
+    // read on top of it.
+    this.soilLiftPreview = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH + 2)
       .setVisible(false);
 
     this.toolGhost = this.add
@@ -3703,10 +3766,121 @@ export class StackAcresScene extends Phaser.Scene {
     preview.setVisible(true);
   }
 
+  /**
+   * Starts a hold-tap relocation: outlines the contiguous group at
+   * `(tx, ty)` and bobs whatever crop stands on it, then leaves it up until
+   * the next tap says where it lands (`dispatchTap`'s own lift
+   * interception, checked before every other rule in that chain).
+   *
+   * Replaces any lift already pending rather than refusing a second hold --
+   * a hold started on a different bed while one is already up silently
+   * abandons the first, no explicit cancel required.
+   */
+  private startSoilLift(tx: number, ty: number): void {
+    const group = soilTileGroup(this.soil, tx, ty);
+    if (group.length === 0) return;
+    this.teardownSoilLiftVisuals();
+    this.soilLift = { anchor: { tx, ty }, group };
+    this.drawSoilLiftOutline(group);
+    if (this.options.reducedMotion) return;
+    const groupKeys = new Set(group.map((tile) => `${tile.tx},${tile.ty}`));
+    for (const [, node] of this.nodes) {
+      const bed = this.bedOf(node);
+      if (!bed || !groupKeys.has(`${bed.tx},${bed.ty}`)) continue;
+      const container = node.container;
+      const baseY = container.y;
+      const tween = this.tweens.add({
+        targets: container,
+        y: baseY - 6,
+        duration: 480,
+        ease: "Sine.easeInOut",
+        yoyo: true,
+        repeat: -1,
+      });
+      this.soilLiftTweens.push({ tween, container, baseY });
+    }
+  }
+
+  /** Draws the lifted group's own outline -- every tile in the group gets
+   *  the same diamond `previewSoilAt` draws for one placement candidate,
+   *  since a lift can cover more than the single tile that started it. */
+  private drawSoilLiftOutline(group: readonly SoilTileCoord[]): void {
+    const preview = this.soilLiftPreview;
+    if (!preview) return;
+    preview.clear();
+    const ramp = rampHex("soil");
+    preview.fillStyle(ramp.top, 0.35);
+    preview.lineStyle(2, ramp.rim, 0.95);
+    for (const tile of group) {
+      const corners = soilTileDiamond(tile.tx, tile.ty);
+      preview.beginPath();
+      preview.moveTo(corners.n.x, corners.n.y);
+      preview.lineTo(corners.e.x, corners.e.y);
+      preview.lineTo(corners.s.x, corners.s.y);
+      preview.lineTo(corners.w.x, corners.w.y);
+      preview.closePath();
+      preview.fillPath();
+      preview.strokePath();
+    }
+    preview.setVisible(true);
+  }
+
+  /** Tears down the lift's own visuals -- the outline and every bob tween,
+   *  each container put back exactly where it rested -- without touching
+   *  `this.soilLift` itself, so `cancelSoilLift` and `commitSoilLift` can
+   *  share this and disagree only about what happens to the state after. */
+  private teardownSoilLiftVisuals(): void {
+    for (const { tween, container, baseY } of this.soilLiftTweens) {
+      tween.stop();
+      container.y = baseY;
+    }
+    this.soilLiftTweens = [];
+    this.soilLiftPreview?.clear();
+    this.soilLiftPreview?.setVisible(false);
+  }
+
+  /** Puts a lifted group back down unmoved -- tapping its own spot again, a
+   *  stale plan, or anything else that should end the hold without acting. */
+  private cancelSoilLift(): void {
+    if (!this.soilLift) return;
+    this.teardownSoilLiftVisuals();
+    this.soilLift = null;
+  }
+
+  /**
+   * Ends the lift for real: tears down its visuals and reports the move up
+   * to the shell. Does NOT touch `this.soil` itself -- the shell's own
+   * `setSoil`, following its optimistic guess and then the server's real
+   * answer, is what actually repaints the group at its new spot, through the
+   * exact same `refreshSoil` path any other soil change already takes.
+   */
+  private commitSoilLift(toTx: number, toTy: number): void {
+    const lift = this.soilLift;
+    if (!lift) return;
+    this.teardownSoilLiftVisuals();
+    this.soilLift = null;
+    this.callbacks.onSoilMoveCommitted?.(lift.anchor.tx, lift.anchor.ty, toTx, toTy);
+  }
+
+  private clearSoilLiftTimer(): void {
+    if (this.soilLiftTimer !== null) {
+      clearTimeout(this.soilLiftTimer);
+      this.soilLiftTimer = null;
+    }
+  }
+
   /** Redraws everything a soil change moves: the beds themselves, the grass
    *  the SDF now cuts differently, and every crop whose slot shifted. */
   private refreshSoil(): void {
     if (!this.created) return;
+    // Every node is about to be destroyed and rebuilt below -- a lift's own
+    // bob tweens target the OLD containers, so a lift still pending here
+    // (one the move that triggered this repaint did not itself commit, e.g.
+    // an unrelated soil change landing mid-hold) is dropped rather than left
+    // holding onto references that are about to go stale. `commitSoilLift`
+    // already cleared its own lift before this ever runs, so the ordinary
+    // "my own move just landed" path never reaches this as a real lift.
+    this.cancelSoilLift();
     // Repaints the Crop Fields' own soil tiles. Used to be `paintSector`'s
     // own "meadow" district; that district merged into the Farmstead in the
     // 2026-09-08 restructure, and `paintDistrictBoundary("farmstead")`'s crop
@@ -4197,6 +4371,28 @@ export class StackAcresScene extends Phaser.Scene {
       startY: at.y,
       trail: [{ t: performance.now(), x: at.x, y: at.y }],
     });
+    /** Arms the hold-tap timer if this press landed on a placed bed; a no-op
+     *  anywhere else. Resolved once, at press-down -- a hold is judged by
+     *  where the finger LANDED, not by wherever a stray sub-slop drift takes
+     *  it before the timer fires. */
+    const armSoilLift = (clientX: number, clientY: number, pointerId: number): void => {
+      this.clearSoilLiftTimer();
+      const ground = resolveWorld(clientX, clientY);
+      const { tx, ty } = soilTileAt(ground.x, ground.y);
+      if (!hasSoilTile(this.soil, tx, ty)) return;
+      this.soilLiftTimer = setTimeout(() => {
+        this.soilLiftTimer = null;
+        const gesture = this.gesture;
+        // Still the same unmoved press: a pan/mow already claimed this
+        // gesture by the time the timer fires, or the finger already came up
+        // and cancelled it (see `move`/`up`) -- either way the hold no
+        // longer means anything.
+        if (!gesture || gesture.kind !== "press" || gesture.id !== pointerId) return;
+        this.startSoilLift(tx, ty);
+        gesture.liftedThisPress = true;
+      }, SOIL_LIFT_HOLD_MS);
+    };
+
     const startPinch = (): void => {
       const [a, b] = fingers();
       if (!a || !b) return;
@@ -4227,11 +4423,16 @@ export class StackAcresScene extends Phaser.Scene {
         // The pointer is already gone. The gesture tracks fine without it.
       }
       this.pts.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      if (this.pts.size === 2) startPinch();
-      else {
+      if (this.pts.size === 2) {
+        // A second finger joining converts this into a pinch; whatever
+        // single-finger hold was pending on the first no longer applies.
+        this.clearSoilLiftTimer();
+        startPinch();
+      } else {
         const gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
         gesture.startMow = mowable(event.clientX, event.clientY);
         this.gesture = gesture;
+        armSoilLift(event.clientX, event.clientY, event.pointerId);
       }
     };
 
@@ -4279,6 +4480,11 @@ export class StackAcresScene extends Phaser.Scene {
         if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) <= TAP_SLOP) {
           return;
         }
+        // Past the slop, this press is a pan/mow, not a hold -- a pending
+        // hold-lift timer no longer applies. A hold that already fired
+        // (`gesture.liftedThisPress`) stays lifted regardless: the group is
+        // already up, the finger moving off it now is not a cancel.
+        this.clearSoilLiftTimer();
         // A drag that started on standing grass with the scythe out cuts a
         // swathe; anywhere else, a drag pans -- there is no plot left for it
         // to sweep across instead.
@@ -4340,6 +4546,10 @@ export class StackAcresScene extends Phaser.Scene {
     const up = (event: PointerEvent, cancelled: boolean): void => {
       if (!this.pts.has(event.pointerId)) return;
       this.pts.delete(event.pointerId);
+      // A release that beat the hold timer to it (an ordinary tap) means the
+      // hold never gets to mean anything, whether or not it would have
+      // landed on a bed.
+      this.clearSoilLiftTimer();
       try {
         if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
       } catch {
@@ -4394,6 +4604,11 @@ export class StackAcresScene extends Phaser.Scene {
         this.mowSegment(at, at);
         return;
       }
+      // The hold timer already fired mid-press and lifted a bed group -- this
+      // release is just the finger letting go of it, not a second tap. The
+      // DROP is a separate, later tap, handled by `dispatchTap`'s own lift
+      // interception below.
+      if (gesture.liftedThisPress) return;
       // Pipe and soil have no held tool any more (2026-09-10): every tap
       // falls through to `dispatchTap` below, the same way a tap with
       // nothing held always has, so the tile lights up and offers its dock
@@ -4407,6 +4622,45 @@ export class StackAcresScene extends Phaser.Scene {
     };
 
     const dispatchTap = (clientX: number, clientY: number): void => {
+      // A lifted bed group claims the very next tap, wherever it lands --
+      // this is the DROP half of hold-to-lift, tap-to-drop, and it runs
+      // before every other rule in this chain (a unit's own picture
+      // included) because once something is lifted, the one thing left to
+      // decide is where it goes.
+      if (this.soilLift) {
+        const lift = this.soilLift;
+        const ground = resolveWorld(clientX, clientY);
+        const { tx, ty } = soilTileAt(ground.x, ground.y);
+        if (tx === lift.anchor.tx && ty === lift.anchor.ty) {
+          // Tapping the group's own spot again puts it back down unmoved.
+          this.cancelSoilLift();
+          return;
+        }
+        const plan = planSoilGroupRelocation(
+          this.soil,
+          lift.anchor.tx,
+          lift.anchor.ty,
+          tx,
+          ty,
+          soilTileInCropFieldBeds,
+        );
+        if (plan.kind === "ok") {
+          this.commitSoilLift(tx, ty);
+          return;
+        }
+        if (plan.kind !== "empty") {
+          // A real refusal (already a bed there, or outside the Crop
+          // Fields) -- say so and leave the group lifted so the player can
+          // try a different spot without holding again.
+          this.tapRejectRipple(clientX, clientY);
+          return;
+        }
+        // The lifted bed vanished under us (removed elsewhere while it was
+        // up) -- drop the stale lift and let this same tap fall through to
+        // the ordinary chain below instead of leaving a lift up over
+        // nothing.
+        this.cancelSoilLift();
+      }
       // A unit's own picture first, with no tool needed. Collecting, feeding,
       // watering and clearing muck all start from a bare tap now
       // (`unitTapEligible`, above). A unit with nothing to do selects

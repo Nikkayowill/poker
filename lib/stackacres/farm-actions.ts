@@ -87,6 +87,12 @@ export type Action =
   | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
   | { action: "buy-soil"; tier: SoilTier; quantity: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
+  // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
+  // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
+  // it carried along. Free -- moves no Gold either way. The group itself is
+  // never named by the client; the server (and the optimistic guess) derive
+  // it fresh from `(tx, ty)` via `soilTileGroup`, see stackacres-service.ts.
+  | { action: "move-soil-tile-group"; tx: number; ty: number; toTx: number; toTy: number }
   // Ray's seed shelf (./catalogue.ts's SeedStock). Buys seeds of one crop for
   // Gold, ahead of planting -- `stock` above spends one off the shelf
   // instead of charging Gold directly once the crop it names is a crop

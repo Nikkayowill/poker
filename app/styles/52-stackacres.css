@@ -1108,42 +1108,98 @@
    `at`, this component works out which side of it to sit on and how far to
    nudge off an edge, the same HEADROOM/SIDE_ROOM math `.sa-radial` uses),
    and `translate` centres the row on that point the way `.sa-radial-more`
-   already centres on its own anchor. */
+   already centres on its own anchor.
+
+   Unlike every other block on this screen, this one shell is glass rather
+   than paper: the tap menu it holds is a contextual overlay floating on top
+   of the map, not a fixed piece of farmhouse furniture, and it is the one
+   surface asked to carry the same frosted, tinted-glass material as
+   `.sa-drag-token` (the water can / feed scoop's own floating token) further
+   down this file -- a thin translucent rim standing in for the chunky
+   3px outline, backdrop blur standing in for the flat paper fill. */
 .sa-gel-row {
   position: absolute;
   translate: -50% 0;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 7px;
-  max-width: min(320px, calc(100% - 20px));
-  padding: 8px 30px 8px 10px;
-  overflow-x: auto;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
-  scrollbar-width: none;
+  padding: 7px 32px 7px 10px;
+  border: 1.5px solid rgba(255, 255, 255, .75);
+  border-radius: var(--sa-r-chip);
+  background:
+    radial-gradient(120% 140% at 20% 10%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .16) 38%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(165deg, rgba(255, 241, 214, .58), rgba(224, 174, 94, .38));
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow:
+    inset 0 -6px 12px rgba(122, 86, 54, .14),
+    inset 0 2px 4px rgba(255, 255, 255, .7),
+    0 12px 26px rgba(52, 34, 18, .3),
+    0 0 0 5px rgba(255, 255, 255, .12);
   pointer-events: auto;
-  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+  animation: sa-gel-in 240ms var(--sa-bounce) backwards;
 }
 
-.sa-gel-row::-webkit-scrollbar { display: none; }
+/* The scrollable strip inside the shell above -- split out from `.sa-gel-row`
+   so the glass padding/edge stay put while only this part scrolls. Capped to
+   `VISIBLE_TOKENS` (stackacres-gel-dock.tsx) tokens wide rather than however
+   many the row holds: the Long Meadow alone has 22 crops, and a wheel a
+   whole screen wide would just be the old edge-to-edge seed strip again.
+   `.is-scrollable`'s mask only turns on past that count -- with one or two
+   tokens the strip is exactly as wide as its content, and fading an edge
+   with nothing past it would read as a token silently vanishing. */
+.sa-gel-scroll {
+  --sa-gel-token-w: 72px;
+  --sa-gel-gap: 7px;
+  display: flex;
+  align-items: center;
+  gap: var(--sa-gel-gap);
+  max-width: calc(var(--sa-gel-token-w) * 3 + var(--sa-gel-gap) * 2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
 
+.sa-gel-scroll::-webkit-scrollbar { display: none; }
+
+.sa-gel-scroll.is-scrollable {
+  mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+
+/* Just the mark -- no chip behind it. A circle only in shape (the hit area
+   and the focus ring below), never in fill: a glass row already has enough
+   going on without a second little bordered disc riding on top of it. */
 .sa-gel-close {
   position: absolute;
-  right: 8px;
-  top: 6px;
+  right: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
+  border-radius: 50%;
   background: none;
-  font-size: 18px;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1;
   color: var(--sa-ink);
+  text-shadow: 0 1px 1px rgba(255, 255, 255, .5);
   cursor: pointer;
-  opacity: .6;
+  opacity: .65;
 }
 
 .sa-gel-close:hover { opacity: 1; }
+
+.sa-gel-close:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--sa-corn);
+  outline-offset: 2px;
+}
 
 .sa-gel-empty {
   display: flex;
@@ -1156,45 +1212,121 @@
 
 .sa-gel-empty p { margin: 0; }
 
-/* One token: the same pressable block every other key on this screen is
-   (`.sa-gel-token` joins that shared family further up this file), plus a
-   fixed-position "live" state -- while a drag holds it, it pops out of the
-   row's own flow onto the field itself and tracks the finger 1:1 (no
-   transition on `left`/`top` while merely `.is-live`; `.is-returning` adds
-   one back so a missed drop eases home instead of teleporting). */
+/* One token: a drop of the same tinted glass `.sa-gel-row` is made of,
+   pooled into a small capsule. `.sa-gel-token` still joins the shared
+   pressable-block family further up this file for its font, tap highlight
+   and focus ring, but every rule that used to draw it as a flat outlined
+   block is overridden below -- glass reads as a material in its own right,
+   not a paper block that happens to be see-through.
+
+   `.is-live` is the fixed-position "picked up" state: while a drag holds a
+   token it pops out of the row's own flow onto the field itself and tracks
+   the finger 1:1 (`.is-returning` adds a spring-back transition for a missed
+   drop instead of a teleport). `.is-hot` mirrors `.sa-gel-target.is-hot` --
+   both grow together as the token nears the circle, so the two glass shapes
+   read as reaching for each other rather than one just landing on the
+   other. */
 .sa-gel-token {
+  position: relative;
   flex: 0 0 auto;
+  width: var(--sa-gel-token-w);
+  min-height: var(--sa-tap);
+  scroll-snap-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
-  width: 74px;
-  min-height: var(--sa-tap);
   padding: 7px 5px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, .7);
+  border-radius: 20px;
+  background:
+    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .85) 0%, rgba(255, 255, 255, .2) 40%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(165deg, rgba(255, 241, 214, .5), rgba(224, 174, 94, .28));
+  -webkit-backdrop-filter: blur(6px) saturate(1.4);
+  backdrop-filter: blur(6px) saturate(1.4);
+  box-shadow:
+    inset 0 -5px 10px rgba(122, 86, 54, .16),
+    inset 0 1.5px 3px rgba(255, 255, 255, .8),
+    0 4px 10px rgba(52, 34, 18, .22);
   color: var(--sa-ink);
   cursor: grab;
-  touch-action: none;
-  transition: box-shadow var(--duration-fast) var(--sa-ease-out), background var(--duration-fast) ease;
+  /* Horizontal panning stays native (the row scrolls under a thumb same as
+     any other list) -- only a mostly-vertical move past INTENT_SLOP turns
+     into the drag-out gesture, decided in stackacres-gel-dock.tsx. */
+  touch-action: pan-x;
+  transition: box-shadow var(--duration-fast) var(--sa-ease-out),
+    transform var(--duration-fast) var(--sa-ease-out), background var(--duration-fast) ease;
 }
 
-.sa-gel-token:hover:not(:disabled) { filter: brightness(1.04); }
-.sa-gel-token .sa-ico { width: 24px; height: 24px; }
+.sa-gel-token:hover:not(:disabled) { filter: brightness(1.05) saturate(1.1); }
+.sa-gel-token .sa-ico {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .2));
+}
+
+.sa-gel-token:not(:disabled):active {
+  transform: scale(.92, 1.06);
+  box-shadow:
+    inset 0 -3px 8px rgba(122, 86, 54, .22),
+    inset 0 1.5px 3px rgba(255, 255, 255, .85),
+    0 2px 6px rgba(52, 34, 18, .24);
+  transition: none;
+}
+
+.sa-gel-token:focus-visible {
+  outline: 3px solid var(--sa-corn);
+  outline-offset: 3px;
+}
+
+.sa-gel-token:disabled {
+  filter: saturate(.4) brightness(.92);
+  cursor: not-allowed;
+}
 
 .sa-gel-token.is-live {
   position: fixed;
   z-index: 20;
   translate: -50% -50%;
   cursor: grabbing;
-  box-shadow: 0 14px 26px rgba(28, 44, 64, .32), var(--sa-drop);
+  animation: sa-gel-pickup 220ms var(--sa-bounce);
+  box-shadow:
+    inset 0 -5px 10px rgba(122, 86, 54, .16),
+    inset 0 1.5px 3px rgba(255, 255, 255, .85),
+    0 16px 28px rgba(28, 44, 64, .3);
+}
+
+.sa-gel-token.is-live.is-hot {
+  transform: scale(1.18);
+  filter: brightness(1.15) saturate(1.3);
+  transition: transform 120ms var(--sa-ease-out), filter 120ms var(--sa-ease-out);
 }
 
 .sa-gel-token.is-returning {
-  transition: left .22s var(--sa-ease-out), top .22s var(--sa-ease-out);
+  transition: left .24s var(--sa-bounce), top .24s var(--sa-bounce);
+}
+
+/* The one-shot "picked up" wobble: a squash on the way out and a settle back
+   to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
+   scoop, just done as a shape change instead of a uniform scale since this
+   token has no separate `--grow` custom property to key off. Plays once on
+   the class transition into `.is-live` and does not loop. */
+@keyframes sa-gel-pickup {
+  0% { transform: scale(1, 1); }
+  40% { transform: scale(1.22, .8); }
+  70% { transform: scale(.94, 1.06); }
+  100% { transform: scale(1, 1); }
+}
+
+/* The shell's own drop-in: a bead of gel pooling into shape rather than the
+   ring's plain scale-fade (`sa-radial-in` above), since this shell is the
+   one glass surface on the screen. */
+@keyframes sa-gel-in {
+  0% { opacity: 0; transform: scale(.82, .68); filter: blur(6px); }
+  65% { opacity: 1; transform: scale(1.04, 1.05); filter: blur(0); }
+  100% { transform: scale(1, 1); }
 }
 
 .sa-gel-name {
@@ -4189,8 +4321,9 @@
   /* The ring still appears at once; it just does not spring in. Keeping the
      transform means the buttons stay centred on their own arc points. */
   .sa-radial-btn { animation: none; }
-  /* The gel dock's tokens and circle hold still too. A drag still works;
-     only the idle bob, pulse and pop-in go. */
+  /* The gel dock's tokens, shell and circle hold still too. A drag still
+     works; only the idle bob, pulse and pop-in go. */
+  .sa-gel-row,
   .sa-gel-token,
   .sa-gel-token .sa-ico,
   .sa-gel-target { animation: none; }

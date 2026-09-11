@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 const bodySchema = z.object({ cosmeticId: z.string().min(1).max(64) });
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "cosmetics:equip", 40, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cosmetics:equip", 40, 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));

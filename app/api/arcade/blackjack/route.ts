@@ -33,7 +33,7 @@ const dealSchema = z.union([
  * entirely and withholds the dealer's hole card until the dealer's turn.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "arcade:blackjack:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:blackjack:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   // Deliberately tighter than the poker table's create limit: every accepted
   // call here debits Gold, so a scripted loop is a wallet-drainer rather than
   // just noise.
-  const limited = enforceRateLimit(request, "arcade:blackjack:deal", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:blackjack:deal", 60, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

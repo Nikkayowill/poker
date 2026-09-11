@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * would hide half the feature from a guest who has earned it.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "notifications:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "notifications:read", 60, 60 * 1000);
   if (limited) return limited;
 
   try {

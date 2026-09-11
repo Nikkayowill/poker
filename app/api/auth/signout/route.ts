@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * browser reverts to an ordinary guest.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "auth:signout", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "auth:signout", 30, 60 * 1000);
   if (limited) return limited;
   return withoutSessionCookie(NextResponse.json({ ok: true }));
 }

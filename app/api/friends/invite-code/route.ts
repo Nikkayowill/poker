@@ -9,7 +9,7 @@ const GUEST_MESSAGE = "Create an account to get an invite code.";
 
 /** The caller's reusable invite code, creating one on first call. */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:invite-code:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:invite-code:read", 60, 60 * 1000);
   if (limited) return limited;
 
   try {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
  * link. Regeneration itself needs no body; there is nothing to choose.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:invite-code:regenerate", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:invite-code:regenerate", 10, 60 * 1000);
   if (limited) return limited;
 
   try {

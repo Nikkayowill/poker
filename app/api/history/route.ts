@@ -22,7 +22,7 @@ const querySchema = z.object({
  * cross-session progress, which this app only promises to a real account.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "history:list", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "history:list", 60, 60 * 1000);
   if (limited) return limited;
 
   try {

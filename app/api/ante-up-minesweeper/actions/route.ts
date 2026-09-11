@@ -40,7 +40,7 @@ const bodySchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "ante-up-minesweeper:act", 600, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up-minesweeper:act", 600, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

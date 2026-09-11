@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 /** Marks every unread notification read, fired when the bell popover opens. */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "notifications:read-all", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "notifications:read-all", 30, 60 * 1000);
   if (limited) return limited;
 
   try {

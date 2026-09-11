@@ -46,7 +46,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ game: string }> },
 ) {
-  const limited = enforceRateLimit(request, "pvp:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "pvp:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const game = resolveGame((await context.params).game);
@@ -87,7 +87,7 @@ export async function POST(
 ) {
   // Every accepted call here escrows Gold, so this is tight: a scripted loop
   // would lock a wallet up in offers rather than just making noise.
-  const limited = enforceRateLimit(request, "pvp:challenge", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "pvp:challenge", 30, 60 * 1000);
   if (limited) return limited;
 
   const game = resolveGame((await context.params).game);

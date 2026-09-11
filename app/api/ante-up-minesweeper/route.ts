@@ -19,7 +19,7 @@ const startSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "ante-up-minesweeper:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up-minesweeper:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "ante-up-minesweeper:start", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up-minesweeper:start", 30, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

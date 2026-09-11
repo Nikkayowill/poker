@@ -22,7 +22,7 @@ export const runtime = "nodejs";
  * one-pending-per-profile index shouldn't be the first thing absorbing it.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:gold:rewarded:start", 6, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:gold:rewarded:start", 6, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
  * startRewardedAd resumes and, past its TTL, sweeps on its own.
  */
 export async function DELETE(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:gold:rewarded:cancel", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:gold:rewarded:cancel", 20, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);

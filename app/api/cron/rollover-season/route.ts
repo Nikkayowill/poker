@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   // Same posture as the other cron routes: a tight per-IP cap, purely to
   // blunt a flood of guesses at CRON_SECRET.
-  const limited = enforceRateLimit(request, "cron:rollover-season", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cron:rollover-season", 10, 60 * 1000);
   if (limited) return limited;
 
   if (!isCronAuthorized(request)) {

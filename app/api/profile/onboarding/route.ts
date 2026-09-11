@@ -12,7 +12,7 @@ export const runtime = "nodejs";
  * is a one-way flag flip, fired once from lib/onboarding/use-onboarding-tour.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:onboarding:complete", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:onboarding:complete", 20, 60 * 1000);
   if (limited) return limited;
 
   try {

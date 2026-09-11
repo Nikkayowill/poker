@@ -21,7 +21,7 @@ export const runtime = "nodejs";
  * Supabase itself, rather than trusting anything the caller asserts.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "auth:link", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "auth:link", 20, 60 * 1000);
   if (limited) return limited;
 
   const supabase = await createServerSupabase();

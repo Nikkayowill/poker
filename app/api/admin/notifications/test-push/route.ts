@@ -21,7 +21,7 @@ const bodySchema = z.object({ profileId: z.string().uuid() });
  * needs to be able to tell that apart from "it silently did nothing").
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:notifications:test-push", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:notifications:test-push", 20, 60 * 1000);
   if (limited) return limited;
   if (!isAdminAuthorized(request)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });

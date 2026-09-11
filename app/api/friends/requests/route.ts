@@ -18,7 +18,7 @@ const bodySchema = z.object({ profileId: z.string().uuid() });
  * adds ten friends a minute.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:request", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:request", 10, 60 * 1000);
   if (limited) return limited;
 
   try {

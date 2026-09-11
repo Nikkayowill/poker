@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   // Generous, matching pvp:match:act: a fast solver fires several of these
   // a second, and nothing here moves Gold except the fill that wins, which
   // the version guard already makes idempotent.
-  const limited = enforceRateLimit(request, "ante-up:act", 600, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up:act", 600, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

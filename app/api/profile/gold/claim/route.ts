@@ -9,7 +9,7 @@ import { readSessionToken } from "@/lib/server/session";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:gold:claim", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:gold:claim", 10, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);

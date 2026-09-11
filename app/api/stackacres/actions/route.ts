@@ -19,6 +19,7 @@ import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
+import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
@@ -74,6 +75,8 @@ import {
   collectStackAcresVat,
   deployStackAcresDrone,
   collectStackAcresDroneForage,
+  meetStackAcresTraveler,
+  turnInStackAcresTravelerQuest,
 } from "@/lib/server/stackacres-service";
 import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -472,6 +475,19 @@ const bodySchema = z.discriminatedUnion("action", [
   // than trusting anything the client claims about where it is or what it
   // swept up.
   z.object({ action: z.literal("collect-drone-forage"), droneId: z.string().uuid() }),
+  // The travelers' story (lib/stackacres/story/). Neither moves Gold:
+  // `story-meet` accepts a traveler's first quest, `story-turn-in` hands the
+  // active one in, debiting only the items it asked for and paying a story
+  // keepsake, never a purse. Both only ever follow a bubble's own committing
+  // button -- a tap on a traveler reaches this route not at all.
+  z.object({
+    action: z.literal("story-meet"),
+    traveler: z.enum(TRAVELER_IDS as unknown as [string, ...string[]]),
+  }),
+  z.object({
+    action: z.literal("story-turn-in"),
+    traveler: z.enum(TRAVELER_IDS as unknown as [string, ...string[]]),
+  }),
 ]);
 
 /**
@@ -614,6 +630,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return deployStackAcresDrone(token, now);
     case "collect-drone-forage":
       return collectStackAcresDroneForage(token, action.droneId, now);
+    case "story-meet":
+      return meetStackAcresTraveler(token, action.traveler, now);
+    case "story-turn-in":
+      return turnInStackAcresTravelerQuest(token, action.traveler, now);
   }
 }
 
@@ -621,7 +641,7 @@ export async function POST(request: NextRequest) {
   // Every action here moves one purse at most once and the guards make
   // replays idempotent; 60/min covers a fast restocking ritual plus feeding
   // and watering with a wide margin.
-  const limited = enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
   if (limited) return limited;
 
   // Access is granted to a PROFILE, so the session cookie is what says who is

@@ -31,7 +31,7 @@ const openSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "cribbage:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cribbage:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   // Every accepted call here escrows Gold, same posture as pvp:challenge.
-  const limited = enforceRateLimit(request, "cribbage:open", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cribbage:open", 30, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

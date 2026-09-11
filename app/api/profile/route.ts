@@ -33,7 +33,7 @@ const updateSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(
+  const limited = await enforceRateLimit(
     request,
     "profile:read",
     120,
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(
+  const limited = await enforceRateLimit(
     request,
     "profile:create",
     10,
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const limited = enforceRateLimit(
+  const limited = await enforceRateLimit(
     request,
     "profile:update",
     20,

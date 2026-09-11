@@ -35,7 +35,7 @@ const sessionSchema = z.string().min(10).max(200);
  * way the webhook route picks a mode from which secret verifies a body.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stripe:verify", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stripe:verify", 20, 60 * 1000);
   if (limited) return limited;
   try {
     const ownerToken = readSessionToken(request);

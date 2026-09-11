@@ -20,7 +20,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const limited = enforceRateLimit(request, "games:advance", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "games:advance", 120, 60 * 1000);
   if (limited) return limited;
 
   try {

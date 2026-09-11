@@ -21,7 +21,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "games:join", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "games:join", 20, 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));

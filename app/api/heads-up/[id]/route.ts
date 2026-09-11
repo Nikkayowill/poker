@@ -28,7 +28,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const limited = enforceRateLimit(request, "heads-up:table:read", 180, 60 * 1000);
+  const limited = await enforceRateLimit(request, "heads-up:table:read", 180, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -48,7 +48,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const limited = enforceRateLimit(request, "heads-up:act", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "heads-up:act", 60, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

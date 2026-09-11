@@ -17,7 +17,7 @@ export const runtime = "nodejs";
  * relevant -- see lib/legal/documents.ts's support_disclosure.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stripe:tiers", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stripe:tiers", 60, 60 * 1000);
   if (limited) return limited;
   try {
     // Rendering the panel must not create a player. Checkout is where a

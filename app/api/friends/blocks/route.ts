@@ -20,7 +20,7 @@ const bodySchema = z.object({ profileId: z.string().uuid() });
  * route is rate-limited to deny.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:block", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:block", 30, 60 * 1000);
   if (limited) return limited;
 
   try {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
 /** Lifts a block. Does not restore the friendship it tore down. */
 export async function DELETE(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:block", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:block", 30, 60 * 1000);
   if (limited) return limited;
 
   try {

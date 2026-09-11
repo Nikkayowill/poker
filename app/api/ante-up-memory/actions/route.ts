@@ -28,7 +28,7 @@ const resignSchema = z.object({ action: z.literal("resign") });
 const bodySchema = z.discriminatedUnion("action", [flipSchema, resignSchema]);
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "ante-up-memory:act", 600, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up-memory:act", 600, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

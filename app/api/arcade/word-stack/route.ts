@@ -41,7 +41,7 @@ export const runtime = "nodejs";
  * it, the same read-never-writes rule as the no-day path.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "arcade:word-stack:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:word-stack:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   // Looser than the casino deal limits: nothing here spends Gold, and the
   // unique index means a scripted loop gets the same board back rather than
   // consuming anything. This is noise control, not a wallet guard.
-  const limited = enforceRateLimit(request, "arcade:word-stack:start", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:word-stack:start", 60, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

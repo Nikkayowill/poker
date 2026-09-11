@@ -17,7 +17,7 @@ export const runtime = "nodejs";
  * an address into a durable profile id a guest lacks.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "missions:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "missions:read", 60, 60 * 1000);
   if (limited) return limited;
 
   try {

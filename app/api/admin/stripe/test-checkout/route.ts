@@ -26,7 +26,7 @@ const bodySchema = z.object({
  * subscription this route creates.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:stripe:test-checkout", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:stripe:test-checkout", 10, 60 * 1000);
   if (limited) return limited;
   if (!isAdminAuthorized(request)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });

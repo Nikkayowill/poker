@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   // depth against a flood of junk requests forcing a raw-body read + HMAC
   // check per hit. Generous, since a real sale can fire a burst of genuine
   // events from Stripe's own IPs in a short window.
-  const limited = enforceRateLimit(request, "stripe:webhook", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stripe:webhook", 120, 60 * 1000);
   if (limited) return limited;
 
   const liveSecret = stripeWebhookSecret();

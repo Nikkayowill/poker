@@ -43,7 +43,7 @@ const bodySchema = z.union([
 ]);
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stripe:checkout", 5, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stripe:checkout", 5, 60 * 1000);
   if (limited) return limited;
 
   try {

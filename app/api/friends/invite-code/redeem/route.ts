@@ -18,7 +18,7 @@ const bodySchema = z.object({ code: z.string().trim().min(1).max(32) });
  * redeems at most one code in a sitting.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:invite-code:redeem", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:invite-code:redeem", 10, 60 * 1000);
   if (limited) return limited;
 
   try {

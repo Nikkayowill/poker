@@ -29,7 +29,7 @@ const bodySchema = z.object({
 const MAX_CLAIM_ATTEMPTS = 4;
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "games:quick-play", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "games:quick-play", 10, 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));

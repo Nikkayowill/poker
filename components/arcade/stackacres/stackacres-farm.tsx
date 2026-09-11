@@ -1757,9 +1757,20 @@ export function StackAcresFarm() {
   const truckKnownRef = useRef(false);
   const truckWanted = processing.contract !== null;
   useEffect(() => {
-    world.current?.setTruckPresent(truckWanted, truckWanted && !truckKnownRef.current);
+    // `world.current` is null until the scene has actually booted -- and the
+    // first response (with the first `truckWanted` value it ever carries)
+    // routinely lands before that: `refresh()` fires on mount, the same
+    // frame `<StackAcresWorld>` starts mounting, and a same-machine fetch
+    // resolves well inside Phaser's own boot time. Depending on `worldReady`
+    // too, and guarding the whole body on `world.current` rather than just
+    // optional-chaining the call, is what turns that from "the truck's first
+    // real state change is silently dropped" into "try again once the world
+    // exists" -- optional-chaining alone still marks `truckKnownRef` done
+    // and never gets a second chance.
+    if (!world.current) return;
+    world.current.setTruckPresent(truckWanted, truckWanted && !truckKnownRef.current);
     truckKnownRef.current = true;
-  }, [truckWanted]);
+  }, [truckWanted, worldReady]);
 
   /**
    * Answers what became of one action, for the callers that have to undo

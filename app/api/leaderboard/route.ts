@@ -32,7 +32,7 @@ const querySchema = z.object({
  * this game at all.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "leaderboard:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "leaderboard:read", 60, 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = querySchema.safeParse({

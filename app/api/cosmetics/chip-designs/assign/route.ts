@@ -15,7 +15,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "cosmetics:assign-chip", 40, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cosmetics:assign-chip", 40, 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));

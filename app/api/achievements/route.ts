@@ -17,7 +17,7 @@ export const runtime = "nodejs";
  * guest lacks.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "achievements:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "achievements:read", 60, 60 * 1000);
   if (limited) return limited;
 
   try {

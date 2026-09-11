@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
    * double-click idempotent -- nothing here does, deliberately, since a tip
    * clicked twice is two tips and the house is never the party at risk.
    */
-  const limited = enforceRateLimit(request, "arcade:tip", 6, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:tip", 6, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

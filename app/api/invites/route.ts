@@ -24,7 +24,7 @@ const GUEST_MESSAGE = "Create an account to invite players to your table.";
  * people a minute.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "invites:send", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "invites:send", 10, 60 * 1000);
   if (limited) return limited;
 
   try {

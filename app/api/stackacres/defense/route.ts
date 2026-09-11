@@ -39,7 +39,7 @@ const bodySchema = z.object({
  *  needed. A read, so no ban gate: an ordinary GET, same posture the main
  *  `/api/stackacres` snapshot route already takes. */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stackacres:defense-read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stackacres:defense-read", 60, 60 * 1000);
   if (limited) return limited;
 
   const token = readSessionToken(request);
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   // One upgrade per bay is a rare, deliberate tap, not a repeated action --
   // 20/min is generous headroom over any real play pattern.
-  const limited = enforceRateLimit(request, "stackacres:defense", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stackacres:defense", 20, 60 * 1000);
   if (limited) return limited;
 
   const token = readSessionToken(request);

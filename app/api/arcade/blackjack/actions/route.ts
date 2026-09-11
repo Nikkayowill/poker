@@ -29,7 +29,7 @@ const actionSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "arcade:blackjack:act", 240, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:blackjack:act", 240, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

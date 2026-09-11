@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * only ever needed by the profile editor's own "Badges" section.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:badges:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:badges:read", 60, 60 * 1000);
   if (limited) return limited;
 
   try {

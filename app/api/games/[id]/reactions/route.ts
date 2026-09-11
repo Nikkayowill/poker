@@ -31,7 +31,7 @@ export async function POST(
 ) {
   // Usual per-IP abuse backstop. The cooldown the feature actually needs is
   // enforced per seat below.
-  const limited = enforceRateLimit(request, "games:reaction", 40, 10 * 1000);
+  const limited = await enforceRateLimit(request, "games:reaction", 40, 10 * 1000);
   if (limited) return limited;
 
   const ownerToken = readSessionToken(request);
@@ -64,7 +64,7 @@ export async function POST(
   // The real "one reaction, briefly" cooldown, keyed on the seat rather than
   // the caller so it survives a device swap and can't be dodged with a
   // second tab.
-  const seatLimit = checkRateLimit(`reaction:${id}:${seat.id}`, 1, REACTION_COOLDOWN_MS);
+  const seatLimit = await checkRateLimit(`reaction:${id}:${seat.id}`, 1, REACTION_COOLDOWN_MS);
   if (!seatLimit.ok) return rateLimited(seatLimit.retryAfterSeconds);
 
   // Best-effort: nobody's hand depends on this landing. A missing admin

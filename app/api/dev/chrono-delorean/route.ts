@@ -56,7 +56,7 @@ function guard(request: NextRequest): NextResponse | null {
 }
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "dev:chrono-delorean:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "dev:chrono-delorean:read", 60, 60 * 1000);
   if (limited) return limited;
 
   const blocked = guard(request);
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "dev:chrono-delorean:write", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "dev:chrono-delorean:write", 30, 60 * 1000);
   if (limited) return limited;
 
   const blocked = guard(request);

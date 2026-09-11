@@ -19,7 +19,7 @@ export const runtime = "nodejs";
  * so a guest's subscription just sits unused until they register.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "push:subscribe", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "push:subscribe", 20, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);

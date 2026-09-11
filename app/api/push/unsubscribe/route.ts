@@ -16,7 +16,7 @@ export const runtime = "nodejs";
  * clean up a stale endpoint outside a normal page load.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "push:unsubscribe", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "push:unsubscribe", 20, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);

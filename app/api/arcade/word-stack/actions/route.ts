@@ -35,7 +35,7 @@ const actionSchema = z.object({
 export async function POST(request: NextRequest) {
   // Six guesses a day makes anything past this a script, but the limit is
   // generous enough to absorb a player retyping into a bad connection.
-  const limited = enforceRateLimit(request, "arcade:word-stack:guess", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "arcade:word-stack:guess", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

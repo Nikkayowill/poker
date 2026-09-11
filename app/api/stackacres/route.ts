@@ -35,7 +35,7 @@ export const runtime = "nodejs";
  * costs a real deploy nothing beyond the one boolean read guarding it.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stackacres:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stackacres:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readSessionToken(request);

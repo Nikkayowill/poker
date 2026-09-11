@@ -19,7 +19,7 @@ const bodySchema = z.object({ remember: z.boolean() });
  * signing in is exactly the moment an identity needs to exist.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "auth:session-preference", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "auth:session-preference", 10, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * (same "the browser never picks a mode" rule the checkout route follows).
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "stripe:portal", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stripe:portal", 10, 60 * 1000);
   if (limited) return limited;
   try {
     const ownerToken = readSessionToken(request);

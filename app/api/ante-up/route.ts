@@ -24,7 +24,7 @@ const startSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "ante-up:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   // A wagered start moves Gold, same tightness as pvp:challenge.
-  const limited = enforceRateLimit(request, "ante-up:start", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ante-up:start", 30, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

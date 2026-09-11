@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   // Vercel's own scheduler calls this at most once a day; a tight cap is
   // pure defense-in-depth against someone flooding the URL to guess
   // CRON_SECRET, not something legitimate traffic could ever brush against.
-  const limited = enforceRateLimit(request, "cron:notify-inactive-players", 10, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cron:notify-inactive-players", 10, 60 * 1000);
   if (limited) return limited;
 
   if (!isCronAuthorized(request)) {

@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * this is the one place it's read purely to answer "how close am I."
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "cosmetics:list", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "cosmetics:list", 60, 60 * 1000);
   if (limited) return limited;
   try {
     // Browsing the catalog is not entering the room, so a caller with no

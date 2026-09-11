@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * fetch the body copy.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "legal:status", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "legal:status", 60, 60 * 1000);
   if (limited) return limited;
   try {
     // A reader with no session has accepted nothing, which is answerable

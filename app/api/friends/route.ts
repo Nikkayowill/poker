@@ -18,7 +18,7 @@ const targetSchema = z.object({ profileId: z.string().uuid() });
  * to you in the same frame.
  */
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:read", 120, 60 * 1000);
   if (limited) return limited;
 
   try {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
  * is a uuid, so there is nothing here worth hiding from a URL.
  */
 export async function DELETE(request: NextRequest) {
-  const limited = enforceRateLimit(request, "friends:mutate", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "friends:mutate", 30, 60 * 1000);
   if (limited) return limited;
 
   try {

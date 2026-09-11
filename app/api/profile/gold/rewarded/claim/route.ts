@@ -18,7 +18,7 @@ export const runtime = "nodejs";
  * that can be established about an ad view at all.
  */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "profile:gold:rewarded:claim", 12, 60 * 1000);
+  const limited = await enforceRateLimit(request, "profile:gold:rewarded:claim", 12, 60 * 1000);
   if (limited) return limited;
   try {
     const token = readSessionToken(request);

@@ -20,7 +20,7 @@ const bodySchema = z.object({
 
 /** Hosts a brand-new table: "Host Private Game" (isPrivate: true), or a fresh public table. */
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "games:create", 10, 5 * 60 * 1000);
+  const limited = await enforceRateLimit(request, "games:create", 10, 5 * 60 * 1000);
   if (limited) return limited;
   try {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));

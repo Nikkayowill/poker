@@ -42,7 +42,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const limited = enforceRateLimit(request, "pvp:match:read", 180, 60 * 1000);
+  const limited = await enforceRateLimit(request, "pvp:match:read", 180, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -65,7 +65,7 @@ export async function POST(
   // Generous compared with the challenge limits: a blitz game is a lot of
   // legitimate moves, and nothing here moves Gold except the one move that
   // ends the match, which the version guard already makes idempotent.
-  const limited = enforceRateLimit(request, "pvp:match:act", 600, 60 * 1000);
+  const limited = await enforceRateLimit(request, "pvp:match:act", 600, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

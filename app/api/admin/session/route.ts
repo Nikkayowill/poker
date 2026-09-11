@@ -16,7 +16,7 @@ const bodySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:session:read", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:session:read", 60, 60 * 1000);
   if (limited) return limited;
 
   if (!isAdminAuthorized(request)) {
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:session:create", 8, 15 * 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:session:create", 8, 15 * 60 * 1000);
   if (limited) return limited;
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success || !isAdminSecretValid(parsed.data.secret)) {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:session:clear", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:session:clear", 30, 60 * 1000);
   if (limited) return limited;
 
   const response = NextResponse.json({ authenticated: false });

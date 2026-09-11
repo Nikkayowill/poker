@@ -31,7 +31,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const limited = enforceRateLimit(request, "sit-and-go:table:read", 180, 60 * 1000);
+  const limited = await enforceRateLimit(request, "sit-and-go:table:read", 180, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -54,7 +54,7 @@ export async function POST(
   // Joining escrows Gold; leaving doesn't (it refunds). Generous either way,
   // same posture as cribbage:act -- there's no version-guarded move here to
   // worry about racing.
-  const limited = enforceRateLimit(request, "sit-and-go:act", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "sit-and-go:act", 60, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

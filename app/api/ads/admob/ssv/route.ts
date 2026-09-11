@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   // in depth against a flood of junk requests forcing a signature-key
   // fetch/verify per hit. Generous, since Google's own SSV traffic can
   // burst from a shared IP range.
-  const limited = enforceRateLimit(request, "ads:admob:ssv", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "ads:admob:ssv", 120, 60 * 1000);
   if (limited) return limited;
 
   const rawQuery = request.nextUrl.search.replace(/^\?/, "");

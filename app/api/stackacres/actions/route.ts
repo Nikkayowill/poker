@@ -621,7 +621,7 @@ export async function POST(request: NextRequest) {
   // Every action here moves one purse at most once and the guards make
   // replays idempotent; 60/min covers a fast restocking ritual plus feeding
   // and watering with a wide margin.
-  const limited = enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
+  const limited = await enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
   if (limited) return limited;
 
   // Access is granted to a PROFILE, so the session cookie is what says who is

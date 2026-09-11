@@ -23,7 +23,7 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ gameId: string; hand: string }> },
 ) {
-  const limited = enforceRateLimit(request, "history:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "history:read", 120, 60 * 1000);
   if (limited) return limited;
 
   try {

@@ -12,7 +12,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, "admin:gold:unlimited", 20, 60 * 1000);
+  const limited = await enforceRateLimit(request, "admin:gold:unlimited", 20, 60 * 1000);
   if (limited) return limited;
   if (!isAdminAuthorized(request)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });

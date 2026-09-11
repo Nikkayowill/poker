@@ -1,5 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
 interface Bucket {
   count: number;
@@ -23,13 +25,11 @@ function sweep(now: number) {
 }
 
 /**
- * Fixed-window limiter keyed by source IP. Cookies are bearer identifiers
- * supplied by the caller, so they must never be the only input to a limiter:
- * an attacker could otherwise mint a fresh cookie value for every request.
- * This is still process-local and should be paired with an edge limiter in a
- * multi-instance deployment.
+ * In-process fixed-window limiter. Same-instance only -- fine for local dev
+ * and tests, but on a multi-instance deployment each instance gets its own
+ * buckets, so this alone does not actually cap a distributed caller.
  */
-export function checkRateLimit(
+function checkRateLimitInMemory(
   key: string,
   limit: number,
   windowMs: number,
@@ -46,6 +46,60 @@ export function checkRateLimit(
   }
   bucket.count += 1;
   return { ok: true };
+}
+
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const redis = UPSTASH_URL && UPSTASH_TOKEN
+  ? new Redis({ url: UPSTASH_URL, token: UPSTASH_TOKEN })
+  : null;
+
+// One Ratelimit instance per distinct (limit, windowMs) pair, so every route
+// with the same shape shares a limiter instead of allocating one per call.
+const redisLimiters = new Map<string, Ratelimit>();
+function redisLimiterFor(limit: number, windowMs: number): Ratelimit {
+  const cacheKey = `${limit}:${windowMs}`;
+  let limiter = redisLimiters.get(cacheKey);
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis: redis!,
+      limiter: Ratelimit.slidingWindow(limit, `${windowMs} ms`),
+      // Buckets are already namespaced per route+caller by the key we pass
+      // in; this is just the key's Redis-side prefix.
+      prefix: "ratelimit",
+    });
+    redisLimiters.set(cacheKey, limiter);
+  }
+  return limiter;
+}
+
+async function checkRateLimitRedis(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
+  const { success, reset } = await redisLimiterFor(limit, windowMs).limit(key);
+  if (success) return { ok: true };
+  return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((reset - Date.now()) / 1000)) };
+}
+
+/**
+ * Fixed-window limiter keyed by source IP. Cookies are bearer identifiers
+ * supplied by the caller, so they must never be the only input to a limiter:
+ * an attacker could otherwise mint a fresh cookie value for every request.
+ *
+ * Shared across instances when UPSTASH_REDIS_REST_URL/TOKEN are set (see
+ * .env.example); falls back to the process-local Map otherwise, which is
+ * genuinely sufficient for local dev and tests but not for a multi-instance
+ * production deployment.
+ */
+export async function checkRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
+  if (redis) return checkRateLimitRedis(key, limit, windowMs);
+  return checkRateLimitInMemory(key, limit, windowMs);
 }
 
 /** Best-effort source IP from proxy headers -- "unknown" when neither is present (e.g. local dev). */
@@ -81,12 +135,12 @@ export function rateLimited(retryAfterSeconds: number) {
 }
 
 /** Convenience guard: returns a 429 response to return early, or null to proceed. */
-export function enforceRateLimit(
+export async function enforceRateLimit(
   request: NextRequest,
   route: string,
   limit: number,
   windowMs: number,
-): NextResponse | null {
-  const result = checkRateLimit(`${route}:${callerKey(request)}`, limit, windowMs);
+): Promise<NextResponse | null> {
+  const result = await checkRateLimit(`${route}:${callerKey(request)}`, limit, windowMs);
   return result.ok ? null : rateLimited(result.retryAfterSeconds);
 }

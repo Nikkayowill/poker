@@ -18,7 +18,7 @@ const POLL_LIMIT_PER_MINUTE = 120;
 const GUEST_MESSAGE = "Create an account to get table invites.";
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "invites:pending", POLL_LIMIT_PER_MINUTE, 60 * 1000);
+  const limited = await enforceRateLimit(request, "invites:pending", POLL_LIMIT_PER_MINUTE, 60 * 1000);
   if (limited) return limited;
 
   try {

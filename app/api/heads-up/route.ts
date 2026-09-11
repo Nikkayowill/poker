@@ -41,7 +41,7 @@ const inviteSchema = z.object({
 const bodySchema = z.discriminatedUnion("action", [quickPlaySchema, inviteSchema]);
 
 export async function GET(request: NextRequest) {
-  const limited = enforceRateLimit(request, "heads-up:read", 120, 60 * 1000);
+  const limited = await enforceRateLimit(request, "heads-up:read", 120, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   // Every accepted call here escrows Gold, same posture as cribbage:open.
-  const limited = enforceRateLimit(request, "heads-up:open", 30, 60 * 1000);
+  const limited = await enforceRateLimit(request, "heads-up:open", 30, 60 * 1000);
   if (limited) return limited;
 
   const token = readOrCreateSessionToken(request);

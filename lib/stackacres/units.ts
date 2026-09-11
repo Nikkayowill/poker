@@ -447,6 +447,12 @@ export function optimisticallyStockedUnit(input: {
   permanent: boolean;
   inGreenhouse: boolean;
   nowMs: number;
+  /** The bed this crop should render on, when the caller already knows it
+   *  (the tile the player tapped) -- see `predictStackAcresAction`'s "stock"
+   *  case. Null (the default) is the honest answer everywhere else: the
+   *  server picks the real slot, and `cropSpot` scatters an unslotted crop
+   *  in the open field until the response lands. */
+  soilSlot?: number | null;
 }): StackAcresUnitSnapshot {
   const def = STACKACRES_CATALOGUE[input.stock];
   // Deliberately does NOT apply a soil tier's growth multiplier. Which bed
@@ -477,7 +483,7 @@ export function optimisticallyStockedUnit(input: {
     muckFee: null,
     permanent: input.permanent,
     housedIn: input.inGreenhouse ? "greenhouse" : null,
-    soilSlot: null,
+    soilSlot: input.soilSlot ?? null,
   };
 }
 

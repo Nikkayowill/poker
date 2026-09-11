@@ -11,7 +11,7 @@
  * app/api/stackacres/actions/route.ts is the wire authority.
  */
 
-import type { StackAcresCrop, StackAcresStock } from "./catalogue";
+import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
@@ -31,7 +31,11 @@ export type Action =
   | { action: "clear-sector"; sector: SectorId }
   | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
-  | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean }
+  // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
+  // bed -- see `predictStackAcresAction`'s "stock" case in
+  // optimistic-actions.ts for why the optimistic guess needs them too, not
+  // just the server.
+  | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean; tx?: number; ty?: number }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
   // No `unitIds` means "bring in everything that is ready" -- what the
@@ -200,6 +204,67 @@ export function intentOf(body: Action): string {
   if ("recipe" in body) return `${body.action}:${body.recipe}`;
   if ("kind" in body) return `${body.action}:${body.kind}`;
   return body.action;
+}
+
+/**
+ * The instant toast a spend should show, or null for an action that either
+ * moves no Gold/shelf stock or already gets its own call-site toast.
+ *
+ * Kayo (2026-09-11): shop purchases "don't feel responsive" -- `buySound()`
+ * plays on every one of these already (see lib/audio/stackacres-sfx.ts, wired
+ * at every call site), but a muted phone or a quiet room has nothing else to
+ * go on until the round trip lands, so a purchase can read as having done
+ * nothing. This is the visual half `act()` (stackacres-farm.tsx) fires
+ * alongside the optimistic patch, through the same `sa-toast` `lastCollect`
+ * mechanism every other instant confirmation on this screen already uses.
+ *
+ * Deliberately excludes `place-soil-tile`/`remove-soil-tile`/
+ * `move-soil-tile-group`/`place-pipe`/`remove-pipe`: those five already set
+ * their own `lastCollect` toast at the call site, a beat before `act()` runs,
+ * and firing a second, generic one here would silently overwrite it in the
+ * same render (both are plain `setState` calls in one synchronous stack).
+ * Also excludes anything that moves no Gold or shelf stock (`collect`,
+ * `feed`, `water`, `retire`, the Workshop/Town Contract actions, ...) --
+ * those already read as answered through their own sound, sprite change, or
+ * (for `collect`) the "on its way" toast `act` sets independently.
+ */
+export function purchaseCueText(body: Action): string | null {
+  switch (body.action) {
+    case "stock":
+      return isLivestock(body.stock)
+        ? `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`
+        : `Seeded ${STACKACRES_CATALOGUE[body.stock].label}!`;
+    case "buy-stock":
+      return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;
+    case "expand-capacity":
+      return "Capacity expanded!";
+    case "buy-feed":
+      return "Feed delivered!";
+    case "buy-soil":
+      return "Soil delivered!";
+    case "buy-seed":
+      return "Seeds delivered!";
+    case "upgrade-tool":
+      return "Spade upgraded!";
+    case "buy-cutter":
+      return "New tool in hand!";
+    case "unlock-synergy-perk":
+      return "Perk unlocked!";
+    case "midnight-merchant-buy":
+      return "Bought!";
+    case "clear-sector":
+      return "Clearing the land…";
+    case "unlock-crop-fields":
+      return "Crop Fields unlocked!";
+    case "build-greenhouse":
+      return "Greenhouse begun!";
+    case "forge-enchantment":
+      return "Enchantment forged!";
+    case "deploy-drone":
+      return "Drone deployed!";
+    default:
+      return null;
+  }
 }
 
 /**

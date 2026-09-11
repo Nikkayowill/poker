@@ -94,6 +94,7 @@ import {
   nextFreeSoilSlot,
   planSoilGroupRelocation,
   plantSoilTile,
+  soilSlotForTile,
   soilSlotOnTile,
   type SoilTile,
 } from "./soil";
@@ -331,13 +332,6 @@ export function predictStackAcresAction(
       return { units: [...kept, ...resown] };
     }
     case "stock": {
-      const unit = optimisticallyStockedUnit({
-        id: newOptimisticUnitId(),
-        stock: body.stock,
-        permanent: false,
-        inGreenhouse: body.inGreenhouse === true,
-        nowMs: ctx.nowMs,
-      });
       // Livestock still pays Gold straight out of the purse, unchanged --
       // there is no seed shelf for a Hen Coop/Sheep Pen/Cattle Pen. A crop
       // spends one seed off the shelf instead; the Gold already left at
@@ -346,6 +340,13 @@ export function predictStackAcresAction(
       if (isLivestock(body.stock)) {
         const profile = debited(ctx, STACKACRES_CATALOGUE[body.stock].seedCost);
         if (!profile) return null;
+        const unit = optimisticallyStockedUnit({
+          id: newOptimisticUnitId(),
+          stock: body.stock,
+          permanent: false,
+          inGreenhouse: false,
+          nowMs: ctx.nowMs,
+        });
         return { units: [...ctx.units, unit], profile };
       }
       const held = ctx.seedStock[body.stock] ?? 0;
@@ -356,12 +357,36 @@ export function predictStackAcresAction(
       // plants on the lowest free one. A farm with nothing tilled would
       // flash a sprout the server is about to refuse, so it guesses nothing.
       // Greenhouse crops stand on the glasshouse's own sub-grid instead.
-      if (body.inGreenhouse !== true) {
-        const taken = ctx.units
-          .map((u) => u.soilSlot)
-          .filter((slot): slot is number => slot !== null);
-        if (nextFreeSoilSlot(createSoilMap(ctx.soilTiles), taken) === null) return null;
+      const taken = ctx.units
+        .map((u) => u.soilSlot)
+        .filter((slot): slot is number => slot !== null);
+      if (body.inGreenhouse !== true && nextFreeSoilSlot(createSoilMap(ctx.soilTiles), taken) === null) {
+        return null;
       }
+      // The bed `onRadialSeed` tapped, if the tap named a real one this
+      // client can see. Mirrors `assignSoilSlot`'s own "honor the tapped
+      // tile, else fall through" -- a stale/bogus/already-taken tap leaves
+      // `soilSlot` null exactly like a plain sidebar `onSeed` would, and
+      // `cropSpot` (world.ts) scatters it in the Crop Fields until the real
+      // response lands with the server's own answer. A good tap gets its
+      // real slot immediately: without this the crop always rendered at a
+      // scattered point and visibly jumped to its tile once the response
+      // caught up, since 2026-09-10's `cropSpot` change made `soilSlot` the
+      // only way a crop stands on a tile at all (see `CropPlacement`'s own
+      // header).
+      const tappedSlot =
+        body.inGreenhouse !== true && body.tx !== undefined && body.ty !== undefined
+          ? soilSlotForTile(createSoilMap(ctx.soilTiles), body.tx, body.ty)
+          : null;
+      const soilSlot = tappedSlot !== null && !taken.includes(tappedSlot) ? tappedSlot : null;
+      const unit = optimisticallyStockedUnit({
+        id: newOptimisticUnitId(),
+        stock: body.stock,
+        permanent: false,
+        inGreenhouse: body.inGreenhouse === true,
+        nowMs: ctx.nowMs,
+        soilSlot,
+      });
       return {
         units: [...ctx.units, unit],
         seedStock: { ...ctx.seedStock, [body.stock]: held - 1 },

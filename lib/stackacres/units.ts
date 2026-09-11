@@ -422,6 +422,11 @@ export function optimisticallyWateredUnit(
   const pushed = (Number.isFinite(readyAt) ? readyAt : nowMs) + dryMs;
   return {
     ...unit,
+    // Mirrors the seed branch above: a unit can only reach this branch via
+    // `unitRowAction`'s "water" offer, which only fires while `state ===
+    // "dry"`. Without this, the stale "dry" state (and its cue bubble) rides
+    // along in the spread below until the real server response lands.
+    state: "working",
     readyAt: new Date(pushed).toISOString(),
     thirstyAt: thirstMs === null ? null : new Date(nowMs + thirstMs).toISOString(),
   };

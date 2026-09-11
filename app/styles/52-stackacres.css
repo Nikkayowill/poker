@@ -1345,6 +1345,15 @@
   transition: left .24s var(--sa-bounce), top .24s var(--sa-bounce);
 }
 
+/* On a good drop the token used to just vanish in one frame when the dock
+   unmounted at SETTLE_MS (420ms) -- the real crop/unit was already visible
+   underneath it by then, so that hard cut read as a stutter. Fades it out
+   over the same window instead, matching the water-can/feed drag token's
+   own `.is-settling` fade (`sa-drag-fade`, reused here). */
+.sa-gel-token.is-settling {
+  animation: sa-drag-fade .42s ease-in forwards;
+}
+
 /* The one-shot "picked up" wobble: a squash on the way out and a settle back
    to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
    scoop, just done as a shape change instead of a uniform scale since this

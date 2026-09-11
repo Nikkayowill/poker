@@ -44,6 +44,7 @@ import {
   upgradeStackAcresTool,
   buyStackAcresCutter,
   waterStackAcres,
+  waterStackAcresGroup,
   drawStackAcresWater,
   catchStackAcresFish,
   sowStackAcresWheat,
@@ -223,7 +224,14 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("feed-pen"),
     zone: z.enum(PEN_ZONE_IDS as unknown as [ZoneId, ...ZoneId[]]),
   }),
-  z.object({ action: z.literal("water"), unitId: unitIdSchema }),
+  // unitIds is set only for a group-water drop (the water can dragged onto a
+  // >=2x2 block of thirsty crops); bounded the same way `collect`'s set is,
+  // so a fabricated list cannot make the server do unbounded work.
+  z.object({
+    action: z.literal("water"),
+    unitId: unitIdSchema,
+    unitIds: z.array(unitIdSchema).min(2).max(64).optional(),
+  }),
   // Fills the watering can. Moves no Gold.
   z.object({ action: z.literal("draw-water") }),
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
@@ -523,7 +531,9 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "feed-pen":
       return feedStackAcresPen(token, action.zone, now);
     case "water":
-      return waterStackAcres(token, action.unitId, now);
+      return action.unitIds && action.unitIds.length > 1
+        ? waterStackAcresGroup(token, action.unitIds, now)
+        : waterStackAcres(token, action.unitId, now);
     case "draw-water":
       return drawStackAcresWater(token, now);
     case "catch-fish":

@@ -106,8 +106,10 @@ import {
 import {
   createSoilMap,
   soilSlotOnTile,
+  soilSlotTile,
   soilTileAt,
   soilTilesEqual,
+  thirstyTileGroup,
   type SoilTile,
 } from "@/lib/stackacres/soil";
 import {
@@ -349,7 +351,17 @@ interface FarmProcessing {
 /** A drag tool on offer: what a good drop does, where the tool floats and
  *  where it has to land. `key` remounts the overlay for each new offer. */
 type DragOffer =
-  | { key: string; kind: "water"; unitId: string; iconAt: TapPoint; targetAt: TapPoint }
+  // unitIds is set only when the tapped crop sits in a >=2x2 block of
+  // thirsty crops (soil.ts's `thirstyTileGroup`) -- the drop then waters the
+  // whole block in one request instead of just `unitId`.
+  | {
+      key: string;
+      kind: "water";
+      unitId: string;
+      unitIds?: string[];
+      iconAt: TapPoint;
+      targetAt: TapPoint;
+    }
   | { key: string; kind: "feed-pen"; zone: ZoneId; iconAt: TapPoint; targetAt: TapPoint }
   | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
 
@@ -1599,6 +1611,17 @@ export function StackAcresFarm() {
     [liveUnits, soilMapForTiles],
   );
 
+  /** The id of whichever crop stands on `(tx, ty)` AND is dry right now, or
+   *  null -- `soil.ts`'s `thirstyTileGroup` calls this once per tile it
+   *  walks to decide how far a group-water block reaches. */
+  const dryUnitAt = useCallback(
+    (tx: number, ty: number): string | null => {
+      const unit = cropOnTile(tx, ty);
+      return unit && unit.state === "dry" ? unit.id : null;
+    },
+    [cropOnTile],
+  );
+
   // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
   // Pixel Pilgrim's own unlock tint should be showing -- both pure
   // derivations of state already held above, recomputed only when one of
@@ -2581,10 +2604,17 @@ export function StackAcresFarm() {
           return;
         }
         panelSound();
+        // A dry crop's own tile, if it has one -- crops off the lattice
+        // (open-field scatter) have no bed to walk a block out from, so
+        // they always water alone. Same >=2x2 rule `thirstyTileGroup`'s own
+        // header describes; a lone or L-shaped run falls back to `unitId`.
+        const tile = unit.soilSlot !== null ? soilSlotTile(soilMapForTiles, unit.soilSlot) : null;
+        const group = tile ? thirstyTileGroup(soilMapForTiles, tile.tx, tile.ty, dryUnitAt) : [];
         setDragOffer({
           key: `water:${unitId}:${Date.now()}`,
           kind: "water",
           unitId,
+          unitIds: group.length > 1 ? group : undefined,
           iconAt: offerIconAt(at),
           targetAt: at,
         });
@@ -2646,7 +2676,7 @@ export function StackAcresFarm() {
         void act({ action: action.kind, unitId });
       }
     },
-    [act, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, triggerCascade, water],
+    [act, dryUnitAt, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, soilMapForTiles, triggerCascade, water],
   );
 
   /**
@@ -2782,6 +2812,25 @@ export function StackAcresFarm() {
     if (offer.kind === "water") {
       waterSound();
       world.current?.registerFrenzyTap(offer.unitId);
+      // Deterministic (which crops in the block are still dry, clamped to
+      // however much water is left) -- same posture `onPlaceSoilTile`/
+      // `onMoveSoilTileGroup` already take toward their own toast, set here
+      // rather than through `purchaseCueText` (water moves no Gold/shelf
+      // stock, so that helper skips it).
+      if (offer.unitIds && offer.unitIds.length > 1) {
+        // Only ever less than the block when the can ran dry partway --
+        // say so, rather than claiming the whole block got watered.
+        const wateredCount = Math.min(offer.unitIds.length, water);
+        if (wateredCount > 0) {
+          const text =
+            wateredCount === offer.unitIds.length
+              ? `Watered ${wateredCount} crops!`
+              : `Watered ${wateredCount} of ${offer.unitIds.length} crops. Can's empty.`;
+          setLastCollect({ text, nonce: Date.now() });
+        }
+        void act({ action: "water", unitId: offer.unitId, unitIds: offer.unitIds });
+        return;
+      }
       void act({ action: "water", unitId: offer.unitId });
       return;
     }
@@ -2794,7 +2843,7 @@ export function StackAcresFarm() {
     const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
     if (unit) feedSound(unit.stock);
     void act({ action: "feed", unitId: offer.unitId });
-  }, [act, dragOffer, liveUnits]);
+  }, [act, dragOffer, liveUnits, water]);
 
   const closeDragOffer = useCallback(() => setDragOffer(null), []);
 
@@ -3953,7 +4002,9 @@ export function StackAcresFarm() {
               targetAt={dragOffer.targetAt}
               hint={
                 dragOffer.kind === "water"
-                  ? "Drag onto the soil"
+                  ? dragOffer.unitIds && dragOffer.unitIds.length > 1
+                    ? `Drop to water all ${dragOffer.unitIds.length}`
+                    : "Drag onto the soil"
                   : dragOffer.kind === "feed-pen"
                     ? "Drag into the trough"
                     : "Drag onto the animal"

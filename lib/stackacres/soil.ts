@@ -416,6 +416,65 @@ export function moveSoilTileGroup(soil: SoilMap, moves: readonly SoilGroupMove[]
   return true;
 }
 
+/**
+ * Same 4-neighbour walk as `soilTileGroup`, but a step also has to hold a
+ * thirsty crop (`occupantAt` names the dry unit standing on a tile, or null)
+ * -- what a water-can drop checks to decide whether it waters one crop or an
+ * entire bed at once. `occupantAt` is injected rather than this file reading
+ * unit state itself, the same reason `buildCropInstances` takes `spotFor`:
+ * this module stays a leaf that knows tiles, not crops.
+ *
+ * Returns unit ids, seed tile first, but only when the block is at least
+ * 2x2 (four tiles) -- Kayo (2026-09-11): a straight two-tile run should not
+ * trigger group-watering, only an actual square-ish bed. A smaller or
+ * disconnected run returns [], and the caller falls back to watering the one
+ * tapped tile, same as always.
+ *
+ * The algorithm is flood-fill connected-component labelling with a minimum
+ * cluster size -- the same core logic behind tile-clearing/grouping puzzle
+ * games (SameGame, match-flood clears, and the like): find every same-kind
+ * tile reachable from the one tapped, only act once the cluster clears a
+ * size floor. Worth remembering if StackAcres ever gets an arcade game built
+ * on that mechanic directly -- Kayo's floated the idea, not started.
+ */
+export function thirstyTileGroup(
+  soil: SoilMap,
+  tx: number,
+  ty: number,
+  occupantAt: (tx: number, ty: number) => string | null,
+): string[] {
+  if (!hasSoilTile(soil, tx, ty) || !occupantAt(tx, ty)) return [];
+  const startKey = soilTileKey(tx, ty);
+  const seen = new Set<string>([startKey]);
+  const queue: SoilTileCoord[] = [{ tx, ty }];
+  const group: SoilTileCoord[] = [];
+  const steps: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    group.push(current);
+    for (const [dx, dy] of steps) {
+      const ntx = current.tx + dx;
+      const nty = current.ty + dy;
+      const key = soilTileKey(ntx, nty);
+      if (seen.has(key) || !hasSoilTile(soil, ntx, nty) || !occupantAt(ntx, nty)) continue;
+      seen.add(key);
+      queue.push({ tx: ntx, ty: nty });
+    }
+  }
+  const minTx = Math.min(...group.map((t) => t.tx));
+  const maxTx = Math.max(...group.map((t) => t.tx));
+  const minTy = Math.min(...group.map((t) => t.ty));
+  const maxTy = Math.max(...group.map((t) => t.ty));
+  const atLeast2x2 = maxTx - minTx + 1 >= 2 && maxTy - minTy + 1 >= 2;
+  if (group.length < 4 || !atLeast2x2) return [];
+  const ids: string[] = [];
+  for (const tile of group) {
+    const id = occupantAt(tile.tx, tile.ty);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
 /* ------------------------------------------------------------------ */
 /* The starter kit -- SINCE REMOVED                                    */
 /* ------------------------------------------------------------------ */

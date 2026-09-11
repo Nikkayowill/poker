@@ -21,6 +21,14 @@ import {
 } from "@/lib/stackacres/iso";
 import { worldBoundsRect, worldBoundsScreenRect } from "@/lib/stackacres/bounds";
 import {
+  TRUCK_FOOTPRINT,
+  TruckState,
+  spawnTruck,
+  stepTruck,
+  truckHitAt,
+  type DeliveryTruck,
+} from "@/lib/stackacres/delivery-truck";
+import {
   DRONE_FORAGE_COOLDOWN_MS,
   DRONE_VACUUM_MS,
   DroneState,
@@ -426,6 +434,17 @@ export interface StackAcresSceneCallbacks {
    * a unit already wins over both) and before every other ground fallback.
    */
   onMerchantTap: () => void;
+  /**
+   * A tap that landed on the delivery truck, ONLY while it is actually
+   * `Parked` at its dock (see lib/stackacres/delivery-truck.ts) -- the same
+   * "checked first among the structures, only while actually present"
+   * priority `onMerchantTap` documents, right after it: a temporary visitor
+   * wins over a permanent structure even though neither footprint overlaps
+   * the barn's. Opens the same Town Contracts sheet the signpost's
+   * `onSignpostTap` does; the truck is a second entrance to it, not a
+   * different feature.
+   */
+  onTruckTap: () => void;
   /**
    * A tap that landed on the Pixel Pilgrim's own shrine -- a character
    * target, so it is checked right after the Midnight Merchant (another
@@ -854,7 +873,7 @@ const STOCK_ART: Readonly<Record<StackAcresLivestock, PainterName>> = {
  * one of the two had every animal walking backwards. This is the single
  * answer both of them now ask.
  */
-const ART_FACES: Readonly<Partial<Record<PainterName, 1 | -1>>> = { sheep: -1 };
+const ART_FACES: Readonly<Partial<Record<PainterName, 1 | -1>>> = { sheep: -1, truck: -1 };
 
 /** The sprite x-scale sign that turns `art` to face `heading` (`Critter.facing`
  *  -- 1 for screen-right). A mirror is a negative x scale rather than
@@ -1273,6 +1292,21 @@ interface DroneNode {
 }
 
 /**
+ * The delivery truck's own Phaser picture, the identical split `DroneNode`
+ * above documents: `truck` is the pure state `stepTruck` advances every
+ * frame, `container`/`sprite`/`shadow` are what that state is drawn as. At
+ * most one ever exists -- `this.truck` holds it directly rather than a
+ * `Map<id, ...>` the way `droneNodes` does for a whole fleet, since
+ * StackAcres has exactly one truck, not a hangar of them.
+ */
+interface TruckSceneNode {
+  truck: DeliveryTruck;
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
+}
+
+/**
  * One placed irrigation tile's own Phaser picture. `body` is the connector
  * (or well) sprite, always present; `flow` is one image per set arm bit,
  * only ever populated while `node.hydrated` -- a dry pipe or a well shows
@@ -1464,6 +1498,22 @@ export class StackAcresScene extends Phaser.Scene {
    *  own snapshot arrives, which can race the scene's boot) is held here and
    *  applied once there is a scene to add an image to. */
   private pendingMerchant: boolean | null = null;
+  /**
+   * The delivery truck's own live state and picture, or null while it is off
+   * the map entirely (no open contract, or one that has not yet been asked
+   * for). See `setTruckPresent` and lib/stackacres/delivery-truck.ts's own
+   * module doc for the "presentation, not authority" split this follows.
+   */
+  private truckNode: TruckSceneNode | null = null;
+  /** What `setTruckPresent` was last told to want -- read every frame by
+   *  `stepTruckNode` rather than threaded through as an argument, the same
+   *  "caller sets a flag, the step loop reacts to it" shape `wantPresent`
+   *  plays inside `stepTruck` itself. */
+  private truckWanted = false;
+  /** Mirrors `pendingMerchant`'s own role: a `setTruckPresent` call that
+   *  lands before `create()` has run is held here and applied once there is
+   *  a scene to build the truck into. */
+  private pendingTruckPresent: { wanted: boolean; immediate: boolean } | null = null;
   /**
    * Every deployed Mechanical Forage Drone this profile owns, by drone id.
    * Ownership (which ids exist) is server-confirmed via `setDroneHangar`;
@@ -2086,6 +2136,11 @@ export class StackAcresScene extends Phaser.Scene {
       const droneIds = this.pendingDroneIds;
       this.pendingDroneIds = null;
       this.setDroneHangar(droneIds);
+    }
+    if (this.pendingTruckPresent !== null) {
+      const { wanted, immediate } = this.pendingTruckPresent;
+      this.pendingTruckPresent = null;
+      this.setTruckPresent(wanted, immediate);
     }
     if (this.pendingPipeNodes !== null) {
       const nodes = this.pendingPipeNodes;
@@ -2867,6 +2922,86 @@ export class StackAcresScene extends Phaser.Scene {
       .setAlpha(0.8);
     const image = this.put("midnightMerchant", x, y, this.depthAt(x, y));
     this.merchantNode = { image, shadow };
+  }
+
+  /**
+   * Wants (or stops wanting) the delivery truck on the lot -- called by
+   * stackacres-farm.tsx every time `StackAcresView.contract`'s presence
+   * flips, not on every render tick. Unlike `setMerchant`, wanting the
+   * truck does not instantly create or destroy its picture: `stepTruckNode`
+   * (called from `update()`) is what actually drives it in or out over
+   * `DELIVERY_ROUTE`, once this flag tells it to. This method only ever
+   * spawns a fresh truck the first time `wanted` goes true while none
+   * exists yet (nothing to animate out of, so there is nothing here for
+   * `stepTruckNode` to do but start the state machine), and otherwise just
+   * records the flag for `stepTruckNode`'s own Parked check to read next
+   * frame.
+   *
+   * `immediate` -- true only for stackacres-farm.tsx's very first observed
+   * "a contract is already open" (see its own `truckKnownRef` doc comment)
+   * -- spawns the truck already `Parked` at the dock rather than playing an
+   * eleven-second arrival on every page load.
+   */
+  setTruckPresent(wanted: boolean, immediate = false): void {
+    if (!this.created) {
+      this.pendingTruckPresent = { wanted, immediate };
+      return;
+    }
+    this.truckWanted = wanted;
+    if (wanted && !this.truckNode) {
+      this.truckNode = this.spawnTruckNode(immediate);
+    }
+    // A truck that should leave, or one that never arrived, needs nothing
+    // more done here: `stepTruckNode` reads `truckWanted` every frame and
+    // drives the actual Departing transition (and eventual destroy) itself
+    // -- the same "flag now, animate in the step loop" split `wantPresent`
+    // plays inside `stepTruck`.
+  }
+
+  /** One freshly summoned truck's Phaser picture, at the route's own first
+   *  vertex (or already parked -- see `setTruckPresent`'s own `immediate`
+   *  doc comment) and ready to start driving on the next `update()`. */
+  private spawnTruckNode(alreadyParked: boolean): TruckSceneNode {
+    const truck = spawnTruck("stackacres-delivery-truck", alreadyParked);
+    const at = isoProject(truck.x, truck.y);
+    const container = this.add.container(at.x, at.y).setDepth(this.depthAt(truck.x, truck.y));
+    // Same shadow-pool math paintProps() uses for every static prop -- the
+    // shadow painter's pool is 33 by 13 units at scale 1.
+    const shadow = this.add
+      .image(3 / S, 1 / S, "shadow", ART_FRAME)
+      .setOrigin(0.5, 0.5)
+      .setScale(TRUCK_FOOTPRINT.w / 33 / S, TRUCK_FOOTPRINT.h / 13 / S)
+      .setAlpha(0.8);
+    const p = PAINTERS.truck;
+    const sprite = this.add
+      .image(0, 0, "truck", ART_FRAME)
+      .setOrigin(p.ax, p.ay)
+      .setScale(mirrorFor("truck", truck.facing) / S, 1 / S);
+    container.add([shadow, sprite]);
+    return { truck, container, sprite, shadow };
+  }
+
+  /**
+   * One frame of the truck's drive (or its stay at the dock), and the
+   * teardown once it has fully driven off. Gated in full on `this.truckNode`
+   * existing at all -- `setTruckPresent` is what creates one in the first
+   * place, so there is no separate flag to check for "no contract has ever
+   * been open": there is simply no node here to step.
+   */
+  private stepTruckNode(dtMs: number): void {
+    const node = this.truckNode;
+    if (!node) return;
+    const next = stepTruck(node.truck, dtMs, this.truckWanted);
+    if (next === null) {
+      node.container.destroy(true);
+      this.truckNode = null;
+      return;
+    }
+    node.truck = next;
+    const at = isoProject(next.x, next.y);
+    node.container.setPosition(at.x, at.y);
+    node.container.setDepth(this.depthAt(next.x, next.y));
+    node.sprite.setScale(mirrorFor("truck", next.facing) / S, 1 / S);
   }
 
   /**
@@ -4967,6 +5102,23 @@ export class StackAcresScene extends Phaser.Scene {
       // against, since nothing was ever drawn at that spot.
       if (this.merchantNode && midnightMerchantHitAt(ground.x, ground.y)) {
         this.callbacks.onMerchantTap();
+        return;
+      }
+      // The delivery truck -- checked right after the Midnight Merchant
+      // (another temporary visitor that is not a fixed `PropKind`) and only
+      // tested while it is actually `Parked` at the dock: mid-drive it is
+      // moving ground, not a tap target, the same reason `truckHitAt`'s own
+      // doc comment gives for evaluating it at the fixed `TRUCK_PARK_SPOT`
+      // rather than the truck's live position. Opens the same Town
+      // Contracts sheet the signpost does (stackacres-farm.tsx's
+      // `onWorldTruckTap`) -- the truck is a second door to it, not a
+      // different one.
+      if (
+        this.truckNode &&
+        this.truckNode.truck.state === TruckState.Parked &&
+        truckHitAt(ground.x, ground.y)
+      ) {
+        this.callbacks.onTruckTap();
         return;
       }
       // The Pixel Pilgrim's shrine -- checked right after the Midnight
@@ -7159,6 +7311,7 @@ export class StackAcresScene extends Phaser.Scene {
     for (const node of this.nodes.values()) this.placeUnitCue(node);
 
     this.stepDrones(time, delta);
+    this.stepTruckNode(delta);
   }
 
   /**

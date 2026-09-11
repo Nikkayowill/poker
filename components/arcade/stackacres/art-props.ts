@@ -36,6 +36,7 @@ export type PropPainterName =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
+  | "truck"
   | "midnightMerchant"
   | "log"
   | "mushroom"
@@ -738,6 +739,109 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     stroke(c, "rgba(90,60,20,.35)", 0.5);
     ell(c, 8.4, 1.9, 1.6, 0.6, -0.4);
     F(c, "rgba(255,255,255,.35)");
+  }),
+
+  /**
+   * The delivery truck: StackAcres' one moving vehicle (see
+   * lib/stackacres/delivery-truck.ts), parked at the yardRoad dock while it
+   * waits on a Town Contract. A cream cab in front, a taller wood-slat
+   * cargo box behind it -- the same "flat mass, lit upper-left" volume
+   * every prop here is built from, on two wheels instead of feet. The box
+   * sits taller than the cab on purpose (a real box truck's silhouette),
+   * which is also what keeps the two reading as one vehicle rather than a
+   * car towing a shed: the cab's roofline tucks under the box's own
+   * shoulder rather than butting flush against it.
+   */
+  truck: painter(38, 28, (c) => {
+    // Wheels first, so the chassis and body paint over their tops -- same
+    // draw order `wheelbarrow`'s own single wheel uses.
+    for (const wx of [9, 29]) {
+      ell(c, wx, 24.6, 3.6, 3.6);
+      F(c, "#241f1c");
+      ell(c, wx, 24.6, 2.1, 2.1);
+      F(c, RAMPS.iron.top);
+      for (let k = 0; k < 3; k += 1) {
+        const a = (k / 3) * Math.PI;
+        c.beginPath();
+        c.moveTo(wx - Math.cos(a) * 1.9, 24.6 - Math.sin(a) * 1.9);
+        c.lineTo(wx + Math.cos(a) * 1.9, 24.6 + Math.sin(a) * 1.9);
+        stroke(c, "rgba(0,0,0,.3)", 0.4, "butt");
+      }
+      ell(c, wx, 24.6, 0.7, 0.7);
+      F(c, "#241f1c");
+    }
+
+    // The chassis, riding low between the wheels.
+    rr(c, 3, 20.2, 32, 2.4, 1);
+    F(c, RAMPS.iron.rim);
+
+    // The cargo box: tall, wood-slat sides, its far (right, shaded) face a
+    // touch darker than its near one the same way `crate`'s own two side
+    // panels are.
+    rr(c, 16, 6.2, 20, 14.8, 1.6);
+    F(c, RAMPS.wood.top);
+    rr(c, 30, 6.2, 6, 14.8, 1.6);
+    F(c, "rgba(50,28,8,.3)");
+    for (const x of [20.5, 25, 29.5]) {
+      c.beginPath();
+      c.moveTo(x, 7.4);
+      c.lineTo(x, 19.8);
+      stroke(c, "rgba(55,30,10,.28)", 0.6, "butt");
+    }
+    // The roll-up door's seam and handle, centred on the box's near face.
+    c.beginPath();
+    c.moveTo(17.2, 10.4);
+    c.lineTo(28.4, 10.4);
+    stroke(c, "rgba(45,25,8,.4)", 0.6, "butt");
+    rr(c, 21.6, 12.6, 3.4, 1.1, 0.5);
+    F(c, "rgba(35,20,6,.55)");
+    rr(c, 16, 6.2, 20, 14.8, 1.6);
+    stroke(c, "rgba(45,25,8,.5)", 0.6);
+    // A crate riding in the open tailgate, just visible over the box's own
+    // far edge -- the one "carrying goods" cue, echoing the hay heaped on
+    // `wheelbarrow`'s own tub.
+    rr(c, 31.4, 4.6, 5.2, 4.4, 0.6);
+    F(c, RAMPS.wood.side);
+    rr(c, 31.4, 4.6, 5.2, 1.3, 0.4);
+    F(c, "rgba(255,235,200,.3)");
+
+    // The cab: shorter and lower than the box, tucked in front of it.
+    rr(c, 2, 9.4, 15.4, 11.4, 2);
+    F(c, RAMPS.cream.top);
+    rr(c, 13.6, 9.4, 3.8, 11.4, 2);
+    F(c, "rgba(160,145,110,.32)");
+    rr(c, 2, 9.4, 15.4, 11.4, 2);
+    stroke(c, RAMPS.cream.rim, 0.6);
+    // The windshield, angled back over the hood the way a cab's always is.
+    poly(c, [[3.4, 11.1], [12.2, 11.1], [10.6, 15.2], [4.6, 15.2]]);
+    F(c, RAMPS.water.top);
+    poly(c, [[3.4, 11.1], [7.2, 11.1], [6.2, 12.6], [4.1, 12.6]]);
+    F(c, "rgba(255,255,255,.4)");
+    // A painted roof stripe, StackAcres' own gold, over both the cab and
+    // the box -- what reads as "one vehicle" from a distance before either
+    // shape does.
+    for (const [x0, x1, y] of [[2, 17.4, 9.9], [16, 36, 6.7]] as const) {
+      c.beginPath();
+      c.moveTo(x0, y);
+      c.lineTo(x1, y);
+      stroke(c, RAMPS.gold.top, 1.1, "butt");
+    }
+    // Bumper, grille, headlight.
+    rr(c, 0.8, 19.4, 15.8, 1.9, 0.9);
+    F(c, RAMPS.iron.top);
+    rr(c, 2, 16.8, 3.2, 2.6, 0.5);
+    F(c, RAMPS.iron.rim);
+    ell(c, 3.6, 18.6, 1.15, 1.15);
+    F(c, RAMPS.gold.top);
+    ell(c, 3.2, 18.2, 0.4, 0.4);
+    F(c, "rgba(255,255,255,.55)");
+    // The wing mirror, a single stroke off the cab's near-top corner.
+    c.beginPath();
+    c.moveTo(2.4, 10.6);
+    c.lineTo(0.4, 9.4);
+    stroke(c, RAMPS.iron.rim, 0.7);
+    ell(c, 0.2, 9.1, 0.6, 0.4, -0.4);
+    F(c, RAMPS.iron.top);
   }),
 
   /*

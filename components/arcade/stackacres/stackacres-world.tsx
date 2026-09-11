@@ -153,6 +153,13 @@ export interface StackAcresWorldApi {
    *  render. Passing the unchanged list twice is a harmless no-op (the
    *  scene's own `setDroneHangar` diffs against what it already has). */
   setDroneHangar: (droneIds: string[]) => void;
+  /** Wants (or stops wanting) the delivery truck on the lot -- same
+   *  "push, never rebuild" contract as `setMerchant`, called whenever
+   *  `StackAcresView.contract`'s presence flips. `immediate` skips the
+   *  drive-in animation, for the one case that is not a genuinely observed
+   *  transition (a contract already open on page load) -- see the scene's
+   *  own `setTruckPresent` doc comment. */
+  setTruckPresent: (wanted: boolean, immediate?: boolean) => void;
   /** Parks every drone's forage drops for `durationMs` -- they keep flying,
    *  they just stop finding anything. Called when the server refuses a claim
    *  with `day-capped`: the farm cannot pay another Gold piece today, so the
@@ -207,6 +214,10 @@ export interface StackAcresWorldProps {
   /** A finger landed on the Midnight Merchant, while he is actually
    *  standing on the lot (see `setMerchant` on the imperative handle). */
   onMerchantTap: () => void;
+  /** A finger landed on the delivery truck, while it is actually parked at
+   *  its dock (see `setTruckPresent` on the imperative handle). Opens the
+   *  same Town Contracts sheet `onSignpostTap` does. */
+  onTruckTap: () => void;
   /** A finger landed on the Pixel Pilgrim's own shrine. Fires no bow and
    *  reaches no server by itself -- this is only the cue to open his
    *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
@@ -332,6 +343,7 @@ export function StackAcresWorld({
   onGreenhouseTap,
   onGreenhouseSlotTap,
   onMerchantTap,
+  onTruckTap,
   onMonkTap,
   onRayTap,
   onVisitorTap,
@@ -367,6 +379,7 @@ export function StackAcresWorld({
   const greenhouseTapRef = useRef(onGreenhouseTap);
   const greenhouseSlotTapRef = useRef(onGreenhouseSlotTap);
   const merchantTapRef = useRef(onMerchantTap);
+  const truckTapRef = useRef(onTruckTap);
   const monkTapRef = useRef(onMonkTap);
   const rayTapRef = useRef(onRayTap);
   const visitorTapRef = useRef(onVisitorTap);
@@ -408,6 +421,7 @@ export function StackAcresWorld({
     greenhouseTapRef.current = onGreenhouseTap;
     greenhouseSlotTapRef.current = onGreenhouseSlotTap;
     merchantTapRef.current = onMerchantTap;
+    truckTapRef.current = onTruckTap;
     monkTapRef.current = onMonkTap;
     rayTapRef.current = onRayTap;
     visitorTapRef.current = onVisitorTap;
@@ -475,6 +489,7 @@ export function StackAcresWorld({
           onGreenhouseTap: () => greenhouseTapRef.current(),
           onGreenhouseSlotTap: (row, col, at) => greenhouseSlotTapRef.current(row, col, at),
           onMerchantTap: () => merchantTapRef.current(),
+          onTruckTap: () => truckTapRef.current(),
           onMonkTap: (at) => monkTapRef.current(at),
           onRayTap: (at) => rayTapRef.current(at),
           onVisitorTap: (kind, at) => visitorTapRef.current(kind, at),
@@ -622,6 +637,7 @@ export function StackAcresWorld({
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),
       setDroneHangar: (droneIds) => sceneRef.current?.setDroneHangar(droneIds),
+      setTruckPresent: (wanted, immediate) => sceneRef.current?.setTruckPresent(wanted, immediate),
       holdDroneForage: (durationMs) => sceneRef.current?.holdDroneForage(durationMs),
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
     }),

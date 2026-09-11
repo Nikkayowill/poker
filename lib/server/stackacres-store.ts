@@ -31,6 +31,7 @@ import {
   type StackAcresPrestigeState,
 } from "@/lib/stackacres/prestige";
 import type { NpcId } from "@/lib/stackacres/friendship";
+import { freshStory, type StoredStory } from "@/lib/stackacres/story/state";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import { adminClient } from "./supabase-admin";
 
@@ -101,6 +102,7 @@ declare global {
   var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
   var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
   var __riverRoomStackAcresWater: Map<string, number> | undefined;
+  var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -2962,4 +2964,117 @@ export async function giveStackAcresGift(
     outcome: row.outcome as GiftAttemptResult["outcome"],
     grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* The travelers' story                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `homestead_story` and its `write_homestead_story`/
+ * `turn_in_homestead_story_quest` RPCs -- one jsonb document per profile
+ * holding the whole `StoredStory` (lib/stackacres/story/state.ts), version-
+ * guarded the same way a Realtime-carried row is everywhere else in this
+ * codebase. A fresh document (never written) reports version 0, matching
+ * `write_homestead_story`'s own "0 means no row yet" contract.
+ */
+const memoryStory =
+  globalThis.__riverRoomStackAcresStory ?? new Map<string, { story: StoredStory; version: number }>();
+globalThis.__riverRoomStackAcresStory = memoryStory;
+
+export interface StoredStoryRow {
+  story: StoredStory;
+  version: number;
+}
+
+const FRESH_STORY_ROW: StoredStoryRow = { story: freshStory(), version: 0 };
+
+/** A profile's whole story document, or a fresh one (version 0) if it has
+ *  never been written. Read-only -- the two functions below are the only
+ *  writers. */
+export async function readStackAcresStory(profileId: string): Promise<StoredStoryRow> {
+  const supabase = adminClient();
+  if (!supabase) return memoryStory.get(profileId) ?? FRESH_STORY_ROW;
+
+  const { data, error } = await supabase
+    .from("homestead_story")
+    .select("story, version")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your story: ${error.message}`);
+  if (!data) return FRESH_STORY_ROW;
+  const row = data as { story: StoredStory; version: number | string };
+  return { story: row.story, version: Number(row.version) };
+}
+
+/** Writes the whole document if and only if it is still at
+ *  `expectedVersion`. Returns the new version, or null on a lost race --
+ *  the caller re-reads and retries (see stackacres-service.ts's
+ *  `recordStoryEvents`/`meetStackAcresTraveler`). */
+export async function writeStackAcresStory(
+  profileId: string,
+  story: StoredStory,
+  expectedVersion: number,
+): Promise<number | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryStory.get(profileId) ?? FRESH_STORY_ROW;
+    if (current.version !== expectedVersion) return null;
+    const next = { story, version: current.version + 1 };
+    memoryStory.set(profileId, next);
+    return next.version;
+  }
+
+  const { data, error } = await supabase.rpc("write_homestead_story", {
+    p_profile_id: profileId,
+    p_story: story,
+    p_expected_version: expectedVersion,
+  });
+  if (error) throw new Error(`Could not save your story: ${error.message}`);
+  return data === null ? null : Number(data);
+}
+
+export type StoryTurnInOutcome = "ok" | "conflict" | "insufficient";
+
+/**
+ * The guarded write behind a quest turn-in: the version-checked document
+ * write, plus every deliver objective's debit against
+ * `homestead_processing_inventory`, atomically -- see the migration's own
+ * `turn_in_homestead_story_quest` for why this is one function and not a
+ * write followed by a loop of `adjustStackAcresInventory` calls (a refused
+ * turn-in must never have already spent an item, and two calls cannot share
+ * one transaction the way this RPC does).
+ */
+export async function turnInStackAcresStory(
+  profileId: string,
+  story: StoredStory,
+  expectedVersion: number,
+  debits: readonly { item: MachineItemId; quantity: number }[],
+): Promise<StoryTurnInOutcome> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryStory.get(profileId) ?? FRESH_STORY_ROW;
+    if (current.version !== expectedVersion) return "conflict";
+    // Checked, never spent, before any debit lands -- a refused turn-in
+    // must not cost an item, the same rule the real RPC's transaction keeps.
+    for (const debit of debits) {
+      const key = `${profileId}:${debit.item}`;
+      if ((memoryInventory.get(key) ?? 0) < debit.quantity) return "insufficient";
+    }
+    for (const debit of debits) {
+      const key = `${profileId}:${debit.item}`;
+      memoryInventory.set(key, (memoryInventory.get(key) ?? 0) - debit.quantity);
+    }
+    memoryStory.set(profileId, { story, version: current.version + 1 });
+    return "ok";
+  }
+
+  const { data, error } = await supabase.rpc("turn_in_homestead_story_quest", {
+    p_profile_id: profileId,
+    p_story: story,
+    p_expected_version: expectedVersion,
+    p_debits: debits.map((d) => ({ item: d.item, quantity: d.quantity })),
+  });
+  if (error) throw new Error(`Could not turn that in: ${error.message}`);
+  return data as StoryTurnInOutcome;
 }

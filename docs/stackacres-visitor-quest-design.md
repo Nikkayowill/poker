@@ -1,147 +1,155 @@
-# StackAcres Visitor Quest & Automation System
+# StackAcres Travelers: Story and Questline
 
-Design doc for the 10 stranded-visitor NPCs (concept art already built, see
-`public/stackacres/sprites/visitor-*.png`). This adapts the "pixel refugees
-gate late-game automation" brief to the cast and economy that actually exist
-in this codebase, rather than inventing new characters or fabricated systems.
-Every reward named below is a real, already-shipped StackAcres system — the
-Synergy Tree, the Mill/Dairy/Loom, the Sunlight Forge, Ray's Museum secret
-wing, Irrigation, the Crossbreeding Bed, and the Friendship/keepsake track.
-Nothing here requires a new database table. A few genuinely new mechanics are
-flagged explicitly as **PROPOSED, NOT BUILT** — treat those as a menu to pick
-from later, not a spec to implement blind.
+The optional story layer for StackAcres. It replaces the ten stranded
+visitors (`lib/stackacres/visitors.ts`, concept art only, one greeting line
+each) with eleven characters who each carry a short quest line, a dialogue
+script, and a keepsake reward. Nothing on the farm waits on any of it. A
+player who never taps a traveler loses nothing.
 
-The premise stays exactly what Kayo signed off on for the cast: these 10 are
-interdimensional refugees whose home universes ran out of memory, stranded on
-a farm made of smooth, high-fidelity vector art — and they know it. Every
-greeting line below leans on that mismatch.
+## Premise
+
+The farm is a plot of land in East Preston, Nova Scotia. The player's mentor
+is the spirit of Great-Grandpa Ray, who built the house himself, raised
+heritage livestock, and broke the ground with a team of oxen. An auroral
+shimmer drops ten travelers from other dimensions onto his land. They are
+retro pixel art in a flat-vector world and they can tell. The player farms,
+processes goods, and helps each of them find a way home. Leo's beacon is the
+finale, and it needs the other ten home first.
+
+Ray is not a traveler. He is the land's own, drawn as a spirit standing near
+his house (PR #480 replaced his standing sprite with the house; the spirit
+sprite is a new asset, not the retired one).
 
 ## Cast
 
-| Visitor | Kind | Visual | District |
-|---|---|---|---|
-| Bleep | Hovering robot | one glowing eye, cracked star-map device | Farmstead |
-| Glimm | Blob alien | squishy body, cracked dome visor, worried face | Oak (woods) |
-| Nib | Astronaut scout | tiny, alien face through a cracked visor | Oak (woods) |
-| Pixl | Crystal being | faceted, glowing amber core, one flickering point | Coast |
-| Squee | Insectoid scout | six legs, curled antennae, compound eyes | Oak (woods) |
-| Dott | Shelled quadruped | saucer dome shell, worried face peeking out | Coast |
-| Mira | Human mechanic | teal jumpsuit, tool belt, goggles, wrench | Mine |
-| Zeph | Human elder navigator | purple star-robe, glowing-orb staff | Townsquare |
-| Kip | Human child | chibi, yellow puffy jacket, striped cap | Townsquare |
-| Tavo | Human pilot | burnt-orange flight suit, cracked helmet | Mine |
+| Traveler | Role | District | Unlock | Reward |
+|---|---|---|---|---|
+| Ray | The Pioneer | farmstead | always | `rays_heritage_cap` |
+| Chef Pierre | The Retro Cook | farmstead | level 2 | `liquid_chowder_bowl` |
+| Detective Miles | The Low-Res PI | coast | level 2 | `anomalous_scanner` |
+| Artist Skye | The Street Animator | oak | level 3 | `glitched_neon_fence` |
+| Diver Barnaby | The 16-Bit Aqua-Nut | coast | level 3 | `deepsea_waterwheel_node` |
+| Knight Arthur | The Flat Kingdom Paladin | townsquare | `town_trusted` flag | `aegis_plaza_token` |
+| Miner Brayden | The Blocky Excavator | mine | level 4 | `glitched_drill_bit` |
+| Botanist Ivy | The Nursery Programmer | farmstead | level 4 | `hyperdense_square_seeds` |
+| Cowboy Wes | The Low-Poly Wrangler | oxfields | `cleared_oxfields` flag | `oxen_speed_harness` |
+| Beekeeper Bea | The Sprite Apiarist | oak | level 5 | `liquid_gold_honeycomb` |
+| Astronaut Leo | The Cosmic Voyager | townsquare | every other traveler home | `infinite_shard_matrix` |
 
-## 3-Act structure
+"Level" is not a new stat. It is the supply store's own milestone ladder
+(`lib/stackacres/shop-locks.ts`) plus one, so a fresh farm is level 1 and a
+farm holding all five flags is level 6. A locked traveler's bubble shows the
+same "Requires: ..." label the store does. The brief's Town Hall and Barn
+gates map onto the two permanent flags that already mean "the town trusts
+you" and "the cattle pasture is yours".
 
-### Act 1 — Manual to Mechanical (Farmstead)
-**Arrival:** Bleep crash-lands by the windmill, half-dead, one eye flickering.
-He's the tech gate: fixing him is the player's introduction to the idea that
-a visitor is a *system*, not a shopkeeper. His reward track points at the
-**Sunlight Forge** (permanent tool enchantments) and unlocking the second
-Synergy archetype slot — the mechanical bridge before biology/scale show up.
+## Quest lines
 
-### Act 2 — The Interlocking Network (Oak woods, Coast)
-**Arrival:** five biological/alien anomalies, already hiding when the player
-finds them — Glimm, Nib, Squee (Oak woods) and Pixl, Dott (Coast). None of
-them trust the player alone; each needs something the *others* produce.
-Materials loop between them (crossbreed items, forge-grade crops, processed
-goods) so progress on one visitor stalls without progress on a neighbor. This
-is the interlocking-dependency web the brief asks for, built from the
-Crossbreeding Bed's existing byproducts (`golden_maize`, `sunroot_egg`,
-`candied_husk`, `marbled_down`, `tallow_wool`, `custard_curd`) plus Mill/
-Dairy/Loom goods.
+Every objective is a real farm verb. Counters tick off actions the server
+already runs. Deliver objectives read the inventory at turn-in and debit it
+then. Brayden's tool check reads the equipment rung live, so a player who
+already holds the Iron Shovel is never asked to buy it again.
 
-### Act 3 — Hyper-Efficient Homestead (Mine, Townsquare)
-**Arrival:** the futuristic humans — Mira and Tavo deep in the Mine, Zeph and
-Kip make it as far as Townsquare. This act's reward is the Synergy Tree's
-**third slot** and the top rung of the Friendship ladder for each of them —
-"permanently anchoring their data to the smooth world" is, mechanically, each
-of them putting down roots (a keepsake, a standing presence) rather than
-staying a rescue-in-progress.
+| Quest | Title | Objectives |
+|---|---|---|
+| ray.q1 | First Furrows | lay 3 soil beds, water 5 crops |
+| ray.q2 | A Full Basket | harvest 10 crops |
+| ray.q3 | Clearing the Debris | clear 1 district |
+| pierre.q1 | Real Ingredients | bring 5 potatoes, 5 carrots |
+| pierre.q2 | The Glitched Recipe | make 1 cake |
+| miles.q1 | Scene of the Anomaly | find 3 hidden spots |
+| miles.q2 | Heavy Evidence | clear 1 district |
+| skye.q1 | Organic Pigment | bring 6 beets, 6 poppies |
+| skye.q2 | Canvas | make 2 cloth |
+| barnaby.q1 | Sounding the Depths | catch 3 fish |
+| barnaby.q2 | Pressure Lines | lay 4 irrigation tiles |
+| arthur.q1 | Provisions for the Garrison | bring 10 wheat |
+| arthur.q2 | The Town's Trust | fill 2 town orders |
+| brayden.q1 | Iron Tools | own the Iron Shovel |
+| brayden.q2 | A Better Edge | forge 1 enchantment |
+| ivy.q1 | First Cross | 1 Crossbreeding Bed harvest |
+| ivy.q2 | Maritime Strains | 3 Crossbreeding Bed harvests |
+| wes.q1 | Hay in the Loft | buy 12 feed servings, feed 6 times |
+| wes.q2 | Working Stock | collect from animals 8 times |
+| bea.q1 | Fields of Flowers | harvest 16 poppy or sunflower |
+| bea.q2 | Keep Them Wet | water 20 crops |
+| leo.q1 | Beacon Components | bring 5 flour, 5 cheese, 5 cloth |
+| leo.q2 | Light the Beacon | lay 6 irrigation tiles, forge 1 enchantment |
 
-## Character frameworks
+Rewards are story items only (`lib/stackacres/story/items.ts`), the same
+category as Ray's keepsakes and the Pilgrim's relics. A turn-in never credits
+Gold. `stackacres-service.ts` pins Gold to four credit sites and this is not
+a fifth.
 
-### Bleep — the Tech Gate
-- **Visual profile:** small hovering robot, one cracked glowing eye, clutches
-  a dead star-map device against his chassis.
-- **Greeting (art-style shock):** *"BZZT—new biosignature. You're not
-  pixelated. Are you... smooth? My scanners don't know what to do with you."*
-- **Upgrades:** Sunlight Forge enchant slots (`lib/stackacres/forge.ts`) and
-  the 2nd Synergy archetype unlock slot.
+## Where it lives
 
-### Glimm, Nib, Squee, Pixl, Dott — the Biological Gate
-Treated as one interlocking quest cluster rather than five separate gates —
-see the pipeline below for how they hand off to each other.
-- **Glimm** (blob, cracked visor): *"Oh! Oh no, you can see me? I've been
-  hiding so well. ...wait, why do you look so clean-edged? Are YOU the
-  glitch here?"*
-- **Nib** (astronaut scout): *"Reporting... nothing. Ship's gone. Squad's
-  gone. But your farm has really good anti-aliasing, for what it's worth."*
-- **Squee** (insectoid): *"*click click* You register as... whole? I only
-  render in blocks. This is either a compliment to you or an insult to me."*
-- **Pixl** (crystal being): *"My facets keep catching light your world
-  doesn't seem to make. I flicker. You don't. I find that deeply rude,
-  somehow."*
-- **Dott** (shelled quadruped): *"I peeked out of my shell for the first
-  time in days and the grass has MORE PIXELS than me. I don't know how to
-  feel about that."*
-- **Upgrades:** the Crossbreeding Bed's yield odds, Ray's Museum secret wing
-  (a themed exhibit slot), Irrigation pipe reach.
+```
+lib/stackacres/story/
+  travelers.ts     the cast: name, district, unlock, reward
+  items.ts         the eleven keepsakes
+  unlocks.ts       derived gates, level = shop milestone + 1
+  events.ts        the farm events the engine listens for
+  quests.ts        objectives per traveler, labels, event matching
+  state.ts         stored progress, meet / event / turn-in reducers, the view
+  dialogue.ts      every line, node selection
+  use-stackacres-story.ts   the client hook
+```
 
-### Mira, Tavo — the Scale Gate (Mine)
-- **Mira** (mechanic): *"Huh. Smooth gradients. Where I'm from, a sunset
-  like that would melt my graphics card. Mind if I set up shop near your
-  tools?"*
-- **Tavo** (pilot): *"Crashed my ship somewhere past that ridge. Helmet's
-  cracked, pride's cracked worse. At least the landing was soft. Softer than
-  me, actually."*
-- **Upgrades:** Automated Logistics (farmhand speed) and High-Yield
-  Processing (Mill double-output) — the two Synergy perks that are
-  literally named "automation" already.
+Server is authoritative, same as every other StackAcres system. The pure
+reducers in `state.ts` are the only thing that moves progress:
 
-### Zeph, Kip — the Anchor (Townsquare)
-- **Zeph** (elder navigator): *"Every star I ever charted looked like this
-  world does. Sharp. Certain. I have not looked like that in a long while,
-  child."*
-- **Kip** (child): *"Whoa you're not BLOCKY! Are you a boss? Do bosses live
-  on farms? Can I pet the cow, is the cow blocky too?"*
-- **Upgrades:** 3rd Synergy archetype slot, top Friendship ladder keepsakes
-  for the whole cast (Zeph and Kip are the ones who convince the other eight
-  to stay for good).
+- `applyStoryEvent(story, event)` runs inside the server action that caused
+  the event. The client replays the same event locally so a counter ticks
+  before the response lands, and drops its replay the moment a fresh server
+  view arrives.
+- `meetTraveler` and `applyTurnIn` run for the two intents a bubble can post,
+  `story-meet` and `story-turn-in`. Both refuse before touching anything.
+- `storyView` is what the client renders. `dialogueNodeFor` picks a node from
+  it. A node carries `speakerName`, `dialogueText`, `vibratePattern`, the
+  buttons, and the intent the committing button posts. It never names an
+  item or a number to change.
 
-## Gated quest pipeline
+Events map onto existing actions like so:
 
-All "inputs" are real items from `lib/stackacres/items.ts`,
-`machine-items.ts`, or `crossbreed-items.ts`. All "rewards" are real unlocks.
+| Event | Action |
+|---|---|
+| harvested | collect |
+| watered | water |
+| fed | feed, feed-pen |
+| feed-bought | buy-feed |
+| processed | process, work |
+| fish-caught | catch-fish |
+| secret-zone-tapped | tap-secret-zone |
+| sector-cleared | clear-sector |
+| pipe-placed | place-pipe |
+| soil-placed | place-soil-tile |
+| contract-fulfilled | fulfill-contract |
+| enchantment-forged | forge-enchantment |
+| crossbreed-harvested | harvest-crossbreed |
 
-| # | Quest (Act) | Giver & dependency lock | Motivation | Inputs | Reward | Key dialogue beats |
-|---|---|---|---|---|---|---|
-| 1 | Reboot Bleep (1) | Bleep, no lock — first contact | His last charge is going; he needs raw calories, not tech, to reboot | 10× any Tier-1 crop (garlic/onion/beet/poppy/potato/carrot/cabbage) | Unlocks Bleep as a standing NPC + Forge enchant slot 1 | Accept: *"Feed the eye. I know how that sounds."* / Empty: *"Still one eye. Still dim. Still hungry."* / Done: *"Charge holding. First good news in a very blocky while."* |
-| 2 | Bleep's Diagnostic (1) | Bleep, locked until #1 | He can scan the farm now, but the scan itself needs Flour to run — cheap, but processed | 5× Flour (Mill) | Unlocks 2nd Synergy archetype slot | Accept: *"Run me through the mill's own math and I can read your whole farm."* / Empty: *"No Flour, no diagnostic. I can wait. I'm good at waiting, it turns out."* / Done: *"Diagnostic clean. You have more headroom than you think — go find it."* |
-| 3 | Glimm Won't Come Out (2) | Glimm, locked until Bleep's Diagnostic (his scan is what finds her) | She only trusts something that took real effort to make, not raw produce | 3× Cloth (Loom) | Opens her dialogue for good, +1 Museum secret-wing roll chance | Accept: *"...you found me because a ROBOT told you where to look? Fine. FINE. Bring me something that isn't just... grown."* / Empty: *"Still just grass and dirt out there? I can wait longer than you can grow."* / Done: *"Woven. Actually made. Okay. Okay, you're alright."* |
-| 4 | Squee's Trade (2) | Squee, locked until Glimm Won't Come Out | Squee wants what Glimm has now (Cloth) to line a nest — sibling handoff, the interlock in action | 2× Cloth + 3× Cheese (Dairy) | Unlocks Crossbreeding Bed yield-odds bump | Accept: *"*click* She has the woven thing. I want the woven thing. Bring two. And something dairy, don't ask why."* / Empty: *"*click click* (disappointed clicking)"* / Done: *"*happy click* Nest complete. You are now nest-approved."* |
-| 5 | Nib's Star-Chart (2) | Nib, locked until Squee's Trade | Nib needs a Crossbreed item (a farm-grown oddity) as a substitute component for his dead scanner | 1× Golden Maize (crossbreed) | Unlocks Irrigation pipe +1 reach | Accept: *"My scanner needs a power crystal. You don't have one. You have... this weird corn. It might work."* / Empty: *"Still just ordinary corn out there? Keep looking."* / Done: *"It's reading. Barely. But it's reading. I might find my way home yet."* |
-| 6 | Pixl and Dott's Standoff (2) | Pixl + Dott together, locked until Nib's Star-Chart | Pixl's light-flicker and Dott's shell-crack are the same kind of damage; fixing one needs the other's material | 1× Sunroot Egg + 1× Candied Husk (crossbreed) | Opens both permanently, +2 Museum secret-wing roll chance | Accept (Pixl): *"Dott says the egg stops the flicker. Dott is probably wrong. Bring it anyway."* / Accept (Dott): *"Pixl says the husk seals a shell. Pixl is probably wrong too. But bring it."* / Done: *"...huh. We were both right for once."* |
-| 7 | Mira's Toolkit (3) | Mira, locked until the full Oak/Coast cluster (quests 3–6) is done | She won't set up in the Mine until the surface visitors are safe — she's the second wave, not the first | 5× Flour + 5× Cheese + 5× Cloth | Unlocks Automated Logistics perk purchase | Accept: *"Get your surface friends settled first. Then we'll talk tools."* / Empty: *"Still nothing processed coming out of that mill of yours? I can't work with raw."* / Done: *"Wrench fits. Belt's stocked. Let's automate something."* |
-| 8 | Tavo's Wreck (3) | Tavo, locked until Mira's Toolkit | His ship's black box needs Mira's tools to crack open — direct hand-off between the two humans | 3× Flour + 3× Cheese + 3× Cloth (Mira's toolkit, spent again) | Unlocks High-Yield Processing perk purchase | Accept: *"Mira's got the tools now. I've got the wreck. Bring me the same stack she used."* / Empty: *"Box is still sealed. So is my mood."* / Done: *"Cracked it. Whole flight log. Whole crash. Not fun to relive, but — thank you."* |
-| 9 | Zeph's Reading (3) | Zeph, locked until Tavo's Wreck (the black box gives him the coordinates he needs) | He needs the flight log's data plus a physical offering — the last quest that still costs anything | 10× any Tier-3 crop + 5× Cloth | Unlocks 3rd Synergy archetype slot | Accept: *"Tavo's log has numbers. I need something grown to weigh against them — an old ritual, don't ask."* / Empty: *"The numbers still don't balance. Bring more."* / Done: *"They balance. For the first time since I landed, they balance."* |
-| 10 | Kip Wants Everyone to Stay (3) | Kip, locked until Zeph's Reading | Not a material quest — a gift round to all 9 other visitors, closing the Friendship ladder for the whole cast at once | 1× any keepsake-eligible gift to each of the other 9 | Top Friendship ladder rung for all 10 visitors, permanent standing NPCs | Accept: *"If EVERYONE gets a present do you think they'll stay? Even Bleep? Even Zeph, he's kind of grumpy."* / Empty: *"You haven't given everyone something yet. I'm counting. I'm ALWAYS counting."* / Done: *"They're staying. They're actually staying. I did that. WE did that."* |
+## Built and not built
 
-## PROPOSED, NOT BUILT — automation objects the brief names that don't exist yet
+Built: everything under `lib/stackacres/story/`, with tests, and this doc.
 
-The brief specifically asks for sprinklers/drones/auto-harvesters as
-unlockable blueprints. Those aren't real systems today — flagging them here
-as options rather than building them speculatively:
+Not built yet, in the order they should land:
 
-- **Laser Sprinklers** — would need a new irrigation variant in
-  `lib/stackacres/irrigation.ts` that auto-waters on a timer instead of
-  requiring a pipe-network tap. Real scope: a new tile-state + a cron-like
-  check, similar shape to the existing hunger/thirst clocks.
-- **Drone Nodes** — `bakeDroneTexture` already exists in
-  `stackacres-scene.ts` for wildlife defense; a *harvest* drone would be a
-  new, separate mechanic (auto-collects ready units), not a reskin of that
-  one. Real scope: bigger — would need its own settlement path under the
-  one-faucet/one-ceiling rule every other payout follows.
+1. Server slice. A `homestead_story` row per profile holding `StoredStory`,
+   `story` on `StackAcresView`, the two intents on the actions route, and
+   `applyStoryEvent` calls inside the handlers listed above. Migration ships
+   with the same PR and is applied with it.
+2. Scene. Placement for eleven travelers (the same seeded search
+   `visitors.ts` uses), a hit-test, and a tap that calls `open`. Ray's spirit
+   stands near his house, drawn translucent.
+3. Bubble. One dialogue component for every traveler, shaped like
+   `stackacres-monk-dialogue.tsx`, rendering a `StoryDialogueNode` and its
+   choices. Locked travelers show the hint under the line.
+4. Art. Ten traveler sprites through the visitors' own pixelation pipeline
+   (`prep_visitors.py`: cut, box-filter to a 48px grid, 20-colour quantize,
+   nearest-neighbour upscale). Reference renders are in `~/Pictures`
+   (`RandomNPC1.jpg`, `4_NPCs.jpg`, `4NPCs_2.jpg`). Portrait paths are
+   `/stackacres/sprites/traveler-<id>.png`.
+5. Remove `visitors.ts`, `stackacres-visitor-greeting.tsx`, and the ten
+   `visitor*` prop kinds once the scene draws the new cast.
 
-Neither is needed for the 10-quest pipeline above; both are here only
-because the original brief named them by name.
+The Pixel Pilgrim, the Midnight Merchant, the farmhand, and Ray's gift
+friendship are separate systems and stay as they are.

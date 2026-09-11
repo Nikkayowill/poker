@@ -25,6 +25,7 @@ import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { PipeFacing, PipeKind } from "./irrigation";
 import type { ZoneId } from "./zones";
+import type { TravelerId } from "./story/travelers";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
@@ -117,6 +118,12 @@ export type Action =
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }
+  // The travelers' story (./story/). Both move no Gold: `story-meet` accepts
+  // a traveler's first quest, `story-turn-in` hands the active one in --
+  // debiting only the items it asked for, and paying a story keepsake,
+  // never a purse. Only ever sent from a bubble's own committing button.
+  | { action: "story-meet"; traveler: TravelerId }
+  | { action: "story-turn-in"; traveler: TravelerId }
   // The Mechanical Forage Drone. `deploy-drone` spends the flat hangar fee,
   // once per drone; `collect-drone-forage` pays whatever the server rolled
   // for that one claim -- there is no fake patch for it in

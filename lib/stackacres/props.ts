@@ -56,23 +56,23 @@ export type PropKind =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
-  // The ten stranded visitors (see ./visitors.ts) -- static, tappable, and
-  // placed by VISITOR_PROPS there rather than here, the same "kind lives
-  // where the rest of a prop's shape lives, placement lives beside its own
-  // story" split ./visitors.ts's own header explains. They are still
-  // PropKind members: the scene's `put(prop.kind, ...)` and this file's own
-  // PROP_SIZE/PROP_SHADOW are what a painter and a ground shadow are drawn
-  // from, and neither cares whether a placement array sits in this file.
-  | "visitorBleep"
-  | "visitorGlimm"
-  | "visitorNib"
-  | "visitorPixl"
-  | "visitorSquee"
-  | "visitorDott"
-  | "visitorMira"
-  | "visitorZeph"
-  | "visitorKip"
-  | "visitorTavo";
+  // The eleven story travelers (see ./story/placement.ts) -- static,
+  // tappable, and placed by TRAVELER_PROPS there rather than here: the kind
+  // lives where the rest of a prop's shape lives, the placement beside its
+  // own story. They are still PropKind members because the scene's
+  // `put(prop.kind, ...)` and this file's own PROP_SIZE/PROP_SHADOW are what
+  // a painter and a ground shadow are drawn from.
+  | "travelerRay"
+  | "travelerPierre"
+  | "travelerMiles"
+  | "travelerSkye"
+  | "travelerBarnaby"
+  | "travelerArthur"
+  | "travelerBrayden"
+  | "travelerIvy"
+  | "travelerWes"
+  | "travelerBea"
+  | "travelerLeo";
 
 export interface PropPlacement extends WorldPoint {
   kind: PropKind;
@@ -155,22 +155,23 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBed: { w: 28, h: 12 },
   stoneWall: { w: 32, h: 10 },
   scarecrow: { w: 20, h: 36 },
-  // Sized off each visitor's own real PNG aspect (width/288 tall) at a world
-  // height picked for their lore -- small alien/robot/bug/shell/crystal kinds
-  // at 18-22, the adult humans at 38 (a standing adult's read height at this
-  // zoom -- see STANDING_CHARACTER_SHADOW below), the child at 26. Width =
-  // height * (pngWidth/288), never picked independently, so
+  // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
+  // width/320) at a world height picked for their read: the adults at 38 (a
+  // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
+  // below), Skye and Ivy, the two small ones, at 30, Ray's spirit at 40.
+  // Width = height * (pngWidth/pngHeight), never picked independently, so
   // `spriteBacked`'s stretch-to-box `drawImage` never distorts the art.
-  visitorBleep: { w: 13.75, h: 20 },
-  visitorGlimm: { w: 16.67, h: 20 },
-  visitorNib: { w: 10.5, h: 18 },
-  visitorPixl: { w: 18.79, h: 22 },
-  visitorSquee: { w: 13.5, h: 18 },
-  visitorDott: { w: 17.08, h: 20 },
-  visitorMira: { w: 13.46, h: 38 },
-  visitorZeph: { w: 17.42, h: 38 },
-  visitorKip: { w: 15.71, h: 26 },
-  visitorTavo: { w: 17.42, h: 38 },
+  travelerRay: { w: 19.75, h: 40 },
+  travelerPierre: { w: 19.79, h: 38 },
+  travelerMiles: { w: 17.42, h: 38 },
+  travelerSkye: { w: 16.25, h: 30 },
+  travelerBarnaby: { w: 17.42, h: 38 },
+  travelerArthur: { w: 26.13, h: 38 },
+  travelerBrayden: { w: 22.96, h: 38 },
+  travelerIvy: { w: 19.38, h: 30 },
+  travelerWes: { w: 14.25, h: 38 },
+  travelerBea: { w: 21.38, h: 38 },
+  travelerLeo: { w: 22.96, h: 38 },
 };
 
 /**
@@ -191,16 +192,17 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBed: { w: 30, h: 6 },
   stoneWall: { w: 34, h: 5 },
   scarecrow: { w: 24, h: 7 },
-  visitorBleep: { w: 16, h: 6 },
-  visitorGlimm: { w: 19, h: 6 },
-  visitorNib: { w: 13, h: 5 },
-  visitorPixl: { w: 21, h: 6 },
-  visitorSquee: { w: 17, h: 5 },
-  visitorDott: { w: 20, h: 6 },
-  visitorMira: { w: 15, h: 6 },
-  visitorZeph: { w: 20, h: 7 },
-  visitorKip: { w: 18, h: 6 },
-  visitorTavo: { w: 20, h: 7 },
+  travelerRay: { w: 22, h: 7 },
+  travelerPierre: { w: 22, h: 7 },
+  travelerMiles: { w: 20, h: 7 },
+  travelerSkye: { w: 18, h: 6 },
+  travelerBarnaby: { w: 20, h: 7 },
+  travelerArthur: { w: 29, h: 8 },
+  travelerBrayden: { w: 25, h: 7 },
+  travelerIvy: { w: 22, h: 6 },
+  travelerWes: { w: 17, h: 7 },
+  travelerBea: { w: 24, h: 7 },
+  travelerLeo: { w: 25, h: 7 },
 };
 
 /**

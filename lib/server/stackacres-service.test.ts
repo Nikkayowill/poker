@@ -2243,6 +2243,8 @@ describe("the currency wall", () => {
       "sow-wheat",
       "start-blueprint",
       "stock",
+      "story-meet",
+      "story-turn-in",
       "tap-secret-zone",
       "trade-secret-item",
       "unlock-crop-fields",

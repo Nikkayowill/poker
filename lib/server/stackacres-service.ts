@@ -163,6 +163,17 @@ import {
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
+import type { StoryEvent } from "@/lib/stackacres/story/events";
+import type { StoryItemId } from "@/lib/stackacres/story/items";
+import {
+  activeQuest,
+  applyStoryEvent,
+  applyTurnIn,
+  meetTraveler,
+  storyView,
+  type StackAcresStoryView,
+} from "@/lib/stackacres/story/state";
+import { TRAVELER_CATALOGUE, isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import {
@@ -233,6 +244,9 @@ import {
   prayAtStackAcresShrine as prayAtStackAcresShrine_store,
   readStackAcresFriendship,
   giveStackAcresGift as giveStackAcresGift_store,
+  readStackAcresStory,
+  writeStackAcresStory,
+  turnInStackAcresStory,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
@@ -672,6 +686,11 @@ export interface StackAcresView {
     unlocked: boolean;
     drones: { droneId: string; deployedAt: string }[];
   };
+  /** The travelers' story (lib/stackacres/story/): every traveler's unlock,
+   *  quest and readiness as this server derives it, and the story items
+   *  held. The bubble renders straight off this; a tap never asks the
+   *  server what to say. */
+  story: StackAcresStoryView;
 }
 
 /**
@@ -894,6 +913,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     storedFriendships,
     vatManifest,
     cutters,
+    storedStory,
   ] = await Promise.all([
     listStackAcresUnits(profile.id),
     readStackAcresFeed(profile.id),
@@ -939,6 +959,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     readStackAcresVatManifest(profile.id),
     readStackAcresCutters(profile.id),
+    readStackAcresStory(profile.id),
   ]);
 
   const { museum, secretDonations } = splitMuseumDonations(donated);
@@ -1027,6 +1048,10 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
       unlocked: droneHangarUnlocked,
       drones: droneRows.map((drone) => ({ droneId: drone.droneId, deployedAt: drone.deployedAt })),
     },
+    // Off the same derived `sectors`, influence and flags Ray's shop locks
+    // read (see readShopProgress), so a traveler's "Requires: ..." and the
+    // shelf's can never disagree.
+    story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, { tool }),
   };
 }
 
@@ -1202,6 +1227,16 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
    *  other action leaves this undefined. */
   fishCaught?: { species: FishSpecies };
+  /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
+   *  THIS call just did -- never named `story`, which is StackAcresView's
+   *  own always-present standing and would collide with it in this
+   *  intersection. `granted` names the keepsake only on the turn-in that
+   *  finished a traveler's whole line, and only the first time. */
+  storyResult?: {
+    traveler: TravelerId;
+    outcome: "met" | "already-met" | "advanced" | "completed";
+    granted: StoryItemId | null;
+  };
 };
 
 /**
@@ -1228,6 +1263,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
+  if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
   return Object.keys(delta).length > 0 ? delta : null;
 }
 
@@ -1552,6 +1588,7 @@ export async function clearStackAcresSector(
     });
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "sector-cleared", sector }]);
   return view(debited, now);
 }
 
@@ -1949,6 +1986,7 @@ export async function forgeStackAcresToolEnchantment(
       round: await snapshots(profile.id, now),
     });
   }
+  await recordStoryEvents(profile.id, [{ kind: "enchantment-forged" }]);
   return {
     ...(await view(profile, now)),
     forgeResult: { enchantmentId: outcome.enchantmentId, success: true },
@@ -2064,6 +2102,9 @@ export async function harvestStackAcresCrossbreedBed(
     throw new StackAcresRequestError("That row is not ripe yet, or was already brought in.", 409, {
       round: await snapshots(profile.id, now),
     });
+  }
+  if (settled.hybridItem !== null) {
+    await recordStoryEvents(profile.id, [{ kind: "crossbreed-harvested", item: settled.hybridItem }]);
   }
   return { ...(await view(profile, now)), crossbreedResult: settled };
 }
@@ -2495,6 +2536,7 @@ export async function buyStackAcresFeed(
     throw error;
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "feed-bought", servings: item.servings * quantity }]);
   return view(debited, now);
 }
 
@@ -2614,6 +2656,7 @@ export async function feedStackAcres(
     });
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "fed", count: 1 }]);
   return view(profile, now);
 }
 
@@ -2680,6 +2723,7 @@ export async function feedStackAcresPen(
       round: await snapshots(profile.id, now),
     });
   }
+  await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }]);
   return view(profile, now);
 }
 
@@ -2772,6 +2816,7 @@ export async function waterStackAcres(
     });
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "watered", count: 1 }]);
   return view(profile, now);
 }
 
@@ -2850,6 +2895,7 @@ export async function waterStackAcresGroup(
       round: await snapshots(profile.id, now),
     });
   }
+  await recordStoryEvents(profile.id, [{ kind: "watered", count: wateredCount }]);
   return view(profile, now);
 }
 
@@ -2875,6 +2921,7 @@ export async function catchStackAcresFish(
   const profile = await ensureProfile(token);
   const species: FishSpecies = pickCaughtFish();
   await adjustStackAcresInventory(profile.id, species, 1);
+  await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }]);
   return { ...(await view(profile, now)), fishCaught: { species } };
 }
 
@@ -2975,6 +3022,9 @@ export async function tapStackAcresSecretZone(
     // that never gets marked and so could be replayed.
     return { ...(await view(profile, now)), discovery: null };
   }
+
+  // A marked attempt is a spot searched, found or not -- what Miles asks for.
+  await recordStoryEvents(profile.id, [{ kind: "secret-zone-tapped", zoneId }]);
 
   const found = rollSecretDiscovery(zone, Math.random);
   let discovery: SecretItemId | null = null;
@@ -3531,6 +3581,16 @@ export async function harvestStackAcres(
     });
   }
 
+  // Step 7. The travelers' story counts what settled, one event per stock
+  // kind, each carrying how many units of it came in -- after the credits
+  // above, so a story hiccup can never cost a harvest (see recordStoryEvents).
+  const settledByStock = new Map<StackAcresStock, number>();
+  for (const row of settled) settledByStock.set(row.stock, (settledByStock.get(row.stock) ?? 0) + 1);
+  await recordStoryEvents(
+    profile.id,
+    [...settledByStock].map(([stock, count]) => ({ kind: "harvested", stock, count })),
+  );
+
   return {
     ...(await view(profile, now)),
     harvest: {
@@ -3875,6 +3935,8 @@ export async function workStackAcres(
 
   let machinesStarted = 0;
   let machinesCollected = 0;
+  // What each collected run made, for the travelers' story (see the end).
+  const processedEvents: StoryEvent[] = [];
   const machines = await listStackAcresMachines(profile.id);
   // Read once for the whole pass rather than per machine -- a loadout does
   // not change mid-request, and this moves no Gold either way (see the
@@ -3961,6 +4023,7 @@ export async function workStackAcres(
       try {
         await adjustStackAcresInventory(profile.id, output, credited);
         machinesCollected += 1;
+        processedEvents.push({ kind: "processed", recipe: machine.recipeId, count: credited });
       } catch (error) {
         console.error("stackacres.machine_output_credit_failed", {
           profileId: profile.id,
@@ -3971,6 +4034,7 @@ export async function workStackAcres(
     }
   }
 
+  await recordStoryEvents(profile.id, processedEvents);
   return {
     ...(await view(profile, now)),
     work: { wheatCollected, machinesStarted, machinesCollected },
@@ -4112,6 +4176,13 @@ export async function processStackAcresRecipeAction(
   if (!isRecipeId(recipeInput)) throw new StackAcresRequestError("Not a real recipe.", 400);
   const profile = await ensureProfile(token);
   const processed = await processRecipe(profile.id, recipeInput, now);
+  // An instant recipe is made right here; a queued one is counted when
+  // `workStackAcres` collects it, so it is never counted twice.
+  if (processed.produced !== null) {
+    await recordStoryEvents(profile.id, [
+      { kind: "processed", recipe: processed.recipe, count: processed.produced.quantity },
+    ]);
+  }
   return { ...(await view(profile, now)), processed };
 }
 
@@ -4266,6 +4337,7 @@ export async function fulfillStackAcresTownContract(
     });
   }
 
+  await recordStoryEvents(profile.id, [{ kind: "contract-fulfilled" }]);
   return {
     ...(await view(paid ?? (await ensureProfile(token)), now)),
     contractReward: { gold: contract.goldReward, influence: contract.influenceReward },
@@ -4565,6 +4637,7 @@ export async function placeStackAcresPipeTile(
   }
 
   await recomputeIrrigation(profile.id, now);
+  await recordStoryEvents(profile.id, [{ kind: "pipe-placed", pipe: input.kind }]);
   return view(debited, now);
 }
 
@@ -4703,6 +4776,7 @@ export async function placeStackAcresSoilTile(
     throw error;
   }
   if (outcome.kind === "created") {
+    await recordStoryEvents(profile.id, [{ kind: "soil-placed", count: 1 }]);
     return view(profile, now);
   }
 
@@ -5028,6 +5102,147 @@ export async function giveStackAcresGift(
     ...(await view(profile, now)),
     gift: { npc, points: result.points, outcome: result.outcome, grantedKeepsake },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* The travelers' story                                                */
+/* ------------------------------------------------------------------ */
+
+/** How many times a story write is re-read and retried after losing a
+ *  version race before giving up. Two farm actions landing in the same
+ *  instant is the common case this covers; more than that is a client
+ *  hammering the route, which the rate limiter already answers. */
+const STORY_WRITE_ATTEMPTS = 3;
+
+/**
+ * Advances every open traveler quest by what an action just did, inside
+ * that action -- see lib/stackacres/story/state.ts's `applyStoryEvent`.
+ *
+ * Called AFTER the action's own settlement is durable, and best-effort like
+ * the museum donation inside a harvest: a story hiccup must never turn a
+ * settled, credited action into an error response. Version-guarded and
+ * retried, so two actions landing together each count; the client replays
+ * the same events locally and this server view overwrites its guess.
+ */
+async function recordStoryEvents(profileId: string, events: readonly StoryEvent[]): Promise<void> {
+  if (events.length === 0) return;
+  try {
+    for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
+      const current = await readStackAcresStory(profileId);
+      const next = events.reduce(applyStoryEvent, current.story);
+      // Same object means no open quest listened to any of these.
+      if (next === current.story) return;
+      if ((await writeStackAcresStory(profileId, next, current.version)) !== null) return;
+    }
+    console.error("stackacres.story_event_lost_race", { profileId, events });
+  } catch (error) {
+    console.error("stackacres.story_event_failed", { profileId, events, error });
+  }
+}
+
+/**
+ * Accepts a traveler's first quest -- what the bubble's "I'll help" sends.
+ * Moves no Gold and touches no inventory. The unlock is re-derived here off
+ * the same shop progress the store's own locks read (see readShopProgress),
+ * so a hand-rolled POST for a locked traveler is refused the same way the
+ * greyed-out bubble already is. A second accept is a harmless no-op.
+ */
+export async function meetStackAcresTraveler(
+  token: string,
+  travelerInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isTravelerId(travelerInput)) throw new StackAcresRequestError("There is nobody there to talk to.", 400);
+  const traveler: TravelerId = travelerInput;
+  const name = TRAVELER_CATALOGUE[traveler].name;
+  const profile = await ensureProfile(token);
+
+  for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
+    const [current, progress] = await Promise.all([readStackAcresStory(profile.id), readShopProgress(profile.id)]);
+    const result = meetTraveler(current.story, traveler, progress);
+    if (result.outcome === "locked") {
+      throw new StackAcresRequestError(`${name} is not ready to talk yet.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "already-met") {
+      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "already-met", granted: null } };
+    }
+    if ((await writeStackAcresStory(profile.id, result.story, current.version)) !== null) {
+      return { ...(await view(profile, now)), storyResult: { traveler, outcome: "met", granted: null } };
+    }
+  }
+  throw new StackAcresRequestError(`${name} was mid-sentence. Try again.`, 409, {
+    round: await snapshots(profile.id, now),
+  });
+}
+
+/**
+ * Hands in a traveler's active quest -- what the bubble's turn-in button
+ * sends. Refuses before touching anything (not met, already home, an
+ * objective still short), and only then debits the quest's deliver items
+ * and advances the line in ONE transaction (`turn_in_homestead_story_quest`),
+ * so a refused turn-in never costs an item and a lost race costs nothing
+ * twice. The last quest of a line grants that traveler's keepsake, a story
+ * item inside the same document -- never Gold, and never a machine item:
+ * the currency wall below pins Gold to its four sites and this is not one.
+ */
+export async function turnInStackAcresTravelerQuest(
+  token: string,
+  travelerInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  if (!isTravelerId(travelerInput)) throw new StackAcresRequestError("There is nobody there to talk to.", 400);
+  const traveler: TravelerId = travelerInput;
+  const name = TRAVELER_CATALOGUE[traveler].name;
+  const profile = await ensureProfile(token);
+
+  for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
+    const [current, inventory, tool] = await Promise.all([
+      readStackAcresStory(profile.id),
+      readStackAcresInventory(profile.id),
+      readStackAcresToolTier(profile.id),
+    ]);
+    const result = applyTurnIn(current.story, traveler, inventory, { tool });
+    if (result.outcome === "not-met") {
+      throw new StackAcresRequestError(`Say hello to ${name} first.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "already-done") {
+      throw new StackAcresRequestError(`${name} has already gone home.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "not-ready") {
+      const quest = activeQuest(current.story.travelers[traveler], traveler);
+      if (quest === null) throw new Error(`${traveler}: not-ready with no active quest`);
+      throw new StackAcresRequestError(`${quest.title} is not finished yet.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    const quest = result.quest;
+    if (quest === null) throw new Error(`${traveler}: turn-in ${result.outcome} without a quest`);
+
+    const debits = quest.objectives.flatMap((objective) =>
+      objective.kind === "deliver" ? [{ item: objective.item, quantity: objective.target }] : [],
+    );
+    const written = await turnInStackAcresStory(profile.id, result.story, current.version, debits);
+    if (written === "insufficient") {
+      throw new StackAcresRequestError(`You do not have everything ${name} asked for.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (written === "ok") {
+      return {
+        ...(await view(profile, now)),
+        storyResult: { traveler, outcome: result.outcome, granted: result.granted },
+      };
+    }
+  }
+  throw new StackAcresRequestError(`${name} was mid-sentence. Try again.`, 409, {
+    round: await snapshots(profile.id, now),
+  });
 }
 
 /**

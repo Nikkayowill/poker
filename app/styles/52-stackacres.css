@@ -1320,13 +1320,17 @@
   100% { transform: scale(1, 1); }
 }
 
-/* The shell's own drop-in: a bead of gel pooling into shape rather than the
-   ring's plain scale-fade (`sa-radial-in` above), since this shell is the
-   one glass surface on the screen. */
+/* The shell's own drop-in: a bead of gel pooling into shape while rising up
+   out of the target circle (`.sa-gel-target`), rather than the ring's plain
+   scale-fade (`sa-radial-in` above) or fading in already parked at its
+   resting spot. `--sa-gel-rise` (set inline in stackacres-gel-dock.tsx, sign
+   flipped the same way `rowTop` itself flips) is how far back toward the tap
+   the shell starts; `translate: -50% 0` on `.sa-gel-row` still owns the
+   horizontal centering, so this only ever moves it vertically. */
 @keyframes sa-gel-in {
-  0% { opacity: 0; transform: scale(.82, .68); filter: blur(6px); }
-  65% { opacity: 1; transform: scale(1.04, 1.05); filter: blur(0); }
-  100% { transform: scale(1, 1); }
+  0% { opacity: 0; transform: translateY(var(--sa-gel-rise)) scale(.82, .68); filter: blur(6px); }
+  65% { opacity: 1; transform: translateY(0) scale(1.04, 1.05); filter: blur(0); }
+  100% { transform: translateY(0) scale(1, 1); }
 }
 
 .sa-gel-name {

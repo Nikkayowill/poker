@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -261,7 +262,18 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
         className="sa-gel-row"
         role="group"
         aria-label={label}
-        style={{ left: `${at.x + nudgeX}px`, top: `${rowTop}px` }}
+        style={{
+          left: `${at.x + nudgeX}px`,
+          top: `${rowTop}px`,
+          // How far the shell travels on its entrance, and which way: it
+          // rises out of the target circle rather than just fading in at
+          // its own resting spot, so `sa-gel-in` below starts translated
+          // back toward the tap by this much and settles to 0. Flipped
+          // the same way `rowTop` itself flips, so a dock pinned below the
+          // tap (a tap too close to HEADROOM) still visibly rises out of
+          // the circle rather than dropping down onto it.
+          "--sa-gel-rise": `${flip ? -ROW_OFFSET : ROW_OFFSET}px`,
+        } as CSSProperties}
       >
         <button type="button" className="sa-gel-close" aria-label="Close" onClick={onClose}>
           ×

@@ -75,13 +75,16 @@ export interface StackAcresGelDockProps {
 const SETTLE_MS = 420;
 /** How long a missed drop takes springing back to its row slot. */
 const RETURN_MS = 220;
-/** How far above (or, flipped, below) the tap the row sits -- clear of the
+/** How far below (or, flipped, above) the tap the row sits -- clear of the
  *  circle pinned on the tap itself, the same spirit as the radial ring's own
- *  RADIUS but a straight offset rather than an arc. */
-const ROW_OFFSET = 92;
+ *  RADIUS but a straight offset rather than an arc. Increased for cinematic
+ *  gesture space during drag tracking. */
+const ROW_OFFSET = 127;
+/** Estimated menu height (shell + tokens) used for viewport-aware flip logic.
+ *  Includes padding, border, and scrollable content area. */
+const ESTIMATED_MENU_HEIGHT = 110;
 /** Mirrors StackAcresRadialMenu's own HEADROOM/SIDE_ROOM: how much room the
- *  row needs before it has to flip below the tap or nudge off an edge. */
-const HEADROOM = 150;
+ *  row needs before it has to nudge off an edge horizontally. */
 const SIDE_ROOM = 150;
 /** How many tokens the wheel shows before it fades into a scrollable edge --
  *  see `.sa-gel-scroll`'s own width in 52-stackacres.css, sized to match. */
@@ -120,9 +123,13 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   // itself.
   const [isHot, setIsHot] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
 
   useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth);
+    const onResize = () => {
+      setViewportWidth(window.innerWidth);
+      setViewportHeight(window.innerHeight);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -246,9 +253,13 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     }
   };
 
-  const flip = at.y < HEADROOM;
+  // Intelligent screen-bottom awareness: prefer placing the dock below the circle,
+  // only flipping above if the menu would overflow the bottom of the viewport with
+  // a safety margin. Default position is below (positive offset), flip to above
+  // (negative offset) only when necessary.
+  const flip = at.y + ROW_OFFSET + ESTIMATED_MENU_HEIGHT > viewportHeight;
   const nudgeX = Math.max(0, SIDE_ROOM - at.x) - Math.max(0, at.x + SIDE_ROOM - viewportWidth);
-  const rowTop = at.y + (flip ? ROW_OFFSET : -ROW_OFFSET);
+  const rowTop = at.y + (flip ? -ROW_OFFSET : ROW_OFFSET);
 
   return (
     <div ref={rootRef} className="sa-gel">
@@ -269,8 +280,8 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
           // rises out of the target circle rather than just fading in at
           // its own resting spot, so `sa-gel-in` below starts translated
           // back toward the tap by this much and settles to 0. Flipped
-          // the same way `rowTop` itself flips, so a dock pinned below the
-          // tap (a tap too close to HEADROOM) still visibly rises out of
+          // the same way `rowTop` itself flips, so a dock pinned above the
+          // tap (a tap too close to the bottom of the viewport) still visibly rises out of
           // the circle rather than dropping down onto it.
           "--sa-gel-rise": `${flip ? -ROW_OFFSET : ROW_OFFSET}px`,
         } as CSSProperties}

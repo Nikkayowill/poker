@@ -68,6 +68,16 @@ export function stackacresStockPrice(stock: StackAcresStock): number {
 }
 
 /**
+ * Whether this kind is sold outright at all. Tier 1 is not, since 2026-09-11
+ * -- see `ownableOutright` in ./catalogue.ts for why. `stackacresStockPrice`
+ * above deliberately still answers for every kind, so the round-trip rule
+ * below keeps being checked on tier 1 too.
+ */
+export function stackacresStockOwnableOutright(stock: StackAcresStock): boolean {
+  return STACKACRES_CATALOGUE[stock].ownableOutright;
+}
+
+/**
  * What a Gold-bought unit returns in ONE cycle as a fraction of what it cost.
  * THE NUMBER THAT MUST STAY BELOW 1 on every tier.
  *

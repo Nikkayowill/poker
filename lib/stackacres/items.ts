@@ -80,16 +80,21 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
   milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
 
-  /* ---- Tier 1 (fast/cheap): sellPrice 12, yield quantity 3. ---- */
-  garlic: { label: "Garlic", plural: "Garlic", icon: "ico-garlic", sellPrice: 12 },
-  onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 12 },
-  beet: { label: "Beet", plural: "Beets", icon: "ico-beet", sellPrice: 12 },
-  poppy: { label: "Poppy", plural: "Poppies", icon: "ico-poppy", sellPrice: 12 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 12 },
-  // Same numbers `sprout`'s old "carrot" item used to carry -- see
-  // catalogue.ts's file header.
-  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 12 },
-  cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 12 },
+  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Retuned
+   * 2026-09-11 alongside catalogue.ts's TIER1 (was sellPrice 12, quantity 3
+   * against a 15-minute cycle) -- see that file's TIER1 comment. Net per
+   * cycle (2 - 1 seed = 1 Gold) no longer matches the old Gold/minute rate;
+   * that parity was given up on purpose to keep every amount a whole Gold
+   * value, rather than introduce fractional currency anywhere. ---- */
+  garlic: { label: "Garlic", plural: "Garlic", icon: "ico-garlic", sellPrice: 2 },
+  onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
+  beet: { label: "Beet", plural: "Beets", icon: "ico-beet", sellPrice: 2 },
+  poppy: { label: "Poppy", plural: "Poppies", icon: "ico-poppy", sellPrice: 2 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
+  // No longer `sprout`'s old "carrot" item numbers -- retuned 2026-09-11,
+  // see the tier comment above.
+  carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
+  cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
   cucumber: { label: "Cucumber", plural: "Cucumbers", icon: "ico-cucumber", sellPrice: 25 },
@@ -135,14 +140,15 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   pig: { item: "wool", quantity: 6 },
   cattle: { item: "milk", quantity: 8 },
 
-  /* ---- All 22 crops: item id == stock id, always. ---- */
-  garlic: { item: "garlic", quantity: 3 },
-  onion: { item: "onion", quantity: 3 },
-  beet: { item: "beet", quantity: 3 },
-  poppy: { item: "poppy", quantity: 3 },
-  potato: { item: "potato", quantity: 3 },
-  carrot: { item: "carrot", quantity: 3 },
-  cabbage: { item: "cabbage", quantity: 3 },
+  /* ---- All 22 crops: item id == stock id, always. Tier 1 quantity is 1,
+   * not 3 -- see the tier comment in STACKACRES_ITEM_CATALOGUE above. ---- */
+  garlic: { item: "garlic", quantity: 1 },
+  onion: { item: "onion", quantity: 1 },
+  beet: { item: "beet", quantity: 1 },
+  poppy: { item: "poppy", quantity: 1 },
+  potato: { item: "potato", quantity: 1 },
+  carrot: { item: "carrot", quantity: 1 },
+  cabbage: { item: "cabbage", quantity: 1 },
   cucumber: { item: "cucumber", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },
   brokoly: { item: "brokoly", quantity: 4 },

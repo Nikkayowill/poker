@@ -781,6 +781,15 @@ const CASCADE_POP_STAGGER_MS = 110;
  *  -- it is sized against a fingertip, and a fingertip does not zoom. */
 const TAP_PAD = 12;
 
+/**
+ * How far a pressed unit's own picture lifts off its base while the finger is
+ * down, in scene units -- the same space the hold-lift's own bob is authored
+ * in (`startSoilLift`'s `y: baseY - 6`). Small on purpose: this answers a
+ * thumb, it is not an animation anybody should notice finishing. See
+ * `pressLiftUnit`.
+ */
+const PRESS_LIFT = 4;
+
 /** The dropped-tap ring's own resting radius and life. In CSS pixels and
  *  milliseconds: sized against a fingertip like `TAP_PAD` (it is answering the
  *  same thumb), and short enough to be gone before the pan it announced has
@@ -1947,6 +1956,13 @@ export class StackAcresScene extends Phaser.Scene {
    *  `down`), cancelled the moment the press crosses `TAP_SLOP` or lets go
    *  before `SOIL_LIFT_HOLD_MS`. */
   private soilLiftTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The unit currently held down under a finger, its own sprite, and the y
+   *  that sprite rests at -- see `pressLiftUnit`. Null whenever no press is
+   *  standing on a unit. */
+  private pressLift: { unitId: string; sprite: Phaser.GameObjects.Image; baseY: number } | null = null;
+  /** The diamond marking the cell a pressed unit stands on, drawn for as long
+   *  as that press lasts. */
+  private pressDiamond: Phaser.GameObjects.Graphics | null = null;
   private toolIconName: PainterName = "ico-look";
   /** The held tool. Only the scythe changes what a gesture MEANS here; every
    *  other tool does nothing on the canvas at all. */
@@ -2118,6 +2134,15 @@ export class StackAcresScene extends Phaser.Scene {
     this.soilPreview = this.add
       .graphics()
       .setDepth(GROW_AREA_GROUND_DEPTH + 1)
+      .setVisible(false);
+
+    // A pressed unit's own cell, just over `soilPreview` so a press on a bed
+    // that already has the seed ring open still reads, and still under the
+    // crop standing on it -- the shadow belongs on the ground, not on the
+    // plant. See `pressLiftUnit`.
+    this.pressDiamond = this.add
+      .graphics()
+      .setDepth(GROW_AREA_GROUND_DEPTH + 1.2)
       .setVisible(false);
 
     // Between `soilPreview` and the lift's own outline: the whole set of
@@ -4920,6 +4945,9 @@ export class StackAcresScene extends Phaser.Scene {
         // and cancelled it (see `move`/`up`) -- either way the hold no
         // longer means anything.
         if (!gesture || gesture.kind !== "press" || gesture.id !== pointerId) return;
+        // The hold won this press: the bed group's own outline and bob are
+        // the picture from here, so the press lift stops being it.
+        this.clearPressLift();
         this.startSoilLift(tx, ty);
         gesture.liftedThisPress = true;
       }, SOIL_LIFT_HOLD_MS);
@@ -4986,14 +5014,20 @@ export class StackAcresScene extends Phaser.Scene {
       this.pts.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (this.pts.size === 2) {
         // A second finger joining converts this into a pinch; whatever
-        // single-finger hold was pending on the first no longer applies.
+        // single-finger hold was pending on the first no longer applies, and
+        // neither does the press lift the first finger was showing.
         this.clearSoilLiftTimer();
+        this.clearPressLift();
         startPinch();
       } else {
         const gesture = oneFinger(event.pointerId, { x: event.clientX, y: event.clientY }, "press");
         gesture.startMow = mowable(event.clientX, event.clientY);
         this.gesture = gesture;
         armSoilLift(event.clientX, event.clientY, event.pointerId);
+        // Instant, and independent of what this gesture turns out to be: the
+        // lift says which cell is under the thumb, and `move`/`up` take it
+        // back down again whether the press became a tap, a pan or a hold.
+        this.pressLiftUnit(event.clientX, event.clientY);
         // Ray's house presses instantly on touch, independent of whatever
         // this gesture turns out to be (a tap, a pan, a mow) -- see
         // `setRayHousePressed`'s own header for why this is a plain texture
@@ -5061,8 +5095,11 @@ export class StackAcresScene extends Phaser.Scene {
           return;
         }
         // Past the slop, this press is a pan/mow, not a hold -- a pending
-        // hold-lift timer no longer applies.
+        // hold-lift timer no longer applies, and the unit it was standing on
+        // is no longer the thing it is aimed at (the ripple below is what
+        // that press gets instead).
         this.clearSoilLiftTimer();
+        this.clearPressLift();
         // A drag that started on standing grass with the scythe out cuts a
         // swathe; anywhere else, a drag pans -- there is no plot left for it
         // to sweep across instead.
@@ -5136,6 +5173,11 @@ export class StackAcresScene extends Phaser.Scene {
         this.rayHousePressPointerId = null;
         this.setRayHousePressed(false);
       }
+      // Same rule for a pressed unit, and for the same reason: the lift is
+      // about the finger being down, not about what the gesture resolved to.
+      // Before the `!gesture` return below, so a release with no gesture
+      // object still puts the unit back down.
+      this.clearPressLift();
       // A release that beat the hold timer to it (an ordinary tap) means the
       // hold never gets to mean anything, whether or not it would have
       // landed on a bed.
@@ -6017,6 +6059,76 @@ export class StackAcresScene extends Phaser.Scene {
     const inside = boundsPoint(x, y, node.sprite.getBounds());
     if (!inside) return false;
     return !alphaMaskCovers(mask, inside.u, inside.v);
+  }
+
+  /**
+   * The press half of a tap on a unit: its picture lifts off its own base and
+   * a translucent diamond marks the cell that will act, from the instant the
+   * finger lands until it comes up again. The action itself still happens on
+   * release, through `dispatchTap` -- this only says which cell is under the
+   * thumb, before anything is committed.
+   *
+   * ON THE SPRITE, NOT THE CONTAINER, which is `popUnit`'s own choice read the
+   * other way round. `update` rewrites a walking animal's CONTAINER position
+   * every frame, and that animal's shadow is a fixed local child of the
+   * container (see `buildUnit`), so lifting the container would both be
+   * overwritten and carry the shadow up off the grass with it. Nothing writes
+   * `sprite.y` for livestock.
+   *
+   * Set outright rather than tweened, the same posture `setRayHousePressed`
+   * takes: an eased press answer arrives after the thumb has already moved on,
+   * and an instant offset cannot be caught half-applied by a rebuild. Reduced
+   * motion is not consulted for that same reason -- neither a fixed offset nor
+   * a diamond lying on the ground is motion.
+   */
+  private pressLiftUnit(clientX: number, clientY: number): void {
+    this.clearPressLift();
+    // A lifted bed group already owns the picture, bob and outline both.
+    if (this.soilLift) return;
+    const id = this.unitAt(clientX, clientY);
+    if (!id) return;
+    const node = this.nodes.get(id);
+    if (!node) return;
+    this.pressLift = { unitId: id, sprite: node.sprite, baseY: node.sprite.y };
+    node.sprite.y -= PRESS_LIFT;
+    this.drawPressDiamond(node);
+  }
+
+  /** The cell a pressed unit stands on: its own bed where it has one, and
+   *  wherever it is standing otherwise. Deliberately not the tile under the
+   *  FINGER -- a ripe crop's leaves overhang its neighbours, so the finger's
+   *  own tile is not always the tile that is about to act. */
+  private drawPressDiamond(node: UnitNode): void {
+    const marker = this.pressDiamond;
+    if (!marker) return;
+    const ground = node.critter ?? node.spot;
+    const at = this.bedOf(node) ?? (ground ? soilTileAt(ground.x, ground.y) : null);
+    if (!at) return;
+    const corners = soilTileDiamond(at.tx, at.ty);
+    marker.clear();
+    marker.fillStyle(0x000000, 0.18);
+    marker.beginPath();
+    marker.moveTo(corners.n.x, corners.n.y);
+    marker.lineTo(corners.e.x, corners.e.y);
+    marker.lineTo(corners.s.x, corners.s.y);
+    marker.lineTo(corners.w.x, corners.w.y);
+    marker.closePath();
+    marker.fillPath();
+    marker.setVisible(true);
+  }
+
+  /** Puts a pressed unit back down. The sprite is restored only while it is
+   *  still the same object this press lifted: a node rebuilt mid-press (a
+   *  growth crossing a stage, a harvest taking it away) destroyed that sprite,
+   *  and whatever replaced it is already at its own resting y. */
+  private clearPressLift(): void {
+    const held = this.pressLift;
+    this.pressLift = null;
+    this.pressDiamond?.clear();
+    this.pressDiamond?.setVisible(false);
+    if (!held) return;
+    if (this.nodes.get(held.unitId)?.sprite !== held.sprite) return;
+    held.sprite.y = held.baseY;
   }
 
   /** The placed bed a crop's soil slot names, or null for anything off the

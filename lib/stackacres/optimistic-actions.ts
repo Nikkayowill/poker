@@ -71,7 +71,7 @@ import {
   type SeedStock,
   type StackAcresStock,
 } from "./catalogue";
-import { stackacresStockPrice } from "./market";
+import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
 import { sectorClearCheck, type SectorId } from "./sectors";
 import { cropFieldsUnlockCheck } from "./crop-fields";
@@ -401,6 +401,9 @@ export function predictStackAcresAction(
       };
     }
     case "buy-stock": {
+      // Tier 1 is not sold outright at all (`stackacresStockOwnableOutright`),
+      // so the server refuses this outright -- guess nothing.
+      if (!stackacresStockOwnableOutright(body.stock)) return null;
       // Buying a crop outright plants it, so it needs a free bed the same way
       // sowing does (`buyStackAcresStock`'s own gate). Nothing tilled means
       // the server is about to refuse, so guess nothing.

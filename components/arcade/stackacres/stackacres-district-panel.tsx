@@ -258,16 +258,18 @@ export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright
               <span className="sa-buy-label">Seed one cycle</span>
               <span className="sa-buy-price">{option.seedCost.toLocaleString()} Gold</span>
             </button>
-            <button
-              type="button"
-              className="sa-buy-btn is-gold"
-              disabled={isPending(`buy-stock:${option.stock}`) || option.atCap}
-              title={option.atCap ? option.seedReason ?? undefined : undefined}
-              onClick={() => onBuyOutright(option.stock)}
-            >
-              <span className="sa-buy-label">Buy outright</span>
-              <span className="sa-buy-price">{option.outrightCost.toLocaleString()} Gold</span>
-            </button>
+            {option.outrightCost !== null && (
+              <button
+                type="button"
+                className="sa-buy-btn is-gold"
+                disabled={isPending(`buy-stock:${option.stock}`) || option.atCap}
+                title={option.atCap ? option.seedReason ?? undefined : undefined}
+                onClick={() => onBuyOutright(option.stock)}
+              >
+                <span className="sa-buy-label">Buy outright</span>
+                <span className="sa-buy-price">{option.outrightCost.toLocaleString()} Gold</span>
+              </button>
+            )}
             {option.expand && (
               <button
                 type="button"

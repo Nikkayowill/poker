@@ -147,6 +147,17 @@ describe("buyOptionsForZone", () => {
     expect(full.seedReason).toMatch(/full/);
   });
 
+  it("prices no outright buy for a tier-1 crop, so its row shows seed only", () => {
+    const [carrot] = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} })
+      .filter((o) => o.stock === "carrot");
+    expect(carrot.seedCost).toBeGreaterThan(0);
+    expect(carrot.outrightCost).toBeNull();
+
+    // Everything else still carries one, so the shelf keeps both buttons.
+    const [hen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
+    expect(hen.outrightCost).toBeGreaterThan(0);
+  });
+
   it("a crop has no cap at all, no matter how many are already planted", () => {
     // "farmstead" is where every crop kind lives (lib/stackacres/world.ts).
     const units = Array.from({ length: 40 }, (_, i) => unit({ id: `c${i}`, stock: "carrot" }));

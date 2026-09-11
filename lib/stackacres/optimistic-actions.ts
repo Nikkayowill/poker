@@ -88,7 +88,15 @@ import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } fr
 import { applyInfluenceDiscount } from "./influence-tiers";
 import type { StackAcresUpkeepState } from "./upkeep";
 import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
-import { createSoilMap, nextFreeSoilSlot, plantSoilTile, soilSlotOnTile, type SoilTile } from "./soil";
+import {
+  createSoilMap,
+  moveSoilTileGroup,
+  nextFreeSoilSlot,
+  planSoilGroupRelocation,
+  plantSoilTile,
+  soilSlotOnTile,
+  type SoilTile,
+} from "./soil";
 import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
@@ -101,7 +109,7 @@ import {
 import { priceForNextPurchase, type MidnightMerchantSnapshot } from "./midnight-merchant";
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
-import { stockZone } from "./world";
+import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { removeFromInventory, type StackAcresInventory } from "./inventory";
 import {
   MACHINE_CAP,
@@ -571,6 +579,27 @@ export function predictStackAcresAction(
       );
       if (!occupant) return { soilTiles };
       return { soilTiles, units: withoutStackAcresUnit(ctx.units, occupant.id) };
+    }
+    case "move-soil-tile-group": {
+      // Same pure planner the server runs (stackacres-service.ts's
+      // `moveStackAcresSoilTileGroup`) against this same layout, so the
+      // guess and the real answer only disagree when this read is stale.
+      const soil = createSoilMap(ctx.soilTiles);
+      const plan = planSoilGroupRelocation(
+        soil,
+        body.tx,
+        body.ty,
+        body.toTx,
+        body.toTy,
+        soilTileInCropFieldBeds,
+      );
+      if (plan.kind !== "ok") return null;
+      if (!moveSoilTileGroup(soil, plan.moves)) return null;
+      // Crop-free on purpose, same as place/remove-soil-tile above: no unit
+      // moves here, only the beds -- a crop's `soilSlot` is an index into
+      // the ordered tile list, not a coordinate, so it keeps resolving to
+      // the same bed once that bed's tx/ty change (see soil.ts's header).
+      return { soilTiles: [...soil.values()] };
     }
     case "sow-wheat": {
       if (ctx.wheatPlots.length >= WHEAT_PLOT_CAP) return null;

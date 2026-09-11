@@ -3090,6 +3090,25 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /**
+   * Hold-tap lift, tap-to-drop: relocates the contiguous group of beds
+   * touching the lifted tile so it lands on the tapped destination, whatever
+   * crop stands on it carried along. Same optimistic posture as
+   * `onPlaceSoilTile` above -- the group appears to have moved the instant
+   * this fires (deterministic, see optimistic-actions.ts's
+   * `move-soil-tile-group` case); a refusal (already a bed there, outside
+   * the Crop Fields) rolls back through `act`'s own snapshot restore, the
+   * same as every other tile action.
+   */
+  const onMoveSoilTileGroup = useCallback(
+    (tx: number, ty: number, toTx: number, toTy: number) => {
+      buySound();
+      setLastCollect({ text: "Shifting the bed…", nonce: Date.now() });
+      void act({ action: "move-soil-tile-group", tx, ty, toTx, toTy });
+    },
+    [act],
+  );
+
   /** Placing a well or a length of pipe straight out of the radial ring.
    *  Unlike `onPlaceSoilTile` above, this one DOES get an optimistic guess --
    *  see optimistic-actions.ts's own `place-pipe` case -- so the tile appears
@@ -3707,6 +3726,7 @@ export function StackAcresFarm() {
               onUnitTap={onWorldUnitTap}
               onUnitSelect={onWorldUnitSelect}
               onGroundTap={onWorldGroundTap}
+              onSoilMoveCommitted={onMoveSoilTileGroup}
               onBarnTap={onWorldBarnTap}
               onSignpostTap={onWorldSignpostTap}
               onWorkshopTap={onWorldWorkshopTap}

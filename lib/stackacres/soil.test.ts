@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { growthStage, cropRank, cropRanks, cropSpot, CROP_FIELD_BEDS, STACKACRES_TILE } from "./world";
+import {
+  growthStage,
+  cropRank,
+  cropRanks,
+  cropSpot,
+  CROP_FIELD_BEDS,
+  soilTileInCropFieldBeds,
+  STACKACRES_TILE,
+} from "./world";
 import {
   MEADOW_TILE,
   meadowBaseDensity,
@@ -35,8 +43,11 @@ import {
   soilTileTier,
   nextFreeSoilSlot,
   soilSlotTile,
+  soilTileGroup,
   soilTileState,
   soilTilesEqual,
+  moveSoilTileGroup,
+  planSoilGroupRelocation,
   type CropSource,
   type SoilMap,
   type SoilTile,
@@ -727,6 +738,148 @@ describe("the Crop Fields can actually hold bought beds", () => {
       }
     }
     expect(placeable).toHaveLength(acrossX * acrossY);
+  });
+});
+
+describe("hold-tap relocation: soilTileGroup", () => {
+  it("is empty when nothing is placed at the seed coordinate", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    expect(soilTileGroup(soil, 5, 5)).toEqual([]);
+  });
+
+  it("is just the one tile when nothing touches it", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 5, ty: 5, order: 1, origin: "purchased" },
+    ]);
+    expect(soilTileGroup(soil, 0, 0)).toEqual([{ tx: 0, ty: 0 }]);
+  });
+
+  it("picks up every tile reachable by a chain of 4-neighbour beds", () => {
+    // A bent row: (0,0)-(1,0)-(1,1), plus an unrelated bed two tiles away
+    // that must not be swept in.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 1, ty: 1, order: 2, origin: "purchased" },
+      { tx: 3, ty: 0, order: 3, origin: "purchased" },
+    ]);
+    const group = soilTileGroup(soil, 0, 0);
+    expect(new Set(group.map((t) => `${t.tx},${t.ty}`))).toEqual(
+      new Set(["0,0", "1,0", "1,1"]),
+    );
+  });
+
+  it("does not cross a diagonal gap -- only 4-neighbours connect", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 1, order: 1, origin: "purchased" },
+    ]);
+    expect(soilTileGroup(soil, 0, 0)).toEqual([{ tx: 0, ty: 0 }]);
+  });
+});
+
+describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () => {
+  const alwaysInBounds = () => true;
+
+  it("refuses a seed coordinate with no bed", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    expect(planSoilGroupRelocation(soil, 5, 5, 6, 5, alwaysInBounds)).toEqual({ kind: "empty" });
+  });
+
+  it("refuses a destination equal to the current spot", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    expect(planSoilGroupRelocation(soil, 0, 0, 0, 0, alwaysInBounds)).toEqual({ kind: "no-op" });
+  });
+
+  it("refuses a destination outside the injected bounds", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    const plan = planSoilGroupRelocation(soil, 0, 0, 1, 0, () => false);
+    expect(plan.kind).toBe("out-of-bounds");
+  });
+
+  it("refuses a destination already held by a bed outside the moving group", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 5, ty: 0, order: 1, origin: "purchased" },
+    ]);
+    const plan = planSoilGroupRelocation(soil, 0, 0, 5, 0, alwaysInBounds);
+    expect(plan).toEqual({ kind: "blocked", at: { tx: 5, ty: 0 } });
+  });
+
+  it("plans and executes a single tile's move, preserving order/origin/tier", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 3, origin: "purchased", tier: "hydro" },
+    ]);
+    const plan = planSoilGroupRelocation(soil, 0, 0, 4, 7, alwaysInBounds);
+    expect(plan).toEqual({ kind: "ok", moves: [{ from: { tx: 0, ty: 0 }, to: { tx: 4, ty: 7 } }] });
+    expect(plan.kind === "ok" && moveSoilTileGroup(soil, plan.moves)).toBe(true);
+    expect(hasSoilTile(soil, 0, 0)).toBe(false);
+    expect(soil.get(soilTileKey(4, 7))).toEqual({ tx: 4, ty: 7, order: 3, origin: "purchased", tier: "hydro" });
+  });
+
+  it("slides a whole contiguous group by the same offset", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+    ]);
+    // The anchor (0,0) moves to (0,5); its neighbour (1,0) must carry the
+    // same +0,+5 offset to (1,5), not collapse onto the anchor's new spot.
+    const plan = planSoilGroupRelocation(soil, 0, 0, 0, 5, alwaysInBounds);
+    expect(plan.kind).toBe("ok");
+    expect(plan.kind === "ok" && moveSoilTileGroup(soil, plan.moves)).toBe(true);
+    expect(hasSoilTile(soil, 0, 0)).toBe(false);
+    expect(hasSoilTile(soil, 1, 0)).toBe(false);
+    expect(soilTileGroup(soil, 0, 5).map((t) => `${t.tx},${t.ty}`).sort()).toEqual(["0,5", "1,5"]);
+  });
+
+  it("lets a group slide into ground it is itself vacating, with no transient collision", () => {
+    // Sliding the pair one step right: (0,0)->(1,0), (1,0)->(2,0). (1,0) is
+    // both a destination (for the anchor) and a source (for its neighbour)
+    // in the SAME move -- this must not read as blocked.
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+    ]);
+    const plan = planSoilGroupRelocation(soil, 0, 0, 1, 0, alwaysInBounds);
+    expect(plan.kind).toBe("ok");
+    expect(plan.kind === "ok" && moveSoilTileGroup(soil, plan.moves)).toBe(true);
+    expect(hasSoilTile(soil, 0, 0)).toBe(false);
+    expect(soilTileGroup(soil, 1, 0).map((t) => `${t.tx},${t.ty}`).sort()).toEqual(["1,0", "2,0"]);
+  });
+
+  it("moveSoilTileGroup refuses and changes nothing when a from-tile is stale", () => {
+    const soil = createSoilMap([{ tx: 0, ty: 0, order: 0, origin: "purchased" }]);
+    const ok = moveSoilTileGroup(soil, [
+      { from: { tx: 9, ty: 9 }, to: { tx: 1, ty: 1 } },
+    ]);
+    expect(ok).toBe(false);
+    expect(hasSoilTile(soil, 0, 0)).toBe(true);
+    expect(soil.size).toBe(1);
+  });
+
+  it("agrees with the real Crop Fields bounds check placeStackAcresSoilTile uses", () => {
+    const origin = soilTileAt(MEADOW.x, MEADOW.y);
+    const soil = createSoilMap([{ tx: origin.tx, ty: origin.ty, order: 0, origin: "purchased" }]);
+    // One tile in, still inside -- and one tile past the field's edge.
+    const inside = planSoilGroupRelocation(
+      soil,
+      origin.tx,
+      origin.ty,
+      origin.tx + 1,
+      origin.ty,
+      soilTileInCropFieldBeds,
+    );
+    expect(inside.kind).toBe("ok");
+    const outside = planSoilGroupRelocation(
+      soil,
+      origin.tx,
+      origin.ty,
+      origin.tx - 1,
+      origin.ty,
+      soilTileInCropFieldBeds,
+    );
+    expect(outside.kind).toBe("out-of-bounds");
   });
 });
 

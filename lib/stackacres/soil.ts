@@ -293,6 +293,130 @@ export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): 
 }
 
 /* ------------------------------------------------------------------ */
+/* Relocating placed beds                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every tile reachable from `(tx, ty)` by a chain of 4-neighbour placed
+ * tiles -- what a hold-tap on one bed picks up as a single block, so
+ * relocating a row of touching beds moves the whole row rather than one
+ * tile at a time. Empty when nothing is placed at the seed coordinate.
+ */
+export function soilTileGroup(soil: SoilMap, tx: number, ty: number): SoilTileCoord[] {
+  if (!hasSoilTile(soil, tx, ty)) return [];
+  const startKey = soilTileKey(tx, ty);
+  const seen = new Set<string>([startKey]);
+  const queue: SoilTileCoord[] = [{ tx, ty }];
+  const group: SoilTileCoord[] = [];
+  const steps: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    group.push(current);
+    for (const [dx, dy] of steps) {
+      const ntx = current.tx + dx;
+      const nty = current.ty + dy;
+      const key = soilTileKey(ntx, nty);
+      if (seen.has(key) || !hasSoilTile(soil, ntx, nty)) continue;
+      seen.add(key);
+      queue.push({ tx: ntx, ty: nty });
+    }
+  }
+  return group;
+}
+
+/** One tile's move, as part of a group relocating together. */
+export interface SoilGroupMove {
+  from: SoilTileCoord;
+  to: SoilTileCoord;
+}
+
+export type SoilGroupRelocationPlan =
+  | { kind: "ok"; moves: SoilGroupMove[] }
+  /** No bed stands at the seed coordinate -- nothing to pick up. */
+  | { kind: "empty" }
+  /** The destination is the same tile the group already occupies. */
+  | { kind: "no-op" }
+  /** A destination tile lands outside `inBounds`. */
+  | { kind: "out-of-bounds"; at: SoilTileCoord }
+  /** A destination tile already holds a bed that ISN'T also moving. */
+  | { kind: "blocked"; at: SoilTileCoord };
+
+/**
+ * Plans sliding the contiguous group at `(tx, ty)` so that tile lands on
+ * `(toTx, toTy)`, every other tile in the group carried by the same offset.
+ *
+ * A destination tile is only a collision when it holds a bed OUTSIDE the
+ * moving group -- the group is translating as one rigid block, so one
+ * member's destination coinciding with another member's current position is
+ * an internal shuffle, not a conflict. `moveSoilTileGroup` below is what
+ * actually has to execute that shuffle without a transient duplicate; this
+ * function only decides whether the final layout is legal.
+ *
+ * `inBounds` is injected rather than read from `./world.ts`'s
+ * `CROP_FIELD_BEDS` directly -- this file's header explains why it cannot
+ * value-import world.ts. Both stackacres-service.ts and
+ * optimistic-actions.ts already import world.ts and pass its own bounds
+ * check in, so server and client agree on where a bed may stand without a
+ * second copy of that rectangle living here.
+ */
+export function planSoilGroupRelocation(
+  soil: SoilMap,
+  tx: number,
+  ty: number,
+  toTx: number,
+  toTy: number,
+  inBounds: (tx: number, ty: number) => boolean,
+): SoilGroupRelocationPlan {
+  const group = soilTileGroup(soil, tx, ty);
+  if (group.length === 0) return { kind: "empty" };
+  const dx = toTx - tx;
+  const dy = toTy - ty;
+  if (dx === 0 && dy === 0) return { kind: "no-op" };
+  const groupKeys = new Set(group.map((t) => soilTileKey(t.tx, t.ty)));
+  const moves: SoilGroupMove[] = [];
+  for (const tile of group) {
+    const to: SoilTileCoord = { tx: tile.tx + dx, ty: tile.ty + dy };
+    if (!inBounds(to.tx, to.ty)) return { kind: "out-of-bounds", at: to };
+    const toKey = soilTileKey(to.tx, to.ty);
+    if (!groupKeys.has(toKey) && hasSoilTile(soil, to.tx, to.ty)) {
+      return { kind: "blocked", at: to };
+    }
+    moves.push({ from: { tx: tile.tx, ty: tile.ty }, to });
+  }
+  return { kind: "ok", moves };
+}
+
+/**
+ * Executes a relocation plan's `moves` in place, mutating `soil`. Returns
+ * false, changing nothing, if any `from` tile is no longer standing -- the
+ * caller's plan was built against a snapshot that has since moved under it,
+ * and a partial relocation would strand the rest of the group.
+ *
+ * Every `from` is deleted BEFORE any `to` is written, so a group shuffling
+ * internally (one member's destination is another member's current
+ * position) never collides with itself -- a `Map` has no uniqueness
+ * constraint to trip, but writing-then-deleting in the wrong order would
+ * still let a later delete remove a tile this same call just placed.
+ *
+ * Preserves each tile's `order`/`origin`/`tier` -- only `tx`/`ty` change.
+ * That is what keeps every crop's `soilSlot` (an index into
+ * `orderedSoilTiles`, not a coordinate) resolving to the same bed after the
+ * move: see this file's own header on `soilSlotSpot` for why an `order`
+ * change, not a coordinate change, is what would actually reassign crops.
+ */
+export function moveSoilTileGroup(soil: SoilMap, moves: readonly SoilGroupMove[]): boolean {
+  const relocated: SoilTile[] = [];
+  for (const move of moves) {
+    const tile = soil.get(soilTileKey(move.from.tx, move.from.ty));
+    if (!tile) return false;
+    relocated.push({ ...tile, tx: move.to.tx, ty: move.to.ty });
+  }
+  for (const move of moves) soil.delete(soilTileKey(move.from.tx, move.from.ty));
+  for (const tile of relocated) soil.set(soilTileKey(tile.tx, tile.ty), tile);
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
 /* The starter kit -- SINCE REMOVED                                    */
 /* ------------------------------------------------------------------ */
 

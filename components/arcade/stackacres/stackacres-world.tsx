@@ -181,6 +181,10 @@ export interface StackAcresWorldProps {
    *  point in world units, alongside the CSS-pixel `at` -- see
    *  StackAcresSceneCallbacks.onGroundTap's own doc for why both travel. */
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
+  /** A hold-tap relocation landed: the bed group touching `(tx, ty)` should
+   *  move so that tile lands on `(toTx, toTy)`. See
+   *  StackAcresSceneCallbacks.onSoilMoveCommitted's own doc. */
+  onSoilMoveCommitted?: (tx: number, ty: number, toTx: number, toTy: number) => void;
   /** A finger landed on the barn -- Ray's Museum's own entryway. */
   onBarnTap: () => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
@@ -317,6 +321,7 @@ export function StackAcresWorld({
   onUnitTap,
   onUnitSelect,
   onGroundTap,
+  onSoilMoveCommitted,
   onBarnTap,
   onSignpostTap,
   onWorkshopTap,
@@ -350,6 +355,7 @@ export function StackAcresWorld({
   const unitTapRef = useRef(onUnitTap);
   const unitSelectRef = useRef(onUnitSelect);
   const groundTapRef = useRef(onGroundTap);
+  const soilMoveCommittedRef = useRef(onSoilMoveCommitted);
   const barnTapRef = useRef(onBarnTap);
   const signpostTapRef = useRef(onSignpostTap);
   const workshopTapRef = useRef(onWorkshopTap);
@@ -389,6 +395,7 @@ export function StackAcresWorld({
     unitTapRef.current = onUnitTap;
     unitSelectRef.current = onUnitSelect;
     groundTapRef.current = onGroundTap;
+    soilMoveCommittedRef.current = onSoilMoveCommitted;
     barnTapRef.current = onBarnTap;
     signpostTapRef.current = onSignpostTap;
     workshopTapRef.current = onWorkshopTap;
@@ -453,6 +460,8 @@ export function StackAcresWorld({
           onUnitTap: (unitId, at) => unitTapRef.current(unitId, at),
           onUnitSelect: (unitId, at) => unitSelectRef.current(unitId, at),
           onGroundTap: (zone, at, world) => groundTapRef.current(zone, at, world),
+          onSoilMoveCommitted: (tx, ty, toTx, toTy) =>
+            soilMoveCommittedRef.current?.(tx, ty, toTx, toTy),
           onBarnTap: () => barnTapRef.current(),
           onSignpostTap: () => signpostTapRef.current(),
           onWorkshopTap: () => workshopTapRef.current(),

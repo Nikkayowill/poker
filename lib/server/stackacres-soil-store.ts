@@ -1,6 +1,11 @@
 import "server-only";
 
-import { soilTileKey, type SoilTile, type SoilTileOrigin } from "@/lib/stackacres/soil";
+import {
+  soilTileKey,
+  type SoilGroupMove,
+  type SoilTile,
+  type SoilTileOrigin,
+} from "@/lib/stackacres/soil";
 import {
   SOIL_DEFAULT_TIER,
   isSoilTier,
@@ -167,6 +172,71 @@ export async function removeStackAcresSoilTile(
   });
   if (error) throw new Error(`Could not remove that soil tile: ${error.message}`);
   return Boolean(data);
+}
+
+/** What one call to `moveStackAcresSoilTiles` actually did. */
+export type MoveSoilGroupOutcome =
+  | { kind: "moved"; tiles: StoredSoilTile[] }
+  /** A `from` tile named in the plan no longer stands -- the plan was built
+   *  against a layout that has since changed under it. */
+  | { kind: "stale" }
+  /** A `to` tile is already held by a bed outside the moving group. */
+  | { kind: "blocked" };
+
+/**
+ * Relocates a contiguous group of already-placed beds by writing each
+ * tile's new `tx`/`ty` -- never a delete-and-reinsert, which would hand the
+ * relocated tile a fresh `order` and silently reassign every crop whose
+ * `soilSlot` names a tile later in the ordering (see soil.ts's own header).
+ *
+ * Re-validated here against the CURRENT rows, not trusted from the caller's
+ * plan: `move_homestead_soil_tile_group`'s own exists-check (ST005) and
+ * collision-check (ST004) are what actually make this safe against a race,
+ * the same posture `place_homestead_soil_tile`'s exists-check takes.
+ */
+export async function moveStackAcresSoilTiles(
+  profileId: string,
+  moves: readonly SoilGroupMove[],
+): Promise<MoveSoilGroupOutcome> {
+  if (moves.length === 0) return { kind: "moved", tiles: [] };
+  const supabase = adminClient();
+  if (!supabase) {
+    const layout = memoryLayout(profileId);
+    for (const move of moves) {
+      if (!layout.has(soilTileKey(move.from.tx, move.from.ty))) return { kind: "stale" };
+    }
+    const movingFrom = new Set(moves.map((move) => soilTileKey(move.from.tx, move.from.ty)));
+    for (const move of moves) {
+      const toKey = soilTileKey(move.to.tx, move.to.ty);
+      if (!movingFrom.has(toKey) && layout.has(toKey)) return { kind: "blocked" };
+    }
+    const relocated = moves.map((move) => ({
+      ...layout.get(soilTileKey(move.from.tx, move.from.ty))!,
+      tx: move.to.tx,
+      ty: move.to.ty,
+    }));
+    for (const move of moves) layout.delete(soilTileKey(move.from.tx, move.from.ty));
+    for (const tile of relocated) layout.set(soilTileKey(tile.tx, tile.ty), tile);
+    return { kind: "moved", tiles: relocated.map((tile) => ({ ...tile })) };
+  }
+
+  const { data, error } = await supabase.rpc("move_homestead_soil_tile_group", {
+    p_profile_id: profileId,
+    p_moves: moves.map((move) => ({
+      from_tx: move.from.tx,
+      from_ty: move.from.ty,
+      to_tx: move.to.tx,
+      to_ty: move.to.ty,
+    })),
+  });
+  if (error) {
+    // ST004/ST005 are the migration's own custom SQLSTATEs, mirroring ST003
+    // above -- see move_homestead_soil_tile_group's own comment.
+    if (error.code === "ST004") return { kind: "blocked" };
+    if (error.code === "ST005") return { kind: "stale" };
+    throw new Error(`Could not move that bed: ${error.message}`);
+  }
+  return { kind: "moved", tiles: ((data ?? []) as SoilTileDbRow[]).map(fromRow) };
 }
 
 /* ------------------------------------------------------------------ */

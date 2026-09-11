@@ -387,6 +387,32 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(full).toBeNull();
   });
 
+  // Regression: before this, a crop always guessed `soilSlot: null` and
+  // scattered in the Crop Fields until the response landed, then visibly
+  // jumped to its real tile -- see the "stock" case's own comment.
+  it("plants a crop on the exact bed tapped, not scattered, when that bed is free", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn", tx: 0, ty: 0 },
+      ctx({ profile: profile({ goldBalance: 10_000 }), seedStock: { corn: 2 }, soilTiles: ONE_BED }),
+    );
+    expect(patch?.units?.[0].soilSlot).toBe(0);
+  });
+
+  it("guesses nothing for a tapped bed that is already taken", () => {
+    const standing = unit({ id: "c1", stock: "corn", state: "working", soilSlot: 0 });
+    const twoBeds = [...ONE_BED, { tx: 1, ty: 0, order: 1, origin: "purchased" as const }];
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn", tx: 0, ty: 0 },
+      ctx({
+        profile: profile({ goldBalance: 10_000 }),
+        seedStock: { corn: 2 },
+        soilTiles: twoBeds,
+        units: [standing],
+      }),
+    );
+    expect(patch?.units?.[1].soilSlot).toBeNull();
+  });
+
   it("still guesses a Greenhouse crop with no bed -- it stands on the glasshouse grid", () => {
     const patch = predictStackAcresAction(
       { action: "stock", stock: "corn", inGreenhouse: true },

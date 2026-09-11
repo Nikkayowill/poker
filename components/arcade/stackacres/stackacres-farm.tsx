@@ -249,7 +249,7 @@ import {
 } from "@/lib/stackacres/shop-locks";
 import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import type { TapPoint } from "./stackacres-scene";
-import { type Action, intentOf, newIntentKey } from "@/lib/stackacres/farm-actions";
+import { type Action, intentOf, newIntentKey, purchaseCueText } from "@/lib/stackacres/farm-actions";
 import {
   predictStackAcresAction,
   type FarmPredictContext,
@@ -1744,6 +1744,11 @@ export function StackAcresFarm() {
       if (body.action === "collect" && optimisticApplied) {
         setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
       }
+      // Every shop purchase without its own call-site toast gets one here --
+      // see `purchaseCueText`'s own header for why this is the one place to
+      // do it and which actions it deliberately skips.
+      const purchaseCue = purchaseCueText(body);
+      if (purchaseCue) setLastCollect({ text: purchaseCue, nonce: Date.now() });
       // Set the moment this browser knows what became of the request. While it
       // is false the key survives, so the next press at the same thing is a
       // retry; once it is true the key is dropped and the next press is a new
@@ -1791,6 +1796,12 @@ export function StackAcresFarm() {
           // banner when there is no round to speak for itself.
           if (data.round) setUnits(data.round);
           if (data.profile) setProfile(data.profile);
+          // A refused purchase takes its own instant toast back too -- left
+          // standing, "Bought a Hen!" would sit on screen next to the refusal
+          // banner claiming the opposite. `data.reason === "day-capped"`
+          // below sets its own toast on top of this a few lines down, so this
+          // never fights it.
+          if (purchaseCue) setLastCollect(null);
           // The daily Gold ceiling is the feature working, not a fault. It
           // repaints the round silently like any other refusal, which left a
           // harvest press looking like it did nothing -- so say it out loud

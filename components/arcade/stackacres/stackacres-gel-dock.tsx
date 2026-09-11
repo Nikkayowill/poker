@@ -105,6 +105,14 @@ interface PendingIntent {
   pointerId: number;
   x: number;
   y: number;
+  /** Offset between the token's own resting centre and the finger's initial
+   *  touch point, carried through the whole drag so the token tracks the
+   *  grab point under the finger instead of snapping its centre onto it --
+   *  the same contract StackAcresDragAffordance's own `grab` ref keeps for
+   *  the water can and feed scoop. Without this, a token grabbed off-centre
+   *  visibly jumped the moment the drag started. */
+  grabDx: number;
+  grabDy: number;
 }
 
 export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }: StackAcresGelDockProps) {
@@ -124,6 +132,12 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   const [isHot, setIsHot] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  /** The live drag's own `grabDx`/`grabDy`, copied out of `pending` at the
+   *  moment a press becomes a drag -- `pending` itself is cleared right
+   *  after, so the offset needs a home that survives for the rest of the
+   *  gesture. Read in the "already dragging" branch of `onTokenPointerMove`
+   *  and in `onTokenPointerUp`. */
+  const grabOffset = useRef({ dx: 0, dy: 0 });
 
   useEffect(() => {
     const onResize = () => {
@@ -199,13 +213,28 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     // still scrolls `.sa-gel-scroll` natively until `onTokenPointerMove`
     // below decides otherwise.
     event.currentTarget.setPointerCapture(event.pointerId);
-    pending.current = { key: item.key, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    const rect = event.currentTarget.getBoundingClientRect();
+    pending.current = {
+      key: item.key,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      grabDx: rect.left + rect.width / 2 - event.clientX,
+      grabDy: rect.top + rect.height / 2 - event.clientY,
+    };
+  };
+
+  /** Where the token itself sits for a given pointer position, honouring
+   *  whatever offset it was grabbed at rather than centring on the finger. */
+  const grabbedSpot = (event: ReactPointerEvent<HTMLButtonElement>): TapPoint => {
+    const g = grabOffset.current;
+    return { x: event.clientX + g.dx, y: event.clientY + g.dy };
   };
 
   const onTokenPointerMove = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (phase === "dragging" && dragKey === item.key) {
       event.stopPropagation();
-      const at = { x: event.clientX, y: event.clientY };
+      const at = grabbedSpot(event);
       setDragClient(at);
       setIsHot(isDragDrop(at, targetClient()));
       return;
@@ -225,8 +254,9 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     homeClient.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    grabOffset.current = { dx: intent.grabDx, dy: intent.grabDy };
     setDragKey(item.key);
-    setDragClient({ x: event.clientX, y: event.clientY });
+    setDragClient({ x: event.clientX + intent.grabDx, y: event.clientY + intent.grabDy });
     setPhase("dragging");
   };
 
@@ -235,7 +265,7 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     if (phase !== "dragging" || dragKey !== item.key) return;
     event.stopPropagation();
     setIsHot(false);
-    if (isDragDrop({ x: event.clientX, y: event.clientY }, targetClient())) commit(item);
+    if (isDragDrop(grabbedSpot(event), targetClient())) commit(item);
     else springBack();
   };
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import clsx from "clsx";
-import { paintIcon, type PainterName } from "./stackacres-art";
+import { CROP_ICON_SPRITE, paintIcon, type PainterName } from "./stackacres-art";
 import { isSpriteName, onSpriteReady, spriteImage } from "./stackacres-sprites";
 
 /**
@@ -43,6 +43,15 @@ export function StackAcresIcon({ name, size = 24, className }: StackAcresIconPro
     // lands. An `ico-` badge is drawn shapes the whole way down and has
     // nothing to wait for; subscribing it to every sprite in the game is what
     // used to drag the entire image cache into memory behind a gold coin.
+    // A crop icon is the odd one out: it draws a sprite (`cropIcon` in
+    // stackacres-art.ts), just not one filed under its OWN name the way
+    // `cow` draws `cow`'s -- `CROP_ICON_SPRITE` is the lookup from an icon
+    // name like "ico-garlic" to the sprite it actually waits on ("garlic2").
+    const cropSprite = CROP_ICON_SPRITE[name];
+    if (cropSprite) {
+      if (spriteImage(cropSprite)) return;
+      return onSpriteReady(() => paintIcon(canvas, name, size));
+    }
     if (!isSpriteName(name) || spriteImage(name)) return;
     return onSpriteReady(() => paintIcon(canvas, name, size));
   }, [name, size]);

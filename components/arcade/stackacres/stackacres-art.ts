@@ -454,9 +454,9 @@ const [tomato0, tomato1, tomato2] = simpleCropFrames(31, 39, RAMPS.roof);
 const [wheat10, wheat11, wheat12] = simpleCropFrames(23, 37, RAMPS.straw);
 const [wheat20, wheat21, wheat22] = simpleCropFrames(37, 36, RAMPS.gold);
 
-/** A small flat silhouette for one of the 22 crops' seed-strip/shop icons --
- *  24 device pixels wants a blob, not a render; see this file's own header
- *  for why every crop icon keeps this flat shape instead of the sprite. */
+/** A small flat silhouette, tinted by `mat`. Used directly for a couple of
+ *  non-crop badges, and as `cropIcon`'s own fallback below for the moment
+ *  before a crop's real sprite has loaded. */
 function simpleCropIcon(mat: Ramp): Paint {
   return (c) => {
     ell(c, 12, 13, 8, 7.5);
@@ -467,6 +467,67 @@ function simpleCropIcon(mat: Ramp): Paint {
     stroke(c, mat.rim, 1);
   };
 }
+
+/** A crop's seed-strip/shop icon: its own mature-stage (stage-2) sprite,
+ *  scaled to fit the icon's square box without stretching -- a crop's own
+ *  portrait is nothing close to square, so `spriteBacked`'s plain
+ *  `drawImage(img, 0, 0, w, h)` would squash it. Falls back to
+ *  `simpleCropIcon`'s flat blob, tinted the same as the crop's own ramp,
+ *  until that sprite has loaded (`CROP_ICON_SPRITE` below is how
+ *  stackacres-icon.tsx knows to repaint once it does).
+ *
+ *  This used to be `simpleCropIcon` for every crop -- same blob, differently
+ *  tinted, so crops sharing a ramp (garlic/onion/potato/cabbage all
+ *  RAMPS.cream, say) were literally the same icon. The real art is a bold,
+ *  flat-shaded low-poly render (public/stackacres/sprites), not dense
+ *  pixel-art detail, so unlike the hand-drawn ripe-frame glyphs this file's
+ *  own header once warned would "smudge" at icon size, it still reads
+ *  clearly this small. */
+function cropIcon(sprite: PainterSpriteName, mat: Ramp): Paint {
+  const fallback = simpleCropIcon(mat);
+  return (c) => {
+    const img = spriteImage(sprite);
+    if (!img) {
+      fallback(c);
+      return;
+    }
+    const box = 24;
+    const k = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    c.drawImage(img, (box - w) / 2, (box - h) / 2, w, h);
+  };
+}
+
+/** Maps a crop's icon name to the sprite it actually draws (`cropIcon`
+ *  above), since that sprite is not filed under the icon's own name the way
+ *  every other sprite-backed painter's is (`cow` draws `cow`'s own sprite;
+ *  `ico-garlic` draws `garlic2`'s). `stackacres-icon.tsx` reads this
+ *  alongside `isSpriteName` so a canvas that painted the flat fallback still
+ *  repaints once the real sprite lands. */
+export const CROP_ICON_SPRITE: Readonly<Record<string, PainterSpriteName>> = {
+  "ico-artichoke": "artichoke2",
+  "ico-beet": "beet2",
+  "ico-brokoly": "brokoly2",
+  "ico-cabbage": "cabbage2",
+  "ico-carrot": "carrot2",
+  "ico-corn": "corn2",
+  "ico-corn2": "corn22",
+  "ico-cucumber": "cucumber2",
+  "ico-eggplant": "eggplant2",
+  "ico-garlic": "garlic2",
+  "ico-grap": "grap2",
+  "ico-grap2": "grap22",
+  "ico-onion": "onion2",
+  "ico-pepper": "pepper2",
+  "ico-poppy": "poppy2",
+  "ico-potato": "potato2",
+  "ico-pumpkin": "pumpkin2",
+  "ico-sunflowe_broken": "sunflowe_broken2",
+  "ico-sunflower": "sunflower2",
+  "ico-tomato": "tomato2",
+  "ico-wheat2": "wheat22",
+};
 
 /** Glass with a gradient and a diagonal streak; a flat fill reads as a hole
  *  punched in the barn wall rather than a window. */
@@ -1898,38 +1959,32 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#7ec8e3");
   }),
 
-  // All 22 crops' seed-strip/shop icons -- simple filled blobs (see
-  // `simpleCropIcon`), not the ripe field painter's own render: an icon is 24
-  // device pixels, and at that size the render's leaf detail collapses into a
-  // smudge while the flat three-tone shape still reads clearly. carrot/corn
-  // used to keep their own hand-drawn ripe-frame shape here (predating the
-  // rest of the roster), but that depended on their old 12x16/12x22 box --
-  // now that both draw the real CraftPix sprite at a different box (see
-  // ./crop-visuals.ts's CROP_BOX), they get the same `simpleCropIcon`
-  // treatment as every other crop. "ico-wheat" is deliberately NOT redefined
-  // here for wheat1 -- it reuses the existing wheat sheaf glyph below, drawn
-  // for machine-items.ts's wheat.
-  "ico-artichoke": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
-  "ico-beet": painter(24, 24, simpleCropIcon(RAMPS.roof)),
-  "ico-brokoly": painter(24, 24, simpleCropIcon(RAMPS.pine)),
-  "ico-cabbage": painter(24, 24, simpleCropIcon(RAMPS.cream)),
-  "ico-carrot": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
-  "ico-corn": painter(24, 24, simpleCropIcon(RAMPS.corn)),
-  "ico-corn2": painter(24, 24, simpleCropIcon(RAMPS.gold)),
-  "ico-cucumber": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
-  "ico-eggplant": painter(24, 24, simpleCropIcon(RAMPS.pine)),
-  "ico-garlic": painter(24, 24, simpleCropIcon(RAMPS.cream)),
-  "ico-grap": painter(24, 24, simpleCropIcon(RAMPS.pine)),
-  "ico-grap2": painter(24, 24, simpleCropIcon(RAMPS.leaf)),
-  "ico-onion": painter(24, 24, simpleCropIcon(RAMPS.cream)),
-  "ico-pepper": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
-  "ico-poppy": painter(24, 24, simpleCropIcon(RAMPS.roof)),
-  "ico-potato": painter(24, 24, simpleCropIcon(RAMPS.cream)),
-  "ico-pumpkin": painter(24, 24, simpleCropIcon(RAMPS.carrot)),
-  "ico-sunflowe_broken": painter(24, 24, simpleCropIcon(RAMPS.gold)),
-  "ico-sunflower": painter(24, 24, simpleCropIcon(RAMPS.corn)),
-  "ico-tomato": painter(24, 24, simpleCropIcon(RAMPS.roof)),
-  "ico-wheat2": painter(24, 24, simpleCropIcon(RAMPS.gold)),
+  // All 22 crops' seed-strip/shop icons -- each crop's own mature-stage
+  // sprite via `cropIcon` (see that function's own header), tinted by the
+  // same ramp as a fallback for the instant before that sprite loads.
+  // "ico-wheat" is deliberately NOT redefined here for wheat1 -- it reuses
+  // the existing wheat sheaf glyph below, drawn for machine-items.ts's wheat.
+  "ico-artichoke": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-artichoke"], RAMPS.leaf)),
+  "ico-beet": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-beet"], RAMPS.roof)),
+  "ico-brokoly": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-brokoly"], RAMPS.pine)),
+  "ico-cabbage": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-cabbage"], RAMPS.cream)),
+  "ico-carrot": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-carrot"], RAMPS.carrot)),
+  "ico-corn": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-corn"], RAMPS.corn)),
+  "ico-corn2": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-corn2"], RAMPS.gold)),
+  "ico-cucumber": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-cucumber"], RAMPS.leaf)),
+  "ico-eggplant": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-eggplant"], RAMPS.pine)),
+  "ico-garlic": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-garlic"], RAMPS.cream)),
+  "ico-grap": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-grap"], RAMPS.pine)),
+  "ico-grap2": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-grap2"], RAMPS.leaf)),
+  "ico-onion": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-onion"], RAMPS.cream)),
+  "ico-pepper": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-pepper"], RAMPS.carrot)),
+  "ico-poppy": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-poppy"], RAMPS.roof)),
+  "ico-potato": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-potato"], RAMPS.cream)),
+  "ico-pumpkin": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-pumpkin"], RAMPS.carrot)),
+  "ico-sunflowe_broken": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-sunflowe_broken"], RAMPS.gold)),
+  "ico-sunflower": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-sunflower"], RAMPS.corn)),
+  "ico-tomato": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-tomato"], RAMPS.roof)),
+  "ico-wheat2": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-wheat2"], RAMPS.gold)),
 
   // The processing track's two items. Named by MACHINE_ITEM_CATALOGUE in
   // lib/stackacres/machine-items.ts since it was written; these are the

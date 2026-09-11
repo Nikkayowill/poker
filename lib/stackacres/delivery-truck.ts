@@ -79,11 +79,10 @@ function laneRouteReversed(): readonly WorldPoint[] {
  * would sit the truck in the fork itself, in the way of the
  * lane/yardRoad/dockSpur junction paint. x 160 clears the barn (x 71..145)
  * and the silo (x 143..165, both feet at y 34) by 25 world units of open
- * road body between their south edge and the dock's own y 59, and clears
- * the monk's shrine (`MONK_HOUSE_FOOTPRINT`, y 88..134) by 29 more the
- * other way -- delivery-truck.test.ts holds both distances along the whole
- * route, not just this one endpoint, the same rigor
- * paths.test.ts's own drive-clearance test uses for Ray's house driveway.
+ * road body between their south edge and the dock's own y 59 --
+ * delivery-truck.test.ts holds that distance along the whole route, not
+ * just this one endpoint, the same rigor paths.test.ts's own
+ * drive-clearance test uses for Ray's house driveway.
  */
 export const DELIVERY_ROUTE: readonly WorldPoint[] = [...laneRouteReversed(), yardPoint(160, 59)];
 

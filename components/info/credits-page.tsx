@@ -10,12 +10,11 @@ import Link from "next/link";
  * history of each asset's introducing commit — see that file before editing
  * this page, since a new sprite belongs there first and here second.
  *
- * Three assets are marked unattributed on purpose rather than guessed: the
+ * Two assets are marked unattributed on purpose rather than guessed: the
  * "isometric plant pack" (44 flora sprites) and the day/dusk/night music
- * have no vendor recorded anywhere in the repo. The monk shrine sprite
- * (monk-house.png, "Houses Pack 3") is being replaced rather than credited —
- * it's still live in-game as of this page shipping, so don't delete the
- * file, just don't list it below.
+ * have no vendor recorded anywhere in the repo. (The Pixel Pilgrim's own
+ * "Houses Pack 3" shrine sprite, monk-house.png, used to be a third --
+ * removed along with the shrine itself rather than ever credited.)
  */
 export function CreditsPage() {
   return (

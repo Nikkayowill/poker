@@ -364,10 +364,10 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * and world.test.ts).
  *
  * Exported, unlike the signpost's or the windmill's own footprints: the
- * scene's `paintRayHouse` reads it directly for where to stand the sprite
- * (the same "footprint is the one source of truth, the scene paints off it"
- * shape `MONK_HOUSE_FOOTPRINT` already uses), rather than restating its
- * corner as a second literal the two could drift apart from.
+ * scene's `paintRayHouse` reads it directly for where to stand the sprite --
+ * the footprint is the one source of truth and the scene paints off it,
+ * rather than restating its corner as a second literal the two could drift
+ * apart from.
  */
 export const RAY_HOUSE_FOOTPRINT: WorldRect = yardRect(108 - 90 / 2, -32 - 44, 90, 44);
 
@@ -1090,8 +1090,7 @@ const OPEN_BUSH_KINDS: readonly SceneryKind[] = ["bush", "bush2", "bush3"];
  * this house's footprint sits close enough to that edge (see its own header)
  * that a tree or a bush planted just OUTSIDE the farm zone, even well past
  * it, still visually reaches the roof and the chimney: the drawn sprite
- * reads far taller than its flat ground box, the same "art bigger than
- * footprint" gap `monkHouse`'s own header describes.
+ * reads far taller than its flat ground box.
  *
  * The first pass (110 north, 30 every other side) still left a bush sitting
  * on the chimney, and the 220-north/30-side pass after it *still* wasn't

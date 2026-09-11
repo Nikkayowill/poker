@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { BARN_FOOTPRINT } from "./world";
-import { MONK_HOUSE_FOOTPRINT } from "./monk";
 import { PATH_CLEARANCE, distanceToPath, type PathSpec } from "./paths";
 import { yardRect } from "./yard";
 import {
@@ -28,27 +27,24 @@ describe("DELIVERY_ROUTE", () => {
     expect(TRUCK_PARK_SPOT).toEqual(DELIVERY_ROUTE[DELIVERY_ROUTE.length - 1]);
   });
 
-  it("never runs its own body through the barn, the silo, or the monk's shrine", () => {
+  it("never runs its own body through the barn or the silo", () => {
     // The barn's own footprint already covers the silo's feet too (both are
     // grouped under "the barn's feet on y 34" in props.ts's own header), so
     // one rect check stands in for both.
     const route = routeAsPath(TRUCK_FOOTPRINT.w);
     const half = TRUCK_FOOTPRINT.w / 2;
-    for (const rect of [BARN_FOOTPRINT, MONK_HOUSE_FOOTPRINT]) {
-      for (let x = rect.x; x <= rect.x + rect.width; x += 3) {
-        for (let y = rect.y; y <= rect.y + rect.height; y += 3) {
-          expect(distanceToPath(x, y, route)).toBeGreaterThanOrEqual(half);
-        }
+    for (let x = BARN_FOOTPRINT.x; x <= BARN_FOOTPRINT.x + BARN_FOOTPRINT.width; x += 3) {
+      for (let y = BARN_FOOTPRINT.y; y <= BARN_FOOTPRINT.y + BARN_FOOTPRINT.height; y += 3) {
+        expect(distanceToPath(x, y, route)).toBeGreaterThanOrEqual(half);
       }
     }
   });
 
-  it("parks with real clearance on both sides of the road, not just past each landmark's edge", () => {
+  it("parks with real clearance south of the barn/silo's own feet", () => {
     // x 160 y 59: 25 units of open road south of the barn/silo's own feet
-    // (y 34), 29 north of the monk's shrine (y 88) -- both comfortably past
-    // PATH_CLEARANCE (6), which is the header's own claim.
+    // (y 34) -- comfortably past PATH_CLEARANCE (6), which is the header's
+    // own claim.
     expect(TRUCK_PARK_SPOT.y - (BARN_FOOTPRINT.y + BARN_FOOTPRINT.height)).toBeGreaterThan(PATH_CLEARANCE * 2);
-    expect(MONK_HOUSE_FOOTPRINT.y - TRUCK_PARK_SPOT.y).toBeGreaterThan(PATH_CLEARANCE * 2);
   });
 
   it("does not park exactly on a road vertex (the fork the junction paint owns)", () => {

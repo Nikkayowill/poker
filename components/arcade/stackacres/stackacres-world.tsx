@@ -223,7 +223,7 @@ export interface StackAcresWorldProps {
    *  its dock (see `setTruckPresent` on the imperative handle). Opens the
    *  same Town Contracts sheet `onSignpostTap` does. */
   onTruckTap: () => void;
-  /** A finger landed on the Pixel Pilgrim's own shrine. Fires no bow and
+  /** A finger landed on the Pixel Pilgrim himself. Fires no bow and
    *  reaches no server by itself -- this is only the cue to open his
    *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
   onMonkTap: (at: TapPoint) => void;

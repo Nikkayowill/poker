@@ -454,7 +454,7 @@ const bodySchema = z.discriminatedUnion("action", [
     crop: z.enum(STACKACRES_CROPS),
     quantity: z.number().int().min(1).max(STACKACRES_SEED_BAGS_PER_PURCHASE),
   }),
-  // The Pixel Pilgrim's shrine. Moves no Gold and spends no row of the
+  // The Pixel Pilgrim's prayer. Moves no Gold and spends no row of the
   // caller's own -- only ever sent after the dialogue's own "yes" (see
   // stackacres-monk-dialogue.tsx), never from the tap itself, so a decline
   // never reaches this route at all.

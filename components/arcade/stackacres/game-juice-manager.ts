@@ -83,6 +83,15 @@ export interface GameJuiceManagerConfig {
    * declared fallback stack (stackacres-font.ts) otherwise.
    */
   fontFamily?: string;
+  /**
+   * Called the instant an item arrives at the barn -- the cue for the
+   * scene to swap its barn sprite to the door-open/hay-bursting frame and
+   * revert it a moment later, the same "the scene owns the sprite, this
+   * class only tells it when" split `barnPoint` already draws. Optional so
+   * a caller with no barn sprite of its own (or a test double) does not
+   * have to supply a no-op.
+   */
+  onBarnArrive?: () => void;
 }
 
 const FALLBACK_FONT_STACK =
@@ -360,6 +369,7 @@ export class GameJuiceManager {
     emitter.setDepth(depth);
     emitter.setPosition(at.x, at.y);
     emitter.explode(BARN_ABSORB_ARRIVE_SHARDS);
+    this.config.onBarnArrive?.();
   }
 
   /* ------------------------------------------------------------------ */

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MissionsPayload, MissionView } from "@/lib/missions/types";
+import { startVisiblePoll } from "@/lib/ui/visible-poll";
 
 /**
  * Polled, not fetch-once like useProgression -- a mission finished at the
@@ -60,13 +61,13 @@ export function useMissions(): MissionsState {
     };
 
     // Deferred through a timer rather than fired from the effect body,
-    // matching useProgression and friends-drawer.tsx.
-    const timer = window.setTimeout(() => void load(), 0);
-    const poll = window.setInterval(() => void load(), POLL_MS);
+    // matching useProgression and friends-drawer.tsx. startVisiblePoll owns
+    // that first timer plus the interval, and skips ticks while the tab is
+    // hidden.
+    const stopPoll = startVisiblePoll(() => void load(), POLL_MS);
     return () => {
       mounted.current = false;
-      window.clearTimeout(timer);
-      window.clearInterval(poll);
+      stopPoll();
     };
   }, []);
 

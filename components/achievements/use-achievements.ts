@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AchievementsPayload, AchievementView } from "@/lib/achievements/types";
+import { startVisiblePoll } from "@/lib/ui/visible-poll";
 
 /** Same cadence as components/missions/use-missions.ts's POLL_MS. */
 const POLL_MS = 15_000;
@@ -55,13 +56,12 @@ export function useAchievements(): AchievementsState {
     };
 
     // Deferred through a timer rather than fired from the effect body,
-    // matching useMissions.
-    const timer = window.setTimeout(() => void load(), 0);
-    const poll = window.setInterval(() => void load(), POLL_MS);
+    // matching useMissions. startVisiblePoll owns that first timer plus the
+    // interval, and skips ticks while the tab is hidden.
+    const stopPoll = startVisiblePoll(() => void load(), POLL_MS);
     return () => {
       mounted.current = false;
-      window.clearTimeout(timer);
-      window.clearInterval(poll);
+      stopPoll();
     };
   }, []);
 

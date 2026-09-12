@@ -10,15 +10,14 @@
  * a shelf price, not an automatic credit, and nothing here is paid until a
  * player actually sells.
  *
- * CROP ROSTER (2026-09-07): `sprout`/`cash_crop` and their old carrot/corn
- * item definitions are gone -- replaced outright by all 22 CraftPix crop
- * ids, item id == crop id (StackAcresCrop in ./catalogue.ts) == icon suffix
- * == sprite file prefix, all identical on purpose. `carrot`/`corn` are still
- * here, but as ordinary tier-1/tier-3 crop entries now rather than a
- * separately-named item a sprout/cash_crop yield pointed at. "wheat1" here is
- * a DIFFERENT item from machine-items.ts's own "wheat" (the Wheat Plot's raw
- * material) -- that one comes off the wheat-plot side table, not a stocked
- * unit, and the two never mix in one inventory row despite the shared name.
+ * CROP ROSTER (2026-09-12): the 22 CraftPix crop ids are gone -- replaced
+ * outright by the 16 Gr8FarmPack crop ids (see ./catalogue.ts's own header),
+ * item id == crop id (StackAcresCrop in ./catalogue.ts) == icon suffix ==
+ * sprite file prefix, all identical on purpose, same as before. "wheatsheaf"
+ * here is a DIFFERENT item from machine-items.ts's own "wheat" (the Wheat
+ * Plot's raw material) -- that one comes off the wheat-plot side table, not a
+ * stocked unit, and the two never mix in one inventory row despite the
+ * similar name (see catalogue.ts's header for why the ids had to differ).
  */
 
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
@@ -27,29 +26,23 @@ export const STACKACRES_ITEMS = [
   "eggs",
   "wool",
   "milk",
-  // All 22 crops, tier order matching ./catalogue.ts's STACKACRES_CROPS.
-  "garlic",
+  // All 16 crops, tier order matching ./catalogue.ts's STACKACRES_CROPS.
+  "lettuce",
+  "spinach",
+  "radish",
   "onion",
-  "beet",
-  "poppy",
-  "potato",
   "carrot",
+  "potato",
   "cabbage",
-  "cucumber",
+  "broccoli",
   "pepper",
-  "brokoly",
-  "sunflower",
-  "sunflowe_broken",
-  "wheat1",
+  "bell_pepper",
+  "celery",
+  "green_bean",
   "tomato",
   "corn",
-  "corn2",
   "eggplant",
-  "grap",
-  "grap2",
-  "pumpkin",
-  "wheat2",
-  "artichoke",
+  "wheatsheaf",
 ] as const;
 
 export type StackAcresItem = (typeof STACKACRES_ITEMS)[number];
@@ -80,53 +73,32 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   wool: { label: "Fleece", plural: "Fleeces", icon: "ico-fleece", sellPrice: 76 },
   milk: { label: "Milk", plural: "Milk", icon: "ico-milk", sellPrice: 220 },
 
-  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Retuned
-   * 2026-09-11 alongside catalogue.ts's TIER1 (was sellPrice 12, quantity 3
-   * against a 15-minute cycle) -- see that file's TIER1 comment. Net per
-   * cycle (2 - 1 seed = 1 Gold) no longer matches the old Gold/minute rate;
-   * that parity was given up on purpose to keep every amount a whole Gold
-   * value, rather than introduce fractional currency anywhere. ---- */
-  garlic: { label: "Garlic", plural: "Garlic", icon: "ico-garlic", sellPrice: 2 },
+  /* ---- Tier 1 (fast/cheap): sellPrice 2, yield quantity 1. Unchanged by the
+   * 2026-09-12 crop-roster swap -- see catalogue.ts's TIER1 comment. ---- */
+  lettuce: { label: "Lettuce", plural: "Lettuce", icon: "ico-lettuce", sellPrice: 2 },
+  spinach: { label: "Spinach", plural: "Spinach", icon: "ico-spinach", sellPrice: 2 },
+  radish: { label: "Radish", plural: "Radishes", icon: "ico-radish", sellPrice: 2 },
   onion: { label: "Onion", plural: "Onions", icon: "ico-onion", sellPrice: 2 },
-  beet: { label: "Beet", plural: "Beets", icon: "ico-beet", sellPrice: 2 },
-  poppy: { label: "Poppy", plural: "Poppies", icon: "ico-poppy", sellPrice: 2 },
-  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
-  // No longer `sprout`'s old "carrot" item numbers -- retuned 2026-09-11,
-  // see the tier comment above.
   carrot: { label: "Carrot", plural: "Carrots", icon: "ico-carrot", sellPrice: 2 },
+  potato: { label: "Potato", plural: "Potatoes", icon: "ico-potato", sellPrice: 2 },
   cabbage: { label: "Cabbage", plural: "Cabbages", icon: "ico-cabbage", sellPrice: 2 },
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
-  cucumber: { label: "Cucumber", plural: "Cucumbers", icon: "ico-cucumber", sellPrice: 25 },
+  broccoli: { label: "Broccoli", plural: "Broccoli", icon: "ico-broccoli", sellPrice: 25 },
   pepper: { label: "Pepper", plural: "Peppers", icon: "ico-pepper", sellPrice: 25 },
-  brokoly: { label: "Broccoli", plural: "Broccoli", icon: "ico-brokoly", sellPrice: 25 },
-  sunflower: { label: "Sunflower", plural: "Sunflowers", icon: "ico-sunflower", sellPrice: 25 },
-  sunflowe_broken: {
-    label: "Wild Sunflower",
-    plural: "Wild Sunflowers",
-    icon: "ico-sunflowe_broken",
-    sellPrice: 25,
-  },
-  // Reuses the existing "ico-wheat" painter (machine-items.ts's wheat sheaf
-  // glyph) rather than a second painter of the same name -- see this file's
-  // own header on why the two "wheat"-named ids never collide.
-  wheat1: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 25 },
+  bell_pepper: { label: "Bell Pepper", plural: "Bell Peppers", icon: "ico-bell_pepper", sellPrice: 25 },
+  celery: { label: "Celery", plural: "Celery", icon: "ico-celery", sellPrice: 25 },
+  green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },
   tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
   /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. ---- */
-  // Same numbers `cash_crop`'s old "corn" item used to carry -- see
-  // catalogue.ts's file header.
   corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
-  corn2: { label: "Field Corn", plural: "Field Corn", icon: "ico-corn2", sellPrice: 44 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
-  // "Grapes"/"Muscat Grapes" are already plural-shaped nouns (sold by the
-  // bunch, never "a grape" at this scale) -- plural equals the label, the
-  // same uncountable shape Wheat/Winter Wheat use.
-  grap: { label: "Grapes", plural: "Grapes", icon: "ico-grap", sellPrice: 44 },
-  grap2: { label: "Muscat Grapes", plural: "Muscat Grapes", icon: "ico-grap2", sellPrice: 44 },
-  pumpkin: { label: "Pumpkin", plural: "Pumpkins", icon: "ico-pumpkin", sellPrice: 44 },
-  wheat2: { label: "Winter Wheat", plural: "Winter Wheat", icon: "ico-wheat2", sellPrice: 44 },
-  artichoke: { label: "Artichoke", plural: "Artichokes", icon: "ico-artichoke", sellPrice: 44 },
+  // Own icon, "ico-wheatsheaf" -- NOT machine-items.ts's "ico-wheat" glyph,
+  // which is a plain hand-drawn painter with no real sprite behind it. This
+  // crop has real Gr8FarmPack art (wheatsheaf2.png) and gets the same
+  // sprite-backed icon treatment every other crop here does.
+  wheatsheaf: { label: "Wheat", plural: "Wheat", icon: "ico-wheatsheaf", sellPrice: 44 },
 };
 
 /** What one finished unit brings in. */
@@ -140,30 +112,25 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   pig: { item: "wool", quantity: 6 },
   cattle: { item: "milk", quantity: 8 },
 
-  /* ---- All 22 crops: item id == stock id, always. Tier 1 quantity is 1,
-   * not 3 -- see the tier comment in STACKACRES_ITEM_CATALOGUE above. ---- */
-  garlic: { item: "garlic", quantity: 1 },
+  /* ---- All 16 crops: item id == stock id, always. Tier 1 quantity is 1,
+   * tier 2 is 4, tier 3 is 5 -- see the tier comments in
+   * STACKACRES_ITEM_CATALOGUE above. ---- */
+  lettuce: { item: "lettuce", quantity: 1 },
+  spinach: { item: "spinach", quantity: 1 },
+  radish: { item: "radish", quantity: 1 },
   onion: { item: "onion", quantity: 1 },
-  beet: { item: "beet", quantity: 1 },
-  poppy: { item: "poppy", quantity: 1 },
-  potato: { item: "potato", quantity: 1 },
   carrot: { item: "carrot", quantity: 1 },
+  potato: { item: "potato", quantity: 1 },
   cabbage: { item: "cabbage", quantity: 1 },
-  cucumber: { item: "cucumber", quantity: 4 },
+  broccoli: { item: "broccoli", quantity: 4 },
   pepper: { item: "pepper", quantity: 4 },
-  brokoly: { item: "brokoly", quantity: 4 },
-  sunflower: { item: "sunflower", quantity: 4 },
-  sunflowe_broken: { item: "sunflowe_broken", quantity: 4 },
-  wheat1: { item: "wheat1", quantity: 4 },
+  bell_pepper: { item: "bell_pepper", quantity: 4 },
+  celery: { item: "celery", quantity: 4 },
+  green_bean: { item: "green_bean", quantity: 4 },
   tomato: { item: "tomato", quantity: 4 },
   corn: { item: "corn", quantity: 5 },
-  corn2: { item: "corn2", quantity: 5 },
   eggplant: { item: "eggplant", quantity: 5 },
-  grap: { item: "grap", quantity: 5 },
-  grap2: { item: "grap2", quantity: 5 },
-  pumpkin: { item: "pumpkin", quantity: 5 },
-  wheat2: { item: "wheat2", quantity: 5 },
-  artichoke: { item: "artichoke", quantity: 5 },
+  wheatsheaf: { item: "wheatsheaf", quantity: 5 },
 };
 
 /** What one of `item` sells for. */

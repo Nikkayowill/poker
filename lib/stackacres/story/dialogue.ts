@@ -133,10 +133,10 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
   skye: {
     locked: "Hold up, I'm not painting yet. Get the farm going and then we talk colour.",
     hello:
-      "Yo. Skye. Where I'm from the walls repaint themselves every twelve frames, and here they just... stay. It's beautiful. I need pigment though. Real pigment. Beets and poppies, grown, not spawned.",
+      "Yo. Skye. Where I'm from the walls repaint themselves every twelve frames, and here they just... stay. It's beautiful. I need pigment though. Real pigment. Radishes and tomatoes, grown, not spawned.",
     quests: [
       {
-        progress: "Six beets for the reds, six poppies for the deep ones. Don't rush them, colour that grows fast fades fast.",
+        progress: "Six radishes for the reds, six tomatoes for the deep ones. Don't rush them, colour that grows fast fades fast.",
         done: "Look at this red. You can't get this red from a palette, you have to grow it.",
       },
       {
@@ -233,7 +233,7 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       "Bea. My bees were three pixels each and my flowers looped forever. Your flowers don't loop. They open. I need whole fields of them near my hive, and I'll show you what the bees make of it.",
     quests: [
       {
-        progress: "Poppies and sunflowers, sixteen between them. The bees aren't picky, but they are hungry.",
+        progress: "Bell pepper and green bean blossoms, sixteen between them. The bees aren't picky, but they are hungry.",
         done: "Sixteen blooms and the hive's singing a note I've never heard.",
       },
       {

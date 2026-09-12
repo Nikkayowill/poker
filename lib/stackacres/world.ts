@@ -89,12 +89,12 @@ export interface WorldPoint {
  * Which district a stock kind belongs to.
  *
  *   hen                        -- Hen Haven (the cheap starter tier)
- *   all 22 crops               -- the Farmstead, in the Crop Fields
+ *   all 16 crops               -- the Farmstead, in the Crop Fields
  *                                  (`CROP_FIELD`/`CROP_FIELD_BEDS` below).
- *                                  The original two hand-vector crops
- *                                  (sprout, cash_crop) are gone; all 22
- *                                  CraftPix crops replace them at this same
- *                                  zone.
+ *                                  The 22 CraftPix crops that used to stand
+ *                                  here are gone (2026-09-12); the 16
+ *                                  Gr8FarmPack crops replace them outright at
+ *                                  this same zone.
  *   pig                        -- the Fold (labelled Sheep Pens)
  *   cattle                     -- Cattle Pasture
  *
@@ -110,30 +110,24 @@ export interface WorldPoint {
  */
 const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
   hen: "henhaven",
-  // All 22 crops: the Farmstead's own Crop Fields -- the only ground with
+  // All 16 crops: the Farmstead's own Crop Fields -- the only ground with
   // soil beds.
-  garlic: "farmstead",
+  lettuce: "farmstead",
+  spinach: "farmstead",
+  radish: "farmstead",
   onion: "farmstead",
-  beet: "farmstead",
-  poppy: "farmstead",
-  potato: "farmstead",
   carrot: "farmstead",
+  potato: "farmstead",
   cabbage: "farmstead",
-  cucumber: "farmstead",
+  broccoli: "farmstead",
   pepper: "farmstead",
-  brokoly: "farmstead",
-  sunflower: "farmstead",
-  sunflowe_broken: "farmstead",
-  wheat1: "farmstead",
+  bell_pepper: "farmstead",
+  celery: "farmstead",
+  green_bean: "farmstead",
   tomato: "farmstead",
   corn: "farmstead",
-  corn2: "farmstead",
   eggplant: "farmstead",
-  grap: "farmstead",
-  grap2: "farmstead",
-  pumpkin: "farmstead",
-  wheat2: "farmstead",
-  artichoke: "farmstead",
+  wheatsheaf: "farmstead",
   pig: "wallow",
   cattle: "oxfields",
 };

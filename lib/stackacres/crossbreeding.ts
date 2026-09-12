@@ -154,16 +154,16 @@ export interface CrossbreedMatrixEntry {
  * here pays Gold on its own -- see ./crossbreed-items.ts's own header for
  * why a hybrid is inventory, not a payout.
  *
- * The crop-side pairings key on the 22-crop roster's own ids (2026-09-07):
- * `corn`, not the retired `cash_crop` it replaced. `corn2`/`wheat2`/`grap2`
- * are second sprites of the same tier and deliberately not paired -- one
- * corn crossing sunflowers is a rule a player can learn, two spellings of
- * corn with different odds is not.
+ * The crop-side pairings key on the 16-crop Gr8FarmPack roster's own ids
+ * (2026-09-12) -- `corn`/`wheatsheaf`/`carrot`/`potato` here are the ids that
+ * survived or replaced the 22-crop CraftPix roster's own pairings
+ * (`sunflower` and `beet`, both gone, are what `wheatsheaf` and `potato`
+ * stand in for below).
  */
 export const CROSSBREED_MATRIX: readonly CrossbreedMatrixEntry[] = [
-  { a: "corn", b: "sunflower", hybrid: "golden_maize", chance: 0.18 },
-  { a: "wheat1", b: "beet", hybrid: "candied_husk", chance: 0.15 },
-  { a: "hen", b: "sunflower", hybrid: "sunroot_egg", chance: 0.1 },
+  { a: "corn", b: "wheatsheaf", hybrid: "golden_maize", chance: 0.18 },
+  { a: "carrot", b: "potato", hybrid: "candied_husk", chance: 0.15 },
+  { a: "hen", b: "wheatsheaf", hybrid: "sunroot_egg", chance: 0.1 },
   { a: "hen", b: "pig", hybrid: "marbled_down", chance: 0.07 },
   { a: "pig", b: "cattle", hybrid: "tallow_wool", chance: 0.06 },
   { a: "cattle", b: "hen", hybrid: "custard_curd", chance: 0.05 },

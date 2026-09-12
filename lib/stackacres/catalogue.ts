@@ -35,16 +35,23 @@
  * WHAT HOLDING IT COSTS is not here: Land Maintenance scales with the whole
  * estate rather than attaching to a tier, so it lives in ./upkeep.ts.
  *
- * CROP ROSTER (2026-09-07): the original two hand-vector crops (`sprout`,
- * `cash_crop`) are gone -- replaced outright, not extended, by all 22 CraftPix
- * crop sprites, `carrot`/`corn` included at the same sprite filenames those
- * two ids used to occupy. There is no more sprout->carrot / cash_crop->corn
- * indirection anywhere in the stock system; every id below is both the stock
- * kind and its own art id. Three tiers by seed cost/duration/yield -- see each
- * tier's own comment below. `corn` still lands on tier 3 at the exact numbers
- * `cash_crop` used to carry. `carrot` no longer does: TIER1 was retuned
- * 2026-09-11 for early-game pacing (see TIER1 below), so tier 1 has moved on
- * from those original numbers on purpose.
+ * CROP ROSTER (2026-09-12): the 22 CraftPix-rendered crops are gone --
+ * stripped outright, not extended, in favour of the 16 crops in the supplied
+ * Gr8FarmPack 2D pixel-art set (see scripts/prepare-stackacres-farmpack-crops.py).
+ * Same "just found some" trade the CraftPix pass itself once made against the
+ * original two hand-vector crops. Every id below is both the stock kind and
+ * its own art id, same as before. Three tiers by seed cost/duration/yield --
+ * see each tier's own comment below; TIER1/TIER2/TIER3's own numbers are
+ * untouched by this swap, only which crop sits in which tier changed.
+ *
+ * `wheatsheaf`, not `wheat`: the obvious id collides with two things already
+ * in this codebase named plain `wheat` -- machine-items.ts's MACHINE_RAW_ITEMS
+ * wheat (the Wheat Plot's own raw material, a separate system from a stocked
+ * unit) and paths.ts's `wheatField` waypoint id. Since a StackAcresItem's item
+ * id equals its stock id, a crop literally named `wheat` would shadow the
+ * Wheat Plot's own wheat everywhere a MachineItemId is looked up. Label stays
+ * "Wheat"; only the id moved, same divergence pattern `brokoly`/"Broccoli"
+ * already used below and still uses.
  */
 
 import type { StackAcresShopLock } from "./shop-locks";
@@ -52,30 +59,24 @@ import type { StackAcresShopLock } from "./shop-locks";
 export const STACKACRES_CROPS = [
   // Tier 1 (fast/cheap): 1 seed / 15s / 8m thirst (unreachable at 15s -- see
   // TIER1 below) / 2 muck.
-  "garlic",
+  "lettuce",
+  "spinach",
+  "radish",
   "onion",
-  "beet",
-  "poppy",
-  "potato",
   "carrot",
+  "potato",
   "cabbage",
   // Tier 2 (medium): 55 seed / 90m / 40m thirst / 90 muck.
-  "cucumber",
+  "broccoli",
   "pepper",
-  "brokoly",
-  "sunflower",
-  "sunflowe_broken",
-  "wheat1",
+  "bell_pepper",
+  "celery",
+  "green_bean",
   "tomato",
   // Tier 3 (slow/valuable): 120 seed / 4h / 90m thirst / 200 muck.
   "corn",
-  "corn2",
   "eggplant",
-  "grap",
-  "grap2",
-  "pumpkin",
-  "wheat2",
-  "artichoke",
+  "wheatsheaf",
 ] as const;
 export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle"] as const;
 
@@ -187,6 +188,22 @@ export interface StackAcresStockDef {
    * pays no seed and never mucks. Tier 1 is the tier you work by hand.
    */
   ownableOutright: boolean;
+  /**
+   * Whether neglect can cost this kind its actual PRODUCE, not just time.
+   * `feedStackAcres`'s own doc comment states the game's rule: a hungry
+   * animal freezes and `readyAt` moves out by however long it starved, so
+   * the yield is always eventually paid. `spoils: true` is the ONE
+   * exception to that rule, and it exists for exactly one kind, for exactly
+   * one reason: the Hen Coop is the farm's starter tier, and a starter tier
+   * that can never actually lose anything teaches a new player nothing about
+   * tending. A `spoils` unit still hungry at its own cycle's `readyAt` voids
+   * that cycle outright -- no produce, a fresh cycle starts on the spot --
+   * see `effectiveStackAcresCycle` in ./units.ts for the exact mechanics.
+   * False (or omitted, which this table never does) for every crop, which
+   * has no hunger clock to spoil in the first place, and for every other
+   * animal, which keeps the ordinary "neglect costs time, never Gold" deal.
+   */
+  spoils: boolean;
 }
 
 /**
@@ -209,47 +226,29 @@ const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, t
  * not a payout baked in here.
  */
 export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresStockDef>> = {
-  // ---- Tier 1 (fast/cheap): sprout's own old numbers, restated per crop. ----
-  garlic: { label: "Garlic", ...TIER1 },
+  // ---- Tier 1 (fast/cheap). ----
+  lettuce: { label: "Lettuce", ...TIER1 },
+  spinach: { label: "Spinach", ...TIER1 },
+  radish: { label: "Radish", ...TIER1 },
   onion: { label: "Onion", ...TIER1 },
-  beet: { label: "Beet", ...TIER1 },
-  poppy: { label: "Poppy", ...TIER1 },
-  potato: { label: "Potato", ...TIER1 },
-  // No longer `sprout`'s old numbers -- TIER1 was retuned 2026-09-11, see
-  // its own comment above.
   carrot: { label: "Carrot", ...TIER1 },
+  potato: { label: "Potato", ...TIER1 },
   cabbage: { label: "Cabbage", ...TIER1 },
 
   // ---- Tier 2 (medium). ----
-  cucumber: { label: "Cucumber", ...TIER2 },
+  broccoli: { label: "Broccoli", ...TIER2 },
   pepper: { label: "Pepper", ...TIER2 },
-  brokoly: {
-    // Labelled Broccoli, keyed as brokoly -- same "id and label diverge"
-    // pattern `pig` uses below for Sheep Pen. The id stays exactly as it is
-    // once stored on a unit row; only the caption moved.
-    label: "Broccoli",
-    ...TIER2,
-  },
-  sunflower: { label: "Sunflower", ...TIER2 },
-  sunflowe_broken: { label: "Wild Sunflower", ...TIER2 },
-  wheat1: { label: "Wheat", ...TIER2 },
+  bell_pepper: { label: "Bell Pepper", ...TIER2 },
+  celery: { label: "Celery", ...TIER2 },
+  green_bean: { label: "Green Bean", ...TIER2 },
   tomato: { label: "Tomato", ...TIER2 },
 
-  // ---- Tier 3 (slow/valuable): cash_crop's own old numbers, restated per
-  // crop (corn below carries them exactly -- see the file header). ----
+  // ---- Tier 3 (slow/valuable). ----
   corn: { label: "Corn", ...TIER3 },
-  corn2: { label: "Field Corn", ...TIER3 },
   eggplant: { label: "Eggplant", ...TIER3 },
-  grap: {
-    // Labelled Grapes, keyed as grap -- same divergence pattern as `brokoly`
-    // above and `pig` below.
-    label: "Grapes",
-    ...TIER3,
-  },
-  grap2: { label: "Muscat Grapes", ...TIER3 },
-  pumpkin: { label: "Pumpkin", ...TIER3 },
-  wheat2: { label: "Winter Wheat", ...TIER3 },
-  artichoke: { label: "Artichoke", ...TIER3 },
+  // Labelled Wheat, keyed as wheatsheaf -- see this file's header for why the
+  // plain id collides with an unrelated existing item.
+  wheatsheaf: { label: "Wheat", ...TIER3 },
 
   hen: {
     label: "Hen Coop",
@@ -283,6 +282,8 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     spoils: false,
     muckFee: 312,
     ownableOutright: true,
+    // Keeps the ordinary rule: neglect costs time, never the wool.
+    spoils: false,
   },
   cattle: {
     label: "Cattle Pen",
@@ -293,6 +294,8 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     spoils: false,
     muckFee: 1_120,
     ownableOutright: true,
+    // Keeps the ordinary rule: neglect costs time, never the milk.
+    spoils: false,
   },
 };
 

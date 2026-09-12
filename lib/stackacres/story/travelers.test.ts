@@ -108,13 +108,15 @@ describe("TRAVELER_QUESTS", () => {
       { kind: "deliver", item: "carrot", target: 5 },
     ]);
     expect(TRAVELER_QUESTS.brayden[0].objectives).toEqual([{ kind: "hold-tool", tool: "iron-shovel", target: 1 }]);
-    expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([{ kind: "harvest", crops: ["poppy", "sunflower"], target: 16 }]);
+    expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([
+      { kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 },
+    ]);
     expect(TRAVELER_QUESTS.leo[1].objectives.map((objective) => objective.kind)).toEqual(["pipes", "forge"]);
   });
 
   it("labels objectives as one imperative line", () => {
-    expect(objectiveLabel({ kind: "harvest", crops: ["poppy", "sunflower"], target: 16 })).toBe(
-      "Harvest 16 poppy or sunflower",
+    expect(objectiveLabel({ kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 })).toBe(
+      "Harvest 16 bell pepper or green bean",
     );
     expect(objectiveLabel({ kind: "deliver", item: "potato", target: 5 })).toBe("Bring 5 Potatoes");
     expect(objectiveLabel({ kind: "hold-tool", tool: "iron-shovel", target: 1 })).toBe("Own the Iron Shovel");

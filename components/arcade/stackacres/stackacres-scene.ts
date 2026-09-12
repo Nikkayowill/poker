@@ -3628,9 +3628,10 @@ export class StackAcresScene extends Phaser.Scene {
       // itself the first time one is drawn; see `alphaMaskFor`.
       this.alphaMaskFor(sprite.texture.key);
       // Onto its own root point, not the bottom-centre of its canvas -- see
-      // `CROP_FOOT` in crop-visuals.ts. Without the sideways half of this a
-      // sprawling crop (cabbage, pumpkin) is drawn beside its bed, and
-      // without the vertical half it floats above one.
+      // `CROP_FOOT` in crop-visuals.ts. Both corrections are a no-op for the
+      // current Gr8FarmPack roster (every CROP_FOOT entry is 0, 0), but a
+      // future crop whose art actually sprawls would float above or beside
+      // its own bed without them, so this stays real rather than dropped.
       sprite.x += cropFootShiftX(crop, stage);
       sprite.y += cropGroundOffset(crop, stage);
       // Dry soil reads as a faded plant, with the water cue floating over it.

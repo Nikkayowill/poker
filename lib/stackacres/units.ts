@@ -404,6 +404,11 @@ export function toStackAcresUnitSnapshots(
     }
 
     const irrigated = irrigatedUnitIds.has(row.id);
+    // Effective, not raw: a `spoils` unit (the Hen Coop) that fast-forwarded
+    // past a voided cycle displays its fresh cycle's own clock, not the one
+    // it just lost -- identical to the row's own fields for anything that
+    // cannot spoil. See effectiveStackAcresCycle's own header.
+    const effective = effectiveStackAcresCycle(row, now);
     const hungry = isStackAcresUnitHungry(row, now);
     const dry = isStackAcresUnitDry(row, now, irrigated);
     const ready = isStackAcresUnitReady(row, now, irrigated);

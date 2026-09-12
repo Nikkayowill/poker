@@ -364,7 +364,7 @@ export class GameJuiceManager {
    *  (`celebrateHarvest`'s spark colour), through the same pooled emitter
    *  machinery the harvest pop uses. */
   private arriveAtBarn(at: Point, depth: number): void {
-    const style = juiceStyleFor("wheat2"); // borrowed only for its gold ramp; not a crop-specific burst
+    const style = juiceStyleFor("wheatsheaf"); // borrowed only for its tier-3 shard shape; ramp is overridden below
     const emitter = this.ensureShardEmitter({ ...style, ramp: "gold" });
     emitter.setDepth(depth);
     emitter.setPosition(at.x, at.y);

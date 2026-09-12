@@ -32,7 +32,7 @@ import {
   type WorldPoint,
   type WorldRect,
 } from "../world";
-import { CROP_FIELD, yardRect } from "../yard";
+import { CROP_FIELD, yardPoint, yardRect } from "../yard";
 import { GREENHOUSE_PLOT } from "../greenhouse";
 import { MONK_POST, MONK_TAP_ZONE } from "../monk";
 import { STACKACRES_ZONES, zoneAt, type ZoneId } from "../zones";
@@ -180,26 +180,21 @@ const FARMSTEAD_BANDS: Readonly<Record<"pierre" | "ivy", WorldRect>> = {
 };
 
 const OTHERS: ClearOptions = { buildingMargin: FARMSTEAD_CLEARANCE, ignoreWalls: false };
-const RAY: ClearOptions = { buildingMargin: 2, ignoreWalls: true };
 
 /**
- * Beside his own house: walked outward from the east wall first (the lane
- * runs down the west side), a step at a time, until his feet are on clear
- * ground. The field wall east of the house is deliberately not an obstacle
- * for him -- a spirit standing behind a knee-high wall is the picture.
+ * A fixed spot, not a live search, since `RAY_HOUSE_FOOTPRINT` moved to a
+ * new yard layout (the yard placement dev panel,
+ * components/dev/StackAcresPlacementPanel.tsx) and re-deriving his spot from
+ * the house's own footprint on every load would silently drag him along
+ * with it on the NEXT move too -- undoing whichever placement someone chose
+ * on purpose. This value is a one-time run of the walk-outward search (see
+ * git history for the search itself) against the current
+ * `RAY_HOUSE_FOOTPRINT`, not a hand-typed guess: first clear ground east of
+ * the house's new wall. If the house moves again, re-run that search (or
+ * drag him with the panel) rather than leaving him beside the old spot.
  */
 function raySpot(): WorldPoint {
-  const house = RAY_HOUSE_FOOTPRINT;
-  const feetLine = house.y + house.height;
-  for (const dy of [0, 4, -4, 8, -8, 12, -12, 16, 20]) {
-    for (const dx of [6, 10, 14, 18, 22, 26, 30, 36, 42, 48]) {
-      for (const x of [house.x + house.width + dx, house.x - dx]) {
-        const y = feetLine + dy;
-        if (farmsteadClear("ray", x, y, RAY)) return { x, y };
-      }
-    }
-  }
-  throw new Error("no clear ground beside Ray's house");
+  return yardPoint(168, -73);
 }
 
 /** Somewhere genuinely inside an outer district: off its roads, off the

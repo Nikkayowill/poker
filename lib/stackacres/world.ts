@@ -276,7 +276,32 @@ export function soilTileInCropFieldBeds(tx: number, ty: number): boolean {
  * function that needs no renderer -- the same tradeoff `GROW_AREA`'s own
  * flat district boxes already make.
  */
-export const BARN_FOOTPRINT: WorldRect = yardRect(71, -28, 74, 62);
+export const BARN_FOOTPRINT: WorldRect = yardRect(63, -25, 74, 62);
+
+/** The barn's own single generated elevation has no reverse angle to turn
+ *  to -- it is a straight-on picture, not an isometric volume -- so "rotate
+ *  the barn" is a horizontal mirror, the one real reorientation a flat
+ *  sprite can take (see `paintBarn` in stackacres-scene.ts, the only place
+ *  that draws it). Declared here rather than in stackacres-scene.ts so the
+ *  yard placement dev panel (components/dev/StackAcresPlacementPanel.tsx)
+ *  can read it without importing that Phaser-dependent module, which breaks
+ *  under SSR (`window` at module scope). */
+export const BARN_FLIPPED = true;
+
+/** How far north (away from the barn) `paintRayHouse` draws the house's
+ *  picture and shadow from `RAY_HOUSE_FOOTPRINT`'s own true south edge --
+ *  `RAY_HOUSE_FOOTPRINT` itself, `rayHouseHitAt`, pathing and wild-growth
+ *  exclusion are all untouched; this only nudges the drawn picture. Declared
+ *  here for the same SSR reason as `BARN_FLIPPED` above. */
+export const RAY_HOUSE_VISUAL_NUDGE = -35;
+
+/** Same story as `BARN_FLIPPED` above, for Ray's house's own single
+ *  generated elevation: a horizontal mirror is the one real reorientation a
+ *  flat, straight-on picture can take (see `paintRayHouse`). Off by default
+ *  -- the shipped art faces the barn correctly as drawn -- but the yard
+ *  placement dev panel exposes it for whenever a repositioned house needs
+ *  to face the other way. */
+export const RAY_HOUSE_FLIPPED = false;
 
 /** Whether a tapped ground point (post `isoUnproject`, the same space
  *  `growAreaAt` and every `PropPlacement` live in) lands on the barn --
@@ -363,7 +388,7 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * rather than restating its corner as a second literal the two could drift
  * apart from.
  */
-export const RAY_HOUSE_FOOTPRINT: WorldRect = yardRect(108 - 90 / 2, -32 - 44, 90, 44);
+export const RAY_HOUSE_FOOTPRINT: WorldRect = yardRect(72, -133, 90, 44);
 
 /** Whether a tapped ground point lands on Ray's house, as opposed to the barn
  *  well west of it -- same shape as `midnightMerchantHitAt`. */

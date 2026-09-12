@@ -117,13 +117,16 @@ import {
   cropSpot,
   growAreaAt,
   growAreaBounds,
+  BARN_FLIPPED,
   growAreaInterior,
   growthStage,
   MIDNIGHT_MERCHANT_SPOT,
   midnightMerchantHitAt,
   penFeedSpot,
   powerOfTwoCeil,
+  RAY_HOUSE_FLIPPED,
   RAY_HOUSE_FOOTPRINT,
+  RAY_HOUSE_VISUAL_NUDGE,
   rayHouseTapAt,
   scrollToKeepUnderPointer,
   seededRandom,
@@ -840,7 +843,7 @@ const SPRING_BACK_MS = 260;
 // is the same box: until the 2026-09-09 terrain pass these two were still
 // the pre-relay numbers, and the barn, its silo and its hay were drawn in
 // the middle of the locked Crop Fields while its tap box sat in the yard.
-const BARN_AT = yardPoint(108, 34);
+const BARN_AT = yardPoint(100, 37);
 const BARN_X = BARN_AT.x;
 const BARN_Y = BARN_AT.y;
 
@@ -866,8 +869,10 @@ const BARN_SCALE_BOOST = 1.7;
  *  `paintBarn`'s own header) -- so "rotate the barn" is a horizontal mirror,
  *  the one real reorientation a flat sprite can take. Flipped, not redrawn,
  *  so a future real isometric repaint just deletes this rather than
- *  fighting it. */
-const BARN_FLIPPED = true;
+ *  fighting it. Lives in lib/stackacres/world.ts, not here, so the yard
+ *  placement dev panel (components/dev/StackAcresPlacementPanel.tsx) can
+ *  read the shipped flip state without importing this Phaser-dependent
+ *  module -- see that constant's own header for why. */
 
 /**
  * How much SMALLER than its base painter box Ray's house sprite draws.
@@ -892,8 +897,11 @@ const RAY_HOUSE_SCALE = 0.6;
  * other comments describe, just finally wide enough to see. Moving the
  * footprint itself risks the pathing/wild-growth-exclusion guarantees its
  * own header describes; nudging only the picture does not.
+ *
+ * Lives in lib/stackacres/world.ts, not here -- see that constant's own
+ * header for why (the yard placement dev panel needs it without importing
+ * this Phaser-dependent module).
  */
-const RAY_HOUSE_VISUAL_NUDGE = -30;
 
 /** Same hold as `BARN_OPEN_HOLD_MS`, for `pulseRayHouseOpen`. */
 const RAY_HOUSE_OPEN_HOLD_MS = 700;
@@ -1775,6 +1783,15 @@ export class StackAcresScene extends Phaser.Scene {
    *  either way, see `monkHitAt`). */
   private monk: MonkNode | null = null;
 
+  /** Dev-only: overrides `MONK_POST` for `stepMonkNode`'s every-frame
+   *  reposition. `stepMonkNode` re-derives his screen position from
+   *  `MONK_POST` on every single frame (see its own comment), so a plain
+   *  one-off `setPosition` from the yard placement panel would be undone
+   *  before the next paint; this override is what that per-frame read
+   *  actually consults instead. Null means "use the shipped `MONK_POST`",
+   *  same as always. */
+  private monkDevPost: WorldPoint | null = null;
+
   /** The barn's own entryway, captured off `paintBarn` so `pulseBarnOpen`
    *  has a real sprite to swap the texture of. Null until `create` has
    *  run. */
@@ -1783,6 +1800,11 @@ export class StackAcresScene extends Phaser.Scene {
    *  `barn`, exactly one at a time -- a second arrival before the first has
    *  reverted restarts the clock rather than layering two reverts. */
   private barnOpenRevertTimer: Phaser.Time.TimerEvent | null = null;
+
+  /** Dev-only: the yard placement panel's reference grid
+   *  (`showDevPlacementGrid`/`hideDevPlacementGrid`), lazily created on
+   *  first use since production never touches it. */
+  private devPlacementGrid: Phaser.GameObjects.Graphics | null = null;
 
   /** Ray's house, captured off `paintRayHouse` so a press has a real target
    *  to swap the texture of -- see `setRayHousePressed`. Null until `create`
@@ -2334,6 +2356,7 @@ export class StackAcresScene extends Phaser.Scene {
     // own north edge.
     this.rayHouseSprite = this.put("rayHouse", cx, feetY, this.depthAt(cx, feetY, 90));
     this.rayHouseSprite.setScale((1 / S) * RAY_HOUSE_SCALE);
+    this.rayHouseSprite.setFlipX(RAY_HOUSE_FLIPPED);
   }
 
   /**
@@ -2427,7 +2450,8 @@ export class StackAcresScene extends Phaser.Scene {
     const { pose, frame } = stepMonk(node.state, delta);
     node.state = pose;
     node.sprite.setFrame(frame.crouched ? RANGER_FRAME.work : RANGER_FRAME.frontIdle);
-    const at = isoProject(MONK_POST.x, MONK_POST.y);
+    const post = this.monkDevPost ?? MONK_POST;
+    const at = isoProject(post.x, post.y);
     node.sprite.setPosition(at.x, at.y - (reducedMotion ? 0 : frame.bobLift));
   }
 
@@ -6198,6 +6222,148 @@ export class StackAcresScene extends Phaser.Scene {
       x: ((scene.x - cam.worldView.x) * cam.zoom) / DPR,
       y: ((scene.y - cam.worldView.y) * cam.zoom) / DPR,
     };
+  }
+
+  /**
+   * `screenPointFor`'s exact inverse: page-space client coordinates back to a
+   * true world point. Dev-only -- exists for the yard placement dev panel
+   * (components/dev/StackAcresPlacementPanel.tsx), reached through
+   * `window.__stackacres` the same way `screenPointFor` already is.
+   * Production gesture handling has no reason to call this: `bindInput`
+   * computes the identical thing inline as its own private `resolveWorld`,
+   * and duplicating that closure here would be the second copy this method
+   * exists to avoid needing.
+   */
+  worldPointFor(clientX: number, clientY: number): WorldPoint {
+    const at = { x: (clientX - this.hostOrigin.left) * DPR, y: (clientY - this.hostOrigin.top) * DPR };
+    const scene = this.cameras.main.getWorldPoint(at.x, at.y);
+    return isoUnproject(scene.x, scene.y);
+  }
+
+  /**
+   * Dev-only: move the barn sprite (and its depth sort) to a new world point
+   * live, for the yard placement panel to drag. Visual only -- `BARN_AT` and
+   * `BARN_FOOTPRINT` are source literals in stackacres-scene.ts/world.ts;
+   * this never touches them, so the barn's hit-test box stays exactly where
+   * it shipped until someone pastes the panel's numbers into those files.
+   */
+  setBarnDevPosition(worldX: number, worldY: number): void {
+    if (!this.barnSprite) return;
+    const s = isoProject(worldX, worldY);
+    this.barnSprite.setPosition(s.x, s.y).setDepth(this.depthAt(worldX, worldY + 17));
+  }
+
+  /** Dev-only: mirror the barn sprite for the yard placement panel's flip
+   *  toggle. See `BARN_FLIPPED`'s own header for why a flip is the only
+   *  reorientation this flat sprite can take. */
+  setBarnDevFlipped(flipped: boolean): void {
+    this.barnSprite?.setFlipX(flipped);
+  }
+
+  /** Dev-only counterpart of `setBarnDevPosition` for Ray's house. `worldX`/
+   *  `worldY` is the drawn picture's own feet point (post
+   *  `RAY_HOUSE_VISUAL_NUDGE`, same as `paintRayHouse` positions it) -- not
+   *  `RAY_HOUSE_FOOTPRINT`'s feet, which the panel derives back out itself. */
+  setRayHouseDevPosition(worldX: number, worldY: number): void {
+    if (!this.rayHouseSprite) return;
+    const s = isoProject(worldX, worldY);
+    this.rayHouseSprite.setPosition(s.x, s.y).setDepth(this.depthAt(worldX, worldY, 90));
+  }
+
+  /** Dev-only: mirror Ray's house sprite for the yard placement panel's flip
+   *  toggle. See `RAY_HOUSE_FLIPPED`'s own header. */
+  setRayHouseDevFlipped(flipped: boolean): void {
+    this.rayHouseSprite?.setFlipX(flipped);
+  }
+
+  /** Dev-only: whether the Midnight Merchant is currently spawned at all --
+   *  he's a "present" boolean toggle (`setMerchant`), not always on the lot,
+   *  so the yard placement panel needs to know before it offers a marker
+   *  for something that isn't there to drag. */
+  hasMerchantDevTarget(): boolean {
+    return this.merchantNode !== null;
+  }
+
+  /** Dev-only counterpart of `setBarnDevPosition` for the Midnight
+   *  Merchant. A no-op while he isn't spawned -- see `hasMerchantDevTarget`. */
+  setMerchantDevPosition(worldX: number, worldY: number): void {
+    if (!this.merchantNode) return;
+    const s = isoProject(worldX, worldY);
+    this.merchantNode.image.setPosition(s.x, s.y).setDepth(this.depthAt(worldX, worldY));
+  }
+
+  /** Dev-only: sets `monkDevPost`, which `stepMonkNode` now reads instead of
+   *  `MONK_POST` directly -- see that field's own header for why a plain
+   *  `setPosition` here wouldn't stick past the next frame. */
+  setMonkDevPosition(worldX: number, worldY: number): void {
+    this.monkDevPost = { x: worldX, y: worldY };
+  }
+
+  /** Dev-only: whether a given traveler has actually spawned this session
+   *  (every id in `TRAVELER_IDS` should, but the yard placement panel
+   *  checks anyway rather than assume). */
+  hasTravelerDevTarget(id: TravelerId): boolean {
+    return this.travelerNodes.has(id);
+  }
+
+  /** Dev-only counterpart of `setBarnDevPosition` for one story traveler
+   *  (e.g. "ray"). Unlike the barn/house/monk this one's shipped position
+   *  isn't a hand-typed literal -- `TRAVELER_PROPS` computes it once at
+   *  module load by searching for clear ground (see
+   *  lib/stackacres/story/placement.ts) -- so this only moves the live
+   *  sprite for preview; there is no single constant the panel's printed
+   *  coordinates paste into the way `BARN_AT` does. */
+  setTravelerDevPosition(id: TravelerId, worldX: number, worldY: number): void {
+    const node = this.travelerNodes.get(id);
+    if (!node) return;
+    const s = isoProject(worldX, worldY);
+    node.image.setPosition(s.x, s.y).setDepth(this.depthAt(worldX, worldY));
+  }
+
+  /**
+   * Dev-only: lights up a patch of the yard's own tile grid around a world
+   * point -- the same diamond shape and "water" tone `drawSoilLiftGrid`
+   * uses for legal soil-relocation tiles, so dragging a building in the
+   * yard placement panel looks and feels like the soil-bed relocate players
+   * already know, not a floating dot on a blank field.
+   *
+   * A spatial reference only, not a snap target: unlike soil-lift this never
+   * checks legality or constrains the drop -- a yard building can sit
+   * anywhere -- so there is exactly one tone, not gold/valid/invalid, and
+   * it's drawn once per drag (like `drawSoilLiftGrid` itself) rather than
+   * tracking the pointer every move.
+   */
+  showDevPlacementGrid(worldX: number, worldY: number): void {
+    if (!this.devPlacementGrid) {
+      this.devPlacementGrid = this.add.graphics().setDepth(GROW_AREA_GROUND_DEPTH + 1.5);
+    }
+    const grid = this.devPlacementGrid;
+    grid.clear();
+    const ramp = rampHex("water");
+    grid.fillStyle(ramp.top, 0.14);
+    grid.lineStyle(1, ramp.rim, 0.5);
+    const { tx: centerTx, ty: centerTy } = soilTileAt(worldX, worldY);
+    const RADIUS_TILES = 9;
+    for (let tx = centerTx - RADIUS_TILES; tx <= centerTx + RADIUS_TILES; tx++) {
+      for (let ty = centerTy - RADIUS_TILES; ty <= centerTy + RADIUS_TILES; ty++) {
+        const corners = soilTileDiamond(tx, ty);
+        grid.beginPath();
+        grid.moveTo(corners.n.x, corners.n.y);
+        grid.lineTo(corners.e.x, corners.e.y);
+        grid.lineTo(corners.s.x, corners.s.y);
+        grid.lineTo(corners.w.x, corners.w.y);
+        grid.closePath();
+        grid.fillPath();
+        grid.strokePath();
+      }
+    }
+    grid.setVisible(true);
+  }
+
+  /** Dev-only: clears the yard placement panel's reference grid, for drag
+   *  end (or when the panel unmounts/minimizes). */
+  hideDevPlacementGrid(): void {
+    this.devPlacementGrid?.clear();
   }
 
   /**

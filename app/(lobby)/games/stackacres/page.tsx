@@ -4,6 +4,7 @@ import { StackAcresFarmDynamic } from "@/components/arcade/stackacres/stackacres
 import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
 import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
+import { StackAcresPlacementPanel } from "@/components/dev/StackAcresPlacementPanel";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
@@ -18,6 +19,27 @@ import { readSessionTokenFromCookies } from "@/lib/server/session";
  */
 const CHRONO_DELOREAN_PANEL_ENABLED =
   process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_CHRONO_DELOREAN_ENABLED === "1";
+
+/** Same gate, same reasoning, for the yard placement dev panel -- see
+ *  StackAcresPlacementPanel.tsx's own header. */
+const STACKACRES_PLACEMENT_PANEL_ENABLED =
+  process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_STACKACRES_PLACEMENT_ENABLED === "1";
+
+/**
+ * Dev-only: skip `tokenHasStackAcresAccess` locally, so a stock `pnpm dev`
+ * checkout can open the farm without an admin flipping `homestead_access` on
+ * a profile first -- normally the only way through the lock (see
+ * `tokenHasStackAcresAccess`'s own header). Same fail-closed posture as every
+ * other gate on this page: an explicit opt-in on top of `NODE_ENV`, off by
+ * default, automatically inert in production regardless of this value.
+ *
+ * Does not touch `hasStackAcresAccess`/`setStackAcresAccess` or their
+ * `homestead_access` column -- this only changes what `allowed` resolves to
+ * on this one page render, so it works the same in memory mode and against a
+ * real dev Supabase project, and grants nothing any API route would honor.
+ */
+const STACKACRES_DEV_BYPASS_ACCESS =
+  process.env.NODE_ENV !== "production" && process.env.STACKACRES_DEV_BYPASS_ACCESS === "1";
 
 export const metadata: Metadata = {
   // Route, modules and name now all read StackAcres -- see
@@ -46,7 +68,7 @@ export const metadata: Metadata = {
 export default async function StackAcresPage() {
   const store = await cookies();
   const token = readSessionTokenFromCookies((name) => store.get(name)?.value);
-  const allowed = await tokenHasStackAcresAccess(token);
+  const allowed = STACKACRES_DEV_BYPASS_ACCESS ? true : await tokenHasStackAcresAccess(token);
 
   const profile = allowed ? null : token ? await findProfileBySessionToken(token) : null;
 
@@ -74,6 +96,7 @@ export default async function StackAcresPage() {
           containing block absent one, which is fine for a dev-only overlay
           that only needs to sit in a corner of the screen. */}
       {allowed && CHRONO_DELOREAN_PANEL_ENABLED && <ChronoDevPanel />}
+      {allowed && STACKACRES_PLACEMENT_PANEL_ENABLED && <StackAcresPlacementPanel />}
     </div>
   );
 }

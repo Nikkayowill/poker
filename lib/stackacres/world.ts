@@ -286,7 +286,7 @@ export const BARN_FOOTPRINT: WorldRect = yardRect(71, -28, 74, 62);
 
 /** Whether a tapped ground point (post `isoUnproject`, the same space
  *  `growAreaAt` and every `PropPlacement` live in) lands on the barn --
- *  StackAcres' entryway into Ray's Museum. */
+ *  the supply store's entryway. */
 export function barnHitAt(x: number, y: number): boolean {
   return (
     x >= BARN_FOOTPRINT.x &&
@@ -357,11 +357,11 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * A tap here opens the friendship gift dialogue (stackacres-farm.tsx's
  * `onWorldRayTap`), which also carries his Shop and Blueprints buttons -- the
  * same callback the standing figure used to answer for. That is a different
- * surface from the barn (`barnHitAt`, Ray's Museum). This box does not
- * overlap the barn's, the silo's, the field wall's (props.ts's `stoneWall`
- * entries at y -46) or any other `YARD_PROPS` entry (x 63..153, y -76..-32 --
- * see world-entryways.test.ts, which checks it against every one of those,
- * and world.test.ts).
+ * surface from the barn (`barnHitAt`), which now opens the same supply store
+ * directly. This box does not overlap the barn's, the field wall's (props.ts's
+ * `stoneWall` entries at y -46) or any other `YARD_PROPS` entry (x 63..153,
+ * y -76..-32 -- see world-entryways.test.ts, which checks it against every
+ * one of those, and world.test.ts).
  *
  * Exported, unlike the signpost's or the windmill's own footprints: the
  * scene's `paintRayHouse` reads it directly for where to stand the sprite --
@@ -441,15 +441,18 @@ export function signpostHitAt(x: number, y: number): boolean {
 }
 
 /**
- * The windmill's footprint: the box `PROP_SIZE.windmill` gives (30 wide,
- * 70 tall) at props.ts's `yardPoint(330, 28)`, restated for the same
- * import-cycle reason. In fiction it is the Mill the Workshop runs, so it
- * doubles as the Workshop's entryway instead of a new building.
+ * Where the windmill used to stand: the box `PROP_SIZE.windmill` gives (30
+ * wide, 70 tall) at the same `yardPoint(330, 28)` props.ts once placed it
+ * at. NOT PAINTED ANY MORE (props.ts's own header) -- kept only so
+ * `windmillHitAt` still has a real box to answer, in case whatever building
+ * eventually carries the Workshop's entryway wants this exact spot back.
  */
 const WINDMILL_FOOTPRINT: WorldRect = yardRect(330 - 30 / 2, 28 - 70, 30, 70);
 
-/** Whether a tapped ground point lands on the windmill, the Workshop's
- *  entryway. */
+/** Whether a tapped ground point lands where the windmill used to stand.
+ *  UNUSED BY THE SCENE RIGHT NOW: nothing calls this since the windmill
+ *  (and the Workshop's only entryway) was pulled from the yard -- see
+ *  `onWorkshopTap`'s own header in stackacres-scene.ts. */
 export function windmillHitAt(x: number, y: number): boolean {
   return (
     x >= WINDMILL_FOOTPRINT.x &&

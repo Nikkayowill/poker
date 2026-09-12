@@ -16,9 +16,10 @@
  * which is valued and paid the instant it is harvested and has nothing left
  * to hand an NPC. A gift is consumed the moment it counts (see the server's
  * `giveStackAcresGift`, which debits the item and advances a friendship row
- * in one transaction) -- there is no "try it and see" here the way a
- * `donate-secret-item` museum drop gets, because unlike a museum shelf a
- * gift is not information the player already has.
+ * in one transaction) -- there is no "try it and see" here the way donating
+ * a secret item (`donate-secret-item`, lib/stackacres/secrets.ts) gets,
+ * because unlike showing off a find, a gift is not information the player
+ * already has.
  *
  * ONE COUNTED GIFT PER NPC PER UTC DAY, same boundary as devotion.ts's
  * (`./exchange.ts`'s `stackacresExchangeDay`) -- not to gate the item spend

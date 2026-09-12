@@ -239,11 +239,11 @@ export const DRONE_FORAGE_COOLDOWN_MS = DRONE_FORAGE_COOLDOWN_SECONDS * 1000;
  *  debit-then-create pairing this funds.
  *
  *  Priced as a late-game permanent buy, not a consumable. The hangar sits
- *  behind a completed museum and every drone is a standing Gold faucet
- *  (one forage claim of 15 to 60 Gold every 20 to 30 seconds the farm is
- *  open, capped only by the shared daily ceiling), so a drone should take
- *  hours of patrolling to pay itself off. The 2,500 it launched at earned
- *  itself back in about half an hour. */
+ *  behind every one of the farm's milestones (lib/stackacres/shop-locks.ts)
+ *  and every drone is a standing Gold faucet (one forage claim of 15 to 60
+ *  Gold every 20 to 30 seconds the farm is open, capped only by the shared
+ *  daily ceiling), so a drone should take hours of patrolling to pay itself
+ *  off. The 2,500 it launched at earned itself back in about half an hour. */
 export const DRONE_DEPLOY_COST_GOLD = 25_000;
 
 /* ------------------------------------------------------------------ */

@@ -77,7 +77,6 @@ import {
   mowerStripe,
   stepMowerToward,
 } from "@/lib/stackacres/mower-drive";
-import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import {
   SPARKLE_MAX,
   godRayAlpha,
@@ -134,7 +133,6 @@ import {
   stepCritter,
   stockZone,
   stocksInZone,
-  windmillHitAt,
   yardWellHitAt,
   type Critter,
   type SceneryKind,
@@ -415,10 +413,10 @@ export interface StackAcresSceneCallbacks {
    */
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   /**
-   * A tap that landed on the barn -- Ray's Museum's own entryway. Checked
-   * after a unit (a unit's own picture always wins over the structure
-   * standing behind it) and before the district ground fallback, the same
-   * ordering `unitAt` already documents for "the farm itself" taps.
+   * A tap that landed on the barn -- the supply store's own entryway.
+   * Checked after a unit (a unit's own picture always wins over the
+   * structure standing behind it) and before the district ground fallback,
+   * the same ordering `unitAt` already documents for "the farm itself" taps.
    */
   onBarnTap: () => void;
   /**
@@ -428,12 +426,14 @@ export interface StackAcresSceneCallbacks {
    */
   onSignpostTap: () => void;
   /**
-   * A tap that landed on the windmill, the Workshop's entryway. In fiction it
-   * is the Mill the Workshop runs. Same priority as `onBarnTap`.
+   * Opens the Workshop. NOT WIRED TO ANY TAP ZONE RIGHT NOW: the windmill
+   * that used to trigger this was removed from the yard (props.ts's own
+   * header), and a new building to carry it is still coming. Kept here,
+   * unfired, so wiring it back up is a placement, not a rebuild.
    */
   onWorkshopTap: () => void;
   /** A tap that landed on the yard's well, where the watering can gets
-   *  filled. Same priority as the windmill. */
+   *  filled. */
   onWellTap: (at: TapPoint) => void;
   /** A tap that landed on the pond's dock, where a line gets cast. Same
    *  priority as the well -- both are fixed utility fixtures, checked right
@@ -604,12 +604,6 @@ export interface StackAcresSceneOptions {
    *  cuts and how long it stays cut. Mutable through `setCutter` so swapping
    *  does not tear the scene down and lose the mown map. */
   cutter: StackAcresCutter;
-  /** Which of the barn's two glow states should be showing, if either --
-   *  see lib/stackacres/museum-secrets.ts's `museumGlowTier`. Mutable
-   *  through `setMuseumGlowTier` for the same reason `cutter` is: a fresh
-   *  find must restart or stop the barn's tween without rebuilding the
-   *  scene. */
-  museumGlowTier: MuseumGlowTier;
   /**
    * NOW INERT. Used to be the Synergy Tree's `automated_logistics`
    * multiplier on the farmhand's own walk speed; the farmhand no longer
@@ -669,10 +663,6 @@ function isCropArtName(name: PainterName): boolean {
 /** Chrome gold, as the canvas needs it. Same value as 01-tokens.css. */
 const GOLD = 0xffd23f;
 
-/** How solid Great-Grandpa Ray's spirit is drawn: see-through enough to
- *  read as a ghost, solid enough that his face still reads. His drift
- *  dips a little below this at the bottom of each breath. */
-const RAY_SPIRIT_ALPHA = 0.78;
 /** How wide the icon inside a cue bubble is drawn, in world units, and how
  *  far above the bubble's tail its centre sits. */
 const CUE_ICON_SIZE = 9.5;
@@ -866,8 +856,18 @@ const BARN_OPEN_HOLD_MS = 700;
  *  otherwise draws close to double the barn's 74). Applied as an extra
  *  scale on top of `put()`'s own `1/S`, from the same bottom-centre anchor,
  *  so the barn grows up and outward from its feet rather than shifting off
- *  `BARN_AT`. */
-const BARN_SCALE_BOOST = 1.35;
+ *  `BARN_AT`. Bumped again on Kayo's own call: the barn reads as the yard's
+ *  landmark now that the silo and windmill are gone from beside it, so it
+ *  gets to fill more of that space. */
+const BARN_SCALE_BOOST = 1.7;
+
+/** The barn's own single generated elevation has no reverse angle to turn
+ *  to -- it is a straight-on picture, not an isometric volume (see
+ *  `paintBarn`'s own header) -- so "rotate the barn" is a horizontal mirror,
+ *  the one real reorientation a flat sprite can take. Flipped, not redrawn,
+ *  so a future real isometric repaint just deletes this rather than
+ *  fighting it. */
+const BARN_FLIPPED = true;
 
 /**
  * How much SMALLER than its base painter box Ray's house sprite draws.
@@ -1774,20 +1774,11 @@ export class StackAcresScene extends Phaser.Scene {
    *  sheet never loaded -- see `bakeFarmhandTexture`; his tap target exists
    *  either way, see `monkHitAt`). */
   private monk: MonkNode | null = null;
-  /** Set once, the moment `setFarmhandSecretUnlock(true)` first fires -- a
-   *  reused sprite sheet has no second image to swap to (see that method's
-   *  own header), so the flag exists only to stop a later, unrelated redraw
-   *  replaying the one-time unlock burst. */
-  private farmhandSecretUnlocked = false;
 
-  /** Ray's Museum's own entryway, captured off `paintBarn` so the glow
-   *  tween has a real target -- see `setMuseumGlowTier`. Null until
-   *  `create` has run. */
+  /** The barn's own entryway, captured off `paintBarn` so `pulseBarnOpen`
+   *  has a real sprite to swap the texture of. Null until `create` has
+   *  run. */
   private barnSprite: Phaser.GameObjects.Image | null = null;
-  /** The barn glow's own running tween, exactly one at a time -- swapped out
-   *  (never layered) whenever the tier changes, the same discipline
-   *  `toolGhostTween` holds. */
-  private barnGlowTween: Phaser.Tweens.Tween | null = null;
   /** The pending revert from `pulseBarnOpen`'s door-open frame back to
    *  `barn`, exactly one at a time -- a second arrival before the first has
    *  reverted restarts the clock rather than layering two reverts. */
@@ -2700,17 +2691,17 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * A barn, a silo and some clutter in the margin above the first row, so the
-   * farm has a home rather than a top-left corner. It is the one fixed
-   * landmark out here: the opening shot frames it along with the plots.
+   * The barn and its flanking hay/barrel clutter in the margin above the
+   * first row, so the farm has a home rather than a top-left corner. It is
+   * the one fixed landmark out here: the opening shot frames it along with
+   * the plots. The silo that used to stand beside it is gone -- Kayo's
+   * call, to clear the yard down to the barn itself.
    *
    * The barn is the generated sprite (`PAINTERS.barn`, a straight-on
    * elevation) placed flat, the same `put()` every yard prop already uses
    * in this isometric world -- Kayo's call, over the earlier isometric-
    * volume treatment this function used to draw by hand: it is a known,
    * accepted tradeoff pending a proper isometric repaint of the sprite kit.
-   * The silo has no generated art of its own, so it stays a hand-drawn
-   * isometric volume, matching the mockup this pass was previewed against.
    */
   private paintBarn(): void {
     // Scaled up to match `BARN_SCALE_BOOST`'s own footprint on the ground --
@@ -2723,44 +2714,21 @@ export class StackAcresScene extends Phaser.Scene {
     // flat sprite, so it keeps sorting against nearby world objects the way
     // the approved mockup did. Scaled up from its own bottom-centre anchor
     // (see `BARN_SCALE_BOOST`) so the roofline grows taller without the
-    // barn's feet leaving `BARN_AT`.
+    // barn's feet leaving `BARN_AT`. Flipped per `BARN_FLIPPED`'s own header.
     this.barnSprite = this.put("barn", BARN_X, BARN_Y, this.depthAt(BARN_X, BARN_Y + 17));
     this.barnSprite.setScale((1 / S) * BARN_SCALE_BOOST);
-    this.applyMuseumGlowTier();
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseBarnGlow, this);
-    this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseBarnGlow, this);
+    this.barnSprite.setFlipX(BARN_FLIPPED);
 
-    // Silo: a plain cylinder-ish box (no gable) with a shallow domed cap,
-    // standing where the flat barn's own silo painter used to.
-    const g = this.add.graphics().setDepth(this.depthAt(BARN_X, BARN_Y + 17));
-    const mix = (a: WorldPoint, b: WorldPoint, k: number): WorldPoint => ({
-      x: a.x + (b.x - a.x) * k,
-      y: a.y + (b.y - a.y) * k,
-    });
-    const siloCentre = { x: BARN_X + 40, y: BARN_Y - 4 };
-    const siloFootprint = this.isoFootprint(siloCentre.x, siloCentre.y, 20, 20);
-    const siloTop = this.drawIsoWalls(g, siloFootprint, 50, rampHex("metal").side);
-    const capCentre = mix(siloTop.n, siloTop.s, 0.5);
-    const capRx = Math.abs(siloTop.e.x - siloTop.w.x) / 2;
-    const capRy = Math.abs(siloTop.s.y - siloTop.n.y) / 2;
-    g.fillStyle(rampHex("metal").top, 1);
-    g.fillEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
-    g.lineStyle(1.2, rampHex("metal").rim, 1);
-    g.strokeEllipse(capCentre.x, capCentre.y, capRx * 2, Math.max(capRy * 2, 6));
-    g.fillStyle(rampHex("roof").top, 1);
-    g.beginPath();
-    g.moveTo(siloTop.w.x, siloTop.w.y);
-    g.lineTo(siloTop.n.x, siloTop.n.y);
-    g.lineTo(siloTop.e.x, siloTop.e.y);
-    g.lineTo(capCentre.x, capCentre.y - 16);
-    g.closePath();
-    g.fillPath();
-
-    this.put("hay", BARN_X + 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
-    this.put("hay", BARN_X + 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
+    // The hay and the barrel mirror the same flip -- `BARN_FLIPPED` turns
+    // the doors around, and clutter that used to sit at the doors' own side
+    // has to swap sides with them rather than stay put and read as facing
+    // the blank wall instead.
+    const flip = BARN_FLIPPED ? -1 : 1;
+    this.put("hay", BARN_X + flip * 58, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.5));
+    this.put("hay", BARN_X + flip * 66, BARN_Y - 11, this.depthAt(BARN_X, BARN_Y, 0.6));
     // Nudged out from -48 to clear the barn's own wider silhouette now that
     // `BARN_SCALE_BOOST` grows it from the same bottom-centre anchor.
-    this.put("barrel", BARN_X - 55, BARN_Y - 14, this.depthAt(BARN_X - 55, BARN_Y - 14));
+    this.put("barrel", BARN_X - flip * 55, BARN_Y - 14, this.depthAt(BARN_X - flip * 55, BARN_Y - 14));
   }
 
   /**
@@ -2883,33 +2851,17 @@ export class StackAcresScene extends Phaser.Scene {
    * where these stand across six districts. Each picture is kept by id so
    * `setStoryCues` can hang a quest badge over it.
    *
-   * Ray is drawn as what he is: a spirit. Translucent, on a fainter shadow
-   * than a body casts, drifting a couple of units up and down beside his
-   * own house. The ten travelers stand still -- they are pixel art in a
-   * flat-vector world, and holding perfectly still is part of the read.
+   * Ray stands the same way the other ten do now: solid, on the same shadow
+   * a body casts, holding still. He used to be drawn as a spirit -- Kayo's
+   * call to retire that: Ray is alive again.
    */
   private paintTravelers(): void {
     for (const prop of TRAVELER_PROPS) {
       const pool = PROP_SHADOW[prop.kind];
-      const spirit = prop.traveler === "ray";
       this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
         .setScale(pool.w / 33 / S, pool.h / 13 / S)
-        .setAlpha(spirit ? 0.35 : 0.8);
+        .setAlpha(0.8);
       const image = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
-      if (spirit) {
-        image.setAlpha(RAY_SPIRIT_ALPHA);
-        if (!this.options.reducedMotion) {
-          this.tweens.add({
-            targets: image,
-            y: "-=2.5",
-            alpha: RAY_SPIRIT_ALPHA - 0.14,
-            duration: 2600,
-            yoyo: true,
-            repeat: -1,
-            ease: "Sine.easeInOut",
-          });
-        }
-      }
       this.travelerNodes.set(prop.traveler, { image, cue: null, cueBob: null, shown: null });
     }
   }
@@ -3424,8 +3376,8 @@ export class StackAcresScene extends Phaser.Scene {
    * enough on a tile's exact centre for the gap to matter in practice.
    */
   /** One freshly deployed drone's Phaser picture, parked at the ring tile
-   *  nearest the barn (Ray's Museum -- the hangar it was bought from) and
-   *  ready to start patrolling on the next `update()`. */
+   *  nearest the barn (the hangar it was bought from) and ready to start
+   *  patrolling on the next `update()`. */
   private spawnDroneNode(id: string): DroneNode {
     const bounds = this.droneGridBounds!;
     const hangarTile = tileOf({ x: BARN_X, y: BARN_Y });
@@ -5395,7 +5347,7 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onTravelerTap(traveler, this.travelerHeadPoint(traveler));
         return;
       }
-      // The barn -- Ray's Museum's own entryway -- checked before the
+      // The barn -- the supply store's own entryway -- checked before the
       // district ground fallback: it stands north of every grow area (see
       // BARN_FOOTPRINT's own doc comment), so the two never compete for the
       // same tap, but a unit always wins over the structure behind it.
@@ -5403,7 +5355,7 @@ export class StackAcresScene extends Phaser.Scene {
         // The door-open/hay-bursting frame on a tap, not just a delivery
         // arrival (`pulseBarnOpen`'s other caller, `onBarnArrive`) -- a tap
         // is the barn's own "something happened here" moment too, and the
-        // Museum sheet opening a beat later is no reason to skip it.
+        // store sheet opening a beat later is no reason to skip it.
         this.pulseBarnOpen();
         this.callbacks.onBarnTap();
         return;
@@ -5427,11 +5379,9 @@ export class StackAcresScene extends Phaser.Scene {
         this.callbacks.onSignpostTap();
         return;
       }
-      // The windmill, the Workshop's entryway. Same ordering as the signpost.
-      if (windmillHitAt(ground.x, ground.y)) {
-        this.callbacks.onWorkshopTap();
-        return;
-      }
+      // The windmill's own tap zone is gone along with the windmill itself
+      // -- the Workshop (`onWorkshopTap`) is unreachable from the world
+      // until a new building is placed for it (props.ts's own header).
       // The yard's well, where the watering can is filled.
       if (yardWellHitAt(ground.x, ground.y)) {
         this.callbacks.onWellTap(local);
@@ -5716,124 +5666,6 @@ export class StackAcresScene extends Phaser.Scene {
    *  the player has panned somewhere deliberate. */
   setViewExpansion(expansion: number): void {
     this.options.viewExpansion = Number.isFinite(expansion) && expansion > 0 ? expansion : 1;
-  }
-
-  /**
-   * Ray's Museum's own beacon, pushed the same way `setToolTier` is: a fresh
-   * find (or a fresh Golden Spade purchase) has to restart or stop the
-   * barn's tween NOW, not on the next scene rebuild -- rebuilding would
-   * throw away everything else `create()` painted for the same reason
-   * `setToolTier`'s own header gives.
-   *
-   * A no-op on a repeat call with the same tier: `applyMuseumGlowTier`
-   * always stops the previous tween before starting a fresh one, so calling
-   * this every poll tick with an unchanged tier must not restart the
-   * breathing cycle from its first frame each time.
-   */
-  setMuseumGlowTier(tier: MuseumGlowTier): void {
-    if (this.options.museumGlowTier === tier) return;
-    this.options.museumGlowTier = tier;
-    this.applyMuseumGlowTier();
-  }
-
-  /**
-   * Starts the tween for whatever tier is currently held, after tearing down
-   * whichever one was running -- called both from `setMuseumGlowTier` and
-   * once from `paintBarn` itself, since the barn sprite (the tween's target)
-   * does not exist until that method has run.
-   *
-   * BOTH STATES ARE PHASER TWEENS ON THE SPRITE ITSELF, never a manual
-   * per-frame nudge in `update()` -- the brief this shipped against asks for
-   * exactly that pipeline, and it is also simply the right tool: Phaser's
-   * tween manager already sleeps when nothing is animating, which a
-   * hand-rolled update() hook would not get for free.
-   */
-  private applyMuseumGlowTier(): void {
-    this.releaseBarnGlow();
-    const sprite = this.barnSprite;
-    if (!sprite) return;
-    sprite.setAlpha(1).clearTint();
-
-    if (this.options.museumGlowTier === "none") return;
-
-    if (this.options.reducedMotion) {
-      // No tween under reduced motion, the same posture every other loop in
-      // this file takes -- but the state should still read at a glance, so
-      // a steady (non-animated) tint stands in for the pulse.
-      if (this.options.museumGlowTier === "progression") sprite.setTint(0xffd54a);
-      else sprite.setAlpha(0.85);
-      return;
-    }
-
-    if (this.options.museumGlowTier === "ambient") {
-      // Slow breathing, same timing family as the pond's own ripples: a
-      // gentle "there's more here" nudge, not an alarm.
-      this.barnGlowTween = this.tweens.add({
-        targets: sprite,
-        alpha: { from: 1, to: 0.82 },
-        duration: 2_200,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
-      return;
-    }
-
-    // "progression": a rapid golden tint-shift. Tweening a plain {t: 0..1}
-    // object and driving setTint from it (rather than tweening a colour
-    // property directly, which Phaser's tweens do not interpolate) is what
-    // makes this a genuine colour SHIFT rather than a hard flash between two
-    // fixed tints.
-    const mix = { t: 0 };
-    this.barnGlowTween = this.tweens.add({
-      targets: mix,
-      t: 1,
-      duration: 450,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut",
-      onUpdate: () => {
-        const colour = Phaser.Display.Color.Interpolate.ColorWithColor(
-          Phaser.Display.Color.ValueToColor(0xffffff),
-          Phaser.Display.Color.ValueToColor(0xffd54a),
-          100,
-          Math.round(mix.t * 100),
-        );
-        sprite.setTint(colour.color);
-      },
-    });
-  }
-
-  private releaseBarnGlow(): void {
-    this.barnGlowTween?.remove();
-    this.barnGlowTween = null;
-  }
-
-  /**
-   * Ray's Museum's hidden wing, completed for the first time ever: the
-   * player's own local-optimistic unlock, played the instant the harvest
-   * response says so rather than waiting on a refetch.
-   *
-   * EMITS A REAL PHASER EVENT (`museum:hidden-set-unlocked`) rather than
-   * only changing the farmhand's own look, exactly as the brief this
-   * shipped against asks for -- any future listener (a sound cue, a toast,
-   * eventually a real alternate sprite sheet) can hook this without touching
-   * the call site that fires it.
-   *
-   * THE VISUAL ITSELF IS A TINT, NOT A SWAPPED TEXTURE, AND NOT A SCALE POP
-   * EITHER -- same reasoning as when this shipped against the farmhand: the
-   * sheet has no second "easter-egg" image to point at, and generating one
-   * is out of scope (new character art comes from Kayo's own supplied
-   * renders). Now lands on the Pixel Pilgrim instead, since he is the one
-   * standing on this same baked sheet since the farmhand was disabled --
-   * this replaces his own resting blue-grey tint (see `spawnMonkNode`)
-   * rather than layering over it, since `setTint` always replaces.
-   */
-  setFarmhandSecretUnlock(unlocked: boolean): void {
-    if (!unlocked || this.farmhandSecretUnlocked) return;
-    this.farmhandSecretUnlocked = true;
-    this.events.emit("museum:hidden-set-unlocked");
-    this.monk?.sprite.setTint(0xffd54a);
   }
 
   /** Floats the held tool's own picture above a finger that just turned a

@@ -4,9 +4,8 @@ import { expect, test } from "@playwright/test";
  * The Pixel Pilgrim: tapping him opens his dialogue, declining costs
  * nothing, and saying "yes" advances the devotion streak.
  *
- * Same tap-hook approach as stackacres-museum.spec.ts's own header: he has
- * no DOM element of his own (painted straight into the Phaser scene), so
- * this computes the exact screen point a real tap needs through
+ * He has no DOM element of his own (painted straight into the Phaser
+ * scene), so this computes the exact screen point a real tap needs through
  * `window.__stackacres.screenPointFor` and dispatches a real pointer press
  * there.
  */
@@ -32,8 +31,7 @@ async function grantAndOpenStackAcres(
   expect(accessResponse.ok()).toBe(true);
 
   // Grandfather Ray's one-time welcome modal covers the whole screen and
-  // would otherwise swallow the very first tap this test sends -- see
-  // stackacres-museum.spec.ts's own note on the same gate.
+  // would otherwise swallow the very first tap this test sends.
   await page.addInitScript(() => {
     try {
       window.localStorage.setItem("sa-ray-welcomed", "1");

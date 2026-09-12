@@ -1,9 +1,9 @@
 /**
  * Where the farm's fixed props stand.
  *
- * Pure layout: the windmill, the well, the clutter by the silo, the lamps
- * down the lane and the rest, each as a kind and the world point its feet
- * are on. The renderer (components/arcade/stackacres/
+ * Pure layout: the well, the crates by the barn, the lamps down the lane and
+ * the rest, each as a kind and the world point its feet are on. The renderer
+ * (components/arcade/stackacres/
  * art-props.ts) paints them; the scene places each one by its feet with a
  * soft ground shadow under it and sorts it by that y like everything else
  * with height.
@@ -12,15 +12,15 @@
  * ./paths, the arrangement those modules have with each other: this file is
  * not in that cycle today, but the props' positions are measured against
  * the same fixed geometry -- the Hen Coop block at x 170..330, y 200..360,
- * the barn's feet on y 34 (barn x 71..145, silo 143..165, hay 166..188 at
- * y 23..33, barrel 60..70 at y 20..33), the road centred on y 58 (body
- * 38..78, feathered rim to ~34), the lane at x 50 (body 30..70), the track
- * leaving (60,58) north-west and the pond at x -84..20, y 80..160 -- and
- * props.test.ts is what holds them to it. The road and the lane are two and
- * a half tiles wide now (see ./roads.ts), which is what pushed the lamps,
- * the mailbox and the signpost out to where they stand.
+ * the barn's feet on y 34 (barn x 71..145, hay 166..188 at y 23..33, barrel
+ * 60..70 at y 20..33), the road centred on y 58 (body 38..78, feathered rim
+ * to ~34), the lane at x 50 (body 30..70), the track leaving (60,58)
+ * north-west and the pond at x -84..20, y 80..160 -- and props.test.ts is
+ * what holds them to it. The road and the lane are two and a half tiles wide
+ * now (see ./roads.ts), which is what pushed the lamps, the mailbox and the
+ * signpost out to where they stand.
  *
- * The yard is the band NORTH of the road, between the silo and the seed
+ * The yard is the band NORTH of the road, between the barn and the seed
  * strip: feet at y <= 32, x 150..370, on the barn's own muddy yard mat.
  * Nothing stands on a path body, on the coop block, or in the pond's
  * clearing. Lamps stand on the lane's west verge only, three of them, the
@@ -84,12 +84,13 @@ export interface PropPlacement extends WorldPoint {
  * building, and twenty-two read as a junk shop.
  */
 export const YARD_PROPS: readonly PropPlacement[] = [
-  // The one tall silhouette in the yard, and the only thing that moves
-  // there: its blades turn (see WINDMILL_HUB). Left of the seed strip
-  // (x >= ~374 at the opening shot) so a new player sees it.
-  { kind: "windmill", ...yardPoint(330, 28) },
+  // The windmill used to stand here, left of the seed strip. Pulled per
+  // Kayo's call: it opened the Workshop with no visible reason to, and a new
+  // building is coming to take over that job (see `onWorkshopTap`'s own
+  // header) -- "windmill" stays a real PropKind/painter, just unplaced, so
+  // reattaching the Workshop's entryway is a placement, not a rebuild.
 
-  // Clutter east of the silo and the hay, against the road's north rim.
+  // Clutter east of the barn and the hay, against the road's north rim.
   // The road's body now starts at y 38 (two and a half tiles wide, centred
   // on y 58 -- see lib/stackacres/paths.ts); everything here keeps its feet
   // at y <= 32, on the mud of the barn yard, clear of the body.

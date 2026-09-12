@@ -49,7 +49,9 @@ import {
   type StackAcresView,
 } from "./stackacres-service";
 import { resetStackAcresDroneStoreForTests } from "./stackacres-drone-store";
+import { isDroneHangarUnlocked } from "./stackacres-drone-service";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
+import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
@@ -82,6 +84,7 @@ import {
   recordStackAcresHarvest,
   adjustStackAcresCapacity,
   createStackAcresMachine,
+  buildStackAcresGreenhouseRow,
 } from "./stackacres-store";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -131,7 +134,6 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import {
-  STACKACRES_ITEMS,
   STACKACRES_STOCK,
   STACKACRES_YIELDS,
   itemSellPrice,
@@ -139,7 +141,6 @@ import {
   yieldValue,
 } from "@/lib/stackacres/items";
 import { STACKACRES_UPKEEP_FREE_PLOTS, stackacresUpkeepFee } from "@/lib/stackacres/upkeep";
-import { emptyMuseumRegistry, museumDiscoveryBonusQuantity } from "@/lib/stackacres/museum";
 import { machineItemSellPrice } from "@/lib/stackacres/machine-items";
 import {
   WHEAT_DURATION_MS,
@@ -173,7 +174,7 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // It is THIS one the harvest reads -- a sweep lists rows rather than
     // fetching them one at a time.
     listStackAcresUnits: vi.fn(actual.listStackAcresUnits),
-    // Passthrough spy, so one test can stand in for a museum write failing --
+    // Passthrough spy, so one test can stand in for a donation write failing --
     // the memory branch has no DB to fail for real.
     markStackAcresDonated: vi.fn(actual.markStackAcresDonated),
     // Passthrough spy, so one test can stand in for a lost race on the
@@ -218,15 +219,12 @@ const MAX_PLOTS = STACKACRES_STOCK.length * (STACKACRES_BASE_CAP + STACKACRES_MA
  * A profile with Gold, which is now the only thing a farm needs -- there is no
  * starting grant to trigger any more.
  *
- * EVERY SECTOR IS CLEARED, THE DAY'S LAND FEE IS PRE-PAID, AND EVERY ITEM IS
- * ALREADY DONATED TO RAY'S MUSEUM by default, and that is a deliberate seam
- * rather than a shortcut. Almost every test in this file is about stock,
- * money ordering or the settlement guards, and none of them are about land or
- * about a first-ever discovery -- so both are pre-cleared and those tests
- * keep asserting exactly the arithmetic they were written for, undisturbed by
- * a bonus nobody there is testing for. Land Maintenance passes `settled:
- * false`; the "Ray's Museum" block passes `museum: false`; both start where a
- * real farm starts.
+ * EVERY SECTOR IS CLEARED AND THE DAY'S LAND FEE IS PRE-PAID by default, and
+ * that is a deliberate seam rather than a shortcut. Almost every test in this
+ * file is about stock, money ordering or the settlement guards, and none of
+ * them are about land -- so it is pre-cleared and those tests keep asserting
+ * exactly the arithmetic they were written for. Land Maintenance passes
+ * `settled: false`; both start where a real farm starts.
  */
 /**
  * How many beds `funded` tills: a 12 x 12 block, one per crop per slot with
@@ -244,13 +242,11 @@ async function funded(
   {
     land = [...SECTOR_LADDER],
     settled = true,
-    museum = true,
     cropFieldsUnlocked = true,
     beds = true,
   }: {
     land?: SectorId[];
     settled?: boolean;
-    museum?: boolean;
     /** The Crop Fields' bed-tiling and crop-stocking routes are gated on the
      *  standalone unlock now (lib/stackacres/crop-fields.ts) -- this file's
      *  own tests all predate that gate and assume a farm ready to sow, so it
@@ -276,9 +272,6 @@ async function funded(
       stackacresExchangeDay(T0),
       stackacresUpkeepFee(MAX_PLOTS),
     );
-  }
-  if (museum) {
-    for (const item of STACKACRES_ITEMS) await markStackAcresDonated(profile.id, item);
   }
   // Ray's seed shelf gates planting a crop now (see the 2026-09-07 seed
   // inventory pass) -- "funded" has always meant "ready to do anything this
@@ -1257,114 +1250,6 @@ describe("harvesting", () => {
     await expect(collectOne(token, cattle.id, HEN_READY)).rejects.toMatchObject({
       message: "Not ready yet.",
     });
-  });
-});
-
-/**
- * Ray's Museum. A first-ever discovery folds bonus UNITS of the item into the
- * harvest's own inventory credit, exactly once per item ever. No Gold moves,
- * so the daily ceiling has nothing to say about it.
- *
- * `funded()` pre-donates every item by default (see its own doc) so that
- * describe blocks with no interest in a first-ever discovery are never
- * perturbed by one; every test below starts from `museum: false` instead.
- */
-describe("Ray's Museum", () => {
-  it("folds the first-ever discovery bonus into the harvest's own inventory credit", async () => {
-    const { token, id } = await funded(500_000, { museum: false });
-    const view = await stockStackAcres(token, { stock: "hen" }, T0);
-    const unitId = unitOf(view, "hen").id;
-    const before = await balance(token);
-
-    const result = await collectOne(token, unitId, HEN_READY);
-
-    const bonusQuantity = museumDiscoveryBonusQuantity(HEN_YIELD.quantity);
-    expect(bonusQuantity).toBeGreaterThan(0);
-    expect(result.harvest.discoveries).toEqual([{ item: HEN_YIELD.item, bonusQuantity }]);
-    expect(result.harvest.tally).toEqual([
-      { item: HEN_YIELD.item, quantity: HEN_YIELD.quantity + bonusQuantity },
-    ]);
-    expect(result.inventory.eggs).toBe(HEN_YIELD.quantity + bonusQuantity);
-    expect(await balance(token)).toBe(before);
-    expect(await readStackAcresMuseum(id)).toContain(HEN_YIELD.item);
-    expect(result.museum[HEN_YIELD.item]).toBe(true);
-  });
-
-  it("never adds the bonus twice -- a duplicate harvest of the same item earns nothing extra", async () => {
-    const { token, id } = await funded(500_000, { museum: false });
-    await markStackAcresDonated(id, HEN_YIELD.item);
-    const view = await stockStackAcres(token, { stock: "hen" }, T0);
-    const unitId = unitOf(view, "hen").id;
-
-    const result = await collectOne(token, unitId, HEN_READY);
-
-    expect(result.harvest.discoveries).toEqual([]);
-    expect(result.inventory.eggs).toBe(HEN_YIELD.quantity);
-  });
-
-  it("counts each item separately within one sweep -- an already-donated item earns no repeat bonus while a new one still does", async () => {
-    const { token, id } = await funded(500_000, { museum: false });
-    await markStackAcresDonated(id, HEN_YIELD.item);
-    await stockStackAcres(token, { stock: "hen" }, T0);
-    await sowWatered(token, "carrot");
-
-    // A Carrot bed and a Hen Coop share a 15-minute cycle, so both ripen
-    // together -- the only way to bring a donated and an undonated item home
-    // in the same sweep.
-    const result = await harvestStackAcres(token, {}, HEN_READY);
-
-    const carrotYield = STACKACRES_YIELDS.carrot;
-    const bonusQuantity = museumDiscoveryBonusQuantity(carrotYield.quantity);
-    expect(result.harvest.discoveries).toEqual([{ item: carrotYield.item, bonusQuantity }]);
-    expect(result.inventory.carrot).toBe(carrotYield.quantity + bonusQuantity);
-    expect(result.inventory.eggs).toBe(HEN_YIELD.quantity);
-  });
-
-  it("tracks each item independently -- donating one never flags another", async () => {
-    const { token } = await funded(500_000, { museum: false });
-    const hen = await stockStackAcres(token, { stock: "hen" }, T0);
-    await collectOne(token, unitOf(hen, "hen").id, HEN_READY);
-
-    const registry = (await readStackAcres(token, HEN_READY)).museum;
-    expect(registry[HEN_YIELD.item]).toBe(true);
-    for (const item of Object.keys(registry) as (keyof typeof registry)[]) {
-      if (item !== HEN_YIELD.item) expect(registry[item]).toBe(false);
-    }
-  });
-
-  it("starts a fresh farm with nothing donated", async () => {
-    const { token } = await funded(500_000, { museum: false });
-    expect((await readStackAcres(token, T0)).museum).toEqual(emptyMuseumRegistry());
-  });
-
-  it("still credits the harvest in full when a museum write throws", async () => {
-    // A throw here must be swallowed, not surfaced, and must not cost the
-    // player the produce they already grew.
-    const { token } = await funded(500_000, { museum: false });
-    const view = await stockStackAcres(token, { stock: "hen" }, T0);
-    const unitId = unitOf(view, "hen").id;
-    vi.mocked(markStackAcresDonated).mockRejectedValueOnce(new Error("boom"));
-
-    const result = await collectOne(token, unitId, HEN_READY);
-
-    expect(result.harvest.discoveries).toEqual([]);
-    expect(result.inventory.eggs).toBe(HEN_YIELD.quantity);
-  });
-
-  it("adds the bonus even when the day's Gold allowance is spent, since it pays no Gold", async () => {
-    const { token, id } = await funded(500_000, { museum: false });
-    const view = await stockStackAcres(token, { stock: "hen" }, T0);
-    const unitId = unitOf(view, "hen").id;
-    await burnAllowance(id, STACKACRES_GOLD_CEILING, HEN_READY);
-    const before = await balance(token);
-
-    const result = await collectOne(token, unitId, HEN_READY);
-
-    const bonusQuantity = museumDiscoveryBonusQuantity(HEN_YIELD.quantity);
-    expect(result.harvest.discoveries).toEqual([{ item: HEN_YIELD.item, bonusQuantity }]);
-    expect(result.inventory.eggs).toBe(HEN_YIELD.quantity + bonusQuantity);
-    expect(await balance(token)).toBe(before);
-    expect(await readStackAcresMuseum(id)).toContain(HEN_YIELD.item);
   });
 });
 
@@ -3674,15 +3559,6 @@ describe("hidden secrets", () => {
       expect(await readStackAcresMuseum(id)).toContain(DICE);
     });
 
-    it("does not touch StackAcresItem's own museum registry", async () => {
-      const { token, id } = await funded(500_000, { museum: false });
-      await adjustStackAcresSecretLedger(id, DICE, 1);
-      await donateStackAcresSecretItem(token, DICE, T0);
-      const view = await readStackAcres(token, T0);
-      expect(view.museum).toEqual(emptyMuseumRegistry());
-      expect(view.secretDonations[DICE]).toBe(true);
-    });
-
     it("refunds the item if recording the donation throws", async () => {
       const { token, id } = await funded();
       await adjustStackAcresSecretLedger(id, DICE, 1);
@@ -4289,7 +4165,7 @@ describe("prestigeResetStackAcres", () => {
     expect(await readStackAcresUpkeep(id, stackacresExchangeDay(T0))).toBe(0);
   });
 
-  it("leaves land, purchased capacity, placed machines, Ray's Museum and Town Influence untouched", async () => {
+  it("leaves land, purchased capacity, placed machines and Town Influence untouched", async () => {
     const { token, id } = await funded();
     await adjustStackAcresCapacity(id, "hen", 1);
     await createStackAcresMachine(id, MACHINE_KINDS[0]);
@@ -4301,7 +4177,6 @@ describe("prestigeResetStackAcres", () => {
     expect(after.sectors.sort()).toEqual(before.sectors.sort());
     expect(after.capacity.hen).toBe(1);
     expect(after.machines).toHaveLength(1);
-    expect(after.museum).toEqual(before.museum);
     expect(after.influence).toBe(before.influence);
   });
 
@@ -4332,9 +4207,54 @@ describe("prestigeResetStackAcres", () => {
   });
 });
 
+/**
+ * The hangar's unlock gate: every one of the farm's permanent milestone
+ * flags earned (lib/stackacres/shop-locks.ts), the drop-in replacement for
+ * the old museum-donation gate this feature used to use. `funded()`'s
+ * defaults (every sector cleared, Crop Fields unlocked) already earn three
+ * of the five flags on their own; this tops a funded farm up to every one
+ * of them so a test can ask for the fully-unlocked case without hand-rolling
+ * the whole ladder itself.
+ */
+async function earnEveryMilestone(id: string): Promise<void> {
+  await adjustStackAcresInfluence(id, 1);
+  // buildStackAcresGreenhouseRow debits the build cost itself (20 Flour, 12
+  // Cloth) rather than taking it on faith, so it needs stock on hand first.
+  await adjustStackAcresInventory(id, "flour", 20);
+  await adjustStackAcresInventory(id, "cloth", 12);
+  await buildStackAcresGreenhouseRow(id);
+}
+
+describe("isDroneHangarUnlocked", () => {
+  const BASE: StackAcresShopProgress = {
+    sectors: ["wallow", "oxfields"],
+    influence: 1,
+    greenhouseBuilt: true,
+    cropFieldsUnlocked: true,
+  };
+
+  it("unlocks only once every milestone flag is earned", () => {
+    expect(isDroneHangarUnlocked(BASE)).toBe(true);
+  });
+
+  it("stays locked while any single flag is missing", () => {
+    expect(isDroneHangarUnlocked({ ...BASE, cropFieldsUnlocked: false })).toBe(false);
+    expect(isDroneHangarUnlocked({ ...BASE, greenhouseBuilt: false })).toBe(false);
+    expect(isDroneHangarUnlocked({ ...BASE, influence: 0 })).toBe(false);
+    expect(isDroneHangarUnlocked({ ...BASE, sectors: ["oxfields"] })).toBe(false);
+    expect(isDroneHangarUnlocked({ ...BASE, sectors: [] })).toBe(false);
+  });
+
+  it("stays locked on a bare farm", () => {
+    expect(
+      isDroneHangarUnlocked({ sectors: [], influence: 0, greenhouseBuilt: false, cropFieldsUnlocked: false }),
+    ).toBe(false);
+  });
+});
+
 describe("the Mechanical Forage Drone", () => {
   it("refuses to deploy before the hangar is unlocked", async () => {
-    const { token, id } = await funded(500_000, { museum: false });
+    const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
     await expect(deployStackAcresDrone(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     const before = await balance(token);
     expect(before).toBe(500_000);
@@ -4344,14 +4264,16 @@ describe("the Mechanical Forage Drone", () => {
     void id;
   });
 
-  it("unlocks once every museum exhibit has at least one donation", async () => {
-    const { token } = await funded(500_000, { museum: true });
+  it("unlocks once every farm milestone has been earned", async () => {
+    const { token, id } = await funded(500_000);
+    await earnEveryMilestone(id);
     const { hangarUnlocked } = await listStackAcresDrones(token);
     expect(hangarUnlocked).toBe(true);
   });
 
   it("debits the flat deploy fee and creates one owned drone", async () => {
-    const { token } = await funded(500_000, { museum: true });
+    const { token, id } = await funded(500_000);
+    await earnEveryMilestone(id);
     const result = await deployStackAcresDrone(token, T0);
     expect(result.droneDeploy?.droneId).toBeTruthy();
     expect(await balance(token)).toBe(500_000 - DRONE_DEPLOY_COST_GOLD);
@@ -4361,20 +4283,23 @@ describe("the Mechanical Forage Drone", () => {
   });
 
   it("refuses to deploy without enough Gold, and takes none", async () => {
-    const { token } = await funded(100, { museum: true });
+    const { token, id } = await funded(100);
+    await earnEveryMilestone(id);
     await expect(deployStackAcresDrone(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await balance(token)).toBe(100);
   });
 
   it("refuses a forage claim for a drone the caller does not own", async () => {
-    const { token } = await funded(500_000, { museum: true });
+    const { token, id } = await funded(500_000);
+    await earnEveryMilestone(id);
     await expect(collectStackAcresDroneForage(token, randomUUID(), T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
   });
 
   it("pays out a forage claim once, then refuses a second claim inside the cooldown", async () => {
-    const { token } = await funded(500_000, { museum: true });
+    const { token, id } = await funded(500_000);
+    await earnEveryMilestone(id);
     const deployed = await deployStackAcresDrone(token, T0);
     const droneId = deployed.droneDeploy!.droneId;
     const before = await balance(token);
@@ -4397,7 +4322,8 @@ describe("the Mechanical Forage Drone", () => {
   });
 
   it("refuses a forage claim once the day's Gold ceiling is exhausted, and pays nothing", async () => {
-    const { token, id } = await funded(500_000, { museum: true });
+    const { token, id } = await funded(500_000);
+    await earnEveryMilestone(id);
     const deployed = await deployStackAcresDrone(token, T0);
     const droneId = deployed.droneDeploy!.droneId;
     await burnAllowance(id, STACKACRES_GOLD_CEILING, T0);

@@ -468,7 +468,7 @@ const bodySchema = z.discriminatedUnion("action", [
     item: z.enum(GIFTABLE_ITEMS as unknown as [string, ...string[]]),
   }),
   // Mechanical Forage Drone: a flat-fee deploy, gated on the hangar's own
-  // derived museum-donation unlock (see stackacres-drone-service.ts).
+  // derived milestone unlock (see stackacres-drone-service.ts).
   z.object({ action: z.literal("deploy-drone") }),
   // A drone id, not a tile or a collectible id: the server re-derives
   // whether that drone is actually eligible (owned, off cooldown) rather

@@ -5,7 +5,6 @@ import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import { stackacresCutterDef, type StackAcresCutter } from "@/lib/stackacres/cutters";
-import type { MuseumGlowTier } from "@/lib/stackacres/museum-secrets";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
@@ -42,9 +41,9 @@ export type StackAcresProcessing = Omit<FarmhandPlanInput, "claimed"> & {
  * carrying the tap point in CSS pixels relative to this host -- which is the
  * same box every DOM overlay on the screen is positioned in, so the shell can
  * drop a radial menu straight onto those numbers. `onBarnTap` fires when a
- * finger lands on the barn itself -- Ray's Museum's entryway -- and carries
- * no tap point, since it opens a modal rather than anchoring anything to the
- * screen. `onViewMoved` says the camera has shifted under anything so
+ * finger lands on the barn itself -- Ray's Supply Store's entryway -- and
+ * carries no tap point, since it opens a modal rather than anchoring anything
+ * to the screen. `onViewMoved` says the camera has shifted under anything so
  * pinned. The rest of the contract is
  * unchanged: `onReady` when the first frame is drawn, and, through `api`,
  * a way for the shell to move the camera (`zoomBy` for the zoom buttons mouse
@@ -112,8 +111,8 @@ export interface StackAcresWorldApi {
    *  stackacres-farm.tsx already owns the render decision itself
    *  (`MidnightMerchantManager.isRendered()`) and only needs to tell the
    *  scene when that boolean actually flips -- the same "push, never
-   *  rebuild" contract `setToolTier`/`setMuseumGlowTier` already use for
-   *  their own props, exposed through the imperative handle instead of a
+   *  rebuild" contract `setToolTier` already uses for
+   *  its own props, exposed through the imperative handle instead of a
    *  prop because it is closer in shape to `popUnit`/`floatAt` (a command
    *  fired from an event) than to a value the scene must always reflect. */
   setMerchant: (present: boolean) => void;
@@ -197,7 +196,7 @@ export interface StackAcresWorldProps {
    *  move so that tile lands on `(toTx, toTy)`. See
    *  StackAcresSceneCallbacks.onSoilMoveCommitted's own doc. */
   onSoilMoveCommitted?: (tx: number, ty: number, toTx: number, toTy: number) => void;
-  /** A finger landed on the barn -- Ray's Museum's own entryway. */
+  /** A finger landed on the barn -- Ray's Supply Store's own entryway. */
   onBarnTap: () => void;
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
@@ -266,9 +265,6 @@ export interface StackAcresWorldProps {
   onViewMoved: () => void;
   /** The cutter in hand, which sets the mow swathe and how long it stays cut. */
   cutter: StackAcresCutter;
-  /** Which of the barn's two glow states should be showing, if either -- see
-   *  lib/stackacres/museum-secrets.ts's `museumGlowTier`. */
-  museumGlowTier: MuseumGlowTier;
   /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's
    *  walk speed -- `StackAcresView.synergy.farmhandSpeedMultiplier`, 1 with
    *  no active perk. */
@@ -277,15 +273,6 @@ export interface StackAcresWorldProps {
    *  `HUD_VIEW_EXPANSION` while the signpost rail is collapsed into the
    *  compass quick-nav, 1 otherwise. */
   viewExpansion: number;
-  /** True once Ray's Museum's hidden set has ever been completed -- a
-   *  persistent fact of the registry, not a one-shot nonce, since the Pixel
-   *  Pilgrim's own unlock tint should hold on every load after the first,
-   *  not just the harvest that earned it (see stackacres-scene.ts's own
-   *  header on that method for why it now lands on him rather than the
-   *  farmhand). The scene's own `setFarmhandSecretUnlock` is idempotent, so
-   *  pushing this on every change (and once at mount) is safe even before it
-   *  ever flips true. */
-  secretSetComplete: boolean;
   /** Placed soil beds, ALREADY merged with the starter pair -- the shell owns
    *  that merge (see stackacres-farm.tsx's `applyResponse`), this component
    *  only ever pushes what it is handed straight into the scene, the same
@@ -331,10 +318,8 @@ export function StackAcresWorld({
   units,
   tool,
   cutter,
-  museumGlowTier,
   farmhandSpeedMultiplier,
   viewExpansion,
-  secretSetComplete,
   celebrate,
   onReady,
   onUnitTap,
@@ -406,8 +391,6 @@ export function StackAcresWorld({
   // Read at mount for the same reason `toolRef` is: the scene does not exist
   // yet to be told, and it needs the right swathe on its very first stroke.
   const cutterRef = useRef<StackAcresCutter>(cutter);
-  // Read at mount for the same reason `cutterRef` is.
-  const museumGlowTierRef = useRef<MuseumGlowTier>(museumGlowTier);
   // Read at mount for the same reason `cutterRef` is: the boot path needs
   // the right walk speed on his very first step.
   const farmhandSpeedMultiplierRef = useRef(farmhandSpeedMultiplier);
@@ -441,7 +424,6 @@ export function StackAcresWorld({
     toolIconRef.current = toolGhostIcon(tool, cutter);
     toolRef.current = tool;
     cutterRef.current = cutter;
-    museumGlowTierRef.current = museumGlowTier;
     farmhandSpeedMultiplierRef.current = farmhandSpeedMultiplier;
     viewExpansionRef.current = viewExpansion;
   });
@@ -511,7 +493,6 @@ export function StackAcresWorld({
           reducedMotion,
           host,
           cutter: cutterRef.current,
-          museumGlowTier: museumGlowTierRef.current,
           farmhandSpeedMultiplier: farmhandSpeedMultiplierRef.current,
           viewExpansion: viewExpansionRef.current,
         },
@@ -708,16 +689,6 @@ export function StackAcresWorld({
   useEffect(() => {
     sceneRef.current?.setViewExpansion(viewExpansion);
   }, [viewExpansion]);
-
-  // Same "push, never rebuild" reasoning as cutter above -- see
-  // `setMuseumGlowTier` in stackacres-scene.ts.
-  useEffect(() => {
-    sceneRef.current?.setMuseumGlowTier(museumGlowTier);
-  }, [museumGlowTier]);
-
-  useEffect(() => {
-    sceneRef.current?.setFarmhandSecretUnlock(secretSetComplete);
-  }, [secretSetComplete]);
 
   useEffect(() => {
     if (celebrate) sceneRef.current?.celebrateHarvest(celebrate.unitId);

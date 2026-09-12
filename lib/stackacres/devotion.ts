@@ -14,7 +14,7 @@
  * ./crossbreed-items.ts's own header: never Gold-valued, never sold by Ray,
  * never tradeable, never swept by a harvest. A claimed ladder rung IS
  * permanent ownership of its relic -- there is no separate ledger to keep in
- * sync, unlike ./museum-secrets.ts's donation flags, because a relic is
+ * sync, unlike ./secrets.ts's donation flags, because a relic is
  * never given back or consumed.
  *
  * Pure and closed-form, same posture as every other rules module here:
@@ -36,7 +36,7 @@ export function isRelicId(value: string): value is RelicId {
 export interface RelicDef {
   label: string;
   /** The "???" caption shown before it's ever been earned -- same treatment
-   *  ./museum-secrets.ts gives an undiscovered artifact. */
+   *  ./secrets.ts gives an undiscovered item. */
   blurb: string;
   /** A plain emoji, not a stackacres-art.ts painter name -- same posture
    *  lib/stackacres/secrets.ts's own SecretItemDef takes for the identical

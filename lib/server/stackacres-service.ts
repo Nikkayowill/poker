@@ -49,7 +49,6 @@ import {
   type StackAcresUpkeepState,
 } from "@/lib/stackacres/upkeep";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "@/lib/stackacres/market";
-import { emptyMuseumRegistry, museumDiscoveryBonusQuantity, type MuseumRegistry } from "@/lib/stackacres/museum";
 import {
   STACKACRES_SECTORS,
   isSectorUnlocked,
@@ -224,8 +223,6 @@ import {
   listStackAcresWheatPlots,
   readStackAcresInfluence,
   readStackAcresInventory,
-  readStackAcresMuseumSecrets,
-  markStackAcresMuseumSecret,
   readStackAcresOpenContract,
   adjustStackAcresInfluence,
   adjustStackAcresInventory,
@@ -358,14 +355,6 @@ import {
 } from "@/lib/stackacres/crossbreeding";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 import {
-  emptySecretMuseumRegistry,
-  rollSecretArtifact,
-  secretHiddenSetComplete,
-  type SecretMuseumItemId,
-  type SecretMuseumRegistry,
-} from "@/lib/stackacres/museum-secrets";
-import { applyAchievementEvent } from "./achievement-store";
-import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
   isRecipeId,
@@ -446,16 +435,13 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *     why routing a new payer through the SAME ceiling, rather than inventing
  *     a second one, is what keeps it safe.
  *
- * THE CRITICAL HARVEST, RAY'S MUSEUM'S DISCOVERY BONUS and THE PRESTIGE RESET
- * VALVE all used to ride inside the harvest's own Gold payout. None of them
- * pay Gold any more, for the same reason harvest itself does not:
+ * THE CRITICAL HARVEST and THE PRESTIGE RESET VALVE both used to ride inside
+ * the harvest's own Gold payout. Neither pays Gold any more, for the same
+ * reason harvest itself does not:
  *
  *   * A crit (`critBonusQuantity`, lib/stackacres/equipment.ts) now adds bonus
  *     UNITS to a settled line, credited into the same inventory line as the
  *     rest of that line's produce -- extra Eggs, not extra Gold.
- *   * Ray's Museum's first-ever-discovery bonus (`museumDiscoveryBonusQuantity`,
- *     lib/stackacres/museum.ts) is the identical shape: bonus units of the
- *     item just discovered, folded into the same credit.
  *   * The Prestige Reset Valve's permanent multiplier moved to
  *     `sellStackAcresItem`, applied to the Gold a sale yields, before that
  *     Gold is reserved against the ceiling -- see lib/stackacres/prestige.ts's
@@ -563,13 +549,6 @@ export interface StackAcresView {
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Today's allowance: the flat ceiling, and what is left of it. */
   exchange: StackAcresExchangeState;
-  /** Ray's Museum: which produce items this player has ever donated. Total
-   *  over every item, never partial -- see emptyMuseumRegistry. */
-  museum: MuseumRegistry;
-  /** Ray's Museum, secret wing: which hidden finds this player has ever
-   *  turned up (see lib/stackacres/museum-secrets.ts). Total over every
-   *  item, same "never partial" contract `museum` above carries. */
-  museumSecrets: SecretMuseumRegistry;
   /**
    * Land the player may work. DERIVED, not just the stored clear list -- see
    * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
@@ -602,10 +581,9 @@ export interface StackAcresView {
    *  very next harvest. A missing key in `held` means 0, same convention
    *  `capacity` already uses for a stock kind nobody has bought a slot for. */
   secrets: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
-  /** Whether this player has ever donated each secret item to Ray's Museum --
-   *  a small, separate registry from `museum` above (that one is total over
-   *  `StackAcresItem`, and a secret item is deliberately not a member of that
-   *  enum; see lib/stackacres/secrets.ts's own header). */
+  /** Whether this player has ever donated each secret item to Ray -- see
+   *  lib/stackacres/secrets.ts's own header for why a secret item is its own
+   *  small registry rather than a member of `StackAcresItem`. */
   secretDonations: Record<SecretItemId, boolean>;
   /** The Synergy Tree: which archetypes are unlocked/active, and what that
    *  currently does to the farmhand's presentation-only walk speed. */
@@ -676,7 +654,8 @@ export interface StackAcresView {
    *  each tier of it is worth. See lib/stackacres/aging.ts. */
   vat: VatContainer | null;
   /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
-   *  from Ray's Museum donations, see `isDroneHangarUnlocked`) and every
+   *  from the farm's own milestone ladder, lib/stackacres/shop-locks.ts --
+   *  see `isDroneHangarUnlocked` in stackacres-drone-service.ts) and every
    *  drone this profile owns. A drone's own live tile/patrol/charge is
    *  NEVER in this snapshot -- that is client-side, ephemeral state owned
    *  entirely by lib/stackacres/drone.ts, the same split `units` takes with
@@ -829,34 +808,15 @@ async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSn
   return toStackAcresUnitSnapshots(rows, now, await irrigatedUnitIdsFor(profileId, rows));
 }
 
-/** Every donation flag for a player, split into the two registries that ride
- *  the same underlying `homestead_museum_donations` rows: `museum`, total
- *  over `StackAcresItem`, and `secretDonations`, total over `SecretItemId` --
- *  a secret item is deliberately not a member of the former enum, so one
- *  donated id can only ever land in exactly one of the two. Both overlaid
- *  onto a fresh registry so a legacy or partial row never leaves an item
- *  undefined. */
-function splitMuseumDonations(
-  donated: readonly string[],
-): { museum: MuseumRegistry; secretDonations: Record<SecretItemId, boolean> } {
-  const registry = { ...emptyMuseumRegistry() } as Record<string, boolean>;
-  for (const itemId of donated) {
-    if (itemId in registry) registry[itemId] = true;
-  }
-  const secretDonations = Object.fromEntries(
+/** Whether each secret item has ever been donated (see `readStackAcresMuseum`
+ *  in stackacres-store.ts's own header for why that table's read/write pair
+ *  outlived the produce-discovery feature it was originally built for).
+ *  Total over `SecretItemId`, so a legacy or partial row never leaves an
+ *  item undefined. */
+function secretItemDonations(donated: readonly string[]): Record<SecretItemId, boolean> {
+  return Object.fromEntries(
     SECRET_ITEM_IDS.map((itemId) => [itemId, donated.includes(itemId)]),
   ) as Record<SecretItemId, boolean>;
-  return { museum: registry as MuseumRegistry, secretDonations };
-}
-
-/** The secret wing's own version of `museumView`, same overlay contract. */
-async function museumSecretsView(profileId: string): Promise<SecretMuseumRegistry> {
-  const found = await readStackAcresMuseumSecrets(profileId);
-  const registry = { ...emptySecretMuseumRegistry() } as Record<string, boolean>;
-  for (const itemId of found) {
-    if (itemId in registry) registry[itemId] = true;
-  }
-  return registry as SecretMuseumRegistry;
 }
 
 /** Strips the profile id off a stored contract row -- the client-safe shape
@@ -885,7 +845,6 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     cleared,
     upkeepPaid,
     donated,
-    museumSecrets,
     tool,
     wheatRows,
     machineRows,
@@ -923,7 +882,6 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
     readStackAcresMuseum(profile.id),
-    museumSecretsView(profile.id),
     readStackAcresToolTier(profile.id),
     listStackAcresWheatPlots(profile.id),
     listStackAcresMachines(profile.id),
@@ -962,7 +920,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     readStackAcresStory(profile.id),
   ]);
 
-  const { museum, secretDonations } = splitMuseumDonations(donated);
+  const secretDonations = secretItemDonations(donated);
   const held: Partial<Record<SecretItemId, number>> = {};
   SECRET_ITEM_IDS.forEach((itemId, index) => {
     if (heldQtys[index] > 0) held[itemId] = heldQtys[index];
@@ -977,16 +935,14 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
   const sectors = unlockedSectors(cleared, units);
   const vatMachine = machineRows.find((machine) => machine.kind === "vat") ?? null;
   const vat = vatMachine ? toVatContainer(vatMachine, vatManifest, now) : null;
-  // A separate pair of reads rather than folded into the big Promise.all
-  // above: that array is a fixed-length tuple on purpose (see its own
-  // comment on why a variable-length spread would widen every sibling
-  // element's type), and this pair has nothing to do with land/economy --
-  // it is read-only hangar ownership, exactly the same "narrow, no Gold
-  // opinion" posture `readShopProgress` takes for Ray's shop locks.
-  const [droneHangarUnlocked, droneRows] = await Promise.all([
-    isDroneHangarUnlocked(profile.id),
-    listDrones(profile.id),
-  ]);
+  // A separate read rather than folded into the big Promise.all above: that
+  // array is a fixed-length tuple on purpose (see its own comment on why a
+  // variable-length spread would widen every sibling element's type), and
+  // drone ownership has nothing to do with land/economy. `isDroneHangarUnlocked`
+  // is pure and synchronous, so it needs no read of its own here -- it takes
+  // the same progress shape passed to `storyView` below.
+  const droneRows = await listDrones(profile.id);
+  const droneHangarUnlocked = isDroneHangarUnlocked({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked });
   return {
     units,
     profile,
@@ -994,8 +950,6 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     water,
     capacity,
     exchange: exchangeState(exchanged, now),
-    museum,
-    museumSecrets,
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
@@ -3050,13 +3004,11 @@ export async function tapStackAcresSecretZone(
 }
 
 /**
- * Donates a held secret item to Ray's Museum, exactly once per item -- reuses
- * `markStackAcresDonated`, the same idempotency-guarded flag a harvest's own
- * first-time produce discovery already writes to (see the museum section
- * above), directly rather than duplicating it. `lucky_poker_dice` is not a
- * `StackAcresItem` and is never added to it (see lib/stackacres/museum.ts's
- * total-over-the-enum invariant) -- `markStackAcresDonated` takes a bare
- * string at the storage layer, so this rides it without touching that file.
+ * Donates a held secret item to Ray, exactly once per item -- writes through
+ * `markStackAcresDonated` at the storage layer (see stackacres-store.ts's own
+ * header on why that idempotency-guarded flag still exists). `lucky_poker_dice`
+ * is not a `StackAcresItem`, and `markStackAcresDonated` takes a bare string,
+ * so this rides it without needing any type of its own.
  *
  * Rule 1's shape, applied to an item instead of Gold: the item leaves the
  * ledger before the donation is recorded, and a failure recording it refunds
@@ -3253,8 +3205,8 @@ export interface StackAcresHarvestResult {
   /** How many fields and pens were brought in together. */
   units: number;
   /** Produce actually credited to inventory, summed per item -- base yield
-   *  plus any crit bonus plus any Ray's Museum discovery bonus folded in.
-   *  See `critBonus`/`discoveries` below for what each contributed. */
+   *  plus any crit bonus folded in. See `critBonus` below for what it
+   *  contributed. */
   tally: { item: StackAcresItem; quantity: number }[];
   /** Every settled unit's yield valued at today's sell price, before any
    *  bonus -- a production figure for the ledger and Prestige eligibility,
@@ -3267,19 +3219,6 @@ export interface StackAcresHarvestResult {
   crit: boolean;
   /** Bonus units a crit added, summed per item. Empty when the roll missed. */
   critBonus: { item: StackAcresItem; quantity: number }[];
-  /** Items donated to Ray's Museum for the very first time in this sweep,
-   *  and the bonus UNITS each discovery added. Empty when nothing here was
-   *  new -- most harvests. */
-  discoveries: { item: StackAcresItem; bonusQuantity: number }[];
-  /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
-   *  null on the overwhelming majority of harvests. Pays no Gold -- see
-   *  lib/stackacres/museum-secrets.ts's own header. */
-  secretFind: SecretMuseumItemId | null;
-  /** True only on the harvest whose find carried the core hidden set from
-   *  incomplete to complete for the first time ever. The client reads this
-   *  to fire its own local unlock celebration -- see stackacres-scene.ts's
-   *  `setFarmhandSecretUnlock`. */
-  secretSetJustCompleted: boolean;
 }
 
 /**
@@ -3307,11 +3246,7 @@ export interface StackAcresHarvestResult {
  *      it. A crit adds bonus UNITS to each settled line (`critBonusQuantity`,
  *      lib/stackacres/equipment.ts), not Gold.
  *   4. Re-tally against what actually settled.
- *   5. Ray's Museum: fold in any first-ever discovery's bonus units, off the
- *      BASE tally (never the crit-inflated one) -- the same rate the old
- *      Gold-denominated bonus paid, just in kind.
- *   6. Credit inventory once per item (base + crit bonus + museum bonus),
- *      write the ledger.
+ *   5. Credit inventory once per item (base + crit bonus), write the ledger.
  */
 export async function harvestStackAcres(
   token: string,
@@ -3437,11 +3372,11 @@ export async function harvestStackAcres(
   const critical = rollHarvestCrit(tool, Math.random, critChance);
 
   // Step 3b. The Midnight Merchant: a second, independent roll riding the
-  // SAME critical the secret-find roll (step 5b, below) piggybacks on --
-  // never a second guarded write, and never gold- or streak-affecting on its
-  // own (`spawnMidnightMerchantVisit` only ever seeds a fresh stock list at
-  // zero purchases; it cannot pay out or spend anything by itself). Best-
-  // effort and swallowed on failure for the same reason the dice-boost
+  // same critical roll above -- never a second guarded write, and never
+  // gold- or streak-affecting on its own (`spawnMidnightMerchantVisit` only
+  // ever seeds a fresh stock list at zero purchases; it cannot pay out or
+  // spend anything by itself). Best-effort and swallowed on failure for the
+  // same reason the dice-boost
   // disarm below is: the harvest itself is already settled and credited, and
   // an NPC failing to show up must not turn that into an error response.
   // Idempotent against a visit already in progress (`spawnMidnightMerchantVisit`
@@ -3491,69 +3426,14 @@ export async function harvestStackAcres(
 
   const baseTally = harvestTally(actual);
 
-  // Step 5. Ray's Museum: a first-ever donation is automatic, not a player
-  // action, and folds bonus UNITS of the item just discovered into the same
-  // inventory credit -- there is no second credit path here, only a bigger
-  // one. markStackAcresDonated is the idempotency guard (the (profile, item)
-  // pair is a primary key), and only the call that actually donates an item
-  // for the first time ever adds the bonus; a later harvest of that same
-  // item, by this player or a replayed request, reports false and adds
-  // nothing. `quantity` is the item's total across the WHOLE sweep, since a
-  // sweep can bring several units of a freshly-discovered item home
-  // together. Off the BASE tally, not the crit-inflated one -- same rate the
-  // old Gold-denominated bonus paid it off, just in kind. Best-effort like
-  // the credit step below: the harvest itself is already settled, and a
-  // museum hiccup must not turn that into an error response.
-  const discoveries: { item: StackAcresItem; bonusQuantity: number }[] = [];
-  const museumBonusTally = new Map<StackAcresItem, number>();
-  for (const { item, quantity } of baseTally) {
-    try {
-      const firstDiscovery = await markStackAcresDonated(profile.id, item);
-      if (!firstDiscovery) continue;
-      const bonusQuantity = museumDiscoveryBonusQuantity(quantity);
-      if (bonusQuantity > 0) {
-        museumBonusTally.set(item, (museumBonusTally.get(item) ?? 0) + bonusQuantity);
-      }
-      discoveries.push({ item, bonusQuantity });
-    } catch (error) {
-      console.error("stackacres.museum_donation_failed", { profileId: profile.id, item, quantity, error });
-    }
-  }
-
-  // Step 5b. Ray's Museum, secret wing: one roll for the sweep, off the SAME
-  // crit that already decided in step 3 -- a secret find piggybacks on a
-  // critical harvest rather than adding a second dice roll to the guarded
-  // write. Pays no Gold and no inventory at all (see rollSecretArtifact's own
-  // header).
-  const secretFind = rollSecretArtifact(tool, critical, Math.random);
-  let secretSetJustCompleted = false;
-  if (secretFind) {
-    try {
-      // Read BEFORE the write on purpose: once the core set is complete, a
-      // later joke-pool find (or a re-roll of something already on the
-      // shelf) must never re-fire the completion event and re-play the
-      // client's unlock celebration. Only the write that carries the set
-      // from incomplete to complete may set `secretSetJustCompleted`.
-      const wasCompleteBefore = secretHiddenSetComplete(await museumSecretsView(profile.id));
-      const firstFind = await markStackAcresMuseumSecret(profile.id, secretFind);
-      if (firstFind && !wasCompleteBefore && secretHiddenSetComplete(await museumSecretsView(profile.id))) {
-        secretSetJustCompleted = true;
-        await applyAchievementEvent(profile.id, { kind: "museum_secret_set_completed" });
-      }
-    } catch (error) {
-      console.error("stackacres.museum_secret_failed", { profileId: profile.id, secretFind, error });
-    }
-  }
-
-  // Step 6. Credit inventory once per item -- base plus any crit bonus plus
-  // any museum bonus. Best-effort per item, same posture the old Gold credit
-  // took: the settlement above is already durable, and a credit hiccup here
-  // must not turn a settled harvest into an error response, only report less
-  // than what actually landed in the barn.
+  // Step 5. Credit inventory once per item -- base plus any crit bonus.
+  // Best-effort per item, same posture the old Gold credit took: the
+  // settlement above is already durable, and a credit hiccup here must not
+  // turn a settled harvest into an error response, only report less than
+  // what actually landed in the barn.
   const finalTally = new Map<StackAcresItem, number>();
   for (const { item, quantity } of baseTally) finalTally.set(item, quantity);
   for (const [item, bonus] of critBonusTally) finalTally.set(item, (finalTally.get(item) ?? 0) + bonus);
-  for (const [item, bonus] of museumBonusTally) finalTally.set(item, (finalTally.get(item) ?? 0) + bonus);
 
   const credited: { item: StackAcresItem; quantity: number }[] = [];
   for (const [item, quantity] of finalTally) {
@@ -3605,9 +3485,6 @@ export async function harvestStackAcres(
       mucked,
       crit: critical,
       critBonus: [...critBonusTally].map(([item, quantity]) => ({ item, quantity })),
-      discoveries,
-      secretFind,
-      secretSetJustCompleted,
     },
   };
 }
@@ -4484,7 +4361,7 @@ export async function contributeToStackAcresMythicBlueprint(
  * `reset_stackacres_prestige`'s own migration comment
  * (20260905140000_stackacres_prestige_reset.sql) for the exact table list
  * and, as importantly, for what survives it -- land cleared, purchased
- * capacity, placed machines, Synergy Tree perks, Ray's Museum registries and
+ * capacity, placed machines, Synergy Tree perks, the donation register and
  * Town Influence are all untouched.
  *
  * A refusal (not enough gross production since the last reset) is an
@@ -5124,8 +5001,8 @@ const STORY_WRITE_ATTEMPTS = 3;
  * that action -- see lib/stackacres/story/state.ts's `applyStoryEvent`.
  *
  * Called AFTER the action's own settlement is durable, and best-effort like
- * the museum donation inside a harvest: a story hiccup must never turn a
- * settled, credited action into an error response. Version-guarded and
+ * every other side effect a harvest folds in: a story hiccup must never turn
+ * a settled, credited action into an error response. Version-guarded and
  * retried, so two actions landing together each count; the client replays
  * the same events locally and this server view overwrites its guess.
  */
@@ -5254,17 +5131,18 @@ export async function turnInStackAcresTravelerQuest(
  * Deploys one Mechanical Forage Drone for the caller, at
  * `DRONE_DEPLOY_COST_GOLD` flat. Both progression invariants live in
  * `deployDrone` (./stackacres-drone-service.ts): the hangar's derived,
- * museum-donation unlock gate is checked before any Gold moves, and the
+ * milestone-based unlock gate is checked before any Gold moves, and the
  * debit + ownership row are one atomic RPC, mirroring
  * `unlockStackAcresSynergyPerk`'s own shape just above.
  */
 export async function deployStackAcresDrone(token: string, now = new Date()): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
-  const result = await deployDrone(profile.id, now);
+  const progress = await readShopProgress(profile.id);
+  const result = await deployDrone(profile.id, now, progress);
   if (!result.success) {
     const message =
       result.reason === "hangar_locked"
-        ? "Ray's Museum hasn't turned up the drone hangar blueprint yet -- keep donating finds."
+        ? "The drone hangar isn't built yet -- keep growing the farm to unlock it."
         : `A drone costs ${DRONE_DEPLOY_COST_GOLD.toLocaleString()} Gold.`;
     throw new StackAcresRequestError(message, result.reason === "hangar_locked" ? 409 : 400, {
       round: await snapshots(profile.id, now),
@@ -5280,11 +5158,8 @@ export async function listStackAcresDrones(
   token: string,
 ): Promise<{ hangarUnlocked: boolean; drones: StoredDrone[] }> {
   const profile = await ensureProfile(token);
-  const [hangarUnlocked, drones] = await Promise.all([
-    isDroneHangarUnlocked(profile.id),
-    listDrones(profile.id),
-  ]);
-  return { hangarUnlocked, drones };
+  const [progress, drones] = await Promise.all([readShopProgress(profile.id), listDrones(profile.id)]);
+  return { hangarUnlocked: isDroneHangarUnlocked(progress), drones };
 }
 
 /**

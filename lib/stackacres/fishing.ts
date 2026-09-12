@@ -19,8 +19,8 @@ export function isFishSpecies(value: string): value is FishSpecies {
 }
 
 /** Out of 100: bluegill common, trout a fair catch, catfish the rare one --
- *  the same three-tier common/uncommon/rare feel the Vat's aging tiers and
- *  Ray's Museum finds already use elsewhere in StackAcres. */
+ *  the same three-tier common/uncommon/rare feel the Vat's aging tiers
+ *  already use elsewhere in StackAcres. */
 const FISH_WEIGHTS: Readonly<Record<FishSpecies, number>> = {
   bluegill: 60,
   trout: 30,

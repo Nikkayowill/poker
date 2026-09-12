@@ -17,7 +17,7 @@ import { STACKACRES_CELL, powerOfTwoCeil, seededRandom } from "@/lib/stackacres/
 import { GOD_RAY_BEAMS, GOD_RAY_TILT } from "@/lib/stackacres/sunlight";
 import { ISO_K } from "@/lib/stackacres/iso";
 import { SOIL_TILE } from "@/lib/stackacres/soil";
-import { cropDrawnScale, cropSpriteScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
+import { cropDrawnScale, type CropArt, type CropStage } from "@/lib/stackacres/crop-visuals";
 import { isStackAcresCrop } from "@/lib/stackacres/catalogue";
 import {
   ART_FRAME,

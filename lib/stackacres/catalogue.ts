@@ -188,22 +188,6 @@ export interface StackAcresStockDef {
    * pays no seed and never mucks. Tier 1 is the tier you work by hand.
    */
   ownableOutright: boolean;
-  /**
-   * Whether neglect can cost this kind its actual PRODUCE, not just time.
-   * `feedStackAcres`'s own doc comment states the game's rule: a hungry
-   * animal freezes and `readyAt` moves out by however long it starved, so
-   * the yield is always eventually paid. `spoils: true` is the ONE
-   * exception to that rule, and it exists for exactly one kind, for exactly
-   * one reason: the Hen Coop is the farm's starter tier, and a starter tier
-   * that can never actually lose anything teaches a new player nothing about
-   * tending. A `spoils` unit still hungry at its own cycle's `readyAt` voids
-   * that cycle outright -- no produce, a fresh cycle starts on the spot --
-   * see `effectiveStackAcresCycle` in ./units.ts for the exact mechanics.
-   * False (or omitted, which this table never does) for every crop, which
-   * has no hunger clock to spoil in the first place, and for every other
-   * animal, which keeps the ordinary "neglect costs time, never Gold" deal.
-   */
-  spoils: boolean;
 }
 
 /**
@@ -282,8 +266,6 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     spoils: false,
     muckFee: 312,
     ownableOutright: true,
-    // Keeps the ordinary rule: neglect costs time, never the wool.
-    spoils: false,
   },
   cattle: {
     label: "Cattle Pen",
@@ -294,8 +276,6 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     spoils: false,
     muckFee: 1_120,
     ownableOutright: true,
-    // Keeps the ordinary rule: neglect costs time, never the milk.
-    spoils: false,
   },
 };
 

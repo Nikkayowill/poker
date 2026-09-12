@@ -56,12 +56,6 @@ export function CreditsPage() {
           <h2>Licensed &amp; sourced art</h2>
           <ul>
             <li>
-              <strong>Crops</strong> — all 22 crop sprites (and their growth
-              stages) come from CraftPix&rsquo;s &ldquo;Free Farming Crops 3D
-              Low Poly Models&rdquo; pack, rendered into flat isometric PNGs
-              through Blender.
-            </li>
-            <li>
               <strong>Farmhand &amp; the Pixel Pilgrim</strong> — the walking
               sprite sheet shared by StackAcres&rsquo; farmhand and its monk
               NPC is Throneless&rsquo;s <em>Ranger</em>, from Kayo&rsquo;s own

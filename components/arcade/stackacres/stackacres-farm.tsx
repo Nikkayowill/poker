@@ -4757,7 +4757,7 @@ export function StackAcresFarm() {
 
               {storeTab === "equipment" && (
                 <>
-                  <StoreShelf icon="ico-scythe">Spade</StoreShelf>
+                  <StoreShelf icon="toolGoldenSpade">Spade</StoreShelf>
                   <div className="sa-tool-rack">
                     <img
                       src={stackacresToolTierDef(toolTier).sprite}
@@ -4847,7 +4847,7 @@ export function StackAcresFarm() {
                   {/* Grass cutters, kept apart from the spades so a spade
                       never mows the meadow. An owned one gets a Use button,
                       the same swap the picker beside the Mow key offers. */}
-                  <StoreShelf icon="ico-scythe">Mower</StoreShelf>
+                  <StoreShelf icon="ico-scythe">Cut the Grass</StoreShelf>
                   <div className="sa-stock-cards">
                     {STACKACRES_CUTTERS.map((id) => {
                       const def = stackacresCutterDef(id);

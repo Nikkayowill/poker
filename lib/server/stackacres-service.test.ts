@@ -54,6 +54,7 @@ import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
+import { __resetStackAcresRevisionsForTest } from "./stackacres-revision-store";
 import { __resetStackAcresBlueprintsForTest } from "./stackacres-blueprint-store";
 import { __resetStackAcresCrossbreedForTest } from "./stackacres-crossbreeding-store";
 import {
@@ -393,6 +394,7 @@ beforeEach(() => {
   __resetStackAcresSeedStockForTest();
   __resetStackAcresSoilTilesForTest();
   __resetStackAcresCrossbreedForTest();
+  __resetStackAcresRevisionsForTest();
   resetStackAcresDroneStoreForTests();
   vi.mocked(createStackAcresUnit).mockImplementation(REAL.createStackAcresUnit);
   vi.mocked(getStackAcresUnit).mockImplementation(REAL.getStackAcresUnit);
@@ -3019,6 +3021,81 @@ describe("idempotency keys", () => {
     );
 
     expect(other.units.filter((u) => u.stock === "carrot")).toHaveLength(1);
+  });
+});
+
+/**
+ * How fresh a response is (lib/server/stackacres-revision-store.ts). Every
+ * action that actually writes something bumps a per-profile counter and
+ * hands the new value back; a refusal, a replay, and a plain read report
+ * whatever the counter already stands at, without moving it. This is the
+ * other half of the client's `applyResponse` guard -- see that function's
+ * own header in stackacres-farm.tsx.
+ */
+describe("revision guard", () => {
+  const run = <T,>(token: string, key: string | null, action: string, fn: () => Promise<T>) =>
+    runStackAcresAction(token, key, action, fn as () => Promise<StackAcresActionResult>, T0);
+
+  it("bumps by one per completed action, in the order they finish", async () => {
+    const { token } = await funded();
+
+    const first = await run(token, randomUUID(), "stock", () =>
+      stockStackAcres(token, { stock: "carrot" }, T0),
+    );
+    const second = await run(token, randomUUID(), "stock", () =>
+      stockStackAcres(token, { stock: "carrot" }, T0),
+    );
+
+    expect(second.revision).toBe(first.revision + 1);
+  });
+
+  it("does not move on a refusal, and the next real action still counts up from there", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+
+    const before = await readStackAcres(token, T0);
+    let refusalRevision: number | undefined;
+    try {
+      await run(token, randomUUID(), "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+    } catch (error) {
+      expect(error).toBeInstanceOf(StackAcresRequestError);
+      refusalRevision = (error as InstanceType<typeof StackAcresRequestError>).round?.revision;
+    }
+    expect(refusalRevision).toBe(before.revision);
+
+    await adjustStackAcresSeedStock(id, "carrot", 1);
+    const after = await run(token, randomUUID(), "stock", () =>
+      stockStackAcres(token, { stock: "carrot" }, T0),
+    );
+    expect(after.revision).toBe(before.revision + 1);
+  });
+
+  it("hands a replay the same revision as the original, not a fresh bump", async () => {
+    const { token } = await funded();
+    const key = randomUUID();
+
+    const original = await run(token, key, "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+    const replay = await run(token, key, "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+
+    expect(replay.revision).toBe(original.revision);
+  });
+
+  it("runs unguarded actions (no key) through the same bump", async () => {
+    const { token } = await funded();
+
+    const first = await run(token, null, "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+    const second = await run(token, null, "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+
+    expect(second.revision).toBe(first.revision + 1);
+  });
+
+  it("a plain read reports the current revision without bumping it", async () => {
+    const { token } = await funded();
+    await run(token, randomUUID(), "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+
+    const readA = await readStackAcres(token, T0);
+    const readB = await readStackAcres(token, T0);
+    expect(readB.revision).toBe(readA.revision);
   });
 });
 

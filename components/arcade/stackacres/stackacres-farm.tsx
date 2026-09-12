@@ -370,6 +370,13 @@ interface FishingOffer {
 
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
+  /** How fresh this response is (lib/server/stackacres-revision-store.ts):
+   *  strictly higher than any response for an action that finished earlier,
+   *  regardless of which one this browser's fetch happens to see first.
+   *  Absent only from a response old enough to predate the guard, which
+   *  `applyResponse` reads as "apply it, same as always" rather than drop it
+   *  -- see that function's own header. */
+  revision?: number;
   /** Null for a cookie-less first visit: the read route never mints a session. */
   profile: PlayerProfile | null;
   feed: number;
@@ -492,7 +499,10 @@ interface StackAcresResponse {
    *  seed shelf, which reads as an empty shelf. */
   seedStock?: SeedStock;
   error?: string;
-  round?: StackAcresUnitSnapshot[];
+  /** A refusal's own view of the units, plus how fresh it is. Absent only
+   *  from a response old enough to predate the revision guard (`applyResponse`
+   *  then applies it unconditionally, same as before). */
+  round?: { units: StackAcresUnitSnapshot[]; revision?: number };
   /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
    *  farm having hit its flat daily Gold ceiling -- see the ceiling throw in
    *  `harvestStackAcres`. Absent on a plain refusal and on every success. */
@@ -1265,6 +1275,27 @@ export function StackAcresFarm() {
   }, [units]);
 
   /**
+   * How fresh the farm on screen is right now, per each response's own
+   * `revision` (lib/server/stackacres-revision-store.ts). Two actions can be
+   * in flight at once (water a crop, feed a hen), and their full-farm
+   * responses can land in an order that does not match which one actually
+   * finished last -- without this, whichever response arrived most recently
+   * won, so a slower response for an action that finished FIRST could
+   * overwrite a faster response for one that finished SECOND, flashing the
+   * farm back to the older state until the truly latest response caught up
+   * a moment later. `acceptRevision` is what every place that applies a
+   * server snapshot calls first: a response with no revision at all predates
+   * this guard and is trusted unconditionally, same as before it existed.
+   */
+  const revisionRef = useRef(-1);
+  const acceptRevision = useCallback((revision: number | undefined): boolean => {
+    if (revision === undefined) return true;
+    if (revision <= revisionRef.current) return false;
+    revisionRef.current = revision;
+    return true;
+  }, []);
+
+  /**
    * The held equipment rung, read the same way `unitsRef` is and for the same
    * reason: `act` needs it to name the multiple a crit just paid ("CRIT! x2"),
    * and it is the only plain VALUE that callback wants. Held in a ref rather
@@ -1279,6 +1310,13 @@ export function StackAcresFarm() {
   }, [toolTier]);
 
   const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
+    // An optimistic patch carries no revision and always applies (see
+    // `acceptRevision`'s own header); a real response that lost the race to
+    // a fresher one already on screen is dropped whole rather than merged
+    // field by field -- every field here comes off the SAME snapshot read,
+    // so a "fresher" `units` next to a stale `profile` from the same
+    // response is not a state this farm was ever actually in.
+    if (!acceptRevision(data.revision)) return;
     if (data.profile) setProfile(data.profile);
     if (data.units) setUnits(data.units);
     if (typeof data.feed === "number") setFeed(data.feed);
@@ -1365,7 +1403,7 @@ export function StackAcresFarm() {
     if (data.droneHangar) setDroneHangar(data.droneHangar);
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
-  }, []);
+  }, [acceptRevision]);
 
   /**
    * Everything an optimistic prediction reads, gathered off live state. A
@@ -1441,6 +1479,10 @@ export function StackAcresFarm() {
    */
   const captureFarmSnapshot = useCallback(
     () => ({
+      // The revision on screen the instant this guess is taken -- so
+      // `restoreFarmSnapshot` can tell whether anything else has landed
+      // since. See that function's own header.
+      revision: revisionRef.current,
       units,
       profile,
       feed,
@@ -1498,6 +1540,14 @@ export function StackAcresFarm() {
   );
   type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
   const restoreFarmSnapshot = useCallback((snap: FarmSnapshot) => {
+    // A different action's fresher response can land while this one is still
+    // out (the refusal or dropped-connection path that calls this awaits a
+    // fetch first) -- and that response already overwrote whatever this
+    // guess touched with the true DB state, which by definition never held a
+    // guess that was refused or never confirmed. Restoring anyway would undo
+    // that newer, confirmed state rather than this guess, which is not what
+    // a rollback is for. Skip when anything has landed since the snapshot.
+    if (snap.revision !== revisionRef.current) return;
     setUnits(snap.units);
     setProfile(snap.profile);
     setFeed(snap.feed);
@@ -1844,8 +1894,11 @@ export function StackAcresFarm() {
           // authoritative unit list the refusal carried on top.
           if (optimisticApplied) restoreFarmSnapshot(snapshot);
           // A refusal carries the true round; paint it, and only raise a
-          // banner when there is no round to speak for itself.
-          if (data.round) setUnits(data.round);
+          // banner when there is no round to speak for itself. Gated by the
+          // same freshness check `applyResponse` uses -- a refusal that lost
+          // the race to a fresher response already on screen must not paint
+          // its own, now-stale, units back over it.
+          if (data.round && acceptRevision(data.round.revision)) setUnits(data.round.units);
           if (data.profile) setProfile(data.profile);
           // A refused purchase takes its own instant toast back too -- left
           // standing, "Bought a Hen!" would sit on screen next to the refusal
@@ -2122,6 +2175,7 @@ export function StackAcresFarm() {
     },
     [
       applyResponse,
+      acceptRevision,
       refresh,
       markInFlight,
       clearInFlight,

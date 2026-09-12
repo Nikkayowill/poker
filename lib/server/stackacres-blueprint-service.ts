@@ -43,12 +43,12 @@ import { inventoryQuantity } from "@/lib/stackacres/inventory";
  */
 
 /** Refuses a Mythic Blueprint request in a way the player can act on. The
- *  round payload is the blueprint's own current state (not a unit snapshot
- *  list, unlike StackAcresRequestError) -- a stale client re-renders THIS
- *  structure's progress from truth, which is all a blueprint error ever
- *  needs to recover from. Deliberately its own class rather than reusing
- *  StackAcresRequestError, whose round type is baked to
- *  StackAcresUnitSnapshot[] -- see that class's own definition. */
+ *  round payload is the blueprint's own current state (not a units-plus-
+ *  revision snapshot, unlike StackAcresRequestError) -- a stale client
+ *  re-renders THIS structure's progress from truth, which is all a
+ *  blueprint error ever needs to recover from. Deliberately its own class
+ *  rather than reusing StackAcresRequestError, whose round type is baked to
+ *  StackAcresRoundSnapshot -- see that class's own definition. */
 export class BlueprintRequestError extends ArcadeRequestError<ConstructionState, never> {
   readonly name = "BlueprintRequestError";
 }

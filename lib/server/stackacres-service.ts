@@ -260,6 +260,7 @@ import {
   completeStackAcresIntent,
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
+import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
 import { creditGoldByProfile, ensureProfile, getProfileById, spendGoldByProfile } from "./profile-store";
 import {
   readMidnightMerchantVisit,
@@ -520,7 +521,7 @@ export type StackAcresRefusalReason = "day-capped";
 
 /** Refuses a StackAcres request in a way the player can act on. */
 export class StackAcresRequestError extends ArcadeRequestError<
-  StackAcresUnitSnapshot[],
+  StackAcresRoundSnapshot,
   StackAcresRefusalReason
 > {
   readonly name = "StackAcresRequestError";
@@ -676,6 +677,13 @@ export interface StackAcresView {
    *  held. The bubble renders straight off this; a tap never asks the
    *  server what to say. */
   story: StackAcresStoryView;
+  /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
+   *  strictly higher than any response for an action that finished earlier,
+   *  regardless of which one this browser's fetch happens to see first. The
+   *  client drops a response whose revision is not higher than the one
+   *  already applied, so two actions in flight at once can never have the
+   *  earlier-finishing one's stale response clobber the later one's. */
+  revision: number;
 }
 
 /**
@@ -809,9 +817,22 @@ function parseUnitId(value: unknown): string {
   return value;
 }
 
-async function snapshots(profileId: string, now: Date): Promise<StackAcresUnitSnapshot[]> {
+/** What a refusal's `round` carries: the units, plus the revision this farm
+ *  is at right now (a plain read -- a refusal changed nothing, so nothing is
+ *  bumped here). See stackacres-revision-store.ts's own header for why the
+ *  client needs this on a refusal too, not only on a success. */
+interface StackAcresRoundSnapshot {
+  units: StackAcresUnitSnapshot[];
+  revision: number;
+}
+
+async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
   const rows = await listStackAcresUnits(profileId);
-  return toStackAcresUnitSnapshots(rows, now, await irrigatedUnitIdsFor(profileId, rows));
+  const [irrigatedUnitIds, revision] = await Promise.all([
+    irrigatedUnitIdsFor(profileId, rows),
+    readStackAcresRevision(profileId),
+  ]);
+  return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds), revision };
 }
 
 /** Whether each secret item has ever been donated (see `readStackAcresMuseum`
@@ -840,7 +861,21 @@ function toContractView(contract: StoredContract): StackAcresContractRow {
   };
 }
 
-async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> {
+/**
+ * `revision` is deliberately NOT one more entry in this function's own
+ * per-profile fan-out below (see lib/server/stackacres-read-budget.test.ts's
+ * own header on why that count is a tripwire, not a style rule) -- almost
+ * every call site is one of the ~50 action functions ending `return
+ * view(profile, now)`, and `runStackAcresAction` always overwrites whatever
+ * this puts here with the real post-write value once the action actually
+ * completes (see its own `bumped` helper). Paying for a read here that gets
+ * thrown away on every one of those calls would be pure waste. The handful
+ * of callers that DO need the true number today (`readStackAcres`'s plain
+ * read, and `runStackAcresAction`'s replay/in-flight branches) fetch it
+ * themselves, once, alongside this call -- see each of those, and
+ * stackacres-revision-store.ts's own header.
+ */
+async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<StackAcresView> {
   const day = stackacresExchangeDay(now);
   const [
     rows,
@@ -1012,6 +1047,7 @@ async function view(profile: PlayerProfile, now: Date): Promise<StackAcresView> 
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
     story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, { tool }),
+    revision,
   };
 }
 
@@ -1271,14 +1307,35 @@ export async function runStackAcresAction(
   const profile = await ensureProfile(token);
   await assessStackAcresUpkeep(profile.id, now);
 
-  if (!key) return run();
+  // Bumped once the write is confirmed, overriding the placeholder `run()`'s
+  // own `view()` call left in `result.revision` (view() never reads the real
+  // number itself -- see its own header on why). Best-effort: a bump that
+  // fails falls back to that placeholder rather than fail an action that
+  // already landed -- see stackacres-revision-store.ts's own header. A
+  // failure here must never reach the catch below, which would release the
+  // intent and let a retry replay a mutation that already succeeded.
+  const bumped = async (result: StackAcresActionResult): Promise<StackAcresActionResult> => {
+    const revision = await bumpStackAcresRevision(profile.id).catch((error) => {
+      console.error("stackacres.revision_bump_failed", { profileId: profile.id, error });
+      return result.revision;
+    });
+    return { ...result, revision };
+  };
+
+  if (!key) return bumped(await run());
 
   const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
-  if (claim.kind === "replay") return { ...(await view(profile, now)), ...(claim.result ?? {}) };
-  if (claim.kind === "in-flight") return view(profile, now);
+  if (claim.kind === "replay") {
+    const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+    return { ...result, ...(claim.result ?? {}), revision };
+  }
+  if (claim.kind === "in-flight") {
+    const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+    return { ...result, revision };
+  }
 
   try {
-    const result = await run();
+    const result = await bumped(await run());
     await completeStackAcresIntent(profile.id, key, replayDelta(result));
     return result;
   } catch (error) {
@@ -1299,7 +1356,12 @@ export async function runStackAcresAction(
  * this file's header says to prefer.
  */
 export async function readStackAcres(token: string, now = new Date()): Promise<StackAcresView> {
-  return view(await ensureProfile(token), now);
+  const profile = await ensureProfile(token);
+  // Run alongside view()'s own fan-out rather than ahead of it -- one more
+  // parallel round trip on the one call site that genuinely needs the true
+  // number, not one more link in a chain.
+  const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+  return { ...result, revision };
 }
 
 /** How many of `stock` this player may OCCUPY a slot with at once right now
@@ -3304,19 +3366,19 @@ export async function harvestStackAcres(
       const row = rows.find((candidate) => candidate.id === unitId);
       if (!row || row.status !== "working") {
         throw new StackAcresRequestError("Nothing to collect here.", 404, {
-          round: toStackAcresUnitSnapshots(rows, now, irrigated),
+          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
       }
       if (isStackAcresUnitHungry(row, now)) {
         throw new StackAcresRequestError("Feed them first.", 409, {
-          round: toStackAcresUnitSnapshots(rows, now, irrigated),
+          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
       }
       // The client's clock is decoration; this is the answer that counts, and
       // the store's own ready_at guard backs it even if this check is raced.
       if (!isStackAcresUnitReady(row, now, irrigated.has(row.id))) {
         throw new StackAcresRequestError("Not ready yet.", 409, {
-          round: toStackAcresUnitSnapshots(rows, now, irrigated),
+          round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
         });
       }
     }
@@ -3327,7 +3389,7 @@ export async function harvestStackAcres(
   );
   if (ready.length === 0) {
     throw new StackAcresRequestError("Nothing is ready yet.", 409, {
-      round: toStackAcresUnitSnapshots(rows, now, irrigated),
+      round: { units: toStackAcresUnitSnapshots(rows, now, irrigated), revision: await readStackAcresRevision(profile.id) },
     });
   }
 

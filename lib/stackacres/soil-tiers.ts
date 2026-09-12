@@ -80,7 +80,13 @@ export interface SoilTierDef {
  */
 export const SOIL_TIER_DEFS: Readonly<Record<SoilTier, SoilTierDef>> = {
   dirt: {
-    label: "Tillable Dirt",
+    // The only tier Ray's shelf still sells (see the store's own
+    // `STORE_SOIL_TIERS` in stackacres-farm.tsx) -- "Soil bag" reads as the
+    // shop's one generic product, where "Tillable Dirt" read as one choice
+    // among three. Enriched Substrate and Hydro Soil below keep their own
+    // names: they are no longer for sale, but a bag or a bed a player
+    // already has still needs its own label in the till-bed picker.
+    label: "Soil bag",
     blurb: "One worked planting square, no frills.",
     price: 167,
     growthMultiplier: 1,

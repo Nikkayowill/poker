@@ -293,16 +293,38 @@ import {
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 /**
- * The preset sizes offered on Ray's shelf for soil, seed, and feed. A single
- * "Buy" button meant a player restocking ten bags fired ten separate presses,
- * and every press after the first one in flight was dropped silently by the
- * in-flight guard in `act` below -- Ray looked like he'd shorted the order.
- * These three buttons ask for the whole stack in one request instead, so a
- * player who wants ten bags gets ten bags from one tap. Filtered per shelf
- * against that shelf's own per-request ceiling (SOIL_BAGS_PER_PURCHASE and
- * siblings), so it never offers a size the server would refuse outright.
+ * The preset sizes offered on Ray's shelf for soil. A single "Buy" button
+ * meant a player restocking ten bags fired ten separate presses, and every
+ * press after the first one in flight was dropped silently by the in-flight
+ * guard in `act` below -- Ray looked like he'd shorted the order. These
+ * buttons ask for the whole stack in one request instead, so a player who
+ * wants ten bags gets ten bags from one tap. Filtered against the shelf's
+ * own per-request ceiling (SOIL_BAGS_PER_PURCHASE), so it never offers a
+ * size the server would refuse outright.
  */
 const BULK_BUY_QUANTITIES: readonly number[] = [1, 10, 20];
+
+/**
+ * Same idea as `BULK_BUY_QUANTITIES` above, for the Seeds and Feed shelves
+ * only: just a small order and a big order rather than three sizes. Those
+ * two shelves list many cards at once (every crop, every shipment) where
+ * Soil lists one, so a third button per card is space the screen doesn't
+ * have to spend. Still filtered against each shelf's own per-request
+ * ceiling, same as the three-size row.
+ */
+const SEED_FEED_BULK_QUANTITIES: readonly number[] = [1, 20];
+
+/**
+ * The tiers Ray's shelf actually sells, as opposed to `SOIL_TIERS` (every
+ * tier the game engine knows about). The Soil tab shows one card -- "Soil
+ * bag," the base `dirt` tier -- rather than the old three-tier ladder.
+ * Enriched Substrate and Hydro Soil are not deleted: a farm that already
+ * holds bags or beds of either keeps their growth bonus / self-watering
+ * perk exactly as before, and both still appear as their own token in the
+ * till-bed radial menu (`SOIL_TIERS.map` below, unchanged) since that picks
+ * from what a player is HOLDING, not from what the shop sells today.
+ */
+const STORE_SOIL_TIERS: readonly SoilTier[] = ["dirt"];
 
 /**
  * The Pixel Pilgrim's own opening lines -- formal, devout, and clear that he
@@ -4554,7 +4576,7 @@ export function StackAcresFarm() {
                             <StoreCost amount={def.seedCost} /> / seed
                           </p>
                           <div className="sa-buy-qty-row">
-                            {BULK_BUY_QUANTITIES.filter(
+                            {SEED_FEED_BULK_QUANTITIES.filter(
                               (quantity) => quantity <= STACKACRES_SEED_BAGS_PER_PURCHASE,
                             ).map((quantity) => {
                               const cost = def.seedCost * quantity;
@@ -4593,12 +4615,14 @@ export function StackAcresFarm() {
                     dig.
                   </p>
                   <div className="sa-stock-cards">
-                    {SOIL_TIERS.map((tier) => {
+                    {STORE_SOIL_TIERS.map((tier) => {
                       const def = soilTierDef(tier);
                       const held = soilStock[tier] ?? 0;
                       // Tier-blind by design (see farm-actions.ts's `intentOf`):
                       // one soil purchase in flight, of any tier or size, holds
                       // every tier's buttons here rather than just this one's.
+                      // (Moot while the shop sells one tier, but this stays
+                      // correct if a second one is ever added back.)
                       const pending = isPending("buy-soil");
                       return (
                         <div key={tier} className="sa-stock-card">
@@ -4683,7 +4707,7 @@ export function StackAcresFarm() {
                           )}
                           {lock.isUnlocked ? (
                             <div className="sa-buy-qty-row">
-                              {BULK_BUY_QUANTITIES.filter(
+                              {SEED_FEED_BULK_QUANTITIES.filter(
                                 (quantity) => quantity <= STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
                               ).map((quantity) => {
                                 const cost = price * quantity;

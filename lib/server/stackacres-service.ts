@@ -19,7 +19,6 @@ import {
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import {
-  effectiveStackAcresCycle,
   hungryAtFor,
   isStackAcresUnitDry,
   isStackAcresUnitHungry,
@@ -187,7 +186,6 @@ import {
   upgradeStackAcresToolTier,
   readStackAcresCutters,
   recordStackAcresCutter,
-  catchUpSpoiledStackAcresUnit,
   collectStackAcresUnit,
   countOccupiedStackAcresUnits,
   createStackAcresUnit,
@@ -2564,44 +2562,12 @@ export async function buyFromMidnightMerchant(
 }
 
 /**
- * Persists a spoil catch-up (see `effectiveStackAcresCycle`,
- * lib/stackacres/units.ts) on a unit before a mutating action acts on it, so
- * the stored row catches up to what reads have already been showing rather
- * than staying stale under them forever.
- *
- * Returns `unit` itself, unchanged, when nothing spoiled -- every stock but
- * the ones flagged `spoils` (only the Hen Coop, today) takes this branch on
- * every call, since `effectiveStackAcresCycle` is the identity function for
- * anything that cannot spoil. Null means another write reached this row
- * first, the same lost-race contract every other guarded write in this file
- * carries; the caller refuses so the player's next request reads the fresh
- * row rather than clobbering whatever that other write did.
- */
-async function withSpoilCatchUp(
-  unit: StoredStackAcresUnit,
-  now: Date,
-): Promise<StoredStackAcresUnit | null> {
-  const effective = effectiveStackAcresCycle(unit, now);
-  if (effective.spoiledCycles === 0) return unit;
-  return catchUpSpoiledStackAcresUnit(unit, {
-    startedAt: new Date(effective.startedAt),
-    readyAt: new Date(effective.readyAt),
-    lastFedAt: new Date(effective.lastFedAt ?? now.getTime()),
-  });
-}
-
-/**
  * Feeds a hungry animal, spending one serving.
  *
  * A hungry unit's clock is frozen, and this is where that is actually made
  * true: ready_at moves forward by however long the animal spent waiting, so
  * the time it was neglected is not silently credited as work. The yield is
  * untouched -- neglect costs you time, never Gold.
- *
- * EXCEPT for a `spoils` unit (the Hen Coop) already past its own cycle's
- * deadline: `withSpoilCatchUp` fast-forwards and persists that voided cycle
- * first, and everything below acts on the fresh cycle it lands on, so the
- * push below never resurrects the produce that cycle already lost.
  */
 export async function feedStackAcres(
   token: string,
@@ -2611,16 +2577,9 @@ export async function feedStackAcres(
   const unitId = parseUnitId(unitIdInput);
   const profile = await ensureProfile(token);
 
-  const found = await getStackAcresUnit(profile.id, unitId);
-  if (!found || found.status !== "working") {
+  const unit = await getStackAcresUnit(profile.id, unitId);
+  if (!unit || unit.status !== "working") {
     throw new StackAcresRequestError("Nothing here eats.", 404, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const unit = await withSpoilCatchUp(found, now);
-  if (!unit) {
-    throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
@@ -2692,18 +2651,9 @@ export async function feedStackAcresPen(
   }
 
   let fedCount = 0;
-  for (const found of hungry) {
+  for (const unit of hungry) {
     const remaining = await adjustStackAcresFeed(profile.id, -1);
     if (remaining === null) break;
-
-    // Same catch-up `feedStackAcres` runs, single-file: a `spoils` unit
-    // (the Hen Coop) already past its own deadline voids that cycle first,
-    // and the push below acts on the fresh cycle it lands on.
-    const unit = await withSpoilCatchUp(found, now);
-    if (!unit) {
-      await adjustStackAcresFeed(profile.id, 1).catch(() => null);
-      continue;
-    }
 
     const hungryAt = hungryAtFor(unit);
     const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
@@ -3507,10 +3457,7 @@ export async function harvestStackAcres(
       // not Gold paid (a harvest pays none). See lib/stackacres/harvest.ts's
       // own header on why `homestead_harvests.payout` still reads this way.
       payout: line.gold,
-      // Effective, not raw: a `spoils` unit (the Hen Coop) that fast-forwarded
-      // past a voided cycle logs when its fresh, actually-collected cycle
-      // started, not the ancient one that never made it to the ledger.
-      startedAt: effectiveStackAcresCycle(row, now).startedAt,
+      startedAt: row.startedAt,
       collectedAt: now.toISOString(),
       // Bought stock spends nothing per cycle, so `stake` above is notional
       // for these rows. The flag is what lets a dashboard tell the difference

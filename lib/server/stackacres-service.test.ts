@@ -328,40 +328,6 @@ function collectOne(token: string, unitId: string, now = T0) {
   return harvestStackAcres(token, { unitIds: [unitId] }, now);
 }
 
-/**
- * Feeds a hen at the exact instant it goes hungry, with zero time actually
- * spent starving. The Hen Coop is `spoils: true` now (2026-09-11, see
- * catalogue.ts): its 8-minute hunger window sits inside its own 15-minute
- * cycle, so a hen left completely untended no longer reaches `HEN_READY` --
- * it voids that cycle instead. This is the "someone tended it" case every
- * pre-existing test below wants, so `readyAt` lands exactly where a plain
- * stocking already put it and `HEN_READY` keeps meaning what it always did.
- * The spoiling mechanic itself gets its own dedicated tests further down.
- *
- * Grants itself the one serving it spends, off the books Ray's shop tracks
- * (`funded()` starts a farm with none), since this is standing in for
- * routine tending, not testing feed shipments.
- */
-async function tendHenAt(token: string, unitId: string, at: Date) {
-  const profile = await ensureProfile(token);
-  await adjustStackAcresFeed(profile.id, 1);
-  await feedStackAcres(token, unitId, new Date(at.getTime() + (HEN.hungerMs ?? 0)));
-}
-
-/** Sows a hen and tends it once -- see `tendHenAt`. */
-async function stockTendedHen(token: string, at: Date = T0): Promise<StackAcresView> {
-  const view = await stockStackAcres(token, { stock: "hen" }, at);
-  await tendHenAt(token, unitOf(view, "hen").id, at);
-  return view;
-}
-
-/** Buys a hen outright and tends it once -- see `tendHenAt`. */
-async function buyTendedHen(token: string, at: Date = T0): Promise<StackAcresView> {
-  const view = await buyStackAcresStock(token, { stock: "hen" }, at);
-  await tendHenAt(token, unitOf(view, "hen").id, at);
-  return view;
-}
-
 /** Burns `gold` of today's allowance directly, standing in for a day already
  *  spent. How it was spent is not what the ceiling tests are about. */
 async function burnAllowance(id: string, gold: number, at: Date = T0) {
@@ -1103,7 +1069,7 @@ describe("thirst", () => {
 describe("harvesting", () => {
   it("credits the snapshotted yield to inventory, exactly once, and moves no Gold", async () => {
     const { token } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
@@ -1126,8 +1092,8 @@ describe("harvesting", () => {
 
   it("brings in every ready unit at once when no unit is named", async () => {
     const { token } = await funded();
-    await stockTendedHen(token);
-    await stockTendedHen(token);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
     await stockStackAcres(token, { stock: "cattle" }, T0);
     const before = await balance(token);
 
@@ -1142,7 +1108,7 @@ describe("harvesting", () => {
 
   it("gives no sweep bonus any more: three hens together credit exactly three yields", async () => {
     const { token } = await funded();
-    for (let i = 0; i < 3; i += 1) await stockTendedHen(token);
+    for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
     const result = await harvestStackAcres(token, {}, HEN_READY);
     expect(result.harvest.tally).toEqual([{ item: "eggs", quantity: HEN_YIELD.quantity * 3 }]);
     expect(result.harvest.gross).toBe(yieldValue("hen") * 3);
@@ -1182,7 +1148,7 @@ describe("harvesting", () => {
     // snapshot. Standing in for that retune by editing the stored row
     // directly, which is the only way to make the two disagree.
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
@@ -1216,7 +1182,7 @@ describe("harvesting", () => {
 
   it("records each unit in the ledger at its own nominal gross", async () => {
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     await collectOne(token, unitOf(view, "hen").id, HEN_READY);
     expect(__stackacresHarvestsForTest()).toHaveLength(1);
     expect(__stackacresHarvestsForTest()[0]).toMatchObject({
@@ -1228,15 +1194,15 @@ describe("harvesting", () => {
 
   it("writes one ledger row per unit in a sweep, not one per sweep", async () => {
     const { token } = await funded();
-    await stockTendedHen(token);
-    await stockTendedHen(token);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
     await harvestStackAcres(token, {}, HEN_READY);
     expect(__stackacresHarvestsForTest()).toHaveLength(2);
   });
 
   it("sends a mucked unit to mucked with the tier's fee, and never withholds the produce", async () => {
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
@@ -1263,7 +1229,7 @@ describe("harvesting", () => {
 
   it("removes the unit outright when the roll comes up clean", async () => {
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
     try {
@@ -1311,7 +1277,7 @@ describe("Land Maintenance", () => {
 
   it("never comes out of a harvest", async () => {
     const { token, id } = await unpaid();
-    for (let i = 0; i < 3; i += 1) await stockTendedHen(token);
+    for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
     const before = await balance(token);
 
     await harvestStackAcres(token, {}, HEN_READY);
@@ -1395,8 +1361,8 @@ describe("Land Maintenance", () => {
     // A unit waiting to be cleared is still land being held. If this ever
     // stops counting them, muck becomes a way to hold land rent-free.
     const { token } = await funded();
-    await stockTendedHen(token);
-    await stockTendedHen(token);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       await harvestStackAcres(token, {}, HEN_READY);
@@ -1414,7 +1380,7 @@ describe("Land Maintenance", () => {
 describe("muck", () => {
   async function mucked() {
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -1768,7 +1734,7 @@ describe("the daily allowance", () => {
 
   it("spends no allowance on a harvest at all", async () => {
     const { token, id } = await funded();
-    await stockTendedHen(token);
+    await stockStackAcres(token, { stock: "hen" }, T0);
 
     await harvestStackAcres(token, {}, HEN_READY);
 
@@ -1989,7 +1955,7 @@ describe("the equipment ladder", () => {
     const { token } = await funded(5_000_000);
     await upgradeStackAcresTool(token, T0);
     await upgradeStackAcresTool(token, T0);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const before = await balance(token);
@@ -2010,7 +1976,7 @@ describe("the equipment ladder", () => {
 
   it("pays no crit when the roll misses", async () => {
     const { token } = await funded(5_000_000);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
@@ -2029,7 +1995,7 @@ describe("the equipment ladder", () => {
     // they had before this feature. Pinned at the luckiest possible roll, so
     // this fails the moment the Trowel is given a non-zero chance.
     const { token } = await funded(5_000_000);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
     const roll = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -2044,7 +2010,7 @@ describe("the equipment ladder", () => {
     const { token, id } = await funded(5_000_000);
     await upgradeStackAcresTool(token, T0);
     await upgradeStackAcresTool(token, T0);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
     await burnAllowance(id, STACKACRES_GOLD_CEILING, HEN_READY);
     const before = await balance(token);
@@ -2068,7 +2034,7 @@ describe("the equipment ladder", () => {
     const { token, id } = await funded(5_000_000);
     await upgradeStackAcresTool(token, T0);
     await upgradeStackAcresTool(token, T0);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
@@ -2413,7 +2379,7 @@ describe("buying stock outright", () => {
 describe("collecting from bought stock", () => {
   it("re-sows itself instead of being removed", async () => {
     const { token } = await funded();
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const view = await collectOne(token, unitId, HEN_READY);
@@ -2428,7 +2394,7 @@ describe("collecting from bought stock", () => {
 
   it("pays the same as a sown unit would", async () => {
     const { token } = await funded();
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const result = await collectOne(token, unitId, HEN_READY);
@@ -2446,7 +2412,7 @@ describe("collecting from bought stock", () => {
     const roll = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const { token } = await funded();
-      const bought = await buyTendedHen(token);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
       const unitId = unitOf(bought, "hen").id;
       const view = await collectOne(token, unitId, HEN_READY);
       expect(view.harvest.mucked).toBe(0);
@@ -2460,7 +2426,7 @@ describe("collecting from bought stock", () => {
     // Bought stock fills the barn; it is not a way past the ceiling, since
     // its produce still has to go through Sell to become Gold.
     const { token, id } = await funded();
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
     const before = await balance(token);
 
@@ -2475,7 +2441,7 @@ describe("collecting from bought stock", () => {
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
     try {
       const { token, id } = await funded();
-      const sown = await stockTendedHen(token);
+      const sown = await stockStackAcres(token, { stock: "hen" }, T0);
       const unitId = unitOf(sown, "hen").id;
       await collectOne(token, unitId, HEN_READY);
       expect(await getStackAcresUnit(id, unitId)).toBeNull();
@@ -2494,7 +2460,7 @@ describe("the harvest ledger", () => {
     // between an economy dashboard and a systematic understatement of what
     // the farm nets.
     const { token } = await funded();
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     await collectOne(token, unitOf(bought, "hen").id, HEN_READY);
 
     const [entry] = __stackacresHarvestsForTest();
@@ -2504,7 +2470,7 @@ describe("the harvest ledger", () => {
 
   it("leaves a sown unit unflagged, because its seed cost was real", async () => {
     const { token } = await funded();
-    const sown = await stockTendedHen(token);
+    const sown = await stockStackAcres(token, { stock: "hen" }, T0);
     await collectOne(token, unitOf(sown, "hen").id, HEN_READY);
 
     const [entry] = __stackacresHarvestsForTest();
@@ -2858,7 +2824,7 @@ describe("idempotency keys", () => {
     // genuinely ready without a watering step in the middle of a test that is
     // about something else.
     const { token, id } = await funded();
-    const view = await stockTendedHen(token);
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
     const unitId = unitOf(view, "hen").id;
     const key = randomUUID();
 
@@ -3688,7 +3654,7 @@ describe("hidden secrets", () => {
   describe("the equipment ladder reads the armed dice boost", () => {
     it("crits at the Trowel's own base chance (0) plus the dice bonus, once armed", async () => {
       const { token, id } = await funded(5_000_000);
-      const bought = await buyTendedHen(token);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
       const unitId = unitOf(bought, "hen").id;
       await adjustStackAcresSecretLedger(id, DICE, 1);
       await consumeStackAcresSecretItem(token, DICE, T0);
@@ -3706,7 +3672,7 @@ describe("hidden secrets", () => {
 
     it("never crits at that same roll without an armed boost -- the Trowel alone is unaffected", async () => {
       const { token } = await funded(5_000_000);
-      const bought = await buyTendedHen(token);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
       const unitId = unitOf(bought, "hen").id;
 
       const roll = vi.spyOn(Math, "random").mockReturnValue(STACKACRES_DICE_CRIT_BONUS - 0.001);
@@ -3722,7 +3688,7 @@ describe("hidden secrets", () => {
 
     it("disarms after the harvest whether or not it actually crit", async () => {
       const { token, id } = await funded(5_000_000);
-      const bought = await buyTendedHen(token);
+      const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
       const unitId = unitOf(bought, "hen").id;
       await adjustStackAcresSecretLedger(id, DICE, 1);
       await consumeStackAcresSecretItem(token, DICE, T0);
@@ -3831,7 +3797,7 @@ describe("Synergy Tree", () => {
     const { token } = await funded();
     await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
     await activateStackAcresSynergyPerk(token, "sunlight_harvester", 0, T0);
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     // Between the Trowel's own 0 and the perk's flat +0.05: a miss without
@@ -3851,7 +3817,7 @@ describe("Synergy Tree", () => {
     const { token } = await funded();
     await unlockStackAcresSynergyPerk(token, "sunlight_harvester", T0);
     // Deliberately never activated.
-    const bought = await buyTendedHen(token);
+    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0.03);
@@ -4235,7 +4201,7 @@ describe("prestigeResetStackAcres", () => {
     const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false });
     await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
     await prestigeResetStackAcres(token, T0);
-    const stocked = await buyTendedHen(token);
+    const stocked = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const result = await collectOne(token, unitOf(stocked, "hen").id, HEN_READY);
     expect(result.harvest.tally).toEqual([{ item: "eggs", quantity: HEN_YIELD.quantity }]);
   });

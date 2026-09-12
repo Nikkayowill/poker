@@ -545,57 +545,6 @@ export async function feedStackAcresUnit(
 }
 
 /**
- * Persists a spoil catch-up: writes the effective `started_at`/`ready_at`/
- * `last_fed_at` (see `effectiveStackAcresCycle`, lib/stackacres/units.ts)
- * straight over the stale ones a `spoils` unit's row was left holding.
- *
- * Guarded exactly like `feedStackAcresUnit` -- same version/status check,
- * same null-means-lost-race contract -- because it is the same "read, then
- * write only if nobody else already did" shape. A lost race here means
- * another write (a feed, a collect) already touched this row first, so the
- * caller refuses and the next request reads whatever that write left behind.
- * There is no Gold or produce moved by this write; a voided cycle pays
- * nothing, so there is nothing here for rules 1-3 to say anything about.
- */
-export async function catchUpSpoiledStackAcresUnit(
-  current: StoredStackAcresUnit,
-  effective: { startedAt: Date; readyAt: Date; lastFedAt: Date },
-): Promise<StoredStackAcresUnit | null> {
-  const supabase = adminClient();
-  const version = current.version + 1;
-
-  if (!supabase) {
-    const stored = memoryUnits.get(current.id);
-    if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
-    const updated: StoredStackAcresUnit = {
-      ...stored,
-      startedAt: effective.startedAt.toISOString(),
-      readyAt: effective.readyAt.toISOString(),
-      lastFedAt: effective.lastFedAt.toISOString(),
-      version,
-    };
-    memoryUnits.set(current.id, clone(updated));
-    return clone(updated);
-  }
-
-  const { data, error } = await supabase
-    .from("homestead_units")
-    .update({
-      started_at: effective.startedAt.toISOString(),
-      ready_at: effective.readyAt.toISOString(),
-      last_fed_at: effective.lastFedAt.toISOString(),
-      version,
-    })
-    .eq("id", current.id)
-    .eq("version", current.version)
-    .eq("status", "working")
-    .select(UNIT_COLUMNS)
-    .maybeSingle();
-  if (error) throw new Error(`Could not catch that unit up: ${error.message}`);
-  return data ? fromRow(data as UnitDbRow) : null;
-}
-
-/**
  * Waters a dry crop: pushes ready_at forward by however long the soil stood
  * dry, so the clock genuinely stopped. Deliberately the same shape as
  * `feedStackAcresUnit` -- same version/status guard, same null-means-lost-race

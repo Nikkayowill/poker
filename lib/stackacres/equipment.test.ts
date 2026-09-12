@@ -74,7 +74,7 @@ describe("the ladder itself", () => {
     const sprites = new Set<string>();
     for (const tier of STACKACRES_TOOL_TIERS) {
       const def = STACKACRES_TOOL_TIER_DEFS[tier];
-      expect(def.sprite, tier).toMatch(/^\/stackacres\/sprites\/.+\.png$/);
+      expect(def.sprite, tier).toMatch(/^\/stackacres\/sprites\/.+\.webp$/);
       expect(def.icon.length, tier).toBeGreaterThan(0);
       sprites.add(def.sprite);
     }

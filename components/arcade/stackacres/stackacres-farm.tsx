@@ -4238,7 +4238,7 @@ export function StackAcresFarm() {
           >
             <div className="sa-panel-head">
               <div className="sa-ray-row">
-                <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
+                <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
                 <span className="sa-ray-name">Grandfather Ray</span>
               </div>
               <button
@@ -4368,7 +4368,7 @@ export function StackAcresFarm() {
             <header className="sa-sheet-head">
               <div>
                 <div className="sa-ray-row">
-                  <img src="/stackacres/sprites/grandfather-ray-portrait.png" alt="" className="sa-ray-portrait" />
+                  <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
                   <span className="sa-ray-name">Grandfather Ray</span>
                 </div>
                 <h2>Supply store</h2>

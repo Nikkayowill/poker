@@ -55,7 +55,7 @@ describe("TRAVELER_CATALOGUE", () => {
   });
 
   it("names a portrait file per traveler", () => {
-    for (const id of TRAVELER_IDS) expect(TRAVELER_PORTRAIT[id]).toBe(`/stackacres/sprites/traveler-${id}.png`);
+    for (const id of TRAVELER_IDS) expect(TRAVELER_PORTRAIT[id]).toBe(`/stackacres/sprites/traveler-${id}.webp`);
   });
 });
 

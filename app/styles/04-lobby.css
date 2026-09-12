@@ -1792,15 +1792,19 @@ button:disabled { cursor: wait; opacity: .62; }
    single-line wordmark elsewhere in the app gets away with, since this one
    carries two words at comparable weight and goes soft below ~130px.
    Route, module and CSS-class names all read "stackacres" too since the
-   district-map pass; only the database still says "homestead". cattle.png is a real corner of the
-   game's own pixel-art tileset (public/stackacres/tiles/), bled off the
-   corner the same way every other tile here anchors its art -- pixelated
-   on purpose, it's a 16x16 sprite. */
+   district-map pass; only the database still says "homestead".
+
+   NO CORNER ART, where every other tile here has some. It pointed at
+   /stackacres/tiles/cattle.png, deleted in 025930ca without this line being
+   updated, so the lobby has 404'd for it since 2026-09-01 and the tile has
+   painted bare anyway -- removing it changes nothing visually.
+
+   Deliberately not repointed at a tile that does exist: a player who never
+   opens the farm should not fetch a byte of it, and this was the one place
+   the lobby broke that. Corner art would have to live somewhere the lobby
+   owns. */
 .hub-tile-stackacres {
-  --tile-art: url("/stackacres/tiles/cattle.png");
   --tile-tint: rgba(255,255,255,.02);
-  background-size: auto, auto, 60px, auto;
-  background-position: center, center, right 16px bottom 14px, center;
   image-rendering: pixelated;
 }
 .hub-tile-stackacres-logo { width: 150px; height: auto; margin-bottom: 1px; }

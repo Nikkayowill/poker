@@ -151,5 +151,5 @@ export const TRAVELER_CATALOGUE: Readonly<Record<TravelerId, TravelerDef>> = {
  *  Ray's is the spirit sprite, not the retired standing one. Art is a
  *  separate pass; these paths are the contract for it. */
 export const TRAVELER_PORTRAIT: Readonly<Record<TravelerId, string>> = Object.fromEntries(
-  TRAVELER_IDS.map((id) => [id, `/stackacres/sprites/traveler-${id}.png`]),
+  TRAVELER_IDS.map((id) => [id, `/stackacres/sprites/traveler-${id}.webp`]),
 ) as Record<TravelerId, string>;

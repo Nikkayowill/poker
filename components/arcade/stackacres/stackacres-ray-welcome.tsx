@@ -40,7 +40,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
         </header>
         <div className="htp-body">
           <img
-            src="/stackacres/sprites/grandfather-ray-portrait.png"
+            src="/stackacres/sprites/grandfather-ray-portrait.webp"
             alt=""
             className="sa-ray-welcome-portrait"
           />

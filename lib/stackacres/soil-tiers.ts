@@ -63,7 +63,7 @@ export interface SoilTierDef {
    *
    * A TINT RATHER THAN ITS OWN ARTWORK, and that is a real constraint, not a
    * shortcut: `soilBed` (stackacres-art.ts) is the only planting-square soil
-   * art in the repo. (`public/stackacres/tiles/soil-rich.png` exists but is
+   * art in the repo. (`public/stackacres/tiles/soil-rich.webp` exists but is
    * a 16x16 orphan from the tile-extraction script with no code referencing
    * it -- it is not a bed plate.) One painter tinted three ways keeps every
    * tier drawn at the same scale and lit by the same sun; a tier gets its

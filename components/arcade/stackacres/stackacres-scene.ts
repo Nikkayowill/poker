@@ -965,7 +965,7 @@ function mirrorFor(art: PainterName, heading: 1 | -1): 1 | -1 {
  *  bake, the same texture key the farmhand used before he was disabled --
  *  only the character standing on it and what he does with the frames
  *  changed (see lib/stackacres/monk.ts). */
-const FARMHAND_SHEET_URL = "/stackacres/sprites/farmhand-ranger.png";
+const FARMHAND_SHEET_URL = "/stackacres/sprites/farmhand-ranger.webp";
 const FARMHAND_SHEET_KEY = "farmhandRangerSheet";
 /** The baked, POT-padded texture `spawnMonkNode` actually draws from.
  *  Baked rather than used as a raw Phaser spritesheet for the same reason

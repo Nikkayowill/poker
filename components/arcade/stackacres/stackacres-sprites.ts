@@ -66,23 +66,16 @@
  * painters so it draws the image once the image is here and its own shapes
  * until then. Nothing at a draw site had to change.
  *
- * `carrot0/1/2` and `corn0/1/2` joined them -- the three growth frames per
- * crop (lib/stackacres/crop-visuals.ts's `CropStage`) used to be a couple of
- * quadratic-curve strokes for the two unripe stages, which is legible as "a
- * crop is here" and nothing more at the seedling/sprout sizes a phone
- * actually shows. Same trade as the trees: six genuinely different renders
- * (not three ramps -- a crop's growth is its SHAPE changing, not its colour),
- * and `lib/stackacres/crop-visuals.ts`'s `FOOT_INSET` table went to all zero
- * on the same pass, since the prep pipeline fits every one of these flush to
- * its box's own bottom edge, the same convention the trees use.
- *
- * The one thing worth knowing before regenerating a crop: FLUX draws every
- * carrot standing in a mound of earth no matter how flatly the prompt forbids
- * ground, so the prep pass strips a brown pad out of the bottom band the way
- * it already stripped a grey/pink one. It has to -- the scene draws its OWN
- * grounding ellipse under each crop (`cropShadow`), so a baked mound ships
- * two shadows stacked. Soil and carrot are both r>g>b and are told apart by
- * saturation, not hue. The corn frames needed none of that.
+ * ALL 16 CROPS ARE THIS TREATMENT NOW (2026-09-12), off the Gr8FarmPack --
+ * three growth frames per crop (lib/stackacres/crop-visuals.ts's `CropStage`)
+ * used to be a couple of quadratic-curve strokes for the two unripe stages,
+ * which is legible as "a crop is here" and nothing more at the
+ * seedling/sprout sizes a phone actually shows. Same trade as the trees:
+ * genuinely different art per stage (not three ramps -- a crop's growth is
+ * its SHAPE changing, not its colour). `CROP_FOOT` in crop-visuals.ts is all
+ * zero for this roster, since `scripts/prepare-stackacres-farmpack-crops.py`
+ * trims every frame flush to its own bottom-centre -- see that table's own
+ * header for why that is a real measurement here, not a placeholder.
  *
  * The module is imported by Node tests through the painter module, so it must
  * never touch `Image` at import time.
@@ -169,78 +162,58 @@ export const SPRITE_ART = {
   frond3: "/stackacres/sprites/frond3.png",
   frond4: "/stackacres/sprites/frond4.png",
   frond5: "/stackacres/sprites/frond5.png",
-  // The three growth frames each for all 22 of the Long Meadow's crops.
+  // The three growth frames each for all 16 of the Long Meadow's crops.
   // Named for lib/stackacres/crop-visuals.ts's CropStage (0 seedling,
-  // 1 sprout, 2 mature) exactly like the painters they front. `sprout`/
-  // `cash_crop`, the two hand-vector crops these frames used to belong to,
-  // are gone -- carrot/corn are ordinary CraftPix crops here now, at the
-  // same sprite filenames those two ids used to occupy.
-  artichoke0: "/stackacres/sprites/artichoke0.png",
-  artichoke1: "/stackacres/sprites/artichoke1.png",
-  artichoke2: "/stackacres/sprites/artichoke2.png",
-  beet0: "/stackacres/sprites/beet0.png",
-  beet1: "/stackacres/sprites/beet1.png",
-  beet2: "/stackacres/sprites/beet2.png",
-  brokoly0: "/stackacres/sprites/brokoly0.png",
-  brokoly1: "/stackacres/sprites/brokoly1.png",
-  brokoly2: "/stackacres/sprites/brokoly2.png",
+  // 1 sprout, 2 mature) exactly like the painters they front. Off the
+  // Gr8FarmPack (2026-09-12) -- see scripts/prepare-stackacres-farmpack-crops.py.
+  bell_pepper0: "/stackacres/sprites/bell_pepper0.png",
+  bell_pepper1: "/stackacres/sprites/bell_pepper1.png",
+  bell_pepper2: "/stackacres/sprites/bell_pepper2.png",
+  broccoli0: "/stackacres/sprites/broccoli0.png",
+  broccoli1: "/stackacres/sprites/broccoli1.png",
+  broccoli2: "/stackacres/sprites/broccoli2.png",
   cabbage0: "/stackacres/sprites/cabbage0.png",
   cabbage1: "/stackacres/sprites/cabbage1.png",
   cabbage2: "/stackacres/sprites/cabbage2.png",
   carrot0: "/stackacres/sprites/carrot0.png",
   carrot1: "/stackacres/sprites/carrot1.png",
   carrot2: "/stackacres/sprites/carrot2.png",
+  celery0: "/stackacres/sprites/celery0.png",
+  celery1: "/stackacres/sprites/celery1.png",
+  celery2: "/stackacres/sprites/celery2.png",
   corn0: "/stackacres/sprites/corn0.png",
   corn1: "/stackacres/sprites/corn1.png",
   corn2: "/stackacres/sprites/corn2.png",
-  corn20: "/stackacres/sprites/corn20.png",
-  corn21: "/stackacres/sprites/corn21.png",
-  corn22: "/stackacres/sprites/corn22.png",
-  cucumber0: "/stackacres/sprites/cucumber0.png",
-  cucumber1: "/stackacres/sprites/cucumber1.png",
-  cucumber2: "/stackacres/sprites/cucumber2.png",
   eggplant0: "/stackacres/sprites/eggplant0.png",
   eggplant1: "/stackacres/sprites/eggplant1.png",
   eggplant2: "/stackacres/sprites/eggplant2.png",
-  garlic0: "/stackacres/sprites/garlic0.png",
-  garlic1: "/stackacres/sprites/garlic1.png",
-  garlic2: "/stackacres/sprites/garlic2.png",
-  grap0: "/stackacres/sprites/grap0.png",
-  grap1: "/stackacres/sprites/grap1.png",
-  grap2: "/stackacres/sprites/grap2.png",
-  grap20: "/stackacres/sprites/grap20.png",
-  grap21: "/stackacres/sprites/grap21.png",
-  grap22: "/stackacres/sprites/grap22.png",
+  green_bean0: "/stackacres/sprites/green_bean0.png",
+  green_bean1: "/stackacres/sprites/green_bean1.png",
+  green_bean2: "/stackacres/sprites/green_bean2.png",
+  lettuce0: "/stackacres/sprites/lettuce0.png",
+  lettuce1: "/stackacres/sprites/lettuce1.png",
+  lettuce2: "/stackacres/sprites/lettuce2.png",
   onion0: "/stackacres/sprites/onion0.png",
   onion1: "/stackacres/sprites/onion1.png",
   onion2: "/stackacres/sprites/onion2.png",
   pepper0: "/stackacres/sprites/pepper0.png",
   pepper1: "/stackacres/sprites/pepper1.png",
   pepper2: "/stackacres/sprites/pepper2.png",
-  poppy0: "/stackacres/sprites/poppy0.png",
-  poppy1: "/stackacres/sprites/poppy1.png",
-  poppy2: "/stackacres/sprites/poppy2.png",
   potato0: "/stackacres/sprites/potato0.png",
   potato1: "/stackacres/sprites/potato1.png",
   potato2: "/stackacres/sprites/potato2.png",
-  pumpkin0: "/stackacres/sprites/pumpkin0.png",
-  pumpkin1: "/stackacres/sprites/pumpkin1.png",
-  pumpkin2: "/stackacres/sprites/pumpkin2.png",
-  sunflowe_broken0: "/stackacres/sprites/sunflowe_broken0.png",
-  sunflowe_broken1: "/stackacres/sprites/sunflowe_broken1.png",
-  sunflowe_broken2: "/stackacres/sprites/sunflowe_broken2.png",
-  sunflower0: "/stackacres/sprites/sunflower0.png",
-  sunflower1: "/stackacres/sprites/sunflower1.png",
-  sunflower2: "/stackacres/sprites/sunflower2.png",
+  radish0: "/stackacres/sprites/radish0.png",
+  radish1: "/stackacres/sprites/radish1.png",
+  radish2: "/stackacres/sprites/radish2.png",
+  spinach0: "/stackacres/sprites/spinach0.png",
+  spinach1: "/stackacres/sprites/spinach1.png",
+  spinach2: "/stackacres/sprites/spinach2.png",
   tomato0: "/stackacres/sprites/tomato0.png",
   tomato1: "/stackacres/sprites/tomato1.png",
   tomato2: "/stackacres/sprites/tomato2.png",
-  wheat10: "/stackacres/sprites/wheat10.png",
-  wheat11: "/stackacres/sprites/wheat11.png",
-  wheat12: "/stackacres/sprites/wheat12.png",
-  wheat20: "/stackacres/sprites/wheat20.png",
-  wheat21: "/stackacres/sprites/wheat21.png",
-  wheat22: "/stackacres/sprites/wheat22.png",
+  wheatsheaf0: "/stackacres/sprites/wheatsheaf0.png",
+  wheatsheaf1: "/stackacres/sprites/wheatsheaf1.png",
+  wheatsheaf2: "/stackacres/sprites/wheatsheaf2.png",
   // The three rungs of the equipment ladder (lib/stackacres/equipment.ts).
   // These already shipped -- the store shelf has been showing them as plain
   // `<img>` since the ladder landed -- but nothing ever put them on the canvas,
@@ -374,7 +347,7 @@ export function isSpriteName(name: string): name is SpriteName {
 }
 
 /**
- * Every crop's three growth-stage frames -- 22 crops x 3 stages, derived
+ * Every crop's three growth-stage frames -- 16 crops x 3 stages, derived
  * from `STACKACRES_CROPS` rather than hand-listed so a new crop's frames are
  * picked up automatically. These are the reason the scene's `preload` used
  * to fetch 150+ files on every single boot: a crop only ever stands in the

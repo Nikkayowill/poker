@@ -210,8 +210,8 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       id: "skye.q1",
       title: "Organic Pigment",
       objectives: [
-        { kind: "deliver", item: "beet", target: 6 },
-        { kind: "deliver", item: "poppy", target: 6 },
+        { kind: "deliver", item: "radish", target: 6 },
+        { kind: "deliver", item: "tomato", target: 6 },
       ],
       turnInLabel: "Hand over the dye crops",
     },
@@ -299,7 +299,7 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
     {
       id: "bea.q1",
       title: "Fields of Flowers",
-      objectives: [{ kind: "harvest", crops: ["poppy", "sunflower"], target: 16 }],
+      objectives: [{ kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 }],
       turnInLabel: "Show her the blooms",
     },
     {

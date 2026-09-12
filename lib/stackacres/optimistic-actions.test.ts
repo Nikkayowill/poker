@@ -510,7 +510,7 @@ describe("predictStackAcresAction: removing a soil tile", () => {
 
   it("takes the crop standing on that tile with it, and leaves an unrelated one alone", () => {
     const onBedA = unit({ id: "crop-a", stock: "corn", soilSlot: 0 });
-    const onBedB = unit({ id: "crop-b", stock: "wheat1", soilSlot: 1 });
+    const onBedB = unit({ id: "crop-b", stock: "wheatsheaf", soilSlot: 1 });
     const patch = predictStackAcresAction(
       { action: "remove-soil-tile", tx: 0, ty: 0 },
       ctx({ soilTiles: [bedA, bedB], units: [onBedA, onBedB] }),
@@ -520,7 +520,7 @@ describe("predictStackAcresAction: removing a soil tile", () => {
   });
 
   it("does not touch the unit list when the lifted bed was bare", () => {
-    const elsewhere = unit({ id: "crop-b", stock: "wheat1", soilSlot: 1 });
+    const elsewhere = unit({ id: "crop-b", stock: "wheatsheaf", soilSlot: 1 });
     const patch = predictStackAcresAction(
       { action: "remove-soil-tile", tx: 0, ty: 0 },
       ctx({ soilTiles: [bedA, bedB], units: [elsewhere] }),

@@ -46,7 +46,7 @@ export function StackAcresIcon({ name, size = 24, className }: StackAcresIconPro
     // A crop icon is the odd one out: it draws a sprite (`cropIcon` in
     // stackacres-art.ts), just not one filed under its OWN name the way
     // `cow` draws `cow`'s -- `CROP_ICON_SPRITE` is the lookup from an icon
-    // name like "ico-garlic" to the sprite it actually waits on ("garlic2").
+    // name like "ico-carrot" to the sprite it actually waits on ("carrot2").
     const cropSprite = CROP_ICON_SPRITE[name];
     if (cropSprite) {
       if (spriteImage(cropSprite)) return;

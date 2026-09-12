@@ -177,7 +177,7 @@ describe("applyStoryEvent", () => {
     story = applyStoryEvent(story, { kind: "watered", count: 4 });
     expect(story.travelers.ray.counts).toEqual([0, 4]);
     expect(story.travelers.bea.counts).toEqual([0]);
-    story = applyStoryEvent(story, { kind: "harvested", stock: "poppy", count: 4 });
+    story = applyStoryEvent(story, { kind: "harvested", stock: "bell_pepper", count: 4 });
     expect(story.travelers.ray.counts).toEqual([0, 4]);
     expect(story.travelers.bea.counts).toEqual([4]);
   });
@@ -241,7 +241,7 @@ describe("applyTurnIn", () => {
       { kind: "watered", count: 5 },
     ]);
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
-    story = applyStoryEvent(story, { kind: "harvested", stock: "beet", count: 10 });
+    story = applyStoryEvent(story, { kind: "harvested", stock: "carrot", count: 10 });
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
     story = applyStoryEvent(story, { kind: "sector-cleared", sector: "wallow" });
     const last = applyTurnIn(story, "ray", {}, TROWEL);

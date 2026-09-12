@@ -27,8 +27,7 @@ const STAGES: CropStage[] = [0, 1, 2];
 
 describe("cropArtFor", () => {
   it("gives every crop kind a frame set and no livestock kind one", () => {
-    // Every crop id is its own art id now (no more sprout->carrot /
-    // cash_crop->corn indirection -- see crop-visuals.ts's own header).
+    // Every crop id is its own art id -- see crop-visuals.ts's own header.
     expect(cropArtFor("carrot")).toBe("carrot");
     expect(cropArtFor("corn")).toBe("corn");
     for (const stock of STACKACRES_CROPS) expect(cropArtFor(stock)).not.toBeNull();
@@ -92,34 +91,34 @@ describe("cropGroundOffset / cropFootShiftX", () => {
     }
   });
 
-  it("pulls a sprawling crop back over its bed", () => {
-    // The cabbage is the case that named this bug: its lowest ink is a front
-    // leaf, so bottom-centre anchoring drew it up and back off the soil.
-    expect(cropGroundOffset("cabbage", 2)).toBeGreaterThan(0);
-    // The onion's root point is right of its canvas centre, so it moves left.
-    expect(cropFootShiftX("onion", 2)).toBeLessThan(0);
+  it("needs no correction for the Gr8FarmPack roster -- every root point is already at bottom-centre", () => {
+    // See CROP_FOOT's own header: this pack is trimmed flush-bottom per
+    // frame, independently per stage, so there is no lean or depth left to
+    // correct the way the old CraftPix renders needed.
+    expect(cropGroundOffset("cabbage", 2)).toBe(0);
+    // -CROP_FOOT.dx of 0 is -0, not 0 -- toBeCloseTo (unlike toBe) treats
+    // them as equal, which is what "no correction" actually means here.
+    expect(cropFootShiftX("onion", 2)).toBeCloseTo(0);
   });
 
   it("never lifts a plant off its own soil", () => {
-    // The trim script clamps `dy` at zero. A model whose projected root lands
-    // below its own lowest ink would otherwise be honoured by raising the
-    // sprite, which hung the carrot about three units over its heap.
     for (const art of ARTS) {
       for (const stage of STAGES) expect(cropGroundOffset(art, stage)).toBeGreaterThanOrEqual(0);
     }
   });
 
   it("banks a wider heap around a wider crop", () => {
-    // One heap size for all 22 read as a smudge beside the big crops, which
+    // One heap size for all 16 read as a smudge beside the big crops, which
     // is most of what made them look unattached.
-    expect(cropCollarScale("cabbage", 2)).toBeGreaterThan(cropCollarScale("garlic", 2));
-    expect(cropCollarScale("garlic", 2)).toBeGreaterThan(0);
+    expect(cropCollarScale("tomato", 2)).toBeGreaterThan(cropCollarScale("carrot", 2));
+    expect(cropCollarScale("carrot", 2)).toBeGreaterThan(0);
   });
 
-  it("puts the heap behind the crops that lie across their own base", () => {
-    // A heap in FRONT of a rosette lands in the middle of its leaves.
-    expect(cropCollarBehind("cabbage")).toBe(true);
-    expect(cropCollarBehind("pumpkin")).toBe(true);
+  it("draws the heap over every crop's foot, since none of this pack's dy sits above the sprawl threshold", () => {
+    // See cropCollarBehind's own header: this always reads false for the
+    // current all-zero CROP_FOOT table, kept as a real check for whichever
+    // future crop's own art actually sprawls.
+    expect(cropCollarBehind("cabbage")).toBe(false);
     expect(cropCollarBehind("carrot")).toBe(false);
     expect(cropCollarBehind("onion")).toBe(false);
   });
@@ -128,23 +127,21 @@ describe("cropGroundOffset / cropFootShiftX", () => {
 describe("cropFootprintHalf", () => {
   // carrot's real CraftPix box is 34 wide (crop-visuals.ts's CROP_BOX) --
   // 17 either side of the stem, so a 1.25x sprite is 21.25 either side.
-  it("expands a mature crop's touch target with its 1.25x sprite", () => {
-    // A ripe carrot is fitted to its bed, so its half-width is half the fit.
-    expect(cropFootprintHalf("carrot", 2)).toBeCloseTo(CROP_BED_FIT_WIDTH / 2);
+  it("never falls below the flat half every crop used before they were grown", () => {
+    // Every Gr8FarmPack box is small enough (widest is green_bean at 17
+    // units) that even a mature, 1.25x-scaled frame stays under the floor --
+    // unlike the old CraftPix roster, no crop here ever grows past
+    // CROP_FOOTPRINT_HALF, so every stage of every crop sits exactly on it.
+    for (const crop of STACKACRES_CROPS) {
+      const art = cropArtFor(crop);
+      if (!art) continue;
+      for (const stage of STAGES) expect(cropFootprintHalf(art, stage)).toBe(CROP_FOOTPRINT_HALF);
+    }
   });
 
-  it("grows monotonically, so a bigger crop is never a smaller target", () => {
+  it("never shrinks a target below the floor even as it stays constant across stages", () => {
     expect(cropFootprintHalf("carrot", 0)).toBeLessThanOrEqual(cropFootprintHalf("carrot", 1));
     expect(cropFootprintHalf("carrot", 1)).toBeLessThanOrEqual(cropFootprintHalf("carrot", 2));
-  });
-
-  it("never falls below the flat half every crop used before they were grown", () => {
-    for (const stage of STAGES) {
-      expect(cropFootprintHalf("carrot", stage)).toBeGreaterThanOrEqual(CROP_FOOTPRINT_HALF);
-    }
-    // Grapes are the narrowest box (14 units): even at 1x a 7-unit half is
-    // under the floor -- this is the case that would otherwise shrink.
-    expect(cropFootprintHalf("grap", 0)).toBe(CROP_FOOTPRINT_HALF);
   });
 });
 
@@ -185,31 +182,28 @@ describe("how big the grown footprint actually gets", () => {
    * overlapping diamonds are the normal case -- which is why `unitAt` had to
    * stop resolving those purely by depth.
    *
-   * carrot's real CraftPix box (34 wide) keeps a mature diamond comfortably
-   * under the field, same as the old hand-vector art this replaced. At the
-   * gentler 1.25x stage-2 ladder even the widest crop (pumpkin, 41 units)
-   * stays well inside the meadow, so the wider-crops overflow this test used
-   * to flag against the old 4x ladder no longer applies.
+   * Every Gr8FarmPack box is well under CROP_BED_FIT_WIDTH (the widest,
+   * green_bean, is 17 units), so `cropBedFit` never shrinks anything and a
+   * ripe diamond is just 2x the flat floor -- comfortably inside the meadow.
    */
   it("keeps carrot's ripe diamond inside the meadow it has to share", () => {
     const MEADOW_W = 136;
     const diamond = cropFootprintHalf("carrot", 2) * 2;
-    // Fitted to its own bed (`cropBedFit`), so exactly the fit width.
-    expect(diamond).toBeCloseTo(CROP_BED_FIT_WIDTH);
+    expect(diamond).toBe(CROP_FOOTPRINT_HALF * 2);
     expect(diamond).toBeLessThanOrEqual(MEADOW_W);
   });
 });
 
 describe("bake scales land on whole pixels", () => {
   // Restated from their sources rather than imported: the painter boxes live
-  // in components/arcade/stackacres/stackacres-art.ts (`painter(12, 16, ...)`
-  // for carrot0, `painter(12, 22, ...)` for corn0) and ART_SCALE in
+  // in components/arcade/stackacres/stackacres-art.ts (`painter(9, 14, ...)`
+  // for carrot0, `painter(13, 32, ...)` for corn0) and ART_SCALE in
   // art-kit.ts, and both of those pull Phaser, which a lib/ test may not.
   // Same "restate and hold it with a test" split SOIL_TILE already uses.
   const ART_SCALE = 8;
   const CROP_BOXES = [
-    { name: "carrot", w: 12, h: 16 },
-    { name: "corn", w: 12, h: 22 },
+    { name: "carrot", w: 9, h: 14 },
+    { name: "corn", w: 13, h: 32 },
   ];
   const STAGES: CropStage[] = [0, 1, 2];
 
@@ -308,10 +302,11 @@ describe("fitting a crop to its bed", () => {
   });
 
   it("never grows a crop that already fits", () => {
+    // Every Gr8FarmPack box is well under CROP_BED_FIT_WIDTH, so cropBedFit
+    // never actually shrinks anything -- every crop hits this floor of 1.
     for (const crop of STACKACRES_CROPS) {
       const art = cropArtFor(crop);
-      if (art) expect(cropBedFit(art)).toBeLessThanOrEqual(1);
+      if (art) expect(cropBedFit(art)).toBe(1);
     }
-    expect(cropBedFit("grap")).toBe(1);
   });
 });

@@ -18,6 +18,15 @@ import {
 
 const NOW = new Date("2026-09-04T00:00:00.000Z");
 
+/**
+ * `lastFedAt` defaults to NOW (freshly fed), not some time in the past. The
+ * Hen Coop's own hunger window shrank to 8 minutes (2026-09-11, see
+ * catalogue.ts's own comment) specifically so it is reachable inside its
+ * cycle -- a row fed 10 minutes ago would already read hungry by default,
+ * which is exactly what the dedicated "hunger" and "spoiling" describe
+ * blocks below want to set up explicitly rather than trip over by accident
+ * in every other test that just wants a plain working row.
+ */
 function row(overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
   return {
     id: "unit-1",
@@ -243,7 +252,7 @@ describe("toStackAcresUnitSnapshots", () => {
 // needs thirstMs under durationMs. Tier 1's own thirstMs sits OVER its 15s
 // durationMs since the 2026-09-11 pacing retune (see catalogue.ts's TIER1
 // comment), so it can no longer stand in for "a crop that can go dry".
-const THIRSTY_CROP = STACKACRES_CATALOGUE.cucumber;
+const THIRSTY_CROP = STACKACRES_CATALOGUE.tomato;
 const THIRST = THIRSTY_CROP.thirstMs ?? 0;
 
 /** A crop sown `agoMs` before NOW and watered at sowing, unless
@@ -252,7 +261,7 @@ const THIRST = THIRSTY_CROP.thirstMs ?? 0;
 function crop(agoMs: number, overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
   const sown = NOW.getTime() - agoMs;
   return row({
-    stock: "cucumber",
+    stock: "tomato",
     stake: THIRSTY_CROP.seedCost,
     yieldQuantity: 3,
     startedAt: new Date(sown).toISOString(),
@@ -304,7 +313,7 @@ describe("sown seed", () => {
 
   it("predicts a sown crop as seed and an animal as working", () => {
     const base = { id: "n", permanent: false, inGreenhouse: false, nowMs: NOW.getTime() };
-    const cropUnit = optimisticallyStockedUnit({ ...base, stock: "cucumber" });
+    const cropUnit = optimisticallyStockedUnit({ ...base, stock: "tomato" });
     expect(cropUnit.seed).toBe(true);
     expect(cropUnit.state).toBe("dry");
     expect(cropUnit.isWatered).toBe(false);
@@ -325,7 +334,7 @@ describe("sown seed", () => {
   it("predicts a bought crop restarting as seed", () => {
     const stocked = optimisticallyStockedUnit({
       id: "n",
-      stock: "cucumber",
+      stock: "tomato",
       permanent: true,
       inGreenhouse: false,
       nowMs: NOW.getTime(),
@@ -340,7 +349,7 @@ describe("sown seed", () => {
   it("predicts a bought crop on a piped bed restarting watered", () => {
     const stocked = optimisticallyStockedUnit({
       id: "n",
-      stock: "cucumber",
+      stock: "tomato",
       permanent: true,
       inGreenhouse: false,
       nowMs: NOW.getTime(),

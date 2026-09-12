@@ -10,13 +10,13 @@
  *
  * WHY A CROP GETS ANY BUMP AT ALL. Every other thing on this map is drawn at
  * its painter's own size (`setScale(1 / ART_SCALE)`), and a crop mostly is
- * too now -- the real art (the `hjm-all_crops_in_lines.png` sheet, see
- * `scripts/prepare-stackacres-crops.py`) reads fine at its own trimmed box
- * size. This used to blow crops up to 1.5x/2.5x/4x their box: that was a
- * legibility hack from when the crop frames were tiny placeholder art and a
- * ripe row was a few pixels of green on a phone. With real art in place that
- * hack is gone; what is left is a small nudge so a mature plant still reads
- * as slightly fuller than a seedling.
+ * too now -- the real art (the Gr8FarmPack, see
+ * `scripts/prepare-stackacres-farmpack-crops.py`) reads fine at its own
+ * trimmed box size. This used to blow crops up to 1.5x/2.5x/4x their box:
+ * that was a legibility hack from when the crop frames were tiny placeholder
+ * art and a ripe row was a few pixels of green on a phone. With real art in
+ * place that hack is gone; what is left is a small nudge so a mature plant
+ * still reads as slightly fuller than a seedling.
  *
  * The three frames are ./world.ts's `growthStage` output, not a separate
  * ladder: 0 seedling, 1 sprout, 2 mature/harvest-ready.
@@ -26,10 +26,9 @@ import { isLivestock, type StackAcresCrop, type StackAcresStock } from "./catalo
 
 /**
  * Which crop's three frames a stock kind draws. Every crop id IS its own art
- * id now -- there is no more sprout->carrot / cash_crop->corn indirection,
- * since `sprout`/`cash_crop` are gone and all 22 CraftPix crop ids equal
- * their own sprite file prefix (see ./items.ts's own note on that identity).
- * `CropArt` is therefore just `StackAcresCrop` restated under its own name.
+ * id -- all 16 Gr8FarmPack crop ids equal their own sprite file prefix (see
+ * ./items.ts's own note on that identity). `CropArt` is therefore just
+ * `StackAcresCrop` restated under its own name.
  */
 export type CropArt = StackAcresCrop;
 
@@ -50,15 +49,14 @@ export function cropArtFor(stock: StackAcresStock): CropArt | null {
  * the frames are real art instead of tiny placeholders.
  *
  * EVERY VALUE HERE MUST LAND ON A WHOLE PIXEL for every crop's painter box,
- * because `bakeSpriteTexture` (carrot/corn/corn2, the crops it actually
- * bakes at scale) takes `Math.ceil(w * ART_SCALE * scale)` per axis
- * INDEPENDENTLY -- a fractional product resamples a frame by a slightly
- * different factor across than down, a non-uniform stretch on top of
- * whatever softening the resize itself adds. ART_SCALE is 8, so any scale
- * that is a multiple of 1/8 lands on a whole pixel for every box regardless
- * of that box's own dimensions; 1, 1.125 (9/8) and 1.25 (10/8) all are.
- * crop-visuals.test.ts holds the table to that rule so a future retune
- * cannot reintroduce a fractional rung.
+ * since `bakeSpriteTexture` (stackacres-art.ts) takes
+ * `Math.ceil(w * ART_SCALE * scale)` per axis INDEPENDENTLY -- a fractional
+ * product resamples a frame by a slightly different factor across than down,
+ * a non-uniform stretch on top of whatever softening the resize itself adds.
+ * ART_SCALE is 8, so any scale that is a multiple of 1/8 lands on a whole
+ * pixel for every box regardless of that box's own dimensions; 1, 1.125 (9/8)
+ * and 1.25 (10/8) all are. crop-visuals.test.ts holds the table to that rule
+ * so a future retune cannot reintroduce a fractional rung.
  */
 const STAGE_SCALE: Readonly<Record<CropStage, number>> = { 0: 1, 1: 1.125, 2: 1.25 };
 
@@ -66,11 +64,14 @@ export function cropSpriteScale(stage: CropStage): number {
   return STAGE_SCALE[stage];
 }
 
-/** The scale a crop's frame is actually drawn at. Only carrot and the two
- *  corns are baked enlarged per stage (stackacres-art.ts's `cropBakeScale`
- *  reads this); every other crop's three frames share one box. */
+/** The scale a crop's frame is actually drawn at. Every crop draws at 1x
+ *  now -- the CraftPix roster's carrot/corn/corn2 bake-enlarged special case
+ *  is gone with it: the Gr8FarmPack has no crop whose native trimmed box
+ *  read too small to need it, and `cropSpriteScale`'s own stage bump already
+ *  covers "a mature plant reads fuller than a seedling" for every crop. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for call-site compatibility, see the comment above
 export function cropDrawnScale(art: CropArt, stage: CropStage): number {
-  return art === "carrot" || art === "corn" || art === "corn2" ? cropSpriteScale(stage) : 1;
+  return 1;
 }
 
 /**
@@ -78,64 +79,37 @@ export function cropDrawnScale(art: CropArt, stage: CropStage): number {
  * bottom-centre of its canvas: `dx` right of centre, `dy` up from the bottom
  * edge, both in art units.
  *
- * WHY A TRIMMED SPRITE NEEDS THIS. Every frame is trimmed to its ink and
- * pasted flush to the bottom of a shared canvas, so bottom-centre is the
- * lowest pixel anywhere in the frame -- and on anything that sprawls that is
- * a front leaf, not the point the plant grows out of. Anchoring there drew a
- * cabbage up and back off its own bed, floating over the soil rather than
- * standing in it.
+ * ALL ZERO for the Gr8FarmPack roster (2026-09-12), and that is not a
+ * placeholder -- it is what the pack's own art measures to.
+ * `scripts/prepare-stackacres-farmpack-crops.py` trims each frame to its own
+ * alpha bbox, centred left/right and flush to the bottom, independently per
+ * stage (there is no shared-camera ground plane across a crop's 3 frames the
+ * way the old CraftPix renders had). Bottom-centre of a bottom-anchored trim
+ * IS the root point, so there is nothing left to correct. The CraftPix
+ * roster's non-zero table (hand-measured off a 3D render's own lean and
+ * depth) does not apply here; don't carry a row over from it if a crop name
+ * happens to repeat.
  *
- * MEASURED, NOT TUNED, and the two halves are measured differently on
- * purpose.
- *
- * `dy` is the model's own root point in 3D: `center_objects_at_origin` in
- * scripts/render-stackacres-craftpix-crops.py puts each bbox centre on the
- * world origin, so (0, 0, ground) is the plant's footprint at ground level,
- * and `ground_anchor` projects it through the render's own camera. That is
- * the number that carries DEPTH -- how far up the frame the ground is at the
- * plant's base -- and it is what stops a sprawling rosette floating over its
- * bed.
- *
- * `dx` is not that point. A model that leans (a bulb with its leaves fanning
- * to one side) has its bbox centre away from the bulb, and anchoring
- * sideways there hung onions and garlic off the edge of their own soil. So
- * across the frame the anchor is where the plant's mass actually rests: the
- * alpha-weighted centre of the bottom slice of the ink
- * (`ground_band_centre` in scripts/trim-stackacres-craftpix-crops.py).
- *
- * Both come out of that trim script, which prints this table. Re-run the
- * pair after a re-render rather than hand-editing a row -- the same rule
- * `CROP_BOX` already carries.
- *
- * `dy` is clamped at zero by the trim script. A model whose projected root
- * lands below its own lowest ink would otherwise be honoured by LIFTING the
- * plant, which hung the carrot about three units over its own heap of soil.
- * Sinking a plant into its bed is fine; hanging one above it is the bug this
- * table exists to fix.
+ * Re-run that script rather than hand-editing a row if this ever needs to
+ * stop being all-zero -- same rule `CROP_BOX` already carries.
  */
 const CROP_FOOT: Readonly<Record<CropArt, { readonly dx: number; readonly dy: number }>> = {
-  artichoke: { dx: 1.04, dy: 2.19 },
-  beet: { dx: 0.91, dy: 1.57 },
-  brokoly: { dx: 4.6, dy: 0.93 },
-  cabbage: { dx: 2.25, dy: 8.34 },
-  carrot: { dx: -0.67, dy: 0 },
-  corn: { dx: 0.79, dy: 0 },
-  corn2: { dx: 2.64, dy: 9.59 },
-  cucumber: { dx: 1.72, dy: 1.54 },
-  eggplant: { dx: -8.42, dy: 12.19 },
-  garlic: { dx: -1.71, dy: 4.84 },
-  grap: { dx: -0.57, dy: 1.36 },
-  grap2: { dx: 0.18, dy: 1.06 },
-  onion: { dx: 2.85, dy: 1.6 },
-  pepper: { dx: -1.15, dy: 2.94 },
-  poppy: { dx: -0.02, dy: 1.29 },
-  potato: { dx: -0.27, dy: 2.99 },
-  pumpkin: { dx: -13.91, dy: 7.27 },
-  sunflowe_broken: { dx: -3.04, dy: 0 },
-  sunflower: { dx: -0.99, dy: 2.89 },
-  tomato: { dx: 2.94, dy: 1.85 },
-  wheat1: { dx: -4.66, dy: 2.58 },
-  wheat2: { dx: -6.03, dy: 5.7 },
+  bell_pepper: { dx: 0, dy: 0 },
+  broccoli: { dx: 0, dy: 0 },
+  cabbage: { dx: 0, dy: 0 },
+  carrot: { dx: 0, dy: 0 },
+  celery: { dx: 0, dy: 0 },
+  corn: { dx: 0, dy: 0 },
+  eggplant: { dx: 0, dy: 0 },
+  green_bean: { dx: 0, dy: 0 },
+  lettuce: { dx: 0, dy: 0 },
+  onion: { dx: 0, dy: 0 },
+  pepper: { dx: 0, dy: 0 },
+  potato: { dx: 0, dy: 0 },
+  radish: { dx: 0, dy: 0 },
+  spinach: { dx: 0, dy: 0 },
+  tomato: { dx: 0, dy: 0 },
+  wheatsheaf: { dx: 0, dy: 0 },
 };
 
 /**
@@ -179,34 +153,29 @@ export function cropFootShiftX(art: CropArt, stage: CropStage): number {
 export const CROP_FOOTPRINT_HALF = 12;
 
 /** Each crop art's own painter box, in art units (see stackacres-art.ts,
- *  whose painters are drawn to these exact dimensions). Every box is sized
- *  off its own trimmed CraftPix sprite's real pixel dimensions (÷
- *  ART_SCALE) -- computed once, not recomputed here. This replaces the old
- *  hand-vector carrot (12x16) / corn (12x22) boxes outright; those ids now
- *  draw the new CraftPix renders at these dimensions instead. */
+ *  whose painters are drawn to these exact dimensions). Every box is the
+ *  Gr8FarmPack's own mature (stage-2) frame, trimmed to its alpha bbox and
+ *  rounded up to a whole ART_SCALE unit ÷ ART_SCALE -- printed by
+ *  scripts/prepare-stackacres-farmpack-crops.py, computed once, not
+ *  recomputed here. Replaces the 22-crop CraftPix table outright
+ *  (2026-09-12); re-run that script rather than hand-editing a row. */
 const CROP_BOX: Readonly<Record<CropArt, { readonly w: number; readonly h: number }>> = {
-  artichoke: { w: 22, h: 47 },
-  beet: { w: 25, h: 41 },
-  brokoly: { w: 39, h: 30 },
-  cabbage: { w: 38, h: 31 },
-  carrot: { w: 34, h: 37 },
-  corn: { w: 23, h: 42 },
-  corn2: { w: 24, h: 44 },
-  cucumber: { w: 22, h: 44 },
-  eggplant: { w: 33, h: 26 },
-  garlic: { w: 23, h: 40 },
-  grap: { w: 14, h: 46 },
-  grap2: { w: 16, h: 44 },
-  onion: { w: 33, h: 38 },
-  pepper: { w: 19, h: 40 },
-  poppy: { w: 29, h: 44 },
-  potato: { w: 23, h: 47 },
-  pumpkin: { w: 41, h: 25 },
-  sunflowe_broken: { w: 28, h: 36 },
-  sunflower: { w: 20, h: 40 },
-  tomato: { w: 31, h: 39 },
-  wheat1: { w: 23, h: 37 },
-  wheat2: { w: 37, h: 36 },
+  bell_pepper: { w: 14, h: 18 },
+  broccoli: { w: 14, h: 13 },
+  cabbage: { w: 13, h: 11 },
+  carrot: { w: 9, h: 14 },
+  celery: { w: 10, h: 14 },
+  corn: { w: 13, h: 32 },
+  eggplant: { w: 15, h: 19 },
+  green_bean: { w: 17, h: 19 },
+  lettuce: { w: 10, h: 9 },
+  onion: { w: 10, h: 10 },
+  pepper: { w: 16, h: 20 },
+  potato: { w: 9, h: 17 },
+  radish: { w: 11, h: 18 },
+  spinach: { w: 13, h: 13 },
+  tomato: { w: 16, h: 22 },
+  wheatsheaf: { w: 10, h: 29 },
 };
 
 /**
@@ -238,8 +207,8 @@ export function cropBox(art: CropArt): { readonly w: number; readonly h: number 
  * (stackacres-art.ts's `soilCollar`), as a scale of that painter's own
  * 16-unit box.
  *
- * Tracks the CROP'S OWN WIDTH rather than being one size for all 22: a heap
- * sized for a garlic reads as a smudge beside a cabbage, which is what made
+ * Tracks the CROP'S OWN WIDTH rather than being one size for all 16: a heap
+ * sized for a carrot reads as a smudge beside a cabbage, which is what made
  * the bigger crops look like they were standing next to their soil rather
  * than in it. Just over half the frame's width, so the heap is wide enough
  * to meet the plant's base on both sides and never so wide it outgrows the
@@ -254,14 +223,17 @@ export function cropCollarScale(art: CropArt, stage: CropStage): number {
  * foot.
  *
  * Over the foot is the rule and it is what makes a plant read as growing out
- * of the ground rather than standing on it. It is wrong for the few crops
- * that lie ACROSS their own base -- a cabbage's rosette, a pumpkin's vine --
- * where a heap in front lands in the middle of the leaves as a brown lump.
+ * of the ground rather than standing on it. It is wrong for a crop that lies
+ * ACROSS its own base -- a rosette, a sprawling vine -- where a heap in
+ * front lands in the middle of the leaves as a brown lump.
  *
  * The tell is already measured: `CROP_FOOT`'s `dy` is how far up the frame
  * the ground sits at the plant's base, so a big one means the plant's own
  * ink hangs well below its footing, which is exactly what a sprawler does.
- * No second table, and no per-crop taste.
+ * No second table, and no per-crop taste. Every Gr8FarmPack crop's `dy` is 0
+ * (see CROP_FOOT's own header), so this always reads false for the current
+ * roster -- kept as a real check rather than hard-coded false in case a
+ * future crop's own art needs it.
  */
 export function cropCollarBehind(art: CropArt): boolean {
   return CROP_FOOT[art].dy >= 6;

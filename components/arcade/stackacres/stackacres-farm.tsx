@@ -1637,6 +1637,26 @@ export function StackAcresFarm() {
     world.current?.setMerchant(merchantRendered);
   }, [merchantRendered]);
 
+  // The barn's door-open tap frame holds for as long as the Supply Store
+  // sheet it opens is up, not just its own short timer -- see
+  // StackAcresWorldApi's `setBarnHeldOpen` doc.
+  useEffect(() => {
+    world.current?.setBarnHeldOpen(showStore);
+  }, [showStore]);
+
+  // Same contract, for Ray's house and the gift dialogue his own tap opens.
+  // Another NPC's gift dialogue (`giftDialogue.npc !== "ray"`) does not open
+  // from his house at all, so it must not hold his door open either.
+  const rayGiftDialogueOpen = giftDialogue?.npc === "ray";
+  useEffect(() => {
+    world.current?.setRayHouseHeldOpen(rayGiftDialogueOpen);
+  }, [rayGiftDialogueOpen]);
+
+  // Same contract again, for the Greenhouse and the panel its own tap opens.
+  useEffect(() => {
+    world.current?.setGreenhouseHeldOpen(showGreenhouse);
+  }, [showGreenhouse]);
+
   // Whether a tap landed inside the Crop Fields' own bed lattice
   // (`CROP_FIELD_BEDS`), rather than merely somewhere in the Farmstead --
   // since the 2026-09-08 district merge, `radial.zone === "farmstead"` alone
@@ -2155,6 +2175,15 @@ export function StackAcresFarm() {
   useEffect(() => {
     storyRef.current = story;
   });
+
+  // Ray himself (the traveler standing near his house), not the house --
+  // his own story dialogue bubble is what `story.dialogue` tracks. Same
+  // held-open contract `setBarnHeldOpen`/`setRayHouseHeldOpen` document,
+  // driven off a different open/close signal. See `setTravelerRayHeldOpen`.
+  const rayTravelerDialogueOpen = story.dialogue?.traveler === "ray";
+  useEffect(() => {
+    world.current?.setTravelerRayHeldOpen(rayTravelerDialogueOpen);
+  }, [rayTravelerDialogueOpen]);
 
   // Hangs a quest badge over every traveler the story view says has one --
   // "!" to offer, "?" ready to hand in, nothing while locked, mid-quest, or

@@ -62,11 +62,14 @@ describe("yard props", () => {
     }
   });
 
-  it("is about a dozen in the yard, not a junk shop", () => {
+  it("stays a light scatter, not a junk shop", () => {
     // `p.x > 150` in the yard's own frame: the props are world coordinates
-    // now, and the yard moved bodily in the 2026-09-07 re-lay.
+    // now, and the yard moved bodily in the 2026-09-07 re-lay. The crates,
+    // the log pile, the wheelbarrow and the stone wall were pulled from this
+    // cluster per Kayo's call (too much junk in one small yard), which is
+    // what dropped the floor here -- see YARD_PROPS's own comment.
     const yard = YARD_PROPS.filter((p) => p.y < PLOTS.y && p.x - YARD_DELTA.x > 150);
-    expect(yard.length).toBeGreaterThanOrEqual(8);
+    expect(yard.length).toBeGreaterThanOrEqual(3);
     expect(yard.length).toBeLessThanOrEqual(14);
   });
 
@@ -148,9 +151,7 @@ describe("yard props", () => {
       for (let j = i + 1; j < YARD_PROPS.length; j += 1) {
         const a = YARD_PROPS[i];
         const b = YARD_PROPS[j];
-        // The two crates lean together on purpose; everything else stands apart.
-        const both = a.kind === "crate" && b.kind === "crate";
-        expect(Math.hypot(a.x - b.x, a.y - b.y), `${a.kind} vs ${b.kind}`).toBeGreaterThanOrEqual(both ? 8 : 16);
+        expect(Math.hypot(a.x - b.x, a.y - b.y), `${a.kind} vs ${b.kind}`).toBeGreaterThanOrEqual(16);
       }
     }
   });
@@ -208,24 +209,12 @@ describe("yard props", () => {
     expect(of("windmill").length).toBe(0);
   });
 
-  it("breaks the stone wall into three or four short lengths north of the yard", () => {
-    const wall = of("stoneWall");
-    expect(wall.length).toBeGreaterThanOrEqual(3);
-    expect(wall.length).toBeLessThanOrEqual(4);
-    for (const seg of wall) {
-      // The yard's own frame, so these stay the numbers the wall was drawn
-      // with after the 2026-09-07 re-lay moved the Farmstead bodily.
-      const x = seg.x - YARD_DELTA.x;
-      expect(seg.y - YARD_DELTA.y).toBe(-46);
-      expect(x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThanOrEqual(160);
-      expect(x + PROP_SIZE.stoneWall.w / 2).toBeLessThanOrEqual(270);
-      // Right of the title chip (x < 146, y < -41) at the opening shot.
-      expect(x - PROP_SIZE.stoneWall.w / 2).toBeGreaterThan(150);
-    }
-    const xs = wall.map((s) => s.x).sort((a, b) => a - b);
-    for (let i = 1; i < xs.length; i += 1) {
-      // A gap between lengths: it is a broken wall, not a fence line.
-      expect(xs[i] - xs[i - 1]).toBeGreaterThan(PROP_SIZE.stoneWall.w);
+  it("places no crate, log pile, wheelbarrow or stone wall -- pulled from the yard as clutter", () => {
+    // Same call as the windmill above: each stays a real PropKind/painter
+    // (`logPile` also still appears on its own through `farmsteadClutter`),
+    // just unplaced in this hand-laid cluster.
+    for (const kind of ["crate", "logPile", "wheelbarrow", "stoneWall"] as const) {
+      expect(of(kind).length, kind).toBe(0);
     }
   });
 });

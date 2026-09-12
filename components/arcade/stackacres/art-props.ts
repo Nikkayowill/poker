@@ -53,7 +53,17 @@ export type PropPainterName =
   | "flowerBush2"
   | "flowerSprig1"
   | "flowerSprig2"
+  | "barbEndWest"
+  | "barbEndEast"
+  | "barbStraight1"
+  | "barbStraight2"
   | "travelerRay"
+  // Ray's own second frame -- a wave, shown for as long as his own dialogue
+  // bubble is open. Not a placed prop of its own (see props.ts's `PropKind`,
+  // which never mentions it); it shares `travelerRay`'s own Image node,
+  // swapped in and out by `setTravelerRayHeldOpen` in stackacres-scene.ts,
+  // the same `barnOpen`/`rayHouseOpen` shape.
+  | "travelerRayActive"
   | "travelerPierre"
   | "travelerMiles"
   | "travelerSkye"
@@ -1111,11 +1121,61 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     }
   }),
 
+  // The Factory's own back fence (2026-09-12) -- simple stand-ins for the
+  // pack's real barbed-wire plates (see props.ts's own PropKind comment on
+  // why there are two end shapes and two straight ones). A post each side,
+  // three strands between -- what shows before the real art loads or if it
+  // never does, same "rarely if ever seen" posture BARN_FALLBACK documents.
+  barbEndWest: painter(13, 22, (c) => {
+    timber(c, 1, 2, 3, 20, 1);
+    for (const y of [6, 12, 18]) {
+      c.beginPath();
+      c.moveTo(4, y);
+      c.lineTo(13, y - 3);
+      stroke(c, "#2c2a28", 1);
+    }
+  }),
+  barbEndEast: painter(13, 22, (c) => {
+    timber(c, 9, 2, 3, 20, 1);
+    for (const y of [6, 12, 18]) {
+      c.beginPath();
+      c.moveTo(9, y);
+      c.lineTo(0, y - 3);
+      stroke(c, "#2c2a28", 1);
+    }
+  }),
+  barbStraight1: painter(31, 31, (c) => {
+    timber(c, 1, 6, 3, 24, 1);
+    timber(c, 27, 2, 3, 24, 1);
+    for (const t of [0, 1, 2]) {
+      c.beginPath();
+      c.moveTo(3, 10 + t * 6);
+      c.lineTo(28, 6 + t * 6);
+      stroke(c, "#2c2a28", 1);
+    }
+  }),
+  // Same shape as barbStraight1, posts spaced a touch differently so a run
+  // of both never reads as one picture repeated -- the hayBale1/hayBale2
+  // reasoning.
+  barbStraight2: painter(31, 31, (c) => {
+    timber(c, 1, 4, 3, 24, 1);
+    timber(c, 27, 5, 3, 24, 1);
+    for (const t of [0, 1, 2]) {
+      c.beginPath();
+      c.moveTo(3, 8 + t * 6);
+      c.lineTo(28, 9 + t * 6);
+      stroke(c, "#2c2a28", 1);
+    }
+  }),
+
   /* ---- the eleven story travelers (lib/stackacres/story/placement.ts) ---- */
   // Boxes match PROP_SIZE in lib/stackacres/props.ts exactly; the tint is
   // each traveler's own dominant colour so a fallback frame still reads as
   // "the chef" or "the knight" rather than one grey figure worn by all.
   travelerRay: travelerFallback(19.75, 40, "#c9d8ec", "human"),
+  // Same box as `travelerRay` -- the two share one Image node, so a
+  // mismatched fallback box would jump the moment the real sprite swapped.
+  travelerRayActive: travelerFallback(19.75, 40, "#c9d8ec", "human"),
   travelerPierre: travelerFallback(19.79, 38, "#d93a3a", "human"),
   travelerMiles: travelerFallback(17.42, 38, "#b08a5a", "human"),
   travelerSkye: travelerFallback(16.25, 30, "#f0b21f", "human"),

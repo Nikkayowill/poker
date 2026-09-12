@@ -118,6 +118,24 @@ export const SPRITE_ART = {
   // proper isometric scale to stand beside the house once that art is ready.
   rayHouse: "/stackacres/sprites/ray-house.webp",
   rayHouseOpen: "/stackacres/sprites/ray-house-open.webp",
+  // The Greenhouse (lib/stackacres/greenhouse.ts): two states of one
+  // supplied isometric glasshouse, chroma-keyed off a solid magenta backing
+  // and cropped to the same canvas so the two line up in place -- the same
+  // `rayHouse`/`rayHouseOpen` pattern. `greenhouse` is idle; `greenhouseOpen`
+  // (vents cracked, steam drifting off the panes) is what the scene swaps to
+  // for as long as the Greenhouse panel is open -- see `setGreenhouseHeldOpen`
+  // in stackacres-scene.ts.
+  greenhouse: "/stackacres/sprites/greenhouse.webp",
+  greenhouseOpen: "/stackacres/sprites/greenhouse-open.webp",
+  // The Factory (2026-09-12), by `FACTORY_FOOTPRINT` in world.ts -- same
+  // two-state pattern as `rayHouse`/`rayHouseOpen`: `factory` idle,
+  // `factoryOpen` (extra chimney smoke, a bread cart rolled into the open
+  // bay) a second frame with no trigger wired to it yet -- placed as
+  // landmark scenery only, the same posture `paintFactory` documents. Kept
+  // real and registered now so a later pass wiring an actual interaction
+  // only has to call `setFactoryHeldOpen`-shaped code, not touch art.
+  factory: "/stackacres/sprites/factory.webp",
+  factoryOpen: "/stackacres/sprites/factory-open.webp",
   // The canopy. Off the isometric plant pack like everything below it since
   // 2026-09-06 -- see scripts/prepare-stackacres-plants.py.
   tree1: "/stackacres/sprites/tree1.webp",
@@ -245,12 +263,22 @@ export const SPRITE_ART = {
   grassTile: "/stackacres/sprites/grass-tile.webp",
   // The eleven story travelers (lib/stackacres/story/): ten true pixel-art
   // PNGs standing in a flat-vector world on purpose (they are not from
-  // here, and the art says so), and Great-Grandpa Ray's spirit, the one
-  // smooth render among them because he IS from here. The same files the
-  // dialogue bubbles show as portraits (TRAVELER_PORTRAIT). Ordinary core
-  // sprites in every other respect: `CORE_SPRITE_NAMES` below picks them up
+  // here, and the art says so), and Great-Grandpa Ray, the one smooth
+  // render among them because he IS from here. The same files the dialogue
+  // bubbles show as portraits (TRAVELER_PORTRAIT). Ordinary core sprites in
+  // every other respect: `CORE_SPRITE_NAMES` below picks them up
   // automatically since they are not crop frames.
+  //
+  // Ray's own real, solid art (2026-09-12) -- he stood in as a pale
+  // desaturated placeholder ("Ray's spirit") until this pack landed; nothing
+  // about the wiring here changed, only which picture the same name points
+  // at. `travelerRayActive` is his second frame -- a wave, chroma-keyed off
+  // the same magenta backing and cropped to the same canvas as `travelerRay`
+  // -- swapped in for as long as his own dialogue bubble is open, the same
+  // `rayHouse`/`rayHouseOpen` held-open contract (see `paintTravelers`/
+  // `setTravelerRayHeldOpen` in stackacres-scene.ts).
   travelerRay: "/stackacres/sprites/traveler-ray.webp",
+  travelerRayActive: "/stackacres/sprites/traveler-ray-open.webp",
   travelerPierre: "/stackacres/sprites/traveler-pierre.webp",
   travelerMiles: "/stackacres/sprites/traveler-miles.webp",
   travelerSkye: "/stackacres/sprites/traveler-skye.webp",
@@ -307,6 +335,13 @@ export const SPRITE_ART = {
   flowerBush2: "/stackacres/sprites/flowerBush2.webp",
   flowerSprig1: "/stackacres/sprites/flowerSprig1.webp",
   flowerSprig2: "/stackacres/sprites/flowerSprig2.webp",
+  // The Factory's own back fence (2026-09-12), off the same pack's barbed-
+  // wire plates -- see props.ts's own PropKind comment on the two end
+  // shapes and two straight ones.
+  barbEndWest: "/stackacres/sprites/barbEndWest.webp",
+  barbEndEast: "/stackacres/sprites/barbEndEast.webp",
+  barbStraight1: "/stackacres/sprites/barbStraight1.webp",
+  barbStraight2: "/stackacres/sprites/barbStraight2.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
   midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",

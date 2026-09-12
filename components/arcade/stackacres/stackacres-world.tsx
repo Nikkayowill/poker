@@ -10,7 +10,7 @@ import type { ZoneId } from "@/lib/stackacres/zones";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { PainterName } from "./stackacres-art";
-import type { StackAcresScene, StackAcresSceneUnit, StoryCues, TapPoint } from "./stackacres-scene";
+import type { StackAcresScene, StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
 import type { PipeNode } from "@/lib/stackacres/irrigation";
@@ -121,6 +121,11 @@ export interface StackAcresWorldApi {
    *  contract as `setMerchant`: stackacres-farm.tsx calls this whenever its
    *  story view changes, and an unchanged badge is a no-op. */
   setStoryCues: (cues: StoryCues) => void;
+  /** Shows or hides each traveler as their own unlock is met -- nobody
+   *  stands on the farm before that. Same "push, never rebuild" contract as
+   *  `setStoryCues`: called with the full eleven-entry record whenever the
+   *  story view changes, a no-op where nothing flipped. */
+  setTravelerUnlocks: (unlocked: TravelerUnlocks) => void;
   /** Placed soil beds (lib/stackacres/soil.ts), passed straight through to
    *  the scene's own methods of the same name -- see stackacres-scene.ts's
    *  "the seam the shop will arrive through" section for what each does.
@@ -644,6 +649,7 @@ export function StackAcresWorld({
       floatAt: (at, text, tone, icon) => sceneRef.current?.floatAt(at, text, tone, icon),
       setMerchant: (present) => sceneRef.current?.setMerchant(present),
       setStoryCues: (cues) => sceneRef.current?.setStoryCues(cues),
+      setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
       placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,

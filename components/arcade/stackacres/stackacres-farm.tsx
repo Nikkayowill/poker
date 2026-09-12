@@ -213,7 +213,7 @@ import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
-import type { StoryCues } from "./stackacres-scene";
+import type { StoryCues, TravelerUnlocks } from "./stackacres-scene";
 import { StackAcresGroundTools } from "./stackacres-ground-tools";
 import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
 import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
@@ -2156,18 +2156,24 @@ export function StackAcresFarm() {
     storyRef.current = story;
   });
 
-  // Hangs a quest badge over every traveler the story view says has one --
-  // "!" to offer, "?" ready to hand in, nothing while locked, mid-quest, or
-  // done. Same "push, never rebuild" contract `setMerchant` keeps: an
-  // unchanged cue set is a no-op on the scene's own side.
+  // Shows/hides each traveler as their own unlock is met (nobody stands on
+  // the farm before that -- see `paintTravelers`/`setTravelerUnlocks` in
+  // stackacres-scene.ts), then hangs a quest badge over every one who's
+  // unlocked and has one to show -- "!" to offer, "?" ready to hand in,
+  // nothing while mid-quest or done. Same "push, never rebuild" contract
+  // `setMerchant` keeps: an unchanged unlock set or cue set is a no-op on
+  // the scene's own side.
   useEffect(() => {
     if (!story.view) return;
+    const unlocked: Record<string, boolean> = {};
     const cues: Record<string, "available" | "ready"> = {};
     for (const [id, traveler] of Object.entries(story.view.travelers)) {
+      unlocked[id] = traveler.unlocked;
       if (!traveler.unlocked || traveler.done) continue;
       if (!traveler.met) cues[id] = "available";
       else if (traveler.ready) cues[id] = "ready";
     }
+    world.current?.setTravelerUnlocks(unlocked as TravelerUnlocks);
     world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
 

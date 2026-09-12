@@ -202,13 +202,30 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     return { x: (rect?.left ?? 0) + at.x, y: (rect?.top ?? 0) + at.y };
   };
 
+  /** The inverse of `targetClient`: a client (viewport) point translated back
+   *  into `.sa-field` local pixels -- what `left`/`top` on a live token
+   *  actually need, since `.sa-gel` is positioned `inset: 0` inside
+   *  `.sa-field`, not the viewport. Every `dragClient`/`homeClient` write
+   *  below has to go through this: setting them straight from
+   *  `event.clientX/clientY` rendered the token as if `.sa-field` started at
+   *  the browser window's own top-left corner, which is only ever true by
+   *  accident. On a phone, where the header above `.sa-field` eats a real
+   *  share of a short viewport, that gap made a picked-up token jump well
+   *  away from the finger the instant a drag started. */
+  const toFieldPoint = (client: TapPoint): TapPoint => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    return { x: client.x - (rect?.left ?? 0), y: client.y - (rect?.top ?? 0) };
+  };
+
   const commit = (item: StackAcresGelDockItem) => {
     setPhase("settling");
     // Snap the live token dead-centre on the circle rather than leaving it
     // wherever the pointer let go (isDragDrop allows some slop): the settle
     // fade and burst below both read off this position, and a fade a few
     // px off-centre looked like the token missed rather than landing.
-    setDragClient(targetClient());
+    // `at` already IS that centre in field-local pixels -- the same space
+    // `dragClient` renders in -- so there is no client-space round trip to do.
+    setDragClient(at);
     item.onCommit();
     timer.current = window.setTimeout(() => {
       if (item.keepOpen) {
@@ -262,9 +279,9 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   const onTokenPointerMove = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (phase === "dragging" && dragKey === item.key) {
       event.stopPropagation();
-      const at = grabbedSpot(event);
-      setDragClient(at);
-      setIsHot(isDragDrop(at, targetClient()));
+      const client = grabbedSpot(event);
+      setDragClient(toFieldPoint(client));
+      setIsHot(isDragDrop(client, targetClient()));
       return;
     }
     const intent = pending.current;
@@ -281,10 +298,10 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     event.stopPropagation();
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
-    homeClient.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    homeClient.current = toFieldPoint({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
     grabOffset.current = { dx: intent.grabDx, dy: intent.grabDy };
     setDragKey(item.key);
-    setDragClient({ x: event.clientX + intent.grabDx, y: event.clientY + intent.grabDy });
+    setDragClient(toFieldPoint({ x: event.clientX + intent.grabDx, y: event.clientY + intent.grabDy }));
     setPhase("dragging");
   };
 

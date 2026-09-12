@@ -23,7 +23,7 @@
  */
 
 import { TRAVELER_QUESTS } from "./quests";
-import type { TravelerStoryView } from "./state";
+import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS, type TravelerId } from "./travelers";
 
 /* ------------------------------------------------------------------ */
@@ -70,6 +70,9 @@ interface TravelerScript {
   readonly hello: string;
   readonly quests: readonly QuestBeats[];
   readonly home: string;
+  /** Ray only -- an alternate `home` line for when he's the last one done
+   *  and the finale traveler hasn't turned up yet. */
+  readonly homeFinaleHint?: string;
 }
 
 const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
@@ -94,6 +97,11 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       },
     ],
     home: "Go on and see to your guests. Strange folk, but lost is lost, and we've always kept a door open here.",
+    /** Shown instead of `home` once every other traveler but one has gone
+     *  home and that last one hasn't turned up yet -- see `dialogueNodeFor`.
+     *  Points at the hidden zones without naming the odds or the item. */
+    homeFinaleHint:
+      "Go on and see to your guests. Though I hear there's still something buried on this land: a well, a loose board, the gear in that windmill. Might be worth a poke around before you call this place finished.",
   },
   pierre: {
     locked: "Non non, not yet. Ze kitchen is not ready, and neither, I think, are you.",
@@ -327,6 +335,16 @@ function buildNodes(): ReadonlyMap<string, StoryDialogueNode> {
       choices: CLOSE_ONLY("Take care"),
       onComplete: null,
     });
+    if (script.homeFinaleHint !== undefined) {
+      put({
+        id: `${id}.home.finale-hint`,
+        speakerName,
+        dialogueText: script.homeFinaleHint,
+        vibratePattern: HAPTIC_TICK,
+        choices: CLOSE_ONLY("Keep looking"),
+        onComplete: null,
+      });
+    }
   }
   return nodes;
 }
@@ -340,11 +358,29 @@ export function storyNode(id: string): StoryDialogueNode {
   return node;
 }
 
-/** Which node a tap on `id` opens, given what the view says about them. */
-export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView): StoryDialogueNode {
+/**
+ * Which node a tap on `id` opens, given what the view says about them.
+ *
+ * `finale` only changes what Ray says once he's home: with every other
+ * traveler done but one, and that one not unlocked yet, he points at the
+ * hidden zones instead of his usual closing line -- the only in-game nudge
+ * toward Leo now that a locked traveler doesn't stand around to be tapped
+ * (see `paintTravelers`/`setTravelerUnlocks` in stackacres-scene.ts).
+ */
+export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView, finale: StackAcresStoryFinale): StoryDialogueNode {
   if (!traveler.unlocked) return storyNode(`${id}.locked`);
   if (!traveler.met) return storyNode(`${id}.hello`);
-  if (traveler.done || traveler.quest === null) return storyNode(`${id}.home`);
+  if (traveler.done || traveler.quest === null) {
+    if (
+      id === "ray" &&
+      !finale.leoUnlocked &&
+      finale.travelersHome === finale.travelersNeeded - 1 &&
+      STORY_DIALOGUE.has("ray.home.finale-hint")
+    ) {
+      return storyNode("ray.home.finale-hint");
+    }
+    return storyNode(`${id}.home`);
+  }
   const quest = TRAVELER_QUESTS[id][traveler.quest.index];
   return storyNode(`${quest.id}.${traveler.ready ? "done" : "progress"}`);
 }

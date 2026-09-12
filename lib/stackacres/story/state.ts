@@ -273,10 +273,22 @@ export interface TravelerStoryView {
   readonly ready: boolean;
 }
 
+/** How close the farm is to Leo's finale gate. Read by Ray's own "home"
+ *  dialogue to hint at the last hidden traveler once nobody else is left --
+ *  see dialogueNodeFor in ./dialogue.ts. */
+export interface StackAcresStoryFinale {
+  /** Travelers whose whole line is done, Leo included once he joins them. */
+  readonly travelersHome: number;
+  /** How many of the other ten Leo's own gate asks for (TRAVELERS_IN_FINALE). */
+  readonly travelersNeeded: number;
+  readonly leoUnlocked: boolean;
+}
+
 export interface StackAcresStoryView {
   readonly level: number;
   readonly travelers: Readonly<Record<TravelerId, TravelerStoryView>>;
   readonly items: readonly StoryItemId[];
+  readonly finale: StackAcresStoryFinale;
 }
 
 export function storyView(
@@ -287,15 +299,18 @@ export function storyView(
 ): StackAcresStoryView {
   const full = withProgress(story, progress);
   const travelers = {} as Record<TravelerId, TravelerStoryView>;
+  let travelersHome = 0;
   for (const id of TRAVELER_IDS) {
     const entry = story.travelers[id];
     const unlock = TRAVELER_CATALOGUE[id].unlock;
     const quest = activeQuest(entry, id);
+    const done = isTravelerDone(entry, id);
+    if (done) travelersHome += 1;
     travelers[id] = {
       unlocked: storyUnlockMet(unlock, full, TRAVELERS_IN_FINALE),
       hint: storyUnlockHint(unlock, full, TRAVELERS_IN_FINALE),
       met: entry.met,
-      done: isTravelerDone(entry, id),
+      done,
       quest:
         quest === null
           ? null
@@ -312,7 +327,12 @@ export function storyView(
       ready: quest !== null && questReady(quest, entry.counts, inventory, facts),
     };
   }
-  return { level: storyLevel(progress), travelers, items: story.items };
+  return {
+    level: storyLevel(progress),
+    travelers,
+    items: story.items,
+    finale: { travelersHome, travelersNeeded: TRAVELERS_IN_FINALE, leoUnlocked: travelers.leo.unlocked },
+  };
 }
 
 /**

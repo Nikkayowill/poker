@@ -104,7 +104,7 @@ export function useStackAcresStory({ view, submit }: UseStackAcresStoryOptions):
 
   const node = useMemo(() => {
     if (anchor === null || displayed === null) return null;
-    return dialogueNodeFor(anchor.traveler, displayed.travelers[anchor.traveler]);
+    return dialogueNodeFor(anchor.traveler, displayed.travelers[anchor.traveler], displayed.finale);
   }, [anchor, displayed]);
 
   // Nodes are shared objects from STORY_DIALOGUE, so this fires once per

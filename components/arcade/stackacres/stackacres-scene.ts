@@ -127,7 +127,6 @@ import {
   RAY_HOUSE_FLIPPED,
   RAY_HOUSE_FOOTPRINT,
   RAY_HOUSE_VISUAL_NUDGE,
-  rayHouseTapAt,
   scrollToKeepUnderPointer,
   seededRandom,
   signpostHitAt,
@@ -376,11 +375,21 @@ export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
 
 interface TravelerNode {
   image: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
   cue: Phaser.GameObjects.Container | null;
   cueBob: Phaser.Tweens.Tween | null;
   /** The badge currently drawn, so `setStoryCues` can skip an unchanged one. */
   shown: StoryCue | null;
+  /** Whether this traveler has spawned yet -- see `setTravelerUnlocks`. Both
+   *  pictures start hidden in `paintTravelers`; nobody stands on the map
+   *  before their own unlock is met. */
+  unlocked: boolean;
 }
+
+/** One flag per traveler: has their unlock been met yet. Read straight off
+ *  `StackAcresStoryView.travelers[id].unlocked`, so the scene never keeps
+ *  its own copy of the rule. */
+export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 
 export interface StackAcresSceneCallbacks {
   /** Fired once the first frame with units on it has been drawn. */
@@ -1572,6 +1581,10 @@ export class StackAcresScene extends Phaser.Scene {
    *  lands before `create()` has run is held here and applied once there
    *  is a picture to hang a badge over. */
   private pendingStoryCues: StoryCues | null = null;
+  /** Mirrors `pendingStoryCues`'s own role for `setTravelerUnlocks`: a call
+   *  landing before `create()` has run is held here and applied once there
+   *  are pictures to show or hide. */
+  private pendingTravelerUnlocks: TravelerUnlocks | null = null;
   /**
    * The delivery truck's own live state and picture, or null while it is off
    * the map entirely (no open contract, or one that has not yet been asked
@@ -2260,6 +2273,11 @@ export class StackAcresScene extends Phaser.Scene {
       this.pendingMerchant = null;
       this.setMerchant(present);
     }
+    if (this.pendingTravelerUnlocks !== null) {
+      const unlocked = this.pendingTravelerUnlocks;
+      this.pendingTravelerUnlocks = null;
+      this.setTravelerUnlocks(unlocked);
+    }
     if (this.pendingStoryCues !== null) {
       const cues = this.pendingStoryCues;
       this.pendingStoryCues = null;
@@ -2384,6 +2402,19 @@ export class StackAcresScene extends Phaser.Scene {
    */
   private setRayHousePressed(pressed: boolean): void {
     this.rayHouseSprite?.setTexture(pressed ? "rayHouseOpen" : "rayHouse", ART_FRAME);
+  }
+
+  /**
+   * Whether a tapped point lands on Ray's house, tested against the drawn
+   * sprite's own screen bounds rather than a ground-plane box -- the house
+   * is a flat picture at one projected point, and a world-space rect around
+   * it projects to a diamond under the iso shear, not a bigger rectangle
+   * (see world.ts's removed `RAY_HOUSE_TAP_ZONE` for what that broke).
+   * `getBounds()` is Phaser's own box for exactly what's drawn, so this
+   * can't drift from what the player actually sees.
+   */
+  private rayHouseSpriteHitAt(sceneX: number, sceneY: number): boolean {
+    return this.rayHouseSprite?.getBounds().contains(sceneX, sceneY) ?? false;
   }
 
   /**
@@ -2875,15 +2906,24 @@ export class StackAcresScene extends Phaser.Scene {
    * Ray stands the same way the other ten do now: solid, on the same shadow
    * a body casts, holding still. He used to be drawn as a spirit -- Kayo's
    * call to retire that: Ray is alive again.
+   *
+   * Every picture is created here, at world load, but starts hidden: a
+   * traveler nobody has unlocked yet has no business standing around to be
+   * found early or tapped by accident, and creating the node regardless
+   * keeps `travelerHitAt`'s geometry and the depth-sorted draw order exactly
+   * as deterministic as they were when everyone stood from turn one.
+   * `setTravelerUnlocks` reveals each one (with a short arrival tween) the
+   * first time the story view says their unlock is met.
    */
   private paintTravelers(): void {
     for (const prop of TRAVELER_PROPS) {
       const pool = PROP_SHADOW[prop.kind];
-      this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
+      const shadow = this.put("shadow", prop.x, prop.y + 1, this.depthAt(prop.x, prop.y, -0.5))
         .setScale(pool.w / 33 / S, pool.h / 13 / S)
-        .setAlpha(0.8);
-      const image = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
-      this.travelerNodes.set(prop.traveler, { image, cue: null, cueBob: null, shown: null });
+        .setAlpha(0.8)
+        .setVisible(false);
+      const image = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y)).setVisible(false);
+      this.travelerNodes.set(prop.traveler, { image, shadow, cue: null, cueBob: null, shown: null, unlocked: false });
     }
   }
 
@@ -2946,6 +2986,50 @@ export class StackAcresScene extends Phaser.Scene {
         yoyo: true,
         repeat: -1,
         ease: "Sine.easeInOut",
+      });
+    }
+  }
+
+  /**
+   * Shows or hides each traveler as their own unlock is met or unmet --
+   * `paintTravelers` starts every one of them hidden, so this is what
+   * actually brings a traveler onto the farm. Same "push, never rebuild,
+   * skip the unchanged one" contract `setStoryCues` keeps: called with the
+   * full eleven-entry record every time the story view changes, a no-op
+   * where nothing flipped.
+   *
+   * An unlock is never expected to go back to false (every `StoryUnlock`
+   * kind in ./unlocks.ts is permanent once met), but this still honours a
+   * false the same way it honours a true rather than assume: no tween on
+   * the way out, just gone, the same as never having arrived.
+   */
+  setTravelerUnlocks(unlocked: TravelerUnlocks): void {
+    if (!this.created) {
+      this.pendingTravelerUnlocks = unlocked;
+      return;
+    }
+    for (const [id, node] of this.travelerNodes) {
+      const isUnlocked = unlocked[id] ?? false;
+      if (isUnlocked === node.unlocked) continue;
+      node.unlocked = isUnlocked;
+      if (!isUnlocked) {
+        node.image.setVisible(false);
+        node.shadow.setVisible(false);
+        continue;
+      }
+      node.shadow.setVisible(true);
+      node.image.setVisible(true);
+      if (this.options.reducedMotion) continue;
+      const arrivedScaleX = node.image.scaleX;
+      const arrivedScaleY = node.image.scaleY;
+      node.image.setAlpha(0).setScale(arrivedScaleX * 0.85, arrivedScaleY * 0.85);
+      this.tweens.add({
+        targets: node.image,
+        alpha: 1,
+        scaleX: arrivedScaleX,
+        scaleY: arrivedScaleY,
+        duration: 280,
+        ease: "Back.easeOut",
       });
     }
   }
@@ -5029,9 +5113,11 @@ export class StackAcresScene extends Phaser.Scene {
         // Ray's house presses instantly on touch, independent of whatever
         // this gesture turns out to be (a tap, a pan, a mow) -- see
         // `setRayHousePressed`'s own header for why this is a plain texture
-        // swap and not a tween.
-        const houseGround = resolveWorld(event.clientX, event.clientY);
-        if (rayHouseTapAt(houseGround.x, houseGround.y)) {
+        // swap and not a tween. Tested in scene space, the same space the
+        // house is actually drawn in -- see `rayHouseSpriteHitAt`'s own
+        // header for why a ground-space test doesn't work for it.
+        const houseScene = sceneAt(event.clientX, event.clientY);
+        if (this.rayHouseSpriteHitAt(houseScene.x, houseScene.y)) {
           this.rayHousePressPointerId = event.pointerId;
           this.setRayHousePressed(true);
         }
@@ -5387,9 +5473,12 @@ export class StackAcresScene extends Phaser.Scene {
       // Pilgrim, the same "a person wins over the structure behind them"
       // ordering, even though none of their footprints overlap the barn's.
       // Hands back the point over their head, not `local`: the bubble is
-      // theirs, not the finger's.
+      // theirs, not the finger's. Geometry alone says who stands where;
+      // `travelerHitAt` knows nothing about unlocks, so a spot reserved for
+      // someone who hasn't arrived yet falls through to whatever is under
+      // their (invisible) feet instead of opening a bubble for nobody.
       const traveler = travelerHitAt(ground.x, ground.y);
-      if (traveler !== null) {
+      if (traveler !== null && this.travelerNodes.get(traveler)?.unlocked) {
         this.callbacks.onTravelerTap(traveler, this.travelerHeadPoint(traveler));
         return;
       }
@@ -5411,10 +5500,12 @@ export class StackAcresScene extends Phaser.Scene {
       // barn, the same "structure wins over ground" priority, and its box
       // does not overlap the barn's, the silo's or the Merchant's spot
       // either (see RAY_HOUSE_FOOTPRINT's own doc comment). Tested against
-      // the wider `rayHouseTapAt`, not the tight `rayHouseHitAt`, so a tap
-      // anywhere on the visible house -- not just its narrow ground box --
-      // lands here; see that function's own header.
-      if (rayHouseTapAt(ground.x, ground.y)) {
+      // the sprite's own screen bounds, not the tight ground-space
+      // `rayHouseHitAt`, so a tap anywhere on the visible house lands here
+      // -- see `rayHouseSpriteHitAt`'s own header for why that has to be a
+      // screen-space test rather than a bigger ground-space box.
+      const scene = sceneAt(clientX, clientY);
+      if (this.rayHouseSpriteHitAt(scene.x, scene.y)) {
         this.pulseRayHouseOpen();
         this.callbacks.onRayTap(local);
         return;

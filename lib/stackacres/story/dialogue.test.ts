@@ -9,12 +9,16 @@ import {
   storyNode,
 } from "./dialogue";
 import { TRAVELER_QUESTS } from "./quests";
-import type { TravelerStoryView } from "./state";
+import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
 const LOCKED: TravelerStoryView = { unlocked: false, hint: "Unlock the Crop Fields", met: false, done: false, quest: null, ready: false };
 const UNMET: TravelerStoryView = { ...LOCKED, unlocked: true, hint: null };
 const DONE: TravelerStoryView = { ...UNMET, met: true, done: true };
+
+/** No one else home yet -- the ordinary case, matching every fixture above
+ *  except the finale test below. */
+const NOT_FINALE: StackAcresStoryFinale = { travelersHome: 0, travelersNeeded: 10, leoUnlocked: false };
 
 function onQuest(index: number, ready: boolean): TravelerStoryView {
   return { ...UNMET, met: true, ready, quest: { index, total: 3, title: "", objectives: [] } };
@@ -34,6 +38,9 @@ describe("STORY_DIALOGUE", () => {
         expected += 2;
       }
     }
+    // Ray alone also has the finale-hint variant of his `home` line.
+    expect(STORY_DIALOGUE.has("ray.home.finale-hint")).toBe(true);
+    expected += 1;
     expect(STORY_DIALOGUE.size).toBe(expected);
   });
 
@@ -89,15 +96,30 @@ describe("STORY_DIALOGUE", () => {
 
 describe("dialogueNodeFor", () => {
   it("picks the node that matches the traveler's state", () => {
-    expect(dialogueNodeFor("ray", LOCKED).id).toBe("ray.locked");
-    expect(dialogueNodeFor("ray", UNMET).id).toBe("ray.hello");
-    expect(dialogueNodeFor("ray", onQuest(0, false)).id).toBe("ray.q1.progress");
-    expect(dialogueNodeFor("ray", onQuest(0, true)).id).toBe("ray.q1.done");
-    expect(dialogueNodeFor("ray", onQuest(2, true)).id).toBe("ray.q3.done");
-    expect(dialogueNodeFor("ray", DONE).id).toBe("ray.home");
+    expect(dialogueNodeFor("ray", LOCKED, NOT_FINALE).id).toBe("ray.locked");
+    expect(dialogueNodeFor("ray", UNMET, NOT_FINALE).id).toBe("ray.hello");
+    expect(dialogueNodeFor("ray", onQuest(0, false), NOT_FINALE).id).toBe("ray.q1.progress");
+    expect(dialogueNodeFor("ray", onQuest(0, true), NOT_FINALE).id).toBe("ray.q1.done");
+    expect(dialogueNodeFor("ray", onQuest(2, true), NOT_FINALE).id).toBe("ray.q3.done");
+    expect(dialogueNodeFor("ray", DONE, NOT_FINALE).id).toBe("ray.home");
   });
 
   it("returns the shared node object, so identity tracks the beat", () => {
-    expect(dialogueNodeFor("bea", onQuest(1, false))).toBe(dialogueNodeFor("bea", onQuest(1, false)));
+    expect(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE)).toBe(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE));
+  });
+
+  it("has Ray point at the hidden zones once he's the last one home and Leo hasn't turned up", () => {
+    const oneShort: StackAcresStoryFinale = { travelersHome: 9, travelersNeeded: 10, leoUnlocked: false };
+    expect(dialogueNodeFor("ray", DONE, oneShort).id).toBe("ray.home.finale-hint");
+  });
+
+  it("goes back to Ray's plain home line once Leo has unlocked", () => {
+    const leoUp: StackAcresStoryFinale = { travelersHome: 10, travelersNeeded: 10, leoUnlocked: true };
+    expect(dialogueNodeFor("ray", DONE, leoUp).id).toBe("ray.home");
+  });
+
+  it("never gives anyone but Ray the finale hint", () => {
+    const oneShort: StackAcresStoryFinale = { travelersHome: 9, travelersNeeded: 10, leoUnlocked: false };
+    expect(dialogueNodeFor("bea", DONE, oneShort).id).toBe("bea.home");
   });
 });

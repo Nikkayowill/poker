@@ -302,6 +302,14 @@ describe("storyView", () => {
     expect(view.travelers.ray.quest).toBeNull();
     expect(view.items).toEqual(["rays_heritage_cap"]);
   });
+
+  it("counts finished lines toward the finale gate", () => {
+    const fresh = storyView(freshStory(), RUNNING_FARM, {}, TROWEL);
+    expect(fresh.finale).toEqual({ travelersHome: 0, travelersNeeded: 10, leoUnlocked: false });
+    const view = storyView(finish(freshStory(), "ray"), RUNNING_FARM, {}, TROWEL);
+    expect(view.finale.travelersHome).toBe(1);
+    expect(view.finale.travelersNeeded).toBe(10);
+  });
 });
 
 describe("applyEventToView", () => {

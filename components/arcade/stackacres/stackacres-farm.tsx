@@ -616,6 +616,38 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
   );
 }
 
+/**
+ * The Supply Store's own five shelves. Each is a full screen of the store
+ * rather than a stop on one long scroll -- a player who wants soil taps
+ * "Soil" and sees only soil, the same "one thing at a time" shape the
+ * seed/soil/feed radial menus already use out on the map. Seeds is the one
+ * shelf that still scrolls (it is Ray's whole catalogue), and that is fine:
+ * a player who opened it already knows it is nothing but seeds.
+ */
+type StoreTab = "seeds" | "soil" | "feed" | "equipment" | "drone";
+
+const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
+  { id: "seeds", label: "Seeds", icon: "ico-carrot" },
+  { id: "soil", label: "Soil", icon: "ico-plant" },
+  { id: "feed", label: "Feed", icon: "ico-feed" },
+  { id: "equipment", label: "Tools", icon: "ico-scythe" },
+  { id: "drone", label: "Drone", icon: "ico-drone" },
+];
+
+/** A bag/serving/seed price, spelled out unambiguously as Gold rather than
+ *  a bare "1,234g" -- a number with a lowercase-letter unit reads as
+ *  anything (grams, generic currency) until you already know the game's
+ *  shorthand. The coin badge is the same one the header's own balance
+ *  uses, so it never needs a second look. */
+function StoreCost({ amount }: { amount: number }) {
+  return (
+    <span className="sa-store-cost">
+      <StackAcresIcon name="ico-gold" size={13} />
+      {amount.toLocaleString()}
+    </span>
+  );
+}
+
 function countdownLabel(msLeft: number): string {
   const total = Math.max(0, Math.ceil(msLeft / 1000));
   const hours = Math.floor(total / 3600);
@@ -894,6 +926,10 @@ export function StackAcresFarm() {
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
+  /** Which shelf of the Supply Store is showing. One category on screen at
+   *  a time instead of every shelf stacked in one long scroll -- see the
+   *  store's own render block below for why. */
+  const [storeTab, setStoreTab] = useState<StoreTab>("seeds");
   const [showContracts, setShowContracts] = useState(false);
   const [showWorkshop, setShowWorkshop] = useState(false);
   /** The vat's own sheet, opened from inside the Workshop. */
@@ -2784,9 +2820,9 @@ export function StackAcresFarm() {
     [openPenFeed],
   );
 
-  /** A finger landed on the barn -- Ray's Supply Store's entryway. Same
-   *  sound-and-sheet shape `onOpenShop` already opens the store with from
-   *  Grandfather Ray's own gift dialogue; nothing goes to the server. */
+  /** A finger landed on the barn -- Ray's Supply Store's entryway. Nothing
+   *  goes to the server. (Ray's own gift dialogue no longer shortcuts here;
+   *  the barn is the only door to the store for now.) */
   const onWorldBarnTap = useCallback(() => {
     setRadial(null);
     panelSound();
@@ -4122,22 +4158,6 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
-              onOpenShop={
-                giftDialogue.npc === "ray"
-                  ? () => {
-                      panelSound();
-                      setShowStore(true);
-                    }
-                  : undefined
-              }
-              onOpenBlueprints={
-                giftDialogue.npc === "ray"
-                  ? () => {
-                      panelSound();
-                      setShowBlueprints(true);
-                    }
-                  : undefined
-              }
             />
           )}
 
@@ -4363,15 +4383,15 @@ export function StackAcresFarm() {
       </div>
 
       {showStore && (
-        <div className="sa-sheet-scrim" role="dialog" aria-modal="true" aria-label="Supply store">
-          <div className="sa-sheet">
-            <header className="sa-sheet-head">
-              <div>
-                <div className="sa-ray-row">
-                  <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
+        <div className="sa-store-scrim" role="dialog" aria-modal="true" aria-label="Supply store">
+          <div className="sa-store-card">
+            <header className="sa-store-head">
+              <div className="sa-ray-row">
+                <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
+                <div>
                   <span className="sa-ray-name">Grandfather Ray</span>
+                  <h2>Supply store</h2>
                 </div>
-                <h2>Supply store</h2>
               </div>
               <button
                 type="button"
@@ -4386,440 +4406,451 @@ export function StackAcresFarm() {
                 by a button in here has to be answered in here. */}
             {error && <p className="duel-error" role="alert">{error}</p>}
 
-            {/* What the day has left comes first. It is the only number in
-                here a player has to plan around: the farm can send out the
-                same Gold whatever it owns, so a full bar is the reason to go
-                and harvest and an empty one is the reason to stop. */}
-            <StoreShelf icon="ico-gold">Today&apos;s allowance</StoreShelf>
-            <div className="sa-exchange">
-              <p className="sa-sheet-note">
-                Bringing in a harvest pays Gold on the spot. Every farm can send out the same{" "}
-                {exchange.ceiling.toLocaleString()} Gold a day, whatever it owns — more stock fills
-                the day faster, it never makes the day bigger.
-              </p>
-              <p className="sa-exchange-meter">
+            {/* The day's Gold ceiling and land upkeep constrain every shelf
+                below rather than belonging to one of them, so they sit above
+                the tabs as a compact status strip instead of costing their
+                own tap or their own long paragraph. */}
+            <div className="sa-store-status">
+              <div className="sa-store-status-row">
                 <span className="sa-exchange-bar" aria-hidden="true">
                   <span style={{ transform: `scaleX(${exchangeLeft})` }} />
                 </span>
                 <span aria-live="polite">
-                  <strong>{exchange.remaining.toLocaleString()}</strong> of{" "}
+                  <strong>{exchange.remaining.toLocaleString()}</strong> /{" "}
                   {exchange.ceiling.toLocaleString()} Gold left today
                 </span>
-              </p>
+              </div>
               {exchange.remaining < 1 && (
-                <p className="sa-sheet-note">
-                  That is everything this farm can send out today. Anything still standing keeps
-                  until the day turns over, in {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}.
+                <p className="sa-store-status-note">
+                  Anything still standing keeps until the day turns over, in{" "}
+                  {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}.
                 </p>
               )}
-            </div>
-
-            <StoreShelf icon="ico-harvest">Land maintenance</StoreShelf>
-            <p className="sa-sheet-note">
-              Holding cleared land costs <strong>{upkeep.fee.toLocaleString()} Gold</strong> a day
-              across {upkeep.plots} {upkeep.plots === 1 ? "plot" : "plots"}, and the first three are
-              free. It comes out of what you harvest, never out of your balance, and it climbs
-              faster than the land earns — a big estate keeps less of every extra plot than a small
-              one does.
-            </p>
-            <p className="sa-sheet-note">
-              {upkeep.due > 0 ? (
-                <>
-                  Today has <strong>{upkeep.due.toLocaleString()} Gold</strong> still to pay. Your
-                  next harvest covers what it can.
-                </>
-              ) : (
-                <>Today is paid up.</>
-              )}
-            </p>
-
-            {/* Between feed and the exchange window on purpose. A tool is
-                bought with GOLD, like the exchange below it, but it is a
-                thing you own rather than money leaving the farm -- so it sits
-                on the near side of that line. */}
-            <StoreShelf icon="ico-scythe">Equipment</StoreShelf>
-            <div className="sa-tool-rack">
-              <img
-                src={stackacresToolTierDef(toolTier).sprite}
-                alt=""
-                className="sa-tool-art"
-                width={96}
-                height={96}
-              />
-              <div className="sa-tool-copy">
-                <h3>{stackacresToolTierDef(toolTier).label}</h3>
-                <p className="sa-stock-terms">{stackacresToolTierDef(toolTier).blurb}</p>
+              <div className="sa-store-status-row">
+                <span className="sa-store-status-label">Land maintenance</span>
+                <span>
+                  {upkeep.due > 0 ? `${upkeep.due.toLocaleString()} Gold due` : "Paid up"} —{" "}
+                  {upkeep.fee.toLocaleString()}/day, {upkeep.plots}{" "}
+                  {upkeep.plots === 1 ? "plot" : "plots"}
+                </span>
               </div>
             </div>
-            {(() => {
-              // The ladder is walked one rung at a time and the SERVER decides
-              // from what -- this only renders the next rung's price, so there
-              // is no list of rungs here to get out of step with the server's
-              // own idea of which one is next.
-              const next = nextToolTier(toolTier);
-              const listPrice = toolUpgradePrice(toolTier);
-              if (!next || listPrice === null) {
-                return (
-                  <p className="sa-sheet-note">
-                    You hold the finest tool on the farm. Nothing left to buy here.
-                  </p>
-                );
-              }
-              // Town Favor discount, read off the same Influence total the
-              // server will charge against -- see influence-tiers.ts and
-              // upgradeStackAcresTool's identical read server-side.
-              const price = applyInfluenceDiscount(listPrice, influence);
-              const def = stackacresToolTierDef(next);
-              // `unlimitedGold` makes spendGold a no-op server-side, so a
-              // profile carrying it can always afford this -- disabling the
-              // button on their balance would be the client refusing a
-              // purchase the server would have allowed.
-              const affordable =
-                (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
-              // Unlimited Gold is a purse exemption, not a progression one:
-              // the milestone gate is about what the farm has done, so it
-              // applies to every account the same way.
-              const lock = evaluateStackAcresShopLock(def, shopProgress);
-              return (
-                <div className="sa-stock-cards">
-                  <div className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
-                    <img src={def.sprite} alt="" className="sa-tool-art" width={72} height={72} />
-                    <h3>{def.label}</h3>
-                    <p className="sa-stock-terms">{def.blurb}</p>
-                    {/* The price stays visible while locked, deliberately --
-                        the sector modal shows its clearing cost to somebody
-                        who does not qualify yet for the same reason: you
-                        cannot decide to save up for a number you have never
-                        been shown. */}
-                    <p className="sa-stock-yield">
-                      {price < listPrice ? (
-                        <>
-                          <span className="sa-stock-was">{listPrice.toLocaleString()}</span>{" "}
-                          {price.toLocaleString()} Gold
-                        </>
-                      ) : (
-                        `${price.toLocaleString()} Gold`
-                      )}
-                    </p>
-                    {lock.lockHint && (
-                      <p className="sa-lock-hint" id="sa-lock-hint-tool">
-                        <Lock size={13} aria-hidden="true" />
-                        <span>{lock.lockHint}</span>
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      className="sa-cta"
-                      disabled={!lock.isUnlocked || isPending("upgrade-tool") || !affordable}
-                      aria-describedby={lock.lockHint ? "sa-lock-hint-tool" : undefined}
-                      onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
-                    >
-                      {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-            <p className="sa-sheet-note">
-              A better spade makes a harvest more likely to come up rich, and a rich harvest brings
-              in extra produce on top.
-            </p>
 
-            {/* Grass cutters, kept apart from the spades so a spade never
-                mows the meadow. An owned one gets a Use button, the same swap
-                the picker beside the Mow key offers. */}
-            <StoreShelf icon="ico-scythe">Mowing</StoreShelf>
-            <div className="sa-stock-cards">
-              {STACKACRES_CUTTERS.map((id) => {
-                const def = stackacresCutterDef(id);
-                const owned = cutters.includes(id);
-                const lock = evaluateStackAcresShopLock(def, shopProgress);
-                const listPrice = def.price ?? 0;
-                const price = applyInfluenceDiscount(listPrice, influence);
-                const affordable =
-                  (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
-                const hintId = `sa-lock-hint-${id}`;
-                return (
-                  <div
-                    key={id}
-                    className={owned || lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}
-                  >
-                    <StackAcresIcon name={def.icon as PainterName} size={72} className="sa-tool-art" />
-                    <h3>{def.label}</h3>
-                    <p className="sa-stock-terms">{def.blurb}</p>
-                    {owned ? (
-                      <button
-                        type="button"
-                        className="sa-cta"
-                        disabled={cutter === id}
-                        onClick={() => pickCutter(id)}
-                      >
-                        {cutter === id ? "In hand" : "Use"}
-                      </button>
-                    ) : (
-                      <>
-                        <p className="sa-stock-yield">
-                          {price < listPrice ? (
-                            <>
-                              <span className="sa-stock-was">{listPrice.toLocaleString()}</span>{" "}
-                              {price.toLocaleString()} Gold
-                            </>
-                          ) : (
-                            `${price.toLocaleString()} Gold`
-                          )}
-                        </p>
-                        {lock.lockHint && (
-                          <p className="sa-lock-hint" id={hintId}>
-                            <Lock size={13} aria-hidden="true" />
-                            <span>{lock.lockHint}</span>
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          className="sa-cta"
-                          disabled={!lock.isUnlocked || isPending("buy-cutter") || !affordable}
-                          aria-describedby={lock.lockHint ? hintId : undefined}
-                          onClick={() => {
-                            if (!isStackAcresBuyableCutter(id)) return;
-                            buySound();
-                            void act({ action: "buy-cutter", cutter: id });
-                          }}
-                        >
-                          {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <StoreShelf icon="ico-plant">Soil</StoreShelf>
-            <p className="sa-sheet-note">
-              Beds are laid in the Crop Fields, not here — buy the bags, then tap bare ground out
-              there to lay one. A bed you take up is spent, so pick the spot before you dig.
-            </p>
-            <div className="sa-stock-cards">
-              {SOIL_TIERS.map((tier) => {
-                const def = soilTierDef(tier);
-                const held = soilStock[tier] ?? 0;
-                // Tier-blind by design (see farm-actions.ts's `intentOf`): one
-                // soil purchase in flight, of any tier or size, holds every
-                // tier's buttons here rather than just this one's.
-                const pending = isPending("buy-soil");
-                return (
-                  <div key={tier} className="sa-stock-card">
-                    <h3>{def.label}</h3>
-                    <p className="sa-stock-terms">{def.blurb}</p>
-                    <p className="sa-stock-yield">{def.price.toLocaleString()} Gold / bag</p>
-                    <div className="sa-buy-qty-row">
-                      {BULK_BUY_QUANTITIES.filter((quantity) => quantity <= SOIL_BAGS_PER_PURCHASE).map(
-                        (quantity) => {
-                          const cost = def.price * quantity;
-                          return (
-                            <button
-                              key={quantity}
-                              type="button"
-                              className="sa-cta"
-                              disabled={pending || gold < cost}
-                              onClick={() => {
-                                buySound();
-                                void act({ action: "buy-soil", tier, quantity });
-                              }}
-                            >
-                              <span>{quantity}x</span>
-                              <span className="sa-buy-qty-cost">{cost.toLocaleString()}g</span>
-                            </button>
-                          );
-                        },
-                      )}
-                    </div>
-                    <p className="sa-sheet-note">
-                      {held} in the barn
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Crops are out of the active scope this pass (lib/stackacres/
-                scope.ts) -- the loop is Hens, the Wheat field and Cattle. The
-                shelf stays reachable behind one disclosure rather than
-                vanishing, so seed a player already bought is never stranded,
-                but it no longer fills the store with 22 rows by default. */}
-            <details className="sa-store-more">
-              <summary>
-                <StoreShelf icon="ico-carrot">More crops ({STACKACRES_CROPS.length})</StoreShelf>
-              </summary>
-              <p className="sa-sheet-note">
-                Not part of the starter loop yet. Buy a few, then tap bare ground in the Long
-                Meadow to plant.
-              </p>
-              <div className="sa-stock-cards">
-                {STACKACRES_CROPS.map((crop) => {
-                  const def = STACKACRES_CATALOGUE[crop];
-                  const held = seedStock[crop] ?? 0;
-                  const pending = isPending(`buy-seed:${crop}`);
-                  return (
-                    <div key={crop} className="sa-stock-card">
-                      <h3>{def.label}</h3>
-                      <p className="sa-stock-yield">{def.seedCost.toLocaleString()} Gold / seed</p>
-                      <div className="sa-buy-qty-row">
-                        {BULK_BUY_QUANTITIES.filter(
-                          (quantity) => quantity <= STACKACRES_SEED_BAGS_PER_PURCHASE,
-                        ).map((quantity) => {
-                          const cost = def.seedCost * quantity;
-                          return (
-                            <button
-                              key={quantity}
-                              type="button"
-                              className="sa-cta"
-                              disabled={pending || gold < cost}
-                              onClick={() => {
-                                buySound();
-                                void act({ action: "buy-seed", crop, quantity });
-                              }}
-                            >
-                              <span>{quantity}x</span>
-                              <span className="sa-buy-qty-cost">{cost.toLocaleString()}g</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <p className="sa-sheet-note">
-                        {held} in the barn
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </details>
-
-            <StoreShelf icon="ico-feed">Feed</StoreShelf>
-            <p className="sa-sheet-note">
-              Animals eat. A hungry pen stops working until you feed it, so keep a shipment in the
-              barn before you leave a Cattle Pen overnight.
-            </p>
-            <div className="sa-stock-cards">
-              {/* Locked rows are shown greyed rather than dropped. A shelf
-                  that silently shortens teaches nothing: the Bulk Shipment
-                  going missing looks like a bug, whereas the Bulk Shipment
-                  sitting there saying what it wants is the progression being
-                  legible. (The wild-ground rule in sectors.ts is the opposite
-                  and stays so -- that is about the WORLD, where a padlock
-                  floating over a field would be nonsense; this is a shop.) */}
-              {Object.entries(STACKACRES_FEED).map(([id, item]) => {
-                const lock = evaluateStackAcresShopLock(item, shopProgress);
-                // Town Favor discount -- same read as the tool tier card
-                // above, and the same price upgradeStackAcresTool's sibling
-                // buyStackAcresFeed will actually charge.
-                const price = applyInfluenceDiscount(item.cost, influence);
-                const pending = isPending(`buy-feed:${id}`);
-                return (
-                  <div key={id} className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
-                    <h3>{item.label}</h3>
-                    <p className="sa-stock-terms">{item.servings} servings</p>
-                    <p className="sa-stock-yield">
-                      {price < item.cost && (
-                        <span className="sa-stock-was">{item.cost.toLocaleString()}</span>
-                      )}{" "}
-                      {price.toLocaleString()} Gold{" "}
-                      <span>({Math.round(price / item.servings)} each)</span>
-                    </p>
-                    {lock.lockHint && (
-                      <p className="sa-lock-hint" id={`sa-lock-hint-${id}`}>
-                        <Lock size={13} aria-hidden="true" />
-                        <span>{lock.lockHint}</span>
-                      </p>
-                    )}
-                    {lock.isUnlocked ? (
-                      <div className="sa-buy-qty-row">
-                        {BULK_BUY_QUANTITIES.filter(
-                          (quantity) => quantity <= STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
-                        ).map((quantity) => {
-                          const cost = price * quantity;
-                          return (
-                            <button
-                              key={quantity}
-                              type="button"
-                              className="sa-cta"
-                              disabled={pending || gold < cost}
-                              onClick={() => {
-                                buySound();
-                                void act({ action: "buy-feed", itemId: id, quantity });
-                              }}
-                            >
-                              <span>{quantity}x</span>
-                              <span className="sa-buy-qty-cost">{cost.toLocaleString()}g</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="sa-cta"
-                        disabled
-                        aria-describedby={lock.lockHint ? `sa-lock-hint-${id}` : undefined}
-                      >
-                        Locked
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="sa-sheet-note">
-              You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the barn.
-            </p>
-
-            {/* Requirement's UI half: the hangar and its Gold, hangar-locked
-                state, and cost were all live server-side already (see
-                stackacres-drone-service.ts) with nothing on the sheet to tap
-                -- this is that missing button. Locked shown greyed rather
-                than hidden, same "the shelf says what it wants" rule the
-                Feed rows above follow. */}
-            <StoreShelf icon="ico-drone">Drone Hangar</StoreShelf>
-            <p className="sa-sheet-note">
-              A Mechanical Forage Drone patrols a district&apos;s outer edge on its own and vacuums
-              up whatever forage it finds along the way. Deploying one is a standing purchase, not a
-              single-use item — each drone you own keeps patrolling until you leave the farm.
-            </p>
-            <div className="sa-stock-cards">
-              <div className={droneHangar.unlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
-                <h3>Mechanical Forage Drone</h3>
-                <p className="sa-stock-terms">
-                  {droneHangar.drones.length > 0
-                    ? `${droneHangar.drones.length} patrolling now`
-                    : "None deployed yet"}
-                </p>
-                <p className="sa-stock-yield">{DRONE_DEPLOY_COST_GOLD.toLocaleString()} Gold</p>
-                {!droneHangar.unlocked && (
-                  <p className="sa-lock-hint" id="sa-lock-hint-drone">
-                    <Lock size={13} aria-hidden="true" />
-                    <span>Earn every one of the farm&apos;s milestones to unlock the hangar.</span>
-                  </p>
-                )}
+            <div className="sa-store-tabs" role="tablist" aria-label="Store shelf">
+              {STORE_TABS.map((tab) => (
                 <button
+                  key={tab.id}
                   type="button"
-                  className="sa-cta"
-                  disabled={
-                    !droneHangar.unlocked ||
-                    isPending("deploy-drone") ||
-                    (!(profile?.unlimitedGold ?? false) && gold < DRONE_DEPLOY_COST_GOLD)
-                  }
-                  aria-describedby={!droneHangar.unlocked ? "sa-lock-hint-drone" : undefined}
-                  onClick={() => { buySound(); void act({ action: "deploy-drone" }); }}
+                  role="tab"
+                  aria-selected={storeTab === tab.id}
+                  className={clsx("sa-store-tab", storeTab === tab.id && "sa-store-tab-active")}
+                  onClick={() => { panelSound(); setStoreTab(tab.id); }}
                 >
-                  {!droneHangar.unlocked
-                    ? "Locked"
-                    : (profile?.unlimitedGold ?? false) || gold >= DRONE_DEPLOY_COST_GOLD
-                      ? "Deploy"
-                      : "Not enough Gold"}
+                  <StackAcresIcon name={tab.icon} size={18} />
+                  <span>{tab.label}</span>
                 </button>
-              </div>
+              ))}
             </div>
 
+            <div className="sa-store-panel" role="tabpanel">
+              {storeTab === "seeds" && (
+                <>
+                  <p className="sa-sheet-note">
+                    {STACKACRES_CROPS.length} seeds, not part of the starter loop yet — buy a few,
+                    then tap bare ground in the Long Meadow to plant.
+                  </p>
+                  <div className="sa-stock-cards">
+                    {STACKACRES_CROPS.map((crop) => {
+                      const def = STACKACRES_CATALOGUE[crop];
+                      const held = seedStock[crop] ?? 0;
+                      const pending = isPending(`buy-seed:${crop}`);
+                      return (
+                        <div key={crop} className="sa-stock-card">
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-yield">
+                            <StoreCost amount={def.seedCost} /> / seed
+                          </p>
+                          <div className="sa-buy-qty-row">
+                            {BULK_BUY_QUANTITIES.filter(
+                              (quantity) => quantity <= STACKACRES_SEED_BAGS_PER_PURCHASE,
+                            ).map((quantity) => {
+                              const cost = def.seedCost * quantity;
+                              return (
+                                <button
+                                  key={quantity}
+                                  type="button"
+                                  className="sa-cta"
+                                  disabled={pending || gold < cost}
+                                  onClick={() => {
+                                    buySound();
+                                    void act({ action: "buy-seed", crop, quantity });
+                                  }}
+                                >
+                                  <span>{quantity}x</span>
+                                  <StoreCost amount={cost} />
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="sa-sheet-note">
+                            {held} in the barn
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {storeTab === "soil" && (
+                <>
+                  <p className="sa-sheet-note">
+                    Beds are laid in the Crop Fields, not here — buy the bags, then tap bare ground
+                    out there to lay one. A bed you take up is spent, so pick the spot before you
+                    dig.
+                  </p>
+                  <div className="sa-stock-cards">
+                    {SOIL_TIERS.map((tier) => {
+                      const def = soilTierDef(tier);
+                      const held = soilStock[tier] ?? 0;
+                      // Tier-blind by design (see farm-actions.ts's `intentOf`):
+                      // one soil purchase in flight, of any tier or size, holds
+                      // every tier's buttons here rather than just this one's.
+                      const pending = isPending("buy-soil");
+                      return (
+                        <div key={tier} className="sa-stock-card">
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-terms">{def.blurb}</p>
+                          <p className="sa-stock-yield">
+                            <StoreCost amount={def.price} /> / bag
+                          </p>
+                          <div className="sa-buy-qty-row">
+                            {BULK_BUY_QUANTITIES.filter(
+                              (quantity) => quantity <= SOIL_BAGS_PER_PURCHASE,
+                            ).map((quantity) => {
+                              const cost = def.price * quantity;
+                              return (
+                                <button
+                                  key={quantity}
+                                  type="button"
+                                  className="sa-cta"
+                                  disabled={pending || gold < cost}
+                                  onClick={() => {
+                                    buySound();
+                                    void act({ action: "buy-soil", tier, quantity });
+                                  }}
+                                >
+                                  <span>{quantity}x</span>
+                                  <StoreCost amount={cost} />
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="sa-sheet-note">
+                            {held} in the barn
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {storeTab === "feed" && (
+                <>
+                  <p className="sa-sheet-note">
+                    Animals eat. A hungry pen stops working until you feed it, so keep a shipment
+                    in the barn before you leave a Cattle Pen overnight.
+                  </p>
+                  <div className="sa-stock-cards">
+                    {/* Locked rows are shown greyed rather than dropped. A shelf
+                        that silently shortens teaches nothing: the Bulk
+                        Shipment going missing looks like a bug, whereas the
+                        Bulk Shipment sitting there saying what it wants is the
+                        progression being legible. (The wild-ground rule in
+                        sectors.ts is the opposite and stays so -- that is
+                        about the WORLD, where a padlock floating over a field
+                        would be nonsense; this is a shop.) */}
+                    {Object.entries(STACKACRES_FEED).map(([id, item]) => {
+                      const lock = evaluateStackAcresShopLock(item, shopProgress);
+                      // Town Favor discount -- same read as the tool tier card
+                      // below, and the same price upgradeStackAcresTool's
+                      // sibling buyStackAcresFeed will actually charge.
+                      const price = applyInfluenceDiscount(item.cost, influence);
+                      const pending = isPending(`buy-feed:${id}`);
+                      return (
+                        <div
+                          key={id}
+                          className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}
+                        >
+                          <h3>{item.label}</h3>
+                          <p className="sa-stock-terms">{item.servings} servings</p>
+                          <p className="sa-stock-yield">
+                            {price < item.cost && (
+                              <span className="sa-stock-was">{item.cost.toLocaleString()}</span>
+                            )}{" "}
+                            <StoreCost amount={price} />{" "}
+                            <span>({Math.round(price / item.servings)} each)</span>
+                          </p>
+                          {lock.lockHint && (
+                            <p className="sa-lock-hint" id={`sa-lock-hint-${id}`}>
+                              <Lock size={13} aria-hidden="true" />
+                              <span>{lock.lockHint}</span>
+                            </p>
+                          )}
+                          {lock.isUnlocked ? (
+                            <div className="sa-buy-qty-row">
+                              {BULK_BUY_QUANTITIES.filter(
+                                (quantity) => quantity <= STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
+                              ).map((quantity) => {
+                                const cost = price * quantity;
+                                return (
+                                  <button
+                                    key={quantity}
+                                    type="button"
+                                    className="sa-cta"
+                                    disabled={pending || gold < cost}
+                                    onClick={() => {
+                                      buySound();
+                                      void act({ action: "buy-feed", itemId: id, quantity });
+                                    }}
+                                  >
+                                    <span>{quantity}x</span>
+                                    <StoreCost amount={cost} />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled
+                              aria-describedby={lock.lockHint ? `sa-lock-hint-${id}` : undefined}
+                            >
+                              Locked
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="sa-sheet-note">
+                    You have <strong>{feed}</strong> {feed === 1 ? "serving" : "servings"} in the
+                    barn.
+                  </p>
+                </>
+              )}
+
+              {storeTab === "equipment" && (
+                <>
+                  <StoreShelf icon="ico-scythe">Spade</StoreShelf>
+                  <div className="sa-tool-rack">
+                    <img
+                      src={stackacresToolTierDef(toolTier).sprite}
+                      alt=""
+                      className="sa-tool-art"
+                      width={96}
+                      height={96}
+                    />
+                    <div className="sa-tool-copy">
+                      <h3>{stackacresToolTierDef(toolTier).label}</h3>
+                      <p className="sa-stock-terms">{stackacresToolTierDef(toolTier).blurb}</p>
+                    </div>
+                  </div>
+                  {(() => {
+                    // The ladder is walked one rung at a time and the SERVER
+                    // decides from what -- this only renders the next rung's
+                    // price, so there is no list of rungs here to get out of
+                    // step with the server's own idea of which one is next.
+                    const next = nextToolTier(toolTier);
+                    const listPrice = toolUpgradePrice(toolTier);
+                    if (!next || listPrice === null) {
+                      return (
+                        <p className="sa-sheet-note">
+                          You hold the finest tool on the farm. Nothing left to buy here.
+                        </p>
+                      );
+                    }
+                    // Town Favor discount, read off the same Influence total
+                    // the server will charge against -- see
+                    // influence-tiers.ts and upgradeStackAcresTool's identical
+                    // read server-side.
+                    const price = applyInfluenceDiscount(listPrice, influence);
+                    const def = stackacresToolTierDef(next);
+                    // `unlimitedGold` makes spendGold a no-op server-side, so
+                    // a profile carrying it can always afford this --
+                    // disabling the button on their balance would be the
+                    // client refusing a purchase the server would have
+                    // allowed.
+                    const affordable =
+                      (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+                    // Unlimited Gold is a purse exemption, not a progression
+                    // one: the milestone gate is about what the farm has
+                    // done, so it applies to every account the same way.
+                    const lock = evaluateStackAcresShopLock(def, shopProgress);
+                    return (
+                      <div className="sa-stock-cards">
+                        <div className={lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
+                          <img src={def.sprite} alt="" className="sa-tool-art" width={72} height={72} />
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-terms">{def.blurb}</p>
+                          {/* The price stays visible while locked,
+                              deliberately -- the sector modal shows its
+                              clearing cost to somebody who does not qualify
+                              yet for the same reason: you cannot decide to
+                              save up for a number you have never been
+                              shown. */}
+                          <p className="sa-stock-yield">
+                            {price < listPrice && (
+                              <span className="sa-stock-was">{listPrice.toLocaleString()}</span>
+                            )}{" "}
+                            <StoreCost amount={price} />
+                          </p>
+                          {lock.lockHint && (
+                            <p className="sa-lock-hint" id="sa-lock-hint-tool">
+                              <Lock size={13} aria-hidden="true" />
+                              <span>{lock.lockHint}</span>
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            className="sa-cta"
+                            disabled={!lock.isUnlocked || isPending("upgrade-tool") || !affordable}
+                            aria-describedby={lock.lockHint ? "sa-lock-hint-tool" : undefined}
+                            onClick={() => { buySound(); void act({ action: "upgrade-tool" }); }}
+                          >
+                            {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <p className="sa-sheet-note">
+                    A better spade makes a harvest more likely to come up rich, and a rich harvest
+                    brings in extra produce on top.
+                  </p>
+
+                  {/* Grass cutters, kept apart from the spades so a spade
+                      never mows the meadow. An owned one gets a Use button,
+                      the same swap the picker beside the Mow key offers. */}
+                  <StoreShelf icon="ico-scythe">Mower</StoreShelf>
+                  <div className="sa-stock-cards">
+                    {STACKACRES_CUTTERS.map((id) => {
+                      const def = stackacresCutterDef(id);
+                      const owned = cutters.includes(id);
+                      const lock = evaluateStackAcresShopLock(def, shopProgress);
+                      const listPrice = def.price ?? 0;
+                      const price = applyInfluenceDiscount(listPrice, influence);
+                      const affordable =
+                        (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= price;
+                      const hintId = `sa-lock-hint-${id}`;
+                      return (
+                        <div
+                          key={id}
+                          className={owned || lock.isUnlocked ? "sa-stock-card" : "sa-stock-card is-locked"}
+                        >
+                          <StackAcresIcon name={def.icon as PainterName} size={72} className="sa-tool-art" />
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-terms">{def.blurb}</p>
+                          {owned ? (
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled={cutter === id}
+                              onClick={() => pickCutter(id)}
+                            >
+                              {cutter === id ? "In hand" : "Use"}
+                            </button>
+                          ) : (
+                            <>
+                              <p className="sa-stock-yield">
+                                {price < listPrice && (
+                                  <span className="sa-stock-was">{listPrice.toLocaleString()}</span>
+                                )}{" "}
+                                <StoreCost amount={price} />
+                              </p>
+                              {lock.lockHint && (
+                                <p className="sa-lock-hint" id={hintId}>
+                                  <Lock size={13} aria-hidden="true" />
+                                  <span>{lock.lockHint}</span>
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                className="sa-cta"
+                                disabled={!lock.isUnlocked || isPending("buy-cutter") || !affordable}
+                                aria-describedby={lock.lockHint ? hintId : undefined}
+                                onClick={() => {
+                                  if (!isStackAcresBuyableCutter(id)) return;
+                                  buySound();
+                                  void act({ action: "buy-cutter", cutter: id });
+                                }}
+                              >
+                                {!lock.isUnlocked ? "Locked" : affordable ? "Buy" : "Not enough Gold"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {storeTab === "drone" && (
+                <>
+                  {/* Requirement's UI half: the hangar and its Gold,
+                      hangar-locked state, and cost were all live server-side
+                      already (see stackacres-drone-service.ts) with nothing
+                      on the sheet to tap -- this is that missing button.
+                      Locked shown greyed rather than hidden, same "the shelf
+                      says what it wants" rule the Feed rows follow. */}
+                  <p className="sa-sheet-note">
+                    A Mechanical Forage Drone patrols a district&apos;s outer edge on its own and
+                    vacuums up whatever forage it finds along the way. Deploying one is a standing
+                    purchase, not a single-use item — each drone you own keeps patrolling until you
+                    leave the farm.
+                  </p>
+                  <div className="sa-stock-cards">
+                    <div className={droneHangar.unlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
+                      <h3>Mechanical Forage Drone</h3>
+                      <p className="sa-stock-terms">
+                        {droneHangar.drones.length > 0
+                          ? `${droneHangar.drones.length} patrolling now`
+                          : "None deployed yet"}
+                      </p>
+                      <p className="sa-stock-yield">
+                        <StoreCost amount={DRONE_DEPLOY_COST_GOLD} />
+                      </p>
+                      {!droneHangar.unlocked && (
+                        <p className="sa-lock-hint" id="sa-lock-hint-drone">
+                          <Lock size={13} aria-hidden="true" />
+                          <span>Earn every one of the farm&apos;s milestones to unlock the hangar.</span>
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        className="sa-cta"
+                        disabled={
+                          !droneHangar.unlocked ||
+                          isPending("deploy-drone") ||
+                          (!(profile?.unlimitedGold ?? false) && gold < DRONE_DEPLOY_COST_GOLD)
+                        }
+                        aria-describedby={!droneHangar.unlocked ? "sa-lock-hint-drone" : undefined}
+                        onClick={() => { buySound(); void act({ action: "deploy-drone" }); }}
+                      >
+                        {!droneHangar.unlocked
+                          ? "Locked"
+                          : (profile?.unlimitedGold ?? false) || gold >= DRONE_DEPLOY_COST_GOLD
+                            ? "Deploy"
+                            : "Not enough Gold"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

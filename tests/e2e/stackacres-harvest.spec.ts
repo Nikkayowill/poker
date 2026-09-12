@@ -180,13 +180,16 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     await page.getByRole("button", { name: /Buy from Ray/i }).click();
     const sheet = page.getByRole("dialog", { name: "Supply store" });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByText(/Today.s allowance/i)).toBeVisible();
+    // The day's Gold ceiling and land maintenance sit in a compact status
+    // strip above the tabs now, visible without picking a shelf.
     await expect(sheet.getByText(/15,000 Gold left today/)).toBeVisible();
     await expect(sheet.getByText(/Land maintenance/i)).toBeVisible();
-    await expect(sheet.getByText(/Holding cleared land costs/i)).toBeVisible();
+    await expect(sheet.getByText(/Paid up/i)).toBeVisible();
 
-    // Feed is priced in Gold now, and the exchange window it used to sit above
-    // is gone entirely.
+    // Feed is its own tab now, one of five shelves instead of the whole
+    // sheet stacked in one scroll -- and it is still priced in Gold, with
+    // no exchange window in sight.
+    await sheet.getByRole("tab", { name: "Feed" }).click();
     await expect(sheet.getByText(/96 Gold/)).toBeVisible();
     await expect(sheet.getByText(/Exchange window/i)).toHaveCount(0);
     await expect(sheet.getByText(/Bushels/i)).toHaveCount(0);

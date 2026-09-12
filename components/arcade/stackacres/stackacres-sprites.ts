@@ -42,9 +42,11 @@
  *   characters. They are also wider than they are tall now, which is simply
  *   what an isometric camera does to a tree.
  *
- * `flower1/2/3`, `rock`, `log`, `mushroom` and `boulder` are the scenery this
- * does NOT cover, and cannot: it is a plant pack, and it has no flower and no
- * stone in it. They are still painters.
+ * `flower1/2/3` and `rock` are scenery this plant pack does NOT cover, and
+ * cannot: it has no flower and no stone in it. They are still painters.
+ * `log`, `mushroom` and `boulder` used to be in that same boat but are not
+ * anymore -- they are FLUX-generated now too, just from a separate isometric
+ * organic pipeline (task-remaining-props), not this plant pack.
  *
  * `grassTile` is in here but is not one of these: it is not a painter, it has
  * no box and no anchor, and it is never wrapped by `spriteBacked`. It rides
@@ -278,6 +280,37 @@ export const SPRITE_ART = {
   travelerWes: "/stackacres/sprites/traveler-wes.png",
   travelerBea: "/stackacres/sprites/traveler-bea.png",
   travelerLeo: "/stackacres/sprites/traveler-leo.png",
+  // The yard props and woodland litter (lib/stackacres/props.ts,
+  // art-props.ts's PROP_PAINTERS), FLUX-generated at an isometric organic
+  // STYLE contract distinct from the flat-vector RAMPS system on purpose --
+  // the ground they stand on (grassTile above, and the sea/pond tiles
+  // art-terrain.ts loads separately) is an organic, painterly, noisy texture
+  // pack, not a flat fill, so these lean into FLUX's native gradients and
+  // texture grain instead of fighting them the way cutterMower/toolTrowel
+  // above do. See
+  // project_stackacres_isometric_organic_prop_style memory for the approved
+  // STYLE string and the pipeline (~/.local/share/flux-sprite-test/task-well,
+  // task-remaining-props). `well` ships its idle frame only for now -- the
+  // bucket-lowering animation phase has no wiring yet and is future work.
+  well: "/stackacres/sprites/well.png",
+  wheelbarrow: "/stackacres/sprites/wheelbarrow.png",
+  crate: "/stackacres/sprites/crate.png",
+  logPile: "/stackacres/sprites/log-pile.png",
+  toolBarrel: "/stackacres/sprites/tool-barrel.png",
+  mailbox: "/stackacres/sprites/mailbox.png",
+  signpost: "/stackacres/sprites/signpost.png",
+  lampPost: "/stackacres/sprites/lamp-post.png",
+  flowerBed: "/stackacres/sprites/flower-bed.png",
+  stoneWall: "/stackacres/sprites/stone-wall.png",
+  scarecrow: "/stackacres/sprites/scarecrow.png",
+  truck: "/stackacres/sprites/truck.png",
+  windmillBlades: "/stackacres/sprites/windmill-blades.png",
+  log: "/stackacres/sprites/log.png",
+  mushroom: "/stackacres/sprites/mushroom.png",
+  boulder: "/stackacres/sprites/boulder.png",
+  // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
+  // travelers above rather than the organic-isometric prop contract.
+  midnightMerchant: "/stackacres/sprites/midnight-merchant.png",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;

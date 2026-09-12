@@ -2354,6 +2354,28 @@ export const PAINTERS: Record<PainterName, Painter> = {
   travelerWes: spriteBacked("travelerWes", DRAWN.travelerWes),
   travelerBea: spriteBacked("travelerBea", DRAWN.travelerBea),
   travelerLeo: spriteBacked("travelerLeo", DRAWN.travelerLeo),
+  // The yard props and woodland litter (lib/stackacres/props.ts,
+  // art-props.ts's PROP_PAINTERS) -- see stackacres-sprites.ts's own comment
+  // for the organic-isometric STYLE these were generated at, distinct from
+  // the plant pack and from the flat-vector RAMPS system. `well` ships its
+  // idle frame only; the bucket-lowering animation isn't wired up yet.
+  well: spriteBacked("well", DRAWN.well),
+  wheelbarrow: spriteBacked("wheelbarrow", DRAWN.wheelbarrow),
+  crate: spriteBacked("crate", DRAWN.crate),
+  logPile: spriteBacked("logPile", DRAWN.logPile),
+  toolBarrel: spriteBacked("toolBarrel", DRAWN.toolBarrel),
+  mailbox: spriteBacked("mailbox", DRAWN.mailbox),
+  signpost: spriteBacked("signpost", DRAWN.signpost),
+  lampPost: spriteBacked("lampPost", DRAWN.lampPost),
+  flowerBed: spriteBacked("flowerBed", DRAWN.flowerBed),
+  stoneWall: spriteBacked("stoneWall", DRAWN.stoneWall),
+  scarecrow: spriteBacked("scarecrow", DRAWN.scarecrow),
+  truck: spriteBacked("truck", DRAWN.truck),
+  windmillBlades: spriteBacked("windmillBlades", DRAWN.windmillBlades),
+  log: spriteBacked("log", DRAWN.log),
+  mushroom: spriteBacked("mushroom", DRAWN.mushroom),
+  boulder: spriteBacked("boulder", DRAWN.boulder),
+  midnightMerchant: spriteBacked("midnightMerchant", DRAWN.midnightMerchant),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,
   // one silhouette, and the woodland pass below multiplied it by about three,

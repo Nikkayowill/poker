@@ -166,28 +166,25 @@ export const FARM_PATHS: readonly PathSpec[] = [
     stones: 0,
   }),
   path({
-    // Ray's house (./world.ts's RAY_HOUSE_FOOTPRINT, x 63..153, y -76..-32)
-    // sits directly behind the barn's own roof (BARN_FOOTPRINT, x 71..145,
-    // y -28..34) with only a few units of air between the two, so there is
-    // no straight shot from the house to the yard: every gap along the
-    // barn's own two sides is already spoken for, the west one by the
-    // barn's built-in barrel (stackacres-scene.ts's `paintBarn`, x 51..69,
-    // y 0..20). The only corridor with room to spare is further west of
-    // that, past x 42 -- clear of the barrel's own edge by PATH_CLEARANCE
-    // (`paths.test.ts` holds this against both footprints along the whole
-    // body, not just at the endpoints). So the drive forks off the lane at
-    // the same corner `yardRoad` does, runs north up that corridor, then
-    // angles in to the house's south-west corner -- the one side of the
-    // building the barn does not block.
+    // Ray's house (./world.ts's RAY_HOUSE_FOOTPRINT, x 72..162, y -133..-89)
+    // moved well north of the barn (BARN_FOOTPRINT, x 63..137, y -25..37) in
+    // the 2026-09 yard placement pass -- a wide 64-unit gap between the two
+    // now, not the old few-units squeeze. The drive still forks off the
+    // lane at the same corner `yardRoad` does and runs up the corridor west
+    // of the barn's built-in barrel (stackacres-scene.ts's `paintBarn`, west
+    // of its own west edge by PATH_CLEARANCE -- `paths.test.ts` holds this
+    // against both footprints along the whole body, not just the
+    // endpoints), then angles east into the house's south-west corner, the
+    // one side of the building the barn's own clutter doesn't reach.
     key: "rayHouseDrive",
     surface: "dirt",
     tier: "service",
     width: 12,
     points: [
-      yardPoint(50, 58),
-      yardPoint(36, 40),
-      yardPoint(36, -20),
-      yardPoint(52, -28),
+      yardPoint(42, 61),
+      yardPoint(28, 43),
+      yardPoint(28, -17),
+      yardPoint(58, -82),
     ],
     stones: 0,
   }),

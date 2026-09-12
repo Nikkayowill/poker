@@ -208,12 +208,12 @@ describe("farm paths", () => {
 
   it("routes Ray's house drive around the barn and its barrel, not through them", () => {
     // The drive's whole reason to bend west before turning back in is the
-    // barn (x 71..145, y -28..34) and its built-in barrel (x 51..69,
-    // y 0..20, see stackacres-scene.ts's `paintBarn`) -- both must stay
+    // barn (x 63..137, y -25..37) and its built-in barrel (x 43..61,
+    // y 3..23, see stackacres-scene.ts's `paintBarn`) -- both must stay
     // outside the drive's body the entire way, not just at its endpoints.
     const drive = byKey("rayHouseDrive");
     const barn = BARN_FOOTPRINT;
-    const barrel = yardRect(51, 0, 18, 20);
+    const barrel = yardRect(43, 3, 18, 20);
     // Sampled right out to each footprint's own true edge plus the same
     // PATH_CLEARANCE margin every other path is held to (props.ts's own
     // header: "nothing stands on a path body"), not a bespoke number.

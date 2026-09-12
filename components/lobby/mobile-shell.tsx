@@ -81,6 +81,7 @@ import {
 } from "@/lib/ui/swipe-pager";
 import { ArcadeFloor } from "@/components/arcade/arcade-floor";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
+import { STACKACRES_TILE_ADVERTISED } from "@/lib/stackacres/tile-advertised";
 import { Leaderboard } from "@/components/leaderboard/leaderboard";
 import { LOBBY_PANE_STORAGE_KEY, TAB_COUNT, TAB_LABELS, TabBar } from "@/components/shell/tab-bar";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -532,7 +533,10 @@ function PlayPane({
           stackacresAccess is granted per player from the admin dashboard
           while the game is still being tried out, so a card nobody can open
           renders as an inert row instead of a disabled link pretending to
-          be a live door.
+          be a live door. Unadvertised by default beyond that: a player
+          without access sees no row here at all unless
+          STACKACRES_TILE_ADVERTISED is on -- see that constant's own
+          header.
 
           prefetch={false} for the same reason as the desktop tile in
           lobby.tsx: this row is on screen from the moment the shell mounts,
@@ -547,13 +551,15 @@ function PlayPane({
           <ChevronRight size={18} aria-hidden="true" />
         </Link>
       ) : (
-        <div className="mshell-card mshell-row mshell-stackacres-row mshell-row-locked" aria-disabled="true">
-          <StackAcresLogo className="mshell-stackacres-logo" />
-          <span className="mshell-row-body">
-            <strong>StackAcres</strong>
-            <small className="mshell-stackacres-soon">Coming soon</small>
-          </span>
-        </div>
+        STACKACRES_TILE_ADVERTISED && (
+          <div className="mshell-card mshell-row mshell-stackacres-row mshell-row-locked" aria-disabled="true">
+            <StackAcresLogo className="mshell-stackacres-logo" />
+            <span className="mshell-row-body">
+              <strong>StackAcres</strong>
+              <small className="mshell-stackacres-soon">Coming soon</small>
+            </span>
+          </div>
+        )
       )}
 
       <RankStrip />

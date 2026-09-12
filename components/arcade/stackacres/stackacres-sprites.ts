@@ -271,13 +271,15 @@ export const SPRITE_ART = {
   // above do. See
   // project_stackacres_isometric_organic_prop_style memory for the approved
   // STYLE string and the pipeline (~/.local/share/flux-sprite-test/task-well,
-  // task-remaining-props). `well` ships its idle frame only for now -- the
-  // bucket-lowering animation phase has no wiring yet and is future work.
-  well: "/stackacres/sprites/well.webp",
-  wheelbarrow: "/stackacres/sprites/wheelbarrow.webp",
+  // task-remaining-props).
+  //
+  // `well`/`wheelbarrow`/`toolBarrel` removed -- Kayo pulled those three
+  // renders (blurry against this style's grain) pending a replacement asset;
+  // stackacres-art.ts's PAINTERS now points those three straight at the
+  // procedural painter instead of `spriteBacked(...)`. Re-add here once a
+  // replacement file ships.
   crate: "/stackacres/sprites/crate.webp",
   logPile: "/stackacres/sprites/log-pile.webp",
-  toolBarrel: "/stackacres/sprites/tool-barrel.webp",
   mailbox: "/stackacres/sprites/mailbox.webp",
   signpost: "/stackacres/sprites/signpost.webp",
   lampPost: "/stackacres/sprites/lamp-post.webp",

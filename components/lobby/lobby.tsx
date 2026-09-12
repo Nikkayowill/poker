@@ -12,6 +12,7 @@ import { accountsEnabled } from "@/lib/auth/client";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
+import { STACKACRES_TILE_ADVERTISED } from "@/lib/stackacres/tile-advertised";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
 import { EntryHero } from "@/components/auth/entry-hero";
 import { SiteFooter } from "@/components/nav/site-footer";
@@ -403,7 +404,12 @@ export function Lobby({
               still being tried out, and a card nobody can open should say
               so plainly rather than pretend to be a live door -- so it
               renders as an inert <div>, not a disabled button dressed as a
-              link.
+              link. Unadvertised by default beyond that: a player without
+              access sees nothing here at all unless
+              STACKACRES_TILE_ADVERTISED is on -- see that constant's own
+              header. A locked "Coming soon" card is still advertising the
+              game to the public, which the invite-only tryout doesn't want
+              yet.
 
               prefetch={false}: App Router links prefetch on intersection by
               default, which would pull the app's heaviest route for every
@@ -423,16 +429,18 @@ export function Lobby({
               </span>
             </Link>
           ) : (
-            <div
-              className="hub-tile hub-tile-stackacres hub-tile-locked"
-              style={tileIndexStyle(1)}
-              aria-disabled="true"
-            >
-              <span className="hub-tile-body">
-                <StackAcresLogo className="hub-tile-stackacres-logo" />
-                <small className="hub-tile-soon">Coming soon</small>
-              </span>
-            </div>
+            STACKACRES_TILE_ADVERTISED && (
+              <div
+                className="hub-tile hub-tile-stackacres hub-tile-locked"
+                style={tileIndexStyle(1)}
+                aria-disabled="true"
+              >
+                <span className="hub-tile-body">
+                  <StackAcresLogo className="hub-tile-stackacres-logo" />
+                  <small className="hub-tile-soon">Coming soon</small>
+                </span>
+              </div>
+            )
           )}
 
           <button

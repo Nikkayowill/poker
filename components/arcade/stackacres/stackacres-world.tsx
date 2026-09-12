@@ -549,12 +549,14 @@ export function StackAcresWorld({
       scene.setToolIcon(toolIconRef.current);
       scene.setTool(toolRef.current);
 
-      // A handle for the gesture harness to read the camera through, and for
+      // A handle for the gesture harness to read the camera through, for
       // Chrono-DeLorean Mode's timescale engine to reach the live Phaser
-      // instance (lib/dev/chrono-simulation-engine.ts) -- `game` rides on
-      // this same handle rather than a second global so there is exactly one
-      // dev-only door onto this scene, not two to keep in sync. Dev only:
-      // production never gets a global.
+      // instance (lib/dev/chrono-simulation-engine.ts), and for the yard
+      // placement dev panel (components/dev/StackAcresPlacementPanel.tsx) to
+      // drag the barn and Ray's house live -- `game` and the placement
+      // methods all ride on this same handle rather than a growing pile of
+      // globals, so there is exactly one dev-only door onto this scene, not
+      // several to keep in sync. Dev only: production never gets a global.
       if (process.env.NODE_ENV !== "production") {
         (
           window as unknown as {
@@ -562,9 +564,37 @@ export function StackAcresWorld({
               scene: unknown;
               game: unknown;
               screenPointFor: (x: number, y: number) => TapPoint;
+              worldPointFor: (clientX: number, clientY: number) => WorldPoint;
+              setBarnDevPosition: (worldX: number, worldY: number) => void;
+              setBarnDevFlipped: (flipped: boolean) => void;
+              setRayHouseDevPosition: (worldX: number, worldY: number) => void;
+              setRayHouseDevFlipped: (flipped: boolean) => void;
+              hasMerchantDevTarget: () => boolean;
+              setMerchantDevPosition: (worldX: number, worldY: number) => void;
+              setMonkDevPosition: (worldX: number, worldY: number) => void;
+              hasTravelerDevTarget: (id: TravelerId) => boolean;
+              setTravelerDevPosition: (id: TravelerId, worldX: number, worldY: number) => void;
+              showDevPlacementGrid: (worldX: number, worldY: number) => void;
+              hideDevPlacementGrid: () => void;
             };
           }
-        ).__stackacres = { scene, game, screenPointFor: (x, y) => scene.screenPointFor(x, y) };
+        ).__stackacres = {
+          scene,
+          game,
+          screenPointFor: (x, y) => scene.screenPointFor(x, y),
+          worldPointFor: (clientX, clientY) => scene.worldPointFor(clientX, clientY),
+          setBarnDevPosition: (worldX, worldY) => scene.setBarnDevPosition(worldX, worldY),
+          setBarnDevFlipped: (flipped) => scene.setBarnDevFlipped(flipped),
+          setRayHouseDevPosition: (worldX, worldY) => scene.setRayHouseDevPosition(worldX, worldY),
+          setRayHouseDevFlipped: (flipped) => scene.setRayHouseDevFlipped(flipped),
+          hasMerchantDevTarget: () => scene.hasMerchantDevTarget(),
+          setMerchantDevPosition: (worldX, worldY) => scene.setMerchantDevPosition(worldX, worldY),
+          setMonkDevPosition: (worldX, worldY) => scene.setMonkDevPosition(worldX, worldY),
+          hasTravelerDevTarget: (id) => scene.hasTravelerDevTarget(id),
+          setTravelerDevPosition: (id, worldX, worldY) => scene.setTravelerDevPosition(id, worldX, worldY),
+          showDevPlacementGrid: (worldX, worldY) => scene.showDevPlacementGrid(worldX, worldY),
+          hideDevPlacementGrid: () => scene.hideDevPlacementGrid(),
+        };
       }
 
       // The scale manager only has a canvas to size once the game has booted,

@@ -2283,13 +2283,18 @@ export const PAINTERS: Record<PainterName, Painter> = {
   // The yard props and woodland litter (lib/stackacres/props.ts,
   // art-props.ts's PROP_PAINTERS) -- see stackacres-sprites.ts's own comment
   // for the organic-isometric STYLE these were generated at, distinct from
-  // the plant pack and from the flat-vector RAMPS system. `well` ships its
-  // idle frame only; the bucket-lowering animation isn't wired up yet.
-  well: spriteBacked("well", DRAWN.well),
-  wheelbarrow: spriteBacked("wheelbarrow", DRAWN.wheelbarrow),
+  // the plant pack and from the flat-vector RAMPS system.
+  //
+  // `well`/`wheelbarrow`/`toolBarrel` reverted to the plain procedural
+  // painter -- Kayo pulled their FLUX renders (blurry against this style's
+  // grain) in favor of a different asset, not yet wired in. Revert this once
+  // that replacement lands rather than re-adding `spriteBacked(...)`
+  // wrapping a texture key nothing loads anymore.
+  well: DRAWN.well,
+  wheelbarrow: DRAWN.wheelbarrow,
   crate: spriteBacked("crate", DRAWN.crate),
   logPile: spriteBacked("logPile", DRAWN.logPile),
-  toolBarrel: spriteBacked("toolBarrel", DRAWN.toolBarrel),
+  toolBarrel: DRAWN.toolBarrel,
   mailbox: spriteBacked("mailbox", DRAWN.mailbox),
   signpost: spriteBacked("signpost", DRAWN.signpost),
   lampPost: spriteBacked("lampPost", DRAWN.lampPost),

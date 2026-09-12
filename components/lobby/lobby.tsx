@@ -403,13 +403,19 @@ export function Lobby({
               still being tried out, and a card nobody can open should say
               so plainly rather than pretend to be a live door -- so it
               renders as an inert <div>, not a disabled button dressed as a
-              link. */}
+              link.
+
+              prefetch={false}: App Router links prefetch on intersection by
+              default, which would pull the app's heaviest route for every
+              player who merely scrolled past this tile, most of whom only
+              play poker. */}
           {profile.stackacresAccess ? (
             <Link
               className="hub-tile hub-tile-stackacres"
               href="/games/stackacres"
               style={tileIndexStyle(1)}
               onClick={tapSound}
+              prefetch={false}
             >
               <span className="hub-tile-body">
                 <StackAcresLogo className="hub-tile-stackacres-logo" />

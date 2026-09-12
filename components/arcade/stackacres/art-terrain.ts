@@ -31,9 +31,9 @@ import { ART_FRAME, ART_SCALE } from "./art-kit";
  */
 
 export const TERRAIN_ATLAS_KEY = "terrainAtlas";
-export const TERRAIN_ATLAS_URL = "/stackacres/sprites/terrain-atlas.png";
+export const TERRAIN_ATLAS_URL = "/stackacres/sprites/terrain-atlas.webp";
 export const SEA_TILE_KEY = "seaTile";
-export const SEA_TILE_URL = "/stackacres/sprites/deep-tile.png";
+export const SEA_TILE_URL = "/stackacres/sprites/deep-tile.webp";
 
 /**
  * Canvas pixels per screen unit in a terrain bake: two on desktop, which

@@ -29,6 +29,11 @@ naming convention every other StackAcres sprite prep script uses. Also
 prints the CROP_BOX (art units) and CROP_FOOT (dx/dy, both ~0) tables
 crop-visuals.ts's own per-crop tables are built from -- re-run this after a
 pack update rather than hand-editing those tables.
+
+Then run `pnpm assets:webp`. The farm serves WebP, and this script writes
+PNG because that is what Pillow speaks -- the encoder converts what landed
+here and deletes the PNG. Skipping it leaves the new frames unreachable:
+stackacres-sprites.ts asks for <cropid><stage>.webp.
 """
 
 from pathlib import Path

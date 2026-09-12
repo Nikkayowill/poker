@@ -77,6 +77,14 @@
  * trims every frame flush to its own bottom-centre -- see that table's own
  * header for why that is a real measurement here, not a placeholder.
  *
+ * THEY ARE ALL WEBP ON DISK (2026-09-12), which is 40% off what the roster
+ * cost as PNG. The prep scripts still write PNG, because that is what Pillow
+ * and the packs speak -- `pnpm assets:webp` is the step that converts what
+ * they produced and deletes the PNG behind it, so run it after re-generating
+ * any of this art or the path here will point at a file that is no longer
+ * there. scripts/encode-stackacres-webp.mjs carries the per-file rule and
+ * why it is a measurement rather than a preference.
+ *
  * The module is imported by Node tests through the painter module, so it must
  * never touch `Image` at import time.
  */
@@ -85,20 +93,20 @@ import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import { ART_SCALE } from "./art-kit";
 
 export const SPRITE_ART = {
-  cow: "/stackacres/sprites/cow.png",
-  hen: "/stackacres/sprites/hen.png",
-  sheep: "/stackacres/sprites/sheep.png",
-  ox: "/stackacres/sprites/ox.png",
-  hog: "/stackacres/sprites/hog.png",
-  barn: "/stackacres/sprites/barn.png",
+  cow: "/stackacres/sprites/cow.webp",
+  hen: "/stackacres/sprites/hen.webp",
+  sheep: "/stackacres/sprites/sheep.webp",
+  ox: "/stackacres/sprites/ox.webp",
+  hog: "/stackacres/sprites/hog.webp",
+  barn: "/stackacres/sprites/barn.webp",
   // The barn's own second frame: door swung open, hay bursting out, for the
   // brief acknowledgement `arriveAtBarn` (game-juice-manager.ts) plays when
   // a collected item lands. Same canvas as `barn`, chroma-keyed off the
   // same magenta backing so the two line up in place -- the `rayHouse`/
   // `rayHouseOpen` pattern, just triggered by a delivery arriving rather
   // than a press.
-  barnOpen: "/stackacres/sprites/barn-open.png",
-  windmill: "/stackacres/sprites/windmill.png",
+  barnOpen: "/stackacres/sprites/barn-open.webp",
+  windmill: "/stackacres/sprites/windmill.webp",
   // Ray's house: two states of one supplied isometric cottage, chroma-keyed
   // off a solid magenta backing and cropped to the same canvas so the two
   // line up in place. `rayHouse` is idle; `rayHouseOpen` (door open, window
@@ -108,133 +116,133 @@ export const SPRITE_ART = {
   // `paintRayHouse`/`setRayHousePressed` in stackacres-scene.ts. Grandfather
   // Ray himself no longer stands here as a sprite; he is being redrawn at a
   // proper isometric scale to stand beside the house once that art is ready.
-  rayHouse: "/stackacres/sprites/ray-house.png",
-  rayHouseOpen: "/stackacres/sprites/ray-house-open.png",
+  rayHouse: "/stackacres/sprites/ray-house.webp",
+  rayHouseOpen: "/stackacres/sprites/ray-house-open.webp",
   // The canopy. Off the isometric plant pack like everything below it since
   // 2026-09-06 -- see scripts/prepare-stackacres-plants.py.
-  tree1: "/stackacres/sprites/tree1.png",
-  tree2: "/stackacres/sprites/tree2.png",
-  tree3: "/stackacres/sprites/tree3.png",
-  pine: "/stackacres/sprites/pine.png",
-  pine2: "/stackacres/sprites/pine2.png",
-  pine3: "/stackacres/sprites/pine3.png",
-  pine4: "/stackacres/sprites/pine4.png",
-  pine5: "/stackacres/sprites/pine5.png",
-  pine6: "/stackacres/sprites/pine6.png",
-  pine7: "/stackacres/sprites/pine7.png",
-  pine8: "/stackacres/sprites/pine8.png",
-  bush: "/stackacres/sprites/bush.png",
-  bush2: "/stackacres/sprites/bush2.png",
-  bush3: "/stackacres/sprites/bush3.png",
+  tree1: "/stackacres/sprites/tree1.webp",
+  tree2: "/stackacres/sprites/tree2.webp",
+  tree3: "/stackacres/sprites/tree3.webp",
+  pine: "/stackacres/sprites/pine.webp",
+  pine2: "/stackacres/sprites/pine2.webp",
+  pine3: "/stackacres/sprites/pine3.webp",
+  pine4: "/stackacres/sprites/pine4.webp",
+  pine5: "/stackacres/sprites/pine5.webp",
+  pine6: "/stackacres/sprites/pine6.webp",
+  pine7: "/stackacres/sprites/pine7.webp",
+  pine8: "/stackacres/sprites/pine8.webp",
+  bush: "/stackacres/sprites/bush.webp",
+  bush2: "/stackacres/sprites/bush2.webp",
+  bush3: "/stackacres/sprites/bush3.webp",
   // The Long Meadow's own grass at the three heights the scythe leaves it
   // (`meadowDensityAt`), plus the open world's grass clumps and rosettes. The
   // prep script records why the mown height had to be cut out of an uncut
   // plate.
-  grassTall: "/stackacres/sprites/grass-tall.png",
-  grassMid: "/stackacres/sprites/grass-mid.png",
-  grassStubble: "/stackacres/sprites/grass-stubble.png",
-  tuft: "/stackacres/sprites/tuft.png",
-  tuft2: "/stackacres/sprites/tuft2.png",
-  swirl1: "/stackacres/sprites/swirl1.png",
-  swirl2: "/stackacres/sprites/swirl2.png",
+  grassTall: "/stackacres/sprites/grass-tall.webp",
+  grassMid: "/stackacres/sprites/grass-mid.webp",
+  grassStubble: "/stackacres/sprites/grass-stubble.webp",
+  tuft: "/stackacres/sprites/tuft.webp",
+  tuft2: "/stackacres/sprites/tuft2.webp",
+  swirl1: "/stackacres/sprites/swirl1.webp",
+  swirl2: "/stackacres/sprites/swirl2.webp",
   // Scrub and ground cover -- the size band between a grass clump and a bush,
   // which is where most of the map's variety lives.
-  weedTall: "/stackacres/sprites/weed-tall.png",
-  weedShort: "/stackacres/sprites/weed-short.png",
-  weed3: "/stackacres/sprites/weed3.png",
-  weed4: "/stackacres/sprites/weed4.png",
-  weed5: "/stackacres/sprites/weed5.png",
-  weed6: "/stackacres/sprites/weed6.png",
-  scrubLow: "/stackacres/sprites/scrub-low.png",
-  scrubRound: "/stackacres/sprites/scrub-round.png",
-  scrubFan: "/stackacres/sprites/scrub-fan.png",
-  scrubPlume: "/stackacres/sprites/scrub-plume.png",
-  scrubBroad: "/stackacres/sprites/scrub-broad.png",
-  scrubLeafy: "/stackacres/sprites/scrub-leafy.png",
-  scrubSprig: "/stackacres/sprites/scrub-sprig.png",
-  scrubBristle: "/stackacres/sprites/scrub-bristle.png",
-  scrubThicket: "/stackacres/sprites/scrub-thicket.png",
-  scrubRosette: "/stackacres/sprites/scrub-rosette.png",
-  scrubPatch: "/stackacres/sprites/scrub-patch.png",
-  scrubMound: "/stackacres/sprites/scrub-mound.png",
-  frond1: "/stackacres/sprites/frond1.png",
-  frond2: "/stackacres/sprites/frond2.png",
-  frond3: "/stackacres/sprites/frond3.png",
-  frond4: "/stackacres/sprites/frond4.png",
-  frond5: "/stackacres/sprites/frond5.png",
+  weedTall: "/stackacres/sprites/weed-tall.webp",
+  weedShort: "/stackacres/sprites/weed-short.webp",
+  weed3: "/stackacres/sprites/weed3.webp",
+  weed4: "/stackacres/sprites/weed4.webp",
+  weed5: "/stackacres/sprites/weed5.webp",
+  weed6: "/stackacres/sprites/weed6.webp",
+  scrubLow: "/stackacres/sprites/scrub-low.webp",
+  scrubRound: "/stackacres/sprites/scrub-round.webp",
+  scrubFan: "/stackacres/sprites/scrub-fan.webp",
+  scrubPlume: "/stackacres/sprites/scrub-plume.webp",
+  scrubBroad: "/stackacres/sprites/scrub-broad.webp",
+  scrubLeafy: "/stackacres/sprites/scrub-leafy.webp",
+  scrubSprig: "/stackacres/sprites/scrub-sprig.webp",
+  scrubBristle: "/stackacres/sprites/scrub-bristle.webp",
+  scrubThicket: "/stackacres/sprites/scrub-thicket.webp",
+  scrubRosette: "/stackacres/sprites/scrub-rosette.webp",
+  scrubPatch: "/stackacres/sprites/scrub-patch.webp",
+  scrubMound: "/stackacres/sprites/scrub-mound.webp",
+  frond1: "/stackacres/sprites/frond1.webp",
+  frond2: "/stackacres/sprites/frond2.webp",
+  frond3: "/stackacres/sprites/frond3.webp",
+  frond4: "/stackacres/sprites/frond4.webp",
+  frond5: "/stackacres/sprites/frond5.webp",
   // The three growth frames each for all 16 of the Long Meadow's crops.
   // Named for lib/stackacres/crop-visuals.ts's CropStage (0 seedling,
   // 1 sprout, 2 mature) exactly like the painters they front. Off the
   // Gr8FarmPack (2026-09-12) -- see scripts/prepare-stackacres-farmpack-crops.py.
-  bell_pepper0: "/stackacres/sprites/bell_pepper0.png",
-  bell_pepper1: "/stackacres/sprites/bell_pepper1.png",
-  bell_pepper2: "/stackacres/sprites/bell_pepper2.png",
-  broccoli0: "/stackacres/sprites/broccoli0.png",
-  broccoli1: "/stackacres/sprites/broccoli1.png",
-  broccoli2: "/stackacres/sprites/broccoli2.png",
-  cabbage0: "/stackacres/sprites/cabbage0.png",
-  cabbage1: "/stackacres/sprites/cabbage1.png",
-  cabbage2: "/stackacres/sprites/cabbage2.png",
-  carrot0: "/stackacres/sprites/carrot0.png",
-  carrot1: "/stackacres/sprites/carrot1.png",
-  carrot2: "/stackacres/sprites/carrot2.png",
-  celery0: "/stackacres/sprites/celery0.png",
-  celery1: "/stackacres/sprites/celery1.png",
-  celery2: "/stackacres/sprites/celery2.png",
-  corn0: "/stackacres/sprites/corn0.png",
-  corn1: "/stackacres/sprites/corn1.png",
-  corn2: "/stackacres/sprites/corn2.png",
-  eggplant0: "/stackacres/sprites/eggplant0.png",
-  eggplant1: "/stackacres/sprites/eggplant1.png",
-  eggplant2: "/stackacres/sprites/eggplant2.png",
-  green_bean0: "/stackacres/sprites/green_bean0.png",
-  green_bean1: "/stackacres/sprites/green_bean1.png",
-  green_bean2: "/stackacres/sprites/green_bean2.png",
-  lettuce0: "/stackacres/sprites/lettuce0.png",
-  lettuce1: "/stackacres/sprites/lettuce1.png",
-  lettuce2: "/stackacres/sprites/lettuce2.png",
-  onion0: "/stackacres/sprites/onion0.png",
-  onion1: "/stackacres/sprites/onion1.png",
-  onion2: "/stackacres/sprites/onion2.png",
-  pepper0: "/stackacres/sprites/pepper0.png",
-  pepper1: "/stackacres/sprites/pepper1.png",
-  pepper2: "/stackacres/sprites/pepper2.png",
-  potato0: "/stackacres/sprites/potato0.png",
-  potato1: "/stackacres/sprites/potato1.png",
-  potato2: "/stackacres/sprites/potato2.png",
-  radish0: "/stackacres/sprites/radish0.png",
-  radish1: "/stackacres/sprites/radish1.png",
-  radish2: "/stackacres/sprites/radish2.png",
-  spinach0: "/stackacres/sprites/spinach0.png",
-  spinach1: "/stackacres/sprites/spinach1.png",
-  spinach2: "/stackacres/sprites/spinach2.png",
-  tomato0: "/stackacres/sprites/tomato0.png",
-  tomato1: "/stackacres/sprites/tomato1.png",
-  tomato2: "/stackacres/sprites/tomato2.png",
-  wheatsheaf0: "/stackacres/sprites/wheatsheaf0.png",
-  wheatsheaf1: "/stackacres/sprites/wheatsheaf1.png",
-  wheatsheaf2: "/stackacres/sprites/wheatsheaf2.png",
+  bell_pepper0: "/stackacres/sprites/bell_pepper0.webp",
+  bell_pepper1: "/stackacres/sprites/bell_pepper1.webp",
+  bell_pepper2: "/stackacres/sprites/bell_pepper2.webp",
+  broccoli0: "/stackacres/sprites/broccoli0.webp",
+  broccoli1: "/stackacres/sprites/broccoli1.webp",
+  broccoli2: "/stackacres/sprites/broccoli2.webp",
+  cabbage0: "/stackacres/sprites/cabbage0.webp",
+  cabbage1: "/stackacres/sprites/cabbage1.webp",
+  cabbage2: "/stackacres/sprites/cabbage2.webp",
+  carrot0: "/stackacres/sprites/carrot0.webp",
+  carrot1: "/stackacres/sprites/carrot1.webp",
+  carrot2: "/stackacres/sprites/carrot2.webp",
+  celery0: "/stackacres/sprites/celery0.webp",
+  celery1: "/stackacres/sprites/celery1.webp",
+  celery2: "/stackacres/sprites/celery2.webp",
+  corn0: "/stackacres/sprites/corn0.webp",
+  corn1: "/stackacres/sprites/corn1.webp",
+  corn2: "/stackacres/sprites/corn2.webp",
+  eggplant0: "/stackacres/sprites/eggplant0.webp",
+  eggplant1: "/stackacres/sprites/eggplant1.webp",
+  eggplant2: "/stackacres/sprites/eggplant2.webp",
+  green_bean0: "/stackacres/sprites/green_bean0.webp",
+  green_bean1: "/stackacres/sprites/green_bean1.webp",
+  green_bean2: "/stackacres/sprites/green_bean2.webp",
+  lettuce0: "/stackacres/sprites/lettuce0.webp",
+  lettuce1: "/stackacres/sprites/lettuce1.webp",
+  lettuce2: "/stackacres/sprites/lettuce2.webp",
+  onion0: "/stackacres/sprites/onion0.webp",
+  onion1: "/stackacres/sprites/onion1.webp",
+  onion2: "/stackacres/sprites/onion2.webp",
+  pepper0: "/stackacres/sprites/pepper0.webp",
+  pepper1: "/stackacres/sprites/pepper1.webp",
+  pepper2: "/stackacres/sprites/pepper2.webp",
+  potato0: "/stackacres/sprites/potato0.webp",
+  potato1: "/stackacres/sprites/potato1.webp",
+  potato2: "/stackacres/sprites/potato2.webp",
+  radish0: "/stackacres/sprites/radish0.webp",
+  radish1: "/stackacres/sprites/radish1.webp",
+  radish2: "/stackacres/sprites/radish2.webp",
+  spinach0: "/stackacres/sprites/spinach0.webp",
+  spinach1: "/stackacres/sprites/spinach1.webp",
+  spinach2: "/stackacres/sprites/spinach2.webp",
+  tomato0: "/stackacres/sprites/tomato0.webp",
+  tomato1: "/stackacres/sprites/tomato1.webp",
+  tomato2: "/stackacres/sprites/tomato2.webp",
+  wheatsheaf0: "/stackacres/sprites/wheatsheaf0.webp",
+  wheatsheaf1: "/stackacres/sprites/wheatsheaf1.webp",
+  wheatsheaf2: "/stackacres/sprites/wheatsheaf2.webp",
   // The three rungs of the equipment ladder (lib/stackacres/equipment.ts).
   // These already shipped -- the store shelf has been showing them as plain
   // `<img>` since the ladder landed -- but nothing ever put them on the canvas,
   // so the tool floating over a mow drag was the same drawn scythe at every
   // rung. They are here now because the ghost is a Phaser image and every
   // Phaser image in this scene comes through this list.
-  toolTrowel: "/stackacres/sprites/tool-trowel.png",
-  toolIronShovel: "/stackacres/sprites/tool-iron-shovel.png",
-  toolGoldenSpade: "/stackacres/sprites/tool-golden-spade.png",
+  toolTrowel: "/stackacres/sprites/tool-trowel.webp",
+  toolIronShovel: "/stackacres/sprites/tool-iron-shovel.webp",
+  toolGoldenSpade: "/stackacres/sprites/tool-golden-spade.webp",
   // The Mower (lib/stackacres/cutters.ts), same "the shelf icon should be
   // the thing you see in your hand" reasoning as the three tools above --
   // this is also the sprite that rolls across the meadow while it is driven.
   // FLUX-generated at the exact tool STYLE contract, with a baked drop-
   // shadow masked out at prep time (see task-tools/prep_mower.py) in favour
   // of a real one added in the scene, the same as every other world sprite.
-  cutterMower: "/stackacres/sprites/cutter-mower.png",
+  cutterMower: "/stackacres/sprites/cutter-mower.webp",
   // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
   // straight into its own 256-unit canvas. It rides this module only because
   // this is what the scene's `preload` walks, and a tile that arrived late
   // would mean baking the lawn twice.
-  grassTile: "/stackacres/sprites/grass-tile.png",
+  grassTile: "/stackacres/sprites/grass-tile.webp",
   // The eleven story travelers (lib/stackacres/story/): ten true pixel-art
   // PNGs standing in a flat-vector world on purpose (they are not from
   // here, and the art says so), and Great-Grandpa Ray's spirit, the one
@@ -242,17 +250,17 @@ export const SPRITE_ART = {
   // dialogue bubbles show as portraits (TRAVELER_PORTRAIT). Ordinary core
   // sprites in every other respect: `CORE_SPRITE_NAMES` below picks them up
   // automatically since they are not crop frames.
-  travelerRay: "/stackacres/sprites/traveler-ray.png",
-  travelerPierre: "/stackacres/sprites/traveler-pierre.png",
-  travelerMiles: "/stackacres/sprites/traveler-miles.png",
-  travelerSkye: "/stackacres/sprites/traveler-skye.png",
-  travelerBarnaby: "/stackacres/sprites/traveler-barnaby.png",
-  travelerArthur: "/stackacres/sprites/traveler-arthur.png",
-  travelerBrayden: "/stackacres/sprites/traveler-brayden.png",
-  travelerIvy: "/stackacres/sprites/traveler-ivy.png",
-  travelerWes: "/stackacres/sprites/traveler-wes.png",
-  travelerBea: "/stackacres/sprites/traveler-bea.png",
-  travelerLeo: "/stackacres/sprites/traveler-leo.png",
+  travelerRay: "/stackacres/sprites/traveler-ray.webp",
+  travelerPierre: "/stackacres/sprites/traveler-pierre.webp",
+  travelerMiles: "/stackacres/sprites/traveler-miles.webp",
+  travelerSkye: "/stackacres/sprites/traveler-skye.webp",
+  travelerBarnaby: "/stackacres/sprites/traveler-barnaby.webp",
+  travelerArthur: "/stackacres/sprites/traveler-arthur.webp",
+  travelerBrayden: "/stackacres/sprites/traveler-brayden.webp",
+  travelerIvy: "/stackacres/sprites/traveler-ivy.webp",
+  travelerWes: "/stackacres/sprites/traveler-wes.webp",
+  travelerBea: "/stackacres/sprites/traveler-bea.webp",
+  travelerLeo: "/stackacres/sprites/traveler-leo.webp",
   // The yard props and woodland litter (lib/stackacres/props.ts,
   // art-props.ts's PROP_PAINTERS), FLUX-generated at an isometric organic
   // STYLE contract distinct from the flat-vector RAMPS system on purpose --
@@ -265,25 +273,25 @@ export const SPRITE_ART = {
   // STYLE string and the pipeline (~/.local/share/flux-sprite-test/task-well,
   // task-remaining-props). `well` ships its idle frame only for now -- the
   // bucket-lowering animation phase has no wiring yet and is future work.
-  well: "/stackacres/sprites/well.png",
-  wheelbarrow: "/stackacres/sprites/wheelbarrow.png",
-  crate: "/stackacres/sprites/crate.png",
-  logPile: "/stackacres/sprites/log-pile.png",
-  toolBarrel: "/stackacres/sprites/tool-barrel.png",
-  mailbox: "/stackacres/sprites/mailbox.png",
-  signpost: "/stackacres/sprites/signpost.png",
-  lampPost: "/stackacres/sprites/lamp-post.png",
-  flowerBed: "/stackacres/sprites/flower-bed.png",
-  stoneWall: "/stackacres/sprites/stone-wall.png",
-  scarecrow: "/stackacres/sprites/scarecrow.png",
-  truck: "/stackacres/sprites/truck.png",
-  windmillBlades: "/stackacres/sprites/windmill-blades.png",
-  log: "/stackacres/sprites/log.png",
-  mushroom: "/stackacres/sprites/mushroom.png",
-  boulder: "/stackacres/sprites/boulder.png",
+  well: "/stackacres/sprites/well.webp",
+  wheelbarrow: "/stackacres/sprites/wheelbarrow.webp",
+  crate: "/stackacres/sprites/crate.webp",
+  logPile: "/stackacres/sprites/log-pile.webp",
+  toolBarrel: "/stackacres/sprites/tool-barrel.webp",
+  mailbox: "/stackacres/sprites/mailbox.webp",
+  signpost: "/stackacres/sprites/signpost.webp",
+  lampPost: "/stackacres/sprites/lamp-post.webp",
+  flowerBed: "/stackacres/sprites/flower-bed.webp",
+  stoneWall: "/stackacres/sprites/stone-wall.webp",
+  scarecrow: "/stackacres/sprites/scarecrow.webp",
+  truck: "/stackacres/sprites/truck.webp",
+  windmillBlades: "/stackacres/sprites/windmill-blades.webp",
+  log: "/stackacres/sprites/log.webp",
+  mushroom: "/stackacres/sprites/mushroom.webp",
+  boulder: "/stackacres/sprites/boulder.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
-  midnightMerchant: "/stackacres/sprites/midnight-merchant.png",
+  midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;
@@ -308,19 +316,19 @@ export type SpriteName = keyof typeof SPRITE_ART;
  * too small to chase.
  */
 const PHONE_SPRITE_ART: Partial<Record<SpriteName, string>> = {
-  pine: "/stackacres/sprites/pine-phone.png",
-  pine2: "/stackacres/sprites/pine2-phone.png",
-  pine3: "/stackacres/sprites/pine3-phone.png",
-  pine4: "/stackacres/sprites/pine4-phone.png",
-  pine5: "/stackacres/sprites/pine5-phone.png",
-  pine6: "/stackacres/sprites/pine6-phone.png",
-  pine7: "/stackacres/sprites/pine7-phone.png",
-  pine8: "/stackacres/sprites/pine8-phone.png",
-  tree1: "/stackacres/sprites/tree1-phone.png",
-  tree2: "/stackacres/sprites/tree2-phone.png",
-  tree3: "/stackacres/sprites/tree3-phone.png",
-  barn: "/stackacres/sprites/barn-phone.png",
-  barnOpen: "/stackacres/sprites/barn-open-phone.png",
+  pine: "/stackacres/sprites/pine-phone.webp",
+  pine2: "/stackacres/sprites/pine2-phone.webp",
+  pine3: "/stackacres/sprites/pine3-phone.webp",
+  pine4: "/stackacres/sprites/pine4-phone.webp",
+  pine5: "/stackacres/sprites/pine5-phone.webp",
+  pine6: "/stackacres/sprites/pine6-phone.webp",
+  pine7: "/stackacres/sprites/pine7-phone.webp",
+  pine8: "/stackacres/sprites/pine8-phone.webp",
+  tree1: "/stackacres/sprites/tree1-phone.webp",
+  tree2: "/stackacres/sprites/tree2-phone.webp",
+  tree3: "/stackacres/sprites/tree3-phone.webp",
+  barn: "/stackacres/sprites/barn-phone.webp",
+  barnOpen: "/stackacres/sprites/barn-open-phone.webp",
 };
 
 /** The URL a name's raw file actually loads from -- the phone-sized stand-in

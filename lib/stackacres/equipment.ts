@@ -97,7 +97,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     label: "Trowel",
     blurb: "The one in your back pocket. Never gets lucky.",
     price: null,
-    sprite: "/stackacres/sprites/tool-trowel.png",
+    sprite: "/stackacres/sprites/tool-trowel.webp",
     icon: "toolTrowel",
     // ZERO, and deliberately so. The free rung is the game as it already
     // plays: a player who never buys anything must see no behaviour change at
@@ -114,7 +114,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     label: "Iron Shovel",
     blurb: "Harvests start coming up rich.",
     price: 45_000,
-    sprite: "/stackacres/sprites/tool-iron-shovel.png",
+    sprite: "/stackacres/sprites/tool-iron-shovel.webp",
     icon: "toolIronShovel",
     critChance: 0.12,
     critBonus: 0.75,
@@ -131,7 +131,7 @@ export const STACKACRES_TOOL_TIER_DEFS: Readonly<
     label: "Golden Spade",
     blurb: "A quarter of harvests come in double.",
     price: 250_000,
-    sprite: "/stackacres/sprites/tool-golden-spade.png",
+    sprite: "/stackacres/sprites/tool-golden-spade.webp",
     icon: "toolGoldenSpade",
     critChance: 0.25,
     critBonus: 1,

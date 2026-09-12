@@ -532,9 +532,13 @@ function PlayPane({
           stackacresAccess is granted per player from the admin dashboard
           while the game is still being tried out, so a card nobody can open
           renders as an inert row instead of a disabled link pretending to
-          be a live door. */}
+          be a live door.
+
+          prefetch={false} for the same reason as the desktop tile in
+          lobby.tsx: this row is on screen from the moment the shell mounts,
+          and a default link would prefetch the heaviest route on that alone. */}
       {profile.stackacresAccess ? (
-        <Link className="mshell-card mshell-row mshell-stackacres-row" href="/games/stackacres" onClick={tapSound}>
+        <Link className="mshell-card mshell-row mshell-stackacres-row" href="/games/stackacres" onClick={tapSound} prefetch={false}>
           <StackAcresLogo className="mshell-stackacres-logo" />
           <span className="mshell-row-body">
             <strong>StackAcres</strong>

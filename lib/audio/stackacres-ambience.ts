@@ -61,6 +61,15 @@ function isSample(cue: AmbienceCueName): cue is AmbienceCueName & SampleName {
 const TICK_MS = 250;
 const LOOKAHEAD_S = 0.6;
 
+/**
+ * How far ahead of a cue's firing its recording is fetched. The windmill and
+ * the gate are 97KB between them and neither can sound sooner than 11s in, so
+ * fetching them during the boot burst competes with Phaser and the sprites for
+ * nothing. Missing the window costs one skipped firing: `playSample` no-ops
+ * without a buffer and the cue comes round again.
+ */
+const SAMPLE_PREFETCH_S = 5;
+
 interface Bed {
   gain: GainNode;
   walks: RandomWalk[];
@@ -102,6 +111,8 @@ class Ambience {
   private sfxMuted = false;
   private beds = new Map<AmbienceBed, Bed>();
   private buffers = new Map<SampleName, AudioBuffer>();
+  /** Samples already fetched or in flight, so `ensureSample` is idempotent. */
+  private requested = new Set<SampleName>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   private cues: ScheduledCue[] = [];
@@ -150,7 +161,6 @@ class Ambience {
 
     this.buildBeds();
     this.applyPlan();
-    void this.loadSamples();
 
     this.timer = setInterval(() => this.tick(), TICK_MS);
     // A context created inside a gesture usually starts running, but Safari
@@ -175,6 +185,11 @@ class Ambience {
     this.beds.clear();
     this.cues = [];
     this.livestock = [];
+    // These were decoded by the context closing below, and the next `start`
+    // builds a new one. Re-fetching on every start used to guarantee that for
+    // free.
+    this.buffers.clear();
+    this.requested.clear();
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.master = null;
@@ -377,6 +392,12 @@ class Ambience {
       const timing = livestockCue(this.herd[kind] ?? 0, this.tod);
       if (!timing) continue;
       this.livestock.push({ kind, timing, nextAt: now + rollGapMs(timing, Math.random) / 1000 });
+      // On ownership rather than on firing, unlike the cue samples in `tick`:
+      // an animal is pressable, and `playAnimal` answers with whatever is in
+      // hand that instant. This is the saving that matters here -- an empty
+      // farm used to fetch all four animal recordings (126KB) to play none.
+      this.ensureSample(kind);
+      if (kind === "hen") this.ensureSample("hen-fuss");
     }
   }
 
@@ -394,8 +415,12 @@ class Ambience {
     const bus = this.cueBus;
     if (!ctx || !bus || this.muted || ctx.state !== "running") return;
     const horizon = ctx.currentTime + LOOKAHEAD_S;
+    const prefetchHorizon = ctx.currentTime + SAMPLE_PREFETCH_S;
 
     for (const entry of this.cues) {
+      if (isSample(entry.cue.cue) && entry.nextAt <= prefetchHorizon) {
+        this.ensureSample(entry.cue.cue);
+      }
       if (entry.nextAt > horizon) continue;
       this.fire(entry.cue.cue, Math.max(entry.nextAt, ctx.currentTime), entry.cue.gain);
       entry.nextAt = entry.nextAt + rollGapMs(entry.cue, Math.random) / 1000;
@@ -469,22 +494,35 @@ class Ambience {
     source.onended = () => chain.disconnect();
   }
 
-  private async loadSamples(): Promise<void> {
+  /**
+   * Fetches and decodes ONE recording, once. This used to be `loadSamples`,
+   * which pulled all six (222KB) at start whether the player owned an animal
+   * or not -- what actually plays is decided by the herd and the hour's cues,
+   * both known before the sound is due.
+   *
+   * Fire and forget: every caller is on the audio path and none can wait.
+   * Until a buffer lands, `playSample`/`playAnimal` fall through to silence
+   * exactly as they already did for a sample that failed to load.
+   */
+  private ensureSample(name: SampleName): void {
     const ctx = this.ctx;
-    if (!ctx) return;
-    await Promise.all(
-      (Object.keys(SAMPLE_FILES) as SampleName[]).map(async (name) => {
-        try {
-          const response = await fetch(SAMPLE_FILES[name]);
-          if (!response.ok) return;
-          const bytes = await response.arrayBuffer();
-          this.buffers.set(name, await ctx.decodeAudioData(bytes));
-        } catch {
-          // A cue with no buffer simply never sounds; the synthesised bed and
-          // the rest of the cues carry the farm without it.
-        }
-      }),
-    );
+    if (!ctx || this.requested.has(name)) return;
+    this.requested.add(name);
+    void (async () => {
+      try {
+        const response = await fetch(SAMPLE_FILES[name]);
+        if (!response.ok) return;
+        const bytes = await response.arrayBuffer();
+        const buffer = await ctx.decodeAudioData(bytes);
+        // `stop()` may have run while this was in flight, in which case the
+        // context that decoded it is closed and a new one is playing.
+        if (this.ctx !== ctx) return;
+        this.buffers.set(name, buffer);
+      } catch {
+        // A cue with no buffer simply never sounds; the synthesised bed and
+        // the rest of the cues carry the farm without it.
+      }
+    })();
   }
 }
 

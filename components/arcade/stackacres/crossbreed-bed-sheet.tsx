@@ -85,8 +85,8 @@ const LIVESTOCK_SPRITE: Record<StackAcresLivestock, string> = { hen: "hen", pig:
 
 function stockSpriteUrl(stock: StackAcresStock, stage: 0 | 1 | 2): string {
   return isLivestock(stock)
-    ? `/stackacres/sprites/${LIVESTOCK_SPRITE[stock]}.png`
-    : `/stackacres/sprites/${stock}${stage}.png`;
+    ? `/stackacres/sprites/${LIVESTOCK_SPRITE[stock]}.webp`
+    : `/stackacres/sprites/${stock}${stage}.webp`;
 }
 
 function countdownLabel(msLeft: number): string {

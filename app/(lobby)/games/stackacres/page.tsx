@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { StackAcresFarm } from "@/components/arcade/stackacres/stackacres-farm";
+import { StackAcresFarmDynamic } from "@/components/arcade/stackacres/stackacres-farm-dynamic";
 import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
 import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
@@ -65,7 +65,7 @@ export default async function StackAcresPage() {
    */
   return (
     <div className={`sa-theme ${stackAcresDisplay.variable}`}>
-      {allowed ? <StackAcresFarm /> : <StackAcresLock playerId={profile?.id ?? null} />}
+      {allowed ? <StackAcresFarmDynamic /> : <StackAcresLock playerId={profile?.id ?? null} />}
       {/* `.sa-theme` above is `display: contents` (see its own comment) and
           generates no box of its own, so ChronoDevPanel is a SIBLING of
           StackAcresFarm here, not nested inside a box this wrapper could

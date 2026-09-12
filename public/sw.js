@@ -44,6 +44,10 @@
 // than only focusing whatever screen was up. Handler-only change, same as
 // v8 -- no SHELL entry moved, so CACHE_NAME stays put and the browser's
 // normal byte-diff update check is what picks this file up.
+// v12: StackAcres' sprites and its short SFX became cacheable (see the
+// `cacheable` check below for what is deliberately left out). Handler-only
+// again -- SHELL is untouched, so CACHE_NAME stays put and nothing already
+// cached is thrown away.
 const CACHE_NAME = "stackchips-shell-v10";
 const SHELL = [
   "/",
@@ -98,10 +102,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // StackAcres' plates and short SFX join poker's /sounds/ and /avatars/.
+  // Nothing here downloads them: the farm is its own route, so a poker-only
+  // player never requests one and nothing enters the cache until the farm
+  // asks. What it buys is the second visit, where 3.4MB of sprites is
+  // currently re-fetched on every cold boot.
+  //
+  // The prefix stops at /sfx/ to keep the three 3MB music loops out. They
+  // stream from an <audio> element one at a time, which is already right, and
+  // an <audio> element asks for byte ranges -- cache.put() rejects a 206 and
+  // the rejection here would be unhandled.
   const cacheable = SHELL.includes(url.pathname)
     || url.pathname.startsWith("/_next/static/")
     || url.pathname.startsWith("/sounds/")
-    || url.pathname.startsWith("/avatars/");
+    || url.pathname.startsWith("/avatars/")
+    || url.pathname.startsWith("/stackacres/")
+    || url.pathname.startsWith("/audio/stackacres/sfx/");
   if (!cacheable) return;
 
   event.respondWith(

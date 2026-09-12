@@ -1,7 +1,7 @@
 /**
  * The farm's ambient soundscape: a continuous synthesised bed plus sparse
- * cues, mixed for the time of day, the district you are standing in, and the
- * animals you actually own.
+ * cues, mixed for the time of day and the animals you actually own. It no
+ * longer varies by district -- see lib/stackacres/ambience-plan.ts for why.
  *
  * This is the ASMR layer, and it is deliberately NOT music. It has no pulse,
  * no key and no loop -- see lib/audio/synth-voices.ts for why that is a
@@ -32,7 +32,6 @@ import {
   type AmbienceCueName,
   type AmbienceTimeOfDay,
 } from "@/lib/stackacres/ambience-plan";
-import type { ZoneId } from "@/lib/stackacres/zones";
 import { RandomWalk, noiseSource, playVoice, type SynthVoice } from "./synth-voices";
 import { respectSilentSwitch } from "./audio-session";
 
@@ -108,7 +107,6 @@ class Ambience {
   private cues: ScheduledCue[] = [];
   private livestock: ScheduledAnimal[] = [];
 
-  private zone: ZoneId = "farmstead";
   private tod: AmbienceTimeOfDay = "day";
   private herd: Partial<Record<SampleName, number>> = {};
   private muted = false;
@@ -241,9 +239,8 @@ class Ambience {
 
   // -- what the farm is doing ----------------------------------------------
 
-  setPlace(zone: ZoneId, tod: AmbienceTimeOfDay): void {
-    if (zone === this.zone && tod === this.tod) return;
-    this.zone = zone;
+  setPlace(tod: AmbienceTimeOfDay): void {
+    if (tod === this.tod) return;
     this.tod = tod;
     this.applyPlan();
   }
@@ -353,20 +350,19 @@ class Ambience {
     const ctx = this.ctx;
     if (!ctx) return;
 
-    const mix = ambienceMix(this.tod, this.zone);
+    const mix = ambienceMix(this.tod);
     for (const [name, bed] of this.beds) {
-      // Four seconds is a long crossfade on purpose: travelling between
-      // districts should feel like walking into somewhere, and a fast
-      // fade makes the map sound like it is cutting between rooms.
+      // Four seconds is a long crossfade on purpose: the day/night handover
+      // should feel gradual, not like the mix cutting between rooms.
       bed.gain.gain.linearRampToValueAtTime(mix[name], ctx.currentTime + 4);
     }
 
     const now = ctx.currentTime;
-    this.cues = ambienceCues(this.tod, this.zone).map((cue) => ({
+    this.cues = ambienceCues(this.tod).map((cue) => ({
       cue,
       // Stagger the first firing across the whole range rather than starting
-      // every cue at once, or arriving somewhere sets off the entire district
-      // in the first two seconds.
+      // every cue at once, or the hour turning over sets off every cue at
+      // once.
       nextAt: now + rollGapMs(cue, Math.random) / 1000,
     }));
     this.applyLivestock();
@@ -503,9 +499,9 @@ export function stopAmbience(): void {
   ambience.stop();
 }
 
-/** Where the listener is, and when. Safe to call on every render. */
-export function setAmbiencePlace(zone: ZoneId, tod: AmbienceTimeOfDay): void {
-  ambience.setPlace(zone, tod);
+/** What hour the farm is in. Safe to call on every render. */
+export function setAmbiencePlace(tod: AmbienceTimeOfDay): void {
+  ambience.setPlace(tod);
 }
 
 /** How many hens/sheep/cattle are standing in the district being listened to. */

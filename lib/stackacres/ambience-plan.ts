@@ -1,11 +1,18 @@
 /**
- * What the farm should SOUND like at a given hour, in a given district.
+ * What the farm should SOUND like at a given hour.
  *
  * Pure and tested, for the same reason `tools.ts` is: the engine that turns
  * this into noise (`lib/audio/stackacres-ambience.ts`) can only be judged by
  * ear, so every decision that can be made as data is made here instead, where
  * it can be asserted. The engine owns oscillators and gain ramps; it owns no
- * opinions about what a wallow sounds like at midnight.
+ * opinions about what the farm sounds like at midnight.
+ *
+ * This used to vary per district too -- the Wallow wetter, the Ox Fields
+ * thinner, a windmill creak only near the actual windmill. That made the
+ * ambience a property of where you stood, which meant travelling reset it and
+ * meant two districts could sound like two different games. It is now one mix
+ * and one cue table for the whole map: the farm sounds like the farm no
+ * matter where you are standing on it.
  *
  * The whole soundscape is SYNTHESISED at runtime -- there is no ambience file
  * to fetch and no ambience loop to hear repeat. That is a deliberate choice
@@ -30,7 +37,6 @@
  */
 
 import { clamp01 } from "./world";
-import type { ZoneId } from "./zones";
 
 /** Which third of the day the farm is in. Mirrors `timeOfDay` in lib/audio/stackacres-music.ts. */
 export type AmbienceTimeOfDay = "day" | "dusk" | "night";
@@ -38,21 +44,22 @@ export type AmbienceTimeOfDay = "day" | "dusk" | "night";
 /**
  * The continuous layers. Each is one synthesis recipe in the engine.
  *
- * THERE IS NO `wind` BED and there is no `air` BED either, and both are
- * decisions rather than omissions. Wind shipped, was turned down once for
- * being the loudest thing on the farm by a wide margin, and was then cut
- * outright. That left `grass` carrying a gust walk of its own, which read as
- * wind just the same and was cut the next day. `air` was the last of it: a
- * continuous low-passed noise floor under everything, held at close to full
- * gain in every district and every hour so the farm was never silent -- which
- * is exactly the brief for a wind bed, just without a gust to point at. It
- * was killed rather than tuned again after three straight rounds of "still
- * sounds like wind" against three different fixes. What is left is `grass`'s
- * fixed, static rustle plus whatever `water`/`insects` a district actually
- * has; a district with none of those genuinely goes quiet, which is the
- * correct sound for bare ground with nothing on it. Do not reinstate a
- * continuous noise-floor bed under any name -- that is the shape that has
- * read as wind three times now, regardless of what wanders on top of it.
+ * THERE IS NO `wind` BED, no `air` BED, and `grass` is held at 0 everywhere.
+ * Wind shipped, was turned down once for being the loudest thing on the farm
+ * by a wide margin, and was then cut outright. `grass` carried a gust walk of
+ * its own, which read as wind just the same and was cut the next day, and
+ * even flattened to a fixed static rustle it still read as wind once enough
+ * of it was playing -- so `grass` is silenced rather than tuned a third time.
+ * `air` was the last of it: a continuous low-passed noise floor under
+ * everything, held at close to full gain always so the farm was never
+ * silent -- which is exactly the brief for a wind bed, just without a gust to
+ * point at. It was killed rather than tuned again after three straight
+ * rounds of "still sounds like wind" against three different fixes. What is
+ * left is `water`/`insects`. Do not reinstate a continuous noise-floor bed
+ * under any name -- that is the shape that has read as wind three times now,
+ * regardless of what wanders on top of it. `grass` stays in this list at 0
+ * rather than being deleted, so the engine keeps holding one crossfaded
+ * voice per bed rather than tearing one down.
  */
 export const AMBIENCE_BEDS = ["grass", "water", "insects"] as const;
 export type AmbienceBed = (typeof AMBIENCE_BEDS)[number];
@@ -103,62 +110,24 @@ export interface AmbienceCue {
 
 const SILENT: AmbienceMix = { grass: 0, water: 0, insects: 0 };
 
+/** The one bed mix the whole map shares. `grass` stays out of it -- see AMBIENCE_BEDS. */
+const BASE_MIX: AmbienceMix = { grass: 0, water: 0.4, insects: 0.6 };
+
 /**
- * The bed mix for a district at an hour.
- *
- * Read the numbers as a picture rather than as levels. The Wallow is wet and
- * sheltered, so it carries water and barely rustles; the Ox Fields are bare
- * open ground with nothing standing on them, so they are the thinnest and
- * quietest place on the map and carry no water at all; the Long Meadow is the
- * grass one, which is also the district the scythe works in; the Farmstead
- * sits among buildings, so its rustle is broken up and its water is the yard
- * pump.
+ * The bed mix for an hour, the same wherever you are standing.
  *
  * Night drops `insects` to zero on purpose even though crickets are a night
  * sound: the `insects` bed is the daytime hum of flies and bees, a continuous
  * texture, where crickets are a CUE with gaps in it. Running both would be
  * one noise layer too many under a sleeping farm.
  */
-export function ambienceMix(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceMix {
-  const base = zoneBed(zone);
+export function ambienceMix(tod: AmbienceTimeOfDay): AmbienceMix {
   const day = timeBed(tod);
   return {
-    grass: clamp01(base.grass * day.grass),
-    water: clamp01(base.water * day.water),
-    insects: clamp01(base.insects * day.insects),
+    grass: clamp01(BASE_MIX.grass * day.grass),
+    water: clamp01(BASE_MIX.water * day.water),
+    insects: clamp01(BASE_MIX.insects * day.insects),
   };
-}
-
-function zoneBed(zone: ZoneId): AmbienceMix {
-  switch (zone) {
-    case "farmstead":
-      // Buildings break the rustle up and the yard pump is the only water --
-      // pulled up from 0.3/0.16/0.5 by the 2026-09-08 district merge, which
-      // folded the old "meadow" bed (0.9/0/0.85, the loudest rustle on the
-      // map) into this same district. One bed for the whole Farmstead now,
-      // roughly halfway between the yard's own quiet and the Crop Fields'
-      // open grass, since `zoneBed` has no notion of a sub-area to blend
-      // between the two within a single district.
-      return { grass: 0.62, water: 0.1, insects: 0.68 };
-    case "henhaven":
-      // The coops' own district since the 2026-09-07 re-lay. Straw and open
-      // grass with no standing water: the yard's bed without the yard pump.
-      return { grass: 0.55, water: 0, insects: 0.6 };
-    case "oxfields":
-      // Bare open ground with nothing standing on it to make a noise --
-      // the quietest district on the map on purpose, now that there is no
-      // `air` floor to carry it.
-      return { grass: 0.42, water: 0, insects: 0.35 };
-    case "wallow":
-      // Wet, sheltered, low. Water carries; not much else does.
-      return { grass: 0.34, water: 0.85, insects: 0.7 };
-    // townsquare, mine, coast and oak fall through to SILENT deliberately.
-    // They are wild ground the map re-lay reserved with nothing standing on
-    // them (see ./sectors.ts's `SectorState`), and inventing a bed for a
-    // market or a shoreline means new audio assets, which is a later pass.
-    default:
-      return SILENT;
-  }
 }
 
 function timeBed(tod: AmbienceTimeOfDay): AmbienceMix {
@@ -166,27 +135,26 @@ function timeBed(tod: AmbienceTimeOfDay): AmbienceMix {
     case "day":
       return { grass: 1, water: 1, insects: 1 };
     case "dusk":
-      // The grass settles with the light; the insects are at their loudest.
-      return { grass: 0.85, water: 1, insects: 1 };
+      return { grass: 1, water: 1, insects: 1 };
     case "night":
       // The daytime hum hands over to the cricket cue.
-      return { grass: 0.55, water: 1, insects: 0 };
+      return { grass: 1, water: 1, insects: 0 };
     default:
       return SILENT;
   }
 }
 
 /**
- * The sparse cues for a district at an hour, longest-gap-first for no reason
- * the engine depends on -- it is just easier to read a table that runs from
- * "constant" to "rare".
+ * The sparse cues for an hour, the same wherever you are standing,
+ * longest-gap-first for no reason the engine depends on -- it is just easier
+ * to read a table that runs from "constant" to "rare".
  *
  * Gaps are deliberately long. The temptation with a cue list is to make the
  * farm busy, and a busy farm is a noisy one: the point of this layer is that
  * a player who stops moving hears something happen every ten or twenty
  * seconds, not every two.
  */
-export function ambienceCues(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceCue[] {
+export function ambienceCues(tod: AmbienceTimeOfDay): AmbienceCue[] {
   const cues: AmbienceCue[] = [];
   const night = tod === "night";
   const dusk = tod === "dusk";
@@ -203,47 +171,29 @@ export function ambienceCues(tod: AmbienceTimeOfDay, zone: ZoneId): AmbienceCue[
   if (day || dusk) {
     cues.push({
       cue: "bird-high",
-      minGapMs: day ? 2_600 : 6_000,
-      maxGapMs: day ? 9_000 : 16_000,
-      gain: day ? 0.42 : 0.28,
+      minGapMs: day ? 1_500 : 3_500,
+      maxGapMs: day ? 5_000 : 9_000,
+      gain: day ? 0.46 : 0.32,
     });
     cues.push({
       cue: "bird-low",
-      minGapMs: day ? 5_000 : 9_000,
-      maxGapMs: day ? 15_000 : 24_000,
-      gain: 0.3,
+      minGapMs: day ? 3_000 : 5_000,
+      maxGapMs: day ? 9_000 : 14_000,
+      gain: 0.32,
     });
+    cues.push({ cue: "crow-caw", minGapMs: 14_000, maxGapMs: 38_000, gain: 0.28 });
   }
+  if (day) cues.push({ cue: "pigeon-coo", minGapMs: 12_000, maxGapMs: 32_000, gain: 0.28 });
+  if (dusk) cues.push({ cue: "farm-bell", minGapMs: 60_000, maxGapMs: 150_000, gain: 0.16 });
+  if (night) cues.push({ cue: "owl-hoot", minGapMs: 20_000, maxGapMs: 56_000, gain: 0.28 });
 
-  switch (zone) {
-    case "farmstead":
-      // The 2026-09-08 district merge folded the old "meadow" cues in here
-      // too: `crow-caw`/`owl-hoot` were the Crop Fields' own, unique to them
-      // on the old map, so they carry over as a Farmstead cue rather than
-      // being dropped outright.
-      if (day) cues.push({ cue: "pigeon-coo", minGapMs: 14_000, maxGapMs: 38_000, gain: 0.3 });
-      cues.push({ cue: "windmill-creak", minGapMs: 11_000, maxGapMs: 26_000, gain: 0.24 });
-      cues.push({ cue: "gate-creak", minGapMs: 30_000, maxGapMs: 90_000, gain: 0.18 });
-      cues.push({ cue: "straw-rustle", minGapMs: 8_000, maxGapMs: 21_000, gain: 0.23 });
-      cues.push({ cue: "water-drop", minGapMs: 4_000, maxGapMs: 12_000, gain: 0.22 });
-      if (dusk) {
-        cues.push({ cue: "farm-bell", minGapMs: 60_000, maxGapMs: 150_000, gain: 0.16 });
-        cues.push({ cue: "crow-caw", minGapMs: 16_000, maxGapMs: 44_000, gain: 0.26 });
-      }
-      if (night) cues.push({ cue: "owl-hoot", minGapMs: 22_000, maxGapMs: 60_000, gain: 0.26 });
-      break;
-    case "oxfields":
-      // Open ground with nothing on it: `air` carries this district almost on
-      // its own, and the few cues are all far away.
-      if (dusk || day) cues.push({ cue: "crow-caw", minGapMs: 12_000, maxGapMs: 34_000, gain: 0.3 });
-      if (night) cues.push({ cue: "owl-hoot", minGapMs: 18_000, maxGapMs: 52_000, gain: 0.3 });
-      cues.push({ cue: "gate-creak", minGapMs: 26_000, maxGapMs: 70_000, gain: 0.16 });
-      break;
-    case "wallow":
-      cues.push({ cue: "water-drop", minGapMs: 1_600, maxGapMs: 5_400, gain: 0.34 });
-      cues.push({ cue: "frog", minGapMs: night ? 2_400 : 6_000, maxGapMs: night ? 7_000 : 16_000, gain: 0.34 });
-      break;
-  }
+  // These used to belong to one district apiece; now they just play,
+  // wherever you are, because the farm is one place rather than four.
+  cues.push({ cue: "windmill-creak", minGapMs: 11_000, maxGapMs: 26_000, gain: 0.24 });
+  cues.push({ cue: "gate-creak", minGapMs: 28_000, maxGapMs: 80_000, gain: 0.17 });
+  cues.push({ cue: "straw-rustle", minGapMs: 8_000, maxGapMs: 21_000, gain: 0.23 });
+  cues.push({ cue: "water-drop", minGapMs: 2_500, maxGapMs: 8_000, gain: 0.28 });
+  cues.push({ cue: "frog", minGapMs: night ? 2_400 : 6_000, maxGapMs: night ? 7_000 : 16_000, gain: 0.34 });
 
   return cues;
 }

@@ -3425,8 +3425,8 @@ export function StackAcresFarm() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
-    setAmbiencePlace(place, tod);
-  }, [place, tod]);
+    setAmbiencePlace(tod);
+  }, [tod]);
   // Wildlife Ecosystem & Nighttime Predator Defense reads the SAME `tod`
   // ambience already computes, rather than polling `timeOfDay()` a second
   // time -- see wildlife.ts's own header for why the two must never be
@@ -4283,11 +4283,12 @@ export function StackAcresFarm() {
               the only way back into a district you had closed was to find
               its name in the signpost and travel there again -- which also
               flies the camera, so "let me look at that list again" cost you
-              your view. It is a peg on the right edge, always there, always
-              naming the district it will open, and it is the one piece of
-              chrome that is deliberately louder than it needs to be: it is
-              how a player learns the panel is a drawer rather than something
-              that happens to them. */}
+              your view. It is a peg on the right edge, always there, and it
+              is the one piece of chrome that is deliberately louder than it
+              needs to be: it is how a player learns the panel is a drawer
+              rather than something that happens to them. It used to name the
+              district it would open; the map no longer sounds or reads as
+              separate districts, so it just says what it does. */}
           <button
             type="button"
             className={clsx("sa-panel-tab", { "is-stowed": panelOpen })}
@@ -4297,7 +4298,7 @@ export function StackAcresFarm() {
             tabIndex={panelOpen ? -1 : undefined}
           >
             <ChevronLeft size={18} aria-hidden="true" />
-            <span className="sa-panel-tab-label">{district.label.replace(/^The /, "")}</span>
+            <span className="sa-panel-tab-label">Farm</span>
           </button>
 
           {/* The district panel: deep management, not the way you play.

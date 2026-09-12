@@ -7,57 +7,38 @@ import {
   rollGapMs,
   type AmbienceTimeOfDay,
 } from "./ambience-plan";
-import { WILD_SECTORS } from "./sectors";
-import { ZONE_IDS } from "./zones";
 
 const TIMES: AmbienceTimeOfDay[] = ["day", "dusk", "night"];
 
 describe("ambienceMix", () => {
-  it("keeps every bed inside 0..1 for every district and hour", () => {
-    for (const zone of ZONE_IDS) {
-      for (const tod of TIMES) {
-        const mix = ambienceMix(tod, zone);
-        for (const bed of AMBIENCE_BEDS) {
-          expect(mix[bed], `${zone}/${tod}/${bed}`).toBeGreaterThanOrEqual(0);
-          expect(mix[bed], `${zone}/${tod}/${bed}`).toBeLessThanOrEqual(1);
-        }
+  it("keeps every bed inside 0..1 at every hour", () => {
+    for (const tod of TIMES) {
+      const mix = ambienceMix(tod);
+      for (const bed of AMBIENCE_BEDS) {
+        expect(mix[bed], `${tod}/${bed}`).toBeGreaterThanOrEqual(0);
+        expect(mix[bed], `${tod}/${bed}`).toBeLessThanOrEqual(1);
       }
     }
   });
 
-  it("still gives every worked district something in the mix, now that there is no air floor", () => {
-    // There is no bed guaranteed non-zero any more (that guarantee was the
-    // `air` floor, and it read as wind) -- but every worked zone still carries
-    // grass, so one of those going genuinely silent would be a regression in
-    // the zone table, not a property this file enforces directly.
-    //
-    // The four districts the 2026-09-07 map re-lay reserved are SILENT on
-    // purpose and excluded here: nothing is built on them, and inventing a bed
-    // for a market or a shoreline means new audio assets, which is a later
-    // pass. `WILD_SECTORS` is the same list, read from its one owner so this
-    // cannot quietly cover a district that has since been built.
-    const worked = ZONE_IDS.filter((zone) => !WILD_SECTORS.includes(zone));
-    expect(worked).toEqual(["farmstead", "henhaven", "oxfields", "wallow"]);
-    for (const zone of worked) {
-      for (const tod of TIMES) {
-        const mix = ambienceMix(tod, zone);
-        const total = mix.grass + mix.water + mix.insects;
-        expect(total, `${zone}/${tod}`).toBeGreaterThan(0);
-      }
-    }
+  it("does not vary by district: the mix is one property of the hour now", () => {
+    // Districts used to each carry their own bed values (the Wallow wetter,
+    // the Ox Fields thinner). That made the ambience a property of where you
+    // stood rather than of the farm, which is exactly what got cut -- so
+    // there is no zone argument left to pass in the first place.
+    expect(ambienceMix.length).toBe(1);
   });
 
-  it("makes the farmstead the grassiest district and the wallow the wettest", () => {
-    // The districts have to be TOLD APART by ear, which is the whole point of
-    // mixing per district rather than playing one farm bed everywhere. The
-    // Farmstead carries the top grass value now: the 2026-09-08 district
-    // merge folded the old "meadow" bed (the loudest rustle on the map) into
-    // it -- see zoneBed's own comment.
-    const grass = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).grass }));
-    expect(grass.sort((a, b) => b.value - a.value)[0].zone).toBe("farmstead");
-
-    const water = ZONE_IDS.map((zone) => ({ zone, value: ambienceMix("day", zone).water }));
-    expect(water.sort((a, b) => b.value - a.value)[0].zone).toBe("wallow");
+  it("still gives the farm something in the mix by day and dusk, now that there is no air floor", () => {
+    // There is no bed guaranteed non-zero any more -- the `air` floor read as
+    // wind and was cut, and `grass` was cut the same way after it. By day and
+    // dusk `insects` still carries the mix; at night it hands off to the
+    // cricket CUE on purpose (see the test below), so the bed layer going
+    // quiet overnight is correct, not a regression.
+    for (const tod of ["day", "dusk"] as const) {
+      const mix = ambienceMix(tod);
+      expect(mix.grass + mix.water + mix.insects, tod).toBeGreaterThan(0);
+    }
   });
 
   it("has no wind bed and no air bed", () => {
@@ -68,74 +49,68 @@ describe("ambienceMix", () => {
     expect([...AMBIENCE_BEDS] as string[]).not.toContain("air");
   });
 
-  it("hands the daytime insect hum over to the cricket cue at night", () => {
-    for (const zone of ZONE_IDS) {
-      expect(ambienceMix("night", zone).insects, zone).toBe(0);
-      const cues = ambienceCues("night", zone).map((cue) => cue.cue);
-      expect(cues, zone).toContain("cricket");
+  it("keeps grass silenced rather than reinstated under the same or a new name", () => {
+    // `grass`'s own gust walk read as wind too (see AMBIENCE_BEDS), so it is
+    // held at 0 for the same reason `wind`/`air` never came back.
+    for (const tod of TIMES) {
+      expect(ambienceMix(tod).grass, tod).toBe(0);
     }
   });
 
-  it("settles the grass with the light", () => {
-    for (const zone of ZONE_IDS) {
-      const day = ambienceMix("day", zone).grass;
-      const night = ambienceMix("night", zone).grass;
-      if (day > 0) expect(night, zone).toBeLessThan(day);
-    }
+  it("hands the daytime insect hum over to the cricket cue at night", () => {
+    expect(ambienceMix("night").insects).toBe(0);
+    expect(ambienceCues("night").map((cue) => cue.cue)).toContain("cricket");
   });
 });
 
 describe("ambienceCues", () => {
-  it("gives every district something to hear at every hour", () => {
-    for (const zone of ZONE_IDS) {
-      for (const tod of TIMES) {
-        expect(ambienceCues(tod, zone).length, `${zone}/${tod}`).toBeGreaterThan(0);
-      }
+  it("gives the farm something to hear at every hour", () => {
+    for (const tod of TIMES) {
+      expect(ambienceCues(tod).length, tod).toBeGreaterThan(0);
     }
   });
 
-  it("never schedules the same cue twice in one district", () => {
+  it("does not vary by district: the cue table is one property of the hour now", () => {
+    expect(ambienceCues.length).toBe(1);
+  });
+
+  it("never schedules the same cue twice", () => {
     // Two entries for one cue would run two independent schedulers for it,
     // quietly doubling how often it fires -- a mistake that is very hard to
     // hear as a bug and very easy to make while editing the table.
-    for (const zone of ZONE_IDS) {
-      for (const tod of TIMES) {
-        const names = ambienceCues(tod, zone).map((cue) => cue.cue);
-        expect(new Set(names).size, `${zone}/${tod}`).toBe(names.length);
-      }
+    for (const tod of TIMES) {
+      const names = ambienceCues(tod).map((cue) => cue.cue);
+      expect(new Set(names).size, tod).toBe(names.length);
     }
   });
 
   it("always leaves a real gap: no cue is a metronome", () => {
     // A cue whose min and max are equal fires on a fixed period, which is a
     // beat. The brief for this whole layer was explicitly "not beats".
-    for (const zone of ZONE_IDS) {
-      for (const tod of TIMES) {
-        for (const cue of ambienceCues(tod, zone)) {
-          expect(cue.maxGapMs, `${zone}/${tod}/${cue.cue}`).toBeGreaterThan(cue.minGapMs);
-          expect(cue.minGapMs, `${zone}/${tod}/${cue.cue}`).toBeGreaterThanOrEqual(1_000);
-          expect(cue.gain, `${zone}/${tod}/${cue.cue}`).toBeGreaterThan(0);
-          expect(cue.gain, `${zone}/${tod}/${cue.cue}`).toBeLessThanOrEqual(1);
-        }
+    for (const tod of TIMES) {
+      for (const cue of ambienceCues(tod)) {
+        expect(cue.maxGapMs, `${tod}/${cue.cue}`).toBeGreaterThan(cue.minGapMs);
+        expect(cue.minGapMs, `${tod}/${cue.cue}`).toBeGreaterThanOrEqual(1_000);
+        expect(cue.gain, `${tod}/${cue.cue}`).toBeGreaterThan(0);
+        expect(cue.gain, `${tod}/${cue.cue}`).toBeLessThanOrEqual(1);
       }
     }
   });
 
   it("keeps birds to the daylight and owls to the dark", () => {
-    for (const zone of ZONE_IDS) {
-      const night = ambienceCues("night", zone).map((cue) => cue.cue);
-      expect(night, zone).not.toContain("bird-high");
-      expect(night, zone).not.toContain("bird-low");
-    }
-    expect(ambienceCues("day", "farmstead").map((cue) => cue.cue)).not.toContain("owl-hoot");
-    expect(ambienceCues("night", "farmstead").map((cue) => cue.cue)).toContain("owl-hoot");
+    const night = ambienceCues("night").map((cue) => cue.cue);
+    expect(night).not.toContain("bird-high");
+    expect(night).not.toContain("bird-low");
+    expect(ambienceCues("day").map((cue) => cue.cue)).not.toContain("owl-hoot");
+    expect(night).toContain("owl-hoot");
   });
 
-  it("puts the frogs and the water in the wallow", () => {
-    const wallow = ambienceCues("night", "wallow").map((cue) => cue.cue);
-    expect(wallow).toContain("frog");
-    expect(wallow).toContain("water-drop");
-    expect(ambienceCues("night", "oxfields").map((cue) => cue.cue)).not.toContain("frog");
+  it("plays the frogs and the creaks everywhere now, not just their old home district", () => {
+    const night = ambienceCues("night").map((cue) => cue.cue);
+    expect(night).toContain("frog");
+    expect(night).toContain("water-drop");
+    expect(night).toContain("windmill-creak");
+    expect(night).toContain("gate-creak");
   });
 });
 

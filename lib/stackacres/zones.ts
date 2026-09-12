@@ -267,8 +267,8 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // so that pass does not have to move anything else.
 
   // Town Square. On the south road, under the beds' west third, beside
-  // Cattle Pasture. The town the Contracts board, Ray's store and the Museum
-  // are all posted from today without being anywhere.
+  // Cattle Pasture. The town the Contracts board and Ray's store are all
+  // posted from today without being anywhere.
   townsquare: {
     id: "townsquare",
     label: "Town Square",

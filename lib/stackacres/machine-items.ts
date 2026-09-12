@@ -8,9 +8,9 @@
  * lib/server/stackacres-service.ts's `harvestStackAcres` -- so every
  * `StackAcresItem` (eggs, wool, milk, all 22 crops) IS an inventory item now,
  * and the two spaces are one. `StackAcresItem` stays the narrower type where
- * a module only ever deals with what a unit yields (./harvest.ts,
- * ./museum.ts); `MachineItemId` below is the wider one a recipe, the
- * inventory itself, or the Sell action needs.
+ * a module only ever deals with what a unit yields (./harvest.ts);
+ * `MachineItemId` below is the wider one a recipe, the inventory itself, or
+ * the Sell action needs.
  *
  * WHEAT WAS THE ONE ITEM THAT WAS NEITHER. It is not a `StackAcresItem` (it
  * is grown on its own Wheat Plot table, not a stocked unit -- see

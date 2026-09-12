@@ -68,17 +68,6 @@ import {
   itemSellPrice,
   type StackAcresItem,
 } from "@/lib/stackacres/items";
-import { emptyMuseumRegistry, type MuseumRegistry } from "@/lib/stackacres/museum";
-import {
-  SECRET_ARTIFACTS,
-  SECRET_MUSEUM_ITEM_CATALOGUE,
-  emptySecretMuseumRegistry,
-  museumGlowTier as museumGlowTierFor,
-  secretHiddenSetComplete,
-  secretsFoundCount,
-  type SecretMuseumItemId,
-  type SecretMuseumRegistry,
-} from "@/lib/stackacres/museum-secrets";
 import {
   SECRET_ITEM_CATALOGUE,
   SECRET_ITEM_IDS,
@@ -168,7 +157,6 @@ import type { PlayerProfile } from "@/lib/profile/types";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
-import { StackAcresMuseum } from "./stackacres-museum";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
@@ -332,7 +320,7 @@ const PIXEL_PILGRIM_LINES: readonly string[] = [
 ];
 
 /** Grandfather Ray's own opening lines, in the same drawl the welcome
- *  modal and the Museum's own intro already use. One is picked at random
+ *  modal already uses. One is picked at random
  *  each time his gift dialogue opens; the prompt itself lives in
  *  StackAcresFriendshipDialogue, not here, for the same reason
  *  PIXEL_PILGRIM_LINES keeps its own prompt out of this array. */
@@ -389,12 +377,6 @@ interface StackAcresResponse {
   water?: number;
   capacity: Partial<Record<StackAcresStock, number>>;
   exchange: StackAcresExchangeState;
-  museum: MuseumRegistry;
-  /** Ray's Museum, secret wing: which hidden finds this player has ever
-   *  turned up (lib/stackacres/museum-secrets.ts). Absent from a response
-   *  old enough to predate the wing, which `emptySecretMuseumRegistry`
-   *  covers the same way `toStackAcresToolTier` covers a missing `tool`. */
-  museumSecrets?: SecretMuseumRegistry;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -409,8 +391,8 @@ interface StackAcresResponse {
   harvest?: {
     units: number;
     /** Produce actually credited to inventory -- base yield plus any crit
-     *  bonus plus any Ray's Museum discovery bonus. Pays no Gold at all;
-     *  see lib/server/stackacres-service.ts's own header. */
+     *  bonus. Pays no Gold at all; see lib/server/stackacres-service.ts's own
+     *  header. */
     tally: { item: StackAcresItem; quantity: number }[];
     /** Every settled unit's yield at today's sell price, before any bonus --
      *  a production figure, not Gold paid (a harvest pays none). */
@@ -420,17 +402,6 @@ interface StackAcresResponse {
     crit: boolean;
     /** Bonus units a crit added, summed per item. Empty when the roll missed. */
     critBonus: { item: StackAcresItem; quantity: number }[];
-    /** Items donated to Ray's Museum for the very first time in this sweep,
-     *  and the bonus UNITS each discovery added -- already folded into
-     *  `tally` above. */
-    discoveries: { item: StackAcresItem; bonusQuantity: number }[];
-    /** Ray's Museum, secret wing: what this sweep's one roll turned up, or
-     *  null on the overwhelming majority of harvests. Pays no Gold and no
-     *  inventory. */
-    secretFind: SecretMuseumItemId | null;
-    /** True only on the harvest whose find just completed the core hidden
-     *  set for the first time ever. */
-    secretSetJustCompleted: boolean;
   };
   upgraded?: { from: StackAcresToolTier; to: StackAcresToolTier };
   /* The processing track -- wheat, mills, stores, and the one open Town
@@ -549,7 +520,8 @@ interface StackAcresResponse {
     grantedKeepsake: KeepsakeId | null;
   };
   /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
-   *  from Ray's Museum donations) and every drone this profile owns.
+   *  from the farm's own milestone ladder, lib/stackacres/shop-locks.ts) and
+   *  every drone this profile owns.
    *  Absent only from a response old enough to predate the feature, which
    *  `applyResponse` reads as "no drones yet, hangar unconfirmed" -- the
    *  same "old response, nothing changes" posture every other optional
@@ -911,12 +883,8 @@ export function StackAcresFarm() {
   const [error, setError] = useState<string | null>(null);
   const [tool, setTool] = useState<StackAcresTool>("inspect");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [museum, setMuseum] = useState<MuseumRegistry>(() => emptyMuseumRegistry());
-  const [museumSecrets, setMuseumSecrets] = useState<SecretMuseumRegistry>(() =>
-    emptySecretMuseumRegistry(),
-  );
   /** Hidden secrets: what is held, and whether a crit boost is armed. Empty
-   *  and unarmed until the first read lands, same posture `museum` takes. */
+   *  and unarmed until the first read lands. */
   const [secrets, setSecrets] = useState<{
     held: Partial<Record<SecretItemId, number>>;
     boostArmed: boolean;
@@ -926,7 +894,6 @@ export function StackAcresFarm() {
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showStore, setShowStore] = useState(false);
-  const [showMuseum, setShowMuseum] = useState(false);
   const [showContracts, setShowContracts] = useState(false);
   const [showWorkshop, setShowWorkshop] = useState(false);
   /** The vat's own sheet, opened from inside the Workshop. */
@@ -1318,8 +1285,6 @@ export function StackAcresFarm() {
     if (typeof data.water === "number") setWater(data.water);
     if (data.capacity) setCapacity(data.capacity);
     if (data.exchange) setExchange(data.exchange);
-    if (data.museum) setMuseum(data.museum);
-    if (data.museumSecrets) setMuseumSecrets(data.museumSecrets);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
     if (typeof data.influence === "number") setInfluence(data.influence);
@@ -1488,8 +1453,6 @@ export function StackAcresFarm() {
       // place-pipe does for irrigation below.
       seedStock,
       exchange,
-      museum,
-      museumSecrets,
       sectors,
       upkeep,
       influence,
@@ -1515,8 +1478,6 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       exchange,
-      museum,
-      museumSecrets,
       sectors,
       upkeep,
       influence,
@@ -1544,8 +1505,6 @@ export function StackAcresFarm() {
     setCapacity(snap.capacity);
     setSeedStock(snap.seedStock);
     setExchange(snap.exchange);
-    setMuseum(snap.museum);
-    setMuseumSecrets(snap.museumSecrets);
     setSectors(snap.sectors);
     setUpkeep(snap.upkeep);
     setInfluence(snap.influence);
@@ -1641,22 +1600,6 @@ export function StackAcresFarm() {
     [cropOnTile],
   );
 
-  // The barn's own beacon (lib/stackacres/museum-secrets.ts) and whether the
-  // Pixel Pilgrim's own unlock tint should be showing -- both pure
-  // derivations of state already held above, recomputed only when one of
-  // its real inputs changes rather than tracked as state of their own.
-  const museumGlowTier = useMemo(
-    () =>
-      museumGlowTierFor({
-        regularUndonatedCount: Object.values(museum).filter((donated) => !donated).length,
-        secretsFound: secretsFoundCount(museumSecrets),
-        secretsTotal: SECRET_ARTIFACTS.length,
-        hasGoldenSpade: toolTier === "golden-spade",
-      }),
-    [museum, museumSecrets, toolTier],
-  );
-  const secretSetComplete = useMemo(() => secretHiddenSetComplete(museumSecrets), [museumSecrets]);
-
   const anyWorking = units.some(
     (unit) =>
       unit.state === "working" ||
@@ -1687,8 +1630,8 @@ export function StackAcresFarm() {
   }, []);
 
   // Pushed to the scene only when the render decision actually flips, the
-  // same "push, never rebuild" contract setToolTier/setMuseumGlowTier
-  // already follow -- see StackAcresWorldApi's own `setMerchant` doc.
+  // same "push, never rebuild" contract setToolTier already follows -- see
+  // StackAcresWorldApi's own `setMerchant` doc.
   const merchantRendered = merchantSnapshot.state !== "absent";
   useEffect(() => {
     world.current?.setMerchant(merchantRendered);
@@ -1965,17 +1908,12 @@ export function StackAcresFarm() {
           if (single) setCelebrate({ unitId: single, nonce: Date.now() });
           // The toast leads with what went into the barn, because that is
           // what a harvest is now -- it pays no Gold, and selling is a
-          // separate choice made at the Workshop. Ray's Museum rides on the
-          // same toast; its bonus units are already folded into `tally`.
+          // separate choice made at the Workshop.
           const tallyText = harvest.tally
             .map((line) => itemLabel(line.item, line.quantity))
             .join(", ");
-          const discoveryPart =
-            harvest.discoveries.length > 0
-              ? ` · ${harvest.discoveries.length === 1 ? "New Discovery!" : "New Discoveries!"}`
-              : "";
           setLastCollect({
-            text: `+${tallyText} to the barn${discoveryPart}`,
+            text: `+${tallyText} to the barn`,
             nonce: Date.now(),
           });
           if (anchor) {
@@ -2011,22 +1949,6 @@ export function StackAcresFarm() {
                 1 + stackacresToolTierDef(toolTierRef.current).critBonus,
               );
             }
-          }
-          // Ray's Museum, secret wing: its own toast, never folded into the
-          // money line above -- a secret find pays no Gold at all, so it has
-          // nothing to add to that figure and everything to say on its own.
-          if (harvest.secretFind) {
-            goldSound();
-            setLastCollect({
-              text: `You found something in the straw… ${SECRET_MUSEUM_ITEM_CATALOGUE[harvest.secretFind].label}!`,
-              nonce: Date.now(),
-            });
-          }
-          if (harvest.secretSetJustCompleted) {
-            setLastCollect({
-              text: "Ray's hidden collection is complete!",
-              nonce: Date.now(),
-            });
           }
           if (harvest.mucked > 0) {
             setError(
@@ -2426,7 +2348,7 @@ export function StackAcresFarm() {
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
    *  keepsake) only ever shows once the server confirms it, the same
-   *  "nothing to guess" posture a museum donation already takes. */
+   *  "nothing to guess" posture a secret-item donation already takes. */
   const onGiveGift = useCallback(
     (npc: NpcId, item: MachineItemId) => {
       void act({ action: "give-gift", npc, item });
@@ -2862,13 +2784,13 @@ export function StackAcresFarm() {
     [openPenFeed],
   );
 
-  /** A finger landed on the barn, Ray's Museum's entryway. A sound on the
-   *  press and a sheet over the map. Nothing goes to the server; the museum
-   *  registry already lives in this component's state. */
+  /** A finger landed on the barn -- Ray's Supply Store's entryway. Same
+   *  sound-and-sheet shape `onOpenShop` already opens the store with from
+   *  Grandfather Ray's own gift dialogue; nothing goes to the server. */
   const onWorldBarnTap = useCallback(() => {
     setRadial(null);
     panelSound();
-    setShowMuseum(true);
+    setShowStore(true);
   }, []);
 
   /** A finger landed on the signpost, the Town Board's entryway now that
@@ -3965,10 +3887,8 @@ export function StackAcresFarm() {
               units={liveUnits}
               tool={tool}
               cutter={cutter}
-              museumGlowTier={museumGlowTier}
               farmhandSpeedMultiplier={farmhandSpeedMultiplier}
               viewExpansion={compactNav ? HUD_VIEW_EXPANSION : 1}
-              secretSetComplete={secretSetComplete}
               celebrate={celebrate}
               onReady={onWorldReady}
               onUnitTap={onWorldUnitTap}
@@ -4353,7 +4273,7 @@ export function StackAcresFarm() {
                       disabled={isPending(`donate-secret-item:${itemId}`)}
                       onClick={() => onDonateSecretItem(itemId)}
                     >
-                      <span className="sa-buy-label">Donate to Museum</span>
+                      <span className="sa-buy-label">Donate to Ray</span>
                     </button>
                     <button
                       type="button"
@@ -4876,7 +4796,7 @@ export function StackAcresFarm() {
                 {!droneHangar.unlocked && (
                   <p className="sa-lock-hint" id="sa-lock-hint-drone">
                     <Lock size={13} aria-hidden="true" />
-                    <span>Donate at least one item to every exhibit in Ray&apos;s Museum to unlock the hangar.</span>
+                    <span>Earn every one of the farm&apos;s milestones to unlock the hangar.</span>
                   </p>
                 )}
                 <button
@@ -5002,14 +4922,6 @@ export function StackAcresFarm() {
       )}
 
       {showWelcome && <StackAcresRayWelcome onClose={dismissWelcome} />}
-      {showMuseum && (
-        <StackAcresMuseum
-          museum={museum}
-          secrets={museumSecrets}
-          secretDonations={secretDonations}
-          onClose={() => { panelSound(); setShowMuseum(false); }}
-        />
-      )}
       {showGreenhouse && (
         <StackAcresGreenhousePanel
           built={greenhouseBuilt}

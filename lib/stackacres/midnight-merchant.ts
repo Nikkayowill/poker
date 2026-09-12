@@ -76,12 +76,10 @@ export function catalogEntry(itemId: MidnightMerchantItemId): MidnightMerchantCa
 /* ------------------------------------------------------------------ */
 
 /** Not every critical harvest summons a visit -- see
- *  lib/server/stackacres-service.ts's `harvestStackAcres`, step 5c: a
+ *  lib/server/stackacres-service.ts's `harvestStackAcres`, step 3b: a
  *  critical is already a dice-rolled rarity (`rollHarvestCrit`), and this is
- *  a second, independent roll on top of it, the same "a secret find
- *  piggybacks on a critical harvest rather than adding a second guarded
- *  write" shape `rollSecretArtifact` already uses -- gating a SEPARATE roll
- *  off the same trigger, not a second write. */
+ *  a second, independent roll on top of it -- gating a SEPARATE roll off the
+ *  same trigger, not a second guarded write. */
 export const MIDNIGHT_MERCHANT_SPAWN_CHANCE_ON_CRIT = 0.35;
 
 /** How long a spawned visit lasts, in ms, before it lapses on its own even
@@ -152,11 +150,11 @@ export interface MidnightMerchantStockLine {
 
 /** What triggers a visit. Restated here (not imported from
  *  lib/domain-events.ts) because a Merchant visit is not itself a
- *  DomainEvent -- it is CAUSED by one (`critical_harvest` mirrors
- *  DomainEvent's `museum_secret_set_completed`-style "a rare thing just
- *  happened" shape) or by a session-idle tick that owes nothing to any
- *  particular play event. Kept as a closed union matching the SQL CHECK
- *  constraint on `stackacres_midnight_merchant_state.trigger` exactly. */
+ *  DomainEvent -- it is CAUSED by one (`critical_harvest` is that same "a
+ *  rare thing just happened" shape) or by a session-idle tick that owes
+ *  nothing to any particular play event. Kept as a closed union matching
+ *  the SQL CHECK constraint on `stackacres_midnight_merchant_state.trigger`
+ *  exactly. */
 export type MidnightMerchantTrigger = "critical_harvest" | "session_idle_tick" | "admin_grant";
 
 /** The server-confirmed state of a visit, or null for "no visit right now".

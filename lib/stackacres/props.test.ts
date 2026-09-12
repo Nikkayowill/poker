@@ -5,7 +5,6 @@ import {
   PROP_SHADOW,
   PROP_SIZE,
   VERGE_PROPS,
-  WINDMILL_HUB,
   YARD_PROPS,
   farmsteadClutter,
   propRect,
@@ -37,10 +36,12 @@ const PLOTS = growAreaBounds("farmstead");
  *  vacuously forever. */
 const BARN_PIECES = [
   { name: "barn", x: 71, y: -28, width: 74, height: 62 },
-  { name: "silo", x: 143, y: -28, width: 22, height: 62 },
-  { name: "hay1", x: 166, y: 23, width: 14, height: 10 },
-  { name: "hay2", x: 174, y: 23, width: 14, height: 10 },
-  { name: "barrel", x: 60, y: 20, width: 10, height: 13 },
+  // The barn was mirrored (`BARN_FLIPPED`, stackacres-scene.ts) so its doors
+  // face the other way; the hay and the barrel mirrored with it, each
+  // reflected across the barn's own centre (x 108).
+  { name: "hay1", x: 50, y: 23, width: 14, height: 10 },
+  { name: "hay2", x: 42, y: 23, width: 14, height: 10 },
+  { name: "barrel", x: 156, y: 20, width: 10, height: 13 },
 ].map((piece) => ({ ...piece, x: piece.x + YARD_DELTA.x, y: piece.y + YARD_DELTA.y }));
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -203,12 +204,8 @@ describe("yard props", () => {
     expect(distanceToPath(signpost.x, signpost.y, fork)).toBeLessThan(48);
   });
 
-  it("stands one windmill left of the seed strip with its hub on the tower", () => {
-    const mills = of("windmill");
-    expect(mills.length).toBe(1);
-    expect(mills[0].x + PROP_SIZE.windmill.w / 2 + 23).toBeLessThan(374);
-    expect(WINDMILL_HUB.y).toBeLessThan(0);
-    expect(-WINDMILL_HUB.y).toBeLessThan(PROP_SIZE.windmill.h);
+  it("places no windmill -- it was pulled from the yard", () => {
+    expect(of("windmill").length).toBe(0);
   });
 
   it("breaks the stone wall into three or four short lengths north of the yard", () => {

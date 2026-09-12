@@ -1,8 +1,8 @@
 import "server-only";
-import { MUSEUM_EXHIBITS, MUSEUM_EXHIBIT_CATALOGUE } from "@/lib/stackacres/museum";
+import { stackacresMilestone, STACKACRES_MAX_MILESTONE, type StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { DRONE_DEPLOY_COST_GOLD, DRONE_FORAGE_COOLDOWN_SECONDS } from "@/lib/stackacres/drone";
 import { STACKACRES_GOLD_CEILING, stackacresExchangeDay } from "@/lib/stackacres/exchange";
-import { readStackAcresMuseum, releaseStackAcresExchange, reserveStackAcresExchange } from "./stackacres-store";
+import { releaseStackAcresExchange, reserveStackAcresExchange } from "./stackacres-store";
 import {
   collectStackAcresDroneForage,
   deployStackAcresDrone,
@@ -23,11 +23,13 @@ import {
  *
  * GATED UNLOCK STATE: `isDroneHangarUnlocked` is DERIVED, never stored --
  * same rule lib/stackacres/shop-locks.ts's own header states and for the
- * same reason: a permanent fact (museum donations only ever grow) needs no
- * migration and can never regress a farm that has already earned it. "Ray's
- * Museum" here means literally that table: a hangar unlocks once a profile
- * has donated at least one item to every exhibit in
- * `MUSEUM_EXHIBIT_CATALOGUE`.
+ * same reason: every one of the farm's milestone flags is a permanent fact
+ * that only ever grows, so this needs no migration and can never regress a
+ * farm that has already earned it. The hangar unlocks once a profile has
+ * earned every flag on the ladder (`stackacresMilestone(progress) >=
+ * STACKACRES_MAX_MILESTONE`) -- the same difficulty the old museum-donation
+ * gate this replaced asked for, in the farm's own permanent-quest currency
+ * instead of a donation registry.
  *
  * NO INVENTORY MIRROR: the first drone migration also wrote each Gold
  * movement into the dead `homestead_inventory` table as a write-only
@@ -38,16 +40,16 @@ import {
  * beyond ownership, add a column to `stackacres_drones`.
  */
 
-/** Whether this profile has unlocked the drone hangar: at least one
- *  donation on record for every exhibit in Ray's Museum. Checked here, on
- *  the server, before either Gold movement below -- never trusted from the
- *  client, the same posture `requireUnlockedShopEntry` takes for every one
- *  of Ray's shop locks. */
-export async function isDroneHangarUnlocked(profileId: string): Promise<boolean> {
-  const donated = new Set(await readStackAcresMuseum(profileId));
-  return MUSEUM_EXHIBITS.every((exhibitId) =>
-    MUSEUM_EXHIBIT_CATALOGUE[exhibitId].items.some((item) => donated.has(item)),
-  );
+/** Whether this profile has unlocked the drone hangar: every one of the
+ *  farm's permanent quest flags earned (lib/stackacres/shop-locks.ts). Pure
+ *  and synchronous -- the caller reads whatever progress struct it already
+ *  has (or a fresh one) rather than this function reaching for its own
+ *  store read, the same "narrow, no Gold opinion" posture `readShopProgress`
+ *  itself takes. Checked before either Gold movement below -- never trusted
+ *  from the client, the same posture `requireUnlockedShopEntry` takes for
+ *  every one of Ray's shop locks. */
+export function isDroneHangarUnlocked(progress: StackAcresShopProgress): boolean {
+  return stackacresMilestone(progress) >= STACKACRES_MAX_MILESTONE;
 }
 
 export type DeployDroneResult =
@@ -58,11 +60,15 @@ export type DeployDroneResult =
  * Deploys one new drone for `profileId`, at the flat `DRONE_DEPLOY_COST_GOLD`
  * fee. Requirement 1's server half: the hangar gate is checked BEFORE
  * `deployStackAcresDrone` ever reaches the Gold-moving RPC, so a hand-rolled
- * request from a farm that has never completed the museum can never spend
+ * request from a farm that has not earned every milestone can never spend
  * Gold it should not have been offered the chance to.
  */
-export async function deployDrone(profileId: string, now: Date): Promise<DeployDroneResult> {
-  if (!(await isDroneHangarUnlocked(profileId))) {
+export async function deployDrone(
+  profileId: string,
+  now: Date,
+  progress: StackAcresShopProgress,
+): Promise<DeployDroneResult> {
+  if (!isDroneHangarUnlocked(progress)) {
     return { success: false, reason: "hangar_locked" };
   }
 

@@ -86,7 +86,6 @@ declare global {
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
   var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
-  var __riverRoomStackAcresMuseumSecrets: Map<string, Set<string>> | undefined;
   var __riverRoomStackAcresSectors: Map<string, string> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresWheatPlots: Map<string, StoredWheatPlot> | undefined;
@@ -138,21 +137,15 @@ globalThis.__riverRoomStackAcresExchanges = memoryExchanges;
 const memoryHarvests = globalThis.__riverRoomStackAcresHarvests ?? [];
 globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
 
-/** Ray's Museum: which produce items a player has ever donated (see
- *  markStackAcresDonated below). Keyed by profileId, value the set of
- *  item ids -- there is no "undonate", so a Set is the whole model. */
+/** Which items a player has ever donated (see markStackAcresDonated below).
+ *  Keyed by profileId, value the set of item ids -- there is no "undonate",
+ *  so a Set is the whole model. Feeds exactly one live feature now: a Hidden
+ *  Secrets item donated to Ray (lib/stackacres/secrets.ts, `donateStackAcresSecretItem`).
+ *  The produce-discovery bonus this table used to also back (Ray's Museum)
+ *  was removed outright, not migrated -- the table and this reader/writer
+ *  pair stayed because the secret-item donation path still needs them. */
 const memoryMuseum = globalThis.__riverRoomStackAcresMuseum ?? new Map<string, Set<string>>();
 globalThis.__riverRoomStackAcresMuseum = memoryMuseum;
-
-/** Ray's Museum, secret wing: which hidden finds (core exhibit pieces AND
- *  joke pool alike -- see lib/stackacres/museum-secrets.ts) a player has
- *  ever turned up. Same "no undonate, a Set is the whole model" shape as
- *  memoryMuseum, kept as its own map rather than folded into it: the two
- *  registries are read and written by different call sites and never share
- *  an item id, so merging them would only make each harder to reason about. */
-const memoryMuseumSecrets =
-  globalThis.__riverRoomStackAcresMuseumSecrets ?? new Map<string, Set<string>>();
-globalThis.__riverRoomStackAcresMuseumSecrets = memoryMuseumSecrets;
 
 /** Land cleared, keyed `${profileId}:${sector}` and holding the ISO moment it
  *  was cleared. A missing key is land still under growth. */
@@ -260,7 +253,6 @@ export function __resetStackAcresForTest(): void {
   memoryUpkeep.clear();
   memoryHarvests.length = 0;
   memoryMuseum.clear();
-  memoryMuseumSecrets.clear();
   memorySectors.clear();
   memoryWheatPlots.clear();
   memoryInventory.clear();
@@ -549,6 +541,57 @@ export async function feedStackAcresUnit(
     .select(UNIT_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(`Could not feed that: ${error.message}`);
+  return data ? fromRow(data as UnitDbRow) : null;
+}
+
+/**
+ * Persists a spoil catch-up: writes the effective `started_at`/`ready_at`/
+ * `last_fed_at` (see `effectiveStackAcresCycle`, lib/stackacres/units.ts)
+ * straight over the stale ones a `spoils` unit's row was left holding.
+ *
+ * Guarded exactly like `feedStackAcresUnit` -- same version/status check,
+ * same null-means-lost-race contract -- because it is the same "read, then
+ * write only if nobody else already did" shape. A lost race here means
+ * another write (a feed, a collect) already touched this row first, so the
+ * caller refuses and the next request reads whatever that write left behind.
+ * There is no Gold or produce moved by this write; a voided cycle pays
+ * nothing, so there is nothing here for rules 1-3 to say anything about.
+ */
+export async function catchUpSpoiledStackAcresUnit(
+  current: StoredStackAcresUnit,
+  effective: { startedAt: Date; readyAt: Date; lastFedAt: Date },
+): Promise<StoredStackAcresUnit | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryUnits.get(current.id);
+    if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
+    const updated: StoredStackAcresUnit = {
+      ...stored,
+      startedAt: effective.startedAt.toISOString(),
+      readyAt: effective.readyAt.toISOString(),
+      lastFedAt: effective.lastFedAt.toISOString(),
+      version,
+    };
+    memoryUnits.set(current.id, clone(updated));
+    return clone(updated);
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_units")
+    .update({
+      started_at: effective.startedAt.toISOString(),
+      ready_at: effective.readyAt.toISOString(),
+      last_fed_at: effective.lastFedAt.toISOString(),
+      version,
+    })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .eq("status", "working")
+    .select(UNIT_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not catch that unit up: ${error.message}`);
   return data ? fromRow(data as UnitDbRow) : null;
 }
 
@@ -1521,12 +1564,14 @@ export interface StackAcresHarvestEntry {
 }
 
 /* ------------------------------------------------------------------ */
-/* Ray's Museum                                                        */
+/* Item donations                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Every item id this player has ever donated to the museum. There is no
- *  "undonate", so this is the whole registry -- the service layer overlays
- *  it onto lib/stackacres/museum.ts's `emptyMuseumRegistry()`. */
+/** Every item id this player has ever donated. There is no "undonate", so
+ *  this is the whole registry. The only live caller is the Hidden Secrets
+ *  donation path (`donateStackAcresSecretItem` in stackacres-service.ts) --
+ *  see memoryMuseum's own comment above for why this table outlived the
+ *  produce-discovery feature it was originally built for. */
 export async function readStackAcresMuseum(profileId: string): Promise<string[]> {
   const supabase = adminClient();
   if (!supabase) return [...(memoryMuseum.get(profileId) ?? new Set())];
@@ -1535,7 +1580,7 @@ export async function readStackAcresMuseum(profileId: string): Promise<string[]>
     .from("homestead_museum_donations")
     .select("item_id")
     .eq("profile_id", profileId);
-  if (error) throw new Error(`Could not read the museum register: ${error.message}`);
+  if (error) throw new Error(`Could not read the donation register: ${error.message}`);
   return (data as { item_id: string }[]).map((row) => row.item_id);
 }
 
@@ -1544,8 +1589,7 @@ export async function readStackAcresMuseum(profileId: string): Promise<string[]>
  * write that actually donated it -- same idempotency shape as
  * grantStartingBushels: the (profile, item) pair is the primary key, so a
  * second call for an item already in the register is a no-op that reports
- * false, which is exactly how the caller tells a genuine first discovery
- * from a duplicate harvest.
+ * false.
  */
 export async function markStackAcresDonated(profileId: string, itemId: string): Promise<boolean> {
   const supabase = adminClient();
@@ -1561,50 +1605,7 @@ export async function markStackAcresDonated(profileId: string, itemId: string): 
     p_profile_id: profileId,
     p_item_id: itemId,
   });
-  if (error) throw new Error(`Could not reach Ray's Museum: ${error.message}`);
-  return data === true;
-}
-
-/* ------------------------------------------------------------------ */
-/* Ray's Museum, secret wing                                           */
-/* ------------------------------------------------------------------ */
-
-/** Every hidden item id this player has ever turned up. Same "no undonate"
- *  contract as `readStackAcresMuseum` -- the service layer overlays it onto
- *  lib/stackacres/museum-secrets.ts's `emptySecretMuseumRegistry()`. */
-export async function readStackAcresMuseumSecrets(profileId: string): Promise<string[]> {
-  const supabase = adminClient();
-  if (!supabase) return [...(memoryMuseumSecrets.get(profileId) ?? new Set())];
-
-  const { data, error } = await supabase
-    .from("homestead_museum_secrets")
-    .select("item_id")
-    .eq("profile_id", profileId);
-  if (error) throw new Error(`Could not read the museum's secret wing: ${error.message}`);
-  return (data as { item_id: string }[]).map((row) => row.item_id);
-}
-
-/**
- * Flags one hidden item as found, exactly once, ever. Returns true only on
- * the write that actually registered it -- the identical idempotency shape
- * `markStackAcresDonated` uses, for the same reason: a repeat roll of an
- * item already on the shelf is a harmless no-op, not a second event.
- */
-export async function markStackAcresMuseumSecret(profileId: string, itemId: string): Promise<boolean> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const found = memoryMuseumSecrets.get(profileId) ?? new Set<string>();
-    if (found.has(itemId)) return false;
-    found.add(itemId);
-    memoryMuseumSecrets.set(profileId, found);
-    return true;
-  }
-
-  const { data, error } = await supabase.rpc("mark_homestead_museum_secret", {
-    p_profile_id: profileId,
-    p_item_id: itemId,
-  });
-  if (error) throw new Error(`Could not reach Ray's Museum: ${error.message}`);
+  if (error) throw new Error(`Could not record the donation: ${error.message}`);
   return data === true;
 }
 
@@ -2649,7 +2650,7 @@ export async function readStackAcresLifetimeGross(profileId: string): Promise<nu
  * 20260905140000_stackacres_prestige_reset.sql's own header for exactly
  * which tables this sweeps and which it deliberately leaves untouched (land
  * cleared, purchased capacity, placed machines, Synergy Tree perks, the
- * museum registries and Town Influence all survive -- none of them is a
+ * donation register and Town Influence all survive -- none of them is a
  * memory-mode analog this function needs to sweep here either).
  *
  * Returns `eligible: false` rather than throwing when there is not enough

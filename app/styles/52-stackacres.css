@@ -2959,8 +2959,11 @@
   box-shadow: var(--sa-drop-lg);
 }
 
-/* Ray's Museum (stackacres-museum.tsx), reached by tapping the barn. */
-.sa-museum-intro {
+/* The checklist/card grid shell, originally built for the now-deleted Ray's
+   Museum panel and kept because the Greenhouse panel
+   (stackacres-greenhouse-panel.tsx) reuses it for both of its screens -- the
+   build-cost checklist and the six-slot grow grid. */
+.sa-checklist-intro {
   margin: 0 0 4px;
   color: var(--sa-ink-soft);
   font-size: 14px;
@@ -2969,14 +2972,7 @@
   text-wrap: pretty;
 }
 
-.sa-museum-exhibit-blurb {
-  margin: 2px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.sa-museum-items {
+.sa-checklist-items {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 10px;
@@ -2985,7 +2981,7 @@
   list-style: none;
 }
 
-.sa-museum-item {
+.sa-checklist-item {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2997,20 +2993,20 @@
 }
 
 /* Found: the same warm wood badge a store shelf uses. */
-.sa-museum-item.is-found {
+.sa-checklist-item.is-found {
   background: var(--sa-wood);
   box-shadow: 0 3px 0 var(--sa-wood-rim);
 }
 
 /* Not yet found: dimmed and dashed, deliberately unlike a disabled control --
    there is nothing to press here, only something left to discover. */
-.sa-museum-item.is-unfound {
+.sa-checklist-item.is-unfound {
   border-style: dashed;
   background: var(--sa-cream-rim);
   opacity: .6;
 }
 
-.sa-museum-item-badge {
+.sa-checklist-item-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3018,15 +3014,15 @@
   height: 40px;
 }
 
-.sa-museum-item.is-unfound .sa-museum-item-badge { filter: grayscale(1); }
+.sa-checklist-item.is-unfound .sa-checklist-item-badge { filter: grayscale(1); }
 
-.sa-museum-item-name {
+.sa-checklist-item-name {
   color: var(--sa-ink);
   font-size: 12px;
   font-weight: 800;
 }
 
-.sa-museum-item-status {
+.sa-checklist-item-status {
   color: var(--sa-ink-soft);
   font-size: 10px;
   font-weight: 700;
@@ -3034,19 +3030,10 @@
   letter-spacing: .04em;
 }
 
-.sa-museum-hint {
-  margin: 20px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-  text-wrap: pretty;
-}
-
-/* The Greenhouse panel (stackacres-greenhouse-panel.tsx). Reuses the museum's
-   own grid/card shell (.sa-museum-items/.sa-museum-item) for both of its
-   screens -- the build-cost checklist and the six-slot grow grid -- and adds
-   only what those two do not already cover: room for a slot card's own
+/* The Greenhouse panel (stackacres-greenhouse-panel.tsx). Reuses the checklist
+   grid/card shell above (.sa-checklist-items/.sa-checklist-item) for both of
+   its screens -- the build-cost checklist and the six-slot grow grid -- and
+   adds only what those two do not already cover: room for a slot card's own
    button(s), and a wider column so a two-button empty slot does not clip. */
 .sa-greenhouse-slots {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -3064,14 +3051,6 @@
   padding: 6px 10px;
   font-size: 12.5px;
   width: 100%;
-}
-
-/* A bonus wing, not a redesign: a faint top divider is the whole visual
-   difference from an ordinary exhibit above. */
-.sa-museum-secret-wing {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--sa-outline);
 }
 
 /* His welcome and the how-to-play modal are the shared .profile-modal chrome

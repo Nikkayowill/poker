@@ -249,8 +249,8 @@ export function StackAcresPrestigeResetModal({
             <p className="sa-sheet-note">
               Pulling the valve wipes every unit, wheat plot, inventory line, feed serving and
               today&apos;s Land Maintenance for a <strong>permanent</strong> boost to every future
-              harvest. Land cleared, purchased capacity, placed machines, Synergy Tree perks,
-              Ray&apos;s Museum finds and Town Influence all carry over untouched.
+              harvest. Land cleared, purchased capacity, placed machines, Synergy Tree perks
+              and Town Influence all carry over untouched.
             </p>
 
             <p className="sa-contracts-standing">

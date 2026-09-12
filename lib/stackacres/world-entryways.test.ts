@@ -6,7 +6,6 @@ import {
   penFeedSpot,
   rayHouseHitAt,
   signpostHitAt,
-  windmillHitAt,
   yardWellHitAt,
 } from "./world";
 import { PEN_ZONE_IDS } from "./zones";
@@ -19,10 +18,12 @@ function centreOf(kind: PropKind): { x: number; y: number } {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
-// The Town Board, the Workshop and the well are walked up to in the world
-// now, so each box has to sit on the art it answers for and nowhere else.
+// The Town Board and the well are walked up to in the world now, so each box
+// has to sit on the art it answers for and nowhere else. The windmill used to
+// be a third (the Workshop's own entryway) but it was pulled from the yard --
+// see props.ts's own header -- so there is no windmill box to test any more.
 describe("the yard's entryways", () => {
-  const hits = { signpost: signpostHitAt, windmill: windmillHitAt, well: yardWellHitAt } as const;
+  const hits = { signpost: signpostHitAt, well: yardWellHitAt } as const;
   const kinds = Object.keys(hits) as (keyof typeof hits)[];
 
   for (const kind of kinds) {

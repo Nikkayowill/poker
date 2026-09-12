@@ -5,8 +5,8 @@
  * inventory. What this module still owns is the arithmetic every gather-craft-
  * sell design needs to agree on: which item and how much each settled unit
  * contributed, summed per item for the credit and per line for bonus
- * quantity (crit, museum discovery) to apply against. Keeping it pure is what
- * lets that arithmetic be tested without a database.
+ * quantity (a crit) to apply against. Keeping it pure is what lets that
+ * arithmetic be tested without a database.
  *
  * THIS USED TO ALSO CARRY BOUNTIFUL HARVEST, THE PRESTIGE MULTIPLIER AND LAND
  * MAINTENANCE, all multiplying or netting a Gold payout that no longer

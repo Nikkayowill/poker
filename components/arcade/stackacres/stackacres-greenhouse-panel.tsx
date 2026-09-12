@@ -117,24 +117,24 @@ function BuildScreen({
 }) {
   return (
     <>
-      <p className="sa-museum-intro">
+      <p className="sa-checklist-intro">
         &ldquo;Glass walls, a Flour sack for grout and a bolt of Cloth for the
         canopy. Keeps a crop growing at {Math.round(GREENHOUSE_GROWTH_MULTIPLIER * 100)}% pace,
         rain or shine, up to {GREENHOUSE_SLOT_CAP} at once.&rdquo;
       </p>
-      <ul className="sa-museum-items">
+      <ul className="sa-checklist-items">
         {check.lines.map((line) => (
           <li
             key={line.item}
-            className={line.met ? "sa-museum-item is-found" : "sa-museum-item is-unfound"}
+            className={line.met ? "sa-checklist-item is-found" : "sa-checklist-item is-unfound"}
           >
-            <span className="sa-museum-item-badge" aria-hidden="true">
+            <span className="sa-checklist-item-badge" aria-hidden="true">
               <StackAcresIcon name={machineItemIcon(line.item) as PainterName} size={26} />
             </span>
-            <span className="sa-museum-item-name">
+            <span className="sa-checklist-item-name">
               {machineItemLabel(line.item, line.needed)}
             </span>
-            <span className="sa-museum-item-status">
+            <span className="sa-checklist-item-status">
               {line.held.toLocaleString()} / {line.needed.toLocaleString()} on hand
             </span>
           </li>
@@ -167,9 +167,9 @@ function SlotCard({
   if (slot.kind === "ready") {
     const def = STACKACRES_CATALOGUE[slot.stock];
     return (
-      <li className="sa-museum-item is-found">
-        <span className="sa-museum-item-name">{def.label}</span>
-        <span className="sa-museum-item-status">Ready</span>
+      <li className="sa-checklist-item is-found">
+        <span className="sa-checklist-item-name">{def.label}</span>
+        <span className="sa-checklist-item-status">Ready</span>
         <button
           type="button"
           className="sa-cta"
@@ -185,17 +185,17 @@ function SlotCard({
   if (slot.kind === "growing") {
     const def = STACKACRES_CATALOGUE[slot.stock];
     return (
-      <li className="sa-museum-item is-found">
-        <span className="sa-museum-item-name">{def.label}</span>
-        <span className="sa-museum-item-status">
+      <li className="sa-checklist-item is-found">
+        <span className="sa-checklist-item-name">{def.label}</span>
+        <span className="sa-checklist-item-status">
           {slot.thirsty ? "Needs water" : `${Math.round(slot.progress * 100)}% grown`}
         </span>
       </li>
     );
   }
   return (
-    <li className="sa-museum-item is-unfound sa-greenhouse-empty-slot">
-      <span className="sa-museum-item-status">Empty</span>
+    <li className="sa-checklist-item is-unfound sa-greenhouse-empty-slot">
+      <span className="sa-checklist-item-status">Empty</span>
       {GREENHOUSE_ALLOWED_STOCK.map((stock) => {
         const def = STACKACRES_CATALOGUE[stock];
         return (
@@ -230,12 +230,12 @@ function GrowScreen({
   const growing = slots.filter((slot) => slot.kind !== "empty").length;
   return (
     <>
-      <p className="sa-museum-intro">
+      <p className="sa-checklist-intro">
         {growing} of {GREENHOUSE_SLOT_CAP} slots growing. Sealed from the weather outside, and
         {" "}
         {Math.round((1 - GREENHOUSE_GROWTH_MULTIPLIER) * 100)}% faster than the open field.
       </p>
-      <ul className="sa-museum-items sa-greenhouse-slots">
+      <ul className="sa-checklist-items sa-greenhouse-slots">
         {slots.map((slot, index) => (
           <SlotCard key={index} slot={slot} busy={busy} onSow={onSow} onCollect={onCollect} />
         ))}
@@ -260,7 +260,7 @@ export function StackAcresGreenhousePanel({
   return (
     <div className="profile-overlay" role="presentation" onMouseDown={contain(onBackdropMouseDown)}>
       <section
-        className="profile-modal htp-modal sa-museum-modal sa-greenhouse-modal"
+        className="profile-modal htp-modal sa-greenhouse-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="sa-greenhouse-title"
@@ -275,7 +275,7 @@ export function StackAcresGreenhousePanel({
             <X size={18} />
           </button>
         </header>
-        <div className="htp-body sa-museum-body">
+        <div className="htp-body">
           {built ? (
             <GrowScreen units={units} busy={busy} onSow={onSow} onCollect={onCollect} />
           ) : (

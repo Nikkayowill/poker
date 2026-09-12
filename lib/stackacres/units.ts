@@ -258,17 +258,87 @@ export function isStackAcresUnitDry(
 }
 
 /**
+ * A row's effective cycle -- `startedAt`/`readyAt`/`lastFedAt` -- after
+ * fast-forwarding through any fully-spoiled past cycles. Pure: a function of
+ * nothing but the row's own stored timestamps and `now`. See `spoils` in
+ * ./catalogue.ts for what spoiling means and why only the Hen Coop has it.
+ *
+ * A `spoils` unit voids a cycle the instant it is STILL hungry at its own
+ * `readyAt`: that cycle pays nothing, and a fresh one starts right there, as
+ * if the unit had just been fed at that exact moment (`lastFedAt` becomes the
+ * spoil moment too, so the new cycle's own hunger window starts clean). A
+ * voided cycle is, by definition, one nobody touched, so every cycle after
+ * the first spoil repeats on exactly `durationMs` -- spoils land at
+ * `readyAt`, `readyAt + durationMs`, `readyAt + 2*durationMs`, and so on --
+ * which makes however many of them `now` has passed a closed-form division
+ * rather than a loop over however many cycles actually elapsed.
+ *
+ * A non-`spoils` unit -- every crop, the Sheep Pen, the Cattle Pen -- returns
+ * the row's own `startedAt`/`readyAt`/`lastFedAt` completely unchanged: this
+ * function changes nothing about the existing "frozen until fed/watered,
+ * yield always eventually paid" behavior for anything but a hen.
+ */
+export function effectiveStackAcresCycle(
+  row: Pick<StackAcresUnitRow, "stock" | "startedAt" | "readyAt" | "lastFedAt">,
+  now: Date,
+): { startedAt: string; readyAt: string; lastFedAt: string | null } {
+  const unchanged = { startedAt: row.startedAt, readyAt: row.readyAt, lastFedAt: row.lastFedAt };
+  const def = STACKACRES_CATALOGUE[row.stock];
+  if (!def.spoils || def.hungerMs === null) return unchanged;
+
+  const readyAtMs = Date.parse(row.readyAt);
+  const nowMs = now.getTime();
+  if (!Number.isFinite(readyAtMs) || def.durationMs <= 0) return unchanged;
+
+  // Would this cycle still be hungry at its own readyAt, and has `now`
+  // actually reached that readyAt? If not, nothing has spoiled -- the row
+  // stands exactly as stored, same as any other working animal.
+  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: row.lastFedAt });
+  const hungryAtMs = hungryAt ? Date.parse(hungryAt) : NaN;
+  if (!Number.isFinite(hungryAtMs) || hungryAtMs > readyAtMs || nowMs < readyAtMs) return unchanged;
+
+  // The first spoil landed exactly at readyAtMs. A voided cycle is never
+  // touched, so from here every subsequent cycle is "fed" at its own start by
+  // definition -- it spoils again on the same schedule only if this
+  // catalogue entry's hungerMs still fits inside its own durationMs (true for
+  // the hen; guarded here in case a future spoils entry ever does not). If it
+  // does not fit, one spoil is all there is: the fresh cycle just runs (and
+  // may already be sitting ready) like any other animal.
+  if (def.hungerMs > def.durationMs) {
+    return {
+      startedAt: row.readyAt,
+      readyAt: new Date(readyAtMs + def.durationMs).toISOString(),
+      lastFedAt: row.readyAt,
+    };
+  }
+
+  const spoiledCycles = Math.floor((nowMs - readyAtMs) / def.durationMs);
+  const effectiveStartMs = readyAtMs + spoiledCycles * def.durationMs;
+  const effectiveStart = new Date(effectiveStartMs).toISOString();
+  return {
+    startedAt: effectiveStart,
+    readyAt: new Date(effectiveStartMs + def.durationMs).toISOString(),
+    lastFedAt: effectiveStart,
+  };
+}
+
+/**
  * Whether a working row is past its feed window. A hungry unit's clock is
  * frozen -- readyAt is only pushed forward when it is actually fed -- so this
  * has to be checked before readiness, or a starving animal would quietly
  * finish its cycle anyway.
+ *
+ * Routed through `effectiveStackAcresCycle` so a `spoils` unit (the Hen Coop)
+ * that has fast-forwarded past a voided cycle reads as freshly working
+ * rather than eternally hungry; a no-op for every other row.
  */
 export function isStackAcresUnitHungry(
-  row: Pick<StackAcresUnitRow, "status" | "stock" | "lastFedAt">,
+  row: Pick<StackAcresUnitRow, "status" | "stock" | "lastFedAt" | "startedAt" | "readyAt">,
   now: Date,
 ): boolean {
   if (row.status !== "working" || !isLivestock(row.stock)) return false;
-  const hungryAt = hungryAtFor(row);
+  const effective = effectiveStackAcresCycle(row, now);
+  const hungryAt = hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt });
   if (!hungryAt) return false;
   return Date.parse(hungryAt) <= now.getTime();
 }
@@ -292,7 +362,11 @@ export function isStackAcresUnitReady(
   // drought to its own finish line, or one an irrigation pipe keeps watered,
   // stays collectable. See its own comment.
   if (isStackAcresUnitDry(row, now, irrigated)) return false;
-  const ready = Date.parse(row.readyAt);
+  // Effective, not raw: a spoils unit that fast-forwarded past a voided cycle
+  // is judged against ITS fresh readyAt, never the stale one it spoiled
+  // through.
+  const effective = effectiveStackAcresCycle(row, now);
+  const ready = Date.parse(effective.readyAt);
   return Number.isFinite(ready) && ready <= now.getTime();
 }
 
@@ -337,16 +411,20 @@ export function toStackAcresUnitSnapshots(
     // A dry crop's clock stopped the moment its soil did, so its bar is read
     // at THAT moment rather than at `now`. Everything else is read live.
     const readAtMs = dry && thirstyAt ? Date.parse(thirstyAt) : now.getTime();
+    // Effective, not raw: a spoils unit (the Hen Coop) that fast-forwarded
+    // past a voided cycle displays that fresh cycle's own clock, not the
+    // stale one it spoiled through -- a no-op for every other row.
+    const effective = effectiveStackAcresCycle(row, now);
     return {
       id: row.id,
       state: ready ? "ready" : hungry ? "hungry" : dry ? "dry" : "working",
       stock: row.stock,
       stake: row.stake,
       yieldQuantity: row.yieldQuantity,
-      startedAt: row.startedAt,
-      readyAt: row.readyAt,
-      progress: progressOf(row.startedAt, row.readyAt, readAtMs),
-      hungryAt: hungryAtFor(row),
+      startedAt: effective.startedAt,
+      readyAt: effective.readyAt,
+      progress: progressOf(effective.startedAt, effective.readyAt, readAtMs),
+      hungryAt: hungryAtFor({ stock: row.stock, lastFedAt: effective.lastFedAt }),
       // A piped crop never dries, and the browser re-derives dryness from
       // this alone, so it has to say "never" rather than a time that passes.
       thirstyAt: irrigated ? null : thirstyAt,

@@ -510,11 +510,19 @@ export async function createStackAcresUnit(
  * hungry, so the clock genuinely stopped. Guarded the same way everything
  * else is; null means someone else got there first and the caller must
  * refund the serving it spent.
+ *
+ * `newStartedAt` is set only when the caller has fast-forwarded a `spoils`
+ * unit (the Hen Coop, see lib/stackacres/units.ts's `effectiveStackAcresCycle`)
+ * through one or more voided cycles: it persists that catch-up onto the row
+ * itself, under the same version guard as everything else here, so the stored
+ * clock does not stay stale forever. Null (the default) is every other feed,
+ * which never touches `started_at`.
  */
 export async function feedStackAcresUnit(
   current: StoredStackAcresUnit,
   fedAt: Date,
   newReadyAt: Date,
+  newStartedAt: Date | null = null,
 ): Promise<StoredStackAcresUnit | null> {
   const supabase = adminClient();
   const version = current.version + 1;
@@ -524,6 +532,7 @@ export async function feedStackAcresUnit(
     if (!stored || stored.status !== "working" || stored.version !== current.version) return null;
     const updated: StoredStackAcresUnit = {
       ...stored,
+      ...(newStartedAt ? { startedAt: newStartedAt.toISOString() } : {}),
       lastFedAt: fedAt.toISOString(),
       readyAt: newReadyAt.toISOString(),
       version,
@@ -534,7 +543,12 @@ export async function feedStackAcresUnit(
 
   const { data, error } = await supabase
     .from("homestead_units")
-    .update({ last_fed_at: fedAt.toISOString(), ready_at: newReadyAt.toISOString(), version })
+    .update({
+      ...(newStartedAt ? { started_at: newStartedAt.toISOString() } : {}),
+      last_fed_at: fedAt.toISOString(),
+      ready_at: newReadyAt.toISOString(),
+      version,
+    })
     .eq("id", current.id)
     .eq("version", current.version)
     .eq("status", "working")

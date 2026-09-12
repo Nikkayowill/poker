@@ -62,6 +62,7 @@ import {
   adjustStackAcresSecretLedger,
   adjustStackAcresFeed,
   createStackAcresUnit,
+  feedStackAcresUnit,
   getStackAcresUnit,
   listStackAcresUnits,
   markStackAcresDonated,
@@ -107,6 +108,7 @@ import {
   stackacresCapacityPrice,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
+import { hungryAtFor } from "@/lib/stackacres/units";
 import {
   __resetStackAcresSeedStockForTest,
   adjustStackAcresSeedStock,
@@ -300,32 +302,51 @@ async function balance(token: string): Promise<number> {
 }
 
 /**
- * Sows a crop, gives the seed its first water on the spot, and waters it again
- * exactly when the soil dries, so it reaches its finish line on schedule.
+ * Feeds every still-working hen in this profile that would otherwise be
+ * hungry by `now`, right at the moment it first went hungry -- starvedMs is
+ * therefore 0, so `readyAt` never moves. Bypasses the feed-serving cost by
+ * calling the store directly rather than the service's `feedStackAcres`.
  *
- * A CROP LEFT ALONE NEVER RIPENS -- seed does not start until it is watered,
- * and thirst windows sit under their own cycle length on purpose, so watering
- * is the crop track's whole tending loop. Watering at the exact moment it
- * dries costs no time (`readyAt` moves forward by however long it stood dry,
- * which is zero here).
+ * Hen hunger (8m) sits inside the Hen Coop's own 15m cycle since 2026-09-11
+ * (catalogue.ts's `spoils` flag). The vast majority of this file's hen tests
+ * predate that and are about collect/harvest/muck/museum/crit mechanics, not
+ * feeding -- this keeps an otherwise-untouched hen reaching its own `readyAt`
+ * exactly as it always did, instead of voiding a cycle none of them are
+ * testing. Bounded, not unbounded: a hen only needs re-feeding here if a
+ * test's `now` is far enough out that one feed's fresh hunger window is
+ * itself exceeded, which never happens for the timestamps this file uses.
  */
-async function sowWatered(token: string, stock: "carrot" | "corn", at = T0) {
-  const def = STACKACRES_CATALOGUE[stock];
-  const view = await stockStackAcres(token, { stock }, at);
-  const unitId = unitOf(view, stock).id;
-  for (
-    let drink = 0;
-    drink < def.durationMs;
-    drink += (def.thirstMs ?? Number.POSITIVE_INFINITY)
-  ) {
-    await waterStackAcres(token, unitId, new Date(at.getTime() + drink));
+async function keepHensFed(id: string, now: Date): Promise<void> {
+  // Reads through REAL, not the mocked import: this is harness setup, not
+  // the thing under test, and it must not consume a `mockResolvedValueOnce`
+  // a test queued for its own single call into the real code path.
+  const rows = await REAL.listStackAcresUnits(id);
+  for (const row of rows) {
+    if (row.stock !== "hen" || row.status !== "working") continue;
+    let current = row;
+    for (let guard = 0; guard < 1000; guard += 1) {
+      const hungryAt = hungryAtFor(current);
+      if (!hungryAt || Date.parse(hungryAt) > now.getTime()) break;
+      const fed = await feedStackAcresUnit(current, new Date(hungryAt), new Date(current.readyAt));
+      if (!fed) break;
+      current = fed;
+    }
   }
-  return unitId;
 }
 
 /** Brings in one named unit -- what tapping it on the map does. */
-function collectOne(token: string, unitId: string, now = T0) {
+async function collectOne(token: string, unitId: string, now = T0) {
+  const { id } = await ensureProfile(token);
+  await keepHensFed(id, now);
   return harvestStackAcres(token, { unitIds: [unitId] }, now);
+}
+
+/** Brings in every ready unit at once -- what the sweep button does. Also
+ *  keeps hens fed first, for the same reason `collectOne` does. */
+async function harvestAll(token: string, now: Date) {
+  const { id } = await ensureProfile(token);
+  await keepHensFed(id, now);
+  return harvestStackAcres(token, {}, now);
 }
 
 /** Burns `gold` of today's allowance directly, standing in for a day already
@@ -738,6 +759,77 @@ describe("feeding a whole pen", () => {
   });
 });
 
+/**
+ * The Hen Coop's own exception to "neglect costs you time, never Gold" (see
+ * `spoils` in lib/stackacres/catalogue.ts and `effectiveStackAcresCycle` in
+ * lib/stackacres/units.ts). Hen hungerMs (8m) sits inside its own durationMs
+ * (15m), so a hen left completely unfed through its own readyAt voids that
+ * cycle -- no payout -- and a fresh one starts right at the spoil moment.
+ */
+describe("hen spoiling", () => {
+  it("catches up a long-unfed hen on the next feed, spending one serving and paying nothing for the spoiled cycles", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    await adjustStackAcresFeed(id, 1);
+
+    const readyAtMs = T0.getTime() + HEN.durationMs; // the first cycle's own readyAt
+    // Offline 3 hours and 2 minutes past that -- 12 more full cycles have
+    // silently spoiled on top of the first, landing 2 minutes into the 14th.
+    const feedAt = new Date(readyAtMs + 3 * 60 * 60 * 1000 + 2 * 60 * 1000);
+    const effectiveStartMs = readyAtMs + 12 * HEN.durationMs;
+
+    await feedStackAcres(token, unitId, feedAt);
+
+    const row = await getStackAcresUnit(id, unitId);
+    // The stored row itself caught up -- not just the display -- to the
+    // fresh cycle's own clock, fed at the moment this request actually fed it.
+    expect(row?.startedAt).toBe(new Date(effectiveStartMs).toISOString());
+    expect(row?.readyAt).toBe(new Date(effectiveStartMs + HEN.durationMs).toISOString());
+    expect(row?.lastFedAt).toBe(feedAt.toISOString());
+    // One feed caught up every spoiled cycle at once -- not one serving per
+    // cycle skipped.
+    expect(await readStackAcresFeed(id)).toBe(0);
+
+    // Nothing has been paid for any of the spoiled cycles: the barn is still
+    // empty, and the only egg this hen will ever pay for THIS cycle is the
+    // one for the fresh, unspoiled cycle it is now working.
+    expect((await readStackAcres(token, feedAt)).inventory.eggs ?? 0).toBe(0);
+    const collected = await collectOne(
+      token,
+      unitId,
+      new Date(effectiveStartMs + HEN.durationMs + 1000),
+    );
+    expect(collected.inventory.eggs).toBe(HEN_YIELD.quantity);
+  });
+
+  it("refuses a spoil catch-up that lost the race, and touches neither the feed nor the winner's row", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const unitId = unitOf(view, "hen").id;
+    await adjustStackAcresFeed(id, 2);
+
+    // What a second tab read before the first one's feed landed.
+    const staleUnit = await getStackAcresUnit(id, unitId);
+
+    const raceAt = new Date(T0.getTime() + HEN.durationMs + 3 * 60 * 60 * 1000);
+    // The winner: a real feed that catches the row up and bumps its version.
+    await feedStackAcres(token, unitId, raceAt);
+    const winnerRow = await getStackAcresUnit(id, unitId);
+
+    // The loser: still holding the pre-feed snapshot, so its own version
+    // guard cannot match the row any more.
+    vi.mocked(getStackAcresUnit).mockResolvedValueOnce(staleUnit);
+    await expect(feedStackAcres(token, unitId, raceAt)).rejects.toMatchObject({
+      message: "That moved on.",
+    });
+
+    // The lost race refunded its serving and left the winner's write alone.
+    expect(await readStackAcresFeed(id)).toBe(1);
+    expect(await getStackAcresUnit(id, unitId)).toEqual(winnerRow);
+  });
+});
+
 describe("the watering can", () => {
   const dryAt = new Date(T0.getTime() + (SPROUT.thirstMs ?? 0) + 1000);
 
@@ -1098,7 +1190,7 @@ describe("harvesting", () => {
     const before = await balance(token);
 
     // Only the hens are ready at HEN_READY; the cattle pen runs for a day.
-    const result = await harvestStackAcres(token, {}, HEN_READY);
+    const result = await harvestAll(token, HEN_READY);
     expect(result.harvest.units).toBe(2);
     expect(result.harvest.gross).toBe(yieldValue("hen") * 2);
     expect(result.inventory.eggs).toBe(HEN_YIELD.quantity * 2);
@@ -1109,7 +1201,7 @@ describe("harvesting", () => {
   it("gives no sweep bonus any more: three hens together credit exactly three yields", async () => {
     const { token } = await funded();
     for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
-    const result = await harvestStackAcres(token, {}, HEN_READY);
+    const result = await harvestAll(token, HEN_READY);
     expect(result.harvest.tally).toEqual([{ item: "eggs", quantity: HEN_YIELD.quantity * 3 }]);
     expect(result.harvest.gross).toBe(yieldValue("hen") * 3);
   });
@@ -1136,7 +1228,7 @@ describe("harvesting", () => {
     const { token } = await funded();
     await stockStackAcres(token, { stock: "cattle" }, T0);
     const before = await balance(token);
-    await expect(harvestStackAcres(token, {}, HEN_READY)).rejects.toBeInstanceOf(
+    await expect(harvestAll(token, HEN_READY)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(before);
@@ -1152,6 +1244,11 @@ describe("harvesting", () => {
     const unitId = unitOf(view, "hen").id;
     const before = await balance(token);
 
+    // Fed ahead of the row snapshot below, so the one-shot mock captures the
+    // hen's already-fed state -- otherwise `collectOne`'s own feeding step
+    // would run AFTER this snapshot was taken and the mocked list would hand
+    // the sweep a stale, still-hungry row.
+    await keepHensFed(id, HEN_READY);
     const rows = await REAL.listStackAcresUnits(id);
     const retuned = HEN_YIELD.quantity + 2;
     // A sweep LISTS rows, so this is the seam -- once, so nothing leaks into
@@ -1196,7 +1293,7 @@ describe("harvesting", () => {
     const { token } = await funded();
     await stockStackAcres(token, { stock: "hen" }, T0);
     await stockStackAcres(token, { stock: "hen" }, T0);
-    await harvestStackAcres(token, {}, HEN_READY);
+    await harvestAll(token, HEN_READY);
     expect(__stackacresHarvestsForTest()).toHaveLength(2);
   });
 
@@ -1280,7 +1377,7 @@ describe("Land Maintenance", () => {
     for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
     const before = await balance(token);
 
-    await harvestStackAcres(token, {}, HEN_READY);
+    await harvestAll(token, HEN_READY);
 
     expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
     expect(await balance(token)).toBe(before);
@@ -1365,7 +1462,7 @@ describe("Land Maintenance", () => {
     await stockStackAcres(token, { stock: "hen" }, T0);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
-      await harvestStackAcres(token, {}, HEN_READY);
+      await harvestAll(token, HEN_READY);
     } finally {
       random.mockRestore();
     }
@@ -1736,7 +1833,7 @@ describe("the daily allowance", () => {
     const { token, id } = await funded();
     await stockStackAcres(token, { stock: "hen" }, T0);
 
-    await harvestStackAcres(token, {}, HEN_READY);
+    await harvestAll(token, HEN_READY);
 
     expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(0);
     expect((await readStackAcres(token, T0)).exchange.remaining).toBe(STACKACRES_GOLD_CEILING);

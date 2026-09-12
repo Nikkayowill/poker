@@ -16,12 +16,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * FILE, not assumed. Two wrong assumptions were caught doing that and are
  * worth leaving as a record rather than quietly fixing away:
  *
- *   * A hen's `hungerMs` (45 min) is LONGER than its own `durationMs`
- *     (15 min) -- lib/stackacres/catalogue.ts's own comment says so
- *     ("Longer than its own cycle, so a Hen never goes hungry") -- so a hen
- *     cannot demonstrate the hunger-freeze mechanic at all. The pig
- *     scenario below uses `pig` (hunger 2h, duration 4h) instead, which
- *     genuinely goes hungry mid-cycle.
+ *   * A hen's `hungerMs` (8 min, since 2026-09-11) sits INSIDE its own
+ *     `durationMs` (15 min) on purpose -- lib/stackacres/catalogue.ts's
+ *     `spoils` flag -- so a hen left completely untended past its own
+ *     readyAt voids that cycle rather than merely freezing it. The "collapse
+ *     a hen's cycle" scenario below feeds it once, right at the hunger
+ *     boundary, so it demonstrates the harness on an unspoiled cycle; the
+ *     pig scenario uses `pig` (hunger 2h, duration 4h, `spoils: false`)
+ *     to demonstrate the ordinary freeze-until-fed mechanic instead, which
+ *     genuinely goes hungry mid-cycle without voiding anything.
  *   * `clearStackAcresSector` (Wallow, Ox Fields) and `unlockStackAcresCropFields`
  *     (the Crop Fields' own standalone gate, since the 2026-09-08 merge into
  *     the Farmstead) both refuse until the player already has enough
@@ -156,7 +159,7 @@ async function growPigToReady(
 
 describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
   it("collapses a hen's full 15-minute grow cycle into a simulated instant, at zero Land Maintenance", async () => {
-    const { service, profileStore, chrono } = await loadSimulation();
+    const { service, profileStore, chrono, catalogue } = await loadSimulation();
 
     const token = randomUUID();
     const profile = await profileStore.ensureProfile(token);
@@ -183,6 +186,17 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     expect(view.upkeep.fee).toBe(0);
     expect(view.units.find((u) => u.id === unitId)?.state).toBe("working");
 
+    // Hen hungerMs (8m) sits inside its own 15m durationMs since 2026-09-11
+    // (the Hen Coop's `spoils` exception -- see catalogue.ts): left
+    // completely untended, this hen would spoil at its own readyAt instead of
+    // finishing. One feed, right at the hunger boundary so starvedMs is 0 and
+    // readyAt does not move, keeps this demonstration on the hen's own
+    // unspoiled cycle.
+    const hen = catalogue.STACKACRES_CATALOGUE.hen;
+    await service.buyStackAcresFeed(token, { itemId: "feed_sack", quantity: 1 }, t0);
+    const hungryNow = await jumpTo(chrono, token, new Date(t0.getTime() + hen.hungerMs!));
+    await service.feedStackAcres(token, unitId, hungryNow);
+
     // Jump straight to readiness -- the whole point of the harness: real
     // elapsed time between the two calls above and this one is a fraction of
     // a second, simulated time is the hen's full cycle.
@@ -193,7 +207,15 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     expect(view.units.find((u) => u.id === unitId)?.state).toBe("ready");
 
     const goldBefore = (await profileStore.getProfileById(profile.id))!.goldBalance;
-    const harvested = await service.harvestStackAcres(token, { unitIds: [unitId] }, readyNow);
+    // Pinned above the muck chance: this assertion is about the clean,
+    // non-permanent removal path, not about the unrelated 20% muck roll.
+    const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    let harvested;
+    try {
+      harvested = await service.harvestStackAcres(token, { unitIds: [unitId] }, readyNow);
+    } finally {
+      roll.mockRestore();
+    }
     record("harvested", harvested);
     expect(harvested.harvest.units).toBe(1);
     // A harvest fills the barn and pays no Gold.

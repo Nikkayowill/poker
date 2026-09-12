@@ -19,6 +19,7 @@ import {
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import {
+  effectiveStackAcresCycle,
   hungryAtFor,
   isStackAcresUnitDry,
   isStackAcresUnitHungry,
@@ -471,8 +472,13 @@ import type { StoredDrone } from "./stackacres-drone-store";
  * is deleted.
  *
  * A StackAcres unit is a *guaranteed* win -- nothing here can lose your seed,
- * animals go hungry but never die -- so the ordering discipline every staked
- * service restates still applies:
+ * animals go hungry but never die -- with ONE narrow exception: a `spoils`
+ * unit (the Hen Coop, see lib/stackacres/catalogue.ts) that is still hungry
+ * at its own readyAt voids that one cycle's payout, by design, as the game's
+ * one deliberate case of neglect costing more than time (`feedStackAcres`'s
+ * own doc comment states the general rule this departs from). The animal
+ * itself is never lost and every cycle after it is fed keeps paying in full,
+ * so the ordering discipline every staked service restates still applies:
  *
  *   1. **The money leaves the purse before the thing it pays for exists.**
  *      Buying capacity, stock, seed or feed debits Gold before the write
@@ -2562,12 +2568,44 @@ export async function buyFromMidnightMerchant(
 }
 
 /**
+ * What feeding a unit right now pushes its readyAt to, and whether that write
+ * also needs to catch the row's startedAt up to a fast-forwarded spoil cycle.
+ * Shared by `feedStackAcres` and `feedStackAcresPen` so both feeding paths
+ * compute this exactly the same way.
+ *
+ * Seeded from `effectiveStackAcresCycle` rather than the row's raw fields, so
+ * a `spoils` unit (the Hen Coop) that spoiled one or more cycles unfed feeds
+ * its CURRENT, already-voided-through cycle -- never the stale one -- and
+ * `newStartedAt` comes back non-null only when there was a cycle to catch up,
+ * which is exactly when the write needs to persist it. For every other row
+ * `effectiveStackAcresCycle` is the identity, so this is byte-for-byte the
+ * same push it always computed.
+ */
+function feedPushFor(unit: StoredStackAcresUnit, now: Date): { pushed: Date; newStartedAt: Date | null } {
+  const effective = effectiveStackAcresCycle(unit, now);
+  const hungryAt = hungryAtFor({ stock: unit.stock, lastFedAt: effective.lastFedAt });
+  const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
+  const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, now.getTime() - hungrySince) : 0;
+  const readyAt = Date.parse(effective.readyAt);
+  const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + starvedMs);
+  const newStartedAt = effective.startedAt === unit.startedAt ? null : new Date(effective.startedAt);
+  return { pushed, newStartedAt };
+}
+
+/**
  * Feeds a hungry animal, spending one serving.
  *
  * A hungry unit's clock is frozen, and this is where that is actually made
  * true: ready_at moves forward by however long the animal spent waiting, so
  * the time it was neglected is not silently credited as work. The yield is
  * untouched -- neglect costs you time, never Gold.
+ *
+ * THE ONE EXCEPTION: a `spoils` unit (the Hen Coop) that is still hungry at
+ * its own readyAt voids that cycle instead of freezing it -- see `spoils` in
+ * lib/stackacres/catalogue.ts. `feedPushFor` already fast-forwards past any
+ * such voided cycles, and this is also where that catch-up gets written back
+ * to the row, so the stored clock does not stay stale after the player who
+ * fed it moves on.
  */
 export async function feedStackAcres(
   token: string,
@@ -2584,9 +2622,7 @@ export async function feedStackAcres(
     });
   }
 
-  const hungryAt = hungryAtFor(unit);
-  const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
-  const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, now.getTime() - hungrySince) : 0;
+  const { pushed, newStartedAt } = feedPushFor(unit, now);
 
   // Rule 1 again, in servings rather than Gold: the feed is spent before the
   // write it pays for. Null is "not enough", which reads exactly like a lost
@@ -2598,12 +2634,9 @@ export async function feedStackAcres(
     });
   }
 
-  const readyAt = Date.parse(unit.readyAt);
-  const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + starvedMs);
-
   let fed: StoredStackAcresUnit | null;
   try {
-    fed = await feedStackAcresUnit(unit, now, pushed);
+    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
   } catch (error) {
     await adjustStackAcresFeed(profile.id, 1).catch(() => null);
     throw error;
@@ -2643,7 +2676,13 @@ export async function feedStackAcresPen(
 
   const hungry = (await listStackAcresUnits(profile.id))
     .filter((row) => stockZone(row.stock) === zone && isStackAcresUnitHungry(row, now))
-    .sort((a, b) => (hungryAtFor(a) ?? "").localeCompare(hungryAtFor(b) ?? ""));
+    .sort((a, b) => {
+      const ea = effectiveStackAcresCycle(a, now);
+      const eb = effectiveStackAcresCycle(b, now);
+      const hungryA = hungryAtFor({ stock: a.stock, lastFedAt: ea.lastFedAt }) ?? "";
+      const hungryB = hungryAtFor({ stock: b.stock, lastFedAt: eb.lastFedAt }) ?? "";
+      return hungryA.localeCompare(hungryB);
+    });
   if (hungry.length === 0) {
     throw new StackAcresRequestError("Nobody in this pen is hungry.", 409, {
       round: await snapshots(profile.id, now),
@@ -2655,15 +2694,11 @@ export async function feedStackAcresPen(
     const remaining = await adjustStackAcresFeed(profile.id, -1);
     if (remaining === null) break;
 
-    const hungryAt = hungryAtFor(unit);
-    const hungrySince = hungryAt ? Date.parse(hungryAt) : NaN;
-    const starvedMs = Number.isFinite(hungrySince) ? Math.max(0, now.getTime() - hungrySince) : 0;
-    const readyAt = Date.parse(unit.readyAt);
-    const pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + starvedMs);
+    const { pushed, newStartedAt } = feedPushFor(unit, now);
 
     let fed: StoredStackAcresUnit | null;
     try {
-      fed = await feedStackAcresUnit(unit, now, pushed);
+      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
     } catch (error) {
       await adjustStackAcresFeed(profile.id, 1).catch(() => null);
       // The animals already fed stay fed. Only throw if nothing went through.

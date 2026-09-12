@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_CATALOGUE } from "./catalogue";
 import {
+  effectiveStackAcresCycle,
   hungryAtFor,
   isStackAcresUnitDry,
   isStackAcresUnitHungry,
@@ -26,7 +27,10 @@ function row(overrides: Partial<StackAcresUnitRow> = {}): StackAcresUnitRow {
     yieldQuantity: 4,
     startedAt: new Date(NOW.getTime() - 10 * 60 * 1000).toISOString(),
     readyAt: new Date(NOW.getTime() + 5 * 60 * 1000).toISOString(),
-    lastFedAt: new Date(NOW.getTime() - 10 * 60 * 1000).toISOString(),
+    // Well under the hen's own 8-minute hunger window (catalogue.ts's
+    // `spoils` flag), so a default row is genuinely fresh -- not hungry, not
+    // spoiled -- unless a test overrides this to ask about hunger directly.
+    lastFedAt: new Date(NOW.getTime() - 60 * 1000).toISOString(),
     lastWateredAt: null,
     muckFee: null,
     permanent: false,
@@ -48,9 +52,9 @@ describe("hungryAtFor", () => {
 
   it("is lastFedAt plus the kind's hungerMs for livestock", () => {
     const fedAt = new Date(NOW.getTime() - 60 * 1000).toISOString();
-    // hen hungerMs is 45 minutes
+    // hen hungerMs is 8 minutes
     expect(hungryAtFor(row({ stock: "hen", lastFedAt: fedAt }))).toBe(
-      new Date(Date.parse(fedAt) + 45 * 60 * 1000).toISOString(),
+      new Date(Date.parse(fedAt) + 8 * 60 * 1000).toISOString(),
     );
   });
 });
@@ -94,6 +98,96 @@ describe("isStackAcresUnitHungry / isStackAcresUnitReady", () => {
     const r = row({ status: "mucked", muckFee: 22 });
     expect(isStackAcresUnitHungry(r, NOW)).toBe(false);
     expect(isStackAcresUnitReady(r, NOW)).toBe(false);
+  });
+});
+
+describe("effectiveStackAcresCycle", () => {
+  const HEN_DEF = STACKACRES_CATALOGUE.hen;
+  const DURATION = HEN_DEF.durationMs;
+
+  it("a hen still hungry at its own readyAt computes a fresh cycle starting exactly there", () => {
+    // Started a full cycle before its own readyAt (which lands exactly at
+    // NOW), fed only at the start -- hungerMs (8m) is under durationMs (15m),
+    // so it is still hungry when NOW reaches readyAt.
+    const readyAtMs = NOW.getTime();
+    const r = row({
+      startedAt: new Date(readyAtMs - DURATION).toISOString(),
+      readyAt: new Date(readyAtMs).toISOString(),
+      lastFedAt: new Date(readyAtMs - DURATION).toISOString(),
+    });
+    // Two minutes past its own readyAt, still never fed.
+    const at = new Date(readyAtMs + 2 * 60 * 1000);
+
+    const effective = effectiveStackAcresCycle(r, at);
+    expect(effective).toEqual({
+      startedAt: new Date(readyAtMs).toISOString(),
+      readyAt: new Date(readyAtMs + DURATION).toISOString(),
+      lastFedAt: new Date(readyAtMs).toISOString(),
+    });
+    // The voided cycle pays nothing and the fresh one has not finished: not
+    // ready, and not hungry either -- it was just "fed" at the spoil moment.
+    expect(isStackAcresUnitReady(r, at)).toBe(false);
+    expect(isStackAcresUnitHungry(r, at)).toBe(false);
+  });
+
+  it("fast-forwards through every cycle spoiled in a row when left unfed for hours", () => {
+    // Never fed past its own start, so every cycle after the first spoil
+    // repeats on exactly `durationMs` -- see the function's own doc comment.
+    const startMs = NOW.getTime();
+    const readyAtMs = startMs + DURATION;
+    const r = row({
+      startedAt: new Date(startMs).toISOString(),
+      readyAt: new Date(readyAtMs).toISOString(),
+      lastFedAt: new Date(startMs).toISOString(),
+    });
+    // Offline for just over 3 hours past the first readyAt -- against an 8m
+    // hunger / 15m deadline this silently spoils 13 full cycles (the first
+    // natural one, plus 12 more) before landing 5 minutes into the 14th.
+    const at = new Date(readyAtMs + 3 * 60 * 60 * 1000 + 5 * 60 * 1000);
+    const spoiledCycles = 12;
+    const effectiveStartMs = readyAtMs + spoiledCycles * DURATION;
+
+    const effective = effectiveStackAcresCycle(r, at);
+    expect(effective).toEqual({
+      startedAt: new Date(effectiveStartMs).toISOString(),
+      readyAt: new Date(effectiveStartMs + DURATION).toISOString(),
+      lastFedAt: new Date(effectiveStartMs).toISOString(),
+    });
+    // 5 minutes into the fresh cycle: not yet hungry (8m window), not ready.
+    expect(isStackAcresUnitHungry(r, at)).toBe(false);
+    expect(isStackAcresUnitReady(r, at)).toBe(false);
+
+    // toStackAcresUnitSnapshots displays the same fast-forwarded clock, so a
+    // long-neglected hen reads as freshly working rather than eternally
+    // frozen hungry.
+    const [snap] = toStackAcresUnitSnapshots([r], at);
+    expect(snap.state).toBe("working");
+    expect(snap.startedAt).toBe(new Date(effectiveStartMs).toISOString());
+    expect(snap.readyAt).toBe(new Date(effectiveStartMs + DURATION).toISOString());
+  });
+
+  it("leaves a non-spoils unit's own fields completely unchanged, however hungry-past-ready it looks", () => {
+    // Cattle: hungry for 32 hours straight, long past its own 24h readyAt --
+    // exactly the shape that would spoil a hen, but cattle carries
+    // `spoils: false`.
+    const cattle = row({
+      stock: "cattle",
+      startedAt: new Date(NOW.getTime() - 40 * 60 * 60 * 1000).toISOString(),
+      readyAt: new Date(NOW.getTime() - 16 * 60 * 60 * 1000).toISOString(),
+      lastFedAt: new Date(NOW.getTime() - 40 * 60 * 60 * 1000).toISOString(),
+    });
+    const farFuture = new Date(NOW.getTime() + 100 * 24 * 60 * 60 * 1000);
+
+    const effective = effectiveStackAcresCycle(cattle, farFuture);
+    expect(effective).toEqual({
+      startedAt: cattle.startedAt,
+      readyAt: cattle.readyAt,
+      lastFedAt: cattle.lastFedAt,
+    });
+    // Same before/after result as the raw helpers give today: frozen hungry
+    // forever, never fast-forwarded, never silently paid.
+    expect(isStackAcresUnitHungry(cattle, farFuture)).toBe(true);
+    expect(isStackAcresUnitReady(cattle, farFuture)).toBe(false);
   });
 });
 

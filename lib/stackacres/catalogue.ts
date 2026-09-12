@@ -152,6 +152,27 @@ export interface StackAcresStockDef {
    */
   thirstMs: number | null;
   /**
+   * Whether neglect can cost this stock its PAYOUT rather than just its time.
+   * `feedStackAcres`'s own doc comment states the game's general rule --
+   * neglect costs you time, never Gold -- and `spoils: true` is the single,
+   * narrow exception to it: only `hen` carries it. Everything else, every
+   * crop and the Sheep/Cattle Pens included, is `spoils: false` and keeps the
+   * general rule exactly as written: frozen until tended, yield always
+   * eventually paid.
+   *
+   * The Hen Coop is the farm's starter tier, and it is deliberately the one
+   * place this game asks for early, frequent attention rather than none at
+   * all -- see `hungerMs` below, now shorter than the Coop's own
+   * `durationMs`. A `spoils` unit that is still hungry at its own `readyAt`
+   * voids that cycle outright (no payout) and starts a fresh one right then;
+   * see `effectiveStackAcresCycle` in ./units.ts for the exact mechanics.
+   *
+   * Present (not optional) on every entry on purpose: a stock's spoil
+   * behavior should read as a decision made at that entry, not an implicit
+   * default nobody chose.
+   */
+  spoils: boolean;
+  /**
    * What clearing this plot costs after a muck, in Gold. Scaled to the tier
    * on purpose: a single flat fee across tiers an order of magnitude apart
    * makes the cheapest one permanently negative. Twice the tier's net keeps
@@ -178,9 +199,9 @@ export interface StackAcresStockDef {
  * seedCost/sellPrice/quantity retune, kept as whole Gold throughout since
  * nothing in this economy handles fractional currency).
  */
-const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, muckFee: 2, ownableOutright: false } as const;
-const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, muckFee: 90, ownableOutright: true } as const;
-const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, muckFee: 200, ownableOutright: true } as const;
+const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
+const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
+const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
@@ -234,11 +255,17 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     label: "Hen Coop",
     seedCost: 50,
     durationMs: 15 * 60 * 1000,
-    // Longer than its own cycle, so a Hen never goes hungry. The cheapest
-    // animal is deliberately fire-and-forget; tending is what you take on when
-    // you move up to the tiers that yield.
-    hungerMs: 45 * 60 * 1000,
+    // Retuned 2026-09-11 from 45 minutes (longer than the Coop's own cycle,
+    // so a Hen could never actually go hungry) to 8 minutes, comfortably
+    // inside the 15-minute cycle. The Hen Coop is the farm's starter tier,
+    // and it now carries real, frequent feeding stakes from minute one: see
+    // `spoils` above, the one exception to `feedStackAcres`'s "neglect costs
+    // you time, never Gold" rule. A hen fed before its own `readyAt` behaves
+    // exactly like every other animal -- frozen, never losing yield; only a
+    // hen left hungry all the way through its own `readyAt` voids that cycle.
+    hungerMs: 8 * 60 * 1000,
     thirstMs: null,
+    spoils: true,
     muckFee: 44,
     ownableOutright: true,
   },
@@ -253,6 +280,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     durationMs: 4 * 60 * 60 * 1000,
     hungerMs: 2 * 60 * 60 * 1000,
     thirstMs: null,
+    spoils: false,
     muckFee: 312,
     ownableOutright: true,
   },
@@ -262,6 +290,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
     durationMs: 24 * 60 * 60 * 1000,
     hungerMs: 8 * 60 * 60 * 1000,
     thirstMs: null,
+    spoils: false,
     muckFee: 1_120,
     ownableOutright: true,
   },
@@ -284,11 +313,13 @@ export interface StackAcresFeedDef extends StackAcresShopLock {
  *
  * The Feed Sack carries no lock and never will: it is the shelf's floor, and
  * an animal that has gone hungry has to be feedable by whoever is standing
- * there. The Bulk Shipment is the volume rung, and it asks for the Fold --
- * which is exactly where feeding stops being optional. Nothing at the
- * Farmstead needs it: a Hen Coop's `hungerMs` is longer than its own cycle
- * (see STACKACRES_CATALOGUE above), so a farm that only keeps hens has never
- * fed anything and would be buying twenty servings of nothing.
+ * there -- doubly so now that the Hen Coop's own `hungerMs` sits inside its
+ * cycle (see `spoils` in STACKACRES_CATALOGUE above), so a Farmstead-only
+ * farm needs the Feed Sack from its very first cycle. The Bulk Shipment is
+ * the volume rung, and it asks for the Fold -- which is exactly where
+ * feeding stops being one Hen Coop's occasional errand and starts being a
+ * standing chore across a real herd. A farm that only keeps hens has no use
+ * for twenty servings at once.
  *
  * No live farm is stranded by this. `sectors` is derived, so anybody already
  * keeping sheep reads as holding the Fold whether or not they ever paid to

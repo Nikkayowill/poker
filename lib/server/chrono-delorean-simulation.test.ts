@@ -294,10 +294,10 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const plots = sectors.unlockedPlotCount(unlocked, capacity, cropFieldsUnlocked);
     const expectedFee = upkeep.stackacresUpkeepFee(plots);
     console.log("Chrono-DeLorean simulation: plots after Crop Fields+Wallow ->", plots, "fee ->", expectedFee);
-    // Hen Haven(hen) + the Crop Fields(all 22 crops, inside the Farmstead) +
-    // Wallow(pig) = 24 stock kinds x 3 free slots each = 72 plots, 69
-    // chargeable past the free base.
-    expect(plots).toBe(72);
+    // Hen Haven(hen) + the Crop Fields(all 16 Gr8FarmPack crops, inside the
+    // Farmstead) + Wallow(pig) = 18 stock kinds x 3 free slots each = 54
+    // plots, 51 chargeable past the free base.
+    expect(plots).toBe(54);
     expect(expectedFee).toBeGreaterThan(0);
     expect(afterWallow.upkeep.fee).toBe(expectedFee);
 

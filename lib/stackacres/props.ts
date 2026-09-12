@@ -1,8 +1,8 @@
 /**
  * Where the farm's fixed props stand.
  *
- * Pure layout: the well, the crates by the barn, the lamps down the lane and
- * the rest, each as a kind and the world point its feet are on. The renderer
+ * Pure layout: the well, the lamps down the lane and the rest, each as a
+ * kind and the world point its feet are on. The renderer
  * (components/arcade/stackacres/
  * art-props.ts) paints them; the scene places each one by its feet with a
  * soft ground shadow under it and sorts it by that y like everything else
@@ -72,6 +72,18 @@ export type PropKind =
   | "flowerBush2"
   | "flowerSprig1"
   | "flowerSprig2"
+  // The barbed-wire fence (2026-09-12): the pack's other two connector
+  // shapes, `Barb1` (a corner) and a plain repeat of one straight bay,
+  // stay out for now -- see scripts/prepare-stackacres-farmpack-props.py's
+  // own header. A straight run needs a post facing each way and the pack
+  // only drew one, so `barbEndWest`/`barbEndEast` are the same picture,
+  // mirrored at prep time rather than at runtime -- no other prop here
+  // flips per instance, and two baked files cost nothing a generic flip
+  // flag would not.
+  | "barbEndWest"
+  | "barbEndEast"
+  | "barbStraight1"
+  | "barbStraight2"
   // The eleven story travelers (see ./story/placement.ts) -- static,
   // tappable, and placed by TRAVELER_PROPS there rather than here: the kind
   // lives where the rest of a prop's shape lives, the placement beside its
@@ -106,15 +118,15 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   // header) -- "windmill" stays a real PropKind/painter, just unplaced, so
   // reattaching the Workshop's entryway is a placement, not a rebuild.
 
-  // Clutter east of the barn and the hay, against the road's north rim.
-  // The road's body now starts at y 38 (two and a half tiles wide, centred
-  // on y 58 -- see lib/stackacres/paths.ts); everything here keeps its feet
-  // at y <= 32, on the mud of the barn yard, clear of the body.
-  { kind: "crate", ...yardPoint(200, 26) },
-  { kind: "crate", ...yardPoint(211, 24) },
-  { kind: "logPile", ...yardPoint(182, 2) },
+  // The crates, the log pile, the wheelbarrow and the broken stone wall that
+  // used to stand here (east of the barn and the hay, and north of the yard)
+  // were pulled per Kayo's call: too much junk cluttering one small yard.
+  // `well` is the one thing from that cluster kept -- it is a destination
+  // (see stackacres-farm.tsx), not ambient dressing. `crate`/`logPile`/
+  // `wheelbarrow`/`stoneWall` stay real PropKind/painter entries, just
+  // unplaced here, the same way `windmill` did above; `logPile` still
+  // appears on its own through `farmsteadClutter`'s scatter further south.
   { kind: "well", ...yardPoint(238, 30) },
-  { kind: "wheelbarrow", ...yardPoint(284, 24) },
   { kind: "flowerBed", ...yardPoint(270, 6) },
   { kind: "flowerBed", ...yardPoint(302, 6) },
 
@@ -134,13 +146,24 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   { kind: "lampPost", ...yardPoint(26, 300) },
   { kind: "mailbox", ...yardPoint(26, 406) },
 
-  // Field wall north of the yard: three broken lengths, not a fence line.
-  { kind: "stoneWall", ...yardPoint(176, -46) },
-  { kind: "stoneWall", ...yardPoint(216, -46) },
-  { kind: "stoneWall", ...yardPoint(254, -46) },
-
   // Watching the first row of fields from the east verge.
   { kind: "scarecrow", ...yardPoint(402, 110) },
+
+  // The Factory's own back fence (2026-09-12): a west end cap, two straight
+  // bays, an east end cap, laid out west to east and centred on
+  // `FACTORY_FOOTPRINT`'s own x-centre (116). Feet at y 424, 4 units north
+  // of the Factory's own south edge (428, where its picture is anchored) --
+  // `southRoadWest` (paths.ts) runs east-west right behind that line (body
+  // centred on y 447, 32 wide), and props.test.ts holds every `YARD_PROPS`
+  // entry to `nearPath` reading false outright (not just clear of the body:
+  // `PATH_CLEARANCE` widens that to 22 units off the centreline), which only
+  // leaves y <= 425 here. Widths off PROP_SIZE: 13 + 31 + 31 + 13 = 88,
+  // eight short of the building's own 100, centred rather than run edge to
+  // edge with it.
+  { kind: "barbEndWest", ...yardPoint(78.5, 424) },
+  { kind: "barbStraight1", ...yardPoint(100.5, 424) },
+  { kind: "barbStraight2", ...yardPoint(131.5, 424) },
+  { kind: "barbEndEast", ...yardPoint(153.5, 424) },
 ];
 
 /**
@@ -186,6 +209,12 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBush2: { w: 19, h: 15 },
   flowerSprig1: { w: 5, h: 12 },
   flowerSprig2: { w: 12, h: 7 },
+  // Off scripts/prepare-stackacres-farmpack-props.py's own printed table,
+  // same convention as the clutter above.
+  barbEndWest: { w: 13, h: 22 },
+  barbEndEast: { w: 13, h: 22 },
+  barbStraight1: { w: 31, h: 31 },
+  barbStraight2: { w: 31, h: 31 },
   // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
   // width/320) at a world height picked for their read: the adults at 38 (a
   // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
@@ -235,6 +264,12 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBush2: { w: 20, h: 6 },
   flowerSprig1: { w: 5, h: 3 },
   flowerSprig2: { w: 12, h: 4 },
+  // Low and wide, the same posture `stoneWall`'s own shadow above takes for
+  // a horizontal run rather than a standing object.
+  barbEndWest: { w: 15, h: 5 },
+  barbEndEast: { w: 15, h: 5 },
+  barbStraight1: { w: 33, h: 6 },
+  barbStraight2: { w: 33, h: 6 },
   travelerRay: { w: 22, h: 7 },
   travelerPierre: { w: 22, h: 7 },
   travelerMiles: { w: 20, h: 7 },

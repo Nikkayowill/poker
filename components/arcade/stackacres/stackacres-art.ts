@@ -218,6 +218,10 @@ type CorePainterName =
   | "barnOpen"
   | "rayHouse"
   | "rayHouseOpen"
+  | "greenhouse"
+  | "greenhouseOpen"
+  | "factory"
+  | "factoryOpen"
   | "silo"
   | "hay"
   | "barrel"
@@ -896,6 +900,52 @@ const BARN_FALLBACK = painter(74, 70, (c) => {
   F(c, RAMPS.cream.top);
   glass(c, 34.2, 13.2, 5.6, 4.6);
   c.restore();
+});
+
+// A simple gable glass box -- what shows before the Greenhouse's real
+// supplied art arrives (or if it never does), same "rarely if ever seen"
+// posture BARN_FALLBACK documents. Box is 84x71, matching the real art's
+// own aspect ratio at `GREENHOUSE_PLOT.width` (84) wide. `greenhouseOpen`
+// reuses this same drawing below -- the real second frame only adds a
+// drift of steam, not worth a second hand-drawn fallback for a frame this
+// rarely seen either.
+const GREENHOUSE_FALLBACK = painter(84, 71, (c) => {
+  rr(c, 4, 50, 76, 18, 3);
+  F(c, RAMPS.wood.top);
+  rr(c, 6, 20, 72, 32, 2);
+  F(c, lin(c, 6, 20, 6, 52, [[0, RAMPS.water.top], [1, RAMPS.water.side]]));
+  stroke(c, RAMPS.water.rim, 1);
+  poly(c, [[2, 22], [42, 2], [82, 22]]);
+  F(c, lin(c, 2, 2, 82, 22, [[0, RAMPS.water.top], [1, RAMPS.water.rim]]));
+  stroke(c, RAMPS.water.rim, 1);
+});
+
+// Two gabled wooden wings, staggered, standing in for the Factory's own
+// L-shaped complex -- what shows before its real supplied art arrives (or
+// if it never does), same "rarely if ever seen" posture BARN_FALLBACK
+// documents. Box is 100x70, matching `FACTORY_FOOTPRINT.width` (100) at the
+// real art's own aspect ratio. `factoryOpen` reuses this same drawing below
+// -- the real second frame only adds chimney smoke and a cart, not worth a
+// second hand-drawn fallback for a frame this rarely seen either.
+const FACTORY_FALLBACK = painter(100, 70, (c) => {
+  const wing = (x: number, y: number, w: number, ridgeY: number): void => {
+    rr(c, x, y + 14, w, 30, 2);
+    F(c, RAMPS.wood.top);
+    rr(c, x, y + 14, w, 8, 0);
+    F(c, "rgba(0,0,0,.16)");
+    poly(c, [[x - 3, y + 14], [x + w / 2, ridgeY], [x + w + 3, y + 14]]);
+    F(c, RAMPS.roof.top);
+    poly(c, [[x - 3, y + 14], [x + w / 2, ridgeY], [x + w / 2, y + 14]]);
+    F(c, "rgba(255,240,230,.12)");
+    poly(c, [[x + w / 2, ridgeY], [x + w + 3, y + 14], [x + w / 2, y + 14]]);
+    F(c, "rgba(20,8,8,.2)");
+  };
+  wing(2, 8, 56, 0);
+  wing(46, 20, 52, 8);
+  for (const x of [12, 34, 62, 84]) {
+    rr(c, x, 34, 12, 20, 1.2);
+    F(c, "#241a12");
+  }
 });
 
 /** Every painter, by name, as drawn code. A record literal rather than a
@@ -1724,6 +1774,11 @@ const DRAWN: Record<PainterName, Painter> = {
     }
   }),
 
+  greenhouse: GREENHOUSE_FALLBACK,
+  greenhouseOpen: GREENHOUSE_FALLBACK,
+  factory: FACTORY_FALLBACK,
+  factoryOpen: FACTORY_FALLBACK,
+
   silo: painter(22, 62, (c) => {
     rr(c, 3, 12, 16, 50, 3.5);
     F(c, lin(c, 3, 0, 19, 0, [[0, "#f1ebe0"], [0.5, "#d3cabc"], [0.82, "#a89f92"], [1, "#857c70"]]));
@@ -2265,11 +2320,15 @@ export const PAINTERS: Record<PainterName, Painter> = {
   windmill: spriteBacked("windmill", DRAWN.windmill),
   rayHouse: spriteBacked("rayHouse", DRAWN.rayHouse),
   rayHouseOpen: spriteBacked("rayHouseOpen", DRAWN.rayHouseOpen),
+  greenhouse: spriteBacked("greenhouse", DRAWN.greenhouse),
+  greenhouseOpen: spriteBacked("greenhouseOpen", DRAWN.greenhouseOpen),
+  factory: spriteBacked("factory", DRAWN.factory),
+  factoryOpen: spriteBacked("factoryOpen", DRAWN.factoryOpen),
   // The eleven story travelers (lib/stackacres/story/placement.ts) --
-  // pixel-art PNGs, plus Ray's spirit, standing in for the moment before
-  // them; see `travelerFallback` in art-props.ts for the drawn version each
-  // wraps.
+  // pixel-art PNGs, plus Ray's own real art; see `travelerFallback` in
+  // art-props.ts for the drawn version each wraps.
   travelerRay: spriteBacked("travelerRay", DRAWN.travelerRay),
+  travelerRayActive: spriteBacked("travelerRayActive", DRAWN.travelerRayActive),
   travelerPierre: spriteBacked("travelerPierre", DRAWN.travelerPierre),
   travelerMiles: spriteBacked("travelerMiles", DRAWN.travelerMiles),
   travelerSkye: spriteBacked("travelerSkye", DRAWN.travelerSkye),
@@ -2321,6 +2380,10 @@ export const PAINTERS: Record<PainterName, Painter> = {
   flowerBush2: spriteBacked("flowerBush2", DRAWN.flowerBush2),
   flowerSprig1: spriteBacked("flowerSprig1", DRAWN.flowerSprig1),
   flowerSprig2: spriteBacked("flowerSprig2", DRAWN.flowerSprig2),
+  barbEndWest: spriteBacked("barbEndWest", DRAWN.barbEndWest),
+  barbEndEast: spriteBacked("barbEndEast", DRAWN.barbEndEast),
+  barbStraight1: spriteBacked("barbStraight1", DRAWN.barbStraight1),
+  barbStraight2: spriteBacked("barbStraight2", DRAWN.barbStraight2),
   midnightMerchant: spriteBacked("midnightMerchant", DRAWN.midnightMerchant),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,

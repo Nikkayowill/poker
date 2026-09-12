@@ -110,8 +110,15 @@ export interface AmbienceCue {
 
 const SILENT: AmbienceMix = { grass: 0, water: 0, insects: 0 };
 
-/** The one bed mix the whole map shares. `grass` stays out of it -- see AMBIENCE_BEDS. */
-const BASE_MIX: AmbienceMix = { grass: 0, water: 0.4, insects: 0.6 };
+/**
+ * The one bed mix the whole map shares. `grass` stays out of it -- see
+ * AMBIENCE_BEDS. `water` is pitched low on purpose: it is a wide band of
+ * noise wandering in level and pitch (see the bed's synthesis in
+ * stackacres-ambience.ts), which is the same shape as the wind bed that got
+ * cut -- at its old gain it read as wind under the cues rather than as a
+ * stream under the birds.
+ */
+const BASE_MIX: AmbienceMix = { grass: 0, water: 0.22, insects: 0.6 };
 
 /**
  * The bed mix for an hour, the same wherever you are standing.
@@ -149,10 +156,12 @@ function timeBed(tod: AmbienceTimeOfDay): AmbienceMix {
  * longest-gap-first for no reason the engine depends on -- it is just easier
  * to read a table that runs from "constant" to "rare".
  *
- * Gaps are deliberately long. The temptation with a cue list is to make the
- * farm busy, and a busy farm is a noisy one: the point of this layer is that
- * a player who stops moving hears something happen every ten or twenty
- * seconds, not every two.
+ * Gaps still vary a lot cue to cue: the mechanical ones (windmill, gate, the
+ * owl) stay rare so the farm doesn't turn into a machine shop, but the birds,
+ * crickets and frogs run close together on purpose -- that density is what
+ * reads as "a living farm" rather than "an occasional sound effect", and each
+ * firing is itself 2-4 varied chirps (see synth-voices.ts), so it never comes
+ * out as a metronome even at a short gap.
  */
 export function ambienceCues(tod: AmbienceTimeOfDay): AmbienceCue[] {
   const cues: AmbienceCue[] = [];
@@ -163,37 +172,37 @@ export function ambienceCues(tod: AmbienceTimeOfDay): AmbienceCue[] {
   if (night || dusk) {
     cues.push({
       cue: "cricket",
-      minGapMs: night ? 1_800 : 3_200,
-      maxGapMs: night ? 5_200 : 8_000,
-      gain: night ? 0.5 : 0.34,
+      minGapMs: night ? 1_200 : 2_200,
+      maxGapMs: night ? 3_600 : 5_500,
+      gain: night ? 0.62 : 0.46,
     });
   }
   if (day || dusk) {
     cues.push({
       cue: "bird-high",
-      minGapMs: day ? 1_500 : 3_500,
-      maxGapMs: day ? 5_000 : 9_000,
-      gain: day ? 0.46 : 0.32,
+      minGapMs: day ? 1_000 : 1_600,
+      maxGapMs: day ? 2_400 : 3_800,
+      gain: day ? 0.6 : 0.44,
     });
     cues.push({
       cue: "bird-low",
-      minGapMs: day ? 3_000 : 5_000,
-      maxGapMs: day ? 9_000 : 14_000,
-      gain: 0.32,
+      minGapMs: day ? 1_500 : 2_500,
+      maxGapMs: day ? 4_200 : 6_500,
+      gain: 0.44,
     });
-    cues.push({ cue: "crow-caw", minGapMs: 14_000, maxGapMs: 38_000, gain: 0.28 });
+    cues.push({ cue: "crow-caw", minGapMs: 9_000, maxGapMs: 22_000, gain: 0.38 });
   }
-  if (day) cues.push({ cue: "pigeon-coo", minGapMs: 12_000, maxGapMs: 32_000, gain: 0.28 });
+  if (day) cues.push({ cue: "pigeon-coo", minGapMs: 6_000, maxGapMs: 16_000, gain: 0.38 });
   if (dusk) cues.push({ cue: "farm-bell", minGapMs: 60_000, maxGapMs: 150_000, gain: 0.16 });
-  if (night) cues.push({ cue: "owl-hoot", minGapMs: 20_000, maxGapMs: 56_000, gain: 0.28 });
+  if (night) cues.push({ cue: "owl-hoot", minGapMs: 14_000, maxGapMs: 34_000, gain: 0.4 });
 
   // These used to belong to one district apiece; now they just play,
   // wherever you are, because the farm is one place rather than four.
   cues.push({ cue: "windmill-creak", minGapMs: 11_000, maxGapMs: 26_000, gain: 0.24 });
   cues.push({ cue: "gate-creak", minGapMs: 28_000, maxGapMs: 80_000, gain: 0.17 });
-  cues.push({ cue: "straw-rustle", minGapMs: 8_000, maxGapMs: 21_000, gain: 0.23 });
+  cues.push({ cue: "straw-rustle", minGapMs: 8_000, maxGapMs: 21_000, gain: 0.3 });
   cues.push({ cue: "water-drop", minGapMs: 2_500, maxGapMs: 8_000, gain: 0.28 });
-  cues.push({ cue: "frog", minGapMs: night ? 2_400 : 6_000, maxGapMs: night ? 7_000 : 16_000, gain: 0.34 });
+  cues.push({ cue: "frog", minGapMs: night ? 1_800 : 4_000, maxGapMs: night ? 4_500 : 10_000, gain: 0.46 });
 
   return cues;
 }

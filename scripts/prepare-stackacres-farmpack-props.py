@@ -11,13 +11,25 @@ decision attached: things that slot straight into `CLUTTER_KINDS`
 (lib/stackacres/props.ts) the same way `log`/`mushroom`/`boulder` already
 do -- scattered by the district scatter, not hand-positioned. The pack's
 fixed-structure candidates (silo, greenhouse, shed, table, market stalls)
-and the barbed-wire fence (which reads as a neighbour-aware connector set,
-not four random skins) are NOT here on purpose -- see the PR description.
-Also out of scope, permanently: barn/windmill/scarecrow (style overlap with
-the existing organic-FLUX props), trees, dirt/grass (the autotiled terrain
-pack, not a prop), crate (already sprite-backed), trowel/pitchfork/snips/
-watering can (tool-tier and drag-to-water systems, not static props), pump
-(same role as the well).
+are NOT here on purpose -- see the PR description. Also out of scope,
+permanently: barn/windmill/scarecrow (style overlap with the existing
+organic-FLUX props), trees, dirt/grass (the autotiled terrain pack, not a
+prop), crate (already sprite-backed), trowel/pitchfork/snips/watering can
+(tool-tier and drag-to-water systems, not static props), pump (same role as
+the well).
+
+THE BARBED WIRE (2026-09-12) now has a placement decision -- Kayo's own call
+to run it along the back of the new Factory building -- so it is prepped
+here too, four ids off the same four source plates: `barbEnd` (`Barb2.png`,
+wire running one direction off the post -- a line terminus) in both its
+native orientation and `barbEndWest`, the same picture mirrored, since a
+line needs a post facing each way and this pack only drew one; and
+`barbStraight1`/`barbStraight2` (`Barb3.png`/`Barb4.png`, two posts with
+wire strung between) as the two run segments, alternated the way
+`hayBale1`/`hayBale2` already avoid repeating one picture down a line.
+`Barb1.png`, the corner post, stays out for now -- nothing here runs a
+corner yet; it is a real source plate away from becoming a prop the moment
+one does.
 
 Each source file is its own independent canvas, already roughly bottom-
 anchored and centred (same as the crops pack) -- so, same as
@@ -55,7 +67,19 @@ PROPS: dict[str, str] = {
     "flowerBush2": "Flwrbush2.png",
     "flowerSprig1": "smflwr.png",
     "flowerSprig2": "Smflwrs.png",
+    # `Barb2.png` native orientation is post-on-the-left, wire reaching right
+    # -- a west end cap, its post the outside edge of a run reaching east.
+    # `barbEndEast` is that same plate mirrored (post-right, wire reaching
+    # left), for the opposite end of the same run.
+    "barbEndWest": "Barb2.png",
+    "barbEndEast": "Barb2.png",
+    "barbStraight1": "Barb3.png",
+    "barbStraight2": "Barb4.png",
 }
+
+# Ids that are the SAME source plate as another entry above, mirrored --
+# see the module note on why `barbEndEast` needs this and nothing else does.
+FLIP_HORIZONTAL: set[str] = {"barbEndEast"}
 
 
 def trim_flush_bottom(im: Image.Image) -> tuple[Image.Image, int, int]:
@@ -86,6 +110,8 @@ def main() -> None:
     for prop_id, filename in PROPS.items():
         src_path = SRC / filename
         im = Image.open(src_path)
+        if prop_id in FLIP_HORIZONTAL:
+            im = im.transpose(Image.FLIP_LEFT_RIGHT)
         canvas, unit_w, unit_h = trim_flush_bottom(im)
         canvas.save(DST / f"{prop_id}.png")
         box_table[prop_id] = (unit_w, unit_h)

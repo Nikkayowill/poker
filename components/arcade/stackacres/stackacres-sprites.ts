@@ -291,6 +291,22 @@ export const SPRITE_ART = {
   log: "/stackacres/sprites/log.webp",
   mushroom: "/stackacres/sprites/mushroom.webp",
   boulder: "/stackacres/sprites/boulder.webp",
+  // The Farmstead clutter band's new variety (lib/stackacres/props.ts's
+  // CLUTTER_KINDS), off the Gr8FarmPack -- see
+  // scripts/prepare-stackacres-farmpack-props.py. Filenames are the prop id
+  // verbatim, same convention the crop roster above uses.
+  hayBale1: "/stackacres/sprites/hayBale1.webp",
+  hayBale2: "/stackacres/sprites/hayBale2.webp",
+  bucket: "/stackacres/sprites/bucket.webp",
+  stringLights: "/stackacres/sprites/stringLights.webp",
+  smallBush1: "/stackacres/sprites/smallBush1.webp",
+  smallBush2: "/stackacres/sprites/smallBush2.webp",
+  wildflowers1: "/stackacres/sprites/wildflowers1.webp",
+  wildflowers2: "/stackacres/sprites/wildflowers2.webp",
+  flowerBush1: "/stackacres/sprites/flowerBush1.webp",
+  flowerBush2: "/stackacres/sprites/flowerBush2.webp",
+  flowerSprig1: "/stackacres/sprites/flowerSprig1.webp",
+  flowerSprig2: "/stackacres/sprites/flowerSprig2.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
   midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",

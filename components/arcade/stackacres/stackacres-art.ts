@@ -2306,6 +2306,21 @@ export const PAINTERS: Record<PainterName, Painter> = {
   log: spriteBacked("log", DRAWN.log),
   mushroom: spriteBacked("mushroom", DRAWN.mushroom),
   boulder: spriteBacked("boulder", DRAWN.boulder),
+  // The Farmstead clutter band's new variety, off the same Gr8FarmPack the
+  // crop roster uses -- see scripts/prepare-stackacres-farmpack-props.py and
+  // lib/stackacres/props.ts's CLUTTER_KINDS.
+  hayBale1: spriteBacked("hayBale1", DRAWN.hayBale1),
+  hayBale2: spriteBacked("hayBale2", DRAWN.hayBale2),
+  bucket: spriteBacked("bucket", DRAWN.bucket),
+  stringLights: spriteBacked("stringLights", DRAWN.stringLights),
+  smallBush1: spriteBacked("smallBush1", DRAWN.smallBush1),
+  smallBush2: spriteBacked("smallBush2", DRAWN.smallBush2),
+  wildflowers1: spriteBacked("wildflowers1", DRAWN.wildflowers1),
+  wildflowers2: spriteBacked("wildflowers2", DRAWN.wildflowers2),
+  flowerBush1: spriteBacked("flowerBush1", DRAWN.flowerBush1),
+  flowerBush2: spriteBacked("flowerBush2", DRAWN.flowerBush2),
+  flowerSprig1: spriteBacked("flowerSprig1", DRAWN.flowerSprig1),
+  flowerSprig2: spriteBacked("flowerSprig2", DRAWN.flowerSprig2),
   midnightMerchant: spriteBacked("midnightMerchant", DRAWN.midnightMerchant),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,

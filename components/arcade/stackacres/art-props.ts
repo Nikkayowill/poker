@@ -1,6 +1,6 @@
 // No Phaser here at all, not even a type: these are plain Canvas2D painters
 // (see the note at the top of stackacres-art.ts).
-import { blob, ell, F, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
+import { blob, canopy, ell, F, isoBox, leaf, lin, painter, poly, rad, rr, stroke, type Ctx, type Painter } from "./art-kit";
 import { RAMPS } from "./art-palette";
 
 /**
@@ -41,6 +41,18 @@ export type PropPainterName =
   | "log"
   | "mushroom"
   | "boulder"
+  | "hayBale1"
+  | "hayBale2"
+  | "bucket"
+  | "stringLights"
+  | "smallBush1"
+  | "smallBush2"
+  | "wildflowers1"
+  | "wildflowers2"
+  | "flowerBush1"
+  | "flowerBush2"
+  | "flowerSprig1"
+  | "flowerSprig2"
   | "travelerRay"
   | "travelerPierre"
   | "travelerMiles"
@@ -1005,6 +1017,98 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
     F(c, "rgba(255,255,255,.4)");
     shape();
     stroke(c, "rgba(40,50,60,.3)", 0.6);
+  }),
+
+  /* ---- Gr8FarmPack scattered clutter (lib/stackacres/props.ts's
+   * CLUTTER_KINDS) -- see scripts/prepare-stackacres-farmpack-props.py.
+   * Minimal fallbacks built from the flat-vector primitives below: the
+   * pack's own sprite is what actually ships, these only cover the gap
+   * before it loads. */
+  hayBale1: painter(25, 23, (c) => {
+    isoBox(c, 12.5, 22, 9, 12, RAMPS.straw);
+  }),
+  hayBale2: painter(25, 22, (c) => {
+    isoBox(c, 12.5, 21, 9, 11, RAMPS.straw);
+  }),
+  bucket: painter(9, 10, (c) => {
+    isoBox(c, 4.5, 9.5, 3, 6, RAMPS.metal);
+  }),
+  stringLights: painter(38, 66, (c) => {
+    for (const x of [4, 34]) {
+      rr(c, x - 1, 4, 2, 62, 1);
+      F(c, RAMPS.wood.top);
+    }
+    c.beginPath();
+    c.moveTo(4, 6);
+    c.quadraticCurveTo(19, 16, 34, 6);
+    stroke(c, "rgba(40,30,20,.55)", 0.6);
+    for (const t of [0.15, 0.35, 0.5, 0.65, 0.85]) {
+      const x = 4 + (34 - 4) * t;
+      const y = 6 + (16 - 6) * (1 - Math.abs(t - 0.5) * 2) * 0.9;
+      ell(c, x, y + 2.4, 1.3, 1.3);
+      F(c, RAMPS.gold.top);
+    }
+  }),
+  smallBush1: painter(15, 12, (c) => {
+    canopy(
+      c,
+      [
+        [5.5, 8.5, 4.4],
+        [10, 8.8, 4],
+      ],
+      RAMPS.leaf,
+    );
+  }),
+  smallBush2: painter(18, 12, (c) => {
+    canopy(
+      c,
+      [
+        [5, 8.6, 4.2],
+        [11, 8.8, 4.6],
+        [15.5, 9, 3.6],
+      ],
+      RAMPS.leaf,
+    );
+  }),
+  wildflowers1: painter(12, 10, (c) => {
+    bloom(c, 4, 8, 2.4, RAMPS.wild.top, RAMPS.gold.top);
+    bloom(c, 8.4, 7, 2.1, RAMPS.gold.top, RAMPS.wild.top);
+  }),
+  wildflowers2: painter(5, 7, (c) => {
+    bloom(c, 2.5, 5.5, 2.2, RAMPS.wild.top, RAMPS.gold.top);
+  }),
+  flowerBush1: painter(25, 16, (c) => {
+    canopy(
+      c,
+      [
+        [7, 11.5, 5.6],
+        [16, 11.8, 5.2],
+      ],
+      RAMPS.leaf,
+    );
+    bloom(c, 6, 7.5, 1.8, RAMPS.wild.top, RAMPS.gold.top);
+    bloom(c, 16.5, 7.2, 1.8, RAMPS.gold.top, RAMPS.wild.top);
+  }),
+  flowerBush2: painter(19, 15, (c) => {
+    canopy(c, [[9.5, 11, 5.4]], RAMPS.leaf);
+    bloom(c, 6, 6.5, 1.9, RAMPS.gold.top, RAMPS.wild.top);
+    bloom(c, 13, 6.8, 1.9, RAMPS.wild.top, RAMPS.gold.top);
+  }),
+  flowerSprig1: painter(5, 12, (c) => {
+    c.beginPath();
+    c.moveTo(2.5, 12);
+    c.lineTo(2.5, 4);
+    stroke(c, RAMPS.leaf.top, 0.5);
+    bloom(c, 2.5, 2.6, 2.2, RAMPS.wild.top, RAMPS.gold.top);
+  }),
+  flowerSprig2: painter(12, 7, (c) => {
+    for (const x of [3, 9]) {
+      c.beginPath();
+      c.moveTo(x, 7);
+      c.lineTo(x, 2.4);
+      stroke(c, RAMPS.leaf.top, 0.5);
+      bloom(c, x, 1.8, 1.8, RAMPS.gold.top, RAMPS.wild.top);
+    }
   }),
 
   /* ---- the eleven story travelers (lib/stackacres/story/placement.ts) ---- */

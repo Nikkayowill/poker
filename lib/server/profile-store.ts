@@ -6,6 +6,7 @@ import { defaultEquipped, normalizeEquipped, type EquippedCosmetics } from "@/li
 import { BACKSTOP_COOLDOWN_MS, BACKSTOP_GRANT } from "@/lib/profile/backstop";
 import { isSameUtcDay } from "@/lib/profile/daily-gold";
 import { adminClient } from "./supabase-admin";
+import { markHeartbeatWritten, touchSession } from "./session-heartbeat";
 
 // isRegistered is omitted and derived from userId in publicProfile, so the
 // owning account is the single source of truth rather than a flag that can
@@ -189,20 +190,38 @@ export async function ensureProfile(token: string, preferredName?: string): Prom
     return publicProfile(created);
   }
 
-  const displayName = preferredName?.trim() || "Player";
-  const { error: sessionError } = await supabase.from("player_sessions").upsert(
-    { token, display_name: displayName, last_seen_at: new Date().toISOString() },
-    { onConflict: "token", ignoreDuplicates: true },
-  );
-  if (sessionError) throw new Error(`Could not initialize profile: ${sessionError.message}`);
-
+  // Read before write, and the ordering is load-bearing. An existing profile
+  // proves its `player_sessions` row exists -- profiles.session_token is a
+  // foreign key onto it -- so the upsert below has nothing to do on the path
+  // nearly every request takes. Running it first put a write that changed
+  // nothing on every authenticated request, including read-only ones that are
+  // not supposed to have one.
   const { data: existing, error: readError } = await supabase
     .from("profiles")
     .select("*")
     .eq("session_token", token)
     .maybeSingle();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
-  if (existing) return publicProfile(fromRow(existing));
+  if (existing) {
+    // The sighting that keeps `last_seen_at` a liveness signal rather than a
+    // creation stamp. Throttled to one write per token per five minutes, so
+    // this is free on almost every request -- see session-heartbeat.ts for
+    // what was reading that column and what it was actually getting.
+    await touchSession(token);
+    return publicProfile(fromRow(existing));
+  }
+
+  // First sight of this token. The session row has to exist before a profile
+  // is allowed to point at it, so this is where the upsert genuinely belongs.
+  const displayName = preferredName?.trim() || "Player";
+  const { error: sessionError } = await supabase.from("player_sessions").upsert(
+    { token, display_name: displayName, last_seen_at: new Date().toISOString() },
+    { onConflict: "token", ignoreDuplicates: true },
+  );
+  if (sessionError) throw new Error(`Could not initialize profile: ${sessionError.message}`);
+  // The upsert just stamped last_seen_at on a brand new row, so the next
+  // request through here has nothing to refresh for another five minutes.
+  markHeartbeatWritten(token, Date.now());
 
   const profile = defaultProfile(displayName);
   const { data, error } = await supabase

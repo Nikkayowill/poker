@@ -56,6 +56,22 @@ export type PropKind =
   | "flowerBed"
   | "stoneWall"
   | "scarecrow"
+  // Gr8FarmPack scattered clutter (see CLUTTER_KINDS below and
+  // scripts/prepare-stackacres-farmpack-props.py) -- ambient dressing only,
+  // same treatment as toolBarrel: reused for their own new variety rather
+  // than doubling up well/logPile a third and fourth time.
+  | "hayBale1"
+  | "hayBale2"
+  | "bucket"
+  | "stringLights"
+  | "smallBush1"
+  | "smallBush2"
+  | "wildflowers1"
+  | "wildflowers2"
+  | "flowerBush1"
+  | "flowerBush2"
+  | "flowerSprig1"
+  | "flowerSprig2"
   // The eleven story travelers (see ./story/placement.ts) -- static,
   // tappable, and placed by TRAVELER_PROPS there rather than here: the kind
   // lives where the rest of a prop's shape lives, the placement beside its
@@ -156,6 +172,20 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   flowerBed: { w: 28, h: 12 },
   stoneWall: { w: 32, h: 10 },
   scarecrow: { w: 20, h: 36 },
+  // Gr8FarmPack clutter, off scripts/prepare-stackacres-farmpack-props.py's
+  // own printed table (art units, alpha-bbox trimmed).
+  hayBale1: { w: 25, h: 23 },
+  hayBale2: { w: 25, h: 22 },
+  bucket: { w: 9, h: 10 },
+  stringLights: { w: 38, h: 66 },
+  smallBush1: { w: 15, h: 12 },
+  smallBush2: { w: 18, h: 12 },
+  wildflowers1: { w: 12, h: 10 },
+  wildflowers2: { w: 5, h: 7 },
+  flowerBush1: { w: 25, h: 16 },
+  flowerBush2: { w: 19, h: 15 },
+  flowerSprig1: { w: 5, h: 12 },
+  flowerSprig2: { w: 12, h: 7 },
   // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
   // width/320) at a world height picked for their read: the adults at 38 (a
   // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
@@ -193,6 +223,18 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   flowerBed: { w: 30, h: 6 },
   stoneWall: { w: 34, h: 5 },
   scarecrow: { w: 24, h: 7 },
+  hayBale1: { w: 28, h: 8 },
+  hayBale2: { w: 28, h: 8 },
+  bucket: { w: 10, h: 4 },
+  stringLights: { w: 36, h: 5 },
+  smallBush1: { w: 16, h: 5 },
+  smallBush2: { w: 19, h: 5 },
+  wildflowers1: { w: 12, h: 4 },
+  wildflowers2: { w: 6, h: 3 },
+  flowerBush1: { w: 26, h: 6 },
+  flowerBush2: { w: 20, h: 6 },
+  flowerSprig1: { w: 5, h: 3 },
+  flowerSprig2: { w: 12, h: 4 },
   travelerRay: { w: 22, h: 7 },
   travelerPierre: { w: 22, h: 7 },
   travelerMiles: { w: 20, h: 7 },
@@ -250,10 +292,40 @@ export function propRect(prop: PropPlacement): { x: number; y: number; width: nu
  * nothing to tap. Reusing `well`/`logPile` rather than inventing two more
  * kinds keeps one picture doing double duty (the yard's own well by the barn
  * door, and now a second one further out reads as the same farm, not two
- * different ones); `toolBarrel` is the one genuinely new kind, painted by
+ * different ones); `toolBarrel` was the first genuinely new kind, painted by
  * components/arcade/stackacres/art-props.ts.
+ *
+ * The Gr8FarmPack batch (2026-09-12, scripts/prepare-stackacres-farmpack-
+ * props.py) is more of that same genuinely-new variety, not more reuse --
+ * eleven real pack sprites beat leaning on `well`/`logPile` a third and
+ * fourth time once real art exists to fill the gap with. `stringLights`
+ * shipped in that same batch but is deliberately NOT here: at h 66 it is
+ * more than double every other candidate's height (`well`, the previous
+ * tallest, is 32), and this scatter only rejects a candidate whose FOOT
+ * lands on the road/a destination's clearance -- never one whose picture
+ * box, drawn upward from that foot, reaches back into it. A candidate this
+ * tall rolled near the band's own north edge would read as poking into the
+ * road. It is still a real `PropKind`/painter/sprite, just parked as a
+ * deliberately-placed prop (like the market stall it visually wants to hang
+ * near) rather than randomly scattered, until it has one.
  */
-export const CLUTTER_KINDS: readonly PropKind[] = ["well", "logPile", "toolBarrel", "toolBarrel"];
+export const CLUTTER_KINDS: readonly PropKind[] = [
+  "well",
+  "logPile",
+  "toolBarrel",
+  "toolBarrel",
+  "hayBale1",
+  "hayBale2",
+  "bucket",
+  "smallBush1",
+  "smallBush2",
+  "wildflowers1",
+  "wildflowers2",
+  "flowerBush1",
+  "flowerBush2",
+  "flowerSprig1",
+  "flowerSprig2",
+];
 
 /**
  * The dead band itself: south of the road's own clearance, north of the Hen

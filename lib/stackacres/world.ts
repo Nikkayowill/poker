@@ -413,6 +413,30 @@ export function rayHouseHitAt(x: number, y: number): boolean {
  */
 
 /**
+ * The Factory's own footprint (2026-09-12): real supplied art (see
+ * `paintFactory` in stackacres-scene.ts), landmark scenery for now rather
+ * than an entryway -- nothing taps it yet, the same posture the windmill's
+ * old footprint below is kept in reserve with, just newly arrived instead
+ * of newly retired.
+ *
+ * PLACED BESIDE THE LANE'S OWN END, not past it. `paths.ts`'s "lane" spec
+ * terminates at `yardPoint(50, 402)` -- documented in delivery-truck.ts as
+ * where the truck "arrives from, off the visible map" -- and there is no
+ * room to stand a building south of that point: `southRoadWest` runs
+ * east-west right behind it (body centred on y 447, 32 wide). East of the
+ * lane's end, though, is open ground all the way to the Hen Coop
+ * (`GROW_AREA.farmstead`, x 170..330): x 66..166 clears the lane's own body
+ * (x 41..59) by 7 units and the Hen Coop by 4; y 368..428 clears the Hen
+ * Coop's own y 200..360 (moot, given the x gap, but held to regardless). The
+ * building itself is not held off `southRoadWest` by any test -- only
+ * `YARD_PROPS` entries are (props.test.ts), which is why the barbed-wire
+ * fence behind this footprint (props.ts's own `YARD_PROPS`) stands at y 424,
+ * not flush with this rect's own y 428: see that fence's own placement
+ * comment for the exact clearance arithmetic.
+ */
+export const FACTORY_FOOTPRINT: WorldRect = yardRect(66, 368, 100, 60);
+
+/**
  * The signpost's footprint: the box `PROP_SIZE.signpost` gives (18 wide,
  * 26 tall) at props.ts's `yardPoint(130, 84)`, restated here for the same
  * import-cycle reason as Ray's box. The signpost used to be scenery. Now it

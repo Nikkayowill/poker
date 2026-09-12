@@ -177,6 +177,20 @@ export interface StackAcresWorldApi {
   /** A world point as pixels inside the field, for pointing a drag tool at a
    *  fixed spot. Null until the scene has booted. */
   fieldPointFor: (x: number, y: number) => TapPoint | null;
+  /** Holds (or releases) the barn's door-open tap frame for as long as the
+   *  Supply Store sheet it opens is on screen, instead of letting it revert
+   *  on its own short timer -- called from an effect on `showStore`. See
+   *  stackacres-scene.ts's `setBarnHeldOpen`. */
+  setBarnHeldOpen: (held: boolean) => void;
+  /** Same contract as `setBarnHeldOpen`, for Ray's house and the gift
+   *  dialogue its own tap opens. See `setRayHouseHeldOpen`. */
+  setRayHouseHeldOpen: (held: boolean) => void;
+  /** Same contract again, for Ray himself (the traveler, not the house) and
+   *  his own story dialogue bubble. See `setTravelerRayHeldOpen`. */
+  setTravelerRayHeldOpen: (held: boolean) => void;
+  /** Same contract again, for the Greenhouse and the panel its own tap
+   *  opens. See `setGreenhouseHeldOpen`. */
+  setGreenhouseHeldOpen: (held: boolean) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -664,6 +678,10 @@ export function StackAcresWorld({
       setTruckPresent: (wanted, immediate) => sceneRef.current?.setTruckPresent(wanted, immediate),
       holdDroneForage: (durationMs) => sceneRef.current?.holdDroneForage(durationMs),
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
+      setBarnHeldOpen: (held) => sceneRef.current?.setBarnHeldOpen(held),
+      setRayHouseHeldOpen: (held) => sceneRef.current?.setRayHouseHeldOpen(held),
+      setTravelerRayHeldOpen: (held) => sceneRef.current?.setTravelerRayHeldOpen(held),
+      setGreenhouseHeldOpen: (held) => sceneRef.current?.setGreenhouseHeldOpen(held),
     }),
     [],
   );

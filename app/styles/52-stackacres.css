@@ -1757,33 +1757,6 @@
 
 .sa-gift-dialogue-close:hover { opacity: 1; }
 
-/* Ray's Shop and Blueprints buttons. Only his dialogue shows them, now that
- * the places list that used to hold them is gone. A quiet row above the
- * greeting so it doesn't compete with the gift picker. */
-.sa-gift-dialogue-errands {
-  display: flex;
-  gap: 6px;
-  margin: 0 18px 10px 0;
-}
-
-.sa-gift-dialogue-errand {
-  flex: 1;
-  min-height: 30px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  font-size: 11.5px;
-  font-weight: 800;
-  cursor: pointer;
-  background: var(--sa-cream);
-  box-shadow: 0 2px 0 var(--sa-cream-rim), var(--sa-drop);
-  color: var(--sa-ink);
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-.sa-gift-dialogue-errand:hover { filter: brightness(1.05); }
-
 .sa-gift-dialogue-line {
   margin: 0 18px 8px 0;
   font-size: 13px;
@@ -2620,6 +2593,158 @@
     box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
+/* ---- the Supply Store: a centered popup, one shelf at a time ---------- */
+
+/* Replaces .sa-sheet-scrim/.sa-sheet for the barn's own popup only -- every
+   other sheet in here (the Vat, the Forge, the Prestige reset, Blueprints,
+   Town Contracts) still slides up from the bottom edge and is unaffected.
+   The barn used to be the same bottom sheet with eight shelves stacked in
+   one long scroll; centered + tabbed replaces that with one shelf on
+   screen at a time, `sa-store-panel` below the only part that scrolls. */
+.sa-store-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(52, 34, 18, .55);
+  animation: sa-scrim var(--duration-base) ease-out both;
+}
+
+.sa-store-card {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 420px);
+  max-height: 88dvh;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-panel);
+  background: var(--sa-paper);
+  box-shadow: var(--sa-drop-lg);
+  overflow: hidden;
+  animation: sa-sheet-up 380ms var(--sa-bounce) both;
+}
+
+.sa-store-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+  padding: 12px 16px;
+  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
+  background: var(--sa-wood);
+}
+
+.sa-store-head h2 {
+  margin: 1px 0 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  color: var(--sa-ink);
+}
+
+/* The two numbers every shelf is constrained by (the day's Gold ceiling,
+   land upkeep) rather than a shelf of their own -- see the render block's
+   own comment on why these left the tab list. */
+.sa-store-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: none;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  box-shadow: inset 0 0 0 2px var(--sa-corn);
+}
+
+.sa-store-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-store-status-row strong { color: var(--sa-ink); font-weight: 800; }
+
+.sa-store-status-row .sa-exchange-bar { flex: 1; }
+
+.sa-store-status-label {
+  flex: none;
+  color: var(--sa-ink);
+  font-weight: 800;
+}
+
+.sa-store-status-note {
+  margin: 0;
+  color: var(--sa-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sa-store-tabs {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  margin: 12px 16px 0;
+}
+
+.sa-store-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--sa-tap);
+  padding: 6px 2px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-paper-2);
+  color: var(--sa-ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--sa-ease-out),
+    background var(--duration-fast) var(--sa-ease-out),
+    color var(--duration-fast) var(--sa-ease-out);
+}
+
+.sa-store-tab-active {
+  background: var(--sa-corn);
+  color: var(--sa-ink);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-store-tab:active { transform: scale(.96); }
+
+/* The one part of the popup that scrolls. Seeds is Ray's whole crop
+   catalogue and will always run past one screen; every other shelf is
+   short enough to just fit, so this rule does not need to know which shelf
+   is showing -- it only ever engages when the content actually runs long. */
+.sa-store-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.sa-store-panel > .sa-sheet-note:first-child { margin-top: 0; }
+
+/* A price, spelled out as Gold rather than a bare "1,234g" -- see
+   StoreCost in stackacres-farm.tsx. */
+.sa-store-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 /* Shelf and section headings. A carved kicker rather than a heading: it labels
    a shelf, it is not a title. */
 .sa-group-label {
@@ -2743,13 +2868,13 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
-/* Bulk-buy row: soil bags, seed packets, and feed shipments each offer three
-   flat sizes (1x/10x/20x) instead of one "Buy" button, so restocking ten of
-   something is one tap instead of ten -- see stackacres-farm.tsx's
-   `BULK_BUY_QUANTITIES`. The row, not the individual buttons, is what gets
-   pushed to the card's bottom; this rule has to out-specificity (by coming
-   later in the file) the plain `.sa-cta { margin-top: auto }` above so a
-   button doesn't try to push itself within its own row. */
+/* Bulk-buy row: Ray's Soil bag offers three flat sizes (1x/10x/20x), Seeds
+   and Feed offer two (a small order and a big one), all instead of one
+   "Buy" button -- see stackacres-farm.tsx's `BULK_BUY_QUANTITIES` and
+   `SEED_FEED_BULK_QUANTITIES`. The row, not the individual buttons, is what
+   gets pushed to the card's bottom; this rule has to out-specificity (by
+   coming later in the file) the plain `.sa-cta { margin-top: auto }` above
+   so a button doesn't try to push itself within its own row. */
 .sa-stock-card .sa-buy-qty-row { margin-top: auto; }
 
 .sa-buy-qty-row {
@@ -2769,7 +2894,15 @@
   gap: 1px;
 }
 
-.sa-buy-qty-cost {
+/* The Gold cost under the Nx label, quieted a step so the two aren't read as
+   the same fact twice -- a 1x button on a 1-Gold seed prices exactly at "1"
+   either way, and without this the quantity and the cost sit at identical
+   size and weight, stacked directly on top of each other. Scoped to
+   `<StoreCost>` (see stackacres-farm.tsx) inside this one row rather than
+   named `.sa-buy-qty-cost` and left unattached to any element, which is
+   what shipped originally: the cost span had already moved to `StoreCost`'s
+   own `.sa-store-cost` class and this rule stopped matching anything. */
+.sa-buy-qty-row .sa-cta .sa-store-cost {
   font-size: 11px;
   font-weight: 600;
   color: var(--sa-ink-soft);
@@ -2858,37 +2991,7 @@
 
 .sa-stock-card .sa-tool-art { align-self: center; width: 84px; height: 84px; }
 
-/* ---- the exchange window --------------------------------------------- */
-/* ---- today's allowance ------------------------------------------------ */
-
-/* The one block in the sheet with its own surface and a corn edge. It used to
-   be an exchange window -- a place Bushels were traded for Gold -- and it is
-   now just the meter that was behind it: what is left of the flat daily
-   allowance every farm shares. The edge is marking the boundary the farm's
-   money crosses, which is still exactly where it was. */
-.sa-exchange {
-  margin-top: 8px;
-  padding: 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
-}
-
-.sa-exchange > .sa-sheet-note:first-child { margin-top: 0; }
-
-.sa-exchange-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 12px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.sa-exchange-meter strong { color: var(--sa-ink); font-weight: 800; }
+/* ---- the day's Gold ceiling bar ---------------------------------------- */
 
 /* Drains rather than fills: the bar is what is LEFT of the day, matching the
    number under it. Filled-as-spent shipped for one screenshot and put a full

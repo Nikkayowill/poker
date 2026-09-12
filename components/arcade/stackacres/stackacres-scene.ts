@@ -17,7 +17,6 @@ import {
   projectedBounds,
   projectedCorners,
   unprojectBoundsApprox,
-  type DiamondCorners,
 } from "@/lib/stackacres/iso";
 import { worldBoundsRect, worldBoundsScreenRect } from "@/lib/stackacres/bounds";
 import {
@@ -115,6 +114,7 @@ import {
   clampZoom,
   critterSpeed,
   cropSpot,
+  FACTORY_FOOTPRINT,
   growAreaAt,
   growAreaBounds,
   BARN_FLIPPED,
@@ -1135,20 +1135,6 @@ function bakeForageDropTexture(scene: Phaser.Scene): string {
   return FORAGE_DROP_TEXTURE;
 }
 
-/** A Phaser packed colour, lightened (positive) or darkened (negative) by a
- *  flat channel amount. The one-sun shading every isometric structure below
- *  uses: a roof lit from directly above, a left wall toward the light, a
- *  right wall away from it -- the same three-tone convention `litMass` uses
- *  elsewhere in this codebase, done by hand because these are one-off
- *  Graphics shapes rather than a baked painter. */
-function shadeColor(hex: number, amt: number): number {
-  const clamp = (v: number) => Math.max(0, Math.min(255, v));
-  const r = clamp(((hex >> 16) & 0xff) + amt);
-  const g = clamp(((hex >> 8) & 0xff) + amt);
-  const b = clamp((hex & 0xff) + amt);
-  return (r << 16) | (g << 8) | b;
-}
-
 /** Only things with height get a shadow: a canopy, a fallen log, a boulder.
  *  A rock, a tuft or a mushroom sitting on a smudge of its own reads as
  *  hovering, not as standing.
@@ -1813,6 +1799,14 @@ export class StackAcresScene extends Phaser.Scene {
    *  `barn`, exactly one at a time -- a second arrival before the first has
    *  reverted restarts the clock rather than layering two reverts. */
   private barnOpenRevertTimer: Phaser.Time.TimerEvent | null = null;
+  /** True while the Supply Store sheet the barn's own tap opens is on
+   *  screen (see `setBarnHeldOpen`) -- while this is set, `pulseBarnOpen`
+   *  never schedules its own revert, so the door-open frame keeps showing
+   *  for as long as the menu it opened is up, not just for
+   *  `BARN_OPEN_HOLD_MS`. An arrival's own pulse (`onBarnArrive`) still
+   *  times out normally regardless of this flag -- a delivery landing while
+   *  the store happens to be open is not a reason to invent a second hold. */
+  private barnHeldOpen = false;
 
   /** Dev-only: the yard placement panel's reference grid
    *  (`showDevPlacementGrid`/`hideDevPlacementGrid`), lazily created on
@@ -1837,6 +1831,19 @@ export class StackAcresScene extends Phaser.Scene {
    *  showing through that instead of snapping shut before the dialogue even
    *  opens. */
   private rayHouseOpenRevertTimer: Phaser.Time.TimerEvent | null = null;
+  /** True while the gift dialogue Ray's house's own tap opens is on screen
+   *  (see `setRayHouseHeldOpen`) -- the same hold-past-the-menu contract
+   *  `barnHeldOpen` documents, for the same building-with-a-menu shape. */
+  private rayHouseHeldOpen = false;
+
+  /** The Greenhouse's own structure, captured off `paintGreenhouse` so
+   *  `setGreenhouseHeldOpen` has a real sprite to swap the texture of. Null
+   *  until `create` has run. Unlike the barn/Ray's house there is no
+   *  independent "arrival" pulse ever fired at this one -- the Greenhouse
+   *  panel is the only thing that ever opens off a tap here -- so there is
+   *  no timer and no separate `pulseGreenhouseOpen`: the held state alone
+   *  is the whole story, same as `setTravelerRayHeldOpen`. */
+  private greenhouseSprite: Phaser.GameObjects.Image | null = null;
 
   /**
    * True while the camera is bounded to the Greenhouse's own interior (see
@@ -2134,6 +2141,7 @@ export class StackAcresScene extends Phaser.Scene {
     this.paintBarn();
     this.paintGreenhouse();
     this.paintRayHouse();
+    this.paintFactory();
     this.paintProps();
     this.paintFarmsteadClutter();
     this.spawnHerds();
@@ -2426,10 +2434,33 @@ export class StackAcresScene extends Phaser.Scene {
     if (!sprite) return;
     sprite.setTexture("rayHouseOpen", ART_FRAME);
     this.rayHouseOpenRevertTimer?.remove();
+    this.rayHouseOpenRevertTimer = null;
+    // The gift dialogue this same tap is about to open outlives
+    // `RAY_HOUSE_OPEN_HOLD_MS` -- see `rayHouseHeldOpen`'s own field
+    // comment. `setRayHouseHeldOpen(false)` reverts this once it closes.
+    if (this.rayHouseHeldOpen) return;
     this.rayHouseOpenRevertTimer = this.time.delayedCall(RAY_HOUSE_OPEN_HOLD_MS, () => {
       sprite.setTexture("rayHouse", ART_FRAME);
       this.rayHouseOpenRevertTimer = null;
     });
+  }
+
+  /**
+   * Called from the shell whenever the gift dialogue Ray's house's tap
+   * opens changes open/closed -- the same `setBarnHeldOpen` shape, driven
+   * off `giftDialogue` in stackacres-farm.tsx instead of `showStore`.
+   */
+  setRayHouseHeldOpen(held: boolean): void {
+    this.rayHouseHeldOpen = held;
+    const sprite = this.rayHouseSprite;
+    if (!sprite) return;
+    if (held) {
+      sprite.setTexture("rayHouseOpen", ART_FRAME);
+      this.rayHouseOpenRevertTimer?.remove();
+      this.rayHouseOpenRevertTimer = null;
+    } else if (!this.rayHouseOpenRevertTimer) {
+      sprite.setTexture("rayHouse", ART_FRAME);
+    }
   }
 
   /** The Pixel Pilgrim himself, posted by the pond from boot. A no-op (no
@@ -2656,96 +2687,6 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * A footprint's four corners, isometrically projected and raised by
-   * `wallH` -- the shared shape every volumetric structure below (the barn,
-   * the silo, the windmill tower) is built from. `cx`/`cy` are the
-   * footprint's own world-space centre, `w`/`h` its world-space size.
-   */
-  private isoFootprint(cx: number, cy: number, w: number, h: number): DiamondCorners {
-    return projectedCorners({ x: cx - w / 2, y: cy - h / 2, width: w, height: h });
-  }
-
-  /**
-   * The two visible walls of an isometric box: the near-left face (between
-   * the W and S footprint corners) and the near-right face (S and E). The
-   * far two faces are never drawn -- they are permanently behind the
-   * building, the same reason a flat top-down icon never drew a back wall
-   * either. Returns the raised top plate for a roof to sit on.
-   */
-  private drawIsoWalls(
-    g: Phaser.GameObjects.Graphics,
-    footprint: DiamondCorners,
-    wallH: number,
-    wallColor: number,
-  ): DiamondCorners {
-    const lift = (p: WorldPoint): WorldPoint => ({ x: p.x, y: p.y - wallH });
-    const top: DiamondCorners = {
-      n: lift(footprint.n),
-      e: lift(footprint.e),
-      s: lift(footprint.s),
-      w: lift(footprint.w),
-    };
-    const quad = (a: WorldPoint, b: WorldPoint, c: WorldPoint, d: WorldPoint, color: number): void => {
-      g.fillStyle(color, 1);
-      g.beginPath();
-      g.moveTo(a.x, a.y);
-      g.lineTo(b.x, b.y);
-      g.lineTo(c.x, c.y);
-      g.lineTo(d.x, d.y);
-      g.closePath();
-      g.fillPath();
-    };
-    quad(footprint.w, footprint.s, top.s, top.w, shadeColor(wallColor, -30));
-    quad(footprint.s, footprint.e, top.e, top.s, shadeColor(wallColor, -68));
-    return top;
-  }
-
-  /** A flat roof plate: the top face lit brightest (it faces the one sun
-   *  most directly of anything on the building), edged in its own shadow. */
-  private drawIsoFlatRoof(g: Phaser.GameObjects.Graphics, top: DiamondCorners, roofColor: number): void {
-    g.fillStyle(shadeColor(roofColor, 18), 1);
-    g.beginPath();
-    g.moveTo(top.n.x, top.n.y);
-    g.lineTo(top.e.x, top.e.y);
-    g.lineTo(top.s.x, top.s.y);
-    g.lineTo(top.w.x, top.w.y);
-    g.closePath();
-    g.fillPath();
-    g.lineStyle(1.4, shadeColor(roofColor, -30), 1);
-    g.strokePath();
-  }
-
-  /** A gable roof over an isometric box: two ridge-facing slopes and two
-   *  gable-end slopes, each its own tone off the one sun, same shape as the
-   *  camera-preview mockup this pass was built against. */
-  private drawIsoGableRoof(
-    g: Phaser.GameObjects.Graphics,
-    top: DiamondCorners,
-    ridgeH: number,
-    roofColor: number,
-  ): void {
-    const mid1: WorldPoint = { x: (top.n.x + top.e.x) / 2, y: (top.n.y + top.e.y) / 2 - ridgeH };
-    const mid2: WorldPoint = { x: (top.w.x + top.s.x) / 2, y: (top.w.y + top.s.y) / 2 - ridgeH };
-    const face = (pts: readonly WorldPoint[], color: number): void => {
-      g.fillStyle(color, 1);
-      g.beginPath();
-      g.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length; i += 1) g.lineTo(pts[i].x, pts[i].y);
-      g.closePath();
-      g.fillPath();
-    };
-    face([top.n, top.e, mid1], shadeColor(roofColor, 14));
-    face([top.e, top.s, mid2, mid1], shadeColor(roofColor, -18));
-    face([top.s, top.w, mid2], shadeColor(roofColor, -34));
-    face([top.w, top.n, mid1, mid2], shadeColor(roofColor, 2));
-    g.lineStyle(1.6, shadeColor(roofColor, 34), 1);
-    g.beginPath();
-    g.moveTo(mid1.x, mid1.y);
-    g.lineTo(mid2.x, mid2.y);
-    g.strokePath();
-  }
-
-  /**
    * The barn and its flanking hay/barrel clutter in the margin above the
    * first row, so the farm has a home rather than a top-left corner. It is
    * the one fixed landmark out here: the opening shot frames it along with
@@ -2802,6 +2743,12 @@ export class StackAcresScene extends Phaser.Scene {
     if (!sprite) return;
     sprite.setTexture("barnOpen", ART_FRAME);
     this.barnOpenRevertTimer?.remove();
+    this.barnOpenRevertTimer = null;
+    // The Supply Store sheet this same tap is about to open outlives
+    // `BARN_OPEN_HOLD_MS` -- see `barnHeldOpen`'s own field comment. No
+    // timer to schedule; `setBarnHeldOpen(false)` is what reverts this once
+    // that sheet actually closes.
+    if (this.barnHeldOpen) return;
     this.barnOpenRevertTimer = this.time.delayedCall(BARN_OPEN_HOLD_MS, () => {
       sprite.setTexture("barn", ART_FRAME);
       this.barnOpenRevertTimer = null;
@@ -2809,15 +2756,38 @@ export class StackAcresScene extends Phaser.Scene {
   }
 
   /**
-   * The Greenhouse's own footprint (lib/stackacres/greenhouse.ts): a low
-   * glass box built from the same isometric-volume primitives the barn's
-   * silo uses (`isoFootprint`/`drawIsoWalls`/`drawIsoFlatRoof`) rather than a
-   * new baked painter -- there is no supplied art for this structure yet
-   * (new sprites need Kayo's own renders, same rule every other character/
-   * building here has followed), so a Graphics volume in the palette's own
-   * "water" ramp -- the closest existing tone to glass -- is the honest
-   * placeholder: a real, tappable place at a real world position, not a
-   * coloured rectangle standing in for one.
+   * Called from the shell whenever the Supply Store sheet the barn's tap
+   * opens changes open/closed -- `stackacres-world.tsx`'s imperative handle,
+   * driven off `showStore` in stackacres-farm.tsx. Holding true keeps the
+   * door-open frame up for as long as that sheet is; holding false lets it
+   * go, reverting right away unless an arrival's own untimed pulse is
+   * already mid-flight (in which case that pulse's own timer, already
+   * running, is left to finish rather than cut short).
+   */
+  setBarnHeldOpen(held: boolean): void {
+    this.barnHeldOpen = held;
+    const sprite = this.barnSprite;
+    if (!sprite) return;
+    if (held) {
+      sprite.setTexture("barnOpen", ART_FRAME);
+      this.barnOpenRevertTimer?.remove();
+      this.barnOpenRevertTimer = null;
+    } else if (!this.barnOpenRevertTimer) {
+      sprite.setTexture("barn", ART_FRAME);
+    }
+  }
+
+  /**
+   * The Greenhouse's own footprint (lib/stackacres/greenhouse.ts): the
+   * ground plate and the six slot outlines drawn straight onto it (still a
+   * Graphics volume in the palette's own "water" ramp -- the closest
+   * existing tone to glass -- since there is no reason a flat ground cue
+   * needs baked art), then the structure itself standing on top of that
+   * plate as real supplied art (2026-09-12) -- see `greenhouseSprite`'s own
+   * field comment for its two-frame swap. This used to be a hand-drawn
+   * isometric box (the same primitives `paintBarn`'s own header describes
+   * retiring); that code is gone along with it now that both buildings are
+   * sprite-backed.
    *
    * The six slot outlines are purely a "here is where a crop goes" cue at
    * this pass -- not yet wired to a housed unit's own growth stage. Wiring
@@ -2862,15 +2832,42 @@ export class StackAcresScene extends Phaser.Scene {
       ground.strokePath();
     }
 
-    // The glass box itself, standing on the ground plate above -- walls and
-    // a flat roof, sorted by its own footprint's feet like every other
-    // volume here.
+    // The glass box itself, standing on the ground plate above, feet on the
+    // plot's own south edge -- the same bottom-centre anchor `paintRayHouse`
+    // uses. Real art now (2026-09-12); see `greenhouseSprite`'s own field
+    // comment for the two-frame swap this stands in for.
     const cx = GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width / 2;
-    const cy = GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height / 2;
-    const box = this.add.graphics().setDepth(this.depthAt(cx, cy + GREENHOUSE_PLOT.height / 2));
-    const footprint = this.isoFootprint(cx, cy, GREENHOUSE_PLOT.width - 12, GREENHOUSE_PLOT.height - 12);
-    const top = this.drawIsoWalls(box, footprint, 26, ramp.side);
-    this.drawIsoFlatRoof(box, top, ramp.top);
+    const feetY = GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height;
+    // The shadow painter's pool is 33x13 at scale 1 (see `paintProps`'s own
+    // comment); one uniform factor keeps that oval's proportions instead of
+    // stretching it, sized to most of the plot's own width the way a real
+    // building's contact shadow falls short of its full footprint.
+    const shadowScale = (GREENHOUSE_PLOT.width * 0.8) / 33 / S;
+    this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
+      .setScale(shadowScale, shadowScale)
+      .setAlpha(0.8);
+    this.greenhouseSprite = this.put("greenhouse", cx, feetY, this.depthAt(cx, feetY));
+  }
+
+  /**
+   * The Factory (2026-09-12): real supplied art at `FACTORY_FOOTPRINT`
+   * (lib/stackacres/world.ts, which holds the placement math -- beside the
+   * cobbled lane's own end, not past it), placed bottom-centre the same way
+   * `paintRayHouse`/`paintGreenhouse` stand their own structures. Landmark
+   * scenery for now: nothing taps it, and `factoryOpen` (the second frame,
+   * extra chimney smoke and a bread cart in the open bay) is registered but
+   * never swapped to -- there is no menu yet for a held-open state to track.
+   * The barbed-wire run behind it is `props.ts`'s own `YARD_PROPS` entries,
+   * painted through the ordinary `paintProps` path below, not this method.
+   */
+  private paintFactory(): void {
+    const cx = FACTORY_FOOTPRINT.x + FACTORY_FOOTPRINT.width / 2;
+    const feetY = FACTORY_FOOTPRINT.y + FACTORY_FOOTPRINT.height;
+    const shadowScale = (FACTORY_FOOTPRINT.width * 0.8) / 33 / S;
+    this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
+      .setScale(shadowScale, shadowScale)
+      .setAlpha(0.8);
+    this.put("factory", cx, feetY, this.depthAt(cx, feetY));
   }
 
   /**
@@ -3035,6 +3032,30 @@ export class StackAcresScene extends Phaser.Scene {
         ease: "Back.easeOut",
       });
     }
+  }
+
+  /**
+   * Swaps Ray between his idle picture and his wave for as long as his own
+   * dialogue bubble is open -- the same `setBarnHeldOpen`/
+   * `setRayHouseHeldOpen` contract, called from an effect on
+   * `story.dialogue?.traveler === "ray"` in stackacres-farm.tsx. No timer
+   * and no separate pulse: unlike the barn (an arrival can also fire its
+   * own untimed pulse) nothing else ever swaps this texture, so the held
+   * state is the whole story.
+   */
+  setTravelerRayHeldOpen(held: boolean): void {
+    this.travelerNodes.get("ray")?.image.setTexture(held ? "travelerRayActive" : "travelerRay", ART_FRAME);
+  }
+
+  /**
+   * Swaps the Greenhouse between its idle picture and its "growing" frame
+   * (vents cracked, steam drifting off the panes) for as long as the
+   * Greenhouse panel is open -- driven off `showGreenhouse` in
+   * stackacres-farm.tsx. Same no-timer shape as `setTravelerRayHeldOpen`;
+   * see `greenhouseSprite`'s own field comment for why.
+   */
+  setGreenhouseHeldOpen(held: boolean): void {
+    this.greenhouseSprite?.setTexture(held ? "greenhouseOpen" : "greenhouse", ART_FRAME);
   }
 
   /** The CSS-pixel point just over a traveler's head, in the same space a

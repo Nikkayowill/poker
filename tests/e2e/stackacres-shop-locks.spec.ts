@@ -128,6 +128,10 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     const sheet = page.getByRole("dialog", { name: "Supply store" });
     await expect(sheet).toBeVisible();
 
+    // Feed is its own tab now -- one of five shelves instead of the whole
+    // sheet stacked in one scroll.
+    await sheet.getByRole("tab", { name: "Feed" }).click();
+
     // The Bulk Shipment is still ON the shelf. Hiding it would make the
     // progression invisible: a row that is simply missing looks like a bug,
     // and teaches nothing about what to go and do next.
@@ -147,6 +151,7 @@ test("the supply store shows a locked row greyed, named and told what it wants",
 
     // The equipment rung counts milestones instead of naming one quest, so
     // its hint says how far along the farm is as well as what is next.
+    await sheet.getByRole("tab", { name: "Tools" }).click();
     const rung = sheet.locator(".sa-stock-card", { hasText: "Iron Shovel" });
     await expect(rung).toHaveClass(/is-locked/);
     await expect(rung.getByText(/Requires 1 farm milestone \(0 done\)/)).toBeVisible();

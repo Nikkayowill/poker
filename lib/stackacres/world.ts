@@ -1386,8 +1386,12 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   }
 
   // The open ground is not bare, just sparse: the odd lone bush or boulder
-  // out in the grass, well away from the wood's own edge.
-  for (let i = 0; i < 5; i += 1) {
+  // out in the grass, well away from the wood's own edge. 5 -> 7 on the
+  // "more filled, but a middle ground" pass -- a bump this size reads as
+  // fuller ground without turning "sparse" into "wooded," and it costs
+  // nothing extra to load: OPEN_BUSH_KINDS/FOREST_FLOOR_KINDS are already
+  // eager-loaded at boot for the forest lattice above.
+  for (let i = 0; i < 7; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (forestDensityAt(x, y) > 0.15 || random() < 0.45 || blocked(x, y)) continue;
@@ -1399,10 +1403,11 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   }
 
   // Grass clumps and flat rosettes, the thing there is most of. Grown from
-  // ten a chunk to sixteen on the "fill the map up" pass -- this is the layer
-  // that decides whether open ground reads as a lawn or as a field, and it is
+  // ten a chunk to sixteen on the "fill the map up" pass, then sixteen to
+  // twenty on the follow-up middle-ground pass -- this is the layer that
+  // decides whether open ground reads as a lawn or as a field, and it is
   // also the cheapest one to add to, since none of it casts a shadow.
-  for (let i = 0; i < 16; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (blocked(x, y)) continue;
@@ -1417,8 +1422,10 @@ export function chunkScenery(cx: number, cy: number): SceneryItem[] {
   // tuft/flower pass above rather than folded into it, because these are
   // bigger and want their own budget: at the tufts' own rate the grass would
   // be waist-deep in shrubs, and at the shrubs' rate there would be no tufts.
-  // Kept out of the wood, which has its own understory.
-  for (let i = 0; i < 7; i += 1) {
+  // Kept out of the wood, which has its own understory. 7 -> 9 to match the
+  // other two passes' modest bump -- OPEN_SCRUB_KINDS is already loaded, so
+  // this is placement density only, not new art.
+  for (let i = 0; i < 9; i += 1) {
     const x = x0 + random() * STACKACRES_CHUNK;
     const y = y0 + random() * STACKACRES_CHUNK;
     if (forestDensityAt(x, y) > 0.2 || blocked(x, y)) continue;

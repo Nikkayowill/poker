@@ -7,7 +7,6 @@ import {
   stackacresUpkeepFee,
   upkeepState,
 } from "./upkeep";
-import { STACKACRES_GOLD_CEILING } from "./exchange";
 import { STACKACRES_BASE_CAP, STACKACRES_MAX_EXTRA_CAP, STACKACRES_STOCK } from "./catalogue";
 
 /**
@@ -58,29 +57,24 @@ describe("stackacresUpkeepFee", () => {
   });
 
   /**
-   * Sized against the flat daily allowance rather than against any one tier: a
-   * maxed estate should feel the fee and a starting farm should never see it.
-   * The ceiling was raised from 15k to 50k on 2026-09-05, so the percentage
-   * changed proportionally while the base fee stayed the same.
-   *
-   * FLAGGED, NOT RETUNED HERE: MAX_PLOTS grew ~5x on 2026-09-07 when the
-   * 22-crop roster replaced sprout/cash_crop (STACKACRES_STOCK went from 5
-   * kinds to 25), and `stackacresUpkeepFee` is deliberately superlinear (see
-   * "grows FASTER than the land it is charged against" above) -- so the same,
-   * untouched formula now bites a literal every-kind-maxed estate for ~89% of
-   * the daily ceiling instead of the old 5-15% band. STACKACRES_UPKEEP_
-   * BASE_FEE/EXPONENT are economy tuning, out of scope for a crop-roster
-   * swap; this only widens the sanity band to what the real formula now
-   * produces. No real player maxes all 22 crop kinds' extra capacity at once
-   * (that alone is 22 * 3 * 5,000 Gold), but Kayo may still want a gentler
-   * curve or a per-track cap now that the theoretical ceiling is this much
-   * higher.
+   * This used to be sized against the flat daily Gold allowance
+   * (STACKACRES_GOLD_CEILING), which is gone as of 2026-09-12 -- StackAcres no
+   * longer caps daily earning at all, so there is no longer a fixed "share of
+   * a day's money" to hold this fee inside. Probed against the closest
+   * remaining stand-in (a maxed estate's whole sweep sold at list price, i.e.
+   * `settleHarvest`'s gross), the fee at MAX_PLOTS actually EXCEEDS that
+   * gross (fee ~29.2k vs. a ~21.4k sale, at today's roster/tuning) -- so that
+   * substitute isn't a "bites without swallowing" bound either, just a
+   * different number the removed ceiling happened to sit under. No sensible
+   * replacement bound survives the ceiling's removal; the shape assertions
+   * above ("rises... never falls" and "grows FASTER than the land it is
+   * charged against") still cover the properties that matter for this
+   * formula. Flagging for Kayo: MAX_PLOTS upkeep now costs more than
+   * liquidating the entire maxed estate in one sale would recoup, which may
+   * be worth a deliberate look now that the ceiling that used to bound it is
+   * gone -- not touched here since STACKACRES_UPKEEP_BASE_FEE/EXPONENT are
+   * economy tuning, out of scope for this pass.
    */
-  it("bites a maxed estate without swallowing it", () => {
-    const share = stackacresUpkeepFee(MAX_PLOTS) / STACKACRES_GOLD_CEILING;
-    expect(share).toBeGreaterThan(0.05);
-    expect(share).toBeLessThan(1);
-  });
 });
 
 describe("stackacresUpkeepDue", () => {

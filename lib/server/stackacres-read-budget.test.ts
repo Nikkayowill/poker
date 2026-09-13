@@ -27,11 +27,13 @@ describe("the StackAcres read budget", () => {
     return SERVICE.slice(start, end);
   };
 
-  it("reads a player's farm in 36 per-profile round trips", () => {
+  it("reads a player's farm in 35 per-profile round trips", () => {
     // One line per read, so this counts the reads rather than the tables --
     // two of them (the secret ledger, friendship) are nested Promise.all's
-    // over a list that is length 1 today and will not stay that way.
-    expect(fanOut().split("(profile.id").length - 1).toBe(36);
+    // over a list that is length 1 today and will not stay that way. Down
+    // from 36 on 2026-09-12: view() no longer reads the exchange ceiling,
+    // which was removed outright rather than replaced.
+    expect(fanOut().split("(profile.id").length - 1).toBe(35);
   });
 
   it("still issues them in parallel", () => {

@@ -14,15 +14,11 @@
  * squeezed into `homestead_machines`' generic recipe/queue columns, which
  * only ever describe one flat run.
  *
- * THE ONLY DOOR BACK TO GOLD HERE IS THE VAT ITSELF, and it pays out exactly
- * like a fulfilled Town Contract does: through `reserveStackAcresExchange`,
- * against the SAME flat `STACKACRES_GOLD_CEILING` every other Gold door in
- * this feature respects (see lib/stackacres/exchange.ts's own header --
- * "not a percentage of what is held... if a change makes the ceiling depend
- * on anything about the player, that is the bug"). Aging a batch longer
- * makes THIS batch worth more; it never raises how much Gold a day can pay
- * out in total. See `collectStackAcresVat` in lib/server/stackacres-service.ts
- * for where that reservation actually happens.
+ * THE ONLY DOOR BACK TO GOLD HERE IS THE VAT ITSELF, credited in
+ * `collectStackAcresVat` (lib/server/stackacres-service.ts) once the manifest
+ * is settled. Aging a batch longer makes THIS batch worth more; StackAcres
+ * has no daily cap on Gold any more (see lib/stackacres/exchange.ts's header)
+ * so that is simply more Gold, with nothing to weigh it against.
  *
  * PURE FUNCTION OF TIMESTAMPS, same discipline as every other clock in
  * StackAcres (./wheat-plot.ts, ./machines.ts's own `isMachineDone`): there is

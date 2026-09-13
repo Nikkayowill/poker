@@ -225,9 +225,8 @@ export const DRONE_RECHARGE_MS = 8_000;
  * the rest of the flight tuning, because the SCENE has to honour it too.
  *
  * A drone whose next drop spawns sooner than this flies to gold that cannot
- * pay: the claim it fires on arrival is refused, the animation lies to the
- * player, and the farm takes a 409 (plus a reserve/release pair against the
- * day's allowance) for nothing. Holding the next drop for a full cooldown
+ * pay: the claim it fires on arrival is refused (still cooling down) and the
+ * animation lies to the player. Holding the next drop for a full cooldown
  * before rolling it -- see `stepDrones` -- is what keeps the picture and the
  * payout the same event.
  */
@@ -238,13 +237,14 @@ export const DRONE_FORAGE_COOLDOWN_MS = DRONE_FORAGE_COOLDOWN_SECONDS * 1000;
  *  exists -- see `deployStackAcresDrone` in the service file for the
  *  debit-then-create pairing this funds.
  *
- *  Priced as a late-game permanent buy, not a consumable. The hangar sits
- *  behind every one of the farm's milestones (lib/stackacres/shop-locks.ts)
- *  and every drone is a standing Gold faucet (one forage claim of 15 to 60
- *  Gold every 20 to 30 seconds the farm is open, capped only by the shared
- *  daily ceiling), so a drone should take hours of patrolling to pay itself
- *  off. The 2,500 it launched at earned itself back in about half an hour. */
-export const DRONE_DEPLOY_COST_GOLD = 25_000;
+ *  Raised 25,000 -> 1,200,000 on 2026-09-12 (Kayo's call) when StackAcres
+ *  dropped its flat daily Gold ceiling: every drone is now an UNCAPPED
+ *  standing Gold faucet (one forage claim of 15 to 60 Gold every 20 to 30
+ *  seconds the farm is open, all day, every day), so the price is what now
+ *  bounds how fast a fleet can be fielded rather than a ceiling on what it
+ *  earns once fielded -- see lib/stackacres/exchange.ts's header for the
+ *  removal itself. */
+export const DRONE_DEPLOY_COST_GOLD = 1_200_000;
 
 /* ------------------------------------------------------------------ */
 /* Drop spacing                                                        */

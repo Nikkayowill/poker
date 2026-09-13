@@ -15,9 +15,10 @@
  * against "sum the produce," and re-deriving one was explicitly out of scope
  * for this pass. The Prestige Reset Valve's multiplier moved to the Sell
  * action (lib/server/stackacres-service.ts's `sellStackAcresItem`), since
- * that is StackAcres' only Gold-paying step now. Land Maintenance moved to a
- * standalone daily wallet debit (`assessStackAcresUpkeep`), since it can no
- * longer be netted out of a payout this function does not produce.
+ * that is StackAcres' only Gold-paying step now. Land Maintenance nets off
+ * whatever payout DOES credit Gold (`netUpkeepFromPayout`, lib/server/
+ * stackacres-service.ts) -- Sell, a Town Contract, or the Vat -- since this
+ * function doesn't produce one of its own to net against.
  *
  * `lines`/`gross` still exist because `homestead_harvests.payout` is written
  * from exactly these numbers -- see the write site in stackacres-service.ts.

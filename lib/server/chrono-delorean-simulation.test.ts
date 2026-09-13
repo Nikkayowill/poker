@@ -66,6 +66,7 @@ async function loadSimulation() {
   const exchange = await import("@/lib/stackacres/exchange");
   const world = await import("@/lib/stackacres/world");
   const soil = await import("@/lib/stackacres/soil");
+  const items = await import("@/lib/stackacres/items");
 
   return {
     service,
@@ -80,6 +81,7 @@ async function loadSimulation() {
     exchange,
     world,
     soil,
+    items,
   };
 }
 
@@ -243,6 +245,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
       exchange,
       world,
       soil,
+      items,
     } = await loadSimulation();
 
     const token = randomUUID();
@@ -311,42 +314,77 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     // A harvest charges no upkeep any more; it only fills the barn.
     const beforeHarvest = await balance();
     const harvestDay0 = await service.harvestStackAcres(token, { unitIds: [pigId] }, readyNow);
-    expect(harvestDay0.harvest.tally.find((line) => line.item === "wool")?.quantity).toBeGreaterThan(0);
+    const woolFromHarvest = harvestDay0.harvest.tally.find((line) => line.item === "wool")?.quantity ?? 0;
+    expect(woolFromHarvest).toBeGreaterThan(0);
     expect(await balance()).toBe(beforeHarvest);
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(0);
 
-    // Land Maintenance is a standalone wallet debit, assessed once per UTC day.
-    const beforeAssess = await balance();
-    await service.assessStackAcresUpkeep(profile.id, readyNow);
-    console.log("Chrono-DeLorean simulation: day0 upkeep assessed ->", { day: day0, charged: beforeAssess - (await balance()) });
-    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
-    expect(await balance()).toBe(beforeAssess - expectedFee);
+    // Land Maintenance is no longer a standalone debit -- it is netted off
+    // the top of an actual Gold payout now (2026-09-12, Kayo's call; see
+    // `netUpkeepFromPayout` in stackacres-service.ts). A harvest never
+    // triggers it, as just shown, so the pig's own wool has to actually be
+    // SOLD for the bill to come due. One pig's fleece (6 units) is nowhere
+    // near this farm's 51-chargeable-plot bill, so it is topped up here to
+    // stand in for a bigger sale off the same shelf -- what is being
+    // demonstrated is the skim mechanism, not this one pig's yield size.
+    const woolPrice = items.itemSellPrice("wool");
+    const saleQuantity = Math.ceil((expectedFee * 2) / woolPrice);
+    await store.adjustStackAcresInventory(profile.id, "wool", saleQuantity - woolFromHarvest);
 
-    // A second assessment the SAME simulated day charges nothing more:
-    // stackacresUpkeepDue nets out what today's ledger already holds.
-    await service.buyStackAcresFeed(token, { itemId: feedItemId, quantity: 1 }, readyNow);
-    const pigTwo = await growPigToReady(service, chrono, token, pig, readyNow);
-    expect(exchange.stackacresExchangeDay(pigTwo.readyNow)).toBe(day0);
-    await service.harvestStackAcres(token, { unitIds: [pigTwo.pigId] }, pigTwo.readyNow);
+    const beforeSell = await balance();
+    const soldDay0 = await service.sellStackAcresItem(
+      token,
+      { item: "wool", quantity: saleQuantity },
+      readyNow,
+    );
+    console.log("Chrono-DeLorean simulation: day0 sale skims Land Maintenance ->", {
+      day: day0,
+      grossGold: soldDay0.sold.gold,
+      expectedFee,
+      walletDelta: (await balance()) - beforeSell,
+    });
+    // `sold.gold` stays the sale's full sticker price -- only the wallet's
+    // actual increase is docked. The whole day's fee comes off the top of
+    // this one sale (clamped at the payout, not the much larger balance),
+    // and the remainder is what actually lands.
+    expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
+    expect(await balance()).toBe(beforeSell + soldDay0.sold.gold - expectedFee);
+
+    // A second sale the SAME simulated day skims nothing more: today's due
+    // is already zero, so this one lands in full.
+    await store.adjustStackAcresInventory(profile.id, "wool", 10);
     const beforeSecond = await balance();
-    await service.assessStackAcresUpkeep(profile.id, pigTwo.readyNow);
-    expect(await balance()).toBe(beforeSecond);
+    const soldAgainDay0 = await service.sellStackAcresItem(
+      token,
+      { item: "wool", quantity: 10 },
+      readyNow,
+    );
+    expect(await balance()).toBe(beforeSecond + soldAgainDay0.sold.gold);
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
 
-    // Cross a simulated UTC day boundary: the bill is re-assessed from zero.
+    // Cross a simulated UTC day boundary: the bill is re-assessed from zero,
+    // so the next sale is skimmed against a FRESH day's fee, independent of
+    // day 0's ledger.
     const t1 = await jumpTo(chrono, token, new Date(t0.getTime() + ONE_DAY_MS));
     const day1 = exchange.stackacresExchangeDay(t1);
     expect(day1).not.toBe(day0);
     expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(0);
 
-    const beforeDay1 = await balance();
-    await service.assessStackAcresUpkeep(profile.id, t1);
-    console.log("Chrono-DeLorean simulation: day1 upkeep assessed (fresh UTC day) ->", {
+    await store.adjustStackAcresInventory(profile.id, "wool", saleQuantity);
+    const beforeDay1Sell = await balance();
+    const soldDay1 = await service.sellStackAcresItem(
+      token,
+      { item: "wool", quantity: saleQuantity },
+      t1,
+    );
+    console.log("Chrono-DeLorean simulation: day1 sale skims a fresh bill ->", {
       day: day1,
-      charged: beforeDay1 - (await balance()),
+      grossGold: soldDay1.sold.gold,
+      expectedFee,
+      walletDelta: (await balance()) - beforeDay1Sell,
     });
     expect(await store.readStackAcresUpkeep(profile.id, day1)).toBe(expectedFee);
-    expect(await balance()).toBe(beforeDay1 - expectedFee);
+    expect(await balance()).toBe(beforeDay1Sell + soldDay1.sold.gold - expectedFee);
     // Day 0's ledger is untouched by day 1's charge.
     expect(await store.readStackAcresUpkeep(profile.id, day0)).toBe(expectedFee);
   });

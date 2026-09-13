@@ -7,19 +7,11 @@
  * animal and every crop was priced in the farm's own currency. The farm was
  * the one place in the app where winning at the tables bought you nothing.
  *
- * WHAT IT DOES NOT DO, and the thing to check in review: it does not move
- * `STACKACRES_GOLD_CEILING`. The farm's maximum Gold OUTPUT is still a flat
- * daily amount per player, mirrored as a hard ceiling inside
- * `reserve_homestead_exchange`. This file only adds ways for Gold to go IN.
- * Every price here is a sink; there is no code path in this module that pays
- * anybody anything. That asymmetry is the entire safety argument, and it
- * survives any mistuning of the numbers below.
- *
- * The honest consequence, stated plainly because it is the real one: buying
- * permanent stock makes the EXISTING daily ceiling reliably reachable where
- * before it took constant attention. Nobody extracts more than they could
- * yesterday; they just stop having to work for it. If that volume is ever a
- * problem, the conversation is about the ceiling, not about this file.
+ * WHAT IT DOES NOT DO: this file only adds ways for Gold to go IN. Every
+ * price here is a sink; there is no code path in this module that pays
+ * anybody anything. (StackAcres dropped its flat daily Gold-output ceiling
+ * entirely on 2026-09-12 -- see lib/stackacres/exchange.ts's header -- so
+ * this file's sinks are no longer weighed against an output cap either way.)
  *
  * WHERE THINGS ARE SOLD used to be its own mapping here (`STACKACRES_STALLS`)
  * -- a second, hand-written zone-to-stock table alongside world.ts's

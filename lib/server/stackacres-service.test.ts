@@ -35,7 +35,6 @@ import {
   requestStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
-  assessStackAcresUpkeep,
   processRecipe,
   getPrestigeMultiplier,
   prestigeResetStackAcres,
@@ -69,7 +68,6 @@ import {
   markStackAcresDonated,
   raiseStackAcresUpkeep,
   readStackAcresSecretLedgerQty,
-  readStackAcresExchanged,
   readStackAcresFeed,
   readStackAcresWater,
   adjustStackAcresWater,
@@ -81,7 +79,6 @@ import {
   recordStackAcresCropFieldsUnlocked,
   recordStackAcresSectorCleared,
   adjustStackAcresInfluence,
-  reserveStackAcresExchange,
   adjustStackAcresInventory,
   recordStackAcresHarvest,
   adjustStackAcresCapacity,
@@ -124,12 +121,8 @@ import {
   toolUpgradePrice,
 } from "@/lib/stackacres/equipment";
 import { STACKACRES_CUTTER_DEFS } from "@/lib/stackacres/cutters";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
-  STACKACRES_GOLD_CEILING,
-  stackacresExchangeDay,
-} from "@/lib/stackacres/exchange";
-import {
-  HOME_SECTOR,
   HOME_SECTORS,
   SECTOR_LADDER,
   STACKACRES_SECTORS,
@@ -191,8 +184,10 @@ vi.mock("./stackacres-store", async (importOriginal) => {
  * The StackAcres money contract, in memory mode.
  *
  * A harvest fills the barn and pays no Gold. Gold leaves the farm only
- * through Sell, a Town Contract or the Vat, each reserving against one flat
- * daily ceiling first -- see the "currency wall" block near the bottom.
+ * through Sell, a Town Contract or the Vat -- see the "currency wall" block
+ * near the bottom. StackAcres had a flat daily Gold-earning ceiling that
+ * gated all three of those (plus the forage drone); it was removed
+ * 2026-09-12 (Kayo's call), so none of them are capped any more.
  *
  * Nothing here can lose a sowing, so there is no losing branch to check --
  * what has to hold is exact and it all sits on the guards: the seed leaves
@@ -348,17 +343,6 @@ async function harvestAll(token: string, now: Date) {
   const { id } = await ensureProfile(token);
   await keepHensFed(id, now);
   return harvestStackAcres(token, {}, now);
-}
-
-/** Burns `gold` of today's allowance directly, standing in for a day already
- *  spent. How it was spent is not what the ceiling tests are about. */
-async function burnAllowance(id: string, gold: number, at: Date = T0) {
-  await reserveStackAcresExchange(
-    id,
-    stackacresExchangeDay(at),
-    gold,
-    STACKACRES_GOLD_CEILING,
-  );
 }
 
 /** The most recently created unit of `stock` in a view -- reliable because
@@ -1354,9 +1338,12 @@ describe("harvesting", () => {
 
 /**
  * Land Maintenance, end to end. The curve is pinned in
- * lib/stackacres/upkeep.test.ts; what matters here is that it is a standalone
- * wallet debit, charged once a day, clamped at the balance, and never run off
- * a bare read.
+ * lib/stackacres/upkeep.test.ts; what matters here is that it is skimmed off
+ * a Gold payout (2026-09-12, Kayo's call), charged at most once a day, and
+ * clamped at the payout itself rather than the wallet. It runs off nothing
+ * but the three actions that pay Gold -- Sell, Fulfill Contract and Collect
+ * Vat -- so watering, planting, buying, harvesting and clearing land never
+ * touch it at all, however big the bill or however long it stands unpaid.
  */
 describe("Land Maintenance", () => {
   const DAY = stackacresExchangeDay(T0);
@@ -1369,11 +1356,6 @@ describe("Land Maintenance", () => {
    */
   const unpaid = (gold = 500_000) => funded(gold, { settled: false });
 
-  /** What a fully cleared farm with nothing bought owes for the day. `unpaid`
-   *  goes through `funded`, whose own default unlocks the Crop Fields too. */
-  const clearedFarmFee = () =>
-    stackacresUpkeepFee(unlockedPlotCount([...SECTOR_LADDER, HOME_SECTOR], {}, true));
-
   it("never comes out of a harvest", async () => {
     const { token, id } = await unpaid();
     for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
@@ -1381,79 +1363,158 @@ describe("Land Maintenance", () => {
 
     await harvestAll(token, HEN_READY);
 
+    // A harvest fills the barn and pays no Gold either way (see
+    // "harvesting" above) -- this proves it also never triggers Land
+    // Maintenance as a side effect, even on a farm whose bill has stood
+    // unpaid the whole time.
     expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
     expect(await balance(token)).toBe(before);
   });
 
-  it("is debited from the wallet once a day, and only the difference after that", async () => {
+  it("is skimmed off a sale once a day, and the rest lands in full after that", async () => {
     const { token, id } = await unpaid();
-    // The view's own bill, derived from the same land the assessment reads.
+    // The view's own bill, derived from the same land the skim reads.
     const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
     expect(fee).toBeGreaterThan(0);
+
+    // Enough eggs that this one sale's gross clears the whole day's bill.
+    const eggPrice = itemSellPrice("eggs");
+    const quantity = Math.ceil((fee * 2) / eggPrice);
+    await adjustStackAcresInventory(id, "eggs", quantity);
     const before = await balance(token);
 
-    await assessStackAcresUpkeep(id, HEN_READY);
-    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
-    expect(await balance(token)).toBe(before - fee);
+    const sold = await sellStackAcresItem(token, { item: "eggs", quantity }, HEN_READY);
 
-    // Same day again: nothing more is owed, so nothing more moves.
-    await assessStackAcresUpkeep(id, new Date(HEN_READY.getTime() + 60_000));
+    // `sold.gold` stays the sale's full sticker price; only the wallet's
+    // actual increase is docked for the day's fee.
+    expect(sold.sold.gold).toBe(eggPrice * quantity);
     expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
-    expect(await balance(token)).toBe(before - fee);
+    expect(await balance(token)).toBe(before + sold.sold.gold - fee);
+
+    // Same day again: today's due is already zero, so a second sale lands in
+    // full and moves upkeep no further.
+    await adjustStackAcresInventory(id, "eggs", 5);
+    const beforeSecond = await balance(token);
+    const soldAgain = await sellStackAcresItem(token, { item: "eggs", quantity: 5 }, HEN_READY);
+    expect(await balance(token)).toBe(beforeSecond + soldAgain.sold.gold);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
   });
 
   it("charges again once the UTC day turns over", async () => {
-    const { token, id } = await funded();
-    const before = await balance(token);
-    // funded() pre-paid today, so today is a no-op.
-    await assessStackAcresUpkeep(id, HEN_READY);
-    expect(await balance(token)).toBe(before);
+    const { token, id } = await unpaid();
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    const eggPrice = itemSellPrice("eggs");
+    const quantity = Math.ceil((fee * 2) / eggPrice);
+    await adjustStackAcresInventory(id, "eggs", quantity);
+
+    const beforeToday = await balance(token);
+    const soldToday = await sellStackAcresItem(token, { item: "eggs", quantity }, HEN_READY);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
+    expect(await balance(token)).toBe(beforeToday + soldToday.sold.gold - fee);
 
     const tomorrow = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
-    await assessStackAcresUpkeep(id, tomorrow);
-    const charged = await readStackAcresUpkeep(id, stackacresExchangeDay(tomorrow));
-    expect(charged).toBeGreaterThan(0);
-    expect(await balance(token)).toBe(before - charged);
+    const tomorrowDay = stackacresExchangeDay(tomorrow);
+    const feeTomorrow = (await readStackAcres(token, tomorrow)).upkeep.fee;
+    expect(feeTomorrow).toBeGreaterThan(0);
+
+    await adjustStackAcresInventory(id, "eggs", quantity);
+    const beforeTomorrow = await balance(token);
+    const soldTomorrow = await sellStackAcresItem(token, { item: "eggs", quantity }, tomorrow);
+
+    // A fresh bill, assessed independently of what today already paid.
+    expect(await readStackAcresUpkeep(id, tomorrowDay)).toBe(feeTomorrow);
+    expect(await balance(token)).toBe(beforeTomorrow + soldTomorrow.sold.gold - feeTomorrow);
+    // Today's own ledger is untouched by tomorrow's charge.
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
   });
 
   /**
-   * THE SAFETY PROPERTY. A big estate's fee can exceed the wallet, and when it
-   * does the charge stops at what is there. It never goes negative and is
-   * never carried as debt.
+   * THE SAFETY PROPERTY. A big estate's fee can exceed any one payout, and
+   * when it does the skim stops at what is actually being paid -- never at
+   * whatever happens to already be sitting in the wallet. Savings are never a
+   * source of funds; only income is, and only ever up to its own amount.
    */
-  it("clamps at the balance and never drives it negative", async () => {
-    const { token, id } = await unpaid(10);
-    expect(clearedFarmFee()).toBeGreaterThan(10);
+  it("clamps at the payout, never the balance, and never drives it negative", async () => {
+    const { token, id } = await unpaid();
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    expect(fee).toBeGreaterThan(0);
 
-    await assessStackAcresUpkeep(id, HEN_READY);
+    const eggPrice = itemSellPrice("eggs");
+    expect(eggPrice).toBeLessThan(fee); // this sale must be smaller than the bill
+    await adjustStackAcresInventory(id, "eggs", 1);
+    const savings = await balance(token);
 
-    expect(await balance(token)).toBe(0);
-    expect(await readStackAcresUpkeep(id, DAY)).toBe(10);
+    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 1 }, HEN_READY);
 
-    // A broke wallet is simply charged nothing more, not an error.
-    await assessStackAcresUpkeep(id, HEN_READY);
-    expect(await balance(token)).toBe(0);
+    // The entire gross of that one small sale is skimmed -- nothing reaches
+    // the wallet -- but the savings that were sitting there before it are
+    // untouched: the clamp is against the payout, not the balance.
+    expect(sold.sold.gold).toBe(eggPrice);
+    expect(await balance(token)).toBe(savings);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(eggPrice);
+
+    // The rest of the day's bill is still due -- not written off, and never
+    // chased out of the untouched balance above.
+    const due = (await readStackAcres(token, HEN_READY)).upkeep.due;
+    expect(due).toBe(fee - eggPrice);
   });
 
   it("is a no-op for a farm at the free base", async () => {
     const { token, id } = await funded(500_000, { land: [], cropFieldsUnlocked: false, settled: false });
     const before = await balance(token);
-    await assessStackAcresUpkeep(id, HEN_READY);
-    expect(await balance(token)).toBe(before);
+    const eggPrice = itemSellPrice("eggs");
+    await adjustStackAcresInventory(id, "eggs", 3);
+
+    const sold = await sellStackAcresItem(token, { item: "eggs", quantity: 3 }, HEN_READY);
+
+    // Nothing is due, so the whole sale reaches the wallet.
+    expect(sold.sold.gold).toBe(eggPrice * 3);
+    expect(await balance(token)).toBe(before + eggPrice * 3);
     expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
   });
 
-  it("runs off every mutating action but never off a bare read", async () => {
+  it("runs off nothing but a sale -- every other mutating action leaves it untouched", async () => {
     const { token, id } = await unpaid();
-    const before = await balance(token);
-
     const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
     expect(fee).toBeGreaterThan(0);
-    expect(await balance(token)).toBe(before);
+    const before = await balance(token);
 
-    await runStackAcresAction(token, null, "work", () => workStackAcres(token, HEN_READY), HEN_READY);
-    expect(await balance(token)).toBe(before - fee);
-    expect(await readStackAcresUpkeep(id, DAY)).toBe(fee);
+    // A pile of ordinary mutating actions -- buying, planting, watering,
+    // running the idle-worker sweep -- none of which pay the player Gold.
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    const cropView = await stockStackAcres(token, { stock: "carrot" }, T0);
+    await waterStackAcres(token, unitOf(cropView, "carrot").id, T0);
+    await workStackAcres(token, HEN_READY);
+
+    // Not one cent of the (very real) bill above came out of any of that --
+    // only the hen's own seed cost left the wallet.
+    expect(await balance(token)).toBe(before - HEN.seedCost);
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
+
+    // The instant something actually pays Gold, the bill starts coming due.
+    await adjustStackAcresInventory(id, "eggs", 1);
+    await sellStackAcresItem(token, { item: "eggs", quantity: 1 }, HEN_READY);
+    expect(await readStackAcresUpkeep(id, DAY)).toBeGreaterThan(0);
+  });
+
+  it("never runs at all on a farm that never sells anything, however long it runs or however big the bill", async () => {
+    const { token, id } = await unpaid(1_000_000);
+    const fee = (await readStackAcres(token, HEN_READY)).upkeep.fee;
+    expect(fee).toBeGreaterThan(0);
+
+    for (let i = 0; i < STACKACRES_BASE_CAP; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
+    const cropView = await stockStackAcres(token, { stock: "carrot" }, T0);
+    await waterStackAcres(token, unitOf(cropView, "carrot").id, T0);
+    await harvestAll(token, HEN_READY); // fills the barn, pays no Gold
+    await workStackAcres(token, HEN_READY);
+
+    // Days later, still nothing sold, still nothing owed on either day.
+    const muchLater = new Date(T0.getTime() + 3 * 24 * 60 * 60 * 1000);
+    await readStackAcres(token, muchLater); // a bare read, free either way
+
+    expect(await readStackAcresUpkeep(id, DAY)).toBe(0);
+    expect(await readStackAcresUpkeep(id, stackacresExchangeDay(muchLater))).toBe(0);
+    expect(await balance(token)).toBe(1_000_000 - HEN.seedCost * STACKACRES_BASE_CAP);
   });
 
   it("is assessed on every unit standing, mucked ones included", async () => {
@@ -1675,178 +1736,6 @@ describe("expanding capacity", () => {
       StackAcresRequestError,
     );
     expect(await balance(token)).toBe(before);
-  });
-});
-
-/**
- * THE VALVE. Everything above this point SPENDS Gold; a harvest is the one
- * thing in the feature that pays it, and the tests below are mostly here to
- * fail loudly if the property that makes that safe erodes: **the farm's
- * maximum Gold output is a flat daily constant.**
- *
- * A failure in this block is not a broken test, it is a faucet.
- */
-/**
- * The daily allowance: the valve the old exchange window stood in front of.
- * The window is gone; every property below survived it, because none of them
- * was ever about the window.
- *
- * THE FARM IS DELIBERATELY BUILT OF CROPS HERE. Livestock eat, and a Cattle
- * Pen goes hungry (8h) long before it ripens (24h), so a pen left alone never
- * becomes ready at all -- which is the mechanic working, and makes livestock
- * useless for a test about ceilings.
- *
- * The day is filled with `burnAllowance` rather than by harvesting toward it.
- * Reaching 15,000 legitimately takes a maxed estate and many cycles; HOW the
- * day was spent is not what any of this is about, and a test that spent forty
- * lines getting there would be testing the fixture.
- */
-describe("the daily allowance", () => {
-  const EGG = itemSellPrice("eggs");
-
-  it("records a sale against today's allowance", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 10);
-
-    const result = await sellStackAcresItem(token, { item: "eggs", quantity: 10 }, T0);
-
-    expect(result.sold.gold).toBe(EGG * 10);
-    expect(result.exchange.usedToday).toBe(result.sold.gold);
-    expect(result.exchange.remaining).toBe(STACKACRES_GOLD_CEILING - result.sold.gold);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(result.sold.gold);
-  });
-
-  /**
-   * The refusal is the whole feature, and the ORDER of it is what makes it
-   * bearable: the goods come back to the shelf, still there after midnight.
-   */
-  it("refuses a sale the day cannot cover, and leaves the goods on the shelf", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 10);
-    await burnAllowance(id, STACKACRES_GOLD_CEILING);
-    const before = await balance(token);
-
-    // Tagged `day-capped` so the client can tell this apart from a genuine
-    // fault and say "the farm is done for today".
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 10 }, T0)).rejects.toMatchObject({
-      name: "StackAcresRequestError",
-      status: 409,
-      reason: "day-capped",
-    });
-
-    expect(await balance(token)).toBe(before);
-    const view = await readStackAcres(token, T0);
-    expect(view.inventory.eggs).toBe(10);
-    expect(view.exchange.remaining).toBe(0);
-  });
-
-  it("refuses rather than paying part of a sale, when only part of it fits", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 10);
-    await burnAllowance(id, STACKACRES_GOLD_CEILING - (EGG * 10 - 1));
-    const before = await balance(token);
-
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 10 }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-    expect((await readStackAcres(token, T0)).inventory.eggs).toBe(10);
-  });
-
-  it("still pays right up to the last Gold of the day", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 10);
-    await burnAllowance(id, STACKACRES_GOLD_CEILING - EGG * 10);
-    const before = await balance(token);
-
-    const result = await sellStackAcresItem(token, { item: "eggs", quantity: 10 }, T0);
-
-    expect(result.sold.gold).toBe(EGG * 10);
-    expect(await balance(token)).toBe(before + EGG * 10);
-    expect(result.exchange.remaining).toBe(0);
-  });
-
-  it("holds the ceiling when a dozen sales race for the last of it", async () => {
-    // The memory store can still interleave the debit, the reservation and
-    // the credit across awaits, which is the shape of the bug this guards.
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 12);
-    // Room for five eggs' worth, no more.
-    await burnAllowance(id, STACKACRES_GOLD_CEILING - EGG * 5);
-    const before = await balance(token);
-
-    await Promise.allSettled(
-      Array.from({ length: 12 }, () => sellStackAcresItem(token, { item: "eggs", quantity: 1 }, T0)),
-    );
-
-    const paid = (await balance(token)) - before;
-    expect(paid).toBeLessThanOrEqual(EGG * 5);
-    expect(paid % EGG).toBe(0);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(
-      STACKACRES_GOLD_CEILING - EGG * 5 + paid,
-    );
-    // Every egg is either sold or back on the shelf, never lost.
-    expect((await readStackAcres(token, T0)).inventory.eggs).toBe(12 - paid / EGG);
-  });
-
-  /**
-   * THE INVARIANT, stated as a test. Owning more fills the day faster; it does
-   * not make the day bigger. If this ever fails, the ceiling has started
-   * scaling with something and the farm is a percentage faucet again.
-   */
-  it("gives a farm full of stock exactly the same daily ceiling as a bare one", async () => {
-    const bare = await funded();
-    const big = await funded(5_000_000);
-    for (const stock of STACKACRES_STOCK) {
-      for (let i = 0; i < STACKACRES_BASE_CAP; i += 1) {
-        await stockStackAcres(big.token, { stock }, T0);
-      }
-    }
-
-    expect((await readStackAcres(bare.token, T0)).exchange.ceiling).toBe(STACKACRES_GOLD_CEILING);
-    expect((await readStackAcres(big.token, T0)).exchange.ceiling).toBe(STACKACRES_GOLD_CEILING);
-
-    // And the big farm is refused at the same wall, not a wider one.
-    await burnAllowance(big.id, STACKACRES_GOLD_CEILING);
-    await adjustStackAcresInventory(big.id, "eggs", 1);
-    await expect(sellStackAcresItem(big.token, { item: "eggs", quantity: 1 }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-  });
-
-  it("reopens at UTC midnight and not a moment before", async () => {
-    const { token, id } = await funded();
-    const day = stackacresExchangeDay(T0);
-    await adjustStackAcresInventory(id, "eggs", 4);
-    await sellStackAcresItem(token, { item: "eggs", quantity: 4 }, T0);
-    expect(await readStackAcresExchanged(id, day)).toBeGreaterThan(0);
-
-    const lastSecond = new Date("2026-08-31T23:59:59.999Z");
-    expect((await readStackAcres(token, lastSecond)).exchange.usedToday).toBeGreaterThan(0);
-
-    const midnight = new Date("2026-09-01T00:00:00.000Z");
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(midnight))).toBe(0);
-    expect((await readStackAcres(token, midnight)).exchange.remaining).toBe(
-      STACKACRES_GOLD_CEILING,
-    );
-  });
-
-  it("spends no allowance on a harvest at all", async () => {
-    const { token, id } = await funded();
-    await stockStackAcres(token, { stock: "hen" }, T0);
-
-    await harvestAll(token, HEN_READY);
-
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(0);
-    expect((await readStackAcres(token, T0)).exchange.remaining).toBe(STACKACRES_GOLD_CEILING);
-  });
-
-  it("spends no allowance on a sale that refused", async () => {
-    const { token, id } = await funded();
-    await expect(sellStackAcresItem(token, { item: "milk", quantity: 1 }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(0);
   });
 });
 
@@ -2105,13 +1994,12 @@ describe("the equipment ladder", () => {
     }
   });
 
-  it("still crits with the day's Gold allowance spent, since a crit is produce and not Gold", async () => {
-    const { token, id } = await funded(5_000_000);
+  it("pays no Gold on a crit, since a crit is produce and not Gold", async () => {
+    const { token } = await funded(5_000_000);
     await upgradeStackAcresTool(token, T0);
     await upgradeStackAcresTool(token, T0);
     const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
-    await burnAllowance(id, STACKACRES_GOLD_CEILING, HEN_READY);
     const before = await balance(token);
 
     const roll = vi.spyOn(Math, "random").mockReturnValue(0);
@@ -2125,28 +2013,6 @@ describe("the equipment ladder", () => {
     expect(result.inventory.eggs).toBe(HEN_YIELD.quantity * 2);
     expect(await balance(token)).toBe(before);
   });
-
-  it("reserves nothing against today's allowance, crit or not", async () => {
-    // The optimistic reservation must not quietly eat the day's allowance on
-    // a miss, or an unlucky player would hit the ceiling faster than a lucky
-    // one -- the exact opposite of the intent.
-    const { token, id } = await funded(5_000_000);
-    await upgradeStackAcresTool(token, T0);
-    await upgradeStackAcresTool(token, T0);
-    const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
-    const unitId = unitOf(bought, "hen").id;
-
-    const roll = vi.spyOn(Math, "random").mockReturnValue(0.99);
-    let result;
-    try {
-      result = await collectOne(token, unitId, HEN_READY);
-    } finally {
-      roll.mockRestore();
-    }
-
-    expect(result.harvest.crit).toBe(false);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(HEN_READY))).toBe(0);
-  });
 });
 
 describe("the currency wall", () => {
@@ -2157,10 +2023,9 @@ describe("the currency wall", () => {
 
   it("credits Gold in exactly four places: the refund helper, and three payouts", async () => {
     // If this is 5, go and look at the new one and ask the only question that
-    // matters: which DIRECTION does it move Gold, and if it pays, does it
-    // reserve against STACKACRES_GOLD_CEILING first? A refund belongs inside
-    // `refundGold`. A credit that is not a refund is a faucet, and a faucet
-    // that does not reserve first is the change to stop over.
+    // matters: which DIRECTION does it move Gold. A refund belongs inside
+    // `refundGold`. A credit that is not a refund is a faucet, and a new
+    // faucet is the change to stop over.
     //
     // This used to be a count of five -- four refunds plus one payout -- and
     // it had to be edited every time a spend path added its own refund.
@@ -2172,8 +2037,14 @@ describe("the currency wall", () => {
     expect(calls(SERVICE, "creditGoldByProfile")).toBe(4);
     // One of the four is the helper, whose whole body is that call.
     expect(SERVICE).toContain("async function refundGold(");
-    expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, gold)");
-    expect(SERVICE).toContain("paid = await creditGoldByProfile(profile.id, contract.goldReward)");
+    expect(SERVICE).toContain("await creditGoldByProfile(profileId, gold).catch(() => null);");
+    // The other three are the payers, and each nets Land Maintenance off the
+    // top first (netUpkeepFromPayout, 2026-09-12) before crediting only
+    // whatever survives that skim -- never the sticker gross directly.
+    const netUpkeepCalls = SERVICE.split("await netUpkeepFromPayout(profile.id, now,").length - 1;
+    const netGoldCredits = SERVICE.split("paid = await creditGoldByProfile(profile.id, netGold)").length - 1;
+    expect(netUpkeepCalls).toBe(3);
+    expect(netGoldCredits).toBe(3);
 
     const body = (name: string) => {
       const start = SERVICE.indexOf(`export async function ${name}(`);
@@ -2181,23 +2052,15 @@ describe("the currency wall", () => {
       const end = SERVICE.indexOf("\nexport ", start + 1);
       return SERVICE.slice(start, end === -1 ? undefined : end);
     };
-    // Each of the three payers reserves against the ceiling before it credits.
-    for (const payer of ["sellStackAcresItem", "fulfillStackAcresTownContract", "collectStackAcresVat"]) {
-      const source = body(payer);
-      const reserve = source.indexOf("reserveStackAcresExchange(");
-      const credit = source.indexOf("creditGoldByProfile(");
-      expect(reserve, payer).toBeGreaterThan(-1);
-      expect(credit, payer).toBeGreaterThan(reserve);
-    }
-    // Sell takes the goods off the shelf before it reserves any Gold.
+    // Sell takes the goods off the shelf before it credits any Gold.
     const sell = body("sellStackAcresItem");
     const debit = sell.indexOf("adjustStackAcresInventory(profile.id, item, -input.quantity)");
+    const sellCredit = sell.indexOf("creditGoldByProfile(");
     expect(debit).toBeGreaterThan(-1);
-    expect(debit).toBeLessThan(sell.indexOf("reserveStackAcresExchange("));
-    // And a harvest neither credits Gold nor touches the ceiling.
+    expect(debit).toBeLessThan(sellCredit);
+    // And a harvest never credits Gold at all.
     const harvest = body("harvestStackAcres");
     expect(harvest).not.toContain("creditGoldByProfile(");
-    expect(harvest).not.toContain("reserveStackAcresExchange(");
   });
 
   it("spends Gold freely, which is the direction that is allowed", async () => {
@@ -2207,7 +2070,7 @@ describe("the currency wall", () => {
     expect(calls(SERVICE, "spendGoldByProfile")).toBeGreaterThan(1);
   });
 
-  it("exposes exactly three actions that pay Gold out, all ceiling-gated", () => {
+  it("exposes exactly three actions that pay Gold out", () => {
     const actions = [...ROUTE.matchAll(/z\.literal\("([a-z-]+)"\)/g)].map((m) => m[1]).sort();
     // Adding an action means editing this list, which is the point: the
     // question to answer while doing it is "does this move Gold, and which
@@ -2307,9 +2170,7 @@ describe("the currency wall", () => {
     // inside the settlement RPC, never to the purse. `midnight-merchant-buy` spends too, via
     // `redeemMidnightMerchantItem`, which reaches `spend_gold_by_profile`
     // inside its own row-locked RPC (see
-    // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql)
-    // -- never against STACKACRES_GOLD_CEILING, because spending is not a
-    // payout and the ceiling only ever bounds Gold leaving the farm.
+    // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql).
     // `prestige-reset` moves no Gold either; what it moves is the whole grid,
     // irreversibly, for a permanent multiplier on every future `sell`.
     // `place-pipe` is a pure sink, same category as `place-machine` -- it
@@ -2340,14 +2201,10 @@ describe("the currency wall", () => {
     // Drone (2026-09-06). Its Gold credit does not live in this file at all:
     // `collectStackAcresDroneForage` here only delegates to
     // `collectDroneForage` in lib/server/stackacres-drone-service.ts, which
-    // reserves against STACKACRES_GOLD_CEILING (the same constant, same
-    // daily bucket) BEFORE calling `collect_stackacres_drone_forage`'s own
-    // row-locked RPC, then releases the unused difference between the
-    // worst-case reservation and the amount actually rolled -- see that
-    // function's own doc comment for why a drone left patrolling all day is
-    // exactly the shape of faucet that turned Ante Up into a money printer,
-    // and why the ceiling still has to bound it even though no single claim
-    // is large.
+    // in turn calls the store-layer RPC wrapper and returns its outcome. The
+    // flat daily Gold ceiling that used to gate all four payers (and that
+    // this drone path reserved a worst-case share of before rolling) was
+    // removed 2026-09-12 -- StackAcres no longer caps daily earning.
     const paysGold = ["sell", "fulfill-contract", "collect-vat", "collect-drone-forage"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     // `, now` on all four: Chrono-DeLorean Mode threads a resolved `now`
@@ -2357,21 +2214,6 @@ describe("the currency wall", () => {
     expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
     expect(ROUTE).toContain("collectStackAcresVat(token, now)");
     expect(ROUTE).toContain("collectStackAcresDroneForage(token, action.droneId, now)");
-    // The first three payers reserve against the exact same daily ceiling
-    // inline in this file -- this is the property that makes another payer
-    // safe rather than a second faucet. See lib/stackacres/exchange.ts.
-    // (STACKACRES_GOLD_CEILING is a constant, not a call, hence counting
-    // occurrences directly rather than through the `calls` helper above.)
-    expect(SERVICE.split("STACKACRES_GOLD_CEILING").length - 1).toBeGreaterThanOrEqual(4);
-    // The fourth payer reserves against the identical constant, just from its
-    // own sibling service file rather than inline here -- read directly
-    // rather than assumed, so a future drone change that drops the
-    // reservation fails this test rather than only this file's own claim.
-    const DRONE_SERVICE = readFileSync(
-      join(process.cwd(), "lib/server/stackacres-drone-service.ts"),
-      "utf8",
-    );
-    expect(DRONE_SERVICE).toContain("reserveStackAcresExchange(profileId, day, DRONE_FORAGE_MAX_GOLD, STACKACRES_GOLD_CEILING)");
   });
 
   it("hands back no Gold at all for spending Gold", async () => {
@@ -2391,11 +2233,10 @@ describe("a pristine farm", () => {
     expect(view.units).toEqual([]);
     expect(view.feed).toBe(0);
     expect(view.capacity).toEqual({});
-    // No land, so nothing to maintain, and a full day's allowance untouched.
-    // The Farmstead's own three slots are exactly the free base, so a farm
-    // that has cleared nothing and bought nothing never sees a bill.
+    // No land, so nothing to maintain. The Farmstead's own three slots are
+    // exactly the free base, so a farm that has cleared nothing and bought
+    // nothing never sees a bill.
     expect(view.upkeep).toMatchObject({ plots: STACKACRES_UPKEEP_FREE_PLOTS, fee: 0, due: 0 });
-    expect(view.exchange.remaining).toBe(STACKACRES_GOLD_CEILING);
   });
 });
 
@@ -2405,10 +2246,9 @@ describe("a pristine farm", () => {
  * the purse (and comes back on every failure path), and buying an animal
  * never pays anybody anything.
  *
- * The wall the rest of this file guards still stands and is asserted here
- * from the other side: bought stock pays through the same flat daily ceiling
- * a sown one does. It is the reliable way to REACH that ceiling, never a way
- * past it.
+ * A bought unit still has to go through Sell to turn its produce into Gold,
+ * same as a sown one -- it is a second way to STOCK the farm, never a second
+ * way to pay it.
  */
 describe("buying stock outright", () => {
   it("charges the listed price and creates the unit already working", async () => {
@@ -2521,10 +2361,10 @@ describe("collecting from bought stock", () => {
     }
   });
 
-  it("fills the same inventory a sown unit does, and touches no allowance", async () => {
-    // Bought stock fills the barn; it is not a way past the ceiling, since
-    // its produce still has to go through Sell to become Gold.
-    const { token, id } = await funded();
+  it("fills the same inventory a sown unit does, and pays no Gold", async () => {
+    // Bought stock fills the barn; its produce still has to go through Sell
+    // to become Gold.
+    const { token } = await funded();
     const bought = await buyStackAcresStock(token, { stock: "hen" }, T0);
     const unitId = unitOf(bought, "hen").id;
     const before = await balance(token);
@@ -2533,7 +2373,6 @@ describe("collecting from bought stock", () => {
 
     expect(result.inventory.eggs).toBe(HEN_YIELD.quantity);
     expect(await balance(token)).toBe(before);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(HEN_READY))).toBe(0);
   });
 
   it("keeps a sown unit disappearing exactly as it always did", async () => {
@@ -3104,8 +2943,7 @@ describe("revision guard", () => {
  * `view.units` and never pays Gold at harvest -- see
  * lib/stackacres/machine-items.ts's header for why it is not a sixth
  * StackAcresStock. Everything here is inventory until a fulfilled contract
- * turns it back into Gold, through the SAME flat daily ceiling a harvest
- * uses.
+ * turns it back into Gold, same as a harvest's produce does through Sell.
  */
 describe("wheat and machines", () => {
   it("sows a wheat plot for the listed Gold price", async () => {
@@ -3260,28 +3098,6 @@ describe("Town Contracts", () => {
     expect(await balance(token)).toBe(before);
   });
 
-  it("refuses when the day's Gold ceiling has no room, and refunds the goods it had already taken", async () => {
-    const { token, id } = await funded();
-    await placeStackAcresMachine(token, "mill", T0);
-    const opened = await requestStackAcresContract(token, T0);
-    const contract = opened.contract!;
-    const now = await stockpileFlour(token, contract.quantity, T0);
-
-    // Leave less headroom today than this contract pays.
-    await burnAllowance(id, STACKACRES_GOLD_CEILING - contract.goldReward + 1, now);
-
-    const before = await balance(token);
-    await expect(fulfillStackAcresTownContract(token, now)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-
-    // The goods it took in step 1 came back, and the contract is still open
-    // for whenever there is room again.
-    const after = await readStackAcres(token, now);
-    expect(after.inventory.flour).toBe(contract.quantity);
-    expect(after.contract?.status).toBe("open");
-  });
 });
 
 describe("recipes", () => {
@@ -4196,7 +4012,6 @@ describe("sellStackAcresItem", () => {
     expect(result.sold).toEqual({ item: "eggs", quantity: 4, gold: EGG * 4 });
     expect(result.inventory.eggs).toBe(6);
     expect(await balance(token)).toBe(before + EGG * 4);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(EGG * 4);
   });
 
   it("sells a crafted good and raw wheat at their own prices", async () => {
@@ -4220,24 +4035,9 @@ describe("sellStackAcresItem", () => {
 
     expect(await balance(token)).toBe(before);
     expect((await readStackAcres(token, T0)).inventory.eggs).toBe(2);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(0);
   });
 
-  it("puts the goods back when the day's ceiling refuses the Gold", async () => {
-    const { token, id } = await funded();
-    await adjustStackAcresInventory(id, "eggs", 5);
-    await burnAllowance(id, STACKACRES_GOLD_CEILING);
-    const before = await balance(token);
-
-    await expect(sellStackAcresItem(token, { item: "eggs", quantity: 5 }, T0)).rejects.toMatchObject({
-      reason: "day-capped",
-    });
-
-    expect(await balance(token)).toBe(before);
-    expect((await readStackAcres(token, T0)).inventory.eggs).toBe(5);
-  });
-
-  it("applies the prestige multiplier, floored, before the ceiling", async () => {
+  it("applies the prestige multiplier, floored", async () => {
     const { token, id } = await funded();
     await giveLifetimeGross(id, STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS);
     const { prestigeReset } = await prestigeResetStackAcres(token, T0);
@@ -4247,7 +4047,6 @@ describe("sellStackAcresItem", () => {
 
     const gold = Math.floor(EGG * 7 * prestigeReset.multiplier);
     expect(result.sold.gold).toBe(gold);
-    expect(await readStackAcresExchanged(id, stackacresExchangeDay(T0))).toBe(gold);
   });
 
   it("refuses an unknown item or a quantity that is not a positive whole number", async () => {
@@ -4446,11 +4245,11 @@ describe("the Mechanical Forage Drone", () => {
   });
 
   it("debits the flat deploy fee and creates one owned drone", async () => {
-    const { token, id } = await funded(500_000);
+    const { token, id } = await funded(2_000_000);
     await earnEveryMilestone(id);
     const result = await deployStackAcresDrone(token, T0);
     expect(result.droneDeploy?.droneId).toBeTruthy();
-    expect(await balance(token)).toBe(500_000 - DRONE_DEPLOY_COST_GOLD);
+    expect(await balance(token)).toBe(2_000_000 - DRONE_DEPLOY_COST_GOLD);
     const { drones } = await listStackAcresDrones(token);
     expect(drones).toHaveLength(1);
     expect(drones[0].droneId).toBe(result.droneDeploy?.droneId);
@@ -4472,7 +4271,7 @@ describe("the Mechanical Forage Drone", () => {
   });
 
   it("pays out a forage claim once, then refuses a second claim inside the cooldown", async () => {
-    const { token, id } = await funded(500_000);
+    const { token, id } = await funded(2_000_000);
     await earnEveryMilestone(id);
     const deployed = await deployStackAcresDrone(token, T0);
     const droneId = deployed.droneDeploy!.droneId;
@@ -4493,19 +4292,5 @@ describe("the Mechanical Forage Drone", () => {
     const later = new Date(T0.getTime() + 21_000);
     const second = await collectStackAcresDroneForage(token, droneId, later);
     expect(second.droneForage?.reward).toBeGreaterThanOrEqual(0);
-  });
-
-  it("refuses a forage claim once the day's Gold ceiling is exhausted, and pays nothing", async () => {
-    const { token, id } = await funded(500_000);
-    await earnEveryMilestone(id);
-    const deployed = await deployStackAcresDrone(token, T0);
-    const droneId = deployed.droneDeploy!.droneId;
-    await burnAllowance(id, STACKACRES_GOLD_CEILING, T0);
-    const before = await balance(token);
-
-    await expect(collectStackAcresDroneForage(token, droneId, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
   });
 });

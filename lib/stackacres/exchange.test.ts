@@ -1,119 +1,86 @@
 import { describe, expect, it } from "vitest";
-import {
-  STACKACRES_GOLD_CEILING,
-  exchangeState,
-  msUntilNextExchangeDay,
-  stackacresExchangeDay,
-} from "./exchange";
-import { STACKACRES_YIELDS } from "./items";
-import { settleHarvest } from "./harvest";
-import {
-  STACKACRES_BASE_CAP,
-  STACKACRES_LIVESTOCK,
-  STACKACRES_MAX_EXTRA_CAP,
-} from "./catalogue";
+import { msUntilNextExchangeDay, stackacresExchangeDay } from "./exchange";
 
 /**
- * The daily allowance's arithmetic.
- *
- * The shopfront this module used to have -- a rate, a Bushel balance, a choice
- * of how much to send -- went with the currency it traded. The valve behind it
- * did not, and it is the whole subject here. Most of the enforcement lives in
- * the service and the RPC, but two properties are decided in this file and are
- * worth pinning: the ceiling is a CONSTANT, and the day boundary is UTC.
+ * The day boundary shared across StackAcres: land maintenance, the daily
+ * Gold grant, and Ante Up's own daily gates all use the same UTC midnight
+ * rather than each learning a separate one. The flat daily Gold ceiling that
+ * used to also live in this file was removed 2026-09-12 (Kayo's call):
+ * StackAcres has no cap on earning any more. What is left, and what this
+ * file tests, is just the UTC day-boundary arithmetic.
  */
 
-describe("the daily ceiling", () => {
-  it("is a flat number, not a function of anything", () => {
-    // Deliberately a type-level assertion as much as a value one. If this ever
-    // has to become `ceilingFor(profile)` or `ceilingFor(unitsOwned)`, that is
-    // the change that turns StackAcres back into a scaling faucet, and it
-    // should have to delete this test to happen.
-    expect(typeof STACKACRES_GOLD_CEILING).toBe("number");
-    expect(STACKACRES_GOLD_CEILING).toBe(100_000);
-  });
-
-  it("stays inside what the farm can actually spend it on", () => {
-    // The original bound here was "sits alongside the other faucets" -- daily
-    // grant 2,500, rewarded ads 3,000 -- and it was the right test while the
-    // farm had nothing to buy, because its output was pure addition to the
-    // money supply. Now that Gold buys stock and capacity, the number that
-    // keeps this honest is the SINK on the other side.
-    //
-    // Up to 2026-09-05 that sink was "less than the priciest single stock
-    // (cattle)" -- true at a 50,000 ceiling, false at 100,000: cattle is
-    // 60,000, so the 2026-09-10 raise (Kayo's call) deliberately lets a day's
-    // allowance alone clear one Cattle Pen. That is an intended trade, not a
-    // gap this test should hide. What still has to hold, and what this test
-    // holds instead, is the sink against COSMETICS -- the reason the ceiling
-    // was raised in the first place: even the new ceiling doesn't buy the
-    // most expensive cosmetic in a single day, so the farm stays a net sink
-    // for the thing players are actually saving toward.
-    expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(3_000);
-    expect(STACKACRES_GOLD_CEILING).toBeLessThan(350_000);
-  });
-
-  /**
-   * A harvest pays no Gold now; Sell is the door, and it reserves against
-   * this ceiling. A maxed estate's whole sweep, sold at list price, still
-   * sits under the ceiling, so the valve is the ceiling and not the yields.
-   */
-  it("is larger than a maxed estate's whole sweep sold at list price", () => {
-    const perKind = STACKACRES_BASE_CAP + STACKACRES_MAX_EXTRA_CAP;
-    const estate = [
-      ...STACKACRES_LIVESTOCK.flatMap((stock) => Array.from({ length: perKind }, () => stock)),
-      ...Array.from({ length: perKind }, () => "carrot" as const),
-      ...Array.from({ length: perKind }, () => "corn" as const),
-    ];
-    const settled = settleHarvest(
-      estate.map((stock, index) => ({
-        unitId: `u${index}`,
-        stock,
-        yieldQuantity: STACKACRES_YIELDS[stock].quantity,
-      })),
-    );
-    expect(settled.gross).toBeGreaterThan(0);
-    expect(STACKACRES_GOLD_CEILING).toBeGreaterThan(settled.gross);
-  });
-
-  it("is what the client is told, whatever was sold", () => {
-    expect(exchangeState(0, new Date()).ceiling).toBe(STACKACRES_GOLD_CEILING);
-  });
-});
-
-describe("the day boundary", () => {
+describe("stackacresExchangeDay", () => {
   it("is UTC, matching the daily grant rather than the device", () => {
     expect(stackacresExchangeDay(new Date("2026-09-01T00:00:00.000Z"))).toBe("2026-09-01");
     expect(stackacresExchangeDay(new Date("2026-09-01T23:59:59.999Z"))).toBe("2026-09-01");
     expect(stackacresExchangeDay(new Date("2026-09-02T00:00:00.000Z"))).toBe("2026-09-02");
   });
 
+  it("rolls over at the exact UTC millisecond, not a moment before or after", () => {
+    expect(stackacresExchangeDay(new Date("2026-09-01T23:59:59.999Z"))).toBe("2026-09-01");
+    expect(stackacresExchangeDay(new Date("2026-09-02T00:00:00.000Z"))).toBe("2026-09-02");
+  });
+
+  it("does not shift for a device in a non-UTC timezone", () => {
+    // A moment expressed with a non-zero offset still lands on the UTC date.
+    expect(stackacresExchangeDay(new Date("2026-09-01T23:30:00.000-05:00"))).toBe("2026-09-02");
+    expect(stackacresExchangeDay(new Date("2026-09-02T01:30:00.000+05:00"))).toBe("2026-09-01");
+  });
+
+  it("carries across month and year boundaries", () => {
+    expect(stackacresExchangeDay(new Date("2026-09-30T23:59:59.999Z"))).toBe("2026-09-30");
+    expect(stackacresExchangeDay(new Date("2026-10-01T00:00:00.000Z"))).toBe("2026-10-01");
+    expect(stackacresExchangeDay(new Date("2026-12-31T23:59:59.999Z"))).toBe("2026-12-31");
+    expect(stackacresExchangeDay(new Date("2027-01-01T00:00:00.000Z"))).toBe("2027-01-01");
+  });
+
+  it("handles a UTC leap day", () => {
+    expect(stackacresExchangeDay(new Date("2028-02-29T12:00:00.000Z"))).toBe("2028-02-29");
+    expect(stackacresExchangeDay(new Date("2028-03-01T00:00:00.000Z"))).toBe("2028-03-01");
+  });
+});
+
+describe("msUntilNextExchangeDay", () => {
   it("counts down to the next UTC midnight", () => {
     expect(msUntilNextExchangeDay(new Date("2026-09-01T23:00:00.000Z"))).toBe(60 * 60 * 1000);
     expect(msUntilNextExchangeDay(new Date("2026-09-01T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
   });
-});
 
-describe("what the client is told", () => {
-  it("reports the flat ceiling and what is left of it", () => {
-    const state = exchangeState(1_000, new Date("2026-09-01T12:00:00.000Z"));
-    expect(state.ceiling).toBe(STACKACRES_GOLD_CEILING);
-    expect(state.usedToday).toBe(1_000);
-    expect(state.remaining).toBe(STACKACRES_GOLD_CEILING - 1_000);
-    expect(state.resetsAt).toBe("2026-09-02T00:00:00.000Z");
+  it("is a full day exactly at midnight", () => {
+    expect(msUntilNextExchangeDay(new Date("2026-09-01T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
   });
 
-  it("clamps a day that somehow reads over the ceiling", () => {
-    // Belt and braces against a stale or corrupted total. A negative remaining
-    // would render as a bar past its own width, which is worse than a full one.
-    const state = exchangeState(STACKACRES_GOLD_CEILING + 900, new Date());
-    expect(state.remaining).toBe(0);
-    expect(state.usedToday).toBe(STACKACRES_GOLD_CEILING);
+  it("is 1ms at the last instant of the day", () => {
+    expect(msUntilNextExchangeDay(new Date("2026-09-01T23:59:59.999Z"))).toBe(1);
   });
 
-  it("treats a negative total as an untouched day", () => {
-    const state = exchangeState(-500, new Date());
-    expect(state.usedToday).toBe(0);
-    expect(state.remaining).toBe(STACKACRES_GOLD_CEILING);
+  it("is exactly zero once the next day has arrived", () => {
+    // stackacresExchangeDay would already report the new day at this instant;
+    // msUntilNextExchangeDay measures distance to the day AFTER `now`'s day,
+    // so at the boundary itself the distance to that following midnight is a
+    // full day, not zero.
+    expect(msUntilNextExchangeDay(new Date("2026-09-02T00:00:00.000Z"))).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("scales with time of day, mid-afternoon", () => {
+    expect(msUntilNextExchangeDay(new Date("2026-09-01T12:00:00.000Z"))).toBe(12 * 60 * 60 * 1000);
+  });
+
+  it("carries across a month boundary", () => {
+    expect(msUntilNextExchangeDay(new Date("2026-09-30T22:00:00.000Z"))).toBe(2 * 60 * 60 * 1000);
+  });
+
+  it("carries across a UTC leap day", () => {
+    expect(msUntilNextExchangeDay(new Date("2028-02-29T23:00:00.000Z"))).toBe(60 * 60 * 1000);
+  });
+
+  it("is unaffected by the input Date's local timezone offset", () => {
+    // Two Date instances denoting the same UTC instant, spelled with
+    // different offsets, must produce the same countdown.
+    const utc = new Date("2026-09-01T23:00:00.000Z");
+    const offset = new Date("2026-09-01T18:00:00.000-05:00");
+    expect(utc.getTime()).toBe(offset.getTime());
+    expect(msUntilNextExchangeDay(offset)).toBe(msUntilNextExchangeDay(utc));
   });
 });

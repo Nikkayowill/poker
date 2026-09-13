@@ -12,15 +12,9 @@
  * stackacres-service.ts) can turn any inventory item, including Flour/
  * Cheese/Cloth, into Gold at any time, at that item's own (lower) sell
  * price -- see ./machine-items.ts's own header on why a contract still pays
- * a 1.3x premium over Sell for exactly these three goods. FULFILLING A
- * CONTRACT PAYS GOLD THROUGH THE SAME FLAT DAILY CEILING SELL AND THE
- * FERMENTING VAT DO (`STACKACRES_GOLD_CEILING`, ./exchange.ts) -- see
- * `fulfillStackAcresTownContract` in lib/server/stackacres-service.ts. This
- * is not incidental: the ceiling is the one invariant every Gold-in path is
- * required to respect (see that file's own header on why that ceiling, not a
- * second currency, is what keeps this feature safe). A payer that paid
- * outside it would be exactly the shape of bug this file exists to avoid
- * repeating.
+ * a 1.3x premium over Sell for exactly these three goods. Neither door is
+ * capped any more (see lib/stackacres/exchange.ts's header for when and why
+ * the flat daily ceiling this comment used to describe was removed).
  *
  * Town Influence (./town.ts) rides the same fulfillment, uncapped -- it is
  * progression, not currency, and spends nowhere, so it carries none of the

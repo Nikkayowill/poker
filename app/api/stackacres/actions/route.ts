@@ -139,10 +139,10 @@ export const runtime = "nodejs";
  *
  * `clear-sector` is the one piece of land buying that came back: three of the
  * four districts start under wild growth, and clearing one is a permanent,
- * unrefunded Gold spend. Keeping cleared land then costs a daily fee, charged
- * as a standalone wallet debit off every mutating action (see
- * `assessStackAcresUpkeep`/`runStackAcresAction`, lib/server/
- * stackacres-service.ts), not something any one action here asks for.
+ * unrefunded Gold spend. Keeping cleared land then costs a daily fee, netted
+ * off whichever action next pays the player any Gold (see
+ * `netUpkeepFromPayout`, lib/server/stackacres-service.ts), not something any
+ * one action here asks for.
  *
  * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
  * "inventory only" either: it is the one action with no undo, trading the

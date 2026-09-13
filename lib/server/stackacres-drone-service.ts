@@ -1,8 +1,6 @@
 import "server-only";
 import { stackacresMilestone, STACKACRES_MAX_MILESTONE, type StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { DRONE_DEPLOY_COST_GOLD, DRONE_FORAGE_COOLDOWN_SECONDS } from "@/lib/stackacres/drone";
-import { STACKACRES_GOLD_CEILING, stackacresExchangeDay } from "@/lib/stackacres/exchange";
-import { releaseStackAcresExchange, reserveStackAcresExchange } from "./stackacres-store";
 import {
   collectStackAcresDroneForage,
   deployStackAcresDrone,
@@ -100,7 +98,7 @@ export { DRONE_FORAGE_COOLDOWN_SECONDS };
 
 export type CollectDroneForageResult =
   | { success: true; reward: number; goldBalance: number | null }
-  | { success: false; reason: "cooling_down" | "no_such_drone" | "day-capped" };
+  | { success: false; reason: "cooling_down" | "no_such_drone" };
 
 /**
  * Claims one forage pickup for `droneId`. Local-optimistic on the client
@@ -111,30 +109,19 @@ export type CollectDroneForageResult =
  * inside one locked transaction, so a doubled optimistic call can only ever
  * pay out once.
  *
- * ALSO RESERVES AGAINST `STACKACRES_GOLD_CEILING`, the same flat daily cap
- * every other StackAcres payout answers to (harvest, Town Contracts). A
- * drone left patrolling all day is otherwise exactly the shape of faucet
- * that turned Ante Up into a money printer (see CLAUDE.md) -- no per-claim
- * amount is large, but nothing upstream bounds how many claims a day can
- * bring in. The exact reward is only known once the RPC rolls it (inside
- * its own locked transaction), so this reserves the worst case
- * (`DRONE_FORAGE_MAX_GOLD`) BEFORE the RPC runs -- refusing before any state
- * changes, same ordering `harvestStackAcres` uses -- and hands back the
- * unused difference afterward via `releaseStackAcresExchange`, the same
- * shape a harvest sweep does when a race settles fewer units than it
- * reserved for.
+ * NO DAILY CAP (2026-09-12, Kayo's call): StackAcres dropped its flat daily
+ * Gold ceiling entirely, and a fielded drone earns like everything else now
+ * -- uncapped, bounded only by `DRONE_FORAGE_COOLDOWN_SECONDS` per drone.
+ * The guard against an idle fleet printing Gold moved to the front door
+ * instead: `DRONE_DEPLOY_COST_GOLD` (lib/stackacres/drone.ts) is priced high
+ * enough that fielding more drones costs real Gold, rather than a ceiling on
+ * what a fielded fleet can bring back.
  */
 export async function collectDroneForage(
   profileId: string,
   droneId: string,
   now: Date,
 ): Promise<CollectDroneForageResult> {
-  const day = stackacresExchangeDay(now);
-  const reserved = await reserveStackAcresExchange(profileId, day, DRONE_FORAGE_MAX_GOLD, STACKACRES_GOLD_CEILING);
-  if (reserved === null) {
-    return { success: false, reason: "day-capped" };
-  }
-
   const outcome: CollectForageOutcome = await collectStackAcresDroneForage(
     profileId,
     droneId,
@@ -145,15 +132,11 @@ export async function collectDroneForage(
   );
 
   if (!outcome.success) {
-    // Nothing was paid -- hand the whole worst-case reservation back.
-    await releaseStackAcresExchange(profileId, day, DRONE_FORAGE_MAX_GOLD);
     return {
       success: false,
       reason: outcome.reason === "cooling_down" ? "cooling_down" : "no_such_drone",
     };
   }
 
-  const unused = DRONE_FORAGE_MAX_GOLD - outcome.reward;
-  if (unused > 0) await releaseStackAcresExchange(profileId, day, unused);
   return { success: true, reward: outcome.reward, goldBalance: outcome.goldBalance };
 }

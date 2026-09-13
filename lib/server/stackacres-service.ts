@@ -31,12 +31,7 @@ import {
   type StackAcresUnitSnapshot,
 } from "@/lib/stackacres/units";
 import { STACKACRES_YIELDS, type StackAcresItem } from "@/lib/stackacres/items";
-import {
-  STACKACRES_GOLD_CEILING,
-  exchangeState,
-  stackacresExchangeDay,
-  type StackAcresExchangeState,
-} from "@/lib/stackacres/exchange";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import {
   harvestTally,
   settleHarvest,
@@ -196,7 +191,6 @@ import {
   listStackAcresUnits,
   markStackAcresDonated,
   readStackAcresCapacity,
-  readStackAcresExchanged,
   readStackAcresFeed,
   readStackAcresWater,
   adjustStackAcresWater,
@@ -207,8 +201,6 @@ import {
   readStackAcresUpkeep,
   recordStackAcresHarvest,
   recordStackAcresSectorCleared,
-  releaseStackAcresExchange,
-  reserveStackAcresExchange,
   retireStackAcresUnit,
   waterStackAcresUnit,
   createStackAcresContract,
@@ -261,7 +253,7 @@ import {
   releaseStackAcresIntent,
 } from "./stackacres-intent-store";
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
-import { creditGoldByProfile, ensureProfile, getProfileById, spendGoldByProfile } from "./profile-store";
+import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import {
   readMidnightMerchantVisit,
   redeemMidnightMerchantItem,
@@ -402,20 +394,21 @@ import type { StoredDrone } from "./stackacres-drone-store";
  * money.
  *
  * A HARVEST NO LONGER PAYS GOLD, TO ANYONE, FOR ANY ITEM (2026-09-10). It used
- * to pay every collected unit's value directly, under a flat daily ceiling.
- * That is gone: `harvestStackAcres` now always credits the shared processing
- * inventory (./inventory.ts) -- the same door wheat, flour, milk and wool
- * already used -- and the only ways an item there becomes Gold are the new
- * `sellStackAcresItem` (any item, any time, at its own sell price) and a
- * fulfilled Town Contract (`fulfillStackAcresTownContract`, a premium price
- * for Flour/Cheese/Cloth specifically). This did not remove the safety
- * property, it relocated it: **the flat daily ceiling on how much Gold one
- * player may take out of the farm** is unchanged, mirrored as a hard limit
- * inside `reserve_homestead_exchange`, and now gates Sell and a Contract
- * instead of a harvest. Not a percentage, not scaled by stock owned. See
- * lib/stackacres/exchange.ts.
+ * to pay every collected unit's value directly. That is gone: `harvestStackAcres`
+ * now always credits the shared processing inventory (./inventory.ts) -- the
+ * same door wheat, flour, milk and wool already used -- and the only ways an
+ * item there becomes Gold are `sellStackAcresItem` (any item, any time, at its
+ * own sell price) and a fulfilled Town Contract (`fulfillStackAcresTownContract`,
+ * a premium price for Flour/Cheese/Cloth specifically).
  *
- * THE GOLD PATHS, and the asymmetry that is the whole safety story:
+ * StackAcres HAS NO CAP ON EARNING (2026-09-12, Kayo's call, reversing the flat
+ * daily ceiling this comment used to defend). The more you play, the more it
+ * pays; there is no daily bucket to fill and nothing here throttles how much
+ * Gold a payer credits. See lib/stackacres/exchange.ts's header for the day
+ * this changed and why the forage drone's price went up instead of keeping a
+ * cap.
+ *
+ * THE GOLD PATHS:
  *
  *   * NINE SPEND. `expandStackAcresCapacity` buys a slot, `buyStackAcresStock`
  *     buys stock outright, `stockStackAcres` buys a cycle's seed,
@@ -423,19 +416,14 @@ import type { StoredDrone } from "./stackacres-drone-store";
  *     fee, `upgradeStackAcresTool` buys a rung of the equipment ladder,
  *     `buyStackAcresCutter` buys the Mower,
  *     `sowStackAcresWheat` buys wheat seed, `placeStackAcresMachine` buys a
- *     machine outright. All sinks. Land Maintenance (`assessStackAcresUpkeep`)
- *     is a tenth, standalone one -- see its own section below.
- *   * THREE PAY, and all three are gated by `STACKACRES_GOLD_CEILING`, the
- *     SAME flat daily reservation, through the SAME `reserveStackAcresExchange`/
- *     `releaseStackAcresExchange` pair: `sellStackAcresItem`, the new baseline
- *     door from inventory to Gold; `fulfillStackAcresTownContract`, which
- *     trades processed goods for a premium in Gold and Town Influence; and
+ *     machine outright. All sinks. Land Maintenance (`netUpkeepFromPayout`)
+ *     is a tenth, but it never moves Gold on its own -- see its own section
+ *     below.
+ *   * THREE PAY, uncapped: `sellStackAcresItem`, the baseline door from
+ *     inventory to Gold; `fulfillStackAcresTownContract`, which trades
+ *     processed goods for a premium in Gold and Town Influence; and
  *     `collectStackAcresVat`, the Fermenting Vat's own aged-Cheese payout
- *     (lib/stackacres/aging.ts). Nothing else here may credit Gold. A fourth
- *     payer is exactly the kind of change this comment exists to make a
- *     reviewer stop over -- see lib/stackacres/contracts.ts's own header for
- *     why routing a new payer through the SAME ceiling, rather than inventing
- *     a second one, is what keeps it safe.
+ *     (lib/stackacres/aging.ts). Nothing else here may credit Gold.
  *
  * THE CRITICAL HARVEST and THE PRESTIGE RESET VALVE both used to ride inside
  * the harvest's own Gold payout. Neither pays Gold any more, for the same
@@ -453,18 +441,22 @@ import type { StoredDrone } from "./stackacres-drone-store";
  * `creditGoldByProfile` directly, so that the credit function has exactly
  * FOUR call sites in this file: the refund helper, and the three payers
  * above. That is not a style preference -- it is what lets a test state the
- * real invariant ("Gold is credited only by a payer that reserves against the
- * ceiling first") instead of counting call sites that grow with every new
- * refund. A new direct `creditGoldByProfile` that does NOT reserve first is
- * the change to stop over.
+ * real invariant ("Gold is credited only by a payer") instead of counting
+ * call sites that grow with every new refund. A new direct
+ * `creditGoldByProfile` outside those four is the change to stop over.
  *
- * LAND MAINTENANCE is a standalone daily wallet debit now
- * (`assessStackAcresUpkeep`), not something netted out of a harvest payout --
- * a harvest produces no payout left to net it from. It runs as a best-effort
- * side effect of `runStackAcresAction`, on every MUTATING action (never a
- * bare read -- see readStackAcres and CLAUDE.md's "keep game reads
- * write-free" rule), clamped at the wallet's own current balance so it can
- * never go negative. Curve and reasoning unchanged in lib/stackacres/upkeep.ts.
+ * LAND MAINTENANCE IS NETTED OFF A PAYOUT NOW (2026-09-12, Kayo's call),
+ * not a standalone wallet debit -- it used to be assessed as a side effect of
+ * every mutating action regardless of whether that action earned anything,
+ * which meant a farm sitting on savings paid rent just for being watered.
+ * `netUpkeepFromPayout` (see its own header) is called from inside each of
+ * the three payers above, right before the SAME credit call that pays the
+ * player -- it skims at most today's still-due fee off the top of THAT
+ * credit rather than writing a second wallet debit, so the credit function's
+ * four-call-site count above is untouched. A farm that never sells anything
+ * simply never pays Land Maintenance; that is the intended trade of taxing
+ * income instead of savings, not an oversight. Curve and reasoning for the
+ * fee itself are unchanged in lib/stackacres/upkeep.ts.
  *
  * BOUNTIFUL HARVEST (mono-crop/crop-rotation sweep bonuses) IS RETIRED
  * OUTRIGHT, not relocated -- a sweep-composition bonus has no clean meaning
@@ -510,20 +502,8 @@ import type { StoredDrone } from "./stackacres-drone-store";
  * Gold sink that bounds how much of one kind a player can run at once.
  */
 
-/**
- * Reasons a StackAcres refusal is ordinary play rather than a fault.
- *
- * `day-capped` is the farm hitting its flat daily Gold ceiling: nothing is
- * wrong, the crops keep, and the client should say so plainly rather than
- * repaint in silence (see the ceiling throw in `harvestStackAcres`).
- */
-export type StackAcresRefusalReason = "day-capped";
-
 /** Refuses a StackAcres request in a way the player can act on. */
-export class StackAcresRequestError extends ArcadeRequestError<
-  StackAcresRoundSnapshot,
-  StackAcresRefusalReason
-> {
+export class StackAcresRequestError extends ArcadeRequestError<StackAcresRoundSnapshot> {
   readonly name = "StackAcresRequestError";
 }
 
@@ -554,8 +534,6 @@ export interface StackAcresView {
   water: number;
   /** Purchased extra capacity slots, by stock kind. */
   capacity: Partial<Record<StackAcresStock, number>>;
-  /** Today's allowance: the flat ceiling, and what is left of it. */
-  exchange: StackAcresExchangeState;
   /**
    * Land the player may work. DERIVED, not just the stored clear list -- see
    * `unlockedSectors` in lib/stackacres/sectors.ts, which also counts any
@@ -882,7 +860,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     feed,
     water,
     capacity,
-    exchanged,
     cleared,
     upkeepPaid,
     donated,
@@ -919,7 +896,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     readStackAcresFeed(profile.id),
     readStackAcresWater(profile.id),
     readStackAcresCapacity(profile.id),
-    readStackAcresExchanged(profile.id, day),
     readStackAcresSectors(profile.id),
     readStackAcresUpkeep(profile.id, day),
     readStackAcresMuseum(profile.id),
@@ -990,7 +966,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     feed,
     water,
     capacity,
-    exchange: exchangeState(exchanged, now),
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
     // charge happens inside a harvest, netted out of what it pays.
@@ -1299,13 +1274,7 @@ export async function runStackAcresAction(
   run: () => Promise<StackAcresActionResult>,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
-  // Land Maintenance is assessed here, once per mutating action -- see
-  // assessStackAcresUpkeep's own header. Never runs off a bare read:
-  // readStackAcres calls view() directly and never reaches this function, so
-  // CLAUDE.md's "keep game reads write-free" rule holds. assessStackAcresUpkeep
-  // never throws, so this never turns the action riding on it into an error.
   const profile = await ensureProfile(token);
-  await assessStackAcresUpkeep(profile.id, now);
 
   // Bumped once the write is confirmed, overriding the placeholder `run()`'s
   // own `view()` call left in `result.revision` (view() never reads the real
@@ -1382,21 +1351,14 @@ async function capacityFor(profileId: string, stock: StackAcresStock): Promise<n
  * Reads the land a player may work and what they own on it. A PURE READ:
  * nothing here moves a purse.
  *
- * IT USED TO CHARGE. The Bushel version settled the day's fee here, off every
- * mutating action, and `landGate` then refused to let an unpaid farm grow.
- * Both are gone with the second currency, and the reason is worth writing
- * down rather than rediscovering:
- *
- *   * **The fee is netted out of a harvest now** (see lib/stackacres/harvest.ts
- *     and lib/stackacres/upkeep.ts), clamped at what that harvest is worth. It
- *     cannot reach a balance, so there is nothing for a gate to protect
- *     against and no arrears to chase.
- *   * **Gating growth on an unpaid bill achieved nothing once that was true.**
- *     The gate existed because a Bushel debit could go unpaid while the farm
- *     kept earning through other paths. A farm nobody is harvesting produces
- *     no Gold at all, so there is nothing to sink and nobody to press -- and
- *     dropping it removes the one shape this fee must never have, a debt a
- *     player cannot work their way out of.
+ * IT USED TO CHARGE, and `landGate` then refused to let an unpaid farm grow --
+ * that was the Bushel version. StackAcres has been through two designs since:
+ * a standalone daily wallet debit (nothing here to gate, since a debit that
+ * can't reach the balance just doesn't collect), and now (2026-09-12,
+ * `netUpkeepFromPayout` in this file) a fee netted off whichever action next
+ * pays the player Gold. Neither of the last two ever needed a gate: a debit
+ * or a skim that clamps at zero, rather than going into debt, has nothing for
+ * a gate to protect and no arrears to chase.
  *
  * The sectors and units are handed back together rather than read separately,
  * and that is not premature tidiness: every caller needs both a line later
@@ -1414,25 +1376,37 @@ async function readLand(
 }
 
 /**
- * Land Maintenance: charges what is due, lazily, as a best-effort side
- * effect of the next mutating farm action -- see `runStackAcresAction`, the
- * one place this is called from, and lib/stackacres/upkeep.ts's own header
- * for why this is a standalone wallet debit now rather than something netted
- * out of a harvest payout (a harvest produces no payout left to net it from).
+ * Land Maintenance: skims today's still-due fee off a Gold payout, right
+ * before the SAME credit that pays the player -- called from inside each of
+ * the three payers (`sellStackAcresItem`, `fulfillStackAcresTownContract`,
+ * `collectStackAcresVat`), never on its own.
  *
- * Clamped at the wallet's own current balance, never more: tries the full
- * bill first, and only falls back to "whatever the wallet holds" once that
- * is refused, so a player who CAN afford it is never short-changed by a
- * stale balance read. An unpaid remainder is not carried as debt --
- * `stackacresUpkeepDue` (unchanged) simply re-reads the same still-due
- * amount next time.
+ * CHANGED 2026-09-12 (Kayo's call), from a standalone wallet debit that ran
+ * as a side effect of every mutating action, whether or not that action
+ * earned anything -- a farm sitting on savings paid rent just for being
+ * watered. Now the bill only ever comes out of Gold the player is actively
+ * being paid: a farm that never sells anything simply never pays it, which
+ * is the intended trade of taxing income rather than savings.
  *
- * NEVER THROWS. The caller rides this alongside whatever action it is
- * assessing upkeep for, and a maintenance hiccup must not turn that action
- * into an error response -- the same posture every other best-effort
- * side-write in this file takes.
+ * Clamped at `grossGold`, never more: a payout can never be taxed into a
+ * negative. Whatever today's bill this payout can't cover is not chased
+ * from a second wallet write -- it is simply still due, exactly as it would
+ * be on a day nothing sold at all. `stackacresUpkeepDue` never carries a
+ * shortfall past the UTC day it was billed (lib/stackacres/upkeep.ts's own
+ * header), so there is nothing here to carry either.
+ *
+ * BEST-EFFORT against a race, the same posture `raiseStackAcresUpkeep`
+ * always took: if a concurrent payout already raised today's paid total
+ * past what this call computed, this one treats the bill as already
+ * covered rather than double-charging or retrying.
+ *
+ * NEVER THROWS. The caller is mid-payout when this runs, and a maintenance
+ * hiccup must not turn a payout that already earned its Gold into an error
+ * response -- the same posture every other best-effort side-write in this
+ * file takes. Falls back to paying the full gross on any failure.
  */
-export async function assessStackAcresUpkeep(profileId: string, now: Date): Promise<void> {
+async function netUpkeepFromPayout(profileId: string, now: Date, grossGold: number): Promise<number> {
+  if (grossGold <= 0) return grossGold;
   try {
     const day = stackacresUpkeepDay(now);
     const [upkeepPaid, { sectors }, capacity, cropFieldsUnlocked] = await Promise.all([
@@ -1442,21 +1416,14 @@ export async function assessStackAcresUpkeep(profileId: string, now: Date): Prom
       readStackAcresCropFieldsUnlocked(profileId),
     ]);
     const due = stackacresUpkeepDue(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid);
-    if (due <= 0) return;
+    if (due <= 0) return grossGold;
 
-    let charged = (await spendGoldByProfile(profileId, due)) ? due : 0;
-    if (charged === 0) {
-      const profile = await getProfileById(profileId);
-      const balance = profile?.goldBalance ?? 0;
-      if (balance > 0) {
-        charged = (await spendGoldByProfile(profileId, balance)) ? balance : 0;
-      }
-    }
-    if (charged > 0) {
-      await raiseStackAcresUpkeep(profileId, day, upkeepPaid + charged);
-    }
+    const skimmed = Math.min(due, grossGold);
+    const raised = await raiseStackAcresUpkeep(profileId, day, upkeepPaid + skimmed);
+    return raised ? grossGold - skimmed : grossGold;
   } catch (error) {
-    console.error("stackacres.upkeep_assess_failed", { profileId, error });
+    console.error("stackacres.upkeep_net_failed", { profileId, error });
+    return grossGold;
   }
 }
 
@@ -3586,20 +3553,6 @@ export async function harvestStackAcres(
   };
 }
 
-/**
- * Hands back allowance a sweep reserved and then did not use. Best-effort by
- * construction -- the player has already been paid correctly either way, and
- * the only casualty of a failure is reaching today's ceiling sooner than they
- * should have.
- */
-async function releaseReservation(profileId: string, day: string, gold: number): Promise<void> {
-  if (gold <= 0) return;
-  await releaseStackAcresExchange(profileId, day, gold).catch((error) => {
-    console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
-    return null;
-  });
-}
-
 /* ------------------------------------------------------------------ */
 /* Processing: wheat, machines, Town Contracts                         */
 /* ------------------------------------------------------------------ */
@@ -3769,14 +3722,11 @@ export async function sealStackAcresVat(token: string, now = new Date()): Promis
 /**
  * Collects whatever tier the sealed batch has reached and pays for it.
  *
- * MONEY ORDERING, the same four steps `fulfillStackAcresTownContract` runs,
- * in the same order and for the same reason (see its own header): (1) the
- * value is computed and reserved against the SAME flat daily
- * `STACKACRES_GOLD_CEILING` a harvest and a contract both respect -- BEFORE
- * the manifest is settled, so a full day refuses while the batch is still
- * sealed rather than after it is gone; (2) the manifest is deleted under a
- * once-only guard; (3) Gold is credited only once that delete is confirmed
- * durable; any refusal along the way releases the reservation it took.
+ * MONEY ORDERING, the same steps `fulfillStackAcresTownContract` runs, in the
+ * same order and for the same reason (see its own header): (1) the manifest is
+ * deleted under a once-only guard; (2) Gold has today's Land Maintenance
+ * netted off the top (`netUpkeepFromPayout`) and is credited only once that
+ * delete is confirmed durable.
  */
 export async function collectStackAcresVat(
   token: string,
@@ -3803,44 +3753,27 @@ export async function collectStackAcresVat(
   }
   const gold = agedGoldValue(manifest.baseGoldValue, tier);
 
-  // Step 1: reserve against the harvest's own ceiling, before the manifest
-  // is settled.
-  const day = stackacresExchangeDay(now);
-  let reserved = 0;
-  if (gold > 0) {
-    const taken = await reserveStackAcresExchange(profile.id, day, gold, STACKACRES_GOLD_CEILING);
-    if (taken === null) {
-      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
-      throw new StackAcresRequestError(
-        state.remaining > 0
-          ? `The town can pay out ${state.remaining.toLocaleString()} more Gold today, and this batch is worth ${gold.toLocaleString()}. Come back after midnight UTC.`
-          : "This farm has sent out all the Gold it can today. The vat keeps until midnight UTC.",
-        409,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    reserved = gold;
-  }
-
-  // Step 2: settle the manifest itself, exactly once.
+  // Step 1: settle the manifest itself, exactly once.
   const settled = await collectStackAcresVatManifest(manifest, now);
   if (!settled) {
-    await releaseStackAcresExchange(profile.id, day, reserved).catch(() => null);
     throw new StackAcresRequestError("That batch was already collected.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  // Step 3: pay, only now that step 2 is durable.
+  // Step 2: net Land Maintenance off the top, then pay -- only now that
+  // step 1 is durable. `vatCollected.gold` below stays the batch's full
+  // worth; netUpkeepFromPayout only changes what actually lands in Gold.
   let paid: PlayerProfile | null = null;
   if (gold > 0) {
+    const netGold = await netUpkeepFromPayout(profile.id, now, gold);
     try {
-      paid = await creditGoldByProfile(profile.id, gold);
+      paid = await creditGoldByProfile(profile.id, netGold);
     } catch (error) {
       console.error("stackacres.vat_credit_failed", {
         profileId: profile.id,
         manifestId: manifest.id,
-        gold,
+        gold: netGold,
         error,
       });
     }
@@ -4216,15 +4149,12 @@ export async function requestStackAcresContract(
  *   1. The goods leave inventory first (rule 1, applied to items instead of
  *      Gold, exactly as `harvestStackAcres` applies it to Gold before the
  *      write it pays for).
- *   2. Gold is reserved against the SAME flat daily ceiling a harvest
- *      reserves against, before the contract is marked settled -- so a full
- *      day refuses before the goods are gone, not after. A refusal here
- *      refunds the goods.
- *   3. The contract is marked fulfilled under a guard that can settle it at
- *      most once. Losing that race refunds both the goods and the
- *      reservation -- nothing here can pay out for a contract someone else
- *      already collected.
- *   4. Gold and Influence are credited only once step 3 is durable.
+ *   2. The contract is marked fulfilled under a guard that can settle it at
+ *      most once. Losing that race refunds the goods -- nothing here can pay
+ *      out for a contract someone else already collected.
+ *   3. Gold has today's Land Maintenance netted off the top
+ *      (`netUpkeepFromPayout`), and Gold plus Influence are credited only
+ *      once step 2 is durable.
  */
 export async function fulfillStackAcresTownContract(
   token: string,
@@ -4256,51 +4186,28 @@ export async function fulfillStackAcresTownContract(
     });
   }
 
-  // Step 2: reserve against the harvest's own ceiling, before the contract
-  // is marked settled.
-  const day = stackacresExchangeDay(now);
-  let reserved = 0;
-  if (contract.goldReward > 0) {
-    const taken = await reserveStackAcresExchange(
-      profile.id,
-      day,
-      contract.goldReward,
-      STACKACRES_GOLD_CEILING,
-    );
-    if (taken === null) {
-      await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
-      const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
-      throw new StackAcresRequestError(
-        state.remaining > 0
-          ? `The town can pay out ${state.remaining.toLocaleString()} more Gold today, and this contract pays ${contract.goldReward.toLocaleString()}. Come back after midnight UTC.`
-          : "This farm has sent out all the Gold it can today. This contract keeps until midnight UTC.",
-        409,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    reserved = contract.goldReward;
-  }
-
-  // Step 3: settle the contract itself, exactly once.
+  // Step 2: settle the contract itself, exactly once.
   const settled = await settleStackAcresContract(contract);
   if (!settled) {
-    await releaseReservation(profile.id, day, reserved);
     await adjustStackAcresInventory(profile.id, contract.item, contract.quantity).catch(() => null);
     throw new StackAcresRequestError("That contract was already settled.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
 
-  // Step 4: pay, only now that step 3 is durable.
+  // Step 3: net Land Maintenance off the top, then pay -- only now that
+  // step 2 is durable. `contractReward.gold` below stays the contract's
+  // full reward; netUpkeepFromPayout only changes what actually lands.
   let paid: PlayerProfile | null = null;
   if (contract.goldReward > 0) {
+    const netGold = await netUpkeepFromPayout(profile.id, now, contract.goldReward);
     try {
-      paid = await creditGoldByProfile(profile.id, contract.goldReward);
+      paid = await creditGoldByProfile(profile.id, netGold);
     } catch (error) {
       console.error("stackacres.contract_credit_failed", {
         profileId: profile.id,
         contractId: contract.id,
-        gold: contract.goldReward,
+        gold: netGold,
         error,
       });
     }
@@ -4329,22 +4236,13 @@ export async function fulfillStackAcresTownContract(
  * `fulfillStackAcresTownContract` and `collectStackAcresVat` are the only
  * three functions here that may ever credit Gold.
  *
- * Ordered the same way `fulfillStackAcresTownContract` is, with the direction
- * of rule 1 reversed (goods leave before Gold is reserved, rather than Gold
- * leaving before goods exist):
- *
  *   1. The goods leave inventory first, under `adjustStackAcresInventory`'s
  *      own row lock -- a sale can never leave the player owing more than they
  *      held.
  *   2. Gold, multiplied by the Prestige Reset Valve's permanent multiplier
  *      (see lib/stackacres/prestige.ts's own header for why the multiplier
- *      moved here from harvest), is reserved against the SAME flat daily
- *      ceiling every other Gold-in path reserves against. A refusal here
- *      refunds the goods -- Sell straddles two separate guarded writes (the
- *      inventory RPC and the exchange-reservation RPC) that cannot share one
- *      database transaction the way an instant recipe's debit-and-credit can,
- *      so this is a compensating refund rather than a rollback.
- *   3. Gold is credited only once step 2 is durable.
+ *      moved here from harvest), has today's Land Maintenance netted off the
+ *      top (`netUpkeepFromPayout`) and is credited.
  */
 export async function sellStackAcresItem(
   token: string,
@@ -4373,34 +4271,20 @@ export async function sellStackAcresItem(
     });
   }
 
-  // Step 2: reserve the Gold, prestige-multiplied, against the daily ceiling.
-  const day = stackacresExchangeDay(now);
+  // Step 2: net Land Maintenance off the top, then credit the Gold,
+  // prestige-multiplied. `sold.gold` below stays the sale's sticker price;
+  // netUpkeepFromPayout only changes what actually lands in the wallet.
   const basePrice = machineItemSellPrice(item) * input.quantity;
   const prestigeMultiplier = await getPrestigeMultiplier(profile.id);
   // FLOORED, same posture settleHarvest's own prestige step used to take: a
   // multiplier may not invent a Gold piece out of a rounding rule.
   const gold = Math.floor(basePrice * Math.max(1, prestigeMultiplier));
-  const reserved = await reserveStackAcresExchange(profile.id, day, gold, STACKACRES_GOLD_CEILING);
-  if (reserved === null) {
-    await adjustStackAcresInventory(profile.id, item, input.quantity).catch((error) => {
-      console.error("stackacres.sell_refund_failed", { profileId: profile.id, item, quantity: input.quantity, error });
-    });
-    const state = exchangeState(await readStackAcresExchanged(profile.id, day), now);
-    throw new StackAcresRequestError(
-      state.remaining > 0
-        ? `This farm can send out ${state.remaining.toLocaleString()} more Gold today, and that sale is worth ${gold.toLocaleString()}. Sell less, or come back after midnight UTC.`
-        : "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC.",
-      409,
-      { reason: "day-capped", round: await snapshots(profile.id, now) },
-    );
-  }
-
-  // Step 3: credit, only now that the reservation above is durable.
+  const netGold = await netUpkeepFromPayout(profile.id, now, gold);
   let paid: PlayerProfile | null = null;
   try {
-    paid = await creditGoldByProfile(profile.id, gold);
+    paid = await creditGoldByProfile(profile.id, netGold);
   } catch (error) {
-    console.error("stackacres.sell_credit_failed", { profileId: profile.id, item, quantity: input.quantity, gold, error });
+    console.error("stackacres.sell_credit_failed", { profileId: profile.id, item, quantity: input.quantity, gold: netGold, error });
   }
 
   return {
@@ -5262,9 +5146,8 @@ export async function listStackAcresDrones(
 /**
  * Claims one forage pickup swept up by an already-deployed drone. See
  * `collectDroneForage`'s own doc comment for the full picture: local-
- * optimistic on the client, re-verified (ownership, cooldown, the daily
- * Gold ceiling) inside one locked transaction on the server before a single
- * Gold piece moves.
+ * optimistic on the client, re-verified (ownership, cooldown) inside one
+ * locked transaction on the server before a single Gold piece moves.
  */
 export async function collectStackAcresDroneForage(
   token: string,
@@ -5277,17 +5160,8 @@ export async function collectStackAcresDroneForage(
     const message =
       result.reason === "cooling_down"
         ? "That drone is still recharging its magnets."
-        : result.reason === "day-capped"
-          ? "This farm has sent out all the Gold it can today. Everything keeps until midnight UTC."
-          : "There is no such drone here.";
+        : "There is no such drone here.";
     throw new StackAcresRequestError(message, result.reason === "no_such_drone" ? 404 : 409, {
-      // Tagged so the client can park the whole fleet's drops until the day
-      // rolls over (`holdDroneForage`). A capped farm refuses every claim,
-      // and a drone that keeps flying to gold it cannot be paid for asks
-      // again every few seconds for the rest of the day. `cooling_down` is
-      // deliberately left untagged: it is one drone briefly out of step, not
-      // a reason to stop.
-      ...(result.reason === "day-capped" ? { reason: "day-capped" as const } : {}),
       round: await snapshots(profile.id, now),
     });
   }

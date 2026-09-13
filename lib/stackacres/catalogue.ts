@@ -7,21 +7,19 @@
  * are gone -- a harvest is valued and paid in one step now, so a second
  * currency had nothing left to denominate.
  *
- * THE SAFETY ARGUMENT DID NOT MOVE, and it is worth restating because the
- * currency that carried it did. What kept this out of the category Ante Up was
- * in when it printed money was never the Bushel firewall; it was the ceiling
- * behind it: **the farm's maximum Gold OUTPUT is a flat daily constant per
- * player** -- not a percentage, not scaled by stock owned, not scaled by how
- * well anybody played. That ceiling is still here, still mirrored as a hard
- * limit in SQL, and it is now applied to the harvest itself rather than to an
- * exchange window downstream of it. See ./exchange.ts.
+ * THE OLD SAFETY ARGUMENT IS GONE, as of 2026-09-12: StackAcres used to bound itself
+ * with a flat daily Gold-output ceiling (Ante Up's own money-printer failure
+ * mode was the thing being guarded against). That ceiling is gone -- see
+ * ./exchange.ts's header for why -- so there is no longer a global output cap
+ * for anything priced here to be calibrated against. Prices below still carry
+ * their internal balance (seed against yield, muck at 40% of a tier's net, a
+ * serving of feed under a tenth of what the animals that eat it earn); that
+ * part of the argument survives the ceiling's removal untouched.
  *
  * THE CONVERSION: every Bushel price below was multiplied by 2, the exact rate
- * the exchange window paid. That preserves the internal balance the numbers
- * were tuned for -- seed against yield, muck at 40% of a tier's net, a serving
- * of feed under a tenth of what the animals that eat it earn -- and it leaves
- * the daily ceiling calibrated, since 15,000 Gold a day was sized against
- * exactly this rate.
+ * the old exchange window paid, before Bushels themselves were removed --
+ * that is a historical fact about how these numbers were derived, not a
+ * currently-enforced rate.
  *
  * Seed cost and yield are snapshotted onto the unit row at stocking and never
  * re-read here at collection -- the same rule StoredWordStackRound.wagerLadder

@@ -187,14 +187,12 @@ const OTHERS: ClearOptions = { buildingMargin: FARMSTEAD_CLEARANCE, ignoreWalls:
  * components/dev/StackAcresPlacementPanel.tsx) and re-deriving his spot from
  * the house's own footprint on every load would silently drag him along
  * with it on the NEXT move too -- undoing whichever placement someone chose
- * on purpose. This value is a one-time run of the walk-outward search (see
- * git history for the search itself) against the current
- * `RAY_HOUSE_FOOTPRINT`, not a hand-typed guess: first clear ground east of
- * the house's new wall. If the house moves again, re-run that search (or
- * drag him with the panel) rather than leaving him beside the old spot.
+ * on purpose. Dragged to this spot through that same panel (2026-09-12),
+ * not a hand-typed guess. If the house moves again, drag him with the panel
+ * rather than leaving him beside the old spot.
  */
 function raySpot(): WorldPoint {
-  return yardPoint(168, -73);
+  return yardPoint(213, 17);
 }
 
 /** Somewhere genuinely inside an outer district: off its roads, off the

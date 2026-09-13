@@ -1295,11 +1295,23 @@ export async function runStackAcresAction(
 
   const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
   if (claim.kind === "replay") {
-    const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+    // Revision read BEFORE the view, not alongside it in a Promise.all: the
+    // twin that actually wrote can bump the counter in the gap between two
+    // concurrent reads, and whichever order they land in, `acceptRevision`
+    // on the client trusts the number completely. Reading it second could
+    // pair a just-bumped (fresher) number with a view snapshot taken a moment
+    // earlier -- fresher revision, staler data -- which the client accepts as
+    // the new truth and paints, flashing the farm back a step before the
+    // real answer (already in flight) catches up. Reading it first can only
+    // pair a number with data at least that fresh, never staler.
+    const revision = await readStackAcresRevision(profile.id);
+    const result = await view(profile, now);
     return { ...result, ...(claim.result ?? {}), revision };
   }
   if (claim.kind === "in-flight") {
-    const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+    // Same ordering, same reason -- see the "replay" branch just above.
+    const revision = await readStackAcresRevision(profile.id);
+    const result = await view(profile, now);
     return { ...result, revision };
   }
 

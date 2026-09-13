@@ -392,9 +392,11 @@ describe("open-world scenery", () => {
     const open = counts.filter((n) => n <= 2).length;
     expect(dense).toBeGreaterThan(0);
     expect(open).toBeGreaterThan(0);
-    // And the lattice is a hard ceiling: 5x5 planting points per chunk, plus
-    // at most 3 lone things out in the grass.
-    expect(Math.max(...counts)).toBeLessThanOrEqual(28);
+    // Not an unbounded ceiling, just an empirical one -- the lattice plus the
+    // open-ground bush, grass, and scrub passes below it all contribute
+    // non-tuft/non-flower kinds. Raised alongside those passes' loop counts
+    // on the "more filled, middle ground" density pass.
+    expect(Math.max(...counts)).toBeLessThanOrEqual(34);
   });
 
   it("keeps the gaps open: a lane through the wood is walkable ground", () => {

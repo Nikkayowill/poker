@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import {
   ChevronLeft,
@@ -1739,9 +1739,13 @@ export function StackAcresFarm() {
 
   // Pushed to the scene only when the render decision actually flips, the
   // same "push, never rebuild" contract setToolTier already follows -- see
-  // StackAcresWorldApi's own `setMerchant` doc.
+  // StackAcresWorldApi's own `setMerchant` doc. useLayoutEffect: this mirrors
+  // a field `applyResponse` just set in the same commit as whatever DOM
+  // reacted to it, and a passive effect would paint the scene a beat behind
+  // that DOM -- see stackacres-world.tsx's `setUnits` comment for the flash
+  // that lag reads as.
   const merchantRendered = merchantSnapshot.state !== "absent";
-  useEffect(() => {
+  useLayoutEffect(() => {
     world.current?.setMerchant(merchantRendered);
   }, [merchantRendered]);
 
@@ -1830,7 +1834,8 @@ export function StackAcresFarm() {
   // against this list (see StackAcresScene.setDroneHangar), so pushing on
   // every response -- even one that rebuilt the array without actually
   // changing the fleet -- is a harmless no-op on the scene's own side.
-  useEffect(() => {
+  // useLayoutEffect for the same reason `setMerchant` above is one.
+  useLayoutEffect(() => {
     world.current?.setDroneHangar(droneHangar.drones.map((drone) => drone.droneId));
   }, [droneHangar.drones]);
 
@@ -2303,8 +2308,9 @@ export function StackAcresFarm() {
   // unlocked and has one to show -- "!" to offer, "?" ready to hand in,
   // nothing while mid-quest or done. Same "push, never rebuild" contract
   // `setMerchant` keeps: an unchanged unlock set or cue set is a no-op on
-  // the scene's own side.
-  useEffect(() => {
+  // the scene's own side. useLayoutEffect for the same reason `setMerchant`
+  // above is one -- `story.view` is server-confirmed the same way.
+  useLayoutEffect(() => {
     if (!story.view) return;
     const unlocked: Record<string, boolean> = {};
     const cues: Record<string, "available" | "ready"> = {};

@@ -4313,11 +4313,12 @@ export function StackAcresFarm() {
           {/* The district panel: deep management, not the way you play.
               The fast loop is on the canvas now -- tap a ripe crop to collect
               it, tap empty ground to seed it -- so this no longer opens itself
-              when a player travels somewhere. The peg above is how it comes
-              back, and it holds what a tap has no business doing: Gold spends,
-              and the full standing list. That list is also the keyboard and
-              screen-reader path to every canvas tap, which is why it is still
-              here rather than deleted along with the loop it used to be. */}
+              when a player travels somewhere. Manage on the radial menu is
+              how it comes back, and it holds what a tap has no business
+              doing: Gold spends, and the full standing list. That list is
+              also the keyboard and screen-reader path to every canvas tap,
+              which is why it is still here rather than deleted along with
+              the loop it used to be. */}
           <aside
             id="sa-district-panel"
             className={clsx("sa-district-panel", { "is-open": panelOpen })}

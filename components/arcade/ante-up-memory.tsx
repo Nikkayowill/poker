@@ -267,7 +267,15 @@ export function AnteUpMemory() {
             onClick={() => { selectSound(); start(); }}
           >
             <Coins size={15} aria-hidden="true" />
-            {!loaded ? "…" : !canAfford ? "Not enough Gold" : busy ? "Dealing…" : "Ante up"}
+            {!loaded
+              ? "…"
+              : wager > ceiling
+                ? "Over the cap"
+                : !canAfford
+                  ? "Not enough Gold"
+                  : busy
+                    ? "Dealing…"
+                    : "Ante up"}
           </button>
           {loaded && insufficientGold && <GoldShortfallHint needed={wager} compact />}
         </section>

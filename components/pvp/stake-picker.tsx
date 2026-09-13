@@ -24,9 +24,12 @@ export function StakePicker({
   min: number;
   /**
    * The ceiling, if this surface has one. Quick picks above it are not
-   * offered and the custom field clamps to it, so the picker can never hand
-   * back an amount the server is about to refuse. Ante Up passes the board's
-   * own ceiling here (lib/arcade/ante-up-stakes.ts); the duel lobby has none.
+   * offered, but the custom field does NOT clamp to it -- it hands back
+   * whatever the player typed, over ceiling or not, so the caller's own
+   * "caps at X, step up to raise it" messaging and afford/disable checks
+   * actually get a chance to run instead of never seeing an over-ceiling
+   * value in the first place. Ante Up passes the board's own ceiling here
+   * (lib/arcade/ante-up-stakes.ts); the duel lobby has none.
    */
   max?: number;
   onChange: (next: number) => void;
@@ -68,9 +71,7 @@ export function StakePicker({
           max={max}
           step={100}
           value={value}
-          onChange={(event) =>
-            onChange(Math.min(ceiling, Math.max(0, Math.round(Number(event.target.value) || 0))))
-          }
+          onChange={(event) => onChange(Math.max(0, Math.round(Number(event.target.value) || 0)))}
         />
       </label>
     </div>

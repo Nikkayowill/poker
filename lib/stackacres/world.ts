@@ -434,7 +434,7 @@ export function rayHouseHitAt(x: number, y: number): boolean {
  * not flush with this rect's own y 428: see that fence's own placement
  * comment for the exact clearance arithmetic.
  */
-export const FACTORY_FOOTPRINT: WorldRect = yardRect(66, 368, 100, 60);
+export const FACTORY_FOOTPRINT: WorldRect = yardRect(94, 277, 250, 150);
 
 /**
  * The signpost's footprint: the box `PROP_SIZE.signpost` gives (18 wide,

@@ -75,6 +75,13 @@ PROPS: dict[str, str] = {
     "barbEndEast": "Barb2.png",
     "barbStraight1": "Barb3.png",
     "barbStraight2": "Barb4.png",
+    # The corner post (2026-09-12): the fourth plate, now that the yard
+    # placement dev panel lays runs that turn, not just straight ones (see
+    # its own header in components/dev/StackAcresPlacementPanel.tsx). One
+    # frame, native orientation -- the scene picks `setFlipX`/`setFlipY` per
+    # instance the same way `barnSprite` already does, rather than four
+    # baked rotations of one picture.
+    "barbCorner": "Barb1.png",
 }
 
 # Ids that are the SAME source plate as another entry above, mirrored --

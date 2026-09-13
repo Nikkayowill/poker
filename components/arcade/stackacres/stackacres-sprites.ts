@@ -342,6 +342,11 @@ export const SPRITE_ART = {
   barbEndEast: "/stackacres/sprites/barbEndEast.webp",
   barbStraight1: "/stackacres/sprites/barbStraight1.webp",
   barbStraight2: "/stackacres/sprites/barbStraight2.webp",
+  // The corner post (2026-09-12), off the pack's fourth barbed-wire plate --
+  // one frame, native orientation. A run that turns flips it per instance
+  // (`setFlipX`/`setFlipY` on the live sprite) rather than baking four
+  // rotations of one picture.
+  barbCorner: "/stackacres/sprites/barbCorner.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
   midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",

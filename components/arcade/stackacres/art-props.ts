@@ -57,6 +57,7 @@ export type PropPainterName =
   | "barbEndEast"
   | "barbStraight1"
   | "barbStraight2"
+  | "barbCorner"
   | "travelerRay"
   // Ray's own second frame -- a wave, shown for as long as his own dialogue
   // bubble is open. Not a placed prop of its own (see props.ts's `PropKind`,
@@ -1164,6 +1165,26 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
       c.beginPath();
       c.moveTo(3, 8 + t * 6);
       c.lineTo(28, 9 + t * 6);
+      stroke(c, "#2c2a28", 1);
+    }
+  }),
+  // The corner post (2026-09-12): one post, wire reaching out both ways --
+  // the yard placement dev panel flips this per instance
+  // (`setFlipX`/`setFlipY`) to cover the other three turn orientations, the
+  // same way `barnSprite` is already flipped, rather than four drawn
+  // fallbacks for one post.
+  barbCorner: painter(18, 18, (c) => {
+    timber(c, 6, 2, 3, 14, 1);
+    for (const y of [6, 10.5, 15]) {
+      c.beginPath();
+      c.moveTo(9, y);
+      c.lineTo(18, y - 3);
+      stroke(c, "#2c2a28", 1);
+    }
+    for (const x of [3, 7.5, 12]) {
+      c.beginPath();
+      c.moveTo(7, 4);
+      c.lineTo(x, 0);
       stroke(c, "#2c2a28", 1);
     }
   }),

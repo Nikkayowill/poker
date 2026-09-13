@@ -84,13 +84,14 @@ describe("traveler placement", () => {
     }
   });
 
-  it("stands Ray beside his house", () => {
+  it("does not stand Ray on top of his own house", () => {
+    // Used to also check he stood close beside it -- dropped once the yard
+    // placement dev panel moved him further off on Kayo's own call
+    // (raySpot()'s own header). Overlap safety itself is still covered by
+    // the farmstead-zone sweep above (`rayHouseHitAt`/`RAY_HOUSE_FOOTPRINT`
+    // in `keepOut`), this just states the narrower fact in its own name.
     const ray = travelerSpot("ray");
-    const house = RAY_HOUSE_FOOTPRINT;
-    const dx = Math.max(house.x - ray.x, ray.x - (house.x + house.width), 0);
-    const dy = Math.abs(ray.y - (house.y + house.height));
-    expect(dx).toBeLessThanOrEqual(50);
-    expect(dy).toBeLessThanOrEqual(24);
+    expect(rayHouseHitAt(ray.x, ray.y)).toBe(false);
   });
 
   it("never overlaps another traveler's own picture box", () => {

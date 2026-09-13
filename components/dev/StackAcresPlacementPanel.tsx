@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Poin
 import {
   BARN_FLIPPED,
   BARN_FOOTPRINT,
+  FACTORY_FOOTPRINT,
   MIDNIGHT_MERCHANT_SPOT,
   RAY_HOUSE_FLIPPED,
   RAY_HOUSE_FOOTPRINT,
@@ -13,6 +14,7 @@ import {
 import { YARD_DELTA } from "@/lib/stackacres/yard";
 import { MONK_POST } from "@/lib/stackacres/monk";
 import { travelerSpot } from "@/lib/stackacres/story/placement";
+import { YARD_PROPS, type PropPlacement } from "@/lib/stackacres/props";
 
 /** The one dev-only door onto the live scene, opened by
  *  components/arcade/stackacres/stackacres-world.tsx and read here the same
@@ -25,6 +27,10 @@ interface StackAcresDevHandle {
   setBarnDevFlipped: (flipped: boolean) => void;
   setRayHouseDevPosition: (worldX: number, worldY: number) => void;
   setRayHouseDevFlipped: (flipped: boolean) => void;
+  setFactoryDevPosition: (worldX: number, worldY: number) => void;
+  setFactoryDevScale: (scale: number) => void;
+  setBarbFenceDevPieces: (pieces: readonly PropPlacement[]) => void;
+  clearBarbFenceDevPieces: () => void;
   hasMerchantDevTarget: () => boolean;
   setMerchantDevPosition: (worldX: number, worldY: number) => void;
   setMonkDevPosition: (worldX: number, worldY: number) => void;
@@ -38,12 +44,51 @@ function devHandle(): StackAcresDevHandle | null {
   return (window as unknown as { __stackacres?: StackAcresDevHandle }).__stackacres ?? null;
 }
 
+/** Every kind the barbed-wire fence placer can drop -- the pack's four
+ *  shipped plates plus the corner (art-props.ts's own header on why it's
+ *  runtime-flipped rather than four baked rotations). A real subset of
+ *  `PropKind`, not the whole union, so a piece's own kind can index a label
+ *  table without every other prop kind demanding an entry too. */
+type BarbKind = "barbEndWest" | "barbEndEast" | "barbStraight1" | "barbStraight2" | "barbCorner";
+
+/** One barbed-wire fence piece as the placer's own state tracks it: a kind,
+ *  a world point (its feet, dragged independently -- no shared layout with
+ *  any other piece), and its own flip toggles. `id` is a stable React key,
+ *  not anything the scene or props.ts care about. */
+interface PlacedBarbPiece {
+  id: number;
+  kind: BarbKind;
+  point: WorldPoint;
+  flipX: boolean;
+  flipY: boolean;
+}
+
 /** A structure's feet anchor, the point `yardPoint`/the painter's
  *  bottom-centre origin both agree on: footprint centre-x, footprint
  *  bottom-y. Matches the relationship `BARN_AT`/`BARN_FOOTPRINT` and
  *  `paintRayHouse`'s own `cx`/`feetY` locals already encode in source. */
 function footprintFeet(footprint: { x: number; y: number; width: number; height: number }): WorldPoint {
   return { x: footprint.x + footprint.width / 2, y: footprint.y + footprint.height };
+}
+
+/** Every kind the barbed-wire fence placer can drop -- the pack's four
+ *  shipped plates plus the corner (art-props.ts's own header on why it's
+ *  runtime-flipped rather than four baked rotations). */
+const BARB_KINDS: readonly BarbKind[] = ["barbEndWest", "barbEndEast", "barbStraight1", "barbStraight2", "barbCorner"];
+
+/** The shipped run's own four pieces, read back off `YARD_PROPS` rather
+ *  than retyped as four literals -- the placer's own starting point, one
+ *  independently draggable marker per piece from here on. */
+function shippedBarbPieces(): PlacedBarbPiece[] {
+  return YARD_PROPS.filter((prop): prop is PropPlacement & { kind: BarbKind } =>
+    (BARB_KINDS as readonly string[]).includes(prop.kind),
+  ).map((prop, index) => ({
+    id: index,
+    kind: prop.kind,
+    point: { x: prop.x + YARD_DELTA.x, y: prop.y + YARD_DELTA.y },
+    flipX: Boolean(prop.flipX),
+    flipY: Boolean(prop.flipY),
+  }));
 }
 
 const SHIPPED = {
@@ -58,6 +103,7 @@ const SHIPPED = {
     const spot = travelerSpot("ray");
     return { x: spot.x, y: spot.y };
   })(),
+  factoryFeet: footprintFeet(FACTORY_FOOTPRINT),
 };
 
 type StructureKey = "barn" | "house";
@@ -105,6 +151,7 @@ export function StackAcresPlacementPanel() {
   const [nudge, setNudge] = useState(SHIPPED.nudge);
   const [barnFlipped, setBarnFlipped] = useState(SHIPPED.barnFlipped);
   const [houseFlipped, setHouseFlipped] = useState(SHIPPED.houseFlipped);
+  const [factoryScale, setFactoryScale] = useState(1);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const barnRef = useRef<HTMLDivElement | null>(null);
@@ -123,6 +170,25 @@ export function StackAcresPlacementPanel() {
       devHandle()?.hideDevPlacementGrid();
     };
   }, [enabled, minimized]);
+
+  // A stray pointer release the marker under it never saw (the pointer
+  // left the marker, or its own capture was lost some other way) used to
+  // leave `showDevPlacementGrid`'s translucent reference tiles lit up
+  // wherever that drag last drew them -- reading as a patch of "blurry"
+  // blue ground until the panel was minimized. `hideDevPlacementGrid` is a
+  // plain clear(), safe to call on every pointer release anywhere on the
+  // page, so this is a blanket safety net rather than hardening each
+  // placer's own `endDrag` one at a time.
+  useEffect(() => {
+    if (!enabled) return;
+    const clear = () => devHandle()?.hideDevPlacementGrid();
+    window.addEventListener("pointerup", clear);
+    window.addEventListener("pointercancel", clear);
+    return () => {
+      window.removeEventListener("pointerup", clear);
+      window.removeEventListener("pointercancel", clear);
+    };
+  }, [enabled]);
 
   // Keeps the two markers glued to their world points while the camera pans
   // or zooms, not just while a drag is in flight. A 10fps tick is plenty for
@@ -167,6 +233,19 @@ export function StackAcresPlacementPanel() {
   const applyRay = useCallback((point: WorldPoint) => {
     devHandle()?.setTravelerDevPosition("ray", point.x, point.y);
   }, []);
+
+  const hasFactoryTarget = useCallback(() => devHandle() !== null, []);
+  const applyFactory = useCallback((point: WorldPoint) => {
+    devHandle()?.setFactoryDevPosition(point.x, point.y);
+  }, []);
+
+  // Factory resize: separate from `applyFactory`'s own position push since
+  // this is a plain slider, not a drag -- pushed once on mount (once ready)
+  // and again on every slider move.
+  useEffect(() => {
+    if (!ready) return;
+    devHandle()?.setFactoryDevScale(factoryScale);
+  }, [ready, factoryScale]);
 
   const applyHouse = useCallback(
     (feet: WorldPoint, nudgeValue: number) => {
@@ -369,6 +448,39 @@ export function StackAcresPlacementPanel() {
                 `// raySpot() instead of leaving it computed.`
               }
             />
+
+            <label style={{ ...rowStyle, flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+              <span>Factory size ({factoryScale.toFixed(2)}×)</span>
+              <input
+                type="range"
+                min={0.5}
+                max={2.5}
+                step={0.05}
+                value={factoryScale}
+                onChange={(event) => setFactoryScale(Number(event.target.value))}
+              />
+            </label>
+
+            <CharacterPlacer
+              id="factory"
+              label="Factory"
+              color="#c98a3f"
+              initial={SHIPPED.factoryFeet}
+              ready={ready}
+              hasTarget={hasFactoryTarget}
+              applyLive={applyFactory}
+              buildCode={(p) => {
+                const w = FACTORY_FOOTPRINT.width * factoryScale;
+                const h = FACTORY_FOOTPRINT.height * factoryScale;
+                return (
+                  `const FACTORY_SCALE = ${factoryScale.toFixed(2)};\n\n` +
+                  `export const FACTORY_FOOTPRINT: WorldRect =\n` +
+                  `  yardRect(${p.x - w / 2}, ${p.y - h}, ${w}, ${h});`
+                );
+              }}
+            />
+
+            <BarbFencePlacer ready={ready} />
           </div>
         )}
       </div>
@@ -528,6 +640,247 @@ function CharacterPlacer({
               {label}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+let nextBarbPieceId = 1000;
+
+/** One piece's own printed line, yard-local like every other buildCode
+ *  here -- `flipX`/`flipY` only show up when true, so a piece nobody flipped
+ *  prints exactly as plain as the shipped run's own lines always were. */
+function barbPieceLine(piece: PlacedBarbPiece): string {
+  const p = toYardLocal(piece.point);
+  const flips = [piece.flipX && "flipX: true", piece.flipY && "flipY: true"].filter(Boolean).join(", ");
+  return `  { kind: "${piece.kind}", ...yardPoint(${p.x}, ${p.y})${flips ? `, ${flips}` : ""} },`;
+}
+
+/** A short label for the kind picker -- the raw PropKind string works fine
+ *  too, this just reads faster in a cramped dropdown. */
+const BARB_KIND_LABEL: Readonly<Record<BarbKind, string>> = {
+  barbEndWest: "end (west)",
+  barbEndEast: "end (east)",
+  barbStraight1: "straight 1",
+  barbStraight2: "straight 2",
+  barbCorner: "corner",
+};
+
+/**
+ * The barbed-wire fence's own placer: every piece is its own independent
+ * draggable marker with its own kind and flip toggles -- no shared layout,
+ * no forced turn direction. Kayo's own call after the leg-editor version
+ * this replaced: "let me place and design my own." Add a piece, drag it
+ * wherever, flip it until it reads right, remove it if it doesn't belong --
+ * the same trust `stockDevPlacementGrid` already gives the barn/house/
+ * factory, just N times over instead of once.
+ *
+ * Live preview goes through the scene's own sprite pool
+ * (`setBarbFenceDevPieces`) -- every piece in `pieces`, recomputed and
+ * pushed whenever any of them move, get added, removed, or flipped.
+ */
+function BarbFencePlacer({ ready }: { ready: boolean }) {
+  const [pieces, setPieces] = useState<PlacedBarbPiece[]>(() => shippedBarbPieces());
+  const [addKind, setAddKind] = useState<BarbKind>("barbStraight1");
+  const [present, setPresent] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const markerRefs = useRef(new Map<number, HTMLDivElement>());
+  const dragRef = useRef<{ id: number; pointerId: number; grabOffset: WorldPoint } | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    const tick = () => setPresent(devHandle() !== null);
+    tick();
+    const timer = window.setInterval(tick, 500);
+    return () => window.clearInterval(timer);
+  }, [ready]);
+
+  // Keeps every marker glued to its own world point while the camera pans
+  // or zooms -- one tick over the whole list, the same 10fps budget every
+  // other placer's own tracking effect uses.
+  useEffect(() => {
+    if (!ready || !present) return;
+    const tick = () => {
+      const handle = devHandle();
+      if (!handle) return;
+      for (const piece of pieces) {
+        const el = markerRefs.current.get(piece.id);
+        if (!el) continue;
+        const screen = handle.screenPointFor(piece.point.x, piece.point.y);
+        el.style.left = `${screen.x}px`;
+        el.style.top = `${screen.y}px`;
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 100);
+    return () => window.clearInterval(timer);
+  }, [ready, present, pieces]);
+
+  useEffect(() => {
+    if (!ready || !present) return;
+    devHandle()?.setBarbFenceDevPieces(
+      pieces.map((piece) => ({ kind: piece.kind, x: piece.point.x, y: piece.point.y, flipX: piece.flipX, flipY: piece.flipY })),
+    );
+  }, [ready, present, pieces]);
+
+  // Unmounts whenever the panel minimizes (it lives inside the same
+  // `{!minimized && ...}` block every other placer does) -- clearing the
+  // preview and showing the shipped run again is this effect's only job,
+  // the same symmetry `hideDevPlacementGrid` keeps elsewhere.
+  useEffect(() => {
+    return () => devHandle()?.clearBarbFenceDevPieces();
+  }, []);
+
+  const startDrag = useCallback(
+    (id: number) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const handle = devHandle();
+      if (!handle) return;
+      event.stopPropagation();
+      const piece = pieces.find((p) => p.id === id);
+      if (!piece) return;
+      const pointerWorld = handle.worldPointFor(event.clientX, event.clientY);
+      dragRef.current = {
+        id,
+        pointerId: event.pointerId,
+        grabOffset: { x: pointerWorld.x - piece.point.x, y: pointerWorld.y - piece.point.y },
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      handle.showDevPlacementGrid(piece.point.x, piece.point.y);
+    },
+    [pieces],
+  );
+
+  const onDragMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const handle = devHandle();
+    if (!drag || !handle || drag.pointerId !== event.pointerId) return;
+    const pointerWorld = handle.worldPointFor(event.clientX, event.clientY);
+    const next = { x: snap(pointerWorld.x - drag.grabOffset.x), y: snap(pointerWorld.y - drag.grabOffset.y) };
+    setPieces((prev) => prev.map((piece) => (piece.id === drag.id ? { ...piece, point: next } : piece)));
+  }, []);
+
+  const endDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    devHandle()?.hideDevPlacementGrid();
+  }, []);
+
+  const addPiece = useCallback(() => {
+    setPieces((prev) => {
+      // Drops the new piece a short offset from the last one (or a plain
+      // yard spot if this is the first) -- somewhere on screen to grab,
+      // never on top of an existing marker.
+      const last = prev[prev.length - 1];
+      const point = last ? { x: last.point.x + 20, y: last.point.y + 8 } : { x: -720 + 110, y: -175 + 424 };
+      return [...prev, { id: nextBarbPieceId++, kind: addKind, point, flipX: false, flipY: false }];
+    });
+  }, [addKind]);
+
+  const removePiece = useCallback((id: number) => {
+    setPieces((prev) => prev.filter((piece) => piece.id !== id));
+  }, []);
+
+  const setPieceKind = useCallback((id: number, kind: BarbKind) => {
+    setPieces((prev) => prev.map((piece) => (piece.id === id ? { ...piece, kind } : piece)));
+  }, []);
+
+  const toggleFlip = useCallback((id: number, axis: "flipX" | "flipY") => {
+    setPieces((prev) => prev.map((piece) => (piece.id === id ? { ...piece, [axis]: !piece[axis] } : piece)));
+  }, []);
+
+  const code =
+    pieces.length === 0
+      ? "// No pieces -- add at least one below."
+      : `// Replace the shipped barbEnd*/barbStraight*/barbCorner entries in\n` +
+        `// props.ts's YARD_PROPS with (PropPlacement's own flipX/flipY are new --\n` +
+        `// see its header):\n` +
+        pieces.map(barbPieceLine).join("\n");
+
+  const copy = useCallback(() => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(code)
+        .then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        })
+        .catch(() => {});
+    }
+  }, [code]);
+
+  return (
+    <div style={{ borderTop: "1px solid #33452b", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontWeight: 700 }}>Barbed-wire fence</div>
+      {!present ? (
+        <div style={{ opacity: 0.6, fontSize: 10.5 }}>Not currently on the map.</div>
+      ) : (
+        <>
+          {pieces.map((piece) => (
+            <div key={piece.id} style={{ ...rowStyle, flexWrap: "wrap" }}>
+              <select
+                value={piece.kind}
+                onChange={(event) => setPieceKind(piece.id, event.target.value as BarbKind)}
+                style={{ ...presetButtonStyle, padding: "3px 4px" }}
+              >
+                {BARB_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {BARB_KIND_LABEL[kind]}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 10.5 }}>
+                <input type="checkbox" checked={piece.flipX} onChange={() => toggleFlip(piece.id, "flipX")} />
+                flipX
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 10.5 }}>
+                <input type="checkbox" checked={piece.flipY} onChange={() => toggleFlip(piece.id, "flipY")} />
+                flipY
+              </label>
+              <button type="button" onClick={() => removePiece(piece.id)} style={presetButtonStyle}>
+                remove
+              </button>
+            </div>
+          ))}
+
+          <div style={rowStyle}>
+            <select value={addKind} onChange={(event) => setAddKind(event.target.value as BarbKind)} style={{ ...presetButtonStyle, padding: "3px 4px" }}>
+              {BARB_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {BARB_KIND_LABEL[kind]}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={addPiece} style={presetButtonStyle}>
+              add piece
+            </button>
+          </div>
+
+          <div style={{ opacity: 0.55, fontSize: 10.5, lineHeight: 1.4 }}>
+            Every piece drags and flips on its own -- nothing here lays itself out
+            automatically. Drag a marker below, or add another piece above.
+          </div>
+
+          <CodeBlock label="barbFence" code={code} copied={copied} onCopy={copy} />
+
+          {ready &&
+            pieces.map((piece) => (
+              <div
+                key={piece.id}
+                ref={(el) => {
+                  if (el) markerRefs.current.set(piece.id, el);
+                  else markerRefs.current.delete(piece.id);
+                }}
+                onPointerDown={startDrag(piece.id)}
+                onPointerMove={onDragMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                style={markerStyle("#8a8f96", 50)}
+                title={`Drag ${BARB_KIND_LABEL[piece.kind]}`}
+              >
+                {BARB_KIND_LABEL[piece.kind]}
+              </div>
+            ))}
         </>
       )}
     </div>

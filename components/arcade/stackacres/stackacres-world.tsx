@@ -16,6 +16,7 @@ import type { SoilTile } from "@/lib/stackacres/soil";
 import type { PipeNode } from "@/lib/stackacres/irrigation";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { FarmhandPlanInput } from "@/lib/stackacres/farmhand-plan";
+import type { PropPlacement } from "@/lib/stackacres/props";
 
 /** The processing half of a snapshot: everything the AUTOMATED farmhand
  *  plans against (lib/stackacres/farmhand-plan.ts). Separate from `units`
@@ -588,6 +589,10 @@ export function StackAcresWorld({
               setBarnDevFlipped: (flipped: boolean) => void;
               setRayHouseDevPosition: (worldX: number, worldY: number) => void;
               setRayHouseDevFlipped: (flipped: boolean) => void;
+              setFactoryDevPosition: (worldX: number, worldY: number) => void;
+              setFactoryDevScale: (scale: number) => void;
+              setBarbFenceDevPieces: (pieces: readonly PropPlacement[]) => void;
+              clearBarbFenceDevPieces: () => void;
               hasMerchantDevTarget: () => boolean;
               setMerchantDevPosition: (worldX: number, worldY: number) => void;
               setMonkDevPosition: (worldX: number, worldY: number) => void;
@@ -606,6 +611,10 @@ export function StackAcresWorld({
           setBarnDevFlipped: (flipped) => scene.setBarnDevFlipped(flipped),
           setRayHouseDevPosition: (worldX, worldY) => scene.setRayHouseDevPosition(worldX, worldY),
           setRayHouseDevFlipped: (flipped) => scene.setRayHouseDevFlipped(flipped),
+          setFactoryDevPosition: (worldX, worldY) => scene.setFactoryDevPosition(worldX, worldY),
+          setFactoryDevScale: (scale) => scene.setFactoryDevScale(scale),
+          setBarbFenceDevPieces: (pieces) => scene.setBarbFenceDevPieces(pieces),
+          clearBarbFenceDevPieces: () => scene.clearBarbFenceDevPieces(),
           hasMerchantDevTarget: () => scene.hasMerchantDevTarget(),
           setMerchantDevPosition: (worldX, worldY) => scene.setMerchantDevPosition(worldX, worldY),
           setMonkDevPosition: (worldX, worldY) => scene.setMonkDevPosition(worldX, worldY),

@@ -73,17 +73,21 @@ export type PropKind =
   | "flowerSprig1"
   | "flowerSprig2"
   // The barbed-wire fence (2026-09-12): the pack's other two connector
-  // shapes, `Barb1` (a corner) and a plain repeat of one straight bay,
-  // stay out for now -- see scripts/prepare-stackacres-farmpack-props.py's
-  // own header. A straight run needs a post facing each way and the pack
-  // only drew one, so `barbEndWest`/`barbEndEast` are the same picture,
-  // mirrored at prep time rather than at runtime -- no other prop here
-  // flips per instance, and two baked files cost nothing a generic flip
-  // flag would not.
+  // shapes stay a plain repeat of one straight bay for now -- see
+  // scripts/prepare-stackacres-farmpack-props.py's own header. A straight
+  // run needs a post facing each way and the pack only drew one, so
+  // `barbEndWest`/`barbEndEast` are the same picture, mirrored at prep time
+  // rather than at runtime -- no other prop here flips per instance, and two
+  // baked files cost nothing a generic flip flag would not. `barbCorner`
+  // (2026-09-12, `Barb1`) is the exception: a run that turns needs the same
+  // post in up to four orientations, and baking four rotated copies of one
+  // picture costs more than the runtime `setFlipX`/`setFlipY` the yard
+  // placement dev panel already drives the barn/house with.
   | "barbEndWest"
   | "barbEndEast"
   | "barbStraight1"
   | "barbStraight2"
+  | "barbCorner"
   // The eleven story travelers (see ./story/placement.ts) -- static,
   // tappable, and placed by TRAVELER_PROPS there rather than here: the kind
   // lives where the rest of a prop's shape lives, the placement beside its
@@ -104,6 +108,15 @@ export type PropKind =
 
 export interface PropPlacement extends WorldPoint {
   kind: PropKind;
+  /** Mirrors the flat sprite in place, the same `setFlipX`/`setFlipY` the
+   *  barn/Ray's house already take (BARN_FLIPPED/RAY_HOUSE_FLIPPED), just
+   *  per-entry here instead of one constant for a whole structure. Added
+   *  for the barbed-wire fence's corner post and its N/S-axis pieces (see
+   *  lib/stackacres/barb-fence.ts) -- a run that only ever goes east never
+   *  needs either, so both are optional rather than every entry above
+   *  growing two new `false`s. */
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 /**
@@ -149,21 +162,32 @@ export const YARD_PROPS: readonly PropPlacement[] = [
   // Watching the first row of fields from the east verge.
   { kind: "scarecrow", ...yardPoint(402, 110) },
 
-  // The Factory's own back fence (2026-09-12): a west end cap, two straight
-  // bays, an east end cap, laid out west to east and centred on
-  // `FACTORY_FOOTPRINT`'s own x-centre (116). Feet at y 424, 4 units north
-  // of the Factory's own south edge (428, where its picture is anchored) --
-  // `southRoadWest` (paths.ts) runs east-west right behind that line (body
-  // centred on y 447, 32 wide), and props.test.ts holds every `YARD_PROPS`
-  // entry to `nearPath` reading false outright (not just clear of the body:
-  // `PATH_CLEARANCE` widens that to 22 units off the centreline), which only
-  // leaves y <= 425 here. Widths off PROP_SIZE: 13 + 31 + 31 + 13 = 88,
-  // eight short of the building's own 100, centred rather than run edge to
-  // edge with it.
-  { kind: "barbEndWest", ...yardPoint(78.5, 424) },
-  { kind: "barbStraight1", ...yardPoint(100.5, 424) },
-  { kind: "barbStraight2", ...yardPoint(131.5, 424) },
-  { kind: "barbEndEast", ...yardPoint(153.5, 424) },
+  // The Factory's own barbed-wire enclosure (2026-09-12), hand-placed
+  // through the yard placement dev panel's free-form fence placer
+  // (components/dev/StackAcresPlacementPanel.tsx) -- every piece dragged
+  // and flipped independently, not a laid-out run. Replaces the old
+  // straight west-to-east back fence now that the Factory itself is bigger
+  // (see `FACTORY_SCALE`/`FACTORY_FOOTPRINT`'s own header in
+  // stackacres-scene.ts/world.ts).
+  { kind: "barbStraight1", ...yardPoint(261, 418) },
+  { kind: "barbStraight2", ...yardPoint(285, 264), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(312, 289) },
+  { kind: "barbEndWest", ...yardPoint(304, 263), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(315, 322) },
+  { kind: "barbStraight1", ...yardPoint(318, 355) },
+  { kind: "barbStraight1", ...yardPoint(321, 388) },
+  { kind: "barbStraight1", ...yardPoint(324, 421) },
+  // Nudged 15-17 units north from where they were first dropped (435/437):
+  // just past the map's own south edge and too close to the road behind it.
+  { kind: "barbStraight1", ...yardPoint(279, 420), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(305, 420), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(253, 261), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(221, 258), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(190, 256), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(158, 253), flipX: true },
+  { kind: "barbStraight1", ...yardPoint(125, 250), flipX: true },
+  { kind: "barbCorner", ...yardPoint(97, 245) },
+  { kind: "barbStraight2", ...yardPoint(103, 274) },
 ];
 
 /**
@@ -215,6 +239,7 @@ export const PROP_SIZE: Record<PropKind, PropSize> = {
   barbEndEast: { w: 13, h: 22 },
   barbStraight1: { w: 31, h: 31 },
   barbStraight2: { w: 31, h: 31 },
+  barbCorner: { w: 18, h: 18 },
   // Sized off each traveler's own real PNG aspect (width/288 tall, Ray's
   // width/320) at a world height picked for their read: the adults at 38 (a
   // standing adult's height at this zoom -- see STANDING_CHARACTER_SHADOW
@@ -270,6 +295,7 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
   barbEndEast: { w: 15, h: 5 },
   barbStraight1: { w: 33, h: 6 },
   barbStraight2: { w: 33, h: 6 },
+  barbCorner: { w: 19, h: 4 },
   travelerRay: { w: 22, h: 7 },
   travelerPierre: { w: 22, h: 7 },
   travelerMiles: { w: 20, h: 7 },

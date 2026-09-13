@@ -59,6 +59,8 @@ import {
   WINDMILL_SPEED,
   YARD_PROPS,
   farmsteadClutter,
+  type PropKind,
+  type PropPlacement,
 } from "@/lib/stackacres/props";
 import { TRAVELER_PROPS, travelerHitAt, travelerSpot } from "@/lib/stackacres/story/placement";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
@@ -872,6 +874,13 @@ const BARN_OPEN_HOLD_MS = 700;
  *  landmark now that the silo and windmill are gone from beside it, so it
  *  gets to fill more of that space. */
 const BARN_SCALE_BOOST = 1.7;
+
+/** Same relationship `BARN_SCALE_BOOST` has to the barn's own base
+ *  `put()` scale, for the Factory -- 1 (unscaled) until the yard placement
+ *  dev panel's printed code sets it to something else, at which point
+ *  `FACTORY_FOOTPRINT`'s own width/height should grow by the same factor
+ *  so the hit-test box keeps matching the picture. */
+const FACTORY_SCALE = 2.5;
 
 /** The barn's own single generated elevation has no reverse angle to turn
  *  to -- it is a straight-on picture, not an isometric volume (see
@@ -1844,6 +1853,18 @@ export class StackAcresScene extends Phaser.Scene {
    *  no timer and no separate `pulseGreenhouseOpen`: the held state alone
    *  is the whole story, same as `setTravelerRayHeldOpen`. */
   private greenhouseSprite: Phaser.GameObjects.Image | null = null;
+
+  /** The Factory's own structure, captured off `paintFactory` so the yard
+   *  placement dev panel has a real sprite to drag -- see
+   *  `setFactoryDevPosition`. Null until `create` has run. */
+  private factorySprite: Phaser.GameObjects.Image | null = null;
+
+  /** The barbed-wire back fence's four segments (west cap, two straights,
+   *  east cap -- `BARB_FENCE_KINDS` below), captured off `paintProps` in
+   *  that same west-to-east order so the yard placement dev panel can drag
+   *  the whole run as one unit. See `setBarbFenceDevOrigin`. Empty until
+   *  `create` has run. */
+  private barbFenceSprites: Phaser.GameObjects.Image[] = [];
 
   /**
    * True while the camera is bounded to the Greenhouse's own interior (see
@@ -2867,8 +2888,21 @@ export class StackAcresScene extends Phaser.Scene {
     this.put("shadow", cx, feetY + 1, this.depthAt(cx, feetY, -0.5))
       .setScale(shadowScale, shadowScale)
       .setAlpha(0.8);
-    this.put("factory", cx, feetY, this.depthAt(cx, feetY));
+    this.factorySprite = this.put("factory", cx, feetY, this.depthAt(cx, feetY));
+    this.factorySprite.setScale((1 / S) * FACTORY_SCALE);
   }
+
+  /** The barbed-wire back fence's four segments, west to east, matching
+   *  `YARD_PROPS`'s own placement order in props.ts. Read by `paintProps`
+   *  to fill `barbFenceSprites` in that same order, and by
+   *  `setBarbFenceDevOrigin` to rebuild each segment's width off
+   *  `PROP_SIZE`. */
+  private static readonly BARB_FENCE_KINDS: readonly PropKind[] = [
+    "barbEndWest",
+    "barbStraight1",
+    "barbStraight2",
+    "barbEndEast",
+  ];
 
   /**
    * The yard's fixed props and the lamps down the lane (lib/stackacres/
@@ -2880,6 +2914,7 @@ export class StackAcresScene extends Phaser.Scene {
    * prop here.
    */
   private paintProps(): void {
+    this.barbFenceSprites = [];
     for (const prop of YARD_PROPS) {
       const pool = PROP_SHADOW[prop.kind];
       // The shadow painter's pool is 33 by 13 units at scale 1.
@@ -2890,7 +2925,12 @@ export class StackAcresScene extends Phaser.Scene {
         this.paintWindmill(prop.x, prop.y);
         continue;
       }
-      this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+      const image = this.put(prop.kind, prop.x, prop.y, this.depthAt(prop.x, prop.y));
+      if (prop.flipX) image.setFlipX(true);
+      if (prop.flipY) image.setFlipY(true);
+      if ((StackAcresScene.BARB_FENCE_KINDS as readonly string[]).includes(prop.kind)) {
+        this.barbFenceSprites.push(image);
+      }
     }
     this.paintTravelers();
   }
@@ -6386,6 +6426,66 @@ export class StackAcresScene extends Phaser.Scene {
    *  toggle. See `RAY_HOUSE_FLIPPED`'s own header. */
   setRayHouseDevFlipped(flipped: boolean): void {
     this.rayHouseSprite?.setFlipX(flipped);
+  }
+
+  /**
+   * Dev-only counterpart of `setBarnDevPosition` for the Factory. `worldX`/
+   * `worldY` is the picture's own feet point (`FACTORY_FOOTPRINT`'s centre-x,
+   * bottom-y, the same relationship `footprintFeet` in the placement panel
+   * derives for the barn) -- visual only, `FACTORY_FOOTPRINT` itself is a
+   * source literal in world.ts until the panel's printed code is pasted in.
+   */
+  setFactoryDevPosition(worldX: number, worldY: number): void {
+    if (!this.factorySprite) return;
+    const s = isoProject(worldX, worldY);
+    this.factorySprite.setPosition(s.x, s.y).setDepth(this.depthAt(worldX, worldY));
+  }
+
+  /** Dev-only: resizes the Factory sprite in place (bottom-centre anchor,
+   *  same as every other resize here) -- `scale` multiplies the same
+   *  `1 / S` base `put()` already applied, the same relationship
+   *  `BARN_SCALE_BOOST` has to the barn's own base scale. Visual only:
+   *  `FACTORY_FOOTPRINT`'s width/height don't move until the panel's
+   *  printed code is pasted into world.ts. */
+  setFactoryDevScale(scale: number): void {
+    this.factorySprite?.setScale((1 / S) * scale);
+  }
+
+  /** Dev-only: the barbed-wire fence placer's own live preview pool
+   *  (`setBarbFenceDevPieces`) -- separate from `barbFenceSprites`, the
+   *  shipped run `paintProps` already draws from `YARD_PROPS`, so editing
+   *  never fights the shipped run for the same Image nodes. Emptied and
+   *  every sprite destroyed by `clearBarbFenceDevPieces`. */
+  private barbFenceDevPreview: Phaser.GameObjects.Image[] = [];
+
+  /**
+   * Dev-only: renders the barbed-wire fence placer's current piece list
+   * (each dragged and flipped independently in the panel -- there is no
+   * automatic layout here, on Kayo's own call) as a live preview, and hides
+   * the shipped run (`barbFenceSprites`) underneath it so the two never
+   * show at once. Destroys and rebuilds the whole preview pool each call
+   * rather than diffing it against the last one -- this fires on a UI edit
+   * (drag a piece, add/remove one), not a render loop, so the churn costs
+   * nothing a dev panel needs to care about. Visual only: `YARD_PROPS`'s
+   * own entries don't move until the panel's printed code is pasted into
+   * props.ts.
+   */
+  setBarbFenceDevPieces(pieces: readonly PropPlacement[]): void {
+    for (const sprite of this.barbFenceDevPreview) sprite.destroy();
+    this.barbFenceDevPreview = [];
+    for (const sprite of this.barbFenceSprites) sprite.setVisible(pieces.length === 0);
+    for (const piece of pieces) {
+      const image = this.put(piece.kind, piece.x, piece.y, this.depthAt(piece.x, piece.y));
+      image.setFlipX(Boolean(piece.flipX)).setFlipY(Boolean(piece.flipY));
+      this.barbFenceDevPreview.push(image);
+    }
+  }
+
+  /** Dev-only: clears the barbed-wire fence placer's live preview and shows
+   *  the shipped run again -- called on unmount/minimize the same way
+   *  `hideDevPlacementGrid` is. */
+  clearBarbFenceDevPieces(): void {
+    this.setBarbFenceDevPieces([]);
   }
 
   /** Dev-only: whether the Midnight Merchant is currently spawned at all --

@@ -16,33 +16,25 @@
  * settled unit's own gross, written before the sweep's Bountiful Harvest
  * synergy and before Land Maintenance -- see the write site in
  * lib/server/stackacres-service.ts. Summed across a profile's whole history,
- * that is GROSS farm production, not net Gold ever credited. That choice is
- * deliberate: net credited Gold is capped at STACKACRES_GOLD_CEILING every
- * day (lib/stackacres/exchange.ts), so over enough days a huge farm and a
- * modest one converge toward the same lifetime net total -- a prestige score
- * built on that number would reward patience over scale. Gross is immune to
- * the daily ceiling and rewards the thing a prestige mechanic is supposed to
- * reward: how much farm was actually built before it was traded in.
+ * that is GROSS farm production, not net Gold ever credited. That choice
+ * predates StackAcres dropping its daily Gold cap (2026-09-12; see
+ * lib/stackacres/exchange.ts's header) and still holds: gross rewards how
+ * much farm was actually built before it was traded in, which is what a
+ * prestige mechanic is supposed to reward, regardless of what net earning
+ * looks like.
  *
  * ORDER OF APPLICATION MOVED FROM HARVEST TO SELL. A harvest no longer pays
  * Gold at all -- see lib/server/stackacres-service.ts's own header -- so
  * there is nothing left in `settleHarvest` (./harvest.ts) for this multiplier
  * to apply to. `sellStackAcresItem` applies it instead, to the Gold one sale
- * yields, BEFORE that Gold is reserved against the daily ceiling. Same
- * reasoning as before, just relocated: applying it after the reservation
- * would let a permanent, ever-growing account-wide multiplier bypass the one
- * sink every Gold path in StackAcres is subject to. Applying it before the
- * ceiling keeps the money-ordering invariant intact -- a prestiged player
- * still cannot out-earn the flat daily cap, they just reach it faster.
+ * yields.
  */
 
 /**
  * Below this much gross earned SINCE THE LAST RESET, the valve refuses
- * outright. Sized against the flat daily allowance the same way
- * lib/stackacres/upkeep.ts sizes its own base fee: ten days of the flat
- * ceiling's worth of gross production is a real milestone on a farm that is
- * actually being played, not a same-session flip a player could reach by
- * harvesting once and immediately resetting.
+ * outright. A real milestone on a farm that is actually being played, not a
+ * same-session flip a player could reach by harvesting once and immediately
+ * resetting.
  */
 export const STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS = 150_000;
 
@@ -65,13 +57,12 @@ export const STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS = 150_000;
 export const STACKACRES_PRESTIGE_GROSS_PER_POINT = 750_000;
 
 /**
- * Hard ceiling on the multiplier itself, same posture as every other ceiling
- * in this economy (STACKACRES_GOLD_CEILING, the equipment ladder's crit
- * bonus, MONO_CROP_MAX_MULTIPLIER): a permanent account-wide reward still
- * has to have a top, or a farm played long enough eventually breaks every
- * other tuning number in the game. 5x a lifetime's worth of resets is
- * already a large, hard-earned number under the curve above -- reaching it
- * takes multiple resets at real scale, not one lucky run.
+ * Hard ceiling on the multiplier itself, same posture as the equipment
+ * ladder's crit bonus and MONO_CROP_MAX_MULTIPLIER: a permanent account-wide
+ * reward still has to have a top, or a farm played long enough eventually
+ * breaks every other tuning number in the game. 5x a lifetime's worth of
+ * resets is already a large, hard-earned number under the curve above --
+ * reaching it takes multiple resets at real scale, not one lucky run.
  */
 export const STACKACRES_PRESTIGE_MULTIPLIER_CAP = 5;
 

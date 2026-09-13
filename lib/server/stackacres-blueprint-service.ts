@@ -35,11 +35,7 @@ import { inventoryQuantity } from "@/lib/stackacres/inventory";
  *
  * MOVES NO GOLD AT ALL. A blueprint spends processing-track inventory only
  * (see ./contracts.ts's sibling header on why that item space carries no
- * Gold value of its own) and pays nothing back -- there is no reservation
- * step here to mirror `fulfillStackAcresTownContract`'s, and there must
- * never be one added without going through the same
- * `reserveStackAcresExchange` ceiling every other Gold payer in this
- * feature respects.
+ * Gold value of its own) and pays nothing back.
  */
 
 /** Refuses a Mythic Blueprint request in a way the player can act on. The

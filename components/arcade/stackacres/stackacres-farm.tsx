@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import clsx from "clsx";
 import {
-  ChevronLeft,
   Coins,
   Dna,
   HelpCircle,
@@ -57,11 +65,6 @@ import {
 } from "@/lib/stackacres/catalogue";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
-import {
-  exchangeState,
-  msUntilNextExchangeDay,
-  type StackAcresExchangeState,
-} from "@/lib/stackacres/exchange";
 import {
   STACKACRES_YIELDS,
   itemLabel,
@@ -405,7 +408,6 @@ interface StackAcresResponse {
   /** Water in the can. Absent from a response older than the can. */
   water?: number;
   capacity: Partial<Record<StackAcresStock, number>>;
-  exchange: StackAcresExchangeState;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -525,10 +527,6 @@ interface StackAcresResponse {
    *  from a response old enough to predate the revision guard (`applyResponse`
    *  then applies it unconditionally, same as before). */
   round?: { units: StackAcresUnitSnapshot[]; revision?: number };
-  /** Why a refusal is ordinary play rather than a fault. `day-capped` is the
-   *  farm having hit its flat daily Gold ceiling -- see the ceiling throw in
-   *  `harvestStackAcres`. Absent on a plain refusal and on every success. */
-  reason?: "day-capped";
   /** The Pixel Pilgrim's devotion: this player's current UTC-day streak and
    *  progress up his relic ladder. Absent only from a response old enough
    *  to predate the feature. See lib/stackacres/devotion.ts. */
@@ -568,9 +566,9 @@ interface StackAcresResponse {
   droneForage?: { droneId: string; reward: number };
   /** The Prestige Reset Valve's own standing: how many times pulled, the
    *  live multiplier, and gross production still needed before the next
-   *  pull. Always present on a current server, same as `upkeep`/`exchange`
-   *  above -- optional only so a bundle old enough to predate the feature
-   *  keeps working. See lib/stackacres/prestige.ts. */
+   *  pull. Always present on a current server, same as `upkeep` above --
+   *  optional only so a bundle old enough to predate the feature keeps
+   *  working. See lib/stackacres/prestige.ts. */
   prestige?: StackAcresPrestigeView;
   /** Set only by a successful `prestige-reset` response; every other
    *  action's answer leaves this undefined. `prestige` above already
@@ -678,15 +676,6 @@ function StoreCost({ amount }: { amount: number }) {
       {amount.toLocaleString()}
     </span>
   );
-}
-
-function countdownLabel(msLeft: number): string {
-  const total = Math.max(0, Math.ceil(msLeft / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 /**
@@ -872,11 +861,6 @@ export function StackAcresFarm() {
    * bubble and its optimistic tick.
    */
   const [storyView, setStoryView] = useState<StackAcresStoryView | null>(null);
-  // Seeded from the same pure helper the server uses, so the window's terms are
-  // right on the first paint rather than blank until the read lands.
-  const [exchange, setExchange] = useState<StackAcresExchangeState>(() =>
-    exchangeState(0, new Date()),
-  );
   /**
    * Land the player may work, and what keeping it costs today.
    *
@@ -962,6 +946,39 @@ export function StackAcresFarm() {
    *  a time instead of every shelf stacked in one long scroll -- see the
    *  store's own render block below for why. */
   const [storeTab, setStoreTab] = useState<StoreTab>("seeds");
+  /**
+   * The store's own splash-ring taps (the close key, each shelf tab) -- see
+   * `.sa-store-card`'s own CSS comment for why this is a real, if brief,
+   * piece of state instead of a CSS `:active` rule: a ring keyed to `:active`
+   * reverts the instant a finger lifts, which cuts the animation off rather
+   * than letting it fade, and reads as a pop rather than a splash.
+   *
+   * One shared array rather than one `useState` per splashable button --
+   * `STORE_TABS` renders in a `.map()`, and a hook cannot live inside one.
+   * Each entry is tagged with which button it belongs to (`key`) so a
+   * button only ever renders its own splashes, never another one's.
+   */
+  const [storeSplashes, setStoreSplashes] = useState<
+    { id: number; key: string; x: number; y: number }[]
+  >([]);
+  const nextStoreSplashId = useRef(0);
+  const addStoreSplash = useCallback(
+    (key: string) => (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const id = nextStoreSplashId.current++;
+      setStoreSplashes((prev) => [
+        ...prev,
+        { id, key, x: event.clientX - rect.left, y: event.clientY - rect.top },
+      ]);
+      // Matches sa-splash-ring's 520ms duration -- the DOM node's whole job
+      // is done once that animation finishes, so it is removed rather than
+      // left to accumulate.
+      window.setTimeout(() => {
+        setStoreSplashes((prev) => prev.filter((splash) => splash.id !== id));
+      }, 520);
+    },
+    [],
+  );
   const [showContracts, setShowContracts] = useState(false);
   const [showWorkshop, setShowWorkshop] = useState(false);
   /** The vat's own sheet, opened from inside the Workshop. */
@@ -1380,7 +1397,6 @@ export function StackAcresFarm() {
     if (typeof data.feed === "number") setFeed(data.feed);
     if (typeof data.water === "number") setWater(data.water);
     if (data.capacity) setCapacity(data.capacity);
-    if (data.exchange) setExchange(data.exchange);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
     if (typeof data.influence === "number") setInfluence(data.influence);
@@ -1552,7 +1568,6 @@ export function StackAcresFarm() {
       // (soilStock) and adds a bed (soilTiles) optimistically, same as
       // place-pipe does for irrigation below.
       seedStock,
-      exchange,
       sectors,
       upkeep,
       influence,
@@ -1577,7 +1592,6 @@ export function StackAcresFarm() {
       water,
       capacity,
       seedStock,
-      exchange,
       sectors,
       upkeep,
       influence,
@@ -1612,7 +1626,6 @@ export function StackAcresFarm() {
     setWater(snap.water);
     setCapacity(snap.capacity);
     setSeedStock(snap.seedStock);
-    setExchange(snap.exchange);
     setSectors(snap.sectors);
     setUpkeep(snap.upkeep);
     setInfluence(snap.influence);
@@ -1985,27 +1998,9 @@ export function StackAcresFarm() {
           if (data.profile) setProfile(data.profile);
           // A refused purchase takes its own instant toast back too -- left
           // standing, "Bought a Hen!" would sit on screen next to the refusal
-          // banner claiming the opposite. `data.reason === "day-capped"`
-          // below sets its own toast on top of this a few lines down, so this
-          // never fights it.
+          // banner claiming the opposite.
           if (purchaseCue) setLastCollect(null);
-          // The daily Gold ceiling is the feature working, not a fault. It
-          // repaints the round silently like any other refusal, which left a
-          // harvest press looking like it did nothing -- so say it out loud
-          // in the same toast a good harvest answers in, and let the standing
-          // notice by the Harvest key (below) carry the countdown.
-          if (data.reason === "day-capped") {
-            // A capped farm refuses every drone claim too, and the drones
-            // ask on their own -- so park the fleet's drops until the day
-            // rolls over rather than let five patrols keep flying to gold
-            // that cannot pay and firing a refused request apiece every few
-            // seconds until midnight.
-            world.current?.holdDroneForage(msUntilNextExchangeDay(new Date()));
-            setLastCollect({
-              text: data.error ?? "The farm has sent out all the Gold it can today.",
-              nonce: Date.now(),
-            });
-          } else if (!data.round) {
+          if (!data.round) {
             setError(data.error ?? "That did not go through.");
           } else if (body.action === "collect") {
             // Take back the "on its way" promise from above -- the round
@@ -2013,9 +2008,9 @@ export function StackAcresFarm() {
             // all, and nothing is actually inbound.
             setLastCollect(null);
           }
-          // Re-read the allowance once this request has let go of the send
-          // lock, so the window (and the standing notice) show the server's
-          // truth rather than the amount this browser thought it could send.
+          // Re-read once this request has let go of the send lock, so the
+          // farm shows the server's truth rather than what this browser
+          // thought it could send.
           if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
           return { ok: false, message: data.error ?? "That did not go through." };
         }
@@ -3472,8 +3467,8 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** The ring's own way through to the deep end -- the same drawer the peg on
-   *  the right edge opens, reached without having to go and find the peg. */
+  /** The ring's own way through to the deep end -- Manage on the radial menu
+   *  is the only door into the drawer now. */
   const openPanel = useCallback(() => {
     panelSound();
     setRadial(null);
@@ -3561,14 +3556,6 @@ export function StackAcresFarm() {
     () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
     [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
-
-  const exchangeLeft = exchange.ceiling > 0 ? exchange.remaining / exchange.ceiling : 0;
-  // The farm has paid out everything it can today. `< 1`, not `<= 0`, because a
-  // sub-Gold remainder settles no harvest either -- every yield is whole Gold.
-  // Drives the standing notice below, the feedback that was missing: the
-  // allowance meter only lived in the supply-store sheet.
-  const dayCapped = exchange.remaining < 1;
-  const capResetLabel = countdownLabel(Date.parse(exchange.resetsAt) - nowMs);
 
   // stackacres-scene.ts fires onReady synchronously once the scene is built
   // and the camera framed -- before Phaser's own render loop has actually
@@ -4007,7 +3994,7 @@ export function StackAcresFarm() {
           {upkeep.due > 0 && (
             <span
               className="sa-upkeep"
-              title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next harvest.`}
+              title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next sale, contract or vat batch.`}
             >
               <StackAcresIcon name="ico-gold" size={16} />
               <strong>-{upkeep.due.toLocaleString()}</strong>
@@ -4308,55 +4295,20 @@ export function StackAcresFarm() {
               what was gathered TOGETHER, so a farm collected a tap at a time
               earns nothing. It only appears when there is something to bring
               in -- a permanently-visible disabled key on a canvas is chrome a
-              player learns to stop reading.
-
-              Once the day is capped the key would only ever refuse, so it is
-              swapped for the reason: the farm has paid out all it can today,
-              the crops keep, and here is when it reopens. */}
-          {carrying > 0 &&
-            (dayCapped ? (
-              <p className="sa-harvest-capped" role="status">
-                <StackAcresIcon name="ico-gold" size={18} />
-                <span>
-                  Today&apos;s Gold is all sent out. {carrying}{" "}
-                  {carrying === 1 ? "field keeps" : "fields keep"} growing — back in {capResetLabel}.
-                </span>
-              </p>
-            ) : (
-              <button
-                type="button"
-                className="sa-harvest-all"
-                disabled={isPending("collect")}
-                onClick={onHarvestAll}
-              >
-                <StackAcresIcon name="ico-harvest" size={18} />
-                <span>
-                  Harvest {carrying} {carrying === 1 ? "field" : "fields"}
-                </span>
-              </button>
-            ))}
-
-          {/* The handle the panel hangs off when it is shut. Before this,
-              the only way back into a district you had closed was to find
-              its name in the signpost and travel there again -- which also
-              flies the camera, so "let me look at that list again" cost you
-              your view. It is a peg on the right edge, always there, and it
-              is the one piece of chrome that is deliberately louder than it
-              needs to be: it is how a player learns the panel is a drawer
-              rather than something that happens to them. It used to name the
-              district it would open; the map no longer sounds or reads as
-              separate districts, so it just says what it does. */}
-          <button
-            type="button"
-            className={clsx("sa-panel-tab", { "is-stowed": panelOpen })}
-            aria-expanded={panelOpen}
-            aria-controls="sa-district-panel"
-            onClick={() => { panelSound(); setPanelOpen(true); }}
-            tabIndex={panelOpen ? -1 : undefined}
-          >
-            <ChevronLeft size={18} aria-hidden="true" />
-            <span className="sa-panel-tab-label">Farm</span>
-          </button>
+              player learns to stop reading. */}
+          {carrying > 0 && (
+            <button
+              type="button"
+              className="sa-harvest-all"
+              disabled={isPending("collect")}
+              onClick={onHarvestAll}
+            >
+              <StackAcresIcon name="ico-harvest" size={18} />
+              <span>
+                Harvest {carrying} {carrying === 1 ? "field" : "fields"}
+              </span>
+            </button>
+          )}
 
           {/* The district panel: deep management, not the way you play.
               The fast loop is on the canvas now -- tap a ripe crop to collect
@@ -4502,56 +4454,42 @@ export function StackAcresFarm() {
       {showStore && (
         <div className="sa-store-scrim" role="dialog" aria-modal="true" aria-label="Supply store">
           <div className="sa-store-card">
+            {/* One line: a small Ray portrait, the store's own brand (not his
+                name -- see stackacres-ray-welcome.tsx for where his own voice
+                still lives), and a close key. Used to be a two-line header
+                plus a whole status card (the daily Gold ceiling and Land
+                Maintenance) sitting above the tabs -- StackAcres dropped that
+                ceiling entirely (lib/stackacres/exchange.ts), and Land
+                Maintenance already has its own HUD pill (`.sa-upkeep` above)
+                whenever it is actually owed, so neither needed a second home
+                here. */}
             <header className="sa-store-head">
-              <div className="sa-ray-row">
-                <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
-                <div>
-                  <span className="sa-ray-name">Grandfather Ray</span>
-                  <h2>Supply store</h2>
-                </div>
-              </div>
+              <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-store-mark" />
+              <h2>StackAcres Supply Co.</h2>
               <button
                 type="button"
-                className="sa-sheet-close"
+                className="sa-store-close"
+                aria-label="Close"
+                onPointerDown={addStoreSplash("close")}
                 onClick={() => { panelSound(); setShowStore(false); }}
               >
-                Done
+                <X size={16} aria-hidden="true" />
+                {storeSplashes
+                  .filter((splash) => splash.key === "close")
+                  .map((splash) => (
+                    <span
+                      key={splash.id}
+                      className="sa-splash"
+                      style={{ left: splash.x, top: splash.y }}
+                      aria-hidden="true"
+                    />
+                  ))}
               </button>
             </header>
 
             {/* The page's own banner sits behind the scrim, so a refusal raised
                 by a button in here has to be answered in here. */}
             {error && <p className="duel-error" role="alert">{error}</p>}
-
-            {/* The day's Gold ceiling and land upkeep constrain every shelf
-                below rather than belonging to one of them, so they sit above
-                the tabs as a compact status strip instead of costing their
-                own tap or their own long paragraph. */}
-            <div className="sa-store-status">
-              <div className="sa-store-status-row">
-                <span className="sa-exchange-bar" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${exchangeLeft})` }} />
-                </span>
-                <span aria-live="polite">
-                  <strong>{exchange.remaining.toLocaleString()}</strong> /{" "}
-                  {exchange.ceiling.toLocaleString()} Gold left today
-                </span>
-              </div>
-              {exchange.remaining < 1 && (
-                <p className="sa-store-status-note">
-                  Anything still standing keeps until the day turns over, in{" "}
-                  {countdownLabel(Date.parse(exchange.resetsAt) - nowMs)}.
-                </p>
-              )}
-              <div className="sa-store-status-row">
-                <span className="sa-store-status-label">Land maintenance</span>
-                <span>
-                  {upkeep.due > 0 ? `${upkeep.due.toLocaleString()} Gold due` : "Paid up"} —{" "}
-                  {upkeep.fee.toLocaleString()}/day, {upkeep.plots}{" "}
-                  {upkeep.plots === 1 ? "plot" : "plots"}
-                </span>
-              </div>
-            </div>
 
             <div className="sa-store-tabs" role="tablist" aria-label="Store shelf">
               {STORE_TABS.map((tab) => (
@@ -4561,10 +4499,21 @@ export function StackAcresFarm() {
                   role="tab"
                   aria-selected={storeTab === tab.id}
                   className={clsx("sa-store-tab", storeTab === tab.id && "sa-store-tab-active")}
+                  onPointerDown={addStoreSplash(tab.id)}
                   onClick={() => { panelSound(); setStoreTab(tab.id); }}
                 >
                   <StackAcresIcon name={tab.icon} size={18} />
                   <span>{tab.label}</span>
+                  {storeSplashes
+                    .filter((splash) => splash.key === tab.id)
+                    .map((splash) => (
+                      <span
+                        key={splash.id}
+                        className="sa-splash"
+                        style={{ left: splash.x, top: splash.y }}
+                        aria-hidden="true"
+                      />
+                    ))}
                 </button>
               ))}
             </div>
@@ -5009,11 +4958,6 @@ export function StackAcresFarm() {
             things grown and things an animal made is <strong>Crop Rotation</strong>. Either
             multiplies what the whole harvest pays, so the Harvest key is worth more than tapping
             each field on its own.
-          </p>
-          <p>
-            Every farm can send out the same {exchange.ceiling.toLocaleString()} Gold a day, whatever
-            it owns — owning more reaches that sooner, it never gets more than that. Anything still
-            standing keeps until tomorrow.
           </p>
           <ul>
             <li>Seed a crop or stock a pen with Gold, then come back when it turns gold.</li>

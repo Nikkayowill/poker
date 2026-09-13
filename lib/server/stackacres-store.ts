@@ -82,7 +82,6 @@ declare global {
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
   var __riverRoomStackAcresTool: Map<string, StackAcresToolTier> | undefined;
   var __riverRoomStackAcresCutters: Map<string, Set<StackAcresBuyableCutter>> | undefined;
-  var __riverRoomStackAcresExchanges: Map<string, number> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
   var __riverRoomStackAcresMuseum: Map<string, Set<string>> | undefined;
@@ -129,10 +128,6 @@ globalThis.__riverRoomStackAcresTool = memoryTool;
 const memoryCutters =
   globalThis.__riverRoomStackAcresCutters ?? new Map<string, Set<StackAcresBuyableCutter>>();
 globalThis.__riverRoomStackAcresCutters = memoryCutters;
-
-/** Gold taken out of the farm, keyed `${profileId}:${YYYY-MM-DD}`. */
-const memoryExchanges = globalThis.__riverRoomStackAcresExchanges ?? new Map<string, number>();
-globalThis.__riverRoomStackAcresExchanges = memoryExchanges;
 
 const memoryHarvests = globalThis.__riverRoomStackAcresHarvests ?? [];
 globalThis.__riverRoomStackAcresHarvests = memoryHarvests;
@@ -249,7 +244,6 @@ export function __resetStackAcresForTest(): void {
   memoryWater.clear();
   memoryTool.clear();
   memoryCutters.clear();
-  memoryExchanges.clear();
   memoryUpkeep.clear();
   memoryHarvests.length = 0;
   memoryMuseum.clear();
@@ -1123,8 +1117,8 @@ export async function buildStackAcresGreenhouseRow(profileId: string): Promise<b
 
 /**
  * Gold already taken for land maintenance on this UTC day. Read-only and
- * advisory, the same caveat `readStackAcresExchanged` carries: it is what the
- * HUD shows, never what a charge is decided on. The decision is made inside
+ * advisory: it is what the HUD shows, never what a charge is decided on. The
+ * decision is made inside
  * `raiseStackAcresUpkeep`, atomically, because anything read first can be
  * raced by a second tab.
  *
@@ -1152,8 +1146,7 @@ export async function readStackAcresUpkeep(profileId: string, day: string): Prom
  * Raises today's paid total to `target`, and says whether this call is the
  * one that moved it.
  *
- * RAISE-TO, NOT ADD, and that is the whole reason this is not shaped like
- * `reserveStackAcresExchange`. A day's bill is not fixed when the day starts:
+ * RAISE-TO, NOT ADD. A day's bill is not fixed when the day starts:
  * a player who buys a capacity slot at noon owes more for the afternoon than
  * they did for the morning, so the ledger has to hold "what has been paid
  * toward today" and the caller has to settle the DIFFERENCE. A plain
@@ -1167,8 +1160,7 @@ export async function readStackAcresUpkeep(profileId: string, day: string): Prom
  * leaves the day slightly under-collected until the next action re-reads it
  * -- a rounding error in the player's favour, not a double charge.
  *
- * The caller debits BEFORE calling this (rule 1) and refunds on false,
- * exactly like `reserveStackAcresExchange`'s null.
+ * The caller debits BEFORE calling this (rule 1) and refunds on false.
  */
 export async function raiseStackAcresUpkeep(
   profileId: string,
@@ -1390,122 +1382,8 @@ export async function fillStackAcresWater(profileId: string): Promise<number> {
 }
 
 /* ------------------------------------------------------------------ */
-/* The daily Gold allowance, and Land Maintenance                       */
+/* Land Maintenance                                                    */
 /* ------------------------------------------------------------------ */
-
-/**
- * How much Gold this player has already taken out of the farm today. Read-only
- * and advisory: it is what the store sheet shows, never what a reservation is
- * decided on. The decision is made inside reserveStackAcresExchange, atomically,
- * because anything read first can be raced.
- */
-export async function readStackAcresExchanged(profileId: string, day: string): Promise<number> {
-  const supabase = adminClient();
-  if (!supabase) return memoryExchanges.get(`${profileId}:${day}`) ?? 0;
-
-  const { data, error } = await supabase
-    .from("homestead_exchanges")
-    .select("gold")
-    .eq("profile_id", profileId)
-    .eq("day", day)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read today's exchange: ${error.message}`);
-  return data ? Number((data as { gold: number | string }).gold) : 0;
-}
-
-/**
- * Reserves `gold` against today's ceiling, atomically, and returns the day's
- * new total -- or null when the reservation would break the ceiling.
- *
- * Called by the harvest now rather than by an exchange window, and called
- * BEFORE any unit is settled, so that a full day refuses while the crops are
- * still standing. `releaseStackAcresExchange` below is the other half of that
- * order.
- *
- * Null is the whole point of this function. It is the same posture every other
- * write here takes: a null is a refusal or a lost race, the two are
- * indistinguishable from the caller, and null must never pay. Two requests
- * racing for the last of the day's allowance cannot both win, because the RPC
- * takes a row lock rather than reading and then writing.
- *
- * `ceiling` can only ever TIGHTEN what the database allows: the SQL function
- * carries its own hard copy of the constant and takes the smaller of the two,
- * so raising the farm's Gold faucet needs a migration rather than a deploy.
- */
-export async function reserveStackAcresExchange(
-  profileId: string,
-  day: string,
-  gold: number,
-  ceiling: number,
-): Promise<number | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const key = `${profileId}:${day}`;
-    const used = memoryExchanges.get(key) ?? 0;
-    const next = used + gold;
-    if (next > ceiling) return null;
-    memoryExchanges.set(key, next);
-    return next;
-  }
-
-  const { data, error } = await supabase.rpc("reserve_homestead_exchange", {
-    p_profile_id: profileId,
-    p_day: day,
-    p_gold: gold,
-    p_ceiling: ceiling,
-  });
-  if (error) throw new Error(`Could not reach the exchange window: ${error.message}`);
-  return data === null ? null : Number(data);
-}
-
-/**
- * Hands part of a reservation back, when a sweep settled fewer units than it
- * reserved for.
- *
- * WHY THIS EXISTS AT ALL. A harvest reserves against the day's allowance
- * BEFORE it settles any unit, because the reservation is the thing that can
- * refuse -- refusing after the crops are gone would consume a harvest and pay
- * nothing for it. The cost of that order is this function: if a second tab won
- * the race for some of the units, the sweep must give back the part of the
- * allowance it did not use, or a double-tap would quietly burn a day's Gold.
- *
- * Deliberately NOT the same call as `reserveStackAcresExchange` with a
- * negative amount. That RPC raises on a non-positive amount on purpose -- a
- * zero would hand back a non-null total and authorise a payout that reserved
- * nothing -- and the release has the opposite failure mode to guard: it
- * clamps at zero rather than refusing, because a release that cannot find
- * what to release must not throw on top of a harvest that already settled.
- *
- * Best-effort by construction. It returns the day's new total, or null if the
- * release could not be recorded; the caller logs and carries on, because the
- * player has already been paid correctly either way and the only casualty is
- * that they may reach today's ceiling sooner than they should.
- */
-export async function releaseStackAcresExchange(
-  profileId: string,
-  day: string,
-  gold: number,
-): Promise<number | null> {
-  if (!Number.isFinite(gold) || gold <= 0) return null;
-  const supabase = adminClient();
-  if (!supabase) {
-    const key = `${profileId}:${day}`;
-    const next = Math.max(0, (memoryExchanges.get(key) ?? 0) - gold);
-    memoryExchanges.set(key, next);
-    return next;
-  }
-
-  const { data, error } = await supabase.rpc("release_homestead_exchange", {
-    p_profile_id: profileId,
-    p_day: day,
-    p_gold: gold,
-  });
-  if (error) {
-    console.error("stackacres.allowance_release_failed", { profileId, day, gold, error });
-    return null;
-  }
-  return data === null ? null : Number(data);
-}
 
 /** One settled collection, for the append-only economy ledger. */
 export interface StackAcresHarvestEntry {

@@ -1,16 +1,17 @@
 /**
  * Land Maintenance: what holding cleared ground costs, per UTC day, in Gold.
  *
- * A STANDALONE WALLET DEBIT NOW, not netted out of a harvest payout -- a
- * harvest no longer produces one to net it from (see
- * lib/server/stackacres-service.ts's own header). `assessStackAcresUpkeep`
- * charges what is due, lazily, as a best-effort side effect of the next
- * mutating farm action (never a bare read -- see `runStackAcresAction`),
- * clamped at the wallet's own current balance so it can never go negative and
+ * NETTED OFF A GOLD PAYOUT (2026-09-12, Kayo's call), not a standalone wallet
+ * debit -- see lib/server/stackacres-service.ts's own header and
+ * `netUpkeepFromPayout` there. Skimmed off the top of whatever
+ * `sellStackAcresItem`/`fulfillStackAcresTownContract`/`collectStackAcresVat`
+ * is about to credit, clamped at that payout so it can never go negative and
  * never turns into debt: an unpaid remainder is not carried forward, the next
- * assessment simply re-reads the same still-due amount.
+ * payout simply re-reads the same still-due amount. A farm that never sells
+ * anything simply never pays it.
  *
- * WHAT IT KEPT from that pass, because both were better than what I had:
+ * WHAT IT KEPT from the pass before that, because both were better than what
+ * I had:
  *
  *   * **The charge base is SLOTS ON CLEARED GROUND** (`unlockedPlotCount`),
  *     not units owned. Charging for what is standing would let a player clear
@@ -27,7 +28,7 @@
  * on a small farm, the dominant term on a maxed estate. A big farm still earns
  * more than a small one; it just keeps less of each additional plot.
  *
- * Assessed lazily, once per UTC day, on that day's harvests. There is no cron
+ * Assessed lazily, once per UTC day, off that day's payouts. There is no cron
  * behind this and deliberately isn't one -- the same reasoning that keeps
  * every other piece of StackAcres a pure function of timestamps. The day's
  * paid total lives in one row per (profile, day), in `homestead_upkeep`.

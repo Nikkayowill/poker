@@ -266,21 +266,4 @@ describe("forage cooldown vs. the drop cadence", () => {
     expect(SCENE).toContain("time >= node.nextDropAtMs");
     expect(SCENE).toContain("node.nextDropAtMs = this.time.now + DRONE_FORAGE_COOLDOWN_MS");
   });
-
-  it("stops entirely once the farm is day-capped", () => {
-    // The other refusal a patrolling drone can walk into, and the worse one:
-    // a capped farm refuses EVERY claim until UTC midnight, so nothing about
-    // waiting one more cooldown helps. The server has to say which refusal
-    // it was, and the client has to park the fleet on hearing it.
-    const SERVICE = readFileSync(
-      join(process.cwd(), "lib/server/stackacres-service.ts"),
-      "utf8",
-    );
-    expect(SERVICE).toContain('result.reason === "day-capped" ? { reason: "day-capped" as const } : {}');
-    const FARM = readFileSync(
-      join(process.cwd(), "components/arcade/stackacres/stackacres-farm.tsx"),
-      "utf8",
-    );
-    expect(FARM).toContain("holdDroneForage(msUntilNextExchangeDay(new Date()))");
-  });
 });

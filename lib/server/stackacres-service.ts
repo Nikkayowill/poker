@@ -2643,6 +2643,128 @@ export async function stockStackAcres(
 }
 
 /**
+ * Sows the same crop across a whole contiguous block of bare, same-tier beds
+ * at once instead of one at a time -- the planting equivalent of
+ * `waterStackAcresGroup` below. What dropping a Crop Fields gel-dock seed
+ * token on a bare bed that's part of a >=2x2 block sends (`plantableTileGroup`,
+ * lib/stackacres/soil.ts); a lone bed still goes through `stockStackAcres`
+ * above, unchanged.
+ *
+ * Crops only -- livestock and the Greenhouse have no open bed lattice to
+ * group over, and crops are the one stock kind with no cap to race
+ * (STACKACRES_BASE_CAP is livestock-only), so this skips both the cap check
+ * and the Greenhouse branch `stockStackAcres` still carries.
+ *
+ * Every named tile is planted only if it is STILL a real, unoccupied bed
+ * right now -- same trust posture `waterStackAcresGroup` takes toward its own
+ * unit-id list. Unlike a single sow, a tile that lost the race for its own
+ * exact slot is skipped rather than retried onto some OTHER free bed
+ * elsewhere on the farm: scattering one of a dozen requested crops off to a
+ * random tile far outside the block the player just dragged over would read
+ * as a bug, not a courtesy. Running out of seed partway stops the batch
+ * early (same as the watering can running dry); planting nowhere at all,
+ * because every tile in the block filled in the meantime, is the only real
+ * refusal.
+ */
+export async function stockStackAcresGroup(
+  token: string,
+  input: { stock: string; tiles: readonly SoilTileCoord[] },
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isStackAcresStock(input.stock) || !isStackAcresCrop(input.stock)) {
+    throw new StackAcresRequestError("Not a real crop.", 400);
+  }
+  const stock: StackAcresCrop = input.stock;
+  const def = STACKACRES_CATALOGUE[stock];
+  const produce = STACKACRES_YIELDS[stock];
+  const profile = await ensureProfile(token);
+
+  const land = await readLand(profile.id);
+  const zone = stockZone(stock);
+  requireOpenSector(land.sectors, zone, `${def.label}s`);
+  // Same standalone Crop Fields gate `stockStackAcres` checks -- every crop
+  // is zoned to the always-open Farmstead (stockZone's own header), so its
+  // real lock is this one, not `requireOpenSector` above.
+  if (zone === "farmstead" && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
+    throw new StackAcresRequestError(
+      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const [purchased, units] = await Promise.all([
+    listStackAcresSoilTiles(profile.id),
+    listStackAcresUnits(profile.id),
+  ]);
+  const soil = soilMapFor(purchased);
+  const takenSlots = new Set(
+    units.map((unit) => unit.soilSlot).filter((slot): slot is number => slot !== null),
+  );
+
+  let plantedCount = 0;
+  const seenTiles = new Set<string>();
+  for (const tile of input.tiles) {
+    // A client sending the same tile twice (or a group larger than what its
+    // own flood fill actually found) must not cost two seeds for one bed.
+    const tileKey = soilTileKey(tile.tx, tile.ty);
+    if (seenTiles.has(tileKey)) continue;
+    seenTiles.add(tileKey);
+
+    const slot = soilSlotForTile(soil, tile.tx, tile.ty);
+    if (slot === null || takenSlots.has(slot)) continue;
+
+    const heldSeeds = await adjustStackAcresSeedStock(profile.id, stock, -1);
+    if (heldSeeds === null) break;
+
+    const tileRow = soilSlotTile(soil, slot);
+    const growthMultiplier = tileRow ? soilGrowthMultiplier(soilTileTier(tileRow)) : 1;
+    const durationMs = Math.round(def.durationMs * growthMultiplier);
+
+    try {
+      await createStackAcresUnit(profile.id, {
+        stock,
+        stake: def.seedCost,
+        yieldQuantity: produce.quantity,
+        startedAt: now,
+        readyAt: new Date(now.getTime() + durationMs),
+        lastFedAt: null,
+        lastWateredAt: null,
+        permanent: false,
+        housedIn: null,
+        soilSlot: slot,
+      });
+      takenSlots.add(slot);
+      plantedCount += 1;
+    } catch (error) {
+      await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
+      if (!(error instanceof SoilSlotConflictError)) {
+        // An unexpected DB error, not just a lost race for this one bed --
+        // stop rather than keep hammering it, but keep whatever already
+        // landed (same posture `waterStackAcresGroup` takes on its own
+        // mid-batch throw).
+        if (plantedCount === 0) throw error;
+        break;
+      }
+      // Lost the race for this exact tile to something else -- move on
+      // rather than retry it onto a different bed (see this function's own
+      // header on why).
+    }
+  }
+
+  if (plantedCount === 0) {
+    throw new StackAcresRequestError(
+      `${def.label}'s bed just filled. Try tapping bare ground again.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  await waterIrrigatedCrops(profile.id, now);
+  return view(profile, now);
+}
+
+/**
  * Sends bought stock away. NO REFUND, and the UI has to say so before it asks
  * -- see STACKACRES_RETIRE_REFUND.
  *

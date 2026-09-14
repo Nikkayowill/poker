@@ -97,6 +97,7 @@ import {
 } from "@/lib/stackacres/world";
 import {
   createSoilMap,
+  plantableTileGroup,
   soilSlotOnTile,
   soilSlotTile,
   soilTileAt,
@@ -1814,6 +1815,15 @@ export function StackAcresFarm() {
     [cropOnTile],
   );
 
+  /** Whether tile `(tx, ty)` already has a crop standing on it -- `soil.ts`'s
+   *  `plantableTileGroup` calls this once per tile it walks to decide how
+   *  far a group-plant block reaches, the planting mirror of `dryUnitAt`
+   *  above. */
+  const bedOccupiedAt = useCallback(
+    (tx: number, ty: number): boolean => cropOnTile(tx, ty) !== null,
+    [cropOnTile],
+  );
+
   const anyWorking = units.some(
     (unit) =>
       unit.state === "working" ||
@@ -3468,11 +3478,18 @@ export function StackAcresFarm() {
    *  Carries the tile the player actually tapped, when there's a bed to name
    *  -- `radialSoilTile` is only non-null inside a real bed, which is the
    *  one difference from `onSeed` below: that control has no tap to point
-   *  at, so it always plants on the lowest free slot, same as ever. */
+   *  at, so it always plants on the lowest free slot, same as ever.
+   *
+   *  When the tapped bed is part of a >=2x2 block of bare, same-tier beds
+   *  (`plantableTileGroup`, soil.ts), the whole block goes in one request
+   *  instead of just the one tile -- the planting mirror of the water can's
+   *  own group-drop (`thirstyTileGroup` above). A smaller or mixed-tier
+   *  patch falls back to the single tile, same as ever. */
   const onRadialSeed = useCallback(
     (stock: StackAcresStock) => {
       const at = radial?.at ?? null;
       const tile = radialSoilTile ? { tx: radialSoilTile.tx, ty: radialSoilTile.ty } : null;
+      const group = tile ? plantableTileGroup(soilMapForTiles, tile.tx, tile.ty, bedOccupiedAt) : [];
       setRadial(null);
       // The same seed going into the same ground as `onSeed`; the only
       // difference is which control asked for it.
@@ -3484,10 +3501,16 @@ export function StackAcresFarm() {
       // which `assignSoilSlot` already handles by falling through to the
       // lowest free slot, same as it always has.
       const pending = tile ? pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`) : null;
-      const send = () => act({ action: "stock", stock, ...(tile ? { tx: tile.tx, ty: tile.ty } : {}) });
+      const send = () =>
+        act({
+          action: "stock",
+          stock,
+          ...(tile ? { tx: tile.tx, ty: tile.ty } : {}),
+          ...(group.length > 1 ? { tiles: group } : {}),
+        });
       void (pending ? pending.catch(() => null).then(send) : send());
     },
-    [act, radial, radialSoilTile],
+    [act, bedOccupiedAt, radial, radialSoilTile, soilMapForTiles],
   );
 
   /**

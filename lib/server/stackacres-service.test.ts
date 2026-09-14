@@ -21,6 +21,7 @@ import {
   retireStackAcresStock,
   runStackAcresAction,
   stockStackAcres,
+  stockStackAcresGroup,
   tapStackAcresSecretZone,
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
@@ -913,6 +914,68 @@ describe("group-watering a >=2x2 block", () => {
     // Still T0, before any of the three would dry out again.
     await expect(waterStackAcresGroup(token, ids, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await readStackAcresWater(id)).toBe(WATER_CAPACITY - 3);
+  });
+});
+
+describe("group-planting a >=2x2 block", () => {
+  // `funded()`'s own bed block: a 12-wide row-major grid starting here, so
+  // these four are always a real, bare 2x2 corner of it.
+  const bedOrigin = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+  const block2x2 = [
+    { tx: bedOrigin.tx, ty: bedOrigin.ty },
+    { tx: bedOrigin.tx + 1, ty: bedOrigin.ty },
+    { tx: bedOrigin.tx, ty: bedOrigin.ty + 1 },
+    { tx: bedOrigin.tx + 1, ty: bedOrigin.ty + 1 },
+  ];
+
+  it("plants every named tile and spends one seed each", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", 4);
+
+    const view = await stockStackAcresGroup(token, { stock: "carrot", tiles: block2x2 }, T0);
+    expect(view.units.filter((u) => u.stock === "carrot")).toHaveLength(4);
+    expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(0);
+  });
+
+  it("plants as far as the seed shelf goes, and does not error on running out", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    await adjustStackAcresSeedStock(id, "carrot", 2);
+
+    const view = await stockStackAcresGroup(token, { stock: "carrot", tiles: block2x2 }, T0);
+    expect(view.units.filter((u) => u.stock === "carrot")).toHaveLength(2);
+    expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(0);
+  });
+
+  it("skips a tile that already filled rather than erroring", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "carrot", tile: block2x2[0] }, T0);
+
+    const view = await stockStackAcresGroup(token, { stock: "carrot", tiles: block2x2 }, T0);
+    // The already-occupied corner stays a single carrot, not two stacked on
+    // the same bed -- the other three tiles still went in.
+    expect(view.units.filter((u) => u.stock === "carrot")).toHaveLength(4);
+    // One seed for the pre-existing plant plus three for the group -- never
+    // four, which would mean a seed was spent on the skipped tile too.
+    expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(1000 - 4);
+  });
+
+  it("refuses when every named tile is already occupied", async () => {
+    const { token, id } = await funded();
+    for (const tile of block2x2) await stockStackAcres(token, { stock: "carrot", tile }, T0);
+
+    await expect(
+      stockStackAcresGroup(token, { stock: "carrot", tiles: block2x2 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(1000 - 4);
+  });
+
+  it("refuses livestock -- there is no bed lattice to group over", async () => {
+    const { token } = await funded();
+    await expect(
+      stockStackAcresGroup(token, { stock: "hen", tiles: block2x2 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 });
 

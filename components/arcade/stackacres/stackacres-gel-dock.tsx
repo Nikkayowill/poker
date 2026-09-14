@@ -345,6 +345,10 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   const arrowFrom: TapPoint = { x: at.x + nudgeX, y: flip ? rowTop + ESTIMATED_MENU_HEIGHT : rowTop };
   const arrow = arrowGeometry(arrowFrom, at);
   const hintTop = flip ? rowTop - 24 : rowTop + ESTIMATED_MENU_HEIGHT + 8;
+  // The item actually being dragged, rendered as its own floating clone
+  // below rather than inside `.sa-gel-row` -- see that clone's own comment
+  // for why.
+  const draggedItem = dragKey ? items.find((entry) => entry.key === dragKey) : undefined;
 
   return (
     <div ref={rootRef} className={clsx("sa-gel", `is-${phase}`)}>
@@ -370,6 +374,49 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
             />
           ))}
         </span>
+      )}
+      {draggedItem && phase !== "idle" && (
+        // The token actually chasing the finger. Deliberately a sibling of
+        // `.sa-gel-target` above rather than something rendered inside
+        // `.sa-gel-row`/`.sa-gel-scroll`: that row carries its own
+        // `translate` for centering, and per the CSS transforms spec any
+        // element with a non-none transform/translate/rotate/scale becomes
+        // the containing block for its `position: fixed` (and `absolute`)
+        // descendants. A token positioned `fixed` in there silently stopped
+        // meaning "fixed to the viewport" and started meaning "fixed to the
+        // row" instead, and `.sa-gel-scroll`'s own `overflow-x: auto;
+        // overflow-y: hidden` (there so the row can scroll past
+        // VISIBLE_TOKENS) then clipped it the moment it tried to travel
+        // toward the circle -- it read as trapped in the dock rather than
+        // dragging out of it the way the water can / feed scoop do. Living
+        // here instead, at the same untransformed `.sa-gel` level
+        // `.sa-gel-target` already uses, means `dragClient`'s field-local
+        // coordinates land exactly where they're set with nothing above to
+        // clip them. The matching token inside the row goes invisible in
+        // place instead (`is-lifted` below) so the scroll strip doesn't
+        // reflow, but it keeps the pointer capture and drives this clone's
+        // position.
+        <button
+          type="button"
+          aria-hidden="true"
+          tabIndex={-1}
+          className={clsx("sa-gel-token", "sa-gel-token-live", {
+            "is-hot": isHot,
+            "is-returning": phase === "returning",
+            "is-settling": phase === "settling",
+          })}
+          style={{ left: `${dragClient.x}px`, top: `${dragClient.y}px` }}
+        >
+          <StackAcresIcon name={draggedItem.icon} size={24} />
+          <span className="sa-gel-name">{draggedItem.label}</span>
+          {typeof draggedItem.cost === "number" && (
+            <span className="sa-gel-cost">
+              <StackAcresIcon name="ico-gold" size={12} />
+              {draggedItem.cost.toLocaleString()}
+            </span>
+          )}
+          {typeof draggedItem.qty === "number" && <span className="sa-gel-qty">×{draggedItem.qty}</span>}
+        </button>
       )}
       <div
         className="sa-gel-row"
@@ -405,20 +452,19 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
             className={clsx("sa-gel-scroll", { "is-scrollable": items.length > VISIBLE_TOKENS })}
           >
             {items.map((item, index) => {
-              const live = dragKey === item.key && phase !== "idle";
+              // Held while the token above is off flying toward the circle:
+              // this instance stays put (still owns the pointer capture and
+              // drives the clone's position) but goes invisible in place
+              // rather than trying to relocate itself, so the row keeps its
+              // layout and scroll position exactly as they were.
+              const lifted = dragKey === item.key && phase !== "idle";
               const disabled = busy || Boolean(item.disabledReason);
               return (
                 <button
                   key={item.key}
                   ref={index === 0 ? firstRef : undefined}
                   type="button"
-                  className={clsx("sa-gel-token", {
-                    "is-live": live,
-                    "is-hot": live && isHot,
-                    "is-returning": live && phase === "returning",
-                    "is-settling": live && phase === "settling",
-                  })}
-                  style={live ? { left: `${dragClient.x}px`, top: `${dragClient.y}px` } : undefined}
+                  className={clsx("sa-gel-token", { "is-lifted": lifted })}
                   disabled={disabled}
                   title={item.disabledReason}
                   onPointerDown={(event) => onTokenPointerDown(item, event)}

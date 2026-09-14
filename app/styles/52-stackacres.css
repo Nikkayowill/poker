@@ -1315,13 +1315,28 @@
    Safari, which is where this dock actually lives. 16px still reads as
    heavy glass without paying for every off-screen token at a heavier cost.
 
-   `.is-live` is the fixed-position "picked up" state: while a drag holds a
-   token it pops out of the row's own flow onto the field itself and tracks
-   the finger 1:1 (`.is-returning` adds a spring-back transition for a missed
-   drop instead of a teleport). `.is-hot` mirrors `.sa-gel-target.is-hot` --
-   both grow together as the token nears the circle, so the two glass shapes
-   read as reaching for each other rather than one just landing on the
-   other. */
+   `.is-lifted` just hides this in-row instance in place while its drag is
+   live -- the actual floating token is a separate `.sa-gel-token-live`
+   clone rendered outside `.sa-gel-row` (see stackacres-gel-dock.tsx's own
+   comment on it for why it has to live there rather than here: a `position:
+   fixed` token nested inside `.sa-gel-row`'s own `translate` stopped
+   escaping to the viewport and got clipped by `.sa-gel-scroll` instead,
+   which is what made a drag out of this dock read as trapped in place
+   instead of flying out to the circle the way the water can / feed scoop
+   do). Keeping this instance mounted (rather than unmounting it) preserves
+   the row's layout and scroll position for the rest of the drag.
+
+   SMOKED, not clear-and-white, for the same reason `.sa-store-card` further
+   down this file flipped the same way: a pale, clear fill with the farm's
+   usual dark ink read fine in isolation, but a token sits over whatever the
+   map happens to show underneath -- light grass, sand, cobble, a barn wall
+   -- and dark-on-pale-glass has no backdrop it can count on for contrast.
+   Tinting the fill dark and flipping `--sa-ink`/`--sa-ink-soft` to cream
+   (below) fixes that for every backdrop at once instead of chasing a
+   text-shadow per case, and it's still the same glass: same highlight
+   glint, same blur, same lit rim, just tuned the other way. Scoped to this
+   class rather than touching the shared tokens at the top of the file, so
+   nothing outside the gel dock's own capsules is affected. */
 .sa-gel-token {
   position: relative;
   flex: 0 0 auto;
@@ -1335,17 +1350,23 @@
   gap: 1px;
   padding: 7px 5px;
   overflow: hidden;
-  border: 1.5px solid rgba(255, 255, 255, .6);
+  border: 1.5px solid rgba(255, 255, 255, .55);
   border-radius: 20px;
   background:
-    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .18) 40%, rgba(255, 255, 255, 0) 60%),
-    rgba(255, 255, 255, .2);
+    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .32) 0%, rgba(255, 255, 255, .1) 40%, rgba(255, 255, 255, 0) 60%),
+    rgba(20, 15, 10, .44);
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   backdrop-filter: blur(16px) saturate(1.7);
   box-shadow:
-    inset 0 -5px 10px rgba(18, 22, 32, .16),
-    inset 0 1.5px 3px rgba(255, 255, 255, .75),
-    0 4px 10px rgba(14, 14, 22, .24);
+    inset 0 -5px 10px rgba(0, 0, 0, .22),
+    inset 0 1.5px 3px rgba(255, 255, 255, .6),
+    0 4px 10px rgba(14, 14, 22, .3);
+  /* Flipped for this capsule and its descendants only -- see the header
+     comment above. `.sa-gel-name` (no color of its own) inherits `--sa-ink`
+     straight from here; `.sa-gel-cost`/`.sa-gel-qty` below read
+     `--sa-ink-soft` explicitly, same as the store's own cost badges do. */
+  --sa-ink: #f7f1e6;
+  --sa-ink-soft: rgba(247, 241, 230, .82);
   color: var(--sa-ink);
   cursor: grab;
   /* Horizontal panning stays native (the row scrolls under a thumb same as
@@ -1382,11 +1403,22 @@
   cursor: not-allowed;
 }
 
-.sa-gel-token.is-live {
-  position: fixed;
+.sa-gel-token.is-lifted {
+  visibility: hidden;
+}
+
+/* The live drag clone: a sibling of `.sa-gel-target`, not a descendant of
+   `.sa-gel-row` -- see stackacres-gel-dock.tsx's comment on where it's
+   rendered. Plain `position: absolute` rather than `fixed`: nothing above
+   this element in the tree carries a transform/translate, so it needs no
+   viewport-escape trick to begin with, and its `left`/`top` are already the
+   same field-local pixels `.sa-gel-target`'s own `at.x`/`at.y` use. */
+.sa-gel-token-live {
+  position: absolute;
   z-index: 20;
   translate: -50% -50%;
   cursor: grabbing;
+  pointer-events: none;
   animation: sa-gel-pickup 220ms var(--sa-bounce);
   /* Softens every left/top update from a live pointermove into a short
      chase instead of a hard per-frame teleport -- the same trailing-spring
@@ -1401,13 +1433,13 @@
     0 16px 28px rgba(14, 14, 22, .32);
 }
 
-.sa-gel-token.is-live.is-hot {
+.sa-gel-token-live.is-hot {
   transform: scale(1.18);
   filter: brightness(1.15) saturate(1.3);
   transition: transform 120ms var(--sa-ease-out), filter 120ms var(--sa-ease-out);
 }
 
-.sa-gel-token.is-returning {
+.sa-gel-token-live.is-returning {
   transition: left .24s var(--sa-bounce), top .24s var(--sa-bounce);
 }
 
@@ -1416,15 +1448,15 @@
    underneath it by then, so that hard cut read as a stutter. Fades it out
    over the same window instead, matching the water-can/feed drag token's
    own `.is-settling` fade (`sa-drag-fade`, reused here). */
-.sa-gel-token.is-settling {
+.sa-gel-token-live.is-settling {
   animation: sa-drag-fade .42s ease-in forwards;
 }
 
 /* The one-shot "picked up" wobble: a squash on the way out and a settle back
    to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
    scoop, just done as a shape change instead of a uniform scale since this
-   token has no separate `--grow` custom property to key off. Plays once on
-   the class transition into `.is-live` and does not loop. */
+   token has no separate `--grow` custom property to key off. Plays once when
+   the live clone mounts and does not loop. */
 @keyframes sa-gel-pickup {
   0% { transform: scale(1, 1); }
   40% { transform: scale(1.22, .8); }
@@ -1452,24 +1484,29 @@
   text-align: center;
 }
 
-/* Same purse badge the ring's own .sa-radial-cost carries. */
+/* Same purse badge the ring's own .sa-radial-cost carries, but reading
+   `--sa-ink-soft` instead of the ring's flat `--sa-choc`: `.sa-radial-btn`
+   sits on opaque paper, where choc-brown was always legible, but the gel
+   token is smoked glass over the map (see `.sa-gel-token`'s own header) --
+   `--sa-ink-soft` is what that capsule already flips to cream for. */
 .sa-gel-cost {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   font-size: 12px;
   font-weight: 800;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-gel-cost .sa-ico { width: 12px; height: 12px; }
 
 /* How many of this seed or soil bag are on hand -- a count rather than a
-   price, the same distinction the old seed strip's own qty badge drew. */
+   price, the same distinction the old seed strip's own qty badge drew.
+   `--sa-ink-soft`, not `--sa-choc` -- see `.sa-gel-cost` just above. */
 .sa-gel-qty {
   font-size: 11px;
   font-weight: 800;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 /* ---- the Pixel Pilgrim's dialogue -------------------------------------
@@ -2522,16 +2559,23 @@
   animation: sa-scrim var(--duration-base) ease-out both;
 }
 
-/* A puddle, not a pane of glass -- StackAcres' whole supply store is water
-   now, not fog. Frosted glass (`.sa-gel-token` further down, unrelated) reads
-   as diffuse: a heavy blur softening whatever is behind it. Water reads the
-   opposite way: clear and glossy, a crisp bright reflection floating on a
-   cool, faintly blue-tinted pool, with real depth in its shadow rather than
-   an even tint. So there is almost no blur here (2px, just enough to say
-   "through a thin layer" without fogging anything), the highlight is a sharp
-   near-white ellipse rather than a soft glow, and the base tint leans blue,
-   not the app's usual warm cream. Border, radius and outer drop-shadow are
-   untouched from the flat-paper card this replaced.
+/* Clear glass, not frosted, and not a tinted puddle either. The version
+   before this one leaned blue and carried a bright near-white highlight
+   across the panel; over the farm that reads as a milky sheet laid on the
+   scene rather than a window onto it.
+
+   The numbers that matter, and they are all small: a 2.5% white fill, a 3px
+   blur, and a rim at 20% white. Nothing else fills the shape. Everything
+   that says "glass" is one pixel wide and sits ON the boundary
+   (`--sa-glass-rim*` below): four inset lines, no blur, no spread, brightest
+   along the top since the light is above. A wide soft white glow inside the
+   shape is not an edge, it is a fill, and stacking those is exactly how this
+   look drifts back into frosted glassmorphism.
+
+   Blur radius sets what survives: a 1px line at 6% alpha smears to nothing
+   through 3px of blur, so fine detail behind the panel disappears while big
+   shapes (a roof, a bed of crops, a road) come through. That is the right
+   trade here -- the farm is made of big shapes.
 
    TAPPING IT SPLASHES. A puddle's whole tactile identity is what happens
    when you touch it: a ring of displaced water that spreads outward from
@@ -2548,37 +2592,76 @@
    overflow: hidden` so the ring is clipped to the shape it splashed on
    rather than spilling past its edges. */
 .sa-store-card {
+  /* Declared here so every surface in the store -- head, tabs, close key,
+     stock rows, the Buy keys -- is cut from one material.
+
+     SMOKED, not clear-and-white. Clear glass with the farm's usual dark
+     ink was tried first and failed on the real scene: brown text over
+     grass, cobble and a barn roof has no consistent ground to sit on, and
+     every fix that keeps dark ink means putting a pale fill back, which is
+     the milky look this whole pass exists to avoid. So the fill goes dark
+     instead of light and the ink flips to cream. The material is unchanged
+     -- same near-nothing fill, same 3px blur, same one-pixel lit rim -- it
+     is just tinted the other way, which is what a glass panel over a bright
+     outdoor scene actually looks like. */
+  --sa-glass-fill: rgba(20, 15, 10, .34);
+  --sa-glass-fill-ctl: rgba(255, 255, 255, .07);
+  --sa-glass-fill-quiet: rgba(20, 15, 10, .16);
+
+  /* Flipped for descendants only. Every rule in the store already paints
+     from these two, so the whole panel turns over at once and nothing
+     outside `.sa-store-card` is touched. */
+  --sa-ink: #f7f1e6;
+  --sa-ink-soft: rgba(247, 241, 230, .78);
+  --sa-glass-line: rgba(255, 255, 255, .2);
+  --sa-glass-line-soft: rgba(255, 255, 255, .12);
+  --sa-glass-rim:
+    inset 0 1px 0 rgba(255, 255, 255, .42),
+    inset 0 -1px 0 rgba(255, 255, 255, .08),
+    inset 1px 0 0 rgba(255, 255, 255, .12),
+    inset -1px 0 0 rgba(255, 255, 255, .12);
+  --sa-glass-rim-sm:
+    inset 0 1px 0 rgba(255, 255, 255, .4),
+    inset 0 -1px 0 rgba(255, 255, 255, .1),
+    inset 1px 0 0 rgba(255, 255, 255, .12),
+    inset -1px 0 0 rgba(255, 255, 255, .12);
+  --sa-glass-rim-press:
+    inset 0 2px 3px rgba(20, 20, 24, .18),
+    inset 0 -1px 0 rgba(255, 255, 255, .18);
+
   display: flex;
   flex-direction: column;
-  width: min(100%, 420px);
-  max-height: 88dvh;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  /* Sized for the only shape this game is ever played in: a phone on its
+     side, roughly 930x430 CSS pixels. The old 420px column put two stock
+     cards on screen in a viewport with 900 pixels of width going spare, so
+     every shelf was a scroll. Wide enough for four cards a row, capped so it
+     does not become a billboard on a desktop. Height is capped in absolute
+     pixels as well as dvh, since 88dvh of a 430px-tall viewport is 378px and
+     leaves the panel scrolling for no reason on anything taller. */
+  width: min(100% - 32px, 780px);
+  max-height: min(92dvh, 560px);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background:
-    radial-gradient(90% 40% at 28% 0%, rgba(255, 255, 255, .8) 0%, rgba(255, 255, 255, .3) 30%, rgba(255, 255, 255, 0) 55%),
-    linear-gradient(165deg, rgba(214, 236, 255, .6) 0%, rgba(163, 206, 250, .38) 55%, rgba(126, 178, 235, .42) 100%);
-  -webkit-backdrop-filter: blur(2px) saturate(1.5);
-  backdrop-filter: blur(2px) saturate(1.5);
-  box-shadow:
-    inset 0 2px 2px rgba(255, 255, 255, .95),
-    inset 0 -16px 24px -6px rgba(20, 70, 130, .3),
-    var(--sa-drop-lg);
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: blur(3px) saturate(1.08);
+  backdrop-filter: blur(3px) saturate(1.08);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   overflow: hidden;
   animation: sa-sheet-up 380ms var(--sa-bounce) both;
 }
 
-/* One line: the store's mark, its name, a close key -- replaced a two-line
-   byline-plus-title header that ran the width of the card on its own. */
+/* One line: the store's mark, its name, a close key. No fill and no second
+   border of its own -- the divider is the same hairline the rest of the
+   panel uses, and the head reads as the top of one sheet rather than a
+   separate bar sitting on it. */
 .sa-store-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: none;
-  padding: 8px 10px 8px 8px;
-  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .08) 100%),
-    rgba(150, 195, 245, .2);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sa-glass-line-soft);
+  background: none;
 }
 
 .sa-store-head h2 {
@@ -2588,21 +2671,22 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: -.005em;
+  letter-spacing: -.01em;
   color: var(--sa-ink);
 }
 
 .sa-store-mark {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
   object-fit: cover;
   object-position: top center;
-  background: var(--sa-paper);
+  background: rgba(255, 255, 255, .07);
+  box-shadow: var(--sa-glass-rim-sm);
 }
 
 /* The small close key: its own droplet, splashable (see the card's own
@@ -2615,23 +2699,20 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   overflow: hidden;
-  border: 1.5px solid rgba(255, 255, 255, .75);
-  border-radius: 50%;
-  background:
-    radial-gradient(70% 70% at 32% 22%, rgba(255, 255, 255, .95) 0%, rgba(255, 255, 255, .3) 40%, rgba(255, 255, 255, 0) 62%),
-    rgba(150, 200, 250, .32);
-  -webkit-backdrop-filter: blur(1px) saturate(1.5);
-  backdrop-filter: blur(1px) saturate(1.5);
-  box-shadow:
-    inset 0 -3px 6px rgba(18, 60, 110, .22),
-    inset 0 1px 2px rgba(255, 255, 255, .95),
-    0 2px 6px rgba(14, 14, 22, .2);
+  border: 1px solid var(--sa-glass-line);
+  border-radius: 12px;
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  backdrop-filter: blur(4px) saturate(1.1);
+  box-shadow: var(--sa-glass-rim-sm), 0 5px 14px -10px rgba(20, 20, 24, .3);
   color: var(--sa-ink);
   cursor: pointer;
 }
+
+.sa-store-close:active { box-shadow: var(--sa-glass-rim-press); }
 
 .sa-store-close:hover { filter: brightness(1.05) saturate(1.1); }
 
@@ -2642,43 +2723,57 @@
 
 .sa-store-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex: none;
-  margin: 12px 16px 0;
+  margin: 10px 12px 0;
+  padding: 4px;
+  border: 1px solid var(--sa-glass-line-soft);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-quiet);
 }
 
-/* Splashable, same posture as `.sa-store-close` -- see the card's own
-   comment. `background`/`box-shadow` carry the wet look; the shared
-   pressable-block family further up this file still owns font, tap
-   highlight and touch-action, unaffected by any of this. */
+/* Lozenges in a trough, not six separate keys. Landscape is all width and
+   no height, so icon and label sit side by side rather than stacked -- the
+   row that cost 62px of a 430px-tall screen now costs 44px, and the labels
+   come up from 11px to 12.5px in the same move. Splashable, same posture as
+   `.sa-store-close`; the shared pressable-block family further up this file
+   still owns font, tap highlight and touch-action. */
 .sa-store-tab {
   position: relative;
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
-  min-height: var(--sa-tap);
-  padding: 6px 2px;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 4px;
   overflow: hidden;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-block);
-  background:
-    radial-gradient(85% 60% at 30% 8%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .15) 40%, rgba(255, 255, 255, 0) 65%),
-    rgba(150, 195, 245, .22);
+  border: 1px solid transparent;
+  border-radius: var(--sa-r-chip);
+  background: none;
   color: var(--sa-ink-soft);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 800;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--duration-fast) var(--sa-ease-out), color var(--duration-fast) var(--sa-ease-out);
 }
 
+.sa-store-tab .sa-ico { flex: none; opacity: .8; }
+.sa-store-tab-active .sa-ico { opacity: 1; }
+
+/* Corn is gone from this row. A yellow fill on the selected tab is the one
+   thing loud enough to sink a near-invisible panel, and the shelf you are
+   on is a state, not an action -- the lit rim and the ink stepping to full
+   strength carry it, same as every other selected surface in here. */
 .sa-store-tab-active {
-  background:
-    radial-gradient(85% 60% at 30% 8%, rgba(255, 255, 255, .7) 0%, rgba(255, 255, 255, .2) 40%, rgba(255, 255, 255, 0) 65%),
-    var(--sa-corn);
+  border-color: var(--sa-glass-line);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  backdrop-filter: blur(4px) saturate(1.1);
+  box-shadow: var(--sa-glass-rim-sm), 0 5px 14px -10px rgba(20, 20, 24, .3);
   color: var(--sa-ink);
-  box-shadow: var(--sa-drop);
 }
 
 /* The ring itself. A short-lived DOM node (see the card's own comment for
@@ -2712,9 +2807,15 @@
 .sa-store-panel {
   flex: 1 1 auto;
   min-height: 0;
+  /* x hidden is a backstop, not the fix -- the real fix is every flex/grid
+     ancestor between the card and the price text getting its own
+     `min-width: 0` (see `.sa-stock-card`'s comment). This just guarantees
+     that if some future shelf gets that wrong, the overflow is invisible
+     instead of a card poking out past the panel's rounded corner. */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
 }
 
 .sa-store-panel > .sa-sheet-note:first-child { margin-top: 0; }
@@ -2890,6 +2991,237 @@
   color: var(--sa-ink-soft);
 }
 
+/* ---- the same glass, inside the store only --------------------------- */
+
+/* Everything below is scoped to `.sa-store-card` on purpose: cream paper
+   cards and corn CTAs are still the material everywhere else in StackAcres
+   (the Vat, the Forge, Blueprints, Town Contracts, every drawer), and this
+   is not a rewrite of that system. Inside the store, though, opaque cream
+   rows sitting in a near-invisible shell would read as paper floating on
+   the farm with a frame you can barely see -- so the rows become divisions
+   of the same sheet: a faint hairline, a whisper of fill, no drop shadow.
+   They come after `.sa-stock-card`/`.sa-cta` in the file and carry an extra
+   class, so they win on both counts.
+
+   This covers every surface the shelves actually render, not just the seed
+   grid: the equipment rack (Tools), and `StackAcresBuySection`/
+   `StackAcresUnitRows` (Livestock), which are the exact same components the
+   districts' own drawers use, reused here unmodified apart from this
+   scoping. Missing any one of them is how the Drone card, the Bulk
+   Shipment row, the Trowel rack and the Livestock buy buttons each ended
+   up as an opaque cream block sitting in the glass -- same bug, four
+   places, because each is a component this pass never touched, not one
+   that was styled and got it wrong. */
+.sa-store-card .sa-tool-rack {
+  border: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+.sa-store-card .sa-panel-section {
+  border-top-color: var(--sa-glass-line-soft);
+}
+
+.sa-store-card .sa-buy-kind + .sa-buy-kind {
+  border-top-color: var(--sa-glass-line-soft);
+}
+
+.sa-store-card .sa-buy-cap {
+  border: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+}
+
+.sa-store-card .sa-unit-row {
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+/* Seed one cycle: a quiet row, same weight as a stock card. */
+.sa-store-card .sa-buy-btn {
+  border: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+/* Buy outright / Expand capacity: the committal purchases, so they get the
+   same brighter glass the primary Buy key uses elsewhere on this shelf --
+   not the district drawer's solid corn and leaf, which is exactly the
+   milky-white-pill problem this whole pass exists to undo. The two stay
+   told apart by their label and price colour, not by two different fills. */
+.sa-store-card .sa-buy-btn.is-gold,
+.sa-store-card .sa-buy-btn.is-expand {
+  border: 1px solid rgba(255, 255, 255, .3);
+  background: rgba(255, 255, 255, .07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    inset 0 -1px 0 rgba(255, 255, 255, .12),
+    inset 1px 0 0 rgba(255, 255, 255, .16),
+    inset -1px 0 0 rgba(255, 255, 255, .16),
+    0 6px 16px -10px rgba(20, 20, 24, .3);
+}
+
+.sa-store-card .sa-buy-btn.is-gold .sa-buy-price {
+  color: #ffd88a;
+}
+
+.sa-store-card .sa-buy-btn.is-expand .sa-buy-label {
+  color: var(--sa-ink);
+}
+
+.sa-store-card .sa-buy-btn.is-expand .sa-buy-price {
+  color: #b9eec4;
+}
+.sa-store-card .sa-stock-card {
+  /* The grid-blowout gotcha: a grid item's default `min-width` is `auto`,
+     which floors it at its own content's min-content width, not at the
+     track's `minmax(172px, 1fr)` share. Broccoli's "20x 1,100" button is
+     wider than 172px of min-content, so without this the card refused to
+     shrink to its column and dragged the whole grid past the panel's edge
+     -- the exact clipped-right-edge screenshot this fixes. Same fix, same
+     reason, on the qty row and its buttons below: every flex/grid parent
+     between here and the actual text needs its own `min-width: 0`, or the
+     floor just moves down one level instead of going away. */
+  min-width: 0;
+  gap: 2px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
+/* ---- the store's own type scale ------------------------------------- */
+
+/* Four sizes, and every one of them is a job: the thing's name, what it
+   does, what it costs, and how many you already have. The shelf used to run
+   17 / 14 / 13.5 / 14 with the last two carrying different facts at the same
+   weight, which is why a card read as a wall rather than a stack. */
+.sa-store-card .sa-stock-card h3 {
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--sa-ink);
+}
+
+.sa-store-card .sa-stock-terms {
+  margin-top: 1px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--sa-ink-soft);
+}
+
+/* The unit price, as a chip rather than a line of text -- it is a label on
+   the goods, not a sentence, and pulling it out of the flow is what lets
+   the name and the buy keys sit next to each other. */
+.sa-store-card .sa-stock-yield {
+  align-self: flex-start;
+  margin: 6px 0 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--sa-glass-line-soft);
+  border-radius: var(--sa-r-chip);
+  background: rgba(255, 255, 255, .05);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sa-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-store-card .sa-stock-yield span { color: var(--sa-ink-soft); }
+
+/* "3 in the barn": the quietest fact on the card, and the only one that is
+   not about the purchase. */
+.sa-store-card .sa-stock-card .sa-sheet-note {
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--sa-ink-soft);
+}
+
+/* The shelf's own one-line instruction. Sized to be read once and then
+   ignored, not to compete with the goods under it. */
+.sa-store-panel > .sa-sheet-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--sa-ink-soft);
+}
+
+/* Four across in landscape instead of two, which is what takes the seed
+   shelf from a scroll to a screen. */
+.sa-store-card .sa-stock-cards {
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: 10px;
+  margin-top: 0;
+}
+
+/* The Buy key: the one surface allowed a brighter rim, since it is the
+   thing you came in here to press. Weight comes from the lit edge and the
+   shadow under it, not from a fuller fill -- the moment this goes back to a
+   heavy white pill the whole panel reads as milky again. */
+.sa-store-card .sa-cta {
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .07);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  backdrop-filter: blur(4px) saturate(1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    inset 0 -1px 0 rgba(255, 255, 255, .12),
+    inset 1px 0 0 rgba(255, 255, 255, .16),
+    inset -1px 0 0 rgba(255, 255, 255, .16),
+    0 6px 16px -10px rgba(20, 20, 24, .3);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The 1x / 20x pair. Each key carries a quantity and its total, so they run
+   side by side at one height rather than stacking two lines of text: the
+   quantity leads, the price follows it in the same line, quieter.
+
+   Quiet glass, not the bright primary rim `.sa-store-card .sa-cta` gives a
+   lone Buy/Deploy key. A seed card can carry two or three of these side by
+   side, and the bright rim is written to mark the one commit action on a
+   shelf -- three of them in a row was three competing highlights, which is
+   exactly the clutter this pass is for. They stay told apart from the card
+   they sit in by a hairline and a touch more fill, nothing louder. Higher
+   specificity than `.sa-store-card .sa-cta` (three classes, not two), so
+   this wins regardless of source order. */
+.sa-store-card .sa-buy-qty-row { min-width: 0; gap: 6px; }
+
+/* Just the quantity now -- "1 / seed" already sets the unit price two lines
+   up, so a "20x, 20 Gold" button was the same fact stated twice at two
+   different sizes. The Gold amount is still there for anyone who needs it
+   (`aria-label` on the button in stackacres-farm.tsx), it just isn't
+   printed on the button any more.
+
+   `min-width: 0` stays regardless -- it is the same grid-blowout floor
+   `.sa-stock-card`'s own comment explains, and costs nothing now that the
+   content is short enough it was never actually going to trigger it. */
+.sa-store-card .sa-buy-qty-row .sa-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+  font-size: 14px;
+}
+
+.sa-store-card .sa-buy-qty-row .sa-cta:not(:disabled):active {
+  box-shadow: inset 0 2px 3px rgba(20, 20, 24, .18);
+}
+
+/* The corn CTA's press is a 4px drop onto its own rim shadow; with that
+   shadow gone the button would travel down onto nothing. Swaps the lit edge
+   to the bottom instead, the same way the close key and the tabs do. */
+.sa-store-card .sa-cta:not(:disabled):active {
+  box-shadow: var(--sa-glass-rim-press);
+}
+
 /* ---- a shelf row the farm has not unlocked yet ----------------------- */
 
 /* Stock Ray is holding back, not a half-rendered card.
@@ -2919,6 +3251,25 @@
 }
 .sa-stock-card.is-locked .sa-tool-art {
   filter: saturate(.2) brightness(1.04);
+}
+
+/* The same row, inside the store's glass. "Keeps its own paper" above is
+   the right idea everywhere else in StackAcres -- opaque cream reads as
+   solid board -- but the store flips its ink to cream on a dark fill (see
+   `.sa-store-card`'s own header comment), and `var(--sa-paper)` is cream
+   too. A locked card was painting cream text on a cream card: legible
+   nowhere, which is worse than the "looks like a UI kit" problem the paper
+   rule was written to avoid. Same specificity as the rule above (two
+   classes each), so this wins by coming later -- kept as an addition
+   rather than folded in, so a non-store `.is-locked` row is untouched. */
+.sa-store-card .sa-stock-card.is-locked {
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+.sa-store-card .sa-stock-card.is-locked h3,
+.sa-store-card .sa-stock-card.is-locked .sa-stock-terms,
+.sa-store-card .sa-stock-card.is-locked .sa-stock-yield {
+  opacity: .6;
 }
 
 .sa-lock-hint {
@@ -4671,18 +5022,18 @@
   pointer-events: none;
 }
 
+/* No idle animation here on purpose: `filter` plus an infinite `animation`
+   on the same element (it used to bob up and down) knocks it off the
+   compositor's fast transform-only path, forced full repaint every frame
+   instead -- cheap for a tiny vector painter, not for a real photo. Kayo's
+   call once the watering can moved from a drawn droplet to the Gr8FarmPack
+   render (2026-09-13). */
 .sa-drag-token .sa-ico {
   position: relative;
   z-index: 1;
   width: 30px;
   height: 30px;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
-  animation: sa-drag-bob 1.6s ease-in-out infinite;
-}
-
-@keyframes sa-drag-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
 }
 
 .sa-drag-token:focus-visible {
@@ -4695,8 +5046,6 @@
   transition: none;
   cursor: grabbing;
 }
-
-.sa-drag.is-dragging .sa-drag-token .sa-ico { animation: none; }
 
 /* On a good drop the can tips over the soil and the scoop shakes out over
    the trough, then both fade. */
@@ -4787,8 +5136,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sa-drag-arrow-line,
-  .sa-drag-target,
-  .sa-drag-token .sa-ico { animation: none; }
+  .sa-drag-target { animation: none; }
   .sa-drag-token { transition: none; }
 }
 

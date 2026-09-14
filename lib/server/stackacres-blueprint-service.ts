@@ -108,6 +108,20 @@ function toBlueprintView(state: ConstructionState): BlueprintView {
   };
 }
 
+/** The states-to-views loop `blueprintsView` runs below, pulled out so
+ *  stackacres-service.ts's batch RPC path (which already has every
+ *  blueprint's `ConstructionState` via `stackAcresAllBlueprintsFromBatchRows`)
+ *  can reuse it without a second read of `readAllStackAcresBlueprints`. */
+export function blueprintsViewFromStates(
+  states: Record<BlueprintId, ConstructionState>,
+): Record<BlueprintId, BlueprintView> {
+  const out = {} as Record<BlueprintId, BlueprintView>;
+  for (const [id, state] of Object.entries(states) as [BlueprintId, ConstructionState][]) {
+    out[id] = toBlueprintView(state);
+  }
+  return out;
+}
+
 /** Every blueprint, shaped for the dashboard -- what
  * lib/server/stackacres-service.ts's own `view()` would spread into
  * `StackAcresView.blueprints` if this feature were wired into that shared
@@ -115,11 +129,7 @@ function toBlueprintView(state: ConstructionState): BlueprintView {
  * step; the route below already serves this same shape standalone). */
 export async function blueprintsView(profileId: string): Promise<Record<BlueprintId, BlueprintView>> {
   const states = await readAllStackAcresBlueprints(profileId);
-  const out = {} as Record<BlueprintId, BlueprintView>;
-  for (const [id, state] of Object.entries(states) as [BlueprintId, ConstructionState][]) {
-    out[id] = toBlueprintView(state);
-  }
-  return out;
+  return blueprintsViewFromStates(states);
 }
 
 function parseStructureId(value: unknown): BlueprintId {

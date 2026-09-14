@@ -228,6 +228,59 @@ export async function readAllStackAcresBlueprints(
 }
 
 /**
+ * The live-Supabase half of `readStackAcresBlueprint` above, restated to run
+ * against rows already in hand instead of querying per structure id --
+ * `readStackAcresBlueprint` reads one header (filtered by `structure_id`)
+ * and, only if in progress, one stage's progress rows (filtered by
+ * `structure_id` AND `stage_index`); the batch RPC instead hands back EVERY
+ * header and EVERY progress row this profile has, unfiltered, so this does
+ * both of those filters client-side against the whole set. Memory mode has
+ * no batch to speak of and is untouched -- this is only ever called from the
+ * live-Supabase branch.
+ */
+export function stackAcresBlueprintFromBatchRows(
+  headerRows: { structure_id: string; current_stage: number | string; status: string; completed_at: string | null }[],
+  progressRows: { structure_id: string; stage_index: number | string; item: string; contributed: number | string }[],
+  structureId: BlueprintId,
+): ConstructionState {
+  const headerRow = headerRows.find((row) => row.structure_id === structureId);
+  if (!headerRow) return notStartedConstructionState(structureId);
+
+  const currentStage = Number(headerRow.current_stage);
+  const status: "in_progress" | "completed" = headerRow.status === "completed" ? "completed" : "in_progress";
+
+  if (status === "completed") {
+    return { blueprintId: structureId, status, currentStage, stageContributed: {}, completedAt: headerRow.completed_at };
+  }
+
+  const stageContributed: Partial<Record<MachineItemId, number>> = {};
+  for (const progressRow of progressRows) {
+    if (
+      progressRow.structure_id === structureId &&
+      Number(progressRow.stage_index) === currentStage &&
+      isMachineItem(progressRow.item)
+    ) {
+      stageContributed[progressRow.item] = Number(progressRow.contributed);
+    }
+  }
+
+  return { blueprintId: structureId, status: "in_progress", currentStage, stageContributed, completedAt: null };
+}
+
+/** `readAllStackAcresBlueprints`'s own batch-RPC counterpart -- see
+ *  `stackAcresBlueprintFromBatchRows`'s header for why the same per-id
+ *  filtering has to happen client-side here instead of in SQL. */
+export function stackAcresAllBlueprintsFromBatchRows(
+  headerRows: { structure_id: string; current_stage: number | string; status: string; completed_at: string | null }[],
+  progressRows: { structure_id: string; stage_index: number | string; item: string; contributed: number | string }[],
+): Record<BlueprintId, ConstructionState> {
+  const entries = MYTHIC_BLUEPRINT_IDS.map(
+    (id) => [id, stackAcresBlueprintFromBatchRows(headerRows, progressRows, id)] as const,
+  );
+  return Object.fromEntries(entries) as Record<BlueprintId, ConstructionState>;
+}
+
+/**
  * Begins one player's copy of one blueprint at stage 0. Idempotent by
  * primary key (Supabase) / Map key (memory) -- returns false, never an
  * error, when it was already started (or already finished), so a doubled

@@ -9,4 +9,4 @@
  * stuck. The server, the optimistic layer and the HUD all read this one
  * number.
  */
-export const WATER_CAPACITY = 12;
+export const WATER_CAPACITY = 35;

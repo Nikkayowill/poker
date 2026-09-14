@@ -49,7 +49,7 @@ const memoryInventory: Map<string, number> = (globalThis.__riverRoomStackAcresCr
 
 const PLOT_COLUMNS = "id, profile_id, row_index, col_index, stock, started_at, ready_at, version, created_at";
 
-interface CrossbreedPlotDbRow {
+export interface CrossbreedPlotDbRow {
   id: string;
   profile_id: string;
   row_index: number;
@@ -60,6 +60,8 @@ interface CrossbreedPlotDbRow {
   version: number | string;
   created_at: string;
 }
+
+export { plotFromRow as stackAcresCrossbreedPlotFromBatchRow };
 
 function plotFromRow(row: CrossbreedPlotDbRow): StoredCrossbreedPlot {
   return {
@@ -280,8 +282,21 @@ export function __resetStackAcresCrossbreedForTest(): void {
   memoryInventory.clear();
 }
 
-/** Every hybrid item this player holds. A missing key is 0, same convention
- *  `readStackAcresInventory` uses for the processing track. */
+/** Same fold-rows-dropping-unrecognized-items logic
+ *  `readStackAcresCrossbreedInventory` runs below (every hybrid item this
+ *  player holds, a missing key meaning 0 -- same convention
+ *  `readStackAcresInventory` uses for the processing track), pulled out for
+ *  the batch RPC path. */
+export function stackAcresCrossbreedInventoryFromBatchRows(
+  rows: { item: string; quantity: number | string }[],
+): Partial<Record<CrossbreedItem, number>> {
+  const out: Partial<Record<CrossbreedItem, number>> = {};
+  for (const row of rows) {
+    if (isCrossbreedItem(row.item)) out[row.item] = Number(row.quantity);
+  }
+  return out;
+}
+
 export async function readStackAcresCrossbreedInventory(
   profileId: string,
 ): Promise<Partial<Record<CrossbreedItem, number>>> {
@@ -300,9 +315,5 @@ export async function readStackAcresCrossbreedInventory(
     .select("item, quantity")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your hybrids: ${error.message}`);
-  const out: Partial<Record<CrossbreedItem, number>> = {};
-  for (const row of (data ?? []) as { item: string; quantity: number | string }[]) {
-    if (isCrossbreedItem(row.item)) out[row.item] = Number(row.quantity);
-  }
-  return out;
+  return stackAcresCrossbreedInventoryFromBatchRows((data ?? []) as { item: string; quantity: number | string }[]);
 }

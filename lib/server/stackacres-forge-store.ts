@@ -88,6 +88,16 @@ export async function forgeStackAcresEnchantment(
 }
 
 /** Every permanently-forged enchantment item_id for a profile (quantity > 0). */
+/** Same row-to-id mapping `listOwnedStackAcresEnchantments` runs below,
+ *  pulled out for the batch RPC path -- the batch's own SQL doesn't filter
+ *  `quantity > 0` (unlike this reader's own `.gt("quantity", 0)`), so that
+ *  check moves here instead. */
+export function stackAcresOwnedEnchantmentsFromBatchRows(
+  rows: { item_id: string; quantity: number | string }[],
+): string[] {
+  return rows.filter((row) => Number(row.quantity) > 0).map((row) => String(row.item_id));
+}
+
 export async function listOwnedStackAcresEnchantments(profileId: string): Promise<string[]> {
   const supabase = adminClient();
   if (!supabase) {

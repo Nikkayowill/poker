@@ -78,12 +78,11 @@ export async function forgeEnchantment(
   };
 }
 
-/** Every enchantment catalogue id (bare, not versioned) this profile has
- *  permanently forged. Stale/renamed item_ids in the ownership table are
- *  silently dropped, same posture `listUnlockedSynergyArchetypes` takes for
- *  a stale perk item_id. */
-export async function listOwnedForgeEnchantmentIds(profileId: string): Promise<string[]> {
-  const owned = await listOwnedStackAcresEnchantments(profileId);
+/** The matching loop `listOwnedForgeEnchantmentIds` runs below, pulled out
+ *  so `stackacres-service.ts`'s batch RPC path (which already has the raw
+ *  owned item_id list, via `stackAcresOwnedEnchantmentsFromBatchRows`) can
+ *  reuse it without a second read of `listOwnedStackAcresEnchantments`. */
+export function forgeEnchantmentIdsFromOwned(owned: readonly string[]): string[] {
   const ids: string[] = [];
   for (const itemId of owned) {
     for (const id of Object.keys(FORGE_ENCHANTMENTS)) {
@@ -101,6 +100,15 @@ export async function listOwnedForgeEnchantmentIds(profileId: string): Promise<s
     }
   }
   return ids;
+}
+
+/** Every enchantment catalogue id (bare, not versioned) this profile has
+ *  permanently forged. Stale/renamed item_ids in the ownership table are
+ *  silently dropped, same posture `listUnlockedSynergyArchetypes` takes for
+ *  a stale perk item_id. */
+export async function listOwnedForgeEnchantmentIds(profileId: string): Promise<string[]> {
+  const owned = await listOwnedStackAcresEnchantments(profileId);
+  return forgeEnchantmentIdsFromOwned(owned);
 }
 
 /**

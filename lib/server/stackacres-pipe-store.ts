@@ -46,7 +46,7 @@ export interface StoredPipe extends PlacedPipe {
  *  Mirrors `homestead_pipes_enforce_cap()`. */
 export const PIPE_LAYOUT_CAP = 120;
 
-interface PipeDbRow {
+export interface PipeDbRow {
   tx: number | string;
   ty: number | string;
   kind: string;
@@ -62,6 +62,8 @@ const PIPE_COLUMNS = "tx, ty, kind, mask, hydrated, distance, facing, version";
 function isPipeKind(value: string): value is PipeKind {
   return value === "well" || value === "pipe";
 }
+
+export { fromRow as stackAcresPipeFromBatchRow };
 
 function fromRow(row: PipeDbRow): StoredPipe {
   const kind = String(row.kind);

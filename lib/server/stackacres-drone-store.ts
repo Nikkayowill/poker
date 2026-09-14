@@ -89,6 +89,22 @@ export async function deployStackAcresDrone(
 
 /** Every drone a profile currently owns. Ownership is permanent (no
  *  retiring a drone yet), so this is the whole fleet. */
+/** Same row-to-StoredDrone mapping `listStackAcresDrones` runs below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresDroneFromBatchRow(row: {
+  drone_id: string;
+  profile_id: string;
+  deployed_at: string;
+  last_forage_at: string | null;
+}): StoredDrone {
+  return {
+    droneId: row.drone_id,
+    profileId: row.profile_id,
+    deployedAt: row.deployed_at,
+    lastForageAt: row.last_forage_at,
+  };
+}
+
 export async function listStackAcresDrones(profileId: string): Promise<StoredDrone[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -101,12 +117,7 @@ export async function listStackAcresDrones(profileId: string): Promise<StoredDro
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read the drone hangar: ${error.message}`);
   return (data as { drone_id: string; profile_id: string; deployed_at: string; last_forage_at: string | null }[]).map(
-    (row) => ({
-      droneId: row.drone_id,
-      profileId: row.profile_id,
-      deployedAt: row.deployed_at,
-      lastForageAt: row.last_forage_at,
-    }),
+    stackAcresDroneFromBatchRow,
   );
 }
 

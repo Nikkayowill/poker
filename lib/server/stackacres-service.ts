@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { adminClient } from "./supabase-admin";
 import {
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
@@ -83,8 +84,12 @@ import {
   listStackAcresPipes,
   placeStackAcresPipe,
   removeStackAcresPipe,
+  stackAcresPipeFromBatchRow,
   syncStackAcresPipeNetwork,
+  type PipeDbRow,
+  type StoredPipe,
 } from "./stackacres-pipe-store";
+import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
   createSoilMap,
   nextFreeSoilSlot,
@@ -113,12 +118,20 @@ import {
   adjustStackAcresSoilStock,
   listStackAcresSoilTiles,
   readStackAcresSoilStock,
+  stackAcresSoilStockFromBatchRows,
+  stackAcresSoilTileFromBatchRow,
   type SoilStock,
+  type SoilTileDbRow,
+  type StoredSoilTile,
   placeStackAcresSoilTile as placeSoilTileRow,
   removeStackAcresSoilTile as removeSoilTileRow,
   moveStackAcresSoilTiles as moveSoilTileGroupRow,
 } from "./stackacres-soil-store";
-import { adjustStackAcresSeedStock, readStackAcresSeedStock } from "./stackacres-seed-store";
+import {
+  adjustStackAcresSeedStock,
+  readStackAcresSeedStock,
+  stackAcresSeedStockFromBatchRows,
+} from "./stackacres-seed-store";
 import {
   GREENHOUSE_SLOT_CAP,
   greenhouseBuildCheck,
@@ -167,6 +180,7 @@ import {
   meetTraveler,
   storyView,
   type StackAcresStoryView,
+  type StoredStory,
 } from "@/lib/stackacres/story/state";
 import { TRAVELER_CATALOGUE, isTravelerId, type TravelerId } from "@/lib/stackacres/story/travelers";
 import type { PlayerProfile } from "@/lib/profile/types";
@@ -237,12 +251,45 @@ import {
   readStackAcresStory,
   writeStackAcresStory,
   turnInStackAcresStory,
+  stackAcresUnitFromBatchRow,
+  stackAcresFeedFromBatchRow,
+  stackAcresWaterFromBatchRow,
+  stackAcresCapacityFromBatchRows,
+  stackAcresSectorsFromBatchRows,
+  stackAcresUpkeepFromBatchRow,
+  stackAcresMuseumFromBatchRows,
+  stackAcresToolTierFromBatchRow,
+  stackAcresInventoryFromBatchRows,
+  stackAcresOpenContractFromBatchRow,
+  stackAcresInfluenceFromBatchRow,
+  stackAcresSecretLedgerQtyFromBatchRows,
+  stackAcresGreenhouseFromBatchRow,
+  stackAcresCropFieldsUnlockedFromBatchRow,
+  stackAcresPrestigeFromBatchRow,
+  stackAcresCuttersFromBatchRows,
+  stackAcresStoryFromBatchRow,
+  stackAcresDevotionFromBatchRow,
+  stackAcresFriendshipFromBatchRows,
+  wheatPlotFromRow,
+  machineFromRow,
+  vatManifestFromRow,
   type StoredStackAcresUnit,
   type StoredContract,
   type StoredWheatPlot,
+  type ContractDbRow,
+  type UnitDbRow,
+  type WheatPlotDbRow,
+  type MachineDbRow,
+  type VatManifestDbRow,
+  type StoredMachine,
+  type StoredDevotionRow,
+  type StoredFriendshipRow,
+  type StoredVatManifest,
+  type StoredStoryRow,
 } from "./stackacres-store";
 import {
   prestigeGoldRemaining,
+  type StackAcresPrestigeState,
   type StackAcresPrestigeView,
   type StackAcresPrestigeResetResult,
 } from "@/lib/stackacres/prestige";
@@ -323,13 +370,17 @@ import {
   applySynergyBuffs,
   listActiveSynergyArchetypes,
   listUnlockedSynergyArchetypes,
+  synergyArchetypesFromOwned,
   unlockSynergyPerk,
 } from "./stackacres-synergy-service";
+import { stackAcresOwnedPerksFromBatchRows } from "./stackacres-synergy-store";
 import {
   forgeEnchantment,
+  forgeEnchantmentIdsFromOwned,
   forgedToolStatsFor,
   listOwnedForgeEnchantmentIds,
 } from "./stackacres-forge-service";
+import { stackAcresOwnedEnchantmentsFromBatchRows } from "./stackacres-forge-store";
 import { FORGE_ENCHANTMENTS, isForgeEnchantmentId } from "@/lib/stackacres/forge";
 import {
   harvestCrossbreedBed,
@@ -340,6 +391,9 @@ import {
 import {
   listStackAcresCrossbreedPlots,
   readStackAcresCrossbreedInventory,
+  stackAcresCrossbreedInventoryFromBatchRows,
+  stackAcresCrossbreedPlotFromBatchRow,
+  type CrossbreedPlotDbRow,
 } from "./stackacres-crossbreeding-store";
 import {
   isInCrossbreedGrid,
@@ -347,6 +401,7 @@ import {
   type CrossbreedBedView,
   type CrossbreedPlotView,
 } from "@/lib/stackacres/crossbreeding";
+import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
 import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
 import {
   RECIPE_CATALOGUE,
@@ -364,10 +419,12 @@ import {
 import type { BlueprintId } from "@/lib/stackacres/blueprints";
 import {
   blueprintsView,
+  blueprintsViewFromStates,
   contributeToBlueprint,
   startBlueprintForProfile,
   type BlueprintView,
 } from "./stackacres-blueprint-service";
+import { stackAcresAllBlueprintsFromBatchRows } from "./stackacres-blueprint-store";
 import {
   evaluateStackAcresShopLock,
   stackacresShopLockRefusal,
@@ -382,7 +439,7 @@ import {
   isDroneHangarUnlocked,
   listDrones,
 } from "./stackacres-drone-service";
-import type { StoredDrone } from "./stackacres-drone-store";
+import { stackAcresDroneFromBatchRow, type StoredDrone } from "./stackacres-drone-store";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -853,89 +910,221 @@ function toContractView(contract: StoredContract): StackAcresContractRow {
  * themselves, once, alongside this call -- see each of those, and
  * stackacres-revision-store.ts's own header.
  */
+/**
+ * The ~30-way per-profile fan-out below, batched into one Postgres round
+ * trip when Supabase is configured (`stackacres_read_batch`, migration
+ * 20260914000000) instead of ~30 separate PostgREST round trips -- see that
+ * migration's own header for exactly which reads this covers and which
+ * three it deliberately leaves as their own RPC calls. Memory mode has no
+ * batch to speak of (there is no network round trip to save there in the
+ * first place) and keeps running every one of the original individual reads,
+ * unchanged -- this function's whole job is choosing between the two and
+ * handing the SAME local variables to the rest of `view()` either way, so
+ * everything below this point reads identically regardless of which branch
+ * ran.
+ */
 async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<StackAcresView> {
   const day = stackacresExchangeDay(now);
-  const [
-    rows,
-    feed,
-    water,
-    capacity,
-    cleared,
-    upkeepPaid,
-    donated,
-    tool,
-    wheatRows,
-    machineRows,
-    inventory,
-    contract,
-    influence,
-    boostArmedQty,
-    heldQtys,
-    unlockedSynergies,
-    activeSynergies,
-    greenhouseBuilt,
-    cropFieldsUnlocked,
-    blueprints,
-    midnightMerchant,
-    prestige,
-    lifetimeGross,
-    forgedEnchantments,
-    crossbreedPlots,
-    crossbreedInventory,
-    pipeRows,
-    soilTiles,
-    soilStock,
-    seedStock,
-    storedDevotion,
-    storedFriendships,
-    vatManifest,
-    cutters,
-    storedStory,
-  ] = await Promise.all([
-    listStackAcresUnits(profile.id),
-    readStackAcresFeed(profile.id),
-    readStackAcresWater(profile.id),
-    readStackAcresCapacity(profile.id),
-    readStackAcresSectors(profile.id),
-    readStackAcresUpkeep(profile.id, day),
-    readStackAcresMuseum(profile.id),
-    readStackAcresToolTier(profile.id),
-    listStackAcresWheatPlots(profile.id),
-    listStackAcresMachines(profile.id),
-    readStackAcresInventory(profile.id),
-    readStackAcresOpenContract(profile.id),
-    readStackAcresInfluence(profile.id),
-    readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY),
-    // One nested Promise.all rather than spreading SECRET_ITEM_IDS.map(...)
-    // into this array literal: a spread of a variable-length array would
-    // widen every sibling element's inferred type too, since Promise.all's
-    // tuple overload needs a fixed-length literal to keep each position's own
-    // type. Nesting keeps this array a fixed-length literal.
-    Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
-    listUnlockedSynergyArchetypes(profile.id),
+  const supabase = adminClient();
+
+  // Three reads never come from the batch (they're already their own
+  // aggregate/idle-sweep RPCs, not a plain per-table select -- see the
+  // migration's header), so they're kicked off up front alongside the batch
+  // fetch, and nothing here waits on anything else. Drones ARE in the batch
+  // (its own `drones` key) -- the fifth slot below only exists for the
+  // memory-mode fallback's own per-table reads (which include their own
+  // `listDrones` call, last in that array); when a batch is available this
+  // slot does nothing; `listDrones` must never be called a second time here,
+  // or every live-Supabase view() pays for a real, wasted extra round trip
+  // whose result nothing reads.
+  const [batch, activeSynergies, midnightMerchant, lifetimeGross, fallback] = await Promise.all([
+    supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
-    readStackAcresGreenhouse(profile.id),
-    readStackAcresCropFieldsUnlocked(profile.id),
-    blueprintsView(profile.id),
     readMidnightMerchantVisit(profile.id, now),
-    readStackAcresPrestige(profile.id),
     readStackAcresLifetimeGross(profile.id),
-    listOwnedForgeEnchantmentIds(profile.id),
-    listStackAcresCrossbreedPlots(profile.id),
-    readStackAcresCrossbreedInventory(profile.id),
-    listStackAcresPipes(profile.id),
-    listStackAcresSoilTiles(profile.id),
-    readStackAcresSoilStock(profile.id),
-    readStackAcresSeedStock(profile.id),
-    readStackAcresDevotion(profile.id),
-    // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
-    // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
-    // this array literal would widen every sibling element's inferred type.
-    Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
-    readStackAcresVatManifest(profile.id),
-    readStackAcresCutters(profile.id),
-    readStackAcresStory(profile.id),
+    supabase
+      ? Promise.resolve(null)
+      : Promise.all([
+          listStackAcresUnits(profile.id),
+          readStackAcresFeed(profile.id),
+          readStackAcresWater(profile.id),
+          readStackAcresCapacity(profile.id),
+          readStackAcresSectors(profile.id),
+          readStackAcresUpkeep(profile.id, day),
+          readStackAcresMuseum(profile.id),
+          readStackAcresToolTier(profile.id),
+          listStackAcresWheatPlots(profile.id),
+          listStackAcresMachines(profile.id),
+          readStackAcresInventory(profile.id),
+          readStackAcresOpenContract(profile.id),
+          readStackAcresInfluence(profile.id),
+          readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY),
+          // One nested Promise.all rather than spreading SECRET_ITEM_IDS.map(...)
+          // into this array literal: a spread of a variable-length array would
+          // widen every sibling element's inferred type too, since Promise.all's
+          // tuple overload needs a fixed-length literal to keep each position's own
+          // type. Nesting keeps this array a fixed-length literal.
+          Promise.all(SECRET_ITEM_IDS.map((itemId) => readStackAcresSecretLedgerQty(profile.id, itemId))),
+          listUnlockedSynergyArchetypes(profile.id),
+          readStackAcresGreenhouse(profile.id),
+          readStackAcresCropFieldsUnlocked(profile.id),
+          blueprintsView(profile.id),
+          readStackAcresPrestige(profile.id),
+          listOwnedForgeEnchantmentIds(profile.id),
+          listStackAcresCrossbreedPlots(profile.id),
+          readStackAcresCrossbreedInventory(profile.id),
+          listStackAcresPipes(profile.id),
+          listStackAcresSoilTiles(profile.id),
+          readStackAcresSoilStock(profile.id),
+          readStackAcresSeedStock(profile.id),
+          readStackAcresDevotion(profile.id),
+          // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
+          // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
+          // this array literal would widen every sibling element's inferred type.
+          Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
+          readStackAcresVatManifest(profile.id),
+          readStackAcresCutters(profile.id),
+          readStackAcresStory(profile.id),
+          listDrones(profile.id),
+        ] as const),
   ]);
+
+  let rows: StoredStackAcresUnit[];
+  let feed: number;
+  let water: number;
+  let capacity: Partial<Record<StackAcresStock, number>>;
+  let cleared: SectorId[];
+  let upkeepPaid: number;
+  let donated: string[];
+  let tool: StackAcresToolTier;
+  let wheatRows: StoredWheatPlot[];
+  let machineRows: StoredMachine[];
+  let inventory: StackAcresInventory;
+  let contract: StoredContract | null;
+  let influence: number;
+  let boostArmedQty: number;
+  let heldQtys: number[];
+  let unlockedSynergies: SynergyArchetype[];
+  let greenhouseBuilt: boolean;
+  let cropFieldsUnlocked: boolean;
+  let blueprints: Record<BlueprintId, BlueprintView>;
+  let prestige: StackAcresPrestigeState;
+  let forgedEnchantments: string[];
+  let crossbreedPlots: StoredCrossbreedPlot[];
+  let crossbreedInventory: Partial<Record<CrossbreedItem, number>>;
+  let pipeRows: StoredPipe[];
+  let soilTiles: StoredSoilTile[];
+  let soilStock: SoilStock;
+  let seedStock: SeedStock;
+  let storedDevotion: StoredDevotionRow;
+  let storedFriendships: StoredFriendshipRow[];
+  let vatManifest: StoredVatManifest | null;
+  let cutters: StackAcresCutter[];
+  let storedStory: StoredStoryRow;
+  let droneRows: StoredDrone[];
+
+  if (batch) {
+    rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
+    feed = stackAcresFeedFromBatchRow(batch.feed as { servings: number | string } | null);
+    water = stackAcresWaterFromBatchRow(batch.water as { level: number | string } | null);
+    capacity = stackAcresCapacityFromBatchRows(batch.capacity as { stock: string; extra_slots: number | string }[]);
+    cleared = stackAcresSectorsFromBatchRows(batch.sectors as { sector: string }[]);
+    upkeepPaid = stackAcresUpkeepFromBatchRow(batch.upkeep as { bushels: number | string } | null);
+    donated = stackAcresMuseumFromBatchRows(batch.museum as { item_id: string }[]);
+    tool = stackAcresToolTierFromBatchRow(batch.tool as { tier?: unknown } | null);
+    wheatRows = (batch.wheat_plots as unknown as WheatPlotDbRow[]).map(wheatPlotFromRow);
+    machineRows = (batch.machines as unknown as MachineDbRow[]).map(machineFromRow);
+    inventory = stackAcresInventoryFromBatchRows(batch.inventory as { item: string; quantity: number | string }[]);
+    contract = stackAcresOpenContractFromBatchRow(batch.contract as ContractDbRow | null);
+    influence = stackAcresInfluenceFromBatchRow(batch.influence as { influence: number | string } | null);
+    const secretLedgerRows = batch.secret_ledger as { item_id: string; quantity: number | string }[];
+    boostArmedQty = stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, STACKACRES_DICE_BOOST_ARMED_KEY);
+    heldQtys = SECRET_ITEM_IDS.map((itemId) => stackAcresSecretLedgerQtyFromBatchRows(secretLedgerRows, itemId));
+    unlockedSynergies = synergyArchetypesFromOwned(
+      stackAcresOwnedPerksFromBatchRows(batch.perk_unlocks as { item_id: string; quantity: number | string }[]),
+    );
+    greenhouseBuilt = stackAcresGreenhouseFromBatchRow(batch.greenhouse);
+    cropFieldsUnlocked = stackAcresCropFieldsUnlockedFromBatchRow(batch.crop_fields);
+    blueprints = blueprintsViewFromStates(
+      stackAcresAllBlueprintsFromBatchRows(
+        batch.blueprints as { structure_id: string; current_stage: number | string; status: string; completed_at: string | null }[],
+        batch.blueprint_progress as { structure_id: string; stage_index: number | string; item: string; contributed: number | string }[],
+      ),
+    );
+    prestige = stackAcresPrestigeFromBatchRow(
+      batch.prestige as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
+    );
+    forgedEnchantments = forgeEnchantmentIdsFromOwned(
+      stackAcresOwnedEnchantmentsFromBatchRows(batch.tool_enchantments as { item_id: string; quantity: number | string }[]),
+    );
+    crossbreedPlots = (batch.crossbreed_plots as unknown as CrossbreedPlotDbRow[]).map(stackAcresCrossbreedPlotFromBatchRow);
+    crossbreedInventory = stackAcresCrossbreedInventoryFromBatchRows(
+      batch.crossbreed_inventory as { item: string; quantity: number | string }[],
+    );
+    pipeRows = (batch.pipes as unknown as PipeDbRow[]).map(stackAcresPipeFromBatchRow);
+    soilTiles = (batch.soil_tiles as unknown as SoilTileDbRow[]).map(stackAcresSoilTileFromBatchRow);
+    soilStock = stackAcresSoilStockFromBatchRows(batch.soil_stock as { tier: string; quantity: number | string }[]);
+    seedStock = stackAcresSeedStockFromBatchRows(batch.seed_stock as { crop: string; quantity: number | string }[]);
+    storedDevotion = stackAcresDevotionFromBatchRow(
+      batch.devotion as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
+    );
+    const friendshipRows = batch.friendship as {
+      npc: string;
+      points: number | string;
+      last_gifted_day: string | null;
+      claimed_rungs: number[] | null;
+    }[];
+    storedFriendships = FRIENDSHIP_NPCS.map((npc) => stackAcresFriendshipFromBatchRows(friendshipRows, npc));
+    vatManifest = batch.vat_manifest ? vatManifestFromRow(batch.vat_manifest as unknown as VatManifestDbRow) : null;
+    cutters = stackAcresCuttersFromBatchRows(batch.cutters as { cutter: unknown }[]);
+    storedStory = stackAcresStoryFromBatchRow(batch.story as { story: StoredStory; version: number | string } | null);
+    droneRows = (batch.drones as { drone_id: string; profile_id: string; deployed_at: string; last_forage_at: string | null }[]).map(
+      stackAcresDroneFromBatchRow,
+    );
+  } else {
+    [
+      rows,
+      feed,
+      water,
+      capacity,
+      cleared,
+      upkeepPaid,
+      donated,
+      tool,
+      wheatRows,
+      machineRows,
+      inventory,
+      contract,
+      influence,
+      boostArmedQty,
+      heldQtys,
+      unlockedSynergies,
+      greenhouseBuilt,
+      cropFieldsUnlocked,
+      blueprints,
+      prestige,
+      forgedEnchantments,
+      crossbreedPlots,
+      crossbreedInventory,
+      pipeRows,
+      soilTiles,
+      soilStock,
+      seedStock,
+      storedDevotion,
+      storedFriendships,
+      vatManifest,
+      cutters,
+      storedStory,
+      droneRows,
+    ] = fallback as [
+      StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
+      string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
+      number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
+      StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
+      StoredPipe[], StoredSoilTile[], SoilStock, SeedStock, StoredDevotionRow, StoredFriendshipRow[],
+      StoredVatManifest | null, StackAcresCutter[], StoredStoryRow, StoredDrone[],
+    ];
+  }
 
   const secretDonations = secretItemDonations(donated);
   const held: Partial<Record<SecretItemId, number>> = {};
@@ -952,13 +1141,10 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   const sectors = unlockedSectors(cleared, units);
   const vatMachine = machineRows.find((machine) => machine.kind === "vat") ?? null;
   const vat = vatMachine ? toVatContainer(vatMachine, vatManifest, now) : null;
-  // A separate read rather than folded into the big Promise.all above: that
-  // array is a fixed-length tuple on purpose (see its own comment on why a
-  // variable-length spread would widen every sibling element's type), and
-  // drone ownership has nothing to do with land/economy. `isDroneHangarUnlocked`
-  // is pure and synchronous, so it needs no read of its own here -- it takes
-  // the same progress shape passed to `storyView` below.
-  const droneRows = await listDrones(profile.id);
+  // `droneRows` came off the same batch (or its fallback array) above --
+  // `isDroneHangarUnlocked` is pure and synchronous, so it needs no read of
+  // its own here, it takes the same progress shape passed to `storyView`
+  // below.
   const droneHangarUnlocked = isDroneHangarUnlocked({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked });
   return {
     units,

@@ -9,6 +9,7 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
+import { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { PainterName } from "./stackacres-art";
 import type { StackAcresScene, StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "./stackacres-scene";
 import type { WorldPoint } from "@/lib/stackacres/world";
@@ -154,6 +155,10 @@ export interface StackAcresWorldApi {
    *  defense state, called once per segment/zone on load and again right
    *  after a successful upgrade. */
   setWildlifeTimeOfDay: (tod: WildlifeTimeOfDay) => void;
+  /** The weather the ambience engine should sound like right now -- see
+   *  StackAcresScene's own `getAudibleWeather` for why this can read CLEAR
+   *  even while it is actually raining. */
+  getAudibleWeather: () => StackAcresWeather;
   setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
   setLivestockHealth: (zone: ZoneId, health: number) => void;
   /** Every Mechanical Forage Drone this profile owns, by id --
@@ -680,6 +685,7 @@ export function StackAcresWorld({
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       setWildlifeTimeOfDay: (tod) => sceneRef.current?.setWildlifeTimeOfDay(tod),
+      getAudibleWeather: () => sceneRef.current?.getAudibleWeather() ?? StackAcresWeather.CLEAR,
       setFenceTier: (zone, segmentIndex, tier, durability) =>
         sceneRef.current?.setFenceTier(zone, segmentIndex, tier, durability),
       setLivestockHealth: (zone, health) => sceneRef.current?.setLivestockHealth(zone, health),

@@ -32,11 +32,14 @@ import {
   setAmbienceAwake,
   setAmbienceHerd,
   setAmbiencePlace,
+  setAmbienceRiverUnlocked,
+  setAmbienceWeather,
   setFarmSfxMuted,
   startAmbience,
   stopAmbience,
 } from "@/lib/audio/stackacres-ambience";
 import { timeOfDay } from "@/lib/audio/stackacres-music";
+import { StackAcresWeather } from "@/lib/stackacres/weather";
 import {
   buySound,
   collectSound,
@@ -59,6 +62,7 @@ import {
   STACKACRES_CROPS,
   STACKACRES_FEED,
   STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
+  STACKACRES_LIVESTOCK,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   type SeedStock,
   type StackAcresStock,
@@ -670,12 +674,18 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
 }
 
 /**
- * The Supply Store's own six shelves. Each is a full screen of the store
+ * The Supply Store's own seven shelves. Each is a full screen of the store
  * rather than a stop on one long scroll -- a player who wants soil taps
  * "Soil" and sees only soil, the same "one thing at a time" shape the
  * seed/soil/feed radial menus already use out on the map. Seeds is the one
  * shelf that still scrolls (it is Ray's whole catalogue), and that is fine:
  * a player who opened it already knows it is nothing but seeds.
+ *
+ * Livestock reuses the exact same `buyOptionsForZone`/`StackAcresBuySection`
+ * pair the map's signpost drawer already uses, just fed every livestock zone
+ * that's currently unlocked instead of only whichever one you're standing in
+ * -- hens/pigs/cattle used to be buyable only by travelling to their own
+ * district (Hen Haven, the Fold, Ox Fields).
  *
  * "Sell" is the odd one out: every other tab spends Gold, this one is the
  * only place in the whole store that pays it. It reuses `onSell` wholesale
@@ -685,10 +695,11 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * Workshop shelf just never listed the sixteen crops or the three raw
  * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "soil" | "feed" | "equipment" | "drone" | "sell";
+type StoreTab = "seeds" | "livestock" | "soil" | "feed" | "equipment" | "drone" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "seeds", label: "Seeds", icon: "ico-carrot" },
+  { id: "livestock", label: "Livestock", icon: "ico-egg" },
   { id: "soil", label: "Soil", icon: "ico-plant" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
@@ -3664,6 +3675,38 @@ export function StackAcresFarm() {
   }, [tod]);
 
   /**
+   * The ambience engine agreeing with the sky: birdsong continuing under a
+   * rain overlay is the same "picture and soundtrack disagree" bug as the
+   * farm's mute button not covering the music used to be. Polled rather than
+   * pushed on a state change, because weather rolls on the scene's own clock
+   * (lib/stackacres/weather.ts) and nothing on the React side is told when it
+   * turns over -- 2s is fast next to weather's own 45s minimum hold and the
+   * tint's own 2.6s crossfade, so a shower is never audibly late to start.
+   */
+  useEffect(() => {
+    if (!hasStarted) return;
+    const apply = () => {
+      const weather = world.current?.getAudibleWeather() ?? StackAcresWeather.CLEAR;
+      setAmbienceWeather(weather === StackAcresWeather.GOLD_RUSH_RAIN ? "rain" : "clear");
+    };
+    apply();
+    const timer = window.setInterval(apply, 2_000);
+    return () => window.clearInterval(timer);
+  }, [hasStarted]);
+
+  /**
+   * The river bed: a permanent, farm-wide fact (has the Sheep Pens' mud
+   * hollow been cleared), not a positional one -- see
+   * lib/stackacres/ambience-plan.ts's `riverBedGain` for why it rides the
+   * same `sectors` state the map and the shop lock already read, rather than
+   * which district the camera happens to be over.
+   */
+  useEffect(() => {
+    if (!hasStarted) return;
+    setAmbienceRiverUnlocked(isSectorUnlocked("wallow", sectors));
+  }, [hasStarted, sectors]);
+
+  /**
    * Standing in Ox Fields with no cattle should sound like empty ground;
    * standing there with three should sound like you keep cattle. Only the
    * animals in the district being listened to count -- a cow four districts
@@ -3683,6 +3726,22 @@ export function StackAcresFarm() {
   const buyOptions: BuyOption[] = useMemo(
     () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
     [place, liveUnits, gold, capacity],
+  );
+
+  /** The Supply Store's Livestock shelf: every livestock kind whose own
+   *  district is unlocked, not just whichever one `place` happens to be --
+   *  the store is opened from the barn, not from standing in a district, so
+   *  it has no single zone of its own the way the signpost drawer's
+   *  `buyOptions` above does. A kind whose district is still locked (the
+   *  Fold, Ox Fields, until the sector ladder opens them) is left off the
+   *  shelf entirely rather than shown disabled -- same posture the drawer
+   *  itself takes by simply not existing for a locked district. */
+  const livestockBuyOptions: BuyOption[] = useMemo(
+    () =>
+      Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
+        .filter((zone) => isSectorUnlocked(zone, sectors))
+        .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity })),
+    [sectors, liveUnits, gold, capacity],
   );
 
   // Once there is a second cutter to swap to, say where the swap is.
@@ -4705,6 +4764,24 @@ export function StackAcresFarm() {
                         </div>
                       );
                     })}
+                  </div>
+                </>
+              )}
+
+              {storeTab === "livestock" && (
+                <>
+                  <p className="sa-sheet-note">
+                    Buy an animal outright, or seed one cycle at a time. Locked pens show up here
+                    once their district is unlocked.
+                  </p>
+                  <div className="sa-panel-section">
+                    <StackAcresBuySection
+                      options={livestockBuyOptions}
+                      isPending={isPending}
+                      onSeed={onSeed}
+                      onBuyOutright={onBuyOutright}
+                      onExpand={onExpand}
+                    />
                   </div>
                 </>
               )}

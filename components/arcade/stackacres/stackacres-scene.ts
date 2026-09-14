@@ -88,6 +88,7 @@ import {
 } from "@/lib/stackacres/sunlight";
 import { DOCK, dockHitAt, DUCK_ORBIT, LILY_PADS, POND, REEDS, RIPPLE_SPOTS } from "@/lib/stackacres/water";
 import { WeatherOverlayManager } from "./weather-overlay-manager";
+import { StackAcresWeather } from "@/lib/stackacres/weather";
 import { WildlifeManager } from "./wildlife-manager";
 import { fenceSegmentsForZone, type FenceTier, type WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import {
@@ -3833,7 +3834,10 @@ export class StackAcresScene extends Phaser.Scene {
     };
     this.nodes.set(unit.id, node);
     this.paintUnitCue(node);
-    if (unit.state === "ready" && !isLivestock(unit.stock)) this.bob(node, [sprite]);
+    if (unit.state === "ready" && !isLivestock(unit.stock)) {
+      this.bob(node, [sprite]);
+      this.sway(node, sprite);
+    }
     // A freshly sown seed mound is the one build with no `previous` node AND
     // no growth history to ease from -- it just materializes, unlike every
     // other tap-driven action, which already gets `popUnit`'s "heard you"
@@ -3844,6 +3848,18 @@ export class StackAcresScene extends Phaser.Scene {
     // node getting the same bounce once it actually appears, instead of the
     // tap feeling unanswered until the plant just showed up.
     if (previous === undefined && unit.seed) this.popUnit(unit.id);
+    // "The Mature Pop": a crop that just turned ready this rebuild (not one
+    // that was already ready and got rebuilt for some other reason -- a
+    // muck/clear cycle, say) gets the same bounce plus a scatter of gold
+    // sparkle. `growCrop`'s own smooth in-place stage change is the common
+    // path for this during normal play; this covers every case that instead
+    // goes through a full rebuild (reduced motion disables `growCrop`
+    // outright, and a few state changes -- see that method's own early
+    // returns -- always did).
+    if (previous && previous.unit.state !== "ready" && unit.state === "ready" && !isLivestock(unit.stock)) {
+      this.popUnit(unit.id);
+      this.maturePopGlint(node);
+    }
   }
 
   /**
@@ -3912,6 +3928,12 @@ export class StackAcresScene extends Phaser.Scene {
     const from = node.stage;
     const to = unitStage(unit);
     if (from === to) return false;
+    // Read before `node.unit` is overwritten just below -- "The Mature Pop"
+    // fires once, on the crossing, never on a growth tween that lands on a
+    // crop that was already ready (there is no such tween: `from === to`
+    // above already returned, but a future stage split should not have to
+    // rediscover that this line has to come first).
+    const wasReady = node.unit.state === "ready";
 
     // The bob is a looping y tween on this same sprite (see `bob`), and the
     // growth below owns that y for its duration. Taking it off now and putting
@@ -3962,7 +3984,14 @@ export class StackAcresScene extends Phaser.Scene {
         // Land on the target rather than on whatever the last frame happened to
         // sample -- the same reason `popUnit` rests its own scale on complete.
         apply(1);
-        if (unit.state === "ready") this.bob(node, [node.sprite]);
+        if (unit.state === "ready") {
+          this.bob(node, [node.sprite]);
+          this.sway(node, node.sprite);
+          if (!wasReady) {
+            this.popUnit(unit.id);
+            this.maturePopGlint(node);
+          }
+        }
       },
     });
     return true;
@@ -4206,6 +4235,18 @@ export class StackAcresScene extends Phaser.Scene {
    *  swap this triggers. */
   setWildlifeTimeOfDay(tod: WildlifeTimeOfDay): void {
     this.wildlife?.setTimeOfDay(tod);
+  }
+
+  /**
+   * The weather the ear should agree with right now -- CLEAR whenever the
+   * screen itself is showing clear, whether that's really the state or the
+   * Greenhouse has just hidden it (see WeatherOverlayManager's own
+   * `isSuppressed`). Polled by the shell alongside `setWildlifeTimeOfDay`;
+   * see lib/audio/stackacres-ambience.ts's `setAmbienceWeather`.
+   */
+  getAudibleWeather(): StackAcresWeather {
+    if (!this.weather || this.weather.isSuppressed()) return StackAcresWeather.CLEAR;
+    return this.weather.getActiveWeather();
   }
 
   /** Hydrates one fence bay's tier/durability from the store -- called once
@@ -4863,6 +4904,77 @@ export class StackAcresScene extends Phaser.Scene {
         ease: "Sine.easeInOut",
       }),
     );
+  }
+
+  /**
+   * Wind rustling through a ready crop: a slow, shallow rotation wobble
+   * layered under `bob`'s vertical lift, rather than a replacement for it --
+   * the two read together as a plant standing in a breeze, where either one
+   * alone reads as a bounce or a lean. Rotates the sprite itself, not the
+   * container, for the same reason `bob` takes explicit `targets` instead of
+   * `node.container`: this one plant swaying must not drag its shadow or
+   * soil collar with it, or the whole bed square would appear to tilt.
+   *
+   * Every ready crop gets its own amplitude, period and starting phase from
+   * `this.random()` -- a bed of identical crops swaying in lockstep reads as
+   * one rigid object rather than as a field of separate plants, the same
+   * "give every firing its own draw" rule ambience-plan.ts's cues already
+   * follow for the same reason.
+   */
+  private sway(node: UnitNode, sprite: Phaser.GameObjects.Image): void {
+    if (this.options.reducedMotion) return;
+    const amplitude = 0.025 + this.random() * 0.02;
+    const duration = 1500 + this.random() * 1000;
+    sprite.setRotation(-amplitude);
+    node.tweens.push(
+      this.tweens.add({
+        targets: sprite,
+        rotation: amplitude,
+        duration,
+        delay: this.random() * duration,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      }),
+    );
+  }
+
+  /**
+   * The one-shot half of "a crop just turned ready": a handful of the
+   * sunlight system's own gold sparkle bake (see `bakeSparkle`'s header for
+   * why this reuses that texture rather than a new asset) scattering up and
+   * outward from the plant and fading, timed to land alongside `popUnit`'s
+   * squash-and-stretch bounce. Plain one-shot Images and tweens, not a
+   * pooled emitter -- a crop turning ready is roughly as frequent as a tap,
+   * the same "cheap, short-lived, not pooled" call GameJuiceManager's own
+   * header makes for effects at that rate.
+   */
+  private maturePopGlint(node: UnitNode): void {
+    if (this.options.reducedMotion) return;
+    const sparkleKey = bakeSparkle(this);
+    const gold = rampHex("gold").top;
+    const count = 3 + Math.floor(this.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = this.random() * Math.PI * 2;
+      const distance = 9 + this.random() * 7;
+      const mote = this.add
+        .image(node.container.x, node.container.y - 6, sparkleKey)
+        .setDepth(node.container.depth + 1)
+        .setScale(0.4 + this.random() * 0.25)
+        .setAlpha(0.9)
+        .setTint(gold);
+      this.tweens.add({
+        targets: mote,
+        x: mote.x + Math.cos(angle) * distance,
+        y: mote.y + Math.sin(angle) * distance - 14,
+        alpha: 0,
+        scale: 0,
+        duration: 520 + this.random() * 220,
+        delay: i * 40,
+        ease: "Quad.easeOut",
+        onComplete: () => mote.destroy(),
+      });
+    }
   }
 
 

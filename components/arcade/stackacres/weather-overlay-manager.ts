@@ -166,6 +166,15 @@ export class WeatherOverlayManager {
     return this.state.active;
   }
 
+  /** Whether the visual layer is currently hidden (see `setSuppressed`), for
+   *  a caller like the ambience engine that needs to agree with what the
+   *  screen is actually showing rather than with the weather clock's raw
+   *  state -- rain audio has no business playing while the Greenhouse has
+   *  hidden the rain streaks themselves. */
+  isSuppressed(): boolean {
+    return this.suppressed;
+  }
+
   /** Convenience passthrough so a caller never has to import
    *  lib/stackacres/weather.ts's registry itself just to price one yield. */
   modifiersFor(baseYield: number): WeatherModifierResult {

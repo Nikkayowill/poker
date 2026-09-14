@@ -25,9 +25,16 @@
 import { playFarmAnimal, playFarmVoice } from "./stackacres-ambience";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 
-/** Seed going into the ground: `stock`, the Bushels path onto a fresh unit. */
+/**
+ * Seed going into the ground: `stock`, the Bushels path onto a fresh unit.
+ *
+ * Two beats, the same shape `collectSound` answers a crop harvest with: the
+ * scatter first, then a soft pat as it's pressed into the bed -- a seed that
+ * only ever scattered and never landed was the gap here.
+ */
 export function sowSound() {
   playFarmVoice("sow-seed", 0.9);
+  window.setTimeout(() => playFarmVoice("dirt-pat", 0.7), 160);
 }
 
 /**
@@ -35,6 +42,11 @@ export function sowSound() {
  * a hen that clucks as the eggs go in the basket is the whole reason to have
  * bothered generating animal recordings, and it is the moment the farm most
  * needs to feel alive.
+ *
+ * A crop gets the same two-beat shape with no animal to lead it: the CUT
+ * (`leaf-snip`) first, then the produce landing (`harvest-pour`) a beat
+ * after, rather than the pour alone answering both the stroke and the
+ * result.
  */
 export function collectSound(stock: StackAcresStock) {
   if (stock === "hen" || stock === "pig" || stock === "cattle") {
@@ -42,7 +54,8 @@ export function collectSound(stock: StackAcresStock) {
     window.setTimeout(() => playFarmVoice("harvest-pour", 0.85), 220);
     return;
   }
-  playFarmVoice("harvest-pour", 0.95);
+  playFarmVoice("leaf-snip", 0.85);
+  window.setTimeout(() => playFarmVoice("harvest-pour", 0.8), 90);
 }
 
 /** Feeding an animal: grain thrown, and the animal noticing. */
@@ -131,4 +144,15 @@ export function panelSound() {
 /** Picking up a tool from the dock. */
 export function toolSound() {
   playFarmVoice("tool-tap", 0.8);
+}
+
+/**
+ * A Prestige Reset going through.
+ *
+ * The one moment on this farm big enough for a chord rather than a single
+ * cue -- everything else here answers a tap; this answers a permanent,
+ * irreversible choice, and a `buy-latch`-sized click would undersell it.
+ */
+export function prestigeSound() {
+  playFarmVoice("prestige-chime", 1);
 }

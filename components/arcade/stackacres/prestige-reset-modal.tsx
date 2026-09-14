@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
 import { AlertTriangle, Flame, Lock, RotateCcw, Sparkles } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
+import { prestigeSound } from "@/lib/audio/stackacres-sfx";
 import {
   STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
   type StackAcresPrestigeResetResult,
@@ -178,6 +179,7 @@ export function StackAcresPrestigeResetModal({
         setStep("review");
         return;
       }
+      prestigeSound();
       setNote({
         tone: "paid",
         text: `Reset complete. Permanent multiplier is now ${formatMultiplier(outcome.result.multiplier)} (+${formatMultiplier(outcome.result.gainedMultiplier)}).`,

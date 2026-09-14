@@ -241,7 +241,13 @@ export type SynthVoice =
   | "travel-steps"
   | "refuse"
   | "panel-slide"
-  | "tool-tap";
+  | "tool-tap"
+  | "dirt-pat"
+  // A permanent-progress moment: a Prestige Reset, and nothing else -- see
+  // this voice's own case below for why it is built differently from every
+  // action cue above it.
+  | "leaf-snip"
+  | "prestige-chime";
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -288,6 +294,15 @@ const VOICE_TRIM: Record<SynthVoice, number> = {
   refuse: 1.05,
   "panel-slide": 8.6,
   "tool-tap": 2.63,
+  // Not run through the render harness the comment above describes -- these
+  // three are estimated by ear against the closest measured shape
+  // (`dirt-pat` and `leaf-snip` against the other noise-burst action cues,
+  // `prestige-chime` against `farm-bell`'s own additive partials) rather
+  // than rendered and read off a meter. Re-measure properly if any turns out
+  // wrong once heard.
+  "dirt-pat": 1.6,
+  "leaf-snip": 3.4,
+  "prestige-chime": 0.4,
 };
 
 /**
@@ -620,6 +635,77 @@ export function playVoice(
     case "tool-tap": {
       parts.push(noiseBurst(ctx, at, { freq: 1400, q: 2.2, env: { attack: 0.001, decay: 0.028, peak: 0.16 } }));
       parts.push(tone(ctx, at + 0.002, { freq: 520, env: { attack: 0.002, decay: 0.045, peak: 0.08 } }));
+      break;
+    }
+    case "dirt-pat": {
+      // Soft and muted, deliberately: a hand pressing loose soil down over a
+      // seed, not a strike. A low, heavily-damped thump under a very short,
+      // dark (lowpassed, not bandpassed) noise burst -- no bright top end at
+      // all, which is what keeps this from reading as `post-hammer`'s knock.
+      parts.push(
+        tone(ctx, at, { freq: 90, sweepTo: 68, env: { attack: 0.006, decay: 0.09, peak: 0.14 } }),
+      );
+      parts.push(
+        noiseBurst(ctx, at, {
+          freq: 260,
+          q: 0.7,
+          type: "lowpass",
+          env: { attack: 0.004, decay: 0.05, peak: 0.1 },
+        }),
+      );
+      break;
+    }
+    case "leaf-snip": {
+      // A crop harvest, as distinct from `harvest-pour`'s grain stream: this
+      // is the CUT, not the produce landing after it -- a short, bright
+      // scissor transient followed by a softer rustle as the cut stem falls
+      // through the rest of the plant. Two bursts, not one, for the same
+      // reason `scythe-swish` is two: a blade has an attack and a release.
+      parts.push(
+        noiseBurst(ctx, at, {
+          freq: 3400,
+          sweepTo: 2200,
+          q: 3.2,
+          env: { attack: 0.001, decay: 0.03, peak: 0.22 },
+        }),
+      );
+      parts.push(
+        noiseBurst(ctx, at + 0.03, {
+          freq: 1800,
+          q: 1.6,
+          env: { attack: 0.006, decay: rand(0.06, 0.1), peak: 0.1 },
+        }),
+      );
+      break;
+    }
+    case "prestige-chime": {
+      // A warm three-note chord, not a single struck bell like `farm-bell`:
+      // a Prestige Reset is a bigger, calmer moment than anything else here,
+      // and the chord is what tells the ear apart the two. Root/third/fifth,
+      // staggered slightly and each with its own gentle vibrato so the three
+      // notes breathe rather than beat against each other.
+      const root = rand(210, 240);
+      [1, 1.25, 1.5].forEach((ratio, i) => {
+        parts.push(
+          tone(ctx, at + i * 0.06, {
+            freq: root * ratio,
+            vibrato: { depth: 2, rate: rand(2.6, 3.6) },
+            env: { attack: 0.06 + i * 0.02, decay: 2.6 - i * 0.25, peak: 0.16 },
+          }),
+        );
+      });
+      // A glassy high shimmer riding the chord, the same inharmonic-partial
+      // trick `farm-bell` uses, just softer and slower to decay -- the
+      // "wind-chime" half of the cue, over the "synth chord" half above.
+      const shimmerBase = root * 4;
+      [1, 2.02, 3.01].forEach((ratio, i) => {
+        parts.push(
+          tone(ctx, at + 0.1 + i * 0.03, {
+            freq: shimmerBase * ratio,
+            env: { attack: 0.01, decay: 1.8 / (1 + i * 0.6), peak: 0.05 / (1 + i * 0.8) },
+          }),
+        );
+      });
       break;
     }
   }

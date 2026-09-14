@@ -494,6 +494,61 @@ export function thirstyTileGroup(
   return ids;
 }
 
+/**
+ * Same 4-neighbour flood fill as `thirstyTileGroup`, run over BARE beds
+ * instead of thirsty ones -- what a seed drop checks to decide whether it
+ * plants one tile or a whole patch at once. `occupiedAt` is injected the
+ * same way `thirstyTileGroup`'s `occupantAt` is (this module stays a leaf
+ * that knows tiles, not crops): true when a crop already stands on that
+ * tile, so a step never crosses into a bed that isn't actually free.
+ *
+ * Also held to the TAPPED tile's own soil tier -- a mixed-tier group would
+ * silently plant some of the batch faster-growing than the rest with
+ * nothing on screen distinguishing them, so the fill stops at a tier
+ * boundary the same way it stops at an occupied or missing tile.
+ *
+ * Same >=2x2 minimum-cluster floor as `thirstyTileGroup`, for the identical
+ * reason (Kayo, 2026-09-11): a straight two-tile run should not trigger the
+ * group gesture, only an actual square-ish patch. Returns tile coordinates
+ * rather than unit ids -- there is no unit yet, only the beds to put one on.
+ */
+export function plantableTileGroup(
+  soil: SoilMap,
+  tx: number,
+  ty: number,
+  occupiedAt: (tx: number, ty: number) => boolean,
+): SoilTileCoord[] {
+  const start = soil.get(soilTileKey(tx, ty));
+  if (!start || occupiedAt(tx, ty)) return [];
+  const tier = soilTileTier(start);
+  const startKey = soilTileKey(tx, ty);
+  const seen = new Set<string>([startKey]);
+  const queue: SoilTileCoord[] = [{ tx, ty }];
+  const group: SoilTileCoord[] = [];
+  const steps: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    group.push(current);
+    for (const [dx, dy] of steps) {
+      const ntx = current.tx + dx;
+      const nty = current.ty + dy;
+      const key = soilTileKey(ntx, nty);
+      if (seen.has(key)) continue;
+      const candidate = soil.get(key);
+      if (!candidate || occupiedAt(ntx, nty) || soilTileTier(candidate) !== tier) continue;
+      seen.add(key);
+      queue.push({ tx: ntx, ty: nty });
+    }
+  }
+  const minTx = Math.min(...group.map((t) => t.tx));
+  const maxTx = Math.max(...group.map((t) => t.tx));
+  const minTy = Math.min(...group.map((t) => t.ty));
+  const maxTy = Math.max(...group.map((t) => t.ty));
+  const atLeast2x2 = maxTx - minTx + 1 >= 2 && maxTy - minTy + 1 >= 2;
+  if (group.length < 4 || !atLeast2x2) return [];
+  return group;
+}
+
 /* ------------------------------------------------------------------ */
 /* The starter kit -- SINCE REMOVED                                    */
 /* ------------------------------------------------------------------ */

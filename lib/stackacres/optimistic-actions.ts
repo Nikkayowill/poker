@@ -427,6 +427,46 @@ export function predictStackAcresAction(
       }
       const held = ctx.seedStock[body.stock] ?? 0;
       if (held < 1) return null;
+      // A group-plant drop (`plantableTileGroup`, soil.ts): one provisional
+      // unit per requested tile, up to however much seed is actually held --
+      // the same "stops early, does not refuse outright" posture
+      // `stockStackAcresGroup` takes server-side. A tile that resolves to no
+      // slot, or one already claimed earlier in this same guess, is skipped
+      // rather than guessed onto a random other bed (see that function's own
+      // header on why scattering one crop off the block it was dropped on
+      // would read as a bug).
+      if (body.tiles && body.tiles.length > 1) {
+        const soil = createSoilMap(ctx.soilTiles);
+        const takenSlots = new Set(
+          ctx.units.map((u) => u.soilSlot).filter((slot): slot is number => slot !== null),
+        );
+        const seenTiles = new Set<string>();
+        const planted: StackAcresUnitSnapshot[] = [];
+        for (const tile of body.tiles) {
+          if (planted.length >= held) break;
+          const tileKey = `${tile.tx},${tile.ty}`;
+          if (seenTiles.has(tileKey)) continue;
+          seenTiles.add(tileKey);
+          const slot = soilSlotForTile(soil, tile.tx, tile.ty);
+          if (slot === null || takenSlots.has(slot)) continue;
+          takenSlots.add(slot);
+          planted.push(
+            optimisticallyStockedUnit({
+              id: newOptimisticUnitId(),
+              stock: body.stock,
+              permanent: false,
+              inGreenhouse: false,
+              nowMs: ctx.nowMs,
+              soilSlot: slot,
+            }),
+          );
+        }
+        if (planted.length === 0) return null;
+        return {
+          units: [...ctx.units, ...planted],
+          seedStock: { ...ctx.seedStock, [body.stock]: held - planted.length },
+        };
+      }
       // An open-air crop needs a free bed somewhere on the farm (2026-09-09,
       // `stockStackAcres`'s own gate) -- the same "is there ANY free slot"
       // question `assignSoilSlot` asks, since a tap that names no bed still

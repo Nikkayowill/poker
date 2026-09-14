@@ -48,6 +48,7 @@ import {
   soilTilesEqual,
   moveSoilTileGroup,
   planSoilGroupRelocation,
+  plantableTileGroup,
   thirstyTileGroup,
   type CropSource,
   type SoilMap,
@@ -890,6 +891,70 @@ describe("group-watering: thirstyTileGroup", () => {
     const dry: Record<string, string> = { "0,0": "a", "1,0": "b", "0,1": "c" };
     const occupantAt = (tx: number, ty: number) => dry[`${tx},${ty}`] ?? null;
     expect(thirstyTileGroup(soil, 0, 0, occupantAt)).toEqual([]);
+  });
+});
+
+describe("group-planting: plantableTileGroup", () => {
+  /** A 2x2 block of bare tier-1 beds, plus an unrelated bare tile two away
+   *  that must never be swept in. */
+  const block2x2 = () =>
+    createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased", tier: "dirt" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "dirt" },
+      { tx: 0, ty: 1, order: 2, origin: "purchased", tier: "dirt" },
+      { tx: 1, ty: 1, order: 3, origin: "purchased", tier: "dirt" },
+      { tx: 5, ty: 5, order: 4, origin: "purchased", tier: "dirt" },
+    ]);
+  const neverOccupied = () => false;
+
+  it("is empty when the seed tile has no soil, or is already occupied", () => {
+    const soil = block2x2();
+    expect(plantableTileGroup(soil, 5, 5, () => true)).toEqual([]);
+    expect(plantableTileGroup(soil, 8, 8, neverOccupied)).toEqual([]);
+    expect(plantableTileGroup(soil, 0, 0, () => true)).toEqual([]);
+  });
+
+  it("returns all four tiles for a full 2x2 bare block, seed tile first", () => {
+    const soil = block2x2();
+    expect(plantableTileGroup(soil, 0, 0, neverOccupied)).toEqual(
+      expect.arrayContaining([
+        { tx: 0, ty: 0 },
+        { tx: 1, ty: 0 },
+        { tx: 0, ty: 1 },
+        { tx: 1, ty: 1 },
+      ]),
+    );
+    expect(plantableTileGroup(soil, 0, 0, neverOccupied)).toHaveLength(4);
+  });
+
+  it("falls back to empty for a run narrower than 2x2, even at 4+ tiles", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
+      { tx: 2, ty: 0, order: 2, origin: "purchased" },
+      { tx: 3, ty: 0, order: 3, origin: "purchased" },
+    ]);
+    expect(plantableTileGroup(soil, 0, 0, neverOccupied)).toEqual([]);
+  });
+
+  it("stops at an occupied tile -- the group only ever includes bare beds", () => {
+    // A 2x2 block where one corner already has a crop: only 3 tiles qualify,
+    // still under the 4-tile floor, so no group triggers.
+    const soil = block2x2();
+    const occupiedAt = (tx: number, ty: number) => tx === 1 && ty === 1;
+    expect(plantableTileGroup(soil, 0, 0, occupiedAt)).toEqual([]);
+  });
+
+  it("stops at a tier boundary -- a mixed-tier block never merges", () => {
+    const soil = createSoilMap([
+      { tx: 0, ty: 0, order: 0, origin: "purchased", tier: "dirt" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "dirt" },
+      { tx: 0, ty: 1, order: 2, origin: "purchased", tier: "enriched" },
+      { tx: 1, ty: 1, order: 3, origin: "purchased", tier: "enriched" },
+    ]);
+    // Only the two "dirt" tiles qualify from (0,0) -- a straight run, under
+    // the 4-tile floor.
+    expect(plantableTileGroup(soil, 0, 0, neverOccupied)).toEqual([]);
   });
 });
 

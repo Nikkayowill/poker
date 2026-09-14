@@ -38,6 +38,7 @@ import {
   harvestStackAcres,
   runStackAcresAction,
   stockStackAcres,
+  stockStackAcresGroup,
   tapStackAcresSecretZone,
   toStackAcresErrorResponse,
   tradeStackAcresSecretItemToRay,
@@ -165,6 +166,10 @@ export const runtime = "nodejs";
  *  the shape of the storage out of the response. */
 const unitIdSchema = z.string().uuid();
 const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
+const soilTileCoordSchema = z.object({
+  tx: z.number().int().min(-512).max(512),
+  ty: z.number().int().min(-512).max(512),
+});
 const synergyArchetypeSchema = z.enum(SYNERGY_ARCHETYPES as unknown as [string, ...string[]]);
 // [0, SYNERGY_MAX_ACTIVE_SLOTS) -- the service layer re-checks this too (see
 // `activateSynergyPerk`'s own comment), but a clean 400 here is cheaper than
@@ -209,12 +214,19 @@ const bodySchema = z.discriminatedUnion("action", [
   // ever honours one that resolves to a real, unoccupied bed the player
   // owns -- anything else (no soil there, someone else's slot, out of range)
   // falls straight through to the ordinary lowest-free-slot pick.
+  // `tiles` is set only for a group-plant drop (a seed dragged onto a >=2x2
+  // block of bare, same-tier beds -- lib/stackacres/soil.ts's
+  // `plantableTileGroup`); bounded the same way `water`'s own `unitIds` set
+  // is, so a fabricated list cannot make the server do unbounded work.
+  // Livestock and the Greenhouse have no bed lattice to group over, and
+  // `stockStackAcresGroup` refuses both outright.
   z.object({
     action: z.literal("stock"),
     stock: stockSchema,
     inGreenhouse: z.boolean().optional(),
     tx: z.number().int().min(-512).max(512).optional(),
     ty: z.number().int().min(-512).max(512).optional(),
+    tiles: z.array(soilTileCoordSchema).min(2).max(64).optional(),
   }),
   z.object({ action: z.literal("buy-stock"), stock: stockSchema }),
   z.object({ action: z.literal("retire"), unitId: unitIdSchema }),
@@ -532,15 +544,17 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "build-greenhouse":
       return buildStackAcresGreenhouse(token, now);
     case "stock":
-      return stockStackAcres(
-        token,
-        {
-          stock: action.stock,
-          inGreenhouse: action.inGreenhouse,
-          tile: action.tx !== undefined && action.ty !== undefined ? { tx: action.tx, ty: action.ty } : null,
-        },
-        now,
-      );
+      return action.tiles && action.tiles.length > 1
+        ? stockStackAcresGroup(token, { stock: action.stock, tiles: action.tiles }, now)
+        : stockStackAcres(
+            token,
+            {
+              stock: action.stock,
+              inGreenhouse: action.inGreenhouse,
+              tile: action.tx !== undefined && action.ty !== undefined ? { tx: action.tx, ty: action.ty } : null,
+            },
+            now,
+          );
     case "buy-stock":
       return buyStackAcresStock(token, { stock: action.stock }, now);
     case "retire":

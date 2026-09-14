@@ -35,8 +35,17 @@ export type Action =
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
   // optimistic-actions.ts for why the optimistic guess needs them too, not
-  // just the server.
-  | { action: "stock"; stock: StackAcresStock; inGreenhouse?: boolean; tx?: number; ty?: number }
+  // just the server. `tiles` is the group-plant equivalent: a whole
+  // >=2x2 block of bare, same-tier beds (`plantableTileGroup`, soil.ts),
+  // sown with one seed each in a single request instead of one at a time.
+  | {
+      action: "stock";
+      stock: StackAcresStock;
+      inGreenhouse?: boolean;
+      tx?: number;
+      ty?: number;
+      tiles?: { tx: number; ty: number }[];
+    }
   | { action: "buy-stock"; stock: StackAcresStock }
   | { action: "retire"; unitId: string }
   // No `unitIds` means "bring in everything that is ready" -- what the

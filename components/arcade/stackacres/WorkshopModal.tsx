@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "r
 import clsx from "clsx";
 import { Cog, Coins, Lock } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
+import { ContractPayout } from "./contract-payout";
 import { VAT_INPUT_ITEM, VAT_INPUT_QUANTITY, type VatContainer } from "@/lib/stackacres/aging";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -174,6 +175,15 @@ export function WorkshopModal({
 }: WorkshopModalProps) {
   const [now, setNow] = useState(() => Date.now());
   const [note, setNote] = useState<Note | null>(null);
+  /** The same bouncy Gold burst a Town Contract pays out with (see
+   *  ContractPayout's own header) -- a sale is settled from a sheet the same
+   *  way a contract is, so it gets the same "come to where the press was"
+   *  answer rather than a plain toast standing in for it. Keyed on the item
+   *  AND a nonce, so selling the same item twice in a row is a fresh burst
+   *  rather than a live one asked to replay. */
+  const [sellPayout, setSellPayout] = useState<{ item: MachineItemId; gold: number; nonce: number } | null>(
+    null,
+  );
   // Loom/Vat stay off the shelf by default (Pig/wool is out of active scope,
   // and nothing in scope makes the Cheese a Vat ages) -- see
   // lib/stackacres/scope.ts's own header. Already-built machines never hide,
@@ -249,8 +259,11 @@ export function WorkshopModal({
     (item: MachineItemId, quantity: number) =>
       run(
         () => onSell(item, quantity),
-        (result) =>
-          result.sold ? `Sold ${machineItemLabel(result.sold.item, result.sold.quantity)} for ${result.sold.gold.toLocaleString()} Gold.` : null,
+        (result) => {
+          if (!result.sold) return null;
+          setSellPayout({ item: result.sold.item, gold: result.sold.gold, nonce: Date.now() });
+          return `Sold ${machineItemLabel(result.sold.item, result.sold.quantity)} for ${result.sold.gold.toLocaleString()} Gold.`;
+        },
       ),
     [run, onSell],
   );
@@ -319,6 +332,9 @@ export function WorkshopModal({
             const sellIntent = `sell:${item}:${quantity}`;
             return (
               <li key={item}>
+                {sellPayout?.item === item && (
+                  <ContractPayout key={sellPayout.nonce} gold={sellPayout.gold} influence={0} />
+                )}
                 <StackAcresIcon name={icon(item)} size={20} />
                 <span>{machineItemLabel(item, quantity)}</span>
                 {quantity > 0 && (

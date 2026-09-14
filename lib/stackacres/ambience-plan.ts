@@ -243,3 +243,66 @@ export function rollGapMs(cue: { minGapMs: number; maxGapMs: number }, random: (
   const span = Math.max(0, cue.maxGapMs - cue.minGapMs);
   return cue.minGapMs + random() * span;
 }
+
+/**
+ * Whether the sky is doing something the ear should agree with.
+ *
+ * Deliberately just two states, not lib/stackacres/weather.ts's whole
+ * StackAcresWeather registry: SOLAR_FLARE and DRY_SPELL change light and
+ * economy, not sound, so the engine has nothing to say about them. RAIN is
+ * the one state a farm's soundscape cannot ignore -- birdsong continuing
+ * uninterrupted under a rain overlay is the same "picture and soundtrack
+ * disagree" bug as a bed left mute, just pointed the other way.
+ */
+export type AmbienceWeather = "clear" | "rain";
+
+/**
+ * The `rain` bed's target gain. Not folded into AMBIENCE_BEDS/`ambienceMix`
+ * because rain is a property of the sky's own clock (weather.ts), not of the
+ * hour -- crossfading it on the tod ramp would mean a shower that started at
+ * 2:59pm and a clock that ticks over to dusk at 3:00 fight the same gain
+ * node. The engine ramps this one independently, on rain's own transition.
+ */
+export function rainBedGain(weather: AmbienceWeather): number {
+  return weather === "rain" ? 0.55 : 0;
+}
+
+/**
+ * How hard rain leans on the daytime hum. Insects go quiet under a downpour
+ * the same way they go quiet at night (see `timeBed`'s night case) -- this
+ * multiplies whatever the hour already put there rather than replacing it,
+ * so dusk-in-the-rain is dusk's own mix, ducked, not a third fixed number to
+ * keep in sync with `ambienceMix`.
+ */
+export const RAIN_INSECT_DUCK = 0.2;
+
+/**
+ * Whether a cue should sit out a rain shower rather than fire through it.
+ *
+ * Birds and pigeons go quiet in the rain; a crow calling through a downpour
+ * reads as wrong the same way insects buzzing through one does. Frogs, the
+ * water drop, the crickets and the two mechanical creaks are left alone on
+ * purpose -- a frog chorus picking up in the rain is correct, not a miss.
+ */
+export function cueSuppressedByRain(cue: AmbienceCueName): boolean {
+  return cue === "bird-high" || cue === "bird-low" || cue === "pigeon-coo" || cue === "crow-caw";
+}
+
+/**
+ * The `river` bed's target gain: a livelier, higher, more restless cousin of
+ * the constant `water` bed, that only plays once the farm actually has
+ * something running water to answer for -- see stackacres-ambience.ts's own
+ * comment on the bed for which sector that is and why.
+ *
+ * A PERMANENT fact, not a positional one, on purpose: `ambienceMix` stopped
+ * varying by district for a reason (see its own header, and the tests that
+ * pin it), and gating this on "which district is the camera over right
+ * now" would be that same mistake with new names on it. Gating it on
+ * "has this farm ever cleared its one wet sector" instead means the layer
+ * rises once, everywhere, the same way the day/night and rain axes already
+ * apply everywhere -- never "closer to the water," which is the shape that
+ * was cut.
+ */
+export function riverBedGain(unlocked: boolean): number {
+  return unlocked ? 0.32 : 0;
+}

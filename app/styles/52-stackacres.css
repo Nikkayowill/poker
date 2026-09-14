@@ -1583,12 +1583,11 @@
 
 /* The one-shot "picked up" wobble: a squash on the way out and a settle back
    to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
-   scoop, just done as a shape change instead of a uniform scale since this
-   token has no separate `--grow` custom property to key off. Each frame
-   restates the position too: an animated `transform` replaces the property
-   outright, so a keyframe that set the scale alone would drop the token at
-   the field's top-left corner for its whole 220ms. Plays once when the live
-   clone mounts and does not loop. */
+   scoop, just done as a shape change rather than the uniform scale `--lift`
+   carries. Each frame restates the position too: an animated `transform`
+   replaces the property outright, so a keyframe that set the scale alone
+   would drop the token at the field's top-left corner for its whole 220ms.
+   Plays once when the live clone mounts and does not loop. */
 @keyframes sa-gel-pickup {
   0% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1, 1); }
   40% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1.22, .8); }
@@ -4424,6 +4423,7 @@
 }
 
 .sa-workshop-shelf li {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;

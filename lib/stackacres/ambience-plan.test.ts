@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   AMBIENCE_BEDS,
+  AMBIENCE_CUES,
+  RAIN_INSECT_DUCK,
   ambienceCues,
   ambienceMix,
+  cueSuppressedByRain,
   livestockCue,
+  rainBedGain,
+  riverBedGain,
   rollGapMs,
   type AmbienceTimeOfDay,
 } from "./ambience-plan";
@@ -139,6 +144,40 @@ describe("livestockCue", () => {
       expect(cue.gain, `${count}`).toBeGreaterThan(0);
       expect(cue.gain, `${count}`).toBeLessThanOrEqual(0.4);
     }
+  });
+});
+
+describe("weather", () => {
+  it("holds the rain bed silent when clear and gives it real gain when raining", () => {
+    expect(rainBedGain("clear")).toBe(0);
+    expect(rainBedGain("rain")).toBeGreaterThan(0);
+    expect(rainBedGain("rain")).toBeLessThanOrEqual(1);
+  });
+
+  it("holds RAIN_INSECT_DUCK in 0..1 so it can only turn the hum down, never up", () => {
+    expect(RAIN_INSECT_DUCK).toBeGreaterThan(0);
+    expect(RAIN_INSECT_DUCK).toBeLessThan(1);
+  });
+
+  it("silences birds and pigeons in the rain but leaves everything else alone", () => {
+    const silenced = AMBIENCE_CUES.filter(cueSuppressedByRain);
+    expect(silenced.sort()).toEqual(["bird-high", "bird-low", "crow-caw", "pigeon-coo"].sort());
+    // Frogs and the water drop read as MORE correct in the rain, not less --
+    // a regression that lumped them in with the birds would be silent farm
+    // noise no one would think to test for otherwise.
+    expect(cueSuppressedByRain("frog")).toBe(false);
+    expect(cueSuppressedByRain("water-drop")).toBe(false);
+    expect(cueSuppressedByRain("cricket")).toBe(false);
+    expect(cueSuppressedByRain("windmill-creak")).toBe(false);
+    expect(cueSuppressedByRain("gate-creak")).toBe(false);
+  });
+});
+
+describe("riverBedGain", () => {
+  it("is silent until the farm's one wet sector is cleared, then real", () => {
+    expect(riverBedGain(false)).toBe(0);
+    expect(riverBedGain(true)).toBeGreaterThan(0);
+    expect(riverBedGain(true)).toBeLessThanOrEqual(1);
   });
 });
 

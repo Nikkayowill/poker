@@ -252,7 +252,7 @@ export function seatAngleDeg(slot: number, count: number = SEAT_COUNT): number {
 }
 
 /**
- * Per-seat position offsets (in metres).
+ * Hand-tuned position nudges for individual CHAIRS (in metres).
  *
  * IMPORTANT: this is 3D table space, not screen space.
  * - x: left (-) / right (+) on the felt
@@ -260,20 +260,44 @@ export function seatAngleDeg(slot: number, count: number = SEAT_COUNT): number {
  * - z: forward toward the camera (+) / back away from the camera (-). This
  *   is the axis that reads as up/down on screen: negative z (away) moves
  *   a seat up and further back on screen.
+ *
+ * KEYED BY THE CHAIR, NOT BY THE SLOT NUMBER, and that is the whole point of
+ * this table's shape. It used to be an array indexed by slot, which is wrong
+ * the moment the table is not six-handed: `seatAnglesDeg` fills the arc
+ * OUTWARD from the dealer, so slot 3 is the chair at 250 degrees (her left)
+ * at six-handed and the chair at 290 (her right) at four-handed. The one
+ * non-zero nudge therefore jumped across the dealer as players came and went,
+ * which moved the chair bounding her and broke the "her elbow room never
+ * changes with the headcount" property `dealerShoulderRoom` is built on --
+ * the exact thing table-anchors.test.ts pins, and the reason her artwork does
+ * not have to be re-scaled mid-session.
+ *
+ * A chair is named by how many `SEAT_SPACING_DEG` steps it sits from the
+ * dealer: negative to her left, positive to her right. That name does not
+ * depend on how many people are at the table, so a nudge stays on the chair
+ * it was measured against. The values are unchanged, and at six-handed this
+ * lands every seat exactly where it landed before.
  */
-const SEAT_OFFSET_PER_SEAT: Vec3[] = [
-  { x: 0, y: 0, z: 0 }, // seat 0 (you, camera)
-  { x: 0, y: 0, z: 0 }, // seat 1 (far left)
-  { x: 0, y: 0, z: 0 }, // seat 2 (left of dealer) — moved back
-  { x: 0.02, y: 0, z: -0.0 }, // seat 3 (dealer's left)
-  { x: 0.0, y: 0, z: 0 }, // seat 4 (dealer's right)
-  { x: 0, y: 0, z: 0 }, // seat 5 (far right)
-];
+const SEAT_NUDGE_BY_STEP_FROM_DEALER: ReadonlyMap<number, { x: number; y: number; z: number }> = new Map([
+  // The chair immediately to the dealer's left.
+  [-1, { x: 0.02, y: 0, z: -0.0 }],
+]);
+
+/** Which chair a slot is sitting in, as steps from the dealer: negative to
+ *  her left, positive to her right, and 0 would be the dealer herself (no
+ *  slot is ever there). The near chair -- slot 0, the camera -- is the one
+ *  seat not on the far arc at all, and is left un-nudged rather than being
+ *  given a nonsense step. */
+function stepFromDealer(slot: number, count: number): number | null {
+  if (slot <= 0) return null;
+  return Math.round((seatAngleDeg(slot, count) - DEALER_ANGLE_DEG) / SEAT_SPACING_DEG);
+}
 
 /** Where a player sits, at the floor -- the base of their chair. */
 export function seatAnchor(slot: number, count: number = SEAT_COUNT): Vec3 {
   const { x, z } = ringPoint(seatAngleDeg(slot, count), SEAT_RING);
-  const offset = SEAT_OFFSET_PER_SEAT[Math.min(Math.max(slot, 0), SEAT_OFFSET_PER_SEAT.length - 1)] ?? { x: 0, y: 0, z: 0 };
+  const step = stepFromDealer(slot, count);
+  const offset = (step === null ? undefined : SEAT_NUDGE_BY_STEP_FROM_DEALER.get(step)) ?? { x: 0, y: 0, z: 0 };
   return {
     x: x + offset.x,
     y: FLOOR_Y + offset.y,

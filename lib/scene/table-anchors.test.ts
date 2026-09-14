@@ -427,6 +427,39 @@ describe("seating a table that is not full", () => {
   it("gives a short-handed table more elbow room, not less", () => {
     expect(seatShoulderRoom(1, 3)).toBeGreaterThan(seatShoulderRoom(1, SEAT_COUNT));
   });
+
+  /**
+   * THE CAUSE BEHIND "the arc grows outward" BELOW, pinned separately so a
+   * failure says which of the two broke.
+   *
+   * The hand-tuned art nudges used to be an array indexed by SLOT, and a slot
+   * is not a chair: `seatAnglesDeg` fills outward from the dealer, so slot 3
+   * is the chair at 250 degrees six-handed and the chair at 290 four-handed.
+   * The one non-zero nudge jumped across the dealer as players came and went,
+   * which moved whichever chair was bounding her.
+   *
+   * Stated as "a chair at a given angle is at a given place": that holds
+   * however the nudges are keyed internally, so this does not have to be
+   * rewritten the next time one is measured.
+   */
+  it("puts a chair in the same place whatever the headcount", () => {
+    const placeByAngle = new Map<number, { x: number; z: number }>();
+    for (let count = 2; count <= SEAT_COUNT; count += 1) {
+      for (let slot = 1; slot < count; slot += 1) {
+        const angle = seatAngleDeg(slot, count);
+        const seat = seatAnchor(slot, count);
+        const seen = placeByAngle.get(angle);
+        if (!seen) {
+          placeByAngle.set(angle, { x: seat.x, z: seat.z });
+          continue;
+        }
+        expect(seat.x).toBeCloseTo(seen.x, 9);
+        expect(seat.z).toBeCloseTo(seen.z, 9);
+      }
+    }
+    // The six-handed arc is the widest, so every chair on it was checked.
+    expect(placeByAngle.size).toBe(SEAT_COUNT - 1);
+  });
 });
 
 describe("stadiumRayPoint", () => {

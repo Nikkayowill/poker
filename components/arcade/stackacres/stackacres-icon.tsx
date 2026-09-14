@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import clsx from "clsx";
-import { CROP_ICON_SPRITE, paintIcon, type PainterName } from "./stackacres-art";
+import { CROP_ICON_SPRITE, ICON_SPRITE_OVERRIDE, paintIcon, type PainterName } from "./stackacres-art";
 import { isSpriteName, onSpriteReady, spriteImage } from "./stackacres-sprites";
 
 /**
@@ -47,7 +47,7 @@ export function StackAcresIcon({ name, size = 24, className }: StackAcresIconPro
     // stackacres-art.ts), just not one filed under its OWN name the way
     // `cow` draws `cow`'s -- `CROP_ICON_SPRITE` is the lookup from an icon
     // name like "ico-carrot" to the sprite it actually waits on ("carrot2").
-    const cropSprite = CROP_ICON_SPRITE[name];
+    const cropSprite = CROP_ICON_SPRITE[name] ?? ICON_SPRITE_OVERRIDE[name];
     if (cropSprite) {
       if (spriteImage(cropSprite)) return;
       return onSpriteReady(() => paintIcon(canvas, name, size));

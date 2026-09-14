@@ -4713,18 +4713,18 @@
   pointer-events: none;
 }
 
+/* No idle animation here on purpose: `filter` plus an infinite `animation`
+   on the same element (it used to bob up and down) knocks it off the
+   compositor's fast transform-only path, forced full repaint every frame
+   instead -- cheap for a tiny vector painter, not for a real photo. Kayo's
+   call once the watering can moved from a drawn droplet to the Gr8FarmPack
+   render (2026-09-13). */
 .sa-drag-token .sa-ico {
   position: relative;
   z-index: 1;
   width: 30px;
   height: 30px;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
-  animation: sa-drag-bob 1.6s ease-in-out infinite;
-}
-
-@keyframes sa-drag-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
 }
 
 .sa-drag-token:focus-visible {
@@ -4737,8 +4737,6 @@
   transition: none;
   cursor: grabbing;
 }
-
-.sa-drag.is-dragging .sa-drag-token .sa-ico { animation: none; }
 
 /* On a good drop the can tips over the soil and the scoop shakes out over
    the trough, then both fade. */
@@ -4829,8 +4827,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sa-drag-arrow-line,
-  .sa-drag-target,
-  .sa-drag-token .sa-ico { animation: none; }
+  .sa-drag-target { animation: none; }
   .sa-drag-token { transition: none; }
 }
 

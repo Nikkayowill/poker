@@ -10,8 +10,12 @@ import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 import { WHEAT_DURATION_MS, WHEAT_SEED_COST, type StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import {
+  createsStackAcresUnit,
+  isOptimisticUnitId,
   predictStackAcresAction,
   resolveOptimisticOutcome,
+  unitIdsIn,
+  withResolvedUnitIds,
   type FarmPredictContext,
   type MachineView,
 } from "./optimistic-actions";
@@ -707,5 +711,87 @@ describe("resolveOptimisticOutcome", () => {
   });
   it("restores and refetches when the outcome is unknown", () => {
     expect(resolveOptimisticOutcome({ ok: false, hasJsonBody: false })).toBe("restore-and-refetch");
+  });
+});
+
+describe("provisional unit ids", () => {
+  it("tells an id this browser invented from one the server issued", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "hen" },
+      ctx({ profile: profile({ goldBalance: 10_000 }) }),
+    );
+    const planted = patch?.units?.at(-1);
+    expect(planted).toBeDefined();
+    expect(isOptimisticUnitId(planted!.id)).toBe(true);
+    expect(isOptimisticUnitId("6d3a1f2e-0b4c-4a7f-9c11-2f8e5d6b7a90")).toBe(false);
+  });
+
+  it("names the two actions that make a unit", () => {
+    expect(createsStackAcresUnit({ action: "stock", stock: "hen" })).toBe(true);
+    expect(createsStackAcresUnit({ action: "buy-stock", stock: "hen" })).toBe(true);
+    expect(createsStackAcresUnit({ action: "water", unitId: "u1" })).toBe(false);
+  });
+
+  it("reads every unit id an action names", () => {
+    expect(unitIdsIn({ action: "feed", unitId: "u1" })).toEqual(["u1"]);
+    expect(unitIdsIn({ action: "water", unitId: "u1", unitIds: ["u1", "u2"] })).toEqual(["u1", "u1", "u2"]);
+    expect(unitIdsIn({ action: "collect" })).toEqual([]);
+    expect(unitIdsIn({ action: "draw-water" })).toEqual([]);
+  });
+});
+
+describe("withResolvedUnitIds", () => {
+  const swap = (id: string) => (id === "provisional" ? "real" : id);
+
+  it("re-points a single-target action", () => {
+    expect(withResolvedUnitIds({ action: "water", unitId: "provisional" }, swap)).toEqual({
+      action: "water",
+      unitId: "real",
+    });
+    expect(withResolvedUnitIds({ action: "clear", unitId: "provisional" }, swap)).toEqual({
+      action: "clear",
+      unitId: "real",
+    });
+  });
+
+  it("refuses a single-target action whose unit never resolved", () => {
+    expect(withResolvedUnitIds({ action: "feed", unitId: "provisional" }, () => null)).toBeNull();
+  });
+
+  it("waters what it can when only part of a block resolved", () => {
+    expect(
+      withResolvedUnitIds(
+        { action: "water", unitId: "u1", unitIds: ["u1", "u2", "provisional"] },
+        (id) => (id === "provisional" ? null : id),
+      ),
+    ).toEqual({ action: "water", unitId: "u1", unitIds: ["u1", "u2"] });
+  });
+
+  it("drops the group when it wears down to one crop, since the route takes two or more", () => {
+    expect(
+      withResolvedUnitIds({ action: "water", unitId: "u1", unitIds: ["u1", "provisional"] }, (id) =>
+        id === "provisional" ? null : id,
+      ),
+    ).toEqual({ action: "water", unitId: "u1" });
+  });
+
+  it("stands a group drop on a surviving crop when its own anchor fell away", () => {
+    expect(
+      withResolvedUnitIds({ action: "water", unitId: "provisional", unitIds: ["provisional", "u2", "u3"] }, (id) =>
+        id === "provisional" ? null : id,
+      ),
+    ).toEqual({ action: "water", unitId: "u2", unitIds: ["u2", "u3"] });
+  });
+
+  it("keeps a whole-farm collect exactly as it was", () => {
+    expect(withResolvedUnitIds({ action: "collect" }, swap)).toEqual({ action: "collect" });
+  });
+
+  it("refuses a collect with nothing left to bring in", () => {
+    expect(withResolvedUnitIds({ action: "collect", unitIds: ["provisional"] }, () => null)).toBeNull();
+  });
+
+  it("leaves an action that names no unit alone", () => {
+    expect(withResolvedUnitIds({ action: "draw-water" }, swap)).toEqual({ action: "draw-water" });
   });
 });

@@ -158,7 +158,12 @@ export const runtime = "nodejs";
  * matters on: only a profile an admin has granted access gets past, everyone
  * else gets a 401.
  */
-const unitIdSchema = z.string().min(1);
+/** Every unit id is a database uuid. Checked here rather than left to the
+ *  units table's own cast, which answered a bad id with Postgres' "invalid
+ *  input syntax for type uuid" -- a message that reached the player as
+ *  "Could not load that unit" and told them nothing. A clean 400 also keeps
+ *  the shape of the storage out of the response. */
+const unitIdSchema = z.string().uuid();
 const stockSchema = z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]);
 const synergyArchetypeSchema = z.enum(SYNERGY_ARCHETYPES as unknown as [string, ...string[]]);
 // [0, SYNERGY_MAX_ACTIVE_SLOTS) -- the service layer re-checks this too (see

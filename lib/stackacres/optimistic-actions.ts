@@ -229,13 +229,81 @@ function debited(ctx: FarmPredictContext, amount: number): PlayerProfile | null 
   };
 }
 
+/** Marks an id this browser invented rather than one the server issued.
+ *  Every real unit id is a database uuid, so nothing can collide with it. */
+export const OPTIMISTIC_UNIT_PREFIX = "sa-optimistic-";
+
+/** Whether `id` names a unit that only exists in this browser's guess. Such
+ *  an id must never reach the server: the units table keys on uuid, and the
+ *  insert/select would fail on the cast rather than on anything meaningful.
+ *  stackacres-farm.tsx's `act` resolves these to real ids before sending. */
+export function isOptimisticUnitId(id: string): boolean {
+  return id.startsWith(OPTIMISTIC_UNIT_PREFIX);
+}
+
 let optimisticUnitSeq = 0;
 /** A throwaway id for a unit this browser is about to create. Replaced by
  *  the server's own id the moment the real response lands. */
 function newOptimisticUnitId(): string {
   optimisticUnitSeq += 1;
-  return `sa-optimistic-${optimisticUnitSeq}`;
+  return `${OPTIMISTIC_UNIT_PREFIX}${optimisticUnitSeq}`;
 }
+
+/** Whether `body` is one of the two actions that makes a new unit row, and
+ *  so leaves a provisional id on screen until its response lands. */
+export function createsStackAcresUnit(body: Action): boolean {
+  return body.action === "stock" || body.action === "buy-stock";
+}
+
+/** Every unit id `body` names, across the two shapes actions carry them in
+ *  (`unitId` for the one tapped, `unitIds` for a group drop). */
+export function unitIdsIn(body: Action): string[] {
+  const ids: string[] = [];
+  if ("unitId" in body) ids.push(body.unitId);
+  if ("unitIds" in body && body.unitIds) ids.push(...body.unitIds);
+  return ids;
+}
+
+/**
+ * `body` with every unit id it names run through `resolve`, or null when the
+ * action has nothing left to act on.
+ *
+ * A group drop (`water`/`collect`'s own `unitIds`) keeps whatever resolved
+ * and drops the rest -- the same "waters what it can" posture the server
+ * takes when the can runs dry partway. A single-target action whose one unit
+ * does not resolve is refused outright rather than quietly retargeted at a
+ * neighbour.
+ */
+export function withResolvedUnitIds(
+  body: Action,
+  resolve: (id: string) => string | null,
+): Action | null {
+  const resolveAll = (ids: readonly string[]): string[] =>
+    ids.map(resolve).filter((id): id is string => id !== null);
+  if (body.action === "collect") {
+    if (!body.unitIds) return body;
+    const ids = resolveAll(body.unitIds);
+    return ids.length > 0 ? { ...body, unitIds: ids } : null;
+  }
+  if (body.action === "water") {
+    const group = body.unitIds ? resolveAll(body.unitIds) : null;
+    // A group drop whose own anchor fell away can stand on the first crop
+    // that survived; the anchor is only the key both duplicate guards read.
+    const anchor = resolve(body.unitId) ?? group?.[0] ?? null;
+    if (anchor === null) return null;
+    // The route takes a block of two or more, or no group at all -- a group
+    // worn down to one crop is simply that one crop's own water.
+    return group && group.length > 1
+      ? { ...body, unitId: anchor, unitIds: group }
+      : { action: "water", unitId: anchor };
+  }
+  if ("unitId" in body) {
+    const anchor = resolve(body.unitId);
+    return anchor === null ? null : { ...body, unitId: anchor };
+  }
+  return body;
+}
+
 
 /**
  * The processing track as one patch. The component only ever sets the four

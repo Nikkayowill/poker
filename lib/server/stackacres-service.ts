@@ -1273,9 +1273,10 @@ async function refundGold(profileId: string, gold: number): Promise<void> {
  * earlier, or names ground with no bed at all) falls straight through to
  * the same "lowest free slot" pick every other sow uses, never a refusal.
  *
- * The full slot space is every tile this profile has bought, in the SAME
- * order (`soilMapFor`) the shell hands the scene, which is what makes the
- * slot index this returns mean the same bed on both sides.
+ * The slot this returns is the chosen bed's own `order` (see `soilSlotTile`
+ * in lib/stackacres/soil.ts), which is what makes it mean the same bed on
+ * both sides of the wire and go on meaning it after other beds are bought
+ * or removed.
  */
 async function assignSoilSlot(
   profileId: string,
@@ -4831,7 +4832,15 @@ export async function placeStackAcresSoilTile(
 
   let outcome: Awaited<ReturnType<typeof placeSoilTileRow>>;
   try {
-    outcome = await placeSoilTileRow(profile.id, tx, ty, tier);
+    // The slots the crops are holding, so the new bed's order clears them --
+    // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
+    // memory store is the only one that needs the read, and the RPC does the
+    // same arithmetic in SQL.
+    outcome = await placeSoilTileRow(profile.id, tx, ty, tier, async () =>
+      (await listStackAcresUnits(profile.id))
+        .map((unit) => unit.soilSlot)
+        .filter((slot): slot is number => slot !== null),
+    );
   } catch (error) {
     await refundSoilBag(profile.id, tier);
     throw error;
@@ -4857,13 +4866,12 @@ export async function placeStackAcresSoilTile(
  * (stackacres-scene.ts); nothing is spent and nothing is refunded, since
  * this only ever moves ground the player already bought.
  *
- * NEVER remove-then-place. A crop's position is `soilSlot`, an index into
- * `orderedSoilTiles` (lib/stackacres/soil.ts), not a coordinate -- as long
- * as a tile keeps its own `tile_order` while its tx/ty change, every crop
- * standing on it keeps resolving to the same bed with no unit-row write at
- * all. Removing and reinserting would hand out a NEW order, reshuffle every
- * later tile's slot index, and (per `removeStackAcresSoilTile` above) delete
- * the bed's own occupant outright.
+ * NEVER remove-then-place. A crop's position is `soilSlot`, which is a bed's
+ * `tile_order` (lib/stackacres/soil.ts), not a coordinate -- as long as a
+ * tile keeps that order while its tx/ty change, every crop standing on it
+ * keeps resolving to the same bed with no unit-row write at all. Removing
+ * and reinserting would hand out a NEW order, stranding the bed's crop, and
+ * (per `removeStackAcresSoilTile` above) delete the occupant outright.
  *
  * The group and its legality are recomputed HERE from a fresh read, never
  * trusted from the client: `planSoilGroupRelocation` is the identical pure
@@ -5059,6 +5067,13 @@ export async function buyStackAcresSeed(
  * a lost race on the abandon (the crop was harvested or cleared a moment
  * earlier) is left alone rather than retried -- there is nothing left to
  * take.
+ *
+ * EVERY OTHER CROP IS LEFT ALONE, and that is the whole point of a slot
+ * being a bed's `order` rather than its place in the bed list. Under the
+ * old index-into-`orderedSoilTiles` shape this call quietly moved every crop
+ * ordered after the removed bed onto its neighbour's bed, so lifting a bed
+ * in one corner shuffled a row of lettuce in another (2026-09-14). Nothing
+ * here renumbers anything now because there is nothing left to renumber.
  */
 export async function removeStackAcresSoilTile(
   token: string,

@@ -657,7 +657,13 @@ export function predictStackAcresAction(
       const held = ctx.soilStock[tier] ?? 0;
       if (held < 1) return null;
       const soil = createSoilMap(ctx.soilTiles);
-      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, tier);
+      // Every slot a crop currently holds, so the new bed's order clears
+      // them all -- see `nextSoilOrder` on why max-plus-one over the beds
+      // alone would let a fresh bed adopt an orphaned crop.
+      const claimed = ctx.units
+        .map((unit) => unit.soilSlot)
+        .filter((slot): slot is number => slot !== null);
+      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, tier, claimed);
       if (result.kind !== "created") return null;
       return {
         soilTiles: [...ctx.soilTiles, result.tile],
@@ -673,10 +679,10 @@ export function predictStackAcresAction(
       // A crop standing on the lifted bed goes with it -- the same
       // `soilSlotOnTile` question stackacres-service.ts asks server-side
       // before it deletes the occupant for real. Reads `ctx.soilTiles`
-      // (before the removal), same reason the service resolves occupancy
-      // before its own delete: the crop's slot names this tile by its
-      // position in the CURRENT lattice, which the removal is about to
-      // shrink. No refund of its seed cost either.
+      // (before the removal) so the bed is still there to be matched. No
+      // refund of its seed cost either. Every OTHER crop stays exactly where
+      // it is: a slot is a bed's own `order`, so a removal that misses a
+      // crop leaves it alone.
       const soil = createSoilMap(ctx.soilTiles);
       const occupant = ctx.units.find(
         (unit) => unit.soilSlot !== null && soilSlotOnTile(soil, unit.soilSlot, body.tx, body.ty),
@@ -700,9 +706,9 @@ export function predictStackAcresAction(
       if (plan.kind !== "ok") return null;
       if (!moveSoilTileGroup(soil, plan.moves)) return null;
       // Crop-free on purpose, same as place/remove-soil-tile above: no unit
-      // moves here, only the beds -- a crop's `soilSlot` is an index into
-      // the ordered tile list, not a coordinate, so it keeps resolving to
-      // the same bed once that bed's tx/ty change (see soil.ts's header).
+      // moves here, only the beds -- a crop's `soilSlot` is its bed's own
+      // `order`, not a coordinate, so it keeps resolving to the same bed
+      // once that bed's tx/ty change (see soil.ts's `soilSlotSpot`).
       return { soilTiles: [...soil.values()] };
     }
     case "sow-wheat": {

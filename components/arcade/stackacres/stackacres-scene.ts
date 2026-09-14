@@ -4299,14 +4299,21 @@ export class StackAcresScene extends Phaser.Scene {
 
   placeSoilAt(x: number, y: number, tier: SoilTier = SOIL_DEFAULT_TIER): boolean {
     const { tx, ty } = soilTileAt(x, y);
-    const placed = plantSoilTile(this.soil, { tx, ty }, tier).kind === "created";
+    // The slots the crops on screen are holding, so the new bed's order
+    // clears them (see `nextSoilOrder`).
+    const claimed: number[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.unit.soilSlot !== null && node.unit.soilSlot !== undefined) claimed.push(node.unit.soilSlot);
+    }
+    const placed = plantSoilTile(this.soil, { tx, ty }, tier, claimed).kind === "created";
     if (placed) this.refreshSoil();
     return placed;
   }
 
-  /** Lifts a tile. A crop whose own slot stood on it does not vanish -- its
-   *  slot wraps onto whatever soil is left (`soilSlotSpot`'s own clamp), or
-   *  the field scatter if none is, which is why this repaints the units too. */
+  /** Lifts a tile. A crop that was standing on it is taken away with it by
+   *  the server; anything still holding that bed's slot falls back to the
+   *  field scatter (`soilSlotSpot` answers null for a bed that is gone),
+   *  which is why this repaints the units too. */
   removeSoilAt(x: number, y: number): boolean {
     const { tx, ty } = soilTileAt(x, y);
     const removed = removeSoilTile(this.soil, tx, ty);
@@ -6060,6 +6067,31 @@ export class StackAcresScene extends Phaser.Scene {
    * pad because the texture has no ink at a coordinate the texture does not
    * even contain would undo it.
    */
+  /**
+   * Whether a screen point is on a crop's own painted pixels.
+   *
+   * The near-inverse of `artHitIsAir`, and deliberately a separate function
+   * rather than `!artHitIsAir(...)`: that one answers "should an art-BOX hit
+   * be thrown away", so a point outside the sprite entirely comes back as
+   * not-air (the fingertip pad is allowed to reach past the texture). This
+   * one is asked before any box hit has been established, so outside the
+   * sprite has to mean false or every crop on the farm would answer yes.
+   *
+   * No fingertip pad, for the same reason: a padded plant would reach onto
+   * the bare bed beside it and take the tap that plants a seed there.
+   */
+  private onCropInk(node: UnitNode, x: number, y: number): boolean {
+    if (node.unit.state === "mucked") return false;
+    if (cropArtFor(node.unit.stock) === null) return false;
+    const inside = boundsPoint(x, y, node.sprite.getBounds());
+    if (!inside) return false;
+    const mask = this.alphaMaskFor(node.sprite.texture.key);
+    // No mask warmed yet: the box is the best answer available, and it is
+    // still a better one than the square two rows behind the plant.
+    if (!mask) return true;
+    return alphaMaskCovers(mask, inside.u, inside.v);
+  }
+
   private artHitIsAir(node: UnitNode, x: number, y: number): boolean {
     if (node.unit.state === "mucked") return false;
     if (cropArtFor(node.unit.stock) === null) return false;
@@ -6157,16 +6189,54 @@ export class StackAcresScene extends Phaser.Scene {
     // A CSS pixel is this many scene units at the current zoom, which is what
     // keeps the pad a constant size under the thumb rather than under the map.
     const pad = TAP_PAD / this.zoomL();
-    // A crop and its bed are one target: on a placed bed, the tap is that
-    // bed's own crop, or nobody's (so it falls through to the bed's seed
-    // offer), however far a neighbour's leaves or cue bubble reach over it.
-    // The square always decides; a bubble floats over the row behind, and
-    // letting it win there made the bed behind a seed untappable. `at` is in
-    // projected scene space and the lattice is in ground space, so the tap is
-    // unprojected before it is floored.
+    // On the bed lattice a tap resolves to a crop or to nobody (so it falls
+    // through to that bed's seed offer) -- see the branch below for which of
+    // the plant and the square gets to answer. `at` is in projected scene
+    // space and the lattice is in ground space, so the tap is unprojected
+    // before it is floored.
     const ground = isoUnproject(at.x, at.y);
     const tapTile = soilTileAt(ground.x, ground.y);
     if (hasSoilTile(this.soil, tapTile.tx, tapTile.ty)) {
+      // A PLANT THE FINGER IS ACTUALLY ON BEATS THE SQUARE UNDER IT, and it
+      // has to, because a plant is not drawn inside its own square. The
+      // sprite anchors (0.5, 1) on the bed's CENTRE and grows upward, while
+      // the bed's diamond is only 16 screen units tall -- so a mature corn
+      // (its painted box is 32 units tall, wheat 29, tomato 22: see
+      // CROP_BOX in lib/stackacres/crop-visuals.ts) stands a clear one to
+      // two rows of beds up the screen from the square it belongs to.
+      // Resolving the tap by ground square alone therefore handed the thumb
+      // whatever was growing one or two beds BEHIND the plant it was
+      // squarely on top of. `CROP_BED_FIT_WIDTH` caps how wide a crop draws
+      // for exactly this reason; nothing caps how tall, and in an iso view
+      // with world y foreshortened by half, height is the axis that misses.
+      //
+      // Real painted pixels, not the sprite's box -- more than half a ripe
+      // plant's box is transparent, so a box test would put the tap back on
+      // a neighbour by a different route. Frontmost wins where two plants'
+      // ink genuinely overlaps, which is what the player sees on top.
+      //
+      // A CUE BUBBLE IS STILL NOT A TARGET HERE. That is the rule the
+      // by-square branch below was introduced to get (a bubble floating over
+      // the row behind made the bed under it untappable, so a seed could not
+      // be planted there) and it is kept: only `node.sprite`, the plant
+      // itself, is consulted. A bare bed under a neighbour's leaves is
+      // reached the same way the eye reaches it -- by the part of it that is
+      // not covered.
+      //
+      // A BEDLESS CROP COUNTS TOO. A crop with a null slot scatters across
+      // the Crop Fields (`cropSpot` in lib/stackacres/world.ts), and that
+      // scatter can land it on top of a placed bed -- where the by-square
+      // rule below, which only ever answers with a bed's own crop, could
+      // never reach it. Its own painted pixels are the only handle it has.
+      let inkHit: { id: string; depth: number } | null = null;
+      for (const [id, node] of this.nodes) {
+        if (!this.onCropInk(node, at.x, at.y)) continue;
+        const depth = node.container.depth;
+        if (!inkHit || depth > inkHit.depth) inkHit = { id, depth };
+      }
+      if (inkHit) return inkHit.id;
+      // Nothing painted under the finger: the square decides, as it has since
+      // the bubbles were taken out of it.
       for (const [id, node] of this.nodes) {
         const bed = this.bedOf(node);
         if (bed && bed.tx === tapTile.tx && bed.ty === tapTile.ty) return id;

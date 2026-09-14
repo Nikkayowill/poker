@@ -51,11 +51,15 @@ export interface StackAcresUnitRow {
   /** What clearing this unit costs while it is mucked. Null unless mucked. */
   muckFee: number | null;
   /**
-   * Crops only: the fixed planting slot this crop holds in the flattened
-   * soil slot space (see `soilSlotPoint` in ./soil.ts). This is the ONLY
-   * thing that puts a crop on a tile -- the renderer and the irrigation
-   * recompute both stand a crop dead centre of the tile this slot owns and
-   * nowhere else.
+   * Crops only: the bed this crop stands on, named by that bed's own `order`
+   * (see `soilSlotTile` in ./soil.ts). This is the ONLY thing that puts a
+   * crop on a tile -- the renderer and the irrigation recompute both stand a
+   * crop dead centre of the bed this slot names and nowhere else.
+   *
+   * A BED'S ORDER, NOT ITS PLACE IN THE BED LIST. It was an index into
+   * `orderedSoilTiles` until 2026-09-14, and that list is dense: removing one
+   * bed slid every crop after it onto its neighbour's bed, so lifting a bed
+   * in one corner of the farm rearranged crops in another.
    *
    * Null means this crop has no bed: livestock always, and a crop sown
    * before `assignSoilSlot` started refusing a sow with no free bed

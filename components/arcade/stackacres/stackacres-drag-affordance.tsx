@@ -41,7 +41,10 @@ export interface StackAcresDragAffordanceProps {
 }
 
 const ICONS: Readonly<Record<DragAffordanceKind, PainterName>> = {
-  water: "ico-water",
+  // The one surface that gets the real watering can instead of the plain
+  // droplet every other water surface draws -- see "ico-watering-can"'s own
+  // header in stackacres-art.ts.
+  water: "ico-watering-can",
   feed: "ico-feed",
 };
 

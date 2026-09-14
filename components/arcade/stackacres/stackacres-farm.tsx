@@ -107,7 +107,6 @@ import {
 import {
   SOIL_BAGS_PER_PURCHASE,
   SOIL_DEFAULT_TIER,
-  SOIL_TIERS,
   soilTierDef,
   type SoilStock,
   type SoilTier,
@@ -321,11 +320,12 @@ const SEED_FEED_BULK_QUANTITIES: readonly number[] = [1, 20];
  * The tiers Ray's shelf actually sells, as opposed to `SOIL_TIERS` (every
  * tier the game engine knows about). The Soil tab shows one card -- "Soil
  * bag," the base `dirt` tier -- rather than the old three-tier ladder.
- * Enriched Substrate and Hydro Soil are not deleted: a farm that already
- * holds bags or beds of either keeps their growth bonus / self-watering
- * perk exactly as before, and both still appear as their own token in the
- * till-bed radial menu (`SOIL_TIERS.map` below, unchanged) since that picks
- * from what a player is HOLDING, not from what the shop sells today.
+ * The Crop Fields' own gel dock plants that same `dirt` tier directly, with
+ * no tier picker of its own: Enriched Substrate and Hydro Soil are not
+ * deleted from the engine (a farm that already holds a bed of either keeps
+ * its growth bonus / self-watering perk), but nothing on the shelf or in the
+ * dock offers planting one anymore -- keeping a plot hydrated is the pipe
+ * network's job now, not a soil purchase.
  */
 const STORE_SOIL_TIERS: readonly SoilTier[] = ["dirt"];
 
@@ -1172,13 +1172,14 @@ export function StackAcresFarm() {
     armedRemoveBed?: { tx: number; ty: number };
     /**
      * Which step of the Crop Fields' own bare-ground dock is showing: the
-     * root Lay Pipe/Plant Soil choice, or one branch's own follow-on
-     * (soil tiers, or Pipe vs. Well when no well exists yet). Lives on
-     * `radial` for the same reason `armedRemoveBed` does -- a fresh tap on
-     * any tile replaces the whole object, so a stale step can never survive
-     * onto a different tile. `undefined` reads as `"root"`.
+     * root Lay Pipe/Plant Soil choice, or the Pipe branch's own Pipe vs.
+     * Well follow-on (only reachable when no well exists yet). Plant Soil
+     * has no follow-on of its own -- it commits straight from the root.
+     * Lives on `radial` for the same reason `armedRemoveBed` does -- a fresh
+     * tap on any tile replaces the whole object, so a stale step can never
+     * survive onto a different tile. `undefined` reads as `"root"`.
      */
-    gelStep?: "root" | "pipe" | "soil";
+    gelStep?: "root" | "pipe";
   } | null>(null);
   /**
    * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
@@ -3620,9 +3621,10 @@ export function StackAcresFarm() {
    *    branch computes, just reshaped for `onCommit` instead of `onSelect`.
    * 2. A bed already standing here -- owned seed tokens to plant, plus
    *    Remove Bed (armed/confirm, via `radial.armedRemoveBed`, unchanged).
-   * 3. Bare ground -- the root Lay Pipe/Plant Soil choice, or whichever
-   *    branch's own follow-on `radial.gelStep` says is showing (soil tiers;
-   *    or Pipe vs. Well, only reachable when no well exists yet).
+   * 3. Bare ground -- the root Lay Pipe/Plant Soil choice. Plant Soil
+   *    commits immediately (one tap of dirt, no tier picker); Lay Pipe has
+   *    its own follow-on, `radial.gelStep === "pipe"`, offering Pipe vs.
+   *    Well when no well exists yet.
    */
   const cropFieldGelItems: StackAcresGelDockItem[] = (() => {
     if (!radial || !radialInCropFieldBeds) return [];
@@ -3722,25 +3724,6 @@ export function StackAcresFarm() {
     // Bare ground: nothing stands here yet. `gelStep` is undefined until the
     // root choice fires once (see `radial`'s own doc), so it reads as root.
     const step = radial.gelStep ?? "root";
-    if (step === "soil") {
-      // ONE TOKEN PER TIER, generated from SOIL_TIER_DEFS rather than listed
-      // here, so adding a tier to that table adds it here with no second
-      // place to forget. NO `cost`: soil is paid for at Ray's shelf, so a
-      // Gold price here would read as a second charge -- a tier with no bags
-      // left is offered disabled instead, which is what points at the shop.
-      return SOIL_TIERS.map((tier) => {
-        const def = soilTierDef(tier);
-        const held = soilStock[tier] ?? 0;
-        return {
-          key: `till-bed-${tier}`,
-          label: def.label,
-          icon: "ico-plant" as PainterName,
-          qty: held,
-          disabledReason: held > 0 ? undefined : "None in the barn — buy from Ray",
-          onCommit: () => onPlaceSoilTile(tx, ty, tier),
-        };
-      });
-    }
     const lone = !PIPE_NEIGHBORS.some((n) =>
       irrigation.some((node) => node.tx === ptx + n.tx && node.ty === pty + n.ty),
     );
@@ -3791,8 +3774,9 @@ export function StackAcresFarm() {
         key: "choose-soil",
         label: "Plant Soil",
         icon: "ico-plant",
-        keepOpen: true,
-        onCommit: () => setRadial({ ...radial, gelStep: "soil" }),
+        qty: soilStock[SOIL_DEFAULT_TIER] ?? 0,
+        disabledReason: (soilStock[SOIL_DEFAULT_TIER] ?? 0) > 0 ? undefined : "None in the barn — buy from Ray",
+        onCommit: () => onPlaceSoilTile(tx, ty),
       },
     ];
   })();
@@ -4313,11 +4297,12 @@ export function StackAcresFarm() {
           {/* The district panel: deep management, not the way you play.
               The fast loop is on the canvas now -- tap a ripe crop to collect
               it, tap empty ground to seed it -- so this no longer opens itself
-              when a player travels somewhere. The peg above is how it comes
-              back, and it holds what a tap has no business doing: Gold spends,
-              and the full standing list. That list is also the keyboard and
-              screen-reader path to every canvas tap, which is why it is still
-              here rather than deleted along with the loop it used to be. */}
+              when a player travels somewhere. Manage on the radial menu is
+              how it comes back, and it holds what a tap has no business
+              doing: Gold spends, and the full standing list. That list is
+              also the keyboard and screen-reader path to every canvas tap,
+              which is why it is still here rather than deleted along with
+              the loop it used to be. */}
           <aside
             id="sa-district-panel"
             className={clsx("sa-district-panel", { "is-open": panelOpen })}

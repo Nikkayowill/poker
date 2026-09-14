@@ -50,6 +50,7 @@ import {
   spriteImage,
   spriteLoadKey,
   type PainterSpriteName,
+  type SpriteName,
 } from "./stackacres-sprites";
 
 export type { Painter } from "./art-kit";
@@ -233,6 +234,7 @@ type CorePainterName =
   | "ico-clear"
   | "ico-pipe"
   | "ico-water"
+  | "ico-watering-can"
   | "ico-bushels"
   | "ico-gold"
   | "ico-egg"
@@ -470,12 +472,56 @@ function cropIcon(sprite: PainterSpriteName, mat: Ramp): Paint {
   };
 }
 
+/** The Water tool's droplet shape, factored out of "ico-water" below so
+ *  `wateringCanIcon`'s fallback can draw the exact same thing rather than a
+ *  second copy of it. */
+const waterDroplet: Paint = (c) => {
+  c.beginPath();
+  c.moveTo(12, 3);
+  c.quadraticCurveTo(19, 13.5, 19, 16.5);
+  c.quadraticCurveTo(19, 21, 12, 21);
+  c.quadraticCurveTo(5, 21, 5, 16.5);
+  c.quadraticCurveTo(5, 13.5, 12, 3);
+  F(c, lin(c, 5, 3, 19, 21, [[0, "#8fe0f5"], [1, "#3f9fc9"]]));
+  c.beginPath();
+  c.moveTo(12, 3);
+  c.quadraticCurveTo(19, 13.5, 19, 16.5);
+  c.quadraticCurveTo(19, 21, 12, 21);
+  c.quadraticCurveTo(5, 21, 5, 16.5);
+  c.quadraticCurveTo(5, 13.5, 12, 3);
+  stroke(c, "#2b7a9c", 1.8);
+  ell(c, 9.3, 15, 2.1, 3, -0.3);
+  F(c, "rgba(255,255,255,.55)");
+};
+
+/** The drag-to-water token's own watering can: `wateringCan`'s real render,
+ *  scaled to fit the icon's square box without stretching -- same
+ *  aspect-preserving technique `cropIcon` uses below. Falls back to
+ *  `waterDroplet` until the sprite has loaded. */
+function wateringCanIcon(): Paint {
+  return (c) => {
+    const img = spriteImage("wateringCan");
+    if (!img) {
+      waterDroplet(c);
+      return;
+    }
+    const box = 24;
+    const k = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    c.drawImage(img, (box - w) / 2, (box - h) / 2, w, h);
+  };
+}
+
 /** Maps a crop's icon name to the sprite it actually draws (`cropIcon`
  *  above), since that sprite is not filed under the icon's own name the way
  *  every other sprite-backed painter's is (`cow` draws `cow`'s own sprite;
  *  `ico-carrot` draws `carrot2`'s). `stackacres-icon.tsx` reads this
  *  alongside `isSpriteName` so a canvas that painted the flat fallback still
- *  repaints once the real sprite lands. */
+ *  repaints once the real sprite lands. Crop-only: values are
+ *  `PainterSpriteName` because a crop's sprite is also placed in the world
+ *  (`carrot2` bakes as a grown crop, not just an icon) -- see
+ *  `ICON_SPRITE_OVERRIDE` below for an icon whose sprite isn't. */
 export const CROP_ICON_SPRITE: Readonly<Record<string, PainterSpriteName>> = {
   "ico-bell_pepper": "bell_pepper2",
   "ico-broccoli": "broccoli2",
@@ -493,6 +539,17 @@ export const CROP_ICON_SPRITE: Readonly<Record<string, PainterSpriteName>> = {
   "ico-spinach": "spinach2",
   "ico-tomato": "tomato2",
   "ico-wheatsheaf": "wheatsheaf2",
+};
+
+/** `CROP_ICON_SPRITE`'s counterpart for an icon whose backing sprite isn't a
+ *  `PainterSpriteName` -- `wateringCan` never bakes into the Phaser world
+ *  (see its exclusion in stackacres-sprites.ts), so it can't sit in that map
+ *  without widening every crop entry's type along with it. Same consumer,
+ *  same reason to exist: `stackacres-icon.tsx` checks both so a canvas that
+ *  painted `wateringCanIcon`'s fallback droplet repaints once the real can
+ *  has loaded. */
+export const ICON_SPRITE_OVERRIDE: Readonly<Record<string, SpriteName>> = {
+  "ico-watering-can": "wateringCan",
 };
 
 /** Glass with a gradient and a diagonal streak; a flat fill reads as a hole
@@ -1965,24 +2022,22 @@ const DRAWN: Record<PainterName, Painter> = {
   // The Water tool's own droplet, the same blue as the drop on ico-pipe's
   // spout -- one held to fill a trough or a dry crop rather than lay a run
   // of pipe, so it reads as the same liquid the irrigation tiles carry.
-  "ico-water": painter(24, 24, (c) => {
-    c.beginPath();
-    c.moveTo(12, 3);
-    c.quadraticCurveTo(19, 13.5, 19, 16.5);
-    c.quadraticCurveTo(19, 21, 12, 21);
-    c.quadraticCurveTo(5, 21, 5, 16.5);
-    c.quadraticCurveTo(5, 13.5, 12, 3);
-    F(c, lin(c, 5, 3, 19, 21, [[0, "#8fe0f5"], [1, "#3f9fc9"]]));
-    c.beginPath();
-    c.moveTo(12, 3);
-    c.quadraticCurveTo(19, 13.5, 19, 16.5);
-    c.quadraticCurveTo(19, 21, 12, 21);
-    c.quadraticCurveTo(5, 21, 5, 16.5);
-    c.quadraticCurveTo(5, 13.5, 12, 3);
-    stroke(c, "#2b7a9c", 1.8);
-    ell(c, 9.3, 15, 2.1, 3, -0.3);
-    F(c, "rgba(255,255,255,.55)");
-  }),
+  // Every water-related surface EXCEPT the drag-to-water token draws this:
+  // the well-fill toast, the HUD water counter, the "needs water" cue
+  // bubble and the toolbelt's own Water button. See "ico-watering-can"
+  // below for the one surface that doesn't.
+  "ico-water": painter(24, 24, waterDroplet),
+
+  // The drag-to-water token's own can (2026-09-13): the Gr8FarmPack's real
+  // render, scaled to fit the icon's square box without stretching -- same
+  // technique `cropIcon` uses for a crop's own portrait, since the source
+  // plate is nothing close to square. Falls back to the same droplet
+  // "ico-water" draws until the sprite has loaded, or if it never does.
+  // Deliberately its own icon rather than swapping "ico-water" itself: the
+  // well-fill toast, the HUD counter, the cue bubble over a dry crop and the
+  // toolbelt button all keep the plain droplet on purpose (Kayo's call --
+  // only the drag gesture over a crop gets the jug).
+  "ico-watering-can": painter(24, 24, wateringCanIcon()),
 
   // The rod the dock's drag token holds: a plain taper from a hand grip to
   // a sagging line and a red-and-white bobber, the same layered-stroke

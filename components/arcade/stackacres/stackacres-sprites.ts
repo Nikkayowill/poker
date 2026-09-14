@@ -256,6 +256,18 @@ export const SPRITE_ART = {
   // shadow masked out at prep time (see task-tools/prep_mower.py) in favour
   // of a real one added in the scene, the same as every other world sprite.
   cutterMower: "/stackacres/sprites/cutter-mower.webp",
+  // The drag-to-water token's own can (2026-09-13), off the same Gr8FarmPack
+  // as the crop roster -- see prepare-stackacres-watering-can-icon.py, and
+  // that plate's own carve-out in prepare-stackacres-farmpack-props.py's
+  // header ("tool-tier and drag-to-water systems, not static props"). Not a
+  // world sprite: fitted into `ico-watering-can`'s 24x24 icon box the same
+  // aspect-preserving way `cropIcon` fits a crop's own portrait
+  // (stackacres-art.ts's `wateringCanIcon`). Scoped to the drag token only,
+  // on purpose -- the well-fill toast, the HUD water counter, the "needs
+  // water" cue bubble over a dry crop and the toolbelt's own Water button
+  // all keep drawing `ico-water`'s plain droplet, see
+  // stackacres-drag-affordance.tsx.
+  wateringCan: "/stackacres/sprites/watering-can.webp",
   // Not a painter and not a cut-out: the ground tile, drawn by `bakeGrass`
   // straight into its own 256-unit canvas. It rides this module only because
   // this is what the scene's `preload` walks, and a tile that arrived late
@@ -403,8 +415,16 @@ export function spriteUrl(name: SpriteName): string {
  *  except `grassTile` -- a ground tile is a texture, not a thing with a box
  *  and an anchor, so it is the one name here that `spriteBacked` and
  *  `bakeSpriteTexture` must never be handed. (`soilSlot` was the other, until
- *  a bed became the `soilBed` painter and its picture was deleted.) */
-export type PainterSpriteName = Exclude<SpriteName, "grassTile">;
+ *  a bed became the `soilBed` painter and its picture was deleted.)
+ *
+ *  `wateringCan` is the second exception, for a different reason: it is
+ *  never placed in the Phaser world at all, only drawn into a DOM icon
+ *  canvas by `wateringCanIcon` (stackacres-art.ts), the same
+ *  fit-without-stretching read `cropIcon` gives a crop's own portrait. There
+ *  is no `wateringCan`-named entry in `PainterName`/`DRAWN`/`PAINTERS` for
+ *  `bakeSpriteTexture` to find, on purpose -- excluding it here rather than
+ *  adding one nothing would ever call. */
+export type PainterSpriteName = Exclude<SpriteName, "grassTile" | "wateringCan">;
 
 export const SPRITE_NAMES = Object.keys(SPRITE_ART) as readonly SpriteName[];
 

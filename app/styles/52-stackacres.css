@@ -1315,16 +1315,13 @@
    Safari, which is where this dock actually lives. 16px still reads as
    heavy glass without paying for every off-screen token at a heavier cost.
 
-   `.is-lifted` just hides this in-row instance in place while its drag is
-   live -- the actual floating token is a separate `.sa-gel-token-live`
-   clone rendered outside `.sa-gel-row` (see stackacres-gel-dock.tsx's own
-   comment on it for why it has to live there rather than here: a `position:
-   fixed` token nested inside `.sa-gel-row`'s own `translate` stopped
-   escaping to the viewport and got clipped by `.sa-gel-scroll` instead,
-   which is what made a drag out of this dock read as trapped in place
-   instead of flying out to the circle the way the water can / feed scoop
-   do). Keeping this instance mounted (rather than unmounting it) preserves
-   the row's layout and scroll position for the rest of the drag.
+   `.is-live` is the fixed-position "picked up" state: while a drag holds a
+   token it pops out of the row's own flow onto the field itself and tracks
+   the finger 1:1 (`.is-returning` adds a spring-back transition for a missed
+   drop instead of a teleport). `.is-hot` mirrors `.sa-gel-target.is-hot` --
+   both grow together as the token nears the circle, so the two glass shapes
+   read as reaching for each other rather than one just landing on the
+   other.
 
    SMOKED, not clear-and-white, for the same reason `.sa-store-card` further
    down this file flipped the same way: a pale, clear fill with the farm's
@@ -1403,22 +1400,11 @@
   cursor: not-allowed;
 }
 
-.sa-gel-token.is-lifted {
-  visibility: hidden;
-}
-
-/* The live drag clone: a sibling of `.sa-gel-target`, not a descendant of
-   `.sa-gel-row` -- see stackacres-gel-dock.tsx's comment on where it's
-   rendered. Plain `position: absolute` rather than `fixed`: nothing above
-   this element in the tree carries a transform/translate, so it needs no
-   viewport-escape trick to begin with, and its `left`/`top` are already the
-   same field-local pixels `.sa-gel-target`'s own `at.x`/`at.y` use. */
-.sa-gel-token-live {
-  position: absolute;
+.sa-gel-token.is-live {
+  position: fixed;
   z-index: 20;
   translate: -50% -50%;
   cursor: grabbing;
-  pointer-events: none;
   animation: sa-gel-pickup 220ms var(--sa-bounce);
   /* Softens every left/top update from a live pointermove into a short
      chase instead of a hard per-frame teleport -- the same trailing-spring
@@ -1433,13 +1419,13 @@
     0 16px 28px rgba(14, 14, 22, .32);
 }
 
-.sa-gel-token-live.is-hot {
+.sa-gel-token.is-live.is-hot {
   transform: scale(1.18);
   filter: brightness(1.15) saturate(1.3);
   transition: transform 120ms var(--sa-ease-out), filter 120ms var(--sa-ease-out);
 }
 
-.sa-gel-token-live.is-returning {
+.sa-gel-token.is-returning {
   transition: left .24s var(--sa-bounce), top .24s var(--sa-bounce);
 }
 
@@ -1448,15 +1434,15 @@
    underneath it by then, so that hard cut read as a stutter. Fades it out
    over the same window instead, matching the water-can/feed drag token's
    own `.is-settling` fade (`sa-drag-fade`, reused here). */
-.sa-gel-token-live.is-settling {
+.sa-gel-token.is-settling {
   animation: sa-drag-fade .42s ease-in forwards;
 }
 
 /* The one-shot "picked up" wobble: a squash on the way out and a settle back
    to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
    scoop, just done as a shape change instead of a uniform scale since this
-   token has no separate `--grow` custom property to key off. Plays once when
-   the live clone mounts and does not loop. */
+   token has no separate `--grow` custom property to key off. Plays once on
+   the class transition into `.is-live` and does not loop. */
 @keyframes sa-gel-pickup {
   0% { transform: scale(1, 1); }
   40% { transform: scale(1.22, .8); }

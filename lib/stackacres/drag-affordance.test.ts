@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DRAG_DROP_RADIUS, DRAG_ICON_EDGE, DRAG_ICON_OFFSET, dragIconSpot, isDragDrop } from "./drag-affordance";
+import {
+  DRAG_DROP_RADIUS,
+  DRAG_ICON_EDGE,
+  DRAG_ICON_OFFSET,
+  dragIconSpot,
+  isDragDrop,
+  rowGesture,
+} from "./drag-affordance";
 
 const FIELD = { width: 800, height: 600 };
 
@@ -54,5 +61,33 @@ describe("isDragDrop", () => {
 
   it("rejects a release just past it", () => {
     expect(isDragDrop({ x: 100 + DRAG_DROP_RADIUS + 1, y: 100 }, target)).toBe(false);
+  });
+});
+
+describe("rowGesture", () => {
+  it("stays a press until the finger has travelled", () => {
+    expect(rowGesture({ dx: 3, dy: 3 }, { scrollable: true })).toBe("press");
+    expect(rowGesture({ dx: 0, dy: 7 }, { scrollable: true })).toBe("press");
+  });
+
+  it("browses on a clearly sideways move", () => {
+    expect(rowGesture({ dx: 30, dy: 4 }, { scrollable: true })).toBe("browse");
+    expect(rowGesture({ dx: -30, dy: 4 }, { scrollable: true })).toBe("browse");
+  });
+
+  it("drags on a move with real vertical intent, both ways", () => {
+    expect(rowGesture({ dx: 0, dy: -20 }, { scrollable: true })).toBe("drag");
+    expect(rowGesture({ dx: 0, dy: 20 }, { scrollable: true })).toBe("drag");
+  });
+
+  it("drags the diagonal reach a token at the end of the row makes for the circle", () => {
+    // Roughly 40 degrees up and inward -- what the old "steeper than 45
+    // degrees" test read as a scroll and refused to pick up.
+    expect(rowGesture({ dx: 24, dy: -20 }, { scrollable: true })).toBe("drag");
+    expect(rowGesture({ dx: -24, dy: -20 }, { scrollable: true })).toBe("drag");
+  });
+
+  it("never browses a row with nothing to scroll", () => {
+    expect(rowGesture({ dx: 40, dy: 0 }, { scrollable: false })).toBe("drag");
   });
 });

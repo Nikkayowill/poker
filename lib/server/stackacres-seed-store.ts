@@ -41,6 +41,20 @@ function memoryStock(profileId: string): Map<StackAcresCrop, number> {
   return held;
 }
 
+/** Same drop-unrecognized-crops fold `readStackAcresSeedStock` runs below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresSeedStockFromBatchRows(rows: { crop: string; quantity: number | string }[]): SeedStock {
+  const out: SeedStock = {};
+  for (const row of rows) {
+    // Unknown crops are DROPPED rather than degraded to a known one: unlike a
+    // placed unit (which stands on the map and must render somehow), an
+    // unrecognised seed has nothing to grow into and folding it into another
+    // crop's count would hand the player free seed of something else.
+    if (isStackAcresCrop(row.crop)) out[row.crop] = Number(row.quantity);
+  }
+  return out;
+}
+
 export async function readStackAcresSeedStock(profileId: string): Promise<SeedStock> {
   const supabase = adminClient();
   if (!supabase) {
@@ -51,15 +65,7 @@ export async function readStackAcresSeedStock(profileId: string): Promise<SeedSt
     .select("crop, quantity")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read the seed shelf: ${error.message}`);
-  const out: SeedStock = {};
-  for (const row of (data ?? []) as { crop: string; quantity: number | string }[]) {
-    // Unknown crops are DROPPED rather than degraded to a known one: unlike a
-    // placed unit (which stands on the map and must render somehow), an
-    // unrecognised seed has nothing to grow into and folding it into another
-    // crop's count would hand the player free seed of something else.
-    if (isStackAcresCrop(row.crop)) out[row.crop] = Number(row.quantity);
-  }
-  return out;
+  return stackAcresSeedStockFromBatchRows((data ?? []) as { crop: string; quantity: number | string }[]);
 }
 
 /**

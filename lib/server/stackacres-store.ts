@@ -268,7 +268,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 const UNIT_COLUMNS =
   "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot";
 
-interface UnitDbRow {
+export interface UnitDbRow {
   id: string;
   profile_id: string;
   stock: string;
@@ -286,6 +286,14 @@ interface UnitDbRow {
   housed_in: string | null;
   soil_slot: number | string | null;
 }
+
+/** Same parser `listStackAcresUnits`/`getStackAcresUnit`/etc. already call as
+ *  `fromRow` -- exported under its own name (rather than renaming the many
+ *  internal `fromRow(...)` call sites in this file) so `stackacres-read-
+ *  batch.ts`'s consumer in stackacres-service.ts can reuse it on a row that
+ *  came back inside the batch RPC instead of its own `.from("homestead_units")`
+ *  select. */
+export { fromRow as stackAcresUnitFromBatchRow };
 
 function fromRow(row: UnitDbRow): StoredStackAcresUnit {
   return {
@@ -836,6 +844,18 @@ export async function clearStackAcresMuck(current: StoredStackAcresUnit): Promis
 /* Capacity                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Same fold-rows-into-a-record logic `readStackAcresCapacity` runs below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresCapacityFromBatchRows(
+  rows: { stock: string; extra_slots: number | string }[],
+): Partial<Record<StackAcresStock, number>> {
+  const out: Partial<Record<StackAcresStock, number>> = {};
+  for (const row of rows) {
+    out[row.stock as StackAcresStock] = Number(row.extra_slots);
+  }
+  return out;
+}
+
 /** Every stock kind's purchased extra slots, for a player. Missing entries
  *  mean 0, same as a missing homestead_feed row means 0 servings. */
 export async function readStackAcresCapacity(
@@ -856,11 +876,7 @@ export async function readStackAcresCapacity(
     .select("stock, extra_slots")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your capacity: ${error.message}`);
-  const out: Partial<Record<StackAcresStock, number>> = {};
-  for (const row of (data ?? []) as { stock: string; extra_slots: number | string }[]) {
-    out[row.stock as StackAcresStock] = Number(row.extra_slots);
-  }
-  return out;
+  return stackAcresCapacityFromBatchRows((data ?? []) as { stock: string; extra_slots: number | string }[]);
 }
 
 /**
@@ -904,6 +920,12 @@ export async function adjustStackAcresCapacity(
  *  may they work" -- lib/stackacres/sectors.ts's `unlockedSectors` also
  *  counts any district they already keep stock in, which is what carries
  *  farms that predate this feature. */
+/** Same row-to-SectorId mapping `readStackAcresSectors` runs below, pulled
+ *  out for the batch RPC path. */
+export function stackAcresSectorsFromBatchRows(rows: { sector: string }[]): SectorId[] {
+  return rows.map((row) => row.sector as SectorId);
+}
+
 export async function readStackAcresSectors(profileId: string): Promise<SectorId[]> {
   const supabase = adminClient();
   if (!supabase) {
@@ -920,7 +942,7 @@ export async function readStackAcresSectors(profileId: string): Promise<SectorId
     .select("sector")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your land: ${error.message}`);
-  return ((data ?? []) as { sector: string }[]).map((row) => row.sector as SectorId);
+  return stackAcresSectorsFromBatchRows((data ?? []) as { sector: string }[]);
 }
 
 /**
@@ -967,6 +989,13 @@ export async function recordStackAcresSectorCleared(
 
 /** Whether this player has unlocked the Crop Fields. Read-only; unlocking
  *  them is `recordStackAcresCropFieldsUnlocked` below, the only writer. */
+/** Existence-only check `readStackAcresCropFieldsUnlocked` runs below,
+ *  pulled out for the batch RPC path -- same shape
+ *  `stackAcresGreenhouseFromBatchRow` uses for the identical convention. */
+export function stackAcresCropFieldsUnlockedFromBatchRow(row: unknown): boolean {
+  return row !== null && row !== undefined;
+}
+
 export async function readStackAcresCropFieldsUnlocked(profileId: string): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) return memoryCropFields.has(profileId);
@@ -977,7 +1006,7 @@ export async function readStackAcresCropFieldsUnlocked(profileId: string): Promi
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your Crop Fields: ${error.message}`);
-  return data !== null;
+  return stackAcresCropFieldsUnlockedFromBatchRow(data);
 }
 
 /**
@@ -1020,6 +1049,12 @@ export async function recordStackAcresCropFieldsUnlocked(
 
 /** Whether this player has built their Greenhouse. Read-only; building it is
  *  `buildStackAcresGreenhouseRow` below, which is the only writer. */
+/** Existence-only check `readStackAcresGreenhouse` runs below, pulled out
+ *  for the batch RPC path -- a row means built, no row means not yet. */
+export function stackAcresGreenhouseFromBatchRow(row: unknown): boolean {
+  return row !== null && row !== undefined;
+}
+
 export async function readStackAcresGreenhouse(profileId: string): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) return memoryGreenhouse.has(profileId);
@@ -1030,7 +1065,7 @@ export async function readStackAcresGreenhouse(profileId: string): Promise<boole
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your Greenhouse: ${error.message}`);
-  return data !== null;
+  return stackAcresGreenhouseFromBatchRow(data);
 }
 
 /** How many crops this player currently has housed in the Greenhouse --
@@ -1128,6 +1163,12 @@ export async function buildStackAcresGreenhouseRow(profileId: string): Promise<b
  * Gold, and renaming a live column to fix a caption is a data migration
  * nobody needs.
  */
+/** Same "missing row means 0" logic `readStackAcresUpkeep` returns below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresUpkeepFromBatchRow(row: { bushels: number | string } | null): number {
+  return row ? Number(row.bushels) : 0;
+}
+
 export async function readStackAcresUpkeep(profileId: string, day: string): Promise<number> {
   const supabase = adminClient();
   if (!supabase) return memoryUpkeep.get(`${profileId}:${day}`) ?? 0;
@@ -1139,7 +1180,7 @@ export async function readStackAcresUpkeep(profileId: string, day: string): Prom
     .eq("day", day)
     .maybeSingle();
   if (error) throw new Error(`Could not read today's land fee: ${error.message}`);
-  return data ? Number((data as { bushels: number | string }).bushels) : 0;
+  return stackAcresUpkeepFromBatchRow(data as { bushels: number | string } | null);
 }
 
 /**
@@ -1191,6 +1232,12 @@ export async function raiseStackAcresUpkeep(
 /** Which rung of the ladder this player holds. No stored row is the free
  *  starting Trowel, so this never returns null and never throws on a player
  *  who has bought nothing. */
+/** Same degrade-to-a-playable-rung logic `readStackAcresToolTier` runs
+ *  below, pulled out for the batch RPC path. */
+export function stackAcresToolTierFromBatchRow(row: { tier?: unknown } | null): StackAcresToolTier {
+  return toStackAcresToolTier(row?.tier);
+}
+
 export async function readStackAcresToolTier(profileId: string): Promise<StackAcresToolTier> {
   const supabase = adminClient();
   if (!supabase) return memoryTool.get(profileId) ?? STACKACRES_STARTING_TIER;
@@ -1204,7 +1251,7 @@ export async function readStackAcresToolTier(profileId: string): Promise<StackAc
   // Through toStackAcresToolTier rather than a cast: a row written by a build
   // that knows a rung this one does not must degrade to something playable
   // rather than throw on the farm's own load.
-  return toStackAcresToolTier(data?.tier);
+  return stackAcresToolTierFromBatchRow(data as { tier?: unknown } | null);
 }
 
 /**
@@ -1241,6 +1288,12 @@ export async function upgradeStackAcresToolTier(
 }
 
 /** Every cutter this player owns, Scythe first. No rows means only the Scythe. */
+/** Same row-to-owned-cutters logic `readStackAcresCutters` runs below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresCuttersFromBatchRows(rows: { cutter: unknown }[]): StackAcresCutter[] {
+  return ownedStackAcresCutters(rows.map((row) => row.cutter));
+}
+
 export async function readStackAcresCutters(profileId: string): Promise<StackAcresCutter[]> {
   const supabase = adminClient();
   if (!supabase) return ownedStackAcresCutters([...(memoryCutters.get(profileId) ?? [])]);
@@ -1250,7 +1303,7 @@ export async function readStackAcresCutters(profileId: string): Promise<StackAcr
     .select("cutter")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your cutters: ${error.message}`);
-  return ownedStackAcresCutters((data ?? []).map((row: { cutter: unknown }) => row.cutter));
+  return stackAcresCuttersFromBatchRows((data ?? []) as { cutter: unknown }[]);
 }
 
 /**
@@ -1285,6 +1338,13 @@ export async function recordStackAcresCutter(
 /* Feed                                                                */
 /* ------------------------------------------------------------------ */
 
+/** Same "missing row means 0" default `readStackAcresFeed` returns below,
+ *  pulled out so the batch RPC's row (already fetched, not queried again)
+ *  can be parsed with the identical logic. */
+export function stackAcresFeedFromBatchRow(row: { servings: number | string } | null): number {
+  return row ? Number(row.servings) : 0;
+}
+
 export async function readStackAcresFeed(profileId: string): Promise<number> {
   const supabase = adminClient();
   if (!supabase) return memoryFeed.get(profileId) ?? 0;
@@ -1295,7 +1355,7 @@ export async function readStackAcresFeed(profileId: string): Promise<number> {
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your feed store: ${error.message}`);
-  return data ? Number((data as { servings: number | string }).servings) : 0;
+  return stackAcresFeedFromBatchRow(data as { servings: number | string } | null);
 }
 
 /**
@@ -1325,6 +1385,12 @@ export async function adjustStackAcresFeed(profileId: string, delta: number): Pr
 }
 
 /** The watering can's level. No row yet means a full can. */
+/** Same "missing row means full, present row clamped to capacity" logic
+ *  `readStackAcresWater` returns below, pulled out for the batch RPC path. */
+export function stackAcresWaterFromBatchRow(row: { level: number | string } | null): number {
+  return row ? Math.min(WATER_CAPACITY, Number(row.level)) : WATER_CAPACITY;
+}
+
 export async function readStackAcresWater(profileId: string): Promise<number> {
   const supabase = adminClient();
   if (!supabase) return memoryWater.get(profileId) ?? WATER_CAPACITY;
@@ -1335,7 +1401,7 @@ export async function readStackAcresWater(profileId: string): Promise<number> {
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your watering can: ${error.message}`);
-  return data ? Math.min(WATER_CAPACITY, Number((data as { level: number | string }).level)) : WATER_CAPACITY;
+  return stackAcresWaterFromBatchRow(data as { level: number | string } | null);
 }
 
 /**
@@ -1413,6 +1479,12 @@ export interface StackAcresHarvestEntry {
  *  donation path (`donateStackAcresSecretItem` in stackacres-service.ts) --
  *  see memoryMuseum's own comment above for why this table outlived the
  *  produce-discovery feature it was originally built for. */
+/** Same row-to-id mapping `readStackAcresMuseum` runs below, pulled out for
+ *  the batch RPC path. */
+export function stackAcresMuseumFromBatchRows(rows: { item_id: string }[]): string[] {
+  return rows.map((row) => row.item_id);
+}
+
 export async function readStackAcresMuseum(profileId: string): Promise<string[]> {
   const supabase = adminClient();
   if (!supabase) return [...(memoryMuseum.get(profileId) ?? new Set())];
@@ -1422,7 +1494,7 @@ export async function readStackAcresMuseum(profileId: string): Promise<string[]>
     .select("item_id")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read the donation register: ${error.message}`);
-  return (data as { item_id: string }[]).map((row) => row.item_id);
+  return stackAcresMuseumFromBatchRows(data as { item_id: string }[]);
 }
 
 /**
@@ -1500,6 +1572,17 @@ export async function recordStackAcresHarvest(entry: StackAcresHarvestEntry): Pr
  */
 
 /** One item's quantity for a player, or 0 if no row exists. */
+/** The single reader above filters `item_id` server-side and reads one row;
+ *  the batch RPC instead hands back every ledger row this profile has, so
+ *  this does that same lookup client-side against the whole set. */
+export function stackAcresSecretLedgerQtyFromBatchRows(
+  rows: { item_id: string; quantity: number | string }[],
+  itemId: string,
+): number {
+  const row = rows.find((entry) => entry.item_id === itemId);
+  return row ? Number(row.quantity) : 0;
+}
+
 export async function readStackAcresSecretLedgerQty(profileId: string, itemId: string): Promise<number> {
   const supabase = adminClient();
   if (!supabase) return memoryStackAcresSecretLedger.get(`${profileId}:${itemId}`) ?? 0;
@@ -1511,7 +1594,15 @@ export async function readStackAcresSecretLedgerQty(profileId: string, itemId: s
     .eq("item_id", itemId)
     .maybeSingle();
   if (error) throw new Error(`Could not read that: ${error.message}`);
-  return data ? Number((data as { quantity: number | string }).quantity) : 0;
+  // Reuses the same lookup `stackAcresSecretLedgerQtyFromBatchRows` runs
+  // against the batch's whole (unfiltered) row set -- this query already
+  // filtered to one item_id server-side and never selected the column back,
+  // so the found row (if any) is wrapped back into that shape rather than
+  // re-deriving "missing means 0" a second time.
+  return stackAcresSecretLedgerQtyFromBatchRows(
+    data ? [{ item_id: itemId, quantity: (data as { quantity: number | string }).quantity }] : [],
+    itemId,
+  );
 }
 
 /**
@@ -1576,7 +1667,7 @@ export interface StoredWheatPlot extends StackAcresWheatPlotRow {
 
 const WHEAT_PLOT_COLUMNS = "id, profile_id, started_at, ready_at, version, created_at";
 
-interface WheatPlotDbRow {
+export interface WheatPlotDbRow {
   id: string;
   profile_id: string;
   started_at: string;
@@ -1585,7 +1676,7 @@ interface WheatPlotDbRow {
   created_at: string;
 }
 
-function wheatPlotFromRow(row: WheatPlotDbRow): StoredWheatPlot {
+export function wheatPlotFromRow(row: WheatPlotDbRow): StoredWheatPlot {
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -1710,6 +1801,18 @@ export async function collectStackAcresWheatPlot(
 /** Every processing-track item this player holds. A missing key is 0, same
  *  convention `readStackAcresCapacity` uses for a stock kind nobody has
  *  bought a slot for. */
+/** Same fold-rows-dropping-unrecognized-items logic `readStackAcresInventory`
+ *  runs below, pulled out for the batch RPC path. */
+export function stackAcresInventoryFromBatchRows(
+  rows: { item: string; quantity: number | string }[],
+): StackAcresInventory {
+  const out: StackAcresInventory = {};
+  for (const row of rows) {
+    if (isMachineItem(row.item)) out[row.item] = Number(row.quantity);
+  }
+  return out;
+}
+
 export async function readStackAcresInventory(profileId: string): Promise<StackAcresInventory> {
   const supabase = adminClient();
   if (!supabase) {
@@ -1726,11 +1829,7 @@ export async function readStackAcresInventory(profileId: string): Promise<StackA
     .select("item, quantity")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read your stores: ${error.message}`);
-  const out: StackAcresInventory = {};
-  for (const row of (data ?? []) as { item: string; quantity: number | string }[]) {
-    if (isMachineItem(row.item)) out[row.item] = Number(row.quantity);
-  }
-  return out;
+  return stackAcresInventoryFromBatchRows((data ?? []) as { item: string; quantity: number | string }[]);
 }
 
 /**
@@ -1876,7 +1975,7 @@ export interface StoredMachine extends StackAcresMachineRow {
 const MACHINE_COLUMNS =
   "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, version, created_at";
 
-interface MachineDbRow {
+export interface MachineDbRow {
   id: string;
   profile_id: string;
   kind: string;
@@ -1889,7 +1988,7 @@ interface MachineDbRow {
   created_at: string;
 }
 
-function machineFromRow(row: MachineDbRow): StoredMachine {
+export function machineFromRow(row: MachineDbRow): StoredMachine {
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -2085,7 +2184,7 @@ export interface StoredVatManifest extends AgingManifest {
 const VAT_MANIFEST_COLUMNS =
   "id, profile_id, machine_id, item, quantity, base_gold_value, sealed_at, ready_at, version, created_at";
 
-interface VatManifestDbRow {
+export interface VatManifestDbRow {
   id: string;
   profile_id: string;
   machine_id: string;
@@ -2098,7 +2197,7 @@ interface VatManifestDbRow {
   created_at: string;
 }
 
-function vatManifestFromRow(row: VatManifestDbRow): StoredVatManifest {
+export function vatManifestFromRow(row: VatManifestDbRow): StoredVatManifest {
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -2265,7 +2364,7 @@ export interface StoredContract {
 const CONTRACT_COLUMNS =
   "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
 
-interface ContractDbRow {
+export interface ContractDbRow {
   id: string;
   profile_id: string;
   item: string;
@@ -2276,7 +2375,7 @@ interface ContractDbRow {
   created_at: string;
 }
 
-function contractFromRow(row: ContractDbRow): StoredContract {
+export function contractFromRow(row: ContractDbRow): StoredContract {
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -2291,6 +2390,14 @@ function contractFromRow(row: ContractDbRow): StoredContract {
 
 /** This player's OPEN contract, or null when there is not one -- the board
  *  is one slot, never a list; see lib/stackacres/contracts.ts's header. */
+/** `contractFromRow` above already does the parsing; this is just its
+ *  "missing row" wrapper, pulled out so the batch RPC path (which already
+ *  filtered to `status = 'open'` in SQL, same as this reader's own
+ *  `.eq("status", "open")`) shares it. */
+export function stackAcresOpenContractFromBatchRow(row: ContractDbRow | null): StoredContract | null {
+  return row ? contractFromRow(row) : null;
+}
+
 export async function readStackAcresOpenContract(profileId: string): Promise<StoredContract | null> {
   const supabase = adminClient();
   if (!supabase) {
@@ -2307,7 +2414,7 @@ export async function readStackAcresOpenContract(profileId: string): Promise<Sto
     .eq("status", "open")
     .maybeSingle();
   if (error) throw new Error(`Could not read the town board: ${error.message}`);
-  return data ? contractFromRow(data as ContractDbRow) : null;
+  return stackAcresOpenContractFromBatchRow(data as ContractDbRow | null);
 }
 
 /**
@@ -2397,6 +2504,12 @@ export async function fulfillStackAcresContract(current: StoredContract): Promis
 
 /** How much Town Influence this player has earned, total. Never spent
  *  anywhere in this feature, so unlike Gold it carries no ceiling. */
+/** Same "missing row means 0" logic `readStackAcresInfluence` returns
+ *  below, pulled out for the batch RPC path. */
+export function stackAcresInfluenceFromBatchRow(row: { influence: number | string } | null): number {
+  return row ? Number(row.influence) : 0;
+}
+
 export async function readStackAcresInfluence(profileId: string): Promise<number> {
   const supabase = adminClient();
   if (!supabase) return memoryInfluence.get(profileId) ?? 0;
@@ -2407,7 +2520,7 @@ export async function readStackAcresInfluence(profileId: string): Promise<number
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your standing in town: ${error.message}`);
-  return data ? Number((data as { influence: number | string }).influence) : 0;
+  return stackAcresInfluenceFromBatchRow(data as { influence: number | string } | null);
 }
 
 /** Adds to this player's Town Influence, atomically. Additive only -- there
@@ -2441,6 +2554,19 @@ export async function adjustStackAcresInfluence(profileId: string, delta: number
  * backfill, the same convention `readStackAcresToolTier`'s missing-row-means-
  * the-free-starting-rung already follows.
  */
+/** Same "missing row means the default state" logic `readStackAcresPrestige`
+ *  runs below, pulled out for the batch RPC path. */
+export function stackAcresPrestigeFromBatchRow(
+  row: { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
+): StackAcresPrestigeState {
+  if (!row) return STACKACRES_PRESTIGE_DEFAULT_STATE;
+  return {
+    prestigeCount: Number(row.prestige_count),
+    multiplier: Number(row.multiplier),
+    lifetimeGrossAtReset: Number(row.lifetime_gross_at_reset),
+  };
+}
+
 export async function readStackAcresPrestige(profileId: string): Promise<StackAcresPrestigeState> {
   const supabase = adminClient();
   if (!supabase) return memoryPrestige.get(profileId) ?? STACKACRES_PRESTIGE_DEFAULT_STATE;
@@ -2451,14 +2577,9 @@ export async function readStackAcresPrestige(profileId: string): Promise<StackAc
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your prestige standing: ${error.message}`);
-  if (!data) return STACKACRES_PRESTIGE_DEFAULT_STATE;
-
-  const row = data as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string };
-  return {
-    prestigeCount: Number(row.prestige_count),
-    multiplier: Number(row.multiplier),
-    lifetimeGrossAtReset: Number(row.lifetime_gross_at_reset),
-  };
+  return stackAcresPrestigeFromBatchRow(
+    data as { prestige_count: number | string; multiplier: number | string; lifetime_gross_at_reset: number | string } | null,
+  );
 }
 
 /**
@@ -2605,6 +2726,19 @@ const FRESH_DEVOTION: StoredDevotionRow = { streak: 0, lastPrayedDay: null, clai
 
 /** The stored devotion record for a profile, or a fresh one if it has never
  *  prayed. Read-only -- `prayAtStackAcresShrine` is the only writer. */
+/** Same "missing row means fresh" logic `readStackAcresDevotion` runs
+ *  below, pulled out for the batch RPC path. */
+export function stackAcresDevotionFromBatchRow(
+  row: { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
+): StoredDevotionRow {
+  if (!row) return FRESH_DEVOTION;
+  return {
+    streak: Number(row.streak),
+    lastPrayedDay: row.last_prayed_day,
+    claimedRungs: row.claimed_rungs ?? [],
+  };
+}
+
 export async function readStackAcresDevotion(profileId: string): Promise<StoredDevotionRow> {
   const supabase = adminClient();
   if (!supabase) return memoryDevotion.get(profileId) ?? FRESH_DEVOTION;
@@ -2615,13 +2749,9 @@ export async function readStackAcresDevotion(profileId: string): Promise<StoredD
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your devotion: ${error.message}`);
-  if (!data) return FRESH_DEVOTION;
-  const row = data as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null };
-  return {
-    streak: Number(row.streak),
-    lastPrayedDay: row.last_prayed_day,
-    claimedRungs: row.claimed_rungs ?? [],
-  };
+  return stackAcresDevotionFromBatchRow(
+    data as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
+  );
 }
 
 /**
@@ -2709,6 +2839,23 @@ const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, 
 /** The stored friendship record for a profile/NPC pair, or a fresh one if
  *  no gift has ever landed. Read-only -- `giveStackAcresGift` is the only
  *  writer. */
+/** The single reader below filters `npc` server-side and reads one row; the
+ *  batch RPC instead hands back every friendship row this profile has, so
+ *  this does that same lookup client-side, then the identical "missing
+ *  means fresh" parse `readStackAcresFriendship` runs. */
+export function stackAcresFriendshipFromBatchRows(
+  rows: { npc: string; points: number | string; last_gifted_day: string | null; claimed_rungs: number[] | null }[],
+  npc: NpcId,
+): StoredFriendshipRow {
+  const row = rows.find((entry) => entry.npc === npc);
+  if (!row) return FRESH_FRIENDSHIP;
+  return {
+    points: Number(row.points),
+    lastGiftedDay: row.last_gifted_day,
+    claimedRungs: row.claimed_rungs ?? [],
+  };
+}
+
 export async function readStackAcresFriendship(profileId: string, npc: NpcId): Promise<StoredFriendshipRow> {
   const supabase = adminClient();
   if (!supabase) return memoryFriendship.get(`${profileId}:${npc}`) ?? FRESH_FRIENDSHIP;
@@ -2720,13 +2867,24 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
     .eq("npc", npc)
     .maybeSingle();
   if (error) throw new Error(`Could not read your standing with him: ${error.message}`);
-  if (!data) return FRESH_FRIENDSHIP;
-  const row = data as { points: number | string; last_gifted_day: string | null; claimed_rungs: number[] | null };
-  return {
-    points: Number(row.points),
-    lastGiftedDay: row.last_gifted_day,
-    claimedRungs: row.claimed_rungs ?? [],
-  };
+  // Reuses the same lookup `stackAcresFriendshipFromBatchRows` runs against
+  // the batch's whole (unfiltered) row set -- this query already filtered to
+  // one npc server-side and never selected the column back, so the found row
+  // (if any) is wrapped back into that shape rather than re-deriving
+  // "missing means fresh" a second time.
+  return stackAcresFriendshipFromBatchRows(
+    data
+      ? [
+          {
+            npc,
+            points: (data as { points: number | string }).points,
+            last_gifted_day: (data as { last_gifted_day: string | null }).last_gifted_day,
+            claimed_rungs: (data as { claimed_rungs: number[] | null }).claimed_rungs,
+          },
+        ]
+      : [],
+    npc,
+  );
 }
 
 /** What one call to `give_homestead_gift` reports. `outcome` is
@@ -2834,6 +2992,15 @@ const FRESH_STORY_ROW: StoredStoryRow = { story: freshStory(), version: 0 };
 /** A profile's whole story document, or a fresh one (version 0) if it has
  *  never been written. Read-only -- the two functions below are the only
  *  writers. */
+/** Same "missing row means fresh, version 0" logic `readStackAcresStory`
+ *  runs below, pulled out for the batch RPC path. */
+export function stackAcresStoryFromBatchRow(
+  row: { story: StoredStory; version: number | string } | null,
+): StoredStoryRow {
+  if (!row) return FRESH_STORY_ROW;
+  return { story: row.story, version: Number(row.version) };
+}
+
 export async function readStackAcresStory(profileId: string): Promise<StoredStoryRow> {
   const supabase = adminClient();
   if (!supabase) return memoryStory.get(profileId) ?? FRESH_STORY_ROW;
@@ -2844,9 +3011,7 @@ export async function readStackAcresStory(profileId: string): Promise<StoredStor
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new Error(`Could not read your story: ${error.message}`);
-  if (!data) return FRESH_STORY_ROW;
-  const row = data as { story: StoredStory; version: number | string };
-  return { story: row.story, version: Number(row.version) };
+  return stackAcresStoryFromBatchRow(data as { story: StoredStory; version: number | string } | null);
 }
 
 /** Writes the whole document if and only if it is still at

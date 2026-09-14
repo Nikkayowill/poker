@@ -33,7 +33,7 @@ import { adminClient } from "./supabase-admin";
 
 export type StoredSoilTile = SoilTile;
 
-interface SoilTileDbRow {
+export interface SoilTileDbRow {
   tx: number | string;
   ty: number | string;
   tile_order: number | string;
@@ -46,6 +46,8 @@ const SOIL_TILE_COLUMNS = "tx, ty, tile_order, origin, tier";
 function isSoilTileOrigin(value: string): value is SoilTileOrigin {
   return value === "starter" || value === "purchased";
 }
+
+export { fromRow as stackAcresSoilTileFromBatchRow };
 
 function fromRow(row: SoilTileDbRow): StoredSoilTile {
   const origin = String(row.origin);
@@ -275,6 +277,20 @@ function memoryStock(profileId: string): Map<SoilTier, number> {
   return held;
 }
 
+/** Same drop-unrecognized-tiers fold `readStackAcresSoilStock` runs below,
+ *  pulled out for the batch RPC path. */
+export function stackAcresSoilStockFromBatchRows(rows: { tier: string; quantity: number | string }[]): SoilStock {
+  const out: SoilStock = {};
+  for (const row of rows) {
+    // Unknown tiers are DROPPED rather than degraded to dirt here: unlike a
+    // placed bed (which exists on the map and must render somehow), an
+    // unrecognised bag has nothing to show and folding it into the dirt count
+    // would hand the player free plain beds for a tier we retired.
+    if (isSoilTier(row.tier)) out[row.tier] = Number(row.quantity);
+  }
+  return out;
+}
+
 export async function readStackAcresSoilStock(profileId: string): Promise<SoilStock> {
   const supabase = adminClient();
   if (!supabase) {
@@ -285,15 +301,7 @@ export async function readStackAcresSoilStock(profileId: string): Promise<SoilSt
     .select("tier, quantity")
     .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read the soil shelf: ${error.message}`);
-  const out: SoilStock = {};
-  for (const row of (data ?? []) as { tier: string; quantity: number | string }[]) {
-    // Unknown tiers are DROPPED rather than degraded to dirt here: unlike a
-    // placed bed (which exists on the map and must render somehow), an
-    // unrecognised bag has nothing to show and folding it into the dirt count
-    // would hand the player free plain beds for a tier we retired.
-    if (isSoilTier(row.tier)) out[row.tier] = Number(row.quantity);
-  }
-  return out;
+  return stackAcresSoilStockFromBatchRows((data ?? []) as { tier: string; quantity: number | string }[]);
 }
 
 /**

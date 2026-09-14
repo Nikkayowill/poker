@@ -65,8 +65,11 @@ export async function activateSynergyPerk(
 
 /** Every archetype this profile has permanently unlocked, regardless of
  *  whether it's currently slotted for the session. */
-export async function listUnlockedSynergyArchetypes(profileId: string): Promise<SynergyArchetype[]> {
-  const owned = await listOwnedStackAcresPerks(profileId);
+/** The parse loop `listUnlockedSynergyArchetypes` runs below, pulled out so
+ *  `stackacres-service.ts`'s batch RPC path (which already has the raw
+ *  owned item_id list, via `stackAcresOwnedPerksFromBatchRows`) can reuse it
+ *  without a second read of `listOwnedStackAcresPerks`. */
+export function synergyArchetypesFromOwned(owned: readonly string[]): SynergyArchetype[] {
   const archetypes: SynergyArchetype[] = [];
   for (const itemId of owned) {
     // Strips both wrappers rather than assuming v1, so a future rebalance's
@@ -77,6 +80,11 @@ export async function listUnlockedSynergyArchetypes(profileId: string): Promise<
     if (archetype) archetypes.push(archetype);
   }
   return archetypes;
+}
+
+export async function listUnlockedSynergyArchetypes(profileId: string): Promise<SynergyArchetype[]> {
+  const owned = await listOwnedStackAcresPerks(profileId);
+  return synergyArchetypesFromOwned(owned);
 }
 
 /** Which archetypes are currently slotted (owned AND activated) for this

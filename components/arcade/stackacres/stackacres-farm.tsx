@@ -251,10 +251,30 @@ import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey, purchaseCueText } from "@/lib/stackacres/farm-actions";
 import {
+  createsStackAcresUnit,
+  isOptimisticUnitId,
   predictStackAcresAction,
+  unitIdsIn,
+  withResolvedUnitIds,
   type FarmPredictContext,
   type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
+
+/** A promise and the handle that settles it, for a gate another call has to
+ *  be able to wait on -- see `pendingUnitCreates`. */
+function settleable(): { promise: Promise<void>; settle: () => void } {
+  let settle = () => {};
+  const promise = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  return { promise, settle };
+}
+
+/** How many rounds of waiting a provisional target gets before the tap is
+ *  refused. One is the real case (the create that made it); the extra
+ *  passes only cover a create that started while we were already waiting,
+ *  and the bound is what stops a busy farm holding a tap open forever. */
+const PROVISIONAL_WAIT_PASSES = 3;
 
 /**
  * StackAcres: a farm of staked crops and livestock, drawn as a place you look
@@ -1295,6 +1315,19 @@ export function StackAcresFarm() {
    * outcome, win or lose, before it asks.
    */
   const pendingSoilPlacements = useRef(new Map<string, Promise<ContractActionResult>>());
+  /**
+   * Every unit-creating request still in the air (`stock`, `buy-stock`).
+   *
+   * While one is out, the crop or animal it made is on screen under an id
+   * this browser invented (`sa-optimistic-N`), and a finger is perfectly
+   * capable of watering that sprout before the response naming its real row
+   * has landed. Sent as-is, that id reached Postgres as a uuid and came back
+   * as "invalid input syntax for type uuid", which the player saw as "Could
+   * not load that unit" on a crop standing right in front of them.
+   * `settleProvisionalTargets` below waits these out and re-points the
+   * action at the row the server actually made.
+   */
+  const pendingUnitCreates = useRef(new Set<Promise<unknown>>());
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -1349,6 +1382,65 @@ export function StackAcresFarm() {
   useEffect(() => {
     unitsRef.current = units;
   }, [units]);
+
+  /**
+   * The unit list off the last unit-creating response to land, which is what
+   * a provisional id has to be matched against. Deliberately not `unitsRef`:
+   * that one is synced by an effect, so it still holds the pre-response list
+   * for as long as it takes React to commit the setState the response just
+   * made, and the wait below finishes well inside that window.
+   */
+  const unitsFromLastCreate = useRef<StackAcresUnitSnapshot[] | null>(null);
+
+  /**
+   * `body` with any provisional unit id replaced by the real one, or null
+   * when a target this browser only guessed at cannot be matched to a row
+   * the server made.
+   *
+   * The optimistic units themselves are gone by the time the create lands
+   * (the response replaces the whole list), so what they were has to be read
+   * off BEFORE the wait and matched afterwards: same stock kind, and the same
+   * bed where the guess named one. A livestock pen, which stands on no bed,
+   * matches on kind alone -- and only ever against units that were not
+   * already on the farm before the wait started. A create that was refused
+   * leaves nothing to match and the tap is refused with it, which is right:
+   * the crop it was aimed at never existed.
+   */
+  const settleProvisionalTargets = useCallback(async (body: Action): Promise<Action | null> => {
+    const provisional = unitIdsIn(body).filter(isOptimisticUnitId);
+    if (provisional.length === 0) return body;
+    const guesses = new Map(
+      provisional.map((id) => [id, unitsRef.current.find((unit) => unit.id === id)] as const),
+    );
+    const knownBefore = new Set(
+      unitsRef.current.filter((unit) => !isOptimisticUnitId(unit.id)).map((unit) => unit.id),
+    );
+    for (let pass = 0; pass < PROVISIONAL_WAIT_PASSES && pendingUnitCreates.current.size > 0; pass += 1) {
+      await Promise.allSettled([...pendingUnitCreates.current]);
+    }
+    if (!mounted.current) return null;
+    const landed = unitsFromLastCreate.current;
+    if (!landed) return null;
+    const arrived = landed.filter((unit) => !knownBefore.has(unit.id));
+    const claimed = new Set<string>();
+    const real = new Map<string, string>();
+    for (const [id, guess] of guesses) {
+      if (!guess) continue;
+      const onSameBed =
+        guess.soilSlot === null
+          ? undefined
+          : arrived.find(
+              (unit) =>
+                !claimed.has(unit.id) && unit.stock === guess.stock && unit.soilSlot === guess.soilSlot,
+            );
+      const match =
+        onSameBed ?? arrived.find((unit) => !claimed.has(unit.id) && unit.stock === guess.stock);
+      if (!match) continue;
+      claimed.add(match.id);
+      real.set(id, match.id);
+    }
+    return withResolvedUnitIds(body, (id) => (isOptimisticUnitId(id) ? real.get(id) ?? null : id));
+  }, []);
 
   /**
    * How fresh the farm on screen is right now, per each response's own
@@ -1903,7 +1995,25 @@ export function StackAcresFarm() {
    * thing that makes a change real here.
    */
   const act = useCallback(
-    async (body: Action): Promise<ContractActionResult> => {
+    async (requested: Action): Promise<ContractActionResult> => {
+      // A crop tapped the instant it was sown is still standing there under
+      // an id this browser made up. Wait out the sowing and aim at the row
+      // the server actually wrote -- see `settleProvisionalTargets`. Done
+      // before the intent below is read so the duplicate guard and the
+      // idempotency key both key on the real unit.
+      //
+      // The `some` is checked here rather than left to that function so an
+      // ordinary action never awaits at all: everything below this line runs
+      // in the caller's own tick, the way it always has, and only a tap at a
+      // crop that is still going in the ground gives up the thread.
+      const body = unitIdsIn(requested).some(isOptimisticUnitId)
+        ? await settleProvisionalTargets(requested)
+        : requested;
+      if (!body) {
+        const notYet = "That one is not in the ground yet. Give it a second.";
+        if (mounted.current) setError(notYet);
+        return { ok: false, message: notYet };
+      }
       // A second press at something already being asked about is a duplicate,
       // not a second request. Dropped here rather than sent and deduplicated
       // server-side: the cheapest duplicate is the one that never leaves.
@@ -1954,6 +2064,11 @@ export function StackAcresFarm() {
       // that fails to parse leaves the outcome just as unknown as a dropped
       // connection does.
       let answered = false;
+      // A create has to be waitable: a tap on the crop it is making needs to
+      // know when its real id exists. Registered before the request goes out
+      // and settled in `finally`, whatever the outcome.
+      const createGate = createsStackAcresUnit(body) ? settleable() : null;
+      if (createGate) pendingUnitCreates.current.add(createGate.promise);
       try {
         const response = await fetch("/api/stackacres/actions", {
           method: "POST",
@@ -2016,6 +2131,9 @@ export function StackAcresFarm() {
           return { ok: false, message: data.error ?? "That did not go through." };
         }
         applyResponse(data);
+        // What a tap on the just-made crop will match its provisional id
+        // against, recorded before React has committed the list above.
+        if (createGate && data.units) unitsFromLastCreate.current = data.units;
         // Where the finger that asked for this landed, if it was a tap on the
         // map rather than a sidebar row -- the reward floats out of the thing
         // that was tapped. A sidebar press leaves this null and the toast
@@ -2245,6 +2363,10 @@ export function StackAcresFarm() {
         if (mounted.current) setError(unreachable);
         return { ok: false, message: unreachable };
       } finally {
+        if (createGate) {
+          pendingUnitCreates.current.delete(createGate.promise);
+          createGate.settle();
+        }
         clearInFlight(intent);
         if (answered) pendingKeys.current.delete(intent);
         // One request, one anchor. Leaving it set would float the NEXT
@@ -2261,6 +2383,7 @@ export function StackAcresFarm() {
       captureFarmSnapshot,
       restoreFarmSnapshot,
       buildPredictContext,
+      settleProvisionalTargets,
     ],
   );
 

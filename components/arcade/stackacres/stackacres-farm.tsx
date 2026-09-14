@@ -66,6 +66,8 @@ import {
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
+  STACKACRES_ITEM_CATALOGUE,
+  STACKACRES_ITEMS,
   STACKACRES_YIELDS,
   itemLabel,
   itemSellPrice,
@@ -114,7 +116,7 @@ import {
 } from "@/lib/stackacres/soil-tiers";
 
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
-import { emptyInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
+import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
 import type { VatContainer } from "@/lib/stackacres/aging";
@@ -668,14 +670,22 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
 }
 
 /**
- * The Supply Store's own five shelves. Each is a full screen of the store
+ * The Supply Store's own six shelves. Each is a full screen of the store
  * rather than a stop on one long scroll -- a player who wants soil taps
  * "Soil" and sees only soil, the same "one thing at a time" shape the
  * seed/soil/feed radial menus already use out on the map. Seeds is the one
  * shelf that still scrolls (it is Ray's whole catalogue), and that is fine:
  * a player who opened it already knows it is nothing but seeds.
+ *
+ * "Sell" is the odd one out: every other tab spends Gold, this one is the
+ * only place in the whole store that pays it. It reuses `onSell` wholesale
+ * (lib/stackacres/farm-actions.ts's generic "sell" action, already wired to
+ * WorkshopModal's shelf for the five processing-track items) rather than a
+ * second sell path -- the backend already accepts any `StackAcresItem`, the
+ * Workshop shelf just never listed the sixteen crops or the three raw
+ * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "soil" | "feed" | "equipment" | "drone";
+type StoreTab = "seeds" | "soil" | "feed" | "equipment" | "drone" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "seeds", label: "Seeds", icon: "ico-carrot" },
@@ -683,6 +693,7 @@ const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
   { id: "drone", label: "Drone", icon: "ico-drone" },
+  { id: "sell", label: "Sell", icon: "ico-gold" },
 ];
 
 /** A bag/serving/seed price, spelled out unambiguously as Gold rather than
@@ -5043,6 +5054,49 @@ export function StackAcresFarm() {
                             : "Not enough Gold"}
                       </button>
                     </div>
+                  </div>
+                </>
+              )}
+
+              {storeTab === "sell" && (
+                <>
+                  <p className="sa-sheet-note">
+                    Turn anything in the barn straight into Gold, any time, at its own shelf
+                    price below -- the same door a harvest already fills.
+                  </p>
+                  <div className="sa-stock-cards">
+                    {STACKACRES_ITEMS.map((item) => {
+                      const def = STACKACRES_ITEM_CATALOGUE[item];
+                      const held = inventoryQuantity(processing.inventory, item);
+                      const price = itemSellPrice(item);
+                      return (
+                        <div key={item} className="sa-stock-card">
+                          <h3>{def.label}</h3>
+                          <p className="sa-stock-yield">
+                            <StoreCost amount={price} /> / each
+                          </p>
+                          <div className="sa-buy-qty-row">
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled={held < 1 || isPending(`sell:${item}:1`)}
+                              onClick={() => void onSell(item, 1)}
+                            >
+                              Sell 1
+                            </button>
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled={held < 1 || isPending(`sell:${item}:${held}`)}
+                              onClick={() => void onSell(item, held)}
+                            >
+                              Sell all ({held})
+                            </button>
+                          </div>
+                          <p className="sa-sheet-note">{itemLabel(item, held)} in the barn</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}

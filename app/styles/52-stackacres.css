@@ -1321,7 +1321,19 @@
    drop instead of a teleport). `.is-hot` mirrors `.sa-gel-target.is-hot` --
    both grow together as the token nears the circle, so the two glass shapes
    read as reaching for each other rather than one just landing on the
-   other. */
+   other.
+
+   SMOKED, not clear-and-white, for the same reason `.sa-store-card` further
+   down this file flipped the same way: a pale, clear fill with the farm's
+   usual dark ink read fine in isolation, but a token sits over whatever the
+   map happens to show underneath -- light grass, sand, cobble, a barn wall
+   -- and dark-on-pale-glass has no backdrop it can count on for contrast.
+   Tinting the fill dark and flipping `--sa-ink`/`--sa-ink-soft` to cream
+   (below) fixes that for every backdrop at once instead of chasing a
+   text-shadow per case, and it's still the same glass: same highlight
+   glint, same blur, same lit rim, just tuned the other way. Scoped to this
+   class rather than touching the shared tokens at the top of the file, so
+   nothing outside the gel dock's own capsules is affected. */
 .sa-gel-token {
   position: relative;
   flex: 0 0 auto;
@@ -1335,17 +1347,23 @@
   gap: 1px;
   padding: 7px 5px;
   overflow: hidden;
-  border: 1.5px solid rgba(255, 255, 255, .6);
+  border: 1.5px solid rgba(255, 255, 255, .55);
   border-radius: 20px;
   background:
-    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .18) 40%, rgba(255, 255, 255, 0) 60%),
-    rgba(255, 255, 255, .2);
+    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .32) 0%, rgba(255, 255, 255, .1) 40%, rgba(255, 255, 255, 0) 60%),
+    rgba(20, 15, 10, .44);
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   backdrop-filter: blur(16px) saturate(1.7);
   box-shadow:
-    inset 0 -5px 10px rgba(18, 22, 32, .16),
-    inset 0 1.5px 3px rgba(255, 255, 255, .75),
-    0 4px 10px rgba(14, 14, 22, .24);
+    inset 0 -5px 10px rgba(0, 0, 0, .22),
+    inset 0 1.5px 3px rgba(255, 255, 255, .6),
+    0 4px 10px rgba(14, 14, 22, .3);
+  /* Flipped for this capsule and its descendants only -- see the header
+     comment above. `.sa-gel-name` (no color of its own) inherits `--sa-ink`
+     straight from here; `.sa-gel-cost`/`.sa-gel-qty` below read
+     `--sa-ink-soft` explicitly, same as the store's own cost badges do. */
+  --sa-ink: #f7f1e6;
+  --sa-ink-soft: rgba(247, 241, 230, .82);
   color: var(--sa-ink);
   cursor: grab;
   /* Horizontal panning stays native (the row scrolls under a thumb same as
@@ -1452,24 +1470,29 @@
   text-align: center;
 }
 
-/* Same purse badge the ring's own .sa-radial-cost carries. */
+/* Same purse badge the ring's own .sa-radial-cost carries, but reading
+   `--sa-ink-soft` instead of the ring's flat `--sa-choc`: `.sa-radial-btn`
+   sits on opaque paper, where choc-brown was always legible, but the gel
+   token is smoked glass over the map (see `.sa-gel-token`'s own header) --
+   `--sa-ink-soft` is what that capsule already flips to cream for. */
 .sa-gel-cost {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   font-size: 12px;
   font-weight: 800;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-gel-cost .sa-ico { width: 12px; height: 12px; }
 
 /* How many of this seed or soil bag are on hand -- a count rather than a
-   price, the same distinction the old seed strip's own qty badge drew. */
+   price, the same distinction the old seed strip's own qty badge drew.
+   `--sa-ink-soft`, not `--sa-choc` -- see `.sa-gel-cost` just above. */
 .sa-gel-qty {
   font-size: 11px;
   font-weight: 800;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 /* ---- the Pixel Pilgrim's dialogue -------------------------------------

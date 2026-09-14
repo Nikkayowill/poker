@@ -4507,8 +4507,7 @@ export function StackAcresFarm() {
               {storeTab === "seeds" && (
                 <>
                   <p className="sa-sheet-note">
-                    {STACKACRES_CROPS.length} seeds, not part of the starter loop yet — buy a few,
-                    then tap bare ground in the Long Meadow to plant.
+                    Buy seeds here, then tap bare ground in the Long Meadow to plant them.
                   </p>
                   <div className="sa-stock-cards">
                     {STACKACRES_CROPS.map((crop) => {
@@ -4532,13 +4531,13 @@ export function StackAcresFarm() {
                                   type="button"
                                   className="sa-cta"
                                   disabled={pending || gold < cost}
+                                  aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
                                   onClick={() => {
                                     buySound();
                                     void act({ action: "buy-seed", crop, quantity });
                                   }}
                                 >
-                                  <span>{quantity}x</span>
-                                  <StoreCost amount={cost} />
+                                  {quantity}x
                                 </button>
                               );
                             })}
@@ -4556,9 +4555,8 @@ export function StackAcresFarm() {
               {storeTab === "soil" && (
                 <>
                   <p className="sa-sheet-note">
-                    Beds are laid in the Crop Fields, not here — buy the bags, then tap bare ground
-                    out there to lay one. A bed you take up is spent, so pick the spot before you
-                    dig.
+                    Buy bags here, then tap bare ground in the Crop Fields to lay a bed. A bed you
+                    take up again is spent, so pick the spot first.
                   </p>
                   <div className="sa-stock-cards">
                     {STORE_SOIL_TIERS.map((tier) => {
@@ -4588,13 +4586,13 @@ export function StackAcresFarm() {
                                   type="button"
                                   className="sa-cta"
                                   disabled={pending || gold < cost}
+                                  aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
                                   onClick={() => {
                                     buySound();
                                     void act({ action: "buy-soil", tier, quantity });
                                   }}
                                 >
-                                  <span>{quantity}x</span>
-                                  <StoreCost amount={cost} />
+                                  {quantity}x
                                 </button>
                               );
                             })}
@@ -4612,8 +4610,7 @@ export function StackAcresFarm() {
               {storeTab === "feed" && (
                 <>
                   <p className="sa-sheet-note">
-                    Animals eat. A hungry pen stops working until you feed it, so keep a shipment
-                    in the barn before you leave a Cattle Pen overnight.
+                    A hungry pen stops working until you feed it. Keep a shipment in the barn.
                   </p>
                   <div className="sa-stock-cards">
                     {/* Locked rows are shown greyed rather than dropped. A shelf
@@ -4663,13 +4660,13 @@ export function StackAcresFarm() {
                                     type="button"
                                     className="sa-cta"
                                     disabled={pending || gold < cost}
+                                    aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
                                     onClick={() => {
                                       buySound();
                                       void act({ action: "buy-feed", itemId: id, quantity });
                                     }}
                                   >
-                                    <span>{quantity}x</span>
-                                    <StoreCost amount={cost} />
+                                    {quantity}x
                                   </button>
                                 );
                               })}

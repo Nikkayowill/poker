@@ -2,14 +2,16 @@
 
 import clsx from "clsx";
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { isDragDrop } from "@/lib/stackacres/drag-affordance";
+import { isDragDrop, rowGesture } from "@/lib/stackacres/drag-affordance";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 import { arrowGeometry } from "./stackacres-drag-affordance";
@@ -36,8 +38,9 @@ import type { TapPoint } from "./stackacres-scene";
  * `.sa-gel-scroll`, masked to a soft fade past the edge) and scrolls the rest
  * in -- a real affordance now that Crop Fields can hold two dozen seed types.
  * That only works if a touch on a token can still turn into a horizontal
- * scroll instead of always yanking it into a drag; see the `pending` ref and
- * `INTENT_SLOP` below.
+ * scroll instead of always yanking it into a drag; see the `pending` ref
+ * below and `rowGesture` (lib/stackacres/drag-affordance.ts), which is the
+ * shared, testable answer to which of the two a given move is.
  *
  * Carries the same three cues `StackAcresDragAffordance`'s water can and feed
  * scoop already give a drag: a marching arrow from the dock to the circle
@@ -112,10 +115,6 @@ const SIDE_ROOM = 150;
 /** How many tokens the wheel shows before it fades into a scrollable edge --
  *  see `.sa-gel-scroll`'s own width in 52-stackacres.css, sized to match. */
 const VISIBLE_TOKENS = 3;
-/** Finger travel, in px, before a touch on a token commits to being either a
- *  horizontal scroll of the row or the drag-out-and-drop gesture. Below this
- *  it is still just a press. */
-const INTENT_SLOP = 8;
 
 type Phase = "idle" | "dragging" | "returning" | "settling";
 /** A pointerdown on a token that hasn't yet decided what it is: the finger
@@ -140,35 +139,99 @@ interface PendingIntent {
 
 export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }: StackAcresGelDockProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const timer = useRef<number | null>(null);
-  const homeClient = useRef<TapPoint>({ x: 0, y: 0 });
+  const home = useRef<TapPoint>({ x: 0, y: 0 });
   const pending = useRef<PendingIntent | null>(null);
+  /** The live browse of the row, once a press has turned out to be sideways.
+   *  Scrolled by hand rather than by the browser -- see `rowGesture`. */
+  const browse = useRef<{ pointerId: number; fromX: number; fromLeft: number } | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
-  const [dragClient, setDragClient] = useState<TapPoint>({ x: 0, y: 0 });
   const [phase, setPhase] = useState<Phase>("idle");
-  // Whether the live token is over the circle right now -- read from
-  // `rootRef` inside the pointer handlers below and mirrored into state
-  // rather than recomputed at render time: a ref is only safe to read
-  // outside render (an event handler or an effect), never in the render body
-  // itself.
+  /**
+   * The same two values the pointer handlers read, kept in refs alongside
+   * the state the render reads.
+   *
+   * A pointermove can land between the setState that starts a drag and the
+   * render that commits it, and a handler reading the state closure saw
+   * "idle" for that move and threw it away -- a dropped frame or two right
+   * at pickup, which is exactly where a drag either feels attached to the
+   * finger or does not.
+   */
+  const phaseRef = useRef<Phase>("idle");
+  const dragKeyRef = useRef<string | null>(null);
+  // Whether the live token is over the circle right now -- worked out in the
+  // pointer handlers below and mirrored into state rather than recomputed at
+  // render time: the token's live position is a ref, and a ref is only safe
+  // to read outside render (an event handler or an effect), never in the
+  // render body itself.
   const [isHot, setIsHot] = useState(false);
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
-  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
+  /**
+   * The field's own size, in the pixels `at` is already expressed in.
+   *
+   * This used to measure the WINDOW, which is a different box: `.sa-field`
+   * sits under the farm's header, so the "does the row fit below the tap"
+   * test below thought it had a screenful of room the field did not actually
+   * have. Worst on a phone held sideways, where the field is short to begin
+   * with and the header eats a big share of it. Null only on the very first
+   * render, before the layout effect below has measured -- which runs before
+   * anything is painted, so nothing is ever drawn against a guess.
+   */
+  const [field, setField] = useState<{ width: number; height: number } | null>(null);
   /** The live drag's own `grabDx`/`grabDy`, copied out of `pending` at the
    *  moment a press becomes a drag -- `pending` itself is cleared right
    *  after, so the offset needs a home that survives for the rest of the
    *  gesture. Read in the "already dragging" branch of `onTokenPointerMove`
    *  and in `onTokenPointerUp`. */
   const grabOffset = useRef({ dx: 0, dy: 0 });
+  /**
+   * Where the live token is, in `.sa-field` pixels, and the node it is drawn
+   * on.
+   *
+   * Held in refs and written straight onto the node rather than kept in
+   * state: a drag used to call `setDragClient` on every pointermove, which
+   * re-rendered the whole dock (every token in the row carries its own
+   * `backdrop-filter`) and then moved the token by `left`/`top`, which
+   * relayouts and re-blurs it each frame. A mouse never noticed. A thumb,
+   * on a phone already running the farm's canvas, did -- which is the whole
+   * "smooth on desktop, not on mobile" gap. The node's own `--x`/`--y` are
+   * all that changes now, at most once per animation frame, exactly the way
+   * the water can and feed scoop have always moved.
+   */
+  const livePos = useRef<TapPoint>({ x: 0, y: 0 });
+  const liveEl = useRef<HTMLButtonElement | null>(null);
+  const frame = useRef<number | null>(null);
+  /** `.sa-field`'s own top-left in client pixels, captured once when a press
+   *  starts. Everything else in this component is already in field pixels, so
+   *  this is the only conversion a move has to do -- and reading it per move
+   *  meant a `getBoundingClientRect` (a forced layout) per move. Nothing
+   *  scrolls or resizes under this overlay mid-gesture. */
+  const fieldOrigin = useRef<TapPoint>({ x: 0, y: 0 });
 
-  useEffect(() => {
-    const onResize = () => {
-      setViewportWidth(window.innerWidth);
-      setViewportHeight(window.innerHeight);
+  const enterPhase = (next: Phase) => {
+    phaseRef.current = next;
+    setPhase(next);
+  };
+  const holdToken = (key: string | null) => {
+    dragKeyRef.current = key;
+    setDragKey(key);
+  };
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (rect) setField({ width: rect.width, height: rect.height });
     };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    measure();
+    // Turning a phone sideways changes both, and on iOS the resize that
+    // follows an orientation change can land before the new size is in.
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
   }, []);
 
   // Re-focuses the first token whenever the SET of tokens changes, not just
@@ -192,45 +255,78 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
+    if (frame.current !== null) window.cancelAnimationFrame(frame.current);
   }, []);
 
-  /** The circle's own position, in client (viewport) pixels -- the same
-   *  space the row's tokens already drag in, so a drop check never has to
-   *  cross coordinate systems. */
-  const targetClient = (): TapPoint => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    return { x: (rect?.left ?? 0) + at.x, y: (rect?.top ?? 0) + at.y };
+  /** A client (viewport) point in `.sa-field` local pixels -- the space
+   *  `at`, the circle and the live token all already work in, since
+   *  `.sa-gel` is positioned `inset: 0` inside `.sa-field`, not the viewport.
+   *  Setting a token's position straight from `event.clientX/clientY` drew it
+   *  as if `.sa-field` started at the browser window's own top-left corner,
+   *  which is only ever true by accident; on a phone, where the header above
+   *  `.sa-field` eats a real share of a short viewport, that gap made a
+   *  picked-up token jump well away from the finger. */
+  const toFieldPoint = (client: TapPoint): TapPoint => ({
+    x: client.x - fieldOrigin.current.x,
+    y: client.y - fieldOrigin.current.y,
+  });
+
+  /** Puts the live token on the node, now. */
+  const paintLive = () => {
+    const el = liveEl.current;
+    if (!el) return;
+    el.style.setProperty("--x", `${livePos.current.x}px`);
+    el.style.setProperty("--y", `${livePos.current.y}px`);
   };
 
-  /** The inverse of `targetClient`: a client (viewport) point translated back
-   *  into `.sa-field` local pixels -- what `left`/`top` on a live token
-   *  actually need, since `.sa-gel` is positioned `inset: 0` inside
-   *  `.sa-field`, not the viewport. Every `dragClient`/`homeClient` write
-   *  below has to go through this: setting them straight from
-   *  `event.clientX/clientY` rendered the token as if `.sa-field` started at
-   *  the browser window's own top-left corner, which is only ever true by
-   *  accident. On a phone, where the header above `.sa-field` eats a real
-   *  share of a short viewport, that gap made a picked-up token jump well
-   *  away from the finger the instant a drag started. */
-  const toFieldPoint = (client: TapPoint): TapPoint => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    return { x: client.x - (rect?.left ?? 0), y: client.y - (rect?.top ?? 0) };
+  /** Where the token is going, applied at most once per frame. A thumb can
+   *  fire pointermove faster than the screen repaints, and every extra write
+   *  past the first in a frame is work nobody ever sees. */
+  const trackLive = (spot: TapPoint) => {
+    livePos.current = spot;
+    if (frame.current !== null) return;
+    frame.current = window.requestAnimationFrame(() => {
+      frame.current = null;
+      paintLive();
+    });
   };
+
+  /** Where the token is going right now -- for the two moves that have to
+   *  land on the exact frame their CSS transition starts from. */
+  const placeLive = (spot: TapPoint) => {
+    livePos.current = spot;
+    if (frame.current !== null) {
+      window.cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+    paintLive();
+  };
+
+  /** The live clone as it mounts: React owns the element, the refs above own
+   *  its position, so the first paint has to be seeded by hand. Stable, so a
+   *  render mid-drag (the `is-hot` flip) does not detach and re-attach the
+   *  node the current frame may be about to paint. */
+  const attachLive = useCallback((el: HTMLButtonElement | null) => {
+    liveEl.current = el;
+    if (!el) return;
+    el.style.setProperty("--x", `${livePos.current.x}px`);
+    el.style.setProperty("--y", `${livePos.current.y}px`);
+  }, []);
 
   const commit = (item: StackAcresGelDockItem) => {
-    setPhase("settling");
+    enterPhase("settling");
     // Snap the live token dead-centre on the circle rather than leaving it
     // wherever the pointer let go (isDragDrop allows some slop): the settle
     // fade and burst below both read off this position, and a fade a few
     // px off-centre looked like the token missed rather than landing.
-    // `at` already IS that centre in field-local pixels -- the same space
-    // `dragClient` renders in -- so there is no client-space round trip to do.
-    setDragClient(at);
+    // `at` already IS that centre in field-local pixels -- the same space the
+    // live token is positioned in -- so there is no conversion to do.
+    placeLive(at);
     item.onCommit();
     timer.current = window.setTimeout(() => {
       if (item.keepOpen) {
-        setPhase("idle");
-        setDragKey(null);
+        enterPhase("idle");
+        holdToken(null);
       } else {
         onClose();
       }
@@ -238,26 +334,30 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
   };
 
   const springBack = () => {
-    setPhase("returning");
-    setDragClient(homeClient.current);
+    enterPhase("returning");
+    placeLive(home.current);
     setIsHot(false);
     timer.current = window.setTimeout(() => {
-      setPhase("idle");
-      setDragKey(null);
+      enterPhase("idle");
+      holdToken(null);
     }, RETURN_MS);
   };
 
   const onTokenPointerDown = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    if (phase === "settling" || busy || item.disabledReason) return;
+    if (phaseRef.current === "settling" || busy || item.disabledReason) return;
+    const root = rootRef.current;
+    if (!root) return;
     if (timer.current !== null) window.clearTimeout(timer.current);
     // Captured up front so the gesture keeps reporting to THIS token no
     // matter where the finger wanders -- but nothing about the drag starts
-    // yet. Capture only retargets script events; it does not stop the
-    // browser's own touch-action panning, so a horizontal move from here
-    // still scrolls `.sa-gel-scroll` natively until `onTokenPointerMove`
-    // below decides otherwise.
+    // yet. The row's own scrolling is ours from here on too (the tokens
+    // carry `touch-action: none`), so whichever way this press turns out to
+    // go, the browser will not be doing something else with it at the same
+    // time.
     event.currentTarget.setPointerCapture(event.pointerId);
+    const field = root.getBoundingClientRect();
+    fieldOrigin.current = { x: field.left, y: field.top };
     const rect = event.currentTarget.getBoundingClientRect();
     pending.current = {
       key: item.key,
@@ -269,56 +369,87 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     };
   };
 
-  /** Where the token itself sits for a given pointer position, honouring
-   *  whatever offset it was grabbed at rather than centring on the finger. */
+  /** Where the token itself sits for a given pointer position, in field
+   *  pixels, honouring whatever offset it was grabbed at rather than
+   *  centring on the finger. */
   const grabbedSpot = (event: ReactPointerEvent<HTMLButtonElement>): TapPoint => {
     const g = grabOffset.current;
-    return { x: event.clientX + g.dx, y: event.clientY + g.dy };
+    return toFieldPoint({ x: event.clientX + g.dx, y: event.clientY + g.dy });
   };
 
   const onTokenPointerMove = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (phase === "dragging" && dragKey === item.key) {
+    if (phaseRef.current === "dragging" && dragKeyRef.current === item.key) {
       event.stopPropagation();
-      const client = grabbedSpot(event);
-      setDragClient(toFieldPoint(client));
-      setIsHot(isDragDrop(client, targetClient()));
+      const spot = grabbedSpot(event);
+      trackLive(spot);
+      // A plain boolean: React drops the update when it has not changed, so
+      // this only ever renders on the frame the token crosses the rim.
+      setIsHot(isDragDrop(spot, at));
+      return;
+    }
+    const browsing = browse.current;
+    if (browsing && browsing.pointerId === event.pointerId) {
+      event.stopPropagation();
+      const strip = scrollRef.current;
+      if (strip) strip.scrollLeft = browsing.fromLeft - (event.clientX - browsing.fromX);
       return;
     }
     const intent = pending.current;
     if (!intent || intent.key !== item.key || intent.pointerId !== event.pointerId) return;
-    const dx = event.clientX - intent.x;
-    const dy = event.clientY - intent.y;
-    if (Math.hypot(dx, dy) < INTENT_SLOP) return;
+    const strip = scrollRef.current;
+    // Measured, not counted off `items`: a row of four tokens on a wide
+    // screen has nothing to scroll, and a row that has nothing to scroll has
+    // only one thing a finger on it can mean.
+    const scrollable = strip !== null && strip.scrollWidth > strip.clientWidth + 1;
+    const gesture = rowGesture(
+      { dx: event.clientX - intent.x, dy: event.clientY - intent.y },
+      { scrollable },
+    );
+    if (gesture === "press") return;
     pending.current = null;
-    // Ties, and anything closer to sideways than up, are a scroll -- pulling
-    // a seed out to plant it is a reach UP toward the tapped tile, not a
-    // sideways flick, so the row only has to give up a couple of degrees off
-    // dead-horizontal before it's confident this is a browse, not a drag.
-    if (Math.abs(dy) <= Math.abs(dx) + 4) return;
     event.stopPropagation();
-    event.preventDefault();
+    if (gesture === "browse" && strip) {
+      // Snapping and a scrollLeft written every frame fight each other --
+      // the strip tries to re-settle on a token mid-flick. It goes back on
+      // when the finger lifts, so a browse still parks on a whole token.
+      strip.style.scrollSnapType = "none";
+      browse.current = { pointerId: event.pointerId, fromX: event.clientX, fromLeft: strip.scrollLeft };
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
-    homeClient.current = toFieldPoint({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    home.current = toFieldPoint({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
     grabOffset.current = { dx: intent.grabDx, dy: intent.grabDy };
-    setDragKey(item.key);
-    setDragClient(toFieldPoint({ x: event.clientX + intent.grabDx, y: event.clientY + intent.grabDy }));
-    setPhase("dragging");
+    // Set before the render that mounts the live clone, which reads it back
+    // out through `attachLive` -- otherwise the token's first painted frame
+    // is at the top-left corner of the field.
+    livePos.current = toFieldPoint({ x: event.clientX + intent.grabDx, y: event.clientY + intent.grabDy });
+    holdToken(item.key);
+    enterPhase("dragging");
   };
 
-  const onTokenPointerUp = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
+  /** Ends whatever a press turned into, drag or browse. */
+  const releaseToken = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>, dropped: boolean) => {
     if (pending.current?.key === item.key) pending.current = null;
-    if (phase !== "dragging" || dragKey !== item.key) return;
+    if (browse.current?.pointerId === event.pointerId) {
+      browse.current = null;
+      const strip = scrollRef.current;
+      if (strip) strip.style.scrollSnapType = "";
+      event.stopPropagation();
+      return;
+    }
+    if (phaseRef.current !== "dragging" || dragKeyRef.current !== item.key) return;
     event.stopPropagation();
     setIsHot(false);
-    if (isDragDrop(grabbedSpot(event), targetClient())) commit(item);
+    if (dropped && isDragDrop(grabbedSpot(event), at)) commit(item);
     else springBack();
   };
 
+  const onTokenPointerUp = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
+    releaseToken(item, event, true);
+  };
+
   const onTokenPointerCancel = (item: StackAcresGelDockItem, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (pending.current?.key === item.key) pending.current = null;
-    if (phase !== "dragging" || dragKey !== item.key) return;
-    event.stopPropagation();
-    springBack();
+    releaseToken(item, event, false);
   };
 
   const onTokenKeyDown = (item: StackAcresGelDockItem, event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -328,12 +459,18 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
     }
   };
 
-  // Intelligent screen-bottom awareness: prefer placing the dock below the circle,
-  // only flipping above if the menu would overflow the bottom of the viewport with
-  // a safety margin. Default position is below (positive offset), flip to above
-  // (negative offset) only when necessary.
-  const flip = at.y + ROW_OFFSET + ESTIMATED_MENU_HEIGHT > viewportHeight;
-  const nudgeX = Math.max(0, SIDE_ROOM - at.x) - Math.max(0, at.x + SIDE_ROOM - viewportWidth);
+  // Below the circle by default; above only when below genuinely does not fit
+  // AND above does. The old test never asked that second question, so a tap
+  // near the middle of a short field -- a phone held sideways -- could flip
+  // the row clean off the top edge. A field too short for either side keeps
+  // the row on whichever side of the tap has more screen on it.
+  const fitsBelow = field === null || at.y + ROW_OFFSET + ESTIMATED_MENU_HEIGHT <= field.height;
+  const fitsAbove = at.y - ROW_OFFSET >= 0;
+  const flip = fitsBelow ? false : fitsAbove ? true : field !== null && at.y > field.height / 2;
+  const nudgeX =
+    field === null
+      ? 0
+      : Math.max(0, SIDE_ROOM - at.x) - Math.max(0, at.x + SIDE_ROOM - field.width);
   const rowTop = at.y + (flip ? -ROW_OFFSET : ROW_OFFSET);
   // The arrow's tail sits on whichever edge of the row is actually closest
   // to the circle -- the top edge when the row sits below the tap, the
@@ -390,13 +527,14 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
         // toward the circle -- it read as trapped in the dock rather than
         // dragging out of it the way the water can / feed scoop do. Living
         // here instead, at the same untransformed `.sa-gel` level
-        // `.sa-gel-target` already uses, means `dragClient`'s field-local
+        // `.sa-gel-target` already uses, means the live token's field-local
         // coordinates land exactly where they're set with nothing above to
         // clip them. The matching token inside the row goes invisible in
         // place instead (`is-lifted` below) so the scroll strip doesn't
         // reflow, but it keeps the pointer capture and drives this clone's
         // position.
         <button
+          ref={attachLive}
           type="button"
           aria-hidden="true"
           tabIndex={-1}
@@ -405,7 +543,6 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
             "is-returning": phase === "returning",
             "is-settling": phase === "settling",
           })}
-          style={{ left: `${dragClient.x}px`, top: `${dragClient.y}px` }}
         >
           <StackAcresIcon name={draggedItem.icon} size={24} />
           <span className="sa-gel-name">{draggedItem.label}</span>
@@ -449,6 +586,7 @@ export function StackAcresGelDock({ at, items, label, busy, onClose, onManage }:
           </div>
         ) : (
           <div
+            ref={scrollRef}
             className={clsx("sa-gel-scroll", { "is-scrollable": items.length > VISIBLE_TOKENS })}
           >
             {items.map((item, index) => {

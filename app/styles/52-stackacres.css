@@ -1484,10 +1484,16 @@
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   cursor: grab;
-  /* Horizontal panning stays native (the row scrolls under a thumb same as
-     any other list) -- only a mostly-vertical move past INTENT_SLOP turns
-     into the drag-out gesture, decided in stackacres-gel-dock.tsx. */
-  touch-action: pan-x;
+  /* The browser gets no say in this gesture. It used to be `pan-x`, which
+     let it scroll the row natively -- but a touch it has claimed for a pan
+     cannot be handed back, so the drag-out gesture had to be nearly
+     vertical to be sure the pan had not already started, and a thumb that
+     reached diagonally toward the circle (which is what reaching for the
+     circle from either end of the row actually looks like) got a scroll it
+     did not ask for. The row scrolls under our own hand now, one scrollLeft
+     write per frame, and the drag is free to start in any direction. See
+     `rowGesture`/`BROWSE_BIAS` in lib/stackacres/drag-affordance.ts. */
+  touch-action: none;
   transition: box-shadow var(--duration-fast) var(--sa-ease-out),
     transform var(--duration-fast) var(--sa-ease-out), background var(--duration-fast) ease;
 }
@@ -1523,35 +1529,47 @@
    `.sa-gel-row` -- see stackacres-gel-dock.tsx's comment on where it's
    rendered. Plain `position: absolute` rather than `fixed`: nothing above
    this element in the tree carries a transform/translate, so it needs no
-   viewport-escape trick to begin with, and its `left`/`top` are already the
-   same field-local pixels `.sa-gel-target`'s own `at.x`/`at.y` use. */
+   viewport-escape trick to begin with, and `--x`/`--y` are already the same
+   field-local pixels `.sa-gel-target`'s own `at.x`/`at.y` use. */
 .sa-gel-token-live {
   position: absolute;
+  left: 0;
+  top: 0;
   z-index: 20;
-  translate: -50% -50%;
   cursor: grabbing;
   pointer-events: none;
   animation: sa-gel-pickup 220ms var(--sa-bounce);
-  /* Softens every left/top update from a live pointermove into a short
-     chase instead of a hard per-frame teleport -- the same trailing-spring
-     feel `.sa-drag-token` gets for free from its own always-on `transform`
-     transition (water can / feed scoop). `.is-returning` below still wins
-     this property at the same specificity (declared later in the file), so
-     the spring-back keeps its own slower, bouncier timing. */
-  transition: left 90ms var(--sa-ease-out), top 90ms var(--sa-ease-out);
+  /* Position lives in the transform, exactly the way `.sa-drag-token`'s does
+     (water can / feed scoop). It used to be `left`/`top`, which moves this
+     token by relayout every frame -- and this token carries a
+     `backdrop-filter`, so each frame also paid for a fresh blur of whatever
+     the map had under it. A mouse never noticed. A thumb, on a phone already
+     drawing the farm, did. `--x`/`--y` are written straight onto the node by
+     the pointer handler, once per animation frame.
+
+     The transition is what softens each of those writes into a short chase
+     rather than a hard teleport -- the same trailing-spring feel the can and
+     scoop have. `.is-returning` below still wins this property at the same
+     specificity (declared later in the file), so the spring-back keeps its
+     own slower, bouncier timing. */
+  transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(var(--lift, 1));
+  transition: transform 90ms var(--sa-ease-out);
+  will-change: transform;
   /* Picked up, so the lit rim goes to its brightest and the shadow under it
      grows -- the token is further off the field than it was in the row. */
   box-shadow: var(--sa-glass-rim-lit), 0 16px 28px rgba(14, 14, 22, .32);
 }
 
+/* Through `--lift` rather than its own `transform`, which would drop the
+   position the transform above carries. */
 .sa-gel-token-live.is-hot {
-  transform: scale(1.18);
+  --lift: 1.18;
   filter: brightness(1.15) saturate(1.3);
   transition: transform 120ms var(--sa-ease-out), filter 120ms var(--sa-ease-out);
 }
 
 .sa-gel-token-live.is-returning {
-  transition: left .24s var(--sa-bounce), top .24s var(--sa-bounce);
+  transition: transform .24s var(--sa-bounce);
 }
 
 /* On a good drop the token used to just vanish in one frame when the dock
@@ -1566,13 +1584,16 @@
 /* The one-shot "picked up" wobble: a squash on the way out and a settle back
    to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
    scoop, just done as a shape change instead of a uniform scale since this
-   token has no separate `--grow` custom property to key off. Plays once when
-   the live clone mounts and does not loop. */
+   token has no separate `--grow` custom property to key off. Each frame
+   restates the position too: an animated `transform` replaces the property
+   outright, so a keyframe that set the scale alone would drop the token at
+   the field's top-left corner for its whole 220ms. Plays once when the live
+   clone mounts and does not loop. */
 @keyframes sa-gel-pickup {
-  0% { transform: scale(1, 1); }
-  40% { transform: scale(1.22, .8); }
-  70% { transform: scale(.94, 1.06); }
-  100% { transform: scale(1, 1); }
+  0% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1, 1); }
+  40% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1.22, .8); }
+  70% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(.94, 1.06); }
+  100% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1, 1); }
 }
 
 /* The shell's own drop-in: a bead of gel pooling into shape while rising up

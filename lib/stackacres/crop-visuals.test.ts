@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_CROPS } from "./catalogue";
+import { SOIL_TILE } from "./soil";
 import {
   CROP_BED_FIT_WIDTH,
   CROP_DRY_ALPHA,
@@ -308,5 +309,54 @@ describe("fitting a crop to its bed", () => {
       const art = cropArtFor(crop);
       if (art) expect(cropBedFit(art)).toBe(1);
     }
+  });
+
+  /**
+   * WHY THE TAP RULE CANNOT GO BY GROUND SQUARE ALONE.
+   *
+   * A crop's sprite anchors (0.5, 1) on its bed's CENTRE and is drawn upward
+   * from there (`buildUnit` in stackacres-scene.ts). A bed's own diamond is
+   * SOIL_TILE units tall on screen -- isoProject sends a SOIL_TILE square to
+   * a diamond twice as wide as it is tall -- so any crop drawn taller than
+   * that has most of its picture standing over the beds BEHIND it.
+   *
+   * That is measured here rather than asserted in prose because it is the
+   * whole reason `unitAt` asks about a plant's painted pixels before it asks
+   * which square the finger is over: resolving by square alone handed the
+   * thumb whatever was growing one or two beds back from the plant it was
+   * squarely on top of. `CROP_BED_FIT_WIDTH` already caps the other axis,
+   * which is why the width half of this passes and the height half does not.
+   */
+  it("draws mature crops taller than the bed diamond they stand on", () => {
+    const drawn = (art: ReturnType<typeof cropArtFor>) => {
+      if (!art) return null;
+      const box = cropBox(art);
+      const fit = cropBedFit(art) * cropDrawnScale(art, 2);
+      return { w: box.w * fit, h: box.h * fit };
+    };
+
+    // The diamond a bed projects to: 2 x SOIL_TILE across, SOIL_TILE tall.
+    const bedW = SOIL_TILE * 2;
+    const bedH = SOIL_TILE;
+
+    let overflowing = 0;
+    for (const crop of STACKACRES_CROPS) {
+      const size = drawn(cropArtFor(crop));
+      if (!size) continue;
+      // Width is handled, and stays handled: this is what CROP_BED_FIT_WIDTH
+      // is for, and it is why a tap never strays sideways.
+      expect(size.w).toBeLessThanOrEqual(bedW);
+      if (size.h > bedH) overflowing += 1;
+    }
+
+    // Not a stray crop or two: most of the roster stands off its own square.
+    expect(overflowing).toBeGreaterThan(STACKACRES_CROPS.length / 2);
+
+    // And the worst of them reaches a full extra bed-row up the screen, which
+    // is the case the by-square rule got flatly wrong.
+    const tallest = STACKACRES_CROPS
+      .map((crop) => drawn(cropArtFor(crop))?.h ?? 0)
+      .reduce((a, b) => Math.max(a, b), 0);
+    expect(tallest).toBeGreaterThanOrEqual(bedH * 2);
   });
 });

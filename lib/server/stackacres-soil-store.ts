@@ -115,12 +115,24 @@ export type PlaceSoilSlotOutcome =
  * refuses outright rather than overwriting or growing. The caller treats
  * every refusal kind exactly like a lost race and refunds the bag it already
  * spent -- see `placeStackAcresSoilTile` in stackacres-service.ts.
+ *
+ * `claimed` reports every slot this profile's crops are holding. The new
+ * bed's order has to clear those as well as the standing beds', or a bed
+ * bought after a removal can take back the removed bed's order and adopt a
+ * crop still holding it (see `nextSoilOrder` in lib/stackacres/soil.ts).
+ *
+ * A THUNK, not a value, because only the memory path needs it:
+ * `place_homestead_soil_tile` works the same greatest-of-both out in SQL, in
+ * the same statement as the insert, where it cannot go stale. A soil brush
+ * drag is one request per tile, so making every one of them pay for a units
+ * read that the real store throws away is not a cost worth spending.
  */
 export async function placeStackAcresSoilTile(
   profileId: string,
   tx: number,
   ty: number,
   tier: SoilTier = SOIL_DEFAULT_TIER,
+  claimed: () => Promise<readonly number[]> = async () => [],
 ): Promise<PlaceSoilSlotOutcome> {
   const supabase = adminClient();
   if (!supabase) {
@@ -129,6 +141,7 @@ export async function placeStackAcresSoilTile(
     if (layout.has(key)) return { kind: "occupied" };
     let maxOrder = -1;
     for (const t of layout.values()) maxOrder = Math.max(maxOrder, t.order);
+    for (const slot of await claimed()) maxOrder = Math.max(maxOrder, slot);
     const tile: StoredSoilTile = { tx, ty, order: maxOrder + 1, origin: "purchased", tier };
     layout.set(key, tile);
     return { kind: "created", tile: { ...tile } };

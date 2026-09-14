@@ -2,7 +2,14 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import { SOIL_TILE, SOIL_TILE_PRICE_GOLD, soilTileAt } from "@/lib/stackacres/soil";
+import {
+  SOIL_TILE,
+  SOIL_TILE_PRICE_GOLD,
+  createSoilMap,
+  soilSlotTile,
+  soilTileAt,
+  type SoilTile,
+} from "@/lib/stackacres/soil";
 import { SOIL_BAGS_PER_PURCHASE, soilTierPrice, type SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
@@ -276,6 +283,46 @@ describe("removeStackAcresSoilTile", () => {
     const view = await removeStackAcresSoilTile(token, bedB, T0);
 
     expect(view.units.some((unit) => unit.id === planted?.id)).toBe(true);
+  });
+
+  // THE BUG THIS WHOLE SHAPE EXISTS FOR (2026-09-14). A slot used to be an
+  // index into the ordered bed list, so lifting a bed slid every crop after
+  // it one bed along -- pull a bed out at one end of the farm and a row of
+  // lettuce at the other end rearranged itself. A slot is the bed's own
+  // order now, so the survivors do not move.
+  it("leaves every other crop standing on the same bed when one is lifted", async () => {
+    const token = await sowingFarm();
+    await buyStackAcresSoil(token, { tier: "dirt", quantity: 4 }, T0);
+    const beds = [cropFieldTile(0), cropFieldTile(1), cropFieldTile(2), cropFieldTile(3)];
+    for (const bed of beds) await placeStackAcresSoilTile(token, bed, T0);
+
+    // Three crops in a row, on the last three beds.
+    const sownIds: string[] = [];
+    for (let i = 1; i < beds.length; i += 1) {
+      const crop = STACKACRES_CROPS[i % STACKACRES_CROPS.length];
+      const sown = await stockStackAcres(token, { stock: crop, tile: beds[i] }, T0);
+      const planted = sown.units.find((unit) => !sownIds.includes(unit.id) && unit.soilSlot !== null);
+      expect(planted).toBeDefined();
+      sownIds.push(planted!.id);
+    }
+
+    const where = (view: { units: readonly { id: string; soilSlot: number | null }[]; soilTiles: readonly SoilTile[] }) => {
+      const soil = createSoilMap([...view.soilTiles]);
+      return sownIds.map((id) => {
+        const unit = view.units.find((u) => u.id === id);
+        const tile = unit?.soilSlot == null ? null : soilSlotTile(soil, unit.soilSlot);
+        return tile === null || tile === undefined ? null : { tx: tile.tx, ty: tile.ty };
+      });
+    };
+
+    const before = where(await readStackAcres(token, T0));
+    expect(before).toEqual([beds[1], beds[2], beds[3]].map(({ tx, ty }) => ({ tx, ty })));
+
+    // Lift the FIRST bed -- the one every later slot used to be counted from,
+    // and the one carrying no crop at all.
+    const after = where(await removeStackAcresSoilTile(token, beds[0], T0));
+
+    expect(after).toEqual(before);
   });
 });
 

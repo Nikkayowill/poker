@@ -95,9 +95,11 @@ export type SoilTileOrigin = "starter" | "purchased";
 
 export interface SoilTile extends SoilTileCoord {
   /**
-   * Placement sequence, and the ONLY thing that orders the slot space (see
-   * `orderedSoilTiles`). Monotonic per farm and never reused, so appending a
-   * tile appends slots and cannot renumber the ones already standing.
+   * Placement sequence, and THE BED'S SLOT -- the number a crop's `soilSlot`
+   * holds to name this bed (see `soilSlotTile`). Monotonic per farm and
+   * never reused (`nextSoilOrder`), so a bed keeps it for life: adding beds
+   * cannot renumber the ones already standing, and removing one cannot
+   * either.
    */
   order: number;
   origin: SoilTileOrigin;
@@ -218,13 +220,25 @@ export function removeSoilTile(soil: SoilMap, tx: number, ty: number): boolean {
 }
 
 /**
- * The next free `order`. Max-plus-one rather than `soil.size` so removing a
- * tile from the middle cannot hand out an order that is already standing --
- * which would put two tiles in one slot range.
+ * The next free `order`, which is the next free SLOT (see `soilSlotTile`).
+ *
+ * Max-plus-one rather than `soil.size`, so removing a tile from the middle
+ * cannot hand out an order that is already standing.
+ *
+ * `claimed` is every slot a crop currently holds, and it is in here because
+ * max-plus-one over the standing beds alone is not enough once a slot IS a
+ * bed's order: lift the newest bed and its order goes back on the shelf, so
+ * the next bed bought takes it -- and any crop still holding that slot (the
+ * removal's abandon lost its race, say) silently turns up standing on the
+ * new bed, somewhere else on the farm. Counting the crops' own slots too is
+ * what makes "never reused" true rather than nearly true. Pass it whenever
+ * the units are to hand; the default is the empty case (a test fixture, a
+ * farm with nothing sown).
  */
-export function nextSoilOrder(soil: SoilMap): number {
+export function nextSoilOrder(soil: SoilMap, claimed: Iterable<number> = []): number {
   let max = -1;
   for (const tile of soil.values()) max = Math.max(max, tile.order);
+  for (const slot of claimed) max = Math.max(max, slot);
   return max + 1;
 }
 
@@ -248,13 +262,18 @@ export type PlantSoilTileResult =
  * outcomes left are "bare ground, plant it" and "something is already
  * standing here."
  */
-export function plantSoilTile(soil: SoilMap, coord: SoilTileCoord, tier: SoilTier): PlantSoilTileResult {
+export function plantSoilTile(
+  soil: SoilMap,
+  coord: SoilTileCoord,
+  tier: SoilTier,
+  claimed: Iterable<number> = [],
+): PlantSoilTileResult {
   const key = soilTileKey(coord.tx, coord.ty);
   if (soil.has(key)) return { kind: "occupied" };
   const tile: SoilTile = {
     tx: coord.tx,
     ty: coord.ty,
-    order: nextSoilOrder(soil),
+    order: nextSoilOrder(soil, claimed),
     origin: "purchased",
     tier,
   };
@@ -399,10 +418,10 @@ export function planSoilGroupRelocation(
  * still let a later delete remove a tile this same call just placed.
  *
  * Preserves each tile's `order`/`origin`/`tier` -- only `tx`/`ty` change.
- * That is what keeps every crop's `soilSlot` (an index into
- * `orderedSoilTiles`, not a coordinate) resolving to the same bed after the
- * move: see this file's own header on `soilSlotSpot` for why an `order`
- * change, not a coordinate change, is what would actually reassign crops.
+ * That is what keeps every crop's `soilSlot` (a bed's `order`, not a
+ * coordinate) resolving to the same bed after the move: see `soilSlotSpot`
+ * for why an `order` change, not a coordinate change, is what would actually
+ * reassign crops.
  */
 export function moveSoilTileGroup(soil: SoilMap, moves: readonly SoilGroupMove[]): boolean {
   const relocated: SoilTile[] = [];
@@ -542,8 +561,8 @@ export function soilCapacity(soil: SoilMap): number {
 }
 
 /**
- * The world point for a crop holding a FIXED slot, or null when the slot
- * space is empty.
+ * The world point for a crop holding a FIXED slot, or null when no bed
+ * carries that slot any more.
  *
  * THE ONLY WAY A CROP STANDS ON A BED. `soilSlotSpotForRank`, the rank-hash
  * fallback this used to share the lattice with, is gone (2026-09-10): it
@@ -556,25 +575,40 @@ export function soilCapacity(soil: SoilMap): number {
  * scatter, the same one an unsoiled farm already uses) -- never a guess at
  * which tile it meant.
  *
- * Wraps a slot past capacity so selling off beds cannot make an
- * already-standing crop invisible and untappable; that is the one wrap left,
- * and it only ever fires when a slot's own tile stops existing, never as a
- * placement guess.
+ * A SLOT IS A BED'S `order`, NOT ITS POSITION IN THE LIST (2026-09-14). It
+ * used to be an index into `orderedSoilTiles`, and that array is dense: pull
+ * one bed out of the middle and every later bed slid down a place, so every
+ * crop past the removed one resolved to its neighbour's bed and the whole row
+ * appeared to shuffle itself. Removing a bed on one side of the farm moved
+ * crops on the other side, which is the bug this shape exists to make
+ * impossible. `order` is handed out max-plus-one and never reused
+ * (`nextSoilOrder`), so a bed keeps its slot for life and losing one bed
+ * disturbs nothing else.
+ *
+ * `wheatPlotSpot` in ./world.ts already had this exact lesson written on it
+ * -- it hashes a plot's own id rather than its position "NOT off its position
+ * in the list", because plots get collected out from under each other. Beds
+ * get removed out from under each other the same way.
+ *
+ * Null rather than a wrap when the bed is gone. The wrap that used to be here
+ * was covering for the shuffle above: with a stable slot the only way to miss
+ * is a bed that genuinely no longer exists, and `removeStackAcresSoilTile`
+ * takes that bed's own crop with it, so a null here means a lost race and the
+ * open-field scatter is the honest answer for it.
  */
 export function soilSlotSpot(soil: SoilMap, slot: number): WorldPoint | null {
-  const capacity = soilCapacity(soil);
-  if (capacity <= 0) return null;
-  const wrapped = ((slot % capacity) + capacity) % capacity;
-  return soilSlotPoint(orderedSoilTiles(soil)[wrapped]);
+  const tile = soilSlotTile(soil, slot);
+  return tile === null ? null : soilSlotPoint(tile);
 }
 
-/** Which tile a slot index falls on, or null when there is no soil. Same
- *  wrap as `soilSlotSpot`, so the two never disagree about a slot's home. */
+/** Which bed carries `slot`, or null when none does. A linear scan, like
+ *  `orderedSoilTiles` before it: the map is keyed by coordinate, and a farm
+ *  holds beds in the hundreds at the very top end. */
 export function soilSlotTile(soil: SoilMap, slot: number): SoilTile | null {
-  const capacity = soilCapacity(soil);
-  if (capacity <= 0) return null;
-  const wrapped = ((slot % capacity) + capacity) % capacity;
-  return orderedSoilTiles(soil)[wrapped] ?? null;
+  for (const tile of soil.values()) {
+    if (tile.order === slot) return tile;
+  }
+  return null;
 }
 
 /**
@@ -591,41 +625,36 @@ export function soilSlotOnTile(soil: SoilMap, slot: number, tx: number, ty: numb
 }
 
 /**
- * The slot a specific tile holds, or null when nothing is standing there.
- * The inverse of `soilSlotTile` -- so a planting that names the tile the
- * player actually tapped, rather than "whatever's free", can be checked
- * against the same slot space `nextFreeSoilSlot` and the renderer both use.
- *
- * Unwrapped: this is a lookup into `orderedSoilTiles`, not a wrap-around
- * index, so a tile past `soilCapacity` cannot exist to be found.
+ * The slot a specific bed carries -- its `order`, the inverse of
+ * `soilSlotTile`. Null when no bed stands at that coordinate.
  */
 export function soilSlotForTile(soil: SoilMap, tx: number, ty: number): number | null {
-  const index = orderedSoilTiles(soil).findIndex((tile) => tile.tx === tx && tile.ty === ty);
-  return index >= 0 ? index : null;
+  return soil.get(soilTileKey(tx, ty))?.order ?? null;
 }
 
 /**
- * The lowest slot nobody is standing in, or null when the soil is full.
+ * The slot of the lowest-ordered bed nobody is standing on, or null when
+ * every bed is occupied.
  *
- * LOWEST rather than random, so sowing fills bed one before bed two and a
- * player watching their farm sees it pack in reading order. Full is a real
- * answer, not an error: the caller sows anyway and leaves the slot null,
- * which puts the crop back on the wrapping rank-hash path rather than
- * refusing a purchase because the player is out of ground.
+ * LOWEST rather than random, so sowing fills the oldest bed before the
+ * newest and a player watching their farm sees it pack in the order they
+ * built it. Full is a real answer, not an error: the caller sows anyway and
+ * leaves the slot null, which puts the crop in the open-field scatter rather
+ * than refusing a purchase because the player is out of ground.
+ *
+ * `taken` is read as-is. It used to be normalised through the same modulo
+ * the renderer wrapped by, which was only ever needed because a slot could
+ * fall out of range when the bed list shrank; a slot is a bed's own `order`
+ * now and cannot.
  */
 export function nextFreeSoilSlot(soil: SoilMap, taken: Iterable<number>): number | null {
-  const capacity = soilCapacity(soil);
-  if (capacity <= 0) return null;
-  const used = new Set<number>();
-  for (const slot of taken) {
-    // Normalised the same way the renderer wraps it, so a stale out-of-range
-    // slot still blocks the cell it is actually drawn in.
-    used.add(((slot % capacity) + capacity) % capacity);
+  const used = new Set<number>(taken);
+  let best: number | null = null;
+  for (const tile of soil.values()) {
+    if (used.has(tile.order)) continue;
+    if (best === null || tile.order < best) best = tile.order;
   }
-  for (let slot = 0; slot < capacity; slot += 1) {
-    if (!used.has(slot)) return slot;
-  }
-  return null;
+  return best;
 }
 
 /* ------------------------------------------------------------------ */

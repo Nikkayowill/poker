@@ -20,41 +20,55 @@
  * game. That is the literal brief this pass answers.
  *
  * So, inside `.sa-theme` only:
- *   - Surfaces DO carry a thick outline. Three pixels of `--sa-outline`, not a
- *     1px hairline. It is the same decision the sprites make (see
- *     art-palette.ts's OUTLINE RULE), not a hairline sneaking back in.
+ *   - Every surface is GLASS. One material, declared once as `--sa-glass-*`
+ *     at the top of this file: a near-nothing fill, a 3px blur, and a
+ *     one-pixel lit rim. Panels, keys, rows, chips, drag tokens -- all of it.
  *   - Radii are the farm's own two (`--sa-r-panel` 24px, `--sa-r-block` 16px),
  *     not `--radius-card`/`--radius-control`.
  *   - Nothing reaches for `--brand-*`, `--neon-*` or `--accent-*`. A violet
- *     glow on a wooden sign is the same mistake as felt green in the lobby.
+ *     glow over a cartoon farm is the same mistake as felt green in the lobby.
  * Outside `.sa-theme` this sheet changes nothing, and every shared class it
  * restyles (.floor-bar, .htp-trigger, .gold-balance, .duel-error,
  * .profile-modal) is qualified by `.sa-theme` for exactly that reason.
  *
- * ---- where the colours come from ------------------------------------
+ * ---- what the chrome is made of -------------------------------------
  *
- * Not invented here. components/arcade/stackacres/art-palette.ts holds every
- * material in the game as a three-tone ramp -- `top` (the lit plane), `side`
- * (the plane turned away) and `rim` (the darkest tone, which is also the
- * shape's own outline) -- and this chrome is built out of the same ramps the
- * world is painted with: wood, cream, muck, corn, leaf, roof, carrot. That is
- * what makes a button feel like it belongs to the farm rather than to a UI kit
- * that was pointed at one.
+ * Glass, everywhere, since 2026-09-14. The Supply Co. store went first (PR
+ * #519) and the rest of the farm followed, because a store cut from one
+ * material sitting in a farm made of cream paper blocks read as two apps.
  *
- * It also decides what a "chunky" button IS here, which is the part worth
- * reading before changing any of it. A block's thick bottom edge is not a
- * drop shadow in a brown that looked about right: it is the material's own
- * `rim` face, the near-vertical plane you would see if the block were lifted
- * off the page, drawn by exactly the same logic the sprites use for the front
- * face of a crate. Pressing it moves the block DOWN onto that face by the same
- * number of pixels the face is tall (`--sa-lift`), which is why the press
- * reads as a real key travelling rather than as an element shrinking. Every
- * pressable thing on this screen therefore has three states, all of them
- * physical: raised, pressed, and disabled (raised but unlit).
+ * The rules that keep it glass, and every one of them is easy to undo by
+ * accident:
+ *   - The fill is nearly nothing. Weight comes from the rim, never from
+ *     filling the shape in. A key that goes back to a solid pill takes the
+ *     panel it sits in back to frosted glassmorphism with it.
+ *   - Everything that says "glass" is ONE PIXEL WIDE and sits ON the
+ *     boundary: four inset lines, no blur, no spread, brightest along the
+ *     top since the light is above. A wide soft white glow inside the shape
+ *     is a fill, not an edge.
+ *   - The fill is dark and the ink is cream, not the other way round. Pale
+ *     glass with brown ink was tried first and failed on the real scene:
+ *     over grass, cobble and a barn roof there is no backdrop dark text can
+ *     count on.
+ *   - Colour arrives as a TINT of the world's own hues (`--sa-tint-*`, with
+ *     `--sa-lit-*` for the lettering on it), never as a painted block. Corn
+ *     still means money and roof still means trouble; they just say it
+ *     through the glass now.
  *
- * A hard-edged bottom face on its own would be a costume. Each block also
- * carries a real ambient shadow with an offset and a blur (`--sa-drop`), so
- * the block sits on the grass rather than being stamped onto it.
+ * The hues themselves are not invented here.
+ * components/arcade/stackacres/art-palette.ts holds every material in the
+ * game as a three-tone ramp -- `top` (the lit plane), `side` (the plane
+ * turned away) and `rim` (the darkest tone, which is also the shape's own
+ * outline) -- and the ramps mirrored at the top of this file are the same
+ * ones the world is painted with: wood, cream, muck, corn, leaf, roof,
+ * carrot. The canvas still paints in them directly; the chrome now borrows
+ * them a tint at a time.
+ *
+ * A press has no bottom face to travel onto any more. It swaps the lit edge
+ * from the top of the shape to the bottom (`--sa-glass-rim-press`) and takes
+ * a hair off the scale, which is what a pane of glass being pushed looks
+ * like. Every pressable thing still has the same three states: lit, pressed,
+ * and disabled (unlit rather than faded, so the object stays an object).
  *
  * ---- the two layers --------------------------------------------------
  *
@@ -95,8 +109,8 @@
  * ---- the height budget -----------------------------------------------
  *
  * This screen is landscape-only and the phones it runs on are ~390px tall, so
- * every band of chrome comes straight out of the map. Chunky chrome only pays
- * for itself if it gets out of the way: the district drawer is parked off the
+ * every band of chrome comes straight out of the map. Chrome only pays for
+ * itself if it gets out of the way: the district drawer is parked off the
  * right edge behind a peg, the toolbelt is a two-key dock in the bottom-left
  * corner rather than a column down the right, and the whole scale steps down
  * once in the landscape block at the end of this file. The map is the product;
@@ -184,17 +198,20 @@
 
   /* ---- semantics ----------------------------------------------------- */
 
-  /* Text. Never a grey: a neutral grey on a warm cream board is the one thing
-     that gives away a UI kit dropped onto a game. Both of these are the
-     world's own brown at two depths. */
-  --sa-ink: var(--sa-choc-rim);
-  --sa-ink-soft: var(--sa-choc);
-  /* For text sitting ON a dark material (a wood rim, a pressed key). */
-  --sa-ink-light: var(--sa-cream);
+  /* Text. Cream, because every panel, key and row on this surface is smoked
+     glass now (see "the glass" below) and brown ink on a dark pane has
+     nothing to sit on. Never a grey: both of these are the world's own
+     cream at two strengths, the same way they used to be its brown.
+     --sa-ink-dark is what is left for a mark that sits on a bright accent
+     fill instead of on the glass. */
+  --sa-ink: #f7f1e6;
+  --sa-ink-soft: rgba(247, 241, 230, .78);
+  --sa-ink-dark: var(--sa-choc-rim);
 
-  --sa-paper: var(--sa-cream);
-  --sa-paper-2: #eee0bd;
-  --sa-frame: var(--sa-wood-side);
+  /* The chocolate outline is down to the pins dropped on the map (the tap
+     marker, the speech-bubble anchors) -- the only things left on this
+     surface that are drawn ON the world rather than made of glass. Chrome
+     is edged with --sa-glass-line below instead. */
   --sa-outline: var(--sa-choc-rim);
   --sa-outline-w: 3px;
 
@@ -204,16 +221,112 @@
   --sa-r-block: 16px;
   --sa-r-chip: 999px;
 
-  /* How tall a block's own bottom face is, and therefore exactly how far it
-     travels when pressed. Two steps: a key, and a full-width primary. */
-  --sa-lift: 5px;
-  --sa-lift-lg: 7px;
-
-  /* The ambient shadow every raised thing casts on the grass. Offset and
-     blurred, so the hard bottom face reads as a lit plane and not as a
-     sticker. */
+  /* The ambient shadow a pane casts on the grass. Offset and blurred, so a
+     panel reads as floating over the world rather than printed on it. */
   --sa-drop: 0 5px 12px rgba(52, 34, 18, .28);
   --sa-drop-lg: 0 14px 30px rgba(52, 34, 18, .38);
+
+  /* ---- the glass ------------------------------------------------------
+     One material, declared once, and everything on this surface is cut from
+     it: panels, keys, rows, chips, drag tokens. It came out of the Supply
+     Co. rebuild (PR #519) where it was scoped to that one panel; these are
+     the same numbers, promoted so the whole farm reads as one thing.
+
+     The numbers are all small: a near-nothing fill, a 3px blur, and a rim
+     at 20% white. Nothing else fills the shape. Everything that says
+     "glass" is one pixel wide and sits ON the boundary -- four inset lines,
+     no blur, no spread, brightest along the top since the light is above. A
+     wide soft white glow inside the shape is a fill, not an edge, and
+     stacking those is exactly how this look drifts back into frosted
+     glassmorphism.
+
+     Blur radius decides what survives: a 1px line at 6% alpha smears to
+     nothing through 3px, so fine detail behind a panel disappears while big
+     shapes (a roof, a bed of crops, a road) come through. That is the right
+     trade -- the farm is made of big shapes.
+
+     SMOKED, not clear-and-white. Clear glass with the farm's old brown ink
+     was tried first on the store and failed on the real scene: text over
+     grass, cobble and a barn roof has no ground it can count on, and every
+     fix that keeps dark ink puts a pale fill back, which is the milky look
+     this whole material exists to avoid. So the fill is dark and the ink is
+     cream (--sa-ink above).
+
+     Three fills, because a surface is one of three things: a panel, a
+     control standing on a panel, or a row that is a division OF the panel
+     rather than an object on it. */
+  --sa-glass-fill: rgba(20, 15, 10, .34);
+  --sa-glass-fill-ctl: rgba(255, 255, 255, .07);
+  --sa-glass-fill-quiet: rgba(20, 15, 10, .16);
+
+  /* A fourth fill, for the panels that stand in OPEN AIR: the district
+     drawer, the speech bubbles pinned on the map, the HUD's own popover.
+     Everything else that carries `--sa-glass-fill` is a sheet with
+     `.sa-sheet-scrim`/`.sa-store-scrim` dimming the world behind it first,
+     and .34 over that scrim is the number the store was tuned at. The same
+     .34 with nothing under it sits on lit grass at full brightness, and a
+     drawer full of 13px buy rows over that is unreadable -- verified on the
+     real scene, which is the only place this shows up. Same material, same
+     rim, just carrying its own shade instead of borrowing a scrim's. */
+  --sa-glass-fill-open: rgba(20, 15, 10, .62);
+
+  /* And a fifth, for a STICKY HEAD only. A head has its own panel's rows
+     sliding under it rather than the map, and a row's cream lettering is
+     still legible through .62 of shade -- it reads as ghost text printed on
+     the title. Nearly solid is the only thing that stops it; the rim and the
+     blur are what keep it the same material as the panel under it. */
+  --sa-glass-fill-head: rgba(20, 15, 10, .9);
+
+  --sa-glass-line: rgba(255, 255, 255, .2);
+  --sa-glass-line-soft: rgba(255, 255, 255, .12);
+  /* The edge that goes with --sa-glass-rim-lit, for a primary key. */
+  --sa-glass-line-lit: rgba(255, 255, 255, .3);
+  --sa-glass-blur: blur(3px) saturate(1.08);
+  --sa-glass-blur-ctl: blur(4px) saturate(1.1);
+  /* A sticky head has its own panel's rows sliding under it, not the map, so
+     3px is not enough to stop them being read straight through it. */
+  --sa-glass-blur-head: blur(14px) saturate(1.08);
+  --sa-glass-rim:
+    inset 0 1px 0 rgba(255, 255, 255, .42),
+    inset 0 -1px 0 rgba(255, 255, 255, .08),
+    inset 1px 0 0 rgba(255, 255, 255, .12),
+    inset -1px 0 0 rgba(255, 255, 255, .12);
+  --sa-glass-rim-sm:
+    inset 0 1px 0 rgba(255, 255, 255, .4),
+    inset 0 -1px 0 rgba(255, 255, 255, .1),
+    inset 1px 0 0 rgba(255, 255, 255, .12),
+    inset -1px 0 0 rgba(255, 255, 255, .12);
+  /* The one key you came to a shelf to press: a brighter top line and a
+     shadow under it. Weight comes from the lit edge, never a fuller fill --
+     the moment one of these goes back to a heavy white pill the panel it
+     sits in reads as milky again. */
+  --sa-glass-rim-lit:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    inset 0 -1px 0 rgba(255, 255, 255, .12),
+    inset 1px 0 0 rgba(255, 255, 255, .16),
+    inset -1px 0 0 rgba(255, 255, 255, .16),
+    0 6px 16px -10px rgba(20, 20, 24, .3);
+  /* Pressed. Glass has no bottom face to travel down onto, so a press
+     swaps the lit edge from the top to the bottom instead. */
+  --sa-glass-rim-press:
+    inset 0 2px 3px rgba(20, 20, 24, .18),
+    inset 0 -1px 0 rgba(255, 255, 255, .18);
+
+  /* The world's own hues, at the only strength glass can carry them: enough
+     to say corn or leaf or roof, nowhere near enough to become a painted
+     block again. Every one of these used to be a solid fill on a chunky
+     outlined key. The `lit` pair is the same hue taken up to where it reads
+     as light ink on the dark pane. */
+  --sa-tint-corn: rgba(255, 210, 77, .13);
+  --sa-tint-leaf: rgba(107, 208, 65, .12);
+  --sa-tint-carrot: rgba(255, 154, 60, .13);
+  --sa-tint-water: rgba(99, 200, 232, .13);
+  --sa-tint-roof: rgba(240, 92, 66, .15);
+  --sa-lit-corn: #ffd88a;
+  --sa-lit-leaf: #b9eec4;
+  --sa-lit-carrot: #ffc294;
+  --sa-lit-water: #a7e2f5;
+  --sa-lit-roof: #ffb3a3;
 
   /* The touch floor. Mobile-first is the whole point of the surface: nothing
      interactive on this screen is allowed under it. */
@@ -252,18 +365,19 @@
 
 /* Browser surfaces the design would otherwise leave to the platform: the
    caret, the selection, and the scrollbars inside the drawer and the store
-   sheet. All three ship in colours that belong to no design system, and on a
-   cream board they are the tell. */
+   sheet. All three ship in colours that belong to no design system, and on
+   glass they are the tell. The thumb is the same lit hairline everything
+   else on this surface is edged with. */
 .sa-theme {
   accent-color: var(--sa-corn-side);
-  caret-color: var(--sa-choc);
+  caret-color: var(--sa-cream);
   scrollbar-width: thin;
-  scrollbar-color: var(--sa-cream-rim) transparent;
+  scrollbar-color: rgba(255, 255, 255, .3) transparent;
 }
 
 .sa-theme ::selection {
   background: var(--sa-corn);
-  color: var(--sa-ink);
+  color: var(--sa-ink-dark);
 }
 
 .sa-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -271,7 +385,7 @@
 .sa-theme ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: var(--sa-r-chip);
-  background: var(--sa-cream-rim);
+  background: rgba(255, 255, 255, .3);
   background-clip: content-box;
 }
 
@@ -375,10 +489,9 @@
 
 /* The back link and How-to-play are the two quietest things on the screen and
    were plain slate-blue text over grass, which is unreadable at a glance and
-   unhittable with a thumb. They are small wooden keys now, at the touch
-   floor, and they are the only two blocks on the surface that are wood rather
-   than cream -- they lead OFF the farm, so they read as the fence rather than
-   as something growing on it. */
+   unhittable with a thumb. They are small glass keys now, at the touch
+   floor, on the quiet fill rather than the lit one -- they lead OFF the farm,
+   so they sit back from everything that acts on it. */
 .sa-theme .floor-back,
 .sa-theme .htp-trigger {
   display: inline-flex;
@@ -386,10 +499,12 @@
   gap: 6px;
   min-height: 38px;
   padding: 0 13px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-wood);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-wood-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   font-family: var(--sa-font);
   font-size: 14px;
@@ -412,13 +527,13 @@
   gap: 6px;
 }
 
-/* Feed and Gold. One cream board each, outlined, so a number stays readable
-   whether it is sitting over a bright meadow or over dark ploughed soil --
-   which the old translucent pills could not do, because their contrast
-   depended on whatever the camera happened to be over. There used to be a
-   third, Bushels, when the farm had a currency of its own; a harvest pays Gold
-   directly now, so the wallet the rest of the app already shows is the whole
-   story. */
+/* Feed and Gold. One glass pill each, and the cream ink is what keeps a
+   number readable over a bright meadow or over dark ploughed soil alike --
+   the old translucent pills failed at exactly that, because they kept dark
+   ink and let their contrast depend on whatever the camera was over. There
+   used to be a third, Bushels, when the farm had a currency of its own; a
+   harvest pays Gold directly now, so the wallet the rest of the app already
+   shows is the whole story. */
 .sa-feed,
 .sa-theme .gold-balance.floor-wallet {
   display: inline-flex;
@@ -426,10 +541,12 @@
   gap: 5px;
   min-height: 38px;
   padding: 0 11px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   font-family: var(--sa-font);
   font-size: 15px;
@@ -437,11 +554,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Gold is the money, so it is the one that gets the corn fill rather than
-   paper -- the same material as the buttons that spend it. */
+/* Gold is the money, so it is the one pill carrying a tint -- the same corn
+   the keys that spend it carry, at the strength glass takes it. */
 .sa-theme .gold-balance.floor-wallet {
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
   color: var(--sa-ink);
 }
 
@@ -450,7 +566,7 @@
   height: 20px;
 }
 
-/* The Prestige Reset Valve's HUD badge -- same paper pill as .sa-feed next
+/* The Prestige Reset Valve's HUD badge -- same glass pill as .sa-feed next
    door, but a real button (it opens the valve's own sheet) rather than a
    static readout. */
 .sa-prestige-badge {
@@ -459,10 +575,12 @@
   gap: 5px;
   min-height: 38px;
   padding: 0 11px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   font-family: var(--sa-font);
   font-size: 15px;
@@ -472,8 +590,7 @@
 }
 
 .sa-prestige-badge:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+  box-shadow: var(--sa-glass-rim-press);
 }
 
 .sa-music-toggle {
@@ -483,10 +600,12 @@
   width: 38px;
   height: 38px;
   padding: 0;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   cursor: pointer;
   transition:
@@ -497,15 +616,14 @@
 /* StackAcresHudOverflow's "More" drawer -- phoneHud widths only (see
    stackacres-farm.tsx's own comment). The trigger reuses .sa-music-toggle's
    plain 38px icon square rather than inventing a second one; .is-open only
-   adds the same pressed look .sa-prestige-badge:active already uses, so the
-   button visibly stays down while its own popover is up. */
+   holds the pressed rim, so the button visibly stays down while its own
+   popover is up. */
 .sa-hud-more {
   position: relative;
 }
 
 .sa-hud-more-btn.is-open {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--sa-cream-rim), var(--sa-drop);
+  box-shadow: var(--sa-glass-rim-press);
 }
 
 .sa-hud-more-popover {
@@ -518,10 +636,12 @@
   gap: 6px;
   min-width: 200px;
   padding: 8px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
 }
 
 /* Screen-reader-only. There is no shared utility for this in the codebase --
@@ -638,14 +758,15 @@
   .sa-loading-logo { animation: none; }
 }
 
-/* ---- the pressable block ---------------------------------------------
- * The one primitive this surface is built out of. Everything here that can be
- * pressed is a block of some material: a flat top face, a thick outline, a
- * bottom face in that material's own rim tone, and a soft shadow underneath it
- * on the grass. Pressing travels the block down onto its bottom face.
+/* ---- the pressable key -----------------------------------------------
+ * The one primitive this surface is built out of. Everything here that can
+ * be pressed is a piece of the glass above: a near-nothing fill, a blur, and
+ * a one-pixel lit rim. There is no bottom face to travel down onto any more,
+ * so a press swaps the lit edge from the top to the bottom
+ * (--sa-glass-rim-press) and takes a hair off the scale instead.
  *
- * Grouped rather than repeated so the travel distance and the outline can
- * never drift between two buttons that are meant to be the same object.
+ * Grouped rather than repeated so the press and the focus ring can never
+ * drift between two buttons that are meant to be the same object.
  */
 
 .sa-theme .floor-back,
@@ -667,11 +788,11 @@
   touch-action: manipulation;
 }
 
-/* The squish. Instant (no transition on the way down -- a spring-loaded key
-   has no easing into the bottom of its travel), and the bottom face collapses
-   to nothing as the block lands on it. The scale is small on purpose: at
-   .95 a 48px key visibly changes size, which reads as the button shrinking
-   rather than as the button being pushed. */
+/* The press. Instant (no transition on the way down -- a key has no easing
+   into the bottom of its travel), and the lit edge moves to the bottom as
+   the light comes off the top of the shape. The scale is small on purpose:
+   at .95 a 48px key visibly changes size, which reads as the button
+   shrinking rather than as the button being pushed. */
 .sa-theme .floor-back:active,
 .sa-theme .htp-trigger:active,
 .sa-music-toggle:active,
@@ -685,8 +806,8 @@
 .sa-gel-token:not(:disabled):active,
 .sa-cta:not(:disabled):active,
 .sa-theme .sa-sheet-close:active {
-  transform: translateY(var(--sa-lift)) scale(.98);
-  box-shadow: 0 0 0 var(--sa-outline), 0 1px 3px rgba(52, 34, 18, .35);
+  transform: scale(.98);
+  box-shadow: var(--sa-glass-rim-press);
   transition: none;
 }
 
@@ -711,10 +832,10 @@
   outline-offset: 3px;
 }
 
-/* Unlit, not faded out. `opacity` on a block dims its outline and its bottom
-   face together, which turns a solid object into a ghost of one; this keeps
-   the object and takes the light off it, so a disabled Seed button still
-   reads as a button you cannot afford rather than as a rendering artefact.
+/* Unlit, not faded out. `opacity` on a key dims its rim along with its fill,
+   which turns a pane of glass into a ghost of one; this keeps the object and
+   takes the light off it, so a disabled Seed button still reads as a button
+   you cannot afford rather than as a rendering artefact.
    Every disabled button on this surface still carries a `title` saying why
    (see district-panel.ts's `seedReason`). */
 .sa-unit-action:disabled,
@@ -765,16 +886,21 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
 }
 
+/* Held: the corn tint, the same "this one is active" every selected surface
+   on the farm wears now. A solid corn fill here was the loudest thing on the
+   map and the first thing to give the old block grammar away. */
 .sa-ground-tool.is-held {
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
 }
 
 /* ---- the hint and the toast ------------------------------------------ */
@@ -790,9 +916,12 @@
   max-width: min(30%, 380px);
   margin: 0;
   padding: 6px 16px;
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: rgba(52, 34, 18, .62);
-  backdrop-filter: blur(6px);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-cream);
   font-size: 14px;
   font-weight: 700;
@@ -803,9 +932,9 @@
 
 .sa-tool-hint.is-busy { color: var(--sa-corn); }
 
-/* What you just collected, thrown up over the middle of the map. Corn on
-   chocolate, the loudest pairing on the surface, spent on the one moment the
-   farm actually pays you. */
+/* What you just collected, thrown up over the middle of the map. Glass with
+   the corn tint and corn-lit lettering: the one moment the farm actually pays
+   you still gets the loudest reading the material allows. */
 .sa-toast {
   position: absolute;
   top: calc(var(--sa-header-h) + 14px);
@@ -814,11 +943,13 @@
   transform: translateX(-50%);
   margin: 0;
   padding: 8px 20px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-corn-rim), var(--sa-drop-lg);
-  color: var(--sa-ink);
+  background: var(--sa-tint-corn);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop-lg);
+  color: var(--sa-lit-corn);
   font-size: 19px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -850,17 +981,19 @@
 .sa-side > * { pointer-events: auto; }
 
 /* The shared error line is a translucent violet wash, tuned for a dark page.
-   Over bright grass it turns to mud and the words go with it; here it is a
-   board like everything else, in the roof red the world already uses for a
+   Over bright grass it turns to mud and the words go with it; here it is the
+   farm's own glass, tinted with the roof red the world already uses for a
    painted barn. */
 .sa-theme .duel-error {
   margin: 0;
   padding: 9px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-roof);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-roof-rim), var(--sa-drop);
-  color: var(--sa-cream);
+  background: var(--sa-tint-roof);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop);
+  color: var(--sa-lit-roof);
   font-size: 14px;
   font-weight: 700;
   text-wrap: pretty;
@@ -910,9 +1043,9 @@
   cursor: default;
 }
 
-/* The spot that was tapped: corn inside the same chocolate outline every
-   block on this screen carries, so it reads as the ring's own anchor rather
-   than as a stray dot on the grass. */
+/* The spot that was tapped: corn inside the chocolate outline the map's own
+   pins still carry (see --sa-outline), so it reads as a mark ON the world
+   rather than as another piece of glass floating over it. */
 .sa-radial-pin {
   position: absolute;
   left: -7px;
@@ -941,10 +1074,12 @@
   width: 82px;
   min-height: var(--sa-tap);
   padding: 7px 5px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   cursor: pointer;
   /* `backwards`, not `both`: a filled-forwards animation keeps owning
@@ -968,7 +1103,7 @@
   text-align: center;
 }
 
-/* The price, carrying the same Bushels badge the HUD purse and the buy rows
+/* The price, carrying the same Gold badge the HUD purse and the buy rows
    use, so a number on this screen is never a bare number. */
 .sa-radial-cost {
   display: inline-flex;
@@ -976,7 +1111,7 @@
   gap: 3px;
   font-size: 12.5px;
   font-weight: 800;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-radial-cost .sa-ico { width: 13px; height: 13px; }
@@ -993,7 +1128,8 @@
 }
 
 .sa-pipe-aim-btn.is-held {
-  background: var(--sa-corn);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
 }
 
 .sa-pipe-aim-glyph {
@@ -1003,8 +1139,8 @@
 }
 
 /* The way through to the drawer, under the ring rather than on it: it is not
-   another thing to plant, it is the way out of planting. Wood, because it
-   opens the same door the peg on the right edge does. */
+   another thing to plant, it is the way out of planting. The quiet fill, so
+   it sits back from the ring's own options. */
 .sa-radial-more {
   position: absolute;
   left: 0;
@@ -1012,11 +1148,13 @@
   translate: -50% 0;
   min-height: 34px;
   padding: 4px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-ink);
   font-size: 12.5px;
   font-weight: 800;
   white-space: nowrap;
@@ -1135,8 +1273,12 @@
   position: absolute;
   transform: translateX(-50%);
   padding: 3px 10px;
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: rgba(52, 34, 18, .74);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-cream);
   font-family: var(--sa-font);
   font-size: 11.5px;
@@ -1261,7 +1403,7 @@
   font-weight: 700;
   line-height: 1;
   color: var(--sa-ink);
-  text-shadow: 0 1px 1px rgba(255, 255, 255, .5);
+  text-shadow: 0 1px 2px rgba(20, 15, 10, .6);
   cursor: pointer;
   opacity: .65;
 }
@@ -1282,38 +1424,34 @@
   font-size: 13px;
   color: var(--sa-ink);
   /* Only text left floating with no shell behind it now that `.sa-gel-row`
-     carries no fill -- a soft light halo keeps it legible over whatever the
-     map is showing underneath, same trick `.sa-gel-close` already uses. */
-  text-shadow: 0 1px 2px rgba(255, 255, 255, .7), 0 1px 1px rgba(255, 255, 255, .7);
+     carries no fill -- a soft dark halo keeps cream lettering legible over
+     whatever the map is showing underneath, same trick `.sa-gel-close`
+     already uses. */
+  text-shadow: 0 1px 3px rgba(20, 15, 10, .75), 0 1px 1px rgba(20, 15, 10, .6);
 }
 
 .sa-gel-empty p { margin: 0; }
 
-/* One token: its own drop of glass, pooled into a small capsule -- a real
-   translucent fill under the blur, not just the blur on its own, the same
-   formula `.sa-drag-token` (the water can / feed scoop's floating token)
-   uses further down this file, plus a real thin border, since a small
-   capsule packed edge-to-edge against its neighbours in the scroll strip
-   needs that line to read as its own separate piece. `.sa-gel-row` used to
-   carry this same glass as a bigger shell behind the whole strip, which
-   just doubled up the material -- every token sitting inside a second,
-   bigger pane of identical glass read as gel-on-gel rather than a set of
-   separate bubbles floating over the map, so the row's own fill/blur/shadow
-   were dropped and this is the one surface that carries the look now.
-   `.sa-gel-token` still joins the shared pressable-block family further up
-   this file for its font, tap highlight and focus ring, but every rule that
-   used to draw it as a flat outlined block is overridden below -- glass
-   reads as a material in its own right, not a paper block that happens to
-   be see-through.
+/* One token: a small capsule of the same glass every panel and key on this
+   surface is cut from, plus a real thin border, since a capsule packed
+   edge-to-edge against its neighbours in the scroll strip needs that line to
+   read as its own separate piece. `.sa-gel-row` used to carry the material
+   as a bigger shell behind the whole strip, which just doubled it up --
+   every token sitting inside a second, bigger pane of identical glass read
+   as gel-on-gel rather than a set of separate bubbles floating over the map,
+   so the row's own fill/blur/shadow were dropped and this is the one surface
+   that carries the look now.
 
-   Blur is capped at 16px, lighter than `.sa-drag-token`'s, on purpose: up to
-   VISIBLE_TOKENS-and-then-some tokens can be mounted at once in
-   `.sa-gel-scroll` (the Long Meadow alone holds 22 crops -- only 3 are ever
-   clipped into view, but the rest still sit in the DOM off to the side,
-   each carrying its own `backdrop-filter`), and stacking a heavy blur
-   across that many composited layers is a real scroll-jank risk on mobile
-   Safari, which is where this dock actually lives. 16px still reads as
-   heavy glass without paying for every off-screen token at a heavier cost.
+   This used to be its own formula: a soft highlight gradient under a 16px
+   blur, worked out before the store's rebuild and never reconciled with it.
+   It is the shared material now -- same fill, same 3px blur, same one-pixel
+   lit rim -- which also happens to be the cheaper end of the trade this
+   dock cares about most: up to VISIBLE_TOKENS-and-then-some tokens are
+   mounted at once in `.sa-gel-scroll` (the Long Meadow alone holds 22 crops;
+   only 3 are ever clipped into view, but the rest still sit in the DOM off
+   to the side, each carrying its own `backdrop-filter`), and a heavy blur
+   stacked across that many composited layers is a real scroll-jank risk on
+   mobile Safari, which is where this dock actually lives.
 
    `.is-lifted` just hides this in-row instance in place while its drag is
    live -- the actual floating token is a separate `.sa-gel-token-live`
@@ -1324,19 +1462,7 @@
    which is what made a drag out of this dock read as trapped in place
    instead of flying out to the circle the way the water can / feed scoop
    do). Keeping this instance mounted (rather than unmounting it) preserves
-   the row's layout and scroll position for the rest of the drag.
-
-   SMOKED, not clear-and-white, for the same reason `.sa-store-card` further
-   down this file flipped the same way: a pale, clear fill with the farm's
-   usual dark ink read fine in isolation, but a token sits over whatever the
-   map happens to show underneath -- light grass, sand, cobble, a barn wall
-   -- and dark-on-pale-glass has no backdrop it can count on for contrast.
-   Tinting the fill dark and flipping `--sa-ink`/`--sa-ink-soft` to cream
-   (below) fixes that for every backdrop at once instead of chasing a
-   text-shadow per case, and it's still the same glass: same highlight
-   glint, same blur, same lit rim, just tuned the other way. Scoped to this
-   class rather than touching the shared tokens at the top of the file, so
-   nothing outside the gel dock's own capsules is affected. */
+   the row's layout and scroll position for the rest of the drag. */
 .sa-gel-token {
   position: relative;
   flex: 0 0 auto;
@@ -1350,23 +1476,12 @@
   gap: 1px;
   padding: 7px 5px;
   overflow: hidden;
-  border: 1.5px solid rgba(255, 255, 255, .55);
+  border: 1px solid var(--sa-glass-line);
   border-radius: 20px;
-  background:
-    radial-gradient(90% 70% at 30% 14%, rgba(255, 255, 255, .32) 0%, rgba(255, 255, 255, .1) 40%, rgba(255, 255, 255, 0) 60%),
-    rgba(20, 15, 10, .44);
-  -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  backdrop-filter: blur(16px) saturate(1.7);
-  box-shadow:
-    inset 0 -5px 10px rgba(0, 0, 0, .22),
-    inset 0 1.5px 3px rgba(255, 255, 255, .6),
-    0 4px 10px rgba(14, 14, 22, .3);
-  /* Flipped for this capsule and its descendants only -- see the header
-     comment above. `.sa-gel-name` (no color of its own) inherits `--sa-ink`
-     straight from here; `.sa-gel-cost`/`.sa-gel-qty` below read
-     `--sa-ink-soft` explicitly, same as the store's own cost badges do. */
-  --sa-ink: #f7f1e6;
-  --sa-ink-soft: rgba(247, 241, 230, .82);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   cursor: grab;
   /* Horizontal panning stays native (the row scrolls under a thumb same as
@@ -1386,10 +1501,7 @@
 
 .sa-gel-token:not(:disabled):active {
   transform: scale(.92, 1.06);
-  box-shadow:
-    inset 0 -3px 8px rgba(18, 22, 32, .22),
-    inset 0 1.5px 3px rgba(255, 255, 255, .85),
-    0 2px 6px rgba(14, 14, 22, .26);
+  box-shadow: var(--sa-glass-rim-press);
   transition: none;
 }
 
@@ -1427,10 +1539,9 @@
      this property at the same specificity (declared later in the file), so
      the spring-back keeps its own slower, bouncier timing. */
   transition: left 90ms var(--sa-ease-out), top 90ms var(--sa-ease-out);
-  box-shadow:
-    inset 0 -5px 10px rgba(18, 22, 32, .16),
-    inset 0 1.5px 3px rgba(255, 255, 255, .85),
-    0 16px 28px rgba(14, 14, 22, .32);
+  /* Picked up, so the lit rim goes to its brightest and the shadow under it
+     grows -- the token is further off the field than it was in the row. */
+  box-shadow: var(--sa-glass-rim-lit), 0 16px 28px rgba(14, 14, 22, .32);
 }
 
 .sa-gel-token-live.is-hot {
@@ -1539,10 +1650,12 @@
   top: -18px;
   width: 240px;
   padding: 12px 14px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
   pointer-events: auto;
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
@@ -1585,7 +1698,7 @@
 .sa-monk-dialogue-progress {
   margin: 0 0 8px;
   font-size: 12px;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-monk-dialogue-relics-held {
@@ -1604,8 +1717,10 @@
 .sa-monk-dialogue-no {
   flex: 1;
   min-height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
@@ -1615,15 +1730,15 @@
 }
 
 .sa-monk-dialogue-yes {
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
   color: var(--sa-ink);
 }
 
 .sa-monk-dialogue-no {
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
 }
 
 .sa-monk-dialogue-yes:hover:not(:disabled),
@@ -1663,10 +1778,12 @@
   top: -18px;
   width: 220px;
   padding: 12px 14px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
   pointer-events: auto;
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
@@ -1697,7 +1814,7 @@
 .sa-fence-upgrade-durability {
   margin: 0 0 10px;
   font-size: 12px;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-fence-upgrade-actions {
@@ -1709,8 +1826,10 @@
 .sa-fence-upgrade-no {
   flex: 1;
   min-height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
@@ -1720,15 +1839,15 @@
 }
 
 .sa-fence-upgrade-yes {
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
   color: var(--sa-ink);
 }
 
 .sa-fence-upgrade-no {
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
 }
 
 .sa-fence-upgrade-yes:hover:not(:disabled),
@@ -1767,10 +1886,12 @@
   top: -18px;
   width: 260px;
   padding: 12px 14px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
   pointer-events: auto;
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
@@ -1822,9 +1943,10 @@
   gap: 8px;
   min-height: var(--sa-tap);
   padding: 4px 8px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-cream, #fff7e6);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   cursor: pointer;
   transition:
     transform var(--duration-fast) var(--sa-ease-out),
@@ -1846,8 +1968,8 @@
   font-weight: 800;
 }
 
-.sa-gift-dialogue-item-pref.is-loved { color: var(--sa-berry, #c0435a); }
-.sa-gift-dialogue-item-pref.is-liked { color: var(--sa-choc); }
+.sa-gift-dialogue-item-pref.is-loved { color: #ff9aae; }
+.sa-gift-dialogue-item-pref.is-liked { color: var(--sa-ink-soft); }
 
 .sa-gift-dialogue-keepsake {
   margin: 0 0 8px;
@@ -1858,7 +1980,7 @@
 .sa-gift-dialogue-progress {
   margin: 0 0 8px;
   font-size: 12px;
-  color: var(--sa-choc);
+  color: var(--sa-ink-soft);
 }
 
 .sa-gift-dialogue-keepsakes-held {
@@ -1876,14 +1998,16 @@
 .sa-gift-dialogue-no {
   flex: 1;
   min-height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
   transition:
     transform var(--duration-fast) var(--sa-ease-out),
     box-shadow var(--duration-fast) var(--sa-ease-out);
@@ -1926,10 +2050,12 @@
   top: -18px;
   width: 250px;
   padding: 12px 14px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
   pointer-events: auto;
   animation: sa-radial-in 160ms var(--sa-bounce) backwards;
@@ -1987,8 +2113,10 @@
 .sa-story-dialogue-no {
   flex: 1;
   min-height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
@@ -1998,15 +2126,15 @@
 }
 
 .sa-story-dialogue-yes {
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
   color: var(--sa-ink);
 }
 
 .sa-story-dialogue-no {
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
 }
 
 .sa-story-dialogue-yes:hover:not(:disabled),
@@ -2036,10 +2164,12 @@
   z-index: 3;
   width: min(320px, 46%);
   padding: 0 0 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   overflow-y: auto;
   overscroll-behavior: contain;
   pointer-events: auto;
@@ -2079,10 +2209,12 @@
   gap: 8px;
   min-height: var(--sa-tap);
   padding: 9px 20px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop);
   color: var(--sa-ink);
   font-size: 15.5px;
   font-weight: 800;
@@ -2093,19 +2225,21 @@
     box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
-/* The squish above sets its own transform, which would drop the -50% centring
+/* The press above sets its own transform, which would drop the -50% centring
    and throw the key to the right. Restated with the translate kept. */
 .sa-harvest-all:not(:disabled):active {
-  transform: translateX(-50%) translateY(var(--sa-lift)) scale(.98);
+  transform: translateX(-50%) scale(.98);
 }
 
 .sa-harvest-all .sa-ico { width: 22px; height: 22px; }
 
-/* The drawer's own header band, in the ground colour of the district it is
-   describing -- the same four values the signpost swatches use, so the board
-   you tapped and the drawer that opened are visibly the same place. Sticky,
-   because the drawer scrolls and the close button has to stay reachable at the
-   bottom of a long buy list. */
+/* The drawer's own header band, carrying the ground colour of the district it
+   is describing -- the same values the signpost swatches use, so the board you
+   tapped and the drawer that opened are visibly the same place. The colour is
+   mixed INTO the glass rather than painted over it: a solid band is the one
+   thing that would make the top of this drawer read as a different material
+   from the rest of it. Sticky, because the drawer scrolls and the close button
+   has to stay reachable at the bottom of a long buy list. */
 .sa-panel-head {
   position: sticky;
   top: 0;
@@ -2115,25 +2249,26 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 8px 12px;
-  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
-  background: var(--sa-wood);
+  border-bottom: 1px solid var(--sa-glass-line-soft);
+  border-radius: calc(var(--sa-r-panel) - 1px) calc(var(--sa-r-panel) - 1px) 0 0;
+  /* The zone's colour rides ON the head's own fill rather than replacing it
+     (`--sa-zone-wash`, set per district below): a wash on its own is 26%
+     of a colour and nothing else, which let every row scrolling under the
+     head be read straight through it. */
+  background: linear-gradient(var(--sa-zone-wash, transparent), var(--sa-zone-wash, transparent)), var(--sa-glass-fill-head);
+  -webkit-backdrop-filter: var(--sa-glass-blur-head);
+  backdrop-filter: var(--sa-glass-blur-head);
 }
 
-.sa-district-panel[data-zone="farmstead"] .sa-panel-head { background: var(--sa-zone-farmstead); }
-.sa-district-panel[data-zone="henhaven"] .sa-panel-head { background: var(--sa-zone-henhaven); }
-.sa-district-panel[data-zone="meadow"] .sa-panel-head { background: var(--sa-zone-meadow); }
-.sa-district-panel[data-zone="oxfields"] .sa-panel-head { background: var(--sa-zone-oxfields); }
-.sa-district-panel[data-zone="wallow"] .sa-panel-head { background: var(--sa-zone-wallow); }
-.sa-district-panel[data-zone="townsquare"] .sa-panel-head { background: var(--sa-zone-townsquare); }
-.sa-district-panel[data-zone="mine"] .sa-panel-head { background: var(--sa-zone-mine); }
-.sa-district-panel[data-zone="coast"] .sa-panel-head { background: var(--sa-zone-coast); }
-.sa-district-panel[data-zone="oak"] .sa-panel-head { background: var(--sa-zone-oak); }
-
-/* Ox Fields and the Wallow are dark ploughed ground; their band needs cream
-   lettering where the two green districts need chocolate. */
-.sa-district-panel[data-zone="oxfields"] .sa-ray-name,
-.sa-district-panel[data-zone="wallow"] .sa-ray-name { color: var(--sa-cream); }
+.sa-district-panel[data-zone="farmstead"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-farmstead) 26%, transparent); }
+.sa-district-panel[data-zone="henhaven"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-henhaven) 26%, transparent); }
+.sa-district-panel[data-zone="meadow"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-meadow) 26%, transparent); }
+.sa-district-panel[data-zone="oxfields"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-oxfields) 26%, transparent); }
+.sa-district-panel[data-zone="wallow"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-wallow) 26%, transparent); }
+.sa-district-panel[data-zone="townsquare"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-townsquare) 26%, transparent); }
+.sa-district-panel[data-zone="mine"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-mine) 26%, transparent); }
+.sa-district-panel[data-zone="coast"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-coast) 26%, transparent); }
+.sa-district-panel[data-zone="oak"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-oak) 26%, transparent); }
 
 .sa-panel-close {
   display: flex;
@@ -2143,10 +2278,12 @@
   height: var(--sa-tap);
   min-height: 0;
   flex: none;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
   cursor: pointer;
   transition:
@@ -2186,8 +2323,9 @@
 .sa-panel-section {
   margin: 12px 14px 0;
   padding-top: 12px;
-  /* A divider between two shelves, drawn in the board's own darker tone. */
-  border-top: 2px solid var(--sa-cream-rim);
+  /* A divider between two shelves: the same hairline the panel is edged
+     with, never an outline around one. */
+  border-top: 1px solid var(--sa-glass-line-soft);
 }
 
 .sa-panel-section:first-of-type {
@@ -2215,9 +2353,10 @@
   gap: 8px;
 }
 
-/* Not a block: a row is a slat in the board, not something to press. It is
-   recessed rather than raised (inset shadow, no bottom face) so the one thing
-   in it that IS pressable -- its action -- is the only thing standing up. */
+/* Not a key: a row is a division OF the panel, not an object sitting on it.
+   It takes the quiet fill and a single lit line along its top, so the one
+   thing in it that IS pressable -- its action -- is the only thing standing
+   up. */
 .sa-unit-row {
   display: grid;
   grid-template-columns: 34px 1fr auto;
@@ -2225,15 +2364,15 @@
   gap: 9px;
   padding: 7px 9px;
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 /* Ripe. The row itself lights up, so a district with something to collect
    reads from the doorway rather than needing the state line to be read. */
 .sa-unit-row[data-state="ready"] {
-  background: color-mix(in srgb, var(--sa-corn) 42%, var(--sa-paper));
-  box-shadow: inset 0 0 0 2px var(--sa-corn-side);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-unit-icon { display: flex; }
@@ -2261,20 +2400,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* State colours are the world's own, darkened to the `rim` step where they
-   have to carry small text on a cream board -- the carrot and corn `top`
-   tones are the right hue for a sprite in sunlight and nowhere near
-   readable at 12.5px on paper. */
-.sa-unit-state[data-state="ready"] { color: var(--sa-corn-rim); }
-.sa-unit-state[data-state="hungry"] { color: var(--sa-carrot-rim); }
-.sa-unit-state[data-state="dry"] { color: var(--sa-water-rim); }
-.sa-unit-state[data-state="mucked"] { color: var(--sa-choc); }
+/* State colours are the world's own, lifted to the step that reads as light
+   ink on glass -- the `rim` tones these used to carry were picked to sit on a
+   cream board and go invisible on a dark pane. */
+.sa-unit-state[data-state="ready"] { color: var(--sa-lit-corn); }
+.sa-unit-state[data-state="hungry"] { color: var(--sa-lit-carrot); }
+.sa-unit-state[data-state="dry"] { color: var(--sa-lit-water); }
+.sa-unit-state[data-state="mucked"] { color: var(--sa-ink-soft); }
 
 .sa-unit-action {
   min-height: 38px;
   padding: 6px 13px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
@@ -2284,16 +2427,18 @@
     box-shadow var(--duration-fast) var(--sa-ease-out);
 }
 
+/* A tint does the telling now, not four solid fills: same glass, same lit
+   rim, a different hue mixed into it and carried by the lettering. */
 .sa-unit-action.is-primary {
-  background: var(--sa-corn);
-  box-shadow: 0 4px 0 var(--sa-corn-rim), var(--sa-drop);
-  color: var(--sa-ink);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-corn);
 }
 
 .sa-unit-action.is-warn {
-  background: var(--sa-carrot);
-  box-shadow: 0 4px 0 var(--sa-carrot-rim), var(--sa-drop);
-  color: var(--sa-ink);
+  background: var(--sa-tint-carrot);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-carrot);
 }
 
 /* Watering: the same shape as Feed, in the pond's blue rather than the
@@ -2301,24 +2446,24 @@
    and a player should be able to tell at a glance which one a row is asking
    for. */
 .sa-unit-action.is-water {
-  background: var(--sa-water);
-  box-shadow: 0 4px 0 var(--sa-water-rim), var(--sa-drop);
-  color: var(--sa-ink);
+  background: var(--sa-tint-water);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-water);
 }
 
 /* Destructive-adjacent (clear a mucked unit, confirm a retire): one warning
    colour in the system, the roof red the barn is painted in. */
 .sa-unit-action.is-bad {
-  background: var(--sa-roof);
-  box-shadow: 0 4px 0 var(--sa-roof-rim), var(--sa-drop);
-  color: var(--sa-cream);
+  background: var(--sa-tint-roof);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-roof);
 }
 
 /* Retiring is not an action anyone came here to take, so its key is unpainted
    board rather than a colour competing with Collect two rows above. */
 .sa-unit-action.is-ghost {
-  background: var(--sa-cream-side);
-  box-shadow: 0 4px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink-soft);
 }
 
@@ -2361,7 +2506,7 @@
 
 .sa-buy-kind + .sa-buy-kind {
   padding-top: 12px;
-  border-top: 2px solid var(--sa-cream-rim);
+  border-top: 1px solid var(--sa-glass-line-soft);
 }
 
 .sa-buy-head {
@@ -2387,8 +2532,9 @@
    board, not a sentence. */
 .sa-buy-cap {
   padding: 2px 9px;
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink-soft);
   font-size: 12.5px;
   font-weight: 800;
@@ -2410,10 +2556,10 @@
   min-width: 132px;
   min-height: var(--sa-tap);
   padding: 7px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-cream-side);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   cursor: pointer;
   text-align: left;
   transition:
@@ -2435,28 +2581,21 @@
   color: var(--sa-ink-soft);
 }
 
-/* Both prices are Gold now, so material tells apart what you GET rather than
-   what you pay with: corn and leaf for the permanent purchases -- the animal
-   itself, and the room to keep it -- against plain board for seeding a single
-   cycle, which is spent and gone with its own harvest. */
+/* Both prices are Gold now, so what separates these is what you GET rather
+   than what you pay with: the two committal purchases -- the animal itself,
+   and the room to keep it -- get the lit rim, against the quiet fill for
+   seeding a single cycle, which is spent and gone with its own harvest. Their
+   price colour is what tells those two apart, not two different fills. */
 .sa-buy-btn.is-gold,
 .sa-buy-btn.is-expand {
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-lit);
 }
 
-.sa-buy-btn.is-gold .sa-buy-price,
-.sa-buy-btn.is-expand .sa-buy-price { color: var(--sa-corn-rim); }
-
-/* Expanding is buying room rather than buying an animal, so it is the same
-   corn material with the leaf stripe of a thing that grows. */
-.sa-buy-btn.is-expand {
-  background: var(--sa-leaf);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-leaf-rim), var(--sa-drop);
-}
+.sa-buy-btn.is-gold .sa-buy-price { color: var(--sa-lit-corn); }
 
 .sa-buy-btn.is-expand .sa-buy-label { color: var(--sa-ink); }
-.sa-buy-btn.is-expand .sa-buy-price { color: var(--sa-leaf-rim); }
+.sa-buy-btn.is-expand .sa-buy-price { color: var(--sa-lit-leaf); }
 
 /* ---- the store sheet -------------------------------------------------- */
 
@@ -2478,17 +2617,23 @@
 }
 
 /* Ray's counter, slid up from the bottom edge with the same overshoot the
-   drawer opens on. */
+   drawer opens on -- and the shell most of the farm's panels are actually
+   made of: Town Contracts, the Workshop, the Fermenting Vat, Blueprints, the
+   Sunlight Forge, the Crossbreeding Bed, the Midnight Merchant, the Prestige
+   valve, both clearing sheets and the Synergy tree all render into it. One
+   rule here is what keeps them one material. */
 .sa-sheet {
   width: min(100%, 560px);
   max-height: 84dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 16px calc(18px + env(safe-area-inset-bottom));
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   animation: sa-sheet-up 380ms var(--sa-bounce) both;
 }
 
@@ -2497,9 +2642,12 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Sticky and wooden: the shopfront sign stays put while the shelves scroll
-   under it, which is also what keeps Done reachable from the bottom of a long
-   barn list. */
+/* Sticky: the sign stays put while the shelves scroll under it, which is also
+   what keeps Done reachable from the bottom of a long barn list. It carries
+   the quiet fill rather than nothing at all, since content has to pass behind
+   it, but no second border of its own -- the divider is the same hairline the
+   rest of the panel uses, so the head reads as the top of one sheet rather
+   than a separate bar sitting on it. */
 .sa-sheet-head {
   position: sticky;
   top: 0;
@@ -2510,9 +2658,11 @@
   gap: 10px;
   margin: 0 -16px 4px;
   padding: 10px 16px;
-  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
-  background: var(--sa-wood);
+  border-bottom: 1px solid var(--sa-glass-line-soft);
+  border-radius: calc(var(--sa-r-panel) - 1px) calc(var(--sa-r-panel) - 1px) 0 0;
+  background: var(--sa-glass-fill-head);
+  -webkit-backdrop-filter: var(--sa-glass-blur-head);
+  backdrop-filter: var(--sa-glass-blur-head);
 }
 
 .sa-sheet-head h2 {
@@ -2526,10 +2676,12 @@
 .sa-theme .sa-sheet-close {
   min-height: var(--sa-tap);
   padding: 6px 18px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 var(--sa-lift) 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
   font-size: 15px;
   font-weight: 800;
@@ -2591,44 +2743,10 @@
    (`.sa-store-close`, `.sa-store-tab`) needs `position: relative;
    overflow: hidden` so the ring is clipped to the shape it splashed on
    rather than spilling past its edges. */
+/* The glass this panel introduced is declared at the top of the file now and
+   every other surface on the farm is cut from it too, so all that is left
+   here is the store's own shape. */
 .sa-store-card {
-  /* Declared here so every surface in the store -- head, tabs, close key,
-     stock rows, the Buy keys -- is cut from one material.
-
-     SMOKED, not clear-and-white. Clear glass with the farm's usual dark
-     ink was tried first and failed on the real scene: brown text over
-     grass, cobble and a barn roof has no consistent ground to sit on, and
-     every fix that keeps dark ink means putting a pale fill back, which is
-     the milky look this whole pass exists to avoid. So the fill goes dark
-     instead of light and the ink flips to cream. The material is unchanged
-     -- same near-nothing fill, same 3px blur, same one-pixel lit rim -- it
-     is just tinted the other way, which is what a glass panel over a bright
-     outdoor scene actually looks like. */
-  --sa-glass-fill: rgba(20, 15, 10, .34);
-  --sa-glass-fill-ctl: rgba(255, 255, 255, .07);
-  --sa-glass-fill-quiet: rgba(20, 15, 10, .16);
-
-  /* Flipped for descendants only. Every rule in the store already paints
-     from these two, so the whole panel turns over at once and nothing
-     outside `.sa-store-card` is touched. */
-  --sa-ink: #f7f1e6;
-  --sa-ink-soft: rgba(247, 241, 230, .78);
-  --sa-glass-line: rgba(255, 255, 255, .2);
-  --sa-glass-line-soft: rgba(255, 255, 255, .12);
-  --sa-glass-rim:
-    inset 0 1px 0 rgba(255, 255, 255, .42),
-    inset 0 -1px 0 rgba(255, 255, 255, .08),
-    inset 1px 0 0 rgba(255, 255, 255, .12),
-    inset -1px 0 0 rgba(255, 255, 255, .12);
-  --sa-glass-rim-sm:
-    inset 0 1px 0 rgba(255, 255, 255, .4),
-    inset 0 -1px 0 rgba(255, 255, 255, .1),
-    inset 1px 0 0 rgba(255, 255, 255, .12),
-    inset -1px 0 0 rgba(255, 255, 255, .12);
-  --sa-glass-rim-press:
-    inset 0 2px 3px rgba(20, 20, 24, .18),
-    inset 0 -1px 0 rgba(255, 255, 255, .18);
-
   display: flex;
   flex-direction: column;
   /* Sized for the only shape this game is ever played in: a phone on its
@@ -2643,8 +2761,8 @@
   border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
   background: var(--sa-glass-fill);
-  -webkit-backdrop-filter: blur(3px) saturate(1.08);
-  backdrop-filter: blur(3px) saturate(1.08);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
   box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   overflow: hidden;
   animation: sa-sheet-up 380ms var(--sa-bounce) both;
@@ -2705,8 +2823,8 @@
   border: 1px solid var(--sa-glass-line);
   border-radius: 12px;
   background: var(--sa-glass-fill-ctl);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
-  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), 0 5px 14px -10px rgba(20, 20, 24, .3);
   color: var(--sa-ink);
   cursor: pointer;
@@ -2770,8 +2888,8 @@
 .sa-store-tab-active {
   border-color: var(--sa-glass-line);
   background: var(--sa-glass-fill-ctl);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
-  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), 0 5px 14px -10px rgba(20, 20, 24, .3);
   color: var(--sa-ink);
 }
@@ -2856,10 +2974,10 @@
   width: 38px;
   height: 38px;
   flex: none;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
 }
 
 .sa-shelf-badge .sa-ico { width: 22px; height: 22px; }
@@ -2877,17 +2995,21 @@
 
 /* ---- the primary key -------------------------------------------------- */
 
-/* The one full-width action a screen or a sheet section is actually for:
-   Buy this feed, Exchange these Bushels, Thanks Ray. Corn, the loudest
-   material, on the tallest travel in the system. */
+/* The one full-width action a screen or a sheet section is actually for: Buy
+   this feed, Sell this haul, Thanks Ray. The brightest rim in the system and
+   nothing else -- weight comes from the lit edge, never from a fuller fill.
+   The moment this goes back to a solid pill the panel it sits in reads as a
+   paper form again. */
 .sa-cta {
   margin-top: 10px;
   min-height: 52px;
   padding: 10px 22px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-lit);
   border-radius: var(--sa-r-block);
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-lit);
   color: var(--sa-ink);
   font-size: 16px;
   font-weight: 800;
@@ -2913,11 +3035,12 @@
 .sa-stock-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 12px 14px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-stock-card h3 { margin: 0; font-size: 17px; font-weight: 800; color: var(--sa-ink); }
@@ -2991,102 +3114,26 @@
   color: var(--sa-ink-soft);
 }
 
-/* ---- the same glass, inside the store only --------------------------- */
+/* ---- the store's own shape ------------------------------------------- */
 
-/* Everything below is scoped to `.sa-store-card` on purpose: cream paper
-   cards and corn CTAs are still the material everywhere else in StackAcres
-   (the Vat, the Forge, Blueprints, Town Contracts, every drawer), and this
-   is not a rewrite of that system. Inside the store, though, opaque cream
-   rows sitting in a near-invisible shell would read as paper floating on
-   the farm with a frame you can barely see -- so the rows become divisions
-   of the same sheet: a faint hairline, a whisper of fill, no drop shadow.
-   They come after `.sa-stock-card`/`.sa-cta` in the file and carry an extra
-   class, so they win on both counts.
+/* The material used to be scoped to `.sa-store-card` here, because cream
+   paper cards and corn CTAs were still the rest of the farm. They are not
+   any more -- every rule above paints from the same glass -- so all that is
+   left in this section is the store's own sizing and type, which is tighter
+   than the sheets' since it fits four cards across a landscape phone.
 
-   This covers every surface the shelves actually render, not just the seed
-   grid: the equipment rack (Tools), and `StackAcresBuySection`/
-   `StackAcresUnitRows` (Livestock), which are the exact same components the
-   districts' own drawers use, reused here unmodified apart from this
-   scoping. Missing any one of them is how the Drone card, the Bulk
-   Shipment row, the Trowel rack and the Livestock buy buttons each ended
-   up as an opaque cream block sitting in the glass -- same bug, four
-   places, because each is a component this pass never touched, not one
-   that was styled and got it wrong. */
-.sa-store-card .sa-tool-rack {
-  border: 1px solid var(--sa-glass-line-soft);
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-.sa-store-card .sa-panel-section {
-  border-top-color: var(--sa-glass-line-soft);
-}
-
-.sa-store-card .sa-buy-kind + .sa-buy-kind {
-  border-top-color: var(--sa-glass-line-soft);
-}
-
-.sa-store-card .sa-buy-cap {
-  border: 1px solid var(--sa-glass-line-soft);
-  background: var(--sa-glass-fill-quiet);
-}
-
-.sa-store-card .sa-unit-row {
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-/* Seed one cycle: a quiet row, same weight as a stock card. */
-.sa-store-card .sa-buy-btn {
-  border: 1px solid var(--sa-glass-line-soft);
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-/* Buy outright / Expand capacity: the committal purchases, so they get the
-   same brighter glass the primary Buy key uses elsewhere on this shelf --
-   not the district drawer's solid corn and leaf, which is exactly the
-   milky-white-pill problem this whole pass exists to undo. The two stay
-   told apart by their label and price colour, not by two different fills. */
-.sa-store-card .sa-buy-btn.is-gold,
-.sa-store-card .sa-buy-btn.is-expand {
-  border: 1px solid rgba(255, 255, 255, .3);
-  background: rgba(255, 255, 255, .07);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .6),
-    inset 0 -1px 0 rgba(255, 255, 255, .12),
-    inset 1px 0 0 rgba(255, 255, 255, .16),
-    inset -1px 0 0 rgba(255, 255, 255, .16),
-    0 6px 16px -10px rgba(20, 20, 24, .3);
-}
-
-.sa-store-card .sa-buy-btn.is-gold .sa-buy-price {
-  color: #ffd88a;
-}
-
-.sa-store-card .sa-buy-btn.is-expand .sa-buy-label {
-  color: var(--sa-ink);
-}
-
-.sa-store-card .sa-buy-btn.is-expand .sa-buy-price {
-  color: #b9eec4;
-}
+   The grid-blowout gotcha, kept because it is easy to undo by accident: a
+   grid item's default `min-width` is `auto`, which floors it at its own
+   content's min-content width, not at the track's `minmax(172px, 1fr)`
+   share. Broccoli's "20x 1,100" button is wider than 172px of min-content,
+   so without `min-width: 0` the card refuses to shrink to its column and
+   drags the whole grid past the panel's edge. Every flex/grid parent between
+   the card and the actual text needs its own, or the floor just moves down a
+   level instead of going away. */
 .sa-store-card .sa-stock-card {
-  /* The grid-blowout gotcha: a grid item's default `min-width` is `auto`,
-     which floors it at its own content's min-content width, not at the
-     track's `minmax(172px, 1fr)` share. Broccoli's "20x 1,100" button is
-     wider than 172px of min-content, so without this the card refused to
-     shrink to its column and dragged the whole grid past the panel's edge
-     -- the exact clipped-right-edge screenshot this fixes. Same fix, same
-     reason, on the qty row and its buttons below: every flex/grid parent
-     between here and the actual text needs its own `min-width: 0`, or the
-     floor just moves down one level instead of going away. */
   min-width: 0;
   gap: 2px;
   padding: 10px 12px 12px;
-  border: 1px solid var(--sa-glass-line-soft);
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 /* ---- the store's own type scale ------------------------------------- */
@@ -3153,24 +3200,12 @@
   margin-top: 0;
 }
 
-/* The Buy key: the one surface allowed a brighter rim, since it is the
-   thing you came in here to press. Weight comes from the lit edge and the
-   shadow under it, not from a fuller fill -- the moment this goes back to a
-   heavy white pill the whole panel reads as milky again. */
+/* The Buy key, sized for a shelf rather than for the full width of a sheet.
+   Its material is the shared primary key's. */
 .sa-store-card .sa-cta {
   min-height: 42px;
   padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, .3);
   border-radius: 13px;
-  background: rgba(255, 255, 255, .07);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
-  backdrop-filter: blur(4px) saturate(1.1);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .6),
-    inset 0 -1px 0 rgba(255, 255, 255, .12),
-    inset 1px 0 0 rgba(255, 255, 255, .16),
-    inset -1px 0 0 rgba(255, 255, 255, .16),
-    0 6px 16px -10px rgba(20, 20, 24, .3);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -3215,61 +3250,32 @@
   box-shadow: inset 0 2px 3px rgba(20, 20, 24, .18);
 }
 
-/* The corn CTA's press is a 4px drop onto its own rim shadow; with that
-   shadow gone the button would travel down onto nothing. Swaps the lit edge
-   to the bottom instead, the same way the close key and the tabs do. */
-.sa-store-card .sa-cta:not(:disabled):active {
-  box-shadow: var(--sa-glass-rim-press);
-}
-
 /* ---- a shelf row the farm has not unlocked yet ----------------------- */
 
 /* Stock Ray is holding back, not a half-rendered card.
    
    NOT `filter: saturate()` ON THE CARD, which is the obvious way to grey
-   something out and was the first attempt here. It desaturates the cream
-   board along with everything on it, and a neutral grey panel on a warm cream
-   surface is the exact tell the palette block at the top of this file exists
-   to avoid -- the card stopped looking locked and started looking like a UI
-   kit dropped onto a game. So the CARD keeps its own paper and outline, and
+   something out and was the first attempt here. It takes the card's own rim
+   down with everything on it, and a locked row stopped looking locked and
+   started looking like a rendering fault. So the CARD keeps its glass and
    what steps back is the copy and the art sitting on it. The Locked button
-   greys itself through the shared `.sa-cta:disabled` rule above, which is
+   unlights itself through the shared `.sa-cta:disabled` rule above, which is
    where "you cannot press this" is already said in this surface's own voice.
 
    The hint is deliberately left at full ink. It is the one line telling you
    what to go and do, and dimming it would fade out the only part of a locked
    row that is worth showing at all. */
 .sa-stock-card.is-locked {
-  background: var(--sa-paper);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
 }
 .sa-stock-card.is-locked h3,
 .sa-stock-card.is-locked .sa-stock-terms,
 .sa-stock-card.is-locked .sa-stock-yield {
   color: var(--sa-ink-soft);
-  opacity: .72;
+  opacity: .6;
 }
 .sa-stock-card.is-locked .sa-tool-art {
   filter: saturate(.2) brightness(1.04);
-}
-
-/* The same row, inside the store's glass. "Keeps its own paper" above is
-   the right idea everywhere else in StackAcres -- opaque cream reads as
-   solid board -- but the store flips its ink to cream on a dark fill (see
-   `.sa-store-card`'s own header comment), and `var(--sa-paper)` is cream
-   too. A locked card was painting cream text on a cream card: legible
-   nowhere, which is worse than the "looks like a UI kit" problem the paper
-   rule was written to avoid. Same specificity as the rule above (two
-   classes each), so this wins by coming later -- kept as an addition
-   rather than folded in, so a non-store `.is-locked` row is untouched. */
-.sa-store-card .sa-stock-card.is-locked {
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
-}
-.sa-store-card .sa-stock-card.is-locked h3,
-.sa-store-card .sa-stock-card.is-locked .sa-stock-terms,
-.sa-store-card .sa-stock-card.is-locked .sa-stock-yield {
-  opacity: .6;
 }
 
 .sa-lock-hint {
@@ -3301,10 +3307,10 @@
   gap: 14px;
   margin-top: 10px;
   padding: 10px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-tool-copy { min-width: 0; }
@@ -3340,11 +3346,11 @@
 .sa-ray-portrait {
   width: 34px;
   height: 34px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
   object-fit: cover;
   object-position: top center;
-  background: var(--sa-paper);
+  background: var(--sa-glass-fill-ctl);
 }
 
 .sa-ray-name {
@@ -3362,12 +3368,12 @@
   width: 104px;
   height: 104px;
   margin: 0 auto;
-  border: 4px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
   object-fit: cover;
   object-position: top center;
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop-lg);
 }
 
 /* The checklist/card grid shell, originally built for the now-deleted Ray's
@@ -3398,22 +3404,23 @@
   align-items: center;
   gap: 4px;
   padding: 10px 6px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-quiet);
   text-align: center;
 }
 
-/* Found: the same warm wood badge a store shelf uses. */
+/* Found: the lit rim a filled slot gets everywhere else on this surface. */
 .sa-checklist-item.is-found {
-  background: var(--sa-wood);
-  box-shadow: 0 3px 0 var(--sa-wood-rim);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
 }
 
 /* Not yet found: dimmed and dashed, deliberately unlike a disabled control --
    there is nothing to press here, only something left to discover. */
 .sa-checklist-item.is-unfound {
   border-style: dashed;
-  background: var(--sa-cream-rim);
+  background: none;
   opacity: .6;
 }
 
@@ -3464,25 +3471,30 @@
   width: 100%;
 }
 
-/* His welcome and the how-to-play modal are the shared .profile-modal chrome
-   (a violet-black card), which is right everywhere else in the app and wrong
-   sitting on a farm. Re-boarded here only -- qualified by .sa-theme, so the
-   same component keeps its chrome dressing on every other screen that
-   opens it. */
+/* Ray's welcome, the Greenhouse panel and the how-to-play modal all render
+   the shared .profile-modal chrome (a violet-black card), which is right
+   everywhere else in the app and wrong sitting on a farm. Re-cut in the
+   farm's own glass here only -- qualified by .sa-theme, so the same
+   components keep their chrome dressing on every other screen that opens
+   them, and nothing outside this route changes. */
 .sa-theme .profile-overlay { background: rgba(52, 34, 18, .6); }
 
 .sa-theme .profile-modal {
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
 }
 
 .sa-theme .profile-modal-header {
-  border-bottom: var(--sa-outline-w) solid var(--sa-outline);
-  background: var(--sa-wood);
-  border-radius: calc(var(--sa-r-panel) - var(--sa-outline-w)) calc(var(--sa-r-panel) - var(--sa-outline-w)) 0 0;
+  border-bottom: 1px solid var(--sa-glass-line-soft);
+  background: var(--sa-glass-fill-quiet);
+  -webkit-backdrop-filter: var(--sa-glass-blur-head);
+  backdrop-filter: var(--sa-glass-blur-head);
+  border-radius: calc(var(--sa-r-panel) - 1px) calc(var(--sa-r-panel) - 1px) 0 0;
 }
 
 .sa-theme .profile-modal-header span { color: var(--sa-ink-soft); font-weight: 800; }
@@ -3491,16 +3503,16 @@
 .sa-theme .modal-close {
   width: var(--sa-tap);
   height: var(--sa-tap);
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: 0 4px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
 }
 
 .sa-theme .modal-close:active {
-  transform: translateY(4px);
-  box-shadow: 0 0 0 var(--sa-outline);
+  transform: scale(.98);
+  box-shadow: var(--sa-glass-rim-press);
 }
 
 .sa-theme .htp-body { color: var(--sa-ink-soft); }
@@ -3521,25 +3533,27 @@
 .sa-gate-card {
   width: min(100%, 400px);
   padding: 24px 22px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   text-align: center;
 }
 
 /* The real logo (components/brand/stackacres-logo.tsx). The mark's own STACK
-   is chalk-white, which was drawn for a violet-black room and disappears on a
-   cream board -- the gate is the one place it is shown large on paper, so it
-   gets the world's own chocolate behind it rather than a recolour of the
-   mark. */
+   is chalk-white, drawn for a violet-black room: it needed a chocolate plate
+   behind it while this card was cream, and needs none now that the card is
+   dark glass. The plate is kept as the quiet fill, marking the mark's own
+   block rather than carrying its contrast. */
 .sa-heading-logo { width: 220px; height: auto; }
 .sa-gate-card .sa-heading-logo { margin: 0 auto; }
 
 .sa-gate-card .ante-lobby-heading {
   padding: 12px 16px;
   border-radius: var(--sa-r-block);
-  background: var(--sa-choc-rim);
+  background: var(--sa-glass-fill-quiet);
 }
 
 .sa-gate-icon {
@@ -3549,11 +3563,11 @@
   width: 52px;
   height: 52px;
   margin-bottom: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  box-shadow: 0 4px 0 var(--sa-corn-rim);
-  color: var(--sa-ink);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-corn);
 }
 
 .sa-gate-card p {
@@ -3585,8 +3599,8 @@
 .sa-gate-id code {
   padding: 9px 11px;
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 2px 0 rgba(52, 34, 18, .12);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink);
   font-size: 13px;
   font-weight: 700;
@@ -3609,10 +3623,12 @@
 
 .sa-theme .orientation-gate {
   padding: 24px 22px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-panel);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop-lg);
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
   color: var(--sa-ink);
   text-align: center;
 }
@@ -3701,16 +3717,18 @@
   gap: 10px;
   margin-top: 4px;
   padding: 12px 26px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-lit);
   border-radius: var(--sa-r-block);
-  background: var(--sa-corn);
-  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-corn-rim), var(--sa-drop-lg);
+  background: var(--sa-glass-fill-ctl);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop-lg);
   animation: sa-breathe 2.4s var(--sa-ease-out) infinite;
 }
 
 .sa-play-screen:active .sa-play-prompt {
-  transform: translateY(var(--sa-lift-lg));
-  box-shadow: 0 0 0 var(--sa-outline), 0 2px 4px rgba(52, 34, 18, .4);
+  transform: scale(.98);
+  box-shadow: var(--sa-glass-rim-press);
   animation: none;
 }
 
@@ -3769,11 +3787,13 @@
   gap: 5px;
   min-height: 38px;
   padding: 0 11px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-roof);
-  box-shadow: 0 3px 0 var(--sa-roof-rim), var(--sa-drop);
-  color: var(--sa-cream);
+  background: var(--sa-tint-roof);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-lit-roof);
   font-family: var(--sa-font);
   font-size: 15px;
   font-weight: 800;
@@ -3816,18 +3836,18 @@
   text-wrap: pretty;
 }
 
-/* Corn, like every other Gold price on this surface. */
+/* The corn tint, like every other Gold price on this surface. */
 .sa-clear-price {
   display: flex;
   align-items: center;
   gap: 9px;
   margin: 14px 0 0;
   padding: 11px 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-corn-rim);
-  color: var(--sa-ink);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-corn);
 }
 
 .sa-clear-price strong {
@@ -3857,9 +3877,10 @@
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink);
   font-size: 14px;
   font-weight: 700;
@@ -3867,11 +3888,11 @@
   text-wrap: pretty;
 }
 
-/* Met lines go leaf, unmet lines stay paper. Colour is carried by the MARK
-   rather than by the row's own text, so an unmet requirement never reads as
-   an error -- it is a thing still to do, and most of them are met in the
+/* Met lines go leaf, unmet lines stay plain glass. Colour is carried by the
+   MARK rather than by the row's own text, so an unmet requirement never reads
+   as an error -- it is a thing still to do, and most of them are met in the
    ordinary course of playing. */
-.sa-clear-req.is-met { background: var(--sa-paper); }
+.sa-clear-req.is-met { background: var(--sa-tint-leaf); }
 
 .sa-clear-req-mark {
   display: inline-flex;
@@ -3880,15 +3901,16 @@
   width: 24px;
   height: 24px;
   flex: none;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-cream-side);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink);
 }
 
 .sa-clear-req.is-met .sa-clear-req-mark {
-  background: var(--sa-leaf);
-  box-shadow: inset 0 -2px 0 var(--sa-leaf-rim);
+  background: var(--sa-tint-leaf);
+  box-shadow: inset 0 0 0 1px var(--sa-leaf);
+  color: var(--sa-lit-leaf);
 }
 
 .sa-clear-cta { margin-top: 16px; }
@@ -3925,10 +3947,10 @@
   gap: 5px;
   min-height: 34px;
   padding: 6px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 2px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink);
   font-size: 12.5px;
   font-weight: 700;
@@ -3945,9 +3967,10 @@
   gap: 8px;
   margin: 12px 0 0;
   padding: 10px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink-soft);
   font-size: 13.5px;
   font-weight: 700;
@@ -3975,27 +3998,27 @@
 .sa-contracts-note {
   margin: 12px 0 0;
   padding: 9px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
   font-size: 13.5px;
   font-weight: 700;
 }
 
 .sa-contracts-note.is-paid {
-  background: var(--sa-leaf);
-  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
-  color: var(--sa-ink);
+  background: var(--sa-tint-leaf);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-leaf);
 }
 
 .sa-contracts-note.is-refused {
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
 }
 
 .sa-contracts-note.is-pending {
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
   opacity: 0.8;
 }
@@ -4014,15 +4037,15 @@
    uses -- the marker for "this is the number to plan around". */
 .sa-contract {
   padding: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-contract.is-posted {
-  background: var(--sa-paper);
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-contract-head {
@@ -4064,9 +4087,9 @@
 .sa-contract-bar {
   flex: 1;
   height: 14px;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
   overflow: hidden;
 }
 
@@ -4106,9 +4129,9 @@
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink-soft);
   font-size: 12.5px;
   font-weight: 700;
@@ -4120,7 +4143,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sa-contract-rewards li.is-gold { background: var(--sa-corn); color: var(--sa-outline); }
+.sa-contract-rewards li.is-gold { background: var(--sa-tint-corn); color: var(--sa-lit-corn); }
 
 /* ---- a delivered contract's own answer --------------------------------
    Every other Gold payout on this farm is answered in the world, because every
@@ -4134,7 +4157,7 @@
 .sa-contract { position: relative; }
 
 .sa-contract.is-paid {
-  box-shadow: inset 0 0 0 3px var(--sa-corn), 0 0 0 4px rgb(255 210 63 / 0.28), var(--sa-drop);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), 0 0 0 4px rgb(255 210 63 / 0.28);
 }
 
 .sa-contract-payout {
@@ -4194,17 +4217,19 @@
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   color: var(--sa-ink);
   font-size: 19px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  box-shadow: var(--sa-drop);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
 }
 
-.sa-contract-ticker strong.is-gold { background: var(--sa-corn); color: var(--sa-outline); }
+.sa-contract-ticker strong.is-gold { background: var(--sa-tint-corn); color: var(--sa-lit-corn); }
 
 .sa-contract-ticker strong.is-influence { font-size: 15px; }
 
@@ -4219,23 +4244,23 @@
 
 /* ---- the Fermenting Vat ------------------------------------------------ */
 
-/* The chamber: what is sealed inside right now, or the empty state. Same
-   paper-2/outline/drop shape .sa-contract uses, sealed swapping to the
-   posted-contract's corn-ring treatment for the same reason: it is the one
-   state on this sheet with a live Gold number riding on it. */
+/* The chamber: what is sealed inside right now, or the empty state. The same
+   quiet glass .sa-contract uses, sealed swapping to the posted-contract's
+   corn ring for the same reason: it is the one state on this sheet with a
+   live Gold number riding on it. */
 .sa-vat-chamber {
   margin: 12px 0 0;
   padding: 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   text-align: center;
 }
 
 .sa-vat-chamber.is-sealed {
-  background: var(--sa-paper);
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-vat-status {
@@ -4254,10 +4279,10 @@
   justify-content: center;
   gap: 4px;
   margin-top: 8px;
-  color: var(--sa-outline);
+  color: var(--sa-ink-soft);
 }
 
-.sa-vat-star { color: var(--sa-cream-rim); }
+.sa-vat-star { color: rgba(247, 241, 230, .3); }
 .sa-vat-star.is-lit { color: var(--sa-corn); }
 
 .sa-vat-countdown {
@@ -4289,10 +4314,10 @@
   gap: 6px;
   margin: 10px 0 0;
   padding: 4px 10px;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  color: var(--sa-outline);
+  background: var(--sa-tint-corn);
+  color: var(--sa-lit-corn);
   font-size: 13px;
   font-weight: 700;
 }
@@ -4316,23 +4341,23 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink-soft);
   font-size: 13px;
   font-weight: 700;
 }
 
 .sa-vat-rung.is-reached {
-  background: var(--sa-leaf);
-  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
-  color: var(--sa-ink);
+  background: var(--sa-tint-leaf);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+  color: var(--sa-lit-leaf);
 }
 
 .sa-vat-rung.is-current-target {
-  background: var(--sa-paper);
-  box-shadow: inset 0 0 0 2px var(--sa-corn);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn);
   color: var(--sa-ink);
 }
 
@@ -4382,9 +4407,9 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border: 2px solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink-soft);
   font-size: 12.5px;
   font-weight: 700;
@@ -4435,18 +4460,20 @@
   flex: 1 1 180px;
 }
 
-/* A machine card: unbuilt reads as paper, running gets a leaf ring, done
-   gets the corn ring the posted contract uses for "press this". */
+/* A machine card: unbuilt reads as plain glass, running gets a leaf ring,
+   done gets the corn ring the posted contract uses for "press this". */
 .sa-workshop-machine.is-unbuilt h3 {
   color: var(--sa-ink-soft);
 }
 
 .sa-workshop-machine.is-working {
-  box-shadow: inset 0 0 0 3px var(--sa-leaf), var(--sa-drop);
+  background: var(--sa-tint-leaf);
+  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-workshop-machine.is-done {
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-workshop-machine .sa-contract-bar {
@@ -4468,10 +4495,10 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink);
   font-size: 13.5px;
   font-weight: 700;
@@ -4500,10 +4527,12 @@
   gap: 5px;
   min-height: 38px;
   padding: 0 11px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper);
-  box-shadow: 0 3px 0 var(--sa-cream-rim), var(--sa-drop);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   font-family: var(--sa-font);
   font-size: 15px;
@@ -4519,8 +4548,9 @@
    otherwise the badge is indistinguishable chrome nobody has a reason to
    tap. */
 .sa-synergy-badge.has-active {
-  background: var(--sa-corn);
-  box-shadow: 0 3px 0 var(--sa-corn-rim), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop);
+  color: var(--sa-lit-corn);
 }
 
 .sa-synergy-milestone {
@@ -4529,10 +4559,11 @@
   gap: 6px;
   margin: 12px 0 0;
   padding: 9px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-corn);
-  color: var(--sa-outline);
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-corn);
   font-size: 13.5px;
   font-weight: 800;
 }
@@ -4544,8 +4575,8 @@
 .sa-synergy-perk.is-locked { opacity: .72; }
 
 .sa-synergy-perk.is-active {
-  background: var(--sa-paper);
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-synergy-perk-desc {
@@ -4560,12 +4591,12 @@
   font-size: 14px;
 }
 
-/* Slotting an owned perk spends no Gold, so it gets the leaf material
-   .sa-buy-btn.is-expand uses for the same "growth, not a purchase" reason. */
+/* Slotting an owned perk spends no Gold, so it carries the leaf tint for the
+   same "growth, not a purchase" reason .sa-buy-btn.is-expand does. */
 .sa-synergy-perk-btn.is-slot {
-  background: var(--sa-leaf);
-  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-leaf-rim), var(--sa-drop);
-  color: var(--sa-ink);
+  background: var(--sa-tint-leaf);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-leaf);
 }
 
 /* The Midnight Merchant's own sheet. Reuses .sa-sheet/.sa-sheet-scrim/
@@ -4579,23 +4610,23 @@
   gap: 6px;
   margin: 10px 0 0;
   padding: 5px 11px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink-soft);
   font-size: 13px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
-/* Corn-edged rather than a foreign red: this palette has no danger color of
-   its own (see 52-stackacres.css's own cozy-farm brief), so urgency is the
-   same "number to plan around" marker .sa-contract.is-posted already uses,
-   not a new hue. */
+/* Corn-tinted rather than a foreign red: this palette has no danger colour of
+   its own (see this file's own cozy-farm brief), so urgency is the same
+   "number to plan around" marker .sa-contract.is-posted already uses, not a
+   new hue. */
 .sa-merchant-countdown.is-urgent {
-  background: var(--sa-corn);
-  color: var(--sa-outline);
-  box-shadow: inset 0 -3px 0 var(--sa-outline);
+  background: var(--sa-tint-corn);
+  color: var(--sa-lit-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn);
 }
 
 .sa-merchant-stock {
@@ -4609,10 +4640,10 @@
 
 .sa-merchant-item {
   padding: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-merchant-item.is-sold-out { opacity: .6; }
@@ -4658,7 +4689,7 @@
   margin-left: 4px;
   padding: 2px 6px;
   border-radius: var(--sa-r-chip);
-  background: var(--sa-cream-rim);
+  background: var(--sa-glass-fill-ctl);
   color: var(--sa-ink-soft);
   font-size: 11.5px;
   font-weight: 800;
@@ -4679,9 +4710,10 @@
   gap: 8px;
   margin: 12px 0 0;
   padding: 10px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-forge-stat { display: flex; flex-direction: column; gap: 2px; text-align: center; }
@@ -4706,21 +4738,21 @@
 .sa-forge-note {
   margin: 12px 0 0;
   padding: 9px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
   font-size: 13.5px;
   font-weight: 700;
 }
 
 .sa-forge-note.is-paid {
-  background: var(--sa-leaf);
-  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
-  color: var(--sa-ink);
+  background: var(--sa-tint-leaf);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-leaf);
 }
 
 .sa-forge-note.is-refused {
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
 }
 
@@ -4735,18 +4767,18 @@
 
 .sa-forge-slot {
   padding: 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 /* A forged slot gets the same corn-ring treatment .sa-contract.is-posted
    uses for "this is the number to plan around" -- here it marks "this is
    already yours" instead. */
 .sa-forge-slot.is-owned {
-  background: var(--sa-paper);
-  box-shadow: inset 0 0 0 3px var(--sa-corn), var(--sa-drop);
+  background: var(--sa-tint-corn);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-forge-slot-head {
@@ -4775,7 +4807,7 @@
   letter-spacing: .04em;
 }
 
-.sa-forge-slot-tag.is-owned { color: var(--sa-leaf-rim); }
+.sa-forge-slot-tag.is-owned { color: var(--sa-lit-leaf); }
 
 .sa-forge-slot-desc {
   margin: 6px 0 0;
@@ -4818,11 +4850,11 @@
   gap: 10px;
   margin: 14px 0 0;
   padding: 12px 14px;
-  border: var(--sa-outline-w) solid var(--sa-roof-rim);
+  border: 1px solid var(--sa-roof);
   border-radius: var(--sa-r-block);
-  background: var(--sa-cream);
-  box-shadow: inset 0 -3px 0 var(--sa-roof);
-  color: var(--sa-roof-rim);
+  background: var(--sa-tint-roof);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+  color: var(--sa-lit-roof);
 }
 
 .sa-prestige-warning > svg { flex: none; margin-top: 2px; color: var(--sa-roof); }
@@ -4853,9 +4885,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--sa-roof);
-  box-shadow: 0 var(--sa-lift-lg) 0 var(--sa-roof-rim), var(--sa-drop);
-  color: var(--sa-ink-light);
+  border-color: var(--sa-roof);
+  background: var(--sa-tint-roof);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-lit-roof);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4900,16 +4933,12 @@
   inset: 0;
   z-index: 6;
   pointer-events: none;
-  --drag-tint: rgba(64, 168, 228, .55);
-  --drag-tint-light: rgba(186, 232, 255, .78);
-  --drag-tint-deep: rgba(22, 96, 168, .55);
+  --drag-tint: rgba(64, 168, 228, .34);
   --drag-particle: #6fc6f2;
 }
 
 .sa-drag.is-feed {
-  --drag-tint: rgba(236, 176, 58, .55);
-  --drag-tint-light: rgba(255, 234, 170, .8);
-  --drag-tint-deep: rgba(168, 110, 20, .5);
+  --drag-tint: rgba(236, 176, 58, .34);
   --drag-particle: #e8b84a;
 }
 
@@ -4978,8 +5007,11 @@
   50% { transform: scale(1.06); }
 }
 
-/* The token: frosted glass with a lit top, a tinted body and a specular
-   sweep, positioned by transform so dragging stays on the compositor. */
+/* The token: the farm's own glass with the tool's tint mixed into it,
+   positioned by transform so dragging stays on the compositor. It used to
+   carry a third formula of its own (a wide specular sweep over an 8px blur,
+   plus a 5px white halo) -- the same frosted look the panels have all moved
+   off, so it moved too. The tint is what still says water or feed. */
 .sa-drag-token {
   position: absolute;
   left: 0;
@@ -4990,19 +5022,12 @@
   width: 60px;
   height: 60px;
   padding: 0;
-  border: 1.5px solid rgba(255, 255, 255, .75);
+  border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
-  background:
-    radial-gradient(110% 80% at 30% 18%, rgba(255, 255, 255, .9) 0%, rgba(255, 255, 255, .28) 34%, rgba(255, 255, 255, 0) 56%),
-    radial-gradient(circle at 72% 86%, var(--drag-tint-deep) 0%, transparent 62%),
-    linear-gradient(160deg, var(--drag-tint-light), var(--drag-tint));
-  box-shadow:
-    inset 0 -7px 14px rgba(0, 0, 0, .16),
-    inset 0 2px 5px rgba(255, 255, 255, .8),
-    0 12px 24px rgba(28, 44, 64, .34),
-    0 0 0 5px rgba(255, 255, 255, .16);
-  -webkit-backdrop-filter: blur(8px) saturate(1.6);
-  backdrop-filter: blur(8px) saturate(1.6);
+  background: var(--drag-tint);
+  box-shadow: var(--sa-glass-rim-lit), 0 12px 24px rgba(28, 44, 64, .34);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) scale(var(--grow, 1));
   transition: transform .26s cubic-bezier(.34, 1.56, .64, 1);
   cursor: grab;
@@ -5010,16 +5035,6 @@
   pointer-events: auto;
   will-change: transform;
   -webkit-tap-highlight-color: transparent;
-}
-
-.sa-drag-token::after {
-  content: "";
-  position: absolute;
-  inset: 5px 12px auto 10px;
-  height: 40%;
-  border-radius: 50% 50% 45% 45%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .7), rgba(255, 255, 255, 0));
-  pointer-events: none;
 }
 
 /* No idle animation here on purpose: `filter` plus an infinite `animation`
@@ -5070,8 +5085,12 @@
   position: absolute;
   transform: translateX(-50%);
   padding: 3px 10px;
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: rgba(52, 34, 18, .74);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-cream);
   font-family: var(--sa-font);
   font-size: 11.5px;
@@ -5132,7 +5151,7 @@
 }
 
 /* The can's level in the HUD, next to feed. Roof-red once it runs dry. */
-.sa-water.is-empty strong { color: var(--sa-roof); }
+.sa-water.is-empty strong { color: var(--sa-lit-roof); }
 
 @media (prefers-reduced-motion: reduce) {
   .sa-drag-arrow-line,
@@ -5228,19 +5247,12 @@
   width: 64px;
   height: 64px;
   padding: 0;
-  border: 1.5px solid rgba(255, 255, 255, .75);
+  border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
-  background:
-    radial-gradient(110% 80% at 30% 18%, rgba(255, 255, 255, .9) 0%, rgba(255, 255, 255, .28) 34%, rgba(255, 255, 255, 0) 56%),
-    radial-gradient(circle at 72% 86%, rgba(120, 78, 32, .5) 0%, transparent 62%),
-    linear-gradient(160deg, rgba(224, 195, 150, .82), rgba(160, 118, 62, .55));
-  box-shadow:
-    inset 0 -7px 14px rgba(0, 0, 0, .16),
-    inset 0 2px 5px rgba(255, 255, 255, .8),
-    0 12px 24px rgba(28, 44, 64, .34),
-    0 0 0 5px rgba(255, 255, 255, .16);
-  -webkit-backdrop-filter: blur(8px) saturate(1.6);
-  backdrop-filter: blur(8px) saturate(1.6);
+  background: rgba(160, 118, 62, .34);
+  box-shadow: var(--sa-glass-rim-lit), 0 12px 24px rgba(28, 44, 64, .34);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
   transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) scale(var(--grow, 1)) rotate(var(--tilt, 0deg));
   transition: transform .26s cubic-bezier(.34, 1.56, .64, 1);
   cursor: grab;
@@ -5311,8 +5323,12 @@
   position: absolute;
   transform: translateX(-50%);
   padding: 3px 10px;
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
-  background: rgba(52, 34, 18, .74);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-cream);
   font-family: var(--sa-font);
   font-size: 11.5px;
@@ -5356,9 +5372,9 @@
    map comes straight out of the map. The layout is the same fixed column as
    everywhere else; this block only shrinks what sits over and above it.
 
-   The blocks keep their travel and their outline -- a thinner outline or a
-   1px travel is where chunky quietly turns back into flat -- so what gives
-   here is padding, type size and the drawer's own generosity. */
+   The keys keep their rim and their touch floor -- a rim that fades out is
+   where glass quietly turns back into a flat translucent rectangle -- so what
+   gives here is padding, type size and the drawer's own generosity. */
 @media (orientation: landscape) and (max-height: 520px) {
   .sa-shell { --sa-header-h: 46px; }
   .sa-theme { --sa-tap: 44px; }
@@ -5411,7 +5427,7 @@
 .sa-xb-note {
   margin: 12px 0 0;
   padding: 9px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
   font-size: 13.5px;
   font-weight: 700;
@@ -5419,13 +5435,14 @@
 }
 
 .sa-xb-note.is-paid {
-  background: var(--sa-leaf);
-  box-shadow: inset 0 -3px 0 var(--sa-leaf-rim);
+  background: var(--sa-tint-leaf);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-lit-leaf);
 }
 
 .sa-xb-note.is-refused {
-  background: var(--sa-paper-2);
-  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
 }
 
 .sa-xb-grid {
@@ -5434,9 +5451,10 @@
   gap: 6px;
   margin: 12px 0 0;
   padding: 8px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-xb-cell {
@@ -5448,11 +5466,11 @@
   aspect-ratio: 1;
   min-width: 0;
   padding: 4px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-choc);
-  box-shadow: inset 0 -3px 0 var(--sa-choc-rim);
-  color: var(--sa-cream);
+  background: color-mix(in srgb, var(--sa-choc) 34%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+  color: var(--sa-ink);
   font: inherit;
   font-size: 11px;
   font-weight: 800;
@@ -5463,23 +5481,23 @@
 .sa-xb-cell:disabled { cursor: default; }
 
 .sa-xb-cell.is-empty {
-  background: var(--sa-paper);
-  box-shadow: inset 0 -3px 0 var(--sa-cream-rim);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
   color: var(--sa-ink-soft);
 }
 
 .sa-xb-cell.is-empty:not(:disabled):hover,
 .sa-xb-cell.is-picking {
   color: var(--sa-ink);
-  box-shadow: inset 0 0 0 3px var(--sa-leaf), inset 0 -3px 0 var(--sa-cream-rim);
+  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-xb-cell.is-ripe {
-  box-shadow: inset 0 0 0 3px var(--sa-leaf), inset 0 -3px 0 var(--sa-choc-rim);
+  box-shadow: inset 0 0 0 1px var(--sa-leaf), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-xb-cell.is-cross {
-  box-shadow: inset 0 0 0 3px var(--sa-corn), inset 0 -3px 0 var(--sa-choc-rim);
+  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 
 .sa-xb-cell-label {
@@ -5500,9 +5518,10 @@
 .sa-xb-picker {
   margin: 12px 0 0;
   padding: 10px 12px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .sa-xb-picker-title {
@@ -5530,10 +5549,10 @@
   gap: 2px;
   width: 100%;
   padding: 8px 6px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
+  border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-block);
-  background: var(--sa-paper);
-  box-shadow: var(--sa-drop);
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
   color: var(--sa-ink);
   font: inherit;
   font-size: 12px;
@@ -5578,7 +5597,7 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--sa-r-chip);
-  background: var(--sa-paper-2);
+  background: var(--sa-glass-fill-quiet);
   color: var(--sa-ink);
   font-size: 13px;
   font-weight: 700;

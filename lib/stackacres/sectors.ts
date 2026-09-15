@@ -519,7 +519,99 @@ export const SECTOR_FOG = { colour: 0xcfe3ec, alpha: 0.16 } as const;
  * can go.
  */
 export function sectorOvergrowth(id: SectorId): OvergrowthItem[] {
-  return overgrowthOver(STACKACRES_ZONES[id].bounds, id.length);
+  const grown = overgrowthOver(STACKACRES_ZONES[id].bounds, id.length, SECTOR_FLAVOUR[id]);
+  const landmark = SECTOR_LANDMARK[id];
+  if (!landmark) return grown;
+  // The growth gives way to the landmark: anything it would stand inside is
+  // dropped, so it reads as a clearing round the thing rather than as a tree
+  // grown through another tree.
+  const b = STACKACRES_ZONES[id].bounds;
+  const at = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  const clear = grown.filter((i) => Math.hypot(i.x - at.x, i.y - at.y) > landmark.clearing);
+  clear.push({ kind: landmark.kind, x: at.x, y: at.y, scale: landmark.scale });
+  return clear.sort((a, c) => a.x + a.y - (c.x + c.y));
+}
+
+/**
+ * The one thing standing on a wild sector that is not undergrowth.
+ *
+ * Only two of the four get one, and their own blurbs decide which. The
+ * Ancestral Oak's says "something old stands here" and the Mine Entrance's
+ * says "a way in" -- both promise something visible NOW, and neither had it:
+ * every wild sector was scrub and nothing else, so the places the copy calls
+ * landmarks looked exactly like the places it does not.
+ *
+ * The Coastal Market ("stalls and a dock, ONCE there is anything to trade")
+ * and the Town Square ("the town is still only a board you post to") promise
+ * the opposite -- their content explicitly does not exist yet -- so building
+ * either would contradict both the copy and this module's own rule that
+ * locked ground must not look like somewhere already built.
+ *
+ * Both use art the woodland already paints, so this adds no assets: a
+ * broadleaf and a boulder at better than twice the size anything else on the
+ * map grows to. A real mine head is a sprite somebody has to draw; an outcrop
+ * you can pick out from across the map is what the existing set can honestly
+ * give.
+ */
+const SECTOR_LANDMARK: Readonly<
+  Partial<Record<SectorId, { kind: SceneryKind; scale: number; clearing: number }>>
+> = {
+  oak: { kind: "tree1", scale: 2.6, clearing: 34 },
+  mine: { kind: "boulder", scale: 2.4, clearing: 26 },
+};
+
+/**
+ * What grows on one particular piece of wild ground, over the common mix.
+ *
+ * All four wild sectors used to deal from the same three pools, so the Mine,
+ * the Coast, the Oak and the Town Square were the same anonymous scrub in
+ * four places -- the player has no way to tell which is which until they tap
+ * it. These accents are still the RIGHT story for locked land (nothing built,
+ * nobody's farm) and still use only kinds the woodland already paints, so
+ * they need no art: what changes is that the Mine is visibly stony, the Coast
+ * washed with driftwood and low cover, the Oak genuinely wooded, and the Town
+ * Square rubble under weeds.
+ *
+ * A sector with no entry keeps the common mix, which is what the two
+ * claimable sectors on the ladder (`wallow`, `oxfields`) want -- they are
+ * ordinary farmland waiting to be cleared, not a place with a character.
+ */
+const SECTOR_FLAVOUR: Readonly<Partial<Record<SectorId, OvergrowthFlavour>>> = {
+  // Stone, and the scrub that grows in the cracks of it. Conifers only up
+  // top: the default canopy is mostly broadleaf, and a mine hillside under
+  // oak and ash reads as the Ancestral Oak's wood rather than as stony
+  // ground.
+  mine: {
+    canopy: ["pine3", "pine6", "pine8"],
+    scrub: ["boulder", "boulder", "rock", "rock", "rock", "scrubBristle", "scrubMound", "bush2"],
+    floor: ["rock", "tuft", "tuft2", "weed3", "weed5"],
+  },
+  // Driftwood and low salt-bitten cover, no canopy to speak of.
+  coast: {
+    canopy: ["pine4", "pine7", "bush3"],
+    scrub: ["log", "log", "rock", "scrubPlume", "scrubMound", "bush", "bush3"],
+    floor: ["tuft", "tuft2", "frond2", "frond5", "weed6", "flower2"],
+  },
+  // The one place that is meant to be a wood.
+  oak: {
+    canopy: ["tree1", "tree1", "tree2", "tree3", "tree3"],
+    scrub: ["bush", "bush2", "bush3", "scrubLeafy", "scrubThicket", "log"],
+    floor: ["mushroom", "mushroom", "frond2", "frond5", "tuft", "weed6", "flower3"],
+  },
+  // A square somebody left: fallen stone, and weeds through it.
+  townsquare: {
+    canopy: ["tree2", "bush3", "pine5"],
+    scrub: ["rock", "rock", "log", "boulder", "scrubBristle", "scrubPlume", "bush"],
+    floor: ["weed3", "weed5", "weed6", "tuft", "flower1", "flower3"],
+  },
+};
+
+/** One sector's accent over the common mix. Every field is optional; whatever
+ *  is absent falls back to the shared pool. */
+interface OvergrowthFlavour {
+  canopy?: readonly SceneryKind[];
+  scrub?: readonly SceneryKind[];
+  floor?: readonly SceneryKind[];
 }
 
 /**
@@ -539,10 +631,17 @@ export function cropFieldOvergrowth(): OvergrowthItem[] {
  *  deal from -- one rectangle of wild growth, seeded by its own bounds and a
  *  caller-supplied salt so two rects the same size and position (which never
  *  actually happens on this map, but costs nothing to guard) still differ. */
-function overgrowthOver(bounds: WorldRect, salt: number): OvergrowthItem[] {
+function overgrowthOver(
+  bounds: WorldRect,
+  salt: number,
+  flavour: OvergrowthFlavour = {},
+): OvergrowthItem[] {
   const random = seededRandom(
     (Math.round(bounds.x) * 374761393) ^ (Math.round(bounds.y) * 668265263) ^ (salt * 0x9e3779b1),
   );
+  const canopy = flavour.canopy ?? OVERGROWTH_CANOPY;
+  const scrub = flavour.scrub ?? OVERGROWTH_SCRUB;
+  const floor = flavour.floor ?? OVERGROWTH_FLOOR;
   const items: OvergrowthItem[] = [];
   const cols = Math.max(1, Math.ceil(bounds.width / OVERGROWTH_SPACING));
   const rows = Math.max(1, Math.ceil(bounds.height / OVERGROWTH_SPACING));
@@ -563,7 +662,7 @@ function overgrowthOver(bounds: WorldRect, salt: number): OvergrowthItem[] {
 
       if (roll < 0.34) {
         items.push({
-          kind: OVERGROWTH_CANOPY[Math.floor(size * OVERGROWTH_CANOPY.length)],
+          kind: canopy[Math.floor(size * canopy.length)],
           x,
           y,
           // The same wide height range the woodland's trees get, for the same
@@ -572,14 +671,14 @@ function overgrowthOver(bounds: WorldRect, salt: number): OvergrowthItem[] {
         });
       } else if (roll < 0.62) {
         items.push({
-          kind: OVERGROWTH_SCRUB[Math.floor(size * OVERGROWTH_SCRUB.length)],
+          kind: scrub[Math.floor(size * scrub.length)],
           x,
           y,
           scale: 0.85 + random() * 0.4,
         });
       } else {
         items.push({
-          kind: OVERGROWTH_FLOOR[Math.floor(size * OVERGROWTH_FLOOR.length)],
+          kind: floor[Math.floor(size * floor.length)],
           x,
           y,
           scale: 0.9 + random() * 0.35,

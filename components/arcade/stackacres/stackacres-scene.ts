@@ -50,7 +50,12 @@ import {
   greenhouseSlotAt,
   greenhouseSlotLayouts,
 } from "@/lib/stackacres/greenhouse";
-import { SEA_EXPANSE_TILE, seaExpanseTiles, terrainChunks } from "@/lib/stackacres/terrain";
+import {
+  CROP_FIELD_LANES,
+  SEA_EXPANSE_TILE,
+  seaExpanseTiles,
+  terrainChunks,
+} from "@/lib/stackacres/terrain";
 import {
   PROP_SHADOW,
   PROP_SIZE,
@@ -4644,6 +4649,7 @@ export class StackAcresScene extends Phaser.Scene {
       // fenced box for taps and for animal wandering; it is simply no longer
       // a picture.
       built.push(...this.paintSoilTiles());
+      built.push(...this.paintCropFieldFence());
       return built;
     }
     const ground = livestock === "cattle" ? "soil" : livestock === "pig" ? "muck" : "straw";
@@ -4670,6 +4676,50 @@ export class StackAcresScene extends Phaser.Scene {
       built.push(this.put(x === gateX ? "gateX" : "railX", x, south, this.depthAt(x + half, south)));
     }
     for (let y = area.y; y < south; y += step) {
+      built.push(this.put("railY", area.x, y, this.depthAt(area.x, y + half)));
+      built.push(this.put("railY", east, y, this.depthAt(east, y + half)));
+    }
+    return built;
+  }
+
+  /**
+   * The Crop Fields' own fence, around the whole bed lattice.
+   *
+   * The pens have had one since they were built (`paintDistrictBoundary`
+   * above); the Crop Fields never did, because that branch returns early for
+   * a district with no livestock in it -- so the biggest worked area on the
+   * map was the one place whose edge was not drawn at all.
+   *
+   * Openings rather than a gate. Where one of `CROP_FIELD_LANES`' walking
+   * lanes reaches the perimeter the bay is left out, so each lane runs out of
+   * the field through a gap in the rail instead of stopping dead at it. That
+   * is six openings, and it means the fence explains the lanes rather than
+   * fighting them -- a single gate in the middle of the south run (what the
+   * pens do) would have put a rail across four of them.
+   */
+  private paintCropFieldFence(): Phaser.GameObjects.GameObject[] {
+    const built: Phaser.GameObjects.GameObject[] = [];
+    const area = CROP_FIELD_BEDS;
+    const step = FENCE_BAY;
+    const half = step / 2;
+    const east = area.x + area.width;
+    const south = area.y + area.height;
+    // A bay is dropped when the span it would cover meets a lane running out
+    // through that side: `across` is the lane's own extent on the axis the
+    // run varies along.
+    const spans = (lo: number, laneLo: number, laneLen: number) =>
+      lo + step > laneLo && lo < laneLo + laneLen;
+    const openX = (x: number) =>
+      CROP_FIELD_LANES.some((l) => l.height > l.width && spans(x, l.x, l.width));
+    const openY = (y: number) =>
+      CROP_FIELD_LANES.some((l) => l.width > l.height && spans(y, l.y, l.height));
+    for (let x = area.x; x < east; x += step) {
+      if (openX(x)) continue;
+      built.push(this.put("railX", x, area.y, this.depthAt(x + half, area.y)));
+      built.push(this.put("railX", x, south, this.depthAt(x + half, south)));
+    }
+    for (let y = area.y; y < south; y += step) {
+      if (openY(y)) continue;
       built.push(this.put("railY", area.x, y, this.depthAt(area.x, y + half)));
       built.push(this.put("railY", east, y, this.depthAt(east, y + half)));
     }

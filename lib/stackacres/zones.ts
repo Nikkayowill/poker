@@ -111,6 +111,9 @@ import { SOIL_EDGE_BAND, soilSignedDistance, type SoilMap } from "./soil";
 // merge folded them into the Farmstead district -- see that constant's own
 // header.
 import { CROP_FIELD } from "./yard";
+// Ground paint, and the one thing the Farmstead's own scatter has to dodge:
+// a clover tuft on a worked dirt lane reads as a weed nobody pulled.
+import { CROP_FIELD_LANES } from "./terrain";
 
 export const ZONE_IDS = [
   "farmstead",
@@ -478,21 +481,23 @@ export const ZONE_CHUNK = 160;
  * has to be mown tile by tile (see `meadowDensityAt`).
  */
 const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
-  // Always empty, and `zoneScenery` below hard-excludes it before this list
-  // is ever read (`id === "farmstead"`) -- the Farmstead has its own
-  // hand-placed dressing (props.ts's `YARD_PROPS`/`farmsteadClutter`)
-  // instead of ambient scatter. The Crop Fields' own clover/buttercup
-  // scatter (what "meadow" had here before the 2026-09-08 merge) did not
-  // carry over: it has no district of its own to key off any more, and
-  // scattering it across the whole of the Farmstead's now much bigger
-  // bounds -- yard and pond included -- would need a Crop-Fields-only
-  // filter this pass did not build. The Crop Fields still read as a real
-  // place from their soil, their beds and whatever is actually growing.
-  farmstead: [],
-  // The Hen Coops' own district. Left empty deliberately: it inherited the
-  // Farmstead's yard, which has never scattered anything, and inventing hen
-  // furniture is an art pass, not part of re-laying the map.
-  henhaven: [],
+  // The Crop Fields' own ground cover, back after the 2026-09-08 merge
+  // dropped it. It is NOT scattered across the Farmstead's bounds -- that
+  // rect is 956x512 and takes in the yard, the buildings and the pond, and
+  // clover growing through the barn floor is exactly why this was left
+  // empty before. `zoneScenery` confines it to ./yard.ts's `CROP_FIELD`
+  // instead, which is the Crop-Fields-only filter the old comment here said
+  // was missing. Everything in this pool is ground cover, so the worst a
+  // misplaced one can do is sit under a bed that draws over it anyway; the
+  // yard's own hand-placed dressing (props.ts's `YARD_PROPS`/
+  // `farmsteadClutter`) is untouched and still the only thing out there.
+  farmstead: ["clover", "clover", "buttercup", "grassMid", "grassTall"],
+  // Hen Haven. Its pen block is the whole district bar a 16-unit collar
+  // (see `PEN_BLOCKS`), so this only ever lands around the fence line --
+  // which is where a stacked bale belongs anyway, and is why the pool is
+  // one standing kind rather than anything that lies flat and would need
+  // ground it cannot reach (`deepInZone`).
+  henhaven: ["hayBale"],
   // Furrows dominate: the ground itself is the content in a worked field,
   // and the posts and gear are what break it up.
   oxfields: ["furrow", "furrow", "furrow", "furrow", "hitchPost", "hayBale", "plough", "oxTrough"],
@@ -510,8 +515,11 @@ const ZONE_SCATTER: Readonly<Record<ZoneId, readonly ZoneSceneryKind[]>> = {
 
 /** Scatter density per chunk, by district. */
 const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
-  farmstead: 0,
-  henhaven: 0,
+  // Rolled against the whole chunk but kept only inside `CROP_FIELD` (see
+  // `zoneScenery`), so the count that actually lands in the field is lower
+  // than this wherever a chunk straddles its edge.
+  farmstead: 8,
+  henhaven: 3,
   oxfields: 9,
   wallow: 6,
   townsquare: 0,
@@ -532,6 +540,21 @@ const ZONE_SCATTER_COUNT: Readonly<Record<ZoneId, number>> = {
  */
 /** The kinds that lie flat on the ground rather than standing on it. */
 const FLAT_KINDS: ReadonlySet<ZoneSceneryKind> = new Set<ZoneSceneryKind>(["furrow", "mudPool"]);
+
+/**
+ * Inside the Crop Fields and on a growing patch rather than a walking lane.
+ *
+ * The Farmstead's whole scatter gate: its own `bounds` take in the yard, the
+ * buildings and the pond, none of which may grow ambient anything, and the
+ * one part of that district which should is the field.
+ */
+function inCropFieldPatch(x: number, y: number): boolean {
+  if (!within(CROP_FIELD, x, y)) return false;
+  for (const lane of CROP_FIELD_LANES) {
+    if (within(lane, x, y)) return false;
+  }
+  return true;
+}
 
 /** Well inside a district, clear of the fence line into the woodland. */
 function deepInZone(id: ZoneId, x: number, y: number): boolean {
@@ -557,11 +580,12 @@ export const PEN_BLOCKS: Readonly<Partial<Record<ZoneId, WorldRect>>> = {
   // to that source -- this pair has drifted apart before, and the wild-growth
   // exclusion it exists for silently stopped covering the plot.
   //
-  // The Farmstead and the four wild districts are absent on purpose: their
-  // scatter lists are empty, so there is nothing to exclude. (The Crop Fields'
-  // own bed lattice needs no entry here for the same reason `meadow`'s did
-  // before the 2026-09-08 merge stopped it existing as a district: nothing in
-  // `ZONE_SCATTER.farmstead` is there to exclude it from.)
+  // The four wild districts are absent on purpose: their scatter lists are
+  // empty, so there is nothing to exclude. The Farmstead is absent for a
+  // different reason now that it does scatter -- `inCropFieldPatch` confines
+  // it to `CROP_FIELD`, and this district's own grow area (the yard's Hen Coop
+  // remnant, x 170..330 in yard-local units) is nowhere near that rect's
+  // x 464..976, so the filter already covers what an entry here would.
   henhaven: { x: -192, y: -416, width: 128, height: 128 },
   oxfields: { x: 0, y: 288, width: 192, height: 192 },
   wallow: { x: 288, y: -256, width: 128, height: 128 },
@@ -604,7 +628,12 @@ export function zoneScenery(
     const y = y0 + random() * ZONE_CHUNK;
     const roll = random();
     const id = zoneAt(x, y);
-    if (id === null || id === "farmstead") continue;
+    if (id === null) continue;
+    // The Farmstead scatters only inside the Crop Fields, and only on the
+    // patches -- never on the lanes cut through them, which are worked dirt
+    // and read as dirt (./terrain.ts's `CROP_FIELD_LANES`). Everywhere else
+    // in that district is yard, buildings or pond, dressed by hand.
+    if (id === "farmstead" && !inCropFieldPatch(x, y)) continue;
     if (locked.has(id)) continue;
     if (i >= ZONE_SCATTER_COUNT[id]) continue;
     // The connectors run right through two of the districts, so the same
@@ -689,14 +718,13 @@ export function meadowBaseDensity(tx: number, ty: number, soil: SoilMap = NO_SOI
   const rect = meadowTileRect(tx, ty);
   const cx = rect.x + MEADOW_TILE / 2;
   const cy = rect.y + MEADOW_TILE / 2;
-  if (
-    cx < CROP_FIELD.x ||
-    cx > CROP_FIELD.x + CROP_FIELD.width ||
-    cy < CROP_FIELD.y ||
-    cy > CROP_FIELD.y + CROP_FIELD.height
-  ) {
-    return 0;
-  }
+  // Outside the field, or standing on one of the walking lanes cut through
+  // it. The lanes are worked dirt (./terrain.ts's `CROP_FIELD_LANES`) and
+  // this is the same rule the `nearPath` line below states for roads: grass
+  // down the middle of a lane hides the structure the lane exists to draw.
+  // `nearPath` cannot answer for them, a lane being ground paint rather than
+  // a `PathSpec`, so it is asked separately.
+  if (!inCropFieldPatch(cx, cy)) return 0;
   // Nothing grows on the lane through the field, so a stroke that follows the
   // road cuts nothing and the road stays visible through waist-high grass.
   if (nearPath(cx, cy)) return 0;

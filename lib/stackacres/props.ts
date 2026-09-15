@@ -27,16 +27,29 @@
  * way FarmVille lights one driveway rather than every path.
  */
 
-import { BARN_FOOTPRINT, WHEAT_FIELD, growAreaBounds, seededRandom, type WorldPoint, type WorldRect } from "./world";
+import {
+  BARN_FOOTPRINT,
+  RAY_HOUSE_FOOTPRINT,
+  WHEAT_FIELD,
+  growAreaBounds,
+  seededRandom,
+  type WorldPoint,
+  type WorldRect,
+} from "./world";
+// Ground the widened clutter band now runs over and must not deal onto: the
+// Factory's lot (./terrain.ts), the Greenhouse's plot, and the Crop Fields'
+// beds. None of these import this module back.
+import { FACTORY_LOT } from "./terrain";
+import { GREENHOUSE_PLOT } from "./greenhouse";
 // A strict leaf (./yard.ts imports nothing), so this is a plain value import
 // with no cycle to work around. Every literal below is the number the yard was
 // originally laid out with, so the comments naming them stay true.
-import { yardPoint, yardRect } from "./yard";
+import { CROP_FIELD, yardPoint, yardRect } from "./yard";
 // A value import, safe for the reason paths.ts's own header gives: this
 // module is not part of the world.ts/paths.ts/zones.ts import cycle, so
 // there is nothing here that could be read before either module finishes
 // evaluating.
-import { nearPath } from "./paths";
+import { ALL_FARM_PATHS, distanceToPath, nearPath } from "./paths";
 // The rounded pads over every fork (see ./path-junctions.ts): a junction's
 // fillet fills the concave corner between two roads, ground `nearPath` alone
 // still reads as grass, so clutter has to be kept off it separately.
@@ -389,26 +402,62 @@ export const CLUTTER_KINDS: readonly PropKind[] = [
 ];
 
 /**
- * The dead band itself: south of the road's own clearance, north of the Hen
- * Coop and the wheat field's own north edges. x 40..420 clears the lane's
- * west verge and sits inside the Farmstead's own bounds (./zones.ts);
- * y 40..195 is measured the same way FARMSTEAD_PATH_NODES's own doc comment
- * measures its clearance -- south of the road (`nearPath` already excludes
- * everything within its own body) and north of both destinations' 200/140
- * edges, with room for a candidate's own clearance check to bite before
- * either edge.
+ * The ground the clutter is dealt over: the yard, near enough end to end.
+ *
+ * This used to be `yardRect(40, 40, 380, 155)` -- a strip 155 units tall
+ * across the yard's middle, sized to fall between the road's clearance and
+ * the Hen Coop and wheat field's north edges. Every exclusion it was avoiding
+ * is tested per candidate below anyway, and what the narrow band actually did
+ * was leave the whole southern third of the yard -- the Factory's end of it --
+ * as bare lawn with nothing standing on it, which is the "empty field"
+ * complaint this pass exists to answer.
+ *
+ * It stops short of `CROP_FIELD` on the east (that ground is beds and has its
+ * own ground cover, see ./zones.ts's `ZONE_SCATTER.farmstead`) and stays
+ * inside the Farmstead's own bounds on every side.
  */
-export const FARMSTEAD_CLUTTER_BAND: WorldRect = yardRect(40, 40, 380, 155);
+export const FARMSTEAD_CLUTTER_BAND: WorldRect = yardRect(30, -40, 400, 440);
 
 /** Grid cell a clutter candidate is rolled in, in world units -- coarse
  *  enough that a well and a barrel never crowd, fine enough that the band
  *  reads as scattered rather than gridded once the exclusions have thinned
  *  it out. */
-const CLUTTER_CELL = 40;
+const CLUTTER_CELL = 30;
 
-/** Chance any given cell rolls a prop at all. Below half so the band still
- *  reads as open grass with things standing in it, not a second yard. */
-const CLUTTER_FILL_CHANCE = 0.4;
+/** Chance any given cell rolls a prop at all.
+ *
+ *  Was 0.4 with a 40-unit cell, on the reasoning that the band should read as
+ *  open grass with things standing in it. Measured over the widened band that
+ *  produced NINE props for the whole yard -- the exclusions (roads, junctions,
+ *  buildings, and the gap every candidate must keep from `YARD_PROPS`) throw
+ *  out about four fifths of what is rolled, so the roll has to be generous
+ *  before anything survives it. */
+const CLUTTER_FILL_CHANCE = 0.62;
+
+/**
+ * The clutter kinds that are FURNITURE rather than ground dressing, and the
+ * most of them this scatter may leave standing in the yard.
+ *
+ * `YARD_PROPS`' own header sets the rule this enforces -- "about a dozen in
+ * the yard... twenty-two read as a junk shop" -- and that rule is about
+ * things somebody put there: wells, barrels, log piles, stacked bales. It was
+ * never about undergrowth. Bushes, wildflowers and sprigs are what open lawn
+ * looks like when nobody has mown it, and a yard can carry as many of those
+ * as the gap check allows without reading as cluttered at all.
+ *
+ * So the density is split: plants fill the band, furniture stays under a
+ * ceiling. Raising `CLUTTER_FILL_CHANCE` alone would have bought the yard its
+ * missing life at the cost of the exact junk-shop look that header forbids.
+ */
+const CLUTTER_FURNITURE_KINDS: ReadonlySet<PropKind> = new Set<PropKind>([
+  "well",
+  "logPile",
+  "toolBarrel",
+  "hayBale1",
+  "hayBale2",
+  "bucket",
+]);
+const MAX_CLUTTER_FURNITURE = 7;
 
 /** Extra clearance, beyond a destination's own edge, a clutter candidate
  *  must clear -- a barrel sitting flush against the Hen Coop's fence reads
@@ -420,6 +469,28 @@ const CLUTTER_CLEARANCE = 10;
  *  items or a clutter item and a `YARD_PROPS` entry -- overlapping picture
  *  boxes is the one thing a scatter must never produce. */
 const CLUTTER_PROP_GAP = 4;
+
+/** What two PLANTS keep between them instead (see `tooCloseToAny`). Measured
+ *  from the larger of the two radii rather than their sum, so a sprig may sit
+ *  inside a bush's own spread the way it would in a real verge, while two
+ *  bushes still cannot land on the same spot. */
+const PLANT_CLUMP_GAP = 3;
+
+/**
+ * Whether a clutter candidate is too close to a road to stand there.
+ *
+ * `nearPath` is the whole-clearance test (`width / 2 + PATH_CLEARANCE`) and
+ * is what furniture is held to. Ground cover is held to the road's own body
+ * instead, so it may grow on the verge but never on the surface -- the same
+ * distinction the verge's own lamp posts and mailbox already make by hand.
+ */
+function onRoadSurface(x: number, y: number, isFurniture: boolean): boolean {
+  if (isFurniture) return nearPath(x, y);
+  for (const spec of ALL_FARM_PATHS) {
+    if (distanceToPath(x, y, spec) < spec.width / 2) return true;
+  }
+  return false;
+}
 
 function insideRect(x: number, y: number, rect: WorldRect, margin: number): boolean {
   return x >= rect.x - margin && x <= rect.x + rect.width + margin && y >= rect.y - margin && y <= rect.y + rect.height + margin;
@@ -436,8 +507,19 @@ function propRadius(kind: PropKind): number {
 
 function tooCloseToAny(x: number, y: number, kind: PropKind, others: readonly PropPlacement[]): boolean {
   const ownRadius = propRadius(kind);
+  const plant = !CLUTTER_FURNITURE_KINDS.has(kind);
   for (const other of others) {
-    const clearance = ownRadius + propRadius(other.kind) + CLUTTER_PROP_GAP;
+    // Two plants may grow into each other; anything else keeps its picture
+    // box clear. Overlapping BOXES is what a scatter must never produce, and
+    // for a well against a barrel that is the same as overlapping pictures --
+    // but a clump of wildflowers beside a bush is a clump of wildflowers
+    // beside a bush, and holding those apart at furniture spacing is what
+    // left the lawn between the roads reading as bare.
+    const bothPlants = plant && !CLUTTER_FURNITURE_KINDS.has(other.kind);
+    const gap = bothPlants ? PLANT_CLUMP_GAP : CLUTTER_PROP_GAP;
+    const clearance = bothPlants
+      ? Math.max(ownRadius, propRadius(other.kind)) + gap
+      : ownRadius + propRadius(other.kind) + gap;
     if (Math.hypot(x - other.x, y - other.y) < clearance) return true;
   }
   return false;
@@ -466,21 +548,45 @@ export function farmsteadClutter(seed = 0xc1f7e4): PropPlacement[] {
   const cols = Math.ceil(band.width / CLUTTER_CELL);
   const rows = Math.ceil(band.height / CLUTTER_CELL);
   const items: PropPlacement[] = [];
+  let furniture = 0;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const random = seededRandom((seed ^ Math.imul(col + 1, 0x1f123bb5) ^ Math.imul(row + 1, 0x6c9291a7)) >>> 0);
       if (random() > CLUTTER_FILL_CHANCE) continue;
       const kind = CLUTTER_KINDS[Math.floor(random() * CLUTTER_KINDS.length)];
+      if (CLUTTER_FURNITURE_KINDS.has(kind) && furniture >= MAX_CLUTTER_FURNITURE) continue;
       const x = band.x + col * CLUTTER_CELL + random() * CLUTTER_CELL;
       const y = band.y + row * CLUTTER_CELL + random() * CLUTTER_CELL;
-      if (nearPath(x, y)) continue;
+      // Furniture keeps the full road clearance; ground cover only has to
+      // stay off the road SURFACE.
+      //
+      // Roads are what actually thin this scatter -- measured, they reject
+      // about half of every candidate rolled, far more than the spacing
+      // rules do -- and the yard is criss-crossed by the lane, the yard road,
+      // Ray's drive and the grid. Treating a flower sprig like a barrel is
+      // what left the verges bare: a barrel on the verge reads as dumped,
+      // while wildflowers along a track are exactly where wildflowers grow.
+      if (onRoadSurface(x, y, CLUTTER_FURNITURE_KINDS.has(kind))) continue;
       if (FARM_JUNCTIONS.some((j) => Math.hypot(x - j.at.x, y - j.at.y) < j.reach)) continue;
       if (insideRect(x, y, BARN_FOOTPRINT, CLUTTER_CLEARANCE)) continue;
       if (insideRect(x, y, henCoop, CLUTTER_CLEARANCE)) continue;
       if (insideRect(x, y, WHEAT_FIELD, CLUTTER_CLEARANCE)) continue;
+      // The three the old narrow band never reached, and so never had to
+      // name. A widened band runs over all of them: the Factory is excluded
+      // by its whole LOT rather than its footprint, since a flowering bush
+      // standing on an industrial yard reads as a mistake either way.
+      if (insideRect(x, y, RAY_HOUSE_FOOTPRINT, CLUTTER_CLEARANCE)) continue;
+      if (insideRect(x, y, GREENHOUSE_PLOT, CLUTTER_CLEARANCE)) continue;
+      // The Factory's lot is excluded whole rather than by its building. The
+      // lot IS the building plus a 14-unit margin, so once the footprint's own
+      // clearance is taken there is about four units of ground left in it --
+      // letting crates onto the yard was tried and placed exactly none.
+      if (insideRect(x, y, FACTORY_LOT, CLUTTER_CLEARANCE)) continue;
+      if (insideRect(x, y, CROP_FIELD, 0)) continue;
       if (inPondZone(x, y)) continue;
       if (tooCloseToAny(x, y, kind, YARD_PROPS)) continue;
       if (tooCloseToAny(x, y, kind, items)) continue;
+      if (CLUTTER_FURNITURE_KINDS.has(kind)) furniture += 1;
       items.push({ kind, x, y });
     }
   }

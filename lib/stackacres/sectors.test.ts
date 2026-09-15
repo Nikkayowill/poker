@@ -5,6 +5,7 @@ import {
   SECTOR_IDS,
   OVERGROWTH_SPACING,
   SECTOR_LADDER,
+  WILD_SECTORS,
   STACKACRES_SECTORS,
   cropFieldOvergrowth,
   isSectorUnlocked,
@@ -20,6 +21,10 @@ import { CROP_FIELD } from "./yard";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
 import { STACKACRES_CROPS, STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
+// Test-only, and Phaser-free at runtime (that module imports Phaser as a
+// TYPE only): the scene's painter table, so overgrowth can be held to what
+// can actually be drawn. Same arrangement props.test.ts has with art-props.
+import { PAINTERS } from "@/components/arcade/stackacres/stackacres-art";
 import { stockZone } from "./world";
 import { STACKACRES_ZONES, ZONE_IDS } from "./zones";
 
@@ -232,6 +237,62 @@ describe("sectorOvergrowth", () => {
 
   it("gives each sector its own growth", () => {
     expect(sectorOvergrowth("wallow")).not.toEqual(sectorOvergrowth("oxfields"));
+  });
+
+  it("only ever grows something the scene can actually paint", () => {
+    // The regression guard for `SECTOR_FLAVOUR`: those pools name kinds by
+    // hand, and a kind with no painter renders as a hole in the sector rather
+    // than as an error anyone would notice. Covers the Crop Fields' own
+    // overgrowth and the ladder sectors too, so the same mistake cannot be
+    // made in the shared pools either.
+    const everywhere = [...SECTOR_IDS.map((id) => sectorOvergrowth(id)), cropFieldOvergrowth()];
+    for (const items of everywhere) {
+      for (const item of items) {
+        expect(PAINTERS[item.kind], `nothing paints ${item.kind}`).toBeDefined();
+      }
+    }
+  });
+
+  it("stands a landmark on the two wild sectors whose copy promises one", () => {
+    // "Something old stands here" (the Oak) and "a way in" (the Mine) both
+    // promise something visible now, and both used to render as scrub like
+    // everywhere else. The other two say the opposite -- stalls "once there
+    // is anything to trade", a town that "is still only a board" -- so they
+    // must NOT get one, or the ground contradicts the modal standing on it.
+    for (const id of ["oak", "mine"] as const) {
+      const big = sectorOvergrowth(id).filter((i) => i.scale > 2);
+      expect(big, `${id} has no landmark`).toHaveLength(1);
+    }
+    for (const id of ["coast", "townsquare"] as const) {
+      const big = sectorOvergrowth(id).filter((i) => i.scale > 2);
+      expect(big, `${id} should still be bare ground`).toHaveLength(0);
+    }
+  });
+
+  it("gives each wild sector a character you can tell apart", () => {
+    // Presence, not shares. A wild sector is 128 square and grows about
+    // sixteen things, so "more stone than the Oak" is sampling noise as
+    // often as it is a real difference in the mix -- the first draft of this
+    // test asserted exactly that and failed on a sector whose stone simply
+    // had not come up. What IS stable, the generator being seeded, is which
+    // kinds each place actually grows.
+    const kindsOn = (id: SectorId) => new Set(sectorOvergrowth(id).map((i) => i.kind));
+    const mine = kindsOn("mine");
+    const oak = kindsOn("oak");
+    // The Mine is stony ground under conifers; the Oak is broadleaf wood
+    // with the forest floor to match. Neither can be mistaken for the other.
+    expect([...mine].some((k) => k === "rock" || k === "boulder")).toBe(true);
+    expect([...oak].some((k) => k === "tree2" || k === "tree3")).toBe(true);
+    expect([...mine].some((k) => k.startsWith("tree"))).toBe(false);
+    // And all four read as four different places rather than as one mix
+    // dealt out four times, which is what they were before.
+    const mixes = WILD_SECTORS.map((id) => [...kindsOn(id)].sort().join(","));
+    expect(new Set(mixes).size).toBe(WILD_SECTORS.length);
+    // The two sectors actually on the ladder keep the common mix: they are
+    // farmland waiting to be cleared, not a place with a character.
+    for (const id of SECTOR_LADDER) {
+      expect(sectorOvergrowth(id).length, id).toBeGreaterThan(0);
+    }
   });
 
   it("stays inside the sector's own bounds", () => {

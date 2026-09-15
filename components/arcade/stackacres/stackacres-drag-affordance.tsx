@@ -53,20 +53,20 @@ const ICONS: Readonly<Record<DragAffordanceKind, PainterName>> = {
  *  already watered the instant the drop lands (`onDrop` applies the
  *  optimistic patch synchronously), so this is purely how long the splash
  *  gets to hang around on top of it before handing the view back. Used to
- *  be 620ms; once the flicker itself was fixed, that was long enough on its
- *  own to read as sluggish. */
-const SETTLE_MS = 360;
+ *  be 620ms, then 360ms; still read as a beat of hang time once the flicker
+ *  itself was fixed, so it's now half that. */
+const SETTLE_MS = 180;
 /** How long the spring back takes. Matches the token's CSS transition. */
 const RETURN_MS = 260;
 /** The pour or scatter: where each drop or grain lands relative to the target, and when it leaves. */
 const PARTICLES: readonly { dx: number; dy: number; delay: number }[] = [
   { dx: -22, dy: 18, delay: 0 },
-  { dx: -10, dy: 26, delay: 25 },
-  { dx: 2, dy: 22, delay: 10 },
-  { dx: 14, dy: 28, delay: 40 },
-  { dx: 24, dy: 16, delay: 15 },
-  { dx: -4, dy: 34, delay: 65 },
-  { dx: 10, dy: 12, delay: 50 },
+  { dx: -10, dy: 26, delay: 12 },
+  { dx: 2, dy: 22, delay: 5 },
+  { dx: 14, dy: 28, delay: 20 },
+  { dx: 24, dy: 16, delay: 7 },
+  { dx: -4, dy: 34, delay: 32 },
+  { dx: 10, dy: 12, delay: 25 },
 ];
 
 type Phase = "idle" | "dragging" | "returning" | "settling";

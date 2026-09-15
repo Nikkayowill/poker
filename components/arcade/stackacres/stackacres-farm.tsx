@@ -409,7 +409,8 @@ type DragOffer =
       targetAt: TapPoint;
     }
   | { key: string; kind: "feed-pen"; zone: ZoneId; iconAt: TapPoint; targetAt: TapPoint }
-  | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
+  | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint }
+  | { key: string; kind: "collect"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
 
 /** The fishing rod floating at the dock, mid-cast. Its own state, not a
  *  `DragOffer`: a cast is a two-stage gesture (drag in, wait for a bite,
@@ -2291,8 +2292,19 @@ export function StackAcresFarm() {
           const tallyText = harvest.tally
             .map((line) => itemLabel(line.item, line.quantity))
             .join(", ");
+          // A weather-worn unit used to raise the same red banner a real
+          // refusal does, which read as a broken error over an ordinary farm
+          // event. It rides along on the same gold toast instead -- the mess
+          // itself keeps asking to be cleared via its cue bubble on the map,
+          // so the toast only has to give the player the heads-up once.
+          const muckedNote =
+            harvest.mucked > 0
+              ? harvest.mucked === 1
+                ? " -- 1 crop came up weather-worn, tap it to clear"
+                : ` -- ${harvest.mucked} crops came up weather-worn, tap to clear`
+              : "";
           setLastCollect({
-            text: `+${tallyText} to the barn`,
+            text: `+${tallyText} to the barn${muckedNote}`,
             nonce: Date.now(),
           });
           if (anchor) {
@@ -2313,7 +2325,7 @@ export function StackAcresFarm() {
             setLastCollect({
               text: `Rich pickings! +${harvest.critBonus
                 .map((line) => itemLabel(line.item, line.quantity))
-                .join(", ")}`,
+                .join(", ")}${muckedNote}`,
               nonce: Date.now(),
             });
             // And the world's own answer to it, on the unit that got lucky:
@@ -2328,13 +2340,6 @@ export function StackAcresFarm() {
                 1 + stackacresToolTierDef(toolTierRef.current).critBonus,
               );
             }
-          }
-          if (harvest.mucked > 0) {
-            setError(
-              harvest.mucked === 1
-                ? "That came up weather-worn. Clear it before it earns again."
-                : `${harvest.mucked} came up weather-worn. Clear them before they earn again.`,
-            );
           }
         }
         // The other three a finger can start from the map. No produce to
@@ -3088,47 +3093,31 @@ export function StackAcresFarm() {
         });
         return;
       }
-      // The farm's own voice for the gesture, chosen off the same `action`
-      // that is about to be sent. This is the press the whole sound set was
-      // written for and it was the last thing still answering with the app's
-      // chrome click: tapping a hen, a dry row and a mucked plot all made the
-      // one lobby noise, while the sidebar rows beside them -- doing exactly
-      // the same three things -- had had their own sounds since the sound
-      // pass landed. The tap path simply predated it.
-      //
-      // Clear speaks on the PRESS because `act`'s optimistic layer applies it
-      // the instant the request is sent. Feed and water never get here; they
-      // speak on the drop, in `onDragDrop`. Collect stays silent here and
-      // answers in `act` with the voice of the animal that paid out.
-      if (action.kind === "clear") muckSound();
-      tapAnchor.current = at;
-      // Frenzy Heat Combo Engine: every accepted tap (a refused one already
-      // returned above) counts as a hit for how fast the player is tapping.
-      // Collect is the only action with a yield to bonus off of --
-      // STACKACRES_YIELDS' quantity times its Gold value, an ESTIMATE with
-      // no crit or synergy bonus folded in (both are rolled server-side, and
-      // this fires before the server has answered at all). This is a
-      // DISPLAY-ONLY number: it never changes what `act` below actually
-      // settles for -- see lib/stackacres/frenzy.ts's own header.
-      const baseYieldGold =
-        action.kind === "collect"
-          ? STACKACRES_YIELDS[unit.stock].quantity * itemSellPrice(STACKACRES_YIELDS[unit.stock].item)
-          : undefined;
-      world.current?.registerFrenzyTap(unitId, baseYieldGold);
-      // A tap is a one-unit sweep. It earns no synergy by construction --
-      // three is the fewest a Bountiful Harvest considers -- which is exactly
-      // what the Harvest key beside it is for. A collect is chained onto
-      // `triggerCascade` once it settles, in case it crit -- every other verb
-      // has nothing to chain.
+      // Harvest is drag-and-drop too, the same as water and feed above: the
+      // tap floats a basket beside the unit, and dragging it back onto the
+      // unit is what actually sends "collect" (`onDragDrop`). Same posture
+      // as water/feed-unit above rather than a drag clear across the map --
+      // a ready crop out in the Crop Fields is nowhere near the barn on
+      // screen, so the barn can't be the drop target here.
       if (action.kind === "collect") {
-        void act({ action: "collect", unitIds: [unitId] }).then((result) => {
-          if (result.ok) void triggerCascade(unitId, unit.stock);
+        panelSound();
+        setDragOffer({
+          key: `collect:${unitId}:${Date.now()}`,
+          kind: "collect",
+          unitId,
+          iconAt: offerIconAt(at),
+          targetAt: at,
         });
-      } else {
-        void act({ action: action.kind, unitId });
+        return;
       }
+      // Only "clear" reaches here now -- collect, feed and water all opened
+      // a drag offer above and returned. Clear speaks on the PRESS because
+      // `act`'s optimistic layer applies it the instant the request is sent.
+      muckSound();
+      tapAnchor.current = at;
+      void act({ action: action.kind, unitId });
     },
-    [act, dryUnitAt, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, soilMapForTiles, triggerCascade, water],
+    [act, dryUnitAt, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, soilMapForTiles, water],
   );
 
   /**
@@ -3304,10 +3293,29 @@ export function StackAcresFarm() {
       void act({ action: "feed-pen", zone: offer.zone });
       return;
     }
+    if (offer.kind === "collect") {
+      // The reward floats out of the unit itself, same as a plain tap used
+      // to. Stays silent here, same as a plain tap used to: only the
+      // response in `act` knows which unit actually paid out, and that is
+      // the voice this gesture is worth having.
+      tapAnchor.current = offer.targetAt;
+      const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
+      // Same estimate `onWorldUnitTap` used to make on the press, moved here
+      // now that the press only opens the drag -- see its own header on
+      // `lib/stackacres/frenzy.ts` for why this is display-only.
+      const baseYieldGold = unit
+        ? STACKACRES_YIELDS[unit.stock].quantity * itemSellPrice(STACKACRES_YIELDS[unit.stock].item)
+        : undefined;
+      world.current?.registerFrenzyTap(offer.unitId, baseYieldGold);
+      void act({ action: "collect", unitIds: [offer.unitId] }).then((result) => {
+        if (result.ok && unit) void triggerCascade(offer.unitId, unit.stock);
+      });
+      return;
+    }
     const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
     if (unit) feedSound(unit.stock);
     void act({ action: "feed", unitId: offer.unitId });
-  }, [act, dragOffer, liveUnits, water]);
+  }, [act, dragOffer, liveUnits, triggerCascade, water]);
 
   const closeDragOffer = useCallback(() => setDragOffer(null), []);
 
@@ -4496,7 +4504,7 @@ export function StackAcresFarm() {
           {dragOffer && (
             <StackAcresDragAffordance
               key={dragOffer.key}
-              kind={dragOffer.kind === "water" ? "water" : "feed"}
+              kind={dragOffer.kind === "water" ? "water" : dragOffer.kind === "collect" ? "harvest" : "feed"}
               iconAt={dragOffer.iconAt}
               targetAt={dragOffer.targetAt}
               hint={
@@ -4506,7 +4514,9 @@ export function StackAcresFarm() {
                     : "Drag onto the soil"
                   : dragOffer.kind === "feed-pen"
                     ? "Drag into the trough"
-                    : "Drag onto the animal"
+                    : dragOffer.kind === "collect"
+                      ? "Drag to collect"
+                      : "Drag onto the animal"
               }
               onDrop={onDragDrop}
               onClose={closeDragOffer}

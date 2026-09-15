@@ -48,19 +48,25 @@ const ICONS: Readonly<Record<DragAffordanceKind, PainterName>> = {
   feed: "ico-feed",
 };
 
-/** How long the pour or scatter plays before the overlay goes away. */
-const SETTLE_MS = 620;
+/** How long the pour or scatter plays before the overlay goes away. Matches
+ *  `sa-drag-fade`'s own duration in the CSS -- the crop underneath is
+ *  already watered the instant the drop lands (`onDrop` applies the
+ *  optimistic patch synchronously), so this is purely how long the splash
+ *  gets to hang around on top of it before handing the view back. Used to
+ *  be 620ms; once the flicker itself was fixed, that was long enough on its
+ *  own to read as sluggish. */
+const SETTLE_MS = 360;
 /** How long the spring back takes. Matches the token's CSS transition. */
 const RETURN_MS = 260;
 /** The pour or scatter: where each drop or grain lands relative to the target, and when it leaves. */
 const PARTICLES: readonly { dx: number; dy: number; delay: number }[] = [
   { dx: -22, dy: 18, delay: 0 },
-  { dx: -10, dy: 26, delay: 40 },
-  { dx: 2, dy: 22, delay: 20 },
-  { dx: 14, dy: 28, delay: 70 },
-  { dx: 24, dy: 16, delay: 30 },
-  { dx: -4, dy: 34, delay: 110 },
-  { dx: 10, dy: 12, delay: 90 },
+  { dx: -10, dy: 26, delay: 25 },
+  { dx: 2, dy: 22, delay: 10 },
+  { dx: 14, dy: 28, delay: 40 },
+  { dx: 24, dy: 16, delay: 15 },
+  { dx: -4, dy: 34, delay: 65 },
+  { dx: 10, dy: 12, delay: 50 },
 ];
 
 type Phase = "idle" | "dragging" | "returning" | "settling";

@@ -798,6 +798,31 @@ export async function listProfiles(): Promise<AdminProfileSummary[]> {
   return all;
 }
 
+/**
+ * `hasStackAcresAccess` and `isBanned` together, in one query instead of two --
+ * the actions route calls both on every single action (access before the
+ * body is even parsed, ban after), and until now that was two separate
+ * round trips to the same `profiles` row for two single-column reads. Only
+ * for that hot path; the two functions below stay as they are for every
+ * other caller that only needs one of the two.
+ */
+export async function stackAcresActionGate(
+  token: string,
+): Promise<{ access: boolean; banned: boolean }> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const stored = memoryProfiles.get(token);
+    return { access: stored?.stackacresAccess ?? false, banned: stored?.banned ?? false };
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("homestead_access, banned")
+    .eq("session_token", token)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check StackAcres access: ${error.message}`);
+  return { access: Boolean(data?.homestead_access), banned: Boolean(data?.banned) };
+}
+
 /** Cheap ban check, called by every join-flow route and the actions route before letting a token do anything. */
 export async function isBanned(token: string): Promise<boolean> {
   const supabase = adminClient();

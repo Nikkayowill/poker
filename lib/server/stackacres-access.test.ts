@@ -32,6 +32,21 @@ function routeFiles(dir: string): string[] {
 
 const gatedRoutes = routeFiles(API_DIR);
 
+/**
+ * The names a route may call to pass the gate. `stackAcresActionGate` is the
+ * actions route's own combined access+ban read (one query instead of two for
+ * the same `profiles` row) -- it fails closed exactly like
+ * `tokenHasStackAcresAccess` does, so a route calling it has not skipped the
+ * gate, just folded a second check into the same round trip.
+ */
+const GATE_CALLS = ["tokenHasStackAcresAccess(", "stackAcresActionGate("];
+
+/** The earliest of the gate calls that actually appears, or -1 if neither does. */
+function gateCallIndex(source: string): number {
+  const found = GATE_CALLS.map((name) => source.indexOf(name)).filter((i) => i >= 0);
+  return found.length > 0 ? Math.min(...found) : -1;
+}
+
 /** A handler's body with comments stripped, for asking what runs before what. */
 function handlerBody(path: string): string {
   // Comments are stripped first, and names are matched as CALLS rather than
@@ -56,7 +71,7 @@ describe("the StackAcres's access gate", () => {
     "gates %s",
     (_label, path) => {
       const source = readFileSync(path, "utf8");
-      expect(source).toContain("tokenHasStackAcresAccess");
+      expect(gateCallIndex(source), `${path} must call the gate`).toBeGreaterThanOrEqual(0);
       expect(source).toContain("stackacresLocked");
     },
   );
@@ -74,7 +89,7 @@ describe("the StackAcres's access gate", () => {
     for (const path of gatedRoutes) {
       const source = handlerBody(path);
       const limiter = source.indexOf("enforceRateLimit(");
-      const gate = source.indexOf("tokenHasStackAcresAccess(");
+      const gate = gateCallIndex(source);
       expect(limiter, `${path} must rate limit`).toBeGreaterThanOrEqual(0);
       expect(gate, `${path} must call the gate`).toBeGreaterThanOrEqual(0);
       expect(limiter).toBeLessThan(gate);

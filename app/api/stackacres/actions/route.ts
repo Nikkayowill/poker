@@ -79,9 +79,9 @@ import {
   meetStackAcresTraveler,
   turnInStackAcresTravelerQuest,
 } from "@/lib/server/stackacres-service";
-import { isBanned } from "@/lib/server/profile-store";
+import { stackAcresActionGate } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
-import { stackacresLocked, tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
+import { stackacresLocked } from "@/lib/server/stackacres-access";
 import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import { resolveChronoNow } from "@/lib/server/chrono-delorean";
 import { SOIL_BAGS_PER_PURCHASE, SOIL_TIERS } from "@/lib/stackacres/soil-tiers";
@@ -669,8 +669,15 @@ export async function POST(request: NextRequest) {
   // prober an identity they never asked for, which is the one thing a refusal
   // must not do. It runs after the limiter above because it costs a database
   // read; see lib/server/stackacres-access.ts.
+  //
+  // Access and ban are both single-column reads of the SAME `profiles` row,
+  // fetched together here rather than as two separate round trips (one
+  // before the body is parsed, one after) -- `stackAcresActionGate`'s own
+  // header explains why this route in particular gets the combined query.
   const token = readSessionToken(request);
-  if (!token || !(await tokenHasStackAcresAccess(token))) return stackacresLocked();
+  if (!token) return stackacresLocked();
+  const gate = await stackAcresActionGate(token);
+  if (!gate.access) return stackacresLocked();
 
   try {
     const parsed = requestSchema.safeParse(await request.json().catch(() => ({})));
@@ -687,7 +694,7 @@ export async function POST(request: NextRequest) {
     // suspended account -- nothing here can rot -- so closing off `sell`
     // costs a banned account no progress, only the ability to convert what
     // it already grew into Gold until the ban lifts.
-    if (await isBanned(token)) {
+    if (gate.banned) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),

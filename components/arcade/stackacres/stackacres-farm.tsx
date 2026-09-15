@@ -1485,6 +1485,22 @@ export function StackAcresFarm() {
     revisionRef.current = revision;
     return true;
   }, []);
+  /**
+   * Bumped on every successful `applyResponse`, optimistic guesses included --
+   * unlike `revisionRef`, which only moves for a CONFIRMED response. Without
+   * this, two overlapping actions race `restoreFarmSnapshot`: action A's
+   * snapshot is taken at revision R, its guess applies (no revision, so R
+   * does not move), then action B's snapshot is ALSO taken at revision R and
+   * its own guess applies on top. If A is then refused, `restoreFarmSnapshot`
+   * saw revision R at capture and still sees R now and wrongly concludes
+   * nothing has happened since -- rolling the farm back past B's still-live,
+   * still-unconfirmed guess to the state from before either tap, which then
+   * flickers back to correct once B's real response lands. `restoreFarmSnapshot`
+   * checks this alongside the revision so a sibling guess applied in between
+   * is enough to skip the restore, the same way a fresher confirmed response
+   * already is.
+   */
+  const localGenRef = useRef(0);
 
   /**
    * The held equipment rung, read the same way `unitsRef` is and for the same
@@ -1508,6 +1524,10 @@ export function StackAcresFarm() {
     // so a "fresher" `units` next to a stale `profile` from the same
     // response is not a state this farm was ever actually in.
     if (!acceptRevision(data.revision)) return;
+    // See localGenRef's own header: this moves for every applied snapshot,
+    // optimistic guesses included, which is what `revisionRef` alone cannot
+    // tell `restoreFarmSnapshot` about.
+    localGenRef.current += 1;
     if (data.profile) setProfile(data.profile);
     if (data.units) setUnits(data.units);
     if (typeof data.feed === "number") setFeed(data.feed);
@@ -1673,6 +1693,10 @@ export function StackAcresFarm() {
       // `restoreFarmSnapshot` can tell whether anything else has landed
       // since. See that function's own header.
       revision: revisionRef.current,
+      // The local generation the instant this guess is taken -- catches a
+      // SIBLING optimistic guess applied in between, which never moves
+      // `revision`. See localGenRef's own header.
+      localGen: localGenRef.current,
       units,
       profile,
       feed,
@@ -1734,8 +1758,11 @@ export function StackAcresFarm() {
     // guess touched with the true DB state, which by definition never held a
     // guess that was refused or never confirmed. Restoring anyway would undo
     // that newer, confirmed state rather than this guess, which is not what
-    // a rollback is for. Skip when anything has landed since the snapshot.
+    // a rollback is for. Skip when anything has landed since the snapshot --
+    // a confirmed response (revision moved) or a sibling optimistic guess
+    // applied on top (localGen moved, see its own header) either one.
     if (snap.revision !== revisionRef.current) return;
+    if (snap.localGen !== localGenRef.current) return;
     setUnits(snap.units);
     setProfile(snap.profile);
     setFeed(snap.feed);

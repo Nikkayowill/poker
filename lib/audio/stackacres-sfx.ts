@@ -77,11 +77,18 @@ export function feedSound(stock: StackAcresStock) {
  * The one action cue with no animal in it, deliberately: nothing on the crop
  * track has a voice to answer with, and borrowing a hen for it would put a
  * bird in the Long Meadow, where there are none.
+ *
+ * `water-drop`'s own trim (synth-voices.ts's `VOICE_TRIM`) is calibrated to
+ * the quiet ambience-cue reference, not the louder action-cue one, because
+ * the same recipe also plays as a background river/wallow drip. Bumping that
+ * shared trim would blast the ambience; these gains carry the ~4dB the
+ * action instance needs on top of it instead, so the pour actually reads as
+ * an action and not a background drip that happened to sync with the tap.
  */
 export function waterSound() {
-  playFarmVoice("water-drop", 0.9);
-  window.setTimeout(() => playFarmVoice("water-drop", 0.7), 90);
-  window.setTimeout(() => playFarmVoice("water-drop", 0.5), 200);
+  playFarmVoice("water-drop", 1.4);
+  window.setTimeout(() => playFarmVoice("water-drop", 1.1), 90);
+  window.setTimeout(() => playFarmVoice("water-drop", 0.8), 200);
 }
 
 /** Clearing a mucked unit: the one genuinely laborious thing on the farm. */

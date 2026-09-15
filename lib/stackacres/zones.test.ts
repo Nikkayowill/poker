@@ -22,10 +22,13 @@ import {
   zoneFrame,
   zoneHerd,
   zoneToolPolicy,
+  zoneScenery,
   zonesByDistance,
   type ZoneId,
+  ZONE_CHUNK,
   PEN_BLOCKS,
 } from "./zones";
+import { CROP_FIELD_LANES } from "./terrain";
 import { FARM_ZONE, chunkScenery, growAreaBounds, STACKACRES_CHUNK } from "./world";
 import { CROP_FIELD } from "./yard";
 
@@ -218,6 +221,56 @@ describe("district scenery clearance", () => {
   });
 });
 
+describe("the Farmstead's ambient scatter", () => {
+  // Every chunk that touches the Farmstead, which is the district that took
+  // the yard, the buildings AND the pond in the 2026-09-08 merge -- so the
+  // whole point of this block is that scatter reaches the Crop Fields and
+  // nothing else in there.
+  const farmsteadItems = () => {
+    const b = STACKACRES_ZONES.farmstead.bounds;
+    const items = [];
+    for (let cy = Math.floor(b.y / ZONE_CHUNK); cy <= Math.floor((b.y + b.height) / ZONE_CHUNK); cy += 1) {
+      for (let cx = Math.floor(b.x / ZONE_CHUNK); cx <= Math.floor((b.x + b.width) / ZONE_CHUNK); cx += 1) {
+        for (const item of zoneScenery(cx, cy)) {
+          if (zoneAt(item.x, item.y) === "farmstead") items.push(item);
+        }
+      }
+    }
+    return items;
+  };
+
+  it("dresses the Crop Fields rather than the yard", () => {
+    const items = farmsteadItems();
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item.x, `${item.kind} outside the field`).toBeGreaterThanOrEqual(CROP_FIELD.x);
+      expect(item.x).toBeLessThanOrEqual(CROP_FIELD.x + CROP_FIELD.width);
+      expect(item.y).toBeGreaterThanOrEqual(CROP_FIELD.y);
+      expect(item.y).toBeLessThanOrEqual(CROP_FIELD.y + CROP_FIELD.height);
+    }
+  });
+
+  it("keeps it off the lanes cut through the field", () => {
+    for (const item of farmsteadItems()) {
+      for (const lane of CROP_FIELD_LANES) {
+        const onLane =
+          item.x >= lane.x &&
+          item.x <= lane.x + lane.width &&
+          item.y >= lane.y &&
+          item.y <= lane.y + lane.height;
+        expect(onLane, `${item.kind} grew on a walking lane`).toBe(false);
+      }
+    }
+  });
+
+  it("scatters only ground cover there, never farm gear", () => {
+    const cover = new Set(["clover", "buttercup", "grassMid", "grassTall"]);
+    for (const item of farmsteadItems()) {
+      expect(cover.has(item.kind), `${item.kind} is not ground cover`).toBe(true);
+    }
+  });
+});
+
 describe("the woodland yields to the districts", () => {
   it("grows no wild scenery inside any district", () => {
     // Walk every chunk that touches a district and check what the woodland
@@ -245,10 +298,31 @@ describe("the Crop Fields' grass", () => {
   // own headers. Their ground is `CROP_FIELD` now, a fixed rect rather than a
   // `STACKACRES_ZONES` entry, and `meadowBaseDensity` tests membership in it
   // directly instead of asking `zoneAt` for a district id.
-  // Dead centre of the field, clear of both its edges and the lane that
-  // crosses its west side -- a corner offset landed on that lane instead.
-  const someTile = () =>
-    meadowTileAt(CROP_FIELD.x + CROP_FIELD.width / 2, CROP_FIELD.y + CROP_FIELD.height / 2);
+  // The middle of the field's first PATCH, not the middle of the field.
+  // Dead centre used to be the safe pick; since the field was cut into
+  // patches (./terrain.ts's `CROP_FIELD_LANES`) the centre is exactly where
+  // the two middle lanes cross, and nothing grows on a lane.
+  const someTile = () => meadowTileAt(CROP_FIELD.x + 55, CROP_FIELD.y + 55);
+
+  it("grows no grass on the lanes cut through the field", () => {
+    // The lanes are worked dirt, and the rule `meadowBaseDensity` already
+    // states for roads applies to them: waist-high grass down the middle of a
+    // lane hides the structure the lane is there to draw. `nearPath` cannot
+    // answer for a lane (it is ground paint, not a PathSpec), so this is what
+    // catches it -- and it did catch it: every sampled tile on a lane was
+    // grassy before the check went in.
+    for (const lane of CROP_FIELD_LANES) {
+      for (let i = 1; i < 6; i += 1) {
+        const x = lane.x + lane.width / 2;
+        const y = lane.y + (lane.height * i) / 6;
+        const t = meadowTileAt(x, y);
+        expect(meadowBaseDensity(t.tx, t.ty), `grass on a lane at ${x},${y}`).toBe(0);
+      }
+    }
+    // ...and the patches either side of a lane still grow their grass.
+    const patch = meadowTileAt(CROP_FIELD.x + 55, CROP_FIELD.y + 55);
+    expect(meadowBaseDensity(patch.tx, patch.ty)).toBeGreaterThan(0);
+  });
 
   it("floor-divides tile coordinates, so negative world space does not fold two tiles into one", () => {
     expect(meadowTileAt(-1, -1)).toEqual({ tx: -1, ty: -1 });
@@ -345,14 +419,21 @@ describe("the scythe's stroke", () => {
   it("cuts an unbroken swathe however fast the finger moved", () => {
     // One long stroke arriving as a single move event: the sampling, not the
     // event rate, is what has to keep the swathe continuous.
-    const cut = mowStroke({ x: gate.x, y: gate.y + 40 }, { x: gate.x + 200, y: gate.y + 40 });
+    const y = gate.y + 40;
+    const cut = mowStroke({ x: gate.x, y }, { x: gate.x + 200, y });
     expect(cut.length).toBeGreaterThan(10);
     const columns = new Set(cut.map((t) => t.tx));
     // Every tile column between the ends is represented -- no gaps.
     const min = Math.min(...columns);
     const max = Math.max(...columns);
+    const ty = meadowTileAt(gate.x, y).ty;
     for (let tx = min; tx <= max; tx += 1) {
-      expect(columns.has(tx), `column ${tx} was stepped over`).toBe(true);
+      if (columns.has(tx)) continue;
+      // A stroke this long cannot stay inside one patch -- a patch is 110
+      // wide -- so it crosses a lane, and a lane is the ONE legitimate reason
+      // a column is missing: there is no grass on it to cut. Anything else is
+      // the sampling stepping over a column, which is what this guards.
+      expect(meadowBaseDensity(tx, ty), `column ${tx} was stepped over`).toBe(0);
     }
   });
 

@@ -17,9 +17,19 @@ import {
 // connections-puzzles.ts -- this is purely a drift guard.
 import { PROP_PAINTERS } from "@/components/arcade/stackacres/art-props";
 import { FARM_JUNCTIONS } from "./path-junctions";
-import { FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
+import { ALL_FARM_PATHS, FARM_PATHS, PATH_CLEARANCE, distanceToPath, nearPath } from "./paths";
 import { POND, POND_SAND, inPondZone, pondRadial } from "./water";
-import { BARN_FOOTPRINT, FARM_ZONE, WHEAT_FIELD, growAreaBounds, inFarmZone } from "./world";
+import {
+  BARN_FOOTPRINT,
+  FARM_ZONE,
+  RAY_HOUSE_FOOTPRINT,
+  WHEAT_FIELD,
+  growAreaBounds,
+  inFarmZone,
+} from "./world";
+import { FACTORY_LOT } from "./terrain";
+import { GREENHOUSE_PLOT } from "./greenhouse";
+import { CROP_FIELD } from "./yard";
 import { YARD_DELTA } from "./yard";
 
 /** The Farmstead's own grow area now: the Hen Coop block, x 170..330,
@@ -261,12 +271,25 @@ function boxesOverlap(
 describe("farmsteadClutter", () => {
   const items = farmsteadClutter();
 
-  it("places at least a few things, and never so many the band reads as gridded", () => {
+  it("fills the yard with ground cover", () => {
+    // The band used to be a 155-tall strip across the middle of the yard and
+    // dealt NINE things over the whole Farmstead, which is what "empty field"
+    // looked like up close. It covers the yard now.
+    expect(items.length).toBeGreaterThan(15);
+  });
+
+  it("keeps furniture under the junk-shop ceiling, however dense the plants get", () => {
     // "About a dozen in the yard... twenty-two read as a junk shop" is
-    // YARD_PROPS's own rule (see this file's header); the same restraint
-    // applies to a second scatter over a much larger, mostly-empty band.
-    expect(items.length).toBeGreaterThan(0);
-    expect(items.length).toBeLessThan(20);
+    // YARD_PROPS's own rule -- and it is a rule about things somebody PUT
+    // there, not about undergrowth. Bushes and wildflowers are what unmown
+    // lawn looks like; wells and barrels are what makes a junk shop. Only the
+    // second kind is capped.
+    const furniture = new Set(["well", "logPile", "toolBarrel", "hayBale1", "hayBale2", "bucket"]);
+    const placed = items.filter((i) => furniture.has(i.kind));
+    expect(placed.length).toBeLessThanOrEqual(7);
+    // ...and the plants really are the bulk of it, or the split above is
+    // doing nothing.
+    expect(items.length - placed.length).toBeGreaterThan(placed.length);
   });
 
   it("only ever places a kind from CLUTTER_KINDS", () => {
@@ -282,10 +305,48 @@ describe("farmsteadClutter", () => {
     }
   });
 
-  it("never lands on a path, the barn, the Hen Coop, the wheat field, or the pond", () => {
+  it("never lands on the Factory, the Greenhouse, Ray's house or the beds", () => {
+    // The widened band runs over all four. The narrow one never reached them,
+    // which is why farmsteadClutter had no exclusion naming them.
+    for (const item of items) {
+      for (const [name, rect] of [
+        ["the Factory's lot", FACTORY_LOT],
+        ["the Greenhouse", GREENHOUSE_PLOT],
+        ["Ray's house", RAY_HOUSE_FOOTPRINT],
+        ["the Crop Fields", CROP_FIELD],
+      ] as const) {
+        const inside =
+          item.x >= rect.x &&
+          item.x <= rect.x + rect.width &&
+          item.y >= rect.y &&
+          item.y <= rect.y + rect.height;
+        expect(inside, `${item.kind} at ${item.x},${item.y} on ${name}`).toBe(false);
+      }
+    }
+  });
+
+  it("keeps furniture off the roads entirely, and every plant off the surface", () => {
+    // Two different rules on purpose. A barrel or a well keeps the whole
+    // `nearPath` clearance -- one standing on the verge reads as dumped
+    // there. Ground cover only has to stay off the road BODY, because
+    // wildflowers along a track are where wildflowers actually grow, and
+    // holding them to furniture clearance is what left the verges bare.
+    const furniture = new Set(["well", "logPile", "toolBarrel", "hayBale1", "hayBale2", "bucket"]);
+    for (const item of items) {
+      if (furniture.has(item.kind)) {
+        expect(nearPath(item.x, item.y), `${item.kind} at ${item.x},${item.y} on a verge`).toBe(false);
+        continue;
+      }
+      const onSurface = ALL_FARM_PATHS.some(
+        (spec) => distanceToPath(item.x, item.y, spec) < spec.width / 2,
+      );
+      expect(onSurface, `${item.kind} at ${item.x},${item.y} on the road surface`).toBe(false);
+    }
+  });
+
+  it("never lands on the barn, the Hen Coop, the wheat field, or the pond", () => {
     const henCoop = growAreaBounds("farmstead");
     for (const item of items) {
-      expect(nearPath(item.x, item.y), `${item.kind} at ${item.x},${item.y} on a path`).toBe(false);
       expect(inPondZone(item.x, item.y), `${item.kind} at ${item.x},${item.y} in the pond`).toBe(false);
       for (const [name, rect] of [
         ["barn", BARN_FOOTPRINT],

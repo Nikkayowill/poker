@@ -4,7 +4,9 @@ import { GREENHOUSE_PLOT } from "./greenhouse";
 import { isoProject, isoUnproject, projectedBounds } from "./iso";
 import { ALL_FARM_PATHS, FARM_PATHS, nearestOnPath } from "./paths";
 import {
-  DIRT_YARDS,
+  CROP_FIELD_LANES,
+  COBBLE_YARDS,
+  RAY_YARD,
   SEA_EXPANSE_TILE,
   SEA_SAND_WIDTH,
   SEA_SHALLOW_WIDTH,
@@ -30,7 +32,18 @@ import {
   tileFrameOffset,
 } from "./terrain";
 import { POND, POND_SAND, POND_SHALLOW, POND_ZONE } from "./water";
-import { BARN_FOOTPRINT, FARM_ZONE, STACKACRES_CHUNK, WHEAT_FIELD, chunkScenery, type WorldPoint } from "./world";
+import { CROP_FIELD } from "./yard";
+import {
+  BARN_FOOTPRINT,
+  FACTORY_FOOTPRINT,
+  FARM_ZONE,
+  RAY_HOUSE_FOOTPRINT,
+  STACKACRES_CHUNK,
+  WHEAT_FIELD,
+  chunkScenery,
+  type WorldPoint,
+  type WorldRect,
+} from "./world";
 import { ZONE_LIST } from "./zones";
 
 describe("the lattice", () => {
@@ -305,9 +318,29 @@ describe("the dirt", () => {
     expect(mid && dirtReach(mid)).toBe(22);
   });
 
-  it("puts a yard under the barn and around the Greenhouse, and nowhere else", () => {
-    expect(DIRT_YARDS).toHaveLength(2);
-    const [barn, greenhouse] = DIRT_YARDS;
+  it("gives every building inside the farm zone ground of its own", () => {
+    expect(COBBLE_YARDS).toHaveLength(4);
+    const [barn, greenhouse, factory] = COBBLE_YARDS;
+    // Ray's own yard is checked below, against the farm-zone rule it is the
+    // single exception to.
+    expect(COBBLE_YARDS).toContain(RAY_YARD);
+    // Ray's house is the one building with no plot, because it is the one
+    // building outside the farm zone -- see COBBLE_YARDS' own comment. If this
+    // ever stops being true, he wants a plot like everyone else.
+    expect(RAY_HOUSE_FOOTPRINT.y + RAY_HOUSE_FOOTPRINT.height).toBeLessThan(FARM_ZONE.y);
+    // The Factory's lot contains the whole building with a margin. It had no
+    // ground of its own at all before -- the biggest building on the map
+    // stood on bare lawn.
+    expect(factory.x).toBeLessThanOrEqual(FACTORY_FOOTPRINT.x);
+    expect(factory.y).toBeLessThanOrEqual(FACTORY_FOOTPRINT.y);
+    expect(factory.x + factory.width).toBeGreaterThanOrEqual(
+      FACTORY_FOOTPRINT.x + FACTORY_FOOTPRINT.width,
+    );
+    expect(factory.y + factory.height).toBeGreaterThanOrEqual(
+      FACTORY_FOOTPRINT.y + FACTORY_FOOTPRINT.height,
+    );
+    // ...and stops short of the Greenhouse rather than paving under it.
+    expect(factory.x + factory.width).toBeLessThan(GREENHOUSE_PLOT.x);
     // The barn's feet stand on its ground band.
     expect(barn.x).toBeLessThanOrEqual(BARN_FOOTPRINT.x);
     expect(barn.x + barn.width).toBeGreaterThanOrEqual(BARN_FOOTPRINT.x + BARN_FOOTPRINT.width);
@@ -318,11 +351,18 @@ describe("the dirt", () => {
     expect(greenhouse.y).toBeLessThanOrEqual(GREENHOUSE_PLOT.y - 8);
     expect(greenhouse.x + greenhouse.width).toBeGreaterThanOrEqual(GREENHOUSE_PLOT.x + GREENHOUSE_PLOT.width + 8);
     expect(greenhouse.y + greenhouse.height).toBeGreaterThanOrEqual(GREENHOUSE_PLOT.y + GREENHOUSE_PLOT.height + 8);
-    for (const yard of DIRT_YARDS) {
-      expect(yard.x).toBeGreaterThanOrEqual(FARM_ZONE.x);
-      expect(yard.y).toBeGreaterThanOrEqual(FARM_ZONE.y);
-      expect(yard.x + yard.width).toBeLessThanOrEqual(FARM_ZONE.x + FARM_ZONE.width);
-      expect(yard.y + yard.height).toBeLessThanOrEqual(FARM_ZONE.y + FARM_ZONE.height);
+    for (const yard of COBBLE_YARDS) {
+      // Ray's yard is the ONE exception, and only because his house is one
+      // too: it sits at y -308..-264 while the farm zone starts at -256, so
+      // honouring this rule for him meant leaving the only building on the
+      // map with no ground under it. Every other yard is still held to the
+      // zone, so a plot drafted outside it anywhere else still fails here.
+      if (yard !== RAY_YARD) {
+        expect(yard.x).toBeGreaterThanOrEqual(FARM_ZONE.x);
+        expect(yard.y).toBeGreaterThanOrEqual(FARM_ZONE.y);
+        expect(yard.x + yard.width).toBeLessThanOrEqual(FARM_ZONE.x + FARM_ZONE.width);
+        expect(yard.y + yard.height).toBeLessThanOrEqual(FARM_ZONE.y + FARM_ZONE.height);
+      }
       const overlapsWheat =
         yard.x < WHEAT_FIELD.x + WHEAT_FIELD.width &&
         yard.x + yard.width > WHEAT_FIELD.x &&
@@ -330,6 +370,86 @@ describe("the dirt", () => {
         yard.y + yard.height > WHEAT_FIELD.y;
       expect(overlapsWheat).toBe(false);
     }
+  });
+
+  it("paves the building yards and leaves the roads between them bare", () => {
+    // The whole point of the split. Yard and road were both "dirt" before, so
+    // the barn's apron, the Factory's lot and every road in the yard melted
+    // into one tan mass with no edge anywhere in it -- the Crop Fields read
+    // as designed precisely because their lanes are bounded on both sides.
+    for (const yard of COBBLE_YARDS) {
+      // Sampled rather than probed at the centre: a road may legitimately
+      // cross a yard and stays a road where it does -- Ray's own drive runs
+      // straight through the middle of his, which is what a drive is for. So
+      // the rule is that a yard is paved wherever a road has not claimed it,
+      // and never lawn.
+      let paved = 0;
+      for (let i = 1; i <= 4; i += 1) {
+        for (let j = 1; j <= 4; j += 1) {
+          const x = yard.x + (yard.width * i) / 5;
+          const y = yard.y + (yard.height * j) / 5;
+          const material = terrainMaterialAt(x, y);
+          expect(material, `lawn left inside a yard at ${x},${y}`).not.toBe("grass");
+          if (material === "cobble") paved += 1;
+        }
+      }
+      expect(paved, `nothing paved in the yard at ${yard.x},${yard.y}`).toBeGreaterThan(0);
+    }
+    // A road in the yard stays earth, so it still reads as a road across the
+    // stone rather than as more of it.
+    const yardRoad = FARM_PATHS.find((p) => p.key === "yardRoad");
+    expect(yardRoad).toBeDefined();
+    const on = yardRoad!.points[1];
+    expect(terrainMaterialAt(on.x, on.y)).toBe("dirt");
+  });
+
+  it("never paves under a building the ground does not belong to", () => {
+    const overlaps = (a: WorldRect, b: WorldRect) =>
+      a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+    const [barnYard, greenhouseYard, factoryYard] = COBBLE_YARDS;
+    // Each lot keeps to its own building. The Factory's is the one with
+    // neighbours close enough for this to bite: the Greenhouse and the wheat
+    // plot both sit just east of it.
+    expect(overlaps(factoryYard, GREENHOUSE_PLOT)).toBe(false);
+    expect(overlaps(factoryYard, WHEAT_FIELD)).toBe(false);
+    expect(overlaps(factoryYard, BARN_FOOTPRINT)).toBe(false);
+    expect(overlaps(factoryYard, RAY_HOUSE_FOOTPRINT)).toBe(false);
+    expect(overlaps(barnYard, RAY_HOUSE_FOOTPRINT)).toBe(false);
+    expect(overlaps(greenhouseYard, WHEAT_FIELD)).toBe(false);
+    // And the field's lanes stay in the field, clear of every building.
+    for (const lane of CROP_FIELD_LANES) {
+      for (const building of [
+        BARN_FOOTPRINT,
+        RAY_HOUSE_FOOTPRINT,
+        FACTORY_FOOTPRINT,
+        GREENHOUSE_PLOT,
+        WHEAT_FIELD,
+      ]) {
+        expect(overlaps(lane, building)).toBe(false);
+      }
+    }
+  });
+
+  it("cuts the Crop Fields into patches with dirt lanes", () => {
+    expect(CROP_FIELD_LANES).toHaveLength(6);
+    for (const lane of CROP_FIELD_LANES) {
+      // Every lane lies entirely inside the field it divides.
+      expect(lane.x).toBeGreaterThanOrEqual(CROP_FIELD.x);
+      expect(lane.y).toBeGreaterThanOrEqual(CROP_FIELD.y);
+      expect(lane.x + lane.width).toBeLessThanOrEqual(CROP_FIELD.x + CROP_FIELD.width);
+      expect(lane.y + lane.height).toBeLessThanOrEqual(CROP_FIELD.y + CROP_FIELD.height);
+      // Wide enough to take in two rows of the terrain lattice whatever
+      // phase it lands on, so a lane never bakes away to nothing.
+      expect(Math.min(lane.width, lane.height)).toBeGreaterThan(TERRAIN_CELL);
+    }
+    // A lane is worked dirt; the patch either side of it is not. Sampled in
+    // the middle of the field's first row of patches rather than at the
+    // lane's own mid-height, which is where a crossing lane runs.
+    const lane = CROP_FIELD_LANES[0];
+    const patchY = CROP_FIELD.y + 55;
+    expect(terrainMaterialAt(lane.x + lane.width / 2, patchY)).toBe("dirt");
+    expect(terrainMaterialAt(lane.x - 40, patchY)).toBe("grass");
+    expect(terrainMaterialAt(lane.x + lane.width + 40, patchY)).toBe("grass");
   });
 });
 

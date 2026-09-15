@@ -342,12 +342,12 @@ describe("grass yields to placed soil", () => {
   // same size as a meadow tile, a run of adjacent beds leaves little to no
   // bare ground immediately next to any one of them, so a "just outside the
   // bed" probe would as often land on a NEIGHBOURING bed as on open ground.
-  // A single tile at the field's own centre keeps every test below
-  // meaningful.
-  const centreTile = soilTileAt(
-    CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
-    CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
-  );
+  // A single tile well inside the field's first PATCH keeps every test below
+  // meaningful. It used to be the field's own centre, which stopped working
+  // when the field was cut into patches (./terrain.ts's `CROP_FIELD_LANES`):
+  // the centre is where the two middle lanes cross, no grass grows on a lane,
+  // and so a bed placed there has no grass collar to measure.
+  const centreTile = soilTileAt(CROP_FIELD_BEDS.x + 55, CROP_FIELD_BEDS.y + 55);
   const soil = createSoilMap([{ ...centreTile, order: 0, origin: "starter" }]);
   const bed = orderedSoilTiles(soil)[0];
   const centre = {

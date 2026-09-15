@@ -159,23 +159,102 @@ export function seaExpanseTiles(reach: WorldRect): WorldPoint[] {
   return out;
 }
 
-/* ---- the dirt ------------------------------------------------------------ */
+/* ---- the yards ----------------------------------------------------------- */
 
 /**
- * The two yards that are worked ground rather than lawn: the barn's apron
- * (its ground band, the picture box's feet, with the yard in front of the
- * door) and the Greenhouse's plot with a margin. Yard literals, so they move
- * with the Farmstead; terrain.test.ts holds them to `BARN_FOOTPRINT` and
- * `GREENHOUSE_PLOT`, which live in modules this one must not value-import.
+ * The Factory's lot: its footprint (yardRect(94, 277, 250, 150)) with a
+ * 14-unit margin, except on two sides. East it stops 2 units short of the
+ * Greenhouse's own plot rather than running under it, and south it stops on
+ * `FARM_ZONE`'s own edge -- the building's feet are only 4 units off it, so
+ * an even margin there would hang the lot outside the Farmstead entirely.
  *
- * The old Hen Pen block is deliberately not here. Its mud stayed after the
- * hens moved to Hen Haven as "the worn ground the coops left behind", and
- * what that read as on screen was a large empty brown square in the middle
- * of the yard. It is lawn again.
+ * Exported, unlike the other two entries, because ./props.ts excludes the
+ * whole LOT from the yard's clutter scatter rather than just the building: a
+ * flowering bush standing on an industrial yard reads as a mistake whether or
+ * not it is touching the wall.
  */
-export const DIRT_YARDS: readonly WorldRect[] = [
+export const FACTORY_LOT: WorldRect = yardRect(80, 263, 266, 168);
+
+/**
+ * Ray's own yard: `RAY_HOUSE_FOOTPRINT` (yardRect(72, -133, 90, 44)) with a
+ * margin, stopping well short of the barn's picture box south of it so the
+ * two read as neighbours across a strip of lawn.
+ *
+ * THE ONE PAVED YARD OUTSIDE `FARM_ZONE`, and it has to be. Ray's house sits
+ * at y -308..-264 while the farm zone starts at -256, so `zoneAt` returns
+ * null over the whole building -- he stands eight units off the end of his
+ * own farm. That is a quirk of where PR #480 put the house rather than a
+ * decision about Ray, and the cost of honouring it was that his was the only
+ * building on the map standing on bare lawn while the barn, the Greenhouse
+ * and the Factory all had ground. terrain.test.ts names this rect as the
+ * single exception to "every yard is inside the farm zone" rather than
+ * dropping that rule, so a yard drafted anywhere else outside it still fails.
+ */
+export const RAY_YARD: WorldRect = yardRect(58, -147, 118, 72);
+
+/**
+ * The yards that are PAVED rather than bare earth: the ground each building
+ * in the farmyard stands on.
+ *
+ * Why these are not simply more `DIRT_YARDS`. A building's yard and the road
+ * that reaches it were both "dirt", the same material with no edge between
+ * them, so the barn's apron, the Factory's lot and every road in the yard
+ * melted into one amorphous tan mass -- the Crop Fields read as designed
+ * because their lanes are bounded by green on both sides, and the farmyard
+ * had no such boundary anywhere in it. Paving the yards separates them: worked
+ * stone where the buildings are, bare earth for the roads between, lawn
+ * around both.
+ *
+ * Cobble is the right material and not a new one: it is already `PairGrass`'s
+ * fifth pair, already what the entrance lane is laid with, and the barn has
+ * stood on a stone apron since that lane was paved. This makes the rest of
+ * the yard agree with the barn rather than inventing a look for it.
+ */
+export const COBBLE_YARDS: readonly WorldRect[] = [
+  // The barn's apron: its ground band, the picture box's feet, with the yard
+  // in front of the door.
   yardRect(55, -6, 120, 60),
+  // The Greenhouse's plot, with a margin.
   yardRect(336, 322, 104, 84),
+  FACTORY_LOT,
+  RAY_YARD,
+  //
+  // The old Hen Pen block is not here either. Its mud stayed after the hens
+  // moved to Hen Haven as "the worn ground the coops left behind", and what
+  // that read as on screen was a large empty brown square in the middle of
+  // the yard. It is lawn again.
+];
+
+/**
+ * The walking lanes through the Crop Fields, which cut the one 512-square
+ * block into sixteen 110-square patches.
+ *
+ * Ground paint only. Beds are still placeable anywhere inside
+ * `CROP_FIELD_BEDS` (./world.ts), including across a lane -- a lane refuses
+ * nothing, and no existing bed moved or stopped working when these arrived.
+ * What they change is that the field reads as a worked farm broken into plots
+ * rather than as one uniform green square, which is the whole complaint they
+ * exist to answer.
+ *
+ * 24 wide rather than 16: the terrain lattice samples corners every 16 units
+ * on its own (8,-8) phase, so a 16-wide band can fall between two corner rows
+ * and bake one cell thick in some places and none in others. 24 always takes
+ * in two rows, the same reasoning `dirtReach` uses for a road. That leaves
+ * 512 - 3*24 = 440 for four patches of 110 across each axis.
+ *
+ * Yard literals like `DIRT_YARDS` above, so they move with the Farmstead, and
+ * terrain.test.ts holds them inside `CROP_FIELD` rather than restating them.
+ */
+const CROP_LANE = 24;
+const CROP_PATCH = 110;
+export const CROP_FIELD_LANES: readonly WorldRect[] = [
+  // Three lanes north-south, three east-west, on the patch pitch.
+  yardRect(464 + CROP_PATCH, -81, CROP_LANE, 512),
+  yardRect(464 + CROP_PATCH * 2 + CROP_LANE, -81, CROP_LANE, 512),
+  yardRect(464 + CROP_PATCH * 3 + CROP_LANE * 2, -81, CROP_LANE, 512),
+  yardRect(464, -81 + CROP_PATCH, 512, CROP_LANE),
+  yardRect(464, -81 + CROP_PATCH * 2 + CROP_LANE, 512, CROP_LANE),
+  yardRect(464, -81 + CROP_PATCH * 3 + CROP_LANE * 2, 512, CROP_LANE),
 ];
 
 /**
@@ -235,7 +314,11 @@ export function terrainMaterialAt(x: number, y: number): TerrainMaterial {
   }
   const road = roadSurfaceAt(x, y);
   if (road) return road;
-  for (const yard of DIRT_YARDS) if (inRect(x, y, yard)) return "dirt";
+  // Paved yards beat the lanes: nothing overlaps today, and if a building's
+  // ground ever did reach the field, the building is the thing that was put
+  // there on purpose.
+  for (const yard of COBBLE_YARDS) if (inRect(x, y, yard)) return "cobble";
+  for (const lane of CROP_FIELD_LANES) if (inRect(x, y, lane)) return "dirt";
   return "grass";
 }
 

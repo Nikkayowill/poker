@@ -2987,6 +2987,20 @@ export async function feedStackAcres(
   let fed: StoredStackAcresUnit | null;
   try {
     fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
+    // Same version-guard retry as feedStackAcresPen below, and for the same
+    // reason: a miss here almost always means this function's own read at
+    // the top went stale for this one unit (irrigation/auto-feed tick, or an
+    // overlapping request on the same animal), not a real refusal. Without
+    // it, the optimistic patch already showing "fed" on screen gets rolled
+    // back a beat later purely because of a read that was a hair too old --
+    // the flicker back to hungry the player sees is this exact gap.
+    if (!fed) {
+      const freshUnit = await getStackAcresUnit(profile.id, unit.id);
+      if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now)) {
+        const retryPush = feedPushFor(freshUnit, now);
+        fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt);
+      }
+    }
   } catch (error) {
     await adjustStackAcresFeed(profile.id, 1).catch(() => null);
     throw error;
@@ -3100,6 +3114,24 @@ export async function feedStackAcresPen(
  * whole tending loop -- so a drink only counts once the ground actually
  * needs it.
  */
+/** How far to push `ready_at` for a dry unit's next water: a seed's first
+ *  drink starts its clock from zero (`seedClockOnFirstWater`), anything else
+ *  keeps its progress and has the dry spell added on. Shared by
+ *  `waterStackAcres` and `waterStackAcresGroup`, including each one's own
+ *  version-guard retry, which needs the identical math against a freshly
+ *  re-read row. */
+function waterPushFor(row: StoredStackAcresUnit, now: Date): { pushed: Date; restartedAt: Date | null } {
+  if (isUnwateredSeedRow(row)) {
+    const clock = seedClockOnFirstWater(row, now.getTime());
+    return { pushed: clock.readyAt, restartedAt: clock.startedAt };
+  }
+  const thirstyAt = thirstyAtFor(row);
+  const driedAt = thirstyAt ? Date.parse(thirstyAt) : NaN;
+  const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+  const readyAt = Date.parse(row.readyAt);
+  return { pushed: new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs), restartedAt: null };
+}
+
 export async function waterStackAcres(
   token: string,
   unitIdInput: string,
@@ -3115,8 +3147,7 @@ export async function waterStackAcres(
     });
   }
 
-  const thirstyAt = thirstyAtFor(unit);
-  if (!thirstyAt) {
+  if (!thirstyAtFor(unit)) {
     throw new StackAcresRequestError("That does not grow in soil.", 400, {
       round: await snapshots(profile.id, now),
     });
@@ -3135,21 +3166,7 @@ export async function waterStackAcres(
   const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
   if (!isStackAcresUnitDry(unit, now, irrigated.has(unit.id))) return view(profile, now);
 
-  let pushed: Date;
-  let restartedAt: Date | null = null;
-  if (isUnwateredSeedRow(unit)) {
-    // Seed's first water starts its clock from zero.
-    const clock = seedClockOnFirstWater(unit, now.getTime());
-    pushed = clock.readyAt;
-    restartedAt = clock.startedAt;
-  } else {
-    // Any other dry crop keeps its progress and has the dry spell added to
-    // ready_at.
-    const driedAt = Date.parse(thirstyAt);
-    const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
-    const readyAt = Date.parse(unit.readyAt);
-    pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
-  }
+  const { pushed, restartedAt } = waterPushFor(unit, now);
 
   const remaining = await adjustStackAcresWater(profile.id, -1);
   if (remaining === null) {
@@ -3161,6 +3178,25 @@ export async function waterStackAcres(
   let watered: StoredStackAcresUnit | null;
   try {
     watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
+    // Same version-guard retry as waterStackAcresGroup below, and for the
+    // same reason: a miss here almost always means this function's own read
+    // at the top went stale for this one unit (irrigation's auto-water tick,
+    // or an overlapping request on the same crop), not a real refusal.
+    // Without it, the optimistic patch already painted watered on screen
+    // gets rolled back a beat later purely because of a read that was a
+    // hair too old -- that round trip back to thirsty is the flicker.
+    if (!watered) {
+      const fresh = await getStackAcresUnit(profile.id, unit.id);
+      if (
+        fresh &&
+        fresh.status === "working" &&
+        thirstyAtFor(fresh) !== null &&
+        isStackAcresUnitDry(fresh, now, irrigated.has(fresh.id))
+      ) {
+        const retryPush = waterPushFor(fresh, now);
+        watered = await waterStackAcresUnit(fresh, now, retryPush.pushed, retryPush.restartedAt);
+      }
+    }
   } catch (error) {
     await adjustStackAcresWater(profile.id, 1).catch(() => null);
     throw error;
@@ -3211,24 +3247,12 @@ export async function waterStackAcresGroup(
     });
   }
 
-  const waterPushFor = (row: StoredStackAcresUnit): { pushed: Date; restartedAt: Date | null } => {
-    if (isUnwateredSeedRow(row)) {
-      const clock = seedClockOnFirstWater(row, now.getTime());
-      return { pushed: clock.readyAt, restartedAt: clock.startedAt };
-    }
-    const thirstyAt = thirstyAtFor(row);
-    const driedAt = thirstyAt ? Date.parse(thirstyAt) : NaN;
-    const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
-    const readyAt = Date.parse(row.readyAt);
-    return { pushed: new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs), restartedAt: null };
-  };
-
   let wateredCount = 0;
   for (const unit of dry) {
     const remaining = await adjustStackAcresWater(profile.id, -1);
     if (remaining === null) break;
 
-    const { pushed, restartedAt } = waterPushFor(unit);
+    const { pushed, restartedAt } = waterPushFor(unit, now);
 
     let watered: StoredStackAcresUnit | null;
     try {
@@ -3252,7 +3276,7 @@ export async function waterStackAcresGroup(
           thirstyAtFor(fresh) !== null &&
           isStackAcresUnitDry(fresh, now, irrigated.has(fresh.id))
         ) {
-          const retryPush = waterPushFor(fresh);
+          const retryPush = waterPushFor(fresh, now);
           watered = await waterStackAcresUnit(fresh, now, retryPush.pushed, retryPush.restartedAt);
         }
       }

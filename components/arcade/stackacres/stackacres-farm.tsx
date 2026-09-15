@@ -266,6 +266,7 @@ import {
   type FarmPredictContext,
   type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
+import { mergeIncomingStackAcresUnits, touchedUnitIds } from "@/lib/stackacres/unit-merge";
 
 /** A promise and the handle that settles it, for a gate another call has to
  *  be able to wait on -- see `pendingUnitCreates`. */
@@ -1351,6 +1352,47 @@ export function StackAcresFarm() {
    * action at the row the server actually made.
    */
   const pendingUnitCreates = useRef(new Set<Promise<unknown>>());
+  /**
+   * Refcounted: which unit ids carry an optimistic guess from an action that
+   * is STILL in the air, and how many overlapping in-flight actions are
+   * claiming each one.
+   *
+   * Every response this farm gets back is a full, authoritative unit list,
+   * not a diff -- one action's `snapshots()` read on the server can only
+   * know about writes that had already committed by the moment it ran. Two
+   * actions fired close together (planting four crops in a burst is four
+   * separate requests; two rapid taps on different tiles is two) race each
+   * other's full-list responses: whichever lands first does not yet know
+   * about the other's still-uncommitted write, so its `units` array is
+   * missing a just-created crop, or still shows an old field a sibling tap
+   * already painted watered/fed. A bare `setUnits(data.units)` would
+   * overwrite the sibling's correct, still-pending optimistic guess with
+   * that stale truth -- gone for a beat, then restored a moment later once
+   * the sibling's OWN response lands. That round trip is the flicker.
+   *
+   * `applyResponse` reads this to keep any unit id still claimed by someone
+   * else's in-flight action showing this browser's own guess instead of an
+   * incoming response's stale view of it. `act` populates it right after
+   * applying its own guess (see the diff against the pre-guess snapshot
+   * below) and releases its claim the instant its own response is about to
+   * be painted -- refcounted rather than a plain Set because two group
+   * actions can legitimately claim the same unit id at once (overlapping
+   * bed selections), and the second's release must not steal the first's
+   * still-live claim.
+   */
+  const pendingOptimisticUnitIds = useRef(new Map<string, number>());
+  const claimOptimisticUnitIds = useCallback((ids: readonly string[]) => {
+    for (const id of ids) {
+      pendingOptimisticUnitIds.current.set(id, (pendingOptimisticUnitIds.current.get(id) ?? 0) + 1);
+    }
+  }, []);
+  const releaseOptimisticUnitIds = useCallback((ids: readonly string[]) => {
+    for (const id of ids) {
+      const count = pendingOptimisticUnitIds.current.get(id) ?? 0;
+      if (count <= 1) pendingOptimisticUnitIds.current.delete(id);
+      else pendingOptimisticUnitIds.current.set(id, count - 1);
+    }
+  }, []);
   // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
   // retiring refunds nothing, so it has to be two deliberate taps.
   const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
@@ -1529,7 +1571,19 @@ export function StackAcresFarm() {
     // tell `restoreFarmSnapshot` about.
     localGenRef.current += 1;
     if (data.profile) setProfile(data.profile);
-    if (data.units) setUnits(data.units);
+    // A unit id still claimed by a SIBLING action that has not answered yet
+    // (see pendingOptimisticUnitIds's own header) keeps this browser's own
+    // guess instead of this response's view of it -- whether that means
+    // overriding a stale field this response predates, or, for a crop that
+    // response has never heard of yet, putting it back in at all.
+    if (data.units) {
+      const incoming = data.units;
+      setUnits((prev) =>
+        pendingOptimisticUnitIds.current.size === 0
+          ? incoming
+          : mergeIncomingStackAcresUnits(prev, incoming, pendingOptimisticUnitIds.current.keys()),
+      );
+    }
     if (typeof data.feed === "number") setFeed(data.feed);
     if (typeof data.water === "number") setWater(data.water);
     if (data.capacity) setCapacity(data.capacity);
@@ -2094,6 +2148,18 @@ export function StackAcresFarm() {
       const snapshot = captureFarmSnapshot();
       const patch = predictStackAcresAction(body, buildPredictContext());
       const optimisticApplied = patch !== null;
+      // Claimed the instant the guess is on screen, released the instant
+      // THIS action's own answer is about to be painted (success below) or,
+      // failing that, once it is done trying entirely (`finally`) -- see
+      // pendingOptimisticUnitIds's own header.
+      const touchedIds = patch?.units ? touchedUnitIds(snapshot.units, patch.units) : [];
+      if (touchedIds.length > 0) claimOptimisticUnitIds(touchedIds);
+      let touchedClaimReleased = false;
+      const releaseTouchedClaim = () => {
+        if (touchedClaimReleased) return;
+        touchedClaimReleased = true;
+        if (touchedIds.length > 0) releaseOptimisticUnitIds(touchedIds);
+      };
       if (patch) applyResponse(patch);
       // The travelers' story ticks the instant this request is sent, not
       // when it lands -- see storyRef's own header. Every event this action
@@ -2189,6 +2255,10 @@ export function StackAcresFarm() {
           if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
           return { ok: false, message: data.error ?? "That did not go through." };
         }
+        // Released before painting the response -- this action's own guess
+        // is about to be superseded by its own truth, so it must not go on
+        // shielding whatever it touched from getting that truth applied.
+        releaseTouchedClaim();
         applyResponse(data);
         // What a tap on the just-made crop will match its provisional id
         // against, recorded before React has committed the list above.
@@ -2422,6 +2492,10 @@ export function StackAcresFarm() {
         if (mounted.current) setError(unreachable);
         return { ok: false, message: unreachable };
       } finally {
+        // Safety net for the refusal and dropped-connection paths, which
+        // roll the guess back rather than supersede it -- a no-op if the
+        // success path above already released this action's claim.
+        releaseTouchedClaim();
         if (createGate) {
           pendingUnitCreates.current.delete(createGate.promise);
           createGate.settle();
@@ -2443,6 +2517,8 @@ export function StackAcresFarm() {
       restoreFarmSnapshot,
       buildPredictContext,
       settleProvisionalTargets,
+      claimOptimisticUnitIds,
+      releaseOptimisticUnitIds,
     ],
   );
 

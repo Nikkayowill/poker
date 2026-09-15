@@ -54,7 +54,22 @@ async function stubSocialApis(page: Page): Promise<Stubs> {
   // that has to stop offering buttons.
   let incoming = [PENDING_REQUEST];
 
-  await page.route((url) => url.pathname === "/api/notifications", (route) => route.fulfill({ json: NOTIFICATIONS }));
+  // The inbox reads notifications through the shared lobby poll now
+  // (lib/hub/hub-poller.ts), so the stub answers /api/hub with whichever
+  // sections that request asked for rather than the retired per-readout
+  // route. Anything else the poll happens to include is answered empty.
+  await page.route((url) => url.pathname === "/api/hub", (route) => {
+    const include = new URL(route.request().url()).searchParams.get("include") ?? "";
+    const payload: Record<string, unknown> = {};
+    for (const section of include.split(",").filter(Boolean)) {
+      if (section === "notifications") payload.notifications = NOTIFICATIONS;
+      if (section === "invites") payload.invites = { invites: [], ttlMs: 300_000 };
+      if (section === "headsUp") payload.headsUp = { invites: [] };
+      if (section === "missions") payload.missions = { daily: [], weekly: [] };
+      if (section === "achievements") payload.achievements = { achievements: [] };
+    }
+    return route.fulfill({ json: payload });
+  });
   await page.route((url) => url.pathname === "/api/notifications/read-all", (route) => route.fulfill({ json: {} }));
   await page.route((url) => url.pathname === "/api/friends", (route) => route.fulfill({
     json: { friends: [], incoming, outgoing: [], recentOpponents: [] },

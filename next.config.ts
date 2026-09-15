@@ -22,6 +22,12 @@ const adsterraOrigins = [
 // (components/auth/turnstile-widget.tsx). Fixed host, unlike Adsterra.
 const turnstileOrigin = "https://challenges.cloudflare.com";
 
+// Browser Sentry events used to be tunnelled through this app's own
+// /monitoring route, which made every beacon a billed function invocation on
+// an app with no users yet. They go straight to Sentry now, so the ingest
+// host has to be reachable from the page.
+const sentryIngestOrigin = "https://*.ingest.us.sentry.io";
+
 const csp = [
   "default-src 'self'",
   // 'wasm-unsafe-eval' is for the 3D table room's Meshopt decoder
@@ -35,7 +41,7 @@ const csp = [
   // websocket -- the bare scheme (any host) rather than a specific LAN IP,
   // so this doesn't leak a developer's home network address into source
   // control and still works from any device on the LAN, not just one.
-  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws:" : ""}`,
+  `connect-src 'self' blob: https://*.supabase.co wss://*.supabase.co ${sentryIngestOrigin} ${adsterraOrigins} ${turnstileOrigin}${isDev ? " ws:" : ""}`,
   `frame-src 'self' ${adsterraOrigins} ${turnstileOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -120,9 +126,11 @@ export default withSentryConfig(nextConfig, {
   project: "riverroom-nextjs",
   silent: !process.env.CI,
   widenClientFileUpload: true,
-  tunnelRoute: "/monitoring",
   webpack: {
-    automaticVercelMonitors: true,
+    // Wrapping cron routes for Sentry check-ins needs the Node SDK, which no
+    // longer ships (see the note on instrumentation-client.ts being the only
+    // Sentry entry point left).
+    automaticVercelMonitors: false,
     treeshake: {
       removeDebugLogging: true,
     },

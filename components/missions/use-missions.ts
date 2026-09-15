@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MissionsPayload, MissionView } from "@/lib/missions/types";
-import { startVisiblePoll } from "@/lib/ui/visible-poll";
+import { subscribeHub } from "@/lib/hub/hub-poller";
 
 /**
  * Polled, not fetch-once like useProgression -- a mission finished at the
- * table a moment ago should show up in the lobby soon after, matching
- * friends-drawer.tsx's INVITE_POLL_MS pattern rather than the rank strip's
- * single load.
+ * table a moment ago should show up in the lobby soon after.
+ *
+ * The poll itself is no longer this hook's: it rides lib/hub/hub-poller.ts's
+ * shared request alongside notifications and achievements, which is what took
+ * an idle lobby from three invocations a tick to one a minute. The cadence
+ * lives there too.
  */
-const POLL_MS = 15_000;
 
 export interface MissionsState {
   data: MissionsPayload | null;
@@ -23,7 +25,6 @@ export interface MissionsState {
 export function useMissions(): MissionsState {
   const [data, setData] = useState<MissionsPayload | null>(null);
   const [justCompleted, setJustCompleted] = useState<MissionView[]>([]);
-  const mounted = useRef(true);
   // Not state: this is bookkeeping for the diff, not something that should
   // itself trigger a render.
   const previousCompleted = useRef<Map<string, boolean>>(new Map());
@@ -31,44 +32,26 @@ export function useMissions(): MissionsState {
   const clearCompleted = useCallback(() => setJustCompleted([]), []);
 
   useEffect(() => {
-    mounted.current = true;
+    return subscribeHub(["missions"], (payload) => {
+      const next = payload.missions;
+      if (!next) return;
 
-    const load = async () => {
-      try {
-        const response = await fetch("/api/missions", { cache: "no-store" });
-        if (!response.ok || !mounted.current) return;
-        const next = (await response.json()) as MissionsPayload;
-
-        const newlyCompleted: MissionView[] = [];
-        for (const mission of [...next.daily, ...next.weekly]) {
-          // Only a mission this hook has already SEEN as incomplete counts --
-          // one that was already done before this session started must not
-          // toast on the first load.
-          if (mission.completed && previousCompleted.current.get(mission.code) === false) {
-            newlyCompleted.push(mission);
-          }
-          previousCompleted.current.set(mission.code, mission.completed);
+      const newlyCompleted: MissionView[] = [];
+      for (const mission of [...next.daily, ...next.weekly]) {
+        // Only a mission this hook has already SEEN as incomplete counts --
+        // one that was already done before this session started must not
+        // toast on the first load.
+        if (mission.completed && previousCompleted.current.get(mission.code) === false) {
+          newlyCompleted.push(mission);
         }
-
-        setData(next);
-        if (newlyCompleted.length > 0) {
-          setJustCompleted((current) => [...current, ...newlyCompleted]);
-        }
-      } catch {
-        // Silent, same contract as useProgression: a readout beside working
-        // controls should fail quietly rather than show an error banner.
+        previousCompleted.current.set(mission.code, mission.completed);
       }
-    };
 
-    // Deferred through a timer rather than fired from the effect body,
-    // matching useProgression and friends-drawer.tsx. startVisiblePoll owns
-    // that first timer plus the interval, and skips ticks while the tab is
-    // hidden.
-    const stopPoll = startVisiblePoll(() => void load(), POLL_MS);
-    return () => {
-      mounted.current = false;
-      stopPoll();
-    };
+      setData(next);
+      if (newlyCompleted.length > 0) {
+        setJustCompleted((current) => [...current, ...newlyCompleted]);
+      }
+    });
   }, []);
 
   return { data, justCompleted, clearCompleted };

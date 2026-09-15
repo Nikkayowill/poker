@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import { addTrail, reportMessage } from "@/lib/monitoring/monitor";
 
 /**
  * Sign-in redirect telemetry.
@@ -11,6 +11,10 @@ import * as Sentry from "@sentry/nextjs";
  * deployment. These reports capture the values actually used in the browser at
  * the moment of the click, which is the only place that truth exists.
  */
+
+// Reported through lib/monitoring/monitor.ts rather than "@sentry/nextjs"
+// directly: poker-app.tsx imports this module, and naming the SDK here put
+// its whole server build in every function that page belongs to.
 
 /**
  * What the browser is about to hand Supabase as the post-Google destination.
@@ -27,8 +31,8 @@ export function reportOAuthStart(callbackUrl: string): void {
     buildSiteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
     hasServiceWorker: Boolean(navigator.serviceWorker?.controller),
   };
-  Sentry.addBreadcrumb({ category: "auth", level: "info", message: "oauth.start", data: detail });
-  Sentry.captureMessage("oauth.start", { level: "info", extra: detail });
+  addTrail({ category: "auth", level: "info", message: "oauth.start", data: detail });
+  reportMessage("oauth.start", { level: "info", extra: detail });
 }
 
 /**
@@ -45,7 +49,7 @@ export function reportStrayAuthCode(exchanged: boolean): void {
     buildSiteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
     hasServiceWorker: Boolean(navigator.serviceWorker?.controller),
   };
-  Sentry.captureMessage("oauth.stray_code_at_root", {
+  reportMessage("oauth.stray_code_at_root", {
     level: exchanged ? "warning" : "error",
     extra: detail,
   });

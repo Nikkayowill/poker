@@ -1,8 +1,8 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import NextError from "next/error";
 import { useEffect } from "react";
+import { reportFatalError } from "@/lib/monitoring/monitor";
 
 export default function GlobalError({
   error,
@@ -10,7 +10,9 @@ export default function GlobalError({
   error: Error & { digest?: string };
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Not `Sentry.captureException` directly: see lib/monitoring/monitor.ts
+    // for why naming the SDK from this file costs 1.7MB in every page function.
+    reportFatalError(error);
   }, [error]);
 
   return (

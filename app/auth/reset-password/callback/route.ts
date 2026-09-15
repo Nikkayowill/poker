@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
 import { linkAuthenticatedUser } from "@/lib/server/link-account";
 import { withRequestSessionCookie } from "@/lib/server/session";
@@ -31,10 +30,6 @@ export async function GET(request: NextRequest) {
       authError,
       paramKeys: [...searchParams.keys()],
     });
-    Sentry.captureMessage("password_reset.callback_missing_code", {
-      level: "error",
-      extra: { origin, authError },
-    });
     return NextResponse.redirect(`${origin}/?resetError=1`);
   }
 
@@ -52,10 +47,6 @@ export async function GET(request: NextRequest) {
       code: error?.code,
       message: error?.message,
     });
-    Sentry.captureMessage("password_reset.exchange_failed", {
-      level: "error",
-      extra: { origin, reason: error?.message ?? "no session returned" },
-    });
     return NextResponse.redirect(`${origin}/?resetError=1`);
   }
 
@@ -68,7 +59,6 @@ export async function GET(request: NextRequest) {
     );
   } catch (linkError) {
     console.error("[auth/reset-password/callback] linkAuthenticatedUser failed", linkError);
-    Sentry.captureException(linkError, { extra: { origin, stage: "link_account" } });
     return NextResponse.redirect(`${origin}/?resetError=1`);
   }
 }

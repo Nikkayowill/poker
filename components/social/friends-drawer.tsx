@@ -7,6 +7,7 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { useClipboardCopy } from "@/components/use-clipboard-copy";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
+import { subscribeHub } from "@/lib/hub/hub-poller";
 import type { GameSnapshot, PublicSeat } from "@/lib/game/types";
 import { TIER_CONFIG } from "@/lib/game/tiers";
 // Type-only: heads-up-shell.tsx is a "use client" component, but this import
@@ -48,13 +49,12 @@ const SIGNED_OUT_STATUS = 401;
 const GUEST_STATUS = 403;
 
 /**
- * How often the open drawer re-reads its invites.
+ * How often the expiry countdown on each invite row re-renders.
  *
  * An invite is live for five minutes (TABLE_INVITE_TTL_MS) and points at a
- * table running right now, so a list that only loaded when the drawer opened
- * would offer seats that are already gone and miss the one that just arrived.
- * /api/invites/pending allows 120/minute precisely so a client can poll; four
- * a minute leaves that untouched even with several tabs open.
+ * table running right now, so a row that has lapsed has to stop being
+ * offered rather than just read "Expired". Re-reading the list itself is the
+ * hub poller's job (lib/hub/hub-poller.ts), on this same cadence.
  */
 const INVITE_POLL_MS = 15_000;
 
@@ -284,54 +284,12 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
   }, []);
 
   /**
-   * Reads the invite list, and never reports its own failure.
-   *
-   * Separate from `load`: this one polls, and a transient failure on a
-   * background poll must not replace the friends list the player is reading
-   * with an error banner. The gate is `load`'s to decide; both routes make
-   * the same 401/403 split, so a signed-out visitor is already being told.
-   */
-  const loadInvites = useCallback(async () => {
-    try {
-      const response = await fetch("/api/invites/pending", { cache: "no-store" });
-      if (!response.ok) {
-        // A gate is not an error, but it does mean there is nothing to show.
-        if (response.status === SIGNED_OUT_STATUS || response.status === GUEST_STATUS) {
-          if (mounted.current) setInvites([]);
-        }
-        return;
-      }
-      const data = (await response.json()) as { invites: PendingTableInvite[] };
-      if (mounted.current) setInvites(data.invites ?? []);
-    } catch {
-      // Left as-is: the previous list is closer to the truth than an empty one,
-      // and every row carries its own expiry, which the countdown enforces.
-    }
-  }, []);
-
-  /**
-   * Reads pending Heads-Up challenges, same silent-on-failure contract as
-   * `loadInvites` above: a transient miss on a background poll should leave
-   * the last-known list standing, not blank it or surface a banner.
-   */
-  const loadHeadsUpInvites = useCallback(async () => {
-    try {
-      const response = await fetch("/api/heads-up", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { invites?: HeadsUpTable[] };
-      if (mounted.current) setHeadsUpInvites(data.invites ?? []);
-    } catch {
-      // Left as-is; see loadInvites' own comment for why.
-    }
-  }, []);
-
-  /**
    * The caller's own invite code, fetching-and-creating it on first open.
    *
-   * Silent on failure like `loadInvites`: the code is a convenience this
-   * drawer offers on top of everything else, and a transient miss just
-   * leaves that one control showing its own loading state rather than
-   * blanking the whole drawer with an error banner.
+   * Silent on failure, like the invite lists the hub poller feeds: the code
+   * is a convenience this drawer offers on top of everything else, and a
+   * transient miss just leaves that one control showing its own loading
+   * state rather than blanking the whole drawer with an error banner.
    */
   const loadInviteCode = useCallback(async () => {
     try {
@@ -351,23 +309,33 @@ export function FriendsDrawer({ onClose, inviteGameId, onJoinedTable, tableSeats
     // kicked off synchronously here sets state during the same commit.
     const timer = window.setTimeout(() => {
       void load();
-      void loadInvites();
-      void loadHeadsUpInvites();
       void loadInviteCode();
     }, 0);
-    // One interval drives both the refetch and the countdown: a row that has
-    // just lapsed should stop being offered, not merely read "Expired".
-    const poll = window.setInterval(() => {
-      setNow(Date.now());
-      void loadInvites();
-      void loadHeadsUpInvites();
-    }, INVITE_POLL_MS);
+
+    // Both invite lists ride lib/hub/hub-poller.ts's shared request rather
+    // than two fetches of their own. Same cadence as before -- an invite
+    // expires, so it stays on the fast tick -- but folded in beside whatever
+    // else the lobby already has subscribed.
+    const stopHub = subscribeHub(["invites", "headsUp"], (payload) => {
+      if (!mounted.current) return;
+      // Left standing on a miss, not blanked: the previous list is closer to
+      // the truth than an empty one, and every row carries its own expiry,
+      // which the countdown below enforces.
+      if (payload.invites) setInvites(payload.invites.invites);
+      if (payload.headsUp) setHeadsUpInvites(payload.headsUp.invites);
+    });
+
+    // The countdown still needs its own beat: a row that has just lapsed
+    // should stop being offered, not merely read "Expired".
+    const countdown = window.setInterval(() => setNow(Date.now()), INVITE_POLL_MS);
+
     return () => {
       mounted.current = false;
       window.clearTimeout(timer);
-      window.clearInterval(poll);
+      window.clearInterval(countdown);
+      stopHub();
     };
-  }, [load, loadInvites, loadHeadsUpInvites, loadInviteCode]);
+  }, [load, loadInviteCode]);
 
   useEffect(() => {
     // Whatever opened the drawer, the lobby's Friends tile in practice.

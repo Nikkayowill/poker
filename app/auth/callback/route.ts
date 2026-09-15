@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
 import { findRestoreConflict, linkAuthenticatedUser } from "@/lib/server/link-account";
 import { withRequestSessionCookie } from "@/lib/server/session";
@@ -33,17 +32,13 @@ export async function GET(request: NextRequest) {
   const authError = searchParams.get("error_description") ?? searchParams.get("error");
 
   if (!code) {
-    // console.error alongside Sentry: Vercel's own runtime logs are directly
-    // readable without a Sentry read-scoped token, which this deployment
-    // doesn't have one of yet.
+    // Vercel's own runtime logs are where these land: this deployment has no
+    // Sentry read-scoped token, and the server SDK no longer ships (see
+    // instrumentation-client.ts, the only Sentry entry point left).
     console.error("[auth/callback] missing code", {
       origin,
       authError,
       paramKeys: [...searchParams.keys()],
-    });
-    Sentry.captureMessage("oauth.callback_missing_code", {
-      level: "error",
-      extra: { origin, authError },
     });
     return NextResponse.redirect(`${origin}/?authError=1`);
   }
@@ -61,10 +56,6 @@ export async function GET(request: NextRequest) {
       status: error?.status,
       code: error?.code,
       message: error?.message,
-    });
-    Sentry.captureMessage("oauth.exchange_failed", {
-      level: "error",
-      extra: { origin, reason: error?.message ?? "no session returned" },
     });
     return NextResponse.redirect(`${origin}/?authError=1`);
   }
@@ -92,7 +83,6 @@ export async function GET(request: NextRequest) {
     return withRequestSessionCookie(request, NextResponse.redirect(`${origin}/?entered=1`), result.token);
   } catch (linkError) {
     console.error("[auth/callback] linkAuthenticatedUser failed", linkError);
-    Sentry.captureException(linkError, { extra: { origin, stage: "link_account" } });
     return NextResponse.redirect(`${origin}/?authError=1`);
   }
 }

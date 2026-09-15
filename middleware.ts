@@ -64,7 +64,6 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/api/")
     || request.nextUrl.pathname === "/auth/callback"
     || request.nextUrl.pathname === "/auth/reset-password/callback"
-    || request.nextUrl.pathname === "/monitoring"
   ) {
     return response;
   }

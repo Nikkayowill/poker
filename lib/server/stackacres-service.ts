@@ -3049,6 +3049,18 @@ export async function feedStackAcresPen(
     let fed: StoredStackAcresUnit | null;
     try {
       fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
+      // See waterStackAcresGroup's matching retry for why: a version-guard
+      // miss here is almost always this same drop's own top-of-function read
+      // going stale for one animal in the pen, not a real refusal, and
+      // without a retry it is the one that silently flashes back to hungry
+      // while the rest of the pen stays fed.
+      if (!fed) {
+        const freshUnit = await getStackAcresUnit(profile.id, unit.id);
+        if (freshUnit && isStackAcresUnitHungry(freshUnit, now)) {
+          const retryPush = feedPushFor(freshUnit, now);
+          fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt);
+        }
+      }
     } catch (error) {
       await adjustStackAcresFeed(profile.id, 1).catch(() => null);
       // The animals already fed stay fed. Only throw if nothing went through.
@@ -3199,28 +3211,51 @@ export async function waterStackAcresGroup(
     });
   }
 
+  const waterPushFor = (row: StoredStackAcresUnit): { pushed: Date; restartedAt: Date | null } => {
+    if (isUnwateredSeedRow(row)) {
+      const clock = seedClockOnFirstWater(row, now.getTime());
+      return { pushed: clock.readyAt, restartedAt: clock.startedAt };
+    }
+    const thirstyAt = thirstyAtFor(row);
+    const driedAt = thirstyAt ? Date.parse(thirstyAt) : NaN;
+    const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
+    const readyAt = Date.parse(row.readyAt);
+    return { pushed: new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs), restartedAt: null };
+  };
+
   let wateredCount = 0;
   for (const unit of dry) {
     const remaining = await adjustStackAcresWater(profile.id, -1);
     if (remaining === null) break;
 
-    let pushed: Date;
-    let restartedAt: Date | null = null;
-    if (isUnwateredSeedRow(unit)) {
-      const clock = seedClockOnFirstWater(unit, now.getTime());
-      pushed = clock.readyAt;
-      restartedAt = clock.startedAt;
-    } else {
-      const thirstyAt = thirstyAtFor(unit);
-      const driedAt = thirstyAt ? Date.parse(thirstyAt) : NaN;
-      const dryMs = Number.isFinite(driedAt) ? Math.max(0, now.getTime() - driedAt) : 0;
-      const readyAt = Date.parse(unit.readyAt);
-      pushed = new Date((Number.isFinite(readyAt) ? readyAt : now.getTime()) + dryMs);
-    }
+    const { pushed, restartedAt } = waterPushFor(unit);
 
     let watered: StoredStackAcresUnit | null;
     try {
       watered = await waterStackAcresUnit(unit, now, pushed, restartedAt);
+      // A version-guard miss here almost always means THIS SAME drop's own
+      // read at the top of the function is a beat stale for this one unit --
+      // a second in-flight action on the same crop (irrigation's own auto-
+      // water stamp, or an overlapping tap) landed in the gap between that
+      // read and this write. Without a retry the unit is silently dropped
+      // from an otherwise-successful group response: the player sees every
+      // OTHER tile in the drop stay watered and this one alone flash back to
+      // thirsty a moment later, which reads as random and unfixable. One
+      // fresh re-read and a second attempt closes that window; if the row
+      // has moved on for a real reason (already watered, harvested, etc.)
+      // the retry's own dryness check below skips it same as before.
+      if (!watered) {
+        const fresh = await getStackAcresUnit(profile.id, unit.id);
+        if (
+          fresh &&
+          fresh.status === "working" &&
+          thirstyAtFor(fresh) !== null &&
+          isStackAcresUnitDry(fresh, now, irrigated.has(fresh.id))
+        ) {
+          const retryPush = waterPushFor(fresh);
+          watered = await waterStackAcresUnit(fresh, now, retryPush.pushed, retryPush.restartedAt);
+        }
+      }
     } catch (error) {
       await adjustStackAcresWater(profile.id, 1).catch(() => null);
       // Whatever already went through stays watered. Only throw if nothing did.

@@ -26,7 +26,7 @@ import type { TapPoint } from "./stackacres-scene";
  * still do everything a finger can.
  */
 
-export type DragAffordanceKind = "water" | "feed";
+export type DragAffordanceKind = "water" | "feed" | "harvest";
 
 export interface StackAcresDragAffordanceProps {
   kind: DragAffordanceKind;
@@ -46,6 +46,7 @@ const ICONS: Readonly<Record<DragAffordanceKind, PainterName>> = {
   // header in stackacres-art.ts.
   water: "ico-watering-can",
   feed: "ico-feed",
+  harvest: "ico-harvest",
 };
 
 /** How long the pour or scatter plays before the overlay goes away. Matches

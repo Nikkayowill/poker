@@ -55,7 +55,7 @@ const STANDING: Record<Dir, string> = { down: "1", up: "5", left: "9", right: "1
 const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
   water: { anim: "water", repeat: 1 },
   harvest: { anim: "harvest", repeat: 0 },
-  plant: { anim: "chop", repeat: 1 },
+  plant: { anim: "chop", repeat: 0 },
 };
 
 /** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
@@ -428,6 +428,7 @@ export class TopdownScene extends Phaser.Scene {
       const signature = `${frame}|${cue}|${at.x},${at.y}`;
       const existing = this.unitNodes.get(unit.id);
       if (existing?.signature === signature) continue;
+      const isNew = !existing;
       existing?.sprite.destroy();
       existing?.cue?.destroy();
       const hen = stockZone(unit.stock) === "henhaven";
@@ -439,6 +440,11 @@ export class TopdownScene extends Phaser.Scene {
         this.bob(cueImage);
       }
       this.unitNodes.set(unit.id, { sprite, cue: cueImage, signature });
+      // A crop this small, on a bed the farmer is standing right next to, is otherwise easy to
+      // miss under his own swing and the toast that lands on the same spot -- see stackacres-farm.tsx's
+      // "Seeded" toast. Skipped for a livestock purchase: those show up in Hen Haven, screens away
+      // from wherever the shop sheet was, so there is nothing on screen for a spawn to compete with.
+      if (isNew && !hen) this.popUnit(unit.id);
     }
     for (const [id, node] of this.unitNodes) {
       if (seen.has(id)) continue;

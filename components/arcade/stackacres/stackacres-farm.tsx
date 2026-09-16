@@ -3276,6 +3276,7 @@ export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "top
     if (!offer) return;
     if (offer.kind === "water") {
       waterSound();
+      world.current?.farmerAction("water");
       world.current?.registerFrenzyTap(offer.unitId);
       // Deterministic (which crops in the block are still dry, clamped to
       // however much water is left) -- same posture `onPlaceSoilTile`/
@@ -3318,6 +3319,7 @@ export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "top
       const baseYieldGold = unit
         ? STACKACRES_YIELDS[unit.stock].quantity * itemSellPrice(STACKACRES_YIELDS[unit.stock].item)
         : undefined;
+      world.current?.farmerAction("harvest");
       world.current?.registerFrenzyTap(offer.unitId, baseYieldGold);
       void act({ action: "collect", unitIds: [offer.unitId] }).then((result) => {
         if (result.ok && unit) void triggerCascade(offer.unitId, unit.stock);
@@ -3639,6 +3641,7 @@ export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "top
       // The same seed going into the same ground as `onSeed`; the only
       // difference is which control asked for it.
       sowSound();
+      world.current?.farmerAction("plant");
       tapAnchor.current = at;
       // If this exact bed was just tilled and that request has not answered
       // yet, wait for it -- see `pendingSoilPlacements`'s own header. Ignored

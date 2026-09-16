@@ -19,9 +19,12 @@ import type { TopdownScene } from "./scene";
  * Homestead and the Crop Fields. Those api methods are no-ops below, each
  * named, so the gap is visible rather than silent.
  *
- * Pixel art at a whole-number zoom: the game renders the host's size divided
- * by the largest zoom that still shows 13 tiles across and 8 down, and CSS
- * (52-stackacres.css, `.sa-world canvas`) stretches that canvas to the host.
+ * Pixel art at a whole-number zoom: the canvas is the host at full device
+ * resolution, and the camera zooms by the largest whole number that still
+ * shows 13 tiles across and 8 down. Rendering at device resolution rather
+ * than one canvas pixel per art pixel is what lets the farmer and the camera
+ * glide a device pixel at a time; at art resolution every step was a 4px jump
+ * and the farmer shook against the ground (see scene.ts's `placeCamera`).
  */
 
 export const MIN_TILES_ACROSS = 13;
@@ -101,8 +104,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
         const zoom = pickZoom(host.clientWidth, host.clientHeight, dpr);
         return {
-          width: Math.max(16, Math.floor((host.clientWidth * dpr) / zoom)),
-          height: Math.max(16, Math.floor((host.clientHeight * dpr) / zoom)),
+          width: Math.max(16, Math.floor(host.clientWidth * dpr)),
+          height: Math.max(16, Math.floor(host.clientHeight * dpr)),
+          zoom,
         };
       };
       const first = size();
@@ -110,7 +114,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         type: Phaser.AUTO,
         parent: host,
         pixelArt: true,
-        roundPixels: true,
+        // The scene snaps to device pixels itself; Phaser's rounding floors in art pixels.
+        roundPixels: false,
         backgroundColor: "#140c1c",
         // The scene reads pointer events off the host itself, like the isometric scene does.
         input: { mouse: false, touch: false, keyboard: false },
@@ -120,6 +125,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       });
       game = instance;
       sceneRef.current = scene;
+      scene.setZoom(first.zoom);
       const now = latest.current;
       scene.setUnits(now.sceneUnits);
       scene.setSectors(now.sectors);
@@ -133,6 +139,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       const fit = () => {
         if (!instance.isBooted) return;
         const next = size();
+        scene.setZoom(next.zoom);
         if (instance.scale.width === next.width && instance.scale.height === next.height) return;
         instance.scale.resize(next.width, next.height);
       };
@@ -174,6 +181,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       zoomBy: () => undefined,
       recenter: () => undefined,
       // Not drawn in the top-down preview yet (see this file's header).
+      farmerAction: (action) => sceneRef.current?.farmerAction(action),
       registerFrenzyTap: () => undefined,
       playMonkPrayer: () => undefined,
       enterGreenhouse: () => undefined,

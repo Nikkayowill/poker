@@ -15,6 +15,7 @@ import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/stackacres-scene";
+import type { FarmerAction } from "../stackacres/stackacres-world";
 
 /**
  * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move.
@@ -47,6 +48,20 @@ type Dir = "down" | "up" | "left" | "right";
 
 /** The rig's sheets start with walk_down/up/left/right, four frames each; frame 1 of a walk is both feet down. */
 const STANDING: Record<Dir, string> = { down: "1", up: "5", left: "9", right: "13" };
+
+/**
+ * Which rig animation acts out each drop, and how many extra times it plays.
+ * Planting is the hoe stroke (the rig's `chop`): the harvest pose pulls a
+ * carrot up, which would read as the opposite of sowing.
+ */
+const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
+  water: { anim: "water", repeat: 1 },
+  harvest: { anim: "harvest", repeat: 0 },
+  plant: { anim: "chop", repeat: 1 },
+};
+
+/** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
+const TURN_LEAN = 0.6;
 
 const DRAWN_CROPS = new Set(["carrot", "potato", "radish", "wheatsheaf"]);
 
@@ -97,12 +112,15 @@ export interface TopdownCallbacks {
   onViewMoved: () => void;
 }
 
-/** What a tap landed on. `anchor` is the map point the farmer walks to and the menu opens over. */
+/**
+ * What a tap landed on. `anchor` is the map point the farmer walks to and the menu opens over;
+ * `face` is what he turns to on arrival, or null for open ground he walks onto.
+ */
 type Target =
-  | { kind: "unit"; id: string; anchor: Point }
-  | { kind: "npc"; name: string; anchor: Point }
-  | { kind: "tag"; tag: string; anchor: Point }
-  | { kind: "field"; anchor: Point; world: WorldPoint }
+  | { kind: "unit"; id: string; anchor: Point; face: Point }
+  | { kind: "npc"; name: string; anchor: Point; face: Point }
+  | { kind: "tag"; tag: string; anchor: Point; face: Point | null }
+  | { kind: "field"; anchor: Point; face: Point; world: WorldPoint }
   | { kind: "nothing" };
 
 interface UnitNode {
@@ -121,6 +139,10 @@ export class TopdownScene extends Phaser.Scene {
   private layer: Phaser.GameObjects.GameObject[] = [];
   private ground!: Phaser.GameObjects.Image;
   private player!: Phaser.GameObjects.Sprite;
+  /** Where the farmer really is. His sprite and the camera are both snapped from this to device pixels. */
+  private pos: Point = { x: 0, y: 0 };
+  /** Device pixels per art pixel, from topdown-world.tsx's `pickZoom`. */
+  private zoom = 1;
   private playerShadow!: Phaser.GameObjects.Ellipse;
   private animated: { sprite: Phaser.GameObjects.Image; frames: string[] }[] = [];
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image }[] = [];
@@ -166,7 +188,7 @@ export class TopdownScene extends Phaser.Scene {
 
   create(): void {
     for (const area of AREAS) this.specs.set(area, this.cache.json.get(`area:${area}`) as AreaSpec);
-    this.cameras.main.setRoundPixels(true);
+    this.cameras.main.setRoundPixels(false).setZoom(this.zoom);
     this.time.addEvent({
       delay: WATER_FRAME_MS,
       loop: true,
@@ -190,21 +212,23 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (this.path.length === 0) return;
-    const from = { x: this.player.x, y: this.player.y };
+    if (this.path.length > 0) this.walk(delta);
+    this.placeCamera();
+  }
+
+  private walk(delta: number): void {
+    const from = this.pos;
+    // Face along the segment he is on, not the last frame's step, so the walk only turns at a waypoint.
+    const next = this.path[0];
+    if (Math.hypot(next.x - from.x, next.y - from.y) > 0.01) this.facing = this.headingFor(next.x - from.x, next.y - from.y);
+    const key = `walk_${this.facing}`;
+    if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
+      this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+      this.player.play({ key, repeat: -1, timeScale: WALK_SPEED / 44 });
+    }
     const { at, path } = advance(from, this.path, (WALK_SPEED * delta) / 1000);
     this.path = path;
-    this.player.setPosition(at.x, at.y).setDepth(at.y);
-    this.playerShadow.setPosition(at.x + 1, at.y + 1);
-    const dx = at.x - from.x;
-    const dy = at.y - from.y;
-    if (dx || dy) {
-      const dir: Dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
-      if (dir !== this.facing || !this.player.anims.isPlaying) {
-        this.facing = dir;
-        this.player.play({ key: `walk_${dir}`, repeat: -1, timeScale: WALK_SPEED / 44 }, true);
-      }
-    }
+    this.setPlayerAt(at);
     const exit = this.area.exits.find((e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h);
     if (exit) {
       this.path = [];
@@ -214,6 +238,49 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     if (this.path.length === 0) this.arrive();
+  }
+
+  private headingFor(dx: number, dy: number): Dir {
+    const horizontal: Dir = dx > 0 ? "right" : "left";
+    const vertical: Dir = dy > 0 ? "down" : "up";
+    if (this.facing === horizontal && Math.abs(dx) >= Math.abs(dy) * TURN_LEAN) return horizontal;
+    if (this.facing === vertical && Math.abs(dy) >= Math.abs(dx) * TURN_LEAN) return vertical;
+    return Math.abs(dx) > Math.abs(dy) ? horizontal : vertical;
+  }
+
+  private snap(v: number): number {
+    return Math.round(v * this.zoom) / this.zoom;
+  }
+
+  private setPlayerAt(at: Point): void {
+    this.pos = at;
+    const x = this.snap(at.x);
+    const y = this.snap(at.y);
+    this.player.setPosition(x, y).setDepth(y);
+    this.playerShadow.setPosition(x + 1, y + 1);
+  }
+
+  /**
+   * Centres the camera on the farmer, snapped to device pixels, every frame.
+   *
+   * This replaces Phaser's `startFollow` with rounding, which floored the
+   * camera and the sprite separately in whole art pixels: whenever the
+   * farmer's position and the view's half-width fell on opposite sides of a
+   * pixel, he jumped a pixel against the screen and back. Snapping both from
+   * the same point keeps him still on screen while the ground slides.
+   */
+  private placeCamera(): void {
+    const cam = this.cameras.main;
+    const viewW = cam.width / this.zoom;
+    const viewH = cam.height / this.zoom;
+    const mapW = this.area.width * this.area.tile;
+    const mapH = this.area.height * this.area.tile;
+    const edge = (centre: number, view: number, map: number) =>
+      view >= map ? (map - view) / 2 : Math.min(Math.max(centre - view / 2, 0), map - view);
+    const left = this.snap(edge(this.snap(this.pos.x), viewW, mapW));
+    const top = this.snap(edge(this.snap(this.pos.y), viewH, mapH));
+    // Phaser zooms about the camera's centre, so scroll is the view's left edge shifted by the zoomed-away margin.
+    cam.setScroll(left + viewW / 2 - cam.width / 2, top + viewH / 2 - cam.height / 2);
   }
 
   // ------------------------------------------------------------------ areas
@@ -231,7 +298,6 @@ export class TopdownScene extends Phaser.Scene {
 
     this.areaName = name;
     this.area = this.specs.get(name)!;
-    const { width, height, tile } = this.area;
 
     this.ground = this.keep(this.add.image(0, 0, `ground:${name}:${this.waterFrame % this.area.frames}`).setOrigin(0, 0).setDepth(-10));
     for (const spec of this.area.props) {
@@ -248,10 +314,8 @@ export class TopdownScene extends Phaser.Scene {
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
     this.anims.createFromAseprite("farmer", undefined, this.player);
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
-
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, width * tile, height * tile);
-    cam.startFollow(this.player, true, 1, 1);
+    this.setPlayerAt(spawn);
+    this.placeCamera();
 
     this.applyGates();
     this.applyNpcs();
@@ -420,7 +484,7 @@ export class TopdownScene extends Phaser.Scene {
         : target.kind === "unit" || target.kind === "field"
           ? { x: target.anchor.x, y: target.anchor.y + SOIL_TILE * 2 + 2 }
           : target.anchor;
-    const from = { x: this.player.x, y: this.player.y };
+    const from = this.pos;
     this.pending = target.kind === "nothing" ? null : target;
     if (this.pending && target.kind !== "nothing" && Math.hypot(target.anchor.x - from.x, target.anchor.y - from.y) <= REACH) {
       this.path = [];
@@ -448,18 +512,18 @@ export class TopdownScene extends Phaser.Scene {
 
     for (const [id, node] of this.unitNodes) {
       const onBubble = node.cue ? hitImage(node.cue, 2) : false;
-      if (hitImage(node.sprite, 3) || onBubble) consider({ kind: "unit", id, anchor: { x: node.sprite.x, y: node.sprite.y - 2 } }, node.sprite.depth + 1000);
+      if (hitImage(node.sprite, 3) || onBubble) consider({ kind: "unit", id, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } }, node.sprite.depth + 1000);
     }
     if (best) return (best as { target: Target }).target;
 
     for (const [name, node] of this.npcSprites) {
       if (!node.sprite.visible) continue;
       const box = new Phaser.Geom.Rectangle(node.sprite.x - 9, node.sprite.y - 30, 18, 32);
-      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 } }, node.sprite.depth);
+      if (box.contains(map.x, map.y)) consider({ kind: "npc", name, anchor: { x: node.sprite.x, y: node.sprite.y + 10 }, face: { x: node.sprite.x, y: node.sprite.y } }, node.sprite.depth);
     }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
-      if (image.getBounds().contains(map.x, map.y)) consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 } }, spec.y);
+      if (image.getBounds().contains(map.x, map.y)) consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 }, face: { x: spec.x, y: spec.y } }, spec.y);
     }
     if (best) return (best as { target: Target }).target;
 
@@ -474,29 +538,53 @@ export class TopdownScene extends Phaser.Scene {
         // a sprout is a few pixels, and the bed square is what a finger actually hits.
         const planted = this.unitTiles.get(soilTileKey(tx, ty));
         const node = planted ? this.unitNodes.get(planted) : undefined;
-        if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 } };
-        return { kind: "field", anchor: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
+        if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
+        return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
       }
       if (zone.tag === "hen-spots") continue;
-      return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) } };
+      return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
     }
     return { kind: "nothing" };
   }
 
   /** The walk is over: if it was toward something, stop facing it and let the shell open its menu. */
   private arrive(): void {
-    this.player.anims.stop();
-    this.player.setFrame(STANDING[this.facing]);
     this.clearMarker();
     const target = this.pending;
     this.pending = null;
+    if (target && target.kind !== "nothing" && target.face) {
+      // Turn to what he walked to: the crop or bed above him, the person or prop in front.
+      const dx = target.face.x - this.pos.x;
+      const dy = target.face.y - this.pos.y;
+      if (Math.hypot(dx, dy) > 2) this.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
+    }
+    this.stand();
     if (!target || target.kind === "nothing") return;
-    const distance = Math.hypot(target.anchor.x - this.player.x, target.anchor.y - this.player.y);
+    const distance = Math.hypot(target.anchor.x - this.pos.x, target.anchor.y - this.pos.y);
     if (distance > REACH * 2.5) {
       this.floatAt(this.mapToCss(target.anchor), "Can't reach that from here", "deny");
       return;
     }
     this.fire(target);
+  }
+
+  private stand(): void {
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+    this.player.anims.stop();
+    this.player.setFrame(STANDING[this.facing]);
+  }
+
+  private onActionDone = (): void => {
+    if (this.path.length === 0) this.player.setFrame(STANDING[this.facing]);
+  };
+
+  /** The shell's water, harvest or planting drop landed: act it out, facing whatever he walked up to. */
+  farmerAction(action: FarmerAction): void {
+    if (!this.booted || this.path.length > 0) return;
+    const { anim, repeat } = ACTIONS[action];
+    this.stand();
+    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+    this.player.play({ key: `${anim}_${this.facing}`, repeat });
   }
 
   private fire(target: Target): void {
@@ -558,12 +646,13 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ coordinates
 
+  /** Art pixels per host CSS pixel. */
   private scaleX(): number {
-    return this.scale.width / Math.max(1, this.host.clientWidth);
+    return this.cameras.main.worldView.width / Math.max(1, this.host.clientWidth);
   }
 
   private scaleY(): number {
-    return this.scale.height / Math.max(1, this.host.clientHeight);
+    return this.cameras.main.worldView.height / Math.max(1, this.host.clientHeight);
   }
 
   private cssToMap(x: number, y: number): Point {
@@ -710,6 +799,15 @@ export class TopdownScene extends Phaser.Scene {
     const at = soilTileToMap(tx, ty);
     this.preview = this.keep(this.add.graphics().setDepth(-4));
     this.preview.lineStyle(1, 0xdeeed6, 1).strokeRect(at.x + 0.5, at.y + 0.5, SOIL_TILE - 1, SOIL_TILE - 1);
+  }
+
+  /** topdown-world.tsx picks this from the host's size and the device pixel ratio. */
+  setZoom(zoom: number): void {
+    this.zoom = zoom;
+    if (!this.booted) return;
+    this.cameras.main.setZoom(zoom);
+    this.setPlayerAt(this.pos);
+    this.placeCamera();
   }
 
   /** The district panel's travel buttons: the two home districts are on the Homestead; the rest aren't built yet. */

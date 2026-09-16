@@ -3,17 +3,15 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresWeather } from "@/lib/stackacres/weather";
-import type { StackAcresSceneUnit } from "../stackacres/stackacres-scene";
-import type { StackAcresWorldProps } from "../stackacres/stackacres-world";
+import type { StackAcresSceneUnit } from "../stackacres/world-contract";
+import type { StackAcresWorldProps } from "../stackacres/world-contract";
 import type { TopdownScene } from "./scene";
 
 /**
- * The top-down world, as a drop-in for StackAcresWorld: same props, same api,
- * so stackacres-farm.tsx renders it with `worldView="topdown"` and every menu,
- * sheet and server action in the shell works untouched.
+ * The StackAcres map: the farm shell (stackacres-farm.tsx) renders it and talks
+ * to it through ../stackacres/world-contract.ts.
  *
- * What the top-down preview does not draw yet, and so ignores from the
- * contract: the scythe (`tool`, `cutter`), the farmhand, irrigation pipes,
+ * What it does not draw yet, and so ignores from the contract: the scythe (`tool`, `cutter`), the farmhand, irrigation pipes,
  * wildlife and fences, drones and the delivery truck, the greenhouse interior,
  * moving a bed group by hold-and-drag, and every district other than the
  * Homestead and the Crop Fields. Those api methods are no-ops below, each
@@ -80,7 +78,14 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       const p = () => propsRef.current;
       const scene = new SceneClass(
         {
-          onReady: () => p().onReady(),
+          onReady: () => {
+            // e2e specs drive the scene through this, and ChronoDevPanel steps `game`'s clocks.
+            // Set on ready, so its presence means the map is up.
+            if (process.env.NODE_ENV !== "production" && game) {
+              (window as unknown as { __stackacres?: unknown }).__stackacres = { scene: sceneRef.current, game };
+            }
+            p().onReady();
+          },
           onUnitTap: (unitId, at) => p().onUnitTap(unitId, at),
           onGroundTap: (zone, at, world) => p().onGroundTap(zone, at, world),
           onBarnTap: () => p().onBarnTap(),
@@ -117,7 +122,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         // The scene snaps to device pixels itself; Phaser's rounding floors in art pixels.
         roundPixels: false,
         backgroundColor: "#140c1c",
-        // The scene reads pointer events off the host itself, like the isometric scene does.
+        // The scene reads pointer events off the host itself.
         input: { mouse: false, touch: false, keyboard: false },
         scale: { mode: Phaser.Scale.NONE, width: first.width, height: first.height },
         audio: { noAudio: true },
@@ -131,10 +136,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setSectors(now.sectors);
       scene.setCropFieldsUnlocked(now.cropFieldsUnlocked);
       scene.setSoil(now.soilTiles);
-
-      if (process.env.NODE_ENV !== "production") {
-        (window as unknown as { __stackacresTd?: unknown }).__stackacresTd = { scene, game: instance };
-      }
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -154,7 +155,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       sceneRef.current = null;
       game?.destroy(true);
       if (process.env.NODE_ENV !== "production") {
-        delete (window as unknown as { __stackacresTd?: unknown }).__stackacresTd;
+        delete (window as unknown as { __stackacres?: unknown }).__stackacres;
       }
     };
   }, []);

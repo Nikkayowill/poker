@@ -12,7 +12,7 @@ import {
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 import { isDragDrop } from "@/lib/stackacres/drag-affordance";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * A tool you pick up and drop on the thing that needs it.

@@ -15,7 +15,7 @@ import { isDragDrop, rowGesture } from "@/lib/stackacres/drag-affordance";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
 import { arrowGeometry } from "./stackacres-drag-affordance";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * The dock that replaced both the ring's seed options and the old

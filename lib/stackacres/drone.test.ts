@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { STACKACRES_TILE } from "./world";
 import {
@@ -255,15 +253,4 @@ describe("forage cooldown vs. the drop cadence", () => {
     expect(DRONE_FORAGE_COOLDOWN_MS).toBe(DRONE_FORAGE_COOLDOWN_SECONDS * 1000);
   });
 
-  it("is honoured by the scene, which vitest cannot run", () => {
-    // stackacres-scene.ts is Phaser and lives outside lib/, so the hold
-    // itself is asserted on the source: the gate on the drop roll, and the
-    // arming of it the moment a drop is vacuumed.
-    const SCENE = readFileSync(
-      join(process.cwd(), "components/arcade/stackacres/stackacres-scene.ts"),
-      "utf8",
-    );
-    expect(SCENE).toContain("time >= node.nextDropAtMs");
-    expect(SCENE).toContain("node.nextDropAtMs = this.time.now + DRONE_FORAGE_COOLDOWN_MS");
-  });
 });

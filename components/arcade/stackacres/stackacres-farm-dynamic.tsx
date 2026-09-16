@@ -12,7 +12,7 @@ import { LoadingScreen } from "@/components/loading/loading-screen";
  * It saves server-rendering 5,000 lines of client component into HTML nobody
  * reads: the farm needs a canvas, a gesture and a fetch before it shows
  * anything real. Phaser itself is lazier still, behind a runtime import()
- * inside stackacres-world.tsx.
+ * inside ../stackacres-td/topdown-world.tsx.
  *
  * The `loading` screen is not optional here the way it is for PokerTable --
  * this replaces the whole viewport, so without it the gap is a blank page.

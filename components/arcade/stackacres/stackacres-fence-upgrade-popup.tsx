@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { FENCE_TIER_LABEL, FENCE_TIER_MAX_DURABILITY, nextFenceTier, type FenceTier } from "@/lib/stackacres/wildlife";
 import { STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * The fence-upgrade popup: a tap on one bay of a district's own fence line

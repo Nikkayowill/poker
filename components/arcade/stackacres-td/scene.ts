@@ -14,17 +14,15 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { ZoneId } from "@/lib/stackacres/zones";
-import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/stackacres-scene";
-import type { FarmerAction } from "../stackacres/stackacres-world";
+import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/world-contract";
+import type { FarmerAction } from "../stackacres/world-contract";
 
 /**
  * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move.
  *
- * It answers the same callbacks the isometric scene does (see
- * stackacres-world.tsx's `StackAcresWorldProps`), so the whole React shell,
- * its menus and its server actions work unchanged. The one difference in feel
- * is deliberate: tapping a thing walks the farmer over to it first, and the
- * shell's menu opens when he arrives.
+ * It answers the shell's callbacks (../stackacres/world-contract.ts). Tapping a
+ * thing walks the farmer over to it first, and the shell's menu opens when he
+ * arrives.
  *
  * Everything static was drawn by the area rig and exported by export.py:
  *   areas/<area>/ground-<f>.png   terrain, ground items, prop shadows, one per water frame
@@ -534,7 +532,7 @@ export class TopdownScene extends Phaser.Scene {
         if (!world) continue;
         const { tx, ty } = soilTileAt(world.x, world.y);
         const centre = fieldWorldToMap({ x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 });
-        // A tap anywhere on a planted bed means its crop, as it does on the isometric farm:
+        // A tap anywhere on a planted bed means its crop:
         // a sprout is a few pixels, and the bed square is what a finger actually hits.
         const planted = this.unitTiles.get(soilTileKey(tx, ty));
         const node = planted ? this.unitNodes.get(planted) : undefined;
@@ -822,6 +820,33 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     this.floatAt({ x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 }, "That place isn't in this preview yet", "deny");
+  }
+
+  // ------------------------------------------------------------------ dev handle (e2e specs, never production)
+
+  /** A map point in viewport CSS pixels, for a real pointer event. */
+  clientPointFor(x: number, y: number): TapPoint {
+    const rect = this.host.getBoundingClientRect();
+    const at = this.mapToCss({ x, y });
+    return { x: rect.left + at.x, y: rect.top + at.y };
+  }
+
+  /** The middle of a visible NPC's body, or null when they aren't on this map. */
+  npcPoint(name: string): Point | null {
+    const node = this.npcSprites.get(name);
+    return node?.sprite.visible ? { x: node.sprite.x, y: node.sprite.y - 14 } : null;
+  }
+
+  /** Puts the farmer straight down somewhere, so a spec needn't walk across the map first. */
+  placeFarmer(area: TopdownArea, at: Point): void {
+    this.path = [];
+    this.pending = null;
+    this.enterArea(area, at);
+    this.callbacks.onViewMoved();
+  }
+
+  isWalking(): boolean {
+    return this.path.length > 0;
   }
 
   private marker: Phaser.GameObjects.Graphics | null = null;

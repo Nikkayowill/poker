@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { RELIC_CATALOGUE, type RelicId, type StackAcresDevotionView } from "@/lib/stackacres/devotion";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * The Pixel Pilgrim's dialogue: he speaks, then asks. Anchored at the tap

@@ -223,7 +223,7 @@ import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
-import type { StoryCues, TravelerUnlocks } from "./stackacres-scene";
+import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from "./world-contract";
 import { StackAcresGroundTools } from "./stackacres-ground-tools";
 import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
 import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
@@ -231,7 +231,6 @@ import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { StackAcresFishingAffordance } from "./stackacres-fishing-affordance";
 import { useStackAcresMusic } from "./use-stackacres-music";
-import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
 import {
   STACKACRES_STARTING_TIER,
@@ -261,7 +260,6 @@ import {
   influenceTier,
   nextInfluenceTier,
 } from "@/lib/stackacres/influence-tiers";
-import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey, purchaseCueText } from "@/lib/stackacres/farm-actions";
 import {
   createsStackAcresUnit,
@@ -763,13 +761,8 @@ function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAc
   });
 }
 
-/**
- * `worldView` picks the map under the shell: the live isometric farm, or the
- * top-down rewrite (components/arcade/stackacres-td/), which answers the same
- * StackAcresWorld contract so every menu and action below works on either.
- */
-export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "topdown" } = {}) {
-  const World = worldView === "topdown" ? StackAcresTopdownWorld : StackAcresWorld;
+/** The farm shell, over the top-down world (components/arcade/stackacres-td/). */
+export function StackAcresFarm() {
   const [units, setUnits] = useState<StackAcresUnitSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
@@ -4349,7 +4342,7 @@ export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "top
             end was Ray's, which is the only way into the store. */}
         <div ref={fieldRef} className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
           {loaded && (
-            <World
+            <StackAcresTopdownWorld
               units={liveUnits}
               tool={tool}
               cutter={cutter}

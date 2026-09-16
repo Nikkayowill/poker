@@ -4,13 +4,18 @@ import { expect, test } from "@playwright/test";
  * The Pixel Pilgrim: tapping him opens his dialogue, declining costs
  * nothing, and saying "yes" advances the devotion streak.
  *
- * He has no DOM element of his own (painted straight into the Phaser
- * scene), so this computes the exact screen point a real tap needs through
- * `window.__stackacres.screenPointFor` and dispatches a real pointer press
- * there.
+ * He has no DOM element of his own (he's drawn in the Phaser scene), so this
+ * puts the farmer beside him through the dev-only `window.__stackacres`
+ * handle, asks it where he is on screen, and taps there for real.
  */
 
-const MONK_WORLD_POINT = { x: -826, y: -11 }; // Centre of lib/stackacres/monk.ts's MONK_TAP_ZONE.
+interface TopdownHandle {
+  scene: {
+    clientPointFor: (x: number, y: number) => { x: number; y: number };
+    npcPoint: (name: string) => { x: number; y: number } | null;
+    placeFarmer: (area: string, at: { x: number; y: number }) => void;
+  };
+}
 
 async function grantAndOpenStackAcres(
   context: import("@playwright/test").BrowserContext,
@@ -43,23 +48,24 @@ async function grantAndOpenStackAcres(
   await page.goto("/games/stackacres");
   await page.getByRole("button", { name: "Tap to start StackAcres" }).click();
   await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
+  // Stand a few steps below him so he's on screen; the tap still walks the farmer up before the dialogue opens.
+  await page.evaluate(() => {
+    const { scene } = (window as unknown as { __stackacres: TopdownHandle }).__stackacres;
+    const pilgrim = scene.npcPoint("pilgrim");
+    if (!pilgrim) throw new Error("the Pilgrim isn't on the Homestead");
+    scene.placeFarmer("homestead", { x: pilgrim.x + 32, y: pilgrim.y + 24 });
+  });
+  await page.waitForTimeout(200);
   return profile;
 }
 
-async function screenPointFor(page: import("@playwright/test").Page, worldX: number, worldY: number) {
-  return page.evaluate(
-    ({ x, y }) =>
-      (
-        window as unknown as {
-          __stackacres: { screenPointFor: (x: number, y: number) => { x: number; y: number } };
-        }
-      ).__stackacres.screenPointFor(x, y),
-    { x: worldX, y: worldY },
-  );
-}
-
 async function tapMonk(page: import("@playwright/test").Page) {
-  const point = await screenPointFor(page, MONK_WORLD_POINT.x, MONK_WORLD_POINT.y);
+  const point = await page.evaluate(() => {
+    const { scene } = (window as unknown as { __stackacres: TopdownHandle }).__stackacres;
+    const pilgrim = scene.npcPoint("pilgrim");
+    if (!pilgrim) throw new Error("the Pilgrim isn't on the Homestead");
+    return scene.clientPointFor(pilgrim.x, pilgrim.y);
+  });
   await page.mouse.click(point.x, point.y);
 }
 

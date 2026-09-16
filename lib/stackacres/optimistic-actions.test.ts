@@ -9,6 +9,9 @@ import { SYNERGY_PERKS } from "./synergy-perks";
 import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
 import { WHEAT_DURATION_MS, WHEAT_SEED_COST, type StackAcresWheatPlotSnapshot } from "./wheat-plot";
+import { STACKACRES_FEED } from "./catalogue";
+import { toolUpgradePrice } from "./equipment";
+import { applyInfluenceDiscount } from "./influence-tiers";
 import {
   createsStackAcresUnit,
   isOptimisticUnitId,
@@ -619,6 +622,51 @@ describe("predictStackAcresAction: the rest of the shop", () => {
       ctx({ profile: profile({ goldBalance: 1_000_000 }), toolTier: "golden-spade" }),
     );
     expect(atTop).toBeNull();
+  });
+
+  /**
+   * The three purchases Town Favor discounts have to predict the SAME number
+   * the server charges, or a farm past rung 1 watches its Gold drop too far
+   * and snap back on its commonest purchases. Pinned against
+   * applyInfluenceDiscount itself rather than a literal, so the ladder can be
+   * retuned without editing arithmetic into this file.
+   */
+  describe("Town Favor discounted purchases predict what the server charges", () => {
+    const RICH = 1_000_000;
+
+    it("discounts a tool upgrade", () => {
+      const listed = toolUpgradePrice("trowel");
+      expect(listed).not.toBeNull();
+      const patch = predictStackAcresAction(
+        { action: "upgrade-tool" },
+        ctx({ profile: profile({ goldBalance: RICH }), toolTier: "trowel", influence: 300 }),
+      );
+      expect(patch?.profile?.goldBalance).toBe(RICH - applyInfluenceDiscount(listed!, 300));
+    });
+
+    it("discounts the feed unit before multiplying by quantity", () => {
+      const item = STACKACRES_FEED.feed_sack;
+      const patch = predictStackAcresAction(
+        { action: "buy-feed", itemId: "feed_sack", quantity: 3 },
+        ctx({ profile: profile({ goldBalance: RICH }), influence: 300 }),
+      );
+      // buyStackAcresFeed's own order: floor the unit, then multiply.
+      expect(patch?.profile?.goldBalance).toBe(RICH - applyInfluenceDiscount(item.cost, 300) * 3);
+    });
+
+    it("leaves a stake alone -- sowing a cycle is not shopping", () => {
+      const patch = predictStackAcresAction(
+        { action: "stock", stock: "hen" },
+        ctx({
+          profile: profile({ goldBalance: RICH }),
+          influence: 750,
+          capacity: { hen: 4 },
+          sectors: [HOME_SECTOR],
+        }),
+      );
+      // Full seedCost, undiscounted, at the top rung of the ladder.
+      expect(patch?.profile?.goldBalance).toBe(RICH - STACKACRES_CATALOGUE.hen.seedCost);
+    });
   });
 
   it("buys the Mower once and leaves the spade alone", () => {

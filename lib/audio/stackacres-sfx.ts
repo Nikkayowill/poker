@@ -154,6 +154,19 @@ export function toolSound() {
 }
 
 /**
+ * A Town Favor rung reached.
+ *
+ * The town's own bell, struck twice, rather than `prestige-chime` -- that
+ * voice is reserved for a Prestige Reset and nothing else. A rung-up is a
+ * promotion in standing, which the town ringing for you fits better than a
+ * chord meant for an irreversible choice.
+ */
+export function townFavorSound() {
+  playFarmVoice("farm-bell", 1);
+  window.setTimeout(() => playFarmVoice("farm-bell", 0.75), 300);
+}
+
+/**
  * A Prestige Reset going through.
  *
  * The one moment on this farm big enough for a chord rather than a single

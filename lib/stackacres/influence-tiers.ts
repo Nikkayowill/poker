@@ -68,9 +68,45 @@ export function nextInfluenceTier(total: number): InfluenceTierDef | null {
 }
 
 /**
+ * The rung `after` reached that `before` had not, or null when a settlement
+ * stayed inside one rung. What a rung-up moment fires on.
+ *
+ * Reports the HIGHEST rung reached rather than each one crossed, so a single
+ * large contract that clears two thresholds at once is one moment naming the
+ * best thing earned instead of a queue of two cards the player has to dismiss.
+ *
+ * Takes both totals rather than a total and a delta because the caller already
+ * holds both and a delta would make a replayed settlement look like a fresh
+ * crossing.
+ */
+export function crossedInfluenceTier(before: number, after: number): InfluenceTierDef | null {
+  const reached = influenceTier(after);
+  return reached.threshold > influenceTier(before).threshold ? reached : null;
+}
+
+/**
  * `price` after this farm's current discount, floored to a whole Gold and
  * never below 1 -- see the header on why a discount may shrink a price but
  * must never zero it out.
+ *
+ * WHAT THIS MAY BE APPLIED TO: a price paid ACROSS RAY'S COUNTER, and nothing
+ * else. Today that is three purchases -- `upgradeStackAcresTool`,
+ * `buyStackAcresCutter` and `buyStackAcresFeed` -- and each has a mirror in
+ * the shop UI and in lib/stackacres/optimistic-actions.ts that must agree with
+ * it, including the ORDER of operations: discount the unit, then multiply by
+ * quantity, because this function floors and the other order rounds
+ * differently.
+ *
+ * WHAT IT MAY NOT BE APPLIED TO: a STAKE. `seedCost` reads like a fourth shop
+ * price and is not one -- for livestock it is also the per-cycle stake
+ * `stockStackAcres` spends in the pen and the stake the Crossbreeding Bed
+ * spends per cell, neither of which is shopping. Discounting it would also
+ * mint Gold: `refundCrossbreedStake` (lib/server/stackacres-service.ts) puts
+ * back `STACKACRES_CATALOGUE[stock].seedCost` recomputed from the catalogue
+ * rather than the amount actually debited, so a stake debited at 90% and
+ * refunded at 100% pays the player 10% for every crossbreed that loses its
+ * race. That refund is correct exactly as long as nothing here touches
+ * `seedCost`. Widening the discount to seeds means fixing that refund FIRST.
  */
 export function applyInfluenceDiscount(price: number, total: number): number {
   const bps = influenceTier(total).discountBps;

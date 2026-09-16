@@ -2815,6 +2815,36 @@
   color: var(--sa-ink);
 }
 
+/* The Town Favor rung, sitting under the store head as its own quiet strip.
+   Deliberately not a pill inside `.sa-store-head` -- that line is already
+   mark + name + close on a narrow phone, and a fourth thing in it pushes the
+   store's own name into an ellipsis. Flat, no fill: it explains the struck-
+   through prices below it and should not compete with them. */
+.sa-store-favor {
+  display: flex;
+  flex: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--sa-glass-line-soft);
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sa-store-favor strong {
+  color: var(--sa-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sa-store-favor svg {
+  flex: none;
+  color: var(--sa-corn);
+}
+
 .sa-store-mark {
   flex: none;
   width: 28px;
@@ -4011,6 +4041,51 @@
 .sa-town-favor strong {
   font-size: 14px;
   font-variant-numeric: initial;
+}
+
+/* The rung-up moment. Reuses the standing block's shape so it reads as that
+   readout celebrating rather than as a fourth kind of panel, but takes a corn
+   rim and a brighter fill for the few seconds it is up. It clears itself after
+   RUNG_UP_HOLD_MS (TownContractsModal.tsx), so this never has to be dismissed
+   and never becomes furniture. */
+.sa-rung-up {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sa-corn-side);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    0 0 0 3px rgba(255, 210, 77, .14);
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  animation: sa-rung-up-in 320ms ease-out both;
+}
+
+.sa-rung-up strong {
+  color: var(--sa-corn);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.sa-rung-up svg {
+  flex: none;
+  color: var(--sa-corn);
+}
+
+@keyframes sa-rung-up-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-rung-up { animation: none; }
 }
 
 /* The sheet answers its own actions. The page's banner sits behind the

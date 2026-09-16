@@ -108,6 +108,13 @@ Done on `feat/stackacres-topdown` (2026-09-16, not committed):
   square gets `onUnitTap` (water, feed, harvest drags), bare field gets `onGroundTap` (the
   planting dock: beds, seeds, pipes). Verified end to end on a memory-mode server: fill the
   can at the well, walk up, water a dry carrot, harvest it into the inventory.
+- **The farmer acts out drops**: the shell calls `farmerAction` when a water, harvest or
+  seed drop lands, and he plays the rig's `water`, `harvest` or `chop` (the hoe, for
+  planting) facing what he walked to. Fish and shoot are drawn but have nothing to attach to.
+- **The canvas is device resolution with an integer camera zoom**, and the scene snaps the
+  farmer and the camera to device pixels itself (`placeCamera`). Phaser's `roundPixels`
+  floors the camera and the sprite separately in art pixels, which made him shake a
+  pixel against the ground as he walked. Don't turn it back on.
 - **Not drawn yet** (api no-ops, named in topdown-world.tsx): mowing with the scythe, the
   farmhand, pipes, wildlife and fences, drones and the truck, the greenhouse interior,
   moving a bed group, and every district except the Homestead and the Crop Fields (sheep,

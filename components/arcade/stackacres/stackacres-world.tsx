@@ -60,6 +60,8 @@ export type StackAcresProcessing = Omit<FarmhandPlanInput, "claimed"> & {
  * that does the same thing.
  */
 
+export type FarmerAction = "water" | "harvest" | "plant";
+
 export interface StackAcresWorldApi {
   zoomBy: (factor: number) => void;
   recenter: () => void;
@@ -105,6 +107,9 @@ export interface StackAcresWorldApi {
    *  meaningful only for a "collect" tap -- see lib/stackacres/frenzy.ts's
    *  own header for why this never touches a real payout. */
   registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
+  /** The farmer acts out a water, harvest or planting drop where he stands.
+   *  Only the top-down world has a farmer; the isometric world ignores it. */
+  farmerAction: (action: FarmerAction) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -671,6 +676,8 @@ export function StackAcresWorld({
       celebrateCascade: (unitIds) => sceneRef.current?.celebrateCascade(unitIds),
       celebrateCrit: (unitId, multiplier) => sceneRef.current?.celebrateCrit(unitId, multiplier),
       registerFrenzyTap: (unitId, baseYieldGold) => sceneRef.current?.registerFrenzyTap(unitId, baseYieldGold),
+      // No farmer walks the isometric farm.
+      farmerAction: () => undefined,
       playMonkPrayer: () => sceneRef.current?.playMonkPrayer(),
       enterGreenhouse: () => sceneRef.current?.enterGreenhouse(),
       exitGreenhouse: () => sceneRef.current?.exitGreenhouse(),

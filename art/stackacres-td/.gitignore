@@ -1,0 +1,9 @@
+# Everything the rigs generate. Rebuild with characters/rig/build.sh and areas/rig/build_all.py;
+# what the game loads is exported to public/stackacres-td by areas/rig/export.py.
+characters/*/
+!characters/rig/
+characters/rig/build/
+areas/*/
+!areas/rig/
+areas/tileset.png
+__pycache__/

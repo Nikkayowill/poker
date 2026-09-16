@@ -1,0 +1,75 @@
+/**
+ * Where the live game's world coordinates land on the top-down maps.
+ *
+ * The live farm keeps positions in plain Cartesian world units
+ * (lib/stackacres/world.ts); the isometric view was only ever a projection.
+ * The top-down maps are drawn in their own pixels, so the few places the
+ * shell and the server care about are pinned here:
+ *
+ *   THE CROP FIELDS are the Old Fields. `CROP_FIELD_BEDS` is 32 by 32 soil
+ *   tiles, and the Old Fields map lays them out tile for tile with the field's
+ *   top-left world corner at map pixel FIELD_ORIGIN. A bed the server stores
+ *   at world tile (tx, ty) is drawn at exactly one map tile, and a tap on a map
+ *   tile names exactly one world tile, so nothing about placement rules moves.
+ *   art/stackacres-td/areas/rig/oldfields.py draws the field at the same spot.
+ *
+ *   A FEW LANDMARKS the shell asks for by world point (the Hen Haven trough for
+ *   the feed drag, the dock end for fishing) map to where those things are
+ *   drawn in the Homestead.
+ *
+ * Anything else has no place on the playable maps yet and maps to null.
+ */
+
+import { SOIL_TILE } from "@/lib/stackacres/soil";
+import { FISHING_SPOT } from "@/lib/stackacres/water";
+import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
+
+export type TopdownArea = "homestead" | "oldfields";
+
+export interface MapPoint {
+  area: TopdownArea;
+  x: number;
+  y: number;
+}
+
+/** Map pixel of the Crop Fields' top-left world corner on the Old Fields map (tile 6, 2). */
+export const FIELD_ORIGIN = { x: 6 * SOIL_TILE, y: 2 * SOIL_TILE } as const;
+export const FIELD_SIZE = CROP_FIELD_BEDS.width;
+
+/** Homestead map pixels for the landmarks the shell anchors drags to. */
+export const HOMESTEAD_TROUGH = { x: 600, y: 312 } as const;
+export const HOMESTEAD_DOCK_END = { x: 226, y: 420 } as const;
+
+export function inCropField(world: WorldPoint): boolean {
+  return (
+    world.x >= CROP_FIELD_BEDS.x &&
+    world.y >= CROP_FIELD_BEDS.y &&
+    world.x < CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width &&
+    world.y < CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height
+  );
+}
+
+/** A Crop Fields world point, in Old Fields map pixels. */
+export function fieldWorldToMap(world: WorldPoint): { x: number; y: number } {
+  return { x: world.x - CROP_FIELD_BEDS.x + FIELD_ORIGIN.x, y: world.y - CROP_FIELD_BEDS.y + FIELD_ORIGIN.y };
+}
+
+/** An Old Fields map pixel, as a Crop Fields world point, or null when it is off the field. */
+export function fieldMapToWorld(map: { x: number; y: number }): WorldPoint | null {
+  const world = { x: map.x - FIELD_ORIGIN.x + CROP_FIELD_BEDS.x, y: map.y - FIELD_ORIGIN.y + CROP_FIELD_BEDS.y };
+  return inCropField(world) ? world : null;
+}
+
+/** Where a world point the shell asks about is drawn, or null when it isn't on a playable map. */
+export function worldToMap(world: WorldPoint): MapPoint | null {
+  if (inCropField(world)) return { area: "oldfields", ...fieldWorldToMap(world) };
+  const trough = penFeedSpot("henhaven");
+  if (world.x === trough.x && world.y === trough.y) return { area: "homestead", ...HOMESTEAD_TROUGH };
+  if (world.x === FISHING_SPOT.x && world.y === FISHING_SPOT.y) return { area: "homestead", ...HOMESTEAD_DOCK_END };
+  return null;
+}
+
+/** A soil tile's top-left corner in Old Fields map pixels. */
+export function soilTileToMap(tx: number, ty: number): { x: number; y: number } {
+  return fieldWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
+}

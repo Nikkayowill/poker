@@ -232,6 +232,7 @@ import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { StackAcresFishingAffordance } from "./stackacres-fishing-affordance";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresWorld, type StackAcresWorldApi } from "./stackacres-world";
+import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
 import {
   STACKACRES_STARTING_TIER,
   nextToolTier,
@@ -762,7 +763,13 @@ function withLocalClock(units: StackAcresUnitSnapshot[], nowMs: number): StackAc
   });
 }
 
-export function StackAcresFarm() {
+/**
+ * `worldView` picks the map under the shell: the live isometric farm, or the
+ * top-down rewrite (components/arcade/stackacres-td/), which answers the same
+ * StackAcresWorld contract so every menu and action below works on either.
+ */
+export function StackAcresFarm({ worldView = "iso" }: { worldView?: "iso" | "topdown" } = {}) {
+  const World = worldView === "topdown" ? StackAcresTopdownWorld : StackAcresWorld;
   const [units, setUnits] = useState<StackAcresUnitSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
@@ -4339,7 +4346,7 @@ export function StackAcresFarm() {
             end was Ray's, which is the only way into the store. */}
         <div ref={fieldRef} className="sa-field" data-drawer={panelOpen ? "open" : "shut"}>
           {loaded && (
-            <StackAcresWorld
+            <World
               units={liveUnits}
               tool={tool}
               cutter={cutter}

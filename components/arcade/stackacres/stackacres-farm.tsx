@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Lock,
   RotateCcw,
+  Sparkles,
   Wand2,
   X,
 } from "lucide-react";
@@ -254,7 +255,11 @@ import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
-import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
+import {
+  applyInfluenceDiscount,
+  influenceTier,
+  nextInfluenceTier,
+} from "@/lib/stackacres/influence-tiers";
 import type { TapPoint } from "./stackacres-scene";
 import { type Action, intentOf, newIntentKey, purchaseCueText } from "@/lib/stackacres/farm-actions";
 import {
@@ -4800,6 +4805,33 @@ export function StackAcresFarm() {
                   ))}
               </button>
             </header>
+
+            {/* Why some prices in here are struck through. The same rung is
+                named in the Town Contracts sheet, where it is EARNED -- this
+                is where it gets SPENT, and a discount the player cannot see
+                the reason for reads as a pricing glitch rather than as
+                something they were paid. Progress to the next rung rides
+                along because the shop is where wanting it happens. */}
+            {(() => {
+              const tier = influenceTier(influence);
+              const next = nextInfluenceTier(influence);
+              return (
+                <p className="sa-store-favor">
+                  <Sparkles size={14} aria-hidden="true" />
+                  <strong>{tier.label}</strong>
+                  <span>
+                    {/* Named shelves, not "everything" -- the discount reaches
+                        tools, cutters and feed only. See the rung-up banner in
+                        TownContractsModal.tsx for the same wording and why. */}
+                    {tier.discountBps > 0
+                      ? `${tier.discountBps / 100}% off tools, cutters and feed`
+                      : "no discount yet"}
+                    {next &&
+                      ` — ${(next.threshold - influence).toLocaleString()} Influence to ${next.label}`}
+                  </span>
+                </p>
+              );
+            })()}
 
             {/* The page's own banner sits behind the scrim, so a refusal raised
                 by a button in here has to be answered in here. */}

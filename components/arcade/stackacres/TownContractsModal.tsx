@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
 import { Check, Coins, Compass, Lock, ScrollText, Sparkles } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
@@ -23,7 +23,13 @@ import {
   machineItemLabel,
   type MachineItemId,
 } from "@/lib/stackacres/machine-items";
-import { influenceTier, nextInfluenceTier } from "@/lib/stackacres/influence-tiers";
+import {
+  crossedInfluenceTier,
+  influenceTier,
+  nextInfluenceTier,
+  type InfluenceTierDef,
+} from "@/lib/stackacres/influence-tiers";
+import { townFavorSound } from "@/lib/audio/stackacres-sfx";
 import { ContractPayout } from "./contract-payout";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
@@ -188,6 +194,26 @@ type Payout = {
 };
 
 /**
+ * A rung the settlement just reached, held long enough to read and then
+ * dropped.
+ *
+ * Its own state rather than a field on `Payout`, because the two have
+ * different lifetimes: the payout ticker is anchored to one contract row and
+ * dies with it, while this is a fact about the whole farm and stays put at the
+ * top of the sheet. Keyed by `nonce` for the same reason `Payout` is -- a
+ * second rung-up should replay rather than sit there already finished.
+ */
+type RungUp = {
+  readonly tier: InfluenceTierDef;
+  readonly nonce: number;
+};
+
+/** How long a rung-up banner holds before it clears itself. Long enough to
+ *  read the sentence twice without becoming furniture the player scrolls past
+ *  on their next delivery. */
+const RUNG_UP_HOLD_MS = 6_000;
+
+/**
  * Wraps a handler so the press is consumed here rather than travelling on.
  * Applied to every pointer entry point on the scrim and the sheet, including
  * the ones with nothing else to do -- a bare `stopPropagation` handler is the
@@ -242,6 +268,7 @@ export function TownContractsModal({
   const [settling, setSettling] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
   const [payout, setPayout] = useState<Payout | null>(null);
+  const [rungUp, setRungUp] = useState<RungUp | null>(null);
 
   const closeAll = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(closeAll, !settling);
@@ -377,6 +404,15 @@ export function TownContractsModal({
             influence: reward.influence,
             nonce: Date.now(),
           });
+          // `influence` here is the total from before this settlement -- the
+          // parent refetches the view, so the prop has not moved yet at the
+          // point this closure was built. Adding the reward to it is the
+          // after-total without waiting on that round trip.
+          const reached = crossedInfluenceTier(influence, influence + reward.influence);
+          if (reached) {
+            townFavorSound();
+            setRungUp({ tier: reached, nonce: Date.now() });
+          }
         }
       } catch {
         rollback(applied);
@@ -385,8 +421,17 @@ export function TownContractsModal({
         setSettling(false);
       }
     },
-    [busy, settling, inventory, onSettle, rollback],
+    [busy, settling, influence, inventory, onSettle, rollback],
   );
+
+  /** The rung-up banner clears itself so it cannot become furniture. Keyed on
+   *  the whole `rungUp` object, so a second rung-up restarts the hold rather
+   *  than inheriting what was left of the first one's. */
+  useEffect(() => {
+    if (!rungUp) return;
+    const timer = window.setTimeout(() => setRungUp(null), RUNG_UP_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [rungUp]);
 
   /** Asks the town to post one. Moves no goods and no Gold, so there is
    *  nothing to debit optimistically and nothing to roll back. */
@@ -501,7 +546,7 @@ export function TownContractsModal({
               <strong>{tier.label}</strong>
               <span>
                 {tier.discountBps > 0
-                  ? `${tier.discountBps / 100}% off Ray's shop`
+                  ? `${tier.discountBps / 100}% off tools, cutters and feed at Ray's`
                   : "no discount at Ray's shop yet"}
                 {next &&
                   ` — ${(next.threshold - influence).toLocaleString()} Influence to ${next.label}`}
@@ -509,6 +554,28 @@ export function TownContractsModal({
             </p>
           );
         })()}
+
+        {/* The moment the ladder above just moved. Sits with the standing
+            readout rather than over the contract row, because a rung is a fact
+            about the farm, not about the delivery that happened to earn it --
+            and because it names the discount in the same place the discount is
+            explained. */}
+        {rungUp && (
+          <p key={rungUp.nonce} className="sa-rung-up" role="status">
+            <Sparkles size={16} aria-hidden="true" />
+            <strong>{rungUp.tier.label}</strong>
+            {/* Names the three shelves the discount actually reaches rather
+                than "everything at Ray's". `applyInfluenceDiscount` is called
+                on exactly three purchases server-side (upgradeStackAcresTool,
+                buyStackAcresCutter, buyStackAcresFeed) -- seeds, soil and
+                livestock are charged at list. A banner promising more than
+                the till honours is worse than no banner. */}
+            <span>
+              Tools, cutters and feed at Ray&apos;s are now{" "}
+              {rungUp.tier.discountBps / 100}% off.
+            </span>
+          </p>
+        )}
 
         {note && (
           <p

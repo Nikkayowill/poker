@@ -543,7 +543,12 @@ export function predictStackAcresAction(
     case "buy-feed": {
       const item = STACKACRES_FEED[body.itemId];
       if (!item) return null;
-      const profile = debited(ctx, item.cost * body.quantity);
+      // Discount the unit and THEN multiply, in that order -- buyStackAcresFeed
+      // does the same, and the other order rounds differently because
+      // applyInfluenceDiscount floors. Predicting the wrong one shows a debit
+      // the server then corrects, which is the flicker this module exists to
+      // avoid.
+      const profile = debited(ctx, applyInfluenceDiscount(item.cost, ctx.influence) * body.quantity);
       if (!profile) return null;
       return { feed: ctx.feed + item.servings * body.quantity, profile };
     }
@@ -551,7 +556,7 @@ export function predictStackAcresAction(
       const next = nextToolTier(ctx.toolTier);
       const price = toolUpgradePrice(ctx.toolTier);
       if (!next || price === null) return null;
-      const profile = debited(ctx, price);
+      const profile = debited(ctx, applyInfluenceDiscount(price, ctx.influence));
       if (!profile) return null;
       return { tool: next, profile };
     }

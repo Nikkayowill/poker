@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INFLUENCE_TIERS,
   applyInfluenceDiscount,
+  crossedInfluenceTier,
   influenceTier,
   nextInfluenceTier,
 } from "./influence-tiers";
@@ -46,6 +47,33 @@ describe("nextInfluenceTier", () => {
     const top = INFLUENCE_TIERS[INFLUENCE_TIERS.length - 1];
     expect(nextInfluenceTier(top.threshold)).toBeNull();
     expect(nextInfluenceTier(top.threshold + 1)).toBeNull();
+  });
+});
+
+describe("crossedInfluenceTier", () => {
+  it("names the rung a settlement just reached", () => {
+    expect(crossedInfluenceTier(15, 25)).toEqual(INFLUENCE_TIERS[1]);
+    expect(crossedInfluenceTier(90, 100)).toEqual(INFLUENCE_TIERS[2]);
+  });
+
+  it("is null when the settlement stayed inside one rung", () => {
+    expect(crossedInfluenceTier(0, 24)).toBeNull();
+    expect(crossedInfluenceTier(100, 299)).toBeNull();
+  });
+
+  it("is null when nothing was earned", () => {
+    expect(crossedInfluenceTier(100, 100)).toBeNull();
+    expect(crossedInfluenceTier(0, 0)).toBeNull();
+  });
+
+  it("reports only the highest rung when one settlement clears two", () => {
+    expect(crossedInfluenceTier(0, 100)).toEqual(INFLUENCE_TIERS[2]);
+    expect(crossedInfluenceTier(0, 1_000)).toEqual(INFLUENCE_TIERS[4]);
+  });
+
+  it("never fires past the top rung", () => {
+    const top = INFLUENCE_TIERS[INFLUENCE_TIERS.length - 1];
+    expect(crossedInfluenceTier(top.threshold, top.threshold + 5_000)).toBeNull();
   });
 });
 

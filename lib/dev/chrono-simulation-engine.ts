@@ -29,7 +29,7 @@
  *
  * WHERE THE GAME INSTANCE COMES FROM. `getChronoSimulatableGame` reads it off
  * the SAME dev-only `window.__stackacres` handle
- * components/arcade/stackacres/stackacres-world.tsx already exposes outside
+ * components/arcade/stackacres-td/topdown-world.tsx already exposes outside
  * production (extended with a `game` field for this feature) -- there is
  * exactly one dev-only door onto the live scene, not a second global to keep
  * in sync with it.
@@ -140,7 +140,7 @@ export function isChronoSimulatableGame(value: unknown): value is ChronoSimulata
  * The dev-only window handle, read defensively. `window` is undefined during
  * SSR/build (this is only ever called from a "use client" effect, but the
  * guard costs nothing and avoids a crash if that ever changes), and the
- * handle itself is absent until stackacres-world.tsx has booted a scene, or
+ * handle itself is absent until topdown-world.tsx has booted a scene, or
  * in any production build at all.
  */
 export function getChronoSimulatableGame(): ChronoSimulatableGame | null {

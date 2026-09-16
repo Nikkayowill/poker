@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { TRAVELER_PORTRAIT, type TravelerId } from "@/lib/stackacres/story/travelers";
 import type { StoryChoice, StoryDialogueNode } from "@/lib/stackacres/story/dialogue";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * One traveler's speech bubble: their portrait, name, line, and whatever

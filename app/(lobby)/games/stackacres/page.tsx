@@ -4,7 +4,6 @@ import { StackAcresFarmDynamic } from "@/components/arcade/stackacres/stackacres
 import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
 import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
-import { StackAcresPlacementPanel } from "@/components/dev/StackAcresPlacementPanel";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
 import { findProfileBySessionToken } from "@/lib/server/profile-store";
 import { readSessionTokenFromCookies } from "@/lib/server/session";
@@ -19,11 +18,6 @@ import { readSessionTokenFromCookies } from "@/lib/server/session";
  */
 const CHRONO_DELOREAN_PANEL_ENABLED =
   process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_CHRONO_DELOREAN_ENABLED === "1";
-
-/** Same gate, same reasoning, for the yard placement dev panel -- see
- *  StackAcresPlacementPanel.tsx's own header. */
-const STACKACRES_PLACEMENT_PANEL_ENABLED =
-  process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_STACKACRES_PLACEMENT_ENABLED === "1";
 
 /**
  * Dev-only: skip `tokenHasStackAcresAccess` locally, so a stock `pnpm dev`
@@ -96,7 +90,6 @@ export default async function StackAcresPage() {
           containing block absent one, which is fine for a dev-only overlay
           that only needs to sit in a corner of the screen. */}
       {allowed && CHRONO_DELOREAN_PANEL_ENABLED && <ChronoDevPanel />}
-      {allowed && STACKACRES_PLACEMENT_PANEL_ENABLED && <StackAcresPlacementPanel />}
     </div>
   );
 }

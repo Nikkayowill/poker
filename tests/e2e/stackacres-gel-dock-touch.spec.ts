@@ -13,10 +13,22 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "@play
  * question that one cannot: with a real finger, on a real short landscape
  * viewport, does a token actually come out of the row and land in the circle.
  *
- * The dock itself only opens on a tap on the Crop Fields' own bare ground, so
- * the tap goes through `window.__stackacres`'s `screenPointFor` rather than a
- * guessed pixel.
+ * The dock itself only opens on a tap on the Crop Fields' own bare ground (the
+ * Old Fields on the top-down map), so the farmer is put there through the
+ * dev-only `window.__stackacres` handle and the tap aims at a map point.
  */
+
+interface TopdownHandle {
+  scene: {
+    clientPointFor: (x: number, y: number) => { x: number; y: number };
+    placeFarmer: (area: string, at: { x: number; y: number }) => void;
+    isWalking: () => boolean;
+  };
+}
+
+/** The Old Fields' south gate, and a bare bed square just inside the fence above it. */
+const OLD_FIELDS_GATE = { x: 352, y: 596 };
+const BARE_BED = { x: 352, y: 520 };
 
 const ADMIN_SECRET = "playwright-admin-secret";
 /** A phone held sideways: short, wide, and the case the dock was reported
@@ -100,31 +112,18 @@ test("a thumb drags a gel token out of the row and into the circle", async ({ br
     };
     await dismissRay();
 
-    // Bare ground inside the Crop Fields' bed lattice, found the way the
-    // farm's own dev recipe finds a building: unproject a grid of screen
-    // points and keep one that really lands in the rect. Aiming at a guessed
-    // pixel unprojects to wherever the iso projection happens to put it.
-    const found = await page.evaluate(() => {
-      const probe = (
-        window as unknown as {
-          __stackacres: { worldPointFor: (x: number, y: number) => { x: number; y: number } };
-        }
-      ).__stackacres;
-      // CROP_FIELD_BEDS: `yardRect(464, -81, 512, 512)` shifted by YARD_DELTA
-      // (lib/stackacres/yard.ts), which is -256..256 on both axes.
-      const inside = (p: { x: number; y: number }) =>
-        p.x >= -256 && p.x <= 256 && p.y >= -256 && p.y <= 256;
-      const hits: { x: number; y: number }[] = [];
-      for (let y = 60; y < window.innerHeight - 60; y += 10) {
-        for (let x = 20; x < window.innerWidth - 20; x += 10) {
-          if (inside(probe.worldPointFor(x, y))) hits.push({ x, y });
-        }
-      }
-      return hits.length > 0 ? hits[Math.floor(hits.length / 2)] : null;
-    });
-    expect(found, "no Crop Fields bed on screen to tap").not.toBeNull();
+    await page.evaluate((gate) => {
+      (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate);
+    }, OLD_FIELDS_GATE);
+    await page.waitForTimeout(300);
+    const found = await page.evaluate(
+      (bed) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.clientPointFor(bed.x, bed.y),
+      BARE_BED,
+    );
     await dismissRay();
-    await page.touchscreen.tap(found!.x, found!.y);
+    await page.touchscreen.tap(found.x, found.y);
+    // The farmer walks up to the bed first; the dock opens when he arrives.
+    await page.waitForFunction(() => !(window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.isWalking());
 
     const dock = page.locator(".sa-gel");
     await expect(dock).toBeVisible({ timeout: 10_000 });

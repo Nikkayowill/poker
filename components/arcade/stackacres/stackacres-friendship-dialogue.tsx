@@ -14,7 +14,7 @@ import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/sta
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * NPC friendship: a gift dialogue, same screen-anchored treatment as

@@ -12,7 +12,7 @@ import {
 import { StackAcresIcon } from "./stackacres-icon";
 import { isDragDrop } from "@/lib/stackacres/drag-affordance";
 import { arrowGeometry } from "./stackacres-drag-affordance";
-import type { TapPoint } from "./stackacres-scene";
+import type { TapPoint } from "./world-contract";
 
 /**
  * Fishing: the same pick-up-and-drop tool `StackAcresDragAffordance` gives

@@ -7,7 +7,7 @@ without the conversation. Read this, then `PIPELINE.md` (how the art is made) an
 ## What this is
 
 StackAcres (the farm game inside the StackChips app, code in `lib/stackacres/` and
-`components/arcade/stackacres/`) is moving from isometric art to **Stardew-style top-down
+`components/arcade/stackacres/`) moved from isometric art to **Stardew-style top-down
 pixel art**, with a walkable character (tap-to-move, no joystick), areas as separate scenes,
 enterable buildings, a marketplace, fishing and bear-defense minigames.
 
@@ -26,8 +26,8 @@ The economy layer is already renderer-agnostic, which is what makes that possibl
 | The other 7 areas | **Drawn.** Kayo liked them; streams added to the Coast and a waterfall to the Mine |
 | Crops | **Three drawn** (carrot, potato, radish, three stages each). Kayo: the other 13 wait until the game is playable |
 | Animation | Water, streams, the waterfall, smoke and the campfire animate (4 frames, `views/*.gif`). Animals do not |
-| Tiled/Phaser export | Not started |
-| Game engine (Phase 1) | Not started. **Kayo: "we need to focus in on delivering this"** |
+| Tiled/Phaser export | Done without Tiled (`areas/rig/export.py`) |
+| Game engine (Phase 1) | **Live at `/games/stackacres`.** The isometric world was deleted on 2026-09-16 (Kayo: "rid of the old isometric") |
 | Interiors, minigame scenes, the other crops, animal animation | Not started, deliberately |
 
 Review pages:
@@ -43,8 +43,8 @@ Review pages:
   is gitignored there; rebuild it. `~/Pictures/StackAcres/` is the older working copy and
   is no longer the source.
 - What the game loads: `public/stackacres-td/`, written by `areas/rig/export.py`.
-- The playable game: `/games/stackacres/topdown`, code in
-  `components/arcade/stackacres-td/` and `lib/stackacres-td/`.
+- The game: `/games/stackacres`, map code in `components/arcade/stackacres-td/` and
+  `lib/stackacres-td/`, the shell's contract with it in `components/arcade/stackacres/world-contract.ts`.
 - The early crop economy spec (carrot, potato, radish, wheat): `docs/stackacres-early-crop-economy.md`.
 - Aseprite: `~/deps/aseprite/build/bin/aseprite`, rebuilt by `~/deps/build-aseprite.sh`.
 - The approved engine plan: `~/.claude/plans/zany-munching-token.md`. **Parts are superseded**, see below.
@@ -82,7 +82,7 @@ Review pages:
 
 ## Making it live: next steps, in order
 
-Done on `feat/stackacres-topdown` (2026-09-16, not committed):
+Done (2026-09-16, PRs #539, #540 and the cutover):
 
 - **Rigs in the repo** at `art/stackacres-td/`; both pipelines run from there.
 - **Export without Tiled.** `areas/rig/export.py` writes, per area, the ground pre-rendered
@@ -91,13 +91,18 @@ Done on `feat/stackacres-topdown` (2026-09-16, not committed):
   the spawn, and the 16px tiles that block walking). Tiled was the plan; pre-rendering the
   ground from the same rig that draws the reviews was simpler and can't drift from them.
   Character sheets are re-keyed by frame index for Phaser's `createFromAseprite`.
-- **Playable on the real farm at `/games/stackacres/topdown`** (same access list as
-  `/games/stackacres`, not linked from the floor). It is the live farm shell,
-  `StackAcresFarm worldView="topdown"`, over `components/arcade/stackacres-td/topdown-world.tsx`,
-  which implements the isometric world's `StackAcresWorldProps`/`StackAcresWorldApi`
-  contract. So the back button, tool kit, HUD, shop, dialogs and every server action are
-  the live ones, and no `lib/stackacres` logic changed. `useStackAcresState()` was not
-  needed: swapping the world under the shell was enough.
+- **It is the game at `/games/stackacres`.** The farm shell (`StackAcresFarm`) renders
+  `components/arcade/stackacres-td/topdown-world.tsx`, which implements
+  `world-contract.ts`. The back button, tool kit, HUD, shop, dialogs and every server action
+  are the same ones the isometric map had, and no `lib/stackacres` logic changed. The old
+  `/games/stackacres/topdown` preview route is gone.
+- **The isometric world is deleted**: `stackacres-scene.ts`, `stackacres-world.tsx`, their
+  Phaser managers, the yard placement dev panel, and the lib modules only they used
+  (the automated farmhand, the Pilgrim's bow, traveler placement, frenzy, gait, the truck,
+  the mower). It's all in git history if a piece is worth porting.
+- **Dev handle**: outside production, `window.__stackacres = { scene, game }` once the map is
+  up. The e2e specs use the scene's `placeFarmer`, `clientPointFor`, `npcPoint` and
+  `isWalking`; ChronoDevPanel steps `game`'s clocks.
 - **Two scenes** (`scene.ts`): the Homestead (barn = store, signpost = contracts, windmill
   = workshop, well, dock, greenhouse footing, Ray and his house, the Pilgrim, Pierre and Ivy
   when unlocked, the Merchant when visiting, Hen Haven with the player's real hens, the loose
@@ -124,6 +129,8 @@ Done on `feat/stackacres-topdown` (2026-09-16, not committed):
 Next, in order:
 
 1. **Kayo plays it on prod** and says how it feels. Tune walk speed, zoom, reach and taps.
+   Art under `public/stackacres/` that only the isometric map drew can be pruned; the sprite
+   list in `stackacres-sprites.ts` still names it for the menus' icons, so check each file.
 2. **The Fold and Cattle Pasture** as scenes, so sheep and cattle show and can be fed.
 3. **The missing contract pieces**: scythe, pipes, Wheat Plots, greenhouse interior.
 4. **The wild areas** as scenes, joined at the exits in `AREAS.md`.

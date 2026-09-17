@@ -160,7 +160,7 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     // unlock -- nothing renders behind it until a real gesture lands.
     await page.getByRole("button", { name: /tap|play|start/i }).first().click();
 
-    // Then Grandfather Ray says hello. It is a first-visit localStorage flag,
+    // Then Ray says hello. It is a first-visit localStorage flag,
     // so a fresh browser context ALWAYS gets it, and his card sits over the
     // signpost rail -- including over the very button this test needs next.
     // Dismissing it explicitly rather than force-clicking through it: a click

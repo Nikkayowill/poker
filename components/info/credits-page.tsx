@@ -42,7 +42,7 @@ export function CreditsPage() {
         <section className="info-page-section">
           <h2>Generated art</h2>
           <p>
-            The cow, hen, sheep, ox, hog, Grandfather Ray, the barn, the
+            The cow, hen, sheep, ox, hog, Ray, the barn, the
             windmill, and the trowel/iron shovel/golden spade tools were all
             generated locally with FLUX.1-schnell, an open-weight
             text-to-image model, from a &ldquo;flat vector&rdquo; prompt Kayo

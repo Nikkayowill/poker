@@ -135,7 +135,7 @@ export const FARM_PATHS: readonly PathSpec[] = [
     surface: "dirt",
     tier: "arterial",
     // Evaluates to the 2.5-tile arterial floor (40). This is the stretch
-    // along the barn front past Grandfather Ray, and it is as wide as the
+    // along the barn front past Ray, and it is as wide as the
     // yard allows: the signpost stands 25.5 units off the centreline, so
     // anything past ~42 puts it inside the road's clearance band
     // (props.test.ts). A truck up to about two tiles parks on it; a bigger

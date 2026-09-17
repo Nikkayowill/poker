@@ -98,7 +98,12 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   // which is a plain hand-drawn painter with no real sprite behind it. This
   // crop has real Gr8FarmPack art (wheatsheaf2.png) and gets the same
   // sprite-backed icon treatment every other crop here does.
-  wheatsheaf: { label: "Wheat", plural: "Wheat", icon: "ico-wheatsheaf", sellPrice: 44 },
+  // "Wheat Sheaf", not "Wheat": machine-items.ts's own `wheat` (the Wheat
+  // Plot's raw material, 4g) was ALSO labelled "Wheat", so the store's Sell tab
+  // listed two different things under one name at 44g and 4g and read as a
+  // pricing bug. The id already diverged for the same collision; the label just
+  // never followed.
+  wheatsheaf: { label: "Wheat Sheaf", plural: "Wheat Sheaves", icon: "ico-wheatsheaf", sellPrice: 44 },
 };
 
 /** What one finished unit brings in. */

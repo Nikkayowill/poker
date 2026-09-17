@@ -228,9 +228,9 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   // ---- Tier 3 (slow/valuable). ----
   corn: { label: "Corn", ...TIER3 },
   eggplant: { label: "Eggplant", ...TIER3 },
-  // Labelled Wheat, keyed as wheatsheaf -- see this file's header for why the
-  // plain id collides with an unrelated existing item.
-  wheatsheaf: { label: "Wheat", ...TIER3 },
+  // "Wheat Sheaf", keyed as wheatsheaf -- both the id AND the label collide with
+  // machine-items.ts's raw `wheat`, which sells for 4g against this one's 44g.
+  wheatsheaf: { label: "Wheat Sheaf", ...TIER3 },
 
   hen: {
     label: "Hen Coop",

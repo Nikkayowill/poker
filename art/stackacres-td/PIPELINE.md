@@ -43,10 +43,33 @@ art/stackacres-td/            (in the repo; generated output is gitignored)
 - **LibreSprite can't replace Aseprite for pixel-mcp**: pixel-mcp writes Aseprite Lua, and
   LibreSprite scripts in JavaScript. Fine as a manual editor.
 
-## The style contract (Kayo approved all of this)
+## Direction since 2026-09-16: depth through movement and polish
 
-- **Palette: DawnBringer 16 only**, everywhere, characters and areas alike. The scripts assert
-  no off-palette pixels.
+Kayo moved the art past DawnBringer 16 (`rich/`, see below) and then set the priorities for
+what comes next, overturning the old "depth from mechanics, not animation polish" note:
+
+- **Static texture is done.** At phone size more texture detail gives little back. The premium
+  feel now comes from atmospheric life and juice.
+- **Emotion through expression, not sprite size.** Keep the compact 48×48 rig. Personality comes
+  from large, expressive dialogue portraits and contextual emotes.
+- **Atmosphere runs in the engine, not in baked frames.** Lightweight shaders and per-sprite
+  animation (wind sway, day/night grading, drifting cloud shadows) instead of more pre-rendered
+  background frames, to protect iPhone texture memory.
+- **Readability first.** New motion never competes with tap targets: high-motion elements live in
+  the background layer or non-interactive zones, so young players can always find what to tap.
+
+## The rich pipeline: `rich/`
+
+Everything below this section describes the original DB16 rigs, which still own layout (area
+scripts), poses and silhouettes (`characters/rig/`). `rich/` redraws on top of them: 12-shade
+hue-shifted ramps (`pal.py`), per-pixel terrain, rebuilt sprites, scene lighting (`scene.py`),
+generated decor (`decor.py`) and every character reshaded on the rig's own poses
+(`characters.py`). Rebuild with `python3 rich/characters.py` then `python3 rich/build.py`.
+
+## The original style contract (the DB16 rigs)
+
+- **Palette: DawnBringer 16 only** in the rigs, characters and areas alike (superseded for what
+  ships by `rich/`). The scripts assert no off-palette pixels.
   `K #140C1C  P #442434  B #30346D  g #4E4A4E  N #854C30  G #346524  R #D04648  O #757161`
   `L #597DCE  o #D27D2C  s #8595A1  v #6DAA2C  T #D2AA99  C #6DC2CA  Y #DAD45E  W #DEEED6`
   The single letters are the keys used in every grid in both rigs.
@@ -59,8 +82,8 @@ art/stackacres-td/            (in the repo; generated output is gitignored)
 - **Sizes:** 16×16 tiles. Character frames 48×48, feet at y=44, centered on x=23.5, a body
   about 16 wide × 27 tall. The in-game phone camera is 4× integer scale, about 13×8 tiles.
   Integer scaling only.
-- **Simple animation:** 4 frames per animation. Kayo explicitly wants depth from mechanics,
-  not animation polish.
+- **Rig animations are 4 frames each.** The old note that Kayo wanted depth from mechanics, not
+  animation polish, is overturned: see "Direction since 2026-09-16" above.
 
 ## Characters: `characters/rig/`
 

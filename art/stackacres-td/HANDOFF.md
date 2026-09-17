@@ -8,7 +8,7 @@ without the conversation. Read this, then `PIPELINE.md` (how the art is made) an
 
 StackAcres (the farm game inside the StackChips app, code in `lib/stackacres/` and
 `components/arcade/stackacres/`) moved from isometric art to **Stardew-style top-down
-pixel art**, with a walkable character (tap-to-move, no joystick), areas as separate scenes,
+pixel art**, with a walkable character (tap-to-move, plus a thumb stick on phones), areas as separate scenes,
 enterable buildings, a marketplace, fishing and bear-defense minigames.
 
 **Kayo's hard rule: no logic changes.** Prices, timers, catalogue, quests, unlocks and odds in
@@ -72,7 +72,10 @@ Review pages:
 - **PixelLab MCP is registered** (`claude mcp add pixellab ...`, local config, HTTP with a
   bearer token). Not used for anything yet; reconnect with `/mcp` in a session to load its tools.
 - **Ray's Museum was deleted** by Kayo on 2026-09-11. Don't bring it back.
-- **Tap-to-move** with simple straight-line-plus-obstacle pathing, not a joystick and not A*.
+- **Tap-to-move** with a breadth-first path (`lib/stackacres-td/movement.ts`). Once all eight areas
+  were playable (2026-09-16) Kayo asked for a **joystick too**: a fixed thumb stick in the bottom-right
+  on touch screens (`stackacres-td/joystick.tsx`), walking him directly with a small foot box that
+  slides along walls. Tapping still walks, and tapping is still how you use things.
 
 ## Superseded parts of the plan file
 

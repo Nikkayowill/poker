@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { advance, findPath, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
+import { advance, findPath, steer, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
 import {
   fieldMapToWorld,
   fieldWorldToMap,
@@ -23,7 +23,7 @@ import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
 
 /**
- * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move.
+ * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move or the thumb stick (joystick.tsx).
  *
  * It answers the shell's callbacks (../stackacres/world-contract.ts). Tapping a
  * thing walks the farmer over to it first, and the shell's menu opens when he
@@ -208,6 +208,10 @@ export class TopdownScene extends Phaser.Scene {
   private facing: Dir = "down";
   private booted = false;
   private down: { x: number; y: number; t: number } | null = null;
+  /** The thumb stick's push: a direction whose length is the share of full speed, or null when let go. */
+  private stick: Point | null = null;
+  /** The stick moved him on the last frame; false while it pushes him into a wall. */
+  private stickWalking = false;
   private daylight!: DaylightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
@@ -283,15 +287,16 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    if (this.path.length > 0) this.walk(delta);
+    if (this.stick) this.walkByStick(delta);
+    else if (this.path.length > 0) this.walk(delta);
     this.placeCamera();
-    this.wind.update(time, this.pos, this.path.length > 0, this.reducedMotion);
+    this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion);
     this.smoke.update(time, this.reducedMotion);
     this.daylight.update(time, this.reducedMotion);
     this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.people.update(
       time,
-      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.path.length > 0 },
+      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
       this.daylight.hour(),
       this.reducedMotion,
       this.hasCue,
@@ -303,25 +308,60 @@ export class TopdownScene extends Phaser.Scene {
     // Face along the segment he is on, not the last frame's step, so the walk only turns at a waypoint.
     const next = this.path[0];
     if (Math.hypot(next.x - from.x, next.y - from.y) > 0.01) this.facing = this.headingFor(next.x - from.x, next.y - from.y);
-    const key = `walk_${this.facing}`;
-    if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
-      this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
-      this.player.play({ key, repeat: -1, timeScale: WALK_SPEED / 44 });
-    }
+    this.playWalk(WALK_SPEED);
     const { at, path } = advance(from, this.path, (WALK_SPEED * delta) / 1000);
     this.path = path;
     this.setPlayerAt(at);
+    if (this.takeExit(at)) return;
+    if (this.path.length === 0) this.arrive();
+  }
+
+  /** The stick walks him directly, sliding along whatever he pushes into; a tap walk in progress gives way to it. */
+  private walkByStick(delta: number): void {
+    const stick = this.stick!;
+    if (this.path.length > 0 || this.pending) {
+      this.path = [];
+      this.pending = null;
+      this.clearMarker();
+    }
+    const speed = WALK_SPEED * Math.hypot(stick.x, stick.y);
+    // A slow phone still walks at full speed, but a long stall (a tab coming back) isn't one big lurch.
+    const at = steer(this.grid, this.pos, stick, (speed * Math.min(delta, 100)) / 1000);
+    this.facing = this.headingFor(stick.x, stick.y);
+    if (Math.hypot(at.x - this.pos.x, at.y - this.pos.y) > 0.001) {
+      this.playWalk(speed);
+      this.setPlayerAt(at);
+      this.stickWalking = true;
+      this.takeExit(at);
+      return;
+    }
+    // Pushed into a wall: stand facing it, so he reads as blocked rather than walking on the spot.
+    if (this.stickWalking || this.player.frame.name !== STANDING[this.facing]) this.stand();
+    this.stickWalking = false;
+  }
+
+  private playWalk(speed: number): void {
+    const key = `walk_${this.facing}`;
+    const timeScale = speed / 44;
+    if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
+      this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+      this.player.play({ key, repeat: -1, timeScale });
+    } else {
+      this.player.anims.timeScale = timeScale;
+    }
+  }
+
+  /** Stepping into an exit to an area he may enter takes him there. */
+  private takeExit(at: Point): boolean {
     const exit = this.area.exits.find(
       (e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h && this.canEnter(e.to),
     );
-    if (exit) {
-      this.path = [];
-      this.pending = null;
-      this.enterArea(exit.to, exit.spawn);
-      this.callbacks.onViewMoved();
-      return;
-    }
-    if (this.path.length === 0) this.arrive();
+    if (!exit) return false;
+    this.path = [];
+    this.pending = null;
+    this.enterArea(exit.to, exit.spawn);
+    this.callbacks.onViewMoved();
+    return true;
   }
 
   /** Bought land can only be walked into once it is owned, whatever path the farmer found to its edge. */
@@ -716,7 +756,7 @@ export class TopdownScene extends Phaser.Scene {
 
   /** The shell's water, harvest or planting drop landed: act it out, facing whatever he walked up to. */
   farmerAction(action: FarmerAction): void {
-    if (!this.booted || this.path.length > 0) return;
+    if (!this.booted || this.isWalking()) return;
     const { anim, repeat } = ACTIONS[action];
     this.stand();
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
@@ -777,6 +817,21 @@ export class TopdownScene extends Phaser.Scene {
       case "homebeds":
         this.floatAt(at, "Crops grow in the Old Fields, up the north lane", "deny");
         return;
+    }
+  }
+
+  /**
+   * The thumb stick (joystick.tsx): a direction whose length is the share of full speed, or null when let go.
+   * Taking hold of it closes whatever menu was open, the same as walking off does.
+   */
+  setStick(push: Point | null): void {
+    if (!this.booted) return;
+    const was = this.stick;
+    this.stick = push;
+    if (push && !was) this.callbacks.onViewMoved();
+    if (!push && was) {
+      if (this.stickWalking && this.path.length === 0) this.stand();
+      this.stickWalking = false;
     }
   }
 
@@ -1000,7 +1055,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   isWalking(): boolean {
-    return this.path.length > 0;
+    return this.path.length > 0 || this.stickWalking;
   }
 
   /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the player's local clock. */

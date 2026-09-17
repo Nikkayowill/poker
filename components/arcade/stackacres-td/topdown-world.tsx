@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresWeather } from "@/lib/stackacres/weather";
+import type { Point } from "@/lib/stackacres-td/movement";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
+import { StackAcresJoystick } from "./joystick";
 import type { TopdownScene } from "./scene";
 
 /**
@@ -203,6 +205,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     [],
   );
 
+  const onStick = useCallback((push: Point | null) => sceneRef.current?.setStick(push), []);
+
   useLayoutEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);
   }, [sceneUnits]);
@@ -223,5 +227,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);
   }, [celebrate]);
 
-  return <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />;
+  return (
+    <>
+      <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />
+      <StackAcresJoystick onStick={onStick} />
+    </>
+  );
 }

@@ -14,7 +14,7 @@ from area import Area
 MW, MH = 32, 28
 
 
-def build():
+def build(for_game=False):
     a = Area("oak", MW, MH)
     a.line("path", (MW, 13), (24, 13))                 # the trail in from the Homestead
     a.line("path", (24, 13), (21, 15))
@@ -46,7 +46,10 @@ def build():
              (170, 440, "round"), (360, 430, "spruce_big")], seed=9)
     a.character("skye", 176, 362)
     a.character("bea", 400, 352)
-    a.character("farmer", 330, 260)
+    a.exit("homestead", 502, 200, 10, 32, (24, 200))   # back east along the trail
+    a.spawn = (492, 216)
+    if not for_game:
+        a.character("farmer", 330, 260)
     return a
 
 

@@ -137,7 +137,7 @@ Next, in order:
    list in `stackacres-sprites.ts` still names it for the menus' icons, so check each file.
 2. **The Fold and Cattle Pasture** as scenes, so sheep and cattle show and can be fed. Done 2026-09-16: gates open when the sector is owned, pens draw the real herd, `focusZone` travels there.
 3. **The missing contract pieces**: scythe, pipes, Wheat Plots, greenhouse interior.
-4. **The wild areas** as scenes, joined at the exits in `AREAS.md`.
+4. **The wild areas** as scenes, joined at the exits in `AREAS.md`. Done 2026-09-16: Coast, Oak, Mine and Town Square open with their first traveler's existing unlock (Miles, Skye, Brayden, Arthur).
 5. The early crop economy (`docs/stackacres-early-crop-economy.md`) as its own change,
    with its migrations applied alongside.
 

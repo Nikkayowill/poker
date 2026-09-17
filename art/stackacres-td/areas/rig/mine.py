@@ -13,7 +13,7 @@ from area import Area
 MW, MH = 28, 22
 
 
-def build():
+def build(for_game=False):
     a = Area("mine", MW, MH)
     a.line("path", (5, MH), (5, 14))                   # the trail up from the Homestead
     a.line("path", (5, 14), (13, 14))
@@ -53,7 +53,10 @@ def build():
     a.tree_line("east", spruce=True, span=(70, 352), seed=6)
     a.tree_line("south", spruce=True, gaps=((50, 130), (350, 410)), seed=6)
     a.character("brayden", 200, 214)
-    a.character("farmer", 100, 300)
+    a.exit("homestead", 72, 342, 32, 10, (680, 24))    # back down the hill trail
+    a.spawn = (88, 334)
+    if not for_game:
+        a.character("farmer", 100, 300)
     return a
 
 

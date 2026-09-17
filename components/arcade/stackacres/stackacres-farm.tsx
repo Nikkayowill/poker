@@ -56,7 +56,6 @@ import {
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
 import {
-  isStackAcresCrop,
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
   STACKACRES_FEED,
@@ -64,6 +63,7 @@ import {
   STACKACRES_LIVESTOCK,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   type SeedStock,
+  type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
@@ -90,25 +90,18 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
-import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
+import { collectFloat } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
-import { type StackAcresTool } from "@/lib/stackacres/tools";
+import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
-  CROP_FIELD_BEDS,
-  penFeedSpot,
   stockZone,
-  type WorldPoint,
 } from "@/lib/stackacres/world";
 import {
   createSoilMap,
-  plantableTileGroup,
-  soilSlotOnTile,
-  soilSlotTile,
-  soilTileAt,
+  hasSoilTile,
   soilTilesEqual,
-  thirstyTileGroup,
   type SoilTile,
 } from "@/lib/stackacres/soil";
 import {
@@ -154,11 +147,6 @@ import {
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
 import {
-  PIPE_NEIGHBORS,
-  PIPE_PLACE_COST,
-  pipeTileAt,
-  type PipeFacing,
-  type PipeKind,
   type PipeNode,
 } from "@/lib/stackacres/irrigation";
 import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
@@ -205,9 +193,7 @@ import {
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
-import { StackAcresRadialMenu, STOCK_ICON } from "./stackacres-radial-menu";
-import { StackAcresGelDock, type StackAcresGelDockItem } from "./stackacres-gel-dock";
-import { StackAcresPipeAim } from "./stackacres-pipe-aim";
+import { STOCK_ICON } from "./stock-icon";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
 import type { FenceTier } from "@/lib/stackacres/wildlife";
@@ -226,8 +212,16 @@ import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
 import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from "./world-contract";
-import { StackAcresGroundTools } from "./stackacres-ground-tools";
-import { StackAcresDragAffordance } from "./stackacres-drag-affordance";
+import { StackAcresToolbelt } from "./stackacres-toolbelt";
+import { StackAcresSeedWheel, type SeedWheelItem } from "./stackacres-seed-wheel";
+import {
+  BELT_DEFAULT_TIER,
+  BELT_TOOL_DEFS,
+  beltAnimation,
+  resolveBeltAction,
+  type BeltTool,
+} from "@/lib/stackacres/toolbelt";
+import type { UseSquare } from "./world-contract";
 import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
@@ -400,28 +394,17 @@ interface FarmProcessing {
   wheatPlots: StackAcresWheatPlotSnapshot[];
 }
 
-/** A drag tool on offer: what a good drop does, where the tool floats and
- *  where it has to land. `key` remounts the overlay for each new offer. */
-type DragOffer =
-  // unitIds is set only when the tapped crop sits in a >=2x2 block of
-  // thirsty crops (soil.ts's `thirstyTileGroup`) -- the drop then waters the
-  // whole block in one request instead of just `unitId`.
-  | {
-      key: string;
-      kind: "water";
-      unitId: string;
-      unitIds?: string[];
-      iconAt: TapPoint;
-      targetAt: TapPoint;
-    }
-  | { key: string; kind: "feed-pen"; zone: ZoneId; iconAt: TapPoint; targetAt: TapPoint }
-  | { key: string; kind: "feed-unit"; unitId: string; iconAt: TapPoint; targetAt: TapPoint }
-  | { key: string; kind: "collect"; unitId: string; iconAt: TapPoint; targetAt: TapPoint };
 
-/** The fishing rod floating at the dock, mid-cast. Its own state, not a
- *  `DragOffer`: a cast is a two-stage gesture (drag in, wait for a bite,
- *  drag back out), not the single drop the water can/feed scoop settle on --
- *  see stackacres-fishing-affordance.tsx. */
+/** How long a stroke gathers beds before sending them as one request. Short
+ *  enough that the round trip still feels immediate, long enough that walking a
+ *  row is a handful of requests rather than one per bed. */
+const STROKE_BATCH_MS = 200;
+
+/** The fishing rod floating at the dock, mid-cast. The one drag-and-drop tool
+ *  left on the farm: a cast is a two-stage gesture (drag in, wait for a bite,
+ *  drag back out), which is why it survived the tool belt replacing the water
+ *  can, the feed scoop and the harvest basket -- see
+ *  stackacres-fishing-affordance.tsx. */
 interface FishingOffer {
   key: string;
   iconAt: TapPoint;
@@ -769,9 +752,6 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
-  /** The drag tool floating on the map right now, if any: the watering can
-   *  over a dry crop, or the feed scoop over a hungry pen. */
-  const [dragOffer, setDragOffer] = useState<DragOffer | null>(null);
   /** The rod mid-cast at the dock, if any. See `FishingOffer`'s own header. */
   const [fishingOffer, setFishingOffer] = useState<FishingOffer | null>(null);
   /** The map's own box, so a drag tool can be kept inside it. */
@@ -981,7 +961,20 @@ export function StackAcresFarm() {
    */
   const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
-  const [tool, setTool] = useState<StackAcresTool>("inspect");
+  // Nothing on the map reads a held StackAcresTool any more; the belt replaced it
+  // (lib/stackacres/toolbelt.ts). Kept only to satisfy the world contract's own prop.
+  const tool: StackAcresTool = "inspect";
+  /**
+   * The tool belt (lib/stackacres/toolbelt.ts). What is held decides what the
+   * Use key and a tap on a square do, which is what replaced tapping a thing
+   * and then dragging a token onto it.
+   */
+  const [belt, setBelt] = useState<BeltTool>("hand");
+  /** The crop the seed pouch sows, and whether its wheel is open. */
+  const [seed, setSeed] = useState<StackAcresCrop | null>(null);
+  const [seedWheelOpen, setSeedWheelOpen] = useState(false);
+  /** The one bed the hoe has asked about lifting. Cleared by anything else the player does. */
+  const [armedLift, setArmedLift] = useState<{ tx: number; ty: number } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   /** Hidden secrets: what is held, and whether a crit boost is armed. Empty
    *  and unarmed until the first read lands. */
@@ -1205,45 +1198,6 @@ export function StackAcresFarm() {
   // it is actually asked for: the Manage button, or the radial menu's own
   // handoff. Travelling flies the camera and nothing else.
   const [panelOpen, setPanelOpen] = useState(false);
-  /**
-   * The seed menu dropped beside a finger that tapped empty district ground,
-   * and where to draw it -- pixels inside .sa-field, which is the same box
-   * the scene reported the tap in.
-   */
-  const [radial, setRadial] = useState<{
-    zone: ZoneId;
-    at: TapPoint;
-    world: WorldPoint;
-    /**
-     * The bed a "Remove Bed" tap on a PLANTED tile is one tap away from
-     * actually lifting -- see `cropFieldGelItems`. Set on the first tap,
-     * which only re-labels the same ring rather than firing anything;
-     * cleared on "Keep the bed", and gone for free on any confirm or close
-     * (every other `setRadial` call below replaces this whole object or
-     * drops it to null), so an armed confirm can never carry over onto a
-     * different tile or outlive the ring that raised it.
-     */
-    armedRemoveBed?: { tx: number; ty: number };
-    /**
-     * Which step of the Crop Fields' own bare-ground dock is showing: the
-     * root Lay Pipe/Plant Soil choice, or the Pipe branch's own Pipe vs.
-     * Well follow-on (only reachable when no well exists yet). Plant Soil
-     * has no follow-on of its own -- it commits straight from the root.
-     * Lives on `radial` for the same reason `armedRemoveBed` does -- a fresh
-     * tap on any tile replaces the whole object, so a stale step can never
-     * survive onto a different tile. `undefined` reads as `"root"`.
-     */
-    gelStep?: "root" | "pipe";
-  } | null>(null);
-  /**
-   * The four-way aim for a lone pipe stub (stackacres-pipe-aim.tsx), pinned
-   * at the finger the same way the ring is. Its own state rather than a
-   * mode of `radial`: it opens AFTER the ring has closed (a "Lay Pipe" that
-   * landed somewhere lone, or an "Aim Pipe" on a stub already down), and
-   * closes on its own terms -- a pick, the scrim, the camera moving, or the
-   * stub joining a neighbour (the effect beside `radialSoilWorld` below).
-   */
-  const [pipeAim, setPipeAim] = useState<{ tx: number; ty: number; at: TapPoint } | null>(null);
   /**
    * Where the finger that started the request in flight landed, so the reward
    * floats out of the thing that was tapped rather than out of the middle of
@@ -1895,45 +1849,6 @@ export function StackAcresFarm() {
 
   const soilMapForTiles = useMemo(() => createSoilMap(mergedSoilTiles), [mergedSoilTiles]);
 
-  /**
-   * The crop standing on tile `(tx, ty)` right now, or null on bare or
-   * empty ground -- the same `soilSlotOnTile` question
-   * `removeStackAcresSoilTile` asks server-side before it deletes a bed's
-   * occupant. Used only to decide whether removing a bed needs a warning
-   * first; the server is the one that actually enforces the loss.
-   */
-  const cropOnTile = useCallback(
-    (tx: number, ty: number): StackAcresUnitSnapshot | null => {
-      for (const unit of liveUnits) {
-        if (unit.soilSlot !== null && soilSlotOnTile(soilMapForTiles, unit.soilSlot, tx, ty)) {
-          return unit;
-        }
-      }
-      return null;
-    },
-    [liveUnits, soilMapForTiles],
-  );
-
-  /** The id of whichever crop stands on `(tx, ty)` AND is dry right now, or
-   *  null -- `soil.ts`'s `thirstyTileGroup` calls this once per tile it
-   *  walks to decide how far a group-water block reaches. */
-  const dryUnitAt = useCallback(
-    (tx: number, ty: number): string | null => {
-      const unit = cropOnTile(tx, ty);
-      return unit && unit.state === "dry" ? unit.id : null;
-    },
-    [cropOnTile],
-  );
-
-  /** Whether tile `(tx, ty)` already has a crop standing on it -- `soil.ts`'s
-   *  `plantableTileGroup` calls this once per tile it walks to decide how
-   *  far a group-plant block reaches, the planting mirror of `dryUnitAt`
-   *  above. */
-  const bedOccupiedAt = useCallback(
-    (tx: number, ty: number): boolean => cropOnTile(tx, ty) !== null,
-    [cropOnTile],
-  );
-
   const anyWorking = units.some(
     (unit) =>
       unit.state === "working" ||
@@ -1995,76 +1910,12 @@ export function StackAcresFarm() {
     world.current?.setGreenhouseHeldOpen(showGreenhouse);
   }, [showGreenhouse]);
 
-  // Whether a tap landed inside the Crop Fields' own bed lattice
-  // (`CROP_FIELD_BEDS`), rather than merely somewhere in the Farmstead --
-  // since the 2026-09-08 district merge, `radial.zone === "farmstead"` alone
-  // is true for the Farmstead's own yard too (its Hen Coop remnant grow
-  // area), and soil is only ever a Crop Fields concept.
-  const radialInCropFieldBeds =
-    !!radial &&
-    radial.zone === "farmstead" &&
-    radial.world.x >= CROP_FIELD_BEDS.x &&
-    radial.world.x <= CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width &&
-    radial.world.y >= CROP_FIELD_BEDS.y &&
-    radial.world.y <= CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height;
-
-  // The bed outline follows the ring, because the ring is where a bed is
-  // bought. Keyed on the radial state, which changes only on a tap, so this
-  // pushes once per open and once per close rather than per frame -- and
-  // every `setRadial(null)` site clears the outline without having to know
-  // it exists. Only the Crop Fields can hold a bed (the service refuses
-  // every other district), so no other zone draws one.
-  const radialSoilWorld = radialInCropFieldBeds && radial ? radial.world : null;
-  useEffect(() => {
-    world.current?.previewSoilAt(radialSoilWorld);
-  }, [radialSoilWorld]);
-
-  // The stub being aimed, as the farm currently knows it. The aim only means
-  // anything while the tile is lone (irrigation.ts's `PipeFacing`), so the
-  // popover goes away the moment a neighbour joins it -- whether by this
-  // player's next drag or by a refresh that says so. A tile the farm does
-  // not know at all is NOT stale, only hidden: a ring "Lay Pipe" sets
-  // `pipeAim` in the same tap that fires the request, and the tile's own
-  // node only lands with the optimistic patch a beat later, so clearing on
-  // "missing" would throw the aim away before the stub ever appears. A
-  // lifted tile reads as missing the same way and simply stays hidden.
-  const pipeAimNode = pipeAim
-    ? (irrigation.find((node) => node.tx === pipeAim.tx && node.ty === pipeAim.ty) ?? null)
-    : null;
-  const pipeAimStale = pipeAimNode !== null && (pipeAimNode.kind !== "pipe" || pipeAimNode.mask !== 0);
-  useEffect(() => {
-    if (!pipeAimStale) return;
-    // Deferred a macrotask rather than set synchronously in the effect body
-    // -- the `window.setTimeout(fn, 0)` shape table-loading-splash.tsx and
-    // useMinHoldFade use, required by this codebase's react-hooks/
-    // set-state-in-effect lint. The render below already hides the popover
-    // for a stale tile, so the one-tick gap draws nothing.
-    const timer = window.setTimeout(() => setPipeAim(null), 0);
-    return () => window.clearTimeout(timer);
-  }, [pipeAimStale]);
 
   // The bed actually standing at the tap, if any -- the one thing that
   // decides both what the ring/strip offers (a crop needs an empty bed to
   // land on; bare ground only ever offers to till one) and, via
   // `onRadialSeed`, which tile a planting names. Null on bare ground, same
   // as it is outside the Crop Fields entirely.
-  const radialSoilTile =
-    radial && radialInCropFieldBeds
-      ? (() => {
-          const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
-          return mergedSoilTiles.find((t) => t.tx === tx && t.ty === ty) ?? null;
-        })()
-      : null;
-
-  // Same "push, never rebuild" contract: the scene diffs its own drone set
-  // against this list (see StackAcresScene.setDroneHangar), so pushing on
-  // every response -- even one that rebuilt the array without actually
-  // changing the fleet -- is a harmless no-op on the scene's own side.
-  // useLayoutEffect for the same reason `setMerchant` above is one.
-  useLayoutEffect(() => {
-    world.current?.setDroneHangar(droneHangar.drones.map((drone) => drone.droneId));
-  }, [droneHangar.drones]);
-
   /** Whether the truck exists at all is a plain function of whether a Town
    *  Contract is open -- see lib/stackacres/delivery-truck.ts's own module
    *  doc for why the truck holds no opinion of its own about that fact.
@@ -2622,7 +2473,6 @@ export function StackAcresFarm() {
   /* ---------------------------------------------------------------- */
 
   const onWorldMonkTap = useCallback((at: TapPoint) => {
-    setRadial(null);
     setMonkDialogue({ phase: "greeting", at, line: PIXEL_PILGRIM_LINES[Math.floor(Math.random() * PIXEL_PILGRIM_LINES.length)] });
   }, []);
 
@@ -2658,7 +2508,6 @@ export function StackAcresFarm() {
    * for a feature with no Gold/unit-list side effects of its own.
    */
   const onWorldFenceSegmentTap = useCallback((zone: ZoneId, segmentIndex: number, at: TapPoint) => {
-    setRadial(null);
     setMonkDialogue(null);
     void (async () => {
       try {
@@ -2768,7 +2617,6 @@ export function StackAcresFarm() {
    */
   const onWorldRayTap = useCallback(
     (at: TapPoint) => {
-      setRadial(null);
       const ray = story.view?.travelers.ray;
       const hasSomethingToSay = ray && ray.unlocked && !ray.done && (!ray.met || ray.ready);
       if (hasSomethingToSay) {
@@ -2789,7 +2637,6 @@ export function StackAcresFarm() {
    */
   const onWorldTravelerTap = useCallback(
     (traveler: TravelerId, at: TapPoint) => {
-      setRadial(null);
       story.open(traveler, at);
     },
     [story],
@@ -2981,29 +2828,10 @@ export function StackAcresFarm() {
     [mapHere, cropFieldsUnlocked, sectors, units.length],
   );
 
-  const closeRadial = useCallback(() => {
-    panelSound();
-    setRadial(null);
-  }, []);
-  /** The scrim's own click: closes the menu, same as `closeRadial`, then
-   *  replays the very click that closed it against the scene underneath
-   *  (`StackAcresScene.tapAt`) -- a real DOM button sits over the canvas
-   *  while the menu is open, so that canvas never sees the click at all.
-   *  Without this, switching to a DIFFERENT patch took two taps: one that
-   *  only closed the old menu, and a second that finally landed on the new
-   *  spot. */
-  const onRadialScrimTap = useCallback((event: { clientX: number; clientY: number }) => {
-    panelSound();
-    setRadial(null);
-    world.current?.tapAt(event.clientX, event.clientY);
-  }, []);
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
   // both go away rather than drift off what they were opened on.
   const onViewMoved = useCallback(() => {
-    setRadial(null);
-    setDragOffer(null);
-    setPipeAim(null);
     setMonkDialogue(null);
     setFencePopup(null);
     setGiftDialogue(null);
@@ -3075,6 +2903,36 @@ export function StackAcresFarm() {
    * arrow to the pen's trough when anything there is hungry, and says why
    * not otherwise. Feeding is per pen now, never per animal.
    */
+  /** Feeds everyone hungry in a pen. The one place `feed-pen` is sent. */
+  const feedPen = useCallback(
+    (zone: ZoneId) => {
+      const resident = liveUnits.find((unit) => stockZone(unit.stock) === zone);
+      if (resident) feedSound(resident.stock);
+      world.current?.farmerAction("harvest");
+      void act({ action: "feed-pen", zone });
+    },
+    [act, liveUnits],
+  );
+
+  /**
+   * Sows one bed with the seed on the wheel. The single-tile half of what
+   * `onRadialSeed` used to do; the whole-block drop it also did is gone, replaced
+   * by holding Use and walking the row, so a bed is only ever sown by a farmer
+   * standing on it.
+   *
+   * If this exact bed was just tilled and that request has not answered yet, it
+   * waits for it -- see `pendingSoilPlacements`. Ignored either way: a refusal
+   * there leaves the tile bedless, which `assignSoilSlot` already handles.
+   */
+  const onSowTile = useCallback(
+    (tx: number, ty: number, stock: StackAcresCrop) => {
+      const pending = pendingSoilPlacements.current.get(`${tx},${ty}`);
+      const send = () => act({ action: "stock", stock, tx, ty });
+      void (pending ? pending.catch(() => null).then(send) : send());
+    },
+    [act],
+  );
+
   const openPenFeed = useCallback(
     (zone: ZoneId, at: TapPoint) => {
       const residents = liveUnits.filter((unit) => stockZone(unit.stock) === zone);
@@ -3091,135 +2949,29 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, "No feed left in the barn.", "deny");
         return;
       }
-      const spot = penFeedSpot(zone);
-      const targetAt = world.current?.fieldPointFor(spot.x, spot.y);
-      if (!targetAt) return;
-      panelSound();
-      setDragOffer({
-        key: `feed-pen:${zone}:${Date.now()}`,
-        kind: "feed-pen",
-        zone,
-        iconAt: offerIconAt(at),
-        targetAt,
-      });
+      // Sent on the press. It used to float a scoop to be dragged into the
+      // trough; the farmer is standing at the trough by the time this fires now,
+      // so the walk IS the gesture and a second one on top of it is just delay.
+      feedPen(zone);
     },
-    [feed, liveUnits, offerIconAt],
-  );
-
-  const onWorldUnitTap = useCallback(
-    (unitId: string, at: TapPoint) => {
-      setRadial(null);
-      const unit = liveUnits.find((candidate) => candidate.id === unitId);
-      if (!unit) return;
-      world.current?.popUnit(unitId);
-      // The sidebar follows the finger rather than gating it: whatever the
-      // player is touching is what "here" means now.
-      setPlace(stockZone(unit.stock));
-      const action = tapActionFor(unit, { feed, gold, nowMs });
-      if (action.kind === "refused") {
-        // A knock on wood for a real no, and silence for a unit that is only
-        // still growing -- see `why` on StackAcresTapAction. The floated line
-        // answers both either way.
-        if (action.why === "blocked") refusedSound();
-        world.current?.floatAt(at, action.reason, "deny");
-        return;
-      }
-      // Drop a second press at THIS unit's own action while its request is
-      // still out -- but nothing else. Two taps on different animals in the
-      // same frame both fire now (each is its own intent); a re-mash of the
-      // same one is caught here, and `act`'s own synchronous `inFlight` check
-      // and the idempotency key behind it are the backstops for the rest (a
-      // retry after a dropped connection, another tab).
-      const tapIntent = action.kind === "collect" ? "collect" : `${action.kind}:${unitId}`;
-      if (inFlight.current.has(tapIntent)) return;
-      // Watering and feeding are drag-and-drop: the tap floats the tool, and
-      // the drop sends the action (`onDragDrop`).
-      if (action.kind === "water") {
-        if (water < 1) {
-          refusedSound();
-          world.current?.floatAt(at, "Your watering can is empty. Fill it at the well.", "deny");
-          return;
-        }
-        panelSound();
-        // A dry crop's own tile, if it has one -- crops off the lattice
-        // (open-field scatter) have no bed to walk a block out from, so
-        // they always water alone. Same >=2x2 rule `thirstyTileGroup`'s own
-        // header describes; a lone or L-shaped run falls back to `unitId`.
-        const tile = unit.soilSlot !== null ? soilSlotTile(soilMapForTiles, unit.soilSlot) : null;
-        const group = tile ? thirstyTileGroup(soilMapForTiles, tile.tx, tile.ty, dryUnitAt) : [];
-        setDragOffer({
-          key: `water:${unitId}:${Date.now()}`,
-          kind: "water",
-          unitId,
-          unitIds: group.length > 1 ? group : undefined,
-          iconAt: offerIconAt(at),
-          targetAt: at,
-        });
-        return;
-      }
-      if (action.kind === "feed") {
-        const zone = stockZone(unit.stock);
-        if (PEN_ZONE_IDS.includes(zone)) {
-          openPenFeed(zone, at);
-          return;
-        }
-        panelSound();
-        setDragOffer({
-          key: `feed-unit:${unitId}:${Date.now()}`,
-          kind: "feed-unit",
-          unitId,
-          iconAt: offerIconAt(at),
-          targetAt: at,
-        });
-        return;
-      }
-      // Harvest is drag-and-drop too, the same as water and feed above: the
-      // tap floats a basket beside the unit, and dragging it back onto the
-      // unit is what actually sends "collect" (`onDragDrop`). Same posture
-      // as water/feed-unit above rather than a drag clear across the map --
-      // a ready crop out in the Crop Fields is nowhere near the barn on
-      // screen, so the barn can't be the drop target here.
-      if (action.kind === "collect") {
-        panelSound();
-        setDragOffer({
-          key: `collect:${unitId}:${Date.now()}`,
-          kind: "collect",
-          unitId,
-          iconAt: offerIconAt(at),
-          targetAt: at,
-        });
-        return;
-      }
-      // Only "clear" reaches here now -- collect, feed and water all opened
-      // a drag offer above and returned. Clear speaks on the PRESS because
-      // `act`'s optimistic layer applies it the instant the request is sent.
-      muckSound();
-      tapAnchor.current = at;
-      void act({ action: action.kind, unitId });
-    },
-    [act, dryUnitAt, feed, gold, liveUnits, nowMs, offerIconAt, openPenFeed, soilMapForTiles, water],
+    [feed, feedPen, liveUnits],
   );
 
   /**
-   * A tap on a unit with nothing to do yet: still growing, or idle and
-   * permanent. Retiring is never a tap (see tap-action.ts). The unit just
-   * pops so the tap isn't silently dropped. Nothing is sent.
+   * A belt slot was pressed (`StackAcresToolbelt`). One slot is always held, so
+   * pressing the held one again is a no-op rather than putting it down -- there
+   * is no "nothing in hand" state to drop back to, and `hand` already is that
+   * state. The seed pouch's own second press opens its wheel instead, which the
+   * belt handles before it ever calls this.
    */
-  const onWorldUnitSelect = useCallback((unitId: string) => {
-    panelSound();
-    setRadial(null);
-    world.current?.popUnit(unitId);
-  }, []);
-
-  /**
-   * A Mow, Pipe or Soil key was pressed (`StackAcresGroundTools`). Water,
-   * feed and harvest have no key; tapping what needs them is enough.
-   * Pressing the held key again drops back to `"inspect"`.
-   */
-  const pickGroundTool = useCallback((next: StackAcresTool) => {
+  const pickBeltTool = useCallback((next: BeltTool) => {
     toolSound();
     setError(null);
-    setTool((held) => (held === next ? "inspect" : next));
+    setSeedWheelOpen(false);
+    // Putting the hoe down forgets whichever bed it had asked about lifting, so
+    // the question never outlives the tool that asked it.
+    setArmedLift(null);
+    setBelt(next);
   }, []);
 
   /** Scythe or Mower, from the picker beside the Mow key or the shop. */
@@ -3242,20 +2994,18 @@ export function StackAcresFarm() {
   /** A finger landed on a district's fenced ground and hit nothing. That is
    *  "I want something HERE", answered where the finger is. */
   const onWorldGroundTap = useCallback(
-    (zone: ZoneId, at: TapPoint, worldPt: WorldPoint) => {
+    (zone: ZoneId, at: TapPoint) => {
       setPlace(zone);
       // A pen's ground is for feeding what lives there, not for building.
       // Stocking a pen is in the side panel.
       if (PEN_ZONE_IDS.includes(zone)) {
-        setRadial(null);
         openPenFeed(zone, at);
         return;
       }
-      // A menu opening over the map, same as the barn and the locked-land
-      // sheets below. Not an action on the farm, so it takes the farm's
-      // panel cue rather than one of the action voices.
-      panelSound();
-      setRadial({ zone, at, world: worldPt });
+      // Anywhere else, a tap on bare ground is just somewhere to stand. It used
+      // to open the seed ring here; the belt replaced that, and the map only
+      // routes a pen's ground to this callback now (scene.ts's `fire`), so the
+      // branch above is the whole of it.
     },
     [openPenFeed],
   );
@@ -3264,7 +3014,6 @@ export function StackAcresFarm() {
    *  goes to the server. (Ray's own gift dialogue no longer shortcuts here;
    *  the barn is the only door to the store for now.) */
   const onWorldBarnTap = useCallback(() => {
-    setRadial(null);
     panelSound();
     setShowStore(true);
   }, []);
@@ -3272,7 +3021,6 @@ export function StackAcresFarm() {
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. Same shape as `onWorldBarnTap`. */
   const onWorldSignpostTap = useCallback(() => {
-    setRadial(null);
     panelSound();
     setShowContracts(true);
   }, []);
@@ -3284,7 +3032,6 @@ export function StackAcresFarm() {
    *  "I'm here for the order," the exact same intent as walking up to the
    *  signpost. */
   const onWorldTruckTap = useCallback(() => {
-    setRadial(null);
     panelSound();
     setShowContracts(true);
   }, []);
@@ -3292,7 +3039,6 @@ export function StackAcresFarm() {
   /** A finger landed on the Workshop building. Same shape
    *  as `onWorldBarnTap`. */
   const onWorldWorkshopTap = useCallback(() => {
-    setRadial(null);
     panelSound();
     setShowWorkshop(true);
   }, []);
@@ -3301,7 +3047,6 @@ export function StackAcresFarm() {
    *  the ring on a well the player dug. */
   const onWorldWellTap = useCallback(
     (at: TapPoint) => {
-      setRadial(null);
       if (water >= WATER_CAPACITY) {
         world.current?.floatAt(at, "Your watering can is already full.", "deny");
         return;
@@ -3318,7 +3063,6 @@ export function StackAcresFarm() {
    *  second line on top of the first. */
   const onWorldDockTap = useCallback(
     (at: TapPoint) => {
-      setRadial(null);
       if (fishingOffer) return;
       const targetAt = world.current?.fieldPointFor(FISHING_SPOT.x, FISHING_SPOT.y);
       if (!targetAt) return;
@@ -3337,70 +3081,6 @@ export function StackAcresFarm() {
 
   const closeFishingOffer = useCallback(() => setFishingOffer(null), []);
 
-  /** A drag tool landed on its target. The overlay plays the pour or
-   *  scatter itself; this sends the action and gives it a voice. */
-  const onDragDrop = useCallback(() => {
-    const offer = dragOffer;
-    if (!offer) return;
-    if (offer.kind === "water") {
-      waterSound();
-      world.current?.farmerAction("water");
-      world.current?.registerFrenzyTap(offer.unitId);
-      // Deterministic (which crops in the block are still dry, clamped to
-      // however much water is left) -- same posture `onPlaceSoilTile`/
-      // `onMoveSoilTileGroup` already take toward their own toast, set here
-      // rather than through `purchaseCueText` (water moves no Gold/shelf
-      // stock, so that helper skips it).
-      if (offer.unitIds && offer.unitIds.length > 1) {
-        // Only ever less than the block when the can ran dry partway --
-        // say so, rather than claiming the whole block got watered.
-        const wateredCount = Math.min(offer.unitIds.length, water);
-        if (wateredCount > 0) {
-          const text =
-            wateredCount === offer.unitIds.length
-              ? `Watered ${wateredCount} crops!`
-              : `Watered ${wateredCount} of ${offer.unitIds.length} crops. Can's empty.`;
-          setLastCollect({ text, nonce: Date.now() });
-        }
-        void act({ action: "water", unitId: offer.unitId, unitIds: offer.unitIds });
-        return;
-      }
-      void act({ action: "water", unitId: offer.unitId });
-      return;
-    }
-    if (offer.kind === "feed-pen") {
-      const resident = liveUnits.find((unit) => stockZone(unit.stock) === offer.zone);
-      if (resident) feedSound(resident.stock);
-      void act({ action: "feed-pen", zone: offer.zone });
-      return;
-    }
-    if (offer.kind === "collect") {
-      // The reward floats out of the unit itself, same as a plain tap used
-      // to. Stays silent here, same as a plain tap used to: only the
-      // response in `act` knows which unit actually paid out, and that is
-      // the voice this gesture is worth having.
-      tapAnchor.current = offer.targetAt;
-      const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
-      // Same estimate `onWorldUnitTap` used to make on the press, moved here
-      // now that the press only opens the drag -- see its own header on
-      // `lib/stackacres/frenzy.ts` for why this is display-only.
-      const baseYieldGold = unit
-        ? STACKACRES_YIELDS[unit.stock].quantity * itemSellPrice(STACKACRES_YIELDS[unit.stock].item)
-        : undefined;
-      world.current?.farmerAction("harvest");
-      world.current?.registerFrenzyTap(offer.unitId, baseYieldGold);
-      void act({ action: "collect", unitIds: [offer.unitId] }).then((result) => {
-        if (result.ok && unit) void triggerCascade(offer.unitId, unit.stock);
-      });
-      return;
-    }
-    const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
-    if (unit) feedSound(unit.stock);
-    void act({ action: "feed", unitId: offer.unitId });
-  }, [act, dragOffer, liveUnits, triggerCascade, water]);
-
-  const closeDragOffer = useCallback(() => setDragOffer(null), []);
-
   /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
    *  (true only in the steady `"present"` state, see
    *  lib/stackacres/midnight-merchant.ts) rather than trusting the scene's
@@ -3411,7 +3091,6 @@ export function StackAcresFarm() {
    *  that gap must not open a sheet for a visit already gone. */
   const onWorldMerchantTap = useCallback(() => {
     if (!merchantManager.current.isInteractive()) return;
-    setRadial(null);
     panelSound();
     setShowMerchant(true);
   }, []);
@@ -3425,7 +3104,6 @@ export function StackAcresFarm() {
    * panel's own build screen is the whole story.
    */
   const onWorldGreenhouseTap = useCallback(() => {
-    setRadial(null);
     panelSound();
     setShowGreenhouse(true);
     if (greenhouseBuilt) world.current?.enterGreenhouse();
@@ -3483,7 +3161,6 @@ export function StackAcresFarm() {
    */
   const onWorldSecretZoneTap = useCallback(
     (zoneId: HiddenZoneId, at: TapPoint) => {
-      setRadial(null);
       tapAnchor.current = at;
       if (inFlight.current.has("tap-secret-zone")) return;
       void act({ action: "tap-secret-zone", zoneId });
@@ -3503,7 +3180,6 @@ export function StackAcresFarm() {
    */
   const onWorldLockedTap = useCallback((zone: ZoneId) => {
     panelSound();
-    setRadial(null);
     setPlace(zone);
     setClearing(zone);
   }, []);
@@ -3512,7 +3188,6 @@ export function StackAcresFarm() {
    *  StackAcresCropFieldsModal's own header. */
   const onWorldCropFieldsLockedTap = useCallback(() => {
     panelSound();
-    setRadial(null);
     setCropFieldsModalOpen(true);
   }, []);
 
@@ -3686,49 +3361,6 @@ export function StackAcresFarm() {
     void act({ action: "unlock-crop-fields" });
   }, [act]);
 
-  /** Seeding straight out of the radial menu. Closes first: the menu's
-   *  prices are about to move under it, and a second tap on a stale one
-   *  would be a purchase the player did not read.
-   *
-   *  Carries the tile the player actually tapped, when there's a bed to name
-   *  -- `radialSoilTile` is only non-null inside a real bed, which is the
-   *  one difference from `onSeed` below: that control has no tap to point
-   *  at, so it always plants on the lowest free slot, same as ever.
-   *
-   *  When the tapped bed is part of a >=2x2 block of bare, same-tier beds
-   *  (`plantableTileGroup`, soil.ts), the whole block goes in one request
-   *  instead of just the one tile -- the planting mirror of the water can's
-   *  own group-drop (`thirstyTileGroup` above). A smaller or mixed-tier
-   *  patch falls back to the single tile, same as ever. */
-  const onRadialSeed = useCallback(
-    (stock: StackAcresStock) => {
-      const at = radial?.at ?? null;
-      const tile = radialSoilTile ? { tx: radialSoilTile.tx, ty: radialSoilTile.ty } : null;
-      const group = tile ? plantableTileGroup(soilMapForTiles, tile.tx, tile.ty, bedOccupiedAt) : [];
-      setRadial(null);
-      // The same seed going into the same ground as `onSeed`; the only
-      // difference is which control asked for it.
-      sowSound();
-      world.current?.farmerAction("plant");
-      tapAnchor.current = at;
-      // If this exact bed was just tilled and that request has not answered
-      // yet, wait for it -- see `pendingSoilPlacements`'s own header. Ignored
-      // either way: a refusal there just leaves this tile without a bed,
-      // which `assignSoilSlot` already handles by falling through to the
-      // lowest free slot, same as it always has.
-      const pending = tile ? pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`) : null;
-      const send = () =>
-        act({
-          action: "stock",
-          stock,
-          ...(tile ? { tx: tile.tx, ty: tile.ty } : {}),
-          ...(group.length > 1 ? { tiles: group } : {}),
-        });
-      void (pending ? pending.catch(() => null).then(send) : send());
-    },
-    [act, bedOccupiedAt, radial, radialSoilTile, soilMapForTiles],
-  );
-
   /**
    * Tilling a bed straight out of the radial ring, or dragged across N tiles
    * by the soil brush -- see optimistic-actions.ts's `place-soil-tile` case.
@@ -3740,7 +3372,6 @@ export function StackAcresFarm() {
   const onPlaceSoilTile = useCallback(
     (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
       buySound();
-      setRadial(null);
       setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       // The tier names WHICH bed; the server reads its price from
       // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
@@ -3764,7 +3395,6 @@ export function StackAcresFarm() {
   const onRemoveSoilTile = useCallback(
     (tx: number, ty: number) => {
       buySound();
-      setRadial(null);
       setLastCollect({ text: "Clearing the bed…", nonce: Date.now() });
       void act({ action: "remove-soil-tile", tx, ty });
     },
@@ -3781,6 +3411,218 @@ export function StackAcresFarm() {
    * the Crop Fields) rolls back through `act`'s own snapshot restore, the
    * same as every other tile action.
    */
+  /**
+   * A stroke's work, waiting to be sent as one request.
+   *
+   * Holding Use and walking a row works a bed every time the farmer steps onto
+   * one -- four or five a second at walking speed. Sent a bed at a time that is
+   * four or five requests a second, which walks into the 60-per-minute limiter
+   * after about a quarter of a row and spends a round trip on each. The server
+   * already takes `water`/`collect` by `unitIds` and `stock` by `tiles`, so a
+   * stroke gathers them here and flushes every STROKE_BATCH_MS as one request
+   * per kind.
+   *
+   * `place-soil-tile` is deliberately NOT gathered: it spends a bag of soil per
+   * bed and the server has no grouped form of it, so hoeing a row is still one
+   * request per bed. Grouping it needs the same careful partial-spend handling
+   * `stockStackAcresGroup` has for seeds.
+   */
+  const stroke = useRef<{
+    water: string[];
+    collect: string[];
+    plant: { stock: StackAcresCrop; tiles: { tx: number; ty: number }[] } | null;
+    timer: number | null;
+  }>({ water: [], collect: [], plant: null, timer: null });
+
+  const flushStroke = useCallback(() => {
+    const batch = stroke.current;
+    if (batch.timer !== null) {
+      window.clearTimeout(batch.timer);
+      batch.timer = null;
+    }
+    const water = batch.water.splice(0);
+    const collect = batch.collect.splice(0);
+    const plant = batch.plant;
+    batch.plant = null;
+    if (water.length === 1) void act({ action: "water", unitId: water[0] });
+    else if (water.length > 1) void act({ action: "water", unitId: water[0], unitIds: water });
+    if (collect.length > 0) void act({ action: "collect", unitIds: collect });
+    if (plant && plant.tiles.length > 0) {
+      // Wait out any bed in this run that was hoed a moment ago and has not been
+      // confirmed yet, the same as a single sowing does (see `onSowTile`).
+      const waiting = plant.tiles
+        .map((tile) => pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`))
+        .filter((pending) => pending !== undefined);
+      const send = () =>
+        act(
+          plant.tiles.length === 1
+            ? { action: "stock", stock: plant.stock, tx: plant.tiles[0].tx, ty: plant.tiles[0].ty }
+            : { action: "stock", stock: plant.stock, tiles: plant.tiles },
+        );
+      void (waiting.length > 0
+        ? Promise.allSettled(waiting).then(send)
+        : send());
+    }
+  }, [act]);
+
+  /** Adds one bed's work to the stroke and starts the clock if it is not already running. */
+  const queueStroke = useCallback(
+    (add: (batch: typeof stroke.current) => void) => {
+      add(stroke.current);
+      if (stroke.current.timer !== null) return;
+      stroke.current.timer = window.setTimeout(() => {
+        stroke.current.timer = null;
+        flushStroke();
+      }, STROKE_BATCH_MS);
+    },
+    [flushStroke],
+  );
+
+  // A stroke in flight when the farm unmounts still has to reach the server:
+  // the beds already changed on screen under the optimistic patch.
+  useEffect(() => () => flushStroke(), [flushStroke]);
+
+  /**
+   * The farmer is standing on a square with a belt tool in hand: he walked to a
+   * tapped one and arrived, or the Use key fired on the one under his feet.
+   *
+   * This is the whole of watering, sowing, hoeing and picking now. It replaced
+   * two flows: the tap-then-drag-a-token gesture (a second on its own before
+   * anything was even sent) and the seed ring on bare ground. The action is
+   * resolved off the held tool by `resolveBeltAction`, which is pure and tested,
+   * so this only has to send it and give it a voice.
+   *
+   * A stroke (Use held while walking a row) stays silent on a refusal: one
+   * floated line per bed walked over would bury the map in text. A single press
+   * says why, the same as a tap always has.
+   */
+  const onUseSquare = useCallback(
+    (square: UseSquare) => {
+      const unit = square.unitId ? liveUnits.find((candidate) => candidate.id === square.unitId) ?? null : null;
+      const action = resolveBeltAction(
+        belt,
+        {
+          unit,
+          tile: square.tile,
+          bedded: square.tile ? hasSoilTile(soilMapForTiles, square.tile.tx, square.tile.ty) : false,
+          armed: Boolean(
+            square.tile && armedLift && armedLift.tx === square.tile.tx && armedLift.ty === square.tile.ty,
+          ),
+        },
+        {
+          water,
+          feed,
+          gold,
+          nowMs,
+          soilStock,
+          tier: BELT_DEFAULT_TIER,
+          seed,
+          seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
+        },
+      );
+      // Anything that is not the second half of a lift disarms it, so an armed
+      // bed never sits waiting through a walk across the farm.
+      if (action.kind !== "arm-lift" && action.kind !== "lift" && armedLift) setArmedLift(null);
+      if (action.kind === "idle") return;
+      if (action.kind === "arm-lift") {
+        if (square.stroke) return;
+        setArmedLift({ tx: action.tx, ty: action.ty });
+        world.current?.floatAt(square.at, action.reason, "deny");
+        return;
+      }
+      if (action.kind === "nothing") {
+        if (square.stroke) return;
+        if (action.why === "blocked") refusedSound();
+        world.current?.floatAt(square.at, action.reason, "deny");
+        return;
+      }
+      // Act it out where he stands, before the request goes anywhere: the
+      // optimistic patch inside `act` lands in the same tick, so the swing and
+      // the change on the ground are one beat rather than two.
+      const animation = beltAnimation(action);
+      if (animation) world.current?.farmerAction(animation);
+      tapAnchor.current = square.at;
+      // A stroke crosses four or five beds a second, so the tool's sound plays
+      // once at the top of a run rather than once per bed -- the continuous
+      // swing animation is what carries the rest. `timer === null` means no
+      // batch is gathering, which is only true on the first bed of a run.
+      const voice = !square.stroke || stroke.current.timer === null;
+      switch (action.kind) {
+        case "water":
+          if (voice) waterSound();
+          world.current?.registerFrenzyTap(action.unitId);
+          if (square.stroke) {
+            queueStroke((batch) => {
+              if (!batch.water.includes(action.unitId)) batch.water.push(action.unitId);
+            });
+            return;
+          }
+          void act({ action: "water", unitId: action.unitId });
+          return;
+        case "collect": {
+          const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
+          // Display-only, and registered per bed either way so a stroked row
+          // builds the frenzy meter the same as tapping each one would.
+          world.current?.registerFrenzyTap(
+            action.unitId,
+            picked
+              ? STACKACRES_YIELDS[picked.stock].quantity * itemSellPrice(STACKACRES_YIELDS[picked.stock].item)
+              : undefined,
+          );
+          if (square.stroke) {
+            queueStroke((batch) => {
+              if (!batch.collect.includes(action.unitId)) batch.collect.push(action.unitId);
+            });
+            return;
+          }
+          void act({ action: "collect", unitIds: [action.unitId] }).then((result) => {
+            if (result.ok && picked) void triggerCascade(action.unitId, picked.stock);
+          });
+          return;
+        }
+        case "feed": {
+          const zone = unit ? stockZone(unit.stock) : null;
+          if (zone && PEN_ZONE_IDS.includes(zone)) {
+            feedPen(zone);
+            return;
+          }
+          if (unit) feedSound(unit.stock);
+          void act({ action: "feed", unitId: action.unitId });
+          return;
+        }
+        case "clear":
+          muckSound();
+          void act({ action: "clear", unitId: action.unitId });
+          return;
+        case "till":
+          onPlaceSoilTile(action.tx, action.ty, action.tier);
+          return;
+        case "lift":
+          setArmedLift(null);
+          onRemoveSoilTile(action.tx, action.ty);
+          return;
+        case "plant":
+          if (voice) sowSound();
+          if (square.stroke) {
+            queueStroke((batch) => {
+              // A stroke that changes crop mid-row flushes the old one first, so
+              // one request never claims to sow two different seeds.
+              if (batch.plant && batch.plant.stock !== action.stock) flushStroke();
+              const run = batch.plant ?? { stock: action.stock, tiles: [] };
+              if (!run.tiles.some((tile) => tile.tx === action.tx && tile.ty === action.ty)) {
+                run.tiles.push({ tx: action.tx, ty: action.ty });
+              }
+              batch.plant = run;
+            });
+            return;
+          }
+          onSowTile(action.tx, action.ty, action.stock);
+          return;
+      }
+    },
+    [act, belt, feed, gold, liveUnits, nowMs, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, flushStroke, queueStroke, soilMapForTiles, soilStock, triggerCascade, water],
+  );
+
   const onMoveSoilTileGroup = useCallback(
     (tx: number, ty: number, toTx: number, toTy: number) => {
       buySound();
@@ -3790,51 +3632,10 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** Placing a well or a length of pipe straight out of the radial ring.
-   *  Unlike `onPlaceSoilTile` above, this one DOES get an optimistic guess --
-   *  see optimistic-actions.ts's own `place-pipe` case -- so the tile appears
-   *  the instant this fires; the toast is flavour on top of that, not a
-   *  stand-in for the missing picture it used to be. */
-  const onPlacePipe = useCallback(
-    (tx: number, ty: number, kind: PipeKind) => {
-      buySound();
-      setRadial(null);
-      setLastCollect({ text: kind === "well" ? "Digging the well…" : "Laying pipe…", nonce: Date.now() });
-      void act({ action: "place-pipe", tx, ty, kind });
-    },
-    [act],
-  );
-
-  /** Removing a placed tile. Same shape as `onRemoveSoilTile` above -- not a
-   *  refund, a spent sink lifted for the room back -- but, like `onPlacePipe`
-   *  above, WITH an optimistic guess now (see optimistic-actions.ts). */
-  const onRemovePipe = useCallback(
-    (tx: number, ty: number) => {
-      buySound();
-      setRadial(null);
-      setLastCollect({ text: "Pulling the pipe…", nonce: Date.now() });
-      void act({ action: "remove-pipe", tx, ty });
-    },
-    [act],
-  );
-
-  /** Pointing a lone stub from the aim popover. No Gold and no toast: the
-   *  stub turns on the tap (optimistic-actions.ts's `aim-pipe` case) and
-   *  that IS the feedback, the same posture the drag tools take. */
-  const onAimPipe = useCallback(
-    (tx: number, ty: number, facing: PipeFacing) => {
-      panelSound();
-      setPipeAim(null);
-      void act({ action: "aim-pipe", tx, ty, facing });
-    },
-    [act],
-  );
-
   /** The ring's own way through to the deep end -- Manage on the radial menu
    *  is the only door into the drawer now. */
   const openPanel = useCallback(() => {
     panelSound();
-    setRadial(null);
     setPanelOpen(true);
   }, []);
 
@@ -3938,7 +3739,22 @@ export function StackAcresFarm() {
     [sectors, liveUnits, gold, capacity],
   );
 
-  // Once there is a second cutter to swap to, say where the swap is.
+  /**
+   * The crops the seed wheel offers: everything the barn holds seed for, best
+   * first, plus whatever is already on the wheel so a pouch that just ran dry
+   * still shows what it was sowing rather than emptying itself.
+   */
+  const seedWheelItems = useMemo<SeedWheelItem[]>(() => {
+    const crops = STACKACRES_CROPS.filter((crop) => (seedStock[crop] ?? 0) > 0 || crop === seed);
+    return crops.map((crop) => ({
+      stock: crop,
+      label: STACKACRES_CATALOGUE[crop].label,
+      icon: STOCK_ICON[crop],
+      qty: seedStock[crop] ?? 0,
+    }));
+  }, [seed, seedStock]);
+
+
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
   /** Everything standing ready right now. The Harvest key's whole subject. */
   const readyUnits = useMemo(
@@ -4013,269 +3829,6 @@ export function StackAcresFarm() {
   const district = STACKACRES_ZONES[place];
   const placeLocked = !isSectorUnlocked(place, sectors);
 
-  /**
-   * The Crop Fields' own gel dock, Crop-Fields-only the same way
-   * `soilExtraActions` used to be -- every other zone's ground tap still
-   * gets `StackAcresRadialMenu` and `pipeExtraActions` below, untouched.
-   * Checked in this fixed order, since a tile is never more than one of
-   * these three at once:
-   *
-   * 1. A pipe or well already standing here -- management tokens (Aim, Draw
-   *    Water, Remove), the same items `pipeExtraActions`'s own "existing"
-   *    branch computes, just reshaped for `onCommit` instead of `onSelect`.
-   * 2. A bed already standing here -- owned seed tokens to plant, plus
-   *    Remove Bed (armed/confirm, via `radial.armedRemoveBed`, unchanged).
-   * 3. Bare ground -- the root Lay Pipe/Plant Soil choice. Plant Soil
-   *    commits immediately (one tap of dirt, no tier picker); Lay Pipe has
-   *    its own follow-on, `radial.gelStep === "pipe"`, offering Pipe vs.
-   *    Well when no well exists yet.
-   */
-  const cropFieldGelItems: StackAcresGelDockItem[] = (() => {
-    if (!radial || !radialInCropFieldBeds) return [];
-    const { tx, ty } = soilTileAt(radial.world.x, radial.world.y);
-    const { tx: ptx, ty: pty } = pipeTileAt(radial.world.x, radial.world.y);
-    const at = radial.at;
-
-    const existingPipe = irrigation.find((node) => node.tx === ptx && node.ty === pty);
-    if (existingPipe) {
-      return [
-        ...(existingPipe.kind === "pipe" && existingPipe.mask === 0
-          ? [
-              {
-                key: "aim-pipe",
-                label: "Aim Pipe",
-                icon: "ico-pipe" as PainterName,
-                onCommit: () => {
-                  closeRadial();
-                  setPipeAim({ tx: ptx, ty: pty, at });
-                },
-              },
-            ]
-          : []),
-        ...(existingPipe.kind === "well"
-          ? [
-              {
-                key: "draw-water",
-                label: "Draw Water",
-                icon: "ico-water" as PainterName,
-                disabledReason: water >= WATER_CAPACITY ? "Your can is already full" : undefined,
-                onCommit: () => onWorldWellTap(at),
-              },
-            ]
-          : []),
-        {
-          key: "remove-pipe",
-          label: existingPipe.kind === "well" ? "Remove Well" : "Remove Pipe",
-          icon: "ico-clear" as PainterName,
-          onCommit: () => onRemovePipe(ptx, pty),
-        },
-      ];
-    }
-
-    if (radialSoilTile) {
-      const crop = cropOnTile(tx, ty);
-      const armed = radial.armedRemoveBed?.tx === tx && radial.armedRemoveBed?.ty === ty;
-      if (crop && armed) {
-        return [
-          {
-            key: "remove-bed-confirm",
-            label: `Confirm -- lose the ${STACKACRES_CATALOGUE[crop.stock].label}`,
-            icon: "ico-clear",
-            onCommit: () => onRemoveSoilTile(tx, ty),
-          },
-          {
-            key: "remove-bed-cancel",
-            label: "Keep the bed",
-            icon: "ico-plant",
-            keepOpen: true,
-            onCommit: () => setRadial({ ...radial, armedRemoveBed: undefined }),
-          },
-        ];
-      }
-      // `seedStock` is keyed by crop only -- `heldSeed` is the same guard the
-      // old seed strip used to keep a livestock stock (never in this list to
-      // begin with, but the type is the broader StackAcresStock) from ever
-      // reaching an unsafe index into it.
-      const heldSeed = (stock: StackAcresStock): number => (isStackAcresCrop(stock) ? seedStock[stock] ?? 0 : 0);
-      const seedItems: StackAcresGelDockItem[] = buyOptionsForZone(radial.zone, {
-        units: liveUnits,
-        gold,
-        capacity,
-      })
-        .filter((option) => heldSeed(option.stock) > 0)
-        .map((option) => ({
-          key: option.stock,
-          label: option.label,
-          icon: STOCK_ICON[option.stock],
-          qty: heldSeed(option.stock),
-          disabledReason: option.atCap ? `${option.owned}/${option.cap} full` : undefined,
-          onCommit: () => onRadialSeed(option.stock),
-        }));
-      return [
-        ...seedItems,
-        {
-          key: "remove-bed",
-          label: crop ? "Remove Bed…" : "Remove Bed",
-          icon: "ico-clear" as PainterName,
-          keepOpen: Boolean(crop),
-          onCommit: crop
-            ? () => setRadial({ ...radial, armedRemoveBed: { tx, ty } })
-            : () => onRemoveSoilTile(tx, ty),
-        },
-      ];
-    }
-
-    // Bare ground: nothing stands here yet. `gelStep` is undefined until the
-    // root choice fires once (see `radial`'s own doc), so it reads as root.
-    const step = radial.gelStep ?? "root";
-    const lone = !PIPE_NEIGHBORS.some((n) =>
-      irrigation.some((node) => node.tx === ptx + n.tx && node.ty === pty + n.ty),
-    );
-    if (step === "pipe") {
-      return [
-        {
-          key: "place-pipe",
-          label: "Lay Pipe",
-          icon: "ico-pipe",
-          cost: PIPE_PLACE_COST.pipe,
-          disabledReason: gold >= PIPE_PLACE_COST.pipe ? undefined : "Not enough Gold",
-          onCommit: () => {
-            onPlacePipe(ptx, pty, "pipe");
-            if (lone) setPipeAim({ tx: ptx, ty: pty, at });
-          },
-        },
-        {
-          key: "place-well",
-          label: "Dig a Well",
-          icon: "ico-plant",
-          cost: PIPE_PLACE_COST.well,
-          disabledReason: gold >= PIPE_PLACE_COST.well ? undefined : "Not enough Gold",
-          onCommit: () => onPlacePipe(ptx, pty, "well"),
-        },
-      ];
-    }
-    const hasWell = irrigation.some((node) => node.kind === "well");
-    return [
-      {
-        key: "choose-pipe",
-        label: "Lay Pipe",
-        icon: "ico-pipe",
-        disabledReason: hasWell && gold < PIPE_PLACE_COST.pipe ? "Not enough Gold" : undefined,
-        // A well already down leaves nothing to choose (a second well is
-        // never offered), so this branch fires straight away instead of
-        // opening a one-item follow-on -- same posture the old ring took.
-        keepOpen: !hasWell,
-        onCommit: () => {
-          if (hasWell) {
-            onPlacePipe(ptx, pty, "pipe");
-            if (lone) setPipeAim({ tx: ptx, ty: pty, at });
-            return;
-          }
-          setRadial({ ...radial, gelStep: "pipe" });
-        },
-      },
-      {
-        key: "choose-soil",
-        label: "Plant Soil",
-        icon: "ico-plant",
-        qty: soilStock[SOIL_DEFAULT_TIER] ?? 0,
-        disabledReason: (soilStock[SOIL_DEFAULT_TIER] ?? 0) > 0 ? undefined : "None in the barn — buy from Ray",
-        onCommit: () => onPlaceSoilTile(tx, ty),
-      },
-    ];
-  })();
-
-  /**
-   * The irrigation ring's own extra buttons -- offered in EVERY district,
-   * unlike `cropFieldGelItems` above (a Crop Fields-only concept): the pipe
-   * lattice is farm-wide (lib/stackacres/irrigation.ts's own header), so a
-   * tap anywhere has a tile under it worth offering. `irrigation` is the
-   * same array the scene was just handed, so "is there a pipe here" never
-   * disagrees with what is actually painted.
-   */
-  const pipeExtraActions = (() => {
-    if (!radial) return [];
-    // No pipe and no well inside a pen -- Henhaven, Oxfields and Wallow are
-    // grow areas the same as any district, so the ground tap that opens this
-    // ring fires there too, but irrigation belongs to the Crop Fields and the
-    // open farm, not inside a hen/ox/hog enclosure. The server holds this
-    // rule too (stackacres-service.ts's `placeStackAcresPipeTile`), so this
-    // is the polish half: hiding the offer rather than making the player
-    // choose it and get refused.
-    if (PEN_ZONE_IDS.includes(radial.zone)) return [];
-    const { tx, ty } = pipeTileAt(radial.world.x, radial.world.y);
-    const at = radial.at;
-    const existing = irrigation.find((node) => node.tx === tx && node.ty === ty);
-    if (existing) {
-      return [
-        // A lone stub can be pointed (irrigation.ts's `PipeFacing`); a joined
-        // one has real arms and nothing to aim, and a well never does.
-        ...(existing.kind === "pipe" && existing.mask === 0
-          ? [
-              {
-                key: "aim-pipe",
-                label: "Aim Pipe",
-                icon: "ico-pipe" as PainterName,
-                onSelect: () => {
-                  closeRadial();
-                  setPipeAim({ tx, ty, at });
-                },
-              },
-            ]
-          : []),
-        ...(existing.kind === "well"
-          ? [
-              {
-                key: "draw-water",
-                label: "Draw Water",
-                icon: "ico-water" as PainterName,
-                disabledReason: water >= WATER_CAPACITY ? "Your can is already full" : undefined,
-                onSelect: () => onWorldWellTap(at),
-              },
-            ]
-          : []),
-        {
-          key: "remove-pipe",
-          label: existing.kind === "well" ? "Remove Well" : "Remove Pipe",
-          icon: "ico-clear" as PainterName,
-          onSelect: () => onRemovePipe(tx, ty),
-        },
-      ];
-    }
-    const hasWell = irrigation.some((node) => node.kind === "well");
-    // Whether the tile about to be laid will stand alone. Decided from the
-    // farm as it is right now, which is the same picture the optimistic
-    // `place-pipe` guess draws from -- a lone stub gets the aim offered
-    // straight away, a tile joining a run has arms already and needs none.
-    const lone = !PIPE_NEIGHBORS.some((step) =>
-      irrigation.some((node) => node.tx === tx + step.tx && node.ty === ty + step.ty),
-    );
-    return [
-      {
-        key: "place-pipe",
-        label: "Lay Pipe",
-        icon: "ico-plant" as PainterName,
-        cost: PIPE_PLACE_COST.pipe,
-        disabledReason: gold >= PIPE_PLACE_COST.pipe ? undefined : "Not enough Gold",
-        onSelect: () => {
-          onPlacePipe(tx, ty, "pipe");
-          if (lone) setPipeAim({ tx, ty, at });
-        },
-      },
-      {
-        key: "place-well",
-        label: "Dig a Well",
-        icon: "ico-plant" as PainterName,
-        cost: PIPE_PLACE_COST.well,
-        disabledReason: hasWell
-          ? "This farm already has a well"
-          : gold >= PIPE_PLACE_COST.well
-            ? undefined
-            : "Not enough Gold",
-        onSelect: () => onPlacePipe(tx, ty, "well"),
-      },
-    ];
-  })();
 
   // Everything in .sa-hud besides Gold and the upkeep-owed pill -- see the
   // header's own comment for why this is one fragment referenced from either
@@ -4413,14 +3966,14 @@ export function StackAcresFarm() {
           {loaded && (
             <StackAcresTopdownWorld
               units={liveUnits}
+              onUseSquare={onUseSquare}
+              useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}
               cutter={cutter}
               farmhandSpeedMultiplier={farmhandSpeedMultiplier}
               viewExpansion={compactNav ? HUD_VIEW_EXPANSION : 1}
               celebrate={celebrate}
               onReady={onWorldReady}
-              onUnitTap={onWorldUnitTap}
-              onUnitSelect={onWorldUnitSelect}
               onGroundTap={onWorldGroundTap}
               onSoilMoveCommitted={onMoveSoilTileGroup}
               onBarnTap={onWorldBarnTap}
@@ -4454,24 +4007,6 @@ export function StackAcresFarm() {
             </div>
           )}
 
-          {/* The seed menu's dismissal layer, and its position in this file is
-              the whole design: it covers the map but sits EARLIER than the
-              toolbelt and the signpost, which are positioned siblings with no
-              z-index of their own and therefore stack above it. So the next
-              tap on the world closes the menu
-              and the chrome stays live while it is open -- and, since this
-              is a real DOM button the canvas underneath never sees the tap,
-              `onRadialScrimTap` replays that same click against the scene
-              once the menu is gone, so a tap on a different patch switches
-              straight to it instead of taking a second tap to land. */}
-          {radial && (
-            <button
-              type="button"
-              className="sa-radial-scrim"
-              aria-label="Close the seed menu"
-              onClick={onRadialScrimTap}
-            />
-          )}
 
           {/* The masthead pill (logo, and before that the pen/field counts) that
               used to sit here is gone -- the signpost below is what a player
@@ -4486,117 +4021,39 @@ export function StackAcresFarm() {
             </p>
           )}
 
-          {/* The tool dock and the places list are gone. Tapping the world
-              offers what it needs right there, and Shop, Blueprints, Town
-              Board and Workshop are walked up to (Ray, the signpost, the
-              windmill). Mow, Pipe and Soil keep three small keys because a
-              drag-a-run gesture has nothing to tap first. */}
-          <StackAcresGroundTools
-            tool={tool}
-            onPick={pickGroundTool}
-            cutters={cutters}
-            cutter={cutter}
-            onPickCutter={pickCutter}
+          {/* The tool belt, top left. The places list is gone and so is the old
+              tool dock: Shop, Blueprints, Town Board and Workshop are walked up
+              to (Ray, the signpost, the windmill), and the ground is worked with
+              whichever slot is held plus the Use key beside the thumb stick. */}
+          <StackAcresToolbelt
+            held={belt}
+            onPick={pickBeltTool}
+            seed={seed}
+            seedIcon={seed ? STOCK_ICON[seed] : null}
+            seedsHeld={seed ? seedStock[seed] ?? 0 : 0}
+            soilHeld={soilStock[BELT_DEFAULT_TIER] ?? 0}
+            water={water}
+            onOpenSeeds={() => {
+              panelSound();
+              setSeedWheelOpen(true);
+            }}
           />
 
-          {/* The seed menu, on the canvas next to the finger that asked for
-              it, inside .sa-field so its coordinates are the ones the scene
-              reported the tap in. Zoom/recentre used to be two buttons here;
-              they're gone (pinch and mouse-wheel already cover zoom, see
-              bindInput's onWheel), and there is nothing left to stack over. */}
-          {/* The Crop Fields get the gel dock (stackacres-gel-dock.tsx):
-              anchored at the tap rather than a screen edge, and every token
-              in it has to be DRAGGED into the circle pinned on the tapped
-              tile, same physical gesture water/feed already use. Every other
-              zone still gets the plain tap-to-fire ring: three livestock
-              kinds fit its fixed arc fine, and livestock has no seed shelf or
-              pipe/soil concept to drag in from (see SeedStock's own doc
-              comment). Gated on `radialInCropFieldBeds`, not
-              `radial.zone === "farmstead"` alone: since the 2026-09-08
-              district merge the Farmstead is also the yard, and a tap on ITS
-              own grow area (the Hen Coop remnant, which holds no stock) is
-              not a seed tap. */}
-          {radial && radialInCropFieldBeds && (
-            <StackAcresGelDock
-              at={radial.at}
-              items={cropFieldGelItems}
-              label={`${STACKACRES_ZONES[radial.zone].label.replace(/^The /, "")}`}
-              busy={
-                pendingByPrefix("stock") ||
-                pendingByPrefix("place-soil-tile") ||
-                pendingByPrefix("remove-soil-tile") ||
-                pendingByPrefix("place-pipe") ||
-                pendingByPrefix("remove-pipe") ||
-                pendingByPrefix("aim-pipe") ||
-                pendingByPrefix("draw-water")
-              }
-              onClose={closeRadial}
-              onManage={openPanel}
-            />
-          )}
-          {radial && !radialInCropFieldBeds && (
-            <StackAcresRadialMenu
-              at={radial.at}
-              // `buyOptionsForZone` is zone-keyed, not bed-aware, so for the
-              // Farmstead it still returns all 22 crops even out here on the
-              // yard -- the ring's fixed arc has no room for that (see
-              // stackacres-gel-dock.tsx's own header) and it has nowhere to
-              // plant them anyway (a crop needs a bed, and beds only exist
-              // inside `radialInCropFieldBeds`). Crops are dropped here for
-              // the same reason the gel dock above is the only place they
-              // ever appear.
-              options={buyOptionsForZone(radial.zone, { units: liveUnits, gold, capacity }).filter(
-                (option) => !isStackAcresCrop(option.stock),
-              )}
-              districtLabel={STACKACRES_ZONES[radial.zone].label}
-              busy={
-                pendingByPrefix("stock") ||
-                pendingByPrefix("place-pipe") ||
-                pendingByPrefix("remove-pipe")
-              }
-              onSeed={onRadialSeed}
-              onClose={closeRadial}
-              onManage={openPanel}
-              extraActions={pipeExtraActions}
-            />
-          )}
-
-          {/* The four-way aim for a lone pipe stub -- opened by the ring's
-              own "Lay Pipe"/"Aim Pipe" above, never by a bare tap. Gated on
-              `pipeAimNode` too, not just `pipeAim`: the effect beside
-              `radialSoilWorld` clears the state a render after the stub
-              joins or goes, and this keeps that one frame from showing an
-              aim for a tile that no longer wants one. */}
-          {pipeAim && pipeAimNode && !pipeAimStale && (
-            <StackAcresPipeAim
-              at={pipeAim.at}
-              facing={pipeAimNode.facing}
-              busy={pendingByPrefix("aim-pipe")}
-              onAim={(facing) => onAimPipe(pipeAim.tx, pipeAim.ty, facing)}
-              onClose={() => setPipeAim(null)}
-            />
-          )}
-
-          {/* The drag tool, floating next to whatever was tapped. */}
-          {dragOffer && (
-            <StackAcresDragAffordance
-              key={dragOffer.key}
-              kind={dragOffer.kind === "water" ? "water" : dragOffer.kind === "collect" ? "harvest" : "feed"}
-              iconAt={dragOffer.iconAt}
-              targetAt={dragOffer.targetAt}
-              hint={
-                dragOffer.kind === "water"
-                  ? dragOffer.unitIds && dragOffer.unitIds.length > 1
-                    ? `Drop to water all ${dragOffer.unitIds.length}`
-                    : "Drag onto the soil"
-                  : dragOffer.kind === "feed-pen"
-                    ? "Drag into the trough"
-                    : dragOffer.kind === "collect"
-                      ? "Drag to collect"
-                      : "Drag onto the animal"
-              }
-              onDrop={onDragDrop}
-              onClose={closeDragOffer}
+          {seedWheelOpen && (
+            <StackAcresSeedWheel
+              items={seedWheelItems}
+              picked={seed}
+              onPick={(stock) => {
+                toolSound();
+                setSeed(stock);
+                setBelt("seeds");
+                setSeedWheelOpen(false);
+              }}
+              onClose={() => setSeedWheelOpen(false)}
+              onManage={() => {
+                setSeedWheelOpen(false);
+                openPanel();
+              }}
             />
           )}
 

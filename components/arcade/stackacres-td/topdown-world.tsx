@@ -7,17 +7,25 @@ import type { Point } from "@/lib/stackacres-td/movement";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
 import { StackAcresJoystick } from "./joystick";
+import { StackAcresUseKey } from "./use-key";
 import type { TopdownScene } from "./scene";
 
 /**
  * The StackAcres map: the farm shell (stackacres-farm.tsx) renders it and talks
  * to it through ../stackacres/world-contract.ts.
  *
+ * The ground is worked with the belt: a tool is held, the farmer walks to a
+ * square, and `onUseSquare` hands it to the shell on arrival. The Use key beside
+ * the thumb stick does the same for the square under his feet, and held down it
+ * strokes a whole row.
+ *
  * What it does not draw yet, and so ignores from the contract: the scythe (`tool`, `cutter`), the farmhand, irrigation pipes,
  * wildlife and fences, drones and the delivery truck, the greenhouse interior,
  * moving a bed group by hold-and-drag, and every district other than the
  * Homestead and the Crop Fields. Those api methods are no-ops below, each
- * named, so the gap is visible rather than silent.
+ * named, so the gap is visible rather than silent. None of them has a belt slot
+ * either: a key that silently does nothing is what the belt exists to stop, so
+ * the scythe and the pipe stay off it until this file draws them.
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
@@ -88,7 +96,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
             }
             p().onReady();
           },
-          onUnitTap: (unitId, at) => p().onUnitTap(unitId, at),
+          onUseSquare: (square) => p().onUseSquare(square),
           onGroundTap: (zone, at, world) => p().onGroundTap(zone, at, world),
           onBarnTap: () => p().onBarnTap(),
           onSignpostTap: () => p().onSignpostTap(),
@@ -181,9 +189,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       currentPlace: () => sceneRef.current?.currentPlace() ?? "farmstead",
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
-      // The camera follows the farmer, so there is nothing to zoom or recenter.
-      zoomBy: () => undefined,
-      recenter: () => undefined,
+      // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
+      zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
+      recenter: () => sceneRef.current?.recenter(),
       // Not drawn in the top-down preview yet (see this file's header).
       farmerAction: (action) => sceneRef.current?.farmerAction(action),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
@@ -207,6 +215,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   );
 
   const onStick = useCallback((push: Point | null) => sceneRef.current?.setStick(push), []);
+  const onUseHeld = useCallback((down: boolean) => sceneRef.current?.setUseHeld(down), []);
 
   useLayoutEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);
@@ -232,6 +241,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     <>
       <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />
       <StackAcresJoystick onStick={onStick} />
+      <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} />
     </>
   );
 }

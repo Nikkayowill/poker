@@ -697,7 +697,6 @@
   height: 100% !important;
 }
 
-.sa-shell.is-placing .sa-world { cursor: copy; }
 
 /* ---- the thumb stick --------------------------------------------------
  * Bottom-right, where a right thumb rests with the phone on its side
@@ -773,6 +772,58 @@
   .sa-joystick-knob { transition: none; }
 }
 
+/* ---- the Use key ------------------------------------------------------
+ * Bottom right, just inboard of the thumb stick, so a right thumb can hold it
+ * down and still walk: that pairing is what makes stroking a whole row possible
+ * (stackacres-td/use-key.tsx). Shown on a mouse too, unlike the stick, because it
+ * is the only way to work the square underfoot without tapping it. It gives way
+ * to the district drawer the same way the stick does. */
+.sa-use-key {
+  position: absolute;
+  right: calc(max(22px, var(--safe-right) + 10px) + 128px);
+  bottom: max(18px, calc(var(--safe-bottom) + 8px));
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: 50%;
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+  opacity: .78;
+  transition: opacity var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
+}
+
+.sa-field[data-drawer="open"] .sa-use-key { display: none; }
+
+.sa-use-key svg {
+  width: 46px;
+  height: 46px;
+  fill: color-mix(in srgb, var(--sa-cream) 82%, transparent);
+  pointer-events: none;
+}
+
+.sa-use-key.is-held {
+  opacity: 1;
+  transform: scale(.94);
+}
+
+.sa-use-key.is-held svg { fill: var(--sa-corn); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-use-key { transition: none; }
+  .sa-use-key.is-held { transform: none; }
+}
+
 /* Every icon on this screen -- tool, HUD purse/feed, unit row, barn row -- is
    a <StackAcresIcon>: a vector painter drawn into a small DOM canvas rather
    than a pixel-art PNG. This is the fallback size; every context below sets
@@ -846,14 +897,13 @@
 .sa-theme .floor-back,
 .sa-theme .htp-trigger,
 .sa-music-toggle,
-.sa-ground-tool,
+.sa-belt-slot,
+.sa-use-key,
 .sa-panel-close,
 .sa-unit-action,
 .sa-unit-link,
 .sa-buy-btn,
 .sa-harvest-all,
-.sa-radial-btn,
-.sa-radial-more,
 .sa-gel-token,
 .sa-cta,
 .sa-theme .sa-sheet-close {
@@ -870,13 +920,11 @@
 .sa-theme .floor-back:active,
 .sa-theme .htp-trigger:active,
 .sa-music-toggle:active,
-.sa-ground-tool:active,
+.sa-belt-slot:active,
 .sa-panel-close:active,
 .sa-unit-action:not(:disabled):active,
 .sa-buy-btn:not(:disabled):active,
 .sa-harvest-all:not(:disabled):active,
-.sa-radial-btn:not(:disabled):active,
-.sa-radial-more:active,
 .sa-gel-token:not(:disabled):active,
 .sa-cta:not(:disabled):active,
 .sa-theme .sa-sheet-close:active {
@@ -891,14 +939,13 @@
 .sa-theme .floor-back:focus-visible,
 .sa-theme .htp-trigger:focus-visible,
 .sa-music-toggle:focus-visible,
-.sa-ground-tool:focus-visible,
+.sa-belt-slot:focus-visible,
+.sa-use-key:focus-visible,
 .sa-panel-close:focus-visible,
 .sa-unit-action:focus-visible,
 .sa-unit-link:focus-visible,
 .sa-buy-btn:focus-visible,
 .sa-harvest-all:focus-visible,
-.sa-radial-btn:focus-visible,
-.sa-radial-more:focus-visible,
 .sa-gel-token:focus-visible,
 .sa-map-place:focus-visible,
 .sa-cta:focus-visible,
@@ -916,51 +963,33 @@
 .sa-unit-action:disabled,
 .sa-buy-btn:disabled,
 .sa-harvest-all:disabled,
-.sa-radial-btn:disabled,
 .sa-gel-token:disabled,
 .sa-cta:disabled {
   filter: saturate(.35) brightness(.94);
   cursor: not-allowed;
 }
 
-/* ---- the ground tools -------------------------------------------------
- * One small key for Mow, the only tool still held, because cutting the Long
- * Meadow has no single-tile version. Pipe and soil are laid one tile at a
- * time from the gel dock instead. Top-left under the header, and on purpose
- * not a bar in the bottom-right corner. */
-.sa-ground-tools {
+/* ---- the tool belt ----------------------------------------------------
+   Where the single Mow key used to sit, now a row of four slots: hand, hoe,
+   watering can, seed pouch (stackacres-toolbelt.tsx). A row rather than the old
+   vertical stack, because the belt is read left to right as a set of jobs and
+   four stacked keys ran down into the map. */
+.sa-toolbelt {
   position: absolute;
   top: calc(var(--sa-header-h) + 10px);
   left: calc(10px + var(--safe-left));
   z-index: 3;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
 }
 
-.sa-ground-tool-keys,
-.sa-cutter-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* The Scythe/Mower swap, beside the Mow key while it is held. Wider than the
-   keys because each option carries its name. */
-.sa-ground-tool.sa-cutter-option {
-  grid-auto-flow: column;
-  gap: 6px;
-  width: auto;
-  padding-inline: 10px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.sa-ground-tool {
+.sa-belt-slot {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--sa-tap);
+  height: var(--sa-tap);
   border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
   background: var(--sa-glass-fill-open);
@@ -968,16 +997,68 @@
   backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
+  font-family: var(--sa-font);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-/* Held: the corn tint, the same "this one is active" every selected surface
-   on the farm wears now. A solid corn fill here was the loudest thing on the
-   map and the first thing to give the old block grammar away. */
-.sa-ground-tool.is-held {
+/* Held: the same corn tint every selected surface on the farm wears. */
+.sa-belt-slot.is-held {
   background: var(--sa-tint-corn);
   box-shadow: var(--sa-glass-rim-lit);
 }
 
+/* Run out of what it uses. Still pressable -- the refusal says why, which
+   teaches more than a dead key does. */
+.sa-belt-slot.is-spent { opacity: .55; }
+
+/* How much soil, water or seed the slot has left, in its corner. */
+.sa-belt-count {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sa-ink) 72%, transparent);
+  color: var(--sa-cream);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+/* ---- the seed wheel ---------------------------------------------------
+   The gel dock's glass row, kept, minus its drag (stackacres-seed-wheel.tsx).
+   Anchored under the belt instead of at a tap, because the pouch is what opens
+   it and the pouch is up here. */
+.sa-seed-wheel {
+  position: absolute;
+  top: calc(var(--sa-header-h) + 10px + var(--sa-tap) + 8px);
+  left: calc(10px + var(--safe-left));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 30px 7px 8px;
+  animation: sa-gel-in 240ms var(--sa-bounce) backwards;
+  --sa-gel-rise: -12px;
+}
+
+/* Nothing is dragged out of this row any more, so the browser may have the
+   touch for a native horizontal scroll -- the very thing the dock had to fake.
+   Overrides .sa-gel-token's own `touch-action: none` and grab cursor. */
+.sa-seed-wheel .sa-gel-token {
+  cursor: pointer;
+  touch-action: pan-x;
+}
+
+.sa-seed-wheel .sa-gel-token.is-held {
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
+}
+
+.sa-seed-wheel .sa-gel-token.is-spent { opacity: .5; }
+
+/* ---- the hint and the toast ------------------------------------------ */
 /* ---- the world map (stackacres-map-sheet.tsx) ------------------------- */
 
 /* The eight places, laid out the way they join up. It replaced the How to
@@ -1122,178 +1203,6 @@
   text-wrap: pretty;
 }
 
-/* ---- the seed ring, on the canvas ------------------------------------ */
-
-/* Dropped where a finger tapped a district's bare ground, in .sa-field's own
-   pixel space -- which is what stackacres-scene.ts reports a tap in, so
-   `left`/`top` are the tap coordinates verbatim, with no second transform to
-   keep in sync. z-index sits it over the signpost and the toolbelt it may
-   overlap; it is a transient answer to a press and it wins while it is up.
-
-   Real <button>s, not canvas hit boxes, so a thumb and a keyboard reach the
-   same thing -- and they are the same pressable block as everything else on
-   this screen. Their press, focus and unlit states come from "the pressable
-   block" above, which lists .sa-radial-btn and .sa-radial-more alongside every
-   other key rather than restating the grammar down here.
-
-   Centring is `translate`, not `transform`: `left`/`top` put a button on its
-   arc point and `translate: -50% -50%` centres it there, which leaves
-   `transform` free for the shared press travel. Doing the centring in
-   `transform` would have the press rule replace it and jump every button half
-   its own size on the way down. */
-.sa-radial {
-  position: absolute;
-  z-index: 4;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.sa-radial > * { pointer-events: auto; }
-
-/* The next tap on the map closes the ring instead of doing whatever it would
-   otherwise have done -- there is no close button to hunt for. Transparent,
-   and covering .sa-field exactly: it is rendered BEFORE the signpost, the
-   toolbelt, the zoom keys and the drawer peg (see stackacres-farm.tsx), which
-   are positioned siblings with no z-index of their own and so stack above it.
-   That is what keeps the chrome live while the ring is up -- and a camera move
-   from one of those keys is the other thing that closes it. */
-.sa-radial-scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: none;
-  cursor: default;
-}
-
-/* The spot that was tapped: corn inside the chocolate outline the map's own
-   pins still carry (see --sa-outline), so it reads as a mark ON the world
-   rather than as another piece of glass floating over it. */
-.sa-radial-pin {
-  position: absolute;
-  left: -7px;
-  top: -7px;
-  width: 14px;
-  height: 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  box-shadow: var(--sa-drop);
-}
-
-.sa-radial-ring {
-  position: absolute;
-  inset: 0;
-}
-
-.sa-radial-btn {
-  position: absolute;
-  translate: -50% -50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  width: 82px;
-  min-height: var(--sa-tap);
-  padding: 7px 5px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  cursor: pointer;
-  /* `backwards`, not `both`: a filled-forwards animation keeps owning
-     `transform` after it ends, which would beat the press rule and leave the
-     button unable to travel. */
-  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out),
-    background var(--duration-fast) ease;
-}
-
-.sa-radial-btn:hover:not(:disabled) { filter: brightness(1.04); }
-
-.sa-radial-btn .sa-ico { width: 26px; height: 26px; }
-
-.sa-radial-name {
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.15;
-  text-align: center;
-}
-
-/* The price, carrying the same Gold badge the HUD purse and the buy rows
-   use, so a number on this screen is never a bare number. */
-.sa-radial-cost {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12.5px;
-  font-weight: 800;
-  color: var(--sa-ink-soft);
-}
-
-.sa-radial-cost .sa-ico { width: 13px; height: 13px; }
-
-/* The pipe aim (stackacres-pipe-aim.tsx): four arrows around the tap, the
-   same pin, ring and pressable block as the seed ring, just squarer -- an
-   arrow needs no name under it, so the button is the tap target and nothing
-   more. `.is-held` is the stub's current aim: corn, the same "this one is
-   active" the toolbelt's held tool wears. */
-.sa-pipe-aim-btn {
-  width: var(--sa-tap);
-  min-height: var(--sa-tap);
-  padding: 0;
-}
-
-.sa-pipe-aim-btn.is-held {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-glass-rim-lit);
-}
-
-.sa-pipe-aim-glyph {
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-/* The way through to the drawer, under the ring rather than on it: it is not
-   another thing to plant, it is the way out of planting. The quiet fill, so
-   it sits back from the ring's own options. */
-.sa-radial-more {
-  position: absolute;
-  left: 0;
-  top: 26px;
-  translate: -50% 0;
-  min-height: 34px;
-  padding: 4px 14px;
-  border: 1px solid var(--sa-glass-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-size: 12.5px;
-  font-weight: 800;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-.sa-radial-more:hover { filter: brightness(1.05); }
-
-/* The mirrored ring (a tap with no room overhead) has taken the space below
-   the pin, so the handoff drops clear of it -- and never upward, since "no
-   room overhead" is exactly the case that put the ring down there. */
-.sa-radial-more.is-under-ring { top: 138px; }
-
 /* Springs out of the tap on the same overshoot curve the drawer opens with.
    Scale only: the centring lives in `translate` and the press in `transform`,
    so this is the one thing left for the animation to carry. */
@@ -1322,161 +1231,8 @@
   pointer-events: none;
 }
 
-.sa-gel-pin {
-  position: absolute;
-  translate: -50% -50%;
-  width: 14px;
-  height: 14px;
-  border: var(--sa-outline-w) solid var(--sa-outline);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-corn);
-  box-shadow: var(--sa-drop);
-}
-
-/* The completion circle: every token in the row has to be dragged into this,
-   pinned exactly on the tapped tile -- same dashed-ring language
-   `.sa-drag-target` already uses for water/feed, so a player who has learned
-   that gesture once recognises this one immediately. */
-.sa-gel-target {
-  position: absolute;
-  translate: -50% -50%;
-  width: 58px;
-  height: 58px;
-  border: 3px dashed rgba(255, 255, 255, .92);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(40, 24, 10, .25), inset 0 0 12px rgba(255, 255, 255, .35);
-  animation: sa-drag-pulse 1.2s ease-in-out infinite;
-  transition: transform .15s var(--sa-ease-out), background-color .15s var(--sa-ease-out);
-}
-
-.sa-gel-target.is-hot {
-  border-style: solid;
-  background-color: rgba(255, 255, 255, .28);
-  transform: scale(1.18);
-  animation: none;
-}
-
-.sa-gel-target.is-settling {
-  animation: none;
-  opacity: 0;
-  transition: opacity .3s var(--sa-ease-out);
-}
-
-/* The marching arrow from the dock to the circle -- the same cue
-   `.sa-drag-arrow`/`.sa-fish-arrow` already give the water can, feed scoop
-   and rod, drawn with the identical `arrowGeometry` helper so a player who
-   has learned either of those gestures recognises this one as the same
-   language, not a different menu that happens to also involve a circle. */
-.sa-gel-arrow {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 1.5px rgba(40, 24, 10, .45));
-  transition: opacity .18s var(--sa-ease-out);
-}
-
-.sa-gel-arrow-line {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-dasharray: 1 11;
-  animation: sa-drag-march .7s linear infinite;
-}
-
-.sa-gel-arrow-head { fill: #fff; }
-
 .sa-gel.is-dragging .sa-gel-arrow { opacity: .35; }
 .sa-gel.is-settling .sa-gel-arrow { opacity: 0; }
-
-.sa-gel-hint {
-  position: absolute;
-  transform: translateX(-50%);
-  padding: 3px 10px;
-  border: 1px solid var(--sa-glass-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur);
-  backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-cream);
-  font-family: var(--sa-font);
-  font-size: 11.5px;
-  font-weight: 800;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-/* The good-drop payoff: a ring pulse plus a small radial spray of droplets
-   out of the circle, `--sa-corn` tinted to match `.sa-gel-pin`, reusing the
-   same `sa-drag-ring`/`sa-drag-spray` keyframes `.sa-drag-burst` already
-   plays for water/feed -- symmetric rather than a directional pour, since a
-   dropped token lands in the circle rather than tipping over it. Without
-   this the token used to just fade in place, which read as the least
-   satisfying of the three drag gestures despite doing the identical
-   physical motion. */
-.sa-gel-burst {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.sa-gel-splash {
-  position: absolute;
-  left: -24px;
-  top: -24px;
-  width: 48px;
-  height: 48px;
-  border: 3px solid var(--sa-corn);
-  border-radius: 50%;
-  opacity: 0;
-  animation: sa-drag-ring .38s ease-out forwards;
-}
-
-.sa-gel-burst i {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  border-radius: 40%;
-  background: var(--sa-corn);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .6);
-  opacity: 0;
-  animation: sa-drag-spray .38s cubic-bezier(.3, .7, .4, 1) var(--d) forwards;
-}
-
-/* The row itself: `left`/`top` are set inline (stackacres-farm.tsx passes
-   `at`, this component works out which side of it to sit on and how far to
-   nudge off an edge, the same HEADROOM/SIDE_ROOM math `.sa-radial` uses),
-   and `translate` centres the row on that point the way `.sa-radial-more`
-   already centres on its own anchor.
-
-   No fill/blur/shadow of its own -- an earlier pass gave this shell the same
-   frosted-glass material `.sa-gel-token` below carries, but that meant every
-   token sat on top of a second, bigger pane of the identical glass, which
-   read as gel-on-gel rather than a set of separate bubbles. Each token
-   already supplies its own real translucent fill, blur and border (see its
-   own comment below), so this element is layout only now: it positions the
-   row, gives the scroll strip room, and reserves the padding `.sa-gel-close`
-   sits in. */
-.sa-gel-row {
-  position: absolute;
-  translate: -50% 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  padding: 7px 32px 7px 10px;
-  border: none;
-  background: none;
-  pointer-events: auto;
-  animation: sa-gel-in 240ms var(--sa-bounce) backwards;
-}
 
 /* The scrollable strip inside the row above -- split out from `.sa-gel-row`
    so the outer padding/edge stay put while only this part scrolls. Capped to
@@ -1648,76 +1404,6 @@
   visibility: hidden;
 }
 
-/* The live drag clone: a sibling of `.sa-gel-target`, not a descendant of
-   `.sa-gel-row` -- see stackacres-gel-dock.tsx's comment on where it's
-   rendered. Plain `position: absolute` rather than `fixed`: nothing above
-   this element in the tree carries a transform/translate, so it needs no
-   viewport-escape trick to begin with, and `--x`/`--y` are already the same
-   field-local pixels `.sa-gel-target`'s own `at.x`/`at.y` use. */
-.sa-gel-token-live {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 20;
-  cursor: grabbing;
-  pointer-events: none;
-  animation: sa-gel-pickup 220ms var(--sa-bounce);
-  /* Position lives in the transform, exactly the way `.sa-drag-token`'s does
-     (water can / feed scoop). It used to be `left`/`top`, which moves this
-     token by relayout every frame -- and this token carries a
-     `backdrop-filter`, so each frame also paid for a fresh blur of whatever
-     the map had under it. A mouse never noticed. A thumb, on a phone already
-     drawing the farm, did. `--x`/`--y` are written straight onto the node by
-     the pointer handler, once per animation frame.
-
-     The transition is what softens each of those writes into a short chase
-     rather than a hard teleport -- the same trailing-spring feel the can and
-     scoop have. `.is-returning` below still wins this property at the same
-     specificity (declared later in the file), so the spring-back keeps its
-     own slower, bouncier timing. */
-  transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(var(--lift, 1));
-  transition: transform 90ms var(--sa-ease-out);
-  will-change: transform;
-  /* Picked up, so the lit rim goes to its brightest and the shadow under it
-     grows -- the token is further off the field than it was in the row. */
-  box-shadow: var(--sa-glass-rim-lit), 0 16px 28px rgba(14, 14, 22, .32);
-}
-
-/* Through `--lift` rather than its own `transform`, which would drop the
-   position the transform above carries. */
-.sa-gel-token-live.is-hot {
-  --lift: 1.18;
-  filter: brightness(1.15) saturate(1.3);
-  transition: transform 120ms var(--sa-ease-out), filter 120ms var(--sa-ease-out);
-}
-
-.sa-gel-token-live.is-returning {
-  transition: transform .24s var(--sa-bounce);
-}
-
-/* On a good drop the token used to just vanish in one frame when the dock
-   unmounted at SETTLE_MS (420ms) -- the real crop/unit was already visible
-   underneath it by then, so that hard cut read as a stutter. Fades it out
-   over the same window instead, matching the water-can/feed drag token's
-   own `.is-settling` fade (`sa-drag-fade`, reused here). */
-.sa-gel-token-live.is-settling {
-  animation: sa-drag-fade .42s ease-in forwards;
-}
-
-/* The one-shot "picked up" wobble: a squash on the way out and a settle back
-   to size, the same read `.sa-drag-token`'s own grow/shrink gives the can and
-   scoop, just done as a shape change rather than the uniform scale `--lift`
-   carries. Each frame restates the position too: an animated `transform`
-   replaces the property outright, so a keyframe that set the scale alone
-   would drop the token at the field's top-left corner for its whole 220ms.
-   Plays once when the live clone mounts and does not loop. */
-@keyframes sa-gel-pickup {
-  0% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1, 1); }
-  40% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1.22, .8); }
-  70% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(.94, 1.06); }
-  100% { transform: translate3d(var(--x, 0px), var(--y, 0px), 0) translate(-50%, -50%) scale(1, 1); }
-}
-
 /* The shell's own drop-in: a bead of gel pooling into shape while rising up
    out of the target circle (`.sa-gel-target`), rather than the ring's plain
    scale-fade (`sa-radial-in` above) or fading in already parked at its
@@ -1737,22 +1423,6 @@
   line-height: 1.15;
   text-align: center;
 }
-
-/* Same purse badge the ring's own .sa-radial-cost carries, but reading
-   `--sa-ink-soft` instead of the ring's flat `--sa-choc`: `.sa-radial-btn`
-   sits on opaque paper, where choc-brown was always legible, but the gel
-   token is smoked glass over the map (see `.sa-gel-token`'s own header) --
-   `--sa-ink-soft` is what that capsule already flips to cream for. */
-.sa-gel-cost {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--sa-ink-soft);
-}
-
-.sa-gel-cost .sa-ico { width: 12px; height: 12px; }
 
 /* How many of this seed or soil bag are on hand -- a count rather than a
    price, the same distinction the old seed strip's own qty badge drew.
@@ -5272,37 +4942,6 @@
   --drag-particle: #e8b84a;
 }
 
-.sa-drag-scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: none;
-  cursor: default;
-  pointer-events: auto;
-}
-
-.sa-drag-arrow {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 1.5px rgba(40, 24, 10, .45));
-  transition: opacity .18s var(--sa-ease-out);
-}
-
-.sa-drag-arrow-line {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-dasharray: 1 11;
-  animation: sa-drag-march .7s linear infinite;
-}
-
-.sa-drag-arrow-head { fill: #fff; }
-
 .sa-drag.is-dragging .sa-drag-arrow { opacity: .35; }
 .sa-drag.is-settling .sa-drag-arrow { opacity: 0; }
 
@@ -5310,80 +4949,11 @@
   to { stroke-dashoffset: -12; }
 }
 
-.sa-drag-target {
-  position: absolute;
-  width: 54px;
-  height: 54px;
-  margin: -27px 0 0 -27px;
-  border: 3px dashed rgba(255, 255, 255, .92);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(40, 24, 10, .25), inset 0 0 12px rgba(255, 255, 255, .35);
-  pointer-events: none;
-  animation: sa-drag-pulse 1.2s ease-in-out infinite;
-  transition: transform .15s var(--sa-ease-out), background-color .15s var(--sa-ease-out);
-}
-
-.sa-drag-target.is-hot {
-  border-style: solid;
-  background-color: rgba(255, 255, 255, .28);
-  transform: scale(1.18);
-  animation: none;
-}
-
 .sa-drag.is-settling .sa-drag-target { animation: none; opacity: 0; transition: opacity .3s var(--sa-ease-out); }
 
 @keyframes sa-drag-pulse {
   0%, 100% { transform: scale(.94); }
   50% { transform: scale(1.06); }
-}
-
-/* The token: the farm's own glass with the tool's tint mixed into it,
-   positioned by transform so dragging stays on the compositor. It used to
-   carry a third formula of its own (a wide specular sweep over an 8px blur,
-   plus a 5px white halo) -- the same frosted look the panels have all moved
-   off, so it moved too. The tint is what still says water or feed. */
-.sa-drag-token {
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 60px;
-  height: 60px;
-  padding: 0;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: 50%;
-  background: var(--drag-tint);
-  box-shadow: var(--sa-glass-rim-lit), 0 12px 24px rgba(28, 44, 64, .34);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) scale(var(--grow, 1));
-  transition: transform .26s cubic-bezier(.34, 1.56, .64, 1);
-  cursor: grab;
-  touch-action: none;
-  pointer-events: auto;
-  will-change: transform;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* No idle animation here on purpose: `filter` plus an infinite `animation`
-   on the same element (it used to bob up and down) knocks it off the
-   compositor's fast transform-only path, forced full repaint every frame
-   instead -- cheap for a tiny vector painter, not for a real photo. Kayo's
-   call once the watering can moved from a drawn droplet to the Gr8FarmPack
-   render (2026-09-13). */
-.sa-drag-token .sa-ico {
-  position: relative;
-  z-index: 1;
-  width: 30px;
-  height: 30px;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
-}
-
-.sa-drag-token:focus-visible {
-  outline: 3px solid var(--sa-corn);
-  outline-offset: 3px;
 }
 
 .sa-drag.is-dragging .sa-drag-token {
@@ -5411,68 +4981,11 @@
   100% { opacity: 0; }
 }
 
-.sa-drag-hint {
-  position: absolute;
-  transform: translateX(-50%);
-  padding: 3px 10px;
-  border: 1px solid var(--sa-glass-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur);
-  backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-cream);
-  font-family: var(--sa-font);
-  font-size: 11.5px;
-  font-weight: 800;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.sa-drag-burst {
-  position: absolute;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.sa-drag-splash {
-  position: absolute;
-  left: -24px;
-  top: -24px;
-  width: 48px;
-  height: 48px;
-  border: 3px solid var(--drag-particle);
-  border-radius: 50%;
-  opacity: 0;
-  animation: sa-drag-ring .14s ease-out .03s forwards;
-}
-
-.sa-drag-burst i {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 7px;
-  height: 10px;
-  margin: -5px 0 0 -3.5px;
-  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
-  background: var(--drag-particle);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .6);
-  opacity: 0;
-  animation: sa-drag-spray .15s cubic-bezier(.3, .7, .4, 1) var(--d) forwards;
-}
-
 .sa-drag.is-feed .sa-drag-burst i {
   width: 6px;
   height: 6px;
   margin: -3px 0 0 -3px;
   border-radius: 40%;
-}
-
-@keyframes sa-drag-spray {
-  0% { opacity: 0; transform: translate(0, -26px) scale(.5); }
-  25% { opacity: 1; }
-  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1); }
 }
 
 @keyframes sa-drag-ring {

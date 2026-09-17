@@ -207,19 +207,18 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     promise: "Cleared, this becomes your Cattle Pens — the best-paying stock on the farm.",
   },
 
-  // The four the map re-lay reserved. `clearCost: 0` is not a free sector: a
-  // wild sector is refused before a price is ever read, by `sectorClearCheck`
-  // here and by `clearStackAcresSector` on the server. The zero is there so a
-  // stray render can only ever show nothing, never a real number somebody
-  // might try to pay. `promise` is what is coming, worded as a promise rather
-  // than an offer.
+  // The four wild areas. They are never bought: each gate opens when its
+  // traveler arrives (story/travelers.ts's WILD_AREA_TRAVELER). `clearCost: 0`
+  // is not a free sector: a wild sector is refused before a price is ever
+  // read, by `sectorClearCheck` here and by `clearStackAcresSector` on the
+  // server. `promise` says what is past the gate.
   townsquare: {
     id: "townsquare",
     state: "wild",
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
-    promise: "One day: the town itself, instead of a board you post to.",
+    promise: "Past this gate: the town square.",
   },
   mine: {
     id: "mine",
@@ -227,7 +226,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
-    promise: "One day: a way down, and whatever is under the hill.",
+    promise: "Past this gate: the mine.",
   },
   coast: {
     id: "coast",
@@ -235,7 +234,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
-    promise: "One day: market stalls on the shore, and a dock to work from.",
+    promise: "Past this gate: the shore.",
   },
   oak: {
     id: "oak",
@@ -243,7 +242,7 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     clearCost: 0,
     requires: null,
     requiresUnits: 0,
-    promise: "One day: whatever the old tree has been waiting for.",
+    promise: "Past this gate: the old oak wood.",
   },
 };
 

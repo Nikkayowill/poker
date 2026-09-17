@@ -900,6 +900,7 @@
 .sa-radial-btn:focus-visible,
 .sa-radial-more:focus-visible,
 .sa-gel-token:focus-visible,
+.sa-map-place:focus-visible,
 .sa-cta:focus-visible,
 .sa-theme .sa-sheet-close:focus-visible {
   outline: 3px solid var(--sa-corn);
@@ -977,34 +978,82 @@
   box-shadow: var(--sa-glass-rim-lit);
 }
 
-/* ---- the hint and the toast ------------------------------------------ */
+/* ---- the world map (stackacres-map-sheet.tsx) ------------------------- */
 
-/* Bottom-left, clear of the ground tools above it and the Harvest All key on
-   the centre line. A carved strip rather than a board: it is a caption on
-   the world, and it changes on every tool pick, so it must not read as
-   something to press. */
-.sa-tool-hint {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
-  max-width: min(30%, 380px);
-  margin: 0;
-  padding: 6px 16px;
-  border: 1px solid var(--sa-glass-line-soft);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur);
-  backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-cream);
-  font-size: 14px;
-  font-weight: 700;
-  text-align: left;
-  text-wrap: balance;
-  pointer-events: none;
+/* The eight places, laid out the way they join up. It replaced the How to
+   Play modal, so it is the one screen that has to be readable at a glance on
+   a phone held sideways: fixed-ratio cells, no scrolling inside the grid. */
+.sa-map-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--sa-map-cols), 1fr);
+  grid-auto-rows: minmax(46px, auto);
+  gap: 6px;
+  margin: 2px 0 10px;
 }
 
-.sa-tool-hint.is-busy { color: var(--sa-corn); }
+.sa-map-place {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: 12px;
+  background: var(--sa-glass-fill-ctl);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--duration-base) ease, box-shadow var(--duration-base) ease;
+}
+.sa-map-place:hover { transform: translateY(-1px); }
+
+.sa-map-place-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sa-map-place-note {
+  color: var(--sa-ink-soft);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+/* Shut land reads as somewhere you cannot work yet, not as a dead button:
+   tapping still walks you to its gate, which is what says how to open it. */
+.sa-map-place.is-shut {
+  background: var(--sa-glass-fill-open);
+  color: var(--sa-ink-soft);
+  filter: grayscale(1);
+  opacity: .62;
+}
+
+/* Where the farmer is standing. */
+.sa-map-place.is-here {
+  border-color: var(--sa-corn-side);
+  box-shadow: var(--sa-glass-rim-sm), 0 0 0 1px var(--sa-corn-side) inset;
+}
+
+.sa-map-here {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--sa-corn);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-map-place { transition: none; }
+  .sa-map-place:hover { transform: none; }
+}
+
+/* ---- the toast ------------------------------------------------------- */
 
 /* What you just collected, thrown up over the middle of the map. Glass with
    the corn tint and corn-lit lettering: the one moment the farm actually pays
@@ -3500,6 +3549,14 @@
   background: var(--sa-glass-fill-ctl);
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop-lg);
 }
+/* A landscape phone is about 430px tall, and at full size the portrait pushed
+   the "Thanks, Ray" button below the fold. */
+@media (max-height: 520px) {
+  .sa-ray-welcome-portrait {
+    width: 64px;
+    height: 64px;
+  }
+}
 
 /* The checklist/card grid shell, originally built for the now-deleted Ray's
    Museum panel and kept because the Greenhouse panel
@@ -5675,7 +5732,6 @@
   .sa-district-blurb { margin: 0 12px 10px; font-size: 12.5px; }
   .sa-panel-section { margin: 10px 12px 0; padding-top: 10px; }
 
-  .sa-tool-hint { font-size: 12.5px; max-width: 40%; padding: 5px 13px; }
   .sa-toast { font-size: 17px; padding: 7px 17px; }
 
   .sa-sheet { max-height: 92dvh; }

@@ -149,6 +149,18 @@ export const TRAVELER_CATALOGUE: Readonly<Record<TravelerId, TravelerDef>> = {
   },
 };
 
+/**
+ * The wild areas are never bought: each gate opens when its first traveler's
+ * own unlock is met (art/stackacres-td/AREAS.md). The map opens the gate and
+ * the gate's sheet names who it is waiting on, both from this.
+ */
+export const WILD_AREA_TRAVELER: Readonly<Partial<Record<ZoneId, TravelerId>>> = {
+  coast: "miles",
+  oak: "skye",
+  mine: "brayden",
+  townsquare: "arthur",
+};
+
 export type PortraitExpression = "neutral" | "happy" | "sad" | "surprised" | "thinking" | "love";
 
 /** A traveler's 64x64 dialogue portrait in one expression, drawn by art/stackacres-td/rich/portraits.py

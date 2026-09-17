@@ -47,7 +47,7 @@ export interface StackAcresToolDef {
 export const STACKACRES_TOOL_DEFS: Readonly<Record<StackAcresTool, StackAcresToolDef>> = {
   inspect: {
     label: "Look",
-    hint: "Tap any square to select it and choose what to do there.",
+    hint: "Tap anywhere to walk there. Tap something to use it.",
     icon: "ico-look",
   },
   scythe: {

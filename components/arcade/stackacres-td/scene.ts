@@ -43,9 +43,20 @@ import { WindSway } from "./wind-sway";
  */
 
 const ASSETS = "/stackacres-td";
-const AREAS: TopdownArea[] = ["homestead", "oldfields"];
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant"];
-const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy"];
+const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture"];
+const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes"];
+const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes"];
+
+/** Bought land with a scene of its own: its gate on the map stands until the sector is owned. */
+const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = { wallow: "fold", oxfields: "pasture" };
+const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = { fold: "wallow", pasture: "oxfields" };
+
+/** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out. */
+const PENS: Partial<Record<ZoneId, { area: TopdownArea; spots: string; cols: number; rowGap: number }>> = {
+  henhaven: { area: "homestead", spots: "hen-spots", cols: 4, rowGap: 22 },
+  wallow: { area: "fold", spots: "sheep-spots", cols: 5, rowGap: 26 },
+  oxfields: { area: "pasture", spots: "cattle-spots", cols: 5, rowGap: 36 },
+};
 const WALK_SPEED = 72; // px/s; the rig's walk frames were timed for 44
 const WATER_FRAME_MS = 170;
 const REACH = 26; // how close the farmer stands before the shell's menu opens
@@ -273,7 +284,9 @@ export class TopdownScene extends Phaser.Scene {
     const { at, path } = advance(from, this.path, (WALK_SPEED * delta) / 1000);
     this.path = path;
     this.setPlayerAt(at);
-    const exit = this.area.exits.find((e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h);
+    const exit = this.area.exits.find(
+      (e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h && this.canEnter(e.to),
+    );
     if (exit) {
       this.path = [];
       this.pending = null;
@@ -282,6 +295,12 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     if (this.path.length === 0) this.arrive();
+  }
+
+  /** Bought land can only be walked into once it is owned, whatever path the farmer found to its edge. */
+  private canEnter(area: TopdownArea): boolean {
+    const sector = AREA_SECTOR[area];
+    return sector === undefined || this.sectors.includes(sector);
   }
 
   private headingFor(dx: number, dy: number): Dir {
@@ -387,7 +406,9 @@ export class TopdownScene extends Phaser.Scene {
   private applyGates(): void {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
     for (const { spec, image } of this.propImages) {
-      const visible = !(spec.tag === "gate:oldfields" && this.cropFieldsUnlocked);
+      const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
+      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.sectors.includes(detail);
+      const visible = !((spec.tag === "gate:oldfields" && this.cropFieldsUnlocked) || cleared);
       image.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
     }
@@ -441,19 +462,26 @@ export class TopdownScene extends Phaser.Scene {
       const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
       return fieldWorldToMap(world);
     }
-    if (zone === "henhaven" && this.areaName === "homestead") {
-      const spots = this.area.zones.find((z) => z.tag === "hen-spots");
+    const pen = PENS[zone];
+    if (pen && this.areaName === pen.area) {
+      const spots = this.area.zones.find((z) => z.tag === pen.spots);
       if (!spots) return null;
-      const hens = this.units.filter((u) => stockZone(u.stock) === "henhaven").map((u) => u.id).sort();
-      const i = hens.indexOf(unit.id);
-      const cols = 4;
-      return { x: spots.x + 12 + ((i % cols) * (spots.w - 24)) / (cols - 1), y: spots.y + 14 + Math.floor(i / cols) * 22 };
+      const herd = this.units.filter((u) => stockZone(u.stock) === zone).map((u) => u.id).sort();
+      const i = herd.indexOf(unit.id);
+      return {
+        x: spots.x + 12 + ((i % pen.cols) * (spots.w - 24)) / (pen.cols - 1),
+        y: spots.y + 14 + Math.floor(i / pen.cols) * pen.rowGap,
+      };
     }
     return null;
   }
 
   private unitFrame(unit: StackAcresSceneUnit): string {
-    if (stockZone(unit.stock) === "henhaven") return unit.id.charCodeAt(unit.id.length - 1) % 2 ? "hen_left" : "hen_right";
+    const zone = stockZone(unit.stock);
+    const side = unit.id.charCodeAt(unit.id.length - 1) % 2 ? "left" : "right";
+    if (zone === "henhaven") return `hen_${side}`;
+    if (zone === "wallow") return `sheep_${side}`;
+    if (zone === "oxfields") return unit.id.charCodeAt(0) % 2 ? `cattle_${side}` : `cattle_${side}_plain`;
     if (unit.state === "mucked") return "crop_withered";
     const stage = unit.state === "ready" ? 2 : (unit.progress ?? 0) < 0.5 ? 0 : 1;
     return DRAWN_CROPS.has(unit.stock) ? `crop_${unit.stock}_${stage}` : `crop_generic_${stage}`;
@@ -488,8 +516,8 @@ export class TopdownScene extends Phaser.Scene {
       const isNew = !existing;
       existing?.sprite.destroy();
       existing?.cue?.destroy();
-      const hen = stockZone(unit.stock) === "henhaven";
-      const baseY = hen ? at.y : at.y + 6;
+      const animal = PENS[stockZone(unit.stock)] !== undefined;
+      const baseY = animal ? at.y : at.y + 6;
       const sprite = this.keep(this.add.image(at.x, baseY, "common", frame).setOrigin(0.5, 1).setDepth(baseY));
       let cueImage: Phaser.GameObjects.Image | null = null;
       if (cue) {
@@ -501,7 +529,7 @@ export class TopdownScene extends Phaser.Scene {
       // miss under his own swing and the toast that lands on the same spot -- see stackacres-farm.tsx's
       // "Seeded" toast. Skipped for a livestock purchase: those show up in Hen Haven, screens away
       // from wherever the shop sheet was, so there is nothing on screen for a spawn to compete with.
-      if (isNew && !hen) this.popUnit(unit.id);
+      if (isNew && !animal) this.popUnit(unit.id);
     }
     for (const [id, node] of this.unitNodes) {
       if (seen.has(id)) continue;
@@ -782,6 +810,7 @@ export class TopdownScene extends Phaser.Scene {
 
   setSectors(sectors: SectorId[]): void {
     this.sectors = sectors;
+    if (this.booted) this.applyGates();
   }
 
   setTravelerUnlocks(unlocked: TravelerUnlocks): void {
@@ -890,6 +919,16 @@ export class TopdownScene extends Phaser.Scene {
   /** The district panel's travel buttons: the two home districts are on the Homestead; the rest aren't built yet. */
   focusZone(zone: ZoneId): void {
     if (!this.booted) return;
+    const sectorArea = SECTOR_AREAS[zone];
+    if (sectorArea) {
+      this.path = [];
+      this.pending = null;
+      // Owned land: go there. Not yet: stand at its gate on the Homestead, where tapping the gate offers it.
+      if (this.sectors.includes(zone)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
+      else this.enterArea("homestead", { x: 636, y: 344 });
+      this.callbacks.onViewMoved();
+      return;
+    }
     if (zone === "farmstead" || zone === "henhaven") {
       const spawn = zone === "henhaven" ? { x: 450, y: 370 } : this.specs.get("homestead")!.spawn;
       this.path = [];

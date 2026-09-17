@@ -14,7 +14,7 @@ from area import Area
 MW, MH = 36, 26
 
 
-def build():
+def build(for_game=False):
     a = Area("pasture", MW, MH)
     a.line("path", (0, 12), (12, 12))                  # in from the Fold
     a.line("path", (12, 12), (12, 7))                  # up to the shed
@@ -35,10 +35,14 @@ def build():
     a.add(kit.trough(), 470, 300, (11, 2))
     a.add(kit.hay_bale(), 500, 180, (9, 2))
     a.add(kit.round_tree(7), 420, 250, (14, 4))
-    for i, (x, y, p) in enumerate(((260, 220, True), (330, 260, False), (300, 320, True), (450, 210, True),
-                                   (380, 330, False))):
-        a.add(creatures.cattle(i % 2 == 0, patches=p), x, y, (12, 3))
-    a.add(creatures.bird(), 440, 150, (3, 1))
+    if for_game:                                       # the game draws the player's own cattle in the pasture
+        a.zone("cattle-spots", 226, 166, 300, 170)
+        a.zone("pen:oxfields", 206, 132, 334, 222)
+    else:
+        for i, (x, y, p) in enumerate(((260, 220, True), (330, 260, False), (300, 320, True), (450, 210, True),
+                                       (380, 330, False))):
+            a.add(creatures.cattle(i % 2 == 0, patches=p), x, y, (12, 3))
+        a.add(creatures.bird(), 440, 150, (3, 1))
 
     for x, y, big in ((80, 300, True), (540, 60, False), (100, 380, False)):
         a.add(kit.rock(big), x, y, (5, 2))
@@ -54,7 +58,10 @@ def build():
     a.tree_line("west", gaps=((170, 230),), seed=3)
     a.tree_line("east", seed=3)
     a.character("wes", 176, 226)
-    a.character("farmer", 110, 230)
+    a.exit("fold", 0, 184, 10, 32, (410, 184))       # back over the fallen fence
+    a.spawn = (22, 200)
+    if not for_game:
+        a.character("farmer", 110, 230)
     return a
 
 

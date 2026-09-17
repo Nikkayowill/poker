@@ -6,6 +6,7 @@ import {
   claimBackstopGold,
   claimDailyGold,
   creditGold,
+  creditGoldByProfileLedgered,
   deleteProfiles,
   ensureProfile,
   findSessionByUserId,
@@ -13,8 +14,10 @@ import {
   linkProfileToUser,
   listProfiles,
   recordSeenIp,
+  reconcileOrphanedGoldDebits,
   setUnlimitedGold,
   spendGold,
+  spendGoldByProfileLedgered,
 } from "./profile-store";
 
 describe("Gold economy (memory mode)", () => {
@@ -245,5 +248,77 @@ describe("Gold economy (memory mode)", () => {
     for (let i = 1; i < profiles.length; i += 1) {
       expect(profiles[i - 1].createdAt >= profiles[i].createdAt).toBe(true);
     }
+  });
+});
+
+// Memory mode implements the same idempotency-on-correlationId shape the
+// Postgres RPCs do (see 20260917001958_gold_ledger_and_idempotent_rpcs.sql),
+// so a retry-safety regression here would also be one in production. What
+// this file CANNOT cover: find_orphaned_gold_debits and
+// confirm_gold_debit_ledgered are SQL-only, and reconcileOrphanedGoldDebits
+// is a documented no-op in memory mode (there is no crash boundary between
+// two in-process Map writes to reconcile). That logic has been reasoned
+// through but not run against a real Postgres instance in this session.
+describe("Ledgered Gold spend/credit (memory mode)", () => {
+  it("debits once per correlationId; a retry is a no-op that returns the same result", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const correlationId = `test_stake:${randomUUID()}`;
+
+    const first = await spendGoldByProfileLedgered(profile.id, 500, correlationId, "test");
+    expect(first).toEqual({ success: true, goldBalance: 1500, alreadyApplied: false });
+
+    const retry = await spendGoldByProfileLedgered(profile.id, 500, correlationId, "test");
+    expect(retry).toEqual({ success: true, goldBalance: 1500, alreadyApplied: true });
+
+    const after = await ensureProfile(token);
+    expect(after.goldBalance).toBe(1500); // not 1000 -- the retry must not have debited again
+  });
+
+  it("credits once per correlationId; a retry is a no-op that returns the same result", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const correlationId = `test_refund:${randomUUID()}`;
+
+    const first = await creditGoldByProfileLedgered(profile.id, 300, correlationId, "test");
+    expect(first).toEqual({ success: true, goldBalance: 2300, alreadyApplied: false });
+
+    const retry = await creditGoldByProfileLedgered(profile.id, 300, correlationId, "test");
+    expect(retry).toEqual({ success: true, goldBalance: 2300, alreadyApplied: true });
+
+    const after = await ensureProfile(token);
+    expect(after.goldBalance).toBe(2300); // not 2600 -- the retry must not have credited again
+  });
+
+  it("rejects an insufficient ledgered spend without touching the balance", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    const result = await spendGoldByProfileLedgered(profile.id, 5000, `test_stake:${randomUUID()}`, "test");
+    expect(result).toEqual({ success: false });
+    expect((await ensureProfile(token)).goldBalance).toBe(2000);
+  });
+
+  it("rejects an invalid amount or a missing correlationId", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await expect(spendGoldByProfileLedgered(profile.id, 0, "x", "test")).rejects.toThrow("Invalid Gold amount.");
+    await expect(spendGoldByProfileLedgered(profile.id, 100, "", "test")).rejects.toThrow(
+      "correlationId is required.",
+    );
+  });
+
+  it("never moves Gold for an unlimited-Gold profile, ledgered or not", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await setUnlimitedGold(profile.id, true);
+    const spent = await spendGoldByProfileLedgered(profile.id, 1_000_000, `test_stake:${randomUUID()}`, "test");
+    expect(spent).toEqual({ success: true, goldBalance: 2000, alreadyApplied: false });
+  });
+
+  it("documents that memory mode never finds an orphaned debit to reconcile", async () => {
+    const token = randomUUID();
+    const profile = await ensureProfile(token);
+    await spendGoldByProfileLedgered(profile.id, 500, `test_stake:${randomUUID()}`, "test");
+    expect(await reconcileOrphanedGoldDebits(0)).toEqual({ found: 0, refunded: 0 });
   });
 });

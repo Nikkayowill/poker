@@ -1,5 +1,5 @@
 import "server-only";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import type { AnyDuelGame, DuelOutcome, DuelSeat } from "@/lib/pvp/match-contract";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
@@ -32,10 +32,13 @@ import {
 } from "./pvp-match-store";
 import { applyMissionEvent } from "./mission-store";
 import {
+  confirmGoldDebitLedgered,
   creditGoldByProfile,
+  creditGoldByProfileLedgered,
   ensureProfile,
   getPublicProfilesByIds,
   spendGoldByProfile,
+  spendGoldByProfileLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
 
@@ -311,11 +314,19 @@ export async function openDuelChallenge(
     }
   }
 
-  // Rule 1: the stake leaves first. Null is "cannot afford", not an error;
-  // spendGoldByProfile is the authority, and any balance read before it is
-  // stale.
-  const debited = await spendGoldByProfile(profile.id, stake);
-  if (!debited) {
+  // Rule 1: the stake leaves first. `false` is "cannot afford", not an
+  // error; spendGoldByProfileLedgered is the authority, and any balance read
+  // before it is stale.
+  //
+  // Ledgered rather than plain spendGoldByProfile: an open challenge can sit
+  // staked for hours waiting for an opponent, which is exactly the window a
+  // process death (crash, deploy, function timeout) between this debit and
+  // createChallenge below would otherwise leave unrecoverable -- no ledger
+  // row means nothing to reconcile against. See
+  // app/api/cron/reconcile-stale-stakes and confirmGoldDebitLedgered below.
+  const stakeCorrelationId = `pvp_challenge_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "pvp_challenge_open");
+  if (!debited.success) {
     throw new DuelRequestError(
       `You need ${stake.toLocaleString()} Gold to stake this duel.`,
       400,
@@ -335,15 +346,25 @@ export async function openDuelChallenge(
     });
   } catch (error) {
     // The challenge never came into existence, so the player must not have
-    // paid for it.
-    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
-      console.error("pvp.challenge_refund_failed", { profileId: profile.id, stake, error: refundError });
-    });
+    // paid for it. Same correlation id as the debit above, so this and a
+    // reconciliation sweep racing it can't both refund the stake.
+    await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "pvp_challenge_open_refund").catch(
+      (refundError) => {
+        console.error("pvp.challenge_refund_failed", { profileId: profile.id, stake, error: refundError });
+      },
+    );
     if (error instanceof OpenChallengeExists) {
       throw new DuelRequestError(error.message, 409);
     }
     throw error;
   }
+
+  // The challenge is now a real row: this debit can legitimately stay
+  // uncredited for as long as it sits unaccepted, so tell the sweep to leave
+  // it alone. Best-effort -- see confirmGoldDebitLedgered's own comment.
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+    console.error("pvp.challenge_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
 
   const [challenger] = await playerViews([profile.id, profile.id]);
   return {
@@ -356,7 +377,7 @@ export async function openDuelChallenge(
       expiresAt: challenge.expiresAt,
       mine: true,
     },
-    profile: debited,
+    profile: { ...profile, goldBalance: debited.goldBalance },
   };
 }
 

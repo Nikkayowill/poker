@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createHeadsUpGame } from "@/lib/game/engine";
 import type { GameState } from "@/lib/game/types";
@@ -29,11 +30,13 @@ import { publicIdentity } from "./leaderboard-identity";
 import { recordDuelResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import {
+  confirmGoldDebitLedgered,
   creditGoldByProfile,
+  creditGoldByProfileLedgered,
   ensureProfile,
   getProfileById,
   getPublicProfilesByIds,
-  spendGoldByProfile,
+  spendGoldByProfileLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
 
@@ -208,28 +211,41 @@ export async function openHeadsUpQuickPlay(
     throw new HeadsUpRequestError("You are already in a heads-up match.", 409);
   }
 
-  const debited = await spendGoldByProfile(profile.id, stake);
-  if (!debited) throw new HeadsUpRequestError(`You need ${stake.toLocaleString()} Gold to play this tier.`, 400);
+  // Ledgered rather than plain spendGoldByProfile: a quick-play table can sit
+  // waiting for an opponent for a while, the same crash-window risk
+  // openDuelChallenge in pvp-match-service.ts documents. See
+  // app/api/cron/reconcile-stale-stakes.
+  const stakeCorrelationId = `heads_up_quick_play_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_quick_play");
+  if (!debited.success) throw new HeadsUpRequestError(`You need ${stake.toLocaleString()} Gold to play this tier.`, 400);
+  const confirmDebit = () =>
+    confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+      console.error("heads_up.quick_play_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+    });
 
   const open = await findOpenHeadsUpTable(tier, profile.id);
   let created: StoredHeadsUpTable | null = null;
   try {
     if (open) {
       await claimHeadsUpSeat(open.id, profile.id, token);
+      await confirmDebit();
       const dealt = await dealHeadsUpTableIfReady(open.id);
       const current = dealt ?? (await getHeadsUpTableById(open.id)) ?? open;
       const seats = await getHeadsUpSeats(open.id);
-      return { table: await tableView(current, seats, profile.id), profile: debited };
+      return { table: await tableView(current, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
     }
 
     created = await createHeadsUpTableRow(profile.id, tier, stake, null);
     await claimHeadsUpSeat(created.id, profile.id, token);
+    await confirmDebit();
     const seats = await getHeadsUpSeats(created.id);
-    return { table: await tableView(created, seats, profile.id), profile: debited };
+    return { table: await tableView(created, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
-      console.error("heads_up.quick_play_refund_failed", { profileId: profile.id, stake, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_quick_play_refund").catch(
+      (refundError) => {
+        console.error("heads_up.quick_play_refund_failed", { profileId: profile.id, stake, error: refundError });
+      },
+    );
     // A failure between createHeadsUpTableRow and claimHeadsUpSeat succeeding
     // would otherwise leave a host-less 'waiting' row sitting in front of
     // every later quick-play search at this tier forever -- the exact shape
@@ -268,24 +284,33 @@ export async function openHeadsUpInvite(
     throw new HeadsUpRequestError("You are already in a heads-up match.", 409);
   }
 
-  const debited = await spendGoldByProfile(profile.id, stake);
-  if (!debited) throw new HeadsUpRequestError(`You need ${stake.toLocaleString()} Gold to play this tier.`, 400);
+  const stakeCorrelationId = `heads_up_invite_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_invite");
+  if (!debited.success) throw new HeadsUpRequestError(`You need ${stake.toLocaleString()} Gold to play this tier.`, 400);
 
   let table: StoredHeadsUpTable | null = null;
   try {
     table = await createHeadsUpTableRow(profile.id, tier, stake, friendProfileId);
     await claimHeadsUpSeat(table.id, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
-      console.error("heads_up.invite_refund_failed", { profileId: profile.id, stake, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_invite_refund").catch(
+      (refundError) => {
+        console.error("heads_up.invite_refund_failed", { profileId: profile.id, stake, error: refundError });
+      },
+    );
     if (table) await cancelEmptyHeadsUpTable(table.id, profile.id).catch(() => null);
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
   }
 
+  // The invite table (and the host's own seat) now exist: this debit can
+  // legitimately stay uncredited for as long as the friend takes to join.
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+    console.error("heads_up.invite_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
+
   const seats = await getHeadsUpSeats(table.id);
-  return { table: await tableView(table, seats, profile.id), profile: debited };
+  return { table: await tableView(table, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
 }
 
 /** Tables a specific friend has invited the caller to, still waiting. */
@@ -309,25 +334,32 @@ export async function joinHeadsUpTable(
     throw new HeadsUpRequestError("You are already in a heads-up match.", 409);
   }
 
-  const debited = await spendGoldByProfile(profile.id, table.stake);
-  if (!debited) {
+  const stakeCorrelationId = `heads_up_join_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, table.stake, stakeCorrelationId, "heads_up_join");
+  if (!debited.success) {
     throw new HeadsUpRequestError(`You need ${table.stake.toLocaleString()} Gold to join this match.`, 400);
   }
 
   try {
     await claimHeadsUpSeat(tableId, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.stake).catch((refundError) => {
-      console.error("heads_up.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, table.stake, stakeCorrelationId, "heads_up_join_refund").catch(
+      (refundError) => {
+        console.error("heads_up.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
+      },
+    );
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
   }
 
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+    console.error("heads_up.join_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
+
   const dealt = await dealHeadsUpTableIfReady(tableId);
   const current = dealt ?? (await getHeadsUpTableById(tableId)) ?? table;
   const seats = await getHeadsUpSeats(tableId);
-  return { table: await tableView(current, seats, profile.id), profile: debited };
+  return { table: await tableView(current, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
 }
 
 /** The caller's own live (waiting or active) table, or null -- the waiting-room poll. */

@@ -48,10 +48,18 @@ function adminProfileView(profile: StoredProfile): AdminProfileSummary {
 
 declare global {
   var __riverRoomProfiles: Map<string, StoredProfile> | undefined;
+  var __riverGoldLedger: Map<string, { profileId: string; amount: number; kind: "debit" | "credit" }> | undefined;
 }
 
 const memoryProfiles = globalThis.__riverRoomProfiles ?? new Map<string, StoredProfile>();
 globalThis.__riverRoomProfiles = memoryProfiles;
+
+// Memory-mode mirror of gold_ledger, keyed the same way the migration's
+// unique index is: `${correlationId}:${kind}`. Only used when adminClient()
+// is null (local dev / tests without Supabase env vars).
+const memoryGoldLedger = globalThis.__riverGoldLedger
+  ?? new Map<string, { profileId: string; amount: number; kind: "debit" | "credit" }>();
+globalThis.__riverGoldLedger = memoryGoldLedger;
 
 function initials(displayName: string) {
   return displayName
@@ -1108,6 +1116,172 @@ export async function creditGoldByProfile(
     .single();
   if (readError) throw new Error(`Could not load profile: ${readError.message}`);
   return publicProfile(fromRow(row));
+}
+
+export type LedgeredGoldResult = { success: true; goldBalance: number; alreadyApplied: boolean } | { success: false };
+
+/**
+ * Same guarded debit as `spendGoldByProfile`, plus an append-only
+ * `gold_ledger` row and idempotency on `correlationId`. A retry with the same
+ * `correlationId` (a crashed process resubmitting, a client retry after a
+ * timeout) is a no-op that returns the original result rather than debiting
+ * twice.
+ *
+ * Staked-game routes that need a crash-safe "debit before the thing it pays
+ * for exists" should call this instead of `spendGoldByProfile`, using a
+ * correlation id derived from the not-yet-created row (e.g. a
+ * pre-generated round id) so the debit and the eventual settlement/refund
+ * share a key a reconciliation sweep can join on.
+ */
+export async function spendGoldByProfileLedgered(
+  profileId: string,
+  amount: number,
+  correlationId: string,
+  reason: string,
+): Promise<LedgeredGoldResult> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  if (!correlationId) throw new Error("correlationId is required.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${correlationId}:debit`;
+    const existing = memoryGoldLedger.get(key);
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) return { success: false };
+    if (existing) {
+      return { success: true, goldBalance: entry[1].goldBalance, alreadyApplied: true };
+    }
+    const [token, current] = entry;
+    if (!current.unlimitedGold && current.goldBalance < amount) return { success: false };
+    const nextBalance = current.unlimitedGold ? current.goldBalance : current.goldBalance - amount;
+    memoryProfiles.set(token, { ...current, goldBalance: nextBalance, updatedAt: new Date().toISOString() });
+    if (!current.unlimitedGold) memoryGoldLedger.set(key, { profileId, amount: -amount, kind: "debit" });
+    return { success: true, goldBalance: nextBalance, alreadyApplied: false };
+  }
+
+  const { data, error } = await supabase
+    .rpc("spend_gold_by_profile_ledgered", {
+      p_profile_id: profileId,
+      p_amount: amount,
+      p_correlation_id: correlationId,
+      p_reason: reason,
+    })
+    .single();
+  if (error) throw new Error(`Could not spend Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number; already_applied: boolean } | null;
+  if (!result?.success) return { success: false };
+  return { success: true, goldBalance: result.gold_balance, alreadyApplied: result.already_applied };
+}
+
+/**
+ * Same guarded credit as `creditGoldByProfile`, plus the same ledger and
+ * idempotency `spendGoldByProfileLedgered` has. A settlement, a refund on
+ * failed creation, and the reconciliation sweep's own refund should all call
+ * this with the same `correlationId` the original debit used -- whichever
+ * fires first lands the credit, and every later call is a safe no-op.
+ */
+export async function creditGoldByProfileLedgered(
+  profileId: string,
+  amount: number,
+  correlationId: string,
+  reason: string,
+): Promise<LedgeredGoldResult> {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Invalid Gold amount.");
+  if (!correlationId) throw new Error("correlationId is required.");
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${correlationId}:credit`;
+    const existing = memoryGoldLedger.get(key);
+    const entry = [...memoryProfiles.entries()].find(([, stored]) => stored.id === profileId);
+    if (!entry) return { success: false };
+    if (existing) {
+      return { success: true, goldBalance: entry[1].goldBalance, alreadyApplied: true };
+    }
+    const [token, current] = entry;
+    const nextBalance = current.unlimitedGold ? current.goldBalance : current.goldBalance + amount;
+    memoryProfiles.set(token, { ...current, goldBalance: nextBalance, updatedAt: new Date().toISOString() });
+    if (!current.unlimitedGold) memoryGoldLedger.set(key, { profileId, amount, kind: "credit" });
+    return { success: true, goldBalance: nextBalance, alreadyApplied: false };
+  }
+
+  const { data, error } = await supabase
+    .rpc("credit_gold_by_profile_ledgered", {
+      p_profile_id: profileId,
+      p_amount: amount,
+      p_correlation_id: correlationId,
+      p_reason: reason,
+    })
+    .single();
+  if (error) throw new Error(`Could not credit Gold: ${error.message}`);
+  const result = data as { success: boolean; gold_balance: number; already_applied: boolean } | null;
+  if (!result?.success) return { success: false };
+  return { success: true, goldBalance: result.gold_balance, alreadyApplied: result.already_applied };
+}
+
+/**
+ * Marks `correlationId`'s debit as backed by a real created row, so
+ * `reconcileOrphanedGoldDebits` never refunds it -- the thing it paid for
+ * can now legitimately sit open (an unaccepted duel challenge) for however
+ * long, and that is not the failure this sweep exists to catch. Call this
+ * right after the create step that follows `spendGoldByProfileLedgered`
+ * succeeds. Best-effort by design: if this write itself fails, the
+ * reconciliation window (currently 15 minutes) is the fallback, not a
+ * second attempt here -- see the call sites' own comments.
+ */
+export async function confirmGoldDebitLedgered(correlationId: string): Promise<void> {
+  if (!correlationId) throw new Error("correlationId is required.");
+  const supabase = adminClient();
+  // Memory mode has no reconciliation sweep to protect against (see
+  // reconcileOrphanedGoldDebits), so there is nothing for this to record.
+  if (!supabase) return;
+  const { error } = await supabase.rpc("confirm_gold_debit_ledgered", { p_correlation_id: correlationId });
+  if (error) throw new Error(`Could not confirm Gold debit: ${error.message}`);
+}
+
+export type OrphanedGoldDebit = {
+  correlationId: string;
+  profileId: string;
+  amount: number;
+  reason: string;
+  createdAt: string;
+};
+
+/**
+ * Finds ledgered debits with no matching settlement/refund credit after
+ * `olderThanMinutes`, and refunds each one through
+ * `creditGoldByProfileLedgered` (same correlationId, so a debit that DID
+ * settle in the gap between the query and the refund is a safe no-op, not a
+ * double credit). Memory mode has no orphans to find -- there is no crash
+ * boundary between two in-process Map writes -- so it always returns empty.
+ */
+export async function reconcileOrphanedGoldDebits(
+  olderThanMinutes: number,
+): Promise<{ found: number; refunded: number }> {
+  const supabase = adminClient();
+  if (!supabase) return { found: 0, refunded: 0 };
+
+  const { data, error } = await supabase.rpc("find_orphaned_gold_debits", {
+    p_older_than_minutes: olderThanMinutes,
+  });
+  if (error) throw new Error(`Could not scan for orphaned Gold debits: ${error.message}`);
+  const orphans = (data ?? []) as {
+    correlation_id: string;
+    profile_id: string;
+    amount: number;
+    reason: string;
+    created_at: string;
+  }[];
+
+  let refunded = 0;
+  for (const orphan of orphans) {
+    const result = await creditGoldByProfileLedgered(
+      orphan.profile_id,
+      orphan.amount,
+      orphan.correlation_id,
+      `reconciliation_refund:${orphan.reason}`,
+    );
+    if (result.success && !result.alreadyApplied) refunded += 1;
+  }
+  return { found: orphans.length, refunded };
 }
 
 /**

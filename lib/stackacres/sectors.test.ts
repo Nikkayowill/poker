@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CROP_FIELDS_UPKEEP_PLOTS,
   HOME_SECTOR,
   HOME_SECTORS,
   SECTOR_IDS,
@@ -19,7 +20,7 @@ import {
 } from "./sectors";
 import { CROP_FIELD } from "./yard";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
-import { STACKACRES_CROPS, STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
+import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
 // Test-only, and Phaser-free at runtime (that module imports Phaser as a
 // TYPE only): the scene's painter table, so overgrowth can be held to what
@@ -186,10 +187,10 @@ describe("unlockedPlotCount", () => {
     const home = unlockedPlotCount([...HOME_SECTORS], {}, false);
     const plusWallow = unlockedPlotCount([...HOME_SECTORS, "wallow"], {}, false);
     // Only the pig is zoned to the Fold (wallow), so clearing it alone is
-    // worth exactly one stock kind's slots. The Crop Fields' own 22 kinds
-    // do not add to this at all while their own flag is unset, even though
-    // they stand inside the Farmstead (a HOME sector, already counted in
-    // `home`) -- see the next test.
+    // worth exactly one stock kind's slots. Crops do not add to this at all
+    // while their own flag is unset, even though they stand inside the
+    // Farmstead (a HOME sector, already counted in `home`) -- see the next
+    // test.
     expect(plusWallow).toBe(home + capFor(0));
   });
 
@@ -207,14 +208,18 @@ describe("unlockedPlotCount", () => {
     );
   });
 
-  it("counts the Crop Fields' own 22 kinds only once their standalone flag is set", () => {
+  it("charges Crop Fields as one flat sector, not once per crop kind, only once its standalone flag is set", () => {
     // The regression this guards: the Farmstead is a HOME sector and never
     // leaves the unlocked list, so a naive sector-only check would count
-    // every crop kind's slots against a farm that has never unlocked the
-    // Crop Fields at all (see ./crop-fields.ts).
+    // Crop Fields against a farm that has never unlocked them at all (see
+    // ./crop-fields.ts). Flat, not `STACKACRES_CROPS.length * capFor(0)`:
+    // crops are uncapped, so there is no per-kind capacity left to charge
+    // for, and scaling by the catalogue's own size is what ran the fee to
+    // 8,314 Gold/day before a single crop was planted (see this function's
+    // own header).
     const locked = unlockedPlotCount([...HOME_SECTORS], {}, false);
     const unlocked = unlockedPlotCount([...HOME_SECTORS], {}, true);
-    expect(unlocked).toBe(locked + STACKACRES_CROPS.length * capFor(0));
+    expect(unlocked).toBe(locked + CROP_FIELDS_UPKEEP_PLOTS);
   });
 });
 

@@ -255,8 +255,9 @@ export function intentOf(body: Action): string {
 export function purchaseCueText(body: Action): string | null {
   switch (body.action) {
     case "stock":
+      // A 50 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 2,500 Gold outright buy.
       return isLivestock(body.stock)
-        ? `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`
+        ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!`
         : `Seeded ${STACKACRES_CATALOGUE[body.stock].label}!`;
     case "buy-stock":
       return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;

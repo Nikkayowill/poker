@@ -179,6 +179,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
+      currentPlace: () => sceneRef.current?.currentPlace() ?? "farmstead",
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
       // The camera follows the farmer, so there is nothing to zoom or recenter.
       zoomBy: () => undefined,

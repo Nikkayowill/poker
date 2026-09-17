@@ -33,8 +33,8 @@ describe("intentOf: the processing track", () => {
 });
 
 describe("purchaseCueText: the instant toast a spend gets", () => {
-  it("names the catalogue label for livestock, either way it's bought", () => {
-    expect(purchaseCueText({ action: "stock", stock: "hen" })).toBe("Bought a Hen Coop!");
+  it("tells a one-cycle stock apart from buying the animal outright", () => {
+    expect(purchaseCueText({ action: "stock", stock: "hen" })).toBe("Started a Hen Coop cycle!");
     expect(purchaseCueText({ action: "buy-stock", stock: "hen" })).toBe("Bought a Hen Coop!");
   });
 

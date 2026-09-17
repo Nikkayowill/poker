@@ -45,6 +45,9 @@ export interface StackAcresSectorModalProps {
    *  the same rule the server applies -- you settle up before you buy more. */
   upkeepOutstanding: number;
   busy: boolean;
+  /** For a wild area: the traveler whose arrival opens its gate, and what
+   *  the player still has to do first (null once nothing is missing). */
+  opener: { name: string; hint: string | null } | null;
   onClear: (sector: SectorId) => void;
   onClose: () => void;
 }
@@ -57,6 +60,7 @@ export function StackAcresSectorModal({
   unlimitedGold,
   upkeepOutstanding,
   busy,
+  opener,
   onClear,
   onClose,
 }: StackAcresSectorModalProps) {
@@ -78,10 +82,8 @@ export function StackAcresSectorModal({
   ];
   const ready = check.ok && upkeepOutstanding <= 0;
 
-  // Wild ground: reserved by the 2026-09-07 map re-lay, with no system under
-  // it yet. It shows what is coming and nothing else -- no price, no
-  // checklist, no button. Selling somebody Town Square today would take real
-  // Gold for an empty field, which is the whole reason `SectorState` exists.
+  // A wild area is never sold: its gate opens when its traveler arrives, so
+  // this says who that is and what to do next. No price, no button.
   if (check.wild) {
     return (
       <div
@@ -94,7 +96,7 @@ export function StackAcresSectorModal({
           <header className="sa-sheet-head">
             <div>
               <p className="sa-clear-kicker">
-                <Lock size={13} aria-hidden="true" /> Wild ground
+                <Lock size={13} aria-hidden="true" /> Gate closed
               </p>
               <h2>{sectorLabel(sector)}</h2>
             </div>
@@ -105,10 +107,12 @@ export function StackAcresSectorModal({
 
           <p className="sa-clear-blurb">{STACKACRES_ZONES[sector].blurb}</p>
           <p className="sa-clear-promise">{def.promise}</p>
-          <p className="sa-sheet-note">
-            Nothing to clear here yet. The road reaches it, and that is all — come back when there
-            is something on the other side of it.
-          </p>
+          {opener && (
+            <p className="sa-sheet-note">
+              This gate opens when {opener.name} arrives.
+              {opener.hint && <> Next step: {opener.hint}.</>}
+            </p>
+          )}
         </div>
       </div>
     );

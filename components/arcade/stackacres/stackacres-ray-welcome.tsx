@@ -45,12 +45,14 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
             className="sa-ray-welcome-portrait"
           />
           <p>
-            &ldquo;Well now, come on in. Name&rsquo;s Ray — this land&rsquo;s been in the family a long
-            while, and I keep an eye on it. Walk yourself out to whichever district takes your fancy
-            and the panel beside you will show what&rsquo;s standing there and what you can buy — the
-            supply store&rsquo;s mine too, so holler if you need feed or want to sell.&rdquo;
+            &ldquo;Well now, come on in. Name&rsquo;s Ray, and this land&rsquo;s been in the family a
+            long while. Tap the ground to walk, and tap whatever you&rsquo;re standing by to use it.&rdquo;
           </p>
-          <p>&ldquo;Go on and get your hands dirty. I&rsquo;ll be right here.&rdquo;</p>
+          <p>
+            &ldquo;The barn is my supply store. The Workshop next door grows wheat, and a Mill there
+            grinds it into flour. The signpost takes orders from town. Come find me when you&rsquo;re ready to
+            help out.&rdquo;
+          </p>
           <button type="button" className="sa-cta" onClick={onClose}>
             Thanks, Ray
           </button>

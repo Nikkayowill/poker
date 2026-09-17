@@ -201,7 +201,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   // to each other, the same invariant it always held.
   farmstead: {
     id: "farmstead",
-    label: "The Farmstead",
+    label: "The Homestead",
     blurb: "Home base -- the barn, the pond, the yard and the Crop Fields.",
     bounds: { x: -700, y: -256, width: 956, height: 512 },
     // Matches --sa-grass: the farmstead's swatch defers to the grass
@@ -275,7 +275,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   townsquare: {
     id: "townsquare",
     label: "Town Square",
-    blurb: "Wild ground. The town is still only a board you post to.",
+    blurb: "The town past the east lane, where Knight Arthur keeps watch.",
     bounds: { x: -208, y: 272, width: 128, height: 128 },
     swatchColor: 0xa3a199,
     approach: { x: -144, y: 292 },
@@ -286,7 +286,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   mine: {
     id: "mine",
     label: "Mine Entrance",
-    blurb: "Wild ground. A way in, and nothing on the other side of it yet.",
+    blurb: "A mine cut into the hill, where Miner Brayden digs.",
     bounds: { x: -416, y: -400, width: 128, height: 128 },
     swatchColor: 0x5c5851,
     approach: { x: -352, y: -292 },
@@ -297,7 +297,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   coast: {
     id: "coast",
     label: "Coastal Market",
-    blurb: "Wild ground. Stalls and a dock, once there is anything to trade.",
+    blurb: "The shore past the south gate, where Detective Miles and Diver Barnaby washed up.",
     bounds: { x: 272, y: -400, width: 128, height: 128 },
     swatchColor: 0x3fa6cc,
     approach: { x: 336, y: -292 },
@@ -308,7 +308,7 @@ export const STACKACRES_ZONES: Readonly<Record<ZoneId, ZoneDef>> = {
   oak: {
     id: "oak",
     label: "The Ancestral Oak",
-    blurb: "Wild ground. Something old stands here.",
+    blurb: "An old oak wood past the west gate, where Artist Skye and Beekeeper Bea ended up.",
     bounds: { x: 272, y: -112, width: 128, height: 128 },
     swatchColor: 0x439f57,
     approach: { x: 292, y: -48 },

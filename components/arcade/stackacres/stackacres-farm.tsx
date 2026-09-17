@@ -14,15 +14,14 @@ import clsx from "clsx";
 import {
   Coins,
   Dna,
-  HelpCircle,
   Lock,
+  MapPin,
   RotateCcw,
   Sparkles,
   Wand2,
   X,
 } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
-import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
@@ -87,12 +86,13 @@ import {
   HOME_SECTOR,
   STACKACRES_SECTORS,
   isSectorUnlocked,
+  sectorClearCheck,
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
 import { collectFloat, tapActionFor } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
-import { STACKACRES_TOOL_DEFS, type StackAcresTool } from "@/lib/stackacres/tools";
+import { type StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
 import {
   HUD_VIEW_EXPANSION,
@@ -220,7 +220,10 @@ import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stacka
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
-import { TRAVELER_CATALOGUE, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
+import { type MapPlaceId } from "@/lib/stackacres/map-places";
+import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
 import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from "./world-contract";
 import { StackAcresGroundTools } from "./stackacres-ground-tools";
@@ -989,7 +992,9 @@ export function StackAcresFarm() {
   const [secretDonations, setSecretDonations] = useState<Record<SecretItemId, boolean>>(
     () => Object.fromEntries(SECRET_ITEM_IDS.map((id) => [id, false])) as Record<SecretItemId, boolean>,
   );
-  const [showHelp, setShowHelp] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  /** Where the farmer stood when the map was opened, for its "you are here". */
+  const [mapHere, setMapHere] = useState<MapPlaceId>("farmstead");
   const [showStore, setShowStore] = useState(false);
   /** Which shelf of the Supply Store is showing. One category on screen at
    *  a time instead of every shelf stacked in one long scroll -- see the
@@ -1417,8 +1422,7 @@ export function StackAcresFarm() {
     : (profile?.goldBalance ?? 0);
 
   /** Whether a given action is mid-flight -- what a button greys itself out
-   *  on now, in place of the old screen-wide `busy`. `anyPending` is only for
-   *  the ambient "Working…" tool hint, which gates nothing. */
+   *  on now, in place of the old screen-wide `busy`. */
   const isPending = useCallback(
     (intent: string) => pendingIntents.has(intent),
     [pendingIntents],
@@ -1436,8 +1440,6 @@ export function StackAcresFarm() {
     },
     [pendingIntents],
   );
-  const anyPending = pendingIntents.size > 0;
-
   /**
    * The unit list as of right now, for `act` to read when a response lands.
    *
@@ -2304,8 +2306,8 @@ export function StackAcresFarm() {
           const muckedNote =
             harvest.mucked > 0
               ? harvest.mucked === 1
-                ? " -- 1 crop came up weather-worn, tap it to clear"
-                : ` -- ${harvest.mucked} crops came up weather-worn, tap to clear`
+                ? " -- 1 came up weather-worn, tap it to clear"
+                : ` -- ${harvest.mucked} came up weather-worn, tap them to clear`
               : "";
           setLastCollect({
             text: `+${tallyText} to the barn${muckedNote}`,
@@ -2400,7 +2402,7 @@ export function StackAcresFarm() {
         if (body.action === "catch-fish" && data.fishCaught) {
           const label = machineItemLabel(data.fishCaught.species, 1);
           waterSound();
-          setLastCollect({ text: `Caught a ${label}!`, nonce: Date.now() });
+          setLastCollect({ text: `Caught ${label}!`, nonce: Date.now() });
           if (anchor) world.current?.floatAt(anchor, `+1 ${label}`, "gain");
         }
         // The zone's own optimistic puff already fired on the press (see
@@ -2591,6 +2593,13 @@ export function StackAcresFarm() {
     world.current?.setTravelerUnlocks(unlocked as TravelerUnlocks);
     world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
+
+  /** Who a closed wild gate is waiting on, for its sheet. */
+  const clearingOpener = useMemo(() => {
+    const traveler = clearing ? WILD_AREA_TRAVELER[clearing] : undefined;
+    if (!traveler) return null;
+    return { name: TRAVELER_CATALOGUE[traveler].name, hint: story.view?.travelers[traveler].hint ?? null };
+  }, [clearing, story.view]);
 
   // No effect needed to disarm the retire confirmation on district change:
   // StackAcresUnitRows only ever renders the current district's own units
@@ -2930,6 +2939,48 @@ export function StackAcresFarm() {
     [sectors],
   );
 
+  /** A place picked off the map: walk there, and say what is still in the way. */
+  const travelToPlace = useCallback(
+    (id: MapPlaceId) => {
+      setShowMap(false);
+      if (id === "cropfields") {
+        travelSound();
+        world.current?.focusZone("cropfields");
+        setCropFieldsModalOpen(!cropFieldsUnlocked);
+        return;
+      }
+      travel(id);
+    },
+    [travel, cropFieldsUnlocked],
+  );
+
+  /** The map button: the farmer's own place is read off the scene here, on the
+   *  press, since React has no way to observe him walking. */
+  const openMap = useCallback(() => {
+    panelSound();
+    setMapHere(world.current?.currentPlace() ?? "farmstead");
+    setShowMap(true);
+  }, []);
+
+  /** Every place, in map order, with whose gate is shut and what opens it. */
+  const mapPlaces = useMemo(
+    () =>
+      mapPlaceStates(
+      mapHere,
+      (id) => (id === "cropfields" ? cropFieldsUnlocked : isSectorUnlocked(id, sectors)),
+      (id) => {
+        if (id === "cropfields") {
+          return `Unlock for ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold`;
+        }
+        const traveler = WILD_AREA_TRAVELER[id];
+        if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
+        const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
+        return `Clear for ${check.cost.toLocaleString()} Gold`;
+      },
+    ),
+    [mapHere, cropFieldsUnlocked, sectors, units.length],
+  );
+
   const closeRadial = useCallback(() => {
     panelSound();
     setRadial(null);
@@ -3238,7 +3289,7 @@ export function StackAcresFarm() {
     setShowContracts(true);
   }, []);
 
-  /** A finger landed on the windmill, the Workshop's entryway. Same shape
+  /** A finger landed on the Workshop building. Same shape
    *  as `onWorldBarnTap`. */
   const onWorldWorkshopTap = useCallback(() => {
     setRadial(null);
@@ -3888,11 +3939,6 @@ export function StackAcresFarm() {
   );
 
   // Once there is a second cutter to swap to, say where the swap is.
-  const toolHint =
-    tool === "scythe" && cutters.length > 1
-      ? `${STACKACRES_TOOL_DEFS.scythe.hint} Pick the Scythe or the Mower beside the key.`
-      : STACKACRES_TOOL_DEFS[tool].hint;
-
   /** Produce in the barn, in catalogue order so the list never reshuffles. */
   /** Everything standing ready right now. The Harvest key's whole subject. */
   const readyUnits = useMemo(
@@ -3964,12 +4010,6 @@ export function StackAcresFarm() {
     return <StackAcresPlayScreen onStart={() => setHasStarted(true)} />;
   }
 
-  // Was `busy ? "Working…" : toolHint` -- every action now pops and applies
-  // its guess the instant a finger lands (see the optimistic layer in
-  // `act`), so a caption saying the farm is still thinking about a tap it
-  // already answered would be a lie. The buttons below gate on their OWN
-  // in-flight intent, not a screen-wide flag.
-  const hint = toolHint;
   const district = STACKACRES_ZONES[place];
   const placeLocked = !isSectorUnlocked(place, sectors);
 
@@ -4312,8 +4352,8 @@ export function StackAcresFarm() {
       <header className="floor-bar">
         <div className="floor-bar-left">
           <FloorBackLink />
-          <button type="button" className="htp-trigger" onClick={() => { panelSound(); setShowHelp(true); }}>
-            <HelpCircle size={13} aria-hidden="true" /> How to play
+          <button type="button" className="htp-trigger" onClick={openMap}>
+            <MapPin size={13} aria-hidden="true" /> Map
           </button>
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
@@ -4630,10 +4670,6 @@ export function StackAcresFarm() {
             />
           )}
 
-          <p className={clsx("sa-tool-hint", { "is-busy": anyPending })} aria-live="polite">
-            {hint}
-          </p>
-
           <div className="sa-side">
             {error && <p className="duel-error" role="alert">{error}</p>}
           </div>
@@ -4900,7 +4936,7 @@ export function StackAcresFarm() {
               {storeTab === "seeds" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy seeds here, then tap bare ground in the Long Meadow to plant them.
+                    Buy seeds here, then tap bare ground in the Crop Fields to plant them.
                   </p>
                   <div className="sa-stock-cards">
                     {STACKACRES_CROPS.map((crop) => {
@@ -5359,70 +5395,12 @@ export function StackAcresFarm() {
         </div>
       )}
 
-      {showHelp && (
-        <HowToPlayModal title="StackAcres" onClose={() => setShowHelp(false)}>
-          <p>
-            The farm is a map of four districts. Drag to look around, pinch or scroll to zoom, or
-            tap a district&apos;s name to travel straight to it.
-          </p>
-          <p>
-            <strong>Only the Farmstead is yours to begin with.</strong> The other three are wild
-            ground — trees, scrub and long grass, with nothing built on them. Tap anywhere on one
-            and it tells you what is under the growth, what clearing it costs in Gold, and what you
-            still need before it is offered. Clearing is permanent.
-          </p>
-          <p>
-            <strong>Everything is tapped on the map itself.</strong> Tap a crop or an animal to
-            collect it when it is ready, feed it when it is hungry, water it when its soil has gone
-            dry, or clear it when it comes up weather-worn. Tap the bare ground inside a district and a small menu opens right there
-            to seed something new.
-          </p>
-          <p>
-            The handle on the right edge opens that district&apos;s panel, which is where Gold buys
-            stock outright and buys more room to keep at once. Close it and it folds back to the
-            handle without moving the camera.
-          </p>
-          <p>
-            <strong>Everything is paid in Gold, in one step.</strong> Bringing in a harvest works
-            out what the produce is worth and puts the Gold straight in your balance — there is no
-            second currency, no barn to empty and nothing to queue for. Gold also buys your seed,
-            your feed, stock outright, more room to keep at once, and the wild districts you clear.
-          </p>
-          <p>
-            Bringing several fields in <em>together</em> can earn a <strong>Bountiful Harvest</strong>.
-            Three or more of the same kind is <strong>Mono-cropping</strong>; a balanced mix of
-            things grown and things an animal made is <strong>Crop Rotation</strong>. Either
-            multiplies what the whole harvest pays, so the Harvest key is worth more than tapping
-            each field on its own.
-          </p>
-          <ul>
-            <li>Seed a crop or stock a pen with Gold, then come back when it turns gold.</li>
-            <li>
-              Animals need feeding and crops need watering. A hungry pen and a dry field both stop
-              where they are until you tend them — a faded plant is one waiting for a drink.
-            </li>
-            <li>Nothing here can die and nothing can be lost. Neglect costs you time, not produce.</li>
-            <li>
-              Each kind of animal or crop can have three going at once, more if you spend Gold to
-              expand it — one kind&apos;s room has nothing to do with any other&apos;s.
-            </li>
-            <li>
-              Something finished sometimes comes up weather-worn and needs clearing, in Gold,
-              before it frees its room again.
-            </li>
-            <li>
-              Land you have cleared costs a daily maintenance fee that grows steeply the more room
-              you keep, and the first three plots are free. It comes out of what you harvest and
-              never out of your balance, so a big day can be worth nothing after the fee — but
-              nothing you own is ever taken away.
-            </li>
-            <li>
-              Buying outright with Gold is permanent: it starts its next run the moment you collect,
-              never needs seeding again, and can be sent away if you want the room back — for
-              nothing, that is not a refund.
-            </li>
-          </ul>
-        </HowToPlayModal>
+      {showMap && (
+        <StackAcresMapSheet
+          places={mapPlaces}
+          onTravel={travelToPlace}
+          onClose={() => { panelSound(); setShowMap(false); }}
+        />
       )}
 
       {clearing && (
@@ -5434,6 +5412,7 @@ export function StackAcresFarm() {
           unlimitedGold={profile?.unlimitedGold === true}
           upkeepOutstanding={upkeep.due}
           busy={pendingByPrefix("clear-sector")}
+          opener={clearingOpener}
           onClear={onClearSector}
           onClose={() => { panelSound(); setClearing(null); }}
         />

@@ -11,8 +11,9 @@ import { SOIL_TILE, createSoilMap, soilTileAt, soilTileKey, type SoilTile } from
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
-import type { TravelerId } from "@/lib/stackacres/story/travelers";
+import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
+import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/world-contract";
 import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
@@ -64,11 +65,8 @@ const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
   mine: "mine",
   townsquare: "townsquare",
 };
-/**
- * The wild districts are never bought: each opens with the existing rule that brings its first traveler
- * (art/stackacres-td/AREAS.md), which the shell already pushes as `travelerUnlocks`. Bought land opens when owned.
- */
-const OPENED_BY_TRAVELER: Partial<Record<ZoneId, TravelerId>> = { coast: "miles", oak: "skye", mine: "brayden", townsquare: "arthur" };
+/** Where to stand on the Homestead in front of the Crop Fields' north gate while it is still shut. */
+const CROP_FIELDS_GATE_APPROACH: Point = { x: 232, y: 80 };
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
   wallow: { x: 636, y: 344 },
@@ -370,8 +368,9 @@ export class TopdownScene extends Phaser.Scene {
     return sector === undefined || this.opened(sector);
   }
 
+  /** A wild area opens with its traveler (the shell pushes `travelerUnlocks`); bought land opens when owned. */
   private opened(zone: ZoneId): boolean {
-    const traveler = OPENED_BY_TRAVELER[zone];
+    const traveler = WILD_AREA_TRAVELER[zone];
     return traveler ? this.travelerUnlocks[traveler] === true : this.sectors.includes(zone);
   }
 
@@ -815,7 +814,7 @@ export class TopdownScene extends Phaser.Scene {
         }
         return cb.onLockedSectorTap(detail as ZoneId, at);
       case "homebeds":
-        this.floatAt(at, "Crops grow in the Old Fields, up the north lane", "deny");
+        this.floatAt(at, "Crops grow in the Crop Fields, up the north lane", "deny");
         return;
     }
   }
@@ -1006,8 +1005,19 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** The district panel's travel buttons: the two home districts are on the Homestead; the rest aren't built yet. */
-  focusZone(zone: ZoneId): void {
+  focusZone(zone: MapPlaceId): void {
     if (!this.booted) return;
+    // The Crop Fields are ground on the Homestead rather than a district, so
+    // they are not in SECTOR_AREAS: open, walk into the field; shut, stand at
+    // the north gate, where a tap says what opens it.
+    if (zone === "cropfields") {
+      this.path = [];
+      this.pending = null;
+      if (this.cropFieldsUnlocked) this.enterArea("oldfields", this.specs.get("oldfields")!.spawn);
+      else this.enterArea("homestead", CROP_FIELDS_GATE_APPROACH);
+      this.callbacks.onViewMoved();
+      return;
+    }
     const sectorArea = SECTOR_AREAS[zone];
     if (sectorArea) {
       this.path = [];
@@ -1052,6 +1062,12 @@ export class TopdownScene extends Phaser.Scene {
     this.pending = null;
     this.enterArea(area, at);
     this.callbacks.onViewMoved();
+  }
+
+  /** Which map place the farmer is standing in, for the map sheet's "you are here". */
+  currentPlace(): MapPlaceId {
+    if (this.areaName === "oldfields") return "cropfields";
+    return AREA_SECTOR[this.areaName] ?? "farmstead";
   }
 
   isWalking(): boolean {

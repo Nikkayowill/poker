@@ -113,9 +113,9 @@ export const SPRITE_ART = {
   // boxes out, a fold-down step, a scatter of petals) is what the scene
   // swaps to for as long as a finger is down on the house, the same
   // press-and-release feel a FarmVille building gives -- see
-  // `paintRayHouse`/`setRayHousePressed` in stackacres-scene.ts. Grandfather
-  // Ray himself no longer stands here as a sprite; he is being redrawn at a
-  // proper isometric scale to stand beside the house once that art is ready.
+  // `paintRayHouse`/`setRayHousePressed` in stackacres-scene.ts. Ray himself
+  // no longer stands here as a sprite; he is being redrawn at a proper
+  // isometric scale to stand beside the house once that art is ready.
   rayHouse: "/stackacres/sprites/ray-house.webp",
   rayHouseOpen: "/stackacres/sprites/ray-house-open.webp",
   // The Greenhouse (lib/stackacres/greenhouse.ts): two states of one
@@ -275,7 +275,7 @@ export const SPRITE_ART = {
   grassTile: "/stackacres/sprites/grass-tile.webp",
   // The eleven story travelers (lib/stackacres/story/): ten true pixel-art
   // PNGs standing in a flat-vector world on purpose (they are not from
-  // here, and the art says so), and Great-Grandpa Ray, the one smooth
+  // here, and the art says so), and Ray, the one smooth
   // render among them because he IS from here. The same files the dialogue
   // bubbles show as portraits (TRAVELER_PORTRAIT). Ordinary core sprites in
   // every other respect: `CORE_SPRITE_NAMES` below picks them up

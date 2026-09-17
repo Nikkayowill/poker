@@ -229,6 +229,7 @@ type CorePainterName =
   | "sign"
   | "ico-look"
   | "ico-plant"
+  | "ico-hoe"
   | "ico-harvest"
   | "ico-feed"
   | "ico-clear"
@@ -1975,6 +1976,27 @@ const DRAWN: Record<PainterName, Painter> = {
     stroke(c, "#9aa3a8", 1.8);
     ell(c, 12, 8.5, 7.5, 2.4);
     F(c, "#f2c94c");
+  }),
+
+  // The belt's Hoe. Same wooden handle ico-clear's rake draws, with a flat
+  // steel head turned across it instead of tines, so the two read as different
+  // jobs at a glance: this one breaks ground, that one sweeps it.
+  "ico-hoe": painter(24, 24, (c) => {
+    c.beginPath();
+    c.moveTo(4, 4);
+    c.lineTo(15, 15);
+    stroke(c, "#b07a45", 2.4);
+    poly(c, [
+      [12, 15],
+      [21, 15],
+      [20, 20],
+      [13, 20],
+    ]);
+    F(c, lin(c, 12, 15, 21, 20, [[0, "#c9d0d4"], [1, "#7d868c"]]));
+    c.beginPath();
+    c.moveTo(13, 20);
+    c.lineTo(20, 20);
+    stroke(c, "#5d666c", 1.2);
   }),
 
   "ico-clear": painter(24, 24, (c) => {

@@ -687,7 +687,7 @@ export interface StackAcresView {
    *  progress up his relic ladder. See lib/stackacres/devotion.ts. */
   devotion: StackAcresDevotionView;
   /** NPC friendship: this player's gift points and claimed keepsake ladder
-   *  with every NPC that has one (FRIENDSHIP_NPCS -- Grandfather Ray, for
+   *  with every NPC that has one (FRIENDSHIP_NPCS -- Ray, for
    *  now). A SEPARATE mechanic from `devotion` above -- see
    *  lib/stackacres/friendship.ts's own header. */
   friendship: Record<NpcId, StackAcresFriendshipView>;
@@ -3562,7 +3562,7 @@ export async function consumeStackAcresSecretItem(
 }
 
 /**
- * Trades a held secret item to Grandfather Ray for an instant wipe of today's
+ * Trades a held secret item to Ray for an instant wipe of today's
  * remaining Land Maintenance -- see lib/stackacres/secrets.ts's
  * `nextUpkeepPaidAfterDiceTrade`, which raises today's paid-toward-upkeep
  * total the exact same raise-to/clamped-at-the-fee way a harvest's own

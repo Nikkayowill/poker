@@ -5,7 +5,7 @@
  *
  * A SEPARATE MECHANIC FROM ./devotion.ts. The Pixel Pilgrim already has his
  * own UTC-day prayer streak and relic ladder -- this file does not touch
- * him, and `FRIENDSHIP_NPCS` holds only Grandfather Ray for now. The two
+ * him, and `FRIENDSHIP_NPCS` holds only Ray for now. The two
  * systems look similar (a day gate, a claimed-rung ladder) because they
  * solve the same shape of problem the same way this codebase already
  * trusts, not because one was copied into the other; keep them separate
@@ -64,7 +64,7 @@ export interface NpcGiftDef {
 
 export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
   ray: {
-    label: "Grandfather Ray",
+    label: "Ray",
     // He is the one who taught the farm to turn raw stock into something
     // finer (the Mill, the Dairy, the Loom); it is the finished goods he
     // lights up for, not the raw milk and wool he already sees every day.

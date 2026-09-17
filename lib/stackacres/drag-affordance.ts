@@ -1,8 +1,14 @@
 /**
- * Where a drag tool floats before it is picked up, and what counts as a drop.
+ * Where a drag tool floats before it is picked up, what counts as a drop, and
+ * the bowed arrow that points from one to the other.
  *
- * Pure so vitest can reach it. The component that draws the tool is
- * components/arcade/stackacres/stackacres-drag-affordance.tsx.
+ * Only the fishing cast still uses any of this. The water can, the feed scoop
+ * and the harvest basket were drag tools too until the tool belt replaced them
+ * (lib/stackacres/toolbelt.ts): a belt tool is used where the farmer stands, so
+ * there is nothing left to drag anywhere.
+ *
+ * Pure so vitest can reach it. The overlay that draws the cast is
+ * components/arcade/stackacres/stackacres-fishing-affordance.tsx.
  */
 
 export interface FieldPoint {
@@ -76,4 +82,41 @@ export function rowGesture(
   if (Math.hypot(move.dx, move.dy) < GESTURE_SLOP) return "press";
   if (!options.scrollable) return "drag";
   return Math.abs(move.dx) > Math.abs(move.dy) * BROWSE_BIAS ? "browse" : "drag";
+}
+
+/**
+ * The arrow from the token to the target, bowed upward so it reads as a
+ * throw rather than a ruler line. Both ends are pulled in so the token and
+ * the target ring sit over clean ends instead of over the line.
+ */
+export function arrowGeometry(from: FieldPoint, to: FieldPoint): { d: string; head: string } | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 70) return null;
+  const bow = Math.min(64, len * 0.35);
+  let nx = (-dy / len) * bow;
+  let ny = (dx / len) * bow;
+  if (ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const cx = (from.x + to.x) / 2 + nx;
+  const cy = (from.y + to.y) / 2 + ny;
+  const startDir = Math.atan2(cy - from.y, cx - from.x);
+  const endDir = Math.atan2(to.y - cy, to.x - cx);
+  const sx = from.x + Math.cos(startDir) * 34;
+  const sy = from.y + Math.sin(startDir) * 34;
+  const ex = to.x - Math.cos(endDir) * 30;
+  const ey = to.y - Math.sin(endDir) * 30;
+  const wing = 9;
+  const back = 12;
+  const bx = ex - Math.cos(endDir) * back;
+  const by = ey - Math.sin(endDir) * back;
+  const head = [
+    `${ex},${ey}`,
+    `${bx + Math.cos(endDir + Math.PI / 2) * wing},${by + Math.sin(endDir + Math.PI / 2) * wing}`,
+    `${bx + Math.cos(endDir - Math.PI / 2) * wing},${by + Math.sin(endDir - Math.PI / 2) * wing}`,
+  ].join(" ");
+  return { d: `M ${sx} ${sy} Q ${cx} ${cy} ${bx} ${by}`, head };
 }

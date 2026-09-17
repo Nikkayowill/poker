@@ -10,8 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { StackAcresIcon } from "./stackacres-icon";
-import { isDragDrop } from "@/lib/stackacres/drag-affordance";
-import { arrowGeometry } from "./stackacres-drag-affordance";
+import { arrowGeometry, isDragDrop } from "@/lib/stackacres/drag-affordance";
 import type { TapPoint } from "./world-contract";
 
 /**

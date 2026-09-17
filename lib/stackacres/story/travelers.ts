@@ -60,7 +60,7 @@ export interface TravelerDef {
 
 export const TRAVELER_CATALOGUE: Readonly<Record<TravelerId, TravelerDef>> = {
   ray: {
-    name: "Great-Grandpa Ray",
+    name: "Ray",
     title: "The Pioneer",
     origin: "East Preston, Nova Scotia. Built the house himself, raised heritage stock, broke the ground with a team of oxen.",
     zone: "farmstead",

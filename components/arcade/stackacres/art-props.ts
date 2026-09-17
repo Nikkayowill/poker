@@ -79,7 +79,7 @@ export type PropPainterName =
 const TAU = Math.PI * 2;
 
 /**
- * The dark edge Grandfather Ray is drawn with.
+ * The dark edge Ray is drawn with.
  *
  * Same tone prep_chibi.py rims his generated art with, so the fallback
  * drawing and the asset it stands in for carry the same outline. Not black: a
@@ -869,7 +869,7 @@ export const PROP_PAINTERS: Record<PropPainterName, Painter> = {
 
   /*
    * The Midnight Merchant: the map's one standing person drawn as a Canvas2D
-   * volume (everyone else who once stood here, Grandfather Ray included, is
+   * volume (everyone else who once stood here, Ray included, is
    * either a real generated sprite now or, in Ray's case, being redrawn at an
    * isometric scale to stand beside his own house rather than as this chibi
    * figure at all), CHIBI, drawn to a fixed 25.125x40 box.

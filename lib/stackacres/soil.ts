@@ -455,6 +455,13 @@ export function moveSoilTileGroup(soil: SoilMap, moves: readonly SoilGroupMove[]
  * tile reachable from the one tapped, only act once the cluster clears a
  * size floor. Worth remembering if StackAcres ever gets an arcade game built
  * on that mechanic directly -- Kayo's floated the idea, not started.
+ *
+ * NOTHING CALLS THIS ANY MORE, and that is on purpose rather than an oversight.
+ * One tap used to water (and sow) a whole block from anywhere, which is how a
+ * farmer standing at the bottom of a 6x2 patch worked the row at the top of it.
+ * The tool belt replaced that with holding the Use key and walking the row
+ * (lib/stackacres/toolbelt.ts), so a bed is only ever worked by a farmer
+ * standing on it. Kept, with its tests, for the grouping arcade game above.
  */
 export function thirstyTileGroup(
   soil: SoilMap,

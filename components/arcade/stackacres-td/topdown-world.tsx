@@ -4,20 +4,32 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, 
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { Point } from "@/lib/stackacres-td/movement";
+// Type-only, so neither Phaser nor the gauge scene lands in this file's
+// bundle: both are loaded at runtime by the effect below.
+import type * as PhaserNS from "phaser";
+import type { FishingGaugeScene } from "../stackacres/fishing-gauge-scene";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
 import { StackAcresJoystick } from "./joystick";
+import { StackAcresUseKey } from "./use-key";
 import type { TopdownScene } from "./scene";
 
 /**
  * The StackAcres map: the farm shell (stackacres-farm.tsx) renders it and talks
  * to it through ../stackacres/world-contract.ts.
  *
+ * The ground is worked with the belt: a tool is held, the farmer walks to a
+ * square, and `onUseSquare` hands it to the shell on arrival. The Use key beside
+ * the thumb stick does the same for the square under his feet, and held down it
+ * strokes a whole row.
+ *
  * What it does not draw yet, and so ignores from the contract: the scythe (`tool`, `cutter`), the farmhand, irrigation pipes,
  * wildlife and fences, drones and the delivery truck, the greenhouse interior,
  * moving a bed group by hold-and-drag, and every district other than the
  * Homestead and the Crop Fields. Those api methods are no-ops below, each
- * named, so the gap is visible rather than silent.
+ * named, so the gap is visible rather than silent. None of them has a belt slot
+ * either: a key that silently does nothing is what the belt exists to stop, so
+ * the scythe and the pipe stay off it until this file draws them.
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
@@ -29,6 +41,13 @@ import type { TopdownScene } from "./scene";
 
 export const MIN_TILES_ACROSS = 13;
 export const MIN_TILES_DOWN = 8;
+
+/** Device pixels per CSS pixel, capped so a 3x screen does not bake a canvas
+ *  nobody can afford. Read in one place so every layer drawn on this canvas
+ *  (the map, and the fishing gauge over it) scales by the same number. */
+function canvasDpr(): number {
+  return Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+}
 
 /** Device pixels per art pixel: the largest whole number that still shows 13 tiles across and 8 down. */
 export function pickZoom(hostWidth: number, hostHeight: number, dpr: number): number {
@@ -54,6 +73,11 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, api } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
+  /** The live game, held so a layer can be added over the map after boot --
+   *  currently just the fishing gauge (see `startFishingGauge`). */
+  const gameRef = useRef<PhaserNS.Game | null>(null);
+  /** The gauge scene while a fishing fight is up, else null. */
+  const gaugeRef = useRef<FishingGaugeScene | null>(null);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
   const propsRef = useRef(props);
@@ -88,7 +112,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
             }
             p().onReady();
           },
-          onUnitTap: (unitId, at) => p().onUnitTap(unitId, at),
+          onUseSquare: (square) => p().onUseSquare(square),
           onGroundTap: (zone, at, world) => p().onGroundTap(zone, at, world),
           onBarnTap: () => p().onBarnTap(),
           onSignpostTap: () => p().onSignpostTap(),
@@ -108,7 +132,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         host,
       );
       const size = () => {
-        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+        const dpr = canvasDpr();
         const zoom = pickZoom(host.clientWidth, host.clientHeight, dpr);
         return {
           width: Math.max(16, Math.floor(host.clientWidth * dpr)),
@@ -131,6 +155,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         scene,
       });
       game = instance;
+      gameRef.current = instance;
       sceneRef.current = scene;
       scene.setZoom(first.zoom);
       const now = latest.current;
@@ -155,6 +180,11 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       cancelled = true;
       observer?.disconnect();
       sceneRef.current = null;
+      // Destroying the game tears the gauge down with it (its own shutdown
+      // handler unbinds the host listeners), so there is nothing to close
+      // here -- only the handle to drop, before the game it points into goes.
+      gaugeRef.current = null;
+      gameRef.current = null;
       game?.destroy(true);
       if (process.env.NODE_ENV !== "production") {
         delete (window as unknown as { __stackacres?: unknown }).__stackacres;
@@ -181,9 +211,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       focusZone: (zone) => sceneRef.current?.focusZone(zone),
       currentPlace: () => sceneRef.current?.currentPlace() ?? "farmstead",
       fieldPointFor: (x, y) => sceneRef.current?.fieldPointFor(x, y) ?? null,
-      // The camera follows the farmer, so there is nothing to zoom or recenter.
-      zoomBy: () => undefined,
-      recenter: () => undefined,
+      // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
+      zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
+      recenter: () => sceneRef.current?.recenter(),
       // Not drawn in the top-down preview yet (see this file's header).
       farmerAction: (action) => sceneRef.current?.farmerAction(action),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
@@ -202,11 +232,52 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       setRayHouseHeldOpen: () => undefined,
       setTravelerRayHeldOpen: () => undefined,
       setGreenhouseHeldOpen: () => undefined,
+      startFishingGauge: (request) => {
+        const game = gameRef.current;
+        const host = hostRef.current;
+        // No map booted (the player left, or Phaser is still loading): the
+        // fight cannot happen, so hand the shell its close straight back
+        // rather than leaving a cast it thinks is still running.
+        if (!game || !host) {
+          request.onClosed?.();
+          return;
+        }
+        // Imported here, not at the top: the gauge scene imports Phaser, and
+        // this file keeps Phaser out of the page bundle by loading it only
+        // when the map boots (see the boot effect above).
+        void (async () => {
+          const { launchFishingGauge } = await import("../stackacres/fishing-gauge-scene");
+          // Booted away while the chunk was in the air.
+          if (gameRef.current !== game) {
+            request.onClosed?.();
+            return;
+          }
+          gaugeRef.current = launchFishingGauge(
+            game,
+            {
+              species: request.species,
+              title: request.title,
+              landedHint: request.landedHint,
+              host,
+              dpr: canvasDpr(),
+            },
+            {
+              onLanded: () => request.onLanded?.(),
+              onEscaped: () => request.onEscaped?.(),
+              onClosed: () => {
+                gaugeRef.current = null;
+                request.onClosed?.();
+              },
+            },
+          );
+        })();
+      },
     }),
     [],
   );
 
   const onStick = useCallback((push: Point | null) => sceneRef.current?.setStick(push), []);
+  const onUseHeld = useCallback((down: boolean) => sceneRef.current?.setUseHeld(down), []);
 
   useLayoutEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);
@@ -232,6 +303,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
     <>
       <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />
       <StackAcresJoystick onStick={onStick} />
+      <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} />
     </>
   );
 }

@@ -1,29 +1,14 @@
 /**
- * StackAcres's tools: which one is held.
+ * StackAcres's old held-tool enum.
  *
- * `inspect` has no button. It is the resting state every session starts in
- * and falls back to. A tap always acts on whatever it lands on, whichever
- * tool is held: a tile lights up and offers its ring, and a dry crop, a
- * hungry pen or a ready unit offers its own drag tool (see
- * stackacres-scene.ts's `dispatchTap`).
+ * The tool belt replaced it (lib/stackacres/toolbelt.ts): what is in hand is a
+ * `BeltTool` now, and the belt's own defs carry the labels and hints the farm
+ * actually shows. This survives for two reasons and no others -- the world
+ * contract still declares a `tool` prop the top-down map ignores, and the defs
+ * below are still the source of a couple of icon names.
  *
- * `scythe` is the only one with a button (`StackAcresGroundTools`), because
- * cutting the Long Meadow has no single-tile version -- a drag has to be
- * armed by something. The cutter in hand (Scythe or Mower) is a separate
- * pick layered on top of this one, see lib/stackacres/cutters.ts.
- *
- * `pipe` and `soil` used to have their own held-and-dragged keys too, laying
- * or lifting a whole run of tiles in one stroke. That gesture is gone
- * (2026-09-10): laying a single pipe tile or bed is now reached entirely
- * through the tap ring/dock, one tile at a time, so nothing ever holds
- * either value any more. They keep their defs below purely for the icon and
- * copy the dock still reads off `STACKACRES_TOOL_DEFS.pipe`/`.soil`, the
- * same reuse `water`/`feed`/`harvest` -- also never held -- already relied
- * on.
- *
- * A stroke past `TAP_SLOP` with the scythe held cuts (`bindInput`'s
- * `mowSegment`); a stroke that never leaves the slop radius is a tap and
- * goes through `dispatchTap` regardless of what's held.
+ * Nothing sets anything but `inspect` any more. Do not add to it; add a belt
+ * slot instead, and only once the map can draw what the slot does.
  */
 
 export const STACKACRES_TOOLS = ["inspect", "scythe", "pipe", "soil", "water", "feed", "harvest"] as const;

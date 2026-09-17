@@ -1,6 +1,15 @@
 import Phaser from "phaser";
 import { advance, findPath, steer, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
 import {
+  clampCentre,
+  clampZoom,
+  ease,
+  nearestWholeZoom,
+  settled,
+  zoomRange,
+  type ZoomRange,
+} from "@/lib/stackacres-td/camera";
+import {
   fieldMapToWorld,
   fieldWorldToMap,
   soilTileToMap,
@@ -15,7 +24,7 @@ import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/trav
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
-import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/world-contract";
+import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
 import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
@@ -86,6 +95,14 @@ const WALK_SPEED = 72; // px/s; the rig's walk frames were timed for 44
 const WATER_FRAME_MS = 170;
 const REACH = 26; // how close the farmer stands before the shell's menu opens
 const TAP_SLOP = 14; // css px a finger may drift and still count as a tap
+/** Share of the remaining gap the camera closes per frame easing back onto the farmer. */
+const CAMERA_RETURN_RATE = 0.18;
+/** Same, for a pinch settling onto its whole-number zoom once the fingers lift. */
+const ZOOM_SETTLE_RATE = 0.3;
+/** Map px the camera may still be off the farmer and count as back on him. */
+const CAMERA_HOME_EPSILON = 0.5;
+/** Zoom the settle may still be short of a whole number and count as landed. */
+const ZOOM_SETTLE_EPSILON = 0.01;
 
 type Dir = "down" | "up" | "left" | "right";
 
@@ -142,7 +159,7 @@ interface AreaSpec {
 
 export interface TopdownCallbacks {
   onReady: () => void;
-  onUnitTap: (unitId: string, at: TapPoint) => void;
+  onUseSquare: (square: UseSquare) => void;
   onGroundTap: (zone: ZoneId, at: TapPoint, world: WorldPoint) => void;
   onBarnTap: () => void;
   onSignpostTap: () => void;
@@ -199,6 +216,16 @@ export class TopdownScene extends Phaser.Scene {
   private unitNodes = new Map<string, UnitNode>();
   /** Soil tile key -> the crop standing on it, so a tap on the bed square picks the crop. */
   private unitTiles = new Map<string, string>();
+  /** The same the other way round, so a crop that was walked to can name its own bed. */
+  private tileOfUnit = new Map<string, { tx: number; ty: number }>();
+  /** Beds that held a crop on the last draw, so an optimistic id being swapped for a real one does not re-pop. */
+  private occupiedTiles = new Set<string>();
+  /** The Use key is held (use-key.tsx), so stepping onto a new bed works it too. */
+  private useDown = false;
+  /** The last bed a held stroke worked, so one step never fires twice. */
+  private stroked: string | null = null;
+  /** An action animation is playing and must not be trampled by the walk cycle. */
+  private acting = false;
   private preview: Phaser.GameObjects.Graphics | null = null;
   private waterFrame = 0;
   private path: Point[] = [];
@@ -206,6 +233,27 @@ export class TopdownScene extends Phaser.Scene {
   private facing: Dir = "down";
   private booted = false;
   private down: { x: number; y: number; t: number } | null = null;
+  /**
+   * The free camera (lib/stackacres-td/camera.ts). `following` is the normal
+   * state: pinned to the farmer, snapped to device pixels, crisp. A drag or a
+   * pinch drops it onto `centre` instead, and `returning` eases it home the
+   * moment he moves again.
+   */
+  private following = true;
+  private returning = false;
+  private centre: Point = { x: 0, y: 0 };
+  /** The follow zoom topdown-world.tsx picked for this canvas, and the whole steps a pinch may rest at. */
+  private fitZoom = 1;
+  private zooms: ZoomRange = { min: 1, max: 1 };
+  /** Where a pinch is easing to once the fingers lift; equal to `zoom` whenever nothing is settling. */
+  private zoomTarget = 1;
+  /** Every finger currently down on the map, in host CSS pixels, so one can pan and two can pinch. */
+  private touches = new Map<number, Point>();
+  private gesture: "none" | "pan" | "pinch" = "none";
+  /** What the pinch started from: the finger gap, the zoom, and the map point under the midpoint. */
+  private pinch: { gap: number; zoom: number; anchor: Point } | null = null;
+  /** The player has pinched, so a resize must re-clamp their zoom rather than yank it back to the follow zoom. */
+  private zoomedByPlayer = false;
   /** The thumb stick's push: a direction whose length is the share of full speed, or null when let go. */
   private stick: Point | null = null;
   /** The stick moved him on the last frame; false while it pushes him into a wall. */
@@ -261,6 +309,7 @@ export class TopdownScene extends Phaser.Scene {
       },
     });
     this.host.addEventListener("pointerdown", this.onPointerDown);
+    this.host.addEventListener("pointermove", this.onPointerMove);
     this.host.addEventListener("pointerup", this.onPointerUp);
     this.host.addEventListener("pointercancel", this.onPointerCancel);
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -271,6 +320,7 @@ export class TopdownScene extends Phaser.Scene {
     motion.addEventListener("change", onMotion);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.host.removeEventListener("pointerdown", this.onPointerDown);
+      this.host.removeEventListener("pointermove", this.onPointerMove);
       this.host.removeEventListener("pointerup", this.onPointerUp);
       this.host.removeEventListener("pointercancel", this.onPointerCancel);
       motion.removeEventListener("change", onMotion);
@@ -287,6 +337,8 @@ export class TopdownScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
+    if (this.useDown && this.isWalking()) this.useSquare(true);
+    this.easeCamera(delta);
     this.placeCamera();
     this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion);
     this.smoke.update(time, this.reducedMotion);
@@ -339,6 +391,9 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   private playWalk(speed: number): void {
+    // A stroke acts each bed out while he keeps moving (Kayo's call), so the
+    // action animation owns the sprite until it finishes; the walk resumes after.
+    if (this.acting) return;
     const key = `walk_${this.facing}`;
     const timeScale = speed / 44;
     if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
@@ -402,6 +457,10 @@ export class TopdownScene extends Phaser.Scene {
    * farmer's position and the view's half-width fell on opposite sides of a
    * pixel, he jumped a pixel against the screen and back. Snapping both from
    * the same point keeps him still on screen while the ground slides.
+   *
+   * A pan or a pinch centres it on `centre` instead of on him (camera.ts).
+   * The snapping is the same either way, so a settled free camera is exactly
+   * as crisp as a following one.
    */
   private placeCamera(): void {
     const cam = this.cameras.main;
@@ -409,10 +468,12 @@ export class TopdownScene extends Phaser.Scene {
     const viewH = cam.height / this.zoom;
     const mapW = this.area.width * this.area.tile;
     const mapH = this.area.height * this.area.tile;
-    const edge = (centre: number, view: number, map: number) =>
-      view >= map ? (map - view) / 2 : Math.min(Math.max(centre - view / 2, 0), map - view);
-    const left = this.snap(edge(this.snap(this.pos.x), viewW, mapW));
-    const top = this.snap(edge(this.snap(this.pos.y), viewH, mapH));
+    const wanted = this.following ? this.pos : this.centre;
+    const at = clampCentre({ x: this.snap(wanted.x), y: this.snap(wanted.y) }, viewW, viewH, mapW, mapH);
+    // Kept in step while following, so a pan starts from what is on screen rather than from a stale point.
+    if (this.following) this.centre = at;
+    const left = this.snap(at.x - viewW / 2);
+    const top = this.snap(at.y - viewH / 2);
     // Phaser zooms about the camera's centre, so scroll is the view's left edge shifted by the zoomed-away margin.
     cam.setScroll(left + viewW / 2 - cam.width / 2, top + viewH / 2 - cam.height / 2);
   }
@@ -457,7 +518,7 @@ export class TopdownScene extends Phaser.Scene {
     this.anims.createFromAseprite("farmer", undefined, this.player);
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
-    this.placeCamera();
+    this.resetCamera();
     this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights);
     this.smoke.build(this.area.emitters);
     this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
@@ -567,16 +628,27 @@ export class TopdownScene extends Phaser.Scene {
 
   private drawUnits(): void {
     const seen = new Set<string>();
+    // Which beds held a crop on the last draw. A crop sown optimistically is
+    // drawn under an id this browser invented, and the server's answer replaces
+    // it with a real one -- a different id on the SAME bed, which without this
+    // reads as a brand-new crop and pops a second time a beat after the first.
+    const held = this.occupiedTiles;
+    this.occupiedTiles = new Set();
     this.unitTiles.clear();
+    this.tileOfUnit.clear();
     for (const unit of this.units) {
       const at = this.unitPlacement(unit);
       if (!at) continue;
       seen.add(unit.id);
+      let tileKey: string | null = null;
       if (this.areaName === "oldfields") {
         const world = fieldMapToWorld(at);
         if (world) {
           const { tx, ty } = soilTileAt(world.x, world.y);
-          this.unitTiles.set(soilTileKey(tx, ty), unit.id);
+          tileKey = soilTileKey(tx, ty);
+          this.unitTiles.set(tileKey, unit.id);
+          this.tileOfUnit.set(unit.id, { tx, ty });
+          this.occupiedTiles.add(tileKey);
         }
       }
       const frame = this.unitFrame(unit);
@@ -600,7 +672,9 @@ export class TopdownScene extends Phaser.Scene {
       // miss under his own swing and the toast that lands on the same spot -- see stackacres-farm.tsx's
       // "Seeded" toast. Skipped for a livestock purchase: those show up in Hen Haven, screens away
       // from wherever the shop sheet was, so there is nothing on screen for a spawn to compete with.
-      if (isNew && !animal) this.popUnit(unit.id);
+      // A bed that already had a crop on the last draw is the same crop under its
+      // real id, not a new one, so it does not pop again.
+      if (isNew && !animal && !(tileKey !== null && held.has(tileKey))) this.popUnit(unit.id);
     }
     for (const [id, node] of this.unitNodes) {
       if (seen.has(id)) continue;
@@ -621,33 +695,237 @@ export class TopdownScene extends Phaser.Scene {
   // ------------------------------------------------------------------ input
 
   private onPointerDown = (event: PointerEvent): void => {
-    this.down = { x: event.clientX, y: event.clientY, t: event.timeStamp };
+    // Captured so a drag that leaves the canvas keeps panning instead of sticking mid-gesture.
+    try {
+      this.host.setPointerCapture(event.pointerId);
+    } catch {
+      // Some pointer ids cannot be captured (a mouse leaving the window mid-drag). The drag still works.
+    }
+    this.touches.set(event.pointerId, this.hostPoint(event));
+    if (this.touches.size === 1) {
+      this.down = { x: event.clientX, y: event.clientY, t: event.timeStamp };
+      return;
+    }
+    // A second finger is never a tap, whatever the first one was doing.
+    this.down = null;
+    if (this.touches.size === 2) this.startPinch();
+  };
+
+  private onPointerMove = (event: PointerEvent): void => {
+    if (!this.touches.has(event.pointerId)) return;
+    const was = this.touches.get(event.pointerId)!;
+    const now = this.hostPoint(event);
+    this.touches.set(event.pointerId, now);
+    if (this.touches.size >= 2) {
+      this.movePinch();
+      return;
+    }
+    const down = this.down;
+    // One finger only pans once it has travelled past the slop a tap is allowed to drift.
+    if (this.gesture === "none") {
+      if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) <= TAP_SLOP) return;
+      this.gesture = "pan";
+      this.down = null;
+      this.takeCamera();
+    }
+    if (this.gesture !== "pan") return;
+    this.panBy(was.x - now.x, was.y - now.y);
   };
 
   private onPointerUp = (event: PointerEvent): void => {
     const down = this.down;
-    this.down = null;
+    const gesture = this.gesture;
+    this.releaseTouch(event.pointerId);
+    if (this.touches.size > 0) return;
+    if (gesture !== "none") return;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > TAP_SLOP) return;
     this.tapAt(event.clientX, event.clientY);
   };
 
-  private onPointerCancel = (): void => {
-    this.down = null;
+  private onPointerCancel = (event: PointerEvent): void => {
+    this.releaseTouch(event.pointerId);
   };
+
+  /** A finger left the map: drop it, and settle whatever gesture it was part of once it was the last one. */
+  private releaseTouch(pointerId: number): void {
+    this.touches.delete(pointerId);
+    try {
+      this.host.releasePointerCapture(pointerId);
+    } catch {
+      // Never captured, or already released. Nothing to undo.
+    }
+    if (this.gesture === "pinch" && this.touches.size < 2) {
+      // The fingers are off: ease to the nearest zoom the art is crisp at (camera.ts's own header).
+      this.pinch = null;
+      this.zoomTarget = nearestWholeZoom(this.zoom, this.zooms);
+    }
+    if (this.touches.size === 0) {
+      this.gesture = "none";
+      this.down = null;
+    }
+  }
+
+  private hostPoint(event: PointerEvent): Point {
+    const rect = this.host.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  // ------------------------------------------------------------- free camera
+
+  /**
+   * Takes the camera off the farmer and leaves it exactly where it already is,
+   * so a pan or a pinch starts from what is on screen rather than jumping.
+   * Closes whatever menu was open, the same as walking off does.
+   */
+  private takeCamera(): void {
+    if (this.following) {
+      this.centre = this.cameraCentre();
+      this.following = false;
+      this.callbacks.onViewMoved();
+    }
+    this.returning = false;
+  }
+
+  /**
+   * The farmer is moving, so the camera comes back to him (Kayo's call: the
+   * stick or a tap-to-move is what ends a look around). Eased rather than cut,
+   * because a cut after a pan reads as the map teleporting.
+   */
+  private homeCamera(): void {
+    if (!this.following) this.returning = true;
+  }
+
+  /**
+   * Straight back onto him at the follow zoom, no ease: a new area has its own
+   * size and its own bounds, so both how far a pinch may pull back and what
+   * easing across the gap would even mean are different here.
+   */
+  private resetCamera(): void {
+    this.following = true;
+    this.returning = false;
+    this.gesture = "none";
+    this.pinch = null;
+    this.touches.clear();
+    this.zoomedByPlayer = false;
+    const cam = this.cameras.main;
+    this.zooms = zoomRange(
+      cam.width,
+      cam.height,
+      this.area.width * this.area.tile,
+      this.area.height * this.area.tile,
+      this.fitZoom,
+    );
+    this.zoomTarget = this.fitZoom;
+    this.applyZoom(this.fitZoom);
+  }
+
+  /** Where the camera is centred right now, in map pixels. */
+  private cameraCentre(): Point {
+    const view = this.cameras.main.worldView;
+    return { x: view.x + view.width / 2, y: view.y + view.height / 2 };
+  }
+
+  private panBy(dxCss: number, dyCss: number): void {
+    this.centre = {
+      x: this.centre.x + dxCss * this.scaleX(),
+      y: this.centre.y + dyCss * this.scaleY(),
+    };
+    this.clampFreeCentre();
+  }
+
+  private startPinch(): void {
+    const [a, b] = [...this.touches.values()];
+    const gap = Math.hypot(a.x - b.x, a.y - b.y);
+    if (gap < 1) return;
+    this.takeCamera();
+    this.gesture = "pinch";
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    this.pinch = { gap, zoom: this.zoom, anchor: this.cssToMap(mid.x, mid.y) };
+  }
+
+  /**
+   * A live pinch. The zoom follows the fingers exactly, whole number or not --
+   * a gesture that snaps under the thumb feels broken, and `releaseTouch`
+   * settles it the instant they lift. The map point the pinch started on stays
+   * under the midpoint, so it zooms into what is being pinched.
+   */
+  private movePinch(): void {
+    const pinch = this.pinch;
+    if (!pinch) return;
+    const [a, b] = [...this.touches.values()];
+    const gap = Math.hypot(a.x - b.x, a.y - b.y);
+    if (gap < 1) return;
+    this.zoomedByPlayer = true;
+    const next = clampZoom((pinch.zoom * gap) / pinch.gap, this.zooms);
+    this.applyZoom(next);
+    this.zoomTarget = next;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    this.centre = {
+      x: pinch.anchor.x - (mid.x - this.host.clientWidth / 2) * this.scaleX(),
+      y: pinch.anchor.y - (mid.y - this.host.clientHeight / 2) * this.scaleY(),
+    };
+    this.clampFreeCentre();
+  }
+
+  private clampFreeCentre(): void {
+    const cam = this.cameras.main;
+    this.centre = clampCentre(
+      this.centre,
+      cam.width / this.zoom,
+      cam.height / this.zoom,
+      this.area.width * this.area.tile,
+      this.area.height * this.area.tile,
+    );
+  }
+
+  private applyZoom(zoom: number): void {
+    this.zoom = zoom;
+    if (!this.booted) return;
+    this.cameras.main.setZoom(zoom);
+    this.setPlayerAt(this.pos);
+    this.placeCamera();
+  }
+
+  /** One frame of the camera easing home and of a pinch settling onto its whole step. */
+  private easeCamera(delta: number): void {
+    if (this.returning) {
+      this.centre = {
+        x: ease(this.centre.x, this.pos.x, CAMERA_RETURN_RATE, delta),
+        y: ease(this.centre.y, this.pos.y, CAMERA_RETURN_RATE, delta),
+      };
+      if (
+        settled(this.centre.x, this.pos.x, CAMERA_HOME_EPSILON) &&
+        settled(this.centre.y, this.pos.y, CAMERA_HOME_EPSILON)
+      ) {
+        this.returning = false;
+        this.following = true;
+      }
+    }
+    if (this.gesture === "pinch" || this.zoom === this.zoomTarget) return;
+    const next = ease(this.zoom, this.zoomTarget, ZOOM_SETTLE_RATE, delta);
+    this.applyZoom(settled(next, this.zoomTarget, ZOOM_SETTLE_EPSILON) ? this.zoomTarget : next);
+  }
 
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
     if (!this.booted) return;
+    // Whatever this tap turns out to be, it is the farmer's business, so the camera comes back off a pan.
+    this.homeCamera();
     const rect = this.host.getBoundingClientRect();
     const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
     const target = this.targetAt(map);
-    // For a crop or a bed, stand just below it rather than on it, so the farmer never covers the menu's target.
+    // On the Crop Fields he walks ONTO the bed, because the belt works the
+    // square under his feet and there is no menu left for him to stand clear of.
+    // An animal in a pen still gets approached from below rather than stood on.
+    const onField = this.areaName === "oldfields" && (target.kind === "unit" || target.kind === "field");
     const goal =
       target.kind === "nothing"
         ? map
-        : target.kind === "unit" || target.kind === "field"
-          ? { x: target.anchor.x, y: target.anchor.y + SOIL_TILE * 2 + 2 }
-          : target.anchor;
+        : onField
+          ? target.anchor
+          : target.kind === "unit"
+            ? { x: target.anchor.x, y: target.anchor.y + SOIL_TILE * 2 + 2 }
+            : target.anchor;
     const from = this.pos;
     this.pending = target.kind === "nothing" ? null : target;
     if (this.pending && target.kind !== "nothing" && Math.hypot(target.anchor.x - from.x, target.anchor.y - from.y) <= REACH) {
@@ -736,11 +1014,13 @@ export class TopdownScene extends Phaser.Scene {
   private stand(): void {
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
     this.player.anims.stop();
+    this.acting = false;
     this.player.setFrame(STANDING[this.facing]);
     this.people.stood(this.time.now);
   }
 
   private onActionDone = (): void => {
+    this.acting = false;
     if (this.path.length === 0) this.player.setFrame(STANDING[this.facing]);
     this.people.stood(this.time.now);
   };
@@ -753,25 +1033,36 @@ export class TopdownScene extends Phaser.Scene {
     this.people.emote(who, kind, this.time.now, this.player, this.hasCue);
   }
 
-  /** The shell's water, harvest or planting drop landed: act it out, facing whatever he walked up to. */
+  /**
+   * The shell's belt action landed: act it out, facing whatever he is standing on.
+   *
+   * It plays while he is walking too, which is what makes a held stroke read as
+   * one continuous job rather than a row of beds changing on their own; `playWalk`
+   * stands back for the duration (see `acting`).
+   */
   farmerAction(action: FarmerAction): void {
-    if (!this.booted || this.isWalking()) return;
+    if (!this.booted) return;
     const { anim, repeat } = ACTIONS[action];
     this.stand();
+    this.acting = true;
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
     this.player.play({ key: `${anim}_${this.facing}`, repeat });
   }
 
   private fire(target: Target): void {
     const cb = this.callbacks;
+    // A crop, an animal or a bed is the belt's business now: the shell asks the
+    // held tool what to do here (lib/stackacres/toolbelt.ts). Props, people and
+    // doors below still open what they always opened.
     if (target.kind === "unit") {
       const node = this.unitNodes.get(target.id);
       const at = node ? this.mapToCss({ x: node.sprite.x, y: node.sprite.y - node.sprite.height / 2 }) : this.mapToCss(target.anchor);
-      cb.onUnitTap(target.id, at);
+      cb.onUseSquare({ tile: this.tileOfUnit.get(target.id) ?? null, unitId: target.id, at, stroke: false });
       return;
     }
     if (target.kind === "field") {
-      cb.onGroundTap("farmstead", this.mapToCss(target.anchor), target.world);
+      const { tx, ty } = soilTileAt(target.world.x, target.world.y);
+      cb.onUseSquare({ tile: { tx, ty }, unitId: null, at: this.mapToCss(target.anchor), stroke: false });
       return;
     }
     if (target.kind === "npc") {
@@ -823,10 +1114,52 @@ export class TopdownScene extends Phaser.Scene {
    * The thumb stick (joystick.tsx): a direction whose length is the share of full speed, or null when let go.
    * Taking hold of it closes whatever menu was open, the same as walking off does.
    */
+  /**
+   * The Use key (use-key.tsx): work the square under his feet with whatever the
+   * belt is holding. Held down, every new bed he steps onto is worked as he
+   * reaches it, which is how a row gets watered or hoed in one walk.
+   */
+  setUseHeld(down: boolean): void {
+    if (!this.booted) return;
+    this.useDown = down;
+    if (!down) {
+      this.stroked = null;
+      return;
+    }
+    this.useSquare(false);
+  }
+
+  /**
+   * Hands the shell the square he is on. A stroke skips a bed it has already
+   * worked and anything off the field, so walking a row fires once per bed and
+   * a walk across the yard fires nothing.
+   */
+  private useSquare(stroke: boolean): void {
+    const world = fieldMapToWorld(this.pos);
+    const tile = world ? soilTileAt(world.x, world.y) : null;
+    const key = tile ? soilTileKey(tile.tx, tile.ty) : null;
+    if (stroke && (key === null || key === this.stroked)) return;
+    this.stroked = key;
+    const unitId = key !== null ? this.unitTiles.get(key) ?? null : this.nearestUnit();
+    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(this.pos), stroke });
+  }
+
+  /** Off the field there are no beds, so Use reaches for whatever he is standing beside. */
+  private nearestUnit(): string | null {
+    let best: { id: string; distance: number } | null = null;
+    for (const [id, node] of this.unitNodes) {
+      if (!node.sprite.visible) continue;
+      const distance = Math.hypot(node.sprite.x - this.pos.x, node.sprite.y - this.pos.y);
+      if (distance <= REACH && (!best || distance < best.distance)) best = { id, distance };
+    }
+    return best?.id ?? null;
+  }
+
   setStick(push: Point | null): void {
     if (!this.booted) return;
     const was = this.stick;
     this.stick = push;
+    if (push) this.homeCamera();
     if (push && !was) this.callbacks.onViewMoved();
     if (!push && was) {
       if (this.stickWalking && this.path.length === 0) this.stand();
@@ -995,13 +1328,48 @@ export class TopdownScene extends Phaser.Scene {
     this.preview.lineStyle(1, 0xdeeed6, 1).strokeRect(at.x + 0.5, at.y + 0.5, SOIL_TILE - 1, SOIL_TILE - 1);
   }
 
-  /** topdown-world.tsx picks this from the host's size and the device pixel ratio. */
+  /**
+   * topdown-world.tsx picks the follow zoom from the host's size and the device
+   * pixel ratio. That also fixes how far a pinch may pull back (the whole area
+   * on screen) and push in, so the range is rebuilt here on every resize.
+   *
+   * A player who has pinched keeps their own zoom across a resize, only
+   * re-clamped to the new range; one who has not rides the follow zoom.
+   */
   setZoom(zoom: number): void {
-    this.zoom = zoom;
+    this.fitZoom = zoom;
+    if (!this.booted) {
+      this.zoom = zoom;
+      this.zoomTarget = zoom;
+      return;
+    }
+    const cam = this.cameras.main;
+    this.zooms = zoomRange(
+      cam.width,
+      cam.height,
+      this.area.width * this.area.tile,
+      this.area.height * this.area.tile,
+      zoom,
+    );
+    const next = this.zoomedByPlayer ? nearestWholeZoom(this.zoom, this.zooms) : zoom;
+    this.zoomTarget = next;
+    this.applyZoom(next);
+  }
+
+  /**
+   * The shell's camera controls, for anything that wants them without a
+   * gesture. A step is a whole zoom, never a fraction, so the art is crisp the
+   * moment it lands (camera.ts).
+   */
+  zoomBy(factor: number): void {
     if (!this.booted) return;
-    this.cameras.main.setZoom(zoom);
-    this.setPlayerAt(this.pos);
-    this.placeCamera();
+    this.zoomedByPlayer = true;
+    this.zoomTarget = nearestWholeZoom(this.zoomTarget + (factor > 1 ? 1 : -1), this.zooms);
+  }
+
+  /** Puts the camera back on the farmer, the same ease a walk does. */
+  recenter(): void {
+    if (this.booted) this.homeCamera();
   }
 
   /** The district panel's travel buttons: the two home districts are on the Homestead; the rest aren't built yet. */
@@ -1068,6 +1436,15 @@ export class TopdownScene extends Phaser.Scene {
   currentPlace(): MapPlaceId {
     if (this.areaName === "oldfields") return "cropfields";
     return AREA_SECTOR[this.areaName] ?? "farmstead";
+  }
+
+  /**
+   * e2e only (through the dev-only `__stackacres` handle): what the camera is
+   * doing, so a spec can tell a pan from a walk and check that a pinch really
+   * did settle on a whole-number zoom.
+   */
+  cameraState(): { zoom: number; following: boolean; centre: Point } {
+    return { zoom: this.zoom, following: this.following, centre: { ...this.centre } };
   }
 
   isWalking(): boolean {

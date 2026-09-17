@@ -9,6 +9,7 @@ import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
+import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
@@ -53,6 +54,43 @@ export interface StackAcresSceneUnit {
 export interface TapPoint {
   x: number;
   y: number;
+}
+
+/**
+ * A square the farmer is standing on with the belt's tool in hand
+ * (lib/stackacres/toolbelt.ts). The map reports where he is; the shell asks the
+ * belt what the held tool does there, so the map still knows nothing about what
+ * anything costs or yields.
+ */
+export interface UseSquare {
+  /** The Crop Fields bed under his feet, or null anywhere off the field. */
+  tile: { tx: number; ty: number } | null;
+  /** The crop on that bed, or the nearest animal he walked up to. */
+  unitId: string | null;
+  /** Where to float a line, in the same CSS-pixel box every overlay uses. */
+  at: TapPoint;
+  /** True while the Use key is held down and he is walking a row, false for a single press or a tap. */
+  stroke: boolean;
+}
+
+/**
+ * One fishing fight, as the shell asks for it.
+ *
+ * `species` picks the profile the gauge plays at -- how short the bar is and
+ * how hard the fish darts -- and nothing else. It is NOT the catch: which
+ * fish a landed cast gives is rolled server-side inside `catch-fish`, which
+ * is why the copy fields exist and why the shell passes a species-free line
+ * (see `rollGaugeDifficulty` in lib/stackacres/fishing-gauge.ts).
+ */
+export interface FishingGaugeRequest {
+  readonly species: FishSpecies;
+  /** Heading on the gauge panel. */
+  readonly title?: string;
+  /** Hint under the gauge once the fish is landed. */
+  readonly landedHint?: string;
+  readonly onLanded?: () => void;
+  readonly onEscaped?: () => void;
+  readonly onClosed?: () => void;
 }
 
 /** What a traveler's badge says: a quest to offer, or one ready to hand in. */
@@ -127,6 +165,18 @@ export interface StackAcresWorldApi {
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
    *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
   emote: (who: EmoteTarget, kind: EmoteKind) => void;
+  /**
+   * Puts the fishing gauge up over the map: the skill half of a cast (see
+   * lib/stackacres/fishing-gauge.ts). The world owns it because the gauge is
+   * a Phaser scene layered on the same game, and the world is what holds
+   * that game.
+   *
+   * The shell decides what each outcome MEANS -- landing one is what sends
+   * `catch-fish` -- so this only reports which way the fight went. Exactly
+   * one of `onLanded`/`onEscaped` fires, always followed by `onClosed`, and
+   * `onClosed` fires on its own if there is no map to fight on.
+   */
+  startFishingGauge: (request: FishingGaugeRequest) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -228,12 +278,15 @@ export interface StackAcresWorldProps {
    *  the client-side twin of a confirmed collect. */
   celebrate: { unitId: string; nonce: number } | null;
   onReady: () => void;
-  /** A finger landed on this unit's own picture. */
-  onUnitTap: (unitId: string, at: TapPoint) => void;
-  /** A finger landed on this unit but the held tool cannot act on it -- an
-   *  offer to point at it rather than an action. See
-   *  StackAcresSceneCallbacks.onUnitSelect. */
-  onUnitSelect: (unitId: string, at: TapPoint) => void;
+  /** What the belt is holding, so the Use key beside the thumb stick names the job it will do. */
+  useKeyLabel: string;
+  /**
+   * The farmer is standing on a square with a belt tool in hand: either he
+   * walked to a tapped one and arrived, or the Use key fired on the one under
+   * his feet. This is how watering, sowing, hoeing and picking all reach the
+   * shell now; it replaced the drag tokens and the seed ring.
+   */
+  onUseSquare: (square: UseSquare) => void;
   /** A finger landed on this district's fenced ground, on nothing in
    *  particular -- an offer to seed something there. `world` is the same
    *  point in world units, alongside the CSS-pixel `at` -- see
@@ -273,7 +326,7 @@ export interface StackAcresWorldProps {
    *  reaches no server by itself -- this is only the cue to open his
    *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */
   onMonkTap: (at: TapPoint) => void;
-  /** A finger landed on Grandfather Ray himself, not the barn behind him --
+  /** A finger landed on Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
   /** A finger landed on one of the eleven story travelers (see

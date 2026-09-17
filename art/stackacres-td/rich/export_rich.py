@@ -29,16 +29,19 @@ sys.path[:0] = [HERE, RIG]
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
+import area_farm  # noqa: E402
 import build  # noqa: E402
+import build_area  # noqa: E402
 import characters  # noqa: E402
 import critters  # noqa: E402
 import decor  # noqa: E402
 import export as rig_export  # noqa: E402
 import extras  # noqa: E402
-import fields  # noqa: E402
+import fold  # noqa: E402
 import homestead  # noqa: E402
 import kit  # noqa: E402
 import oldfields  # noqa: E402
+import pasture  # noqa: E402
 import portraits  # noqa: E402
 import props  # noqa: E402
 import scene  # noqa: E402
@@ -47,7 +50,7 @@ import terrain  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
-PLAYABLE = [homestead, oldfields]
+PLAYABLE = [homestead, oldfields, fold, pasture]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are.
 LIGHTS = {
@@ -58,9 +61,7 @@ LIGHTS = {
 
 
 def patch():
-    build.patch_kit()
-    props.shed_old, props.plough, props.scarecrow, props.wild_growth = (
-        fields.shed_old, fields.plough, fields.scarecrow, fields.wild_growth)
+    build_area.patch("".join(open(m.__file__).read() for m in PLAYABLE))
     smoke = props.smoke
 
     def smoke_emitter():
@@ -342,6 +343,9 @@ def export_common(out_root):
         named.append((f"crop_generic_{stage}", generic_crop(stage)))
     named.append(("crop_withered", withered()))
     for side, left in (("left", True), ("right", False)):
+        named.append((f"sheep_{side}", area_farm.sheep(left)[0]))
+        named.append((f"cattle_{side}", area_farm.cattle(left, patches=True)[0]))
+        named.append((f"cattle_{side}_plain", area_farm.cattle(left, patches=False)[0]))
         named.append((f"hen_{side}", sprites.hen(left)[0]))
         named.append((f"hen_{side}_peck", sprites.hen(left, peck=True)[0]))
     for kind, grid in EMOTES.items():

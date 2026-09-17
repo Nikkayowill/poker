@@ -135,7 +135,7 @@ Next, in order:
 1. **Kayo plays it on prod** and says how it feels. Tune walk speed, zoom, reach and taps.
    Art under `public/stackacres/` that only the isometric map drew can be pruned; the sprite
    list in `stackacres-sprites.ts` still names it for the menus' icons, so check each file.
-2. **The Fold and Cattle Pasture** as scenes, so sheep and cattle show and can be fed.
+2. **The Fold and Cattle Pasture** as scenes, so sheep and cattle show and can be fed. Done 2026-09-16: gates open when the sector is owned, pens draw the real herd, `focusZone` travels there.
 3. **The missing contract pieces**: scythe, pipes, Wheat Plots, greenhouse interior.
 4. **The wild areas** as scenes, joined at the exits in `AREAS.md`.
 5. The early crop economy (`docs/stackacres-early-crop-economy.md`) as its own change,

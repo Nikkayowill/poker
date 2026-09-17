@@ -38,7 +38,7 @@ function greeting(name: string, hour: number): EmoteKind {
  * - everyone breathes and blinks on their own rhythm (the rig's `idle` tag), turns to face the farmer when he
  *   comes close and greets him with an emote bubble (not more than once a minute and a half per person);
  * - the farmer idles too once he has stood still a moment;
- * - hens peck and turn in place, never leaving their spot, because a hen is a tap target;
+ * - hens peck and turn in place, and sheep and cattle turn now and then, never leaving their spot (they are tap targets);
  * - emote bubbles pop up over a head, hold, and fade in steps.
  * Under prefers-reduced-motion people stand still and hens don't peck; emotes still show (they say something).
  */
@@ -74,7 +74,7 @@ export class PeopleLife {
   syncHens(nodes: Iterable<[string, Phaser.GameObjects.Image]>, time: number): void {
     const seen = new Set<string>();
     for (const [id, sprite] of nodes) {
-      if (!sprite.frame.name.startsWith("hen_")) continue;
+      if (!/^(hen|sheep|cattle)_/.test(sprite.frame.name)) continue;
       seen.add(id);
       const known = this.hens.get(id);
       if (!known || known.sprite !== sprite) {
@@ -142,14 +142,16 @@ export class PeopleLife {
         hen.until = 0;
       }
       if (time < hen.next) continue;
-      if (Math.random() < 0.65) {
+      const pecks = hen.base.startsWith("hen_");
+      if (pecks && Math.random() < 0.65) {
         hen.sprite.setFrame(`${hen.base}_peck`);
         hen.until = time + 170;
       } else {
-        hen.base = hen.base === "hen_left" ? "hen_right" : "hen_left";
+        hen.base = hen.base.includes("_left") ? hen.base.replace("_left", "_right") : hen.base.replace("_right", "_left");
         hen.sprite.setFrame(hen.base);
       }
-      hen.next = time + (Math.random() < 0.3 ? 300 : 1400 + Math.random() * 3600);
+      // Sheep and cattle only turn now and then; hens are busier.
+      hen.next = time + (pecks ? (Math.random() < 0.3 ? 300 : 1400 + Math.random() * 3600) : 4000 + Math.random() * 7000);
     }
 
     for (const [who, emote] of this.emotes) {

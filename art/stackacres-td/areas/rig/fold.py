@@ -13,7 +13,7 @@ from area import Area
 MW, MH = 28, 22
 
 
-def build():
+def build(for_game=False):
     a = Area("fold", MW, MH)
     a.line("path", (0, 11), (MW, 11))                  # in from Hen Haven, out over the fallen fence
     a.ellipse("mud", 15, 7, 5.2, 2.6)                  # the wallow
@@ -34,13 +34,17 @@ def build():
     a.add(kit.fence(96, vertical=True), 413, 322)
     a.add(kit.hay_bale(), 380, 300, (9, 2))
     a.add(kit.trough(), 240, 300, (11, 2))
-    for i, (x, y) in enumerate(((230, 250), (280, 280), (330, 240), (360, 275), (260, 310))):
-        a.add(creatures.sheep(i % 2 == 0), x, y, (7, 2))
-    a.add(creatures.sheep(True), 120, 250, (7, 2))     # one out, as one always is
+    if for_game:                                       # the game draws the player's own sheep in the pen
+        a.zone("sheep-spots", 214, 226, 186, 80)
+        a.zone("pen:wallow", 200, 214, 212, 104)
+    else:
+        for i, (x, y) in enumerate(((230, 250), (280, 280), (330, 240), (360, 275), (260, 310))):
+            a.add(creatures.sheep(i % 2 == 0), x, y, (7, 2))
+        a.add(creatures.sheep(True), 120, 250, (7, 2))  # one out, as one always is
 
     a.add(props.hedge(120), 120, 62)                   # hedges under the north trees
     a.add(props.hedge(120), 330, 66)
-    a.add(props.fallen_fence(), 420, 184, (26, 3))     # the way on to the Pasture
+    a.add(props.fallen_fence(), 420, 184, (26, 3), tag="locked:oxfields")   # the way on to the Pasture, until it's cleared
     a.add(kit.stump(), 60, 300, (5, 2))
     for x, y in ((70, 110), (400, 120), (50, 200)):
         a.add(props.mushrooms(x), x, y, (4, 1))
@@ -53,7 +57,11 @@ def build():
     a.tree_line("south", depth=1, seed=2)
     a.tree_line("west", gaps=((150, 210),), seed=2)
     a.tree_line("east", gaps=((150, 210),), seed=2)
-    a.character("farmer", 96, 200)
+    a.exit("homestead", 0, 168, 10, 32, (636, 344))   # back through Hen Haven's gate
+    a.exit("pasture", 438, 168, 10, 32, (22, 200))   # on over the fallen fence
+    a.spawn = (24, 184)
+    if not for_game:
+        a.character("farmer", 96, 200)
     return a
 
 

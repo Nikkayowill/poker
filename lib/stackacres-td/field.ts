@@ -24,7 +24,7 @@ import { SOIL_TILE } from "@/lib/stackacres/soil";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
-export type TopdownArea = "homestead" | "oldfields";
+export type TopdownArea = "homestead" | "oldfields" | "fold" | "pasture";
 
 export interface MapPoint {
   area: TopdownArea;
@@ -39,6 +39,9 @@ export const FIELD_SIZE = CROP_FIELD_BEDS.width;
 /** Homestead map pixels for the landmarks the shell anchors drags to. */
 export const HOMESTEAD_TROUGH = { x: 600, y: 312 } as const;
 export const HOMESTEAD_DOCK_END = { x: 226, y: 420 } as const;
+/** The Fold's and the Cattle Pasture's pen troughs, where a feed drag lands. */
+export const FOLD_TROUGH = { x: 240, y: 300 } as const;
+export const PASTURE_TROUGH = { x: 470, y: 300 } as const;
 
 export function inCropField(world: WorldPoint): boolean {
   return (
@@ -66,6 +69,10 @@ export function worldToMap(world: WorldPoint): MapPoint | null {
   const trough = penFeedSpot("henhaven");
   if (world.x === trough.x && world.y === trough.y) return { area: "homestead", ...HOMESTEAD_TROUGH };
   if (world.x === FISHING_SPOT.x && world.y === FISHING_SPOT.y) return { area: "homestead", ...HOMESTEAD_DOCK_END };
+  const sheep = penFeedSpot("wallow");
+  if (world.x === sheep.x && world.y === sheep.y) return { area: "fold", ...FOLD_TROUGH };
+  const cattle = penFeedSpot("oxfields");
+  if (world.x === cattle.x && world.y === cattle.y) return { area: "pasture", ...PASTURE_TROUGH };
   return null;
 }
 

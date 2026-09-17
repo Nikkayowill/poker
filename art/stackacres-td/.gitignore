@@ -7,3 +7,4 @@ areas/*/
 !areas/rig/
 areas/tileset.png
 __pycache__/
+rich/out/

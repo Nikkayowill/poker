@@ -183,6 +183,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       recenter: () => undefined,
       // Not drawn in the top-down preview yet (see this file's header).
       farmerAction: (action) => sceneRef.current?.farmerAction(action),
+      emote: (who, kind) => sceneRef.current?.emote(who, kind),
       registerFrenzyTap: () => undefined,
       playMonkPrayer: () => undefined,
       enterGreenhouse: () => undefined,

@@ -15,7 +15,12 @@ import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks } from "../stackacres/world-contract";
-import type { FarmerAction } from "../stackacres/world-contract";
+import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
+import { AmbientLife, type AmbientSpec } from "./ambient-life";
+import { ChimneySmoke, type Emitter } from "./chimney-smoke";
+import { DaylightLayer, type LightPoint } from "./daylight-layer";
+import { PeopleLife } from "./people-life";
+import { WindSway } from "./wind-sway";
 
 /**
  * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move.
@@ -24,13 +29,17 @@ import type { FarmerAction } from "../stackacres/world-contract";
  * thing walks the farmer over to it first, and the shell's menu opens when he
  * arrives.
  *
- * Everything static was drawn by the area rig and exported by export.py:
- *   areas/<area>/ground-<f>.png   terrain, ground items, prop shadows, one per water frame
- *   areas/<area>/props.*          standing props, with what tapping each one does (`tag`)
- *   areas/<area>/area.json        props, NPCs, spawn, zones, exits, water that blocks walking
- *   common/sprites.*              soil, crops, hens, cue bubbles
- *   characters/<name>.*           the rig's Aseprite sheets
+ * Everything static was drawn by the art pipeline and exported by art/stackacres-td/rich/export_rich.py:
+ *   areas/<area>/ground-<f>.png   terrain, ground items, cast shadows, reflections; one per water frame (`frames`)
+ *   areas/<area>/props.*          standing props, with what tapping each one does (`tag`) and a swaying part (`sway`)
+ *   areas/<area>/area.json        props, NPCs, spawn, zones, exits, water that blocks walking, lights, emitters
+ *   common/sprites.*              soil, crops, hens, cue bubbles, lamp glows, smoke puffs
+ *   characters/<name>.*           the rig's sheets, reshaded
  * The player's real beds, crops and hens are drawn on top from the shell's props.
+ *
+ * Life runs here rather than in baked frames (docs/stackacres-premium-life.md): the time of day
+ * (daylight-layer.ts), the wind (wind-sway.ts), chimney smoke (chimney-smoke.ts), critters (ambient-life.ts), and
+ * people and hens breathing, blinking, pecking and greeting the farmer with emotes (people-life.ts).
  */
 
 const ASSETS = "/stackacres-td";
@@ -74,6 +83,8 @@ interface PropSpec {
   h: number;
   tag?: string;
   blocks: [number, number][];
+  /** The part the wind moves, drawn over the rest at the same position. */
+  sway?: { frame: string; amp: number; rustle: boolean };
 }
 
 interface AreaSpec {
@@ -88,6 +99,9 @@ interface AreaSpec {
   blocked: [number, number][];
   zones: { tag: string; x: number; y: number; w: number; h: number }[];
   exits: { to: TopdownArea; x: number; y: number; w: number; h: number; spawn: Point }[];
+  lights: LightPoint[];
+  emitters: Emitter[];
+  ambient: AmbientSpec;
 }
 
 export interface TopdownCallbacks {
@@ -156,6 +170,13 @@ export class TopdownScene extends Phaser.Scene {
   private facing: Dir = "down";
   private booted = false;
   private down: { x: number; y: number; t: number } | null = null;
+  private daylight!: DaylightLayer;
+  private readonly wind = new WindSway();
+  private smoke!: ChimneySmoke;
+  private life!: AmbientLife;
+  private people!: PeopleLife;
+  /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day, cues and walking stay. */
+  private reducedMotion = false;
 
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
@@ -174,8 +195,11 @@ export class TopdownScene extends Phaser.Scene {
 
   preload(): void {
     for (const area of AREAS) {
+      // An area ships only as many ground frames as its water needs, so load them once its JSON says how many.
+      this.load.once(`filecomplete-json-area:${area}`, (_key: string, _type: string, data: AreaSpec) => {
+        for (let f = 0; f < data.frames; f++) this.load.image(`ground:${area}:${f}`, `${ASSETS}/areas/${area}/ground-${f}.png`);
+      });
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
-      for (let f = 0; f < 4; f++) this.load.image(`ground:${area}:${f}`, `${ASSETS}/areas/${area}/ground-${f}.png`);
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
@@ -199,19 +223,41 @@ export class TopdownScene extends Phaser.Scene {
     this.host.addEventListener("pointerdown", this.onPointerDown);
     this.host.addEventListener("pointerup", this.onPointerUp);
     this.host.addEventListener("pointercancel", this.onPointerCancel);
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    this.reducedMotion = motion.matches;
+    const onMotion = (event: MediaQueryListEvent) => {
+      this.reducedMotion = event.matches;
+    };
+    motion.addEventListener("change", onMotion);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.host.removeEventListener("pointerdown", this.onPointerDown);
       this.host.removeEventListener("pointerup", this.onPointerUp);
       this.host.removeEventListener("pointercancel", this.onPointerCancel);
+      motion.removeEventListener("change", onMotion);
     });
+    this.daylight = new DaylightLayer(this, (object) => this.keep(object));
+    this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
+    this.life = new AmbientLife(this, (object) => this.keep(object));
+    this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.enterArea("homestead", this.specs.get("homestead")!.spawn);
     this.booted = true;
     this.callbacks.onReady();
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
     if (this.path.length > 0) this.walk(delta);
     this.placeCamera();
+    this.wind.update(time, this.pos, this.path.length > 0, this.reducedMotion);
+    this.smoke.update(time, this.reducedMotion);
+    this.daylight.update(time, this.reducedMotion);
+    this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
+    this.people.update(
+      time,
+      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.path.length > 0 },
+      this.daylight.hour(),
+      this.reducedMotion,
+      this.hasCue,
+    );
   }
 
   private walk(delta: number): void {
@@ -288,6 +334,8 @@ export class TopdownScene extends Phaser.Scene {
     this.layer = [];
     this.animated = [];
     this.propImages = [];
+    this.wind.clear();
+    this.people.clear();
     this.npcSprites.clear();
     this.soilImages = [];
     this.unitNodes.clear();
@@ -302,9 +350,15 @@ export class TopdownScene extends Phaser.Scene {
       const image = this.keep(this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setDepth(spec.y));
       this.propImages.push({ spec, image });
       if (spec.frames.length > 1) this.animated.push({ sprite: image, frames: spec.frames });
+      if (spec.sway) {
+        const part = this.keep(this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setDepth(spec.y + 0.5));
+        this.wind.add(part, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+      }
     }
     for (const npc of this.area.npcs) {
       const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
+      this.anims.createFromAseprite(npc.name, undefined, sprite);
+      this.people.addNpc(npc.name, sprite);
       const shadow = this.keep(this.add.ellipse(npc.x + 1, npc.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
       this.npcSprites.set(npc.name, { sprite, shadow, cue: null });
     }
@@ -314,6 +368,9 @@ export class TopdownScene extends Phaser.Scene {
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.placeCamera();
+    this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights);
+    this.smoke.build(this.area.emitters);
+    this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
 
     this.applyGates();
     this.applyNpcs();
@@ -452,6 +509,10 @@ export class TopdownScene extends Phaser.Scene {
       node.cue?.destroy();
       this.unitNodes.delete(id);
     }
+    this.people.syncHens(
+      [...this.unitNodes].map(([id, node]): [string, Phaser.GameObjects.Image] => [id, node.sprite]),
+      this.time.now,
+    );
   }
 
   private bob(image: Phaser.GameObjects.Image): void {
@@ -567,6 +628,7 @@ export class TopdownScene extends Phaser.Scene {
     const distance = Math.hypot(target.anchor.x - this.pos.x, target.anchor.y - this.pos.y);
     if (distance > REACH * 2.5) {
       this.floatAt(this.mapToCss(target.anchor), "Can't reach that from here", "deny");
+      this.emote("farmer", "sweat");
       return;
     }
     this.fire(target);
@@ -576,11 +638,21 @@ export class TopdownScene extends Phaser.Scene {
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
     this.player.anims.stop();
     this.player.setFrame(STANDING[this.facing]);
+    this.people.stood(this.time.now);
   }
 
   private onActionDone = (): void => {
     if (this.path.length === 0) this.player.setFrame(STANDING[this.facing]);
+    this.people.stood(this.time.now);
   };
+
+  private hasCue = (name: string): boolean => Boolean(this.npcSprites.get(name)?.cue);
+
+  /** An emote bubble over the farmer or someone on the map (see people-life.ts). */
+  emote(who: EmoteTarget, kind: EmoteKind): void {
+    if (!this.booted) return;
+    this.people.emote(who, kind, this.time.now, this.player, this.hasCue);
+  }
 
   /** The shell's water, harvest or planting drop landed: act it out, facing whatever he walked up to. */
   farmerAction(action: FarmerAction): void {
@@ -734,6 +806,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   celebrate(unitIds: readonly string[]): void {
+    if (unitIds.length > 0) this.emote("farmer", "sparkle");
     unitIds.forEach((id, i) => {
       const node = this.unitNodes.get(id);
       if (!node) return;
@@ -853,6 +926,16 @@ export class TopdownScene extends Phaser.Scene {
 
   isWalking(): boolean {
     return this.path.length > 0;
+  }
+
+  /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the player's local clock. */
+  setClock(hour: number | null): void {
+    this.daylight.setOverride(hour);
+  }
+
+  /** Cloud shadows drifting over the map. Off by default until Kayo has seen them. */
+  setCloudShadows(on: boolean): void {
+    this.life.setClouds(on);
   }
 
   private marker: Phaser.GameObjects.Graphics | null = null;

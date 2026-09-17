@@ -95,14 +95,14 @@ export interface FishingGaugeRequest {
 }
 
 /**
- * One stalk in the brush, as the shell asks for it.
+ * One stalk, played on the open map, as the shell asks for it.
  *
  * `species` picks how hard the stalk plays -- how fast the animal moves and
  * how briefly it stands still -- and NOTHING else, the same way
  * `FishingGaugeRequest.species` does. It is not the prize: what a bagged
  * stalk yields is rolled server-side inside `bag-quarry`, which is why the
  * copy fields exist and why the shell passes a species-free line (see
- * `rollQuarryDifficulty` in lib/stackacres/hunt-scope.ts).
+ * `rollQuarryDifficulty` in lib/stackacres/hunt-proximity.ts).
  *
  * `weapon` is the real progression input: the bow until the farm reaches
  * Level 4, the rifle after (see `bestWeapon` in lib/stackacres/hunting.ts).
@@ -110,9 +110,7 @@ export interface FishingGaugeRequest {
 export interface HuntScopeRequest {
   readonly species: QuarrySpecies;
   readonly weapon: HuntingWeapon;
-  /** Heading on the scope panel. */
-  readonly title?: string;
-  /** Hint under the scope once the animal is taken. */
+  /** Hint under the alert gauge once the animal is taken. */
   readonly baggedHint?: string;
   readonly onBagged?: () => void;
   readonly onLost?: () => void;
@@ -204,10 +202,11 @@ export interface StackAcresWorldApi {
    */
   startFishingGauge: (request: FishingGaugeRequest) => void;
   /**
-   * Puts the tracking scope up over the map: the skill half of a stalk (see
-   * lib/stackacres/hunt-scope.ts). The world owns it for the same reason it
-   * owns the fishing gauge -- the scope is a Phaser scene layered on the same
-   * game, and the world is what holds that game.
+   * Starts a stalk on the open map: the skill half is proximity and
+   * patience, not a minigame overlay (see lib/stackacres/hunt-proximity.ts).
+   * The world owns it for the same reason it owns the fishing gauge -- the
+   * floating alert gauge is a Phaser scene layered on the same game, and the
+   * world is what holds that game and the farmer's live position.
    *
    * The shell decides what each outcome MEANS -- bagging one is what sends
    * `bag-quarry` -- so this only reports which way the stalk went. Exactly

@@ -272,10 +272,10 @@ type CorePainterName =
   | "ico-fish-bluegill"
   | "ico-fish-trout"
   | "ico-fish-catfish"
-  | "ico-bow"
-  | "ico-rifle"
-  | "ico-meat"
-  | "ico-pelt";
+  | "ico-camera"
+  | "ico-telephoto"
+  | "ico-fieldnotes"
+  | "ico-trailphoto";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -2142,89 +2142,83 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#161310");
   }),
 
-  // The two hunting weapons (lib/stackacres/hunting.ts) and what a stalk
-  // yields. Drawn as tools and goods, never as anything in use -- see that
-  // module's header on the tone this loop keeps.
-  "ico-bow": painter(24, 24, (c) => {
-    c.beginPath();
-    c.moveTo(16.5, 3.5);
-    c.quadraticCurveTo(22, 12, 16.5, 20.5);
-    stroke(c, "#8a5a24", 2.2);
-    c.beginPath();
-    c.moveTo(16.5, 3.5);
-    c.quadraticCurveTo(22, 12, 16.5, 20.5);
-    stroke(c, "#c08340", 1);
-    c.beginPath();
-    c.moveTo(16.5, 3.5);
-    c.lineTo(16.5, 20.5);
-    stroke(c, "#e8dcc0", 0.9);
-    c.beginPath();
-    c.moveTo(16.5, 12);
-    c.lineTo(4, 12);
-    stroke(c, "#b8a887", 1.3);
-    poly(c, [[4, 12], [8, 10.4], [8, 13.6]]);
-    F(c, "#d8d2c4");
-  }),
-
-  "ico-rifle": painter(24, 24, (c) => {
-    c.beginPath();
-    c.moveTo(3.5, 17.5);
-    c.lineTo(9, 13);
-    stroke(c, "#7a4a1e", 3.2);
-    c.beginPath();
-    c.moveTo(8, 14);
-    c.lineTo(20.5, 5.5);
-    stroke(c, "#4a4d52", 2.4);
-    c.beginPath();
-    c.moveTo(8, 14);
-    c.lineTo(20.5, 5.5);
-    stroke(c, "#8d9298", 0.9);
-    ell(c, 13.2, 9.6, 2.9, 1.4, -0.6);
+  // The two observation gear tiers (lib/stackacres/hunting.ts) and what a
+  // logged stalk yields. Drawn as tools and goods, never as anything in use
+  // -- see that module's header on the non-violent tone this loop keeps.
+  "ico-camera": painter(24, 24, (c) => {
+    rr(c, 3, 8.5, 18, 11.5, 2.2);
+    F(c, lin(c, 3, 8.5, 21, 20, [[0, "#4a4d52"], [1, "#2f3236"]]));
+    stroke(c, "#1c1e21", 1);
+    rr(c, 8.5, 5.2, 6, 3.4, 1.1);
     F(c, "#2f3236");
-    c.beginPath();
-    c.moveTo(10.5, 15.5);
-    c.quadraticCurveTo(11.5, 18.5, 9.5, 18.8);
-    stroke(c, "#5d6167", 1.4);
-  }),
-
-  "ico-meat": painter(24, 24, (c) => {
-    ell(c, 13.5, 13, 7, 5.4, -0.5);
-    F(c, lin(c, 8, 8, 19, 18, [[0, "#d4674f"], [1, "#a23f2e"]]));
-    ell(c, 12, 11.5, 3.4, 2.4, -0.5);
-    F(c, "#e8927c");
-    c.beginPath();
-    c.moveTo(7.5, 17.5);
-    c.lineTo(3.5, 21);
-    stroke(c, "#efe5cf", 2.8);
-    ell(c, 3.2, 21.3, 1.6, 1.6);
+    ell(c, 12, 14.5, 5, 5);
+    F(c, "#1c1e21");
+    ell(c, 12, 14.5, 3.5, 3.5);
+    F(c, lin(c, 9, 11.5, 15, 17.5, [[0, "#8d9298"], [1, "#4a4d52"]]));
+    ell(c, 12, 14.5, 1.5, 1.5);
+    F(c, "#1c1e21");
+    ell(c, 18, 10.6, 1.1, 1.1);
     F(c, "#efe5cf");
   }),
 
-  "ico-pelt": painter(24, 24, (c) => {
-    poly(c, [
-      [12, 2.5],
-      [17.5, 6],
-      [20, 13],
-      [16, 21],
-      [8, 21],
-      [4, 13],
-      [6.5, 6],
-    ]);
-    F(c, lin(c, 6, 4, 18, 20, [[0, "#b98b52"], [1, "#7d5a30"]]));
-    poly(c, [
-      [12, 6],
-      [15.5, 9],
-      [14, 17.5],
-      [10, 17.5],
-      [8.5, 9],
-    ]);
-    F(c, "#d9b688");
-    for (const y of [10, 13.5, 17] as const) {
+  "ico-telephoto": painter(24, 24, (c) => {
+    c.beginPath();
+    c.moveTo(3.5, 18.5);
+    c.lineTo(7.8, 15);
+    stroke(c, "#3f3a32", 3);
+    c.beginPath();
+    c.moveTo(7.5, 15.5);
+    c.lineTo(20.5, 5.5);
+    stroke(c, "#4a4d52", 4.4);
+    c.beginPath();
+    c.moveTo(7.5, 15.5);
+    c.lineTo(20.5, 5.5);
+    stroke(c, "#8d9298", 1.3);
+    // Zoom rings along the barrel.
+    for (const t of [0.32, 0.52, 0.72] as const) {
+      const x = 7.5 + (20.5 - 7.5) * t;
+      const y = 15.5 + (5.5 - 15.5) * t;
       c.beginPath();
-      c.moveTo(9.4, y);
-      c.lineTo(14.6, y);
-      stroke(c, "#8f6a3c", 0.7);
+      c.moveTo(x - 0.9, y + 1.1);
+      c.lineTo(x + 0.9, y - 1.1);
+      stroke(c, "#2f3236", 1.6);
     }
+    ell(c, 20.5, 5.5, 2.6, 2.6);
+    F(c, "#1c1e21");
+    ell(c, 20.5, 5.5, 1.5, 1.5);
+    F(c, lin(c, 19, 4, 22, 7, [[0, "#8fd6ee"], [1, "#2a7e9e"]]));
+  }),
+
+  "ico-fieldnotes": painter(24, 24, (c) => {
+    rr(c, 5.5, 3, 13, 18, 1.4);
+    F(c, "#efe5cf");
+    stroke(c, "#b9a87e", 1);
+    rr(c, 5.5, 3, 4, 18, 1.4);
+    F(c, "#b9a87e");
+    for (const y of [8, 11.5, 15] as const) {
+      c.beginPath();
+      c.moveTo(12, y);
+      c.lineTo(16.5, y);
+      stroke(c, "#a8917c", 1);
+    }
+    c.beginPath();
+    c.moveTo(6.5, 20.5);
+    c.lineTo(19, 6.5);
+    stroke(c, "#dd9a4a", 1.8);
+    ell(c, 19.4, 6.1, 0.9, 0.9);
+    F(c, "#79491b");
+  }),
+
+  "ico-trailphoto": painter(24, 24, (c) => {
+    rr(c, 4, 2.5, 16, 19, 1);
+    F(c, "#f8f1dc");
+    stroke(c, "#b9a87e", 1);
+    rr(c, 6, 4.5, 12, 10.5, 0.6);
+    F(c, lin(c, 6, 4.5, 18, 15, [[0, "#7fb838"], [1, "#2c7a3f"]]));
+    ell(c, 12, 11.2, 2.3, 2.7, -0.15);
+    F(c, "#7a5636");
+    ell(c, 12.9, 9.3, 0.9, 1.2, -0.15);
+    F(c, "#5c3f26");
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

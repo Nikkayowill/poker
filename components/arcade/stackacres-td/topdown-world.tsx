@@ -4,6 +4,10 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, 
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { Point } from "@/lib/stackacres-td/movement";
+// Type-only, so neither Phaser nor the gauge scene lands in this file's
+// bundle: both are loaded at runtime by the effect below.
+import type * as PhaserNS from "phaser";
+import type { FishingGaugeScene } from "../stackacres/fishing-gauge-scene";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
 import { StackAcresJoystick } from "./joystick";
@@ -30,6 +34,13 @@ import type { TopdownScene } from "./scene";
 export const MIN_TILES_ACROSS = 13;
 export const MIN_TILES_DOWN = 8;
 
+/** Device pixels per CSS pixel, capped so a 3x screen does not bake a canvas
+ *  nobody can afford. Read in one place so every layer drawn on this canvas
+ *  (the map, and the fishing gauge over it) scales by the same number. */
+function canvasDpr(): number {
+  return Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+}
+
 /** Device pixels per art pixel: the largest whole number that still shows 13 tiles across and 8 down. */
 export function pickZoom(hostWidth: number, hostHeight: number, dpr: number): number {
   const across = Math.floor((hostWidth * dpr) / (MIN_TILES_ACROSS * 16));
@@ -54,6 +65,11 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, api } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
+  /** The live game, held so a layer can be added over the map after boot --
+   *  currently just the fishing gauge (see `startFishingGauge`). */
+  const gameRef = useRef<PhaserNS.Game | null>(null);
+  /** The gauge scene while a fishing fight is up, else null. */
+  const gaugeRef = useRef<FishingGaugeScene | null>(null);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
   const propsRef = useRef(props);
@@ -108,7 +124,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         host,
       );
       const size = () => {
-        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+        const dpr = canvasDpr();
         const zoom = pickZoom(host.clientWidth, host.clientHeight, dpr);
         return {
           width: Math.max(16, Math.floor(host.clientWidth * dpr)),
@@ -131,6 +147,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
         scene,
       });
       game = instance;
+      gameRef.current = instance;
       sceneRef.current = scene;
       scene.setZoom(first.zoom);
       const now = latest.current;
@@ -155,6 +172,11 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       cancelled = true;
       observer?.disconnect();
       sceneRef.current = null;
+      // Destroying the game tears the gauge down with it (its own shutdown
+      // handler unbinds the host listeners), so there is nothing to close
+      // here -- only the handle to drop, before the game it points into goes.
+      gaugeRef.current = null;
+      gameRef.current = null;
       game?.destroy(true);
       if (process.env.NODE_ENV !== "production") {
         delete (window as unknown as { __stackacres?: unknown }).__stackacres;
@@ -201,6 +223,46 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       setRayHouseHeldOpen: () => undefined,
       setTravelerRayHeldOpen: () => undefined,
       setGreenhouseHeldOpen: () => undefined,
+      startFishingGauge: (request) => {
+        const game = gameRef.current;
+        const host = hostRef.current;
+        // No map booted (the player left, or Phaser is still loading): the
+        // fight cannot happen, so hand the shell its close straight back
+        // rather than leaving a cast it thinks is still running.
+        if (!game || !host) {
+          request.onClosed?.();
+          return;
+        }
+        // Imported here, not at the top: the gauge scene imports Phaser, and
+        // this file keeps Phaser out of the page bundle by loading it only
+        // when the map boots (see the boot effect above).
+        void (async () => {
+          const { launchFishingGauge } = await import("../stackacres/fishing-gauge-scene");
+          // Booted away while the chunk was in the air.
+          if (gameRef.current !== game) {
+            request.onClosed?.();
+            return;
+          }
+          gaugeRef.current = launchFishingGauge(
+            game,
+            {
+              species: request.species,
+              title: request.title,
+              landedHint: request.landedHint,
+              host,
+              dpr: canvasDpr(),
+            },
+            {
+              onLanded: () => request.onLanded?.(),
+              onEscaped: () => request.onEscaped?.(),
+              onClosed: () => {
+                gaugeRef.current = null;
+                request.onClosed?.();
+              },
+            },
+          );
+        })();
+      },
     }),
     [],
   );

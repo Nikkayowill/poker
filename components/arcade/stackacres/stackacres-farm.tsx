@@ -145,6 +145,17 @@ import {
 } from "@/lib/stackacres/friendship";
 import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
+import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
+import {
+  ACTION_BATCH_WINDOW_MS,
+  actionForUnits,
+  batchWindowRemainingMs,
+  coalesceActionTap,
+  drainActionBatch,
+  reopenActionBatch,
+  type ActionBatchWindow,
+  type BatchableAction,
+} from "@/lib/stackacres/action-batch";
 import { SYNERGY_PERKS, type SynergyArchetype } from "@/lib/stackacres/synergy-perks";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -325,6 +336,11 @@ const PROVISIONAL_WAIT_PASSES = 3;
 
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
+/** How many extra windows a batched flush may wait for its own intent to
+ *  clear before sending anyway and letting `act` answer. Bounded so a stuck
+ *  request can never hold a player's taps forever -- see `flushBatch`. */
+const BATCH_FLUSH_ATTEMPTS = 3;
+
 /**
  * The preset sizes offered on Ray's shelf for soil. A single "Buy" button
  * meant a player restocking ten bags fired ten separate presses, and every
@@ -375,7 +391,7 @@ const PIXEL_PILGRIM_LINES: readonly string[] = [
   "I ask nothing of you that I do not also ask of myself.",
 ];
 
-/** Grandfather Ray's own opening lines, in the same drawl the welcome
+/** Ray's own opening lines, in the same drawl the welcome
  *  modal already uses. One is picked at random
  *  each time his gift dialogue opens; the prompt itself lives in
  *  StackAcresFriendshipDialogue, not here, for the same reason
@@ -1089,7 +1105,7 @@ export function StackAcresFarm() {
   // real gesture, which also doubles as the autoplay-policy unlock every
   // browser requires before it will let audio start on its own.
   const [hasStarted, setHasStarted] = useState(false);
-  // Grandfather Ray's one-time hello, first visit only -- a plain localStorage
+  // Ray's one-time hello, first visit only -- a plain localStorage
   // flag rather than a profile field, since this is a hello, not a fact about
   // the farm. Read only once `hasStarted` flips true, so it never flashes
   // behind the tap-to-play splash.
@@ -2536,6 +2552,107 @@ export function StackAcresFarm() {
     ],
   );
 
+  /* ---------------------------------------------------------------- */
+  /* Batched tool taps                                                 */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * One open window per batchable action, with the timer that will close it.
+   * See lib/stackacres/action-batch.ts for the rule; this is the clock and
+   * the `act` call that module deliberately does not own.
+   */
+  const batchWindows = useRef(new Map<BatchableAction, { window: ActionBatchWindow; timer: number | null }>());
+
+  /** Sends a window's trailing batch, or waits out one more window when the
+   *  leading request is somehow still in the air. Held in a ref because the
+   *  timer it arms calls it again. */
+  const flushBatchRef = useRef<(kind: BatchableAction, attempt: number) => void>(() => undefined);
+
+  const flushBatch = useCallback(
+    (kind: BatchableAction, attempt: number): void => {
+      const entry = batchWindows.current.get(kind);
+      if (!entry) return;
+      if (entry.timer !== null) window.clearTimeout(entry.timer);
+      batchWindows.current.delete(kind);
+      const body = drainActionBatch(entry.window);
+      if (!body) return;
+      // `collect` collapses to one intent whatever it names, so a batch can
+      // arrive while the leading tap's own request is still out. Waiting a
+      // window is the difference between these taps landing late and being
+      // refused as duplicates.
+      if (inFlight.current.has(intentOf(body)) && attempt < BATCH_FLUSH_ATTEMPTS) {
+        const reopened = reopenActionBatch(kind, entry.window.queued, Date.now());
+        batchWindows.current.set(kind, {
+          window: reopened,
+          timer: window.setTimeout(() => flushBatchRef.current(kind, attempt + 1), ACTION_BATCH_WINDOW_MS),
+        });
+        return;
+      }
+      void act(body);
+    },
+    [act],
+  );
+
+  useEffect(() => {
+    flushBatchRef.current = flushBatch;
+  }, [flushBatch]);
+
+  /**
+   * A water or harvest press, coalesced.
+   *
+   * The first press goes out immediately, so a single tap is exactly as
+   * responsive as it was before this existed. Presses that land inside the
+   * next 200ms ride one plural request instead of one each -- the same
+   * `unitIds` body the water can's group drop and the Harvest Cascade
+   * already send, so the server, the route's own validation and the
+   * optimistic prediction all see a shape they already handle.
+   */
+  const tapBatched = useCallback(
+    (kind: BatchableAction, unitId: string): void => {
+      const open = batchWindows.current.get(kind);
+      if (open?.timer != null) window.clearTimeout(open.timer);
+      const lone = actionForUnits(kind, [unitId]);
+      // `collect` collapses to one intent whatever it names, so an in-flight
+      // one says nothing about THIS unit: queue the press rather than let it
+      // be refused as a duplicate of somebody else's harvest. `water` keys
+      // per unit, so an in-flight one means this very crop is already being
+      // watered -- leave that to `act`'s duplicate guard, or a second press
+      // would queue a second can-load for a crop that is already wet.
+      const busy = kind === "collect" && lone !== null && inFlight.current.has(intentOf(lone));
+      const tap = coalesceActionTap(open?.window ?? null, kind, unitId, Date.now(), busy);
+      if (tap.flush) void act(tap.flush);
+      if (tap.send) void act(tap.send);
+      if (tap.full) {
+        batchWindows.current.set(kind, { window: tap.window, timer: null });
+        flushBatchRef.current(kind, 0);
+        return;
+      }
+      // Nothing queued behind the leading press: no timer to arm, and the
+      // next press inside the window arms its own.
+      const timer =
+        tap.window.queued.length > 0
+          ? window.setTimeout(
+              () => flushBatchRef.current(kind, 0),
+              batchWindowRemainingMs(tap.window, Date.now()),
+            )
+          : null;
+      batchWindows.current.set(kind, { window: tap.window, timer });
+    },
+    [act],
+  );
+
+  // Leaving the farm mid-burst sends what was queued rather than dropping
+  // it: the presses already happened, and the request is the only record of
+  // them. `act` handles its own unmount (it checks `mounted` before it
+  // touches state), so the POST still lands even though nothing repaints.
+  useEffect(() => {
+    const windows = batchWindows.current;
+    const flushAll = flushBatchRef;
+    return () => {
+      for (const kind of [...windows.keys()]) flushAll.current(kind, BATCH_FLUSH_ATTEMPTS);
+    };
+  }, []);
+
   /**
    * The travelers' story. `submit` posts the one intent a committing choice
    * in the bubble sends, through the exact same `act` (and so the exact
@@ -2803,9 +2920,14 @@ export function StackAcresFarm() {
       // it lands (in `act`), with the voice of the animal that actually paid
       // out. A chrome click in front of that is one sound too many, and it is
       // the app's click rather than the farm's.
-      void act({ action: "collect", unitIds: [unit.id] });
+      //
+      // Batched: this row sits in a list of rows, so it gets pressed down the
+      // list faster than one round trip. Before, the second press was refused
+      // as a duplicate of the first (every `collect` shares one intent) and
+      // did nothing at all.
+      tapBatched("collect", unit.id);
     },
-    [act],
+    [tapBatched],
   );
   /**
    * Bring in everything that is ready, in one act. This is the only control
@@ -2843,9 +2965,13 @@ export function StackAcresFarm() {
         return;
       }
       waterSound();
-      void act({ action: "water", unitId: unit.id });
+      // Batched, same as `onCollect` above: a row in a list of rows. The can
+      // itself is still checked per press, and the server clamps a batch to
+      // whatever water is actually left (`predictStackAcresAction` does the
+      // same locally), exactly as a group drop already does.
+      tapBatched("water", unit.id);
     },
-    [act, water],
+    [tapBatched, water],
   );
   const onClear = useCallback(
     (unit: StackAcresUnitSnapshot) => {
@@ -3277,11 +3403,37 @@ export function StackAcresFarm() {
     [fishingOffer, offerIconAt],
   );
 
-  /** A cast landed a fish. The overlay plays its own splash; this sends the
-   *  action and gives it a voice once the server confirms which fish. */
-  const onFishCaught = useCallback(() => {
-    tapAnchor.current = fishingOffer?.targetAt ?? null;
-    void act({ action: "catch-fish" });
+  /**
+   * The reel hooked something. The cast is over at this point -- the rod
+   * overlay plays its splash and closes itself -- and the gauge takes over:
+   * the fight over the fish is what decides whether `catch-fish` is sent at
+   * all (see lib/stackacres/fishing-gauge.ts). Landing one gives it a voice
+   * the same way it always did, off the server's own answer.
+   *
+   * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
+   * fight is; the fish this cast actually lands is the server's roll inside
+   * `catch-fish`, so the gauge's copy stays species-free and the response's
+   * toast is what names the catch.
+   */
+  const onFishHooked = useCallback(() => {
+    const targetAt = fishingOffer?.targetAt ?? null;
+    tapAnchor.current = targetAt;
+    world.current?.startFishingGauge({
+      species: rollGaugeDifficulty(),
+      title: "Something's on the line!",
+      landedHint: "Reeling it in...",
+      onLanded: () => {
+        void act({ action: "catch-fish" });
+      },
+      onEscaped: () => {
+        // No catch, no cost: the line just went slack. Said where the cast
+        // was, the same place a refusal on the dock would have been said.
+        if (targetAt) world.current?.floatAt(targetAt, "It got away.", "deny");
+      },
+      // Whatever happened, the rod is back on the dock and a new cast is
+      // allowed -- `fishingOffer` is what gates that (see `onWorldDockTap`).
+      onClosed: () => setFishingOffer(null),
+    });
   }, [act, fishingOffer]);
 
   const closeFishingOffer = useCallback(() => setFishingOffer(null), []);
@@ -3311,10 +3463,14 @@ export function StackAcresFarm() {
               : `Watered ${wateredCount} of ${offer.unitIds.length} crops. Can's empty.`;
           setLastCollect({ text, nonce: Date.now() });
         }
+        // Already plural, and already the whole block the player aimed at:
+        // batching it could only fold in a crop they did not aim for.
         void act({ action: "water", unitId: offer.unitId, unitIds: offer.unitIds });
         return;
       }
-      void act({ action: "water", unitId: offer.unitId });
+      // A lone crop, so a second dry crop watered right after this one rides
+      // the same request instead of opening a second one.
+      tapBatched("water", offer.unitId);
       return;
     }
     if (offer.kind === "feed-pen") {
@@ -3338,6 +3494,11 @@ export function StackAcresFarm() {
         : undefined;
       world.current?.farmerAction("harvest");
       world.current?.registerFrenzyTap(offer.unitId, baseYieldGold);
+      // NOT batched, deliberately: the Critical Harvest Cascade chains off
+      // THIS request's own settled result (`triggerCascade` reads the crit
+      // the response carried), and a batched send has no promise to hand
+      // back to the drop that joined it. The panel's own Harvest rows are
+      // where harvest bursts get batched instead -- see `onCollect`.
       void act({ action: "collect", unitIds: [offer.unitId] }).then((result) => {
         if (result.ok && unit) void triggerCascade(offer.unitId, unit.stock);
       });
@@ -3346,7 +3507,7 @@ export function StackAcresFarm() {
     const unit = liveUnits.find((candidate) => candidate.id === offer.unitId);
     if (unit) feedSound(unit.stock);
     void act({ action: "feed", unitId: offer.unitId });
-  }, [act, dragOffer, liveUnits, triggerCascade, water]);
+  }, [act, dragOffer, liveUnits, tapBatched, triggerCascade, water]);
 
   const closeDragOffer = useCallback(() => setDragOffer(null), []);
 
@@ -3417,9 +3578,11 @@ export function StackAcresFarm() {
 
   const onCollectGreenhouse = useCallback(
     (unitId: string) => {
-      void act({ action: "collect", unitIds: [unitId] });
+      // Six slots side by side in one panel: the same press-down-the-list
+      // burst `onCollect` batches for, for the same reason.
+      tapBatched("collect", unitId);
     },
-    [act],
+    [tapBatched],
   );
 
   /**
@@ -4566,7 +4729,7 @@ export function StackAcresFarm() {
               key={fishingOffer.key}
               iconAt={fishingOffer.iconAt}
               targetAt={fishingOffer.targetAt}
-              onCatch={onFishCaught}
+              onCatch={onFishHooked}
               onClose={closeFishingOffer}
             />
           )}
@@ -4679,7 +4842,7 @@ export function StackAcresFarm() {
             <div className="sa-panel-head">
               <div className="sa-ray-row">
                 <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
-                <span className="sa-ray-name">Grandfather Ray</span>
+                <span className="sa-ray-name">Ray</span>
               </div>
               <button
                 type="button"

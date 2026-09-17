@@ -42,7 +42,7 @@
  * requirements differently.
  */
 
-import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
+import { STACKACRES_BASE_CAP, STACKACRES_STOCK, capFor, isStackAcresCrop, type StackAcresStock } from "./catalogue";
 import { nearPath } from "./paths";
 import type { StackAcresUnitSnapshot } from "./units";
 import { seededRandom, stockZone, type SceneryKind, type WorldRect } from "./world";
@@ -381,26 +381,36 @@ export function sectorClearCheck(
  * ground count: a Cattle Pen slot at Ox Fields costs nothing while Ox Fields
  * is still a wood.
  *
- * CROPS NEED A SECOND CHECK, since the 2026-09-08 district merge. Every crop
- * kind is zoned to `farmstead`, a HOME sector that is unconditionally
- * "unlocked" -- so `isSectorUnlocked` alone would count all 22 crop kinds'
- * slots against a brand-new farm that has never spent the 15,000 Gold to
- * unlock the Crop Fields at all (see ./crop-fields.ts). `cropFieldsUnlocked`
- * is the second gate that keeps a fresh account's free base at the Hen
- * Coop's three slots and nothing more, the same shape it held back when the
- * Crop Fields were still their own locked sector.
+ * CROPS ARE CHARGED FLAT, NOT PER KIND (2026-09-17 fix). They used to run
+ * through the same `capFor` slot count as livestock, gated by
+ * `cropFieldsUnlocked` so the Farmstead's permanently-unlocked status
+ * couldn't bill a fresh account for land it never paid for. That gate was
+ * right, but the per-kind count under it stopped meaning anything once
+ * crops went uncapped (`STACKACRES_BASE_CAP`'s own header): there is no
+ * purchasable capacity left for a crop kind to leave idle, so `capFor(0)`
+ * per kind was charging for a resource that no longer exists, and scaled
+ * with the catalogue's own size -- 16 kinds, 48 chargeable plots,
+ * 8,314 Gold/day the instant Crop Fields unlocks, before a single crop is
+ * planted, an order of magnitude past this fee's own designed ceiling (see
+ * ./upkeep.ts's worked table, topping out at 30 plots). Unlocking Crop
+ * Fields is now ONE sector-clearing event, charged like any other sector's
+ * minimum footprint (`CROP_FIELDS_UPKEEP_PLOTS`) -- so a seventeenth crop
+ * can ship without silently moving the bill again.
  */
+export const CROP_FIELDS_UPKEEP_PLOTS = STACKACRES_BASE_CAP;
+
 export function unlockedPlotCount(
   unlocked: readonly SectorId[],
   capacity: Readonly<Partial<Record<StackAcresStock, number>>>,
   cropFieldsUnlocked: boolean,
 ): number {
-  return STACKACRES_STOCK.reduce((total, stock) => {
+  const stockTotal = STACKACRES_STOCK.reduce((total, stock) => {
+    if (isStackAcresCrop(stock)) return total; // charged once, flat, below
     const zone = stockZone(stock);
     if (!isSectorUnlocked(zone, unlocked)) return total;
-    if (zone === "farmstead" && !cropFieldsUnlocked) return total;
     return total + capFor(capacity[stock] ?? 0);
   }, 0);
+  return stockTotal + (cropFieldsUnlocked ? CROP_FIELDS_UPKEEP_PLOTS : 0);
 }
 
 /**

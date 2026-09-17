@@ -14,15 +14,18 @@ export const runtime = "nodejs";
  *
  * 15 minutes is generous room for an in-flight request to finish its own
  * create-or-refund before this treats it as orphaned; it is not a tuned
- * SLA. Scheduled hourly in vercel.json; safe to call more often or by hand
- * -- an empty scan just returns { found: 0, refunded: 0 }.
+ * SLA. Safe to call more often or by hand -- an empty scan just returns
+ * { found: 0, refunded: 0 }.
  *
- * Vercel's free Hobby tier silently limits cron schedules to once a day
- * regardless of what vercel.json says -- confirm the project's actual plan
- * before relying on the hourly cadence below. If it's Hobby, either upgrade
- * or trigger this route from an external scheduler (e.g. Upstash QStash);
- * the route itself doesn't care who calls it, only that CRON_SECRET is
- * presented.
+ * Scheduled once daily in vercel.json, not hourly: this project is on
+ * Vercel's Hobby tier, which rejects the deploy outright for any cron
+ * expression that would fire more than once a day (confirmed by an actual
+ * failed deploy, not a hypothetical). That means an orphaned debit can sit
+ * unrefunded for up to ~24h in production today. If that's not tight
+ * enough, either upgrade past Hobby or trigger this route more often from
+ * an external scheduler (e.g. Upstash QStash) instead of vercel.json's
+ * crons -- the route itself doesn't care who calls it, only that
+ * CRON_SECRET is presented.
  */
 export async function GET(request: NextRequest) {
   const limited = await enforceRateLimit(request, "cron:reconcile-stale-stakes", 10, 60 * 1000);

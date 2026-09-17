@@ -1,5 +1,5 @@
 import "server-only";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { CRIBBAGE_GAME } from "@/lib/cribbage/engine";
 import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
@@ -28,7 +28,14 @@ import {
   type StoredCribbageTable,
 } from "./cribbage-table-store";
 import { applyMissionEvent } from "./mission-store";
-import { creditGoldByProfile, ensureProfile, getPublicProfilesByIds, spendGoldByProfile } from "./profile-store";
+import {
+  confirmGoldDebitLedgered,
+  creditGoldByProfile,
+  creditGoldByProfileLedgered,
+  ensureProfile,
+  getPublicProfilesByIds,
+  spendGoldByProfileLedgered,
+} from "./profile-store";
 import { awardWager } from "./progression-store";
 
 /**
@@ -256,17 +263,26 @@ export async function openCribbageTable(
     throw new CribbageRequestError("You are already at a cribbage table.", 409);
   }
 
-  const debited = await spendGoldByProfile(profile.id, stake);
-  if (!debited) throw new CribbageRequestError(`You need ${stake.toLocaleString()} Gold to stake this table.`, 400);
+  // Ledgered rather than plain spendGoldByProfile: an open table can sit
+  // waiting for seats for a while, the same crash-window risk
+  // openDuelChallenge in pvp-match-service.ts documents. See
+  // app/api/cron/reconcile-stale-stakes.
+  const stakeCorrelationId = `cribbage_open_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "cribbage_open");
+  if (!debited.success) {
+    throw new CribbageRequestError(`You need ${stake.toLocaleString()} Gold to stake this table.`, 400);
+  }
 
   let table: StoredCribbageTable | null = null;
   try {
     table = await createCribbageTableRow(profile.id, stake);
     await claimCribbageSeat(table.id, profile.id);
   } catch (error) {
-    await creditGoldByProfile(profile.id, stake).catch((refundError) => {
-      console.error("cribbage.open_refund_failed", { profileId: profile.id, stake, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "cribbage_open_refund").catch(
+      (refundError) => {
+        console.error("cribbage.open_refund_failed", { profileId: profile.id, stake, error: refundError });
+      },
+    );
     // The table row itself may have persisted even though seating the host
     // in it failed right after. A host-less, permanently-empty 'waiting'
     // row would otherwise sit in the open-table list forever, since nobody
@@ -278,8 +294,17 @@ export async function openCribbageTable(
     throw error;
   }
 
+  // The table (and the host's own seat) now exist: this debit can
+  // legitimately stay uncredited for as long as the table sits waiting.
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+    console.error("cribbage.open_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
+
   const seats = await getCribbageSeats(table.id);
-  return { table: await tableView(table, seats, profile.id, Date.now()), profile: debited };
+  return {
+    table: await tableView(table, seats, profile.id, Date.now()),
+    profile: { ...profile, goldBalance: debited.goldBalance },
+  };
 }
 
 /** Open (waiting) tables, across every stake: the lobby list. */
@@ -364,26 +389,39 @@ export async function joinCribbageTable(
     throw new CribbageRequestError("You are already at a cribbage table.", 409);
   }
 
-  // Rule 1: the joiner's stake leaves before their seat exists.
-  const debited = await spendGoldByProfile(profile.id, table.stake);
-  if (!debited) {
+  // Rule 1: the joiner's stake leaves before their seat exists. Ledgered for
+  // the same reason openCribbageTable's stake is.
+  const stakeCorrelationId = `cribbage_join_stake:${randomUUID()}`;
+  const debited = await spendGoldByProfileLedgered(profile.id, table.stake, stakeCorrelationId, "cribbage_join");
+  if (!debited.success) {
     throw new CribbageRequestError(`You need ${table.stake.toLocaleString()} Gold to join this table.`, 400);
   }
 
   try {
     await claimCribbageSeat(tableId, profile.id);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.stake).catch((refundError) => {
-      console.error("cribbage.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, table.stake, stakeCorrelationId, "cribbage_join_refund").catch(
+      (refundError) => {
+        console.error("cribbage.join_refund_failed", { tableId, profileId: profile.id, stake: table.stake, error: refundError });
+      },
+    );
     if (error instanceof CribbageTableNotJoinable) throw new CribbageRequestError(error.message, 409);
     throw error;
   }
 
+  // The seat now exists: this debit can legitimately stay uncredited for as
+  // long as the table takes to fill and deal.
+  await confirmGoldDebitLedgered(stakeCorrelationId).catch((confirmError) => {
+    console.error("cribbage.join_confirm_failed", { profileId: profile.id, stakeCorrelationId, error: confirmError });
+  });
+
   const dealt = await dealTableIfReady(tableId, profile.id, false, MAX_SEATS);
   const current = dealt ?? (await getCribbageTableById(tableId)) ?? table;
   const seats = await getCribbageSeats(tableId);
-  return { table: await tableView(current, seats, profile.id, Date.now()), profile: debited };
+  return {
+    table: await tableView(current, seats, profile.id, Date.now()),
+    profile: { ...profile, goldBalance: debited.goldBalance },
+  };
 }
 
 /** The host starting the table early, once at least 3 are seated. No new debit: the host already paid at creation. */

@@ -43,6 +43,7 @@ def assert_redrawn(area):
 def patch_kit():
     seeds = itertools.count(1)
     kit.farmhouse, kit.barn, kit.windmill, kit.well = B.farmhouse, B.barn, B.windmill, B.well
+    kit.workshop = B.workshop
     kit.coop = S.coop
     kit.round_tree, kit.spruce = TR.round_tree, TR.spruce
     kit.bush = lambda seed=0, berries=False: TR.bush(next(seeds), berries)

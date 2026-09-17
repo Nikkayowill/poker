@@ -672,6 +672,13 @@ def windmill():
     return s.outline(), (cx, bottom - 1)
 
 
+# The DB16 pass is a comparison render only (see build.py's own header) --
+# the shipped building is rich/buildings.py's `workshop()`, wired in by
+# `patch_kit()`. This alias just keeps the unpatched DB16 render (and
+# `homestead.py`'s own `kit.workshop()` call) from breaking.
+workshop = windmill
+
+
 def coop():
     w, h = 36, 34
     s = Sprite(w, h)

@@ -60,7 +60,11 @@ TAP_CLEARANCE = 24   # map px of open space critters keep around anything a play
 LIGHTS = {
     "rayhouse": [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")],
     "barn": [(48, 40, "lantern")],
-    "workshop": [(32, 45, "window")],
+    # workshop: no entry here any more -- buildings.workshop() bakes its own
+    # two window lights into img.info["lights"] (the branch above already
+    # reads that), so a manual entry here would add a stray third light at
+    # the old windmill's window position, which doesn't exist on this
+    # building.
 }
 
 

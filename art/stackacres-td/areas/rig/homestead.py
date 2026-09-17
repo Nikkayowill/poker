@@ -49,7 +49,8 @@ def build(for_game=False):
     a.add(kit.farmhouse(), 120, 150, (44, 5), tag="rayhouse")
     a.add(props.smoke(), 139, 74)                      # the chimney is lit
     a.add(kit.barn(), 360, 150, (48, 5), tag="barn")
-    a.add(kit.windmill(), 488, 147, (12, 4), tag="workshop")
+    a.add(kit.workshop(), 488, 147, (36, 5), tag="workshop")
+    a.add(props.smoke(), 503, 72)                       # the workshop's own stove is lit
     a.add(kit.greenhouse_ruin(), 600, 116, ground=True)
     a.zone("greenhouse", 560, 60, 80, 56)
     a.add(kit.well(), 186, 160, (10, 3), tag="well")

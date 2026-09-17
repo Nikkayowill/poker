@@ -539,3 +539,192 @@ def well():
     c.put(9, 21, "water", 4.4)
     c.put(13, 22, "water", 3.4)
     return c.outline().image(), (11, 27)
+
+
+# ------------------------------------------------------------------ workshop
+
+def workshop():
+    """The workshop, where the Mill, Dairy, Loom and Vat recipes are worked: a timber-framed shop with cream plaster
+    panels, a shingled gable carrying a gear sign, a stovepipe, wide plank doors, and a lean-to stacked with lumber."""
+    w, h = 82, 78
+    c = Canvas(w, h)
+    L, R = 24, 79                                              # the main building's walls
+    mid = (L + R) / 2
+    peak, eave, bottom = 5, 32, 72
+
+    # lean-to on the left: a dark back wall, a sloped shingle roof, lumber stacked under it
+    for y in range(34, bottom):
+        for x in range(2, L):
+            c.put(x, y, "wood", 0.5 + (y - 34) * 0.018 + (hash2(x // 4, y, 90) - 0.5) * 0.3)
+    for x in range(1, L + 1):
+        top = 30 + round((L - x) * 9 / (L - 1))
+        for k in range(6):
+            row = k // 2
+            level = 4.8 - row * 0.9 - (0.9 if (x + row * 2) % 4 == 0 else 0) - (1.0 if k % 2 else 0)
+            c.put(x, top + k, "leather", level)
+        c.put(x, top + 6, "coal", 0.8)
+    for y in range(40, bottom):                                # the lean-to's front post
+        c.put(2, y, "wood", 4.8)
+        c.put(3, y, "wood", 3.2)
+        c.put(4, y, "wood", 1.4)
+    for x in range(9, 20):                                     # a hand saw hung on the back wall: steel blade, teeth, handle
+        top = 45 + round((x - 9) * 0.25)
+        for y in range(top, 50):
+            c.put(x, y, "stone", 5.4 - (y - top) * 0.5)
+        if x % 2:
+            c.put(x, 50, "stone", 2.2)
+    for x, y in ((19, 44), (20, 44), (21, 45), (21, 46), (21, 47), (20, 48), (19, 48), (20, 46)):
+        c.put(x, y, "wood", 4.4 if y < 46 else 3.0)
+    for row, y0 in enumerate(range(54, bottom, 3)):            # planks stacked on edge, end grain showing
+        for x in range(6, 22):
+            end = x in (6, 7)
+            level = (5.2 if end else 4.2) - row * 0.15 + (hash2(x, row, 91) - 0.5) * 0.6
+            c.put(x, y0, "wood", level + 0.6)
+            c.put(x, y0 + 1, "wood", level)
+            c.put(x, y0 + 2, "wood", 1.6)
+    for lx, ly in ((9, 66), (15, 66), (12, 62)):               # a few logs in front, rings on their ends
+        for y in range(ly - 2, ly + 3):
+            for x in range(lx - 2, lx + 3):
+                d = math.hypot(x - lx, y - ly)
+                if d <= 2.6:
+                    c.put(x, y, "tan" if d < 1.8 else "wood", 4.6 - (x - lx + y - ly) * 0.35 if d < 1.8 else 2.4)
+        c.put(lx, ly, "wood", 2.8)
+
+    # plaster panels between dark oak beams
+    for y in range(eave, bottom):
+        for x in range(L, R + 1):
+            n = noise1(x, y, 5, 93)
+            level = 5.4 - (x - L) / (R - L) * 0.9 + (n - 0.5) * 0.6
+            if hash2(x, y, 94) < 0.03:
+                level -= 0.9                                   # pits in the plaster
+            if y > bottom - 7:
+                level -= (y - (bottom - 7)) * 0.22 * (0.6 + n)  # splashed dirt at the foot of the wall
+            c.put(x, y, "white", level)
+
+    def beam(x0, y0, x1, y1, lit=3.2):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                edge = 0.9 if (x == x0 or y == y0) else -0.9 if (x == x1 or y == y1) else 0
+                grain = -0.5 if hash2(x // 2, y // 5, 95) < 0.2 else 0
+                c.put(x, y, "wood", lit + edge + grain)
+
+    beam(L, eave, R, eave + 2)                                 # sill beam under the gable
+    beam(L, 52, R, 53)                                         # mid rail
+    for bx in (L, 36, 63, R - 2):
+        beam(bx, eave, bx + 2 if bx != R - 2 else R, bottom - 1)
+    for t in range(0, 17):                                     # braces in the lower side panels
+        for x0, sgn in ((L + 3, 1), (R - 3, -1)):
+            x = x0 + sgn * round(t * 9 / 16)
+            y = bottom - 2 - t
+            c.put(x, y, "wood", 3.4)
+            c.put(x + sgn, y, "wood", 2.2)
+
+    def lit_window(wx, wy):
+        for y in range(wy - 1, wy + 11):
+            for x in range(wx - 1, wx + 9):
+                c.put(x, y, "wood", 4.6 if (x == wx - 1 or y == wy - 1) else 2.0)
+        for y in range(wy, wy + 10):
+            for x in range(wx, wx + 8):
+                s = (x - wx) + (y - wy)
+                level = 3.2 - (y - wy) * 0.2 + (1.4 if s in (3, 4) else 0)
+                use = "glass"
+                if y > wy + 5 and hash2(x, y, wx) < 0.55:
+                    use, level = "lamp", 2.0 + (y - wy - 5) * 0.35   # the stove's glow inside
+                c.put(x, y, use, level if x != wx and y != wy else 0.6)
+        for y in range(wy, wy + 10):
+            c.put(wx + 4, y, "wood", 3.6)
+        for x in range(wx, wx + 8):
+            c.put(x, wy + 4, "wood", 3.6)
+        for x in range(wx - 2, wx + 10):                        # sill
+            c.put(x, wy + 10, "wood", 5.4)
+            c.put(x, wy + 11, "wood", 2.2)
+
+    lit_window(L + 4, eave + 6)
+    lit_window(R - 11, eave + 6)
+
+    # wide plank double doors under a lintel, iron straps and ring pulls
+    dx0, dx1, dy0 = round(mid) - 10, round(mid) + 11, 46
+    beam(dx0 - 2, dy0 - 3, dx1 + 2, dy0 - 1, lit=3.6)
+    for y in range(dy0, bottom):
+        for x in range(dx0, dx1 + 1):
+            board = (x - dx0) % 4
+            level = 3.4 + (hash2((x - dx0) // 4, 0, 96) - 0.5) * 0.7 + (noise1(x * 3, y, 7, 97) - 0.5) * 0.8
+            level = level + 0.9 if board == 1 else level - 0.8 if board == 0 else level
+            if y == dy0:
+                level = 1.0                                    # the lintel's shade on the doors
+            c.put(x, y, "wood", level)
+    for y in range(dy0, bottom):
+        c.put(round(mid), y, "ink", 0)
+    for sy in (dy0 + 5, bottom - 6):
+        for x in range(dx0, dx1 + 1):
+            if x != round(mid):
+                c.put(x, sy, "coal", 2.8 if x < mid else 2.2)
+                c.put(x, sy + 1, "coal", 1.0)
+    for rx in (round(mid) - 3, round(mid) + 3):
+        c.put(rx, dy0 + 13, "gold", 4.6)
+        c.put(rx - 1, dy0 + 14, "gold", 3.4)
+        c.put(rx + 1, dy0 + 14, "gold", 2.6)
+        c.put(rx, dy0 + 15, "gold", 2.0)
+
+    # the gable: steep shingles framing a boarded face with the gear sign
+    for y in range(peak, eave + 2):
+        hw = (y - peak) * ((R - L) / 2 + 5) / (eave - peak)
+        for x in range(round(mid - hw), round(mid + hw) + 1):
+            d = min(x - (mid - hw), (mid + hw) - x)
+            if d < 8:
+                row = (y - peak) // 3
+                level = (5.4 if x < mid else 3.0) - d * 0.2 - (0.8 if (x + row * 3) % 5 == 0 else 0)
+                if (y - peak) % 3 == 2:
+                    level -= 1.1
+                if hash2(x // 5, row, 97) < 0.12 and d < 6:
+                    c.put(x, y, "moss", 2.8 + (1.0 if x < mid else 0))
+                    continue
+                if d >= 7:
+                    level = 0.6                                # the roof edge's underside
+                c.put(x, y, "leather", level)
+            elif y < eave:
+                board = (x - round(mid)) % 3
+                level = 4.2 + (0.8 if board == 0 else -0.7 if board == 2 else 0) + (hash2(x // 3, y, 98) - 0.5) * 0.5
+                if d < 10:
+                    level -= (10 - d) * 0.45                   # the roof's shade on the gable boards
+                c.put(x, y, "tan", level)
+    for x in range(round(mid) - 2, round(mid) + 3):            # ridge cap
+        c.put(x, peak - 1, "leather", 5.4 if x < mid else 3.2)
+        c.put(x, peak, "leather", 4.4 if x < mid else 2.6)
+    gx, gy = mid, 21                                           # a dark wooden disc sign with a gold gear on it
+    for y in range(gy - 7, gy + 8):
+        for x in range(round(gx) - 7, round(gx) + 8):
+            d = math.hypot(x - gx, y - gy)
+            if d <= 6.6:
+                c.put(x, y, "wood", 2.2 - (x - gx + y - gy) * 0.08 if d < 5.6 else 4.6 if x + y < gx + gy else 1.4)
+    for a in range(10):
+        ang = a * math.pi / 5 + 0.3
+        for r in (3.4, 4.4):
+            c.put(gx + math.cos(ang) * r, gy + math.sin(ang) * r, "gold", 4.2 - math.sin(ang + 0.8) * 0.9)
+    for y in range(round(gy) - 4, round(gy) + 5):
+        for x in range(round(gx) - 4, round(gx) + 5):
+            d = math.hypot(x - gx, y - gy)
+            if 1.2 < d <= 3.3:
+                c.put(x, y, "gold", 4.2 - (x - gx + y - gy) * 0.35)
+    c.put(round(gx), round(gy), "coal", 0.6)
+
+    # stovepipe through the right slope, a cap, and a rust streak
+    for y in range(0, 22):
+        c.put(66, y, "stone", 3.6)
+        c.put(67, y, "stone", 2.6)
+        c.put(68, y, "stone", 1.6)
+    for x in range(64, 71):
+        c.put(x, 0, "stone", 4.4 if x < 67 else 2.4)
+        c.put(x, 1, "coal", 1.2)
+    for y in range(8, 14):
+        c.put(67, y, "orange", 2.2)
+
+    stone_blocks(c, L - 2, bottom, R + 2, bottom + 3, 99, bw=7, bh=2, lit=4.4)
+    for x in range(1, L - 2):
+        c.put(x, bottom, "dirt", 3.0)
+        c.put(x, bottom + 1, "dirt", 2.2)
+    for x, y in ((L + 1, bottom - 1), (L + 2, bottom - 2), (R - 4, bottom - 1)):   # weeds at the wall's foot
+        c.put(x, y, "leaf", 3.6)
+    img = c.outline().image()
+    img.info["lights"] = [(L + 8, eave + 11, "window"), (R - 7, eave + 11, "window")]
+    return img, (round(mid), bottom + 3)

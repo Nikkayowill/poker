@@ -139,6 +139,8 @@ import {
 import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
+import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-scope";
+import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import {
   ACTION_BATCH_WINDOW_MS,
   actionForUnits,
@@ -501,6 +503,7 @@ interface StackAcresResponse {
    *  `inventory` above already carries the resulting count, this is only
    *  the cast's own "here is what you landed" line. */
   fishCaught?: { species: FishSpecies };
+  quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -2267,6 +2270,19 @@ export function StackAcresFarm() {
           setLastCollect({ text: `Caught ${label}!`, nonce: Date.now() });
           if (anchor) world.current?.floatAt(anchor, `+1 ${label}`, "gain");
         }
+        // A stalk pays no Gold either -- it fills the shelf with meat and a
+        // pelt. The scope's own banner already played; this names what the
+        // server's dice roll actually gave, the same beat a catch gets.
+        if (body.action === "bag-quarry" && data.quarryBagged) {
+          const { species, meat, pelt } = data.quarryBagged;
+          const meatLabel = machineItemLabel("meat", meat);
+          const peltLabel = machineItemLabel("pelt", pelt);
+          setLastCollect({
+            text: `${QUARRY_CATALOGUE[species].label}! ${meatLabel} and ${peltLabel}.`,
+            nonce: Date.now(),
+          });
+          if (anchor) world.current?.floatAt(anchor, `+${meatLabel}, +${peltLabel}`, "gain");
+        }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
         // dispatch itself). This is the SECOND, more celebratory beat --
@@ -3903,6 +3919,37 @@ export function StackAcresFarm() {
     [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
 
+  /**
+   * A finger landed on the brush at the Ancestral Oak. The scope takes over
+   * from here: holding a mark steady and taking it is what decides whether
+   * `bag-quarry` is sent at all (see lib/stackacres/hunt-scope.ts).
+   *
+   * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
+   * stalk is; what this one actually yields is the server's roll inside
+   * `bag-quarry`, so the scope's copy stays species-free and the response's
+   * toast is what names it. The WEAPON is the real input -- the bow until
+   * the farm reaches Level 4, the rifle after.
+   */
+  const onWorldThicketTap = useCallback(
+    (at: TapPoint) => {
+      tapAnchor.current = at;
+      world.current?.startHuntScope({
+        species: rollQuarryDifficulty(),
+        weapon: bestWeapon(shopProgress),
+        baggedHint: "Back to the farm",
+        onBagged: () => {
+          void act({ action: "bag-quarry" });
+        },
+        onLost: () => {
+          // No catch, no cost: it simply heard something. Said where the
+          // stalk started, the same place a refusal here would be said.
+          world.current?.floatAt(at, "It bolted.", "deny");
+        },
+      });
+    },
+    [act, shopProgress],
+  );
+
   // stackacres-scene.ts fires onReady synchronously once the scene is built
   // and the camera framed -- before Phaser's own render loop has actually
   // painted that frame to the canvas. Waiting two rAF ticks closes that gap
@@ -4105,6 +4152,7 @@ export function StackAcresFarm() {
               onWorkshopTap={onWorldWorkshopTap}
               onWellTap={onWorldWellTap}
               onDockTap={onWorldDockTap}
+              onThicketTap={onWorldThicketTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
               onMerchantTap={onWorldMerchantTap}

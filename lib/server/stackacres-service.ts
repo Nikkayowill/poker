@@ -329,6 +329,7 @@ import {
 } from "@/lib/stackacres/cutters";
 import { machineItemLabel } from "@/lib/stackacres/machine-items";
 import { pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
+import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
   WHEAT_DURATION_MS,
@@ -1385,6 +1386,10 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
    *  other action leaves this undefined. */
   fishCaught?: { species: FishSpecies };
+  /** Set by `bagStackAcresQuarry` to what THIS stalk brought back -- every
+   *  other action leaves this undefined. The scope never learns this until
+   *  it lands, which is the whole point: it plays a difficulty, not a prize. */
+  quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
   /** Set by `meetStackAcresTraveler`/`turnInStackAcresTravelerQuest` to what
    *  THIS call just did -- never named `story`, which is StackAcresView's
    *  own always-present standing and would collide with it in this
@@ -3326,6 +3331,32 @@ export async function catchStackAcresFish(
   await adjustStackAcresInventory(profile.id, species, 1);
   await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }]);
   return { ...(await view(profile, now)), fishCaught: { species } };
+}
+
+/**
+ * A completed stalk in the Oak's brush. Which quarry it was is decided HERE,
+ * never by the client -- the scope only reports that the player held a mark
+ * steady and took it, exactly the separation `catchStackAcresFish` keeps
+ * between "the cast completed" and "here is what it landed".
+ *
+ * Free, so there is nothing to refund: a stalk costs nothing to attempt, and
+ * the two inventory writes below are the only thing it moves. They are
+ * deliberately NOT wrapped in a transaction -- `adjustStackAcresInventory` is
+ * already a row-locking RPC per item, the two items are independent, and the
+ * worst a crash between them can do is credit the meat without the pelt. That
+ * is a strictly-in-the-player's-favour partial result on a free action, which
+ * is the same trade every other multi-item credit in this file makes.
+ */
+export async function bagStackAcresQuarry(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const species: QuarrySpecies = pickQuarry();
+  const { meat, pelt } = QUARRY_CATALOGUE[species];
+  await adjustStackAcresInventory(profile.id, "meat", meat);
+  await adjustStackAcresInventory(profile.id, "pelt", pelt);
+  return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
 /** Pays the maintenance fee on a mucked unit, clearing it -- see

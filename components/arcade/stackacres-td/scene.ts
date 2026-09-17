@@ -166,6 +166,7 @@ export interface TopdownCallbacks {
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
   onDockTap: (at: TapPoint) => void;
+  onThicketTap: (at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMerchantTap: () => void;
   onMonkTap: (at: TapPoint) => void;
@@ -1088,6 +1089,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onWellTap(at);
       case "dock":
         return cb.onDockTap(at);
+      case "thicket":
+        return cb.onThicketTap(at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "rayhouse":

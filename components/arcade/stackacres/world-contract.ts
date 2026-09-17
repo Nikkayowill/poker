@@ -10,6 +10,7 @@ import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
+import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
@@ -90,6 +91,31 @@ export interface FishingGaugeRequest {
   readonly landedHint?: string;
   readonly onLanded?: () => void;
   readonly onEscaped?: () => void;
+  readonly onClosed?: () => void;
+}
+
+/**
+ * One stalk in the brush, as the shell asks for it.
+ *
+ * `species` picks how hard the stalk plays -- how fast the animal moves and
+ * how briefly it stands still -- and NOTHING else, the same way
+ * `FishingGaugeRequest.species` does. It is not the prize: what a bagged
+ * stalk yields is rolled server-side inside `bag-quarry`, which is why the
+ * copy fields exist and why the shell passes a species-free line (see
+ * `rollQuarryDifficulty` in lib/stackacres/hunt-scope.ts).
+ *
+ * `weapon` is the real progression input: the bow until the farm reaches
+ * Level 4, the rifle after (see `bestWeapon` in lib/stackacres/hunting.ts).
+ */
+export interface HuntScopeRequest {
+  readonly species: QuarrySpecies;
+  readonly weapon: HuntingWeapon;
+  /** Heading on the scope panel. */
+  readonly title?: string;
+  /** Hint under the scope once the animal is taken. */
+  readonly baggedHint?: string;
+  readonly onBagged?: () => void;
+  readonly onLost?: () => void;
   readonly onClosed?: () => void;
 }
 
@@ -177,6 +203,18 @@ export interface StackAcresWorldApi {
    * `onClosed` fires on its own if there is no map to fight on.
    */
   startFishingGauge: (request: FishingGaugeRequest) => void;
+  /**
+   * Puts the tracking scope up over the map: the skill half of a stalk (see
+   * lib/stackacres/hunt-scope.ts). The world owns it for the same reason it
+   * owns the fishing gauge -- the scope is a Phaser scene layered on the same
+   * game, and the world is what holds that game.
+   *
+   * The shell decides what each outcome MEANS -- bagging one is what sends
+   * `bag-quarry` -- so this only reports which way the stalk went. Exactly
+   * one of `onBagged`/`onLost` fires, always followed by `onClosed`, and
+   * `onClosed` fires on its own if there is no map to stalk on.
+   */
+  startHuntScope: (request: HuntScopeRequest) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -307,6 +345,11 @@ export interface StackAcresWorldProps {
   onWellTap: (at: TapPoint) => void;
   /** A finger landed on the pond's dock. Casts a line. */
   onDockTap: (at: TapPoint) => void;
+  /** A finger landed on the treeline at the Ancestral Oak -- the entryway to
+   *  a stalk, the way the dock is the entryway to a cast. The shell decides
+   *  whether one is on offer and with which weapon; the map only reports the
+   *  tap. */
+  onThicketTap: (at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
    *  the shell's cue to decide whether to open a build panel or call
    *  `enterGreenhouse` (see the api handle above). */

@@ -2141,6 +2141,7 @@ describe("the currency wall", () => {
     expect(actions).toEqual([
       "activate-synergy-perk",
       "aim-pipe",
+      "bag-quarry",
       "build-greenhouse",
       "buy-cutter",
       "buy-feed",

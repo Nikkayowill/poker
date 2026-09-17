@@ -38,9 +38,11 @@ import {
 } from "./items";
 import { FISH_SPECIES } from "./fishing";
 
-/** Wheat, plus the pond's three catchable fish: nothing crafted, nothing
- *  harvested off a stocked unit either -- see this file's header. */
-export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES] as const;
+/** Wheat, the pond's three catchable fish, and what a stalk in the Oak's
+ *  brush brings back: nothing crafted, nothing harvested off a stocked unit
+ *  either -- see this file's header. Meat and pelts join the fish for exactly
+ *  the same reason they did, and like them nothing consumes either yet. */
+export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
 export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
@@ -118,6 +120,15 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
   trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 45 },
   catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 130 },
+  // A stalk yields both at once (see ./hunting.ts's QUARRY_CATALOGUE), so
+  // these are priced as a PAIR, not one at a time: a Rabbit is 29 Gold, a
+  // Deer 67, a Boar 105. Against the fishing ladder's own weights that makes
+  // an average stalk worth about half again an average cast -- it takes
+  // several times longer, and unlike a cast it can be lost outright. Pelts
+  // carry the higher price of the two: meat is the volume good, a pelt is
+  // the one worth the walk.
+  meat: { label: "Meat", plural: "Meat", icon: "ico-meat", sellPrice: 9 },
+  pelt: { label: "Pelt", plural: "Pelts", icon: "ico-pelt", sellPrice: 20 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

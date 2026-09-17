@@ -38,6 +38,12 @@ def build(for_game=False):
     for x, y, big in ((380, 120, False), (140, 400, True)):
         a.add(kit.rock(big), x, y, (5, 2))
 
+    # The brush along the north treeline: tappable ground with no sprite of
+    # its own, and the entryway to a stalk the way the dock is to a cast (see
+    # lib/stackacres/hunt-scope.ts). It sits just inside the clearing against
+    # the trees, which is where AREAS.md already puts the wildlife.
+    a.zone("thicket", 140, 52, 240, 40)
+
     a.tree_line("north", depth=3, seed=5)
     a.tree_line("south", depth=2, seed=5)
     a.tree_line("west", depth=3, seed=5)

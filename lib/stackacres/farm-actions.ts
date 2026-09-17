@@ -66,6 +66,10 @@ export type Action =
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   | { action: "catch-fish" }
+  // A completed stalk at the Oak's treeline: which quarry it was, and so how
+  // much meat and how many pelts it gives, is the server's own dice roll --
+  // same posture as `catch-fish`.
+  | { action: "bag-quarry" }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at

@@ -367,7 +367,7 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * spanning both their width (barn 71..145, silo centred `BARN_X + 40` = 148)
  * -- the one gap in the yard both close enough and open enough for a
  * building this size: every gap AT the barn's own east side (where
- * Grandfather Ray's old, much smaller footprint -- props.ts's former
+ * Ray's old, much smaller footprint -- props.ts's former
  * `{ x: 178, y: 20 }` -- used to sit, between the silo and the crates,
  * the log pile and the Midnight Merchant's spot) is too narrow for anything
  * bigger than his old 25-wide box; north of the barn, over its own roofline,

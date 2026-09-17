@@ -9,7 +9,7 @@ player who never taps a traveler loses nothing.
 ## Premise
 
 The farm is a plot of land in East Preston, Nova Scotia. The player's mentor
-is the spirit of Great-Grandpa Ray, who built the house himself, raised
+is the spirit of Ray, who built the house himself, raised
 heritage livestock, and broke the ground with a team of oxen. An auroral
 shimmer drops ten travelers from other dimensions onto his land. They are
 retro pixel art in a flat-vector world and they can tell. The player farms,

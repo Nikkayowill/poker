@@ -105,15 +105,15 @@ const HIDDEN_ZONE_DISCOVERY_CHANCE = 0.08;
 /**
  * Three small boxes (~22 units square) anchored beside real yard props --
  * see lib/stackacres/props.ts's own `YARD_PROPS`/`PROP_SIZE` for the props
- * these sit next to (the well at (238, 30), Grandfather Ray's post at
+ * these sit next to (the well at (238, 30), Ray's post at
  * (178, 20), the windmill at (330, 28)) -- and clear of both `GROW_AREA` and
  * `BARN_FOOTPRINT` in ./world.ts. secrets.test.ts holds that disjointness
  * directly, the same invariant world.test.ts already holds the four
  * districts' own grow areas to.
  *
  * The brief's "small decor fountain" has no matching art asset in this
- * codebase; the well is the real existing water feature nearest Grandfather
- * Ray's post, so the wishing-well zone uses it rather than inventing new art.
+ * codebase; the well is the real existing water feature nearest Ray's post,
+ * so the wishing-well zone uses it rather than inventing new art.
  */
 export const HIDDEN_ZONES: readonly HiddenZoneDef[] = [
   {

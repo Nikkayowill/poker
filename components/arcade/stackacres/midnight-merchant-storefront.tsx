@@ -13,7 +13,7 @@ import {
 
 /**
  * The Midnight Merchant's own storefront -- a DOM overlay that OVERRIDES
- * Grandfather Ray's standard `TownContractsModal` sheet while a visit is
+ * Ray's standard `TownContractsModal` sheet while a visit is
  * live, rather than composing with it. The two are mutually exclusive by
  * construction (stackacres-farm.tsx opens at most one sheet at a time; see
  * its own `activeSheet` state), not by any check in either component --

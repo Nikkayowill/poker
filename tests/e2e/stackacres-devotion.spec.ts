@@ -35,7 +35,7 @@ async function grantAndOpenStackAcres(
   });
   expect(accessResponse.ok()).toBe(true);
 
-  // Grandfather Ray's one-time welcome modal covers the whole screen and
+  // Ray's one-time welcome modal covers the whole screen and
   // would otherwise swallow the very first tap this test sends.
   await page.addInitScript(() => {
     try {

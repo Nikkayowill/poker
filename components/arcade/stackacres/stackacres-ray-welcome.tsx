@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 /**
- * The one-time welcome a new player gets from Grandfather Ray, the first
+ * The one-time welcome a new player gets from Ray, the first
  * time they ever open StackAcres. Reuses the same `.profile-overlay` /
  * `.profile-modal` shell as HowToPlayModal (see that file) rather than a
  * fifth bespoke modal chrome; the only new class is `.sa-ray-welcome-portrait`.
@@ -27,7 +27,7 @@ export function StackAcresRayWelcome({ onClose }: { onClose: () => void }) {
         <header className="profile-modal-header">
           <div>
             <span>STACKACRES</span>
-            <h2 id="ray-welcome-title">Grandfather Ray</h2>
+            <h2 id="ray-welcome-title">Ray</h2>
           </div>
           <button
             ref={closeButtonRef}

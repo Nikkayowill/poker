@@ -71,9 +71,15 @@ const METER_W = 12;
 const METER_GAP = 10;
 const TITLE_SIZE = 15;
 const HINT_SIZE = 13;
+/** The meter's caption and its live reading. */
+const LABEL_SIZE = 10;
+const VALUE_SIZE = 13;
 const BANNER_SIZE = 26;
 const MIN_TRACK_H = 150;
 const MAX_TRACK_H = 360;
+/** How much of a fully sunk net still shows at the foot of the track, as a
+ *  fraction of the track. Cosmetic only -- see `draw`. */
+const BAR_HANDLE_SPAN = 0.05;
 
 /** Which colour a species reads as on the track. */
 const SPECIES_RAMP: Readonly<Record<FishSpecies, keyof typeof RAMPS>> = {
@@ -144,6 +150,14 @@ export class FishingGaugeScene extends Phaser.Scene {
   private title!: Phaser.GameObjects.Text;
   private hint!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
+  /** The meter's own name and live value. Without these the left-hand bar is
+   *  an unlabelled column that fills and empties for no stated reason -- the
+   *  single thing players said they could not read about this gauge. */
+  private catchLabel!: Phaser.GameObjects.Text;
+  private catchValue!: Phaser.GameObjects.Text;
+  /** The percentage last painted, so the text is only rebuilt when it moves.
+   *  Phaser re-rasterises a Text on every setText, which is not a per-frame job. */
+  private shownPercent = -1;
 
   /** Panel geometry in canvas pixels, recomputed by `layout`. Local to the
    *  container, which sits at the panel's centre. */
@@ -191,8 +205,32 @@ export class FishingGaugeScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1);
 
+    this.catchLabel = this.add
+      .text(0, 0, "CATCH", {
+        fontFamily,
+        fontSize: `${LABEL_SIZE * px}px`,
+        fontStyle: "800",
+        color: RAMPS.cream.side,
+        stroke: RAMPS.iron.rim,
+        strokeThickness: 2 * px,
+        align: "center",
+      })
+      .setOrigin(0.5, 1);
+
+    this.catchValue = this.add
+      .text(0, 0, "0%", {
+        fontFamily,
+        fontSize: `${VALUE_SIZE * px}px`,
+        fontStyle: "800",
+        color: RAMPS.grass.top,
+        stroke: RAMPS.iron.rim,
+        strokeThickness: 2 * px,
+        align: "center",
+      })
+      .setOrigin(0.5, 0);
+
     this.hint = this.add
-      .text(0, 0, "Hold to lift the net", {
+      .text(0, 0, "HOLD to raise the net", {
         fontFamily,
         fontSize: `${HINT_SIZE * px}px`,
         fontStyle: "700",
@@ -216,7 +254,7 @@ export class FishingGaugeScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setAlpha(0);
 
-    this.root.add([this.frame, this.live, this.title, this.hint, this.banner]);
+    this.root.add([this.frame, this.live, this.title, this.catchLabel, this.catchValue, this.hint, this.banner]);
 
     this.layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
@@ -249,7 +287,7 @@ export class FishingGaugeScene extends Phaser.Scene {
     this.scrim.setSize(width, height).setPosition(0, 0);
 
     this.trackH = Phaser.Math.Clamp(height * 0.58, MIN_TRACK_H * px, MAX_TRACK_H * px);
-    const titleBlock = (TITLE_SIZE + HINT_SIZE + PANEL_PAD * 2) * px;
+    const titleBlock = (TITLE_SIZE + HINT_SIZE + LABEL_SIZE + VALUE_SIZE + PANEL_PAD * 2) * px;
     this.panelH = this.trackH + titleBlock + PANEL_PAD * 2 * px;
     const panelW = PANEL_W * px;
 
@@ -257,6 +295,10 @@ export class FishingGaugeScene extends Phaser.Scene {
 
     const top = -this.panelH / 2;
     this.title.setPosition(0, top + (PANEL_PAD + TITLE_SIZE) * px);
+    // Caption above the meter column, reading below it, so the number is
+    // attached to the thing it describes rather than floating in the panel.
+    this.catchLabel.setPosition(this.meterX(), -this.trackH / 2 - 3 * px);
+    this.catchValue.setPosition(this.meterX(), this.trackH / 2 + 3 * px);
     this.hint.setPosition(0, this.panelH / 2 - (PANEL_PAD + HINT_SIZE) * px);
     this.banner.setPosition(0, 0);
     this.banner.setWordWrapWidth(panelW * 2.4);
@@ -326,7 +368,16 @@ export class FishingGaugeScene extends Phaser.Scene {
     // the rule.
     const trackW = TRACK_W * px;
     const barH = profile.barSpan * this.trackH;
-    const barTop = this.yFor(this.state.barPos + profile.barSpan);
+    // DRAWN position, not the real one. A released net sinks a full net-length
+    // below the well (`BAR_SINK`), which is what stops it catching fish on its
+    // own -- but drawn literally it would leave the track empty, with nothing
+    // on screen to tell the player what to raise, and this Graphics has no
+    // clip, so it would paint outside the panel and over the map. So the net
+    // keeps a sliver showing at the bottom edge. Overlap still scores off the
+    // true position, and the bar only greens up on a real cover, so the sliver
+    // never lies about whether the fish is caught.
+    const drawnBarPos = Math.max(this.state.barPos, -profile.barSpan + BAR_HANDLE_SPAN);
+    const barTop = this.yFor(drawnBarPos + profile.barSpan);
     const barColour = overlap > 0 ? hex(RAMPS.grass.top) : hex(RAMPS.gold.side);
     g.fillStyle(barColour, overlap > 0 ? 0.55 : 0.38);
     g.fillRoundedRect(this.trackX() - trackW / 2 + 2 * px, barTop, trackW - 4 * px, barH, 10 * px);
@@ -363,6 +414,15 @@ export class FishingGaugeScene extends Phaser.Scene {
     const meterColour = tension > 0.45 ? hex(RAMPS.roof.top) : hex(RAMPS.grass.top);
     g.fillStyle(meterColour, 0.95);
     g.fillRoundedRect(this.meterX() - meterW / 2, this.trackH / 2 - fillH, meterW, fillH, meterW / 2);
+
+    // The reading, in the same colour as the fill it names, rebuilt only when
+    // the whole number actually changes.
+    const percent = Math.round(this.state.progress * 100);
+    if (percent !== this.shownPercent) {
+      this.shownPercent = percent;
+      this.catchValue.setText(`${percent}%`);
+      this.catchValue.setColor(tension > 0.45 ? RAMPS.roof.top : RAMPS.grass.top);
+    }
   }
 
   /** One-way door: freeze, show the outcome, tear down. */

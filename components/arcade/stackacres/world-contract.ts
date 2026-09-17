@@ -119,6 +119,9 @@ export interface HuntScopeRequest {
   readonly onClosed?: () => void;
 }
 
+/** How a fight ended, as the map needs to act it out. */
+export type FishingCastOutcome = "landed" | "escaped";
+
 /** What a traveler's badge says: a quest to offer, or one ready to hand in. */
 export type StoryCue = "available" | "ready";
 
@@ -215,6 +218,18 @@ export interface StackAcresWorldApi {
    * `onClosed` fires on its own if there is no map to stalk on.
    */
   startHuntScope: (request: HuntScopeRequest) => void;
+  /**
+   * Hands the gauge's answer back to the map, so the farmer can act it out:
+   * landed pulls the catch up out of the water, escaped snaps the rod back on
+   * a slack line. Either way the line comes in and the input lock the cast put
+   * on comes off.
+   *
+   * The shell calls this from the same `onLanded`/`onEscaped` it already had
+   * -- it has to be told, because the fight happens in a separate Phaser scene
+   * that knows nothing about the farmer standing underneath it (see
+   * fishing-gauge-scene.ts's own header on why it is its own scene).
+   */
+  endFishingCast: (outcome: FishingCastOutcome) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -343,7 +358,15 @@ export interface StackAcresWorldProps {
   onWorkshopTap: () => void;
   /** A finger landed on the yard's well. Fills the watering can. */
   onWellTap: (at: TapPoint) => void;
-  /** A finger landed on the pond's dock. Casts a line. */
+  /**
+   * A fish has taken the line: the shell's cue to open the gauge.
+   *
+   * NOT the tap on the dock. The map owns the whole cast -- walking out to the
+   * water, the swing, the wait for a bite -- and only calls this once there is
+   * something to fight, so a cast the player backs out of never reaches the
+   * shell at all. `at` is where the bobber is sitting, which is where the
+   * cast's own lines belong. See scene.ts's `beginCast`.
+   */
   onDockTap: (at: TapPoint) => void;
   /** A finger landed on the treeline at the Ancestral Oak -- the entryway to
    *  a stalk, the way the dock is the entryway to a cast. The shell decides

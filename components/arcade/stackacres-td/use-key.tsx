@@ -18,10 +18,14 @@ import { useEffect, useRef } from "react";
 export function StackAcresUseKey({
   onHeld,
   label,
+  hidden,
 }: {
   onHeld: (down: boolean) => void;
   /** What the belt is holding, so the key announces the job rather than "Use". */
   label: string;
+  /** Stood down while the world has the farmer (a cast). Faded, not unmounted,
+   *  for the same reason the stick is. */
+  hidden?: boolean;
 }) {
   const held = useRef(false);
   const onHeldRef = useRef(onHeld);
@@ -51,6 +55,12 @@ export function StackAcresUseKey({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Standing down mid-press lets go, so the stroke doesn't survive the cast
+  // that hid the key.
+  useEffect(() => {
+    if (hidden) release();
+  }, [hidden]);
+
   const press = (event: { currentTarget: HTMLElement; pointerId: number; preventDefault: () => void }) => {
     if (held.current) return;
     event.preventDefault();
@@ -68,7 +78,7 @@ export function StackAcresUseKey({
   return (
     <button
       type="button"
-      className="sa-use-key"
+      className={hidden ? "sa-use-key is-away" : "sa-use-key"}
       aria-label={label}
       title={label}
       onPointerDown={press}

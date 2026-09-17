@@ -235,10 +235,7 @@ import {
   type BeltTool,
 } from "@/lib/stackacres/toolbelt";
 import type { UseSquare } from "./world-contract";
-import { dragIconSpot } from "@/lib/stackacres/drag-affordance";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
-import { FISHING_SPOT } from "@/lib/stackacres/water";
-import { StackAcresFishingAffordance } from "./stackacres-fishing-affordance";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
 import {
@@ -412,17 +409,6 @@ interface FarmProcessing {
   wheatPlots: StackAcresWheatPlotSnapshot[];
 }
 
-
-/** The fishing rod floating at the dock, mid-cast. The one drag-and-drop tool
- *  left on the farm: a cast is a two-stage gesture (drag in, wait for a bite,
- *  drag back out), which is why it survived the tool belt replacing the water
- *  can, the feed scoop and the harvest basket -- see
- *  stackacres-fishing-affordance.tsx. */
-interface FishingOffer {
-  key: string;
-  iconAt: TapPoint;
-  targetAt: TapPoint;
-}
 
 interface StackAcresResponse {
   units: StackAcresUnitSnapshot[];
@@ -766,8 +752,6 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
-  /** The rod mid-cast at the dock, if any. See `FishingOffer`'s own header. */
-  const [fishingOffer, setFishingOffer] = useState<FishingOffer | null>(null);
   /** The map's own box, so a drag tool can be kept inside it. */
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
@@ -2262,8 +2246,11 @@ export function StackAcresFarm() {
           });
         }
         // A cast pays no Gold -- it fills the shelf, same as a harvest. The
-        // reel-out animation already played on the press; this is the actual
-        // catch, once the server's dice roll is in.
+        // farmer is already playing his reel-and-lift by the time this lands
+        // (the gauge's `onLanded` fired both at once); this is the actual
+        // catch, once the server's dice roll is in, so it is the first point
+        // anything can name the fish. Floats over the bobber, which is where
+        // the player has been looking for the whole fight.
         if (body.action === "catch-fish" && data.fishCaught) {
           const label = machineItemLabel(data.fishCaught.species, 1);
           waterSound();
@@ -3026,15 +3013,6 @@ export function StackAcresFarm() {
    * disabled button with a title attribute explaining itself, so the reason
    * floats where the finger was instead.
    */
-  /** Where to float a drag tool for a tap at `at`, kept inside the map. */
-  const offerIconAt = useCallback((at: TapPoint): TapPoint => {
-    const field = fieldRef.current;
-    return dragIconSpot(at, {
-      width: field?.clientWidth ?? window.innerWidth,
-      height: field?.clientHeight ?? window.innerHeight,
-    });
-  }, []);
-
   /**
    * A tap in a pen, or on one of its animals. Floats the feed scoop with an
    * arrow to the pen's trough when anything there is hungry, and says why
@@ -3195,54 +3173,47 @@ export function StackAcresFarm() {
     [act, water],
   );
 
-  /** A finger landed on the dock. Floats the rod for a cast -- unless one is
-   *  already out, in which case the tap does nothing rather than stacking a
-   *  second line on top of the first. */
-  const onWorldDockTap = useCallback(
-    (at: TapPoint) => {
-      if (fishingOffer) return;
-      const targetAt = world.current?.fieldPointFor(FISHING_SPOT.x, FISHING_SPOT.y);
-      if (!targetAt) return;
-      panelSound();
-      setFishingOffer({ key: `fish:${Date.now()}`, iconAt: offerIconAt(at), targetAt });
-    },
-    [fishingOffer, offerIconAt],
-  );
-
   /**
-   * The reel hooked something. The cast is over at this point -- the rod
-   * overlay plays its splash and closes itself -- and the gauge takes over:
-   * the fight over the fish is what decides whether `catch-fish` is sent at
-   * all (see lib/stackacres/fishing-gauge.ts). Landing one gives it a voice
-   * the same way it always did, off the server's own answer.
+   * A fish has taken the line. The map has already played the cast out and has
+   * the farmer locked on the dock with a bent rod (scene.ts's `beginCast`);
+   * this opens the gauge over it, which is the part that can be missed.
+   *
+   * Only landing one sends `catch-fish`. Either way the outcome goes back to
+   * the map through `endFishingCast` so the farmer acts it out -- the gauge is
+   * its own Phaser scene and cannot reach him itself.
    *
    * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
    * fight is; the fish this cast actually lands is the server's roll inside
    * `catch-fish`, so the gauge's copy stays species-free and the response's
    * toast is what names the catch.
    */
-  const onFishHooked = useCallback(() => {
-    const targetAt = fishingOffer?.targetAt ?? null;
-    tapAnchor.current = targetAt;
-    world.current?.startFishingGauge({
-      species: rollGaugeDifficulty(),
-      title: "Something's on the line!",
-      landedHint: "Reeling it in...",
-      onLanded: () => {
-        void act({ action: "catch-fish" });
-      },
-      onEscaped: () => {
-        // No catch, no cost: the line just went slack. Said where the cast
-        // was, the same place a refusal on the dock would have been said.
-        if (targetAt) world.current?.floatAt(targetAt, "It got away.", "deny");
-      },
-      // Whatever happened, the rod is back on the dock and a new cast is
-      // allowed -- `fishingOffer` is what gates that (see `onWorldDockTap`).
-      onClosed: () => setFishingOffer(null),
-    });
-  }, [act, fishingOffer]);
-
-  const closeFishingOffer = useCallback(() => setFishingOffer(null), []);
+  const onWorldFishHooked = useCallback(
+    (at: TapPoint) => {
+      tapAnchor.current = at;
+      panelSound();
+      world.current?.startFishingGauge({
+        species: rollGaugeDifficulty(),
+        title: "Something's on the line!",
+        landedHint: "Reeling it in...",
+        onLanded: () => {
+          world.current?.endFishingCast("landed");
+          void act({ action: "catch-fish" });
+        },
+        onEscaped: () => {
+          world.current?.endFishingCast("escaped");
+          // No catch, no cost: the line just went slack. Said out at the
+          // bobber, where the player was already looking.
+          world.current?.floatAt(at, "It got away.", "deny");
+        },
+        // A no-op after either outcome above, and the thing that saves the
+        // player from a farmer stuck mid-fight when there was no gauge to
+        // fight on: `startFishingGauge` answers a missing map with `onClosed`
+        // alone, and the cast is still holding input at that point.
+        onClosed: () => world.current?.endFishingCast("escaped"),
+      });
+    },
+    [act],
+  );
 
   /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
    *  (true only in the steady `"present"` state, see
@@ -4151,7 +4122,7 @@ export function StackAcresFarm() {
               onSignpostTap={onWorldSignpostTap}
               onWorkshopTap={onWorldWorkshopTap}
               onWellTap={onWorldWellTap}
-              onDockTap={onWorldDockTap}
+              onDockTap={onWorldFishHooked}
               onThicketTap={onWorldThicketTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
@@ -4226,17 +4197,6 @@ export function StackAcresFarm() {
                 setSeedWheelOpen(false);
                 openPanel();
               }}
-            />
-          )}
-
-          {/* The dock's own rod, mid-cast. */}
-          {fishingOffer && (
-            <StackAcresFishingAffordance
-              key={fishingOffer.key}
-              iconAt={fishingOffer.iconAt}
-              targetAt={fishingOffer.targetAt}
-              onCatch={onFishHooked}
-              onClose={closeFishingOffer}
             />
           )}
 

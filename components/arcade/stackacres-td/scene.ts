@@ -16,6 +16,22 @@ import {
   worldToMap,
   type TopdownArea,
 } from "@/lib/stackacres-td/field";
+import {
+  BITE_SHAKE_MS,
+  BITE_SHAKE_PX,
+  BOBBER_BOB_MS,
+  BOBBER_BOB_PX,
+  SNAP_MS,
+  bobberSpot,
+  castAnimKey,
+  castAnims,
+  castSideFor,
+  isCancellable,
+  rodOutFrame,
+  rollNibbleMs,
+  type CastPhase,
+  type CastSide,
+} from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { SectorId } from "@/lib/stackacres/sectors";
@@ -76,6 +92,20 @@ const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
 };
 /** Where to stand on the Homestead in front of the Crop Fields' north gate while it is still shut. */
 const CROP_FIELDS_GATE_APPROACH: Point = { x: 232, y: 80 };
+/**
+ * Where a cast is thrown from: the shoulder of grass at the pier's north-east
+ * corner, on the shore itself, with open water immediately west.
+ *
+ * Its own spot rather than the anchor below every other prop, for two reasons.
+ * A cast has to be sideways -- the rig throws a rod left or right and has no
+ * pose for throwing one at the camera (see lib/stackacres-td/fishing-cast.ts).
+ * And the prop's usual step-up-from-below anchor lands out on the dirt road,
+ * a pier's width from the pond, which put the bobber down on the planks.
+ * Measured against the composited Homestead art, not guessed: tile (12, 25)
+ * is walkable, and the point the rig's own fishing line ends at from here
+ * (see `bobberSpot`) sits in open water with a clear margin all round.
+ */
+const DOCK_CAST_SPOT: Point = { x: 200, y: 404 };
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
   wallow: { x: 636, y: 344 },
@@ -176,6 +206,10 @@ export interface TopdownCallbacks {
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   onCropFieldsLockedTap: (at: TapPoint) => void;
   onViewMoved: () => void;
+  /** The world has taken the farmer for a cast, or given him back. The shell
+   *  stands the thumb stick and the Use key down for the duration: they are
+   *  refused anyway, and leaving them lit reads as the game having frozen. */
+  onInputLocked: (locked: boolean) => void;
 }
 
 /**
@@ -193,6 +227,22 @@ interface UnitNode {
   sprite: Phaser.GameObjects.Image;
   cue: Phaser.GameObjects.Image | null;
   signature: string;
+}
+
+/**
+ * One cast, from the swing to whatever the gauge answered. `at` is where the
+ * bobber sits in host CSS pixels, which is where the shell floats the cast's
+ * own lines and where it anchored the gauge.
+ */
+interface CastRun {
+  phase: CastPhase;
+  side: CastSide;
+  at: TapPoint;
+  /** The float, sitting at the end of the line the RIG draws (see
+   *  fishing-cast.ts's `LINE_END_DX`). The scene draws no line of its own. */
+  bobber: Phaser.GameObjects.Ellipse;
+  /** The nibble's countdown, cancelled if the player backs out first. */
+  timer: Phaser.Time.TimerEvent | null;
 }
 
 export class TopdownScene extends Phaser.Scene {
@@ -227,6 +277,12 @@ export class TopdownScene extends Phaser.Scene {
   private stroked: string | null = null;
   /** An action animation is playing and must not be trampled by the walk cycle. */
   private acting = false;
+  /** The cast in progress, or null. Its presence is the input lock. */
+  private cast: CastRun | null = null;
+  /** The bite's kick, decaying to nothing. Applied in `placeCamera`, because
+   *  that sets the scroll outright every frame and would overwrite Phaser's
+   *  own `shake` before it drew. */
+  private shake = { left: 0, ms: 0 };
   private preview: Phaser.GameObjects.Graphics | null = null;
   private waterFrame = 0;
   private path: Point[] = [];
@@ -330,6 +386,19 @@ export class TopdownScene extends Phaser.Scene {
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
+    // The cast's beats are cut out of the rig's own fishing tag, so they are
+    // animations the sheet does not carry and this scene registers itself.
+    // Once, here: an animation is a shared keyed thing in Phaser, and building
+    // one mid-play blanks the sprite for a frame.
+    for (const anim of castAnims()) {
+      this.anims.create({
+        key: anim.key,
+        frames: anim.frames.map((frame) => ({ key: "farmer", frame: String(frame) })),
+        frameRate: 1000 / anim.frameMs,
+        repeat: anim.repeat,
+        yoyo: anim.yoyo,
+      });
+    }
     this.enterArea("homestead", this.specs.get("homestead")!.spawn);
     this.booted = true;
     this.callbacks.onReady();
@@ -339,6 +408,7 @@ export class TopdownScene extends Phaser.Scene {
     if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
     if (this.useDown && this.isWalking()) this.useSquare(true);
+    if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
     this.easeCamera(delta);
     this.placeCamera();
     this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion);
@@ -473,7 +543,10 @@ export class TopdownScene extends Phaser.Scene {
     const at = clampCentre({ x: this.snap(wanted.x), y: this.snap(wanted.y) }, viewW, viewH, mapW, mapH);
     // Kept in step while following, so a pan starts from what is on screen rather than from a stale point.
     if (this.following) this.centre = at;
-    const left = this.snap(at.x - viewW / 2);
+    // The bite's kick: a whole device pixel either way, alternating, so it
+    // reads as a jolt rather than as the camera drifting.
+    const kick = this.shake.ms > 0 ? (Math.round(this.shake.ms / 40) % 2 === 0 ? this.shake.left : -this.shake.left) : 0;
+    const left = this.snap(at.x - viewW / 2 + kick);
     const top = this.snap(at.y - viewH / 2);
     // Phaser zooms about the camera's centre, so scroll is the view's left edge shifted by the zoomed-away margin.
     cam.setScroll(left + viewW / 2 - cam.width / 2, top + viewH / 2 - cam.height / 2);
@@ -482,6 +555,15 @@ export class TopdownScene extends Phaser.Scene {
   // ------------------------------------------------------------------ areas
 
   private enterArea(name: TopdownArea, spawn: Point): void {
+    // A cast's bobber and line are kept objects on the old area's layer, so a
+    // rebuild would leave the run pointing at destroyed sprites and the input
+    // lock on forever. Dropping it here is the one place that cannot happen.
+    if (this.cast) {
+      this.cast.timer?.remove();
+      this.cast = null;
+      this.callbacks.onInputLocked(false);
+    }
+    this.acting = false;
     for (const object of this.layer) object.destroy();
     this.layer = [];
     this.animated = [];
@@ -910,6 +992,13 @@ export class TopdownScene extends Phaser.Scene {
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
     if (!this.booted) return;
+    // A cast owns the farmer until it resolves. Before the fish is on, a tap
+    // anywhere reels the line back in; after it, the tap is swallowed and the
+    // gauge has the screen.
+    if (this.cast) {
+      this.cancelCast();
+      return;
+    }
     // Whatever this tap turns out to be, it is the farmer's business, so the camera comes back off a pan.
     this.homeCamera();
     const rect = this.host.getBoundingClientRect();
@@ -966,7 +1055,16 @@ export class TopdownScene extends Phaser.Scene {
     }
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
-      if (image.getBounds().contains(map.x, map.y)) consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 }, face: { x: spec.x, y: spec.y } }, spec.y);
+      if (!image.getBounds().contains(map.x, map.y)) continue;
+      // The dock is walked to from its dry end and cast from side-on, so it
+      // wants its own spot rather than the step-up-from-below every other prop
+      // is approached with. The face point is due west along the planks, which
+      // is what turns him toward the water.
+      if (spec.tag === "dock") {
+        consider({ kind: "tag", tag: spec.tag, anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } }, spec.y);
+        continue;
+      }
+      consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 }, face: { x: spec.x, y: spec.y } }, spec.y);
     }
     if (best) return (best as { target: Target }).target;
 
@@ -1042,7 +1140,7 @@ export class TopdownScene extends Phaser.Scene {
    * stands back for the duration (see `acting`).
    */
   farmerAction(action: FarmerAction): void {
-    if (!this.booted) return;
+    if (!this.booted || this.cast) return;
     const { anim, repeat } = ACTIONS[action];
     this.stand();
     this.acting = true;
@@ -1088,7 +1186,9 @@ export class TopdownScene extends Phaser.Scene {
       case "well":
         return cb.onWellTap(at);
       case "dock":
-        return cb.onDockTap(at);
+        // The world plays the whole cast out before the shell hears anything:
+        // `onDockTap` fires on the bite, not on the tap (see `beginCast`).
+        return this.beginCast();
       case "thicket":
         return cb.onThicketTap(at);
       case "greenhouse":
@@ -1124,6 +1224,12 @@ export class TopdownScene extends Phaser.Scene {
    */
   setUseHeld(down: boolean): void {
     if (!this.booted) return;
+    // Same as a tap during a cast: it backs out of a line that has not been
+    // taken yet, and does nothing once the fight has started.
+    if (this.cast) {
+      if (down) this.cancelCast();
+      return;
+    }
     this.useDown = down;
     if (!down) {
       this.stroked = null;
@@ -1160,6 +1266,11 @@ export class TopdownScene extends Phaser.Scene {
 
   setStick(push: Point | null): void {
     if (!this.booted) return;
+    // The stick is refused outright for the whole cast, the fight included --
+    // it is its own DOM element beside the canvas, so the gauge's capture-phase
+    // grip on the canvas does nothing about it. It does not back a cast out
+    // either: a thumb resting on the stick is not a decision to stop fishing.
+    if (this.cast) return;
     const was = this.stick;
     this.stick = push;
     if (push) this.homeCamera();
@@ -1168,6 +1279,170 @@ export class TopdownScene extends Phaser.Scene {
       if (this.stickWalking && this.path.length === 0) this.stand();
       this.stickWalking = false;
     }
+  }
+
+  // ------------------------------------------------------------------ fishing
+
+  /**
+   * A cast, from the swing to whatever the gauge answers.
+   *
+   * He has already walked to `DOCK_CAST_SPOT` and turned to the water by the
+   * time this runs (see `targetAt`'s dock case and `arrive`). From here the
+   * world owns him: input is locked, the beats run on their own timers, and
+   * the shell hears nothing until the bite, when `onDockTap` puts the gauge
+   * up. The gauge's answer comes back through `endFishingCast`.
+   *
+   * Replaced the drag-the-rod-out-of-a-circle overlay, which asked for one
+   * gesture to cast and a second, opposite one to land a fish it had already
+   * decided was caught. A tap starts this; the only thing left to miss is the
+   * gauge.
+   */
+  private beginCast(): void {
+    if (this.cast) return;
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    if (!dock) return;
+
+    this.path = [];
+    this.pending = null;
+    this.stick = null;
+    this.useDown = false;
+    this.stroked = null;
+    this.clearMarker();
+
+    // Turned to the water before he is stood up, so the one frame between the
+    // two is already the right way round.
+    const side = castSideFor(this.pos.x, dock.spec.x);
+    this.facing = side;
+    this.stand();
+
+    const spot = bobberSpot(this.pos, side);
+    // Hidden through the swing, shown once the rod is out: the rig only draws
+    // the line on the last two frames, and a float sitting out on the water
+    // with nothing attached to it reads as a bug.
+    const bobber = this.keep(
+      this.add.ellipse(spot.x, spot.y, 3, 3, 0xd8564a).setStrokeStyle(1, 0x140c1c).setDepth(spot.y).setVisible(false),
+    );
+    const run: CastRun = { phase: "cast", side, at: this.mapToCss(spot), bobber, timer: null };
+    this.cast = run;
+    this.callbacks.onInputLocked(true);
+
+    this.acting = true;
+    this.playCastAnim("cast", () => this.nibbleStance(run));
+  }
+
+  /** Rod out, line in the water, nothing on it yet. */
+  private nibbleStance(run: CastRun): void {
+    if (this.cast !== run) return;
+    run.phase = "nibble";
+    this.player.anims.stop();
+    this.player.setFrame(rodOutFrame(run.side));
+    run.bobber.setVisible(true);
+    if (!this.reducedMotion) {
+      this.tweens.add({
+        targets: run.bobber,
+        y: run.bobber.y - BOBBER_BOB_PX,
+        duration: BOBBER_BOB_MS / 2,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
+    run.timer = this.time.delayedCall(rollNibbleMs(), () => this.bite(run));
+  }
+
+  /** Something took it. The gauge is the shell's to open, so this only says so. */
+  private bite(run: CastRun): void {
+    if (this.cast !== run) return;
+    run.phase = "tension";
+    run.timer = null;
+    this.tweens.killTweensOf(run.bobber);
+    this.splashAt(run.bobber.x, run.bobber.y);
+    if (!this.reducedMotion) this.shake = { left: BITE_SHAKE_PX, ms: BITE_SHAKE_MS };
+    this.emote("farmer", "exclaim");
+    this.player.play({ key: castAnimKey("tension", run.side) });
+    this.callbacks.onDockTap(run.at);
+  }
+
+  /**
+   * The gauge is done. Landed pulls the catch up out of the water; escaped
+   * snaps the rod back with nothing on it. Either way the line comes in and
+   * he has himself back.
+   */
+  endFishingCast(outcome: "landed" | "escaped"): void {
+    const run = this.cast;
+    if (!run || run.phase !== "tension") return;
+    this.tweens.killTweensOf(run.bobber);
+    if (outcome === "landed") {
+      run.phase = "reel";
+      this.splashAt(run.bobber.x, run.bobber.y);
+      run.bobber.setVisible(false);
+      this.playCastAnim("reel", () => this.playCastAnim("lift", () => this.finishCast()));
+      return;
+    }
+    run.phase = "snap";
+    run.bobber.setVisible(false);
+    this.player.anims.stop();
+    this.player.setFrame(rodOutFrame(run.side));
+    // The recoil of a line going slack: he rocks away from the water and back.
+    const kick = run.side === "left" ? 3 : -3;
+    this.tweens.add({
+      targets: this.player,
+      x: this.player.x + kick,
+      duration: SNAP_MS / 2,
+      yoyo: true,
+      ease: "Quad.easeOut",
+      onComplete: () => this.finishCast(),
+    });
+  }
+
+  /** A tap or the Use key before the fish was on: reel in, say nothing. */
+  private cancelCast(): void {
+    const run = this.cast;
+    if (!run || !isCancellable(run.phase)) return;
+    run.timer?.remove();
+    run.timer = null;
+    this.tweens.killTweensOf(run.bobber);
+    run.bobber.setVisible(false);
+    run.phase = "reel";
+    this.playCastAnim("reel", () => this.finishCast());
+  }
+
+  private finishCast(): void {
+    const run = this.cast;
+    if (!run) return;
+    this.cast = null;
+    this.callbacks.onInputLocked(false);
+    run.timer?.remove();
+    this.tweens.killTweensOf(run.bobber);
+    this.tweens.killTweensOf(this.player);
+    run.bobber.destroy();
+    this.setPlayerAt(this.pos);
+    this.stand();
+  }
+
+  /** One beat of the cast, with its own completion handler and nobody else's. */
+  private playCastAnim(beat: "cast" | "tension" | "reel" | "lift", then: () => void): void {
+    const run = this.cast;
+    if (!run) return;
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
+    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (this.cast === run) then();
+    });
+    this.player.play({ key: castAnimKey(beat, run.side) });
+  }
+
+  /** A ring spreading off the water, for a bite and again for a catch. */
+  private splashAt(x: number, y: number): void {
+    const ring = this.keep(this.add.ellipse(x, y, 6, 3).setStrokeStyle(1, 0x6fc6f2).setDepth(y + 0.2));
+    this.tweens.add({
+      targets: ring,
+      scaleX: 4,
+      scaleY: 4,
+      alpha: 0,
+      duration: 460,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy(),
+    });
   }
 
   // ------------------------------------------------------------------ coordinates

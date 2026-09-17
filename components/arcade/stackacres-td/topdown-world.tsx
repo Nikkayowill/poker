@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { Point } from "@/lib/stackacres-td/movement";
@@ -81,6 +81,15 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const gaugeRef = useRef<FishingGaugeScene | null>(null);
   /** The scope scene while a stalk is up, else null. */
   const scopeRef = useRef<HuntScopeScene | null>(null);
+  /** The world has the farmer (a cast), so the stick and the Use key stand
+   *  down -- the scene refuses both anyway, and two lit controls that do
+   *  nothing read as the game having frozen. React state rather than a ref
+   *  because this one has to repaint.
+   *
+   *  A STALK does not set this: the scope is driven with the Use key (it is
+   *  what takes the shot, see `startHuntScope`), so hiding the controls there
+   *  would take away the button the player needs. */
+  const [castLocked, setCastLocked] = useState(false);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
   const propsRef = useRef(props);
@@ -132,6 +141,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
           onCropFieldsLockedTap: (at) => p().onCropFieldsLockedTap(at),
           onViewMoved: () => p().onViewMoved(),
+          onInputLocked: setCastLocked,
         },
         host,
       );
@@ -237,6 +247,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       setRayHouseHeldOpen: () => undefined,
       setTravelerRayHeldOpen: () => undefined,
       setGreenhouseHeldOpen: () => undefined,
+      endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),
       startFishingGauge: (request) => {
         const game = gameRef.current;
         const host = hostRef.current;
@@ -359,8 +370,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   return (
     <>
       <div ref={hostRef} className="sa-world sa-world-topdown" aria-hidden="true" />
-      <StackAcresJoystick onStick={onStick} />
-      <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} />
+      <StackAcresJoystick onStick={onStick} hidden={castLocked} />
+      <StackAcresUseKey onHeld={onUseHeld} label={props.useKeyLabel} hidden={castLocked} />
     </>
   );
 }

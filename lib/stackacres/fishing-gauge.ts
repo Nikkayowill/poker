@@ -7,13 +7,13 @@
  * only textures and GameObjects.
  *
  * WHAT IT ADDS. ./fishing.ts decides WHICH fish a landed cast gives (the
- * server's roll, via `pickCaughtFish`); the drag gesture in
- * stackacres-fishing-affordance.tsx decides WHEN a cast lands and says in
- * its own header that there is no way to miss it. This module is the part
- * that can be missed: once a fish is on the line, the player holds a
- * capture bar over a fish that darts up and down a track, and the overlap
- * between the two is integrated every frame into a progress value. Full
- * progress lands the fish, empty progress loses it.
+ * server's roll, via `pickCaughtFish`); the world plays the cast itself and
+ * says when a fish is on (lib/stackacres-td/fishing-cast.ts), and nothing in
+ * either of those can be failed. This module is the part that can be missed:
+ * once a fish is on the line, the player holds a capture bar over a fish that
+ * darts up and down a track, and the overlap between the two is integrated
+ * every frame into a progress value. Full progress lands the fish, empty
+ * progress loses it.
  *
  * The species drives the difficulty, so the rare catch is the hard one:
  * catfish get a shorter bar, a faster fish and a steeper drain than a
@@ -39,6 +39,24 @@ export const FISH_MARKER_SPAN = 0.12;
  *  of this audience. */
 export const START_PROGRESS = 0.34;
 
+/**
+ * How long a fresh hook refuses to drain.
+ *
+ * The opening used to teach the wrong lesson. The bar was parked at the
+ * bottom of the well and the fish started mid-track, so the first thing that
+ * happened after the bite was the meter falling -- before the player had
+ * pressed anything, and while the bar was still climbing out of the floor.
+ * You were punished for the half second it took to read the screen, which is
+ * exactly the half second this audience needs.
+ *
+ * Two fixes, and this is the second. The bar now starts UNDER THE FISH (see
+ * `createFishingGaugeState`), so the opening frame is already the winning
+ * shape and the rule reads off the picture. This grace covers the rest: for
+ * its duration a miss costs nothing, so letting go to look is free. Gaining
+ * is not graced -- holding correctly pays from frame one.
+ */
+export const GRACE_MS = 450;
+
 /** Track fractions/second the capture bar may travel at, in either
  *  direction. Without a cap a long fall lands with an unrecoverable
  *  bounce. */
@@ -49,6 +67,18 @@ const BAR_MAX_SPEED = 1.15;
  *  on the first try. */
 const BAR_LIFT = 4.6;
 const BAR_GRAVITY = 2.1;
+
+/**
+ * How far below the well a released net sinks, as a share of its own length.
+ *
+ * It used to stop dead at the bottom of the track, which left it parked
+ * across the lowest third of the water covering anything that swam past. A
+ * player who never touched the screen landed 40% of bluegill that way -- the
+ * most common fish in the pond, caught by doing nothing, which is the worst
+ * thing a skill gate can do. Sinking the net clear of the water instead means
+ * a hand off the screen earns exactly nothing, and the only way up is to hold.
+ */
+const BAR_SINK = 1;
 
 export interface FishGaugeProfile {
   /** Capture bar length as a fraction of the track. */
@@ -88,12 +118,17 @@ export const FISH_GAUGE_PROFILES: Readonly<Record<FishSpecies, FishGaugeProfile>
     drainPerSec: 0.3,
   },
   catfish: {
-    barSpan: 0.2,
-    fishSpeed: 0.62,
-    restMinMs: 220,
-    restMaxMs: 680,
-    gainPerSec: 0.5,
-    drainPerSec: 0.38,
+    // Retuned 2026-09-17 off a simulated skill sweep: at barSpan 0.2 /
+    // fishSpeed 0.62 a player tracking the fish PERFECTLY still lost 83% of
+    // catfish, so the rare fish was not hard, it was a loss with extra steps.
+    // These land ~85% for perfect tracking and ~40% for a human reacting
+    // every 180ms -- the same shape trout already had, one step harder.
+    barSpan: 0.24,
+    fishSpeed: 0.5,
+    restMinMs: 260,
+    restMaxMs: 720,
+    gainPerSec: 0.58,
+    drainPerSec: 0.32,
   },
 };
 
@@ -145,9 +180,16 @@ export function fishGaugeProfile(species: FishSpecies): FishGaugeProfile {
 }
 
 /**
- * A fresh hook. The bar starts parked at the bottom (the player has not
- * pressed anything yet) and the fish starts mid-track heading somewhere
- * else, so the first frame already has motion in it.
+ * A fresh hook. The fish starts mid-track already heading somewhere else, so
+ * the first frame has motion in it -- and the bar starts CENTRED ON THE FISH
+ * rather than parked at the bottom of the well.
+ *
+ * That centring is the whole opening. A player who has never seen this
+ * screen gets one frame that already shows the answer: the fish sitting
+ * inside the net, the meter climbing. Then the fish moves and the net falls,
+ * and keeping the two together is obviously the job. Starting them apart
+ * taught the opposite -- the meter fell first and the connection between the
+ * press and the fill never landed. See `GRACE_MS` for the other half.
  */
 export function createFishingGaugeState(
   species: FishSpecies,
@@ -155,10 +197,11 @@ export function createFishingGaugeState(
 ): FishingGaugeState {
   const profile = fishGaugeProfile(species);
   const fishPos = maxPos(FISH_MARKER_SPAN) / 2;
+  const centred = fishPos + FISH_MARKER_SPAN / 2 - profile.barSpan / 2;
   return {
     species,
     phase: "playing",
-    barPos: 0,
+    barPos: clamp(centred, 0, maxPos(profile.barSpan)),
     barVel: 0,
     fishPos,
     fishTarget: rollFishTarget(random),
@@ -210,9 +253,10 @@ export function stepFishingGauge(
   const accel = holding ? BAR_LIFT - BAR_GRAVITY : -BAR_GRAVITY;
   let barVel = clamp(state.barVel + accel * dt, -BAR_MAX_SPEED, BAR_MAX_SPEED);
   const barLimit = maxPos(profile.barSpan);
+  const barFloor = -profile.barSpan * BAR_SINK;
   let barPos = state.barPos + barVel * dt;
-  if (barPos <= 0) {
-    barPos = 0;
+  if (barPos <= barFloor) {
+    barPos = barFloor;
     barVel = Math.max(0, barVel);
   } else if (barPos >= barLimit) {
     barPos = barLimit;
@@ -241,7 +285,11 @@ export function stepFishingGauge(
 
   const moved: FishingGaugeState = { ...state, barPos, barVel, fishPos, fishTarget, restMs };
   const overlap = gaugeOverlap(moved);
-  const delta = overlap > 0 ? profile.gainPerSec * overlap * dt : -profile.drainPerSec * dt;
+  // Graced: a miss inside the opening window costs nothing, so the first read
+  // of the screen is free. A hit still pays, so holding correctly is never
+  // worth less than waiting.
+  const graced = state.elapsedMs < GRACE_MS;
+  const delta = overlap > 0 ? profile.gainPerSec * overlap * dt : graced ? 0 : -profile.drainPerSec * dt;
   const progress = clamp(moved.progress + delta, 0, 1);
 
   return {

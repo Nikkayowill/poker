@@ -2746,10 +2746,30 @@ export function StackAcresFarm() {
   /* NPC friendship                                                     */
   /* ---------------------------------------------------------------- */
 
-  const onWorldRayTap = useCallback((at: TapPoint) => {
-    setRadial(null);
-    setGiftDialogue({ npc: "ray", phase: "greeting", at, line: RAY_GIFT_LINES[Math.floor(Math.random() * RAY_GIFT_LINES.length)] });
-  }, []);
+  /**
+   * Ray carries two separate interactions: his own story line (he is one of
+   * the eleven travelers, `TRAVELER_IDS` in travelers.ts) and the
+   * gift-giving loop `friendship.ts` only ever wired to him. Before this, a
+   * tap always opened gifts, so his "!"/"?" badge (`setStoryCues`, driven by
+   * the exact same `met`/`ready` read below) lied -- his line could never
+   * start and Leo's finale, which needs all ten travelers plus Ray, could
+   * never be reached. Story first when he actually has something to say,
+   * same as every other traveler; gifts otherwise, so the everyday loop
+   * still works once his current beat is done.
+   */
+  const onWorldRayTap = useCallback(
+    (at: TapPoint) => {
+      setRadial(null);
+      const ray = story.view?.travelers.ray;
+      const hasSomethingToSay = ray && ray.unlocked && !ray.done && (!ray.met || ray.ready);
+      if (hasSomethingToSay) {
+        story.open("ray", at);
+        return;
+      }
+      setGiftDialogue({ npc: "ray", phase: "greeting", at, line: RAY_GIFT_LINES[Math.floor(Math.random() * RAY_GIFT_LINES.length)] });
+    },
+    [story],
+  );
 
   /**
    * A finger landed on one of the eleven story travelers. `at` is already

@@ -9,10 +9,12 @@
  * visitors that used to live in ../visitors.ts (art + a one-shot greeting,
  * no quests) -- that module is gone.
  *
- * The ten travelers are true pixel art in a flat-vector world, and they can
- * tell. That mismatch is the visual tell that they are not from here, the
- * same premise the retired visitors carried. Ray is not one of them. He is
- * the land's own, drawn as a spirit standing near his house.
+ * Everyone, Ray included, is drawn on the same character rig at the same
+ * quality (Kayo: "same quality and same structure as Ray") -- the old
+ * isometric-era "true pixel art in a flat-vector world" visual tell, and
+ * Ray as a spirit rather than a person standing near his house, are both
+ * stale. He is the land's own; the ten travelers are the ones the shimmer
+ * dropped onto it.
  */
 
 import type { ZoneId } from "../zones";

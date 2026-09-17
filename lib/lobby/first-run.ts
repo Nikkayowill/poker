@@ -92,7 +92,7 @@ export const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
     id: "arcade",
     // Counted, never written down -- this step said "Ten" while the catalogue
     // held thirteen. See the note on the constants above.
-    body: `${ARCADE_GAME_COUNT} more games sit behind Ante Up: blackjack, brain games and head-to-head duels.`,
+    body: `${ARCADE_GAME_COUNT} more games sit behind Ante Up: brain games and head-to-head duels.`,
     actionLabel: "Open Ante Up",
     action: { kind: "link", href: "/games" },
     nextLabel: "Next",

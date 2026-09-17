@@ -141,9 +141,9 @@ export function ArcadeFloor({
       {!embedded && showHelp && (
         <HowToPlayModal title="How Ante Up works" onClose={() => setShowHelp(false)}>
           {/* Scoped to the solo boards on purpose. The floor also carries
-              duels and Blackjack, neither of which has a free mode, and the
-              old wording ("Every Ante Up game can be played completely
-              free") promised one for all eleven rows. */}
+              duels, which have no free mode, and the old wording ("Every
+              Ante Up game can be played completely free") promised one for
+              all eleven rows. */}
           <p>
             The solo boards under &ldquo;Beat the board&rdquo; are always free to play, so
             there&apos;s never a cost to trying one. Stake Gold on a round instead and

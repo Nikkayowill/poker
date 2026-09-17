@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "StackChips - Poker, Puzzles & Duels",
     short_name: "StackChips",
     description:
-      "Free online games: six-max Texas Hold’em, 1v1 skill duels, blackjack, cribbage and daily puzzles, one Gold wallet across all of them.",
+      "Free online games: six-max Texas Hold’em, 1v1 skill duels, cribbage and daily puzzles, one Gold wallet across all of them.",
     start_url: "/",
     display: "standalone",
     // These two are what the OS paints AROUND the app rather than inside it:

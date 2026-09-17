@@ -3,9 +3,10 @@
  *
  * The table has one dealer place, far centre, the cutout a real oval table
  * has instead of a chair (`dealerAnchor()`), with exactly one person in it:
- * Claira, in house uniform, drawn from the single `DEALER_ART_SRC` file. The
- * Blackjack room still draws its own dealers from `public/dealer/`; the two
- * surfaces stay separate.
+ * Claira, in house uniform, drawn from the single `DEALER_ART_SRC` file.
+ * `public/dealer/` (Loki and Finn) was Blackjack's own dealer art; it stayed
+ * a separate surface from this one and was deleted with the rest of
+ * Blackjack (2026-09-16) rather than merged in here.
  *
  * There used to be a rotation of three plates here, swapped every eight hands
  * by hashing the table id. It was deleted rather than reduced to a roster of

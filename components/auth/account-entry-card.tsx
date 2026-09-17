@@ -203,7 +203,7 @@ export function AccountEntryCard({
           // are set to buy this line its room; enlarge them and this is
           // what falls off the bottom.
           <p>
-            Poker, blackjack, duels and the daily puzzles — one wallet across
+            Poker, duels and the daily puzzles — one wallet across
             all of Ante Up.
           </p>
         )}

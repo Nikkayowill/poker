@@ -4,11 +4,13 @@
  *
  * Built to retire five pure-chance-against-the-house games (Hi-Lo, Video
  * Poker, Roulette, Baccarat, Coin Flip) at the owner's instruction, while
- * the games with a skill or social component (Hold'em, Blackjack, the free
- * dailies) stayed. That was a product decision, not a technical one. Those
- * five were later deleted outright, code, routes, components, all of it,
- * rather than left in this half-retired state, so RETIRED_ARCADE_GAMES is
- * empty today. The mechanism stays: it's still the correct way to stop
+ * the games with a skill or social component (Hold'em, the free dailies)
+ * stayed. That was a product decision, not a technical one. Those five were
+ * later deleted outright, code, routes, components, all of it, rather than
+ * left in this half-retired state, so RETIRED_ARCADE_GAMES is empty today.
+ * Blackjack stayed live through that round (it was skill, same as Hold'em)
+ * and was itself deleted outright later (2026-09-16), on its own, for an
+ * unrelated reason. The mechanism stays: it's still the correct way to stop
  * offering a *future* game the moment that decision is made, without a
  * same-day code deletion.
  *

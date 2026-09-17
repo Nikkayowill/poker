@@ -1,0 +1,36 @@
+-- Blackjack, dropped: the owner's call (2026-09-16) to delete the game
+-- outright, code, routes, components, and its production data, rather than
+-- retire it through lib/arcade/retired.ts's guard. It was never in that
+-- guard's list -- it was a skill game, not one of the chance-against-the-
+-- house games that guard was built for -- so there is no catalog row or
+-- storage key to unwind there; this migration is the whole DB side of the
+-- removal.
+--
+-- public.blackjack_rounds is the only table involved. Despite its name,
+-- 20260821140000_blackjack_practice_hands.sql never created a second table;
+-- it only loosened this one's base_stake check so a $0 practice round could
+-- share it with a staked one. Dropping the table takes both jobs with it,
+-- along with its two indexes (blackjack_rounds_one_active_per_profile,
+-- blackjack_rounds_profile_recent_idx) and its RLS posture -- all defined on
+-- the table itself, so nothing survives to clean up separately.
+--
+-- No RPC function is Blackjack-specific: every round mutation went through
+-- ordinary UPDATE/INSERT statements in lib/server/blackjack-store.ts, not a
+-- PL/pgSQL function, so there is nothing to drop function-side.
+--
+-- No shared table needs touching either. Checked before writing this: no
+-- CHECK constraint anywhere in the schema enumerates game ids (the game/
+-- game_id columns on arcade_rounds, daily_puzzle_rounds, daily_puzzle_canon,
+-- game_leaderboard_stats and head_to_head_records are free text, only
+-- length- or shape-checked), and none of those tables, nor
+-- achievement_definitions, mission_definitions, or player_lifetime_counters,
+-- hold a single row scoped to Blackjack -- it never reported into the shared
+-- leaderboard/achievement/mission machinery, only into its own table.
+--
+-- Production data goes with it on purpose, not preserved: the owner
+-- confirmed dropping blackjack_rounds' rows rather than keeping them inert,
+-- unlike the memory-match leaderboard rows left in place by
+-- 20260824160000_drop_memory_match_leaderboard.sql -- there is no surviving
+-- surface that could ever read them back.
+
+drop table if exists public.blackjack_rounds;

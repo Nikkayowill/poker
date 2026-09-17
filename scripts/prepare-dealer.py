@@ -5,8 +5,9 @@
 
 THERE IS ONE DEALER and she has the 2.5D table's single dealer place to
 herself. This used to build a bucket of plates and emit a rotation order; that
-is gone, and so is every number that went with it. (The Blackjack room draws
-its own dealers from `public/dealer/` and is not touched by this script.)
+is gone, and so is every number that went with it. (Blackjack used to draw
+its own separate dealers from `public/dealer/`; both were deleted with the
+rest of Blackjack, 2026-09-16.)
 
 What remains is the reason the script existed in the first place: a supplied
 plate arrives at its own crop, at its own size, with its own idea of where the

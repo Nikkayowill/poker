@@ -37,7 +37,7 @@ describe("retired arcade games", () => {
     // The line the owner drew when this guard was introduced: chance-
     // against-the-house is out, skill and social are in. Nothing live today
     // should ever match the (currently empty) retired list.
-    for (const key of ["blackjack", "word-stack", "connections", "sudoku", "memory", "chess", "cribbage"]) {
+    for (const key of ["word-stack", "connections", "sudoku", "memory", "chess", "cribbage"]) {
       expect(isRetiredArcadeGame(key)).toBe(false);
     }
   });

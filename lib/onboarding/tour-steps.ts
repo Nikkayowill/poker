@@ -13,9 +13,9 @@ export const LOBBY_TOUR_STEPS: DriveStep[] = [
   {
     element: '[data-tour="game-tiles"]',
     popover: {
-      title: "Four ways to play",
+      title: "Three ways to play",
       description:
-        "Hold'em is the main event, but Blackjack, Ante Up, and StackAcres are all one tap away — same Gold balance, same account.",
+        "Hold'em is the main event, but Ante Up and StackAcres are both one tap away — same Gold balance, same account.",
     },
   },
   {

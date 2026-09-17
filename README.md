@@ -16,7 +16,6 @@ in-memory store when Supabase credentials are absent.
 - **Texas Hold'em** — six-max cash tables, Heads-Up 1v1 duels, and Sit & Go
   tournaments (6-max, human-only, winner-take-all, escalating blinds).
 - **Cribbage** — a 3-4 player free-for-all table, human-only.
-- **Blackjack** — dealt by the house (Loki and Finn).
 - **PvP duels** — Chess, Checkers, Trivia Showdown, and Word Race. Winner
   takes the pot, no rake; either player can wager any amount at or above the
   duel floor.

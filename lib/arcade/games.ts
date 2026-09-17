@@ -35,7 +35,6 @@ import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 
 export type ArcadeGameId =
-  | "blackjack-21"
   | "daily-word-stack"
   | "connections"
   | "daily-sudoku"
@@ -62,6 +61,12 @@ export type ArcadeGameId =
  * wager step), so it is a field rather than something inferred from
  * entryCost being zero.
  *
+ * `casino` currently has no members -- Blackjack, its last one, was deleted
+ * outright at the owner's request (2026-09-16) rather than merely retired.
+ * The kind stays as a type value for the same reason `puzzle` does below: a
+ * future game staked against house odds still needs somewhere to land.
+ *
+
  * `puzzle` currently has no members, but stays as a type value (and
  * `splitArcadeFloor`/`arcade-floor.tsx` keep their "Free today" branch,
  * which the empty-bucket guard already hides at zero code cost) in case a
@@ -159,15 +164,6 @@ export interface ArcadeWallet {
  * economy rather than a second, unrelated price list.
  */
 export const ARCADE_GAMES: readonly ArcadeGame[] = [
-  {
-    id: "blackjack-21",
-    name: "Blackjack 21",
-    blurb: "Beat the dealer, 3:2 on a natural",
-    kind: "casino",
-    entryCost: 1000,
-    status: "live",
-    href: "/games/blackjack",
-  },
   {
     id: "daily-word-stack",
     name: "Daily Word Stack",
@@ -432,8 +428,11 @@ export function arcadeFloorSummary(games: readonly ArcadeGame[] = ARCADE_GAMES):
     // is about. It comes back into the count by losing the code, not by
     // editing this line.
     free: free.length + wagers.length,
-    // The rows that cannot be opened without spending: a duel's ante and
-    // Blackjack's buy-in are both charged before anything deals.
+    // The rows that cannot be opened without spending: a duel's ante is
+    // charged before anything deals. `staked` (kind: "casino") is empty
+    // today -- see this file's own header on the house games that were
+    // deleted outright -- and stays summed in for whichever future game
+    // reoccupies that kind.
     staked: duels.length + staked.length,
     // Free first, matching the order the floor puts them in, so the tile and
     // the page it opens do not disagree about what the arcade leads with.

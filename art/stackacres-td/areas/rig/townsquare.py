@@ -13,7 +13,7 @@ from area import Area
 MW, MH = 36, 26
 
 
-def build():
+def build(for_game=False):
     a = Area("townsquare", MW, MH)
     a.line("path", (0, 13), (8, 13))                   # the farm road in from the broken cart
     a.rect("cobble", 8, 6, 30, 21)                     # the square
@@ -44,7 +44,10 @@ def build():
     a.tree_line("east", seed=7)
     a.character("arthur", 190, 262)
     a.character("leo", 340, 384)
-    a.character("farmer", 110, 218)
+    a.exit("homestead", 0, 200, 10, 32, (676, 184))    # back west along the farm road
+    a.spawn = (22, 216)
+    if not for_game:
+        a.character("farmer", 110, 218)
     return a
 
 

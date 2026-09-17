@@ -39,6 +39,10 @@ import export as rig_export  # noqa: E402
 import extras  # noqa: E402
 import fold  # noqa: E402
 import homestead  # noqa: E402
+import mine  # noqa: E402
+import oak  # noqa: E402
+import coast  # noqa: E402
+import townsquare  # noqa: E402
 import kit  # noqa: E402
 import oldfields  # noqa: E402
 import pasture  # noqa: E402
@@ -50,7 +54,7 @@ import terrain  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
-PLAYABLE = [homestead, oldfields, fold, pasture]
+PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are.
 LIGHTS = {
@@ -125,6 +129,8 @@ def export_area(module, out_root):
         if sway:
             named.append((f"s{it['i']}", shade(sway["upper"])))
             entry["sway"] = {"frame": f"s{it['i']}", "amp": sway["amp"], "rustle": sway["rustle"]}
+        for lx, ly, kind in source[0].info.get("lights", ()):
+            lights.append({"kind": kind, "x": it["x"] + lx, "y": it["y"] + ly})
         if it["i"] in area.tags:
             entry["tag"] = area.tags[it["i"]]
             for lx, ly, kind in LIGHTS.get(entry["tag"], ()):

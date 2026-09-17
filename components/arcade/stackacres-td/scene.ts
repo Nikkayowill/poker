@@ -43,13 +43,40 @@ import { WindSway } from "./wind-sway";
  */
 
 const ASSETS = "/stackacres-td";
-const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture"];
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes"];
-const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes"];
+const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare"];
+const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
+const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
-/** Bought land with a scene of its own: its gate on the map stands until the sector is owned. */
-const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = { wallow: "fold", oxfields: "pasture" };
-const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = { fold: "wallow", pasture: "oxfields" };
+/** Every district with a scene of its own behind a gate on the Homestead (or the Fold). */
+const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
+  wallow: "fold",
+  oxfields: "pasture",
+  coast: "coast",
+  oak: "oak",
+  mine: "mine",
+  townsquare: "townsquare",
+};
+const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
+  fold: "wallow",
+  pasture: "oxfields",
+  coast: "coast",
+  oak: "oak",
+  mine: "mine",
+  townsquare: "townsquare",
+};
+/**
+ * The wild districts are never bought: each opens with the existing rule that brings its first traveler
+ * (art/stackacres-td/AREAS.md), which the shell already pushes as `travelerUnlocks`. Bought land opens when owned.
+ */
+const OPENED_BY_TRAVELER: Partial<Record<ZoneId, TravelerId>> = { coast: "miles", oak: "skye", mine: "brayden", townsquare: "arthur" };
+/** Where to stand on the Homestead in front of a district's gate while it is still closed. */
+const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
+  wallow: { x: 636, y: 344 },
+  coast: { x: 232, y: 470 },
+  oak: { x: 104, y: 200 },
+  mine: { x: 660, y: 72 },
+  townsquare: { x: 640, y: 184 },
+};
 
 /** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out. */
 const PENS: Partial<Record<ZoneId, { area: TopdownArea; spots: string; cols: number; rowGap: number }>> = {
@@ -300,7 +327,12 @@ export class TopdownScene extends Phaser.Scene {
   /** Bought land can only be walked into once it is owned, whatever path the farmer found to its edge. */
   private canEnter(area: TopdownArea): boolean {
     const sector = AREA_SECTOR[area];
-    return sector === undefined || this.sectors.includes(sector);
+    return sector === undefined || this.opened(sector);
+  }
+
+  private opened(zone: ZoneId): boolean {
+    const traveler = OPENED_BY_TRAVELER[zone];
+    return traveler ? this.travelerUnlocks[traveler] === true : this.sectors.includes(zone);
   }
 
   private headingFor(dx: number, dy: number): Dir {
@@ -407,7 +439,7 @@ export class TopdownScene extends Phaser.Scene {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
     for (const { spec, image } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
-      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.sectors.includes(detail);
+      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.opened(detail);
       const visible = !((spec.tag === "gate:oldfields" && this.cropFieldsUnlocked) || cleared);
       image.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -815,7 +847,9 @@ export class TopdownScene extends Phaser.Scene {
 
   setTravelerUnlocks(unlocked: TravelerUnlocks): void {
     this.travelerUnlocks = unlocked;
-    if (this.booted) this.applyNpcs();
+    if (!this.booted) return;
+    this.applyNpcs();
+    this.applyGates();
   }
 
   setStoryCues(cues: StoryCues): void {
@@ -923,9 +957,11 @@ export class TopdownScene extends Phaser.Scene {
     if (sectorArea) {
       this.path = [];
       this.pending = null;
-      // Owned land: go there. Not yet: stand at its gate on the Homestead, where tapping the gate offers it.
-      if (this.sectors.includes(zone)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
-      else this.enterArea("homestead", { x: 636, y: 344 });
+      // Open: go there. Not yet: stand at its gate on the Homestead, where tapping the gate says what opens it.
+      if (this.opened(zone)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
+      // The Pasture's gate is the fallen fence inside the Fold, which itself may still be shut.
+      else if (zone === "oxfields" && this.opened("wallow")) this.enterArea("fold", { x: 396, y: 184 });
+      else this.enterArea("homestead", GATE_APPROACH[zone === "oxfields" ? "wallow" : zone]!);
       this.callbacks.onViewMoved();
       return;
     }

@@ -48,6 +48,7 @@ import {
   waterStackAcres,
   waterStackAcresGroup,
   drawStackAcresWater,
+  bagStackAcresQuarry,
   catchStackAcresFish,
   sowStackAcresWheat,
   placeStackAcresMachine,
@@ -257,6 +258,10 @@ const bodySchema = z.discriminatedUnion("action", [
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   z.object({ action: z.literal("catch-fish") }),
+  // A completed stalk at the Oak's treeline. Fills the shelf with meat and a
+  // pelt, same as a catch -- moves no Gold. Which quarry it was is the
+  // server's own dice roll.
+  z.object({ action: z.literal("bag-quarry") }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -573,6 +578,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return drawStackAcresWater(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, now);
+    case "bag-quarry":
+      return bagStackAcresQuarry(token, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

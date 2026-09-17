@@ -8,6 +8,7 @@ import type { Point } from "@/lib/stackacres-td/movement";
 // bundle: both are loaded at runtime by the effect below.
 import type * as PhaserNS from "phaser";
 import type { FishingGaugeScene } from "../stackacres/fishing-gauge-scene";
+import type { HuntScopeScene } from "./hunt-scope-scene";
 import type { StackAcresSceneUnit } from "../stackacres/world-contract";
 import type { StackAcresWorldProps } from "../stackacres/world-contract";
 import { StackAcresJoystick } from "./joystick";
@@ -78,6 +79,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const gameRef = useRef<PhaserNS.Game | null>(null);
   /** The gauge scene while a fishing fight is up, else null. */
   const gaugeRef = useRef<FishingGaugeScene | null>(null);
+  /** The scope scene while a stalk is up, else null. */
+  const scopeRef = useRef<HuntScopeScene | null>(null);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
   const propsRef = useRef(props);
@@ -119,6 +122,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onWorkshopTap: () => p().onWorkshopTap(),
           onWellTap: (at) => p().onWellTap(at),
           onDockTap: (at) => p().onDockTap(at),
+          onThicketTap: (at) => p().onThicketTap(at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
           onMerchantTap: () => p().onMerchantTap(),
           onMonkTap: (at) => p().onMonkTap(at),
@@ -184,6 +188,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       // handler unbinds the host listeners), so there is nothing to close
       // here -- only the handle to drop, before the game it points into goes.
       gaugeRef.current = null;
+      scopeRef.current = null;
       gameRef.current = null;
       game?.destroy(true);
       if (process.env.NODE_ENV !== "production") {
@@ -272,12 +277,64 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           );
         })();
       },
+      startHuntScope: (request) => {
+        const game = gameRef.current;
+        const host = hostRef.current;
+        // No map booted (the player left, or Phaser is still loading): the
+        // stalk cannot happen, so hand the shell its close straight back
+        // rather than leaving one it thinks is still running.
+        if (!game || !host) {
+          request.onClosed?.();
+          return;
+        }
+        // Imported here, not at the top, for the same reason the gauge is:
+        // the scope scene imports Phaser, and this file keeps Phaser out of
+        // the page bundle by loading it only when the map boots.
+        void (async () => {
+          const { launchHuntScope } = await import("./hunt-scope-scene");
+          // Booted away while the chunk was in the air.
+          if (gameRef.current !== game) {
+            request.onClosed?.();
+            return;
+          }
+          scopeRef.current = launchHuntScope(
+            game,
+            {
+              species: request.species,
+              weapon: request.weapon,
+              title: request.title,
+              baggedHint: request.baggedHint,
+              host,
+              dpr: canvasDpr(),
+            },
+            {
+              onBagged: () => request.onBagged?.(),
+              onLost: () => request.onLost?.(),
+              onClosed: () => {
+                scopeRef.current = null;
+                request.onClosed?.();
+              },
+            },
+          );
+        })();
+      },
     }),
     [],
   );
 
   const onStick = useCallback((push: Point | null) => sceneRef.current?.setStick(push), []);
-  const onUseHeld = useCallback((down: boolean) => sceneRef.current?.setUseHeld(down), []);
+  const onUseHeld = useCallback((down: boolean) => {
+    // While a stalk is up the Use key takes the mark instead of working the
+    // square underneath -- the map is behind a modal scope, and the farmer
+    // is not the one being asked. Only the press acts; the release is the
+    // stroke gesture's, which the scope has no use for.
+    const scope = scopeRef.current;
+    if (scope) {
+      if (down) scope.useMark();
+      return;
+    }
+    sceneRef.current?.setUseHeld(down);
+  }, []);
 
   useLayoutEffect(() => {
     sceneRef.current?.setUnits(sceneUnits);

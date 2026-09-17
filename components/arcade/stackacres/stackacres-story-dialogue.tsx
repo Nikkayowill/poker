@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { TRAVELER_PORTRAIT, type TravelerId } from "@/lib/stackacres/story/travelers";
-import type { StoryChoice, StoryDialogueNode } from "@/lib/stackacres/story/dialogue";
+import { travelerPortrait, type TravelerId } from "@/lib/stackacres/story/travelers";
+import { portraitExpression, type StoryChoice, type StoryDialogueNode } from "@/lib/stackacres/story/dialogue";
 import type { TapPoint } from "./world-contract";
 
 /**
@@ -53,7 +53,7 @@ export function StackAcresStoryDialogue({ traveler, at, node, busy, onChoose, on
           ×
         </button>
         <div className="sa-story-dialogue-head">
-          <img src={TRAVELER_PORTRAIT[traveler]} alt="" className="sa-story-dialogue-portrait" />
+          <img src={travelerPortrait(traveler, portraitExpression(node))} alt="" className="sa-story-dialogue-portrait" />
           <p className="sa-story-dialogue-name">{node.speakerName}</p>
         </div>
         <p className="sa-story-dialogue-line">&ldquo;{node.dialogueText}&rdquo;</p>

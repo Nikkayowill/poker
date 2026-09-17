@@ -2105,8 +2105,8 @@
 
 .sa-story-dialogue-portrait {
   display: block;
-  height: 48px;
-  width: auto;
+  height: 64px;
+  width: 64px;
   flex: 0 0 auto;
   image-rendering: pixelated;
 }
@@ -3415,8 +3415,9 @@
    a good deal bigger than the byline above, since this is the one place he is
    the whole point of the screen rather than a small attribution. */
 .sa-ray-welcome-portrait {
-  width: 104px;
-  height: 104px;
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
   margin: 0 auto;
   border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);

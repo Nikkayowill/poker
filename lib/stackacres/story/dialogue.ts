@@ -24,7 +24,7 @@
 
 import { TRAVELER_QUESTS } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
-import { TRAVELER_CATALOGUE, TRAVELER_IDS, type TravelerId } from "./travelers";
+import { TRAVELER_CATALOGUE, TRAVELER_IDS, type PortraitExpression, type TravelerId } from "./travelers";
 
 /* ------------------------------------------------------------------ */
 /* Shapes                                                              */
@@ -49,6 +49,14 @@ export interface StoryDialogueNode {
   readonly choices: readonly StoryChoice[];
   /** Posted when a committing choice is taken. Null for a node that only closes. */
   readonly onComplete: StoryIntent | null;
+}
+
+/** The face a traveler's portrait wears for a node: glad to see you, weighing a task up, pleased it's done. */
+export function portraitExpression(node: Pick<StoryDialogueNode, "id">): PortraitExpression {
+  if (node.id.endsWith(".finale-hint")) return "surprised";
+  if (node.id.endsWith(".hello") || node.id.endsWith(".done")) return "happy";
+  if (node.id.endsWith(".progress") || node.id.endsWith(".locked")) return "thinking";
+  return "neutral";
 }
 
 /** Short ticks, not buzzes. A bubble opening is a tap, not an alarm. */

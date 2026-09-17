@@ -61,16 +61,16 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
     // treat it as a first draft for a real lawyer, not a final opinion,
     // before leaning on it in an actual dispute.
     //
-    // Bumped to 4 because the opening paragraphs still described StackChips
-    // as a poker game with bot-filled tables. The floor has grown to a
-    // whole arcade since (Cribbage, PvP duels, Ante Up's brain games) and
-    // most of that expansion is human-only with no computer opponent at
-    // all -- the old wording didn't cover what most of the app now is.
-    version: 4,
+    // Bumped to 5 because Blackjack was deleted outright at the owner's
+    // request (2026-09-16), along with its production data. The opening
+    // paragraph named it as one of the games Gold buys into, and the second
+    // paragraph named it alongside Poker as a table bots could fill; both
+    // are now false statements about a game that no longer exists.
+    version: 5,
     title: "Terms of Service",
     body: [
-      "StackChips is a free-to-play social gaming app played with Gold, an in-app entertainment currency -- Texas Hold'em and Blackjack, Cribbage, head-to-head PvP duels (Chess, Checkers, Trivia Showdown, Word Race), and the Ante Up brain-game collection (Word Stack, Connections, Sudoku, Memory Match, Minesweeper, and others added over time). Nothing in StackChips is real-money gambling: no hand, match, or round you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
-      "Poker and Blackjack tables may be filled with computer-controlled opponents. Any poker seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind. Cribbage tables and PvP duels are human-only -- an empty seat there simply waits for another player rather than being filled by software.",
+      "StackChips is a free-to-play social gaming app played with Gold, an in-app entertainment currency -- Texas Hold'em, Cribbage, head-to-head PvP duels (Chess, Checkers, Trivia Showdown, Word Race), and the Ante Up brain-game collection (Word Stack, Connections, Sudoku, Memory Match, Minesweeper, and others added over time). Nothing in StackChips is real-money gambling: no hand, match, or round you play, and no amount of Gold you hold, wins, buys, or can be exchanged for real money, cryptocurrency, or any prize of monetary value.",
+      "Poker tables may be filled with computer-controlled opponents. Any poker seat at your table that is not held by another player is played by StackChips software, and seats can change hands between hands as players join and leave. Computer opponents follow the same rules, the same betting limits, and the same shuffled deck as every other seat; they cannot see your cards, and they receive no advantage of any kind. Cribbage tables and PvP duels are human-only -- an empty seat there simply waits for another player rather than being filled by software.",
       "You must be at least 18 years old, or the age of majority where you live if that is higher, to play. By continuing you confirm you meet that requirement.",
       "Your Gold balance, table history, and cosmetics belong to your StackChips profile and have no value outside the app. We can suspend or terminate a profile that cheats, abuses other players, colludes, or attempts to convert Gold into anything of real-world value.",
       "Before either of us starts a court proceeding, you agree to first contact us at support@stackchips.app and describe the dispute; we will try in good faith to resolve it informally within 60 days.",
@@ -130,11 +130,15 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentSlug, LegalDocument> = {
   },
   support_disclosure: {
     slug: "support_disclosure",
-    version: 1,
+    // Bumped to 2 because the second paragraph's parenthetical named Loki and
+    // Finn, Blackjack's house dealers, who left the app with the rest of it
+    // (2026-09-16) -- the joke no longer refers to anything a player has
+    // ever seen.
+    version: 2,
     title: "Supporting StackChips",
     body: [
       "Supporting StackChips is entirely optional and never required to play. Your Gold balance, odds, matchmaking, and everything else about how you play are identical whether or not you support us.",
-      "A support payment -- one-time or monthly -- does not purchase or unlock Gold, and does not grant any competitive or economic advantage in any game. It is a gift to help cover running costs (hosting, and yes, dog treats for Loki and Finn), not a purchase of anything in-game.",
+      "A support payment -- one-time or monthly -- does not purchase or unlock Gold, and does not grant any competitive or economic advantage in any game. It is a gift to help cover running costs (hosting included), not a purchase of anything in-game.",
       "Monthly support is offered in a few tiers (currently $2.99, $5.99, and $9.99 per month, in the currency Stripe charges you) and renews automatically each month until you cancel. You can cancel at any time from your account; canceling stops future renewals and does not affect a charge already made.",
       "Support payments are processed by Stripe, our payment processor. We never see or store your card details. Payments are final and non-refundable except where required by law, including the current month of a subscription you cancel partway through.",
     ],

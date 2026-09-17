@@ -21,7 +21,7 @@ import { ViewportFit } from "@/components/shell/viewport-fit";
  */
 const TITLE = "StackChips - Free Online Games, Poker & 1v1 Duels";
 const DESCRIPTION =
-  "Free online games — six-max Texas Hold’em, 1v1 skill duels (chess, checkers, word race), blackjack, cribbage and daily puzzles. Gold has no cash value.";
+  "Free online games — six-max Texas Hold’em, 1v1 skill duels (chess, checkers, word race), cribbage and daily puzzles. Gold has no cash value.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://stackchips.app"),

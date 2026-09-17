@@ -13,8 +13,8 @@ import {
 } from "./games";
 
 const game = (over: Partial<ArcadeGame> = {}): ArcadeGame => ({
-  id: "blackjack-21",
-  name: "Blackjack 21",
+  id: "nonogram",
+  name: "Nonogram",
   blurb: "",
   kind: "casino",
   entryCost: 250,
@@ -26,7 +26,6 @@ const game = (over: Partial<ArcadeGame> = {}): ArcadeGame => ({
 describe("arcade catalogue", () => {
   it("lists every catalogued game in display order", () => {
     expect(ARCADE_GAMES.map((entry) => entry.name)).toEqual([
-      "Blackjack 21",
       "Daily Word Stack",
       "Connections",
       "Sudoku",

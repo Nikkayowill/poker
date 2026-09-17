@@ -5,7 +5,7 @@ import { useModalDismiss } from "@/components/use-modal-dismiss";
 
 /**
  * Shared "leave while Gold is on the line" confirmation — used by
- * FloorBackLink (every arcade/duel/cribbage/blackjack header) and by
+ * FloorBackLink (every arcade/duel/cribbage header) and by
  * poker-table.tsx's own leave controls, which don't route through that link.
  *
  * Deliberately not built on the fuller .profile-modal-header chrome

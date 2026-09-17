@@ -10,8 +10,8 @@ import type { ArcadeGameId } from "@/lib/arcade/games";
  * changes, and it themes with the rest of the chrome for free.
  *
  * One function per game rather than a data table -- the shapes are too
- * different (a grid, a card pair, a row of tiles, a peg track) to fit one
- * schema without it becoming harder to read than 13 small functions.
+ * different (a grid, a row of tiles, a peg track) to fit one schema without
+ * it becoming harder to read than 12 small functions.
  */
 export function GamePreview({ id }: { id: ArcadeGameId }) {
   return <div className="game-preview" aria-hidden="true">{renderPreview(id)}</div>;
@@ -39,16 +39,6 @@ function Board({ cols, cells }: { cols: number; cells: { tone?: Tone; glyph?: st
 
 function renderPreview(id: ArcadeGameId) {
   switch (id) {
-    case "blackjack-21":
-      // Two overlapping cards: the dealer's back card behind a face card of
-      // your own, the exact pair a player sees the instant a hand deals.
-      return (
-        <div className="pv-cards">
-          <span className="pv-card pv-card-back" />
-          <span className="pv-card pv-card-face pv-tone-red">A♦</span>
-        </div>
-      );
-
     case "daily-word-stack":
       // A guess row: two correct, one present, two absent, the same three
       // states the real board colors.

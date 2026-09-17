@@ -25,8 +25,8 @@ export function AboutPage() {
           &amp; Go alongside it. Beside the poker there are head-to-head duels
           (Chess, Checkers, Trivia Showdown, Word Race) where you challenge a
           friend and two players stake Gold against each other directly, winner
-          takes the pot with nothing taken off the top — plus cribbage,
-          blackjack, and the Ante Up puzzles: Word Stack, Connections, Sudoku,
+          takes the pot with nothing taken off the top — plus cribbage
+          and the Ante Up puzzles: Word Stack, Connections, Sudoku,
           Memory Match and Minesweeper. One wallet covers all of it.
         </p>
         <p>

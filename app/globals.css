@@ -36,9 +36,6 @@
 /* After 11: the rewarded-ad offer rides .profile-overlay/.profile-modal and
    only adds to them, so it must cascade later. */
 @import "./styles/26-rewarded-ad.css";
-/* After 23: the dealers' 3D stage sits inside .bj-felt and leans on that
-   file's box, so it must cascade later. */
-@import "./styles/27-dealer-stage.css";
 @import "./styles/33-sudoku.css";
 @import "./styles/34-memory.css";
 @import "./styles/35-legal.css";

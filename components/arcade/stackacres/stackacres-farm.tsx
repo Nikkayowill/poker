@@ -2444,6 +2444,7 @@ export function StackAcresFarm() {
           if (data.gift.outcome === "gifted") {
             panelSound();
             if (anchor) world.current?.floatAt(anchor, "🎁", "gain");
+            world.current?.emote(body.npc, "heart");
           }
           if (data.gift.grantedKeepsake) {
             const keepsake = KEEPSAKE_CATALOGUE[data.gift.grantedKeepsake];
@@ -2461,9 +2462,13 @@ export function StackAcresFarm() {
         // it from "hello" to "progress" or from "done" to "home" on its
         // own. This block is only the toast for a traveler's line finishing.
         if (body.action === "story-turn-in" && data.storyResult) {
-          if (data.storyResult.outcome === "advanced") panelSound();
+          if (data.storyResult.outcome === "advanced") {
+            panelSound();
+            world.current?.emote(data.storyResult.traveler, "note");
+          }
           if (data.storyResult.outcome === "completed") {
             goldSound();
+            world.current?.emote(data.storyResult.traveler, "sparkle");
             if (typeof data.storyResult.granted === "string" && isStoryItemId(data.storyResult.granted)) {
               const item = STORY_ITEM_CATALOGUE[data.storyResult.granted];
               setLastCollect({ text: `${item.icon} ${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you the ${item.label}`, nonce: Date.now() });

@@ -68,6 +68,11 @@ export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 
 export type FarmerAction = "water" | "harvest" | "plant";
 
+/** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
+export type EmoteTarget = "farmer" | "ray" | "pilgrim" | "merchant" | TravelerId;
+/** Stardew's emote set is the reference; each is a small icon bubble in the common atlas. */
+export type EmoteKind = "heart" | "exclaim" | "question" | "note" | "sleep" | "sweat" | "sparkle";
+
 export interface StackAcresWorldApi {
   zoomBy: (factor: number) => void;
   recenter: () => void;
@@ -116,6 +121,9 @@ export interface StackAcresWorldApi {
   /** The farmer acts out a water, harvest or planting drop where he stands.
    *  Only the top-down world has a farmer; the isometric world ignores it. */
   farmerAction: (action: FarmerAction) => void;
+  /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
+   *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
+  emote: (who: EmoteTarget, kind: EmoteKind) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;

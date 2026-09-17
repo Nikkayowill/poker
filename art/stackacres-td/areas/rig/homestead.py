@@ -66,6 +66,10 @@ def build(for_game=False):
     a.add(kit.dock(), 196, 428, tag="dock")
     a.exit("oldfields", 208, 0, 48, 14, (352, 596))   # up the north lane once the log is cleared
     a.exit("fold", 694, 328, 10, 32, (22, 184))      # through Hen Haven's back gate once the Fold is cleared
+    a.exit("oak", 0, 184, 10, 32, (492, 216))       # the west trail, past the brambles
+    a.exit("mine", 664, 0, 32, 18, (88, 334))        # the hill trail, past the rockfall; tall enough to reach under the HUD
+    a.exit("coast", 216, 502, 32, 10, (312, 22))     # the shore road, over the washed-out boardwalk
+    a.exit("townsquare", 694, 168, 10, 32, (22, 216))  # the east road, past the broken cart
     a.add(kit.hay_bale(), 298, 150, (9, 2))            # farm clutter so the yard isn't bare
     a.add(kit.hay_bale(), 290, 164, (9, 2))
     a.add(kit.crate(), 432, 150, (7, 2))

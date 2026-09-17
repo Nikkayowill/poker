@@ -1,154 +1,213 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { PAINTERS } from "./stackacres-art";
-import { allSpritesReady, onSpriteReady } from "./stackacres-sprites";
-import { F, ell, lin, rad, type Ctx, type Painter } from "./art-kit";
 
 /**
  * The tap-to-play splash's backdrop.
  *
- * There is no downloaded key art for this because there doesn't need to be
- * one: the game already draws its own barn, silo, trees and animals as
- * vector painters (see stackacres-art.ts), so this composes a farm-at-dusk
- * scene out of those same painters rather than commissioning or fetching a
- * new picture. A carrot in the seed strip is already the carrot in the
- * field; this makes the barn on the splash the same barn in the game.
+ * Composed straight from the top-down game's own exported assets -- the
+ * Homestead's baked ground (`public/stackacres-td/areas/homestead`), its
+ * prop atlas, and the farmer's sheet -- the same files `components/arcade/
+ * stackacres-td/scene.ts` loads into Phaser. No separate key art: the barn
+ * on the splash is the same barn pixels the game draws once it starts, and
+ * redrawing an area (new crop, new prop) updates the splash for free.
  *
- * A fixed composition, not a live scene -- no clock, no input, no per-frame
- * work -- so it only redraws on resize, the same way paintIcon redraws an
- * icon when its `size` prop changes.
+ * Two canvases: an offscreen one at the area's native 16px-tile resolution,
+ * redrawn only when the water-frame ticks (matching the game's own 170ms
+ * cadence, `WATER_FRAME_MS` in scene.ts), and the visible one, which blits
+ * it scaled to cover the frame on every tick and on resize. Splitting them
+ * keeps the per-frame work to one drawImage instead of re-walking the whole
+ * prop list every tick.
  */
+
+const AREA_BASE = "/stackacres-td/areas/homestead";
+const CHAR_BASE = "/stackacres-td/characters";
+const WATER_FRAME_MS = 170;
+
+interface AtlasFrame {
+  frame: { x: number; y: number; w: number; h: number };
+}
+
+interface PropSpec {
+  frame: string;
+  frames: string[];
+  x: number;
+  y: number;
+  ax: number;
+  ay: number;
+}
+
+interface AreaSpec {
+  width: number;
+  height: number;
+  tile: number;
+  frames: number;
+  spawn: { x: number; y: number };
+  props: PropSpec[];
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.src = src;
+  if (!img.complete) {
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error(`failed to load ${src}`));
+    });
+  }
+  return img;
+}
+
+async function loadJson<T>(src: string): Promise<T> {
+  const res = await fetch(src);
+  return (await res.json()) as T;
+}
+
+interface Scene {
+  area: AreaSpec;
+  ground: HTMLImageElement[];
+  propsAtlas: Record<string, AtlasFrame>;
+  propsSheet: HTMLImageElement;
+  farmerAtlas: Record<string, AtlasFrame>;
+  farmerSheet: HTMLImageElement;
+}
+
+async function loadScene(): Promise<Scene> {
+  const [area, propsMeta, farmerMeta] = await Promise.all([
+    loadJson<AreaSpec>(`${AREA_BASE}/area.json`),
+    loadJson<{ frames: Record<string, AtlasFrame> }>(`${AREA_BASE}/props.json`),
+    loadJson<{ frames: Record<string, AtlasFrame> }>(`${CHAR_BASE}/farmer.json`),
+  ]);
+  const [ground, propsSheet, farmerSheet] = await Promise.all([
+    Promise.all(Array.from({ length: area.frames }, (_, i) => loadImage(`${AREA_BASE}/ground-${i}.png`))),
+    loadImage(`${AREA_BASE}/props.png`),
+    loadImage(`${CHAR_BASE}/farmer.png`),
+  ]);
+  return { area, ground, propsAtlas: propsMeta.frames, propsSheet, farmerAtlas: farmerMeta.frames, farmerSheet };
+}
+
+/** The farmer's idle-facing-down pose: frame 97 of 96-99 (`idle_down` in
+ *  farmer.json's frameTags), one of the walk's own settle poses so he reads
+ *  as standing, not mid-stride. Origin (0.5, 44/48) mirrors the engine's own
+ *  sprite anchor -- the same point his feet plant on the ground tile. */
+const FARMER_IDLE_FRAME = "97";
+const FARMER_ORIGIN_Y = 44 / 48;
+
+function paintOffscreen(ctx: CanvasRenderingContext2D, scene: Scene, waterFrame: number): void {
+  const { area } = scene;
+  const w = area.width * area.tile;
+  const h = area.height * area.tile;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(scene.ground[waterFrame % scene.ground.length], 0, 0);
+
+  const props = [...area.props].sort((a, b) => a.y - b.y);
+  for (const prop of props) {
+    const frameName = prop.frames.length > 1 ? prop.frames[waterFrame % prop.frames.length] : prop.frame;
+    const atlas = scene.propsAtlas[frameName];
+    if (!atlas) continue;
+    const { x, y, w: fw, h: fh } = atlas.frame;
+    ctx.drawImage(scene.propsSheet, x, y, fw, fh, Math.round(prop.x - prop.ax), Math.round(prop.y - prop.ay), fw, fh);
+  }
+
+  const farmerFrame = scene.farmerAtlas[FARMER_IDLE_FRAME];
+  if (farmerFrame) {
+    const { x, y, w: fw, h: fh } = farmerFrame.frame;
+    ctx.drawImage(
+      scene.farmerSheet,
+      x,
+      y,
+      fw,
+      fh,
+      Math.round(area.spawn.x - fw / 2),
+      Math.round(area.spawn.y - fh * FARMER_ORIGIN_Y),
+      fw,
+      fh,
+    );
+  }
+}
+
 export function StackAcresCoverArt() {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-
+    let cancelled = false;
     let frame = 0;
-    const draw = () => {
+    let waterFrame = 0;
+    let waterTimer: ReturnType<typeof setInterval> | undefined;
+    const off = document.createElement("canvas");
+    const offCtx = off.getContext("2d");
+    let scene: Scene | null = null;
+
+    const drawVisible = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx || !scene) return;
       const w = window.innerWidth;
       const h = window.innerHeight;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paintScene(ctx, w, h);
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = "#1b3a22";
+      ctx.fillRect(0, 0, w, h);
+
+      const imgW = scene.area.width * scene.area.tile;
+      const imgH = scene.area.height * scene.area.tile;
+      const scale = Math.max(w / imgW, h / imgH);
+      const drawW = imgW * scale;
+      const drawH = imgH * scale;
+      const dx = (w - drawW) / 2;
+      // Anchored toward the top third: the barn, farmhouse, workshop and
+      // farmer sit in the image's upper half, the pond near the bottom.
+      // Landscape phones are much wider than the 704x512 source, so "cover"
+      // crops height hard -- biasing the crop up keeps the buildings and the
+      // farmer in frame and loses the empty pond edge instead.
+      const dy = (h - drawH) * 0.22;
+      ctx.drawImage(off, dx, dy, drawW, drawH);
+
+      // A scrim over the whole scene so the title and prompt sitting on top
+      // of it stay legible regardless of what's underneath them. Heavier
+      // than a night sky needs it: the Homestead art is bright daylight
+      // green, not the old dusk-violet vector backdrop.
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "rgba(10,14,8,.55)");
+      grad.addColorStop(0.5, "rgba(10,14,8,.35)");
+      grad.addColorStop(1, "rgba(10,14,8,.65)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
     };
 
-    draw();
     const onResize = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(draw);
+      frame = requestAnimationFrame(drawVisible);
     };
+
+    loadScene().then((loaded) => {
+      if (cancelled) return;
+      scene = loaded;
+      off.width = loaded.area.width * loaded.area.tile;
+      off.height = loaded.area.height * loaded.area.tile;
+      if (offCtx) paintOffscreen(offCtx, loaded, 0);
+      drawVisible();
+      waterTimer = setInterval(() => {
+        if (!offCtx || !scene) return;
+        waterFrame = (waterFrame + 1) % scene.area.frames;
+        paintOffscreen(offCtx, scene, waterFrame);
+        drawVisible();
+      }, WATER_FRAME_MS);
+    });
+
     window.addEventListener("resize", onResize);
-    // The barn, cow and hen in this scene draw an image once it arrives, so
-    // redraw then -- the same reason the card redraws on resize.
-    const stopWatching = allSpritesReady() ? undefined : onSpriteReady(onResize);
     return () => {
+      cancelled = true;
       window.removeEventListener("resize", onResize);
-      stopWatching?.();
       cancelAnimationFrame(frame);
+      if (waterTimer) clearInterval(waterTimer);
     };
   }, []);
 
   return <canvas ref={ref} className="sa-play-cover" aria-hidden="true" />;
-}
-
-/** Places a painter's own anchor point at (x, y) in device px, `k` device px
- *  per world unit -- paintIcon's centring maths, generalised so several
- *  painters can share one canvas instead of one each. */
-function place(c: Ctx, p: Painter, x: number, y: number, k: number): void {
-  c.save();
-  c.translate(x - p.ax * p.w * k, y - p.ay * p.h * k);
-  c.scale(k, k);
-  p(c);
-  c.restore();
-}
-
-function paintScene(c: Ctx, w: number, h: number): void {
-  c.clearRect(0, 0, w, h);
-
-  // StackAcres is landscape-only (stackacres-farm.tsx gates everything,
-  // this splash included, behind useLandscape -- it never renders in
-  // portrait), so the frame is always wide and short, never tall. That rules
-  // out a stacked sky-over-ground layout: the .sa-play-content column is
-  // vertically centred and, on a short frame, its own height eats most of
-  // it, leaving no band underneath tall enough to stand a barn in without
-  // colliding with the text above it (this shipped once, on a portrait
-  // build, before that got caught). Scenery flanks the text left and right
-  // instead, sized off the frame's own short side.
-  c.fillStyle = lin(c, 0, 0, 0, h, [
-    [0, "#150a2b"],
-    [1, "#26123f"],
-  ]);
-  c.fillRect(0, 0, w, h);
-
-  // One warm glow, high and to the left -- the same "one sun, upper-left"
-  // rule every painter in stackacres-art.ts is lit by, standing in here for a
-  // low moon since the sky is a night violet, not a daylight blue. Sized off
-  // the SHORT side (h): on a wide phone `max(w, h)` would blow the glow out
-  // to cover most of the frame.
-  const moonX = w * 0.1;
-  const moonY = h * 0.26;
-  const glowR = Math.min(w, h) * 1.5;
-  c.fillStyle = rad(c, moonX, moonY, 0, glowR, [
-    [0, "rgba(255,210,63,.4)"],
-    [0.35, "rgba(255,210,63,.12)"],
-    [1, "rgba(255,210,63,0)"],
-  ]);
-  c.fillRect(0, 0, w, h);
-  const moonR = h * 0.08;
-  ell(c, moonX, moonY, moonR, moonR);
-  F(
-    c,
-    rad(c, moonX - moonR * 0.3, moonY - moonR * 0.3, 0, moonR * 1.4, [
-      [0, "#fffae8"],
-      [0.7, "#ffe9ab"],
-      [1, "#e8c977"],
-    ]),
-  );
-
-  // A thin grass strip along the very bottom -- just enough for the barn
-  // and the animals to visibly stand on, not a full ground band (there
-  // isn't the height to spare for one).
-  const groundH = h * 0.16;
-  c.fillStyle = lin(c, 0, h - groundH, 0, h, [
-    [0, "#1b3a22"],
-    [1, "#2e5a30"],
-  ]);
-  c.fillRect(0, h - groundH, w, groundH);
-
-  // Every painter is sized by TWO independent budgets -- a target height as
-  // a fraction of h (the frame's own short side) and a max width as a
-  // fraction of w, so nothing grows wide enough to reach the centred text
-  // column even on a very short, very wide window. The smaller of the two
-  // wins.
-  const fit = (p: Painter, targetPx: number, maxWidthPx: number) =>
-    Math.min(targetPx / p.h, maxWidthPx / p.w);
-
-  // Left cluster: back tree, silo, barn -- kept inside the left ~28% of the
-  // frame so the widest of them (the barn) never reaches the centred text.
-  place(c, PAINTERS.tree3, w * 0.04, h * 0.86, fit(PAINTERS.tree3, h * 0.3, w * 0.07));
-  place(c, PAINTERS.silo, w * 0.1, h * 0.94, fit(PAINTERS.silo, h * 0.56, w * 0.08));
-  place(c, PAINTERS.barn, w * 0.21, h * 0.97, fit(PAINTERS.barn, h * 0.42, w * 0.2));
-
-  // Right cluster: a tree, then the animals closest to the frame's edge --
-  // mirrors the left cluster's ~28%-of-width budget.
-  place(c, PAINTERS.tree1, w * 0.96, h * 0.86, fit(PAINTERS.tree1, h * 0.3, w * 0.07));
-  place(c, PAINTERS.cow, w * 0.88, h * 0.97, fit(PAINTERS.cow, h * 0.32, w * 0.11));
-  place(c, PAINTERS.sheep, w * 0.78, h * 0.95, fit(PAINTERS.sheep, h * 0.28, w * 0.1));
-  place(c, PAINTERS.hen, w * 0.72, h * 0.98, fit(PAINTERS.hen, h * 0.2, w * 0.06));
-
-  // A scrim over the whole scene so the title and prompt sitting on top of
-  // it stay legible regardless of what's underneath them.
-  c.fillStyle = lin(c, 0, 0, 0, h, [
-    [0, "rgba(13,6,32,.35)"],
-    [0.5, "rgba(13,6,32,.1)"],
-    [1, "rgba(13,6,32,.5)"],
-  ]);
-  c.fillRect(0, 0, w, h);
 }

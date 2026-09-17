@@ -3894,9 +3894,9 @@
   opacity: 0;
 }
 
-/* Farm-at-dusk key art, built from the game's own painters -- see
-   stackacres-cover-art.tsx. Positioned (not just painted first) so it stacks
-   under .sa-play-content regardless of paint-order edge cases. */
+/* The Homestead's own baked ground, props and farmer sprite, composited
+   live -- see stackacres-cover-art.tsx. Positioned (not just painted first)
+   so it stacks under .sa-play-content regardless of paint-order edge cases. */
 .sa-play-cover {
   position: absolute;
   inset: 0;

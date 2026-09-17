@@ -147,9 +147,15 @@ export const TRAVELER_CATALOGUE: Readonly<Record<TravelerId, TravelerDef>> = {
   },
 };
 
-/** The pixel-art PNG each bubble shows, the same file the world draws.
- *  Ray's is the spirit sprite, not the retired standing one. Art is a
- *  separate pass; these paths are the contract for it. */
+export type PortraitExpression = "neutral" | "happy" | "sad" | "surprised" | "thinking" | "love";
+
+/** A traveler's 64x64 dialogue portrait in one expression, drawn by art/stackacres-td/rich/portraits.py
+ *  and exported by rich/export_rich.py. */
+export function travelerPortrait(id: TravelerId, expression: PortraitExpression): string {
+  return `/stackacres-td/portraits/${id}-${expression}.png`;
+}
+
+/** Each traveler's neutral portrait. */
 export const TRAVELER_PORTRAIT: Readonly<Record<TravelerId, string>> = Object.fromEntries(
-  TRAVELER_IDS.map((id) => [id, `/stackacres/sprites/traveler-${id}.webp`]),
+  TRAVELER_IDS.map((id) => [id, travelerPortrait(id, "neutral")]),
 ) as Record<TravelerId, string>;

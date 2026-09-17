@@ -39,6 +39,7 @@ import fields  # noqa: E402
 import homestead  # noqa: E402
 import kit  # noqa: E402
 import oldfields  # noqa: E402
+import portraits  # noqa: E402
 import props  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
@@ -384,6 +385,15 @@ def export_characters(out_root):
     print("characters ->", out)
 
 
+def export_portraits(out_root):
+    out = os.path.join(out_root, "portraits")
+    os.makedirs(out, exist_ok=True)
+    for name in characters.rig.CHARACTERS:
+        for expression in portraits.EXPRESSIONS:
+            portraits.portrait(name, expression).save(os.path.join(out, f"{name}-{expression}.png"))
+    print("portraits ->", out)
+
+
 def main():
     args = sys.argv[1:]
     out_root = os.path.join(rig_export.REPO, "public", "stackacres-td")
@@ -395,6 +405,7 @@ def main():
             export_area(module, out_root)
     export_common(out_root)
     export_characters(out_root)
+    export_portraits(out_root)
 
 
 if __name__ == "__main__":

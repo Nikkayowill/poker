@@ -185,10 +185,10 @@ class Ground:
         idx[above_other & ~below_other] = np.minimum(7, idx[above_other & ~below_other] + 1.6)
 
         # muddy bank around water
-        bank1 = dilate(wet, 1) & ~wet & ~path & ~soil
-        bank2 = dilate(wet, 2) & ~wet & ~bank1 & ~path & ~soil
+        bank1 = dilate(wet, 1) & ~wet & grass
+        bank2 = dilate(wet, 2) & ~wet & ~bank1 & grass
         patchy = fbm(xs, ys, 5, 40, 2) > 0.42
-        bank3 = dilate(wet, 3) & ~wet & ~bank1 & ~bank2 & ~path & ~soil & ~dilate(owner == CODE["stream"], 2)
+        bank3 = dilate(wet, 3) & ~wet & ~bank1 & ~bank2 & grass & ~dilate(owner == CODE["stream"], 2)
         ramp[bank1] = RID["dirt"]
         idx[bank1] = np.where(shift(wet, 1, 0)[bank1], 3.2, 2.0)
         ramp[bank2], idx[bank2] = RID["dirt"], np.where(shift(wet, -2, 0)[bank2], 5.0, 4.0)
@@ -242,6 +242,11 @@ class Ground:
                 if path[y + 2, x + 1]:
                     ramp[y + 2, x + 1], idx[y + 2, x + 1] = RID["dirt"], p[y + 2, x + 1] - 1.2
 
+        self._sand(ramp, idx, owner == CODE["sand"], wet, grass)
+        self._gravel(ramp, idx, owner == CODE["gravel"], grass)
+        self._mud(ramp, idx, owner == CODE["mud"], grass)
+        self._cobble(ramp, idx, owner == CODE["cobble"], grass)
+
         # tilled soil: furrows, lit ridges, dark top edge under the grass lip
         row = iy % 8
         si = np.where(row == 0, 1.0, np.where(row == 1, 4.0, np.clip(np.floor((2.6 + (fbm(xs, ys, 5, 31, 2) - 0.5) * 1.6) * 2) / 2, 2, 3.5)))
@@ -257,6 +262,158 @@ class Ground:
         self.wet = wet
         self.wdepth = depth(wet, 22)
         self.wsoft = blur(wet.astype(float), 9)
+
+    def _sand(self, ramp, idx, sand, wet, grass):
+        """Beach: pale sand in wind ripples, darkening to wet sand at the waterline, with shells and specks."""
+        if not sand.any():
+            return
+        xs, ys = self.xs, self.ys
+        ix, iy = xs.astype(int), ys.astype(int)
+        H, W = sand.shape
+        lv = 4.7 + (fbm(xs, ys, 14, 80) - 0.5) * 1.1 + (fbm(xs, ys, 4, 81, 2) - 0.5) * 0.5
+        ripple = np.sin(xs * 0.32 + ys * 0.95 + fbm(xs, ys, 22, 82) * 7)
+        lv = np.where(ripple > 0.82, lv - 0.7, np.where(ripple < -0.9, lv + 0.4, lv))
+        lv = np.floor(lv * 2) / 2
+        near1, near3, near7 = dilate(wet, 2), dilate(wet, 6), dilate(wet, 12)
+        damp = fbm(xs, ys, 6, 83, 2) > 0.42
+        lv = np.where(near7 & damp, np.minimum(lv, 3.9), lv)
+        lv = np.where(near3, np.minimum(lv, 3.2) - (fbm(xs, ys, 4, 89, 2) > 0.6) * 0.5, lv)
+        lv = np.where(near1, 2.4, lv)
+        not_sand = ~sand
+        lv = np.where(near(grass, -1, 0, 2), np.minimum(lv, 3.2), lv)
+        lv = np.where(near(grass, -1, 0, 1), 2.4, lv)
+        speck = hash_np(ix, iy, 84)
+        lv = np.where((speck < 0.02) & ~near1, lv - 1.2, np.where((speck > 0.985) & ~near1, lv + 1.1, lv))
+        ramp[sand], idx[sand] = RID["sand"], lv[sand]
+        for cy in range(0, H, 13):
+            for cx in range(0, W, 13):
+                if hash2(cx, cy, 85) > 0.2:
+                    continue
+                x, y = cx + int(hash2(cx, cy, 86) * 10), cy + int(hash2(cx, cy, 87) * 10)
+                if x + 2 >= W or y + 2 >= H or not sand[y:y + 2, x:x + 3].all() or near3[y, x]:
+                    continue
+                pink = hash2(cx, cy, 88) < 0.5
+                ramp[y, x], idx[y, x] = (RID["pink"], 4.6) if pink else (RID["white"], 5.8)
+                ramp[y, x + 1], idx[y, x + 1] = (RID["pink"], 3.4) if pink else (RID["white"], 4.4)
+                idx[y + 1, x + 1] = idx[y + 1, x + 1] - 1.4
+                idx[y + 1, x + 2] = idx[y + 1, x + 2] - 1.0
+        _ = not_sand
+
+    def _gravel(self, ramp, idx, gravel, grass):
+        """Mine spoil: grey grit packed with lit chips, each with its own shadow, a few rusty ones."""
+        if not gravel.any():
+            return
+        xs, ys = self.xs, self.ys
+        ix, iy = xs.astype(int), ys.astype(int)
+        H, W = gravel.shape
+        lv = np.floor((3.2 + (fbm(xs, ys, 11, 90) - 0.5) * 1.2 + (fbm(xs, ys, 3, 91, 2) - 0.5) * 0.8) * 2) / 2
+        lv = np.where(near(grass, -1, 0, 2), np.minimum(lv, 2.4), lv)
+        lv = np.where(near(grass, -1, 0, 1), 1.6, lv)
+        lv = np.where(hash_np(ix, iy, 92) < 0.06, lv - 1.0, lv)
+        ramp[gravel], idx[gravel] = RID["stone"], lv[gravel]
+        for cy in range(0, H, 4):
+            for cx in range(0, W, 4):
+                r = hash2(cx, cy, 93)
+                if r > 0.5:
+                    continue
+                x, y = cx + int(hash2(cx, cy, 94) * 3), cy + int(hash2(cx, cy, 95) * 3)
+                wide = r < 0.2
+                cells = [(x, y), (x + 1, y)] + ([(x, y + 1), (x + 1, y + 1)] if wide else [])
+                if not all(xx + 1 < W and yy + 1 < H and gravel[yy, xx] for xx, yy in cells):
+                    continue
+                warm = hash2(cx, cy, 96) < 0.12
+                chip = RID["khaki"] if warm else RID["stone"]
+                for k, (xx, yy) in enumerate(cells):
+                    ramp[yy, xx] = chip
+                    idx[yy, xx] = (5.6 if k == 0 else 4.4 if k == 1 else 3.6) - (1.0 if warm else 0)
+                sx, sy = cells[-1]
+                if gravel[sy + 1, sx]:
+                    ramp[sy + 1, sx], idx[sy + 1, sx] = RID["stone"], 1.4
+
+    def _mud(self, ramp, idx, mud, grass):
+        """The wallow: dark churned mud, lit clods with shadows, hoof prints, and wet patches that catch the sky."""
+        if not mud.any():
+            return
+        xs, ys = self.xs, self.ys
+        ix, iy = xs.astype(int), ys.astype(int)
+        H, W = mud.shape
+        lv = np.floor((2.2 + (fbm(xs, ys, 9, 100) - 0.5) * 1.0 + (fbm(xs, ys, 3, 101, 2) - 0.5) * 0.6) * 2) / 2
+        lv = np.where(near(grass, -1, 0, 2), np.minimum(lv, 1.4), lv)
+        lv = np.where(near(grass, -1, 0, 1), 0.6, lv)
+        ramp[mud], idx[mud] = RID["soil"], lv[mud]
+        wetness = fbm(xs, ys, 10, 102, 2)
+        sheen = mud & (wetness > 0.68) & ~near(grass, -1, 0, 3) & ~near(grass, 1, 0, 2)
+        glint = sheen & (hash_np(ix, iy, 103) < 0.07) & (wetness > 0.72)
+        ramp[sheen], idx[sheen] = RID["slate"], 1.4 + (wetness[sheen] - 0.68) * 8
+        top_edge = sheen & ~shift(sheen, 1, 0)
+        ramp[top_edge], idx[top_edge] = RID["soil"], 0.4
+        ramp[glint], idx[glint] = RID["slate"], 5.8
+        for cy in range(0, H, 5):
+            for cx in range(0, W, 5):
+                r = hash2(cx, cy, 104)
+                if r > 0.5:
+                    continue
+                x, y = cx + int(hash2(cx, cy, 105) * 3), cy + int(hash2(cx, cy, 106) * 3)
+                if x + 3 >= W or y + 3 >= H or not mud[y:y + 3, x:x + 3].all() or sheen[y:y + 3, x:x + 3].any():
+                    continue
+                if r < 0.12:                                   # a hoof print: two dark notches
+                    for xx, yy in ((x, y), (x, y + 1), (x + 2, y), (x + 2, y + 1)):
+                        idx[yy, xx] = 0.3
+                    continue
+                if r < 0.35:                                   # a round clod: lit top, dark underside
+                    for dx, dy, lvl in ((1, 0, 3.9), (0, 1, 3.4), (1, 1, 3.0), (2, 1, 2.6), (1, 2, 0.8), (2, 2, 0.8)):
+                        idx[y + dy, x + dx] = lvl
+                else:
+                    for dx, dy, lvl in ((0, 0, 3.6), (1, 0, 3.0), (1, 1, 0.8)):
+                        idx[y + dy, x + dx] = lvl
+
+    def _cobble(self, ramp, idx, cobble, grass):
+        """Town cobbles: irregular rounded stones (each pixel belongs to its nearest jittered stone centre), lit from
+        the top-left and worn smooth on top, dark mortar in the joints, some warmer stones, moss near the grass."""
+        if not cobble.any():
+            return
+        xs, ys = self.xs, self.ys
+        ix, iy = xs.astype(int), ys.astype(int)
+        cw, ch = 6, 5
+        gx, gy = ix // cw, iy // ch
+        best = np.full(xs.shape, 1e9)
+        second = np.full(xs.shape, 1e9)
+        owner_x = np.zeros(xs.shape, int)
+        owner_y = np.zeros(xs.shape, int)
+        rel_x = np.zeros(xs.shape)
+        rel_y = np.zeros(xs.shape)
+        for oy in (-1, 0, 1):
+            for ox in (-1, 0, 1):
+                cx_cell, cy_cell = gx + ox, gy + oy
+                shift_x = (cy_cell % 2) * 3
+                centre_x = cx_cell * cw + shift_x + 1 + hash_np(cx_cell + 500, cy_cell + 500, 114) * (cw - 2)
+                centre_y = cy_cell * ch + 1 + hash_np(cx_cell + 500, cy_cell + 500, 115) * (ch - 2)
+                dx, dy = xs + 0.5 - centre_x, (ys + 0.5 - centre_y) * 1.15
+                d = np.sqrt(dx * dx + dy * dy)
+                closer = d < best
+                second = np.where(closer, best, np.minimum(second, d))
+                best = np.where(closer, d, best)
+                owner_x = np.where(closer, cx_cell, owner_x)
+                owner_y = np.where(closer, cy_cell, owner_y)
+                rel_x = np.where(closer, dx, rel_x)
+                rel_y = np.where(closer, dy, rel_y)
+        joint = (second - best) < 1.05
+        base = 4.5 + (hash_np(owner_x + 500, owner_y + 500, 116) - 0.5) * 1.4 + (fbm(xs, ys, 30, 111) - 0.5) * 0.6
+        lit = -(rel_x * 0.55 + rel_y * 0.8) / 3.0
+        lv = base + lit * 1.4
+        lv = np.where(best < 1.2, lv + 0.4, lv)
+        near_joint = (second - best) < 2.0
+        lv = np.where(near_joint & ~joint & (rel_x + rel_y > 0), lv - 0.8, lv)
+        lv = np.where(joint, 1.3, lv)
+        lv = np.where(near(grass, -1, 0, 1), np.minimum(lv, 1.6), lv)
+        warm = (hash_np(owner_x + 500, owner_y + 500, 112) < 0.2) & ~joint
+        moss = joint & dilate(grass, 8) & (hash_np(ix, iy, 113) < 0.5)
+        sel = cobble & ~warm & ~moss
+        ramp[sel], idx[sel] = RID["stone"], lv[sel]
+        sel = cobble & warm
+        ramp[sel], idx[sel] = RID["greywood"], lv[sel] - 0.2
+        sel = cobble & moss
+        ramp[sel], idx[sel] = RID["moss"], 2.6
 
     def frame(self, f=0):
         xs, ys = self.xs, self.ys

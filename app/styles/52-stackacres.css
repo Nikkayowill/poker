@@ -699,6 +699,80 @@
 
 .sa-shell.is-placing .sa-world { cursor: copy; }
 
+/* ---- the thumb stick --------------------------------------------------
+ * Bottom-right, where a right thumb rests with the phone on its side
+ * (stackacres-td/joystick.tsx). Touch screens only: a mouse clicks where it
+ * wants to go. It gives way while the district drawer is out, which runs
+ * down that same side. */
+.sa-joystick {
+  --kx: 0px;
+  --ky: 0px;
+  display: none;
+  position: absolute;
+  right: max(22px, calc(var(--safe-right) + 10px));
+  bottom: max(18px, calc(var(--safe-bottom) + 8px));
+  z-index: 3;
+  width: 116px;
+  height: 116px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: 50%;
+  background: var(--sa-glass-fill);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  opacity: .78;
+  transition: opacity var(--duration-fast, 120ms);
+}
+
+@media (pointer: coarse) {
+  .sa-joystick { display: block; }
+}
+
+.sa-field[data-drawer="open"] .sa-joystick { display: none; }
+
+.sa-joystick.is-held { opacity: 1; }
+
+.sa-joystick-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--sa-cream);
+  opacity: .7;
+  pointer-events: none;
+}
+
+.sa-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sa-cream) 82%, transparent);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  transform: translate3d(var(--kx), var(--ky), 0);
+  transition: transform 160ms var(--sa-ease-out, ease-out);
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Under the thumb it tracks exactly; the ease is only for springing back. */
+.sa-joystick.is-held .sa-joystick-knob {
+  background: var(--sa-corn);
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-joystick-knob { transition: none; }
+}
+
 /* Every icon on this screen -- tool, HUD purse/feed, unit row, barn row -- is
    a <StackAcresIcon>: a vector painter drawn into a small DOM canvas rather
    than a pixel-art PNG. This is the fallback size; every context below sets
@@ -3663,38 +3737,140 @@
 
 /* ---- the orientation gate -------------------------------------------- */
 
-/* Shared with the poker table (42-racetrack-table.css), which owns its layout
-   and its copy shape; only its dressing is re-boarded here. A player who turns
-   their phone the wrong way should still be looking at the farm, not at a
-   violet-black card that has clearly come from somewhere else. */
-.sa-theme .orientation-gate-shell {
-  background: var(--sa-choc-rim);
+/* A player holding the phone upright should already be looking at the farm:
+   the Homestead's own ground behind a phone that tips onto its side, and the
+   farmer walking across it once it has. One loop, 4.2s: upright, tip, walk, back. */
+.sa-rotate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 24px 20px calc(24px + var(--safe-bottom));
+  overflow: hidden;
+  background: #1c1a10;
   color: var(--sa-cream);
-}
-
-.sa-theme .orientation-gate {
-  padding: 24px 22px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-panel);
-  background: var(--sa-glass-fill);
-  -webkit-backdrop-filter: var(--sa-glass-blur);
-  backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
-  color: var(--sa-ink);
   text-align: center;
 }
 
-.sa-theme .orientation-gate-mark { color: var(--sa-corn-rim); }
-
-.sa-theme .orientation-gate h1 {
-  font: 800 24px/1.15 var(--sa-font);
-  color: var(--sa-ink);
+.sa-rotate-ground {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 48%, rgba(20, 12, 28, .15), rgba(20, 12, 28, .72)),
+    url("/stackacres-td/areas/homestead/ground-0.png") 38% 30% / auto 160% repeat;
+  image-rendering: pixelated;
 }
 
-.sa-theme .orientation-gate p,
-.sa-theme .orientation-gate small {
-  color: var(--sa-ink-soft);
-  font-weight: 600;
+.sa-rotate-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: min(100%, 340px);
+}
+
+.sa-rotate-logo {
+  width: min(230px, 62vw);
+  height: auto;
+  filter: drop-shadow(0 4px 0 rgba(52, 34, 18, .55)) drop-shadow(0 10px 20px rgba(0, 0, 0, .5));
+}
+
+.sa-rotate-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 200px;
+  height: 200px;
+  margin: 6px 0 2px;
+}
+
+.sa-rotate-phone {
+  display: block;
+  width: 96px;
+  height: 168px;
+  padding: 10px 6px;
+  border-radius: 20px;
+  background: #2a1d12;
+  box-shadow:
+    inset 0 0 0 3px var(--sa-cream),
+    inset 0 0 0 6px #2a1d12,
+    0 8px 0 rgba(20, 12, 28, .45),
+    0 18px 30px rgba(0, 0, 0, .45);
+  animation: sa-rotate-tip 4.2s var(--sa-ease-out, ease-out) infinite;
+}
+
+.sa-rotate-screen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: url("/stackacres-td/areas/homestead/ground-0.png") 34% 38% / 360px auto;
+  image-rendering: pixelated;
+  animation: sa-rotate-light 4.2s ease-out infinite;
+}
+
+/* The farmer stays upright over the phone: he appears as it lands on its side
+   and walks along its length (rig sheet row 3 is walk_right, four 48px frames). */
+.sa-rotate-farmer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 96px;
+  height: 96px;
+  margin: -58px 0 0 -48px;
+  background: url("/stackacres-td/characters/farmer.png") 0 -288px / 384px 2688px no-repeat;
+  image-rendering: pixelated;
+  opacity: 0;
+  animation:
+    sa-rotate-walk 480ms steps(4) infinite,
+    sa-rotate-stroll 4.2s linear infinite;
+}
+
+.sa-rotate-card h1 {
+  margin: 0;
+  font: 800 26px/1.1 var(--sa-font);
+  color: var(--sa-cream);
+  text-shadow: 0 3px 0 rgba(20, 12, 28, .6), 0 8px 18px rgba(0, 0, 0, .55);
+  text-wrap: balance;
+}
+
+.sa-rotate-card p {
+  margin: 0;
+  color: var(--sa-corn);
+  font: 700 16px/1.35 var(--sa-font);
+  text-shadow: 0 2px 0 rgba(20, 12, 28, .6);
+}
+
+@keyframes sa-rotate-tip {
+  0%, 18% { transform: rotate(0deg); }
+  34%, 82% { transform: rotate(-90deg); }
+  96%, 100% { transform: rotate(0deg); }
+}
+
+@keyframes sa-rotate-light {
+  0%, 22% { filter: brightness(.35) saturate(.4); }
+  36%, 80% { filter: none; }
+  94%, 100% { filter: brightness(.35) saturate(.4); }
+}
+
+@keyframes sa-rotate-walk {
+  to { background-position-x: -384px; }
+}
+
+@keyframes sa-rotate-stroll {
+  0%, 36% { opacity: 0; transform: translateX(-56px); }
+  42% { opacity: 1; }
+  74% { opacity: 1; }
+  80%, 100% { opacity: 0; transform: translateX(56px); }
+}
+
+/* Still: the phone already on its side with the farmer standing on it. */
+@media (prefers-reduced-motion: reduce) {
+  .sa-rotate-phone,
+  .sa-rotate-screen,
+  .sa-rotate-farmer { animation: none; }
+  .sa-rotate-phone { transform: rotate(-90deg); }
+  .sa-rotate-farmer { opacity: 1; background-position: -48px -288px; }
 }
 
 /* ---- the tap-to-play splash ------------------------------------------ */

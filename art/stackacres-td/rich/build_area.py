@@ -44,9 +44,21 @@ def patch(script_source):
         owners = [m for m in AREA_MODULES if callable(getattr(m, name, None))]
         if not owners:
             continue                                  # already redrawn by the Homestead's modules
+        fn = getattr(owners[0], name)
+        points = getattr(owners[0], "LIGHTS", {}).get(name)
         for target in (props, creatures):
             if hasattr(target, name):
-                setattr(target, name, getattr(owners[0], name))
+                setattr(target, name, lit(fn, points) if points else fn)
+
+
+def lit(fn, points):
+    """Marks a sprite's lamp and window points on its images, so export can hand them to the night lighting."""
+    def made(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        for img, _ in (result if isinstance(result, list) else [result]):
+            img.info["lights"] = points
+        return result
+    return made
 
 
 def save(img, out, name, views):

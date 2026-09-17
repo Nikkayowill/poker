@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, findPath, lineClear, tileKey, type Grid } from "./movement";
+import { FOOT, advance, findPath, footClear, lineClear, steer, stickVector, tileKey, type Grid } from "./movement";
 
 function grid(rows: string[]): Grid {
   const blocked = new Set<string>();
@@ -45,5 +45,72 @@ describe("advance", () => {
     const { at: pos, path } = advance({ x: 0, y: 0 }, [{ x: 10, y: 0 }, { x: 10, y: 10 }], 15);
     expect(pos).toEqual({ x: 10, y: 5 });
     expect(path).toEqual([{ x: 10, y: 10 }]);
+  });
+});
+
+describe("stickVector", () => {
+  it("ignores a thumb resting near the middle", () => {
+    expect(stickVector(5, 5, 50)).toBeNull();
+  });
+
+  it("walks slowly just past the dead zone and at full speed near the edge", () => {
+    const slow = stickVector(0, -12, 50)!;
+    expect(slow.x).toBeCloseTo(0);
+    expect(Math.hypot(slow.x, slow.y)).toBeCloseTo(0.45 + 0.55 * ((0.24 - 0.2) / 0.55));
+    expect(stickVector(40, 0, 50)).toEqual({ x: 1, y: 0 });
+    expect(stickVector(0, 500, 50)).toEqual({ x: 0, y: 1 });
+  });
+});
+
+describe("steer", () => {
+  it("walks straight across open ground", () => {
+    const g = grid(["......", "......", "......"]);
+    const to = steer(g, at(1, 1), { x: 1, y: 0 }, 20);
+    expect(to.x).toBeCloseTo(at(1, 1).x + 20);
+    expect(to.y).toBeCloseTo(at(1, 1).y);
+  });
+
+  it("stops his feet at a wall instead of walking into it", () => {
+    const g = grid(["...#", "...#", "...#"]);
+    const to = steer(g, at(1, 1), { x: 1, y: 0 }, 60);
+    expect(footClear(g, to)).toBe(true);
+    expect(to.x + FOOT.halfWidth).toBeLessThan(48);
+    expect(to.x).toBeGreaterThan(40);
+  });
+
+  it("slides along a wall when pushed into it at an angle", () => {
+    const g = grid(["#####", ".....", ".....", "....."]);
+    const from = { x: 24, y: 16 + FOOT.halfHeight };
+    const to = steer(g, from, { x: 1, y: -1 }, 20);
+    expect(to.y).toBeCloseTo(from.y);
+    expect(to.x).toBeGreaterThan(from.x + 10);
+  });
+
+  it("is nudged through a one-tile gateway it is a few pixels off", () => {
+    const g = grid(["##.##", ".....", "....."]);
+    // Far enough left of the gap that his feet catch its post, pushing straight up.
+    let p = { x: 40 - 5, y: 24 };
+    for (let i = 0; i < 20; i++) p = steer(g, p, { x: 0, y: -1 }, 2);
+    expect(p.y).toBeLessThan(12);
+    expect(footClear(g, p)).toBe(true);
+  });
+
+  it("stays put pushing straight into a flat wall", () => {
+    const g = grid(["#####", ".....", "....."]);
+    const from = { x: 40, y: 16 + FOOT.halfHeight };
+    expect(steer(g, from, { x: 0, y: -1 }, 10)).toEqual(from);
+  });
+
+  it("can always walk back out when a tap walk left his feet over a building's edge", () => {
+    const g = grid(["#####", ".....", "....."]);
+    const from = { x: 40, y: 17 };
+    expect(footClear(g, from)).toBe(false);
+    expect(steer(g, from, { x: 0, y: 1 }, 6).y).toBeGreaterThan(from.y);
+  });
+
+  it("never leaves the map", () => {
+    const g = grid(["...", "...", "..."]);
+    const to = steer(g, at(0, 1), { x: -1, y: 0 }, 50);
+    expect(to.x - FOOT.halfWidth).toBeGreaterThanOrEqual(0);
   });
 });

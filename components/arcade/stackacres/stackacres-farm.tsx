@@ -24,7 +24,6 @@ import {
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
-import { StackChipsMark } from "@/components/brand/stackchips-mark";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
 import { useTightLandscape } from "@/components/use-tight-landscape";
@@ -3916,15 +3915,20 @@ export function StackAcresFarm() {
   // phone once the client has actually checked.
   if (!landscape) {
     return (
-      <main className="game-shell orientation-gate-shell">
-        <div className="orientation-gate" role="status" aria-live="polite">
-          <span className="orientation-gate-mark"><StackChipsMark size={44} /></span>
+      <main className="game-shell sa-rotate">
+        {/* The Homestead itself behind the ask, and a phone tipping onto its side with the
+            farmer walking across it once it lands: the picture says it before the words do. */}
+        <div className="sa-rotate-ground" aria-hidden="true" />
+        <div className="sa-rotate-card" role="status" aria-live="polite">
+          <StackAcresLogo className="sa-rotate-logo" aria-hidden="true" />
+          <div className="sa-rotate-stage" aria-hidden="true">
+            <span className="sa-rotate-phone">
+              <span className="sa-rotate-screen" />
+            </span>
+            <span className="sa-rotate-farmer" />
+          </div>
           <h1>Turn your phone sideways</h1>
-          {/* Was "The StackAcres is available in landscape mode", a leftover
-              from the homestead -> StackAcres rename reading straight through
-              the old "The Homestead". */}
-          <p>StackAcres only opens in landscape.</p>
-          <small>Rotate your device to keep farming.</small>
+          <p>The farm opens in landscape.</p>
         </div>
       </main>
     );

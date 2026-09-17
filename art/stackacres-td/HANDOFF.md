@@ -8,7 +8,7 @@ without the conversation. Read this, then `PIPELINE.md` (how the art is made) an
 
 StackAcres (the farm game inside the StackChips app, code in `lib/stackacres/` and
 `components/arcade/stackacres/`) moved from isometric art to **Stardew-style top-down
-pixel art**, with a walkable character (tap-to-move, no joystick), areas as separate scenes,
+pixel art**, with a walkable character (tap-to-move, plus a thumb stick on phones), areas as separate scenes,
 enterable buildings, a marketplace, fishing and bear-defense minigames.
 
 **Kayo's hard rule: no logic changes.** Prices, timers, catalogue, quests, unlocks and odds in
@@ -72,7 +72,10 @@ Review pages:
 - **PixelLab MCP is registered** (`claude mcp add pixellab ...`, local config, HTTP with a
   bearer token). Not used for anything yet; reconnect with `/mcp` in a session to load its tools.
 - **Ray's Museum was deleted** by Kayo on 2026-09-11. Don't bring it back.
-- **Tap-to-move** with simple straight-line-plus-obstacle pathing, not a joystick and not A*.
+- **Tap-to-move** with a breadth-first path (`lib/stackacres-td/movement.ts`). Once all eight areas
+  were playable (2026-09-16) Kayo asked for a **joystick too**: a fixed thumb stick in the bottom-right
+  on touch screens (`stackacres-td/joystick.tsx`), walking him directly with a small foot box that
+  slides along walls. Tapping still walks, and tapping is still how you use things.
 
 ## Superseded parts of the plan file
 
@@ -137,7 +140,7 @@ Next, in order:
    list in `stackacres-sprites.ts` still names it for the menus' icons, so check each file.
 2. **The Fold and Cattle Pasture** as scenes, so sheep and cattle show and can be fed. Done 2026-09-16: gates open when the sector is owned, pens draw the real herd, `focusZone` travels there.
 3. **The missing contract pieces**: scythe, pipes, Wheat Plots, greenhouse interior.
-4. **The wild areas** as scenes, joined at the exits in `AREAS.md`.
+4. **The wild areas** as scenes, joined at the exits in `AREAS.md`. Done 2026-09-16: Coast, Oak, Mine and Town Square open with their first traveler's existing unlock (Miles, Skye, Brayden, Arthur).
 5. The early crop economy (`docs/stackacres-early-crop-economy.md`) as its own change,
    with its migrations applied alongside.
 

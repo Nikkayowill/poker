@@ -1,4 +1,6 @@
 /**
+ * How the farmer walks: tap-to-move, and the thumb stick at the end of this file.
+ *
  * Tap-to-move. A tap becomes a path over the 16px tile grid (breadth-first,
  * eight directions, no cutting a blocked corner), smoothed so the farmer walks
  * straight wherever the line between two points is clear. A tap on a blocked
@@ -124,4 +126,96 @@ export function advance(from: Point, path: Point[], distance: number): { at: Poi
     }
   }
   return { at, path: rest };
+}
+
+// ------------------------------------------------------------------ the joystick
+
+/**
+ * The thumb stick in the bottom-right corner walks the farmer directly, beside tap-to-move.
+ *
+ * A stick moves him a few pixels at a time wherever he is, not tile centre to tile centre,
+ * so he needs a body: a small box around his feet, about the width of his shadow.
+ */
+export const FOOT = { halfWidth: 5, halfHeight: 3 };
+
+/** Under this share of the stick's reach, a resting thumb doesn't walk him. */
+export const STICK_DEAD_ZONE = 0.2;
+/** Past this share he walks at full speed; between the two he speeds up, and never starts slower than `STICK_MIN_SPEED`. */
+export const STICK_FULL = 0.75;
+export const STICK_MIN_SPEED = 0.45;
+
+/** How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch him on its post. */
+const CORNER_ASSIST = 7;
+/** The longest single move before collision is checked again, well under a tile. */
+const SUBSTEP = 4;
+
+/**
+ * A thumb `dx, dy` css px from the stick's centre, with `radius` the knob's full reach,
+ * as a direction whose length is his share of full walking speed; null inside the dead zone.
+ */
+export function stickVector(dx: number, dy: number, radius: number): Point | null {
+  const reach = Math.hypot(dx, dy) / radius;
+  if (reach < STICK_DEAD_ZONE) return null;
+  const ramp = Math.min(1, (reach - STICK_DEAD_ZONE) / (STICK_FULL - STICK_DEAD_ZONE));
+  const speed = STICK_MIN_SPEED + (1 - STICK_MIN_SPEED) * ramp;
+  const length = Math.hypot(dx, dy);
+  return { x: (dx / length) * speed, y: (dy / length) * speed };
+}
+
+/** Every tile under his feet at `p` is open. */
+export function footClear(grid: Grid, p: Point): boolean {
+  const { halfWidth: w, halfHeight: h } = FOOT;
+  for (const [x, y] of [[p.x - w, p.y - h], [p.x + w, p.y - h], [p.x - w, p.y + h], [p.x + w, p.y + h]]) {
+    const [tx, ty] = tileOf({ x, y }, grid.tile);
+    if (!open(grid, tx, ty)) return false;
+  }
+  return true;
+}
+
+/**
+ * One step of `distance` px along the unit vector `dir`: straight on if his feet fit, sliding along a wall
+ * if only one axis is blocked, or nudged round a corner he is nearly past.
+ */
+function stepOnce(grid: Grid, from: Point, dir: Point, distance: number): Point {
+  // A tap walk can leave his feet overlapping a building's edge; he may always walk back out of it.
+  const stuck = !footClear(grid, from);
+  const fits = (p: Point) => footClear(grid, p) || (stuck && open(grid, ...tileOf(p, grid.tile)));
+
+  const straight = { x: from.x + dir.x * distance, y: from.y + dir.y * distance };
+  if (fits(straight)) return straight;
+  // Close the last few pixels to the wall rather than stopping a step short of it.
+  for (let part = distance / 2; part >= 0.25; part /= 2) {
+    const shorter = { x: from.x + dir.x * part, y: from.y + dir.y * part };
+    if (fits(shorter)) return shorter;
+  }
+
+  const alongX = { x: straight.x, y: from.y };
+  const alongY = { x: from.x, y: straight.y };
+  const [first, second] = Math.abs(dir.x) >= Math.abs(dir.y) ? [alongX, alongY] : [alongY, alongX];
+  // Only slide along an axis he is really pushing on, so a nearly-straight push doesn't creep him sideways.
+  if (Math.abs(first === alongX ? dir.x : dir.y) > 0.25 && fits(first)) return first;
+  if (Math.abs(second === alongX ? dir.x : dir.y) > 0.25 && fits(second)) return second;
+
+  // Pushing mostly one way into a corner: find the nearest sideways offset that would let him through.
+  const horizontal = Math.abs(dir.x) > Math.abs(dir.y);
+  const forward = horizontal ? { x: Math.sign(dir.x) * distance, y: 0 } : { x: 0, y: Math.sign(dir.y) * distance };
+  for (let offset = 1; offset <= CORNER_ASSIST; offset++) {
+    for (const side of [-1, 1]) {
+      const shifted = horizontal ? { x: from.x, y: from.y + side * offset } : { x: from.x + side * offset, y: from.y };
+      if (!fits(shifted) || !fits({ x: shifted.x + forward.x, y: shifted.y + forward.y })) continue;
+      const nudge = Math.min(distance, offset) * side;
+      return horizontal ? { x: from.x, y: from.y + nudge } : { x: from.x + nudge, y: from.y };
+    }
+  }
+  return from;
+}
+
+/** Walk `distance` px along `dir` (any length; only its direction counts) through the grid's open tiles. */
+export function steer(grid: Grid, from: Point, dir: Point, distance: number): Point {
+  const length = Math.hypot(dir.x, dir.y);
+  if (length === 0 || distance <= 0) return from;
+  const unit = { x: dir.x / length, y: dir.y / length };
+  let at = from;
+  for (let left = distance; left > 0; left -= SUBSTEP) at = stepOnce(grid, at, unit, Math.min(SUBSTEP, left));
+  return at;
 }

@@ -507,6 +507,31 @@ describe("predictStackAcresAction: buying and selling stock", () => {
     expect(patch?.units?.[1].soilSlot).toBeNull();
   });
 
+  it("predicts 75% of the grow time on an enriched bed and spends the enrichment", () => {
+    const patch = predictStackAcresAction(
+      { action: "stock", stock: "corn", tx: 0, ty: 0 },
+      ctx({
+        profile: profile({ goldBalance: 10_000 }),
+        seedStock: { corn: 2 },
+        soilTiles: [{ ...ONE_BED[0], enriched: true }],
+      }),
+    );
+    const sown = patch?.units?.[0];
+    expect(Date.parse(sown?.readyAt ?? "") - Date.parse(sown?.startedAt ?? "")).toBe(
+      Math.round(STACKACRES_CATALOGUE.corn.durationMs * 0.75),
+    );
+    expect(patch?.soilTiles?.[0].enriched).toBe(false);
+  });
+
+  it("marks a bean's bed enriched when the bean is collected", () => {
+    const bean = unit({ id: "b1", stock: "green_bean", state: "ready", soilSlot: 0 });
+    const patch = predictStackAcresAction(
+      { action: "collect", unitIds: ["b1"] },
+      ctx({ soilTiles: ONE_BED, units: [bean] }),
+    );
+    expect(patch?.soilTiles?.[0].enriched).toBe(true);
+  });
+
   it("still guesses a Greenhouse crop with no bed -- it stands on the glasshouse grid", () => {
     const patch = predictStackAcresAction(
       { action: "stock", stock: "corn", inGreenhouse: true },

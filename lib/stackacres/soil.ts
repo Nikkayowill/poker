@@ -116,6 +116,8 @@ export interface SoilTile extends SoilTileCoord {
    * valid and keep meaning "a plain bed".
    */
   tier?: SoilTier;
+  /** Set by a bean harvest, spent by the next sow (./soil-enrich.ts). Optional like `tier`. */
+  enriched?: boolean;
 }
 
 /** The tier of a bed, with the absent case resolved. Always use this rather
@@ -305,7 +307,7 @@ export function orderedSoilTiles(soil: SoilMap): SoilTile[] {
  */
 export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): boolean {
   if (a.length !== b.length) return false;
-  const key = (t: SoilTile) => `${t.tx},${t.ty},${t.order},${t.origin}`;
+  const key = (t: SoilTile) => `${t.tx},${t.ty},${t.order},${t.origin},${t.enriched === true}`;
   const as = a.map(key).sort();
   const bs = b.map(key).sort();
   return as.every((k, i) => k === bs[i]);

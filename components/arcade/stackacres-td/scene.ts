@@ -33,6 +33,7 @@ import {
   type CastSide,
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
+import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
@@ -70,6 +71,7 @@ import { WindSway } from "./wind-sway";
 
 const ASSETS = "/stackacres-td";
 const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare"];
+const ENRICHED_SOIL_TINT = 0xd6f0b4;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
@@ -665,7 +667,10 @@ export class TopdownScene extends Phaser.Scene {
       const mask = (has(0, -1) ? 1 : 0) | (has(1, 0) ? 2 : 0) | (has(0, 1) ? 4 : 0) | (has(-1, 0) ? 8 : 0);
       const at = soilTileToMap(tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
-      this.soilImages.push(this.keep(this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5)));
+      const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
+      // A bean-fed bed reads a touch greener until the next crop spends it.
+      if (isSoilTileEnriched(tile)) image.setTint(ENRICHED_SOIL_TINT);
+      this.soilImages.push(this.keep(image));
     }
   }
 

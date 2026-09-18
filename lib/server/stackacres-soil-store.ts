@@ -39,9 +39,10 @@ export interface SoilTileDbRow {
   tile_order: number | string;
   origin: string;
   tier: string | null;
+  enriched: boolean;
 }
 
-const SOIL_TILE_COLUMNS = "tx, ty, tile_order, origin, tier";
+const SOIL_TILE_COLUMNS = "tx, ty, tile_order, origin, tier, enriched";
 
 function isSoilTileOrigin(value: string): value is SoilTileOrigin {
   return value === "starter" || value === "purchased";
@@ -59,7 +60,13 @@ function fromRow(row: SoilTileDbRow): StoredSoilTile {
     // Degrades to the plain bed rather than throwing: a row predating the
     // tier column reads null here, and that row IS a plain bed.
     tier: toSoilTier(row.tier),
+    enriched: readEnriched(row.enriched),
   };
+}
+
+function readEnriched(value: unknown): boolean {
+  if (typeof value !== "boolean") throw new Error("A soil tile row came back without its enriched flag.");
+  return value;
 }
 
 declare global {
@@ -142,7 +149,7 @@ export async function placeStackAcresSoilTile(
     let maxOrder = -1;
     for (const t of layout.values()) maxOrder = Math.max(maxOrder, t.order);
     for (const slot of await claimed()) maxOrder = Math.max(maxOrder, slot);
-    const tile: StoredSoilTile = { tx, ty, order: maxOrder + 1, origin: "purchased", tier };
+    const tile: StoredSoilTile = { tx, ty, order: maxOrder + 1, origin: "purchased", tier, enriched: false };
     layout.set(key, tile);
     return { kind: "created", tile: { ...tile } };
   }
@@ -187,6 +194,37 @@ export async function removeStackAcresSoilTile(
   });
   if (error) throw new Error(`Could not remove that soil tile: ${error.message}`);
   return Boolean(data);
+}
+
+/**
+ * Sets or clears the enriched flag on the bed whose order is `slot`. The write
+ * is guarded on the flag's current value, so it reports true only for the
+ * call that actually flipped it.
+ */
+export async function setStackAcresSoilTileEnriched(
+  profileId: string,
+  slot: number,
+  enriched: boolean,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    for (const tile of memoryLayout(profileId).values()) {
+      if (tile.order !== slot) continue;
+      if (tile.enriched === enriched) return false;
+      tile.enriched = enriched;
+      return true;
+    }
+    return false;
+  }
+  const { data, error } = await supabase
+    .from("homestead_soil_tiles")
+    .update({ enriched })
+    .eq("profile_id", profileId)
+    .eq("tile_order", slot)
+    .eq("enriched", !enriched)
+    .select("tile_order");
+  if (error) throw new Error(`Could not update that bed: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 /** What one call to `moveStackAcresSoilTiles` actually did. */

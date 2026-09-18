@@ -96,8 +96,10 @@ import {
   plantSoilTile,
   soilSlotForTile,
   soilSlotOnTile,
+  soilSlotTile,
   type SoilTile,
 } from "./soil";
+import { enrichesSoil, isSoilTileEnriched } from "./soil-enrich";
 import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
@@ -442,7 +444,16 @@ export function predictStackAcresAction(
       const resown = targets
         .filter((u) => u.permanent)
         .map((u) => optimisticallyRestartedUnit(u, ctx.nowMs));
-      return { units: [...kept, ...resown] };
+      const enrichedSlots = new Set(
+        targets
+          .filter((u) => u.soilSlot !== null && enrichesSoil(u.stock))
+          .map((u) => u.soilSlot),
+      );
+      if (enrichedSlots.size === 0) return { units: [...kept, ...resown] };
+      return {
+        units: [...kept, ...resown],
+        soilTiles: withEnriched(ctx.soilTiles, enrichedSlots, true),
+      };
     }
     case "stock": {
       // Livestock still pays Gold straight out of the purse, unchanged --
@@ -487,6 +498,7 @@ export function predictStackAcresAction(
           const slot = soilSlotForTile(soil, tile.tx, tile.ty);
           if (slot === null || takenSlots.has(slot)) continue;
           takenSlots.add(slot);
+          const bed = soilSlotTile(soil, slot);
           planted.push(
             optimisticallyStockedUnit({
               id: newOptimisticUnitId(),
@@ -495,13 +507,17 @@ export function predictStackAcresAction(
               inGreenhouse: false,
               nowMs: ctx.nowMs,
               soilSlot: slot,
+              enriched: bed !== null && isSoilTileEnriched(bed),
             }),
           );
         }
         if (planted.length === 0) return null;
+        const sownSlots = new Set(planted.map((u) => u.soilSlot));
+        const spends = ctx.soilTiles.some((t) => sownSlots.has(t.order) && isSoilTileEnriched(t));
         return {
           units: [...ctx.units, ...planted],
           seedStock: { ...ctx.seedStock, [body.stock]: held - planted.length },
+          ...(spends ? { soilTiles: withEnriched(ctx.soilTiles, sownSlots, false) } : {}),
         };
       }
       // An open-air crop needs a free bed somewhere on the farm (2026-09-09,
@@ -532,6 +548,8 @@ export function predictStackAcresAction(
           ? soilSlotForTile(createSoilMap(ctx.soilTiles), body.tx, body.ty)
           : null;
       const soilSlot = tappedSlot !== null && !taken.includes(tappedSlot) ? tappedSlot : null;
+      const bed = soilSlot === null ? null : soilSlotTile(createSoilMap(ctx.soilTiles), soilSlot);
+      const enriched = bed !== null && isSoilTileEnriched(bed);
       const unit = optimisticallyStockedUnit({
         id: newOptimisticUnitId(),
         stock: body.stock,
@@ -539,10 +557,14 @@ export function predictStackAcresAction(
         inGreenhouse: body.inGreenhouse === true,
         nowMs: ctx.nowMs,
         soilSlot,
+        enriched,
       });
       return {
         units: [...ctx.units, unit],
         seedStock: { ...ctx.seedStock, [body.stock]: held - 1 },
+        ...(enriched && soilSlot !== null
+          ? { soilTiles: withEnriched(ctx.soilTiles, new Set([soilSlot]), false) }
+          : {}),
       };
     }
     case "buy-stock": {
@@ -930,4 +952,15 @@ export function resolveOptimisticOutcome(input: {
 }): OptimisticOutcome {
   if (input.ok) return "reconcile";
   return input.hasJsonBody ? "restore-refusal" : "restore-and-refetch";
+}
+
+/** Beds on `slots` with their enriched flag set to `enriched`, the way a bean harvest or a sow leaves them. */
+function withEnriched(
+  tiles: readonly SoilTile[],
+  slots: ReadonlySet<number | null>,
+  enriched: boolean,
+): SoilTile[] {
+  return tiles.map((tile) =>
+    slots.has(tile.order) && isSoilTileEnriched(tile) !== enriched ? { ...tile, enriched } : tile,
+  );
 }

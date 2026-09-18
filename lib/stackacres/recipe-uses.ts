@@ -10,6 +10,7 @@ import { RECIPE_CATALOGUE, RECIPE_IDS, type RecipeId } from "./recipes";
 import { SHELF_FEED_ORDERS, isHenFeedItem, servingBonusEggs } from "./feeding";
 import { FISHING_BAIT_ITEM } from "./fishing";
 import { MACHINE_CATALOGUE } from "./machines";
+import { SOIL_ENRICH_USE_LABEL, isSoilEnrichingItem } from "./soil-enrich";
 
 /** Every recipe that takes `item` as an input, in catalogue order. */
 export function recipesUsing(item: MachineItemId): RecipeId[] {
@@ -42,6 +43,7 @@ export function otherUsesOf(item: MachineItemId): string[] {
     uses.push(eggs > 0 ? `${noun} feed (+${eggs} egg${eggs === 1 ? "" : "s"})` : `${noun} feed`);
   }
   if (item === FISHING_BAIT_ITEM) uses.push("Fishing bait");
+  if (isSoilEnrichingItem(item)) uses.push(SOIL_ENRICH_USE_LABEL);
   return uses;
 }
 

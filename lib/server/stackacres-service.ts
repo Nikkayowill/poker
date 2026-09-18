@@ -114,6 +114,7 @@ import {
   toSoilTier,
   type SoilTier,
 } from "@/lib/stackacres/soil-tiers";
+import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
   adjustStackAcresSoilStock,
   listStackAcresSoilTiles,
@@ -125,6 +126,7 @@ import {
   type StoredSoilTile,
   placeStackAcresSoilTile as placeSoilTileRow,
   removeStackAcresSoilTile as removeSoilTileRow,
+  setStackAcresSoilTileEnriched,
   moveStackAcresSoilTiles as moveSoilTileGroupRow,
 } from "./stackacres-soil-store";
 import {
@@ -1317,8 +1319,8 @@ async function assignSoilSlot(
   stock: StackAcresStock,
   inGreenhouse: boolean,
   tile: SoilTileCoord | null = null,
-): Promise<{ slot: number | null; growthMultiplier: number }> {
-  const plain = { slot: null, growthMultiplier: 1 };
+): Promise<{ slot: number | null; growthMultiplier: number; enriched: boolean }> {
+  const plain = { slot: null, growthMultiplier: 1, enriched: false };
   if (inGreenhouse) return plain;
   if (!(STACKACRES_CROPS as readonly string[]).includes(stock)) return plain;
 
@@ -1341,7 +1343,18 @@ async function assignSoilSlot(
   const tileRow = soilSlotTile(soil, slot);
   if (!tileRow) return plain;
 
-  return { slot, growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) };
+  const enriched = isSoilTileEnriched(tileRow);
+  return {
+    slot,
+    growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) * enrichedGrowthMultiplier(enriched),
+    enriched,
+  };
+}
+
+/** Spends a bed's enrichment once a crop has actually been sown on it. */
+async function spendSoilEnrichment(profileId: string, slot: number | null, enriched: boolean): Promise<void> {
+  if (!enriched || slot === null) return;
+  await setStackAcresSoilTileEnriched(profileId, slot, false);
 }
 
 /**
@@ -2471,6 +2484,7 @@ export async function buyStackAcresStock(
     throw error;
   }
 
+  await spendSoilEnrichment(profile.id, soilAssignment.slot, soilAssignment.enriched);
   // A pipe or hydro bed under the new crop waters it from the start.
   await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
@@ -2680,6 +2694,7 @@ export async function stockStackAcres(
     throw error;
   }
 
+  await spendSoilEnrichment(profile.id, soilAssignment.slot, soilAssignment.enriched);
   // A pipe or hydro bed under the new crop waters it from the start.
   await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
@@ -2761,7 +2776,10 @@ export async function stockStackAcresGroup(
     if (heldSeeds === null) break;
 
     const tileRow = soilSlotTile(soil, slot);
-    const growthMultiplier = tileRow ? soilGrowthMultiplier(soilTileTier(tileRow)) : 1;
+    const enriched = tileRow ? isSoilTileEnriched(tileRow) : false;
+    const growthMultiplier = tileRow
+      ? soilGrowthMultiplier(soilTileTier(tileRow)) * enrichedGrowthMultiplier(enriched)
+      : 1;
     const durationMs = Math.round(def.durationMs * growthMultiplier);
 
     try {
@@ -2779,6 +2797,7 @@ export async function stockStackAcresGroup(
       });
       takenSlots.add(slot);
       plantedCount += 1;
+      await spendSoilEnrichment(profile.id, slot, enriched);
     } catch (error) {
       await adjustStackAcresSeedStock(profile.id, stock, 1).catch(() => null);
       if (!(error instanceof SoilSlotConflictError)) {
@@ -4062,6 +4081,9 @@ export async function harvestStackAcres(
     if (!done) continue;
     settled.push(row);
     if (muckFee !== null) mucked += 1;
+    if (row.soilSlot !== null && enrichesSoil(row.stock)) {
+      await setStackAcresSoilTileEnriched(profile.id, row.soilSlot, true);
+    }
   }
 
   if (settled.length === 0) {

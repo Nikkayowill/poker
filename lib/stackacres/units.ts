@@ -25,6 +25,7 @@
 import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "./catalogue";
 import { STACKACRES_YIELDS } from "./items";
 import { greenhouseDurationMs } from "./greenhouse";
+import { enrichedGrowthMultiplier } from "./soil-enrich";
 
 /** One owned unit as a store row. See lib/server/stackacres-store.ts. */
 export interface StackAcresUnitRow {
@@ -540,6 +541,8 @@ export function optimisticallyStockedUnit(input: {
    *  server picks the real slot, and `cropSpot` scatters an unslotted crop
    *  in the open field until the response lands. */
   soilSlot?: number | null;
+  /** The known bed is enriched (./soil-enrich.ts), so predict its shorter cycle. */
+  enriched?: boolean;
 }): StackAcresUnitSnapshot {
   const def = STACKACRES_CATALOGUE[input.stock];
   // Deliberately does NOT apply a soil tier's growth multiplier. Which bed
@@ -552,7 +555,10 @@ export function optimisticallyStockedUnit(input: {
   // Pessimistic is the right direction for a guess: a crop finishing sooner
   // than predicted reads as a pleasant correction, one finishing later reads
   // as the farm stalling.
-  const durationMs = greenhouseDurationMs(input.stock, def.durationMs, input.inGreenhouse);
+  const durationMs = Math.round(
+    greenhouseDurationMs(input.stock, def.durationMs, input.inGreenhouse) *
+      enrichedGrowthMultiplier(input.enriched === true),
+  );
   return {
     id: input.id,
     stock: input.stock,

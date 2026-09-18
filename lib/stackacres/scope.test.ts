@@ -30,14 +30,14 @@ describe("isActiveStock", () => {
 });
 
 describe("isActiveMachine", () => {
-  it("keeps the Mill, the Dairy, the Oven and the Stew Pot, collapses the Loom and the Vat", () => {
-    expect(MACHINE_KINDS.filter(isActiveMachine)).toEqual(["mill", "dairy", "oven", "stew_pot"]);
+  it("keeps the Mill, the Dairy and the three kitchen machines, collapses the Loom and the Vat", () => {
+    expect(MACHINE_KINDS.filter(isActiveMachine)).toEqual(["mill", "dairy", "oven", "stew_pot", "counter"]);
   });
 });
 
 describe("the Workshop shelf", () => {
   it("lists only real inventory items, the ones the active loop makes", () => {
-    expect([...STACKACRES_WORKSHOP_SHELF_ITEMS]).toEqual(["eggs", "milk", "wheat", "flour", "cake", "bread", "stew"]);
+    expect([...STACKACRES_WORKSHOP_SHELF_ITEMS]).toEqual(["eggs", "milk", "wheat", "flour", "cake", "bread", "stew", "salad"]);
     for (const item of STACKACRES_WORKSHOP_SHELF_ITEMS) expect(isMachineItem(item)).toBe(true);
   });
 });

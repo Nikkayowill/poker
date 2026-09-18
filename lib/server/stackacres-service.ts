@@ -333,7 +333,7 @@ import {
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
 import { MACHINE_ITEM_CATALOGUE, machineItemLabel } from "@/lib/stackacres/machine-items";
-import { pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
+import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
@@ -347,7 +347,7 @@ import {
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
 import { isActiveStock } from "@/lib/stackacres/scope";
-import { eatsWheat, type ServingSource } from "@/lib/stackacres/feeding";
+import { HEN_FEED_ORDER, eatsShelfFeed, feedingToast, servingBonusEggs, type ServingSource } from "@/lib/stackacres/feeding";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -1417,6 +1417,9 @@ export type StackAcresActionResult = StackAcresView & {
   /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
    *  other action leaves this undefined. */
   fishCaught?: { species: FishSpecies };
+  /** Set by `feedStackAcres`/`feedStackAcresPen` when a serving earned extra
+   *  eggs (Spinach), with the line to show. Absent on a plain feeding. */
+  fed?: { toast: string };
   /** Set by `bagStackAcresQuarry` to what THIS stalk brought back -- every
    *  other action leaves this undefined. The scope never learns this until
    *  it lands, which is the whole point: it plays a difficulty, not a prize. */
@@ -1457,6 +1460,7 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.gift !== undefined) delta.gift = result.gift;
   if (result.vatCollected !== undefined) delta.vatCollected = result.vatCollected;
   if (result.fishCaught !== undefined) delta.fishCaught = result.fishCaught;
+  if (result.fed !== undefined) delta.fed = result.fed;
   if (result.storyResult !== undefined) delta.storyResult = result.storyResult;
   return Object.keys(delta).length > 0 ? delta : null;
 }
@@ -2994,16 +2998,19 @@ function feedPushFor(unit: StoredStackAcresUnit, now: Date): { pushed: Date; new
  * fed it moves on.
  */
 /**
- * Spends one serving for `stock`: a hen eats a Wheat from inventory first,
- * and falls back to the bought Feed Sack, so a hen is always feedable.
- * Everything else eats from the Feed Sack as before. Returns where the
- * serving came from, or null when there was none. See `planServings` in
- * lib/stackacres/feeding.ts, the same rule the client predicts with.
+ * Spends one serving for `stock`: a hen eats off the shelf first, in
+ * `HEN_FEED_ORDER` (Spinach, Wheat, Lettuce, Cabbage), and falls back to the
+ * bought Feed Sack, so a hen is always feedable. Everything else eats from
+ * the Feed Sack as before. Returns where the serving came from, or null when
+ * there was none. See `planServings` in lib/stackacres/feeding.ts, the same
+ * rule the client predicts with.
  */
 async function spendServing(profileId: string, stock: StackAcresStock): Promise<ServingSource | null> {
-  if (eatsWheat(stock)) {
-    const wheatLeft = await adjustStackAcresInventory(profileId, "wheat", -1);
-    if (wheatLeft !== null) return "wheat";
+  if (eatsShelfFeed(stock)) {
+    for (const item of HEN_FEED_ORDER) {
+      const left = await adjustStackAcresInventory(profileId, item, -1);
+      if (left !== null) return item;
+    }
   }
   const feedLeft = await adjustStackAcresFeed(profileId, -1);
   return feedLeft === null ? null : "feed";
@@ -3011,18 +3018,24 @@ async function spendServing(profileId: string, stock: StackAcresStock): Promise<
 
 /** Hands a serving back to wherever `spendServing` took it from. */
 async function refundServing(profileId: string, source: ServingSource): Promise<void> {
-  if (source === "wheat") {
-    await adjustStackAcresInventory(profileId, "wheat", 1).catch(() => null);
-  } else {
+  if (source === "feed") {
     await adjustStackAcresFeed(profileId, 1).catch(() => null);
+  } else {
+    await adjustStackAcresInventory(profileId, source, 1).catch(() => null);
   }
+}
+
+/** What a feeding tells the player, when a serving earned extra eggs. */
+function fedResult(sources: readonly ServingSource[]): Pick<StackAcresActionResult, "fed"> {
+  const toast = feedingToast(sources);
+  return toast ? { fed: { toast } } : {};
 }
 
 export async function feedStackAcres(
   token: string,
   unitIdInput: string,
   now = new Date(),
-): Promise<StackAcresView> {
+): Promise<StackAcresActionResult> {
   const unitId = parseUnitId(unitIdInput);
   const profile = await ensureProfile(token);
 
@@ -3045,9 +3058,10 @@ export async function feedStackAcres(
     });
   }
 
+  const bonus = servingBonusEggs(source);
   let fed: StoredStackAcresUnit | null;
   try {
-    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
+    fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
     // Same version-guard retry as feedStackAcresPen below, and for the same
     // reason: a miss here almost always means this function's own read at
     // the top went stale for this one unit (irrigation/auto-feed tick, or an
@@ -3059,7 +3073,7 @@ export async function feedStackAcres(
       const freshUnit = await getStackAcresUnit(profile.id, unit.id);
       if (freshUnit && freshUnit.status === "working" && isStackAcresUnitHungry(freshUnit, now)) {
         const retryPush = feedPushFor(freshUnit, now);
-        fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt);
+        fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
       }
     }
   } catch (error) {
@@ -3074,7 +3088,7 @@ export async function feedStackAcres(
   }
 
   await recordStoryEvents(profile.id, [{ kind: "fed", count: 1 }]);
-  return view(profile, now);
+  return { ...(await view(profile, now)), ...fedResult([source]) };
 }
 
 /**
@@ -3091,7 +3105,7 @@ export async function feedStackAcresPen(
   token: string,
   zone: ZoneId,
   now = new Date(),
-): Promise<StackAcresView> {
+): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
   if (!PEN_ZONE_IDS.includes(zone)) {
     throw new StackAcresRequestError("That is not a pen.", 400, {
@@ -3115,15 +3129,17 @@ export async function feedStackAcresPen(
   }
 
   let fedCount = 0;
+  const sources: ServingSource[] = [];
   for (const unit of hungry) {
     const source = await spendServing(profile.id, unit.stock);
     if (source === null) break;
 
     const { pushed, newStartedAt } = feedPushFor(unit, now);
+    const bonus = servingBonusEggs(source);
 
     let fed: StoredStackAcresUnit | null;
     try {
-      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt);
+      fed = await feedStackAcresUnit(unit, now, pushed, newStartedAt, bonus);
       // See waterStackAcresGroup's matching retry for why: a version-guard
       // miss here is almost always this same drop's own top-of-function read
       // going stale for one animal in the pen, not a real refusal, and
@@ -3133,7 +3149,7 @@ export async function feedStackAcresPen(
         const freshUnit = await getStackAcresUnit(profile.id, unit.id);
         if (freshUnit && isStackAcresUnitHungry(freshUnit, now)) {
           const retryPush = feedPushFor(freshUnit, now);
-          fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt);
+          fed = await feedStackAcresUnit(freshUnit, now, retryPush.pushed, retryPush.newStartedAt, bonus);
         }
       }
     } catch (error) {
@@ -3147,6 +3163,7 @@ export async function feedStackAcresPen(
       continue;
     }
     fedCount += 1;
+    sources.push(source);
   }
 
   if (fedCount === 0) {
@@ -3155,7 +3172,7 @@ export async function feedStackAcresPen(
     });
   }
   await recordStoryEvents(profile.id, [{ kind: "fed", count: fedCount }]);
-  return view(profile, now);
+  return { ...(await view(profile, now)), ...fedResult(sources) };
 }
 
 /**
@@ -3398,9 +3415,12 @@ async function moveStackAcresEnergy(
  *
  * A cast costs FISHING_CAST_ENERGY. The energy is spent before the fish is
  * credited and handed back if that credit fails, the same order Gold keeps.
+ * A baited cast spends one Radish the same way, right after the energy, and
+ * lands from better odds (`BAIT_FISH_WEIGHTS` in lib/stackacres/fishing.ts).
  */
 export async function catchStackAcresFish(
   token: string,
+  bait: boolean,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
@@ -3410,11 +3430,28 @@ export async function catchStackAcresFish(
       round: await snapshots(profile.id, now),
     });
   }
-  const species: FishSpecies = pickCaughtFish();
+  const refundEnergy = () => moveStackAcresEnergy(profile.id, FISHING_CAST_ENERGY, now).catch(() => null);
+  if (bait) {
+    let baitLeft: number | null;
+    try {
+      baitLeft = await adjustStackAcresInventory(profile.id, FISHING_BAIT_ITEM, -1);
+    } catch (error) {
+      await refundEnergy();
+      throw error;
+    }
+    if (baitLeft === null) {
+      await refundEnergy();
+      throw new StackAcresRequestError("You have no radishes for bait.", 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+  }
+  const species: FishSpecies = pickCaughtFish(Math.random, bait);
   try {
     await adjustStackAcresInventory(profile.id, species, 1);
   } catch (error) {
-    await moveStackAcresEnergy(profile.id, FISHING_CAST_ENERGY, now).catch(() => null);
+    if (bait) await adjustStackAcresInventory(profile.id, FISHING_BAIT_ITEM, 1).catch(() => null);
+    await refundEnergy();
     throw error;
   }
   await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }]);
@@ -3896,8 +3933,9 @@ export async function harvestStackAcres(
   const candidateOf = (row: StoredStackAcresUnit): HarvestCandidate => ({
     unitId: row.id,
     stock: row.stock,
-    // Rule 3: the snapshot taken at stocking, never a re-read of the catalogue.
-    yieldQuantity: row.yieldQuantity,
+    // Rule 3: the snapshot taken at stocking, never a re-read of the
+    // catalogue, plus whatever this cycle's feeding earned on top.
+    yieldQuantity: row.yieldQuantity + row.feedBonus,
   });
 
   const planned = settleHarvest(ready.map(candidateOf));

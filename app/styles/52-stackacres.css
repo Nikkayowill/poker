@@ -5329,6 +5329,34 @@
   transition: width 200ms ease-out;
 }
 
+/* Sits beside the energy chip, which fishing spends, so both read as the
+   cast's own settings. */
+.sa-bait-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sa-bait-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--sa-leaf);
+}
+
 .sa-gift-dialogue-tabs {
   display: flex;
   gap: 6px;

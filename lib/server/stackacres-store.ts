@@ -75,6 +75,10 @@ import { adminClient } from "./supabase-admin";
 export interface StoredStackAcresUnit extends StackAcresUnitRow {
   profileId: string;
   createdAt: string;
+  /** Extra produce this cycle earned by feeding (a hen fed Spinach lays one
+   *  more egg), on top of the `yieldQuantity` snapshot. Back to 0 when the
+   *  unit restarts or a spoiled cycle is skipped. */
+  feedBonus: number;
 }
 
 declare global {
@@ -273,7 +277,7 @@ export function __stackacresHarvestsForTest(): readonly StackAcresHarvestEntry[]
 }
 
 const UNIT_COLUMNS =
-  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot";
+  "id, profile_id, stock, status, stake, yield_quantity, started_at, ready_at, last_fed_at, last_watered_at, muck_fee, permanent, version, created_at, housed_in, soil_slot, feed_bonus";
 
 export interface UnitDbRow {
   id: string;
@@ -292,6 +296,7 @@ export interface UnitDbRow {
   created_at: string;
   housed_in: string | null;
   soil_slot: number | string | null;
+  feed_bonus: number | string;
 }
 
 /** Same parser `listStackAcresUnits`/`getStackAcresUnit`/etc. already call as
@@ -320,6 +325,7 @@ function fromRow(row: UnitDbRow): StoredStackAcresUnit {
     createdAt: String(row.created_at),
     housedIn: row.housed_in === "greenhouse" ? "greenhouse" : null,
     soilSlot: row.soil_slot === null || row.soil_slot === undefined ? null : Number(row.soil_slot),
+    feedBonus: Number(row.feed_bonus),
   };
 }
 
@@ -483,6 +489,7 @@ export async function createStackAcresUnit(
       createdAt: now,
       housedIn,
       soilSlot,
+      feedBonus: 0,
     };
     memoryUnits.set(unit.id, clone(unit));
     return clone(unit);
@@ -526,15 +533,21 @@ export async function createStackAcresUnit(
  * itself, under the same version guard as everything else here, so the stored
  * clock does not stay stale forever. Null (the default) is every other feed,
  * which never touches `started_at`.
+ *
+ * `bonusYield` is what this serving adds to the current batch (1 for a hen
+ * fed Spinach, else 0). It lands in `feed_bonus` under the same guard. A
+ * skipped spoiled cycle starts the bonus over, since those eggs never came.
  */
 export async function feedStackAcresUnit(
   current: StoredStackAcresUnit,
   fedAt: Date,
   newReadyAt: Date,
-  newStartedAt: Date | null = null,
+  newStartedAt: Date | null,
+  bonusYield: number,
 ): Promise<StoredStackAcresUnit | null> {
   const supabase = adminClient();
   const version = current.version + 1;
+  const feedBonus = (newStartedAt ? 0 : current.feedBonus) + bonusYield;
 
   if (!supabase) {
     const stored = memoryUnits.get(current.id);
@@ -544,6 +557,7 @@ export async function feedStackAcresUnit(
       ...(newStartedAt ? { startedAt: newStartedAt.toISOString() } : {}),
       lastFedAt: fedAt.toISOString(),
       readyAt: newReadyAt.toISOString(),
+      feedBonus,
       version,
     };
     memoryUnits.set(current.id, clone(updated));
@@ -556,6 +570,7 @@ export async function feedStackAcresUnit(
       ...(newStartedAt ? { started_at: newStartedAt.toISOString() } : {}),
       last_fed_at: fedAt.toISOString(),
       ready_at: newReadyAt.toISOString(),
+      feed_bonus: feedBonus,
       version,
     })
     .eq("id", current.id)
@@ -666,6 +681,7 @@ export async function collectStackAcresUnit(
       readyAt: restart.readyAt.toISOString(),
       lastWateredAt: restart.wateredAt === null ? null : restart.wateredAt.toISOString(),
       muckFee: null,
+      feedBonus: 0,
       version,
     };
     if (!supabase) {
@@ -689,6 +705,7 @@ export async function collectStackAcresUnit(
         ready_at: next.readyAt,
         last_watered_at: next.lastWateredAt,
         muck_fee: null,
+        feed_bonus: 0,
         version,
       })
       .eq("id", current.id)

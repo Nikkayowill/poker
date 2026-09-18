@@ -120,15 +120,20 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
   trout: { label: "Trout", plural: "Trout", icon: "ico-fish-trout", sellPrice: 45 },
   catfish: { label: "Catfish", plural: "Catfish", icon: "ico-fish-catfish", sellPrice: 130 },
-  // A stalk yields both at once (see ./hunting.ts's QUARRY_CATALOGUE), so
-  // these are priced as a PAIR, not one at a time: a Rabbit is 29 Gold, a
-  // Deer 67, a Boar 105. Against the fishing ladder's own weights that makes
-  // an average stalk worth about half again an average cast -- it takes
-  // several times longer, and unlike a cast it can be lost outright. Pelts
-  // carry the higher price of the two: meat is the volume good, a pelt is
-  // the one worth the walk.
-  meat: { label: "Meat", plural: "Meat", icon: "ico-meat", sellPrice: 9 },
-  pelt: { label: "Pelt", plural: "Pelts", icon: "ico-pelt", sellPrice: 20 },
+  // A logged sighting yields both at once (see ./hunting.ts's
+  // QUARRY_CATALOGUE), so these are priced as a PAIR, not one at a time: a
+  // Rabbit is 29 Gold, a Deer 67, a Boar 105. Against the fishing ladder's
+  // own weights that makes an average stalk worth about half again an
+  // average cast -- it takes several times longer, and unlike a cast it can
+  // be lost outright. Trail Photos carry the higher price of the two: Field
+  // Notes are the volume good, a Trail Photo is the one worth the walk.
+  //
+  // item_id stays "meat"/"pelt" (see ./hunting.ts's own header): this file's
+  // reskin from the earlier hunting frame only ever changed the label a
+  // player reads, never the key already written into production
+  // `homestead_inventory` rows.
+  meat: { label: "Field Notes", plural: "Field Notes", icon: "ico-fieldnotes", sellPrice: 9 },
+  pelt: { label: "Trail Photo", plural: "Trail Photos", icon: "ico-trailphoto", sellPrice: 20 },
   flour: { label: "Flour", plural: "Flour", icon: "ico-flour", sellPrice: 40 },
   cheese: { label: "Cheese", plural: "Cheese", icon: "ico-cheese", sellPrice: 700 },
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },

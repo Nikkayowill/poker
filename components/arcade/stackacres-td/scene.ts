@@ -1702,6 +1702,23 @@ export class TopdownScene extends Phaser.Scene {
     return node?.sprite.visible ? { x: node.sprite.x, y: node.sprite.y - 14 } : null;
   }
 
+  /** Where the farmer really is, in world units -- the same space
+   *  lib/stackacres/hunt-proximity.ts plays its stalk in. Read fresh every
+   *  frame rather than cached, since the joystick keeps moving him while a
+   *  stalk is up. */
+  farmerPoint(): Point {
+    return { ...this.pos };
+  }
+
+  /** A world point (farmer position, a wandering animal) projected to CSS
+   *  pixels relative to the canvas host -- the same box every DOM overlay on
+   *  this screen is positioned in. Public alias of `mapToCss` for
+   *  HuntScopeScene's floating alert gauge, which follows the animal instead
+   *  of owning a screen-space layer of its own. */
+  screenPoint(p: Point): TapPoint {
+    return this.mapToCss(p);
+  }
+
   /** Puts the farmer straight down somewhere, so a spec needn't walk across the map first. */
   placeFarmer(area: TopdownArea, at: Point): void {
     this.path = [];

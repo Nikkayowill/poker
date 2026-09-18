@@ -313,10 +313,13 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
             {
               species: request.species,
               weapon: request.weapon,
-              title: request.title,
               baggedHint: request.baggedHint,
-              host,
               dpr: canvasDpr(),
+              // The stalk plays on the open map now, so the scene reads the
+              // farmer's live position and a screen projection straight off
+              // TopdownScene every frame rather than owning either itself.
+              getPlayerWorld: () => sceneRef.current?.farmerPoint() ?? { x: 0, y: 0 },
+              worldToScreen: (point) => sceneRef.current?.screenPoint(point) ?? { x: 0, y: 0 },
             },
             {
               onBagged: () => request.onBagged?.(),
@@ -335,13 +338,14 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
 
   const onStick = useCallback((push: Point | null) => sceneRef.current?.setStick(push), []);
   const onUseHeld = useCallback((down: boolean) => {
-    // While a stalk is up the Use key takes the mark instead of working the
-    // square underneath -- the map is behind a modal scope, and the farmer
-    // is not the one being asked. Only the press acts; the release is the
-    // stroke gesture's, which the scope has no use for.
+    // While a stalk is up the Use key attempts a catch instead of working
+    // the square underneath -- the farmer is still walking the open map
+    // (the joystick keeps driving him), but a press means "take it" rather
+    // than "water/harvest/plant here". Only the press acts; the release is
+    // the stroke gesture's, which the stalk has no use for.
     const scope = scopeRef.current;
     if (scope) {
-      if (down) scope.useMark();
+      if (down) scope.attemptCatch();
       return;
     }
     sceneRef.current?.setUseHeld(down);

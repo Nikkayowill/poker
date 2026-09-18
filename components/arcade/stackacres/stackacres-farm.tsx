@@ -139,7 +139,7 @@ import {
 import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
-import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-scope";
+import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import {
   ACTION_BATCH_WINDOW_MS,
@@ -3891,15 +3891,16 @@ export function StackAcresFarm() {
   );
 
   /**
-   * A finger landed on the brush at the Ancestral Oak. The scope takes over
-   * from here: holding a mark steady and taking it is what decides whether
-   * `bag-quarry` is sent at all (see lib/stackacres/hunt-scope.ts).
+   * A finger landed on the brush at the Ancestral Oak. From here it is a
+   * stalk played on the open map: closing the distance without startling the
+   * animal, then pressing Use, is what decides whether `bag-quarry` is sent
+   * at all (see lib/stackacres/hunt-proximity.ts).
    *
    * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
    * stalk is; what this one actually yields is the server's roll inside
    * `bag-quarry`, so the scope's copy stays species-free and the response's
-   * toast is what names it. The WEAPON is the real input -- the bow until
-   * the farm reaches Level 4, the rifle after.
+   * toast is what names it. The GEAR is the real input -- the Handheld
+   * Camera until the farm reaches Level 4, the Telephoto Lens Scanner after.
    */
   const onWorldThicketTap = useCallback(
     (at: TapPoint) => {
@@ -3912,9 +3913,10 @@ export function StackAcresFarm() {
           void act({ action: "bag-quarry" });
         },
         onLost: () => {
-          // No catch, no cost: it simply heard something. Said where the
-          // stalk started, the same place a refusal here would be said.
-          world.current?.floatAt(at, "It bolted.", "deny");
+          // No catch, no cost: it simply heard something and moved off.
+          // Said where the stalk started, the same place a refusal here
+          // would be said.
+          world.current?.floatAt(at, "It got startled off.", "deny");
         },
       });
     },

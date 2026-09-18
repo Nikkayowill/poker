@@ -1517,7 +1517,7 @@ export function StackAcresFarm() {
     toolTierRef.current = toolTier;
   }, [toolTier]);
 
-  const applyResponse = useCallback((data: Partial<StackAcresResponse>) => {
+  const applyResponse = useCallback((data: Partial<StackAcresResponse>, ownGuess: readonly string[] = []) => {
     // An optimistic patch carries no revision and always applies (see
     // `acceptRevision`'s own header); a real response that lost the race to
     // a fresher one already on screen is dropped whole rather than merged
@@ -1535,13 +1535,18 @@ export function StackAcresFarm() {
     // guess instead of this response's view of it -- whether that means
     // overriding a stale field this response predates, or, for a crop that
     // response has never heard of yet, putting it back in at all.
+    //
+    // `ownGuess` is the ids an action's own guess touched. `act` claims them
+    // before painting that guess, and without this the guess would be shielded
+    // from itself: a watered crop kept its dry picture and a new seed was
+    // dropped as if removed, so neither showed until the server answered.
     if (data.units) {
       const incoming = data.units;
-      setUnits((prev) =>
-        pendingOptimisticUnitIds.current.size === 0
-          ? incoming
-          : mergeIncomingStackAcresUnits(prev, incoming, pendingOptimisticUnitIds.current.keys()),
-      );
+      const own = new Set(ownGuess);
+      setUnits((prev) => {
+        const shielded = [...pendingOptimisticUnitIds.current.keys()].filter((id) => !own.has(id));
+        return shielded.length === 0 ? incoming : mergeIncomingStackAcresUnits(prev, incoming, shielded);
+      });
     }
     if (typeof data.feed === "number") setFeed(data.feed);
     if (typeof data.water === "number") setWater(data.water);
@@ -1964,51 +1969,41 @@ export function StackAcresFarm() {
    * thing that makes a change real here.
    */
   const act = useCallback(
-    async (requested: Action): Promise<ContractActionResult> => {
-      // A crop tapped the instant it was sown is still standing there under
-      // an id this browser made up. Wait out the sowing and aim at the row
-      // the server actually wrote -- see `settleProvisionalTargets`. Done
-      // before the intent below is read so the duplicate guard and the
-      // idempotency key both key on the real unit.
-      //
-      // The `some` is checked here rather than left to that function so an
-      // ordinary action never awaits at all: everything below this line runs
-      // in the caller's own tick, the way it always has, and only a tap at a
-      // crop that is still going in the ground gives up the thread.
-      const body = unitIdsIn(requested).some(isOptimisticUnitId)
-        ? await settleProvisionalTargets(requested)
-        : requested;
-      if (!body) {
-        const notYet = "That one is not in the ground yet. Give it a second.";
-        if (mounted.current) setError(notYet);
-        return { ok: false, message: notYet };
-      }
+    async (requested: Action, options?: { after?: Promise<unknown> }): Promise<ContractActionResult> => {
+      // Everything the press changes on screen happens before the first await
+      // below. Two things can hold the REQUEST back: a crop tapped the instant
+      // it was sown still has an id this browser made up, so the request waits
+      // for the sowing to name the real row (`settleProvisionalTargets`), and a
+      // seed dropped on a bed hoed a moment ago waits for that bed to exist
+      // (`options.after`). Neither is a reason for the crop to wait, so the
+      // guess is painted now and only the request is held.
+      const provisional = unitIdsIn(requested).some(isOptimisticUnitId);
+      const waits = provisional || options?.after !== undefined;
       // A second press at something already being asked about is a duplicate,
       // not a second request. Dropped here rather than sent and deduplicated
       // server-side: the cheapest duplicate is the one that never leaves.
-      const intent = intentOf(body);
-      if (inFlight.current.has(intent)) {
+      const pressIntent = intentOf(requested);
+      if (inFlight.current.has(pressIntent)) {
         return { ok: false, message: "That is already on its way." };
       }
-      markInFlight(intent);
+      markInFlight(pressIntent);
       setError(null);
-      // A key held over from an attempt that never came back makes this press
-      // a retry of that one; otherwise it names a new intent.
-      const key = pendingKeys.current.get(intent) ?? newIntentKey();
-      pendingKeys.current.set(intent, key);
       // Assume the server says yes. `predictStackAcresAction` returns the
       // patch a success would produce (or null when the outcome is a dice
       // roll we won't fake), applied through the very same `applyResponse`
       // the real answer uses. `snapshot` is what a refusal or a dropped
       // request rolls back to.
       const snapshot = captureFarmSnapshot();
-      const patch = predictStackAcresAction(body, buildPredictContext());
+      const patch = predictStackAcresAction(requested, buildPredictContext());
       const optimisticApplied = patch !== null;
       // Claimed the instant the guess is on screen, released the instant
       // THIS action's own answer is about to be painted (success below) or,
       // failing that, once it is done trying entirely (`finally`) -- see
-      // pendingOptimisticUnitIds's own header.
-      const touchedIds = patch?.units ? touchedUnitIds(snapshot.units, patch.units) : [];
+      // pendingOptimisticUnitIds's own header. A made-up crop is already held
+      // by its own sowing's claim until that lands, so a guess on one claims
+      // nothing yet; it is carried onto the real row further down.
+      const guessedIds = patch?.units ? touchedUnitIds(snapshot.units, patch.units) : [];
+      const touchedIds = provisional ? [] : [...guessedIds];
       if (touchedIds.length > 0) claimOptimisticUnitIds(touchedIds);
       let touchedClaimReleased = false;
       const releaseTouchedClaim = () => {
@@ -2016,28 +2011,32 @@ export function StackAcresFarm() {
         touchedClaimReleased = true;
         if (touchedIds.length > 0) releaseOptimisticUnitIds(touchedIds);
       };
-      if (patch) applyResponse(patch);
-      // The travelers' story ticks the instant this request is sent, not
-      // when it lands -- see storyRef's own header. Every event this action
-      // WOULD produce on success, replayed against whichever bubble happens
-      // to be open right now; `noteEvent` is a no-op if none is.
-      for (const event of storyEventsForAction(body, { units: unitsRef.current })) {
-        storyRef.current?.noteEvent(event);
-      }
+      if (patch) applyResponse(patch, guessedIds);
       // The unit resets instantly (above), but the payout itself is a dice
       // roll this layer won't fake -- see predictStackAcresAction's header.
       // A player who taps and hears/sees nothing until the round trip lands
       // reads that gap as lag, so say the honest, numberless part out loud
       // right away; the real toast overwrites this the moment the response
       // is in, and a refusal below retracts it.
-      if (body.action === "collect" && optimisticApplied) {
+      if (requested.action === "collect" && optimisticApplied) {
         setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
       }
       // Every shop purchase without its own call-site toast gets one here --
       // see `purchaseCueText`'s own header for why this is the one place to
       // do it and which actions it deliberately skips.
-      const purchaseCue = purchaseCueText(body);
+      const purchaseCue = purchaseCueText(requested);
       if (purchaseCue) setLastCollect({ text: purchaseCue, nonce: Date.now() });
+      // A create has to be waitable: a tap on the crop it is making needs to
+      // know when its real id exists. Registered as the crop appears, not when
+      // the request leaves, so a seed still waiting on its bed can already be
+      // watered, and settled in `finally`, whatever the outcome.
+      const createGate = createsStackAcresUnit(requested) ? settleable() : null;
+      if (createGate) pendingUnitCreates.current.add(createGate.promise);
+      let body: Action = requested;
+      let intent = pressIntent;
+      // False only when the real target turned out to be another request's,
+      // whose in-flight mark this one must not clear.
+      let ownsIntent = true;
       // Set the moment this browser knows what became of the request. While it
       // is false the key survives, so the next press at the same thing is a
       // retry; once it is true the key is dropped and the next press is a new
@@ -2045,12 +2044,65 @@ export function StackAcresFarm() {
       // that fails to parse leaves the outcome just as unknown as a dropped
       // connection does.
       let answered = false;
-      // A create has to be waitable: a tap on the crop it is making needs to
-      // know when its real id exists. Registered before the request goes out
-      // and settled in `finally`, whatever the outcome.
-      const createGate = createsStackAcresUnit(body) ? settleable() : null;
-      if (createGate) pendingUnitCreates.current.add(createGate.promise);
       try {
+        if (options?.after) await Promise.allSettled([options.after]);
+        if (provisional) {
+          const resolved = await settleProvisionalTargets(requested);
+          if (!resolved) {
+            // The crop it was aimed at never went in. Re-read rather than unpick
+            // the guess by hand: the sowing's own rollback can skip itself when
+            // this guess landed on top of it.
+            if (optimisticApplied) window.setTimeout(() => void refresh(), 0);
+            const notYet = "That one is not in the ground yet. Give it a second.";
+            if (mounted.current) setError(notYet);
+            return { ok: false, message: notYet };
+          }
+          body = resolved;
+          clearInFlight(pressIntent);
+          intent = intentOf(body);
+          if (inFlight.current.has(intent)) {
+            ownsIntent = false;
+            return { ok: false, message: "That is already on its way." };
+          }
+          markInFlight(intent);
+          // The sowing's answer just swapped the made-up crop for the real one,
+          // dry, which would undo the guess above. This render's unit list only
+          // knows the made-up crop, so re-guess against the list that answer
+          // brought and put just the touched units back, leaving everything
+          // else on screen as it now stands. The can and purse were already
+          // spent by the first guess.
+          const landed = unitsFromLastCreate.current;
+          const carried =
+            optimisticApplied && landed
+              ? predictStackAcresAction(body, { ...buildPredictContext(), units: landed })
+              : null;
+          if (landed && carried?.units) {
+            const moved = touchedUnitIds(landed, carried.units);
+            touchedIds.push(...moved);
+            claimOptimisticUnitIds(moved);
+            const touched = new Set(moved);
+            const next = new Map(carried.units.map((unit) => [unit.id, unit]));
+            localGenRef.current += 1;
+            setUnits((prev) =>
+              prev.flatMap((unit) => {
+                if (!touched.has(unit.id)) return [unit];
+                const guess = next.get(unit.id);
+                return guess ? [guess] : [];
+              }),
+            );
+          }
+        }
+        // A key held over from an attempt that never came back makes this press
+        // a retry of that one; otherwise it names a new intent.
+        const key = pendingKeys.current.get(intent) ?? newIntentKey();
+        pendingKeys.current.set(intent, key);
+        // The travelers' story ticks the instant this request is sent, not
+        // when it lands -- see storyRef's own header. Every event this action
+        // WOULD produce on success, replayed against whichever bubble happens
+        // to be open right now; `noteEvent` is a no-op if none is.
+        for (const event of storyEventsForAction(body, { units: unitsRef.current })) {
+          storyRef.current?.noteEvent(event);
+        }
         const response = await fetch("/api/stackacres/actions", {
           method: "POST",
           cache: "no-store",
@@ -2062,6 +2114,9 @@ export function StackAcresFarm() {
           // nothing -- but this browser did, so put the guess back.
           answered = true;
           if (optimisticApplied) restoreFarmSnapshot(snapshot);
+          // A request that waited has usually had a newer answer land on top of
+          // its guess, which makes the restore above skip itself. Re-read.
+          if (waits) window.setTimeout(() => void refresh(), 0);
           const header = Number(response.headers.get("Retry-After"));
           const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
           const tooFast = `Too many taps. Give it ${seconds}s.`;
@@ -2108,7 +2163,8 @@ export function StackAcresFarm() {
           // Re-read once this request has let go of the send lock, so the
           // farm shows the server's truth rather than what this browser
           // thought it could send.
-          if (body.action === "collect") window.setTimeout(() => void refresh(), 0);
+          // A request that waited re-reads for the same reason as the 429 above.
+          if (body.action === "collect" || waits) window.setTimeout(() => void refresh(), 0);
           return { ok: false, message: data.error ?? "That did not go through." };
         }
         // Released before painting the response -- this action's own guess
@@ -2381,7 +2437,7 @@ export function StackAcresFarm() {
           pendingUnitCreates.current.delete(createGate.promise);
           createGate.settle();
         }
-        clearInFlight(intent);
+        if (ownsIntent) clearInFlight(intent);
         if (answered) pendingKeys.current.delete(intent);
         // One request, one anchor. Leaving it set would float the NEXT
         // action's reward out of the last place a finger happened to be.
@@ -3035,15 +3091,14 @@ export function StackAcresFarm() {
    * by holding Use and walking the row, so a bed is only ever sown by a farmer
    * standing on it.
    *
-   * If this exact bed was just tilled and that request has not answered yet, it
-   * waits for it -- see `pendingSoilPlacements`. Ignored either way: a refusal
+   * If this exact bed was just tilled and that request has not answered yet, the
+   * request waits for it (see `pendingSoilPlacements`) but the seed shows at once. Ignored either way: a refusal
    * there leaves the tile bedless, which `assignSoilSlot` already handles.
    */
   const onSowTile = useCallback(
     (tx: number, ty: number, stock: StackAcresCrop) => {
-      const pending = pendingSoilPlacements.current.get(`${tx},${ty}`);
-      const send = () => act({ action: "stock", stock, tx, ty });
-      void (pending ? pending.catch(() => null).then(send) : send());
+      // The seed shows at once; only the request waits for a bed hoed a moment ago.
+      void act({ action: "stock", stock, tx, ty }, { after: pendingSoilPlacements.current.get(`${tx},${ty}`) });
     },
     [act],
   );
@@ -3578,13 +3633,12 @@ export function StackAcresFarm() {
     const waiting = run.tiles
       .map((tile) => pendingSoilPlacements.current.get(`${tile.tx},${tile.ty}`))
       .filter((pending) => pending !== undefined);
-    const send = () =>
-      act(
-        run.tiles.length === 1
-          ? { action: "stock", stock: run.stock, tx: run.tiles[0].tx, ty: run.tiles[0].ty }
-          : { action: "stock", stock: run.stock, tiles: run.tiles },
-      );
-    void (waiting.length > 0 ? Promise.allSettled(waiting).then(send) : send());
+    void act(
+      run.tiles.length === 1
+        ? { action: "stock", stock: run.stock, tx: run.tiles[0].tx, ty: run.tiles[0].ty }
+        : { action: "stock", stock: run.stock, tiles: run.tiles },
+      { after: waiting.length > 0 ? Promise.allSettled(waiting) : undefined },
+    );
   }, [act]);
 
   /** Adds one bed to the sowing run, flushing first if the crop changed mid-row. */

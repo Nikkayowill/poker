@@ -24,6 +24,14 @@ import { OTHELLO_DUEL } from "./othello";
 import { TRIVIA_DUEL } from "./trivia";
 import { WORD_RACE_DUEL } from "./word-race";
 
+// Liar's Dice (./liars-dice.ts) and Mancala (./mancala.ts) are built and
+// tested but deliberately NOT registered here yet: this map is what the live
+// /api/pvp/[game] route uses to decide whether to escrow real Gold into a
+// challenge, and neither game has a route or board to ever play or settle
+// one. Registering them here before that exists would let a client open a
+// real-money challenge for a game with no way to finish it. Add them once
+// their route/board ships; see lib/arcade/games.ts's matching "coming-soon"
+// catalog rows for the two entries this needs to flip to "live" alongside.
 export const DUEL_GAMES: Readonly<Record<string, AnyDuelGame>> = {
   chess: CHESS_DUEL,
   checkers: CHECKERS_DUEL,

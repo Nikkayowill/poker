@@ -28,6 +28,11 @@ export const ANTE_UP_GAMES = [
   "memory-match",
   "word-stack",
   "connections",
+  // Blockudoku and Word Fill-In have pure engines (lib/arcade/puzzles/) but
+  // no service yet -- this list's own contract above says its entries must
+  // match a service's GAME constant, and neither game has one. Add them once
+  // lib/server/ante-up-blockudoku-service.ts / ante-up-word-fill-in-service.ts
+  // exist, alongside flipping their lib/arcade/games.ts rows to "live".
 ] as const;
 
 export type AnteUpGame = (typeof ANTE_UP_GAMES)[number];

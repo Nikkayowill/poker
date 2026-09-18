@@ -137,6 +137,7 @@ const RECIPE_VERB: Record<RecipeId, string> = {
   cake: "Bake",
   bread: "Bake",
   stew: "Cook",
+  salad: "Toss",
 };
 
 /** "3 Wheat → 1 Flour · 20s" / "2 Eggs + 1 Milk + 1 Flour → 1 Cake · instant". */
@@ -191,8 +192,8 @@ export function WorkshopModal({
   // lib/stackacres/scope.ts's own header. Already-built machines never hide,
   // whatever their kind: a player who placed one keeps seeing its state.
   const [showMoreMachines, setShowMoreMachines] = useState(false);
-  // The Oven and the Stew Pot live in Ray's kitchen, not here (stackacres-kitchen.tsx).
-  const workshopKinds = MACHINE_KINDS.filter((kind) => kind !== "oven" && kind !== "stew_pot");
+  // The kitchen machines live in Ray's kitchen, not here (stackacres-kitchen.tsx).
+  const workshopKinds = MACHINE_KINDS.filter((kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter");
   const visibleMachineKinds = workshopKinds.filter(
     (kind) => showMoreMachines || isActiveMachine(kind) || machineOfKind(machines, kind) !== null,
   );

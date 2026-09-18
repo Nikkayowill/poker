@@ -120,7 +120,8 @@ import {
   energyAt,
   type StackAcresEnergyAnchor,
 } from "./energy";
-import { planServings } from "./feeding";
+import { HEN_FEED_ORDER, planServings, type ServingPlan } from "./feeding";
+import { FISHING_BAIT_ITEM } from "./fishing";
 import {
   MACHINE_CAP,
   MACHINE_CATALOGUE,
@@ -340,10 +341,18 @@ function processingPatch(
   };
 }
 
-/** Takes `wheat` off the shelf for a feeding, through `processingPatch` for
- *  the same reason every other shelf change does. */
-function wheatSpentPatch(ctx: FarmPredictContext, wheat: number): ReturnType<typeof processingPatch> {
-  return processingPatch(ctx, { inventory: removeFromInventory(ctx.inventory, "wheat", wheat) ?? ctx.inventory });
+/** Takes what hens ate off the shelf for a feeding, through `processingPatch`
+ *  for the same reason every other shelf change does. */
+function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType<typeof processingPatch> | null {
+  let inventory = ctx.inventory;
+  let used = false;
+  for (const item of HEN_FEED_ORDER) {
+    const quantity = plan.shelfUsed[item] ?? 0;
+    if (quantity === 0) continue;
+    inventory = removeFromInventory(inventory, item, quantity) ?? inventory;
+    used = true;
+  }
+  return used ? processingPatch(ctx, { inventory }) : null;
 }
 
 /**
@@ -358,26 +367,26 @@ export function predictStackAcresAction(
 ): FarmStatePatch | null {
   switch (body.action) {
     case "feed": {
-      // Hens eat Wheat first, then the Feed Sack -- see ./feeding.ts.
+      // Hens eat off the shelf first, then the Feed Sack -- see ./feeding.ts.
       const unit = ctx.units.find((u) => u.id === body.unitId);
       if (!unit) return null;
-      const plan = planServings([unit.stock], ctx.inventory.wheat ?? 0, ctx.feed);
+      const plan = planServings([unit.stock], ctx.inventory, ctx.feed);
       if (plan.fed === 0) return null;
       return {
         units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
         feed: ctx.feed - plan.feedUsed,
-        ...(plan.wheatUsed > 0 ? wheatSpentPatch(ctx, plan.wheatUsed) : {}),
+        ...shelfSpentPatch(ctx, plan),
       };
     }
     case "feed-pen": {
       // Same order the server feeds in: soonest-hungry first, as far as the
-      // feed goes. Hens eat Wheat first -- see ./feeding.ts.
+      // feed goes. Hens eat off the shelf first -- see ./feeding.ts.
       const hungry = ctx.units
         .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
         .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""));
       const plan = planServings(
         hungry.map((u) => u.stock),
-        ctx.inventory.wheat ?? 0,
+        ctx.inventory,
         ctx.feed,
       );
       if (plan.fed === 0) return null;
@@ -385,7 +394,7 @@ export function predictStackAcresAction(
       return {
         units: ctx.units.map((u) => (ids.has(u.id) ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
         feed: ctx.feed - plan.feedUsed,
-        ...(plan.wheatUsed > 0 ? wheatSpentPatch(ctx, plan.wheatUsed) : {}),
+        ...shelfSpentPatch(ctx, plan),
       };
     }
     case "water": {
@@ -860,9 +869,13 @@ export function predictStackAcresAction(
       return { energy, ...processingPatch(ctx, { inventory }) };
     }
     case "catch-fish": {
-      // Only the energy is predicted; which fish is the server's own roll.
+      // Only the energy and the bait are predicted; which fish is the
+      // server's own roll.
       const energy = applyEnergyDelta(ctx.energy, -FISHING_CAST_ENERGY, new Date(ctx.nowMs));
-      return energy ? { energy } : null;
+      if (!energy) return null;
+      if (!body.bait) return { energy };
+      const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
+      return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally

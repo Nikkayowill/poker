@@ -92,7 +92,8 @@ import {
   readStackAcresInventory,
   writeStackAcresEnergy,
 } from "./stackacres-store";
-import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH } from "@/lib/stackacres/energy";
+import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH, energyAt } from "@/lib/stackacres/energy";
+import { isFishSpecies } from "@/lib/stackacres/fishing";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
   STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
@@ -185,6 +186,9 @@ vi.mock("./stackacres-store", async (importOriginal) => {
     // hidden-secrets Land Maintenance trade -- the memory branch's own
     // raise-to-target check cannot be raced from a single synchronous test.
     raiseStackAcresUpkeep: vi.fn(actual.raiseStackAcresUpkeep),
+    // Passthrough spy, so one test can stand in for a catch credit failing
+    // after the bait was spent.
+    adjustStackAcresInventory: vi.fn(actual.adjustStackAcresInventory),
   };
 });
 
@@ -331,7 +335,7 @@ async function keepHensFed(id: string, now: Date): Promise<void> {
     for (let guard = 0; guard < 1000; guard += 1) {
       const hungryAt = hungryAtFor(current);
       if (!hungryAt || Date.parse(hungryAt) > now.getTime()) break;
-      const fed = await feedStackAcresUnit(current, new Date(hungryAt), new Date(current.readyAt));
+      const fed = await feedStackAcresUnit(current, new Date(hungryAt), new Date(current.readyAt), null, 0);
       if (!fed) break;
       current = fed;
     }
@@ -378,6 +382,7 @@ const REAL = {
   listStackAcresUnits: vi.mocked(listStackAcresUnits).getMockImplementation()!,
   markStackAcresDonated: vi.mocked(markStackAcresDonated).getMockImplementation()!,
   raiseStackAcresUpkeep: vi.mocked(raiseStackAcresUpkeep).getMockImplementation()!,
+  adjustStackAcresInventory: vi.mocked(adjustStackAcresInventory).getMockImplementation()!,
 };
 
 beforeEach(() => {
@@ -393,6 +398,7 @@ beforeEach(() => {
   vi.mocked(listStackAcresUnits).mockImplementation(REAL.listStackAcresUnits);
   vi.mocked(markStackAcresDonated).mockImplementation(REAL.markStackAcresDonated);
   vi.mocked(raiseStackAcresUpkeep).mockImplementation(REAL.raiseStackAcresUpkeep);
+  vi.mocked(adjustStackAcresInventory).mockImplementation(REAL.adjustStackAcresInventory);
 });
 
 describe("stocking", () => {
@@ -4452,7 +4458,7 @@ describe("Chapter 1: the bread basket", () => {
 
   it("spends 5 energy per landed cast and refuses a tired one with nothing credited", async () => {
     const { token, id } = await funded();
-    const caught = await catchStackAcresFish(token, T0);
+    const caught = await catchStackAcresFish(token, false, T0);
     expect(caught.energy.level).toBe(ENERGY_MAX - FISHING_CAST_ENERGY);
 
     await writeStackAcresEnergy(id, (await readStackAcresEnergy(id))!.version, {
@@ -4460,7 +4466,7 @@ describe("Chapter 1: the bread basket", () => {
       updatedAt: T0.toISOString(),
     });
     const shelfBefore = await readStackAcresInventory(id);
-    await expect(catchStackAcresFish(token, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
+    await expect(catchStackAcresFish(token, false, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
     expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
   });
 
@@ -4522,5 +4528,145 @@ describe("Chapter 2: the kitchen garden", () => {
     const second = await eatStackAcresFoodAction(token, "stew", T0);
     expect(second.energy.level).toBe(ENERGY_MAX);
     expect(second.inventory.stew ?? 0).toBe(0);
+  });
+});
+
+describe("Chapter 3: greens for the table and the coop", () => {
+  const henHungryAt = new Date(T0.getTime() + (HEN.hungerMs ?? 0) + 1000);
+  const fedAt = new Date(henHungryAt.getTime() + 60_000);
+  const hensOf = async (id: string) => (await listStackAcresUnits(id)).filter((unit) => unit.stock === "hen");
+
+  it("builds the Kitchen Counter for 800 Gold and tosses 2 Lettuce, 1 Spinach and 1 Radish into 1 Salad", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    const view = await placeStackAcresMachine(token, "counter", T0);
+    expect(await balance(token)).toBe(before - 800);
+    expect(view.machines.find((machine) => machine.kind === "counter")).toMatchObject({ status: "idle" });
+
+    await adjustStackAcresInventory(id, "lettuce", 2);
+    await adjustStackAcresInventory(id, "spinach", 1);
+    await adjustStackAcresInventory(id, "radish", 2);
+    const tossed = await processStackAcresRecipeAction(token, "salad", T0);
+    expect(tossed.processed.produced).toEqual({ item: "salad", quantity: 1 });
+    expect(tossed.inventory.lettuce ?? 0).toBe(0);
+    expect(tossed.inventory.spinach ?? 0).toBe(0);
+    expect(tossed.inventory.radish).toBe(1);
+    expect(tossed.inventory.salad).toBe(1);
+  });
+
+  it("refunds the Kitchen Counter's Gold when the machine write fails", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "counter", T0);
+    const before = await balance(token);
+    await expect(placeStackAcresMachine(token, "counter", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("eats Salad for 15 energy", async () => {
+    const { token, id } = await funded();
+    await writeStackAcresEnergy(id, 0, { level: 30, updatedAt: T0.toISOString() });
+    await adjustStackAcresInventory(id, "salad", 1);
+    const view = await eatStackAcresFoodAction(token, "salad", T0);
+    expect(view.energy.level).toBe(45);
+    expect(view.inventory.salad ?? 0).toBe(0);
+  });
+
+  it("feeds a hen Spinach first and lays one more egg in that batch", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const henId = unitOf(view, "hen").id;
+    await adjustStackAcresInventory(id, "spinach", 2);
+    await adjustStackAcresInventory(id, "wheat", 1);
+
+    const fed = await feedStackAcres(token, henId, fedAt);
+    expect(fed.fed).toEqual({ toast: "Fed spinach: +1 egg!" });
+    const shelf = await readStackAcresInventory(id);
+    expect(shelf.spinach).toBe(1);
+    expect(shelf.wheat).toBe(1);
+
+    const [hen] = await hensOf(id);
+    expect(hen.feedBonus).toBe(1);
+    expect(hen.yieldQuantity).toBe(STACKACRES_YIELDS.hen.quantity);
+
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      await collectOne(token, henId, new Date(hen.readyAt));
+    } finally {
+      random.mockRestore();
+    }
+    expect((await readStackAcresInventory(id)).eggs).toBe(STACKACRES_YIELDS.hen.quantity + 1);
+  });
+
+  it("feeds a pen off the shelf in order, Spinach's hen laying one more egg", async () => {
+    const { token, id } = await funded();
+    // Three hens is the coop's starting cap.
+    for (let i = 0; i < 3; i += 1) await stockStackAcres(token, { stock: "hen" }, T0);
+    await adjustStackAcresInventory(id, "cabbage", 2);
+    await adjustStackAcresInventory(id, "wheat", 1);
+    await adjustStackAcresInventory(id, "spinach", 1);
+    const feedBefore = await readStackAcresFeed(id);
+    await adjustStackAcresFeed(id, 1);
+
+    const result = await feedStackAcresPen(token, "henhaven", fedAt);
+
+    expect(result.fed).toEqual({ toast: "Fed spinach: +1 egg!" });
+    // Spinach, then Wheat, then one Cabbage. The sack is not touched.
+    const shelf = await readStackAcresInventory(id);
+    expect(shelf.spinach ?? 0).toBe(0);
+    expect(shelf.wheat ?? 0).toBe(0);
+    expect(shelf.cabbage).toBe(1);
+    expect(await readStackAcresFeed(id)).toBe(feedBefore + 1);
+    const hens = await hensOf(id);
+    for (const hen of hens) expect(hen.lastFedAt).toBe(fedAt.toISOString());
+    expect(hens.map((hen) => hen.feedBonus).sort()).toEqual([0, 0, 1]);
+  });
+
+  it("eats Lettuce before Cabbage and says nothing extra for it", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    await adjustStackAcresInventory(id, "cabbage", 1);
+    await adjustStackAcresInventory(id, "lettuce", 1);
+    const fed = await feedStackAcres(token, unitOf(view, "hen").id, fedAt);
+    expect(fed.fed).toBeUndefined();
+    const shelf = await readStackAcresInventory(id);
+    expect(shelf.lettuce ?? 0).toBe(0);
+    expect(shelf.cabbage).toBe(1);
+  });
+
+  it("spends a Radish on a baited cast and lands from the baited odds", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "radish", 2);
+    // 0.5 is a bluegill unbaited and a trout baited.
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    let caught: Awaited<ReturnType<typeof catchStackAcresFish>>;
+    try {
+      caught = await catchStackAcresFish(token, true, T0);
+    } finally {
+      random.mockRestore();
+    }
+    expect(caught.fishCaught).toEqual({ species: "trout" });
+    expect(caught.inventory.radish).toBe(1);
+    expect(caught.energy.level).toBe(ENERGY_MAX - FISHING_CAST_ENERGY);
+  });
+
+  it("refuses a baited cast with no Radish and hands the energy back", async () => {
+    const { token, id } = await funded();
+    const shelfBefore = await readStackAcresInventory(id);
+    await expect(catchStackAcresFish(token, true, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
+    expect(energyAt(await readStackAcresEnergy(id), T0)).toBe(ENERGY_MAX);
+  });
+
+  it("refunds the Radish and the energy when the catch credit fails", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "radish", 1);
+    vi.mocked(adjustStackAcresInventory).mockImplementation(async (profileId, item, delta) => {
+      if (isFishSpecies(item)) throw new Error("shelf write failed");
+      return REAL.adjustStackAcresInventory(profileId, item, delta);
+    });
+    await expect(catchStackAcresFish(token, true, T0)).rejects.toThrow("shelf write failed");
+    vi.mocked(adjustStackAcresInventory).mockImplementation(REAL.adjustStackAcresInventory);
+    expect((await readStackAcresInventory(id)).radish).toBe(1);
+    expect(energyAt(await readStackAcresEnergy(id), T0)).toBe(ENERGY_MAX);
   });
 });

@@ -66,9 +66,9 @@ export function timeLeftLabel(readyAtIso: string, nowMs: number): string {
  */
 export function tapActionFor(
   unit: StackAcresUnitSnapshot,
-  context: { feed: number; gold: number; nowMs: number; wheat?: number },
+  context: { feed: number; gold: number; nowMs: number; henFeed?: number },
 ): StackAcresTapAction {
-  const action = unitRowAction(unit, { feed: context.feed, gold: context.gold, wheat: context.wheat });
+  const action = unitRowAction(unit, { feed: context.feed, gold: context.gold, henFeed: context.henFeed });
   switch (action.kind) {
     case "collect":
       return { kind: "collect", unitId: unit.id };

@@ -84,8 +84,8 @@ export interface BeltTarget {
 export interface BeltContext {
   water: number;
   feed: number;
-  /** Wheat on the shelf, which a hungry hen eats before the Feed Sack. */
-  wheat?: number;
+  /** Hen feed on the shelf (./feeding.ts), which a hungry hen eats before the Feed Sack. */
+  henFeed?: number;
   gold: number;
   nowMs: number;
   /** Beds on the shelf, per tier, and which tier the hoe lays. */
@@ -160,7 +160,7 @@ function handAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   // An empty hand on empty ground is a walk, not a refusal. Floating "nothing
   // here" every time a finger picks a spot to stand is how a farm turns naggy.
   if (!unit) return { kind: "idle" };
-  const action = tapActionFor(unit, { feed: ctx.feed, gold: ctx.gold, nowMs: ctx.nowMs, wheat: ctx.wheat });
+  const action = tapActionFor(unit, { feed: ctx.feed, gold: ctx.gold, nowMs: ctx.nowMs, henFeed: ctx.henFeed });
   if (action.kind === "refused") return { kind: "nothing", reason: action.reason, why: action.why };
   if (action.kind === "water") return blocked("This one is thirsty. Use the watering can.");
   return action;

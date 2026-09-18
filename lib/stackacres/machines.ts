@@ -23,7 +23,7 @@
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -59,6 +59,8 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   oven: { label: "Oven", placeCost: 500 },
   // Chapter 2's kitchen pot, also in Ray's house. Cooks garden crops into Stew.
   stew_pot: { label: "Stew Pot", placeCost: 1_500 },
+  // Chapter 3's prep counter, also in Ray's house. Tosses greens into Salad.
+  counter: { label: "Kitchen Counter", placeCost: 800 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -70,8 +72,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  Vat (2026-09-06) for the same reason it was never raised for a fourth of
  *  an existing kind: it grew because the number of KINDS grew, not because
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
- *  and 5 -> 6 with the Stew Pot, same reason. */
-export const MACHINE_CAP = 6;
+ *  and 5 -> 6 with the Stew Pot, and 6 -> 7 with the Kitchen
+ *  Counter, same reason. */
+export const MACHINE_CAP = 7;
 
 export type MachineStatus = "idle" | "working";
 

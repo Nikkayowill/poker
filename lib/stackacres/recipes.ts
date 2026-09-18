@@ -48,7 +48,7 @@ import { machineItemSellPrice, type MachineItemId, type MachineProcessedItem } f
 import type { MachineKind } from "./machines";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew"] as const;
+export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export function isRecipeId(value: string): value is RecipeId {
@@ -132,6 +132,18 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
       { item: "onion", quantity: 1 },
     ],
     output: { item: "stew", quantity: 1 },
+    processingMs: 0,
+  },
+  // The Kitchen Counter in Ray's kitchen, Chapter 3's greens. Instant.
+  salad: {
+    label: "Garden Salad",
+    machine: "counter",
+    inputs: [
+      { item: "lettuce", quantity: 2 },
+      { item: "spinach", quantity: 1 },
+      { item: "radish", quantity: 1 },
+    ],
+    output: { item: "salad", quantity: 1 },
     processingMs: 0,
   },
 };

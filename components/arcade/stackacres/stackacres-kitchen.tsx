@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { ENERGY_MAX, FOOD_ENERGY, FOOD_ITEMS, type FoodItem } from "@/lib/stackacres/energy";
-import { MACHINE_CATALOGUE } from "@/lib/stackacres/machines";
+import { MACHINE_CATALOGUE, type MachineKind } from "@/lib/stackacres/machines";
 import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
-import { RECIPE_CATALOGUE } from "@/lib/stackacres/recipes";
+import { RECIPE_CATALOGUE, type RecipeId } from "@/lib/stackacres/recipes";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import { missingLine, recipeIngredients } from "@/lib/stackacres/recipe-uses";
 import { StackAcresIcon } from "./stackacres-icon";
@@ -12,8 +12,8 @@ import type { PainterName } from "./stackacres-art";
 
 /**
  * Ray's kitchen: the Kitchen tab of the dialogue his house opens. Build the
- * Oven, bake Flour into Bread, build the Stew Pot, cook garden crops into
- * Stew, and eat for energy. Every button goes through
+ * Oven, bake Flour into Bread, build the Stew Pot and the Kitchen Counter,
+ * cook garden crops into Stew and Salad, and eat for energy. Every button goes through
  * the farm's own `act`, so each one is optimistic like any other farm tap.
  */
 
@@ -34,12 +34,14 @@ export interface StackAcresKitchenProps {
   onBake: () => Promise<KitchenResult>;
   onBuildStewPot: () => Promise<KitchenResult>;
   onCookStew: () => Promise<KitchenResult>;
+  counterBuilt: boolean;
+  onBuildCounter: () => Promise<KitchenResult>;
+  onTossSalad: () => Promise<KitchenResult>;
   onEat: (item: FoodItem) => Promise<KitchenResult>;
 }
 
 const OVEN_COST = MACHINE_CATALOGUE.oven.placeCost;
 const BREAD_FLOUR = RECIPE_CATALOGUE.bread.inputs[0].quantity;
-const STEW_POT_COST = MACHINE_CATALOGUE.stew_pot.placeCost;
 
 function icon(item: MachineItemId): PainterName {
   return machineItemIcon(item) as PainterName;
@@ -56,13 +58,14 @@ export function StackAcresKitchen({
   onBake,
   onBuildStewPot,
   onCookStew,
+  counterBuilt,
+  onBuildCounter,
+  onTossSalad,
   onEat,
 }: StackAcresKitchenProps) {
   const [note, setNote] = useState<string | null>(null);
   const flour = inventory.flour ?? 0;
   const full = energy >= ENERGY_MAX;
-  const stewIngredients = recipeIngredients("stew", inventory);
-  const canCookStew = stewIngredients.every((ingredient) => ingredient.missing === 0);
 
   const run = async (call: () => Promise<KitchenResult>, done: string) => {
     setNote(null);
@@ -106,45 +109,37 @@ export function StackAcresKitchen({
         </div>
       )}
 
-      {!stewPotBuilt ? (
-        <div className="sa-kitchen-row">
-          <span>Build a Stew Pot to cook garden stew.</span>
-          <button
-            type="button"
-            className="sa-cta"
-            disabled={busy("place-machine:stew_pot") || (goldBalance !== null && goldBalance < STEW_POT_COST)}
-            onClick={() => void run(onBuildStewPot, "The Stew Pot is ready!")}
-          >
-            Build Stew Pot · {STEW_POT_COST.toLocaleString()} Gold
-          </button>
-        </div>
-      ) : (
-        <div className="sa-kitchen-recipe">
-          <p className="sa-kitchen-recipe-title">{RECIPE_CATALOGUE.stew.label}</p>
-          <ul className="sa-kitchen-ingredients">
-            {stewIngredients.map((ingredient) => {
-              const short = missingLine(ingredient);
-              return (
-                <li key={ingredient.item} className={short ? "is-missing" : "is-ready"}>
-                  <StackAcresIcon name={icon(ingredient.item)} size={18} />
-                  <span>
-                    {Math.min(ingredient.have, ingredient.need)} / {machineItemLabel(ingredient.item, ingredient.need)}
-                  </span>
-                  {short && <span className="sa-kitchen-missing">{short}</span>}
-                </li>
-              );
-            })}
-          </ul>
-          <button
-            type="button"
-            className="sa-cta"
-            disabled={busy("process:stew") || !canCookStew}
-            onClick={() => void run(onCookStew, "A hot pot of stew!")}
-          >
-            Cook Stew
-          </button>
-        </div>
-      )}
+      <KitchenRecipe
+        kind="stew_pot"
+        recipe="stew"
+        built={stewPotBuilt}
+        pitch="Build a Stew Pot to cook garden stew."
+        builtNote="The Stew Pot is ready!"
+        verb="Cook Stew"
+        doneNote="A hot pot of stew!"
+        inventory={inventory}
+        goldBalance={goldBalance}
+        busy={busy}
+        run={run}
+        onBuild={onBuildStewPot}
+        onMake={onCookStew}
+      />
+
+      <KitchenRecipe
+        kind="counter"
+        recipe="salad"
+        built={counterBuilt}
+        pitch="Build a Kitchen Counter to toss fresh salad."
+        builtNote="The Kitchen Counter is ready!"
+        verb="Toss Salad"
+        doneNote="A crisp garden salad!"
+        inventory={inventory}
+        goldBalance={goldBalance}
+        busy={busy}
+        run={run}
+        onBuild={onBuildCounter}
+        onMake={onTossSalad}
+      />
 
       <ul className="sa-kitchen-food">
         {FOOD_ITEMS.map((item) => {
@@ -167,6 +162,86 @@ export function StackAcresKitchen({
       </ul>
 
       {note && <p className="sa-kitchen-note" role="status">{note}</p>}
+    </div>
+  );
+}
+
+interface KitchenRecipeProps {
+  kind: MachineKind;
+  recipe: RecipeId;
+  built: boolean;
+  pitch: string;
+  builtNote: string;
+  verb: string;
+  doneNote: string;
+  inventory: StackAcresInventory;
+  goldBalance: number | null;
+  busy: (intent: string) => boolean;
+  run: (call: () => Promise<KitchenResult>, done: string) => Promise<void>;
+  onBuild: () => Promise<KitchenResult>;
+  onMake: () => Promise<KitchenResult>;
+}
+
+/** One kitchen machine: a build button until it is placed, then its recipe
+ *  with what is held and what is still missing. */
+function KitchenRecipe({
+  kind,
+  recipe,
+  built,
+  pitch,
+  builtNote,
+  verb,
+  doneNote,
+  inventory,
+  goldBalance,
+  busy,
+  run,
+  onBuild,
+  onMake,
+}: KitchenRecipeProps) {
+  const def = MACHINE_CATALOGUE[kind];
+  if (!built) {
+    return (
+      <div className="sa-kitchen-row">
+        <span>{pitch}</span>
+        <button
+          type="button"
+          className="sa-cta"
+          disabled={busy(`place-machine:${kind}`) || (goldBalance !== null && goldBalance < def.placeCost)}
+          onClick={() => void run(onBuild, builtNote)}
+        >
+          Build {def.label} · {def.placeCost.toLocaleString()} Gold
+        </button>
+      </div>
+    );
+  }
+  const ingredients = recipeIngredients(recipe, inventory);
+  const ready = ingredients.every((ingredient) => ingredient.missing === 0);
+  return (
+    <div className="sa-kitchen-recipe">
+      <p className="sa-kitchen-recipe-title">{RECIPE_CATALOGUE[recipe].label}</p>
+      <ul className="sa-kitchen-ingredients">
+        {ingredients.map((ingredient) => {
+          const short = missingLine(ingredient);
+          return (
+            <li key={ingredient.item} className={short ? "is-missing" : "is-ready"}>
+              <StackAcresIcon name={icon(ingredient.item)} size={18} />
+              <span>
+                {Math.min(ingredient.have, ingredient.need)} / {machineItemLabel(ingredient.item, ingredient.need)}
+              </span>
+              {short && <span className="sa-kitchen-missing">{short}</span>}
+            </li>
+          );
+        })}
+      </ul>
+      <button
+        type="button"
+        className="sa-cta"
+        disabled={busy(`process:${recipe}`) || !ready}
+        onClick={() => void run(onMake, doneNote)}
+      >
+        {verb}
+      </button>
     </div>
   );
 }

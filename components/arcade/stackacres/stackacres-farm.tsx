@@ -137,7 +137,7 @@ import {
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
 import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
-import type { FishSpecies } from "@/lib/stackacres/fishing";
+import { FISHING_BAIT_ITEM, type FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
 import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -246,7 +246,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { eatsWheat } from "@/lib/stackacres/feeding";
+import { eatsShelfFeed, henFeedOnShelf } from "@/lib/stackacres/feeding";
 import { StackAcresKitchen } from "./stackacres-kitchen";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -483,6 +483,8 @@ interface StackAcresResponse {
    *  `inventory` above already carries the resulting count, this is only
    *  the cast's own "here is what you landed" line. */
   fishCaught?: { species: FishSpecies };
+  /** Set by a `feed`/`feed-pen` whose serving earned extra eggs (Spinach). */
+  fed?: { toast: string };
   quarryBagged?: { species: QuarrySpecies; meat: number; pelt: number };
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
@@ -1267,6 +1269,10 @@ export function StackAcresFarm() {
    * a frame behind the response that reads it.
    */
   const tapAnchor = useRef<TapPoint | null>(null);
+  /** The player's "Use radish bait" toggle. Only offered while they hold a
+   *  Radish, and only sent as bait while they still do. */
+  const [useBait, setUseBait] = useState(false);
+  const baitOnHook = useRef(false);
   /**
    * Critical Harvest Cascade: what the most recent SOLO collect's response
    * said, for `triggerCascade` to read once `act`'s own promise -- and its
@@ -2377,6 +2383,9 @@ export function StackAcresFarm() {
         // catch, once the server's dice roll is in, so it is the first point
         // anything can name the fish. Floats over the bobber, which is where
         // the player has been looking for the whole fight.
+        if ((body.action === "feed" || body.action === "feed-pen") && data.fed) {
+          setLastCollect({ text: data.fed.toast, nonce: Date.now() });
+        }
         if (body.action === "catch-fish" && data.fishCaught) {
           const label = machineItemLabel(data.fishCaught.species, 1);
           waterSound();
@@ -2887,6 +2896,11 @@ export function StackAcresFarm() {
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
   const ovenBuilt = processing.machines.some((machine) => machine.kind === "oven");
   const stewPotBuilt = processing.machines.some((machine) => machine.kind === "stew_pot");
+  const counterBuilt = processing.machines.some((machine) => machine.kind === "counter");
+  const radishesHeld = processing.inventory[FISHING_BAIT_ITEM] ?? 0;
+  useEffect(() => {
+    baitOnHook.current = useBait && radishesHeld > 0;
+  }, [useBait, radishesHeld]);
 
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
@@ -3189,11 +3203,11 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, "Nobody here is hungry.", "deny");
         return;
       }
-      // Hens eat Wheat off the shelf before the Feed Sack (lib/stackacres/feeding.ts).
-      const hensCanEatWheat =
-        (processing.inventory.wheat ?? 0) > 0 &&
-        residents.some((unit) => unit.state === "hungry" && eatsWheat(unit.stock));
-      if (feed < 1 && !hensCanEatWheat) {
+      // Hens eat greens and Wheat off the shelf before the Feed Sack (lib/stackacres/feeding.ts).
+      const hensCanEatShelf =
+        henFeedOnShelf(processing.inventory) > 0 &&
+        residents.some((unit) => unit.state === "hungry" && eatsShelfFeed(unit.stock));
+      if (feed < 1 && !hensCanEatShelf) {
         refusedSound();
         world.current?.floatAt(at, "No feed left in the barn.", "deny");
         return;
@@ -3339,7 +3353,8 @@ export function StackAcresFarm() {
         landedHint: "Reeling it in...",
         onLanded: () => {
           world.current?.endFishingCast("landed");
-          void act({ action: "catch-fish" });
+          // Read at the moment of landing so a toggle flipped mid-fight counts.
+          void act({ action: "catch-fish", bait: baitOnHook.current });
         },
         onEscaped: () => {
           world.current?.endFishingCast("escaped");
@@ -3780,7 +3795,7 @@ export function StackAcresFarm() {
         {
           water,
           feed,
-          wheat: processing.inventory.wheat ?? 0,
+          henFeed: henFeedOnShelf(processing.inventory),
           gold,
           nowMs,
           soilStock,
@@ -4238,6 +4253,12 @@ export function StackAcresFarm() {
             <strong>{energyAt(energy, new Date(nowMs))}</strong>
             <span className="sa-sr">of {ENERGY_MAX} energy</span>
           </span>
+          {radishesHeld > 0 && (
+            <label className="sa-bait-toggle" title="Spend a Radish per cast to catch trout and catfish more often.">
+              <input type="checkbox" checked={useBait} onChange={(event) => setUseBait(event.target.checked)} />
+              <span>Use radish bait ({radishesHeld})</span>
+            </label>
+          )}
           <span className="gold-balance floor-wallet" title="Gold">
             <Coins size={13} aria-hidden="true" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
@@ -4408,6 +4429,9 @@ export function StackAcresFarm() {
                     onBake={() => onProcessRecipe("bread")}
                     onBuildStewPot={() => onPlaceMachine("stew_pot")}
                     onCookStew={() => onProcessRecipe("stew")}
+                    counterBuilt={counterBuilt}
+                    onBuildCounter={() => onPlaceMachine("counter")}
+                    onTossSalad={() => onProcessRecipe("salad")}
                     onEat={onEat}
                   />
                 ) : undefined

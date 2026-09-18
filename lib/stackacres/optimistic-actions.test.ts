@@ -342,6 +342,25 @@ describe("predictStackAcresAction: feed/water/clear", () => {
     expect(single?.feed).toBe(0);
   });
 
+  it("feeds hens Spinach before Wheat, Lettuce and Cabbage", () => {
+    const h1 = unit({ id: "h1", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 2 * 60_000).toISOString() });
+    const h2 = unit({ id: "h2", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 60_000).toISOString() });
+    const patch = predictStackAcresAction(
+      { action: "feed-pen", zone: "henhaven" },
+      ctx({ units: [h1, h2], feed: 0, inventory: { spinach: 1, lettuce: 3, cabbage: 1 } }),
+    );
+    expect(patch?.inventory).toMatchObject({ spinach: 0, lettuce: 2, cabbage: 1 });
+    expect(patch?.feed).toBe(0);
+  });
+
+  it("spends a Radish on a baited cast and never guesses the fish", () => {
+    const patch = predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: { radish: 2 } }));
+    expect(patch?.inventory?.radish).toBe(1);
+    expect(patch?.energy?.level).toBe(95);
+    expect(patch?.inventory?.bluegill ?? 0).toBe(0);
+    expect(predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: {} }))).toBeNull();
+  });
+
   it("eats Bread for 20 energy and refuses when there is none or energy is full", () => {
     const hungry = { level: 30, updatedAt: NOW.toISOString() };
     const patch = predictStackAcresAction({ action: "eat", item: "bread" }, ctx({ energy: hungry, inventory: { bread: 2 } }));
@@ -352,9 +371,9 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("spends 5 energy on a landed cast and guesses nothing when too tired", () => {
-    expect(predictStackAcresAction({ action: "catch-fish" }, ctx())?.energy?.level).toBe(95);
+    expect(predictStackAcresAction({ action: "catch-fish", bait: false }, ctx())?.energy?.level).toBe(95);
     expect(
-      predictStackAcresAction({ action: "catch-fish" }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
+      predictStackAcresAction({ action: "catch-fish", bait: false }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
     ).toBeNull();
   });
 

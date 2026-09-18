@@ -21,20 +21,32 @@ export function isFishSpecies(value: string): value is FishSpecies {
 /** Out of 100: bluegill common, trout a fair catch, catfish the rare one --
  *  the same three-tier common/uncommon/rare feel the Vat's aging tiers
  *  already use elsewhere in StackAcres. */
-const FISH_WEIGHTS: Readonly<Record<FishSpecies, number>> = {
+export const FISH_WEIGHTS: Readonly<Record<FishSpecies, number>> = {
   bluegill: 60,
   trout: 30,
   catfish: 10,
 };
 
-/** Which fish a completed cast lands, weighted by `FISH_WEIGHTS`. Takes the
- *  RNG as a parameter so a test can hand it a fixed sequence instead of
- *  patching `Math.random`. */
-export function pickCaughtFish(random: () => number = Math.random): FishSpecies {
+/** Out of 100, with a radish on the hook: the rarer fish come up more often. */
+export const BAIT_FISH_WEIGHTS: Readonly<Record<FishSpecies, number>> = {
+  bluegill: 30,
+  trout: 45,
+  catfish: 25,
+};
+
+/** What a cast can put on the hook. One is spent per baited cast. */
+export const FISHING_BAIT_ITEM = "radish";
+
+/** Which fish a completed cast lands, weighted by `FISH_WEIGHTS`, or by
+ *  `BAIT_FISH_WEIGHTS` when the cast was baited. Takes the RNG as a
+ *  parameter so a test can hand it a fixed sequence instead of patching
+ *  `Math.random`. */
+export function pickCaughtFish(random: () => number = Math.random, bait = false): FishSpecies {
+  const weights = bait ? BAIT_FISH_WEIGHTS : FISH_WEIGHTS;
   const roll = random() * 100;
   let acc = 0;
   for (const species of FISH_SPECIES) {
-    acc += FISH_WEIGHTS[species];
+    acc += weights[species];
     if (roll < acc) return species;
   }
   return FISH_SPECIES[FISH_SPECIES.length - 1];

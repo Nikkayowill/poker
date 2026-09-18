@@ -66,7 +66,8 @@ export type Action =
   | { action: "draw-water" }
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
-  | { action: "catch-fish" }
+  // `bait` spends one Radish on the hook for better odds.
+  | { action: "catch-fish"; bait: boolean }
   | { action: "eat"; item: FoodItem }
   // A completed stalk at the Oak's treeline: which quarry it was, and so how
   // much meat and how many pelts it gives, is the server's own dice roll --

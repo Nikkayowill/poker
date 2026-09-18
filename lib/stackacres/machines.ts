@@ -25,7 +25,7 @@ import type { StackAcresInventory } from "./inventory";
 import { siloFeedsLeft } from "./feed-silo";
 import { stackacresExchangeDay } from "./exchange";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -71,6 +71,10 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // Pickles or Sauerkraut over hours (./aging.ts), so it earns while the
   // player is away.
   cellar: { label: "Preserves Cellar", placeCost: 25_000 },
+  // Chapter 6's late automation beside Ray's kitchen. Runs no recipe of its
+  // own: it cooks the player's standing order while they are away, at double
+  // yield (./farm-kitchen.ts).
+  farm_kitchen: { label: "Farm Kitchen", placeCost: 60_000 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -84,8 +88,8 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
  *  and 5 -> 6 with the Stew Pot, 6 -> 7 with the Kitchen
  *  Counter, 7 -> 8 with the Feed Silo and 8 -> 9 with the Preserves
- *  Cellar, same reason. */
-export const MACHINE_CAP = 9;
+ *  Cellar and 9 -> 10 with the Farm Kitchen, same reason. */
+export const MACHINE_CAP = 10;
 
 export type MachineStatus = "idle" | "working";
 
@@ -110,6 +114,11 @@ export interface StackAcresMachineRow {
    *  feed. Written under the row's version guard (./feed-silo.ts). */
   autoFeedDay: string | null;
   autoFeeds: number;
+  /** Farm Kitchen only: the recipe it cooks while the player is away, and the
+   *  instant its batches bank from (./farm-kitchen.ts). Null until an order
+   *  is set. Written under the row's version guard. */
+  standingRecipe: RecipeId | null;
+  kitchenSince: string | null;
   version: number;
 }
 
@@ -179,11 +188,17 @@ export interface StackAcresMachineSnapshot {
   /** Feed Silo only: auto-feeds it can still hand out today. Null for every
    *  other kind. */
   autoFeedsLeft: number | null;
+  /** Farm Kitchen only: its standing order, and the instant its batches bank
+   *  from (./farm-kitchen.ts's `farmKitchenBanked`). Null for every other kind. */
+  standingRecipe: RecipeId | null;
+  kitchenSince: string | null;
 }
 
 export function toMachineSnapshot(row: StackAcresMachineRow, now: Date): StackAcresMachineSnapshot {
   return {
     autoFeedsLeft: row.kind === "feed_silo" ? siloFeedsLeft(row, stackacresExchangeDay(now)) : null,
+    standingRecipe: row.kind === "farm_kitchen" ? row.standingRecipe : null,
+    kitchenSince: row.kind === "farm_kitchen" ? row.kitchenSince : null,
     id: row.id,
     kind: row.kind,
     status: row.status,

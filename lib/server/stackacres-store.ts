@@ -1997,7 +1997,7 @@ export interface StoredMachine extends StackAcresMachineRow {
 }
 
 const MACHINE_COLUMNS =
-  "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, auto_feed_day, auto_feeds, version, created_at";
+  "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, auto_feed_day, auto_feeds, standing_recipe, kitchen_since, version, created_at";
 
 export interface MachineDbRow {
   id: string;
@@ -2010,6 +2010,8 @@ export interface MachineDbRow {
   units_processing: number | string | null;
   auto_feed_day: string | null;
   auto_feeds: number | string;
+  standing_recipe: string | null;
+  kitchen_since: string | null;
   version: number | string;
   created_at: string;
 }
@@ -2029,6 +2031,8 @@ export function machineFromRow(row: MachineDbRow): StoredMachine {
     unitsProcessing: Number(row.units_processing ?? 0),
     autoFeedDay: row.auto_feed_day ? String(row.auto_feed_day) : null,
     autoFeeds: Number(row.auto_feeds),
+    standingRecipe: row.standing_recipe && isRecipeId(row.standing_recipe) ? row.standing_recipe : null,
+    kitchenSince: row.kitchen_since ? String(row.kitchen_since) : null,
     version: Number(row.version),
     createdAt: String(row.created_at),
   };
@@ -2079,6 +2083,8 @@ export async function createStackAcresMachine(
       unitsProcessing: 0,
       autoFeedDay: null,
       autoFeeds: 0,
+      standingRecipe: null,
+      kitchenSince: null,
       version: 1,
       createdAt: now,
     };
@@ -2226,6 +2232,35 @@ export async function writeStackAcresSiloFeeds(
     .select(MACHINE_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(`Could not record the Feed Silo's feeds: ${error.message}`);
+  return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/** Writes the Farm Kitchen's standing order and bank start under the row's
+ *  version guard. Null on a lost race. */
+export async function writeStackAcresFarmKitchen(
+  current: StoredMachine,
+  standingRecipe: RecipeId | null,
+  kitchenSince: string | null,
+): Promise<StoredMachine | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryMachines.get(current.id);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredMachine = { ...stored, standingRecipe, kitchenSince, version };
+    memoryMachines.set(current.id, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .update({ standing_recipe: standingRecipe, kitchen_since: kitchenSince, version })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .select(MACHINE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not update the Farm Kitchen: ${error.message}`);
   return data ? machineFromRow(data as MachineDbRow) : null;
 }
 

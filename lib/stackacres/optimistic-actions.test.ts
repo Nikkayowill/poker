@@ -100,6 +100,8 @@ function machine(overrides: Partial<MachineView> = {}): MachineView {
     done: false,
     progress: null,
     autoFeedsLeft: null,
+    standingRecipe: null,
+    kitchenSince: null,
     canStart: false,
     ...overrides,
   };

@@ -71,13 +71,13 @@ describe("wantedForLine", () => {
   });
 
   it("says nothing for a crop nothing uses", () => {
-    expect(recipesUsing("eggplant")).toEqual([]);
-    expect(wantedForLine("eggplant")).toBeNull();
+    expect(recipesUsing("wheatsheaf")).toEqual([]);
+    expect(wantedForLine("wheatsheaf")).toBeNull();
   });
 
   it("lists hen feed and fishing bait beside the recipes", () => {
     expect(otherUsesOf("spinach")).toEqual(["Hen feed (+1 egg)"]);
-    expect(wantedForLine("spinach")).toBe("For: Garden Salad, Hen feed (+1 egg)");
+    expect(wantedForLine("spinach")).toBe("For: Garden Salad, Harvest Feast, Hen feed (+1 egg)");
     expect(wantedForLine("lettuce")).toBe("For: Garden Salad, Hen feed");
     expect(wantedForLine("cabbage")).toBe("For: Sauerkraut, Hen feed");
     expect(wantedForLine("wheat")).toBe("For: Flour, Hen feed");
@@ -151,8 +151,27 @@ describe("the town kitchen (Chapter 5)", () => {
     expect(isFoodItem("pickles")).toBe(false);
   });
 
-  it("adds the Preserves Cellar at 25,000 Gold, one of nine", () => {
+  it("adds the Preserves Cellar at 25,000 Gold", () => {
     expect(MACHINE_CATALOGUE.cellar.placeCost).toBe(25_000);
-    expect(MACHINE_CAP).toBe(9);
+  });
+});
+
+describe("feasts (Chapter 6)", () => {
+  it("bakes Bean Casserole and the Harvest Feast in the Oven", () => {
+    expect(RECIPE_CATALOGUE.bean_casserole.machine).toBe("oven");
+    expect(RECIPE_CATALOGUE.harvest_feast.machine).toBe("oven");
+    expect(wantedForLine("eggplant")).toBe("For: Harvest Feast");
+    expect(wantedForLine("broccoli")).toBe("For: Bean Casserole, Harvest Feast");
+    expect(recipesUsing("bread")).toEqual(["harvest_feast"]);
+  });
+
+  it("makes the Feast a full bar and the Casserole 40", () => {
+    expect(FOOD_ENERGY.harvest_feast).toBe(100);
+    expect(FOOD_ENERGY.bean_casserole).toBe(40);
+  });
+
+  it("adds the Farm Kitchen at 60,000 Gold, one of ten", () => {
+    expect(MACHINE_CATALOGUE.farm_kitchen.placeCost).toBe(60_000);
+    expect(MACHINE_CAP).toBe(10);
   });
 });

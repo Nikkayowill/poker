@@ -5479,3 +5479,20 @@
   margin: 0;
   font-size: 13px;
 }
+
+/* Chapter 6: the Farm Kitchen's standing-order picker. */
+.sa-kitchen-order {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sa-kitchen-order select {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  font: inherit;
+  font-weight: 600;
+}

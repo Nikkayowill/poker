@@ -230,6 +230,7 @@ import {
   createStackAcresVatManifest,
   collectStackAcresMachine,
   writeStackAcresSiloFeeds,
+  writeStackAcresFarmKitchen,
   collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
   listStackAcresAgingManifests,
@@ -353,6 +354,7 @@ import {
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
+import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -4576,6 +4578,8 @@ export interface StackAcresWorkResult {
   machinesCollected: number;
   /** Servings the Feed Silo handed out on this pass. */
   siloServings: number;
+  /** What the Farm Kitchen cooked on this pass, or null. */
+  kitchenCooked: { item: MachineProcessedItem; quantity: number } | null;
 }
 
 export async function workStackAcres(
@@ -4584,6 +4588,7 @@ export async function workStackAcres(
 ): Promise<StackAcresView & { work: StackAcresWorkResult }> {
   const profile = await ensureProfile(token);
   const siloServings = await runFeedSilo(profile.id, now);
+  const kitchenCooked = await runFarmKitchen(profile.id, now);
 
   let wheatCollected = 0;
   const wheatPlots = await listStackAcresWheatPlots(profile.id);
@@ -4700,11 +4705,83 @@ export async function workStackAcres(
     }
   }
 
+  if (kitchenCooked) {
+    processedEvents.push({ kind: "processed", recipe: kitchenCooked.recipe, count: kitchenCooked.quantity });
+  }
   await recordStoryEvents(profile.id, processedEvents);
   return {
     ...(await view(profile, now)),
-    work: { wheatCollected, machinesStarted, machinesCollected, siloServings },
+    work: {
+      wheatCollected,
+      machinesStarted,
+      machinesCollected,
+      siloServings,
+      kitchenCooked: kitchenCooked ? { item: kitchenCooked.item, quantity: kitchenCooked.quantity } : null,
+    },
   };
+}
+
+/**
+ * The Farm Kitchen's lazy settlement: cooks every banked batch of its
+ * standing order the shelf can pay for (lib/stackacres/farm-kitchen.ts).
+ * Runs only inside `workStackAcres`, never in a read.
+ *
+ * The batches are claimed on the machine row first, under its version guard,
+ * so two requests cannot both cook them. Then every input and the doubled
+ * output move in one transaction. A shelf that changed in between hands the
+ * claimed batches back.
+ */
+async function runFarmKitchen(
+  profileId: string,
+  now: Date,
+): Promise<{ recipe: RecipeId; item: MachineProcessedItem; quantity: number } | null> {
+  const machines = await listStackAcresMachines(profileId);
+  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
+  if (!kitchen) return null;
+  const plan = planFarmKitchen(kitchen, await readStackAcresInventory(profileId), now);
+  if (!plan) return null;
+
+  const claimed = await writeStackAcresFarmKitchen(kitchen, plan.recipe, plan.nextSince);
+  if (!claimed) return null;
+
+  const cooked = await processStackAcresRecipeMulti(profileId, plan.inputs, plan.output);
+  if (cooked === null) {
+    await writeStackAcresFarmKitchen(claimed, kitchen.standingRecipe, kitchen.kitchenSince).catch(() => null);
+    return null;
+  }
+  return { recipe: plan.recipe, ...plan.output };
+}
+
+/**
+ * Sets what the Farm Kitchen cooks. Batches start banking from the first
+ * order; changing the order later keeps what is already banked. Moves no
+ * Gold and no items.
+ */
+export async function setStackAcresKitchenOrder(
+  token: string,
+  recipe: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  if (!isFarmKitchenRecipe(recipe)) {
+    throw new StackAcresRequestError("The Farm Kitchen can't cook that.", 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const machines = await listStackAcresMachines(profile.id);
+  const kitchen = machines.find((machine) => machine.kind === "farm_kitchen");
+  if (!kitchen) {
+    throw new StackAcresRequestError("Build the Farm Kitchen first.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const written = await writeStackAcresFarmKitchen(kitchen, recipe, kitchen.kitchenSince ?? now.toISOString());
+  if (!written) {
+    throw new StackAcresRequestError("The Farm Kitchen was busy. Try again.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  return view(profile, now);
 }
 
 /** ./wheat-plot.ts's own `isWheatPlotReady`, restated under a name that does

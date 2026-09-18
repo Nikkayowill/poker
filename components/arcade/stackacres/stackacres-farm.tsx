@@ -471,7 +471,13 @@ interface StackAcresResponse {
    *  `sold` by `sell`, `vatCollected` by `collect-vat`. The view itself
    *  already carries the resulting state; these are the sheet's own
    *  "here is what that press did" line. */
-  work?: { wheatCollected: number; machinesStarted: number; machinesCollected: number; siloServings: number };
+  work?: {
+    wheatCollected: number;
+    machinesStarted: number;
+    machinesCollected: number;
+    siloServings: number;
+    kitchenCooked?: { item: MachineItemId; quantity: number } | null;
+  };
   processed?: {
     recipe: RecipeId;
     produced: { item: MachineProcessedItem; quantity: number } | null;
@@ -2902,6 +2908,17 @@ export function StackAcresFarm() {
     [processing.machines],
   );
   const onStoreJars = useCallback((item: CellarItem) => act({ action: "seal-cellar", item }), [act]);
+  const farmKitchenRow = processing.machines.find((machine) => machine.kind === "farm_kitchen") ?? null;
+  const onSetKitchenOrder = useCallback(
+    (recipe: RecipeId) => act({ action: "set-kitchen-order", recipe }),
+    [act],
+  );
+  const onRunFarmKitchen = useCallback(async () => {
+    takeProcessingDelta();
+    const result = await act({ action: "work" });
+    if (!result.ok) return { ok: false, message: result.message };
+    return { ok: true, cooked: takeProcessingDelta()?.work?.kitchenCooked ?? null };
+  }, [act, takeProcessingDelta]);
   const onOpenCellar = useCallback(async () => {
     takeProcessingDelta();
     const result = await act({ action: "collect-cellar" });
@@ -4441,6 +4458,9 @@ export function StackAcresFarm() {
                     cellar={cellar}
                     onStoreJars={onStoreJars}
                     onOpenCellar={onOpenCellar}
+                    farmKitchen={farmKitchenRow}
+                    onSetKitchenOrder={onSetKitchenOrder}
+                    onRunFarmKitchen={onRunFarmKitchen}
                     onEat={onEat}
                   />
                 ) : undefined

@@ -79,6 +79,9 @@ export const CONTRACT_RUNGS: readonly ContractDef[] = [
   { item: "salsa", quantity: 6, goldReward: 600, influenceReward: 30 },
   { item: "pickles", quantity: 4, goldReward: 260, influenceReward: 10 },
   { item: "pickles", quantity: 8, goldReward: 520, influenceReward: 25 },
+  // Chapter 6. The Harvest Feast has no order: it is for eating and giving.
+  { item: "bean_casserole", quantity: 2, goldReward: 290, influenceReward: 15 },
+  { item: "bean_casserole", quantity: 4, goldReward: 580, influenceReward: 30 },
 ];
 
 export interface StackAcresContractRow {

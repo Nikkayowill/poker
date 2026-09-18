@@ -71,7 +71,13 @@ import type { PainterName } from "./stackacres-art";
 export type WorkshopActionResult =
   | {
       readonly ok: true;
-      readonly work?: { readonly wheatCollected: number; readonly machinesStarted: number; readonly machinesCollected: number; readonly siloServings: number };
+      readonly work?: {
+        readonly wheatCollected: number;
+        readonly machinesStarted: number;
+        readonly machinesCollected: number;
+        readonly siloServings: number;
+        readonly kitchenCooked?: { readonly item: MachineItemId; readonly quantity: number } | null;
+      };
       readonly processed?: {
         readonly recipe: RecipeId;
         readonly produced: { readonly item: MachineProcessedItem; readonly quantity: number } | null;
@@ -149,6 +155,9 @@ function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>[
   if (work.machinesCollected > 0) parts.push(`collected the Mill`);
   if (work.machinesStarted > 0) parts.push(`started the Mill`);
   if (work.siloServings > 0) parts.push(`the Feed Silo fed ${work.siloServings} time${work.siloServings === 1 ? "" : "s"}`);
+  if (work.kitchenCooked) {
+    parts.push(`the Farm Kitchen made ${machineItemLabel(work.kitchenCooked.item, work.kitchenCooked.quantity)}`);
+  }
   if (parts.length === 0) return null;
   const sentence = parts.join(", ");
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
@@ -188,7 +197,7 @@ export function WorkshopModal({
   const [showMoreMachines, setShowMoreMachines] = useState(false);
   // The kitchen machines live in Ray's kitchen, not here (stackacres-kitchen.tsx).
   const workshopKinds = MACHINE_KINDS.filter(
-    (kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter" && kind !== "cellar",
+    (kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter" && kind !== "cellar" && kind !== "farm_kitchen",
   );
   const visibleMachineKinds = workshopKinds.filter(
     (kind) => showMoreMachines || isActiveMachine(kind) || machineOfKind(machines, kind) !== null,

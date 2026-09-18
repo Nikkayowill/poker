@@ -68,7 +68,16 @@ export const NPC_GIFT_CATALOGUE: Readonly<Record<NpcId, NpcGiftDef>> = {
     // He is the one who taught the farm to turn raw stock into something
     // finer (the Mill, the Dairy, the Loom); it is the finished goods he
     // lights up for, not the raw milk and wool he already sees every day.
-    preferences: { cheese: "loved", cloth: "loved", flour: "liked" },
+    // The Harvest Feast is the one he loves most of all: it is the meal his
+    // own kitchen was built for.
+    preferences: {
+      cheese: "loved",
+      cloth: "loved",
+      harvest_feast: "loved",
+      flour: "liked",
+      bean_casserole: "liked",
+      stuffed_peppers: "liked",
+    },
   },
 };
 
@@ -84,6 +93,9 @@ export const GIFTABLE_ITEMS: readonly MachineItemId[] = [
   "cheese",
   "cloth",
   "cake",
+  "stuffed_peppers",
+  "bean_casserole",
+  "harvest_feast",
 ];
 
 export function isGiftableItem(item: MachineItemId): boolean {

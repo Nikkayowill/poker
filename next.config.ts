@@ -28,10 +28,18 @@ const turnstileOrigin = "https://challenges.cloudflare.com";
 // host has to be reachable from the page.
 const sentryIngestOrigin = "https://*.ingest.us.sentry.io";
 
+// The canonical origin. Players land on www; the apex redirects there.
+const siteOrigin = "https://www.stackchips.app";
+
 const csp = [
   "default-src 'self'",
   // 'wasm-unsafe-eval' is for the 3D table room's Meshopt decoder
   `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${adsterraOrigins} ${turnstileOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'unsafe-inline' above stays so pages can keep being served statically
+  // (nonces would force a server render per visit). This still blocks inline
+  // event-handler attributes like <img onerror=...>, the usual shape of an
+  // injected-HTML attack. React never renders those.
+  "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://*.supabase.co ${adsterraOrigins}`,
   "font-src 'self' data:",
@@ -47,6 +55,7 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",
+  "manifest-src 'self'",
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
@@ -108,13 +117,39 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+            value: [
+              "camera=()",
+              "microphone=()",
+              "geolocation=()",
+              "payment=()",
+              "usb=()",
+              "bluetooth=()",
+              "serial=()",
+              "hid=()",
+              "midi=()",
+              "display-capture=()",
+              "browsing-topics=()",
+            ].join(", "),
           },
           {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
         ],
+      },
+      {
+        // Vercel's CDN adds `Access-Control-Allow-Origin: *` to static files and
+        // prerendered pages. Naming our own origin replaces it, so no other
+        // site can read those responses. API routes never had the header and
+        // don't get one.
+        source: "/((?!api/).*)",
+        headers: [{ key: "Access-Control-Allow-Origin", value: siteOrigin }],
+      },
+      {
+        // API responses are only ever read by this app's own pages. Pages and
+        // images are left embeddable so share cards and email logos still load.
+        source: "/api/:path*",
+        headers: [{ key: "Cross-Origin-Resource-Policy", value: "same-origin" }],
       },
     ];
   },

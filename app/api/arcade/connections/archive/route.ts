@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listConnectionsArchive, toConnectionsErrorResponse } from "@/lib/server/connections-service";
+import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -11,8 +12,8 @@ export const runtime = "nodejs";
  * playing a specific archive day stays on the main route with an explicit
  * `day`, not a parallel archive-only open/play pair.
  *
- * No rate limit, matching the sibling GET on /api/arcade/connections: this
- * is one read, not a wallet-adjacent write.
+ * Rate limited like the sibling GET on /api/arcade/connections: every call is a
+ * database read, so an unlimited one is an unlimited bill.
  *
  * The token-reading helper here is deliberately the non-minting one: this
  * file has only a GET handler, and session-minting.test.ts enforces that a
@@ -23,6 +24,8 @@ export const runtime = "nodejs";
  * nothing new to persist, so this never sets a cookie either.
  */
 export async function GET(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "arcade:connections:archive", 60, 60 * 1000);
+  if (limited) return limited;
   const token = readSessionToken(request);
   try {
     return NextResponse.json(await listConnectionsArchive(token));

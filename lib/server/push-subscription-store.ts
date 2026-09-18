@@ -68,6 +68,13 @@ function fromRow(row: SubscriptionRow): StoredPushSubscription {
   };
 }
 
+/**
+ * Devices one profile may hold subscriptions for. Every notification fans out
+ * to all of them, so an unbounded list is an unbounded number of outbound
+ * requests per event. Saving past the cap drops the oldest.
+ */
+export const MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE = 10;
+
 /** Save (or replace) a device's subscription. Upsert on endpoint: a re-subscribe on the same device updates the row rather than duplicating it. */
 export async function savePushSubscription(
   profileId: string,
@@ -92,6 +99,11 @@ export async function savePushSubscription(
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       lastNotifiedAt: existing?.lastNotifiedAt ?? null,
     });
+    const excess = [...memorySubscriptions.values()]
+      .filter((row) => row.profileId === profileId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE);
+    for (const row of excess) memorySubscriptions.delete(row.id);
     return;
   }
   const { error } = await client
@@ -107,6 +119,21 @@ export async function savePushSubscription(
       { onConflict: "endpoint" },
     );
   if (error) throw new Error(error.message);
+
+  const { data: excess, error: excessError } = await client
+    .from("push_subscriptions")
+    .select("id")
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: false })
+    .range(MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE, MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE + 100);
+  if (excessError) throw new Error(excessError.message);
+  if (excess && excess.length > 0) {
+    const { error: pruneError } = await client
+      .from("push_subscriptions")
+      .delete()
+      .in("id", excess.map((row) => String(row.id)));
+    if (pruneError) throw new Error(pruneError.message);
+  }
 }
 
 /** Drop a subscription by endpoint. Called on unsubscribe, and by the sender when a push service reports the endpoint is gone (410/404). */

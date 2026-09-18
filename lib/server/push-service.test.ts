@@ -45,7 +45,7 @@ describe("sendPushToProfile", () => {
   it("does nothing when VAPID keys are unconfigured", async () => {
     clearVapidEnv();
     const profileId = randomUUID();
-    await savePushSubscription(profileId, { endpoint: "https://push.example/a", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/a", p256dh: "p", auth: "a" }, null);
 
     await sendPushToProfile(profileId, payload);
 
@@ -56,8 +56,8 @@ describe("sendPushToProfile", () => {
     setVapidEnv();
     sendNotification.mockResolvedValue(undefined);
     const profileId = randomUUID();
-    await savePushSubscription(profileId, { endpoint: "https://push.example/a", p256dh: "p", auth: "a" }, null);
-    await savePushSubscription(profileId, { endpoint: "https://push.example/b", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/a", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/b", p256dh: "p", auth: "a" }, null);
 
     await sendPushToProfile(profileId, payload);
 
@@ -67,10 +67,21 @@ describe("sendPushToProfile", () => {
     expect(JSON.parse(body)).toEqual(payload);
   });
 
+  it("never sends to an endpoint outside the browser push services", async () => {
+    setVapidEnv();
+    sendNotification.mockResolvedValue(undefined);
+    const profileId = randomUUID();
+    await savePushSubscription(profileId, { endpoint: "https://attacker.example/collect", p256dh: "p", auth: "a" }, null);
+
+    await sendPushToProfile(profileId, payload);
+
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
   it("drops a subscription whose push service reports it gone (410)", async () => {
     setVapidEnv();
     const profileId = randomUUID();
-    await savePushSubscription(profileId, { endpoint: "https://push.example/gone", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/gone", p256dh: "p", auth: "a" }, null);
     sendNotification.mockRejectedValueOnce(Object.assign(new Error("gone"), { statusCode: 410 }));
 
     await sendPushToProfile(profileId, payload);
@@ -81,7 +92,7 @@ describe("sendPushToProfile", () => {
   it("keeps a subscription after a transient failure (not 404/410)", async () => {
     setVapidEnv();
     const profileId = randomUUID();
-    await savePushSubscription(profileId, { endpoint: "https://push.example/flaky", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/flaky", p256dh: "p", auth: "a" }, null);
     sendNotification.mockRejectedValueOnce(Object.assign(new Error("network blip"), { statusCode: 500 }));
 
     await sendPushToProfile(profileId, payload);
@@ -94,7 +105,7 @@ describe("sendPushToSubscription", () => {
   it("no-ops when unconfigured, same as sendPushToProfile", async () => {
     clearVapidEnv();
     const profileId = randomUUID();
-    await savePushSubscription(profileId, { endpoint: "https://push.example/a", p256dh: "p", auth: "a" }, null);
+    await savePushSubscription(profileId, { endpoint: "https://fcm.googleapis.com/fcm/send/a", p256dh: "p", auth: "a" }, null);
     const [subscription] = await pushSubscriptionsForProfile(profileId);
 
     await sendPushToSubscription(subscription, payload);

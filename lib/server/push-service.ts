@@ -1,5 +1,6 @@
 import "server-only";
 import webpush from "web-push";
+import { isAllowedPushEndpoint } from "@/lib/push/endpoint";
 import {
   pushSubscriptionsForProfile,
   removePushSubscription,
@@ -38,6 +39,8 @@ function ensureConfigured(): boolean {
 }
 
 async function sendToSubscription(subscription: StoredPushSubscription, payload: PushPayload): Promise<void> {
+  // Rows saved before the endpoint check existed could point anywhere.
+  if (!isAllowedPushEndpoint(subscription.endpoint)) return;
   try {
     await webpush.sendNotification(
       {

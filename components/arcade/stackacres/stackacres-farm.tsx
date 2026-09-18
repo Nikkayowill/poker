@@ -249,6 +249,7 @@ import {
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresKitchen } from "./stackacres-kitchen";
 import { isActiveStock } from "@/lib/stackacres/scope";
+import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -2907,6 +2908,19 @@ export function StackAcresFarm() {
 
   /** The Kitchen tab in Ray's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
+  /** Built machine kinds, for the seed locks (lib/stackacres/seed-unlocks.ts). */
+  const builtKinds = useMemo(
+    () => new Set(processing.machines.map((machine) => machine.kind)),
+    [processing.machines],
+  );
+  /** Ray's seed shelf: open seeds first, then locked ones, each in catalogue order. */
+  const shopSeeds = useMemo(() => {
+    const active = STACKACRES_CROPS.filter(isActiveStock);
+    return [
+      ...active.filter((crop) => isSeedUnlocked(crop, builtKinds)),
+      ...active.filter((crop) => !isSeedUnlocked(crop, builtKinds)),
+    ];
+  }, [builtKinds]);
   const kitchenBuilt = useCallback(
     (kind: MachineKind) => processing.machines.some((machine) => machine.kind === kind),
     [processing.machines],
@@ -4757,31 +4771,37 @@ export function StackAcresFarm() {
                     Buy seeds here, then tap bare ground in the Crop Fields to plant them.
                   </p>
                   <div className="sa-stock-cards">
-                    {STACKACRES_CROPS.filter(isActiveStock).map((crop) => {
+                    {shopSeeds.map((crop) => {
                       const def = STACKACRES_CATALOGUE[crop];
                       const held = seedStock[crop] ?? 0;
                       const pending = isPending(`buy-seed:${crop}`);
                       const wantedFor = wantedForLine(STACKACRES_YIELDS[crop].item);
+                      const lockLine = seedLockLine(crop, builtKinds);
                       return (
-                        <div key={crop} className="sa-stock-card">
+                        <div key={crop} className={lockLine ? "sa-stock-card is-locked" : "sa-stock-card"}>
                           <h3>{def.label}</h3>
                           <p className="sa-stock-yield">
                             <StoreCost amount={def.seedCost} /> / seed
                           </p>
                           {wantedFor && <p className="sa-stock-wanted">{wantedFor}</p>}
-                          <BuyQuantityControls
-                            unitPrice={def.seedCost}
-                            maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}
-                            gold={gold}
-                            pending={pending}
-                            onBuy={(quantity) => {
-                              buySound();
-                              void act({ action: "buy-seed", crop, quantity });
-                            }}
-                          />
-                          <p className="sa-sheet-note">
-                            {held} in the barn
-                          </p>
+                          {lockLine ? (
+                            <p className="sa-lock-hint">
+                              <Lock size={13} aria-hidden="true" />
+                              <span>{lockLine}</span>
+                            </p>
+                          ) : (
+                            <BuyQuantityControls
+                              unitPrice={def.seedCost}
+                              maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}
+                              gold={gold}
+                              pending={pending}
+                              onBuy={(quantity) => {
+                                buySound();
+                                void act({ action: "buy-seed", crop, quantity });
+                              }}
+                            />
+                          )}
+                          {held > 0 || !lockLine ? <p className="sa-sheet-note">{held} in the barn</p> : null}
                         </div>
                       );
                     })}

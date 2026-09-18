@@ -121,6 +121,38 @@ describe("the extra turn rule", () => {
   });
 });
 
+describe("the last move record", () => {
+  it("is null before anyone has moved", () => {
+    expect(createMancalaState(0, T0).lastMove).toBeNull();
+  });
+
+  it("records an extra turn", () => {
+    const pits = openingPits();
+    pits[5] = 1;
+    const next = play(stateWith(pits), 0, 5);
+    expect(next.lastMove).toEqual({ seat: 0, pit: 5, lastPit: STORE_SEAT0, captured: 0, extraTurn: true });
+  });
+
+  it("records a capture, and reaches the snapshot", () => {
+    const pits = openingPits();
+    pits[1] = 1;
+    pits[2] = 0;
+    pits[10] = 5;
+    const next = play(stateWith(pits), 0, 1);
+    expect(next.lastMove).toEqual({ seat: 0, pit: 1, lastPit: 2, captured: 6, extraTurn: false });
+    expect(mancalaSnapshot(next, 1, T0).lastMove).toEqual(next.lastMove);
+  });
+
+  it("does not claim an extra turn on a move that ends the game", () => {
+    const pits = new Array<number>(PIT_COUNT).fill(0);
+    pits[5] = 1;
+    pits[7] = 3;
+    const next = play(stateWith(pits), 0, 5);
+    expect(next.outcome).not.toBeNull();
+    expect(next.lastMove?.extraTurn).toBe(false);
+  });
+});
+
 describe("the capture rule", () => {
   it("sweeps the landing pit and the opposite pit into the mover's store", () => {
     // Pit 2 is empty; pit 1 has one seed, which lands in pit 2 (empty on

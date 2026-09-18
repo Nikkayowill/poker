@@ -1,5 +1,5 @@
 /**
- * The five duels, for pickers that let a caller start one against someone
+ * The seven duels, for pickers that let a caller start one against someone
  * specific: the friends drawer's Challenge select and the table's own
  * challenge-this-seat control.
  *
@@ -16,6 +16,8 @@ export const CHALLENGEABLE_DUELS: readonly { id: string; label: string }[] = [
   { id: "chess", label: "Chess" },
   { id: "checkers", label: "Checkers" },
   { id: "othello", label: "Othello" },
+  { id: "liars-dice", label: "Liar's Dice" },
+  { id: "mancala", label: "Mancala" },
   { id: "trivia", label: "Trivia Showdown" },
   { id: "word-race", label: "Word Race" },
 ];

@@ -31,9 +31,9 @@
  * the next one's bidding -- the standard rule, and the only sensible one,
  * since the loser is the seat who just had the fewest true claims to stand
  * on. `lastReveal` carries what the challenge exposed (both hands, the true
- * count) forward into that new round's state, so a client rendering the
- * transition can show the board that was just revealed before it vanishes
- * back under fresh, hidden dice.
+ * count) forward, and it stays there until the next challenge replaces it.
+ * Clearing it on the next bid meant a player could miss the showdown if the
+ * loser bid before their screen refreshed.
  *
  * ## Elimination
  *
@@ -90,7 +90,10 @@ export interface LiarsDiceState {
    * lib/cribbage/deck.ts's `rngState` exists.
    */
   rngState: number;
-  /** What the most recent challenge exposed, or null before the first one. */
+  /**
+   * What the most recent challenge exposed, or null before the first one.
+   * Kept through the next round's bids so both seats get to see it.
+   */
   lastReveal: LiarsDiceReveal | null;
   outcome: DuelOutcome | null;
 }
@@ -239,9 +242,9 @@ export function applyLiarsDiceMove(
         bid,
         bidder: seat,
         turn: otherSeat(seat),
-        // A fresh bid supersedes whatever the last challenge exposed; that
-        // showdown belongs to the round that just ended, not this one.
-        lastReveal: null,
+        // lastReveal stays until the next challenge replaces it. Clearing it
+        // here meant a player whose bid held never saw the showdown when the
+        // loser opened the next round before their screen refreshed.
       },
     };
   }

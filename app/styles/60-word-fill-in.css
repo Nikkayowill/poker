@@ -1,0 +1,245 @@
+/* Ante Up: Word Fill-In.
+ *
+ * Loads after 36-duels.css and 43-ante-up.css, which already give the shell,
+ * the wager step, the scoreline and the result block. This file is the grid,
+ * the word list and the two-column landscape layout.
+ *
+ * Portrait: grid on top, then the hint, the word list and Give up. The grid
+ * gives up some size on a short phone so the list still fits under it, since
+ * every move is a grid tap and then a word tap. Landscape or a wide screen:
+ * grid on the left sized from the viewport height, list on the right.
+ */
+
+/* The shared bar keeps a big gap under it for the lobby card. On the board
+   that gap is grid space, so it shrinks here. */
+.ante-shell:has(.wf-match) { gap: 12px; }
+.ante-shell:has(.wf-match) .floor-bar { margin-bottom: 0; }
+
+.wf-match { width: 100%; }
+
+.wf-scoreline .ante-clock { flex: 1; text-align: center; }
+
+.wf-count {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.wf-count strong { color: var(--text-primary); font-size: 14px; }
+
+.wf-play {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+/* ---- Grid ---- */
+.wf-grid {
+  display: grid;
+  /* minmax(0, 1fr) so a letter can never push its row or column wider. */
+  grid-template-columns: repeat(var(--wf-size, 9), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--wf-size, 9), minmax(0, 1fr));
+  aspect-ratio: 1;
+  /* Floored so the squares stay tappable; the rest of the height is left
+     for the hint and the word list. */
+  width: min(100%, 440px, max(252px, calc(100dvh - 390px)));
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(9, 6, 20, .7);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  /* Letter size follows the grid, not the viewport. */
+  container-type: inline-size;
+}
+
+.wf-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--neon-chalk, #eef2f8);
+  color: #1a1030;
+  font: 700 calc(100cqi / var(--wf-size, 9) * .56) / 1 Georgia, serif;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .1s ease;
+}
+/* The shared button:disabled rule fades a settled grid; the answers must stay crisp. */
+.wf-cell:disabled { cursor: default; opacity: 1; }
+
+/* A thick bar across the gap where one word ends against another open square. */
+.wf-bar-right, .wf-bar-below { position: relative; overflow: visible; }
+.wf-bar-right::after,
+.wf-bar-below::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  background: var(--neon-purple);
+  border-radius: 2px;
+  pointer-events: none;
+}
+/* Centred on the 2px gap. */
+.wf-bar-right::after { top: 0; bottom: 0; right: -4px; width: 6px; }
+.wf-bar-below::before { left: 0; right: 0; bottom: -4px; height: 6px; }
+
+.wf-cell:focus-visible {
+  outline: 3px solid var(--neon-purple);
+  outline-offset: -3px;
+  position: relative;
+  z-index: 2;
+}
+
+.wf-cell-black {
+  background: transparent;
+  cursor: default;
+}
+
+.wf-cell-selected {
+  background: var(--brand-gold-light);
+  box-shadow: inset 0 0 0 2px rgba(28, 19, 5, .35);
+}
+
+/* A full slot that spells no list word, usually one a crossing word wrote over. */
+.wf-cell-clash { color: #b3261e; }
+.wf-cell-clash.wf-cell-selected { color: #8c1d16; }
+
+/* A settled loss shows the answer in the squares the player had empty or wrong. */
+.wf-cell-revealed { color: #b3261e; background: #fbd9d6; }
+
+/* ---- Side: hint, clear, word list, give up ---- */
+.wf-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 440px);
+  min-width: 0;
+}
+
+.wf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wf-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+.wf-clear {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand-surface);
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wf-clear:disabled { opacity: .4; cursor: default; }
+.wf-clear:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 2px; }
+
+.wf-words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.wf-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The length tag in front of each group. */
+.wf-group h2 {
+  margin: 0;
+  min-width: 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wf-word {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control, 10px);
+  background: var(--brand-surface);
+  color: var(--text-primary);
+  font: 600 13px ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: .06em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s ease, opacity .12s ease;
+}
+.wf-word:hover:not(:disabled) { background: var(--brand-surface-2, var(--brand-surface)); }
+.wf-word:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 2px; }
+.wf-word:disabled { opacity: .35; cursor: default; }
+/* Once it is over the list is a record to read, not a set of dead buttons. */
+.wf-words-settled .wf-word:disabled { opacity: .85; }
+
+.wf-word-placed {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.wf-word-armed {
+  background: var(--brand-gold-light);
+  color: #1c1305;
+}
+.wf-word-armed:hover:not(:disabled) { background: var(--brand-gold-light); }
+
+.wf-controls { margin-top: 4px; }
+
+/* The result sits where the hint was, right under or beside the grid. */
+.wf-result { align-self: stretch; }
+
+@media (min-width: 400px) {
+  .wf-word { padding: 0 12px; font-size: 14px; }
+}
+
+/* ---- Landscape and wide screens: grid left, list right ---- */
+@media (orientation: landscape) and (min-width: 560px), (min-width: 860px) {
+  .wf-play {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .wf-grid {
+    /* Height is what binds on a rotated phone. */
+    width: min(440px, max(220px, calc(100dvh - 140px)), 55vw);
+  }
+  .wf-side { flex: 1 1 0; max-width: 440px; }
+}
+
+/* A desktop has the height to give each length its own line. */
+@media (min-width: 860px) and (min-height: 600px) {
+  .wf-group { flex-basis: 100%; }
+}

@@ -312,6 +312,27 @@
 /* Nonogram: clue numbers beside the grid, the one detail that tells it
    apart from a plain checkerboard. */
 .pv-nonogram { display: flex; align-items: center; gap: 5px; }
+
+/* Word Fill-In: a crossword corner beside its word list, placed words struck off. */
+.pv-wordfill { display: flex; align-items: center; gap: 5px; }
+.pv-wordlist {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  height: 24px;
+  color: var(--neon-chalk);
+  font-size: 5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .04em;
+}
+.pv-wordlist s { color: var(--neon-muted); }
+.pv-mancala { display: grid; grid-template-columns: 6px repeat(6, 7px) 6px; grid-template-rows: 7px 7px; gap: 2px; padding: 3px; border-radius: 6px; background: var(--neon-ground-lift-2); }
+.pv-mancala-store { grid-row: 1 / 3; border-radius: 4px; background: var(--neon-ground); }
+.pv-mancala-store-left { grid-column: 1; }
+.pv-mancala-store-right { grid-column: 8; background: var(--neon-purple); }
+.pv-mancala-pit { border-radius: 50%; background: var(--neon-ground); }
+.pv-mancala-seeded { background: var(--neon-yellow); }
 .pv-clues {
   display: flex;
   flex-direction: column;

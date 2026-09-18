@@ -1,0 +1,324 @@
+/* Mancala: only what the board adds.
+ *
+ * The lobby, match frame and result card are 36-duels.css. This board wears
+ * the Ante Up neon material (55-ante-up-neon.css): a violet-black tray with a
+ * purple glow ring, pits sunk into it with inset shadows, gold for what you
+ * can tap. Borderless like the rest of the chrome: every ring is a box-shadow.
+ *
+ * Two layouts, picked by the board's own width rather than the viewport:
+ *   wide: the classic tray, stores down the left and right ends.
+ *   narrow: under 480px the ends squeeze the pits below 48px, and their
+ *   square min-height then pushes them into your store, so the stores move
+ *   to a bar above (theirs, on the left) and below (yours, on the right),
+ *   which keeps your store on your right either way.
+ */
+
+.mc {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 580px);
+}
+
+/* ------------------------------------------------------------ side labels */
+
+.mc-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--neon-muted-2);
+}
+
+.mc-side-active {
+  color: var(--neon-chalk);
+}
+
+.mc-side-turn {
+  margin-left: auto;
+  color: var(--neon-yellow);
+  letter-spacing: 0.12em;
+}
+
+/* ------------------------------------------------------------------ tray */
+
+.mc-board {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 6fr) minmax(0, 0.9fr);
+  grid-template-rows: auto auto;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(160deg, rgba(155, 63, 240, .12), transparent 55%),
+    linear-gradient(180deg, var(--neon-ground-lift-2), var(--neon-ground) 85%);
+  box-shadow:
+    0 0 0 1px rgba(155, 63, 240, .38),
+    0 0 34px -16px rgba(155, 63, 240, .7),
+    var(--elevation-4);
+}
+
+.mc-store-theirs { grid-column: 1; grid-row: 1 / 3; }
+.mc-row-top { grid-column: 2; grid-row: 1; }
+.mc-row-bottom { grid-column: 2; grid-row: 2; }
+.mc-store-yours { grid-column: 3; grid-row: 1 / 3; }
+
+.mc-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ pits */
+
+.mc-pit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 48px;
+  aspect-ratio: 1;
+  padding: 5px 3px;
+  border: 0;
+  border-radius: 40%;
+  appearance: none;
+  cursor: default;
+  color: var(--neon-chalk);
+  background: radial-gradient(circle at 50% 38%, var(--neon-ground), rgba(8, 3, 20, .95));
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, .65),
+    inset 0 -1px 0 rgba(182, 166, 219, .12);
+  transition: box-shadow .12s ease, background .12s ease, transform .1s ease;
+}
+
+/* Disabled is the resting state of most pits, so it must not grey them out. */
+.mc-pit:disabled {
+  opacity: 1;
+  color: var(--neon-chalk);
+}
+
+.mc-pit-theirs,
+.mc-pit-theirs:disabled {
+  color: var(--neon-muted);
+}
+
+.mc-pit-legal {
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, .55),
+    inset 0 0 0 2px var(--neon-yellow),
+    0 0 14px -4px var(--neon-yellow);
+}
+
+.mc-pit-legal:not(:disabled) {
+  cursor: pointer;
+}
+
+.mc-pit-legal:not(:disabled):hover {
+  background: radial-gradient(circle at 50% 38%, var(--neon-ground-lift-2), rgba(8, 3, 20, .95));
+}
+
+.mc-pit-legal:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.mc-pit:focus-visible {
+  outline: none;
+  box-shadow: var(--brand-focus);
+  z-index: 1;
+}
+
+/* A fixed three-rows-of-four area, so the dots wrap evenly and the count
+   sits at the same height in every pit whatever it holds. */
+.mc-seeds {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 2px;
+  width: 26px;
+  height: 19px;
+}
+
+.mc-seed {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--neon-purple-bright), var(--neon-purple) 70%);
+  opacity: .8;
+}
+
+.mc-pit-yours .mc-seed {
+  background: radial-gradient(circle at 35% 30%, var(--neon-yellow-bright), var(--neon-yellow) 70%);
+}
+
+.mc-count {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ last move */
+
+.mc-pit-sown::after,
+.mc-pit-landed::after,
+.mc-pit-captured::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Where the last sow started: quiet, so it does not compete with the gold
+   rings on your own turn. */
+.mc-pit-sown::after {
+  box-shadow: inset 0 0 0 1px rgba(182, 166, 219, .45);
+}
+
+/* Where the last seed landed. Declared after sown so a one-seed move into
+   the next pit still reads as a landing. */
+.mc-pit-landed::after {
+  box-shadow: inset 0 0 0 2px var(--neon-purple-bright), 0 0 10px -2px var(--neon-purple-bright);
+}
+
+/* On a capture, the pit across the board that it emptied. */
+.mc-pit-captured::after {
+  box-shadow: inset 0 0 0 2px var(--brand-red);
+}
+
+/* ---------------------------------------------------------------- stores */
+
+.mc-store {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 2px;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 40%, var(--neon-ground), rgba(8, 3, 20, .95));
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, .65);
+}
+
+.mc-store-yours {
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, .6),
+    inset 0 0 0 1px rgba(255, 210, 63, .35);
+}
+
+.mc-store-landed {
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, .55),
+    inset 0 0 0 2px var(--neon-purple-bright),
+    0 0 14px -4px var(--neon-purple-bright);
+}
+
+.mc-store-name {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--neon-muted-2);
+}
+
+.mc-store-count {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--neon-muted);
+}
+
+.mc-store-yours .mc-store-count {
+  color: var(--neon-yellow);
+}
+
+/* ---------------------------------------------------------------- status */
+
+.mc-status {
+  margin: 0;
+  min-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* An extra turn or a capture is the move a new player cannot see happen. */
+.mc-status-event {
+  color: var(--neon-yellow);
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@container (max-width: 479px) {
+  .mc-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .mc-store-theirs { grid-column: 1; grid-row: 1; }
+  .mc-row-top { grid-column: 1 / 3; grid-row: 2; }
+  .mc-row-bottom { grid-column: 1 / 3; grid-row: 3; }
+  .mc-store-yours { grid-column: 2; grid-row: 4; }
+
+  .mc-row {
+    gap: 5px;
+  }
+
+  .mc-pit {
+    aspect-ratio: auto;
+    min-height: 56px;
+  }
+
+  .mc-store {
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 40px;
+    padding: 0 14px;
+  }
+}
+
+/* A rotated phone has width to spare and no height, so the pits stop being
+   square and the tray gets shorter. The side labels go too: the gold rings
+   and the status line already say whose turn it is, and without the cut
+   Resign sat below the fold. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .mc {
+    gap: 6px;
+  }
+
+  .mc-side {
+    display: none;
+  }
+
+  .mc-board,
+  .mc-row {
+    gap: 4px;
+  }
+
+  .mc-board {
+    padding: 6px;
+  }
+
+  .mc-pit {
+    aspect-ratio: auto;
+    height: 46px;
+    min-height: 46px;
+    padding: 4px 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-pit {
+    transition: none;
+  }
+}

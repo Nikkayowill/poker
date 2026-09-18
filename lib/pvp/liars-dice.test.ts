@@ -280,7 +280,7 @@ describe("liarsDiceSnapshot", () => {
     expect(view.lastReveal?.dice[1]).toEqual([6, 6, 6, 6, 6]);
   });
 
-  it("clears lastReveal once a fresh bid is made", () => {
+  it("keeps lastReveal through the next round's bids", () => {
     const state: LiarsDiceState = {
       seats: [[6, 6, 6, 6], [6, 6, 6, 6]],
       bid: null,
@@ -298,6 +298,6 @@ describe("liarsDiceSnapshot", () => {
     };
     const result = applyLiarsDiceMove(state, 1, bid(2, 2), 0);
     if (!("next" in result)) throw new Error("expected next");
-    expect(result.next.lastReveal).toBeNull();
+    expect(result.next.lastReveal?.loser).toBe(1);
   });
 });

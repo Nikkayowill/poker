@@ -152,8 +152,8 @@ export function ArcadeFloor({
             stake is gone.
           </p>
           <p>
-            Sudoku, Memory Match, Minesweeper and Nonogram are unlimited, any time, dealing a
-            fresh board every round. Word Stack and Connections are each one shared puzzle a day
+            Sudoku, Memory Match, Minesweeper, Nonogram, Blockudoku and Word Fill-In are
+            unlimited, any time, dealing a fresh board every round. Word Stack and Connections are each one shared puzzle a day
             for everyone, so there&apos;s exactly one wagered attempt allowed per day — choose
             your wager, or play free, before that day&apos;s puzzle opens.
           </p>

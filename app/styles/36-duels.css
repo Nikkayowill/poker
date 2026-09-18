@@ -434,6 +434,13 @@
   }
 
   .duel-lobby { gap: 18px; }
+
+  /* The floating tab bar shows on lobby screens only, so clear it only when
+     it is there. Same clearance .floor-shell uses. Without this the Ante up
+     button on a 360px phone sat under the bar. */
+  body:has(.mshell-nav) .duel-shell {
+    padding-bottom: calc(48px + var(--safe-bottom) + 30px);
+  }
   .duel-panel { gap: 8px; }
 
   /* The pot is the one thing that must stay readable when the two names

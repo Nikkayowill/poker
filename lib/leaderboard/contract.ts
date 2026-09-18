@@ -131,11 +131,8 @@ export const LEADERBOARD_GAMES: Readonly<Record<string, LeaderboardGameContract>
   trivia: winLossRecordContract("trivia", "Trivia Showdown"),
   "word-race": winLossRecordContract("word-race", "Word Race"),
   cribbage: winLossRecordContract("cribbage", "Cribbage"),
-  // Liar's Dice and Mancala are not here yet for the same reason they're not
-  // in lib/pvp/registry.ts's DUEL_GAMES: leaderboardTabs() below renders one
-  // clickable tab per entry with no coming-soon gate, so registering a game
-  // before it has a route/board would show a tab for a game nobody can find
-  // or play anywhere else in the app.
+  "liars-dice": winLossRecordContract("liars-dice", "Liar's Dice"),
+  mancala: winLossRecordContract("mancala", "Mancala"),
   // A 6-way winner-take-all table, not a literal 1v1 -- the same "head to
   // head" sense cribbage's own 3-4 player table already reads as, since
   // isHeadToHeadGame below is just registry membership.

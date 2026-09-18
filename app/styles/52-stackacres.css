@@ -2928,13 +2928,7 @@
 
 .sa-stock-card .sa-cta { margin-top: auto; }
 
-/* Bulk-buy row: Ray's Soil bag offers three flat sizes (1x/10x/20x), Seeds
-   and Feed offer two (a small order and a big one), all instead of one
-   "Buy" button -- see stackacres-farm.tsx's `BULK_BUY_QUANTITIES` and
-   `SEED_FEED_BULK_QUANTITIES`. The row, not the individual buttons, is what
-   gets pushed to the card's bottom; this rule has to out-specificity (by
-   coming later in the file) the plain `.sa-cta { margin-top: auto }` above
-   so a button doesn't try to push itself within its own row. */
+/* Must come after `.sa-cta { margin-top: auto }` so the row, not each button, sinks to the card bottom. */
 .sa-stock-card .sa-buy-qty-row { margin-top: auto; }
 
 .sa-buy-qty-row {
@@ -2952,6 +2946,44 @@
   flex-direction: column;
   align-items: center;
   gap: 1px;
+}
+
+.sa-qty-stepper {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.sa-qty-btn {
+  min-width: 32px;
+  min-height: 44px;
+  border: 1px solid var(--sa-glass-line-soft);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-quiet);
+  color: var(--sa-ink);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: filter var(--duration-fast) ease;
+}
+
+.sa-qty-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.sa-qty-btn:disabled { opacity: .45; cursor: default; }
+
+.sa-qty-value {
+  min-width: 22px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--sa-ink);
+}
+
+.sa-buy-qty-row .sa-cta.is-ghost {
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink-soft);
 }
 
 /* The Gold cost under the Nx label, quieted a step so the two aren't read as

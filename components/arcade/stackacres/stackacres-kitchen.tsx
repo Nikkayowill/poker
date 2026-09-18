@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CELLAR_CAPACITY, CELLAR_ITEMS, type CellarItem, type VatContainer } from "@/lib/stackacres/aging";
+import {
+  CELLAR_AGING_TIERS,
+  CELLAR_CAPACITY,
+  CELLAR_ITEMS,
+  toVatContainer,
+  type CellarItem,
+  type VatContainer,
+} from "@/lib/stackacres/aging";
 import { ENERGY_MAX, FOOD_ENERGY, FOOD_ITEMS, type FoodItem } from "@/lib/stackacres/energy";
 import { MACHINE_CATALOGUE, type MachineKind } from "@/lib/stackacres/machines";
 import { machineItemIcon, machineItemLabel, machineItemNoun, type MachineItemId } from "@/lib/stackacres/machine-items";
@@ -66,6 +73,8 @@ export interface StackAcresKitchenProps {
   /** Null while the profile is unknown; unlimited Gold passes Infinity. */
   goldBalance: number | null;
   busy: (intent: string) => boolean;
+  /** True while a Farm Kitchen order change is in flight, whichever dish. */
+  orderBusy: boolean;
   onBuild: (kind: MachineKind) => Promise<KitchenResult>;
   onMake: (recipe: RecipeId) => Promise<KitchenResult>;
   onEat: (item: FoodItem) => Promise<KitchenResult>;
@@ -100,6 +109,7 @@ export function StackAcresKitchen({
   built,
   goldBalance,
   busy,
+  orderBusy,
   onBuild,
   onMake,
   onEat,
@@ -123,6 +133,9 @@ export function StackAcresKitchen({
     if (ranOnOpen.current || !canCook) return;
     ranOnOpen.current = true;
     void onRunFarmKitchen().then((result) => {
+      // Refused (say, a Workshop pass already in flight): allow another try
+      // the next time the kitchen can cook.
+      if (!result.ok) ranOnOpen.current = false;
       if (result.ok && result.cooked) {
         setNote(`While you were away, the Farm Kitchen made ${machineItemLabel(result.cooked.item, result.cooked.quantity)}.`);
       }
@@ -186,7 +199,11 @@ export function StackAcresKitchen({
 
       {built("cellar") ? (
         <CellarPanel
-          cellar={cellar}
+          cellar={
+            cellar?.manifest
+              ? toVatContainer({ id: cellar.machineId }, cellar.manifest, new Date(nowMs), CELLAR_AGING_TIERS)
+              : cellar
+          }
           inventory={inventory}
           nowMs={nowMs}
           busy={busy}
@@ -208,7 +225,7 @@ export function StackAcresKitchen({
           order={order}
           banked={banked}
           inventory={inventory}
-          busy={busy}
+          busy={orderBusy}
           onPick={(recipe) =>
             void run(
               () => onSetKitchenOrder(recipe),
@@ -231,9 +248,11 @@ export function StackAcresKitchen({
                 type="button"
                 className="sa-cta"
                 disabled={busy(`eat:${item}`) || held < 1 || full}
-                onClick={() => void run(() => onEat(item), `Yum! +${FOOD_ENERGY[item]} energy.`)}
+                onClick={() =>
+                  void run(() => onEat(item), `Yum! +${Math.min(FOOD_ENERGY[item], ENERGY_MAX - energy)} energy.`)
+                }
               >
-                Eat · +{FOOD_ENERGY[item]}
+                Eat · +{Math.min(FOOD_ENERGY[item], ENERGY_MAX - energy)}
               </button>
             </li>
           );
@@ -355,7 +374,7 @@ interface FarmKitchenPanelProps {
   order: RecipeId | null;
   banked: number;
   inventory: StackAcresInventory;
-  busy: (intent: string) => boolean;
+  busy: boolean;
   onPick: (recipe: RecipeId) => void;
 }
 
@@ -375,7 +394,7 @@ function FarmKitchenPanel({ order, banked, inventory, busy, onPick }: FarmKitche
         <span>Cook:</span>
         <select
           value={order ?? ""}
-          disabled={busy("set-kitchen-order")}
+          disabled={busy}
           onChange={(event) => {
             const picked = FARM_KITCHEN_RECIPES.find((recipe) => recipe === event.target.value);
             if (picked) onPick(picked);

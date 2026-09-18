@@ -115,8 +115,12 @@ export function planSiloFeeding(
   feed: number,
   budget: number,
   now: Date,
+  /** When the Silo was built. It never feeds a hunger from before then, so
+   *  building one late cannot rescue a batch that already went hungry. */
+  builtAt: Date,
 ): SiloPlan {
   const nowMs = now.getTime();
+  const builtMs = builtAt.getTime();
   const left = shelfFeedLeft(inventory);
   let feedLeft = Math.max(0, feed);
   let budgetLeft = Math.max(0, budget);
@@ -147,6 +151,10 @@ export function planSiloFeeding(
       }
     }
     if (!next) break;
+    if (nextMs < builtMs) {
+      next.stopped = true;
+      continue;
+    }
 
     const shelfItem = siloFeedOrder(next.unit.stock).find((item) => left[item] > 0);
     let source: ServingSource;

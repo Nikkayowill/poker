@@ -203,9 +203,9 @@ vi.mock("./stackacres-store", async (importOriginal) => {
  * The StackAcres money contract, in memory mode.
  *
  * A harvest fills the barn and pays no Gold. Gold leaves the farm only
- * through Sell, a Town Contract or the Vat -- see the "currency wall" block
- * near the bottom. StackAcres had a flat daily Gold-earning ceiling that
- * gated all three of those (plus the forage drone); it was removed
+ * through Sell, a Town Contract, the Vat or the Preserves Cellar -- see the
+ * "currency wall" block near the bottom. StackAcres had a flat daily
+ * Gold-earning ceiling that gated the first three (plus the forage drone); it was removed
  * 2026-09-12 (Kayo's call), so none of them are capped any more.
  *
  * Nothing here can lose a sowing, so there is no losing branch to check --
@@ -1424,8 +1424,8 @@ describe("harvesting", () => {
  * lib/stackacres/upkeep.test.ts; what matters here is that it is skimmed off
  * a Gold payout (2026-09-12, Kayo's call), charged at most once a day, and
  * clamped at the payout itself rather than the wallet. It runs off nothing
- * but the three actions that pay Gold -- Sell, Fulfill Contract and Collect
- * Vat -- so watering, planting, buying, harvesting and clearing land never
+ * but the actions that pay Gold -- Sell, Fulfill Contract, and opening the
+ * Vat or the Preserves Cellar -- so watering, planting, buying, harvesting and clearing land never
  * touch it at all, however big the bill or however long it stands unpaid.
  */
 describe("Land Maintenance", () => {
@@ -2153,7 +2153,7 @@ describe("the currency wall", () => {
     expect(calls(SERVICE, "spendGoldByProfile")).toBeGreaterThan(1);
   });
 
-  it("exposes exactly three actions that pay Gold out", () => {
+  it("exposes exactly the actions that pay Gold out, and names each one", () => {
     const actions = [...ROUTE.matchAll(/z\.literal\("([a-z-]+)"\)/g)].map((m) => m[1]).sort();
     // Adding an action means editing this list, which is the point: the
     // question to answer while doing it is "does this move Gold, and which
@@ -5027,5 +5027,34 @@ describe("Chapter 6: feasts", () => {
     await adjustStackAcresInventory(id, "harvest_feast", 1);
     const gifted = await giveStackAcresGift(token, "ray", "harvest_feast", T0);
     expect(gifted.gift).toMatchObject({ outcome: "gifted", points: 3 });
+  });
+});
+
+describe("fixes from the chapter review", () => {
+  const HEN_DEF = STACKACRES_CATALOGUE.hen;
+  const hungryAt = new Date(T0.getTime() + (HEN_DEF.hungerMs ?? 0) + 1000);
+
+  it("won't feed a hen whose last meal hasn't worn off, and spends nothing trying", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    const henId = unitOf(view, "hen").id;
+    await adjustStackAcresInventory(id, "spinach", 5);
+
+    await feedStackAcres(token, henId, hungryAt);
+    await expect(feedStackAcres(token, henId, hungryAt)).rejects.toThrow("Not hungry yet.");
+    await expect(feedStackAcres(token, henId, new Date(hungryAt.getTime() + 60_000))).rejects.toThrow(
+      "Not hungry yet.",
+    );
+
+    expect((await readStackAcresInventory(id)).spinach).toBe(4);
+    const [hen] = (await listStackAcresUnits(id)).filter((unit) => unit.stock === "hen");
+    expect(hen.feedBonus).toBe(1);
+  });
+
+  it("refuses to sell a retired Wheat Sheaf outright and takes no Gold", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    await expect(buyStackAcresStock(token, { stock: "wheatsheaf" }, T0)).rejects.toThrow("any more");
+    expect(await balance(token)).toBe(before);
   });
 });

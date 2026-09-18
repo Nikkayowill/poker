@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { guessWordFillInCell } from "./puzzles/word-fill-in";
+import { guessWordFillInCell, wordFillInSlotCells } from "./puzzles/word-fill-in";
 import {
   ANTE_UP_WORD_FILL_IN_TIERS,
+  anteUpWordFillInClearProblem,
   anteUpWordFillInDeadline,
+  anteUpWordFillInPlaceProblem,
+  clearAnteUpWordFillInSlot,
+  placeAnteUpWordFillInWord,
   anteUpWordFillInGuessProblem,
   anteUpWordFillInPayout,
   guessAnteUpWordFillInCell,
@@ -189,5 +193,40 @@ describe("puzzles/word-fill-in re-export sanity", () => {
     const index = attempt.round.pattern.indexOf(".");
     const guessed = guessWordFillInCell(attempt.round, index, "A", NOW);
     expect(guessed.moves).toBe(1);
+  });
+});
+
+describe("placing and clearing words", () => {
+  function answers(attempt: AnteUpWordFillInAttempt): string[] {
+    return wordFillInSlotCells(attempt.round.templateIndex).map((cells) =>
+      cells.map((cell) => attempt.round.solution[cell]).join(""),
+    );
+  }
+
+  it("wins the attempt once every slot holds its word", () => {
+    let attempt = startAnteUpWordFillIn("quick", 1000, 3, NOW);
+    answers(attempt).forEach((word, slot) => {
+      attempt = placeAnteUpWordFillInWord(attempt, slot, word, NOW);
+    });
+    expect(attempt.status).toBe("won");
+    expect(anteUpWordFillInPayout(attempt)).toBe(1400);
+  });
+
+  it("refuses a placement or a clear after the wager clock ran out", () => {
+    const opened = startAnteUpWordFillIn("quick", 1000, 3, NOW);
+    const words = answers(opened);
+    const started = placeAnteUpWordFillInWord(opened, 0, words[0], NOW);
+    const late = new Date(NOW.getTime() + ANTE_UP_WORD_FILL_IN_TIERS.quick.timeLimitMs);
+    expect(anteUpWordFillInPlaceProblem(started, 1, words[1], late)).toBe("finished");
+    expect(anteUpWordFillInClearProblem(started, 0, late)).toBe("finished");
+    expect(placeAnteUpWordFillInWord(started, 1, words[1], late)).toBe(started);
+  });
+
+  it("clears a slot without ending the attempt", () => {
+    const opened = startAnteUpWordFillIn("marathon", 0, 3, NOW);
+    const placed = placeAnteUpWordFillInWord(opened, 0, answers(opened)[0], NOW);
+    const cleared = clearAnteUpWordFillInSlot(placed, 0, NOW);
+    expect(cleared.status).toBe("active");
+    expect(anteUpWordFillInClearProblem(cleared, 0, NOW)).toBe("already-empty");
   });
 });

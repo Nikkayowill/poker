@@ -1,0 +1,235 @@
+/* Ante Up: Blockudoku.
+ *
+ * After 36-duels.css and 43-ante-up.css: the shell, wager step, result block
+ * and difficulty tiles come from those two. What is here is the board, the
+ * piece tray, the score readout and the clear flash.
+ *
+ * The board is always 9x9, so it is sized like 46-minesweeper.css's grid:
+ * whichever binds first of the container, a desktop cap, or the height the
+ * viewport can spare once the tray and controls are counted. On a 360px
+ * phone that lands near 35px a cell, under 44px, but nine cells cannot be
+ * 44px at that width. The tray pieces carry the full-size target instead.
+ */
+
+.bk-match {
+  --bk-spare-h: max(220px, calc(100dvh - 380px));
+  --bk-block: var(--neon-purple-bright);
+  --bk-gold: var(--brand-gold-light);
+  gap: 10px;
+}
+
+/* ---- Scoreline ---- */
+.bk-scoreline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bk-scoreline .ante-clock { flex: 1; text-align: center; }
+
+.bk-score {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.bk-score svg { align-self: center; color: var(--bk-gold); }
+.bk-score strong { font-size: 16px; }
+.bk-score small { color: var(--text-muted); font-size: 12px; }
+
+/* Beside the score rather than on top of it, so the number stays readable
+   while the pop rises. */
+.bk-gain {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+  color: var(--bk-gold);
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+  opacity: 0;
+  animation: bk-gain-rise .9s ease-out;
+}
+@keyframes bk-gain-rise {
+  0% { opacity: 0; transform: translateY(4px); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
+
+.bk-clock-low {
+  color: #ff8a8a;
+  background: color-mix(in srgb, var(--brand-red) 22%, var(--brand-surface));
+  animation: bk-clock-pulse 1s ease-in-out infinite;
+}
+@keyframes bk-clock-pulse {
+  50% { opacity: .6; }
+}
+
+.bk-progress {
+  width: min(100%, 440px);
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  overflow: hidden;
+}
+.bk-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--bk-gold);
+  transition: width .3s ease;
+}
+
+/* ---- Board and tray ---- */
+.bk-play {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.bk-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  aspect-ratio: 1;
+  width: min(100%, 440px, var(--bk-spare-h));
+  gap: 1px;
+  padding: 2px;
+  background: rgba(9, 6, 20, .7);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  touch-action: manipulation;
+}
+
+.bk-cell {
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .05);
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s ease, box-shadow .12s ease;
+}
+/* Alternate 3x3 boxes sit a shade lighter so the boxes read at a glance. */
+.bk-cell-shade { background: rgba(255, 255, 255, .11); }
+.bk-cell:focus-visible { outline: 2px solid var(--bk-gold); outline-offset: -2px; }
+.bk-cell:disabled { cursor: default; }
+
+.bk-cell-filled {
+  background: var(--bk-block);
+  box-shadow:
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, .28),
+    inset -1.5px -1.5px 0 rgba(0, 0, 0, .3);
+}
+.bk-cell-pending { opacity: .75; }
+
+.bk-cell-ghost { background: rgba(255, 210, 63, .45); box-shadow: inset 0 0 0 2px var(--bk-gold); }
+.bk-cell-ghost-bad { background: rgba(220, 70, 70, .38); box-shadow: inset 0 0 0 2px rgba(255, 120, 120, .8); }
+/* Lines the aimed piece would complete, so a multi-clear can be set up on purpose. */
+.bk-cell-will-clear.bk-cell-filled { background: var(--bk-gold); }
+.bk-cell-will-clear:not(.bk-cell-filled):not(.bk-cell-ghost) { background: rgba(255, 210, 63, .18); }
+
+.bk-cell-clearing { animation: bk-clear 480ms ease-out; }
+@keyframes bk-clear {
+  0% { background: #fff; box-shadow: 0 0 10px var(--bk-gold); transform: scale(1); }
+  40% { background: var(--bk-gold); transform: scale(.85); }
+  100% { transform: scale(1); }
+}
+
+.bk-tray {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: min(100%, 440px);
+}
+
+.bk-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  padding: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand-surface);
+  cursor: grab;
+  /* Dragging a piece must not scroll the page or pop a selection callout. */
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s ease, box-shadow .12s ease, opacity .12s ease;
+}
+.bk-slot:disabled { cursor: default; }
+.bk-slot:focus-visible { outline: 2px solid var(--bk-gold); outline-offset: 2px; }
+.bk-slot-selected { box-shadow: inset 0 0 0 2px var(--bk-gold), 0 0 14px rgba(255, 210, 63, .25); }
+.bk-slot-stuck { opacity: .4; }
+
+.bk-piece {
+  display: grid;
+  grid-template-columns: repeat(var(--bk-piece-cols), 14px);
+  grid-auto-rows: 14px;
+  gap: 2px;
+  pointer-events: none;
+}
+.bk-piece-block {
+  border-radius: 3px;
+  background: var(--bk-block);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .28), inset -1px -1px 0 rgba(0, 0, 0, .3);
+}
+
+.bk-hint {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* A rotated phone has height for the board and little else, so the board
+   takes the full height on the left and everything else stacks beside it. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .bk-shell-playing {
+    gap: 8px;
+    padding-top: calc(8px + var(--safe-top));
+    padding-bottom: max(8px, var(--safe-bottom));
+  }
+  .bk-shell-playing .floor-bar { margin-bottom: 0; }
+
+  .bk-match {
+    --bk-board: min(calc(100dvh - 76px), 440px);
+    display: grid;
+    grid-template-columns: var(--bk-board) minmax(200px, 320px);
+    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-areas:
+      "board score"
+      "board progress"
+      "board tray"
+      "board hint"
+      "board controls";
+    justify-content: center;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 8px;
+  }
+  .bk-play { display: contents; }
+  .bk-grid { grid-area: board; width: var(--bk-board); align-self: start; }
+  .bk-scoreline { grid-area: score; width: 100%; }
+  .bk-progress { grid-area: progress; width: 100%; }
+  .bk-tray { grid-area: tray; width: 100%; gap: 8px; }
+  .bk-slot { min-height: 72px; padding: 6px; }
+  .bk-hint { grid-area: hint; }
+  .bk-match > .duel-controls { grid-area: controls; }
+  .bk-match > .duel-result { grid-column: 2; grid-row: 3 / 6; align-self: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bk-cell-clearing,
+  .bk-gain,
+  .bk-clock-low { animation: none; }
+  .bk-progress span { transition: none; }
+}

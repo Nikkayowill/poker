@@ -16,13 +16,19 @@
 
 import {
   GRID_SIZE,
+  clearWordFillInSlot,
   guessWordFillInCell,
+  placeWordFillInWord,
   resignWordFillInRound,
   startWordFillInRound,
+  wordFillInClearProblem,
   wordFillInElapsedMs,
   wordFillInGuessProblem,
+  wordFillInPlaceProblem,
   wordFillInView,
+  type WordFillInClearProblem,
   type WordFillInGuessProblem,
+  type WordFillInPlaceProblem,
   type WordFillInRound,
   type WordFillInView,
 } from "./puzzles/word-fill-in";
@@ -110,11 +116,11 @@ export function tickAnteUpWordFillIn(
   };
 }
 
-function guard(
+function guard<TProblem extends string>(
   attempt: AnteUpWordFillInAttempt,
   now: Date,
-  problem: WordFillInGuessProblem | null,
-): WordFillInGuessProblem | null {
+  problem: TProblem | null,
+): TProblem | "finished" | null {
   if (attempt.status !== "active") return "finished";
   const deadline = anteUpWordFillInDeadline(attempt);
   if (deadline !== null && now.getTime() >= deadline) return "finished";
@@ -140,6 +146,45 @@ export function guessAnteUpWordFillInCell(
   const round = guessWordFillInCell(attempt.round, index, letter, now);
   if (round.status === "solved") return { ...attempt, round, status: "won" };
   return { ...attempt, round, status: "active" };
+}
+
+export function anteUpWordFillInPlaceProblem(
+  attempt: AnteUpWordFillInAttempt,
+  slotIndex: number,
+  word: string,
+  now: Date,
+): WordFillInPlaceProblem | null {
+  return guard(attempt, now, wordFillInPlaceProblem(attempt.round, slotIndex, word));
+}
+
+/** Drops a list word into a slot; see placeWordFillInWord. */
+export function placeAnteUpWordFillInWord(
+  attempt: AnteUpWordFillInAttempt,
+  slotIndex: number,
+  word: string,
+  now: Date,
+): AnteUpWordFillInAttempt {
+  if (anteUpWordFillInPlaceProblem(attempt, slotIndex, word, now)) return attempt;
+  const round = placeWordFillInWord(attempt.round, slotIndex, word, now);
+  return { ...attempt, round, status: round.status === "solved" ? "won" : "active" };
+}
+
+export function anteUpWordFillInClearProblem(
+  attempt: AnteUpWordFillInAttempt,
+  slotIndex: number,
+  now: Date,
+): WordFillInClearProblem | null {
+  return guard(attempt, now, wordFillInClearProblem(attempt.round, slotIndex));
+}
+
+/** Empties a slot; see clearWordFillInSlot. */
+export function clearAnteUpWordFillInSlot(
+  attempt: AnteUpWordFillInAttempt,
+  slotIndex: number,
+  now: Date,
+): AnteUpWordFillInAttempt {
+  if (anteUpWordFillInClearProblem(attempt, slotIndex, now)) return attempt;
+  return { ...attempt, round: clearWordFillInSlot(attempt.round, slotIndex, now) };
 }
 
 /** Gives up early. The wager is already spent; this only records how it ended. */

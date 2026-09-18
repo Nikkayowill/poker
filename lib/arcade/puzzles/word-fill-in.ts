@@ -370,6 +370,138 @@ export function guessWordFillInCell(
   };
 }
 
+/* ------------------------------------------------------- word placement */
+
+/** Why a word cannot go into a slot, or null if it can. */
+export type WordFillInPlaceProblem = "finished" | "no-slot" | "not-in-list" | "wrong-length" | "no-change";
+
+/** Why a slot cannot be cleared, or null if it can. */
+export type WordFillInClearProblem = "finished" | "no-slot" | "already-empty";
+
+/**
+ * Every slot's cells, in the template's own order. Public: this is the grid's
+ * shape, which the player already sees, and a slot index is what the client
+ * sends to say where a word goes.
+ */
+export function wordFillInSlotCells(templateIndex: number): number[][] {
+  const template = TEMPLATES[templateIndex];
+  if (!template) return [];
+  return slotsForTemplate(template).map((slot) => [...slot.cells]);
+}
+
+function slotAt(round: WordFillInRound, slotIndex: number): number[] | null {
+  if (!Number.isInteger(slotIndex)) return null;
+  return wordFillInSlotCells(round.templateIndex)[slotIndex] ?? null;
+}
+
+function slotWord(guesses: string, cells: readonly number[]): string {
+  return cells.map((cell) => guesses[cell]).join("");
+}
+
+function slotFilled(guesses: string, cells: readonly number[]): boolean {
+  return cells.every((cell) => /^[A-Z]$/.test(guesses[cell]));
+}
+
+/**
+ * Solved when every slot spells a list word and the list is used exactly
+ * once. Checked against the words rather than the stored solution, so a grid
+ * that fits the list another way (two words that swap cleanly) still counts.
+ */
+export function isWordFillInFilledFromList(round: WordFillInRound, guesses: string): boolean {
+  const slots = wordFillInSlotCells(round.templateIndex);
+  if (slots.length !== round.words.length) return false;
+  if (!slots.every((cells) => slotFilled(guesses, cells))) return false;
+  const placed = slots.map((cells) => slotWord(guesses, cells)).sort();
+  const wanted = [...round.words].sort();
+  return placed.every((word, i) => word === wanted[i]);
+}
+
+/** Blanks a slot, except letters a different fully filled slot still uses. */
+function clearedGuesses(round: WordFillInRound, guesses: string, slotIndex: number): string {
+  const slots = wordFillInSlotCells(round.templateIndex);
+  const keep = new Set<number>();
+  slots.forEach((cells, index) => {
+    if (index !== slotIndex && slotFilled(guesses, cells)) cells.forEach((cell) => keep.add(cell));
+  });
+  const next = guesses.split("");
+  for (const cell of slots[slotIndex] ?? []) {
+    if (!keep.has(cell)) next[cell] = "_";
+  }
+  return next.join("");
+}
+
+function withGuesses(round: WordFillInRound, guesses: string, now: Date): WordFillInRound {
+  const solved = isWordFillInFilledFromList(round, guesses);
+  return {
+    ...round,
+    guesses,
+    moves: round.moves + 1,
+    startedAt: round.startedAt ?? now.toISOString(),
+    status: solved ? "solved" : "active",
+    endedAt: solved ? now.toISOString() : null,
+  };
+}
+
+export function wordFillInPlaceProblem(
+  round: WordFillInRound,
+  slotIndex: number,
+  word: string,
+): WordFillInPlaceProblem | null {
+  if (round.status !== "active") return "finished";
+  const cells = slotAt(round, slotIndex);
+  if (!cells) return "no-slot";
+  const upper = typeof word === "string" ? word.toUpperCase() : "";
+  if (!round.words.includes(upper)) return "not-in-list";
+  if (upper.length !== cells.length) return "wrong-length";
+  if (slotWord(round.guesses, cells) === upper) return "no-change";
+  return null;
+}
+
+/**
+ * Drops a list word into a slot, overwriting whatever letters were there,
+ * crossings included. A word already spelled out in another slot moves
+ * rather than appearing twice.
+ */
+export function placeWordFillInWord(
+  round: WordFillInRound,
+  slotIndex: number,
+  word: string,
+  now: Date,
+): WordFillInRound {
+  if (wordFillInPlaceProblem(round, slotIndex, word)) return round;
+  const upper = word.toUpperCase();
+  const slots = wordFillInSlotCells(round.templateIndex);
+
+  let guesses = round.guesses;
+  const elsewhere = slots.findIndex(
+    (cells, index) => index !== slotIndex && slotWord(guesses, cells) === upper,
+  );
+  if (elsewhere !== -1) guesses = clearedGuesses(round, guesses, elsewhere);
+
+  const next = guesses.split("");
+  slots[slotIndex].forEach((cell, i) => {
+    next[cell] = upper[i];
+  });
+  return withGuesses(round, next.join(""), now);
+}
+
+export function wordFillInClearProblem(
+  round: WordFillInRound,
+  slotIndex: number,
+): WordFillInClearProblem | null {
+  if (round.status !== "active") return "finished";
+  const cells = slotAt(round, slotIndex);
+  if (!cells) return "no-slot";
+  if (clearedGuesses(round, round.guesses, slotIndex) === round.guesses) return "already-empty";
+  return null;
+}
+
+/** Empties a slot, keeping any crossing letter another filled slot still needs. */
+export function clearWordFillInSlot(round: WordFillInRound, slotIndex: number, now: Date): WordFillInRound {
+  if (wordFillInClearProblem(round, slotIndex)) return round;
+  return withGuesses(round, clearedGuesses(round, round.guesses, slotIndex), now);
+}
+
 /** Gives up. The round ends unsolved, same shape resignMinesweeperRound leaves a board in. */
 export function resignWordFillInRound(round: WordFillInRound, now: Date): WordFillInRound {
   if (round.status !== "active") return round;
@@ -387,6 +519,8 @@ export interface WordFillInView {
   status: WordFillInRoundStatus;
   guesses: string;
   words: string[];
+  /** Each slot's cells, row-major indices; the grid's shape, never its letters. */
+  slots: number[][];
   /** Only present once the round is over; null while it is still live. */
   solution: string | null;
   moves: number;
@@ -403,6 +537,7 @@ export function wordFillInView(round: WordFillInRound): WordFillInView {
     status: round.status,
     guesses: round.guesses,
     words: round.words,
+    slots: wordFillInSlotCells(round.templateIndex),
     solution: over ? round.solution : null,
     moves: round.moves,
     startedAt: round.startedAt,

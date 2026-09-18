@@ -105,6 +105,40 @@ function renderPreview(id: ArcadeGameId) {
         />
       );
 
+    case "word-fill-in":
+      // A filled crossword corner with black squares and no clue numbers,
+      // beside the word list with the placed words struck off.
+      return (
+        <div className="pv-wordfill">
+          <Board
+            cols={4}
+            cells={[
+              { tone: "chalk", glyph: "C" }, { tone: "chalk", glyph: "A" }, { tone: "chalk", glyph: "T" }, { tone: "black" },
+              { tone: "chalk", glyph: "O" }, { tone: "black" }, { tone: "chalk", glyph: "O" }, { tone: "black" },
+              { tone: "chalk", glyph: "W" }, { tone: "black" }, { tone: "empty" }, { tone: "black" },
+            ]}
+          />
+          <div className="pv-wordlist">
+            <s>CAT</s>
+            <s>COW</s>
+            <span>TOE</span>
+          </div>
+        </div>
+      );
+
+    case "blockudoku":
+      // A corner of the board: placed blocks, with one full row lit gold as it clears.
+      return (
+        <Board
+          cols={4}
+          cells={[
+            { tone: "purple" }, { tone: "empty" }, { tone: "purple" }, { tone: "purple" },
+            { tone: "gold" }, { tone: "gold" }, { tone: "gold" }, { tone: "gold" },
+            { tone: "empty" }, { tone: "purple" }, { tone: "empty" }, { tone: "purple" },
+          ]}
+        />
+      );
+
     case "nonogram":
       // A run of clue numbers beside a partly-filled grid -- the one detail
       // that tells this apart from a plain checkerboard.
@@ -165,6 +199,32 @@ function renderPreview(id: ArcadeGameId) {
           ]}
         />
       );
+
+    case "liars-dice-duel":
+      // Your two dice face up, two of theirs face down: the bid rides on
+      // what you can't see.
+      return (
+        <div className="pv-tiles">
+          <Cell tone="chalk" glyph="4" />
+          <Cell tone="gold" glyph="4" />
+          <Cell tone="purple" glyph="?" />
+          <Cell tone="purple" glyph="?" />
+        </div>
+      );
+
+    case "mancala-duel": {
+      // Two rows of six pits between the two stores, a few pits holding seeds.
+      const seeded = new Set([1, 3, 4, 8, 10]);
+      return (
+        <div className="pv-mancala">
+          <span className="pv-mancala-store pv-mancala-store-left" />
+          {Array.from({ length: 12 }, (_, i) => (
+            <span key={i} className={seeded.has(i) ? "pv-mancala-pit pv-mancala-seeded" : "pv-mancala-pit"} />
+          ))}
+          <span className="pv-mancala-store pv-mancala-store-right" />
+        </div>
+      );
+    }
 
     case "trivia-showdown":
       // A question card over two answer bars -- first right answer wins.

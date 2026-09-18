@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   GRID_SIZE,
   TEMPLATE_COUNT,
+  clearWordFillInSlot,
   guessWordFillInCell,
+  isWordFillInFilledFromList,
+  placeWordFillInWord,
+  wordFillInClearProblem,
+  wordFillInPlaceProblem,
+  wordFillInSlotCells,
   isWordFillInSolved,
   resignWordFillInRound,
   startWordFillInRound,
@@ -239,5 +245,121 @@ describe("wordFillInElapsedMs", () => {
     const resigned = resignWordFillInRound(guessed, new Date(NOW.getTime() + 10_000));
     const muchLater = new Date(NOW.getTime() + 999_999);
     expect(wordFillInElapsedMs(resigned, muchLater)).toBe(10_000);
+  });
+});
+
+/** The word the stored solution puts in each slot. */
+function answers(round: WordFillInRound): string[] {
+  return wordFillInSlotCells(round.templateIndex).map((cells) =>
+    cells.map((cell) => round.solution[cell]).join(""),
+  );
+}
+
+describe("wordFillInSlotCells", () => {
+  it("covers exactly the open cells of every template, one slot per word", () => {
+    for (let seed = 0; seed < TEMPLATE_COUNT; seed += 1) {
+      const round = startWordFillInRound(seed);
+      const slots = wordFillInSlotCells(round.templateIndex);
+      expect(slots).toHaveLength(round.words.length);
+      const covered = new Set(slots.flat());
+      for (let i = 0; i < CELL_COUNT; i += 1) {
+        expect(covered.has(i)).toBe(round.pattern[i] === ".");
+      }
+    }
+  });
+
+  it("is sent in the view, which still carries no letters while live", () => {
+    const round = startWordFillInRound(4);
+    const view = wordFillInView(round);
+    expect(view.slots).toEqual(wordFillInSlotCells(round.templateIndex));
+    expect(view.solution).toBeNull();
+  });
+});
+
+describe("placeWordFillInWord", () => {
+  it("writes the word into the slot and starts the clock", () => {
+    const round = startWordFillInRound(9);
+    const word = answers(round)[0];
+    const placed = placeWordFillInWord(round, 0, word, NOW);
+    const cells = wordFillInSlotCells(round.templateIndex)[0];
+    expect(cells.map((cell) => placed.guesses[cell]).join("")).toBe(word);
+    expect(placed.startedAt).toBe(NOW.toISOString());
+    expect(placed.moves).toBe(1);
+  });
+
+  it("refuses a word not in the list, a wrong length, a bad slot and a no-op", () => {
+    const round = startWordFillInRound(9);
+    const slots = wordFillInSlotCells(round.templateIndex);
+    const word = answers(round)[0];
+    expect(wordFillInPlaceProblem(round, 0, "ZZZZZZZZZ".slice(0, slots[0].length))).toBe("not-in-list");
+    const otherLength = round.words.find((w) => w.length !== slots[0].length) as string;
+    expect(wordFillInPlaceProblem(round, 0, otherLength)).toBe("wrong-length");
+    expect(wordFillInPlaceProblem(round, slots.length, word)).toBe("no-slot");
+    expect(wordFillInPlaceProblem(round, -1, word)).toBe("no-slot");
+    const placed = placeWordFillInWord(round, 0, word, NOW);
+    expect(wordFillInPlaceProblem(placed, 0, word)).toBe("no-change");
+    expect(placeWordFillInWord(round, 0, "NOPE", NOW)).toBe(round);
+  });
+
+  it("moves a word that is already in another slot instead of repeating it", () => {
+    const round = startWordFillInRound(2);
+    const slots = wordFillInSlotCells(round.templateIndex);
+    const words = answers(round);
+    // Two slots of the same length, so one word fits both.
+    const a = slots.findIndex((cells, i) => slots.some((other, j) => j !== i && other.length === cells.length));
+    const b = slots.findIndex((cells, j) => j !== a && cells.length === slots[a].length);
+    const first = placeWordFillInWord(round, a, words[a], NOW);
+    const moved = placeWordFillInWord(first, b, words[a], NOW);
+    const spelled = (cells: number[]) => cells.map((cell) => moved.guesses[cell]).join("");
+    expect(spelled(slots[b])).toBe(words[a]);
+    expect(spelled(slots[a])).not.toBe(words[a]);
+  });
+
+  it("solves once every slot holds its word, and reveals nothing early", () => {
+    const round = startWordFillInRound(11);
+    const words = answers(round);
+    let current = round;
+    words.forEach((word, slot) => {
+      expect(current.status).toBe("active");
+      current = placeWordFillInWord(current, slot, word, NOW);
+    });
+    expect(current.status).toBe("solved");
+    expect(current.endedAt).toBe(NOW.toISOString());
+    expect(isWordFillInFilledFromList(current, current.guesses)).toBe(true);
+    expect(wordFillInPlaceProblem(current, 0, words[0])).toBe("finished");
+  });
+});
+
+describe("clearWordFillInSlot", () => {
+  it("empties a slot but keeps a crossing letter another filled slot uses", () => {
+    const round = startWordFillInRound(5);
+    const slots = wordFillInSlotCells(round.templateIndex);
+    const words = answers(round);
+    // Find two crossing slots.
+    let a = -1;
+    let b = -1;
+    let shared = -1;
+    slots.forEach((cells, i) => {
+      slots.forEach((other, j) => {
+        if (a !== -1 || i === j) return;
+        const cross = cells.find((cell) => other.includes(cell));
+        if (cross !== undefined) { a = i; b = j; shared = cross; }
+      });
+    });
+    let current = placeWordFillInWord(round, a, words[a], NOW);
+    current = placeWordFillInWord(current, b, words[b], NOW);
+    const cleared = clearWordFillInSlot(current, a, NOW);
+    expect(cleared.guesses[shared]).toBe(round.solution[shared]);
+    for (const cell of slots[a]) {
+      if (!slots[b].includes(cell)) expect(cleared.guesses[cell]).toBe("_");
+    }
+    expect(cleared.moves).toBe(current.moves + 1);
+  });
+
+  it("refuses to clear an empty slot, so clearing cannot start the clock", () => {
+    const round = startWordFillInRound(5);
+    expect(wordFillInClearProblem(round, 0)).toBe("already-empty");
+    expect(clearWordFillInSlot(round, 0, NOW)).toBe(round);
+    expect(round.startedAt).toBeNull();
   });
 });

@@ -52,11 +52,30 @@ export interface MancalaMove {
   pit: number;
 }
 
+/**
+ * What the most recent sow did. No rule reads it; it exists so the board can
+ * say "extra turn" or "captured 5" instead of leaving a player to work out
+ * why the turn did not pass or why a pit emptied.
+ */
+export interface MancalaLastMove {
+  seat: DuelSeat;
+  /** The pit that was sown. */
+  pit: number;
+  /** Where the last seed landed. */
+  lastPit: number;
+  /** Seeds taken by a capture (the landing seed plus the opposite pit), or 0. */
+  captured: number;
+  /** The same seat moves again: the last seed landed in its own store. */
+  extraTurn: boolean;
+}
+
 export interface MancalaState {
   /** 14 counts: seat 0's six pits, seat 0's store, seat 1's six pits, seat 1's store. */
   pits: number[];
   /** Whose turn it is. Meaningless once `outcome` is set. */
   turn: DuelSeat;
+  /** Null before the first move. */
+  lastMove: MancalaLastMove | null;
   /** Set once, by whatever ended the match. `mancalaResult` is just this field. */
   outcome: DuelOutcome | null;
 }
@@ -68,6 +87,7 @@ export interface MancalaSnapshot {
   legalPits: number[];
   /** [seat 0's store, seat 1's store]. The score, and the win condition. */
   stores: [number, number];
+  lastMove: MancalaLastMove | null;
   outcome: DuelOutcome | null;
 }
 
@@ -202,6 +222,7 @@ export function createMancalaState(_seed: number, _now: number): MancalaState {
   return {
     pits: openingPits(),
     turn: 0,
+    lastMove: null,
     outcome: null,
   };
 }
@@ -249,22 +270,32 @@ export function applyMancalaMove(
   const pits = [...state.pits];
   const { lastPit, lastPitValueBefore } = sowFrom(pits, seat, claim.pit);
 
+  let captured = 0;
   if (SEAT_PITS[seat].includes(lastPit) && lastPitValueBefore === 0) {
     const opposite = oppositePit(lastPit);
     if (pits[opposite] > 0) {
-      pits[storeOf(seat)] += pits[lastPit] + pits[opposite];
+      captured = pits[lastPit] + pits[opposite];
+      pits[storeOf(seat)] += captured;
       pits[lastPit] = 0;
       pits[opposite] = 0;
     }
   }
 
+  const extraTurn = lastPit === storeOf(seat);
   const ended = finalizeIfEnded(pits);
+  const lastMove: MancalaLastMove = {
+    seat,
+    pit: claim.pit,
+    lastPit,
+    captured,
+    extraTurn: extraTurn && !ended,
+  };
   if (ended) {
-    return { next: { pits, turn: state.turn, outcome: finalOutcome(pits) } };
+    return { next: { pits, turn: state.turn, lastMove, outcome: finalOutcome(pits) } };
   }
 
-  const turn = lastPit === storeOf(seat) ? seat : otherSeat(seat);
-  return { next: { pits, turn, outcome: null } };
+  const turn = extraTurn ? seat : otherSeat(seat);
+  return { next: { pits, turn, lastMove, outcome: null } };
 }
 
 /** Whatever ended the match, or null while it is still being played. */
@@ -307,6 +338,7 @@ export function mancalaSnapshot(
     turn: state.turn,
     legalPits: yours ? legalMancalaPits(state.pits, state.turn) : [],
     stores: [state.pits[STORE_SEAT0], state.pits[STORE_SEAT1]],
+    lastMove: state.lastMove,
     outcome: state.outcome,
   };
 }

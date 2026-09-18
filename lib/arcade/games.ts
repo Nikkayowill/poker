@@ -232,11 +232,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Drop shapes, clear rows, columns and boxes",
     kind: "wager",
     entryCost: 0,
-    // Engine's built (lib/arcade/puzzles/blockudoku.ts) but there's no route,
-    // API or board yet -- "live" with a null href is exactly the bug this
-    // file's own header warns about, an unclickable Play button.
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/blockudoku",
   },
   {
     id: "word-fill-in",
@@ -244,8 +241,8 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Place every word in the list, no clues given",
     kind: "wager",
     entryCost: 0,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/word-fill-in",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
@@ -319,21 +316,17 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     blurb: "Bid on the table, or call the bluff",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
-    // Engine's built (lib/pvp/liars-dice.ts) but deliberately not yet in
-    // lib/pvp/registry.ts's DUEL_GAMES -- that map is what lets the live
-    // /api/pvp/[game] route escrow real Gold, and there's no route or board
-    // to ever play or settle a match here. See registry.ts's own note.
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/liars-dice",
   },
   {
     id: "mancala-duel",
     name: "Mancala",
-    blurb: "Sow the board, empty their side to win",
+    blurb: "Sow the board, fill your store to win",
     kind: "duel",
     entryCost: MIN_DUEL_STAKE,
-    status: "coming-soon",
-    href: null,
+    status: "live",
+    href: "/games/mancala",
   },
 ];
 // Sit & Go and heads-up poker are deliberately NOT catalog rows here.

@@ -4471,3 +4471,56 @@ describe("Chapter 1: the bread basket", () => {
     );
   });
 });
+
+describe("Chapter 2: the kitchen garden", () => {
+  it("builds the Stew Pot for 1,500 Gold and cooks 2 Potato, 2 Carrot and 1 Onion into 1 Stew", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    const view = await placeStackAcresMachine(token, "stew_pot", T0);
+    expect(MACHINE_CATALOGUE.stew_pot.placeCost).toBe(1_500);
+    expect(await balance(token)).toBe(before - 1_500);
+    expect(view.machines.find((machine) => machine.kind === "stew_pot")).toMatchObject({ status: "idle" });
+
+    await adjustStackAcresInventory(id, "potato", 3);
+    await adjustStackAcresInventory(id, "carrot", 2);
+    await adjustStackAcresInventory(id, "onion", 1);
+    const cooked = await processStackAcresRecipeAction(token, "stew", T0);
+    expect(cooked.processed.produced).toEqual({ item: "stew", quantity: 1 });
+    expect(cooked.inventory.potato).toBe(1);
+    expect(cooked.inventory.carrot ?? 0).toBe(0);
+    expect(cooked.inventory.onion ?? 0).toBe(0);
+    expect(cooked.inventory.stew).toBe(1);
+  });
+
+  it("refuses Stew with an ingredient short and takes nothing", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "stew_pot", T0);
+    await adjustStackAcresInventory(id, "potato", 2);
+    await adjustStackAcresInventory(id, "carrot", 2);
+    const shelfBefore = await readStackAcresInventory(id);
+    await expect(processStackAcresRecipeAction(token, "stew", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
+  });
+
+  it("refunds the Stew Pot's Gold when the machine write fails", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "stew_pot", T0);
+    const before = await balance(token);
+    await expect(placeStackAcresMachine(token, "stew_pot", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("eats Stew for 50 energy, capped at 100", async () => {
+    const { token, id } = await funded();
+    await writeStackAcresEnergy(id, 0, { level: 30, updatedAt: T0.toISOString() });
+    await adjustStackAcresInventory(id, "stew", 2);
+
+    const first = await eatStackAcresFoodAction(token, "stew", T0);
+    expect(first.energy.level).toBe(80);
+    expect(first.inventory.stew).toBe(1);
+
+    const second = await eatStackAcresFoodAction(token, "stew", T0);
+    expect(second.energy.level).toBe(ENERGY_MAX);
+    expect(second.inventory.stew ?? 0).toBe(0);
+  });
+});

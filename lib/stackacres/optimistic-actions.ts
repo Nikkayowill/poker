@@ -113,6 +113,15 @@ import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { removeFromInventory, type StackAcresInventory } from "./inventory";
 import {
+  ENERGY_MAX,
+  FISHING_CAST_ENERGY,
+  FOOD_ENERGY,
+  applyEnergyDelta,
+  energyAt,
+  type StackAcresEnergyAnchor,
+} from "./energy";
+import { planServings } from "./feeding";
+import {
   MACHINE_CAP,
   MACHINE_CATALOGUE,
   canStartMachine,
@@ -143,6 +152,8 @@ export interface FarmPredictContext {
   feed: number;
   /** Water left in the watering can. */
   water: number;
+  /** The energy anchor, straight off the component's state. */
+  energy: StackAcresEnergyAnchor;
   capacity: Partial<Record<StackAcresStock, number>>;
   seedStock: SeedStock;
   toolTier: StackAcresToolTier;
@@ -191,6 +202,7 @@ export interface FarmStatePatch {
   profile?: PlayerProfile | null;
   feed?: number;
   water?: number;
+  energy?: StackAcresEnergyAnchor;
   capacity?: Partial<Record<StackAcresStock, number>>;
   seedStock?: SeedStock;
   sectors?: SectorId[];
@@ -328,6 +340,12 @@ function processingPatch(
   };
 }
 
+/** Takes `wheat` off the shelf for a feeding, through `processingPatch` for
+ *  the same reason every other shelf change does. */
+function wheatSpentPatch(ctx: FarmPredictContext, wheat: number): ReturnType<typeof processingPatch> {
+  return processingPatch(ctx, { inventory: removeFromInventory(ctx.inventory, "wheat", wheat) ?? ctx.inventory });
+}
+
 /**
  * The patch to apply the instant `body` is sent, or `null` to send it with
  * no optimistic change (the response is the only thing that will move the
@@ -340,25 +358,34 @@ export function predictStackAcresAction(
 ): FarmStatePatch | null {
   switch (body.action) {
     case "feed": {
+      // Hens eat Wheat first, then the Feed Sack -- see ./feeding.ts.
       const unit = ctx.units.find((u) => u.id === body.unitId);
-      if (!unit || ctx.feed < 1) return null;
+      if (!unit) return null;
+      const plan = planServings([unit.stock], ctx.inventory.wheat ?? 0, ctx.feed);
+      if (plan.fed === 0) return null;
       return {
         units: ctx.units.map((u) => (u.id === unit.id ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
-        feed: ctx.feed - 1,
+        feed: ctx.feed - plan.feedUsed,
+        ...(plan.wheatUsed > 0 ? wheatSpentPatch(ctx, plan.wheatUsed) : {}),
       };
     }
     case "feed-pen": {
       // Same order the server feeds in: soonest-hungry first, as far as the
-      // feed goes.
-      const fed = ctx.units
+      // feed goes. Hens eat Wheat first -- see ./feeding.ts.
+      const hungry = ctx.units
         .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
-        .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""))
-        .slice(0, Math.max(0, ctx.feed));
-      if (fed.length === 0) return null;
-      const ids = new Set(fed.map((u) => u.id));
+        .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""));
+      const plan = planServings(
+        hungry.map((u) => u.stock),
+        ctx.inventory.wheat ?? 0,
+        ctx.feed,
+      );
+      if (plan.fed === 0) return null;
+      const ids = new Set(hungry.slice(0, plan.fed).map((u) => u.id));
       return {
         units: ctx.units.map((u) => (ids.has(u.id) ? optimisticallyFedUnit(u, ctx.nowMs) : u)),
-        feed: ctx.feed - fed.length,
+        feed: ctx.feed - plan.feedUsed,
+        ...(plan.wheatUsed > 0 ? wheatSpentPatch(ctx, plan.wheatUsed) : {}),
       };
     }
     case "water": {
@@ -823,6 +850,19 @@ export function predictStackAcresAction(
         inventory,
         machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
       });
+    }
+    case "eat": {
+      const now = new Date(ctx.nowMs);
+      if (energyAt(ctx.energy, now) >= ENERGY_MAX) return null;
+      const inventory = removeFromInventory(ctx.inventory, body.item, 1);
+      const energy = applyEnergyDelta(ctx.energy, FOOD_ENERGY[body.item], now);
+      if (!inventory || !energy) return null;
+      return { energy, ...processingPatch(ctx, { inventory }) };
+    }
+    case "catch-fish": {
+      // Only the energy is predicted; which fish is the server's own roll.
+      const energy = applyEnergyDelta(ctx.energy, -FISHING_CAST_ENERGY, new Date(ctx.nowMs));
+      return energy ? { energy } : null;
     }
     case "sell": {
       // Known-insufficient is a real refusal, not a guess -- refuse locally

@@ -16,8 +16,10 @@
  * authority, so a fast-forwarded phone clock cannot cash anything early.
  */
 
-export const WHEAT_SEED_COST = 15;
-export const WHEAT_DURATION_MS = 10 * 60 * 1000;
+/** Chapter 1 made this the one wheat on the farm and the first crop anyone
+ *  grows, so it is cheap and quick: 3 Gold of seed, ripe in 5 minutes. */
+export const WHEAT_SEED_COST = 3;
+export const WHEAT_DURATION_MS = 5 * 60 * 1000;
 export const WHEAT_YIELD_QUANTITY = 4;
 
 /** Flat, not a purchasable ladder like `STACKACRES_CAPACITY_PRICE` -- three

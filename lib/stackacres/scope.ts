@@ -38,6 +38,7 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
   "wheat",
   "flour",
   "cake",
+  "bread",
 ];
 
 /** Machine kinds kept on the Workshop sheet this pass. Mill (flour) and Dairy
@@ -45,11 +46,16 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
  *  (wool) and the Fermenting Vat (aged cheese) stay built but collapsed,
  *  since Pig/wool is out of scope and nothing in scope ever makes Cheese to
  *  age. */
-export const STACKACRES_ACTIVE_MACHINES: readonly MachineKind[] = ["mill", "dairy"];
+export const STACKACRES_ACTIVE_MACHINES: readonly MachineKind[] = ["mill", "dairy", "oven"];
+
+/** Crops taken off Ray's seed shelf. The Wheat Sheaf came off in Chapter 1 so
+ *  the Workshop's Wheat Plot is the only wheat to buy. A sheaf already planted,
+ *  or a seed already bagged, still grows and harvests as before. */
+export const STACKACRES_RETIRED_CROPS: readonly StackAcresStock[] = ["wheatsheaf"];
 
 /** Whether `stock` is buyable/plantable in this pass. */
 export function isActiveStock(stock: StackAcresStock): boolean {
-  if (isStackAcresCrop(stock)) return true;
+  if (isStackAcresCrop(stock)) return !STACKACRES_RETIRED_CROPS.includes(stock);
   return (STACKACRES_ACTIVE_LIVESTOCK as readonly string[]).includes(stock);
 }
 

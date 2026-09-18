@@ -23,7 +23,7 @@
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -54,6 +54,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // the Dairy for the same reason a Dairy sits above the Mill: it is the most
   // valuable thing on the floor to be locked out of using casually.
   vat: { label: "Fermenting Vat", placeCost: 1_200 },
+  // Chapter 1's kitchen oven, built in Ray's house. Bakes Flour into Bread,
+  // the first food that gives energy back.
+  oven: { label: "Oven", placeCost: 500 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -64,8 +67,8 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  comment for why the duplication is accepted. Raised 3 -> 4 alongside the
  *  Vat (2026-09-06) for the same reason it was never raised for a fourth of
  *  an existing kind: it grew because the number of KINDS grew, not because
- *  any one kind needed more room. */
-export const MACHINE_CAP = 4;
+ *  any one kind needed more room. Raised 4 -> 5 with the Oven, same reason. */
+export const MACHINE_CAP = 5;
 
 export type MachineStatus = "idle" | "working";
 

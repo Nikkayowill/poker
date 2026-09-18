@@ -236,6 +236,18 @@ import {
 } from "@/lib/stackacres/toolbelt";
 import type { UseSquare } from "./world-contract";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
+import {
+  ENERGY_MAX,
+  ENERGY_REGEN_CAP,
+  ENERGY_START,
+  FISHING_CAST_ENERGY,
+  TOO_TIRED_TO_FISH,
+  energyAt,
+  type FoodItem,
+  type StackAcresEnergyAnchor,
+} from "@/lib/stackacres/energy";
+import { eatsWheat } from "@/lib/stackacres/feeding";
+import { StackAcresKitchen } from "./stackacres-kitchen";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
 import {
@@ -402,6 +414,9 @@ interface StackAcresResponse {
   feed: number;
   /** Water in the can. Absent from a response older than the can. */
   water?: number;
+  /** The energy anchor (lib/stackacres/energy.ts). Absent from a response
+   *  older than Chapter 1. */
+  energy?: StackAcresEnergyAnchor;
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -796,6 +811,10 @@ export function StackAcresFarm() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
+  const [energy, setEnergy] = useState<StackAcresEnergyAnchor>(() => ({
+    level: ENERGY_START,
+    updatedAt: new Date().toISOString(),
+  }));
   /** The map's own box, so a drag tool can be kept inside it. */
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
@@ -1594,6 +1613,7 @@ export function StackAcresFarm() {
     }
     if (typeof data.feed === "number") setFeed(data.feed);
     if (typeof data.water === "number") setWater(data.water);
+    if (data.energy) setEnergy(data.energy);
     if (data.capacity) setCapacity(data.capacity);
     if (data.sectors) setSectors(data.sectors);
     if (data.upkeep) setUpkeep(data.upkeep);
@@ -1690,6 +1710,7 @@ export function StackAcresFarm() {
       units,
       feed,
       water,
+      energy,
       capacity,
       seedStock,
       toolTier,
@@ -1720,6 +1741,7 @@ export function StackAcresFarm() {
       units,
       feed,
       water,
+      energy,
       capacity,
       seedStock,
       toolTier,
@@ -1763,6 +1785,7 @@ export function StackAcresFarm() {
       profile,
       feed,
       water,
+      energy,
       capacity,
       // seedStock IS guessed at by the "stock" predictor above, so a
       // refused or dropped planting has to be able to put the spent seed
@@ -1792,6 +1815,7 @@ export function StackAcresFarm() {
       profile,
       feed,
       water,
+      energy,
       capacity,
       seedStock,
       sectors,
@@ -1829,6 +1853,7 @@ export function StackAcresFarm() {
     setProfile(snap.profile);
     setFeed(snap.feed);
     setWater(snap.water);
+    setEnergy(snap.energy);
     setCapacity(snap.capacity);
     setSeedStock(snap.seedStock);
     setSectors(snap.sectors);
@@ -1902,7 +1927,7 @@ export function StackAcresFarm() {
       unit.state === "hungry" ||
       unit.state === "dry" ||
       unit.state === "ready",
-  );
+  ) || energy.level < ENERGY_REGEN_CAP; // energy is still refilling
   useEffect(() => {
     if (!anyWorking) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -2857,6 +2882,10 @@ export function StackAcresFarm() {
     [story],
   );
 
+  /** The Kitchen tab in Ray's house (./stackacres-kitchen.tsx). */
+  const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
+  const ovenBuilt = processing.machines.some((machine) => machine.kind === "oven");
+
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
    *  keepsake) only ever shows once the server confirms it, the same
@@ -3158,7 +3187,11 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, "Nobody here is hungry.", "deny");
         return;
       }
-      if (feed < 1) {
+      // Hens eat Wheat off the shelf before the Feed Sack (lib/stackacres/feeding.ts).
+      const hensCanEatWheat =
+        (processing.inventory.wheat ?? 0) > 0 &&
+        residents.some((unit) => unit.state === "hungry" && eatsWheat(unit.stock));
+      if (feed < 1 && !hensCanEatWheat) {
         refusedSound();
         world.current?.floatAt(at, "No feed left in the barn.", "deny");
         return;
@@ -3168,7 +3201,7 @@ export function StackAcresFarm() {
       // so the walk IS the gesture and a second one on top of it is just delay.
       feedPen(zone);
     },
-    [feed, feedPen, liveUnits],
+    [feed, feedPen, liveUnits, processing.inventory],
   );
 
   /**
@@ -3289,6 +3322,14 @@ export function StackAcresFarm() {
   const onWorldFishHooked = useCallback(
     (at: TapPoint) => {
       tapAnchor.current = at;
+      // Checked before the fight, so a tired player is never made to land a
+      // fish the server would refuse. The server checks again on `catch-fish`.
+      if (energyAt(energy, new Date()) < FISHING_CAST_ENERGY) {
+        world.current?.endFishingCast("escaped");
+        refusedSound();
+        world.current?.floatAt(at, TOO_TIRED_TO_FISH, "deny");
+        return;
+      }
       panelSound();
       world.current?.startFishingGauge({
         species: rollGaugeDifficulty(),
@@ -3311,7 +3352,7 @@ export function StackAcresFarm() {
         onClosed: () => world.current?.endFishingCast("escaped"),
       });
     },
-    [act],
+    [act, energy],
   );
 
   /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
@@ -3737,6 +3778,7 @@ export function StackAcresFarm() {
         {
           water,
           feed,
+          wheat: processing.inventory.wheat ?? 0,
           gold,
           nowMs,
           soilStock,
@@ -3829,7 +3871,7 @@ export function StackAcresFarm() {
           return;
       }
     },
-    [act, belt, feed, gold, liveUnits, nowMs, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, soilStock, triggerCascade, water],
+    [act, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, soilStock, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
@@ -4183,6 +4225,17 @@ export function StackAcresFarm() {
               <span className="sa-sr">Gold of land maintenance due</span>
             </span>
           )}
+          <span
+            className="sa-energy"
+            title="Energy. Fishing uses it. Eat in Ray's kitchen to fill it up."
+          >
+            <span className="sa-energy-label">Energy</span>
+            <span className="sa-energy-bar" aria-hidden="true">
+              <span style={{ width: `${(energyAt(energy, new Date(nowMs)) / ENERGY_MAX) * 100}%` }} />
+            </span>
+            <strong>{energyAt(energy, new Date(nowMs))}</strong>
+            <span className="sa-sr">of {ENERGY_MAX} energy</span>
+          </span>
           <span className="gold-balance floor-wallet" title="Gold">
             <Coins size={13} aria-hidden="true" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
@@ -4340,6 +4393,20 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
+              kitchen={
+                giftDialogue.npc === "ray" ? (
+                  <StackAcresKitchen
+                    energy={energyAt(energy, new Date(nowMs))}
+                    inventory={processing.inventory}
+                    ovenBuilt={ovenBuilt}
+                    goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
+                    busy={isPending}
+                    onBuildOven={() => onPlaceMachine("oven")}
+                    onBake={() => onProcessRecipe("bread")}
+                    onEat={onEat}
+                  />
+                ) : undefined
+              }
             />
           )}
 

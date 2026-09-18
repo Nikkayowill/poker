@@ -1934,11 +1934,15 @@ export async function processStackAcresRecipe(
     p_output_quantity: output.quantity,
   });
   if (error) {
-    if (error.code === "23514") return null;
+    // SA001: an input was short. The RPC raised, so nothing was debited.
+    if (error.code === NOT_ENOUGH_INPUT) return null;
     throw new Error(`Could not run that recipe: ${error.message}`);
   }
   return data === null ? null : Number(data);
 }
+
+/** SQLSTATE the recipe and seal RPCs raise when an input is short. */
+const NOT_ENOUGH_INPUT = "SA001";
 
 /**
  * `processStackAcresRecipe`'s multi-input sibling, for a recipe like Cake
@@ -2062,9 +2066,12 @@ export async function listStackAcresMachines(profileId: string): Promise<StoredM
 export async function createStackAcresMachine(
   profileId: string,
   kind: MachineKind,
+  /** The game clock's "now", so a machine's build time agrees with every
+   *  other clock (the Feed Silo never feeds a hunger from before it). */
+  placedAt: Date = new Date(),
 ): Promise<StoredMachine> {
   const supabase = adminClient();
-  const now = new Date().toISOString();
+  const now = placedAt.toISOString();
 
   if (!supabase) {
     if ([...memoryMachines.values()].some((m) => m.profileId === profileId && m.kind === kind)) {
@@ -2094,7 +2101,7 @@ export async function createStackAcresMachine(
 
   const { data, error } = await supabase
     .from("homestead_machines")
-    .insert({ profile_id: profileId, kind, status: "idle", version: 1 })
+    .insert({ profile_id: profileId, kind, status: "idle", version: 1, created_at: now })
     .select(MACHINE_COLUMNS)
     .single();
   if (error) throw new Error(`Could not place that: ${error.message}`);
@@ -2339,18 +2346,17 @@ export async function readStackAcresAgingManifest(
   return manifests.find((manifest) => manifest.machineId === machineId) ?? null;
 }
 
+/** Why a seal did not land: the input was short, or the machine already
+ *  holds a manifest (a lost race to a second seal). Nothing was debited
+ *  either way. */
+export type AgingSealResult =
+  | { ok: true; manifest: StoredVatManifest }
+  | { ok: false; reason: "short" | "occupied" };
+
 /**
  * Debits `quantity` of `item` and locks it inside `machineId`'s manifest, in
- * one transaction (`seal_homestead_vat`). Returns the new manifest, or null
- * when there was not enough `item` on hand -- the caller treats null exactly
- * like `adjustStackAcresInventory`'s own null: a refusal or a lost race,
- * never a successful seal.
- *
- * Can also lose the race to a second concurrent seal of the SAME vat (the
- * database's own `homestead_vat_manifests_one_per_machine` unique index);
- * that surfaces as a thrown 23505, which the caller treats the same way
- * `createStackAcresContract` already treats its own partial unique index --
- * refund the debit this call just made, then report a normal refusal.
+ * one transaction (`seal_homestead_vat`). Every refusal rolls the debit back
+ * inside the RPC, so the caller never refunds anything.
  */
 export async function createStackAcresVatManifest(
   profileId: string,
@@ -2360,19 +2366,18 @@ export async function createStackAcresVatManifest(
   baseGoldValue: number,
   sealedAt: Date,
   readyAt: Date,
-): Promise<StoredVatManifest | null> {
+): Promise<AgingSealResult> {
   const supabase = adminClient();
 
   if (!supabase) {
     // Memory mode has no transaction, but also no concurrency between these
-    // two lines -- same reasoning processStackAcresRecipe's own memory
-    // branch gives for checking the debit before either write lands.
+    // lines, so checking before writing is equivalent.
     if ([...memoryVatManifests.values()].some((m) => m.machineId === machineId)) {
-      throw new Error("That vat is already sealed.");
+      return { ok: false, reason: "occupied" };
     }
     const key = `${profileId}:${item}`;
     const held = memoryInventory.get(key) ?? 0;
-    if (held < quantity) return null;
+    if (held < quantity) return { ok: false, reason: "short" };
     memoryInventory.set(key, held - quantity);
     const manifest: StoredVatManifest = {
       id: randomUUID(),
@@ -2387,7 +2392,7 @@ export async function createStackAcresVatManifest(
       createdAt: new Date().toISOString(),
     };
     memoryVatManifests.set(machineId, { ...manifest });
-    return { ...manifest };
+    return { ok: true, manifest: { ...manifest } };
   }
 
   const { data, error } = await supabase.rpc("seal_homestead_vat", {
@@ -2400,10 +2405,12 @@ export async function createStackAcresVatManifest(
     p_ready_at: readyAt.toISOString(),
   });
   if (error) {
-    if (error.code === "23514") return null; // Not enough input on hand.
-    throw new Error(`Could not seal the vat: ${error.message}`); // Includes 23505, a lost race.
+    if (error.code === NOT_ENOUGH_INPUT) return { ok: false, reason: "short" };
+    if (error.code === "23505") return { ok: false, reason: "occupied" };
+    throw new Error(`Could not seal: ${error.message}`);
   }
-  return data ? vatManifestFromRow(data as VatManifestDbRow) : null;
+  if (!data) throw new Error("Could not seal: the database returned no manifest.");
+  return { ok: true, manifest: vatManifestFromRow(data as VatManifestDbRow) };
 }
 
 /**

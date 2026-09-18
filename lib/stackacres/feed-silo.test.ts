@@ -21,9 +21,21 @@ function unit(id: string, stock: "hen" | "cattle", overrides: Partial<SiloUnit> 
   return { id, stock, status: "working", lastFedAt: iso(0), readyAt: iso(def.durationMs), ...overrides };
 }
 
+/** A Silo built long before any of these hungers. */
+const BUILT = at(-24 * 60 * 60 * 1000);
+function planWithSilo(
+  units: readonly SiloUnit[],
+  inventory: Parameters<typeof planSiloFeeding>[1],
+  feed: number,
+  budget: number,
+  now: Date,
+) {
+  return planSiloFeeding(units, inventory, feed, budget, now, BUILT);
+}
+
 describe("the Feed Silo's plan", () => {
   it("feeds a hungry animal at the moment it went hungry", () => {
-    const plan = planSiloFeeding([unit("c", "cattle")], { cattle_feed: 5 }, 0, 48, at(cattleHunger + 1000));
+    const plan = planWithSilo([unit("c", "cattle")], { cattle_feed: 5 }, 0, 48, at(cattleHunger + 1000));
     expect(plan.feedings).toEqual([{ unitId: "c", sources: ["cattle_feed"], fedAts: [iso(cattleHunger)] }]);
     expect(plan.shelfUsed).toEqual({ cattle_feed: 1 });
   });
@@ -31,7 +43,7 @@ describe("the Feed Silo's plan", () => {
   it("repeats while the animal would have gone hungry again before now", () => {
     // Hungry at 8h and 16h mid-batch, then done at 24h: one more serving at
     // its latest hunger moment leaves it collectable, and no more after that.
-    const plan = planSiloFeeding([unit("c", "cattle")], {}, 10, 48, at(CATTLE.durationMs + 30 * cattleHunger));
+    const plan = planWithSilo([unit("c", "cattle")], {}, 10, 48, at(CATTLE.durationMs + 30 * cattleHunger));
     const [feeding] = plan.feedings;
     expect(feeding.fedAts.slice(0, 2)).toEqual([iso(cattleHunger), iso(2 * cattleHunger)]);
     expect(feeding.fedAts).toHaveLength(3);
@@ -40,33 +52,33 @@ describe("the Feed Silo's plan", () => {
   });
 
   it("leaves an animal that is not hungry yet alone", () => {
-    const plan = planSiloFeeding([unit("c", "cattle")], {}, 10, 48, at(cattleHunger - 1));
+    const plan = planWithSilo([unit("c", "cattle")], {}, 10, 48, at(cattleHunger - 1));
     expect(plan.servings).toBe(0);
   });
 
   it("stops when the barn is empty", () => {
-    const plan = planSiloFeeding([unit("a", "cattle"), unit("b", "cattle")], { cattle_feed: 1 }, 0, 48, at(cattleHunger));
+    const plan = planWithSilo([unit("a", "cattle"), unit("b", "cattle")], { cattle_feed: 1 }, 0, 48, at(cattleHunger));
     expect(plan.servings).toBe(1);
     expect(plan.feedings.map((feeding) => feeding.unitId)).toEqual(["a"]);
   });
 
   it("never hands out more than the budget, earliest hunger first", () => {
     const early = unit("early", "hen", { lastFedAt: iso(-60_000) });
-    const plan = planSiloFeeding([unit("late", "hen"), early], {}, 100, 1, at(henHunger));
+    const plan = planWithSilo([unit("late", "hen"), early], {}, 100, 1, at(henHunger));
     expect(plan.feedings).toEqual([{ unitId: "early", sources: ["feed"], fedAts: [iso(henHunger - 60_000)] }]);
   });
 
   it("skips Spinach for hens and uses the rest of the order", () => {
     expect([...siloFeedOrder("hen")]).toEqual(["wheat", "lettuce", "cabbage"]);
     expect([...siloFeedOrder("cattle")]).toEqual(["cattle_feed"]);
-    const plan = planSiloFeeding([unit("h", "hen")], { spinach: 4, lettuce: 1 }, 0, 48, at(henHunger));
+    const plan = planWithSilo([unit("h", "hen")], { spinach: 4, lettuce: 1 }, 0, 48, at(henHunger));
     expect(plan.feedings[0].sources).toEqual(["lettuce"]);
-    const spinachOnly = planSiloFeeding([unit("h", "hen")], { spinach: 4 }, 0, 48, at(henHunger));
+    const spinachOnly = planWithSilo([unit("h", "hen")], { spinach: 4 }, 0, 48, at(henHunger));
     expect(spinachOnly.servings).toBe(0);
   });
 
   it("ignores idle rows and crops", () => {
-    const plan = planSiloFeeding([unit("c", "cattle", { status: "ready" })], {}, 10, 48, at(cattleHunger * 2));
+    const plan = planWithSilo([unit("c", "cattle", { status: "ready" })], {}, 10, 48, at(cattleHunger * 2));
     expect(plan.servings).toBe(0);
   });
 });
@@ -78,5 +90,13 @@ describe("the Feed Silo's daily allowance", () => {
     expect(siloFeedsLeft({ autoFeedDay: "2026-09-18", autoFeeds: 40 }, "2026-09-18")).toBe(8);
     expect(siloFeedsLeft({ autoFeedDay: "2026-09-17", autoFeeds: 48 }, "2026-09-18")).toBe(48);
     expect(siloFeedsLeft({ autoFeedDay: "2026-09-18", autoFeeds: 48 }, "2026-09-18")).toBe(0);
+  });
+});
+
+describe("a Silo built after the hunger", () => {
+  it("does not feed a hunger from before it was built", () => {
+    const builtLate = at(cattleHunger + 60_000);
+    const plan = planSiloFeeding([unit("c", "cattle")], { cattle_feed: 5 }, 0, 48, at(cattleHunger + 120_000), builtLate);
+    expect(plan.servings).toBe(0);
   });
 });

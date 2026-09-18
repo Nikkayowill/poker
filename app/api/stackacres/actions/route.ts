@@ -289,7 +289,7 @@ const bodySchema = z.discriminatedUnion("action", [
     // actually holds, checked server-side under a row lock.
     quantity: z.number().int().min(1).max(9_999),
   }),
-  // Eats one Bread or Cake for energy. Moves no Gold.
+  // Eats one food (FOOD_ITEMS) for energy. Moves no Gold.
   z.object({
     action: z.literal("eat"),
     item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),

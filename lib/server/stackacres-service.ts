@@ -351,7 +351,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { isActiveStock } from "@/lib/stackacres/scope";
+import { STACKACRES_RETIRED_CROPS, isActiveStock } from "@/lib/stackacres/scope";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
@@ -1370,10 +1370,22 @@ async function assignSoilSlot(
   };
 }
 
-/** Spends a bed's enrichment once a crop has actually been sown on it. */
+/** Spends a bed's enrichment once a crop has actually been sown on it.
+ *  Never throws: the crop is already planted, and a failed flag write must
+ *  not undo that or hand the seed back. At worst the bed stays enriched. */
 async function spendSoilEnrichment(profileId: string, slot: number | null, enriched: boolean): Promise<void> {
   if (!enriched || slot === null) return;
-  await setStackAcresSoilTileEnriched(profileId, slot, false);
+  await setStackAcresSoilTileEnriched(profileId, slot, false).catch((error: unknown) => {
+    console.error("stackacres.soil_enrich_spend_failed", { profileId, slot, error });
+  });
+}
+
+/** Marks a bed enriched after a bean harvest. Never throws: the harvest has
+ *  already settled and must still be credited if this write fails. */
+async function markSoilEnriched(profileId: string, slot: number): Promise<void> {
+  await setStackAcresSoilTileEnriched(profileId, slot, true).catch((error: unknown) => {
+    console.error("stackacres.soil_enrich_mark_failed", { profileId, slot, error });
+  });
 }
 
 /**
@@ -2400,6 +2412,9 @@ export async function buyStackAcresStock(
   const def = STACKACRES_CATALOGUE[stock];
   // Tier 1 is worked by hand, not owned: it is off this shelf entirely. Refused
   // here rather than only hidden on the client, and before any Gold moves.
+  if (STACKACRES_RETIRED_CROPS.includes(stock)) {
+    throw new StackAcresRequestError(`Ray doesn't sell ${def.label} any more.`, 400);
+  }
   if (!stackacresStockOwnableOutright(stock)) {
     throw new StackAcresRequestError(`${def.label} is sown from seed, never bought outright.`, 400);
   }
@@ -3087,7 +3102,7 @@ async function runFeedSilo(profileId: string, now: Date): Promise<number> {
     readStackAcresInventory(profileId),
     readStackAcresFeed(profileId),
   ]);
-  const plan = planSiloFeeding(units, inventory, feed, budget, now);
+  const plan = planSiloFeeding(units, inventory, feed, budget, now, new Date(silo.createdAt));
   if (plan.servings === 0) return 0;
 
   const used = siloFeedsUsed(silo, day);
@@ -3148,6 +3163,22 @@ export async function feedStackAcres(
   const unit = await getStackAcresUnit(profile.id, unitId);
   if (!unit || unit.status !== "working") {
     throw new StackAcresRequestError("Nothing here eats.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Only an animal whose last meal has worn off eats. Without this a full hen
+  // could be fed Spinach over and over, each serving adding an egg. Checked
+  // on the stored row, not the spoil-adjusted cycle, so a long-unfed hen can
+  // still be fed to restart it.
+  const hungryAt = hungryAtFor(unit);
+  if (hungryAt === null) {
+    throw new StackAcresRequestError("Nothing here eats.", 404, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  if (Date.parse(hungryAt) > now.getTime()) {
+    throw new StackAcresRequestError("Not hungry yet.", 409, {
       round: await snapshots(profile.id, now),
     });
   }
@@ -3565,9 +3596,10 @@ export async function catchStackAcresFish(
 }
 
 /**
- * Eats one Bread or Cake from inventory for energy. The food debit and the
- * energy credit are one transaction (`eat_homestead_food`), so neither can
- * land without the other. Refused at full energy so food is never wasted.
+ * Eats one food (energy.ts's FOOD_ITEMS) from inventory for energy. The food
+ * debit and the energy credit are one transaction (`eat_homestead_food`), so
+ * neither can land without the other. Refused at full energy; below that,
+ * anything past the cap is lost, and the kitchen shows the real gain.
  */
 export async function eatStackAcresFoodAction(
   token: string,
@@ -4101,7 +4133,7 @@ export async function harvestStackAcres(
     settled.push(row);
     if (muckFee !== null) mucked += 1;
     if (row.soilSlot !== null && enrichesSoil(row.stock)) {
-      await setStackAcresSoilTileEnriched(profile.id, row.soilSlot, true);
+      await markSoilEnriched(profile.id, row.soilSlot);
     }
   }
 
@@ -4318,7 +4350,7 @@ export async function placeStackAcresMachine(
   }
 
   try {
-    await createStackAcresMachine(profile.id, kind);
+    await createStackAcresMachine(profile.id, kind, now);
   } catch (error) {
     await refundGold(profile.id, def.placeCost);
     throw error;
@@ -4384,7 +4416,7 @@ export async function sealStackAcresVat(token: string, now = new Date()): Promis
   const sealedAt = now;
   const readyAt = new Date(now.getTime() + firstAgingTier().durationMs);
 
-  const manifest = await createStackAcresVatManifest(
+  const sealed = await createStackAcresVatManifest(
     profile.id,
     vat.id,
     VAT_INPUT_ITEM,
@@ -4393,9 +4425,11 @@ export async function sealStackAcresVat(token: string, now = new Date()): Promis
     sealedAt,
     readyAt,
   );
-  if (manifest === null) {
+  if (!sealed.ok) {
     throw new StackAcresRequestError(
-      `Sealing the vat takes ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}.`,
+      sealed.reason === "occupied"
+        ? "The vat is already sealed."
+        : `Sealing the vat takes ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -4433,7 +4467,7 @@ export async function sealStackAcresCellar(
     });
   }
 
-  const manifest = await createStackAcresVatManifest(
+  const sealed = await createStackAcresVatManifest(
     profile.id,
     cellar.id,
     item,
@@ -4442,10 +4476,14 @@ export async function sealStackAcresCellar(
     now,
     new Date(now.getTime() + firstAgingTier(CELLAR_AGING_TIERS).durationMs),
   );
-  if (manifest === null) {
-    throw new StackAcresRequestError(`You have no ${machineItemNoun(item, 2)} to store.`, 409, {
-      round: await snapshots(profile.id, now),
-    });
+  if (!sealed.ok) {
+    throw new StackAcresRequestError(
+      sealed.reason === "occupied"
+        ? "The cellar already has jars aging."
+        : `Some of those ${machineItemNoun(item, 2)} just went elsewhere. Try again.`,
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
   }
 
   return view(profile, now);
@@ -4744,7 +4782,14 @@ async function runFarmKitchen(
   const claimed = await writeStackAcresFarmKitchen(kitchen, plan.recipe, plan.nextSince);
   if (!claimed) return null;
 
-  const cooked = await processStackAcresRecipeMulti(profileId, plan.inputs, plan.output);
+  // The RPC is all-or-nothing, so a shortfall or an error spent nothing:
+  // hand the claimed batches back and let the rest of the work pass run.
+  let cooked: number | null = null;
+  try {
+    cooked = await processStackAcresRecipeMulti(profileId, plan.inputs, plan.output);
+  } catch (error) {
+    console.error("stackacres.farm_kitchen_cook_failed", { profileId, recipe: plan.recipe, error });
+  }
   if (cooked === null) {
     await writeStackAcresFarmKitchen(claimed, kitchen.standingRecipe, kitchen.kitchenSince).catch(() => null);
     return null;

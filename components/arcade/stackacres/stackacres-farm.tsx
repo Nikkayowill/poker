@@ -248,6 +248,7 @@ import {
 } from "@/lib/stackacres/energy";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresKitchen } from "./stackacres-kitchen";
+import { isActiveStock } from "@/lib/stackacres/scope";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -1943,7 +1944,10 @@ export function StackAcresFarm() {
       unit.state === "hungry" ||
       unit.state === "dry" ||
       unit.state === "ready",
-  ) || energy.level < ENERGY_REGEN_CAP; // energy is still refilling
+  ) ||
+    energy.level < ENERGY_REGEN_CAP || // energy is still refilling
+    (cellar !== null && cellar.status !== "empty") || // jars aging in the cellar
+    processing.machines.some((machine) => machine.standingRecipe !== null); // the Farm Kitchen banking
   useEffect(() => {
     if (!anyWorking) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -4453,6 +4457,7 @@ export function StackAcresFarm() {
                     built={kitchenBuilt}
                     goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
                     busy={isPending}
+                    orderBusy={pendingByPrefix("set-kitchen-order")}
                     onBuild={onPlaceMachine}
                     onMake={onProcessRecipe}
                     cellar={cellar}
@@ -4752,7 +4757,7 @@ export function StackAcresFarm() {
                     Buy seeds here, then tap bare ground in the Crop Fields to plant them.
                   </p>
                   <div className="sa-stock-cards">
-                    {STACKACRES_CROPS.map((crop) => {
+                    {STACKACRES_CROPS.filter(isActiveStock).map((crop) => {
                       const def = STACKACRES_CATALOGUE[crop];
                       const held = seedStock[crop] ?? 0;
                       const pending = isPending(`buy-seed:${crop}`);

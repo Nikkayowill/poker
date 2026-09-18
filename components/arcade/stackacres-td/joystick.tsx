@@ -16,7 +16,15 @@ import { stickVector, type Point } from "@/lib/stackacres-td/movement";
 /** How far the knob's centre travels from the base's centre, in css px. */
 const REACH = 38;
 
-export function StackAcresJoystick({ onStick }: { onStick: (push: Point | null) => void }) {
+export function StackAcresJoystick({
+  onStick,
+  hidden,
+}: {
+  onStick: (push: Point | null) => void;
+  /** Stood down while the world has the farmer (a cast). Faded, not unmounted:
+   *  a thumb already on the base still needs its pointerup. */
+  hidden?: boolean;
+}) {
   const baseRef = useRef<HTMLDivElement | null>(null);
   const held = useRef<{ id: number; cx: number; cy: number } | null>(null);
   const frame = useRef(0);
@@ -72,7 +80,7 @@ export function StackAcresJoystick({ onStick }: { onStick: (push: Point | null) 
   return (
     <div
       ref={baseRef}
-      className="sa-joystick"
+      className={hidden ? "sa-joystick is-away" : "sa-joystick"}
       aria-hidden="true"
       onPointerDown={(event) => {
         if (held.current) return;

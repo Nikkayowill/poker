@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   KEEPSAKE_CATALOGUE,
   giftPreference,
@@ -52,6 +52,9 @@ export interface StackAcresFriendshipDialogueProps {
   busy: boolean;
   onGift: (item: MachineItemId) => void;
   onClose: () => void;
+  /** Ray's house is the farm kitchen: when set, the greeting gets a Kitchen
+   *  tab beside the gift picker. See ./stackacres-kitchen.tsx. */
+  kitchen?: ReactNode;
 }
 
 function friendshipProgressLine(friendship: StackAcresFriendshipView, npcLabel: string): string {
@@ -72,8 +75,10 @@ export function StackAcresFriendshipDialogue({
   busy,
   onGift,
   onClose,
+  kitchen,
 }: StackAcresFriendshipDialogueProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
+  const [tab, setTab] = useState<"gifts" | "kitchen">("gifts");
 
   useEffect(() => {
     const timer = window.setTimeout(() => firstRef.current?.focus(), 0);
@@ -99,7 +104,31 @@ export function StackAcresFriendshipDialogue({
         <button type="button" className="sa-gift-dialogue-close" aria-label="Close" onClick={onClose}>
           ×
         </button>
-        {result.phase === "greeting" ? (
+        {kitchen && result.phase === "greeting" && (
+          <div className="sa-gift-dialogue-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "gifts"}
+              className={tab === "gifts" ? "is-active" : undefined}
+              onClick={() => setTab("gifts")}
+            >
+              Gifts
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "kitchen"}
+              className={tab === "kitchen" ? "is-active" : undefined}
+              onClick={() => setTab("kitchen")}
+            >
+              Kitchen
+            </button>
+          </div>
+        )}
+        {kitchen && result.phase === "greeting" && tab === "kitchen" ? (
+          kitchen
+        ) : result.phase === "greeting" ? (
           <>
             <p className="sa-gift-dialogue-line">{result.line}</p>
             {heldItems.length === 0 ? (

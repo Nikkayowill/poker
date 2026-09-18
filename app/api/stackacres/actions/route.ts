@@ -10,6 +10,7 @@ import {
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
+import { FOOD_ITEMS } from "@/lib/stackacres/energy";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
@@ -34,6 +35,7 @@ import {
   expandStackAcresCapacity,
   feedStackAcres,
   feedStackAcresPen,
+  eatStackAcresFoodAction,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
@@ -280,6 +282,11 @@ const bodySchema = z.discriminatedUnion("action", [
     // reachable by ordinary play, and the real bound is what the player
     // actually holds, checked server-side under a row lock.
     quantity: z.number().int().min(1).max(9_999),
+  }),
+  // Eats one Bread or Cake for energy. Moves no Gold.
+  z.object({
+    action: z.literal("eat"),
+    item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),
   }),
   // Processing: wheat, machines, Town Contracts. Move no Gold.
   z.object({ action: z.literal("sow-wheat") }),
@@ -578,6 +585,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return drawStackAcresWater(token, now);
     case "catch-fish":
       return catchStackAcresFish(token, now);
+    case "eat":
+      return eatStackAcresFoodAction(token, action.item, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
     case "clear":

@@ -42,7 +42,7 @@ export interface ContractDef {
 /**
  * The rungs a contract is drawn from.
  *
- * FLOUR is priced off seed: a Mill turns 3 Wheat (45 Gold of seed, at
+ * FLOUR is priced off seed: a Mill turns 3 Wheat (a few Gold of seed, at
  * WHEAT_SEED_COST) into 1 Flour, so a contract asking for a handful of Flour
  * has to clear what growing and milling it actually cost -- the same "never
  * pay less than a tier's net" sanity check ./items.ts's `netPerCycle` runs

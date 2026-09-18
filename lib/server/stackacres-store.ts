@@ -33,6 +33,7 @@ import {
 import type { NpcId } from "@/lib/stackacres/friendship";
 import { freshStory, type StoredStory } from "@/lib/stackacres/story/state";
 import { WATER_CAPACITY } from "@/lib/stackacres/water-can";
+import type { FoodItem, StackAcresEnergyAnchor } from "@/lib/stackacres/energy";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -100,6 +101,7 @@ declare global {
   var __riverRoomStackAcresDevotion: Map<string, StoredDevotionRow> | undefined;
   var __riverRoomStackAcresFriendship: Map<string, StoredFriendshipRow> | undefined;
   var __riverRoomStackAcresWater: Map<string, number> | undefined;
+  var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
 }
 
@@ -116,6 +118,10 @@ globalThis.__riverRoomStackAcresFeed = memoryFeed;
 /** Watering can levels. A missing entry is a full can, same as a missing row. */
 const memoryWater = globalThis.__riverRoomStackAcresWater ?? new Map<string, number>();
 globalThis.__riverRoomStackAcresWater = memoryWater;
+
+/** Energy anchors (lib/stackacres/energy.ts). A missing entry is a full farm. */
+const memoryEnergy = globalThis.__riverRoomStackAcresEnergy ?? new Map<string, StoredStackAcresEnergy>();
+globalThis.__riverRoomStackAcresEnergy = memoryEnergy;
 
 /** The equipment rung each player has bought up to, keyed by profile id. A
  *  missing entry is the free starting Trowel, exactly as a missing capacity
@@ -242,6 +248,7 @@ export function __resetStackAcresForTest(): void {
   memoryCapacity.clear();
   memoryFeed.clear();
   memoryWater.clear();
+  memoryEnergy.clear();
   memoryTool.clear();
   memoryCutters.clear();
   memoryUpkeep.clear();
@@ -3084,4 +3091,116 @@ export async function turnInStackAcresStory(
   });
   if (error) throw new Error(`Could not turn that in: ${error.message}`);
   return data as StoryTurnInOutcome;
+}
+
+/* -------------------------------------------------------------------- */
+/* Energy (lib/stackacres/energy.ts)                                     */
+/* -------------------------------------------------------------------- */
+
+/** The stored anchor plus its version. Version 0 means no row yet. */
+export interface StoredStackAcresEnergy extends StackAcresEnergyAnchor {
+  version: number;
+}
+
+/** The batch row (or a plain select) as a stored anchor, or null for no row. */
+export function stackAcresEnergyFromBatchRow(
+  row: { level: number | string; updated_at: string; version: number | string } | null,
+): StoredStackAcresEnergy | null {
+  if (!row) return null;
+  return { level: Number(row.level), updatedAt: String(row.updated_at), version: Number(row.version) };
+}
+
+export async function readStackAcresEnergy(profileId: string): Promise<StoredStackAcresEnergy | null> {
+  const supabase = adminClient();
+  if (!supabase) return memoryEnergy.get(profileId) ?? null;
+
+  const { data, error } = await supabase
+    .from("homestead_energy")
+    .select("level, updated_at, version")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your energy: ${error.message}`);
+  return stackAcresEnergyFromBatchRow(
+    data as { level: number | string; updated_at: string; version: number | string } | null,
+  );
+}
+
+/**
+ * Writes a new energy anchor if the row is still at `expectedVersion` (0 for
+ * no row yet). Returns false when another write got there first; callers
+ * re-read and try again.
+ */
+export async function writeStackAcresEnergy(
+  profileId: string,
+  expectedVersion: number,
+  next: StackAcresEnergyAnchor,
+): Promise<boolean> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const current = memoryEnergy.get(profileId);
+    if ((current?.version ?? 0) !== expectedVersion) return false;
+    memoryEnergy.set(profileId, { ...next, version: expectedVersion + 1 });
+    return true;
+  }
+
+  if (expectedVersion === 0) {
+    const { data, error } = await supabase
+      .from("homestead_energy")
+      .upsert(
+        { profile_id: profileId, level: next.level, updated_at: next.updatedAt, version: 1 },
+        { onConflict: "profile_id", ignoreDuplicates: true },
+      )
+      .select("version");
+    if (error) throw new Error(`Could not update your energy: ${error.message}`);
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_energy")
+    .update({ level: next.level, updated_at: next.updatedAt, version: expectedVersion + 1 })
+    .eq("profile_id", profileId)
+    .eq("version", expectedVersion)
+    .select("version")
+    .maybeSingle();
+  if (error) throw new Error(`Could not update your energy: ${error.message}`);
+  return data !== null;
+}
+
+export type EatStackAcresFoodResult = "eaten" | "no-food" | "stale";
+
+/**
+ * Eats one of `item`: the food leaves inventory and the new energy anchor is
+ * written in one transaction (`eat_homestead_food`). "no-food" means there
+ * was none to eat and nothing was written. "stale" means the energy row
+ * moved since it was read, and the food debit rolled back with it.
+ */
+export async function eatStackAcresFood(
+  profileId: string,
+  item: FoodItem,
+  expectedVersion: number,
+  next: StackAcresEnergyAnchor,
+): Promise<EatStackAcresFoodResult> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${item}`;
+    const held = memoryInventory.get(key) ?? 0;
+    if (held < 1) return "no-food";
+    if ((memoryEnergy.get(profileId)?.version ?? 0) !== expectedVersion) return "stale";
+    memoryInventory.set(key, held - 1);
+    memoryEnergy.set(profileId, { ...next, version: expectedVersion + 1 });
+    return "eaten";
+  }
+
+  const { data, error } = await supabase.rpc("eat_homestead_food", {
+    p_profile_id: profileId,
+    p_item: item,
+    p_expected_version: expectedVersion,
+    p_level: next.level,
+    p_updated_at: next.updatedAt,
+  });
+  if (error) {
+    if (error.code === "40001") return "stale";
+    throw new Error(`Could not eat that: ${error.message}`);
+  }
+  return data === "eaten" ? "eaten" : "no-food";
 }

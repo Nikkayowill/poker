@@ -45,6 +45,9 @@ import {
   collectStackAcresDroneForage,
   listStackAcresDrones,
   buyStackAcresSeed,
+  catchStackAcresFish,
+  eatStackAcresFoodAction,
+  processStackAcresRecipeAction,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -85,7 +88,11 @@ import {
   adjustStackAcresCapacity,
   createStackAcresMachine,
   buildStackAcresGreenhouseRow,
+  readStackAcresEnergy,
+  readStackAcresInventory,
+  writeStackAcresEnergy,
 } from "./stackacres-store";
+import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH } from "@/lib/stackacres/energy";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
   STACKACRES_PRESTIGE_MIN_ELIGIBLE_GROSS,
@@ -2159,6 +2166,7 @@ describe("the currency wall", () => {
       "deploy-drone",
       "donate-secret-item",
       "draw-water",
+      "eat",
       "expand-capacity",
       "feed",
       "feed-pen",
@@ -4356,5 +4364,110 @@ describe("the Mechanical Forage Drone", () => {
     const later = new Date(T0.getTime() + 21_000);
     const second = await collectStackAcresDroneForage(token, droneId, later);
     expect(second.droneForage?.reward).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("Chapter 1: the bread basket", () => {
+  const henHungryAt = new Date(T0.getTime() + (HEN.hungerMs ?? 0) + 1000);
+  const fedAt = new Date(henHungryAt.getTime() + 60_000);
+  const hensOf = async (id: string) => (await listStackAcresUnits(id)).filter((unit) => unit.stock === "hen");
+
+  it("feeds a hen from the wheat on the shelf before the Feed Sack", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await adjustStackAcresInventory(id, "wheat", 1);
+    const feedBefore = await readStackAcresFeed(id);
+    await adjustStackAcresFeed(id, 1);
+
+    await feedStackAcresPen(token, "henhaven", fedAt);
+
+    for (const hen of await hensOf(id)) expect(hen.lastFedAt).toBe(fedAt.toISOString());
+    expect((await readStackAcresInventory(id)).wheat ?? 0).toBe(0);
+    // One hen ate the wheat, the other ate from the sack.
+    expect(await readStackAcresFeed(id)).toBe(feedBefore);
+  });
+
+  it("feeds a single hen with wheat too, leaving the sack alone", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "hen" }, T0);
+    await adjustStackAcresInventory(id, "wheat", 2);
+    const feedBefore = await readStackAcresFeed(id);
+
+    await feedStackAcres(token, unitOf(view, "hen").id, fedAt);
+
+    expect((await readStackAcresInventory(id)).wheat).toBe(1);
+    expect(await readStackAcresFeed(id)).toBe(feedBefore);
+  });
+
+  it("builds the Oven for 500 Gold and bakes 1 Flour into 1 Bread instantly", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    const view = await placeStackAcresMachine(token, "oven", T0);
+    expect(MACHINE_CATALOGUE.oven.placeCost).toBe(500);
+    expect(await balance(token)).toBe(before - 500);
+    expect(view.machines.find((machine) => machine.kind === "oven")).toMatchObject({ status: "idle" });
+
+    await adjustStackAcresInventory(id, "flour", 2);
+    const baked = await processStackAcresRecipeAction(token, "bread", T0);
+    expect(baked.processed.produced).toEqual({ item: "bread", quantity: 1 });
+    expect(baked.inventory.flour).toBe(1);
+    expect(baked.inventory.bread).toBe(1);
+  });
+
+  it("refunds the Oven's Gold when the machine write fails", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "oven", T0);
+    const before = await balance(token);
+    await expect(placeStackAcresMachine(token, "oven", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("starts a new farm at full energy and never charges energy for farm work", async () => {
+    const { token } = await funded();
+    const view = await sowStackAcresWheat(token, T0);
+    expect(view.energy.level).toBe(ENERGY_MAX);
+  });
+
+  it("eats Bread for 20 energy, debiting one from the shelf", async () => {
+    const { token, id } = await funded();
+    await writeStackAcresEnergy(id, 0, { level: 30, updatedAt: T0.toISOString() });
+    await adjustStackAcresInventory(id, "bread", 2);
+
+    const view = await eatStackAcresFoodAction(token, "bread", T0);
+
+    expect(view.energy.level).toBe(50);
+    expect(view.inventory.bread).toBe(1);
+  });
+
+  it("refuses to eat what is not food, what is not held, or at full energy", async () => {
+    const { token, id } = await funded();
+    await expect(eatStackAcresFoodAction(token, "flour", T0)).rejects.toMatchObject({ status: 400 });
+    await expect(eatStackAcresFoodAction(token, "bread", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    await adjustStackAcresInventory(id, "cake", 1);
+    // Full at 100: the cake stays on the shelf.
+    await expect(eatStackAcresFoodAction(token, "cake", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect((await readStackAcresInventory(id)).cake).toBe(1);
+  });
+
+  it("spends 5 energy per landed cast and refuses a tired one with nothing credited", async () => {
+    const { token, id } = await funded();
+    const caught = await catchStackAcresFish(token, T0);
+    expect(caught.energy.level).toBe(ENERGY_MAX - FISHING_CAST_ENERGY);
+
+    await writeStackAcresEnergy(id, (await readStackAcresEnergy(id))!.version, {
+      level: FISHING_CAST_ENERGY - 1,
+      updatedAt: T0.toISOString(),
+    });
+    const shelfBefore = await readStackAcresInventory(id);
+    await expect(catchStackAcresFish(token, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
+    expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
+  });
+
+  it("takes the Wheat Sheaf off Ray's seed shelf", async () => {
+    const { token } = await funded();
+    await expect(buyStackAcresSeed(token, { crop: "wheatsheaf", quantity: 1 }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
   });
 });

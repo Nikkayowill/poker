@@ -60,6 +60,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     units: [],
     feed: 5,
     water: WATER_CAPACITY,
+    energy: { level: 100, updatedAt: NOW.toISOString() },
     capacity: {},
     seedStock: {},
     toolTier: "trowel",
@@ -320,6 +321,41 @@ describe("predictStackAcresAction: feed/water/clear", () => {
     const hen = unit({ id: "h1", stock: "hen", state: "hungry" });
     expect(predictStackAcresAction({ action: "feed-pen", zone: "henhaven" }, ctx({ units: [hen], feed: 0 }))).toBeNull();
     expect(predictStackAcresAction({ action: "feed-pen", zone: "oxfields" }, ctx({ units: [hen], feed: 3 }))).toBeNull();
+  });
+
+  it("feeds hens Wheat first, then the Feed Sack, the same as the server", () => {
+    const h1 = unit({ id: "h1", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 3 * 60_000).toISOString() });
+    const h2 = unit({ id: "h2", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 2 * 60_000).toISOString() });
+    const h3 = unit({ id: "h3", stock: "hen", state: "hungry", hungryAt: new Date(NOW.getTime() - 60_000).toISOString() });
+    const patch = predictStackAcresAction(
+      { action: "feed-pen", zone: "henhaven" },
+      ctx({ units: [h1, h2, h3], feed: 1, inventory: { wheat: 1 } }),
+    );
+    // One Wheat, one Feed Sack serving, and the third hen goes without.
+    expect(patch?.inventory?.wheat).toBe(0);
+    expect(patch?.feed).toBe(0);
+    const byId = new Map(patch!.units!.map((u) => [u.id, u]));
+    expect(byId.get("h3")).toBe(h3);
+
+    const single = predictStackAcresAction({ action: "feed", unitId: "h1" }, ctx({ units: [h1], feed: 0, inventory: { wheat: 2 } }));
+    expect(single?.inventory?.wheat).toBe(1);
+    expect(single?.feed).toBe(0);
+  });
+
+  it("eats Bread for 20 energy and refuses when there is none or energy is full", () => {
+    const hungry = { level: 30, updatedAt: NOW.toISOString() };
+    const patch = predictStackAcresAction({ action: "eat", item: "bread" }, ctx({ energy: hungry, inventory: { bread: 2 } }));
+    expect(patch?.energy?.level).toBe(50);
+    expect(patch?.inventory?.bread).toBe(1);
+    expect(predictStackAcresAction({ action: "eat", item: "bread" }, ctx({ energy: hungry, inventory: {} }))).toBeNull();
+    expect(predictStackAcresAction({ action: "eat", item: "cake" }, ctx({ inventory: { cake: 1 } }))).toBeNull();
+  });
+
+  it("spends 5 energy on a landed cast and guesses nothing when too tired", () => {
+    expect(predictStackAcresAction({ action: "catch-fish" }, ctx())?.energy?.level).toBe(95);
+    expect(
+      predictStackAcresAction({ action: "catch-fish" }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
+    ).toBeNull();
   });
 
   it("clears a mucked unit and debits its fee", () => {

@@ -5284,3 +5284,104 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* Chapter 1: the energy pill beside Gold, and Ray's Kitchen tab. The pill is
+   the same glass as .sa-feed; the bar inside it fills with leaf green. */
+.sa-energy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-energy-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sa-energy-bar {
+  position: relative;
+  width: 56px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sa-glass-line);
+}
+
+.sa-energy-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--sa-leaf);
+  transition: width 200ms ease-out;
+}
+
+.sa-gift-dialogue-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 28px 10px 0;
+}
+
+.sa-gift-dialogue-tabs button {
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-open);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.sa-gift-dialogue-tabs button.is-active {
+  background: var(--sa-tint-corn);
+}
+
+.sa-kitchen {
+  display: grid;
+  gap: 8px;
+}
+
+.sa-kitchen-energy,
+.sa-kitchen-note {
+  margin: 0;
+  font-size: 13px;
+}
+
+.sa-kitchen-food {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa-kitchen-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.sa-kitchen-row > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.sa-kitchen-row .sa-cta {
+  white-space: nowrap;
+}

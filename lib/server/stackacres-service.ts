@@ -191,6 +191,11 @@ import {
   readStackAcresSecretLedgerQty,
   adjustStackAcresCapacity,
   adjustStackAcresFeed,
+  eatStackAcresFood as eatStackAcresFoodRow,
+  readStackAcresEnergy,
+  stackAcresEnergyFromBatchRow,
+  writeStackAcresEnergy,
+  type StoredStackAcresEnergy,
   clearStackAcresMuck,
   readStackAcresToolTier,
   upgradeStackAcresToolTier,
@@ -327,8 +332,22 @@ import {
   type StackAcresBuyableCutter,
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
-import { machineItemLabel } from "@/lib/stackacres/machine-items";
+import { MACHINE_ITEM_CATALOGUE, machineItemLabel } from "@/lib/stackacres/machine-items";
 import { pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
+import {
+  ENERGY_MAX,
+  FISHING_CAST_ENERGY,
+  FOOD_ENERGY,
+  TOO_TIRED_TO_FISH,
+  applyEnergyDelta,
+  energyAt,
+  isFoodItem,
+  settleEnergy,
+  type FoodItem,
+  type StackAcresEnergyAnchor,
+} from "@/lib/stackacres/energy";
+import { isActiveStock } from "@/lib/stackacres/scope";
+import { eatsWheat, type ServingSource } from "@/lib/stackacres/feeding";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -590,6 +609,9 @@ export interface StackAcresView {
   feed: number;
   /** Water left in the watering can (lib/stackacres/water-can.ts). */
   water: number;
+  /** Energy as of this read, already settled for regen (lib/stackacres/
+   *  energy.ts). The client runs `energyAt` on it to tick the HUD. */
+  energy: StackAcresEnergyAnchor;
   /** Purchased extra capacity slots, by stock kind. */
   capacity: Partial<Record<StackAcresStock, number>>;
   /**
@@ -987,6 +1009,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
           readStackAcresCutters(profile.id),
           readStackAcresStory(profile.id),
           listDrones(profile.id),
+          readStackAcresEnergy(profile.id),
         ] as const),
   ]);
 
@@ -1023,6 +1046,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   let cutters: StackAcresCutter[];
   let storedStory: StoredStoryRow;
   let droneRows: StoredDrone[];
+  let storedEnergy: StoredStackAcresEnergy | null;
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1082,6 +1106,9 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     droneRows = (batch.drones as { drone_id: string; profile_id: string; deployed_at: string; last_forage_at: string | null }[]).map(
       stackAcresDroneFromBatchRow,
     );
+    storedEnergy = stackAcresEnergyFromBatchRow(
+      (batch.energy ?? null) as { level: number | string; updated_at: string; version: number | string } | null,
+    );
   } else {
     [
       rows,
@@ -1117,6 +1144,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       cutters,
       storedStory,
       droneRows,
+      storedEnergy,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
@@ -1124,6 +1152,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
       StoredPipe[], StoredSoilTile[], SoilStock, SeedStock, StoredDevotionRow, StoredFriendshipRow[],
       StoredVatManifest | null, StackAcresCutter[], StoredStoryRow, StoredDrone[],
+      StoredStackAcresEnergy | null,
     ];
   }
 
@@ -1147,11 +1176,13 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   // its own here, it takes the same progress shape passed to `storyView`
   // below.
   const droneHangarUnlocked = isDroneHangarUnlocked({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked });
+  const settledEnergy = settleEnergy(storedEnergy, now);
   return {
     units,
     profile,
     feed,
     water,
+    energy: settledEnergy,
     capacity,
     sectors,
     // Reported, never charged, from here: a read must not move a purse. The
@@ -2962,6 +2993,31 @@ function feedPushFor(unit: StoredStackAcresUnit, now: Date): { pushed: Date; new
  * to the row, so the stored clock does not stay stale after the player who
  * fed it moves on.
  */
+/**
+ * Spends one serving for `stock`: a hen eats a Wheat from inventory first,
+ * and falls back to the bought Feed Sack, so a hen is always feedable.
+ * Everything else eats from the Feed Sack as before. Returns where the
+ * serving came from, or null when there was none. See `planServings` in
+ * lib/stackacres/feeding.ts, the same rule the client predicts with.
+ */
+async function spendServing(profileId: string, stock: StackAcresStock): Promise<ServingSource | null> {
+  if (eatsWheat(stock)) {
+    const wheatLeft = await adjustStackAcresInventory(profileId, "wheat", -1);
+    if (wheatLeft !== null) return "wheat";
+  }
+  const feedLeft = await adjustStackAcresFeed(profileId, -1);
+  return feedLeft === null ? null : "feed";
+}
+
+/** Hands a serving back to wherever `spendServing` took it from. */
+async function refundServing(profileId: string, source: ServingSource): Promise<void> {
+  if (source === "wheat") {
+    await adjustStackAcresInventory(profileId, "wheat", 1).catch(() => null);
+  } else {
+    await adjustStackAcresFeed(profileId, 1).catch(() => null);
+  }
+}
+
 export async function feedStackAcres(
   token: string,
   unitIdInput: string,
@@ -2982,8 +3038,8 @@ export async function feedStackAcres(
   // Rule 1 again, in servings rather than Gold: the feed is spent before the
   // write it pays for. Null is "not enough", which reads exactly like a lost
   // race because it is one.
-  const remaining = await adjustStackAcresFeed(profile.id, -1);
-  if (remaining === null) {
+  const source = await spendServing(profile.id, unit.stock);
+  if (source === null) {
     throw new StackAcresRequestError("You are out of feed. Buy a shipment first.", 400, {
       round: await snapshots(profile.id, now),
     });
@@ -3007,11 +3063,11 @@ export async function feedStackAcres(
       }
     }
   } catch (error) {
-    await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+    await refundServing(profile.id, source);
     throw error;
   }
   if (!fed) {
-    await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+    await refundServing(profile.id, source);
     throw new StackAcresRequestError("That moved on.", 409, {
       round: await snapshots(profile.id, now),
     });
@@ -3060,8 +3116,8 @@ export async function feedStackAcresPen(
 
   let fedCount = 0;
   for (const unit of hungry) {
-    const remaining = await adjustStackAcresFeed(profile.id, -1);
-    if (remaining === null) break;
+    const source = await spendServing(profile.id, unit.stock);
+    if (source === null) break;
 
     const { pushed, newStartedAt } = feedPushFor(unit, now);
 
@@ -3081,13 +3137,13 @@ export async function feedStackAcresPen(
         }
       }
     } catch (error) {
-      await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+      await refundServing(profile.id, source);
       // The animals already fed stay fed. Only throw if nothing went through.
       if (fedCount === 0) throw error;
       break;
     }
     if (!fed) {
-      await adjustStackAcresFeed(profile.id, 1).catch(() => null);
+      await refundServing(profile.id, source);
       continue;
     }
     fedCount += 1;
@@ -3315,22 +3371,88 @@ export async function drawStackAcresWater(token: string, now = new Date()): Prom
 }
 
 /**
+ * Moves energy by `delta` with a version-guarded write, retrying a couple of
+ * times when another write lands in between. Returns null when a spend
+ * would go below zero. Only the extras (fishing) spend energy; farm work
+ * never does.
+ */
+async function moveStackAcresEnergy(
+  profileId: string,
+  delta: number,
+  now: Date,
+): Promise<StackAcresEnergyAnchor | null> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const stored = await readStackAcresEnergy(profileId);
+    const next = applyEnergyDelta(stored, delta, now);
+    if (!next) return null;
+    if (await writeStackAcresEnergy(profileId, stored?.version ?? 0, next)) return next;
+  }
+  throw new StackAcresRequestError("That moved on.", 409);
+}
+
+/**
  * A completed cast at the dock. Which fish it lands is decided HERE, never
  * by the client -- the drag-in/wait/drag-out gesture only decides when a
  * cast is complete, same separation `harvestStackAcres` keeps between "the
- * tap happened" and "here is what it was worth". Free: a cast costs nothing
- * to make, so there is nothing to refund on the rare chance the inventory
- * write itself fails.
+ * tap happened" and "here is what it was worth".
+ *
+ * A cast costs FISHING_CAST_ENERGY. The energy is spent before the fish is
+ * credited and handed back if that credit fails, the same order Gold keeps.
  */
 export async function catchStackAcresFish(
   token: string,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
+  const spent = await moveStackAcresEnergy(profile.id, -FISHING_CAST_ENERGY, now);
+  if (!spent) {
+    throw new StackAcresRequestError(TOO_TIRED_TO_FISH, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
   const species: FishSpecies = pickCaughtFish();
-  await adjustStackAcresInventory(profile.id, species, 1);
+  try {
+    await adjustStackAcresInventory(profile.id, species, 1);
+  } catch (error) {
+    await moveStackAcresEnergy(profile.id, FISHING_CAST_ENERGY, now).catch(() => null);
+    throw error;
+  }
   await recordStoryEvents(profile.id, [{ kind: "fish-caught", species }]);
   return { ...(await view(profile, now)), fishCaught: { species } };
+}
+
+/**
+ * Eats one Bread or Cake from inventory for energy. The food debit and the
+ * energy credit are one transaction (`eat_homestead_food`), so neither can
+ * land without the other. Refused at full energy so food is never wasted.
+ */
+export async function eatStackAcresFoodAction(
+  token: string,
+  itemInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isFoodItem(itemInput)) throw new StackAcresRequestError("You can't eat that.", 400);
+  const item: FoodItem = itemInput;
+  const profile = await ensureProfile(token);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const stored = await readStackAcresEnergy(profile.id);
+    if (energyAt(stored, now) >= ENERGY_MAX) {
+      throw new StackAcresRequestError("You're full of energy already.", 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    const next = applyEnergyDelta(stored, FOOD_ENERGY[item], now);
+    if (!next) break;
+    const eaten = await eatStackAcresFoodRow(profile.id, item, stored?.version ?? 0, next);
+    if (eaten === "eaten") return view(profile, now);
+    if (eaten === "no-food") {
+      throw new StackAcresRequestError(`You don't have any ${MACHINE_ITEM_CATALOGUE[item].label} to eat.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+  }
+  throw new StackAcresRequestError("That moved on.", 409, { round: await snapshots(profile.id, now) });
 }
 
 /**
@@ -5228,6 +5350,9 @@ export async function buyStackAcresSeed(
     throw new StackAcresRequestError("Not a real crop.", 400);
   }
   const crop: StackAcresCrop = cropInput;
+  if (!isActiveStock(crop)) {
+    throw new StackAcresRequestError(`Ray doesn't sell ${STACKACRES_CATALOGUE[crop].label} seed any more.`, 400);
+  }
   const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
   if (!Number.isFinite(quantity) || quantity < 1 || quantity > STACKACRES_SEED_BAGS_PER_PURCHASE) {
     throw new StackAcresRequestError(

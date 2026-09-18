@@ -21,6 +21,7 @@ import type { NpcId } from "./friendship";
 import type { MachineItemId } from "./machine-items";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
+import type { FoodItem } from "./energy";
 import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { PipeFacing, PipeKind } from "./irrigation";
@@ -66,6 +67,7 @@ export type Action =
   // The dock's cast, completed: which fish it lands is the server's own
   // dice roll, same posture as `collect`'s Gold.
   | { action: "catch-fish" }
+  | { action: "eat"; item: FoodItem }
   // A completed stalk at the Oak's treeline: which quarry it was, and so how
   // much meat and how many pelts it gives, is the server's own dice roll --
   // same posture as `catch-fish`.
@@ -206,6 +208,7 @@ export function intentOf(body: Action): string {
   // but no `quantity` (it is always exactly one unit), and gifting one NPC
   // must never be conflated with gifting another over the same item.
   if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
+  if (body.action === "eat") return `eat:${body.item}`;
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   // A contribution to one blueprint must never dedupe against or block a
   // contribution to a different one -- checked before the generic `itemId`

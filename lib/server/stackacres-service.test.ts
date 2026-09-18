@@ -48,6 +48,9 @@ import {
   catchStackAcresFish,
   eatStackAcresFoodAction,
   processStackAcresRecipeAction,
+  sealStackAcresCellar,
+  collectStackAcresCellar,
+  sealStackAcresVat,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -2168,6 +2171,7 @@ describe("the currency wall", () => {
       "clear",
       "clear-sector",
       "collect",
+      "collect-cellar",
       "collect-drone-forage",
       "collect-vat",
       "consume-secret-item",
@@ -2196,6 +2200,7 @@ describe("the currency wall", () => {
       "remove-soil-tile",
       "request-contract",
       "retire",
+      "seal-cellar",
       "seal-vat",
       "sell",
       "sow-wheat",
@@ -2286,7 +2291,11 @@ describe("the currency wall", () => {
     // flat daily Gold ceiling that used to gate all four payers (and that
     // this drone path reserved a worst-case share of before rolling) was
     // removed 2026-09-12 -- StackAcres no longer caps daily earning.
-    const paysGold = ["sell", "fulfill-contract", "collect-vat", "collect-drone-forage"];
+    //
+    // `collect-cellar` is a fifth: the Preserves Cellar (Chapter 5) opens
+    // through the same settle-then-credit path as the Vat. `seal-cellar`
+    // spends jars, never Gold, the same as `seal-vat`.
+    const paysGold = ["sell", "fulfill-contract", "collect-vat", "collect-drone-forage", "collect-cellar"];
     expect(actions).toEqual(expect.arrayContaining(paysGold));
     // `, now` on all four: Chrono-DeLorean Mode threads a resolved `now`
     // through every action (lib/server/chrono-delorean.ts), the payers
@@ -2295,6 +2304,7 @@ describe("the currency wall", () => {
     expect(ROUTE).toContain("fulfillStackAcresTownContract(token, now)");
     expect(ROUTE).toContain("collectStackAcresVat(token, now)");
     expect(ROUTE).toContain("collectStackAcresDroneForage(token, action.droneId, now)");
+    expect(ROUTE).toContain("collectStackAcresCellar(token, now)");
   });
 
   it("hands back no Gold at all for spending Gold", async () => {
@@ -4872,5 +4882,83 @@ describe("beans feed the soil", () => {
     expect(Date.parse(unitOf(view, "carrot").readyAt) - T0.getTime()).toBe(
       STACKACRES_CATALOGUE.carrot.durationMs,
     );
+  });
+});
+
+describe("Chapter 5: the town kitchen", () => {
+  const hours = (n: number) => new Date(T0.getTime() + n * 60 * 60 * 1000);
+
+  it("cooks Tomato Sauce and bakes it into Stuffed Peppers worth 40 energy", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "stew_pot", T0);
+    await placeStackAcresMachine(token, "oven", T0);
+    await adjustStackAcresInventory(id, "tomato", 2);
+    await adjustStackAcresInventory(id, "celery", 1);
+    await adjustStackAcresInventory(id, "onion", 1);
+    const sauced = await processStackAcresRecipeAction(token, "sauce", T0);
+    expect(sauced.inventory.sauce).toBe(1);
+
+    await adjustStackAcresInventory(id, "bell_pepper", 2);
+    await adjustStackAcresInventory(id, "potato", 1);
+    const baked = await processStackAcresRecipeAction(token, "stuffed_peppers", T0);
+    expect(baked.inventory.sauce ?? 0).toBe(0);
+    expect(baked.inventory.stuffed_peppers).toBe(1);
+
+    await writeStackAcresEnergy(id, 0, { level: 10, updatedAt: T0.toISOString() });
+    const ate = await eatStackAcresFoodAction(token, "stuffed_peppers", T0);
+    expect(ate.energy.level).toBe(50);
+  });
+
+  it("builds the Preserves Cellar for 25,000 Gold and stores at most 12 jars", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    await placeStackAcresMachine(token, "cellar", T0);
+    expect(await balance(token)).toBe(before - 25_000);
+
+    await adjustStackAcresInventory(id, "pickles", 14);
+    const view = await sealStackAcresCellar(token, "pickles", T0);
+    expect(view.inventory.pickles).toBe(2);
+    expect(view.cellar).toMatchObject({ status: "aging", manifest: { item: "pickles", quantity: 12 } });
+    expect(view.vat).toBeNull();
+
+    await expect(sealStackAcresCellar(token, "pickles", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("refuses to open the cellar before the first hour, then pays twice the jars' price at four hours", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "cellar", T0);
+    await adjustStackAcresInventory(id, "pickles", 12);
+    await sealStackAcresCellar(token, "pickles", T0);
+
+    await expect(collectStackAcresCellar(token, hours(0.5))).rejects.toBeInstanceOf(StackAcresRequestError);
+
+    const before = await balance(token);
+    const opened = await collectStackAcresCellar(token, hours(4));
+    expect(opened.vatCollected).toMatchObject({ quantity: 12, tier: 2, gold: 12 * 60 * 2 });
+    expect(await balance(token)).toBe(before + 12 * 60 * 2);
+    expect(opened.cellar).toMatchObject({ status: "empty", manifest: null });
+  });
+
+  it("keeps the Vat's batch and the Cellar's jars apart", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "vat", T0);
+    await placeStackAcresMachine(token, "cellar", T0);
+    await adjustStackAcresInventory(id, "cheese", 2);
+    await adjustStackAcresInventory(id, "sauerkraut", 3);
+    await sealStackAcresVat(token, T0);
+    const both = await sealStackAcresCellar(token, "sauerkraut", T0);
+    expect(both.vat?.manifest?.item).toBe("cheese");
+    expect(both.cellar?.manifest).toMatchObject({ item: "sauerkraut", quantity: 3 });
+
+    const opened = await collectStackAcresCellar(token, hours(12));
+    expect(opened.vatCollected?.gold).toBe(3 * 15 * 3);
+    expect(opened.cellar?.status).toBe("empty");
+    expect(opened.vat?.manifest?.item).toBe("cheese");
+  });
+
+  it("says so when there are no jars to store", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "cellar", T0);
+    await expect(sealStackAcresCellar(token, "sauerkraut", T0)).rejects.toThrow("You have no Sauerkraut to store.");
   });
 });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   AGING_TIERS,
+  CELLAR_AGING_TIERS,
+  CELLAR_CAPACITY,
+  cellarBaseGoldValue,
+  cellarSealQuantity,
   VAT_INPUT_QUANTITY,
   agedGoldValue,
   baseGoldValueForSeal,
@@ -131,5 +135,39 @@ describe("toVatContainer", () => {
     expect(snap.currentTier?.tier).toBe(2);
     expect(snap.nextTier?.tier).toBe(3);
     expect(snap.collectibleGoldValue).toBe(agedGoldValue(1000, AGING_TIERS[1]));
+  });
+});
+
+describe("the Preserves Cellar ladder", () => {
+  const hour = 60 * 60 * 1000;
+
+  it("ages over hours, not minutes, and even the first tier beats selling now", () => {
+    expect(vatTierForElapsed(hour - 1, CELLAR_AGING_TIERS)).toBeNull();
+    expect(vatTierForElapsed(hour, CELLAR_AGING_TIERS)?.label).toBe("Aged");
+    expect(vatTierForElapsed(4 * hour, CELLAR_AGING_TIERS)?.label).toBe("Well-Aged");
+    expect(vatTierForElapsed(48 * hour, CELLAR_AGING_TIERS)?.label).toBe("Cellar-Aged");
+    expect(CELLAR_AGING_TIERS[0].multiplier).toBeGreaterThan(1);
+  });
+
+  it("stores everything on the shelf up to capacity, priced off today's sell price", () => {
+    expect(cellarSealQuantity(0)).toBe(0);
+    expect(cellarSealQuantity(5)).toBe(5);
+    expect(cellarSealQuantity(40)).toBe(CELLAR_CAPACITY);
+    expect(cellarBaseGoldValue("pickles", 12)).toBe(12 * 60);
+  });
+
+  it("shows the cellar's own ladder in its container", () => {
+    const manifest = {
+      item: "pickles" as const,
+      quantity: 12,
+      baseGoldValue: 720,
+      sealedAt: new Date(0).toISOString(),
+      readyAt: new Date(hour).toISOString(),
+    };
+    const container = toVatContainer({ id: "m" }, manifest, new Date(4 * hour), CELLAR_AGING_TIERS);
+    expect(container.status).toBe("collectible");
+    expect(container.collectibleGoldValue).toBe(1_440);
+    expect(container.nextTier?.label).toBe("Cellar-Aged");
+    expect(container.maxGoldValue).toBe(2_160);
   });
 });

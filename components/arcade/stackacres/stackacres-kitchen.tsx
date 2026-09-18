@@ -1,76 +1,126 @@
 "use client";
 
 import { useState } from "react";
+import { CELLAR_CAPACITY, CELLAR_ITEMS, type CellarItem, type VatContainer } from "@/lib/stackacres/aging";
 import { ENERGY_MAX, FOOD_ENERGY, FOOD_ITEMS, type FoodItem } from "@/lib/stackacres/energy";
 import { MACHINE_CATALOGUE, type MachineKind } from "@/lib/stackacres/machines";
-import { machineItemIcon, machineItemLabel, type MachineItemId } from "@/lib/stackacres/machine-items";
-import { RECIPE_CATALOGUE, type RecipeId } from "@/lib/stackacres/recipes";
-import type { StackAcresInventory } from "@/lib/stackacres/inventory";
+import { machineItemIcon, machineItemLabel, machineItemNoun, type MachineItemId } from "@/lib/stackacres/machine-items";
+import { RECIPE_CATALOGUE, RECIPE_VERB, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
+import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import { missingLine, recipeIngredients } from "@/lib/stackacres/recipe-uses";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
 /**
  * Ray's kitchen: the Kitchen tab of the dialogue his house opens. Build the
- * Oven, bake Flour into Bread, build the Stew Pot and the Kitchen Counter,
- * cook garden crops into Stew and Salad, and eat for energy. Every button goes through
+ * Oven, the Stew Pot and the Kitchen Counter, cook what they make, eat for
+ * energy, and age jars in the Preserves Cellar. Every button goes through
  * the farm's own `act`, so each one is optimistic like any other farm tap.
  */
 
 export interface KitchenResult {
   ok: boolean;
   message?: string;
+  /** Set when opening the cellar paid out. */
+  gold?: number;
 }
+
+/** The cooking machines, in the order the kitchen lists them. */
+const KITCHEN_MACHINES = ["oven", "stew_pot", "counter"] as const satisfies readonly MachineKind[];
+
+/** What each kitchen machine is for, before it is built. */
+const KITCHEN_PITCH: Record<(typeof KITCHEN_MACHINES)[number], string> = {
+  oven: "Build an Oven to bake bread.",
+  stew_pot: "Build a Stew Pot to cook garden stew and tomato sauce.",
+  counter: "Build a Kitchen Counter for salad, salsa and jars of pickles.",
+};
+
+const DONE_NOTE: Partial<Record<RecipeId, string>> = {
+  bread: "Fresh bread!",
+  stew: "A hot pot of stew!",
+  salad: "A crisp garden salad!",
+  sauce: "A pot of tomato sauce!",
+  salsa: "Spicy salsa, ready to eat!",
+  stuffed_peppers: "Stuffed peppers, hot from the oven!",
+  pickles: "A jar of pickles!",
+  sauerkraut: "A jar of sauerkraut!",
+};
 
 export interface StackAcresKitchenProps {
   energy: number;
   inventory: StackAcresInventory;
-  ovenBuilt: boolean;
-  stewPotBuilt: boolean;
+  nowMs: number;
+  /** Which machines are placed. */
+  built: (kind: MachineKind) => boolean;
   /** Null while the profile is unknown; unlimited Gold passes Infinity. */
   goldBalance: number | null;
   busy: (intent: string) => boolean;
-  onBuildOven: () => Promise<KitchenResult>;
-  onBake: () => Promise<KitchenResult>;
-  onBuildStewPot: () => Promise<KitchenResult>;
-  onCookStew: () => Promise<KitchenResult>;
-  counterBuilt: boolean;
-  onBuildCounter: () => Promise<KitchenResult>;
-  onTossSalad: () => Promise<KitchenResult>;
+  onBuild: (kind: MachineKind) => Promise<KitchenResult>;
+  onMake: (recipe: RecipeId) => Promise<KitchenResult>;
   onEat: (item: FoodItem) => Promise<KitchenResult>;
+  cellar: VatContainer | null;
+  onStoreJars: (item: CellarItem) => Promise<KitchenResult>;
+  onOpenCellar: () => Promise<KitchenResult>;
 }
-
-const OVEN_COST = MACHINE_CATALOGUE.oven.placeCost;
-const BREAD_FLOUR = RECIPE_CATALOGUE.bread.inputs[0].quantity;
 
 function icon(item: MachineItemId): PainterName {
   return machineItemIcon(item) as PainterName;
 }
 
+/** "3h 10m", "42m", "under a minute". */
+function waitLabel(ms: number): string {
+  const minutes = Math.ceil(ms / 60_000);
+  if (minutes < 1) return "under a minute";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}m`;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
 export function StackAcresKitchen({
   energy,
   inventory,
-  ovenBuilt,
-  stewPotBuilt,
+  nowMs,
+  built,
   goldBalance,
   busy,
-  onBuildOven,
-  onBake,
-  onBuildStewPot,
-  onCookStew,
-  counterBuilt,
-  onBuildCounter,
-  onTossSalad,
+  onBuild,
+  onMake,
   onEat,
+  cellar,
+  onStoreJars,
+  onOpenCellar,
 }: StackAcresKitchenProps) {
   const [note, setNote] = useState<string | null>(null);
-  const flour = inventory.flour ?? 0;
   const full = energy >= ENERGY_MAX;
 
-  const run = async (call: () => Promise<KitchenResult>, done: string) => {
+  const run = async (call: () => Promise<KitchenResult>, done: string | ((result: KitchenResult) => string)) => {
     setNote(null);
     const result = await call();
-    setNote(result.ok ? done : (result.message ?? "That didn't work. Try again."));
+    setNote(
+      result.ok
+        ? typeof done === "string"
+          ? done
+          : done(result)
+        : (result.message ?? "That didn't work. Try again."),
+    );
+  };
+
+  const buildRow = (kind: MachineKind, pitch: string) => {
+    const def = MACHINE_CATALOGUE[kind];
+    return (
+      <div className="sa-kitchen-row" key={kind}>
+        <span>{pitch}</span>
+        <button
+          type="button"
+          className="sa-cta"
+          disabled={busy(`place-machine:${kind}`) || (goldBalance !== null && goldBalance < def.placeCost)}
+          onClick={() => void run(() => onBuild(kind), `The ${def.label} is ready!`)}
+        >
+          Build {def.label} · {def.placeCost.toLocaleString()} Gold
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -80,66 +130,43 @@ export function StackAcresKitchen({
         {full ? " (full)" : ""}
       </p>
 
-      {!ovenBuilt ? (
-        <div className="sa-kitchen-row">
-          <span>Build an Oven to bake bread.</span>
-          <button
-            type="button"
-            className="sa-cta"
-            disabled={busy("place-machine:oven") || (goldBalance !== null && goldBalance < OVEN_COST)}
-            onClick={() => void run(onBuildOven, "The Oven is ready!")}
-          >
-            Build Oven · {OVEN_COST.toLocaleString()} Gold
-          </button>
-        </div>
-      ) : (
-        <div className="sa-kitchen-row">
-          <StackAcresIcon name={icon("flour")} size={20} />
-          <span>
-            {machineItemLabel("flour", flour)} on hand. {BREAD_FLOUR} Flour bakes 1 Bread.
-          </span>
-          <button
-            type="button"
-            className="sa-cta"
-            disabled={busy("process:bread") || flour < BREAD_FLOUR}
-            onClick={() => void run(onBake, "Fresh bread!")}
-          >
-            Bake Bread
-          </button>
-        </div>
+      {KITCHEN_MACHINES.map((kind) =>
+        built(kind)
+          ? recipesForMachine(kind).map((recipe) => (
+              <KitchenRecipe
+                key={recipe}
+                recipe={recipe}
+                inventory={inventory}
+                busy={busy}
+                onMake={() =>
+                  void run(
+                    () => onMake(recipe),
+                    DONE_NOTE[recipe] ?? `Made ${machineItemLabel(RECIPE_CATALOGUE[recipe].output.item, 1)}!`,
+                  )
+                }
+              />
+            ))
+          : buildRow(kind, KITCHEN_PITCH[kind]),
       )}
 
-      <KitchenRecipe
-        kind="stew_pot"
-        recipe="stew"
-        built={stewPotBuilt}
-        pitch="Build a Stew Pot to cook garden stew."
-        builtNote="The Stew Pot is ready!"
-        verb="Cook Stew"
-        doneNote="A hot pot of stew!"
-        inventory={inventory}
-        goldBalance={goldBalance}
-        busy={busy}
-        run={run}
-        onBuild={onBuildStewPot}
-        onMake={onCookStew}
-      />
-
-      <KitchenRecipe
-        kind="counter"
-        recipe="salad"
-        built={counterBuilt}
-        pitch="Build a Kitchen Counter to toss fresh salad."
-        builtNote="The Kitchen Counter is ready!"
-        verb="Toss Salad"
-        doneNote="A crisp garden salad!"
-        inventory={inventory}
-        goldBalance={goldBalance}
-        busy={busy}
-        run={run}
-        onBuild={onBuildCounter}
-        onMake={onTossSalad}
-      />
+      {built("cellar") ? (
+        <CellarPanel
+          cellar={cellar}
+          inventory={inventory}
+          nowMs={nowMs}
+          busy={busy}
+          onStore={(item) =>
+            void run(() => onStoreJars(item), `Stored in the cellar. They'll be worth more the longer they sit.`)
+          }
+          onOpen={() =>
+            void run(onOpenCellar, (result) =>
+              result.gold !== undefined ? `Sold the aged jars for ${result.gold.toLocaleString()} Gold!` : "Sold!",
+            )
+          }
+        />
+      ) : (
+        buildRow("cellar", "Build a Preserves Cellar to age pickles and sauerkraut for more Gold.")
+      )}
 
       <ul className="sa-kitchen-food">
         {FOOD_ITEMS.map((item) => {
@@ -167,59 +194,22 @@ export function StackAcresKitchen({
 }
 
 interface KitchenRecipeProps {
-  kind: MachineKind;
   recipe: RecipeId;
-  built: boolean;
-  pitch: string;
-  builtNote: string;
-  verb: string;
-  doneNote: string;
   inventory: StackAcresInventory;
-  goldBalance: number | null;
   busy: (intent: string) => boolean;
-  run: (call: () => Promise<KitchenResult>, done: string) => Promise<void>;
-  onBuild: () => Promise<KitchenResult>;
-  onMake: () => Promise<KitchenResult>;
+  onMake: () => void;
 }
 
-/** One kitchen machine: a build button until it is placed, then its recipe
- *  with what is held and what is still missing. */
-function KitchenRecipe({
-  kind,
-  recipe,
-  built,
-  pitch,
-  builtNote,
-  verb,
-  doneNote,
-  inventory,
-  goldBalance,
-  busy,
-  run,
-  onBuild,
-  onMake,
-}: KitchenRecipeProps) {
-  const def = MACHINE_CATALOGUE[kind];
-  if (!built) {
-    return (
-      <div className="sa-kitchen-row">
-        <span>{pitch}</span>
-        <button
-          type="button"
-          className="sa-cta"
-          disabled={busy(`place-machine:${kind}`) || (goldBalance !== null && goldBalance < def.placeCost)}
-          onClick={() => void run(onBuild, builtNote)}
-        >
-          Build {def.label} · {def.placeCost.toLocaleString()} Gold
-        </button>
-      </div>
-    );
-  }
+/** One recipe on a built machine, with what is held and what is still missing. */
+function KitchenRecipe({ recipe, inventory, busy, onMake }: KitchenRecipeProps) {
   const ingredients = recipeIngredients(recipe, inventory);
   const ready = ingredients.every((ingredient) => ingredient.missing === 0);
+  const def = RECIPE_CATALOGUE[recipe];
   return (
     <div className="sa-kitchen-recipe">
-      <p className="sa-kitchen-recipe-title">{RECIPE_CATALOGUE[recipe].label}</p>
+      <p className="sa-kitchen-recipe-title">
+        {def.label} <span className="sa-kitchen-where">· {MACHINE_CATALOGUE[def.machine].label}</span>
+      </p>
       <ul className="sa-kitchen-ingredients">
         {ingredients.map((ingredient) => {
           const short = missingLine(ingredient);
@@ -234,14 +224,77 @@ function KitchenRecipe({
           );
         })}
       </ul>
-      <button
-        type="button"
-        className="sa-cta"
-        disabled={busy(`process:${recipe}`) || !ready}
-        onClick={() => void run(onMake, doneNote)}
-      >
-        {verb}
+      <button type="button" className="sa-cta" disabled={busy(`process:${recipe}`) || !ready} onClick={onMake}>
+        {RECIPE_VERB[recipe]} {def.label}
       </button>
+    </div>
+  );
+}
+
+interface CellarPanelProps {
+  cellar: VatContainer | null;
+  inventory: StackAcresInventory;
+  nowMs: number;
+  busy: (intent: string) => boolean;
+  onStore: (item: CellarItem) => void;
+  onOpen: () => void;
+}
+
+/** The Preserves Cellar: store jars, wait, sell them for more. */
+function CellarPanel({ cellar, inventory, nowMs, busy, onStore, onOpen }: CellarPanelProps) {
+  const title = <p className="sa-kitchen-recipe-title">{MACHINE_CATALOGUE.cellar.label}</p>;
+  const manifest = cellar?.manifest ?? null;
+
+  if (!cellar || !manifest) {
+    return (
+      <div className="sa-kitchen-recipe">
+        {title}
+        <p className="sa-kitchen-cellar-line">
+          Store up to {CELLAR_CAPACITY} jars. The longer they sit, the more they sell for.
+        </p>
+        {CELLAR_ITEMS.map((item) => {
+          const count = Math.min(CELLAR_CAPACITY, inventoryQuantity(inventory, item));
+          return (
+            <button
+              key={item}
+              type="button"
+              className="sa-cta"
+              disabled={busy("seal-cellar") || count < 1}
+              onClick={() => onStore(item)}
+            >
+              {count < 1 ? `No ${machineItemNoun(item, 2)} yet` : `Store ${machineItemLabel(item, count)}`}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const jars = machineItemLabel(manifest.item, manifest.quantity);
+  const nextAt = cellar.nextTier ? Date.parse(manifest.sealedAt) + cellar.nextTier.durationMs : null;
+  const nextLine =
+    cellar.nextTier && nextAt !== null
+      ? `${cellar.nextTier.label} in ${waitLabel(Math.max(0, nextAt - nowMs))}.`
+      : "As good as it gets.";
+
+  return (
+    <div className="sa-kitchen-recipe">
+      {title}
+      {cellar.status === "aging" ? (
+        <p className="sa-kitchen-cellar-line">
+          {jars} aging. {nextLine}
+        </p>
+      ) : (
+        <>
+          <p className="sa-kitchen-cellar-line">
+            {jars}, {cellar.currentTier?.label}. {nextLine} Fully aged, they sell for{" "}
+            {cellar.maxGoldValue.toLocaleString()} Gold.
+          </p>
+          <button type="button" className="sa-cta" disabled={busy("collect-cellar")} onClick={onOpen}>
+            Sell the jars · {cellar.collectibleGoldValue.toLocaleString()} Gold
+          </button>
+        </>
+      )}
     </div>
   );
 }

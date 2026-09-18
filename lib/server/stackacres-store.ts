@@ -2276,26 +2276,32 @@ export function vatManifestFromRow(row: VatManifestDbRow): StoredVatManifest {
   };
 }
 
-/** The manifest currently sealed inside this player's vat, or null when it is
- *  empty. At most one row can ever exist per profile today -- a player has
- *  at most one vat machine (`homestead_machines_one_per_kind`), and at most
- *  one manifest per machine (`homestead_vat_manifests_one_per_machine`). */
-export async function readStackAcresVatManifest(profileId: string): Promise<StoredVatManifest | null> {
+/** Every manifest this player has sealed: at most one per aging machine (the
+ *  Vat and the Preserves Cellar), per `homestead_vat_manifests_one_per_machine`.
+ *  Callers pick theirs by `machineId`. */
+export async function listStackAcresAgingManifests(profileId: string): Promise<StoredVatManifest[]> {
   const supabase = adminClient();
   if (!supabase) {
-    for (const manifest of memoryVatManifests.values()) {
-      if (manifest.profileId === profileId) return { ...manifest };
-    }
-    return null;
+    return [...memoryVatManifests.values()]
+      .filter((manifest) => manifest.profileId === profileId)
+      .map((manifest) => ({ ...manifest }));
   }
 
   const { data, error } = await supabase
     .from("homestead_vat_manifests")
     .select(VAT_MANIFEST_COLUMNS)
-    .eq("profile_id", profileId)
-    .maybeSingle();
+    .eq("profile_id", profileId);
   if (error) throw new Error(`Could not read the vat: ${error.message}`);
-  return data ? vatManifestFromRow(data as VatManifestDbRow) : null;
+  return ((data ?? []) as VatManifestDbRow[]).map(vatManifestFromRow);
+}
+
+/** The manifest sealed inside `machineId`, or null when it is empty. */
+export async function readStackAcresAgingManifest(
+  profileId: string,
+  machineId: string,
+): Promise<StoredVatManifest | null> {
+  const manifests = await listStackAcresAgingManifests(profileId);
+  return manifests.find((manifest) => manifest.machineId === machineId) ?? null;
 }
 
 /**

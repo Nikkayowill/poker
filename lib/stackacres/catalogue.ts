@@ -219,7 +219,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
 
   // ---- Tier 2 (medium). ----
   broccoli: { label: "Broccoli", ...TIER2 },
-  pepper: { label: "Pepper", ...TIER2 },
+  pepper: { label: "Hot Pepper", ...TIER2 },
   bell_pepper: { label: "Bell Pepper", ...TIER2 },
   celery: { label: "Celery", ...TIER2 },
   green_bean: { label: "Green Bean", ...TIER2 },

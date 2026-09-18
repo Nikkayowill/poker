@@ -48,7 +48,21 @@ import { machineItemSellPrice, type MachineItemId, type MachineProcessedItem } f
 import type { MachineKind } from "./machines";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad", "cattle_feed"] as const;
+export const RECIPE_IDS = [
+  "flour",
+  "cheese",
+  "cloth",
+  "cake",
+  "bread",
+  "stew",
+  "salad",
+  "cattle_feed",
+  "sauce",
+  "salsa",
+  "stuffed_peppers",
+  "pickles",
+  "sauerkraut",
+] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export function isRecipeId(value: string): value is RecipeId {
@@ -156,6 +170,73 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     output: { item: "cattle_feed", quantity: 4 },
     processingMs: 20 * 1000,
   },
+  // Chapter 5's town kitchen. All instant. Sauce is also an ingredient for
+  // Stuffed Peppers, so it cooks on the Stew Pot before the Oven needs it.
+  sauce: {
+    label: "Tomato Sauce",
+    machine: "stew_pot",
+    inputs: [
+      { item: "tomato", quantity: 2 },
+      { item: "celery", quantity: 1 },
+      { item: "onion", quantity: 1 },
+    ],
+    output: { item: "sauce", quantity: 1 },
+    processingMs: 0,
+  },
+  salsa: {
+    label: "Hot Salsa",
+    machine: "counter",
+    inputs: [
+      { item: "tomato", quantity: 2 },
+      { item: "pepper", quantity: 1 },
+      { item: "onion", quantity: 1 },
+    ],
+    output: { item: "salsa", quantity: 1 },
+    processingMs: 0,
+  },
+  stuffed_peppers: {
+    label: "Stuffed Peppers",
+    machine: "oven",
+    inputs: [
+      { item: "bell_pepper", quantity: 2 },
+      { item: "sauce", quantity: 1 },
+      { item: "potato", quantity: 1 },
+    ],
+    output: { item: "stuffed_peppers", quantity: 1 },
+    processingMs: 0,
+  },
+  // Jarred at the Counter. The Preserves Cellar ages them (./aging.ts).
+  pickles: {
+    label: "Pickles",
+    machine: "counter",
+    inputs: [{ item: "celery", quantity: 2 }],
+    output: { item: "pickles", quantity: 1 },
+    processingMs: 0,
+  },
+  sauerkraut: {
+    label: "Sauerkraut",
+    machine: "counter",
+    inputs: [{ item: "cabbage", quantity: 3 }],
+    output: { item: "sauerkraut", quantity: 1 },
+    processingMs: 0,
+  },
+};
+
+/** What the button says while making one batch of `recipe`. */
+export const RECIPE_VERB: Readonly<Record<RecipeId, string>> = {
+  flour: "Mill",
+  cheese: "Make",
+  cloth: "Weave",
+  cake: "Bake",
+  bread: "Bake",
+  stew: "Cook",
+  salad: "Toss",
+  cattle_feed: "Mill",
+  sauce: "Cook",
+  salsa: "Mix",
+  stuffed_peppers: "Bake",
+  pickles: "Jar",
+  sauerkraut: "Jar",
 };
 
 /** Whether this recipe settles in one transaction rather than through a

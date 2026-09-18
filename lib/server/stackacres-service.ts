@@ -232,7 +232,8 @@ import {
   writeStackAcresSiloFeeds,
   collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
-  readStackAcresVatManifest,
+  listStackAcresAgingManifests,
+  readStackAcresAgingManifest,
   fulfillStackAcresContract as settleStackAcresContract,
   listStackAcresMachines,
   listStackAcresWheatPlots,
@@ -335,7 +336,7 @@ import {
   type StackAcresBuyableCutter,
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
-import { MACHINE_ITEM_CATALOGUE, machineItemLabel } from "@/lib/stackacres/machine-items";
+import { MACHINE_ITEM_CATALOGUE, machineItemLabel, machineItemNoun } from "@/lib/stackacres/machine-items";
 import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import {
   ENERGY_MAX,
@@ -374,13 +375,19 @@ import {
   type StackAcresMachineSnapshot,
 } from "@/lib/stackacres/machines";
 import {
+  AGING_TIERS,
+  CELLAR_AGING_TIERS,
   VAT_INPUT_ITEM,
   VAT_INPUT_QUANTITY,
   baseGoldValueForSeal,
+  cellarBaseGoldValue,
+  cellarSealQuantity,
   firstAgingTier,
   toVatContainer,
   vatTierForElapsed,
   agedGoldValue,
+  type AgingTier,
+  type CellarItem,
   type VatContainer,
 } from "@/lib/stackacres/aging";
 import {
@@ -722,6 +729,9 @@ export interface StackAcresView {
    *  `machines`, kind `"vat"`), otherwise its current seal (if any) and what
    *  each tier of it is worth. See lib/stackacres/aging.ts. */
   vat: VatContainer | null;
+  /** The Preserves Cellar (Chapter 5): null until placed, otherwise the jars
+   *  aging inside it, on its own slower ladder. Same shape as `vat`. */
+  cellar: VatContainer | null;
   /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
    *  from the farm's own milestone ladder, lib/stackacres/shop-locks.ts --
    *  see `isDroneHangarUnlocked` in stackacres-drone-service.ts) and every
@@ -1009,7 +1019,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
           // above is: FRIENDSHIP_NPCS is variable-length, and spreading it into
           // this array literal would widen every sibling element's inferred type.
           Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
-          readStackAcresVatManifest(profile.id),
+          listStackAcresAgingManifests(profile.id),
           readStackAcresCutters(profile.id),
           readStackAcresStory(profile.id),
           listDrones(profile.id),
@@ -1046,7 +1056,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   let seedStock: SeedStock;
   let storedDevotion: StoredDevotionRow;
   let storedFriendships: StoredFriendshipRow[];
-  let vatManifest: StoredVatManifest | null;
+  let agingManifests: StoredVatManifest[];
   let cutters: StackAcresCutter[];
   let storedStory: StoredStoryRow;
   let droneRows: StoredDrone[];
@@ -1104,7 +1114,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       claimed_rungs: number[] | null;
     }[];
     storedFriendships = FRIENDSHIP_NPCS.map((npc) => stackAcresFriendshipFromBatchRows(friendshipRows, npc));
-    vatManifest = batch.vat_manifest ? vatManifestFromRow(batch.vat_manifest as unknown as VatManifestDbRow) : null;
+    agingManifests = (batch.aging_manifests as unknown as VatManifestDbRow[]).map(vatManifestFromRow);
     cutters = stackAcresCuttersFromBatchRows(batch.cutters as { cutter: unknown }[]);
     storedStory = stackAcresStoryFromBatchRow(batch.story as { story: StoredStory; version: number | string } | null);
     droneRows = (batch.drones as { drone_id: string; profile_id: string; deployed_at: string; last_forage_at: string | null }[]).map(
@@ -1144,7 +1154,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       seedStock,
       storedDevotion,
       storedFriendships,
-      vatManifest,
+      agingManifests,
       cutters,
       storedStory,
       droneRows,
@@ -1155,7 +1165,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
       StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
       StoredPipe[], StoredSoilTile[], SoilStock, SeedStock, StoredDevotionRow, StoredFriendshipRow[],
-      StoredVatManifest | null, StackAcresCutter[], StoredStoryRow, StoredDrone[],
+      StoredVatManifest[], StackAcresCutter[], StoredStoryRow, StoredDrone[],
       StoredStackAcresEnergy | null,
     ];
   }
@@ -1173,8 +1183,14 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   });
   const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
   const sectors = unlockedSectors(cleared, units);
-  const vatMachine = machineRows.find((machine) => machine.kind === "vat") ?? null;
-  const vat = vatMachine ? toVatContainer(vatMachine, vatManifest, now) : null;
+  const agingContainer = (kind: "vat" | "cellar", tiers: readonly AgingTier[]): VatContainer | null => {
+    const machine = machineRows.find((candidate) => candidate.kind === kind);
+    if (!machine) return null;
+    const manifest = agingManifests.find((candidate) => candidate.machineId === machine.id) ?? null;
+    return toVatContainer(machine, manifest, now, tiers);
+  };
+  const vat = agingContainer("vat", AGING_TIERS);
+  const cellar = agingContainer("cellar", CELLAR_AGING_TIERS);
   // `droneRows` came off the same batch (or its fallback array) above --
   // `isDroneHangarUnlocked` is pure and synchronous, so it needs no read of
   // its own here, it takes the same progress shape passed to `storyView`
@@ -1236,6 +1252,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     devotion: devotionView(storedDevotion, now),
     friendship,
     vat,
+    cellar,
     droneHangar: {
       unlocked: droneHangarUnlocked,
       drones: droneRows.map((drone) => ({ droneId: drone.droneId, deployedAt: drone.deployedAt })),
@@ -4308,17 +4325,19 @@ export async function placeStackAcresMachine(
   return view(debited, now);
 }
 
-/** The player's own Fermenting Vat, or a 404 -- every seal/collect action
- *  needs this first, and the message is the same whichever one asked. */
-async function requireVatMachine(profileId: string, now: Date) {
+/** The player's own aging machine (the Vat or the Preserves Cellar), or a
+ *  404 -- every seal/collect action needs this first. */
+async function requireAgingMachine(profileId: string, kind: "vat" | "cellar", now: Date) {
   const machines = await listStackAcresMachines(profileId);
-  const vat = machines.find((machine) => machine.kind === "vat");
-  if (!vat) {
-    throw new StackAcresRequestError("Place a Fermenting Vat first.", 404, {
-      round: await snapshots(profileId, now),
-    });
+  const machine = machines.find((candidate) => candidate.kind === kind);
+  if (!machine) {
+    throw new StackAcresRequestError(
+      kind === "vat" ? "Place a Fermenting Vat first." : "Build the Preserves Cellar first.",
+      404,
+      { round: await snapshots(profileId, now) },
+    );
   }
-  return vat;
+  return machine;
 }
 
 /**
@@ -4341,9 +4360,9 @@ async function requireVatMachine(profileId: string, now: Date) {
  */
 export async function sealStackAcresVat(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  const vat = await requireVatMachine(profile.id, now);
+  const vat = await requireAgingMachine(profile.id, "vat", now);
 
-  const existing = await readStackAcresVatManifest(profile.id);
+  const existing = await readStackAcresAgingManifest(profile.id, vat.id);
   if (existing) {
     throw new StackAcresRequestError("The vat is already sealed.", 409, {
       round: await snapshots(profile.id, now),
@@ -4384,6 +4403,53 @@ export async function sealStackAcresVat(token: string, now = new Date()): Promis
 }
 
 /**
+ * Seals jars of Pickles or Sauerkraut in the Preserves Cellar: every jar of
+ * that kind on the shelf, up to CELLAR_CAPACITY, priced once at seal time off
+ * what the jars sell for today. Same one-transaction seal as the Vat
+ * (`seal_homestead_vat`), keyed on the Cellar's own machine row.
+ */
+export async function sealStackAcresCellar(
+  token: string,
+  item: CellarItem,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const cellar = await requireAgingMachine(profile.id, "cellar", now);
+
+  const existing = await readStackAcresAgingManifest(profile.id, cellar.id);
+  if (existing) {
+    throw new StackAcresRequestError("The cellar already has jars aging.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const inventory = await readStackAcresInventory(profile.id);
+  const quantity = cellarSealQuantity(inventoryQuantity(inventory, item));
+  if (quantity < 1) {
+    throw new StackAcresRequestError(`You have no ${machineItemNoun(item, 2)} to store.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const manifest = await createStackAcresVatManifest(
+    profile.id,
+    cellar.id,
+    item,
+    quantity,
+    cellarBaseGoldValue(item, quantity),
+    now,
+    new Date(now.getTime() + firstAgingTier(CELLAR_AGING_TIERS).durationMs),
+  );
+  if (manifest === null) {
+    throw new StackAcresRequestError(`You have no ${machineItemNoun(item, 2)} to store.`, 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  return view(profile, now);
+}
+
+/**
  * Collects whatever tier the sealed batch has reached and pays for it.
  *
  * MONEY ORDERING, the same steps `fulfillStackAcresTownContract` runs, in the
@@ -4396,21 +4462,39 @@ export async function collectStackAcresVat(
   token: string,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
-  const profile = await ensureProfile(token);
-  await requireVatMachine(profile.id, now);
+  return collectStackAcresAging(token, "vat", AGING_TIERS, now);
+}
 
-  const manifest = await readStackAcresVatManifest(profile.id);
+/** The Preserves Cellar's collect: the Vat's, on the Cellar's ladder. */
+export async function collectStackAcresCellar(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  return collectStackAcresAging(token, "cellar", CELLAR_AGING_TIERS, now);
+}
+
+async function collectStackAcresAging(
+  token: string,
+  kind: "vat" | "cellar",
+  tiers: readonly AgingTier[],
+  now: Date,
+): Promise<StackAcresActionResult> {
+  const profile = await ensureProfile(token);
+  const machine = await requireAgingMachine(profile.id, kind, now);
+  const place = kind === "vat" ? "the vat" : "the cellar";
+
+  const manifest = await readStackAcresAgingManifest(profile.id, machine.id);
   if (!manifest) {
-    throw new StackAcresRequestError("Nothing is sealed in the vat.", 404, {
+    throw new StackAcresRequestError(`Nothing is sealed in ${place}.`, 404, {
       round: await snapshots(profile.id, now),
     });
   }
 
   const elapsedMs = now.getTime() - Date.parse(manifest.sealedAt);
-  const tier = vatTierForElapsed(elapsedMs);
+  const tier = vatTierForElapsed(elapsedMs, tiers);
   if (!tier) {
     throw new StackAcresRequestError(
-      "Still aging. Come back once it reaches Aged quality.",
+      `Still aging. Come back once it reaches ${tiers[0].label} quality.`,
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -4437,6 +4521,7 @@ export async function collectStackAcresVat(
       console.error("stackacres.vat_credit_failed", {
         profileId: profile.id,
         manifestId: manifest.id,
+        kind,
         gold: netGold,
         error,
       });
@@ -4445,6 +4530,8 @@ export async function collectStackAcresVat(
 
   return {
     ...(await view(paid ?? (await ensureProfile(token)), now)),
+    // Named for the Vat, which came first; the Cellar's collect fills the
+    // same field.
     vatCollected: {
       quantity: manifest.quantity,
       tier: tier.tier,

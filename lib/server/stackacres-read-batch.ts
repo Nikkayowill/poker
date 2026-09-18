@@ -42,7 +42,9 @@ export interface StackAcresReadBatch {
   seed_stock: Record<string, unknown>[];
   devotion: Record<string, unknown> | null;
   friendship: Record<string, unknown>[];
-  vat_manifest: Record<string, unknown> | null;
+  /** Every sealed manifest, one per aging machine (the Vat and the
+   *  Preserves Cellar). Added by the Chapter 5 migration. */
+  aging_manifests: Record<string, unknown>[];
   cutters: Record<string, unknown>[];
   story: Record<string, unknown> | null;
   drones: Record<string, unknown>[];

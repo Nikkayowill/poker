@@ -85,7 +85,9 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
 
   /* ---- Tier 2 (medium): sellPrice 25, yield quantity 4. ---- */
   broccoli: { label: "Broccoli", plural: "Broccoli", icon: "ico-broccoli", sellPrice: 25 },
-  pepper: { label: "Pepper", plural: "Peppers", icon: "ico-pepper", sellPrice: 25 },
+  // "Hot Pepper" so it never reads as the same crop as Bell Pepper. The id
+  // stays "pepper" because it is already written into inventory rows.
+  pepper: { label: "Hot Pepper", plural: "Hot Peppers", icon: "ico-pepper", sellPrice: 25 },
   bell_pepper: { label: "Bell Pepper", plural: "Bell Peppers", icon: "ico-bell_pepper", sellPrice: 25 },
   celery: { label: "Celery", plural: "Celery", icon: "ico-celery", sellPrice: 25 },
   green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },

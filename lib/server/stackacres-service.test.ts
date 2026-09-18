@@ -103,6 +103,7 @@ import {
 import { adjustGold, ensureProfile } from "./profile-store";
 import {
   __resetStackAcresSoilTilesForTest,
+  listStackAcresSoilTiles,
   placeStackAcresSoilTile as laySoilBed,
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
@@ -4809,5 +4810,67 @@ describe("Chapter 4a: feed crops and the first automation", () => {
     expect(read.inventory.cattle_feed).toBe(2);
     expect(read.machines.find((machine) => machine.kind === "feed_silo")?.autoFeedsLeft).toBe(48);
     expect(await cattleOf(id)).toEqual(before);
+  });
+});
+
+describe("beans feed the soil", () => {
+  async function readyBeanOnFirstBed(id: string) {
+    const [bed] = await listStackAcresSoilTiles(id);
+    const unit = await createStackAcresUnit(id, {
+      stock: "green_bean",
+      stake: STACKACRES_CATALOGUE.green_bean.seedCost,
+      yieldQuantity: STACKACRES_YIELDS.green_bean.quantity,
+      startedAt: new Date(T0.getTime() - STACKACRES_CATALOGUE.green_bean.durationMs),
+      readyAt: T0,
+      lastFedAt: null,
+      lastWateredAt: T0,
+      permanent: false,
+      soilSlot: bed.order,
+    });
+    return { bed, unit };
+  }
+
+  async function bedAt(id: string, order: number) {
+    return (await listStackAcresSoilTiles(id)).find((tile) => tile.order === order);
+  }
+
+  it("enriches the bean's bed, and the next crop there grows in 75% of the time", async () => {
+    const { token, id } = await funded();
+    const { bed, unit } = await readyBeanOnFirstBed(id);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      await harvestStackAcres(token, { unitIds: [unit.id] }, T0);
+    } finally {
+      random.mockRestore();
+    }
+    expect((await bedAt(id, bed.order))?.enriched).toBe(true);
+
+    const view = await stockStackAcres(token, { stock: "corn", tile: { tx: bed.tx, ty: bed.ty } }, T0);
+    const corn = unitOf(view, "corn");
+    expect(corn.soilSlot).toBe(bed.order);
+    expect(Date.parse(corn.readyAt) - T0.getTime()).toBe(
+      Math.round(STACKACRES_CATALOGUE.corn.durationMs * 0.75),
+    );
+    expect((await bedAt(id, bed.order))?.enriched).toBe(false);
+  });
+
+  it("never stacks: a second bean harvest leaves the bed enriched once", async () => {
+    const { token, id } = await funded();
+    const first = await readyBeanOnFirstBed(id);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      await harvestStackAcres(token, { unitIds: [first.unit.id] }, T0);
+      const second = await readyBeanOnFirstBed(id);
+      await harvestStackAcres(token, { unitIds: [second.unit.id] }, T0);
+    } finally {
+      random.mockRestore();
+    }
+    const tile = first.bed;
+    await stockStackAcres(token, { stock: "corn", tile: { tx: tile.tx, ty: tile.ty } }, T0);
+    expect((await bedAt(id, tile.order))?.enriched).toBe(false);
+    const view = await stockStackAcres(token, { stock: "carrot" }, T0);
+    expect(Date.parse(unitOf(view, "carrot").readyAt) - T0.getTime()).toBe(
+      STACKACRES_CATALOGUE.carrot.durationMs,
+    );
   });
 });

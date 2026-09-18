@@ -85,6 +85,11 @@ describe("wantedForLine", () => {
     expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Mill)");
     expect(otherUsesOf("cattle_feed")).toEqual(["Cattle feed"]);
   });
+
+  it("tags beans as a soil helper", () => {
+    expect(otherUsesOf("green_bean")).toContain("Soil helper (next crop grows faster)");
+    expect(wantedForLine("green_bean")).toContain("Soil helper (next crop grows faster)");
+  });
 });
 
 describe("recipeIngredients", () => {

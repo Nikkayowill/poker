@@ -68,7 +68,7 @@ test("Ray refuses a locked row over HTTP, not just in the browser", async ({ bro
     // The volume feed. Well-formed, real item id, plenty of Gold -- and the
     // Fold is still under wild growth.
     const bulk = await api.post("/api/stackacres/actions", {
-      data: { action: "buy-feed", itemId: "bulk_shipment" },
+      data: { action: "buy-feed", itemId: "bulk_shipment", quantity: 1 },
     });
     expect(bulk.status()).toBe(409);
     expect((await bulk.json()) as { error?: string }).toMatchObject({
@@ -95,7 +95,7 @@ test("Ray refuses a locked row over HTTP, not just in the browser", async ({ bro
     // And the row that is NOT gated still sells, so this is a gate rather
     // than a shelf that has stopped working.
     const sack = await api.post("/api/stackacres/actions", {
-      data: { action: "buy-feed", itemId: "feed_sack" },
+      data: { action: "buy-feed", itemId: "feed_sack", quantity: 1 },
     });
     expect(sack.ok()).toBe(true);
     expect(await goldOf(api)).toBe(before - 96);
@@ -147,7 +147,7 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     // The cheapest shipment is the shelf's floor and carries no gate at all.
     const sack = sheet.locator(".sa-stock-card", { hasText: "Feed Sack" });
     await expect(sack).not.toHaveClass(/is-locked/);
-    await expect(sack.getByRole("button", { name: "Buy" })).toBeEnabled();
+    await expect(sack.getByRole("button", { name: /^Buy 1,/ })).toBeEnabled();
 
     // The equipment rung counts milestones instead of naming one quest, so
     // its hint says how far along the farm is as well as what is next.

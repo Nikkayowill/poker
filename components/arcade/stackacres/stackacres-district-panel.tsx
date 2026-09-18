@@ -1,6 +1,6 @@
 "use client";
 
-import { STACKACRES_CATALOGUE, type StackAcresStock } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CATALOGUE, isLivestock, type StackAcresStock } from "@/lib/stackacres/catalogue";
 import { unitRowAction, type BuyOption } from "@/lib/stackacres/district-panel";
 import { timeLeftLabel } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
@@ -249,7 +249,10 @@ export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright
               title={option.seedReason ?? undefined}
               onClick={() => onSeed(option.stock)}
             >
-              <span className="sa-buy-label">Seed one cycle</span>
+              {/* A stocked animal runs one cycle and is deleted on collect, so for livestock this is a lease. */}
+              <span className="sa-buy-label">
+                {isLivestock(option.stock) ? "Cycle Lease" : "Seed one cycle"}
+              </span>
               <span className="sa-buy-price">{option.seedCost.toLocaleString()} Gold</span>
             </button>
             {option.outrightCost !== null && (

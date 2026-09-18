@@ -4686,17 +4686,17 @@ describe("Chapter 4a: feed crops and the first automation", () => {
     }
   };
 
-  it("mills 2 Corn into 3 Cattle Feed as a queued Mill run", async () => {
+  it("mills 1 Corn into 4 Cattle Feed as a queued Mill run", async () => {
     const { token, id } = await funded();
     await placeStackAcresMachine(token, "mill", T0);
-    await adjustStackAcresInventory(id, "corn", 2);
+    await adjustStackAcresInventory(id, "corn", 1);
     const started = await processStackAcresRecipeAction(token, "cattle_feed", T0);
     expect(started.processed.produced).toBeNull();
     expect(started.inventory.corn ?? 0).toBe(0);
 
     const done = await workStackAcres(token, new Date(T0.getTime() + 20_000));
     expect(done.work.machinesCollected).toBe(1);
-    expect(done.inventory.cattle_feed).toBe(3);
+    expect(done.inventory.cattle_feed).toBe(4);
   });
 
   it("feeds cattle Cattle Feed before the Feed Sack", async () => {

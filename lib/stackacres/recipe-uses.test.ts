@@ -104,15 +104,16 @@ describe("recipeIngredients", () => {
 });
 
 describe("the Cattle Feed recipe", () => {
-  it("is 2 Corn in the Mill, queued like Flour, for 3 Cattle Feed", () => {
+  it("is 1 Corn in the Mill, queued like Flour, for 4 Cattle Feed worth more than the corn", () => {
     expect(RECIPE_CATALOGUE.cattle_feed).toMatchObject({
       label: "Cattle Feed",
       machine: "mill",
-      inputs: [{ item: "corn", quantity: 2 }],
-      output: { item: "cattle_feed", quantity: 3 },
+      inputs: [{ item: "corn", quantity: 1 }],
+      output: { item: "cattle_feed", quantity: 4 },
       processingMs: RECIPE_CATALOGUE.flour.processingMs,
     });
-    expect(machineItemSellPrice("cattle_feed")).toBe(20);
+    expect(machineItemSellPrice("cattle_feed")).toBe(12);
+    expect(4 * machineItemSellPrice("cattle_feed")).toBeGreaterThan(machineItemSellPrice("corn"));
   });
 
   it("puts the Feed Silo on the machine list for 12,000 Gold, one of eight", () => {

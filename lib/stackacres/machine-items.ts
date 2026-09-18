@@ -148,7 +148,7 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   salad: { label: "Garden Salad", plural: "Garden Salads", icon: "ico-lettuce", sellPrice: 12 },
   // Milled from corn for cattle (./feeding.ts). Priced as feed, not as a way
   // to sell corn: two corn sell for more raw. Borrows the corn icon.
-  cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 20 },
+  cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 12 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

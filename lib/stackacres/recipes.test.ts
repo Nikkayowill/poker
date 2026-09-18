@@ -88,9 +88,6 @@ describe("recipeRawGoldValue", () => {
 
   it("sits under every processed good's own sell price, so crafting never loses to selling raw", () => {
     for (const id of RECIPE_IDS) {
-      // Cattle Feed is worth what it feeds, not what it sells for. Selling
-      // the corn raw is meant to pay more.
-      if (id === "cattle_feed") continue;
       const def = RECIPE_CATALOGUE[id];
       expect(machineItemSellPrice(def.output.item)).toBeGreaterThan(recipeRawGoldValue(id));
     }

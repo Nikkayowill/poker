@@ -152,8 +152,8 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
   cattle_feed: {
     label: "Cattle Feed",
     machine: "mill",
-    inputs: [{ item: "corn", quantity: 2 }],
-    output: { item: "cattle_feed", quantity: 3 },
+    inputs: [{ item: "corn", quantity: 1 }],
+    output: { item: "cattle_feed", quantity: 4 },
     processingMs: 20 * 1000,
   },
 };

@@ -97,52 +97,24 @@ describe("wagering", () => {
   });
 
   /**
-   * The ceiling. A player with the balance to cover it could otherwise stake
-   * everything on the grid they always solve, collect a multiple, and restake
-   * the larger balance -- the daily cap bounds how many times a day that runs,
-   * not how large each run is, and compounding does the rest.
+   * The wager ceiling that used to live here (git history /
+   * 20260827090000_ante_up_wager_tier_ceiling.sql) has been removed: a solo
+   * wager is now bounded only by the player's own balance, same as any other
+   * stake in the app. `maxAnteUpWager`/`anteUpWagerCeilingProblem` are kept as
+   * always-unbounded no-ops so a future ceiling has somewhere to land.
    */
-  it("refuses a wager over the easy grid's ceiling, without touching the wallet", async () => {
-    const ceiling = maxAnteUpWager("sudoku", "easy");
-    const { token } = await funded(ceiling * 100);
-    const before = await balance(token);
-    await expect(openAnteUpAttempt(token, "easy", ceiling + 1)).rejects.toBeInstanceOf(
-      AnteUpRequestError,
-    );
-    expect(await balance(token)).toBe(before);
+  it("allows a wager on the easy grid the old ceiling would have refused", async () => {
+    const { token } = await funded(5_000_000);
+    const { attempt } = await openAnteUpAttempt(token, "easy", 1_000_000);
+    expect(attempt.wager).toBe(1_000_000);
   });
 
-  it("allows exactly the ceiling", async () => {
-    // The boundary itself is legal -- an off-by-one here would silently move
-    // every ceiling in ante-up-stakes.ts down by one Gold. No balance
-    // assertion: a wager this size can cross a level threshold, and
-    // awardWager's level reward credits Gold back, which is unrelated to the
-    // debit the test above already pins.
-    const ceiling = maxAnteUpWager("sudoku", "easy");
-    const { token } = await funded(ceiling * 100);
-    const { attempt } = await openAnteUpAttempt(token, "easy", ceiling);
-    expect(attempt.wager).toBe(ceiling);
-  });
+  it("has no upper bound beyond the player's own balance", async () => {
+    expect(maxAnteUpWager("sudoku", "easy")).toBe(Number.POSITIVE_INFINITY);
 
-  it("lets a harder grid carry a stake the easy grid refuses", async () => {
-    // The rule is not "wager less", it is "a bigger stake buys a harder
-    // board" -- so the same amount has to be legal one rung up.
-    const overEasy = maxAnteUpWager("sudoku", "easy") + 1;
-    expect(overEasy).toBeLessThanOrEqual(maxAnteUpWager("sudoku", "expert"));
-
-    const { token } = await funded(overEasy * 10);
-    const { attempt } = await openAnteUpAttempt(token, "expert", overEasy);
-    expect(attempt.wager).toBe(overEasy);
-  });
-
-  it("refuses an over-ceiling wager even when the player can easily afford it", async () => {
-    // Affordability was the only upper bound this game ever had. It is not a
-    // policy bound, and it must no longer be the one doing this job.
     const { token } = await funded(50_000_000);
-    await expect(openAnteUpAttempt(token, "easy", 5_000_000)).rejects.toBeInstanceOf(
-      AnteUpRequestError,
-    );
-    expect(await balance(token)).toBe(50_000_000);
+    const { attempt } = await openAnteUpAttempt(token, "easy", 5_000_000);
+    expect(attempt.wager).toBe(5_000_000);
   });
 });
 

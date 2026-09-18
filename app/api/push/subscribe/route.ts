@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedPushEndpoint, isValidPushKey } from "@/lib/push/endpoint";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { savePushSubscription } from "@/lib/server/push-subscription-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
     const auth = typeof body?.auth === "string" ? body.auth : null;
     if (!endpoint || !p256dh || !auth) {
       return NextResponse.json({ error: "Missing subscription details." }, { status: 400 });
+    }
+    if (!isAllowedPushEndpoint(endpoint) || !isValidPushKey(p256dh) || !isValidPushKey(auth)) {
+      return NextResponse.json({ error: "That isn't a supported push subscription." }, { status: 400 });
     }
 
     const profile = await ensureProfile(token);

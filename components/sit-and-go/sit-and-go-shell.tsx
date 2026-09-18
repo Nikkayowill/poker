@@ -147,8 +147,12 @@ export function SitAndGoShell() {
 
   useEffect(() => {
     mounted.current = true;
-    const first = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
+    // A background tab would otherwise poll every POLL_MS forever.
+    const poll = () => {
+      if (!document.hidden) void refresh();
+    };
+    const first = window.setTimeout(poll, 0);
+    const timer = window.setInterval(poll, POLL_MS);
     return () => {
       mounted.current = false;
       window.clearTimeout(first);

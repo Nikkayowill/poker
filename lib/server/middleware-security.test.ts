@@ -37,6 +37,24 @@ describe("middleware security and API fast path", () => {
     expect(getUser).not.toHaveBeenCalled();
   });
 
+  it("refuses oversized API bodies before any route runs", async () => {
+    const response = await middleware(new NextRequest("https://www.stackchips.app/api/games", {
+      method: "POST",
+      headers: { origin: "https://www.stackchips.app", "content-length": String(10 * 1024 * 1024) },
+    }));
+
+    expect(response.status).toBe(413);
+  });
+
+  it("gives the avatar upload room for a 2 MiB image", async () => {
+    const response = await middleware(new NextRequest("https://www.stackchips.app/api/profile/avatar", {
+      method: "POST",
+      headers: { origin: "https://www.stackchips.app", "content-length": String(2 * 1024 * 1024) },
+    }));
+
+    expect(response.status).not.toBe(413);
+  });
+
   it("continues refreshing Supabase auth on rendered pages", async () => {
     await middleware(new NextRequest("https://www.stackchips.app/profile"));
 

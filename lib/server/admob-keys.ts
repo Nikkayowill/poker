@@ -27,6 +27,12 @@ interface VerifierKeysResponse {
 
 const cache = createTtlCache<AdmobVerifierKey[]>(CACHE_TTL_MS);
 
+// The key lookup runs before the signature check, so a made-up key_id would
+// otherwise buy one outbound fetch per request. A real rotation is still
+// picked up within a minute.
+const MISS_REFETCH_COOLDOWN_MS = 60 * 1000;
+let lastMissRefetchAt = -Infinity;
+
 async function fetchKeys(): Promise<AdmobVerifierKey[]> {
   const response = await fetch(KEYS_URL, { cache: "no-store" });
   if (!response.ok) {
@@ -49,9 +55,10 @@ export async function admobVerifierKey(keyId: number, now = Date.now()): Promise
     cache.write(keys, now);
   }
   let found = keys.find((key) => key.keyId === keyId);
-  if (!found) {
+  if (!found && now - lastMissRefetchAt >= MISS_REFETCH_COOLDOWN_MS) {
+    lastMissRefetchAt = now;
     keys = await fetchKeys();
-    cache.write(keys);
+    cache.write(keys, now);
     found = keys.find((key) => key.keyId === keyId);
   }
   return found?.pem ?? null;

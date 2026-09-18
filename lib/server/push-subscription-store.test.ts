@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE,
   __resetPushSubscriptionsForTest,
   markPushSubscriptionNotified,
   pushSubscriptionsForInactivePlayers,
@@ -45,6 +46,15 @@ describe("push subscriptions (memory mode)", () => {
 
     expect(await pushSubscriptionsForProfile(alice)).toHaveLength(1);
     expect(await pushSubscriptionsForProfile(bob)).toHaveLength(1);
+  });
+
+  it("keeps at most the cap's worth of devices per profile", async () => {
+    const profileId = randomUUID();
+    for (let i = 0; i < MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE + 5; i += 1) {
+      await savePushSubscription(profileId, keys(`https://push.example/${i}`), null);
+    }
+
+    expect(await pushSubscriptionsForProfile(profileId)).toHaveLength(MAX_PUSH_SUBSCRIPTIONS_PER_PROFILE);
   });
 
   it("removes a subscription by endpoint", async () => {

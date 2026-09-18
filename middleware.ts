@@ -27,9 +27,35 @@ import { readSupabasePublicKey, readSupabaseUrl } from "@/lib/supabase/public-en
  */
 const UNUSED_PROJECT_ALIAS_HOST = "poker-navy-six.vercel.app";
 
+/*
+ * Browser API bodies are small JSON intents except the avatar upload, which
+ * the route itself caps at 2 MiB. Stripe's webhook gets more room because an
+ * event's size isn't ours to choose. Refusing anything larger here means a
+ * flood of big bodies never gets parsed by a route. A body with no
+ * Content-Length still meets Vercel's own 4.5MB request limit.
+ */
+const MAX_API_BODY_BYTES = 128 * 1024;
+const LARGER_BODY_LIMITS: Record<string, number> = {
+  "/api/profile/avatar": 2 * 1024 * 1024 + 64 * 1024,
+  "/api/stripe/webhook": 1024 * 1024,
+};
+
+function isOversizedApiBody(request: NextRequest): boolean {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (!Number.isFinite(declared)) return true;
+  return declared > (LARGER_BODY_LIMITS[request.nextUrl.pathname] ?? MAX_API_BODY_BYTES);
+}
+
 export async function middleware(request: NextRequest) {
   if (request.nextUrl.hostname === UNUSED_PROJECT_ALIAS_HOST) {
     return new NextResponse("ok", { status: 200, headers: { "Cache-Control": "no-store" } });
+  }
+
+  if (request.nextUrl.pathname.startsWith("/api/") && isOversizedApiBody(request)) {
+    return NextResponse.json(
+      { error: "Request is too large." },
+      { status: 413, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 
   if (request.nextUrl.pathname.startsWith("/api/") && isCrossOriginMutation(request)) {

@@ -56,22 +56,22 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // the Dairy for the same reason a Dairy sits above the Mill: it is the most
   // valuable thing on the floor to be locked out of using casually.
   vat: { label: "Fermenting Vat", placeCost: 1_200 },
-  // Chapter 1's kitchen oven, built in Ray's house. Bakes Flour into Bread,
+  // Chapter 1's kitchen oven, built in the player's house. Bakes Flour into Bread,
   // the first food that gives energy back.
   oven: { label: "Oven", placeCost: 500 },
-  // Chapter 2's kitchen pot, also in Ray's house. Cooks garden crops into Stew.
+  // Chapter 2's kitchen pot, also in the player's house. Cooks garden crops into Stew.
   stew_pot: { label: "Stew Pot", placeCost: 1_500 },
-  // Chapter 3's prep counter, also in Ray's house. Tosses greens into Salad.
+  // Chapter 3's prep counter, also in the player's house. Tosses greens into Salad.
   counter: { label: "Kitchen Counter", placeCost: 800 },
   // Chapter 4a's first automation, placed from the Workshop. Runs no recipe:
   // it feeds hungry animals from the barn while the player is away
   // (./feed-silo.ts). Priced as a late investment, not a convenience.
   feed_silo: { label: "Feed Silo", placeCost: 12_000 },
-  // Chapter 5's cellar under Ray's kitchen. Runs no recipe: it ages jars of
+  // Chapter 5's cellar under the house kitchen. Runs no recipe: it ages jars of
   // Pickles or Sauerkraut over hours (./aging.ts), so it earns while the
   // player is away.
   cellar: { label: "Preserves Cellar", placeCost: 25_000 },
-  // Chapter 6's late automation beside Ray's kitchen. Runs no recipe of its
+  // Chapter 6's late automation beside the house kitchen. Runs no recipe of its
   // own: it cooks the player's standing order while they are away, at double
   // yield (./farm-kitchen.ts).
   farm_kitchen: { label: "Farm Kitchen", placeCost: 60_000 },

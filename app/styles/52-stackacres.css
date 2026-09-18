@@ -3181,6 +3181,16 @@
   margin-top: 2px;
 }
 
+/* A livestock pen whose land is not cleared yet: the animal's badge greyed
+   beside its name, and a button that opens that land's clearing sheet. */
+.sa-locked-pen h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sa-locked-pen h3 > * { filter: grayscale(1); }
+.sa-locked-pen .sa-cta { margin-top: 12px; }
+
 /* ---- the equipment rack ---------------------------------------------- */
 
 /* What is currently in hand, above the shelf's one buyable rung. A row rather
@@ -5357,94 +5367,148 @@
   accent-color: var(--sa-leaf);
 }
 
-.sa-gift-dialogue-tabs {
-  display: flex;
-  gap: 6px;
-  margin: 0 28px 10px 0;
-}
-
-.sa-gift-dialogue-tabs button {
-  flex: 1;
-  min-height: 32px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-glass-fill-open);
+/* ---- the player's house: the kitchen -----------------------------------
+ * Rides the barn store's popup (`.sa-store-scrim`/`.sa-store-card`), so the
+ * rules here are only what the kitchen adds: an energy pill in the head, and
+ * each tab's contents laid out as a grid of cards across the width of a
+ * phone held sideways rather than one long column. */
+.sa-house-mark {
+  flex: none;
   color: var(--sa-ink);
-  font-family: var(--sa-font);
-  font-size: 12.5px;
-  font-weight: 800;
 }
 
-.sa-gift-dialogue-tabs button.is-active {
-  background: var(--sa-tint-corn);
+.sa-house-energy {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--sa-glass-line-soft);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-quiet);
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+
+.sa-house-energy strong { color: var(--sa-ink); }
 
 .sa-kitchen {
   display: grid;
-  gap: 8px;
-  /* Chapter 5 put nine recipes and the cellar in here; scroll, don't spill. */
-  max-height: min(60vh, 420px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  gap: 10px;
 }
 
-.sa-kitchen-energy,
 .sa-kitchen-note {
   margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-quiet);
   font-size: 13px;
+  font-weight: 700;
 }
 
-.sa-kitchen-food {
+.sa-kitchen-grid {
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.sa-kitchen-row {
+.sa-kitchen-card {
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.sa-kitchen-card h3 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
-.sa-kitchen-row > span {
-  flex: 1;
+.sa-kitchen-card h3 > span {
   min-width: 0;
-}
-
-.sa-kitchen-row .sa-cta {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Chapter 2: seed cards name the recipes a crop feeds, and the Kitchen's
-   stew card shows what you have of each ingredient. */
-.sa-stock-wanted {
-  margin: 2px 0 0;
-  color: var(--sa-leaf-rim);
-  font-size: 12px;
+.sa-kitchen-card .sa-stock-terms { font-size: 12.5px; }
+
+.sa-kitchen-card .sa-cta {
+  width: 100%;
+  min-height: 44px;
+  margin-top: auto;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+/* Something you can cook right now gets a lit rim, so it is found at a glance. */
+.sa-kitchen-card.is-ready {
+  border-color: var(--sa-glass-line-lit);
+  box-shadow: var(--sa-glass-rim-lit);
+}
+
+.sa-kitchen-card.is-unbuilt h3,
+.sa-kitchen-card.is-empty h3 {
+  color: var(--sa-ink-soft);
+}
+
+.sa-kitchen-card.is-empty h3 > svg,
+.sa-kitchen-card.is-empty h3 > img { filter: grayscale(1); opacity: .6; }
+
+/* The Cellar and the Farm Kitchen are one card each, capped so they do not stretch across a desktop. */
+.sa-kitchen-wide {
+  max-width: 560px;
+}
+
+.sa-kitchen-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sa-kitchen-buttons .sa-cta {
+  flex: 1 1 180px;
+  margin-top: 0;
+}
+
+.sa-kitchen-energy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 13px;
   font-weight: 700;
 }
 
-.sa-kitchen-recipe {
-  display: grid;
-  gap: 6px;
+.sa-kitchen-energy-bar {
+  flex: 1;
+  height: 10px;
+  max-width: 320px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: inset 0 0 0 1px var(--sa-glass-line-soft);
 }
 
-.sa-kitchen-recipe-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 800;
+.sa-kitchen-energy-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sa-leaf);
+  transition: width var(--duration-base) var(--sa-ease-out);
 }
 
 .sa-kitchen-ingredients {
   display: grid;
-  gap: 4px;
-  margin: 0;
+  gap: 3px;
+  margin: 4px 0 8px;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -5464,15 +5528,11 @@
   font-weight: 700;
 }
 
-.sa-kitchen-recipe .sa-cta {
-  justify-self: start;
-}
-
-/* Chapter 5: each kitchen recipe names its machine, and the Preserves
-   Cellar says what is aging and when it gets better. */
 .sa-kitchen-where {
+  margin: 0;
   color: var(--sa-leaf-rim);
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .sa-kitchen-cellar-line {
@@ -5480,11 +5540,12 @@
   font-size: 13px;
 }
 
-/* Chapter 6: the Farm Kitchen's standing-order picker. */
+/* The Farm Kitchen's standing-order picker. */
 .sa-kitchen-order {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 6px 0;
   font-size: 13px;
   font-weight: 700;
 }
@@ -5492,13 +5553,40 @@
 .sa-kitchen-order select {
   flex: 1;
   min-width: 0;
-  min-height: 36px;
+  min-height: 40px;
   font: inherit;
   font-weight: 600;
 }
 
-/* A kitchen building's build row names the seeds it opens. */
+/* A kitchen building's card names the seeds it opens. */
 .sa-kitchen-opens {
+  margin: 0;
   color: var(--sa-leaf-rim);
+  font-size: 12px;
   font-weight: 700;
+}
+
+/* ---- a character's speech bubble on a phone held sideways ---------------
+ * useKeepOnScreen slides the card back inside the screen; these make sure it
+ * can fit in the first place. A card taller than the screen scrolls inside
+ * itself, and Ray's gift picker lays its items two across instead of in one
+ * tall column. */
+.sa-gift-dialogue-card,
+.sa-story-dialogue-card {
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-gift-dialogue-card { width: 340px; }
+  .sa-gift-dialogue-items {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    max-height: 132px;
+  }
+  .sa-story-dialogue-card { width: 320px; }
+
+  .sa-kitchen-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .sa-kitchen-card h3 { font-size: 14px; }
 }

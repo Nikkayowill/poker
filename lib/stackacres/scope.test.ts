@@ -13,19 +13,19 @@ import {
 import { isMachineItem } from "./machine-items";
 
 describe("isActiveStock", () => {
-  it("is true for every crop but the Wheat Sheaf, plus hens and cattle this pass", () => {
+  it("is true for every crop but the Wheat Sheaf, plus all three livestock kinds", () => {
     expect(STACKACRES_STOCK.filter(isActiveStock).sort()).toEqual(
-      [...STACKACRES_CROPS.filter((crop) => crop !== "wheatsheaf"), "cattle", "hen"].sort(),
+      [...STACKACRES_CROPS.filter((crop) => crop !== "wheatsheaf"), "cattle", "hen", "pig"].sort(),
     );
-    expect([...STACKACRES_ACTIVE_LIVESTOCK].sort()).toEqual(["cattle", "hen"]);
+    expect([...STACKACRES_ACTIVE_LIVESTOCK].sort()).toEqual(["cattle", "hen", "pig"]);
   });
 
-  it("shows every crop but the retired Wheat Sheaf, hides the pig pen", () => {
+  it("shows every crop but the retired Wheat Sheaf, and the sheep pen", () => {
     for (const crop of STACKACRES_CROPS) {
       expect(isActiveStock(crop), crop).toBe(!STACKACRES_RETIRED_CROPS.includes(crop));
     }
     expect(STACKACRES_RETIRED_CROPS).toEqual(["wheatsheaf"]);
-    expect(isActiveStock("pig")).toBe(false);
+    expect(isActiveStock("pig")).toBe(true);
   });
 });
 
@@ -55,13 +55,13 @@ describe("buyOptionsForZone under the active scope", () => {
     }
   });
 
-  it("offers hens at Hen Haven, cattle at the Ox Fields, every shelved crop at the Farmstead, and nothing at the Fold", () => {
+  it("offers hens at Hen Haven, sheep at the Fold, cattle at the Ox Fields, every shelved crop at the Farmstead", () => {
     const ctx = { units: [], gold: 1_000_000, capacity: {} };
     expect(buyOptionsForZone("henhaven", ctx).map((o) => o.stock)).toEqual(["hen"]);
     expect(buyOptionsForZone("oxfields", ctx).map((o) => o.stock)).toEqual(["cattle"]);
     expect(buyOptionsForZone("farmstead", ctx).map((o) => o.stock).sort()).toEqual(
       STACKACRES_CROPS.filter((crop) => crop !== "wheatsheaf").sort(),
     );
-    expect(buyOptionsForZone("wallow", ctx)).toEqual([]);
+    expect(buyOptionsForZone("wallow", ctx).map((o) => o.stock)).toEqual(["pig"]);
   });
 });

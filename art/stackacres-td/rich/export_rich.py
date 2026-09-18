@@ -58,7 +58,7 @@ PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are.
 LIGHTS = {
-    "rayhouse": [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")],
+    "farmhouse": [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")],
     "barn": [(48, 40, "lantern")],
     # workshop: no entry here any more -- buildings.workshop() bakes its own
     # two window lights into img.info["lights"] (the branch above already

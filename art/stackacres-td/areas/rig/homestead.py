@@ -46,7 +46,7 @@ def build(for_game=False):
     a.line("stream", (6, 29), (6, MH), width=1)        # and out of the pond, south to the shore
 
     # `tag` is what tapping it does in the game; see components/arcade/stackacres-td/scene.ts.
-    a.add(kit.farmhouse(), 120, 150, (44, 5), tag="rayhouse")
+    a.add(kit.farmhouse(), 120, 150, (44, 5), tag="farmhouse")
     a.add(props.smoke(), 139, 74)                      # the chimney is lit
     a.add(kit.barn(), 360, 150, (48, 5), tag="barn")
     a.add(kit.workshop(), 488, 147, (36, 5), tag="workshop")

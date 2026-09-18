@@ -67,7 +67,7 @@ import {
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
-import { buyOptionsForZone, type BuyOption } from "@/lib/stackacres/district-panel";
+import { buyOptionsForZone, lockedLivestock, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   STACKACRES_ITEM_CATALOGUE,
   STACKACRES_ITEMS,
@@ -247,7 +247,7 @@ import {
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
-import { StackAcresKitchen } from "./stackacres-kitchen";
+import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
@@ -1105,6 +1105,8 @@ export function StackAcresFarm() {
   /** The vat's own sheet, opened from inside the Workshop. */
   const [showVat, setShowVat] = useState(false);
   const [showGreenhouse, setShowGreenhouse] = useState(false);
+  /** The player's house panel (./stackacres-house.tsx): the kitchen. */
+  const [showHouse, setShowHouse] = useState(false);
   const [greenhouseBuilt, setGreenhouseBuilt] = useState(false);
   const [cropFieldsUnlocked, setCropFieldsUnlocked] = useState(false);
   const [showMerchant, setShowMerchant] = useState(false);
@@ -1990,13 +1992,10 @@ export function StackAcresFarm() {
     world.current?.setBarnHeldOpen(showStore);
   }, [showStore]);
 
-  // Same contract, for Ray's house and the gift dialogue his own tap opens.
-  // Another NPC's gift dialogue (`giftDialogue.npc !== "ray"`) does not open
-  // from his house at all, so it must not hold his door open either.
-  const rayGiftDialogueOpen = giftDialogue?.npc === "ray";
+  // Same contract, for the player's house and the panel its own tap opens.
   useEffect(() => {
-    world.current?.setRayHouseHeldOpen(rayGiftDialogueOpen);
-  }, [rayGiftDialogueOpen]);
+    world.current?.setHouseHeldOpen(showHouse);
+  }, [showHouse]);
 
   // Same contract again, for the Greenhouse and the panel its own tap opens.
   useEffect(() => {
@@ -2680,7 +2679,7 @@ export function StackAcresFarm() {
 
   // Ray himself (the traveler standing near his house), not the house --
   // his own story dialogue bubble is what `story.dialogue` tracks. Same
-  // held-open contract `setBarnHeldOpen`/`setRayHouseHeldOpen` document,
+  // held-open contract `setBarnHeldOpen`/`setHouseHeldOpen` document,
   // driven off a different open/close signal. See `setTravelerRayHeldOpen`.
   const rayTravelerDialogueOpen = story.dialogue?.traveler === "ray";
   useEffect(() => {
@@ -2906,7 +2905,13 @@ export function StackAcresFarm() {
     [story],
   );
 
-  /** The Kitchen tab in Ray's house (./stackacres-kitchen.tsx). */
+  /** The player's house: its own panel, nothing to do with Ray. */
+  const onWorldHouseTap = useCallback(() => {
+    panelSound();
+    setShowHouse(true);
+  }, []);
+
+  /** The Eat tab in the player's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
   /** Built machine kinds, for the seed locks (lib/stackacres/seed-unlocks.ts). */
   const builtKinds = useMemo(
@@ -4054,9 +4059,9 @@ export function StackAcresFarm() {
    *  the store is opened from the barn, not from standing in a district, so
    *  it has no single zone of its own the way the signpost drawer's
    *  `buyOptions` above does. A kind whose district is still locked (the
-   *  Fold, Ox Fields, until the sector ladder opens them) is left off the
-   *  shelf entirely rather than shown disabled -- same posture the drawer
-   *  itself takes by simply not existing for a locked district. */
+   *  Fold, Ox Fields, until the sector ladder opens them) shows below as a
+   *  greyed card instead (`lockedPens`), whose button opens that land's
+   *  clearing sheet. */
   const livestockBuyOptions: BuyOption[] = useMemo(
     () =>
       Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
@@ -4064,6 +4069,7 @@ export function StackAcresFarm() {
         .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity })),
     [sectors, liveUnits, gold, capacity],
   );
+  const lockedPens = useMemo(() => lockedLivestock(sectors), [sectors]);
 
   /**
    * The crops the seed wheel offers: everything the barn holds seed for, best
@@ -4290,7 +4296,7 @@ export function StackAcresFarm() {
           )}
           <span
             className="sa-energy"
-            title="Energy. Fishing uses it. Eat in Ray's kitchen to fill it up."
+            title="Energy. Fishing uses it. Eat at your house to fill it up."
           >
             <span className="sa-energy-label">Energy</span>
             <span className="sa-energy-bar" aria-hidden="true">
@@ -4351,6 +4357,7 @@ export function StackAcresFarm() {
               onTruckTap={onWorldTruckTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
+              onHouseTap={onWorldHouseTap}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               onFenceSegmentTap={onWorldFenceSegmentTap}
@@ -4462,28 +4469,6 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
               onClose={() => setGiftDialogue(null)}
-              kitchen={
-                giftDialogue.npc === "ray" ? (
-                  <StackAcresKitchen
-                    energy={energyAt(energy, new Date(nowMs))}
-                    inventory={processing.inventory}
-                    nowMs={nowMs}
-                    built={kitchenBuilt}
-                    goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
-                    busy={isPending}
-                    orderBusy={pendingByPrefix("set-kitchen-order")}
-                    onBuild={onPlaceMachine}
-                    onMake={onProcessRecipe}
-                    cellar={cellar}
-                    onStoreJars={onStoreJars}
-                    onOpenCellar={onOpenCellar}
-                    farmKitchen={farmKitchenRow}
-                    onSetKitchenOrder={onSetKitchenOrder}
-                    onRunFarmKitchen={onRunFarmKitchen}
-                    onEat={onEat}
-                  />
-                ) : undefined
-              }
             />
           )}
 
@@ -4812,8 +4797,8 @@ export function StackAcresFarm() {
               {storeTab === "livestock" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy an animal outright, or Cycle Lease one for a single production run. Locked
-                    pens show up here once their district is unlocked.
+                    Buy an animal outright, or Cycle Lease one for a single production run. A greyed
+                    pen opens once you clear its land.
                   </p>
                   <div className="sa-panel-section">
                     <StackAcresBuySection
@@ -4824,6 +4809,29 @@ export function StackAcresFarm() {
                       onExpand={onExpand}
                     />
                   </div>
+                  {lockedPens.length > 0 && (
+                    <div className="sa-stock-cards">
+                      {lockedPens.map((pen) => (
+                        <div key={pen.stock} className="sa-stock-card is-locked sa-locked-pen">
+                          <h3>
+                            <StackAcresIcon name={STOCK_ICON[pen.stock]} size={20} />
+                            {pen.label}
+                          </h3>
+                          <p className="sa-lock-hint">
+                            <Lock size={13} aria-hidden="true" />
+                            <span>Clear {pen.sectorLabel} to keep these</span>
+                          </p>
+                          <button
+                            type="button"
+                            className="sa-cta"
+                            onClick={() => { panelSound(); setClearing(pen.sector); }}
+                          >
+                            Unlock {pen.sectorLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -5197,6 +5205,29 @@ export function StackAcresFarm() {
             </div>
           </div>
         </div>
+      )}
+
+      {showHouse && (
+        <StackAcresHouse
+          error={error}
+          onClose={() => { panelSound(); setShowHouse(false); }}
+          energy={energyAt(energy, new Date(nowMs))}
+          inventory={processing.inventory}
+          nowMs={nowMs}
+          built={kitchenBuilt}
+          goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
+          busy={isPending}
+          orderBusy={pendingByPrefix("set-kitchen-order")}
+          onBuild={onPlaceMachine}
+          onMake={onProcessRecipe}
+          cellar={cellar}
+          onStoreJars={onStoreJars}
+          onOpenCellar={onOpenCellar}
+          farmKitchen={farmKitchenRow}
+          onSetKitchenOrder={onSetKitchenOrder}
+          onRunFarmKitchen={onRunFarmKitchen}
+          onEat={onEat}
+        />
       )}
 
       {showMap && (

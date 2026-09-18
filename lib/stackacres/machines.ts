@@ -22,8 +22,10 @@
 
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
+import { siloFeedsLeft } from "./feed-silo";
+import { stackacresExchangeDay } from "./exchange";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -61,6 +63,10 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   stew_pot: { label: "Stew Pot", placeCost: 1_500 },
   // Chapter 3's prep counter, also in Ray's house. Tosses greens into Salad.
   counter: { label: "Kitchen Counter", placeCost: 800 },
+  // Chapter 4a's first automation, placed from the Workshop. Runs no recipe:
+  // it feeds hungry animals from the barn while the player is away
+  // (./feed-silo.ts). Priced as a late investment, not a convenience.
+  feed_silo: { label: "Feed Silo", placeCost: 12_000 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -72,9 +78,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  Vat (2026-09-06) for the same reason it was never raised for a fourth of
  *  an existing kind: it grew because the number of KINDS grew, not because
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
- *  and 5 -> 6 with the Stew Pot, and 6 -> 7 with the Kitchen
- *  Counter, same reason. */
-export const MACHINE_CAP = 7;
+ *  and 5 -> 6 with the Stew Pot, 6 -> 7 with the Kitchen
+ *  Counter and 7 -> 8 with the Feed Silo, same reason. */
+export const MACHINE_CAP = 8;
 
 export type MachineStatus = "idle" | "working";
 
@@ -95,6 +101,10 @@ export interface StackAcresMachineRow {
   /** How many units of the recipe's output this run will yield. Zero while
    *  idle. Snapshotted for the same reason as `recipeId`. */
   unitsProcessing: number;
+  /** Feed Silo only: the UTC day `autoFeeds` counts, null before its first
+   *  feed. Written under the row's version guard (./feed-silo.ts). */
+  autoFeedDay: string | null;
+  autoFeeds: number;
   version: number;
 }
 
@@ -161,10 +171,14 @@ export interface StackAcresMachineSnapshot {
   unitsProcessing: number;
   done: boolean;
   progress: number | null;
+  /** Feed Silo only: auto-feeds it can still hand out today. Null for every
+   *  other kind. */
+  autoFeedsLeft: number | null;
 }
 
 export function toMachineSnapshot(row: StackAcresMachineRow, now: Date): StackAcresMachineSnapshot {
   return {
+    autoFeedsLeft: row.kind === "feed_silo" ? siloFeedsLeft(row, stackacresExchangeDay(now)) : null,
     id: row.id,
     kind: row.kind,
     status: row.status,

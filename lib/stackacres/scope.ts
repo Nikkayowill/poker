@@ -41,6 +41,7 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
   "bread",
   "stew",
   "salad",
+  "cattle_feed",
 ];
 
 /** Machine kinds kept on the Workshop sheet this pass. Mill (flour) and Dairy
@@ -48,7 +49,7 @@ export const STACKACRES_WORKSHOP_SHELF_ITEMS: readonly MachineItemId[] = [
  *  (wool) and the Fermenting Vat (aged cheese) stay built but collapsed,
  *  since Pig/wool is out of scope and nothing in scope ever makes Cheese to
  *  age. */
-export const STACKACRES_ACTIVE_MACHINES: readonly MachineKind[] = ["mill", "dairy", "oven", "stew_pot", "counter"];
+export const STACKACRES_ACTIVE_MACHINES: readonly MachineKind[] = ["mill", "dairy", "oven", "stew_pot", "counter", "feed_silo"];
 
 /** Crops taken off Ray's seed shelf. The Wheat Sheaf came off in Chapter 1 so
  *  the Workshop's Wheat Plot is the only wheat to buy. A sheaf already planted,

@@ -1997,7 +1997,7 @@ export interface StoredMachine extends StackAcresMachineRow {
 }
 
 const MACHINE_COLUMNS =
-  "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, version, created_at";
+  "id, profile_id, kind, status, started_at, ready_at, recipe_id, units_processing, auto_feed_day, auto_feeds, version, created_at";
 
 export interface MachineDbRow {
   id: string;
@@ -2008,6 +2008,8 @@ export interface MachineDbRow {
   ready_at: string | null;
   recipe_id: string | null;
   units_processing: number | string | null;
+  auto_feed_day: string | null;
+  auto_feeds: number | string;
   version: number | string;
   created_at: string;
 }
@@ -2025,6 +2027,8 @@ export function machineFromRow(row: MachineDbRow): StoredMachine {
     // that, and this fallback only matters if that backfill were ever missed.
     recipeId: row.recipe_id && isRecipeId(row.recipe_id) ? row.recipe_id : null,
     unitsProcessing: Number(row.units_processing ?? 0),
+    autoFeedDay: row.auto_feed_day ? String(row.auto_feed_day) : null,
+    autoFeeds: Number(row.auto_feeds),
     version: Number(row.version),
     createdAt: String(row.created_at),
   };
@@ -2073,6 +2077,8 @@ export async function createStackAcresMachine(
       readyAt: null,
       recipeId: null,
       unitsProcessing: 0,
+      autoFeedDay: null,
+      autoFeeds: 0,
       version: 1,
       createdAt: now,
     };
@@ -2190,6 +2196,36 @@ export async function collectStackAcresMachine(
     .select(MACHINE_COLUMNS)
     .maybeSingle();
   if (error) throw new Error(`Could not collect that machine's run: ${error.message}`);
+  return data ? machineFromRow(data as MachineDbRow) : null;
+}
+
+/** Sets the Feed Silo's auto-feed count for `day`, under the row's version
+ *  guard. Null means another request moved the row first, and the caller
+ *  must not feed on the strength of this call. */
+export async function writeStackAcresSiloFeeds(
+  current: StoredMachine,
+  day: string,
+  autoFeeds: number,
+): Promise<StoredMachine | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const stored = memoryMachines.get(current.id);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredMachine = { ...stored, autoFeedDay: day, autoFeeds, version };
+    memoryMachines.set(current.id, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_machines")
+    .update({ auto_feed_day: day, auto_feeds: autoFeeds, version })
+    .eq("id", current.id)
+    .eq("version", current.version)
+    .select(MACHINE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not record the Feed Silo's feeds: ${error.message}`);
   return data ? machineFromRow(data as MachineDbRow) : null;
 }
 

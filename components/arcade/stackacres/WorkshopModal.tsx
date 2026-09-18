@@ -23,6 +23,7 @@ import {
 } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
 import { RECIPE_CATALOGUE, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
+import { FEED_SILO_DAILY_FEEDS } from "@/lib/stackacres/feed-silo";
 import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
 import {
   WHEAT_PLOT_CAP,
@@ -70,7 +71,7 @@ import type { PainterName } from "./stackacres-art";
 export type WorkshopActionResult =
   | {
       readonly ok: true;
-      readonly work?: { readonly wheatCollected: number; readonly machinesStarted: number; readonly machinesCollected: number };
+      readonly work?: { readonly wheatCollected: number; readonly machinesStarted: number; readonly machinesCollected: number; readonly siloServings: number };
       readonly processed?: {
         readonly recipe: RecipeId;
         readonly produced: { readonly item: MachineProcessedItem; readonly quantity: number } | null;
@@ -138,7 +139,11 @@ const RECIPE_VERB: Record<RecipeId, string> = {
   bread: "Bake",
   stew: "Cook",
   salad: "Toss",
+  cattle_feed: "Mill",
 };
+
+/** What the Feed Silo does, in one line. */
+const SILO_LINE = "Feeds hungry animals from your barn while you're away";
 
 /** "3 Wheat → 1 Flour · 20s" / "2 Eggs + 1 Milk + 1 Flour → 1 Cake · instant". */
 function recipeLine(recipe: RecipeId): string {
@@ -155,6 +160,7 @@ function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>[
   }
   if (work.machinesCollected > 0) parts.push(`collected the Mill`);
   if (work.machinesStarted > 0) parts.push(`started the Mill`);
+  if (work.siloServings > 0) parts.push(`the Feed Silo fed ${work.siloServings} time${work.siloServings === 1 ? "" : "s"}`);
   if (parts.length === 0) return null;
   const sentence = parts.join(", ");
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
@@ -416,6 +422,8 @@ export function WorkshopModal({
                     <p className="sa-stock-terms">
                       Seal {machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}, let it age, open it for Gold
                     </p>
+                  ) : kind === "feed_silo" ? (
+                    <p className="sa-stock-terms">{SILO_LINE}</p>
                   ) : recipes.length > 0 ? (
                     recipes.map((recipe) => (
                       <p className="sa-stock-terms" key={recipe}>
@@ -441,6 +449,19 @@ export function WorkshopModal({
                       </>
                     )}
                   </button>
+                </article>
+              );
+            }
+
+            if (kind === "feed_silo") {
+              const left = machine.autoFeedsLeft ?? FEED_SILO_DAILY_FEEDS;
+              return (
+                <article key={kind} className="sa-stock-card sa-workshop-machine">
+                  <h3>{def.label}</h3>
+                  <p className="sa-stock-terms">{SILO_LINE}</p>
+                  <p className="sa-stock-yield">
+                    {left} of {FEED_SILO_DAILY_FEEDS} auto-feeds left today
+                  </p>
                 </article>
               );
             }

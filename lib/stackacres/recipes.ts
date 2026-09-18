@@ -48,7 +48,7 @@ import { machineItemSellPrice, type MachineItemId, type MachineProcessedItem } f
 import type { MachineKind } from "./machines";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad"] as const;
+export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad", "cattle_feed"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export function isRecipeId(value: string): value is RecipeId {
@@ -145,6 +145,16 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     ],
     output: { item: "salad", quantity: 1 },
     processingMs: 0,
+  },
+  // Chapter 4a: the Mill grinds corn into Cattle Feed, queued like Flour.
+  // Listed after Flour, so `workStackAcres` only ever auto-starts Flour and
+  // corn is milled only when the player asks.
+  cattle_feed: {
+    label: "Cattle Feed",
+    machine: "mill",
+    inputs: [{ item: "corn", quantity: 1 }],
+    output: { item: "cattle_feed", quantity: 4 },
+    processingMs: 20 * 1000,
   },
 };
 

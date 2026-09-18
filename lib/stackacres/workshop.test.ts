@@ -33,6 +33,7 @@ function machine(overrides: Partial<StackAcresMachineSnapshot> = {}): StackAcres
     unitsProcessing: 0,
     done: false,
     progress: null,
+    autoFeedsLeft: null,
     ...overrides,
   };
 }

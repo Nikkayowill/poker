@@ -120,7 +120,8 @@ import {
   energyAt,
   type StackAcresEnergyAnchor,
 } from "./energy";
-import { HEN_FEED_ORDER, planServings, type ServingPlan } from "./feeding";
+import { SHELF_FEED_ITEMS, planServings, type ServingPlan } from "./feeding";
+import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { FISHING_BAIT_ITEM } from "./fishing";
 import {
   MACHINE_CAP,
@@ -341,12 +342,12 @@ function processingPatch(
   };
 }
 
-/** Takes what hens ate off the shelf for a feeding, through `processingPatch`
+/** Takes what hens and cattle ate off the shelf for a feeding, through `processingPatch`
  *  for the same reason every other shelf change does. */
 function shelfSpentPatch(ctx: FarmPredictContext, plan: ServingPlan): ReturnType<typeof processingPatch> | null {
   let inventory = ctx.inventory;
   let used = false;
-  for (const item of HEN_FEED_ORDER) {
+  for (const item of SHELF_FEED_ITEMS) {
     const quantity = plan.shelfUsed[item] ?? 0;
     if (quantity === 0) continue;
     inventory = removeFromInventory(inventory, item, quantity) ?? inventory;
@@ -367,7 +368,7 @@ export function predictStackAcresAction(
 ): FarmStatePatch | null {
   switch (body.action) {
     case "feed": {
-      // Hens eat off the shelf first, then the Feed Sack -- see ./feeding.ts.
+      // Hens and cattle eat off the shelf first, then the Feed Sack -- see ./feeding.ts.
       const unit = ctx.units.find((u) => u.id === body.unitId);
       if (!unit) return null;
       const plan = planServings([unit.stock], ctx.inventory, ctx.feed);
@@ -380,7 +381,7 @@ export function predictStackAcresAction(
     }
     case "feed-pen": {
       // Same order the server feeds in: soonest-hungry first, as far as the
-      // feed goes. Hens eat off the shelf first -- see ./feeding.ts.
+      // feed goes. Hens and cattle eat off the shelf first -- see ./feeding.ts.
       const hungry = ctx.units
         .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
         .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""));
@@ -822,6 +823,7 @@ export function predictStackAcresAction(
         unitsProcessing: 0,
         done: false,
         progress: null,
+        autoFeedsLeft: body.kind === "feed_silo" ? FEED_SILO_DAILY_FEEDS : null,
         canStart: false,
       };
       return { profile, ...processingPatch(ctx, { machines: [...ctx.machines, machine] }) };

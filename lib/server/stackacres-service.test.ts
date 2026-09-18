@@ -91,6 +91,8 @@ import {
   readStackAcresEnergy,
   readStackAcresInventory,
   writeStackAcresEnergy,
+  listStackAcresMachines,
+  writeStackAcresSiloFeeds,
 } from "./stackacres-store";
 import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH, energyAt } from "@/lib/stackacres/energy";
 import { isFishSpecies } from "@/lib/stackacres/fishing";
@@ -3079,14 +3081,14 @@ describe("wheat and machines", () => {
 
     // Wheat ripens (yield 4) but is not yet ready: nothing moves.
     const early = await workStackAcres(token, new Date(T0.getTime() + 1));
-    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0 });
+    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0, siloServings: 0 });
     expect(early.inventory.wheat ?? 0).toBe(0);
 
     // Ripe: collected into inventory, and the same pass starts the mill
     // (input 3, so 4 - 3 = 1 Wheat left over).
     const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
     const ripe = await workStackAcres(token, ripenedAt);
-    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0 });
+    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0 });
     expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - RECIPE_CATALOGUE.flour.inputs[0].quantity);
     expect(ripe.machines[0].status).toBe("working");
     expect(ripe.wheatPlots).toHaveLength(0);
@@ -3102,7 +3104,7 @@ describe("wheat and machines", () => {
     // Done: the run settles into Flour, and the mill goes back to idle.
     const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
     const done = await workStackAcres(token, finishedAt);
-    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1 });
+    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1, siloServings: 0 });
     expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
     expect(done.machines[0].status).toBe("idle");
   });
@@ -4668,5 +4670,144 @@ describe("Chapter 3: greens for the table and the coop", () => {
     vi.mocked(adjustStackAcresInventory).mockImplementation(REAL.adjustStackAcresInventory);
     expect((await readStackAcresInventory(id)).radish).toBe(1);
     expect(energyAt(await readStackAcresEnergy(id), T0)).toBe(ENERGY_MAX);
+  });
+});
+
+describe("Chapter 4a: feed crops and the first automation", () => {
+  const HOUR = 60 * 60 * 1000;
+  const cattleHungerMs = CATTLE.hungerMs ?? 0;
+  const cattleOf = async (id: string) => (await listStackAcresUnits(id)).filter((unit) => unit.stock === "cattle");
+  const withNoMuck = async <T>(run: () => Promise<T>): Promise<T> => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      return await run();
+    } finally {
+      random.mockRestore();
+    }
+  };
+
+  it("mills 1 Corn into 4 Cattle Feed as a queued Mill run", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "mill", T0);
+    await adjustStackAcresInventory(id, "corn", 1);
+    const started = await processStackAcresRecipeAction(token, "cattle_feed", T0);
+    expect(started.processed.produced).toBeNull();
+    expect(started.inventory.corn ?? 0).toBe(0);
+
+    const done = await workStackAcres(token, new Date(T0.getTime() + 20_000));
+    expect(done.work.machinesCollected).toBe(1);
+    expect(done.inventory.cattle_feed).toBe(4);
+  });
+
+  it("feeds cattle Cattle Feed before the Feed Sack", async () => {
+    const { token, id } = await funded();
+    const view = await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresInventory(id, "cattle_feed", 1);
+    await adjustStackAcresFeed(id, 1);
+    const fedAt = new Date(T0.getTime() + cattleHungerMs + 1000);
+
+    await feedStackAcres(token, unitOf(view, "cattle").id, fedAt);
+    expect((await readStackAcresInventory(id)).cattle_feed ?? 0).toBe(0);
+    expect(await readStackAcresFeed(id)).toBe(1);
+  });
+
+  it("feeds a cattle pen Cattle Feed first, then the Feed Sack", async () => {
+    const { token, id } = await funded();
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresInventory(id, "cattle_feed", 1);
+    await adjustStackAcresFeed(id, 3);
+    const fedAt = new Date(T0.getTime() + cattleHungerMs + 1000);
+
+    await feedStackAcresPen(token, "oxfields", fedAt);
+    expect((await readStackAcresInventory(id)).cattle_feed ?? 0).toBe(0);
+    expect(await readStackAcresFeed(id)).toBe(2);
+    for (const unit of await cattleOf(id)) expect(unit.lastFedAt).toBe(fedAt.toISOString());
+  });
+
+  it("builds the Feed Silo for 12,000 Gold and refunds a second one", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    const view = await placeStackAcresMachine(token, "feed_silo", T0);
+    expect(await balance(token)).toBe(before - 12_000);
+    expect(view.machines.find((machine) => machine.kind === "feed_silo")).toMatchObject({
+      status: "idle",
+      autoFeedsLeft: 48,
+    });
+    await expect(placeStackAcresMachine(token, "feed_silo", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before - 12_000);
+  });
+
+  it("feeds hungry cattle as of the moment they went hungry, losing no time", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "feed_silo", T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    const [stocked] = await cattleOf(id);
+    await adjustStackAcresInventory(id, "cattle_feed", 5);
+
+    const worked = await workStackAcres(token, new Date(T0.getTime() + cattleHungerMs + 2 * HOUR));
+    expect(worked.work.siloServings).toBe(1);
+    const [fed] = await cattleOf(id);
+    expect(fed.lastFedAt).toBe(new Date(T0.getTime() + cattleHungerMs).toISOString());
+    expect(fed.readyAt).toBe(stocked.readyAt);
+    expect(worked.inventory.cattle_feed).toBe(4);
+    expect(worked.machines.find((machine) => machine.kind === "feed_silo")?.autoFeedsLeft).toBe(47);
+
+    // Collected the moment the batch is due: the Silo covers the hunger at
+    // 16h, then one serving once the batch is done, and nothing was lost.
+    const readyAt = new Date(stocked.readyAt);
+    const harvested = await withNoMuck(() => harvestStackAcres(token, { unitIds: [stocked.id] }, readyAt));
+    expect(harvested.inventory.milk).toBe(STACKACRES_YIELDS.cattle.quantity);
+    expect(harvested.inventory.cattle_feed).toBe(2);
+  });
+
+  it("stops at the daily cap and leaves the rest hungry", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "feed_silo", T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresFeed(id, 10);
+    const [silo] = (await listStackAcresMachines(id)).filter((machine) => machine.kind === "feed_silo");
+    await writeStackAcresSiloFeeds(silo, "2026-08-31", 47);
+
+    const at = new Date(T0.getTime() + cattleHungerMs + HOUR);
+    const worked = await workStackAcres(token, at);
+    expect(worked.work.siloServings).toBe(1);
+    expect(await readStackAcresFeed(id)).toBe(9);
+    expect(worked.units.filter((unit) => unit.stock === "cattle" && unit.state === "hungry")).toHaveLength(1);
+    expect(worked.machines.find((machine) => machine.kind === "feed_silo")?.autoFeedsLeft).toBe(0);
+
+    const again = await workStackAcres(token, new Date(at.getTime() + 1000));
+    expect(again.work.siloServings).toBe(0);
+  });
+
+  it("never spends Spinach, so the extra egg stays a hand-feeding reward", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "feed_silo", T0);
+    await stockStackAcres(token, { stock: "hen" }, T0);
+    await adjustStackAcresInventory(id, "spinach", 3);
+    await adjustStackAcresInventory(id, "wheat", 1);
+
+    const worked = await workStackAcres(token, new Date(T0.getTime() + (HEN.hungerMs ?? 0) + 1000));
+    expect(worked.work.siloServings).toBe(1);
+    const shelf = await readStackAcresInventory(id);
+    expect(shelf.spinach).toBe(3);
+    expect(shelf.wheat ?? 0).toBe(0);
+    const [hen] = (await listStackAcresUnits(id)).filter((unit) => unit.stock === "hen");
+    expect(hen.feedBonus).toBe(0);
+  });
+
+  it("writes nothing on a read", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "feed_silo", T0);
+    await stockStackAcres(token, { stock: "cattle" }, T0);
+    await adjustStackAcresInventory(id, "cattle_feed", 2);
+    const before = await cattleOf(id);
+
+    const read = await readStackAcres(token, new Date(T0.getTime() + cattleHungerMs + HOUR));
+    expect(unitOf(read, "cattle").state).toBe("hungry");
+    expect(read.inventory.cattle_feed).toBe(2);
+    expect(read.machines.find((machine) => machine.kind === "feed_silo")?.autoFeedsLeft).toBe(48);
+    expect(await cattleOf(id)).toEqual(before);
   });
 });

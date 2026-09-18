@@ -25,6 +25,7 @@ import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
 import { SOIL_DEFAULT_TIER, type SoilTier } from "./soil-tiers";
 import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
+import type { StackAcresInventory } from "./inventory";
 
 /** The belt, in the order it is drawn. `hand` is the resting slot every session starts in. */
 export const BELT_TOOLS = ["hand", "hoe", "can", "seeds"] as const;
@@ -84,8 +85,8 @@ export interface BeltTarget {
 export interface BeltContext {
   water: number;
   feed: number;
-  /** Hen feed on the shelf (./feeding.ts), which a hungry hen eats before the Feed Sack. */
-  henFeed?: number;
+  /** The shelf, which a hungry hen or cattle eats from before the Feed Sack (./feeding.ts). */
+  shelfFeed?: StackAcresInventory;
   gold: number;
   nowMs: number;
   /** Beds on the shelf, per tier, and which tier the hoe lays. */
@@ -160,7 +161,7 @@ function handAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   // An empty hand on empty ground is a walk, not a refusal. Floating "nothing
   // here" every time a finger picks a spot to stand is how a farm turns naggy.
   if (!unit) return { kind: "idle" };
-  const action = tapActionFor(unit, { feed: ctx.feed, gold: ctx.gold, nowMs: ctx.nowMs, henFeed: ctx.henFeed });
+  const action = tapActionFor(unit, { feed: ctx.feed, gold: ctx.gold, nowMs: ctx.nowMs, shelfFeed: ctx.shelfFeed });
   if (action.kind === "refused") return { kind: "nothing", reason: action.reason, why: action.why };
   if (action.kind === "water") return blocked("This one is thirsty. Use the watering can.");
   return action;

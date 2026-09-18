@@ -99,6 +99,7 @@ function machine(overrides: Partial<MachineView> = {}): MachineView {
     unitsProcessing: 0,
     done: false,
     progress: null,
+    autoFeedsLeft: null,
     canStart: false,
     ...overrides,
   };

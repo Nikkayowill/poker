@@ -355,6 +355,7 @@ import { STACKACRES_RETIRED_CROPS, isActiveStock } from "@/lib/stackacres/scope"
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
+import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -1368,6 +1369,12 @@ async function assignSoilSlot(
     growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) * enrichedGrowthMultiplier(enriched),
     enriched,
   };
+}
+
+/** The machine kinds this player has built, for the seed locks
+ *  (lib/stackacres/seed-unlocks.ts). */
+async function builtMachineKinds(profileId: string): Promise<Set<MachineKind>> {
+  return new Set((await listStackAcresMachines(profileId)).map((machine) => machine.kind));
 }
 
 /** Spends a bed's enrichment once a crop has actually been sown on it.
@@ -2420,6 +2427,12 @@ export async function buyStackAcresStock(
   }
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
+  if (isStackAcresCrop(stock)) {
+    const built = await builtMachineKinds(profile.id);
+    if (!isSeedUnlocked(stock, built)) {
+      throw new StackAcresRequestError(seedLockedMessage(stock, built), 409);
+    }
+  }
 
   const land = await readLand(profile.id);
   requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
@@ -5687,7 +5700,6 @@ export async function buyStackAcresSeed(
   input: { crop?: unknown; quantity?: unknown },
   now = new Date(),
 ): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
   const cropInput = input.crop;
   if (typeof cropInput !== "string" || !isStackAcresCrop(cropInput)) {
     throw new StackAcresRequestError("Not a real crop.", 400);
@@ -5695,6 +5707,11 @@ export async function buyStackAcresSeed(
   const crop: StackAcresCrop = cropInput;
   if (!isActiveStock(crop)) {
     throw new StackAcresRequestError(`Ray doesn't sell ${STACKACRES_CATALOGUE[crop].label} seed any more.`, 400);
+  }
+  const profile = await ensureProfile(token);
+  const built = await builtMachineKinds(profile.id);
+  if (!isSeedUnlocked(crop, built)) {
+    throw new StackAcresRequestError(seedLockedMessage(crop, built), 409);
   }
   const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
   if (!Number.isFinite(quantity) || quantity < 1 || quantity > STACKACRES_SEED_BAGS_PER_PURCHASE) {

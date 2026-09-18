@@ -22,6 +22,7 @@ import {
   type MachineKind,
 } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
+import { seedsOpenedLine } from "@/lib/stackacres/seed-unlocks";
 import { RECIPE_CATALOGUE, RECIPE_VERB, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
 import { FEED_SILO_DAILY_FEEDS } from "@/lib/stackacres/feed-silo";
 import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
@@ -432,6 +433,7 @@ export function WorkshopModal({
                   ) : (
                     <p className="sa-stock-terms">Not built yet</p>
                   )}
+                  {seedsOpenedLine(kind) && <p className="sa-stock-wanted">{seedsOpenedLine(kind)}</p>}
                   <button
                     type="button"
                     className="sa-cta"

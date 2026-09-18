@@ -5496,3 +5496,9 @@
   font: inherit;
   font-weight: 600;
 }
+
+/* A kitchen building's build row names the seeds it opens. */
+.sa-kitchen-opens {
+  color: var(--sa-leaf-rim);
+  font-weight: 700;
+}

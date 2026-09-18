@@ -472,7 +472,8 @@ describe("stocking", () => {
   });
 
   it("refuses a crop bought outright with nothing tilled, and the Gold comes back", async () => {
-    const { token } = await funded(500_000, { beds: false });
+    const { token, id } = await funded(500_000, { beds: false });
+    await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
     const before = await balance(token);
 
     await expect(buyStackAcresStock(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
@@ -483,7 +484,8 @@ describe("stocking", () => {
   });
 
   it("stands a crop bought outright in a real bed, not on the scatter fallback", async () => {
-    const { token } = await funded();
+    const { token, id } = await funded();
+    await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
     const view = await buyStackAcresStock(token, { stock: "corn" }, T0);
     expect(unitOf(view, "corn").soilSlot).not.toBeNull();
   });
@@ -596,6 +598,7 @@ describe("stocking", () => {
 describe("buyStackAcresSeed — Ray's shelf", () => {
   it("charges the crop's seed price x quantity and shelves the seeds", async () => {
     const { token, id } = await funded();
+    await createStackAcresMachine(id, "stew_pot"); // Opens carrots (seed-unlocks.ts).
     await adjustStackAcresSeedStock(id, "carrot", -1000);
     const start = await balance(token);
 
@@ -1147,6 +1150,7 @@ describe("thirst", () => {
 
   it("restarts a bought crop as seed, and its first water starts a fresh cycle", async () => {
     const { token, id } = await funded();
+    await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
     await buyStackAcresStock(token, { stock: "corn" }, T0);
     const unitId = unitOf(await readStackAcres(token, T0), "corn").id;
 
@@ -1216,6 +1220,7 @@ describe("thirst", () => {
 
   it("waters a crop stocked with Gold the same way, and still moves no Gold", async () => {
     const { token, id } = await funded();
+    await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
     await buyStackAcresStock(token, { stock: "corn" }, T0);
     const goldAfterBuying = await balance(token);
     const view = await readStackAcres(token, T0);
@@ -5056,5 +5061,30 @@ describe("fixes from the chapter review", () => {
     const before = await balance(token);
     await expect(buyStackAcresStock(token, { stock: "wheatsheaf" }, T0)).rejects.toThrow("any more");
     expect(await balance(token)).toBe(before);
+  });
+});
+
+describe("seed locks", () => {
+  it("won't sell a crop's seed until its building is built, and takes no Gold for trying", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    await expect(buyStackAcresSeed(token, { crop: "potato", quantity: 1 }, T0)).rejects.toThrow(
+      "Potato seed is locked. Build the Stew Pot to unlock.",
+    );
+    await expect(buyStackAcresStock(token, { stock: "eggplant" }, T0)).rejects.toThrow("Build the Oven to unlock");
+    expect(await balance(token)).toBe(before);
+
+    await createStackAcresMachine(id, "stew_pot");
+    await expect(buyStackAcresSeed(token, { crop: "tomato", quantity: 1 }, T0)).rejects.toThrow(
+      "Build the Kitchen Counter to unlock",
+    );
+    const bought = await buyStackAcresSeed(token, { crop: "potato", quantity: 2 }, T0);
+    expect(bought.seedStock.potato).toBe(1002);
+  });
+
+  it("still plants seed already in the barn while its building isn't built", async () => {
+    const { token } = await funded();
+    const view = await stockStackAcres(token, { stock: "potato" }, T0);
+    expect(unitOf(view, "potato")).toBeDefined();
   });
 });

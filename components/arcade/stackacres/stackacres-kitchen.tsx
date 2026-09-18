@@ -22,6 +22,7 @@ import {
   batchesAffordable,
   farmKitchenBanked,
 } from "@/lib/stackacres/farm-kitchen";
+import { seedsOpenedLine } from "@/lib/stackacres/seed-unlocks";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
@@ -158,7 +159,10 @@ export function StackAcresKitchen({
     const def = MACHINE_CATALOGUE[kind];
     return (
       <div className="sa-kitchen-row" key={kind}>
-        <span>{pitch}</span>
+        <span>
+          {pitch}
+          {seedsOpenedLine(kind) && <span className="sa-kitchen-opens"> {seedsOpenedLine(kind)}.</span>}
+        </span>
         <button
           type="button"
           className="sa-cta"

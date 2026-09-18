@@ -129,12 +129,12 @@ describe("opening an attempt", () => {
     expect(await balance(token)).toBe(50_000);
   });
 
-  it("refuses a wager over the board's own ceiling, and names the rung that would take it", async () => {
-    // Easy caps at 5,000; see lib/arcade/ante-up-stakes.ts.
+  it("allows a wager on the easy board the old ceiling would have refused", async () => {
+    // The per-difficulty ceiling in lib/arcade/ante-up-stakes.ts was removed;
+    // a wager is now bounded only by the player's own balance.
     const { token } = await funded(1_000_000);
-    await expect(openAnteUpNonogram(token, "easy", 25_000)).rejects.toThrow(/caps at 5,000/);
-    await expect(openAnteUpNonogram(token, "easy", 25_000)).rejects.toThrow(/Medium/);
-    expect(await balance(token)).toBe(1_000_000);
+    const { attempt } = await openAnteUpNonogram(token, "easy", 25_000);
+    expect(attempt.wager).toBe(25_000);
   });
 
   it("lets a bigger board take a bigger wager", async () => {

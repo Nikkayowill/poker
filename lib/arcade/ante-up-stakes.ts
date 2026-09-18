@@ -1,33 +1,19 @@
 /**
  * How much Gold may ride on one Ante Up attempt.
  *
- * Every Ante Up game had a wager floor (MIN_ANTE_UP_WAGER, restated per game)
- * and no ceiling at all, so the only bound on a stake was the player's own
- * balance. Combined with an easy board being close to a certain win, that made
- * the safest rung of every ladder the most profitable place to put a fortune:
- * stake everything on a grid you always solve, collect a multiple, restake the
- * larger balance. The daily wagered-attempt caps limited how many times a day
- * that could run, not how big each run was, and compounding does the rest.
+ * Ante Up used to bound a wager by a per-game, per-difficulty ceiling (see
+ * git history / 20260827090000_ante_up_wager_tier_ceiling.sql for why one was
+ * added: restaking a near-certain win on an easy board compounded a fortune).
+ * That ceiling has been removed -- a solo wager is now bounded only by the
+ * player's own balance, same as any other stake in the app. The DB-side
+ * trigger this file used to mirror (ante_up_attempts_enforce_wager_ceiling)
+ * is now a no-op; see 20260918152323_ante_up_remove_wager_ceiling.sql.
  *
- * The rule this file encodes: **a bigger stake has to buy a harder board.**
- * Sudoku, Minesweeper and Nonogram have real difficulty rungs to hang that on,
- * so their ceiling climbs with difficulty. The other three have no difficulty
- * axis, so they get one flat ceiling each until they grow one.
- *
- * This is only half the fix. The other half lives in each game's own
- * multiplier table: a ceiling bounds what a single attempt can pay, but a
- * near-certain win paying more than 1x still prints money at any size. See
- * ANTE_UP_TIERS (lib/arcade/ante-up.ts) and its equivalents for the payout
- * side of the same problem.
- *
- * Numbers below are aligned to the poker STAKES_TIERS ladder so a ceiling
- * reads as "this board can fund that seat". They are starting numbers, not
- * measured against real solve rates; retune them here and nowhere else.
+ * The payout side of the old fix is unaffected: ANTE_UP_TIERS and its
+ * equivalents (lib/arcade/ante-up.ts) still keep an easy board's multiplier
+ * near 1x, and the daily wagered-attempt caps still bound how many attempts a
+ * day can run.
  */
-
-import { MINESWEEPER_DIFFICULTIES, type MinesweeperDifficulty } from "./puzzles/minesweeper";
-import { NONOGRAM_DIFFICULTIES, type NonogramDifficulty } from "./puzzles/nonogram";
-import { SUDOKU_DIFFICULTIES, type SudokuDifficulty } from "./puzzles/sudoku";
 
 /**
  * Every game that takes a wager, by the id it is stored under. Matches the
@@ -46,121 +32,27 @@ export const ANTE_UP_GAMES = [
 
 export type AnteUpGame = (typeof ANTE_UP_GAMES)[number];
 
-/** A guaranteed-solvable easy grid is not worth a fortune; an expert one is. */
-const SUDOKU_MAX_WAGER: Readonly<Record<SudokuDifficulty, number>> = {
-  easy: 5_000,
-  medium: 25_000,
-  hard: 100_000,
-  expert: 500_000,
-};
-
-/** Same ladder, one rung shorter. A no-guess beginner board is the easy grid's twin. */
-const MINESWEEPER_MAX_WAGER: Readonly<Record<MinesweeperDifficulty, number>> = {
-  beginner: 5_000,
-  intermediate: 50_000,
-  expert: 500_000,
-};
-
-/**
- * Five rungs, one per board size (5x5 through 25x25). The top rung stops at
- * the same 500,000 Sudoku and Minesweeper stop at rather than climbing past
- * them for having two more rungs: this ladder is longer because a nonogram
- * has a size axis, not because a nonogram is worth more.
- */
-const NONOGRAM_MAX_WAGER: Readonly<Record<NonogramDifficulty, number>> = {
-  easy: 5_000,
-  medium: 25_000,
-  hard: 100_000,
-  expert: 250_000,
-  master: 500_000,
-};
-
-/**
- * The games with no difficulty rung to climb. One number each, low, because
- * there is no harder board to earn a higher ceiling with -- Memory Match is
- * bounded by its turn cap and the other two by being one shared daily board.
- * Raise these only alongside a real difficulty axis for that game.
- */
-const FLAT_MAX_WAGER: Readonly<Record<"memory-match" | "word-stack" | "connections", number>> = {
-  "memory-match": 25_000,
-  "word-stack": 25_000,
-  "connections": 25_000,
-};
-
 /**
  * The most that may be staked on one attempt of `game` at `tier`.
  *
- * An unrecognised tier falls to the game's lowest ceiling rather than its
- * highest: a tier string that does not parse must never be the cheap way past
- * this check. The services parse the difficulty before calling in, so this is
- * a backstop, not the primary guard.
+ * No ceiling exists any more -- kept as a function (rather than deleted, with
+ * every caller inlining Infinity) so a future per-board ceiling has one place
+ * to land again.
  */
-export function maxAnteUpWager(game: AnteUpGame, tier: string | null): number {
-  switch (game) {
-    case "sudoku":
-      return tier !== null && tier in SUDOKU_MAX_WAGER
-        ? SUDOKU_MAX_WAGER[tier as SudokuDifficulty]
-        : SUDOKU_MAX_WAGER.easy;
-    case "minesweeper":
-      return tier !== null && tier in MINESWEEPER_MAX_WAGER
-        ? MINESWEEPER_MAX_WAGER[tier as MinesweeperDifficulty]
-        : MINESWEEPER_MAX_WAGER.beginner;
-    case "nonogram":
-      return tier !== null && tier in NONOGRAM_MAX_WAGER
-        ? NONOGRAM_MAX_WAGER[tier as NonogramDifficulty]
-        : NONOGRAM_MAX_WAGER.easy;
-    default:
-      return FLAT_MAX_WAGER[game];
-  }
+export function maxAnteUpWager(_game: AnteUpGame, _tier: string | null): number {
+  return Number.POSITIVE_INFINITY;
 }
 
 /**
  * Why this wager is too big for this board, or null if it fits.
  *
- * The message names the next rung up rather than only refusing, because the
- * fix the player wants is almost always "play a harder board", not "wager
- * less" -- and a bare refusal reads like a bug when the UI let them pick the
- * amount.
+ * Always null now that there is no ceiling; kept for the same reason as
+ * `maxAnteUpWager` above.
  */
 export function anteUpWagerCeilingProblem(
-  game: AnteUpGame,
-  tier: string | null,
-  wager: number,
+  _game: AnteUpGame,
+  _tier: string | null,
+  _wager: number,
 ): string | null {
-  const max = maxAnteUpWager(game, tier);
-  if (wager <= max) return null;
-
-  const harder = nextRungUp(game, tier);
-  const stakeMore = harder
-    ? ` Step up to ${harder.label} to stake up to ${harder.max.toLocaleString()}.`
-    : "";
-  return `That board caps at ${max.toLocaleString()} Gold a wager.${stakeMore}`;
-}
-
-/**
- * The next difficulty that would allow a bigger wager, for the message above.
- *
- * Reads order and label off each game's own difficulty ladder (the same one
- * its UI and its server-side config lookup use) rather than a hand-typed copy
- * here, so a rung added, removed or renamed in one place can't silently go
- * stale in this message. Sudoku has no label field of its own -- neither does
- * its difficulty picker, which capitalizes the id the same way.
- */
-function nextRungUp(
-  game: AnteUpGame,
-  tier: string | null,
-): { label: string; max: number } | null {
-  const ladder: readonly { id: string; label: string }[] | null =
-    game === "sudoku"
-      ? SUDOKU_DIFFICULTIES.map((id) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }))
-      : game === "minesweeper"
-        ? MINESWEEPER_DIFFICULTIES
-        : game === "nonogram"
-          ? NONOGRAM_DIFFICULTIES
-          : null;
-  if (!ladder || tier === null) return null;
-
-  const next = ladder[ladder.findIndex((rung) => rung.id === tier) + 1];
-  if (next === undefined) return null;
-  return { label: next.label, max: maxAnteUpWager(game, next.id) };
+  return null;
 }

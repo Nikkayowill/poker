@@ -12,6 +12,7 @@ import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { FOOD_ITEMS } from "@/lib/stackacres/energy";
 import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
+import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
@@ -62,6 +63,7 @@ import {
   processStackAcresRecipeAction,
   sealStackAcresCellar,
   collectStackAcresCellar,
+  setStackAcresKitchenOrder,
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
@@ -324,6 +326,11 @@ const bodySchema = z.discriminatedUnion("action", [
     item: z.enum(CELLAR_ITEMS),
   }),
   z.object({ action: z.literal("collect-cellar") }),
+  // The Farm Kitchen's standing order. Moves no Gold and no items.
+  z.object({
+    action: z.literal("set-kitchen-order"),
+    recipe: z.enum(FARM_KITCHEN_RECIPES as unknown as [string, ...string[]]),
+  }),
   // Hidden secrets: three small discovery spots, one collectible. See
   // lib/server/stackacres-service.ts's own "Hidden secrets" section --
   // `tap-secret-zone` moves no Gold at all, and neither do the other three;
@@ -626,6 +633,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return sealStackAcresCellar(token, action.item, now);
     case "collect-cellar":
       return collectStackAcresCellar(token, now);
+    case "set-kitchen-order":
+      return setStackAcresKitchenOrder(token, action.recipe, now);
     case "tap-secret-zone":
       return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":

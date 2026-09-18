@@ -93,6 +93,7 @@ export type Action =
   | { action: "collect-vat" }
   | { action: "seal-cellar"; item: CellarItem }
   | { action: "collect-cellar" }
+  | { action: "set-kitchen-order"; recipe: RecipeId }
   // The idle-worker pass: settles every ripe wheat plot and every mill that
   // has become startable or finished. Moves no Gold. The Workshop sheet
   // fires it when something is due and on its own "work the farm" key.

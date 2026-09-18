@@ -21,7 +21,7 @@ export const ENERGY_START = ENERGY_MAX;
 export const FISHING_CAST_ENERGY = 5;
 export const TOO_TIRED_TO_FISH = "You're too tired to fish. Eat something from the kitchen!";
 
-export const FOOD_ITEMS = ["bread", "cake", "stew", "salad", "salsa", "stuffed_peppers"] as const;
+export const FOOD_ITEMS = ["bread", "cake", "stew", "salad", "salsa", "stuffed_peppers", "bean_casserole", "harvest_feast"] as const;
 export type FoodItem = (typeof FOOD_ITEMS)[number];
 
 export const FOOD_ENERGY: Readonly<Record<FoodItem, number>> = {
@@ -31,6 +31,9 @@ export const FOOD_ENERGY: Readonly<Record<FoodItem, number>> = {
   salad: 15,
   salsa: 20,
   stuffed_peppers: 40,
+  bean_casserole: 40,
+  // A full bar from empty.
+  harvest_feast: ENERGY_MAX,
 };
 
 export function isFoodItem(value: string): value is FoodItem & MachineItemId {

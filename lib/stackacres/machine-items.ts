@@ -57,6 +57,8 @@ export const MACHINE_PROCESSED_ITEMS = [
   "stuffed_peppers",
   "pickles",
   "sauerkraut",
+  "bean_casserole",
+  "harvest_feast",
 ] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
@@ -173,6 +175,11 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 180 },
   pickles: { label: "Pickles", plural: "Pickles", icon: "ico-celery", sellPrice: 60 },
   sauerkraut: { label: "Sauerkraut", plural: "Sauerkraut", icon: "ico-cabbage", sellPrice: 15 },
+  // Chapter 6's feasts. Casserole has a town order, so it sells just under
+  // what the order pays per dish. The Feast has none; it is the meal to eat
+  // or give, priced like the other order-free meals.
+  bean_casserole: { label: "Bean Casserole", plural: "Bean Casseroles", icon: "ico-green_bean", sellPrice: 135 },
+  harvest_feast: { label: "Harvest Feast", plural: "Harvest Feasts", icon: "ico-eggplant", sellPrice: 260 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

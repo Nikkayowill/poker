@@ -34,6 +34,8 @@ function machine(overrides: Partial<StackAcresMachineSnapshot> = {}): StackAcres
     done: false,
     progress: null,
     autoFeedsLeft: null,
+    standingRecipe: null,
+    kitchenSince: null,
     ...overrides,
   };
 }

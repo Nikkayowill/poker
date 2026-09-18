@@ -846,6 +846,8 @@ export function predictStackAcresAction(
         done: false,
         progress: null,
         autoFeedsLeft: body.kind === "feed_silo" ? FEED_SILO_DAILY_FEEDS : null,
+        standingRecipe: null,
+        kitchenSince: null,
         canStart: false,
       };
       return { profile, ...processingPatch(ctx, { machines: [...ctx.machines, machine] }) };
@@ -882,6 +884,18 @@ export function predictStackAcresAction(
       return processingPatch(ctx, {
         inventory,
         machines: ctx.machines.map((candidate) => (candidate.id === machine.id ? working : candidate)),
+      });
+    }
+    case "set-kitchen-order": {
+      const kitchen = ctx.machines.find((candidate) => candidate.kind === "farm_kitchen");
+      if (!kitchen) return null;
+      const updated: MachineView = {
+        ...kitchen,
+        standingRecipe: body.recipe,
+        kitchenSince: kitchen.kitchenSince ?? new Date(ctx.nowMs).toISOString(),
+      };
+      return processingPatch(ctx, {
+        machines: ctx.machines.map((candidate) => (candidate.id === kitchen.id ? updated : candidate)),
       });
     }
     case "eat": {

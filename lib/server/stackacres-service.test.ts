@@ -51,6 +51,7 @@ import {
   sealStackAcresCellar,
   collectStackAcresCellar,
   sealStackAcresVat,
+  setStackAcresKitchenOrder,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -2203,6 +2204,7 @@ describe("the currency wall", () => {
       "seal-cellar",
       "seal-vat",
       "sell",
+      "set-kitchen-order",
       "sow-wheat",
       "start-blueprint",
       "stock",
@@ -3092,14 +3094,14 @@ describe("wheat and machines", () => {
 
     // Wheat ripens (yield 4) but is not yet ready: nothing moves.
     const early = await workStackAcres(token, new Date(T0.getTime() + 1));
-    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0, siloServings: 0 });
+    expect(early.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 0, siloServings: 0, kitchenCooked: null });
     expect(early.inventory.wheat ?? 0).toBe(0);
 
     // Ripe: collected into inventory, and the same pass starts the mill
     // (input 3, so 4 - 3 = 1 Wheat left over).
     const ripenedAt = new Date(T0.getTime() + WHEAT_DURATION_MS);
     const ripe = await workStackAcres(token, ripenedAt);
-    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0 });
+    expect(ripe.work).toEqual({ wheatCollected: 1, machinesStarted: 1, machinesCollected: 0, siloServings: 0, kitchenCooked: null });
     expect(ripe.inventory.wheat).toBe(WHEAT_YIELD_QUANTITY - RECIPE_CATALOGUE.flour.inputs[0].quantity);
     expect(ripe.machines[0].status).toBe("working");
     expect(ripe.wheatPlots).toHaveLength(0);
@@ -3115,7 +3117,7 @@ describe("wheat and machines", () => {
     // Done: the run settles into Flour, and the mill goes back to idle.
     const finishedAt = new Date(ripenedAt.getTime() + RECIPE_CATALOGUE.flour.processingMs);
     const done = await workStackAcres(token, finishedAt);
-    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1, siloServings: 0 });
+    expect(done.work).toEqual({ wheatCollected: 0, machinesStarted: 0, machinesCollected: 1, siloServings: 0, kitchenCooked: null });
     expect(done.inventory.flour).toBe(RECIPE_CATALOGUE.flour.output.quantity);
     expect(done.machines[0].status).toBe("idle");
   });
@@ -4960,5 +4962,70 @@ describe("Chapter 5: the town kitchen", () => {
     const { token } = await funded();
     await placeStackAcresMachine(token, "cellar", T0);
     await expect(sealStackAcresCellar(token, "sauerkraut", T0)).rejects.toThrow("You have no Sauerkraut to store.");
+  });
+});
+
+describe("Chapter 6: feasts", () => {
+  const halfHours = (n: number) => new Date(T0.getTime() + n * 30 * 60 * 1000);
+
+  it("bakes a Harvest Feast that fills the energy bar from empty", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "oven", T0);
+    await adjustStackAcresInventory(id, "eggplant", 2);
+    await adjustStackAcresInventory(id, "broccoli", 2);
+    await adjustStackAcresInventory(id, "bread", 1);
+    await adjustStackAcresInventory(id, "spinach", 2);
+    const baked = await processStackAcresRecipeAction(token, "harvest_feast", T0);
+    expect(baked.inventory.harvest_feast).toBe(1);
+
+    await writeStackAcresEnergy(id, 0, { level: 0, updatedAt: T0.toISOString() });
+    const ate = await eatStackAcresFoodAction(token, "harvest_feast", T0);
+    expect(ate.energy.level).toBe(ENERGY_MAX);
+  });
+
+  it("builds the Farm Kitchen for 60,000 Gold and cooks nothing until it has an order", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    await placeStackAcresMachine(token, "farm_kitchen", T0);
+    expect(await balance(token)).toBe(before - 60_000);
+
+    await adjustStackAcresInventory(id, "celery", 20);
+    const idle = await workStackAcres(token, halfHours(6));
+    expect(idle.work.kitchenCooked).toBeNull();
+    expect(idle.inventory.celery).toBe(20);
+  });
+
+  it("cooks its standing order at double yield for the time banked, and no more", async () => {
+    const { token, id } = await funded();
+    await placeStackAcresMachine(token, "farm_kitchen", T0);
+    const ordered = await setStackAcresKitchenOrder(token, "pickles", T0);
+    expect(ordered.machines.find((machine) => machine.kind === "farm_kitchen")).toMatchObject({
+      standingRecipe: "pickles",
+      kitchenSince: T0.toISOString(),
+    });
+
+    await adjustStackAcresInventory(id, "celery", 20);
+    const cooked = await workStackAcres(token, halfHours(3));
+    expect(cooked.work.kitchenCooked).toEqual({ item: "pickles", quantity: 6 });
+    expect(cooked.inventory.celery).toBe(14);
+    expect(cooked.inventory.pickles).toBe(6);
+
+    // The same moment again: the bank is spent.
+    const again = await workStackAcres(token, halfHours(3));
+    expect(again.work.kitchenCooked).toBeNull();
+    expect(again.inventory.pickles).toBe(6);
+  });
+
+  it("refuses an order the Farm Kitchen can't cook", async () => {
+    const { token } = await funded();
+    await placeStackAcresMachine(token, "farm_kitchen", T0);
+    await expect(setStackAcresKitchenOrder(token, "flour", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("makes the Harvest Feast Ray's favorite gift", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "harvest_feast", 1);
+    const gifted = await giveStackAcresGift(token, "ray", "harvest_feast", T0);
+    expect(gifted.gift).toMatchObject({ outcome: "gifted", points: 3 });
   });
 });

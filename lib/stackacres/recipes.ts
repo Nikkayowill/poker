@@ -62,6 +62,8 @@ export const RECIPE_IDS = [
   "stuffed_peppers",
   "pickles",
   "sauerkraut",
+  "bean_casserole",
+  "harvest_feast",
 ] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
@@ -220,6 +222,31 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     output: { item: "sauerkraut", quantity: 1 },
     processingMs: 0,
   },
+  // Chapter 6's feasts, both in the Oven. Eggs rather than Cheese in the
+  // casserole: a 700 Gold Cheese would make it a dish nobody eats.
+  bean_casserole: {
+    label: "Bean Casserole",
+    machine: "oven",
+    inputs: [
+      { item: "green_bean", quantity: 2 },
+      { item: "broccoli", quantity: 1 },
+      { item: "eggs", quantity: 2 },
+    ],
+    output: { item: "bean_casserole", quantity: 1 },
+    processingMs: 0,
+  },
+  harvest_feast: {
+    label: "Harvest Feast",
+    machine: "oven",
+    inputs: [
+      { item: "eggplant", quantity: 2 },
+      { item: "broccoli", quantity: 2 },
+      { item: "bread", quantity: 1 },
+      { item: "spinach", quantity: 2 },
+    ],
+    output: { item: "harvest_feast", quantity: 1 },
+    processingMs: 0,
+  },
 };
 
 /** What the button says while making one batch of `recipe`. */
@@ -237,6 +264,8 @@ export const RECIPE_VERB: Readonly<Record<RecipeId, string>> = {
   stuffed_peppers: "Bake",
   pickles: "Jar",
   sauerkraut: "Jar",
+  bean_casserole: "Bake",
+  harvest_feast: "Cook",
 };
 
 /** Whether this recipe settles in one transaction rather than through a

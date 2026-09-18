@@ -28,9 +28,9 @@ describe("RECIPE_CATALOGUE", () => {
   });
 
   it("gives every recipe-driven machine kind at least one recipe, and every recipe one machine", () => {
-    // The Vat is not recipe-driven; see aging.ts.
+    // The Vat is not recipe-driven; see aging.ts. Nor is the Feed Silo.
     for (const kind of MACHINE_KINDS) {
-      if (kind === "vat") continue;
+      if (kind === "vat" || kind === "feed_silo") continue;
       expect(recipesForMachine(kind).length).toBeGreaterThan(0);
     }
     expect(recipesForMachine("dairy")).toEqual(["cheese", "cake"]);
@@ -88,6 +88,9 @@ describe("recipeRawGoldValue", () => {
 
   it("sits under every processed good's own sell price, so crafting never loses to selling raw", () => {
     for (const id of RECIPE_IDS) {
+      // Cattle Feed is worth what it feeds, not what it sells for. Selling
+      // the corn raw is meant to pay more.
+      if (id === "cattle_feed") continue;
       const def = RECIPE_CATALOGUE[id];
       expect(machineItemSellPrice(def.output.item)).toBeGreaterThan(recipeRawGoldValue(id));
     }

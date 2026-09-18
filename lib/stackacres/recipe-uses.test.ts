@@ -53,10 +53,9 @@ describe("the Garden Salad recipe", () => {
     expect(FOOD_ENERGY.salad).toBe(15);
   });
 
-  it("grows the machine cap to 7 with the Kitchen Counter at 800 Gold", () => {
+  it("adds the Kitchen Counter at 800 Gold", () => {
     expect(MACHINE_KINDS).toContain("counter");
     expect(MACHINE_CATALOGUE.counter.placeCost).toBe(800);
-    expect(MACHINE_CAP).toBe(7);
   });
 });
 
@@ -83,6 +82,8 @@ describe("wantedForLine", () => {
     expect(wantedForLine("cabbage")).toBe("For: Hen feed");
     expect(wantedForLine("wheat")).toBe("For: Flour, Hen feed");
     expect(wantedForLine("radish")).toBe("For: Garden Salad, Fishing bait");
+    expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Mill)");
+    expect(otherUsesOf("cattle_feed")).toEqual(["Cattle feed"]);
   });
 });
 
@@ -99,5 +100,24 @@ describe("recipeIngredients", () => {
 
   it("pluralises a bigger shortfall", () => {
     expect(missingLine(recipeIngredients("stew", {})[0])).toBe("Need 2 more Potatoes");
+  });
+});
+
+describe("the Cattle Feed recipe", () => {
+  it("is 2 Corn in the Mill, queued like Flour, for 3 Cattle Feed", () => {
+    expect(RECIPE_CATALOGUE.cattle_feed).toMatchObject({
+      label: "Cattle Feed",
+      machine: "mill",
+      inputs: [{ item: "corn", quantity: 2 }],
+      output: { item: "cattle_feed", quantity: 3 },
+      processingMs: RECIPE_CATALOGUE.flour.processingMs,
+    });
+    expect(machineItemSellPrice("cattle_feed")).toBe(20);
+  });
+
+  it("puts the Feed Silo on the machine list for 12,000 Gold, one of eight", () => {
+    expect(MACHINE_CATALOGUE.feed_silo.placeCost).toBe(12_000);
+    expect(MACHINE_CAP).toBe(8);
+    expect(MACHINE_KINDS).toHaveLength(MACHINE_CAP);
   });
 });

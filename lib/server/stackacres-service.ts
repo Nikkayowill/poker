@@ -227,6 +227,7 @@ import {
   createStackAcresWheatPlot,
   createStackAcresVatManifest,
   collectStackAcresMachine,
+  writeStackAcresSiloFeeds,
   collectStackAcresVatManifest,
   collectStackAcresWheatPlot,
   readStackAcresVatManifest,
@@ -347,7 +348,8 @@ import {
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
 import { isActiveStock } from "@/lib/stackacres/scope";
-import { HEN_FEED_ORDER, eatsShelfFeed, feedingToast, servingBonusEggs, type ServingSource } from "@/lib/stackacres/feeding";
+import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
+import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -2998,19 +3000,17 @@ function feedPushFor(unit: StoredStackAcresUnit, now: Date): { pushed: Date; new
  * fed it moves on.
  */
 /**
- * Spends one serving for `stock`: a hen eats off the shelf first, in
- * `HEN_FEED_ORDER` (Spinach, Wheat, Lettuce, Cabbage), and falls back to the
- * bought Feed Sack, so a hen is always feedable. Everything else eats from
- * the Feed Sack as before. Returns where the serving came from, or null when
+ * Spends one serving for `stock`: a hen or cattle eats off the shelf first,
+ * in its own order (`shelfFeedOrder`: Spinach, Wheat, Lettuce, Cabbage for a
+ * hen, Cattle Feed for cattle), and falls back to the bought Feed Sack, so it
+ * is always feedable. Everything else eats from the Feed Sack as before. Returns where the serving came from, or null when
  * there was none. See `planServings` in lib/stackacres/feeding.ts, the same
  * rule the client predicts with.
  */
 async function spendServing(profileId: string, stock: StackAcresStock): Promise<ServingSource | null> {
-  if (eatsShelfFeed(stock)) {
-    for (const item of HEN_FEED_ORDER) {
-      const left = await adjustStackAcresInventory(profileId, item, -1);
-      if (left !== null) return item;
-    }
+  for (const item of shelfFeedOrder(stock)) {
+    const left = await adjustStackAcresInventory(profileId, item, -1);
+    if (left !== null) return item;
   }
   const feedLeft = await adjustStackAcresFeed(profileId, -1);
   return feedLeft === null ? null : "feed";
@@ -3023,6 +3023,74 @@ async function refundServing(profileId: string, source: ServingSource): Promise<
   } else {
     await adjustStackAcresInventory(profileId, source, 1).catch(() => null);
   }
+}
+
+/**
+ * The Feed Silo's lazy settlement: feeds every animal that went hungry, as of
+ * the moment it went hungry, from the barn (lib/stackacres/feed-silo.ts).
+ * Runs only inside writes (`workStackAcres`, `harvestStackAcres`), never in a
+ * read. Returns how many servings it handed out.
+ *
+ * Today's allowance is claimed on the Silo row first, under its version
+ * guard, so two requests cannot both spend it. Each serving then leaves the
+ * barn before the unit write that uses it, and a lost unit write refunds its
+ * servings. Unused allowance is handed back at the end.
+ */
+async function runFeedSilo(profileId: string, now: Date): Promise<number> {
+  const machines = await listStackAcresMachines(profileId);
+  const silo = machines.find((machine) => machine.kind === "feed_silo");
+  if (!silo) return 0;
+  const day = stackacresExchangeDay(now);
+  const budget = siloFeedsLeft(silo, day);
+  if (budget === 0) return 0;
+
+  const [units, inventory, feed] = await Promise.all([
+    listStackAcresUnits(profileId),
+    readStackAcresInventory(profileId),
+    readStackAcresFeed(profileId),
+  ]);
+  const plan = planSiloFeeding(units, inventory, feed, budget, now);
+  if (plan.servings === 0) return 0;
+
+  const used = siloFeedsUsed(silo, day);
+  const claimed = await writeStackAcresSiloFeeds(silo, day, used + plan.servings);
+  if (!claimed) return 0;
+
+  let served = 0;
+  for (const feeding of plan.feedings) {
+    const unit = units.find((candidate) => candidate.id === feeding.unitId);
+    if (!unit) continue;
+    const spent: ServingSource[] = [];
+    for (const source of feeding.sources) {
+      const left =
+        source === "feed"
+          ? await adjustStackAcresFeed(profileId, -1)
+          : await adjustStackAcresInventory(profileId, source, -1);
+      if (left === null) break;
+      spent.push(source);
+    }
+    if (spent.length === 0) continue;
+
+    // Fed at its hunger moment and ready_at left alone: no time is lost.
+    const fedAt = new Date(feeding.fedAts[spent.length - 1]);
+    let written: StoredStackAcresUnit | null = null;
+    try {
+      written = await feedStackAcresUnit(unit, fedAt, new Date(unit.readyAt), null, 0);
+    } catch (error) {
+      console.error("stackacres.silo_feed_failed", { profileId, unitId: unit.id, error });
+    }
+    if (!written) {
+      for (const source of spent) await refundServing(profileId, source);
+      continue;
+    }
+    served += spent.length;
+  }
+
+  if (served < plan.servings) {
+    // A lost race here leaves the allowance claimed, never over the cap.
+    await writeStackAcresSiloFeeds(claimed, day, used + served).catch(() => null);
+  }
+  return served;
 }
 
 /** What a feeding tells the player, when a serving earned extra eggs. */
@@ -3888,6 +3956,9 @@ export async function harvestStackAcres(
   now = new Date(),
 ): Promise<StackAcresView & { harvest: StackAcresHarvestResult }> {
   const profile = await ensureProfile(token);
+  // The Feed Silo settles first, so an animal it would have fed on time is
+  // collected on time rather than refused as hungry.
+  await runFeedSilo(profile.id, now);
   const rows = await listStackAcresUnits(profile.id);
   // A piped crop is never dry, so it ripens on its own clock; without this it
   // read as dry and could not be brought in.
@@ -4394,6 +4465,8 @@ export interface StackAcresWorkResult {
   wheatCollected: number;
   machinesStarted: number;
   machinesCollected: number;
+  /** Servings the Feed Silo handed out on this pass. */
+  siloServings: number;
 }
 
 export async function workStackAcres(
@@ -4401,6 +4474,7 @@ export async function workStackAcres(
   now = new Date(),
 ): Promise<StackAcresView & { work: StackAcresWorkResult }> {
   const profile = await ensureProfile(token);
+  const siloServings = await runFeedSilo(profile.id, now);
 
   let wheatCollected = 0;
   const wheatPlots = await listStackAcresWheatPlots(profile.id);
@@ -4520,7 +4594,7 @@ export async function workStackAcres(
   await recordStoryEvents(profile.id, processedEvents);
   return {
     ...(await view(profile, now)),
-    work: { wheatCollected, machinesStarted, machinesCollected },
+    work: { wheatCollected, machinesStarted, machinesCollected, siloServings },
   };
 }
 

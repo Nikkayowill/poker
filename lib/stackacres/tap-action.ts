@@ -23,6 +23,7 @@
 import { unitRowAction } from "./district-panel";
 import { STACKACRES_ITEM_CATALOGUE, itemLabel, type StackAcresItem } from "./items";
 import type { StackAcresUnitSnapshot } from "./units";
+import type { StackAcresInventory } from "./inventory";
 
 /** What a tap on a unit resolves to. `refused` never reaches the network. */
 export type StackAcresTapAction =
@@ -66,9 +67,9 @@ export function timeLeftLabel(readyAtIso: string, nowMs: number): string {
  */
 export function tapActionFor(
   unit: StackAcresUnitSnapshot,
-  context: { feed: number; gold: number; nowMs: number; henFeed?: number },
+  context: { feed: number; gold: number; nowMs: number; shelfFeed?: StackAcresInventory },
 ): StackAcresTapAction {
-  const action = unitRowAction(unit, { feed: context.feed, gold: context.gold, henFeed: context.henFeed });
+  const action = unitRowAction(unit, { feed: context.feed, gold: context.gold, shelfFeed: context.shelfFeed });
   switch (action.kind) {
     case "collect":
       return { kind: "collect", unitId: unit.id };

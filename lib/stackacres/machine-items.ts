@@ -43,7 +43,7 @@ import { FISH_SPECIES } from "./fishing";
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. */
 export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad"] as const;
+export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad", "cattle_feed"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
@@ -146,6 +146,9 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },
   // Above the 8 Gold its four greens sell for raw. Borrows the lettuce icon.
   salad: { label: "Garden Salad", plural: "Garden Salads", icon: "ico-lettuce", sellPrice: 12 },
+  // Milled from corn for cattle (./feeding.ts). Priced as feed, not as a way
+  // to sell corn: two corn sell for more raw. Borrows the corn icon.
+  cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 20 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

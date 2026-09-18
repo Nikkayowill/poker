@@ -246,7 +246,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { eatsShelfFeed, henFeedOnShelf } from "@/lib/stackacres/feeding";
+import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresKitchen } from "./stackacres-kitchen";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -470,7 +470,7 @@ interface StackAcresResponse {
    *  `sold` by `sell`, `vatCollected` by `collect-vat`. The view itself
    *  already carries the resulting state; these are the sheet's own
    *  "here is what that press did" line. */
-  work?: { wheatCollected: number; machinesStarted: number; machinesCollected: number };
+  work?: { wheatCollected: number; machinesStarted: number; machinesCollected: number; siloServings: number };
   processed?: {
     recipe: RecipeId;
     produced: { item: MachineProcessedItem; quantity: number } | null;
@@ -3203,11 +3203,11 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, "Nobody here is hungry.", "deny");
         return;
       }
-      // Hens eat greens and Wheat off the shelf before the Feed Sack (lib/stackacres/feeding.ts).
-      const hensCanEatShelf =
-        henFeedOnShelf(processing.inventory) > 0 &&
-        residents.some((unit) => unit.state === "hungry" && eatsShelfFeed(unit.stock));
-      if (feed < 1 && !hensCanEatShelf) {
+      // Hens and cattle eat off the shelf before the Feed Sack (lib/stackacres/feeding.ts).
+      const canEatShelf = residents.some(
+        (unit) => unit.state === "hungry" && shelfFeedFor(unit.stock, processing.inventory) > 0,
+      );
+      if (feed < 1 && !canEatShelf) {
         refusedSound();
         world.current?.floatAt(at, "No feed left in the barn.", "deny");
         return;
@@ -3795,7 +3795,7 @@ export function StackAcresFarm() {
         {
           water,
           feed,
-          henFeed: henFeedOnShelf(processing.inventory),
+          shelfFeed: processing.inventory,
           gold,
           nowMs,
           soilStock,

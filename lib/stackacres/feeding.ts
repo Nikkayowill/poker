@@ -1,8 +1,8 @@
 /**
- * Where one animal's serving comes from. Hens eat greens and grain from
- * inventory first, in `HEN_FEED_ORDER`, one item per serving, and fall back
- * to the bought Feed Sack, so a hen is always feedable. Every other animal
- * eats from the Feed Sack.
+ * Where one animal's serving comes from. Hens and cattle eat off the shelf
+ * first, each in its own order (`HEN_FEED_ORDER`, `CATTLE_FEED_ORDER`), one
+ * item per serving, and fall back to the bought Feed Sack, so they are always
+ * feedable. Every other animal eats from the Feed Sack.
  *
  * A serving of Spinach also adds an egg to that hen's current batch
  * (`HEN_FEED_BONUS_EGGS`).
@@ -18,11 +18,27 @@ import type { StackAcresInventory } from "./inventory";
 /** What a hen eats off the shelf, best first. */
 export const HEN_FEED_ORDER = ["spinach", "wheat", "lettuce", "cabbage"] as const;
 
+/** What cattle eat off the shelf. Cattle Feed is milled from corn. */
+export const CATTLE_FEED_ORDER = ["cattle_feed"] as const;
+
 export type HenFeedItem = (typeof HEN_FEED_ORDER)[number];
+export type CattleFeedItem = (typeof CATTLE_FEED_ORDER)[number];
+export type ShelfFeedItem = HenFeedItem | CattleFeedItem;
 
-export type ServingSource = HenFeedItem | "feed";
+export type ServingSource = ShelfFeedItem | "feed";
 
-/** Extra eggs one serving of each shelf item adds to the hen's batch. */
+/** Every item any animal eats off the shelf. */
+export const SHELF_FEED_ITEMS: readonly ShelfFeedItem[] = [...HEN_FEED_ORDER, ...CATTLE_FEED_ORDER];
+
+/** The animals that eat off the shelf, and what the seed card calls their feed. */
+export const SHELF_FEED_ORDERS = {
+  hen: { order: HEN_FEED_ORDER, noun: "Hen" },
+  cattle: { order: CATTLE_FEED_ORDER, noun: "Cattle" },
+} as const satisfies Partial<Record<StackAcresStock, { order: readonly ShelfFeedItem[]; noun: string }>>;
+
+type ShelfFedStock = keyof typeof SHELF_FEED_ORDERS;
+
+/** Extra eggs one serving of each hen shelf item adds to the hen's batch. */
 export const HEN_FEED_BONUS_EGGS: Readonly<Record<HenFeedItem, number>> = {
   spinach: 1,
   wheat: 0,
@@ -34,19 +50,33 @@ export function isHenFeedItem(item: string): item is HenFeedItem {
   return (HEN_FEED_ORDER as readonly string[]).includes(item);
 }
 
-/** Whether `stock` eats off the shelf before touching the Feed Sack. */
-export function eatsShelfFeed(stock: StackAcresStock): boolean {
-  return stock === "hen";
+function isShelfFedStock(stock: StackAcresStock): stock is ShelfFedStock {
+  return stock in SHELF_FEED_ORDERS;
 }
 
-/** Extra eggs a serving from `source` adds. The Feed Sack adds none. */
+/** What `stock` eats off the shelf, best first. Empty for Feed-Sack-only animals. */
+export function shelfFeedOrder(stock: StackAcresStock): readonly ShelfFeedItem[] {
+  return isShelfFedStock(stock) ? SHELF_FEED_ORDERS[stock].order : [];
+}
+
+/** Whether `stock` eats off the shelf before touching the Feed Sack. */
+export function eatsShelfFeed(stock: StackAcresStock): boolean {
+  return shelfFeedOrder(stock).length > 0;
+}
+
+/** Extra eggs a serving from `source` adds. Only hen greens add any. */
 export function servingBonusEggs(source: ServingSource): number {
-  return source === "feed" ? 0 : HEN_FEED_BONUS_EGGS[source];
+  return isHenFeedItem(source) ? HEN_FEED_BONUS_EGGS[source] : 0;
 }
 
 /** How many hen servings the shelf holds, across every hen feed item. */
 export function henFeedOnShelf(inventory: StackAcresInventory): number {
-  return HEN_FEED_ORDER.reduce((total, item) => total + Math.max(0, inventory[item] ?? 0), 0);
+  return shelfFeedFor("hen", inventory);
+}
+
+/** How many shelf servings `inventory` holds for `stock`. */
+export function shelfFeedFor(stock: StackAcresStock, inventory: StackAcresInventory): number {
+  return shelfFeedOrder(stock).reduce((total, item) => total + Math.max(0, inventory[item] ?? 0), 0);
 }
 
 /** The toast for a feeding that earned extra eggs, e.g. "Fed spinach: +1 egg!".
@@ -64,9 +94,16 @@ export interface ServingPlan {
   /** Where each fed animal's serving came from, in the same order. */
   sources: ServingSource[];
   /** Shelf items eaten, by item. Only items actually used appear. */
-  shelfUsed: Partial<Record<HenFeedItem, number>>;
+  shelfUsed: Partial<Record<ShelfFeedItem, number>>;
   feedUsed: number;
   bonusEggs: number;
+}
+
+/** The shelf counts a plan draws down, one per shelf feed item. */
+export function shelfFeedLeft(inventory: StackAcresInventory): Record<ShelfFeedItem, number> {
+  const left = {} as Record<ShelfFeedItem, number>;
+  for (const item of SHELF_FEED_ITEMS) left[item] = Math.max(0, inventory[item] ?? 0);
+  return left;
 }
 
 /**
@@ -79,17 +116,12 @@ export function planServings(
   inventory: StackAcresInventory,
   feed: number,
 ): ServingPlan {
-  const left: Record<HenFeedItem, number> = {
-    spinach: Math.max(0, inventory.spinach ?? 0),
-    wheat: Math.max(0, inventory.wheat ?? 0),
-    lettuce: Math.max(0, inventory.lettuce ?? 0),
-    cabbage: Math.max(0, inventory.cabbage ?? 0),
-  };
+  const left = shelfFeedLeft(inventory);
   let feedLeft = Math.max(0, feed);
   const sources: ServingSource[] = [];
-  const shelfUsed: Partial<Record<HenFeedItem, number>> = {};
+  const shelfUsed: Partial<Record<ShelfFeedItem, number>> = {};
   for (const stock of stocks) {
-    const shelfItem = eatsShelfFeed(stock) ? HEN_FEED_ORDER.find((item) => left[item] > 0) : undefined;
+    const shelfItem = shelfFeedOrder(stock).find((item) => left[item] > 0);
     if (shelfItem) {
       left[shelfItem] -= 1;
       shelfUsed[shelfItem] = (shelfUsed[shelfItem] ?? 0) + 1;

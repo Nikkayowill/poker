@@ -31,7 +31,8 @@ import {
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import { isActiveStock } from "./scope";
-import { eatsShelfFeed } from "./feeding";
+import { shelfFeedFor } from "./feeding";
+import type { StackAcresInventory } from "./inventory";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stocksInZone } from "./world";
 import type { ZoneId } from "./zones";
@@ -50,14 +51,14 @@ export type UnitRowAction =
 /** The one action a unit's row affords right now. */
 export function unitRowAction(
   unit: StackAcresUnitSnapshot,
-  context: { feed: number; gold: number; henFeed?: number },
+  context: { feed: number; gold: number; shelfFeed?: StackAcresInventory },
 ): UnitRowAction {
   switch (unit.state) {
     case "ready":
       return { kind: "collect" };
     case "hungry":
-      // A hen eats greens and Wheat off the shelf before the Feed Sack (./feeding.ts).
-      return context.feed < 1 && !(eatsShelfFeed(unit.stock) && (context.henFeed ?? 0) > 0)
+      // Hens and cattle eat off the shelf before the Feed Sack (./feeding.ts).
+      return context.feed < 1 && shelfFeedFor(unit.stock, context.shelfFeed ?? {}) < 1
         ? { kind: "feed", disabled: true, reason: "No feed left in the barn." }
         : { kind: "feed", disabled: false, reason: null };
     case "dry":

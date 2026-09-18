@@ -32,12 +32,16 @@ describe("arcade catalogue", () => {
       "Memory Match",
       "Minesweeper",
       "Nonogram",
+      "Blockudoku",
+      "Word Fill-In",
       "Chess",
       "Checkers",
       "Othello",
       "Trivia Showdown",
       "Word Race",
       "Cribbage",
+      "Liar's Dice",
+      "Mancala",
     ]);
   });
 

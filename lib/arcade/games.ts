@@ -41,12 +41,16 @@ export type ArcadeGameId =
   | "memory-match"
   | "minesweeper"
   | "nonogram"
+  | "blockudoku"
+  | "word-fill-in"
   | "chess-duel"
   | "checkers-duel"
   | "othello-duel"
   | "trivia-showdown"
   | "word-race"
-  | "cribbage-table";
+  | "cribbage-table"
+  | "liars-dice-duel"
+  | "mancala-duel";
 
 /**
  * `casino` stakes Gold against the house on a chance outcome. `duel` stakes
@@ -222,6 +226,27 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     status: "live",
     href: "/games/nonogram",
   },
+  {
+    id: "blockudoku",
+    name: "Blockudoku",
+    blurb: "Drop shapes, clear rows, columns and boxes",
+    kind: "wager",
+    entryCost: 0,
+    // Engine's built (lib/arcade/puzzles/blockudoku.ts) but there's no route,
+    // API or board yet -- "live" with a null href is exactly the bug this
+    // file's own header warns about, an unclickable Play button.
+    status: "coming-soon",
+    href: null,
+  },
+  {
+    id: "word-fill-in",
+    name: "Word Fill-In",
+    blurb: "Place every word in the list, no clues given",
+    kind: "wager",
+    entryCost: 0,
+    status: "coming-soon",
+    href: null,
+  },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at
   // the cheapest tier as a "starting at": the challenger actually picks the
@@ -287,6 +312,28 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: MIN_DUEL_STAKE,
     status: "live",
     href: "/games/cribbage",
+  },
+  {
+    id: "liars-dice-duel",
+    name: "Liar's Dice",
+    blurb: "Bid on the table, or call the bluff",
+    kind: "duel",
+    entryCost: MIN_DUEL_STAKE,
+    // Engine's built (lib/pvp/liars-dice.ts) but deliberately not yet in
+    // lib/pvp/registry.ts's DUEL_GAMES -- that map is what lets the live
+    // /api/pvp/[game] route escrow real Gold, and there's no route or board
+    // to ever play or settle a match here. See registry.ts's own note.
+    status: "coming-soon",
+    href: null,
+  },
+  {
+    id: "mancala-duel",
+    name: "Mancala",
+    blurb: "Sow the board, empty their side to win",
+    kind: "duel",
+    entryCost: MIN_DUEL_STAKE,
+    status: "coming-soon",
+    href: null,
   },
 ];
 // Sit & Go and heads-up poker are deliberately NOT catalog rows here.

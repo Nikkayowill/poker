@@ -111,7 +111,7 @@ Done (2026-09-16, PRs #539, #540 and the cutover):
   up. The e2e specs use the scene's `placeFarmer`, `clientPointFor`, `npcPoint` and
   `isWalking`; ChronoDevPanel steps `game`'s clocks.
 - **Two scenes** (`scene.ts`): the Homestead (barn = store, signpost = contracts, windmill
-  = workshop, well, dock, greenhouse footing, Ray and his house, the Pilgrim, Pierre and Ivy
+  = workshop, well, dock, greenhouse footing, Ray, the player's house, the Pilgrim, Pierre and Ivy
   when unlocked, the Merchant when visiting, Hen Haven with the player's real hens, the loose
   board secret, the gates) and the Old Fields, which ARE the live Crop Fields tile for tile
   (`lib/stackacres-td/field.ts`, tested). The fallen log blocks the north lane until

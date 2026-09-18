@@ -312,9 +312,9 @@ export interface StackAcresWorldApi {
    *  on its own short timer -- called from an effect on `showStore`. See
    *  stackacres-scene.ts's `setBarnHeldOpen`. */
   setBarnHeldOpen: (held: boolean) => void;
-  /** Same contract as `setBarnHeldOpen`, for Ray's house and the gift
-   *  dialogue its own tap opens. See `setRayHouseHeldOpen`. */
-  setRayHouseHeldOpen: (held: boolean) => void;
+  /** Same contract as `setBarnHeldOpen`, for the player's house and the
+   *  panel its own tap opens. */
+  setHouseHeldOpen: (held: boolean) => void;
   /** Same contract again, for Ray himself (the traveler, not the house) and
    *  his own story dialogue bubble. See `setTravelerRayHeldOpen`. */
   setTravelerRayHeldOpen: (held: boolean) => void;
@@ -394,6 +394,9 @@ export interface StackAcresWorldProps {
   /** A finger landed on Ray himself, not the barn behind him --
    *  see stackacres-farm.tsx's `onWorldRayTap`. */
   onRayTap: (at: TapPoint) => void;
+  /** A finger landed on the player's house. Opens the house panel (the
+   *  kitchen), never anything of Ray's -- see stackacres-farm.tsx's `onWorldHouseTap`. */
+  onHouseTap: (at: TapPoint) => void;
   /** A finger landed on one of the eleven story travelers (see
    *  lib/stackacres/story/placement.ts). `at` is the point over their head,
    *  where the dialogue bubble hangs; see stackacres-farm.tsx's

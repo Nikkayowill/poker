@@ -861,7 +861,7 @@ def window(c, wx, wy, shutters=True):
 
 
 def farmhouse():
-    """Ray's saltbox, same footprint as kit.farmhouse."""
+    """The player's saltbox, same footprint as kit.farmhouse."""
     w, h = 86, 80
     c = Canvas(w, h)
     roof_top, eave, wall_bottom = 10, 46, 75

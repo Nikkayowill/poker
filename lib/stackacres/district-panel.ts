@@ -24,6 +24,7 @@
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
+  STACKACRES_LIVESTOCK,
   STACKACRES_MAX_EXTRA_CAP,
   isLivestock,
   stackacresCapacityPrice,
@@ -34,7 +35,8 @@ import { isActiveStock } from "./scope";
 import { shelfFeedFor } from "./feeding";
 import type { StackAcresInventory } from "./inventory";
 import type { StackAcresUnitSnapshot } from "./units";
-import { stocksInZone } from "./world";
+import { isSectorUnlocked, sectorLabel, type SectorId } from "./sectors";
+import { stockZone, stocksInZone } from "./world";
 import type { ZoneId } from "./zones";
 
 /** What one owned unit's row offers, and why not if it doesn't. */
@@ -153,4 +155,25 @@ export function buyOptionsForZone(
           : null,
     };
   });
+}
+
+/** A pen the barn shows greyed out because its land is not cleared yet. */
+export interface LockedLivestock {
+  stock: StackAcresStock;
+  label: string;
+  /** The district to clear. Opening its clearing sheet is the way to unlock it. */
+  sector: SectorId;
+  sectorLabel: string;
+}
+
+/** Every buyable livestock kind whose district this farm has not cleared, in catalogue order. */
+export function lockedLivestock(unlocked: readonly SectorId[]): LockedLivestock[] {
+  return STACKACRES_LIVESTOCK.filter(isActiveStock)
+    .filter((stock) => !isSectorUnlocked(stockZone(stock), unlocked))
+    .map((stock) => ({
+      stock,
+      label: STACKACRES_CATALOGUE[stock].label,
+      sector: stockZone(stock),
+      sectorLabel: sectorLabel(stockZone(stock)),
+    }));
 }

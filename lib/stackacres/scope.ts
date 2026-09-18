@@ -13,9 +13,9 @@
  *
  * Crops were hidden for one pass while the base gather-craft-sell loop got
  * proven out with just Hen/Wheat Plot/Cattle; that's done, so all 22
- * `STACKACRES_CROPS` are back on the shelf. Livestock stays scoped -- only
- * `STACKACRES_ACTIVE_LIVESTOCK` is buyable; Pig/wool is still out until that
- * list widens too.
+ * `STACKACRES_CROPS` are back on the shelf. All three livestock kinds are
+ * back too: the barn's Livestock tab shows every pen, locked ones greyed out
+ * until their land is cleared.
  */
 
 import type { MachineKind } from "./machines";
@@ -23,7 +23,7 @@ import type { MachineItemId } from "./machine-items";
 import { type StackAcresLivestock, type StackAcresStock, isStackAcresCrop } from "./catalogue";
 
 /** Livestock kept on the shelf this pass. */
-export const STACKACRES_ACTIVE_LIVESTOCK: readonly StackAcresLivestock[] = ["hen", "cattle"];
+export const STACKACRES_ACTIVE_LIVESTOCK: readonly StackAcresLivestock[] = ["hen", "pig", "cattle"];
 
 /** Inventory items the Workshop sheet's shelf shows -- exactly what the
  *  active scope's loop actually produces: Eggs (Hens), Milk (Cattle), Wheat

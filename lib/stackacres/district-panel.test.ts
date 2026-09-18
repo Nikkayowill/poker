@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buyOptionsForZone, occupiedCountFor, unitRowAction } from "./district-panel";
+import { buyOptionsForZone, lockedLivestock, occupiedCountFor, unitRowAction } from "./district-panel";
+import { sectorLabel } from "./sectors";
 import type { StackAcresUnitSnapshot } from "./units";
 
 function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSnapshot {
@@ -169,5 +170,19 @@ describe("buyOptionsForZone", () => {
     expect(carrot.expand).toBeNull();
     expect(carrot.seedAfford).toBe(true);
     expect(carrot.seedReason).toBeNull();
+  });
+});
+
+describe("lockedLivestock", () => {
+  it("greys out sheep and cattle on a fresh farm, and names the land that unlocks each", () => {
+    expect(lockedLivestock(["farmstead", "henhaven"])).toEqual([
+      { stock: "pig", label: "Sheep Pen", sector: "wallow", sectorLabel: sectorLabel("wallow") },
+      { stock: "cattle", label: "Cattle Pen", sector: "oxfields", sectorLabel: sectorLabel("oxfields") },
+    ]);
+  });
+
+  it("drops a pen once its land is cleared", () => {
+    expect(lockedLivestock(["farmstead", "henhaven", "wallow"]).map((pen) => pen.stock)).toEqual(["cattle"]);
+    expect(lockedLivestock(["farmstead", "henhaven", "wallow", "oxfields"])).toEqual([]);
   });
 });

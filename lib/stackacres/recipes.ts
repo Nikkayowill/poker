@@ -130,7 +130,7 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     output: { item: "cake", quantity: 1 },
     processingMs: 0,
   },
-  // The Oven in Ray's kitchen. Instant, like every recipe added since Cake.
+  // The Oven in the house kitchen. Instant, like every recipe added since Cake.
   bread: {
     label: "Bread",
     machine: "oven",

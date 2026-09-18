@@ -203,6 +203,7 @@ export interface TopdownCallbacks {
   onMerchantTap: () => void;
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
+  onHouseTap: (at: TapPoint) => void;
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
@@ -1198,8 +1199,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onThicketTap(at);
       case "greenhouse":
         return cb.onGreenhouseTap();
-      case "rayhouse":
-        return cb.onRayTap(at);
+      case "farmhouse":
+        return cb.onHouseTap(at);
       case "secret":
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
       case "pen":

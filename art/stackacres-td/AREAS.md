@@ -113,7 +113,7 @@ Arthur's post, and the stage for Leo's beacon: the finale.
 
 | Building | Area | What's inside (existing systems) |
 |---|---|---|
-| Ray's House | Homestead | friendship gifts (`friendship.ts`), Shop and Blueprints, which open from Ray's house tap today |
+| Your House | Homestead | the kitchen: cooking, eating, the Preserves Cellar and the Farm Kitchen (`stackacres-house.tsx`). Ray is a separate character; tapping him opens his story or gifts |
 | The Barn | Homestead | Supply Store (Ray's shop) |
 | The Old Mill | Homestead | Workshop machines (Mill, Dairy, Loom, Fermenting Vat) and the Sunlight Forge |
 | The Greenhouse | Homestead | the 6-slot greenhouse grid, enterable once `greenhouse_raised` |

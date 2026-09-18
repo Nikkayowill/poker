@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import {
   KEEPSAKE_CATALOGUE,
   giftPreference,
@@ -15,6 +15,7 @@ import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 import type { TapPoint } from "./world-contract";
+import { useKeepOnScreen } from "./use-keep-on-screen";
 
 /**
  * NPC friendship: a gift dialogue, same screen-anchored treatment as
@@ -52,9 +53,6 @@ export interface StackAcresFriendshipDialogueProps {
   busy: boolean;
   onGift: (item: MachineItemId) => void;
   onClose: () => void;
-  /** Ray's house is the farm kitchen: when set, the greeting gets a Kitchen
-   *  tab beside the gift picker. See ./stackacres-kitchen.tsx. */
-  kitchen?: ReactNode;
 }
 
 function friendshipProgressLine(friendship: StackAcresFriendshipView, npcLabel: string): string {
@@ -75,10 +73,9 @@ export function StackAcresFriendshipDialogue({
   busy,
   onGift,
   onClose,
-  kitchen,
 }: StackAcresFriendshipDialogueProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
-  const [tab, setTab] = useState<"gifts" | "kitchen">("gifts");
+  const cardRef = useKeepOnScreen<HTMLDivElement>();
 
   useEffect(() => {
     const timer = window.setTimeout(() => firstRef.current?.focus(), 0);
@@ -100,35 +97,11 @@ export function StackAcresFriendshipDialogue({
   return (
     <div className="sa-gift-dialogue" style={{ left: `${at.x}px`, top: `${at.y}px` }}>
       <span className="sa-gift-dialogue-pin" aria-hidden="true" />
-      <div className="sa-gift-dialogue-card" role="dialog" aria-label={`Give ${npcLabel} a gift`}>
+      <div ref={cardRef} className="sa-gift-dialogue-card" role="dialog" aria-label={`Give ${npcLabel} a gift`}>
         <button type="button" className="sa-gift-dialogue-close" aria-label="Close" onClick={onClose}>
           ×
         </button>
-        {kitchen && result.phase === "greeting" && (
-          <div className="sa-gift-dialogue-tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "gifts"}
-              className={tab === "gifts" ? "is-active" : undefined}
-              onClick={() => setTab("gifts")}
-            >
-              Gifts
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "kitchen"}
-              className={tab === "kitchen" ? "is-active" : undefined}
-              onClick={() => setTab("kitchen")}
-            >
-              Kitchen
-            </button>
-          </div>
-        )}
-        {kitchen && result.phase === "greeting" && tab === "kitchen" ? (
-          kitchen
-        ) : result.phase === "greeting" ? (
+        {result.phase === "greeting" ? (
           <>
             <p className="sa-gift-dialogue-line">{result.line}</p>
             {heldItems.length === 0 ? (

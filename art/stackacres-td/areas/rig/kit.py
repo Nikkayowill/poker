@@ -533,7 +533,7 @@ def lily_pad(flower=False):
 # ------------------------------------------------------------------ farm
 
 def farmhouse():
-    """Ray's saltbox: white clapboard, slate roof with the long rear slope, red door, green shutters."""
+    """The player's saltbox: white clapboard, slate roof with the long rear slope, red door, green shutters."""
     w, h = 86, 80
     s = Sprite(w, h)
     roof_top, eave, wall_bottom = 10, 46, 75

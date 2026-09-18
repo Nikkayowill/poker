@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { travelerPortrait, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { portraitExpression, type StoryChoice, type StoryDialogueNode } from "@/lib/stackacres/story/dialogue";
 import type { TapPoint } from "./world-contract";
+import { useKeepOnScreen } from "./use-keep-on-screen";
 
 /**
  * One traveler's speech bubble: their portrait, name, line, and whatever
@@ -31,6 +32,7 @@ export interface StackAcresStoryDialogueProps {
 
 export function StackAcresStoryDialogue({ traveler, at, node, busy, onChoose, onClose }: StackAcresStoryDialogueProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
+  const cardRef = useKeepOnScreen<HTMLDivElement>();
 
   useEffect(() => {
     const timer = window.setTimeout(() => firstRef.current?.focus(), 0);
@@ -48,7 +50,7 @@ export function StackAcresStoryDialogue({ traveler, at, node, busy, onChoose, on
   return (
     <div className="sa-story-dialogue" style={{ left: `${at.x}px`, top: `${at.y}px` }}>
       <span className="sa-story-dialogue-pin" aria-hidden="true" />
-      <div className="sa-story-dialogue-card" role="dialog" aria-label={node.speakerName}>
+      <div ref={cardRef} className="sa-story-dialogue-card" role="dialog" aria-label={node.speakerName}>
         <button type="button" className="sa-story-dialogue-close" aria-label="Close" onClick={onClose}>
           ×
         </button>

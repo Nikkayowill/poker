@@ -5385,3 +5385,53 @@
 .sa-kitchen-row .sa-cta {
   white-space: nowrap;
 }
+
+/* Chapter 2: seed cards name the recipes a crop feeds, and the Kitchen's
+   stew card shows what you have of each ingredient. */
+.sa-stock-wanted {
+  margin: 2px 0 0;
+  color: var(--sa-leaf-rim);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sa-kitchen-recipe {
+  display: grid;
+  gap: 6px;
+}
+
+.sa-kitchen-recipe-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.sa-kitchen-ingredients {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-kitchen-ingredients li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sa-kitchen-ingredients li.is-ready {
+  color: var(--sa-leaf-rim);
+}
+
+.sa-kitchen-missing {
+  color: var(--sa-hungry);
+  font-weight: 700;
+}
+
+.sa-kitchen-recipe .sa-cta {
+  justify-self: start;
+}

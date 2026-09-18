@@ -48,7 +48,7 @@ import { machineItemSellPrice, type MachineItemId, type MachineProcessedItem } f
 import type { MachineKind } from "./machines";
 import { hasEnough, type StackAcresInventory } from "./inventory";
 
-export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread"] as const;
+export const RECIPE_IDS = ["flour", "cheese", "cloth", "cake", "bread", "stew"] as const;
 export type RecipeId = (typeof RECIPE_IDS)[number];
 
 export function isRecipeId(value: string): value is RecipeId {
@@ -120,6 +120,18 @@ export const RECIPE_CATALOGUE: Readonly<Record<RecipeId, RecipeDef>> = {
     machine: "oven",
     inputs: [{ item: "flour", quantity: 1 }],
     output: { item: "bread", quantity: 1 },
+    processingMs: 0,
+  },
+  // The Stew Pot in Ray's kitchen, Chapter 2's kitchen garden. Instant.
+  stew: {
+    label: "Hearty Stew",
+    machine: "stew_pot",
+    inputs: [
+      { item: "potato", quantity: 2 },
+      { item: "carrot", quantity: 2 },
+      { item: "onion", quantity: 1 },
+    ],
+    output: { item: "stew", quantity: 1 },
     processingMs: 0,
   },
 };

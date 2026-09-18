@@ -43,7 +43,7 @@ import { FISH_SPECIES } from "./fishing";
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. */
 export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "bread"] as const;
+export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "bread", "stew"] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
@@ -141,6 +141,9 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Above Flour's 40, so baking a Flour always beats selling it. There is no
   // bread art yet, so it borrows the wheat sheaf icon.
   bread: { label: "Bread", plural: "Bread", icon: "ico-wheatsheaf", sellPrice: 55 },
+  // Above the 10 Gold its five crops sell for raw. No stew art yet, so it
+  // borrows the potato icon.
+  stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */
@@ -159,6 +162,12 @@ export function machineItemIcon(item: MachineItemId): string {
 /** "3 Wheat", "1 Flour" -- delegates to items.ts's own `itemLabel` for
  *  whatever `item` is a StackAcresItem, so there is exactly one place either
  *  pluralisation rule is written. */
+/** Just the noun, singular or plural for `quantity`: "Onion", "Carrots". */
+export function machineItemNoun(item: MachineItemId, quantity: number): string {
+  const def = isStackAcresItem(item) ? STACKACRES_ITEM_CATALOGUE[item] : MACHINE_ITEM_CATALOGUE[item];
+  return quantity === 1 ? def.label : def.plural;
+}
+
 export function machineItemLabel(item: MachineItemId, quantity: number): string {
   if (isStackAcresItem(item)) return itemLabel(item, quantity);
   const def = MACHINE_ITEM_CATALOGUE[item];

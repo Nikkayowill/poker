@@ -248,6 +248,7 @@ import {
 } from "@/lib/stackacres/energy";
 import { eatsWheat } from "@/lib/stackacres/feeding";
 import { StackAcresKitchen } from "./stackacres-kitchen";
+import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
 import {
@@ -2885,6 +2886,7 @@ export function StackAcresFarm() {
   /** The Kitchen tab in Ray's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
   const ovenBuilt = processing.machines.some((machine) => machine.kind === "oven");
+  const stewPotBuilt = processing.machines.some((machine) => machine.kind === "stew_pot");
 
   /** The only path that ever sends `give-gift`. Unlike a prayer, there is no
    *  optimistic animation to fire on the press -- a gift's own reward (a
@@ -4399,10 +4401,13 @@ export function StackAcresFarm() {
                     energy={energyAt(energy, new Date(nowMs))}
                     inventory={processing.inventory}
                     ovenBuilt={ovenBuilt}
+                    stewPotBuilt={stewPotBuilt}
                     goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
                     busy={isPending}
                     onBuildOven={() => onPlaceMachine("oven")}
                     onBake={() => onProcessRecipe("bread")}
+                    onBuildStewPot={() => onPlaceMachine("stew_pot")}
+                    onCookStew={() => onProcessRecipe("stew")}
                     onEat={onEat}
                   />
                 ) : undefined
@@ -4698,12 +4703,14 @@ export function StackAcresFarm() {
                       const def = STACKACRES_CATALOGUE[crop];
                       const held = seedStock[crop] ?? 0;
                       const pending = isPending(`buy-seed:${crop}`);
+                      const wantedFor = wantedForLine(STACKACRES_YIELDS[crop].item);
                       return (
                         <div key={crop} className="sa-stock-card">
                           <h3>{def.label}</h3>
                           <p className="sa-stock-yield">
                             <StoreCost amount={def.seedCost} /> / seed
                           </p>
+                          {wantedFor && <p className="sa-stock-wanted">{wantedFor}</p>}
                           <BuyQuantityControls
                             unitPrice={def.seedCost}
                             maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}

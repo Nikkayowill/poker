@@ -61,9 +61,9 @@ describe("the Garden Salad recipe", () => {
 
 describe("wantedForLine", () => {
   it("names the recipes that use a crop", () => {
-    expect(recipesUsing("potato")).toEqual(["stew"]);
-    expect(wantedForLine("potato")).toBe("For: Hearty Stew");
-    expect(wantedForLine("onion")).toBe("For: Hearty Stew");
+    expect(recipesUsing("potato")).toEqual(["stew", "stuffed_peppers"]);
+    expect(wantedForLine("potato")).toBe("For: Hearty Stew, Stuffed Peppers");
+    expect(wantedForLine("onion")).toBe("For: Hearty Stew, Tomato Sauce, Hot Salsa");
   });
 
   it("lists every recipe when more than one wants the item", () => {
@@ -71,15 +71,15 @@ describe("wantedForLine", () => {
   });
 
   it("says nothing for a crop nothing uses", () => {
-    expect(recipesUsing("celery")).toEqual([]);
-    expect(wantedForLine("celery")).toBeNull();
+    expect(recipesUsing("eggplant")).toEqual([]);
+    expect(wantedForLine("eggplant")).toBeNull();
   });
 
   it("lists hen feed and fishing bait beside the recipes", () => {
     expect(otherUsesOf("spinach")).toEqual(["Hen feed (+1 egg)"]);
     expect(wantedForLine("spinach")).toBe("For: Garden Salad, Hen feed (+1 egg)");
     expect(wantedForLine("lettuce")).toBe("For: Garden Salad, Hen feed");
-    expect(wantedForLine("cabbage")).toBe("For: Hen feed");
+    expect(wantedForLine("cabbage")).toBe("For: Sauerkraut, Hen feed");
     expect(wantedForLine("wheat")).toBe("For: Flour, Hen feed");
     expect(wantedForLine("radish")).toBe("For: Garden Salad, Fishing bait");
     expect(wantedForLine("corn")).toBe("For: Cattle feed (at the Mill)");
@@ -121,9 +121,38 @@ describe("the Cattle Feed recipe", () => {
     expect(4 * machineItemSellPrice("cattle_feed")).toBeGreaterThan(machineItemSellPrice("corn"));
   });
 
-  it("puts the Feed Silo on the machine list for 12,000 Gold, one of eight", () => {
+  it("puts the Feed Silo on the machine list for 12,000 Gold", () => {
     expect(MACHINE_CATALOGUE.feed_silo.placeCost).toBe(12_000);
-    expect(MACHINE_CAP).toBe(8);
     expect(MACHINE_KINDS).toHaveLength(MACHINE_CAP);
+  });
+});
+
+describe("the town kitchen (Chapter 5)", () => {
+  it("cooks Tomato Sauce in the Stew Pot and bakes it into Stuffed Peppers", () => {
+    expect(RECIPE_CATALOGUE.sauce.machine).toBe("stew_pot");
+    expect(RECIPE_CATALOGUE.stuffed_peppers.machine).toBe("oven");
+    expect(recipesUsing("sauce")).toEqual(["stuffed_peppers"]);
+    expect(wantedForLine("bell_pepper")).toBe("For: Stuffed Peppers");
+  });
+
+  it("mixes Hot Salsa and jars Pickles and Sauerkraut on the Counter", () => {
+    expect(RECIPE_CATALOGUE.salsa.machine).toBe("counter");
+    expect(RECIPE_CATALOGUE.pickles.inputs).toEqual([{ item: "celery", quantity: 2 }]);
+    expect(RECIPE_CATALOGUE.sauerkraut.inputs).toEqual([{ item: "cabbage", quantity: 3 }]);
+    expect(wantedForLine("pepper")).toBe("For: Hot Salsa");
+    expect(wantedForLine("celery")).toBe("For: Tomato Sauce, Pickles");
+    expect(wantedForLine("tomato")).toBe("For: Tomato Sauce, Hot Salsa");
+  });
+
+  it("makes Salsa and Stuffed Peppers food", () => {
+    expect(FOOD_ENERGY.salsa).toBe(20);
+    expect(FOOD_ENERGY.stuffed_peppers).toBe(40);
+    expect(isFoodItem("sauce")).toBe(false);
+    expect(isFoodItem("pickles")).toBe(false);
+  });
+
+  it("adds the Preserves Cellar at 25,000 Gold, one of nine", () => {
+    expect(MACHINE_CATALOGUE.cellar.placeCost).toBe(25_000);
+    expect(MACHINE_CAP).toBe(9);
   });
 });

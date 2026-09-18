@@ -22,7 +22,7 @@ import {
   type MachineKind,
 } from "@/lib/stackacres/machines";
 import type { MachineView } from "@/lib/stackacres/optimistic-actions";
-import { RECIPE_CATALOGUE, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
+import { RECIPE_CATALOGUE, RECIPE_VERB, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
 import { FEED_SILO_DAILY_FEEDS } from "@/lib/stackacres/feed-silo";
 import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
 import {
@@ -130,18 +130,6 @@ function icon(item: MachineItemId): PainterName {
   return machineItemIcon(item) as PainterName;
 }
 
-/** What the button says while making one batch of `recipe`. */
-const RECIPE_VERB: Record<RecipeId, string> = {
-  flour: "Mill",
-  cheese: "Make",
-  cloth: "Weave",
-  cake: "Bake",
-  bread: "Bake",
-  stew: "Cook",
-  salad: "Toss",
-  cattle_feed: "Mill",
-};
-
 /** What the Feed Silo does, in one line. */
 const SILO_LINE = "Feeds hungry animals from your barn while you're away";
 
@@ -199,7 +187,9 @@ export function WorkshopModal({
   // whatever their kind: a player who placed one keeps seeing its state.
   const [showMoreMachines, setShowMoreMachines] = useState(false);
   // The kitchen machines live in Ray's kitchen, not here (stackacres-kitchen.tsx).
-  const workshopKinds = MACHINE_KINDS.filter((kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter");
+  const workshopKinds = MACHINE_KINDS.filter(
+    (kind) => kind !== "oven" && kind !== "stew_pot" && kind !== "counter" && kind !== "cellar",
+  );
   const visibleMachineKinds = workshopKinds.filter(
     (kind) => showMoreMachines || isActiveMachine(kind) || machineOfKind(machines, kind) !== null,
   );

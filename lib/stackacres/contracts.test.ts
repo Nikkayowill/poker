@@ -95,3 +95,14 @@ describe("isPostedRung", () => {
     expect(isPostedRung(row({ quantity: 3 }), CONTRACT_RUNGS[0])).toBe(false);
   });
 });
+
+describe("the town kitchen orders (Chapter 5)", () => {
+  it("asks for Sauce, Salsa and Pickles only from a farm that can make them, and never Sauerkraut", () => {
+    const kitchen = ["sauce", "salsa", "pickles", "sauerkraut"] as const;
+    const drawn = new Set(
+      Array.from({ length: 50 }, (_, i) => drawContract([...kitchen], () => i / 50)?.item),
+    );
+    expect([...drawn].sort()).toEqual(["pickles", "salsa", "sauce"]);
+    expect(drawContract(["sauerkraut"])).toBeNull();
+  });
+});

@@ -43,7 +43,21 @@ import { FISH_SPECIES } from "./fishing";
  *  either -- see this file's header. Meat and pelts join the fish for exactly
  *  the same reason they did, and like them nothing consumes either yet. */
 export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt"] as const;
-export const MACHINE_PROCESSED_ITEMS = ["flour", "cheese", "cloth", "cake", "bread", "stew", "salad", "cattle_feed"] as const;
+export const MACHINE_PROCESSED_ITEMS = [
+  "flour",
+  "cheese",
+  "cloth",
+  "cake",
+  "bread",
+  "stew",
+  "salad",
+  "cattle_feed",
+  "sauce",
+  "salsa",
+  "stuffed_peppers",
+  "pickles",
+  "sauerkraut",
+] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
@@ -149,6 +163,16 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   // Milled from corn for cattle (./feeding.ts). Priced as feed, not as a way
   // to sell corn: two corn sell for more raw. Borrows the corn icon.
   cattle_feed: { label: "Cattle Feed", plural: "Cattle Feed", icon: "ico-corn", sellPrice: 12 },
+  // Chapter 5's town kitchen. Sauce, Salsa and Pickles have town orders, so
+  // they sell for a little over their raw crops and under what an order pays
+  // per jar (./contracts.ts). Sauerkraut and Stuffed Peppers have no order,
+  // so like Stew they carry a bigger markup. None has its own art yet, so
+  // each borrows its main crop's icon.
+  sauce: { label: "Tomato Sauce", plural: "Tomato Sauce", icon: "ico-tomato", sellPrice: 90 },
+  salsa: { label: "Hot Salsa", plural: "Hot Salsa", icon: "ico-pepper", sellPrice: 90 },
+  stuffed_peppers: { label: "Stuffed Peppers", plural: "Stuffed Peppers", icon: "ico-bell_pepper", sellPrice: 180 },
+  pickles: { label: "Pickles", plural: "Pickles", icon: "ico-celery", sellPrice: 60 },
+  sauerkraut: { label: "Sauerkraut", plural: "Sauerkraut", icon: "ico-cabbage", sellPrice: 15 },
 };
 
 /** What one of `item` sells for, whatever space it started in. */

@@ -116,7 +116,7 @@ import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { MachineKind, StackAcresMachineSnapshot } from "@/lib/stackacres/machines";
 import type { StackAcresWheatPlotSnapshot } from "@/lib/stackacres/wheat-plot";
-import type { VatContainer } from "@/lib/stackacres/aging";
+import type { CellarItem, VatContainer } from "@/lib/stackacres/aging";
 import type { RecipeId } from "@/lib/stackacres/recipes";
 import {
   RELIC_CATALOGUE,
@@ -465,6 +465,7 @@ interface StackAcresResponse {
    *  view, so `undefined` means an old bundle or an optimistic patch, never
    *  "no vat". */
   vat?: VatContainer | null;
+  cellar?: VatContainer | null;
   /** What one Workshop call just did, each set only by its own action's
    *  answer: `work` by the idle-worker pass, `processed` by `process`,
    *  `sold` by `sell`, `vatCollected` by `collect-vat`. The view itself
@@ -1005,6 +1006,7 @@ export function StackAcresFarm() {
    *  than a fifth field on `processing`: no predictor moves it (the vat's
    *  sheet awaits the server), so it never needs to ride the snapshot. */
   const [vat, setVat] = useState<VatContainer | null>(null);
+  const [cellar, setCellar] = useState<VatContainer | null>(null);
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
   /** `clearing`'s own twin for the Crop Fields -- see
@@ -1672,6 +1674,7 @@ export function StackAcresFarm() {
     // `!== undefined` for the same reason as the merchant above: null is the
     // real "no vat placed" answer, and an optimistic patch carries no field.
     if (data.vat !== undefined) setVat(data.vat);
+    if (data.cellar !== undefined) setCellar(data.cellar);
     if (data.work || data.processed || data.sold || data.vatCollected) {
       lastProcessing.current = {
         work: data.work,
@@ -2894,9 +2897,17 @@ export function StackAcresFarm() {
 
   /** The Kitchen tab in Ray's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
-  const ovenBuilt = processing.machines.some((machine) => machine.kind === "oven");
-  const stewPotBuilt = processing.machines.some((machine) => machine.kind === "stew_pot");
-  const counterBuilt = processing.machines.some((machine) => machine.kind === "counter");
+  const kitchenBuilt = useCallback(
+    (kind: MachineKind) => processing.machines.some((machine) => machine.kind === kind),
+    [processing.machines],
+  );
+  const onStoreJars = useCallback((item: CellarItem) => act({ action: "seal-cellar", item }), [act]);
+  const onOpenCellar = useCallback(async () => {
+    takeProcessingDelta();
+    const result = await act({ action: "collect-cellar" });
+    if (!result.ok) return { ok: false, message: result.message };
+    return { ok: true, gold: takeProcessingDelta()?.vatCollected?.gold };
+  }, [act, takeProcessingDelta]);
   const radishesHeld = processing.inventory[FISHING_BAIT_ITEM] ?? 0;
   useEffect(() => {
     baitOnHook.current = useBait && radishesHeld > 0;
@@ -4421,17 +4432,15 @@ export function StackAcresFarm() {
                   <StackAcresKitchen
                     energy={energyAt(energy, new Date(nowMs))}
                     inventory={processing.inventory}
-                    ovenBuilt={ovenBuilt}
-                    stewPotBuilt={stewPotBuilt}
+                    nowMs={nowMs}
+                    built={kitchenBuilt}
                     goldBalance={profile ? (profile.unlimitedGold ? Infinity : profile.goldBalance) : null}
                     busy={isPending}
-                    onBuildOven={() => onPlaceMachine("oven")}
-                    onBake={() => onProcessRecipe("bread")}
-                    onBuildStewPot={() => onPlaceMachine("stew_pot")}
-                    onCookStew={() => onProcessRecipe("stew")}
-                    counterBuilt={counterBuilt}
-                    onBuildCounter={() => onPlaceMachine("counter")}
-                    onTossSalad={() => onProcessRecipe("salad")}
+                    onBuild={onPlaceMachine}
+                    onMake={onProcessRecipe}
+                    cellar={cellar}
+                    onStoreJars={onStoreJars}
+                    onOpenCellar={onOpenCellar}
                     onEat={onEat}
                   />
                 ) : undefined

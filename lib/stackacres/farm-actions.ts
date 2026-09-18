@@ -18,6 +18,7 @@ import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { MidnightMerchantItemId } from "./midnight-merchant";
 import type { NpcId } from "./friendship";
+import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
@@ -90,6 +91,8 @@ export type Action =
   | { action: "process"; recipe: RecipeId }
   | { action: "seal-vat" }
   | { action: "collect-vat" }
+  | { action: "seal-cellar"; item: CellarItem }
+  | { action: "collect-cellar" }
   // The idle-worker pass: settles every ripe wheat plot and every mill that
   // has become startable or finished. Moves no Gold. The Workshop sheet
   // fires it when something is due and on its own "work the farm" key.
@@ -210,6 +213,8 @@ export function intentOf(body: Action): string {
   // must never be conflated with gifting another over the same item.
   if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
   if (body.action === "eat") return `eat:${body.item}`;
+  // One cellar, so storing either kind of jar is the same press.
+  if (body.action === "seal-cellar") return "seal-cellar";
   if ("item" in body) return `${body.action}:${body.item}:${body.quantity}`;
   // A contribution to one blueprint must never dedupe against or block a
   // contribution to a different one -- checked before the generic `itemId`

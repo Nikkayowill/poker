@@ -5382,6 +5382,10 @@
 .sa-kitchen {
   display: grid;
   gap: 8px;
+  /* Chapter 5 put nine recipes and the cellar in here; scroll, don't spill. */
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sa-kitchen-energy,
@@ -5462,4 +5466,16 @@
 
 .sa-kitchen-recipe .sa-cta {
   justify-self: start;
+}
+
+/* Chapter 5: each kitchen recipe names its machine, and the Preserves
+   Cellar says what is aging and when it gets better. */
+.sa-kitchen-where {
+  color: var(--sa-leaf-rim);
+  font-weight: 600;
+}
+
+.sa-kitchen-cellar-line {
+  margin: 0;
+  font-size: 13px;
 }

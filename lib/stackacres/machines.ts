@@ -25,7 +25,7 @@ import type { StackAcresInventory } from "./inventory";
 import { siloFeedsLeft } from "./feed-silo";
 import { stackacresExchangeDay } from "./exchange";
 
-export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo"] as const;
+export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
 export function isMachineKind(value: string): value is MachineKind {
@@ -67,6 +67,10 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
   // it feeds hungry animals from the barn while the player is away
   // (./feed-silo.ts). Priced as a late investment, not a convenience.
   feed_silo: { label: "Feed Silo", placeCost: 12_000 },
+  // Chapter 5's cellar under Ray's kitchen. Runs no recipe: it ages jars of
+  // Pickles or Sauerkraut over hours (./aging.ts), so it earns while the
+  // player is away.
+  cellar: { label: "Preserves Cellar", placeCost: 25_000 },
 };
 
 /** Flat total, and deliberately equal to the number of kinds: with the
@@ -79,8 +83,9 @@ export const MACHINE_CATALOGUE: Readonly<Record<MachineKind, MachineDef>> = {
  *  an existing kind: it grew because the number of KINDS grew, not because
  *  any one kind needed more room. Raised 4 -> 5 with the Oven
  *  and 5 -> 6 with the Stew Pot, 6 -> 7 with the Kitchen
- *  Counter and 7 -> 8 with the Feed Silo, same reason. */
-export const MACHINE_CAP = 8;
+ *  Counter, 7 -> 8 with the Feed Silo and 8 -> 9 with the Preserves
+ *  Cellar, same reason. */
+export const MACHINE_CAP = 9;
 
 export type MachineStatus = "idle" | "working";
 

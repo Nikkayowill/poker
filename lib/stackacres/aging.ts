@@ -40,7 +40,7 @@
  */
 
 import { recipeRawGoldValue } from "./recipes";
-import type { MachineProcessedItem } from "./machine-items";
+import { machineItemSellPrice, type MachineProcessedItem } from "./machine-items";
 
 /** What one seal takes in, and how many. Cheese only, for now -- the same
  *  "start with one good, grow the ladder later" posture the Mill took when it
@@ -83,8 +83,40 @@ export const AGING_TIERS: readonly AgingTier[] = [
  *  this long, the same plain "it ripens, then you collect it" shape
  *  ./wheat-plot.ts already takes. Exported so a caller building `readyAt`
  *  never has to reach into `AGING_TIERS[0]` directly. */
-export function firstAgingTier(): AgingTier {
-  return AGING_TIERS[0];
+export function firstAgingTier(tiers: readonly AgingTier[] = AGING_TIERS): AgingTier {
+  return tiers[0];
+}
+
+/**
+ * The Preserves Cellar (Chapter 5): the same seal-wait-open shape as the Vat,
+ * on a slower ladder built for time away from the farm. It holds jars of
+ * Pickles or Sauerkraut, one kind per batch, and prices a batch off what the
+ * jars would sell for today, so even the first tier beats selling them now.
+ */
+export const CELLAR_AGING_TIERS: readonly AgingTier[] = [
+  { tier: 1, label: "Aged", durationMs: 60 * 60 * 1000, multiplier: 1.5, stars: 1 },
+  { tier: 2, label: "Well-Aged", durationMs: 4 * 60 * 60 * 1000, multiplier: 2, stars: 2 },
+  { tier: 3, label: "Cellar-Aged", durationMs: 12 * 60 * 60 * 1000, multiplier: 3, stars: 3 },
+];
+
+export const CELLAR_ITEMS = ["pickles", "sauerkraut"] as const;
+export type CellarItem = (typeof CELLAR_ITEMS)[number];
+
+/** The most jars one batch holds. The cap is what keeps time away honest. */
+export const CELLAR_CAPACITY = 12;
+
+export function isCellarItem(value: string): value is CellarItem {
+  return (CELLAR_ITEMS as readonly string[]).includes(value);
+}
+
+/** How many jars a seal takes from `held`: all of them, up to capacity. */
+export function cellarSealQuantity(held: number): number {
+  return Math.max(0, Math.min(CELLAR_CAPACITY, Math.floor(held)));
+}
+
+/** A batch's worth at 1x: what the jars sell for today, snapshotted at seal. */
+export function cellarBaseGoldValue(item: CellarItem, quantity: number): number {
+  return machineItemSellPrice(item) * quantity;
 }
 
 /**
@@ -94,9 +126,12 @@ export function firstAgingTier(): AgingTier {
  * "overflow" tier, the same "surplus reads as done, not as more" posture
  * `contractProgress` takes for a held count above what a rung asks for.
  */
-export function vatTierForElapsed(elapsedMs: number): AgingTier | null {
-  for (let i = AGING_TIERS.length - 1; i >= 0; i -= 1) {
-    if (elapsedMs >= AGING_TIERS[i].durationMs) return AGING_TIERS[i];
+export function vatTierForElapsed(
+  elapsedMs: number,
+  tiers: readonly AgingTier[] = AGING_TIERS,
+): AgingTier | null {
+  for (let i = tiers.length - 1; i >= 0; i -= 1) {
+    if (elapsedMs >= tiers[i].durationMs) return tiers[i];
   }
   return null;
 }
@@ -104,9 +139,12 @@ export function vatTierForElapsed(elapsedMs: number): AgingTier | null {
 /** The next rung above `tier` (or above nothing, when `tier` is null), or
  *  null once the ladder is exhausted. What the UI reads to say "42 more
  *  minutes to Well-Aged". */
-export function nextAgingTier(tier: AgingTier | null): AgingTier | null {
-  const index = tier ? AGING_TIERS.findIndex((t) => t.tier === tier.tier) : -1;
-  return AGING_TIERS[index + 1] ?? null;
+export function nextAgingTier(
+  tier: AgingTier | null,
+  tiers: readonly AgingTier[] = AGING_TIERS,
+): AgingTier | null {
+  const index = tier ? tiers.findIndex((t) => t.tier === tier.tier) : -1;
+  return tiers[index + 1] ?? null;
 }
 
 /** Milliseconds until `elapsedMs` of sealed time reaches `target`, floored at
@@ -184,6 +222,7 @@ export function toVatContainer(
   machine: { readonly id: string },
   manifest: AgingManifest | null,
   now: Date,
+  tiers: readonly AgingTier[] = AGING_TIERS,
 ): VatContainer {
   if (!manifest) {
     return {
@@ -199,9 +238,9 @@ export function toVatContainer(
   }
 
   const elapsedMs = Math.max(0, now.getTime() - Date.parse(manifest.sealedAt));
-  const currentTier = vatTierForElapsed(elapsedMs);
-  const nextTier = nextAgingTier(currentTier);
-  const finalTier = AGING_TIERS[AGING_TIERS.length - 1];
+  const currentTier = vatTierForElapsed(elapsedMs, tiers);
+  const nextTier = nextAgingTier(currentTier, tiers);
+  const finalTier = tiers[tiers.length - 1];
 
   return {
     machineId: machine.id,

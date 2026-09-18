@@ -70,6 +70,15 @@ export const CONTRACT_RUNGS: readonly ContractDef[] = [
   { item: "cheese", quantity: 4, goldReward: 3_430, influenceReward: 130 },
   { item: "cloth", quantity: 3, goldReward: 1_190, influenceReward: 40 },
   { item: "cloth", quantity: 6, goldReward: 2_370, influenceReward: 90 },
+  // Chapter 5's town kitchen, same 1.3x premium. Sauerkraut has no rung:
+  // three cabbages sell for 6 Gold, so a fair order would pay almost nothing.
+  // The Preserves Cellar is where Sauerkraut earns its keep instead.
+  { item: "sauce", quantity: 2, goldReward: 200, influenceReward: 10 },
+  { item: "sauce", quantity: 4, goldReward: 400, influenceReward: 20 },
+  { item: "salsa", quantity: 3, goldReward: 300, influenceReward: 15 },
+  { item: "salsa", quantity: 6, goldReward: 600, influenceReward: 30 },
+  { item: "pickles", quantity: 4, goldReward: 260, influenceReward: 10 },
+  { item: "pickles", quantity: 8, goldReward: 520, influenceReward: 25 },
 ];
 
 export interface StackAcresContractRow {

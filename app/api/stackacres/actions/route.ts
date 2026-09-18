@@ -11,6 +11,7 @@ import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import { MACHINE_KINDS } from "@/lib/stackacres/machines";
 import { RECIPE_IDS } from "@/lib/stackacres/recipes";
 import { FOOD_ITEMS } from "@/lib/stackacres/energy";
+import { CELLAR_ITEMS } from "@/lib/stackacres/aging";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
@@ -59,6 +60,8 @@ import {
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processStackAcresRecipeAction,
+  sealStackAcresCellar,
+  collectStackAcresCellar,
   startStackAcresMythicBlueprint,
   contributeToStackAcresMythicBlueprint,
   prestigeResetStackAcres,
@@ -314,6 +317,13 @@ const bodySchema = z.discriminatedUnion("action", [
   // lib/server/stackacres-service.ts's sealStackAcresVat/collectStackAcresVat.
   z.object({ action: z.literal("seal-vat") }),
   z.object({ action: z.literal("collect-vat") }),
+  // The Preserves Cellar: the Vat's two actions for jars of Pickles or
+  // Sauerkraut, on a slower ladder. Only `collect-cellar` pays.
+  z.object({
+    action: z.literal("seal-cellar"),
+    item: z.enum(CELLAR_ITEMS),
+  }),
+  z.object({ action: z.literal("collect-cellar") }),
   // Hidden secrets: three small discovery spots, one collectible. See
   // lib/server/stackacres-service.ts's own "Hidden secrets" section --
   // `tap-secret-zone` moves no Gold at all, and neither do the other three;
@@ -612,6 +622,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return sealStackAcresVat(token, now);
     case "collect-vat":
       return collectStackAcresVat(token, now);
+    case "seal-cellar":
+      return sealStackAcresCellar(token, action.item, now);
+    case "collect-cellar":
+      return collectStackAcresCellar(token, now);
     case "tap-secret-zone":
       return tapStackAcresSecretZone(token, action.zoneId, now);
     case "donate-secret-item":

@@ -37,7 +37,10 @@ describe("isActiveMachine", () => {
 
 describe("the Workshop shelf", () => {
   it("lists only real inventory items, the ones the active loop makes", () => {
-    expect([...STACKACRES_WORKSHOP_SHELF_ITEMS]).toEqual(["eggs", "milk", "wheat", "flour", "cake", "bread", "stew", "salad", "cattle_feed"]);
+    expect([...STACKACRES_WORKSHOP_SHELF_ITEMS]).toEqual([
+      "eggs", "milk", "wheat", "flour", "cake", "bread", "stew", "salad", "cattle_feed",
+      "sauce", "salsa", "stuffed_peppers", "pickles", "sauerkraut",
+    ]);
     for (const item of STACKACRES_WORKSHOP_SHELF_ITEMS) expect(isMachineItem(item)).toBe(true);
   });
 });

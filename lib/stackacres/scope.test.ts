@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { STACKACRES_CROPS, STACKACRES_STOCK } from "./catalogue";
 import { MACHINE_KINDS } from "./machines";
 import { buyOptionsForZone } from "./district-panel";
+import type { StackAcresShopProgress } from "./shop-locks";
 import { ZONE_IDS } from "./zones";
 import {
   STACKACRES_ACTIVE_LIVESTOCK,
@@ -38,17 +39,24 @@ describe("the Workshop shelf", () => {
   });
 });
 
+const NEW_FARM: StackAcresShopProgress = {
+  sectors: ["farmstead"],
+  influence: 0,
+  greenhouseBuilt: false,
+  cropFieldsUnlocked: false,
+};
+
 describe("buyOptionsForZone under the active scope", () => {
   it("never offers a hidden stock kind, in any district", () => {
     for (const zone of ZONE_IDS) {
-      for (const option of buyOptionsForZone(zone, { units: [], gold: 1_000_000, capacity: {} })) {
+      for (const option of buyOptionsForZone(zone, { units: [], gold: 1_000_000, capacity: {}, progress: NEW_FARM })) {
         expect(isActiveStock(option.stock), `${zone}/${option.stock}`).toBe(true);
       }
     }
   });
 
   it("offers hens at Hen Haven, cattle at the Ox Fields, every crop at the Farmstead, and nothing at the Fold", () => {
-    const ctx = { units: [], gold: 1_000_000, capacity: {} };
+    const ctx = { units: [], gold: 1_000_000, capacity: {}, progress: NEW_FARM };
     expect(buyOptionsForZone("henhaven", ctx).map((o) => o.stock)).toEqual(["hen"]);
     expect(buyOptionsForZone("oxfields", ctx).map((o) => o.stock)).toEqual(["cattle"]);
     expect(buyOptionsForZone("farmstead", ctx).map((o) => o.stock).sort()).toEqual([...STACKACRES_CROPS].sort());

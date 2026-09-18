@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buyOptionsForZone, occupiedCountFor, unitRowAction } from "./district-panel";
+import type { StackAcresShopProgress } from "./shop-locks";
 import type { StackAcresUnitSnapshot } from "./units";
+
+const NEW_FARM: StackAcresShopProgress = {
+  sectors: ["farmstead"],
+  influence: 0,
+  greenhouseBuilt: false,
+  cropFieldsUnlocked: false,
+};
 
 function unit(overrides: Partial<StackAcresUnitSnapshot> = {}): StackAcresUnitSnapshot {
   return {
@@ -94,13 +102,13 @@ describe("occupiedCountFor", () => {
 
 describe("buyOptionsForZone", () => {
   it("lists only the stock kinds that live in this district", () => {
-    const options = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
+    const options = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(options.map((o) => o.stock)).toEqual(["hen"]);
   });
 
   it("caps at 3 by default and offers an expand option once full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {} });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(hen.owned).toBe(3);
     expect(hen.cap).toBe(3);
     expect(hen.atCap).toBe(true);
@@ -111,19 +119,19 @@ describe("buyOptionsForZone", () => {
     // Caught by an actual browser run, not by a test: this used to check only
     // whether extra slots were maxed, so a brand-new farm with nothing owned
     // at all offered "Expand capacity" before the free cap was ever reached.
-    const [emptyHen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
+    const [emptyHen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(emptyHen.atCap).toBe(false);
     expect(emptyHen.expand).toBeNull();
 
     const twoOwned = [unit({ id: "a" }), unit({ id: "b" })];
-    const [almostFull] = buyOptionsForZone("henhaven", { units: twoOwned, gold: 1000, capacity: {} });
+    const [almostFull] = buyOptionsForZone("henhaven", { units: twoOwned, gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(almostFull.atCap).toBe(false);
     expect(almostFull.expand).toBeNull();
   });
 
   it("a purchased extra slot raises the cap and clears atCap", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: { hen: 1 } });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: { hen: 1 }, progress: NEW_FARM });
     expect(hen.cap).toBe(4);
     expect(hen.atCap).toBe(false);
     // Not offered again either -- the fourth slot the player just bought has
@@ -133,35 +141,35 @@ describe("buyOptionsForZone", () => {
 
   it("expand disappears once the extra-slot ceiling is reached, even while genuinely full", () => {
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" }), unit({ id: "d" }), unit({ id: "e" }), unit({ id: "f" })];
-    const [hen] = buyOptionsForZone("henhaven", { units, gold: 0, capacity: { hen: 3 } });
+    const [hen] = buyOptionsForZone("henhaven", { units, gold: 0, capacity: { hen: 3 }, progress: NEW_FARM });
     expect(hen.cap).toBe(6);
     expect(hen.atCap).toBe(true);
     expect(hen.expand).toBeNull();
   });
 
   it("seedReason names the Gold cost when short, and the cap when full", () => {
-    const [short] = buyOptionsForZone("henhaven", { units: [], gold: 0, capacity: {} });
+    const [short] = buyOptionsForZone("henhaven", { units: [], gold: 0, capacity: {}, progress: NEW_FARM });
     expect(short.seedReason).toMatch(/Gold/);
     const units = [unit({ id: "a" }), unit({ id: "b" }), unit({ id: "c" })];
-    const [full] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {} });
+    const [full] = buyOptionsForZone("henhaven", { units, gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(full.seedReason).toMatch(/full/);
   });
 
   it("prices no outright buy for a tier-1 crop, so its row shows seed only", () => {
-    const [carrot] = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {} })
+    const [carrot] = buyOptionsForZone("farmstead", { units: [], gold: 1000, capacity: {}, progress: NEW_FARM })
       .filter((o) => o.stock === "carrot");
     expect(carrot.seedCost).toBeGreaterThan(0);
     expect(carrot.outrightCost).toBeNull();
 
     // Everything else still carries one, so the shelf keeps both buttons.
-    const [hen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {} });
+    const [hen] = buyOptionsForZone("henhaven", { units: [], gold: 1000, capacity: {}, progress: NEW_FARM });
     expect(hen.outrightCost).toBeGreaterThan(0);
   });
 
   it("a crop has no cap at all, no matter how many are already planted", () => {
     // "farmstead" is where every crop kind lives (lib/stackacres/world.ts).
     const units = Array.from({ length: 40 }, (_, i) => unit({ id: `c${i}`, stock: "carrot" }));
-    const [carrot] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {} })
+    const [carrot] = buyOptionsForZone("farmstead", { units, gold: 1000, capacity: {}, progress: NEW_FARM })
       .filter((o) => o.stock === "carrot");
     expect(carrot.owned).toBe(40);
     expect(carrot.cap).toBeNull();
@@ -169,5 +177,13 @@ describe("buyOptionsForZone", () => {
     expect(carrot.expand).toBeNull();
     expect(carrot.seedAfford).toBe(true);
     expect(carrot.seedReason).toBeNull();
+  });
+
+  it("locks a higher-tier crop's outright buy on a new farm, never livestock", () => {
+    const ctx = { units: [], gold: 1_000_000, capacity: {}, progress: NEW_FARM };
+    const byStock = new Map(buyOptionsForZone("farmstead", ctx).map((o) => [o.stock, o]));
+    expect(byStock.get("carrot")?.outrightLock).toBeNull();
+    expect(byStock.get("corn")?.outrightLock).toMatch(/^Requires 3 farm milestones/);
+    expect(buyOptionsForZone("henhaven", ctx)[0]?.outrightLock).toBeNull();
   });
 });

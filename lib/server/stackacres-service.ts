@@ -2337,6 +2337,9 @@ export async function buyStackAcresStock(
   const price = stackacresStockPrice(stock);
   const profile = await ensureProfile(token);
 
+  // Outright purchase skips the seed shelf, so the seed's level gate is re-checked here.
+  await requireUnlockedShopEntry(def, profile.id, now);
+
   const land = await readLand(profile.id);
   requireOpenSector(land.sectors, stockZone(stock), `${def.label}s`);
 
@@ -5237,6 +5240,8 @@ export async function buyStackAcresSeed(
   }
   const def = STACKACRES_CATALOGUE[crop];
   const cost = def.seedCost * quantity;
+
+  await requireUnlockedShopEntry(def, profile.id, now);
 
   const debited = await spendGoldByProfile(profile.id, cost);
   if (!debited) {

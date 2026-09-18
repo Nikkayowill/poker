@@ -31,6 +31,7 @@ import {
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import { isActiveStock } from "./scope";
+import { evaluateStackAcresShopLock, type StackAcresShopProgress } from "./shop-locks";
 import type { StackAcresUnitSnapshot } from "./units";
 import { stocksInZone } from "./world";
 import type { ZoneId } from "./zones";
@@ -102,6 +103,8 @@ export interface BuyOption {
    *  that is never sold outright (tier-1 crops), which shows no Buy button at
    *  all rather than a disabled one. */
   outrightCost: number | null;
+  /** The milestone lock hint when this stock is still locked, else null. */
+  outrightLock: string | null;
   /** Null once capacity is already maxed, or for a crop, which never has
    *  anything to expand. */
   expand: { cost: number } | null;
@@ -111,7 +114,12 @@ export interface BuyOption {
  *  there (./world.ts's `stocksInZone`). */
 export function buyOptionsForZone(
   zone: ZoneId,
-  context: { units: readonly StackAcresUnitSnapshot[]; gold: number; capacity: Readonly<Record<string, number>> },
+  context: {
+    units: readonly StackAcresUnitSnapshot[];
+    gold: number;
+    capacity: Readonly<Record<string, number>>;
+    progress: StackAcresShopProgress;
+  },
 ): BuyOption[] {
   // Only what the active scope sells this pass (./scope.ts). A hidden kind a
   // player already owns keeps working everywhere else -- this only stops the
@@ -140,6 +148,7 @@ export function buyOptionsForZone(
           ? `${def.label} seed costs ${def.seedCost.toLocaleString()} Gold.`
           : null,
       outrightCost: stackacresStockOwnableOutright(stock) ? stackacresStockPrice(stock) : null,
+      outrightLock: evaluateStackAcresShopLock(def, context.progress).lockHint,
       // Only worth showing once the base cap is actually the thing in the
       // way -- offering to expand a kind you have room in already would be
       // a Gold button for a problem you do not have. Never shown for a crop:

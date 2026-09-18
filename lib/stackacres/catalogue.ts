@@ -117,7 +117,7 @@ export type SeedStock = Partial<Record<StackAcresCrop, number>>;
  *  that isn't just the player's own balance. */
 export const STACKACRES_SEED_BAGS_PER_PURCHASE = 20;
 
-export interface StackAcresStockDef {
+export interface StackAcresStockDef extends StackAcresShopLock {
   /** What the player calls it. */
   label: string;
   /** Gold debited when the unit is stocked for one cycle. */
@@ -202,35 +202,40 @@ const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 
 const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
 const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
+// Seed milestone gates, capped at 3 like the equipment ladder's top rung.
+const MILESTONE_1 = { minimumMilestone: 1 } as const;
+const MILESTONE_2 = { minimumMilestone: 2 } as const;
+const MILESTONE_3 = { minimumMilestone: 3 } as const;
+
 /**
  * Seed cost, time and hunger. What a unit YIELDS is in ./items.ts: the value
  * of a cycle is the snapshotted yield times what that produce is worth today,
  * not a payout baked in here.
  */
 export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresStockDef>> = {
-  // ---- Tier 1 (fast/cheap). ----
+  // ---- Tier 1 (fast/cheap). The first three are open on a new farm. ----
   lettuce: { label: "Lettuce", ...TIER1 },
-  spinach: { label: "Spinach", ...TIER1 },
-  radish: { label: "Radish", ...TIER1 },
-  onion: { label: "Onion", ...TIER1 },
-  carrot: { label: "Carrot", ...TIER1 },
   potato: { label: "Potato", ...TIER1 },
-  cabbage: { label: "Cabbage", ...TIER1 },
+  carrot: { label: "Carrot", ...TIER1 },
+  spinach: { label: "Spinach", ...TIER1, ...MILESTONE_1 },
+  radish: { label: "Radish", ...TIER1, ...MILESTONE_1 },
+  onion: { label: "Onion", ...TIER1, ...MILESTONE_1 },
+  cabbage: { label: "Cabbage", ...TIER1, ...MILESTONE_1 },
 
   // ---- Tier 2 (medium). ----
-  broccoli: { label: "Broccoli", ...TIER2 },
-  pepper: { label: "Pepper", ...TIER2 },
-  bell_pepper: { label: "Bell Pepper", ...TIER2 },
-  celery: { label: "Celery", ...TIER2 },
-  green_bean: { label: "Green Bean", ...TIER2 },
-  tomato: { label: "Tomato", ...TIER2 },
+  broccoli: { label: "Broccoli", ...TIER2, ...MILESTONE_2 },
+  pepper: { label: "Pepper", ...TIER2, ...MILESTONE_2 },
+  bell_pepper: { label: "Bell Pepper", ...TIER2, ...MILESTONE_2 },
+  celery: { label: "Celery", ...TIER2, ...MILESTONE_2 },
+  green_bean: { label: "Green Bean", ...TIER2, ...MILESTONE_2 },
+  tomato: { label: "Tomato", ...TIER2, ...MILESTONE_2 },
 
   // ---- Tier 3 (slow/valuable). ----
-  corn: { label: "Corn", ...TIER3 },
-  eggplant: { label: "Eggplant", ...TIER3 },
+  corn: { label: "Corn", ...TIER3, ...MILESTONE_3 },
+  eggplant: { label: "Eggplant", ...TIER3, ...MILESTONE_3 },
   // "Wheat Sheaf", keyed as wheatsheaf -- both the id AND the label collide with
   // machine-items.ts's raw `wheat`, which sells for 4g against this one's 44g.
-  wheatsheaf: { label: "Wheat Sheaf", ...TIER3 },
+  wheatsheaf: { label: "Wheat Sheaf", ...TIER3, ...MILESTONE_3 },
 
   hen: {
     label: "Hen Coop",

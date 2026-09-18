@@ -621,6 +621,30 @@ describe("buyStackAcresSeed — Ray's shelf", () => {
       buyStackAcresSeed(token, { crop: "not-a-real-crop", quantity: 1 }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
+
+  it("sells the starter seeds to a bare farm but refuses a locked one before Gold moves", async () => {
+    const { token, id } = await funded(1_000_000, { land: [], cropFieldsUnlocked: false });
+    await adjustStackAcresSeedStock(id, "carrot", -1000);
+    await adjustStackAcresSeedStock(id, "corn", -1000);
+
+    await buyStackAcresSeed(token, { crop: "carrot", quantity: 1 }, T0);
+    const afterStarter = await balance(token);
+    expect(afterStarter).toBe(1_000_000 - STACKACRES_CATALOGUE.carrot.seedCost);
+
+    await expect(
+      buyStackAcresSeed(token, { crop: "corn", quantity: 1 }, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(afterStarter);
+    expect((await readStackAcres(token, T0)).seedStock.corn ?? 0).toBe(0);
+  });
+
+  it("refuses buying a locked crop outright, the route that skips the seed shelf", async () => {
+    const { token } = await funded(10_000_000, { land: [], cropFieldsUnlocked: false });
+    await expect(buyStackAcresStock(token, { stock: "corn" }, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(10_000_000);
+  });
 });
 
 describe("hunger", () => {

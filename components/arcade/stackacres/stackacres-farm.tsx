@@ -338,28 +338,6 @@ const DEFAULT_RETRY_AFTER_SECONDS = 5;
 const BATCH_FLUSH_ATTEMPTS = 3;
 
 /**
- * The preset sizes offered on Ray's shelf for soil. A single "Buy" button
- * meant a player restocking ten bags fired ten separate presses, and every
- * press after the first one in flight was dropped silently by the in-flight
- * guard in `act` below -- Ray looked like he'd shorted the order. These
- * buttons ask for the whole stack in one request instead, so a player who
- * wants ten bags gets ten bags from one tap. Filtered against the shelf's
- * own per-request ceiling (SOIL_BAGS_PER_PURCHASE), so it never offers a
- * size the server would refuse outright.
- */
-const BULK_BUY_QUANTITIES: readonly number[] = [1, 10, 20];
-
-/**
- * Same idea as `BULK_BUY_QUANTITIES` above, for the Seeds and Feed shelves
- * only: just a small order and a big order rather than three sizes. Those
- * two shelves list many cards at once (every crop, every shipment) where
- * Soil lists one, so a third button per card is space the screen doesn't
- * have to spend. Still filtered against each shelf's own per-request
- * ceiling, same as the three-size row.
- */
-const SEED_FEED_BULK_QUANTITIES: readonly number[] = [1, 20];
-
-/**
  * The tiers Ray's shelf actually sells, as opposed to `SOIL_TIERS` (every
  * tier the game engine knows about). The Soil tab shows one card -- "Soil
  * bag," the base `dirt` tier -- rather than the old three-tier ladder.
@@ -709,6 +687,72 @@ function StoreCost({ amount }: { amount: number }) {
       <StackAcresIcon name="ico-gold" size={13} />
       {amount.toLocaleString()}
     </span>
+  );
+}
+
+// One request for the whole count: repeated single buys get dropped by the in-flight guard in `act`.
+function BuyQuantityControls({
+  unitPrice,
+  maxQuantity,
+  gold,
+  pending,
+  onBuy,
+}: {
+  unitPrice: number;
+  /** The server's per-request ceiling for this shelf. */
+  maxQuantity: number;
+  gold: number;
+  pending: boolean;
+  onBuy: (quantity: number) => void;
+}) {
+  const [quantity, setQuantity] = useState(1);
+  const clamped = Math.min(Math.max(1, quantity), maxQuantity);
+  const cost = unitPrice * clamped;
+  const maxAffordable = unitPrice > 0 ? Math.max(0, Math.min(maxQuantity, Math.floor(gold / unitPrice))) : maxQuantity;
+  return (
+    <div className="sa-buy-qty-row">
+      <div className="sa-qty-stepper" role="group" aria-label="Quantity">
+        <button
+          type="button"
+          className="sa-qty-btn"
+          disabled={pending || clamped <= 1}
+          aria-label="Decrease quantity"
+          onClick={() => setQuantity((q) => Math.max(1, Math.min(maxQuantity, q) - 1))}
+        >
+          −
+        </button>
+        <span className="sa-qty-value" aria-live="polite">{clamped}</span>
+        <button
+          type="button"
+          className="sa-qty-btn"
+          disabled={pending || clamped >= maxQuantity}
+          aria-label="Increase quantity"
+          onClick={() => setQuantity((q) => Math.min(maxQuantity, Math.max(1, q) + 1))}
+        >
+          +
+        </button>
+      </div>
+      <button
+        type="button"
+        className="sa-cta"
+        disabled={pending || gold < cost}
+        aria-label={`Buy ${clamped}, ${cost.toLocaleString()} Gold`}
+        onClick={() => onBuy(clamped)}
+      >
+        <span>Buy {clamped}x</span>
+        <StoreCost amount={cost} />
+      </button>
+      <button
+        type="button"
+        className="sa-cta is-ghost"
+        disabled={pending || maxAffordable === 0}
+        aria-label={`Buy max, ${maxAffordable} for ${(maxAffordable * unitPrice).toLocaleString()} Gold`}
+        onClick={() => onBuy(maxAffordable)}
+      >
+        <span>Buy Max</span>
+        <span className="sa-store-cost">{maxAffordable}x</span>
+      </button>
+    </div>
   );
 }
 
@@ -3829,9 +3873,21 @@ export function StackAcresFarm() {
     }
     setAmbienceHerd(herd);
   }, [districtUnits]);
+  /**
+   * What Ray's shelf is allowed to look at when it decides which rows are
+   * open -- the same four facts the SERVER reads before it takes any Gold
+   * (`readShopProgress` in lib/server/stackacres-service.ts), fed through the
+   * same pure evaluator. That is the whole reason this is a struct and not
+   * four loose props: a greyed-out card and the refusal behind it have to be
+   * two renderings of one answer, never two answers.
+   */
+  const shopProgress = useMemo<StackAcresShopProgress>(
+    () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
+    [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
+  );
   const buyOptions: BuyOption[] = useMemo(
-    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
-    [place, liveUnits, gold, capacity],
+    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity, progress: shopProgress }),
+    [place, liveUnits, gold, capacity, shopProgress],
   );
 
   /** The Supply Store's Livestock shelf: every livestock kind whose own
@@ -3846,8 +3902,8 @@ export function StackAcresFarm() {
     () =>
       Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
         .filter((zone) => isSectorUnlocked(zone, sectors))
-        .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity })),
-    [sectors, liveUnits, gold, capacity],
+        .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity, progress: shopProgress })),
+    [sectors, liveUnits, gold, capacity, shopProgress],
   );
 
   /**
@@ -3876,19 +3932,6 @@ export function StackAcresFarm() {
   // The Workshop's "something is ready" dot lived on the deleted places list
   // (`workshopAttention`, lib/stackacres/workshop.ts). If it comes back, it
   // belongs on the windmill sprite as a glow.
-
-  /**
-   * What Ray's shelf is allowed to look at when it decides which rows are
-   * open -- the same four facts the SERVER reads before it takes any Gold
-   * (`readShopProgress` in lib/server/stackacres-service.ts), fed through the
-   * same pure evaluator. That is the whole reason this is a struct and not
-   * four loose props: a greyed-out card and the refusal behind it have to be
-   * two renderings of one answer, never two answers.
-   */
-  const shopProgress = useMemo<StackAcresShopProgress>(
-    () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
-    [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
-  );
 
   /**
    * A finger landed on the brush at the Ancestral Oak. From here it is a
@@ -4534,34 +4577,43 @@ export function StackAcresFarm() {
                       const def = STACKACRES_CATALOGUE[crop];
                       const held = seedStock[crop] ?? 0;
                       const pending = isPending(`buy-seed:${crop}`);
+                      const { lockHint } = evaluateStackAcresShopLock(def, shopProgress);
                       return (
-                        <div key={crop} className="sa-stock-card">
+                        <div
+                          key={crop}
+                          className={lockHint === null ? "sa-stock-card" : "sa-stock-card is-locked"}
+                        >
                           <h3>{def.label}</h3>
                           <p className="sa-stock-yield">
                             <StoreCost amount={def.seedCost} /> / seed
                           </p>
-                          <div className="sa-buy-qty-row">
-                            {SEED_FEED_BULK_QUANTITIES.filter(
-                              (quantity) => quantity <= STACKACRES_SEED_BAGS_PER_PURCHASE,
-                            ).map((quantity) => {
-                              const cost = def.seedCost * quantity;
-                              return (
-                                <button
-                                  key={quantity}
-                                  type="button"
-                                  className="sa-cta"
-                                  disabled={pending || gold < cost}
-                                  aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
-                                  onClick={() => {
-                                    buySound();
-                                    void act({ action: "buy-seed", crop, quantity });
-                                  }}
-                                >
-                                  {quantity}x
-                                </button>
-                              );
-                            })}
-                          </div>
+                          {lockHint !== null && (
+                            <p className="sa-lock-hint" id={`sa-lock-hint-${crop}`}>
+                              <Lock size={13} aria-hidden="true" />
+                              <span>{lockHint}</span>
+                            </p>
+                          )}
+                          {lockHint === null ? (
+                            <BuyQuantityControls
+                              unitPrice={def.seedCost}
+                              maxQuantity={STACKACRES_SEED_BAGS_PER_PURCHASE}
+                              gold={gold}
+                              pending={pending}
+                              onBuy={(quantity) => {
+                                buySound();
+                                void act({ action: "buy-seed", crop, quantity });
+                              }}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled
+                              aria-describedby={`sa-lock-hint-${crop}`}
+                            >
+                              Locked
+                            </button>
+                          )}
                           <p className="sa-sheet-note">
                             {held} in the barn
                           </p>
@@ -4575,8 +4627,8 @@ export function StackAcresFarm() {
               {storeTab === "livestock" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy an animal outright, or seed one cycle at a time. Locked pens show up here
-                    once their district is unlocked.
+                    Buy an animal outright, or Cycle Lease one for a single production run. Locked
+                    pens show up here once their district is unlocked.
                   </p>
                   <div className="sa-panel-section">
                     <StackAcresBuySection
@@ -4613,28 +4665,16 @@ export function StackAcresFarm() {
                           <p className="sa-stock-yield">
                             <StoreCost amount={def.price} /> / bag
                           </p>
-                          <div className="sa-buy-qty-row">
-                            {BULK_BUY_QUANTITIES.filter(
-                              (quantity) => quantity <= SOIL_BAGS_PER_PURCHASE,
-                            ).map((quantity) => {
-                              const cost = def.price * quantity;
-                              return (
-                                <button
-                                  key={quantity}
-                                  type="button"
-                                  className="sa-cta"
-                                  disabled={pending || gold < cost}
-                                  aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
-                                  onClick={() => {
-                                    buySound();
-                                    void act({ action: "buy-soil", tier, quantity });
-                                  }}
-                                >
-                                  {quantity}x
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <BuyQuantityControls
+                            unitPrice={def.price}
+                            maxQuantity={SOIL_BAGS_PER_PURCHASE}
+                            gold={gold}
+                            pending={pending}
+                            onBuy={(quantity) => {
+                              buySound();
+                              void act({ action: "buy-soil", tier, quantity });
+                            }}
+                          />
                           <p className="sa-sheet-note">
                             {held} in the barn
                           </p>
@@ -4687,28 +4727,16 @@ export function StackAcresFarm() {
                             </p>
                           )}
                           {lock.isUnlocked ? (
-                            <div className="sa-buy-qty-row">
-                              {SEED_FEED_BULK_QUANTITIES.filter(
-                                (quantity) => quantity <= STACKACRES_FEED_SHIPMENTS_PER_PURCHASE,
-                              ).map((quantity) => {
-                                const cost = price * quantity;
-                                return (
-                                  <button
-                                    key={quantity}
-                                    type="button"
-                                    className="sa-cta"
-                                    disabled={pending || gold < cost}
-                                    aria-label={`Buy ${quantity}, ${cost.toLocaleString()} Gold`}
-                                    onClick={() => {
-                                      buySound();
-                                      void act({ action: "buy-feed", itemId: id, quantity });
-                                    }}
-                                  >
-                                    {quantity}x
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            <BuyQuantityControls
+                              unitPrice={price}
+                              maxQuantity={STACKACRES_FEED_SHIPMENTS_PER_PURCHASE}
+                              gold={gold}
+                              pending={pending}
+                              onBuy={(quantity) => {
+                                buySound();
+                                void act({ action: "buy-feed", itemId: id, quantity });
+                              }}
+                            />
                           ) : (
                             <button
                               type="button"

@@ -5764,3 +5764,48 @@
   .sa-kitchen-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
   .sa-kitchen-card h3 { font-size: 14px; }
 }
+
+/* The goal chip beside the Map button, and the goals sheet it opens. */
+.sa-goal {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-height: 38px;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 3px 11px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  text-align: left;
+  cursor: pointer;
+}
+.sa-goal:active { box-shadow: var(--sa-glass-rim-press); }
+.sa-goal-top { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sa-ink-soft); }
+.sa-goal-line { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sa-goal-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.3); overflow: hidden; }
+.sa-goal-bar > span { display: block; height: 100%; background: var(--sa-tint-corn); }
+
+.sa-goals-list { display: grid; gap: 10px; margin: 0; padding: 2px 27px 27px; list-style: none; }
+.sa-goals-list > li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; opacity: 0.7; }
+.sa-goals-list > li.is-current { opacity: 1; }
+.sa-goals-num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--sa-glass-fill-ctl); font-size: 12px; font-weight: 800; }
+.is-done .sa-goals-num { background: var(--sa-tint-corn); }
+.sa-goals-list h3 { margin: 0; font-size: 14px; }
+.sa-goals-list p { margin: 1px 0 4px; font-size: 12px; line-height: 1.4; }
+.sa-goals-list ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sa-goals-list ul li.is-built { color: var(--sa-ink-soft); }
+.sa-chapter-opened { font-weight: 700; }
+.sa-chapter-next { color: var(--sa-ink-soft); }
+
+@media (max-height: 520px) {
+  .sa-goal { min-width: 130px; padding: 2px 9px; }
+  .sa-goals-list { max-height: calc(100vh - 110px); overflow-y: auto; padding: 2px 20px 16px; }
+}

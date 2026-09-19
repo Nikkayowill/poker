@@ -128,6 +128,9 @@ def export_area(module, out_root):
         entry = {"frame": frame_names[0], "frames": frame_names, "x": it["bx"], "y": it["by"], "ax": it["ax"],
                  "ay": it["ay"], "w": imgs[0].width, "h": imgs[0].height,
                  "blocks": rig_export.prop_blocks(imgs, (it["ax"], it["ay"]), it["bx"], it["by"], area)}
+        if source[0].info.get("passable"):
+            entry["passable"] = True
+            entry["blocks"] = []
         if sway and sway.get("kind") == "broadleaf":
             canopies.append({"x": it["bx"], "y": it["by"] - 26})
         if sway:

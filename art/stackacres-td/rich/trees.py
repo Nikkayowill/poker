@@ -160,4 +160,6 @@ def bush(seed=0, berries=False):
                 c.put(x, y + 1, "red", 2.4)
                 c.put(x + 1, y + 1, "red", 1.4)
                 c.put(x, y, "pink", 4.6)
-    return c.outline().image(), (9, 12)
+    img = c.outline().image()
+    img.info["passable"] = True                                     # walked through, not around: export drops its blocks
+    return img, (9, 12)

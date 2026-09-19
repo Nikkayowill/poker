@@ -71,7 +71,7 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, api } = props;
+  const { units, celebrate, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes, api } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
   /** The live game, held so a layer can be added over the map after boot --
@@ -98,9 +98,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, cropFieldsUnlocked, soilTiles });
+  const latest = useRef({ sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes });
   useEffect(() => {
-    latest.current = { sceneUnits, sectors, cropFieldsUnlocked, soilTiles };
+    latest.current = { sceneUnits, sectors, cropFieldsUnlocked, soilTiles, woodNodes, stoneNodes };
   });
 
   useEffect(() => {
@@ -180,6 +180,8 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setSectors(now.sectors);
       scene.setCropFieldsUnlocked(now.cropFieldsUnlocked);
       scene.setSoil(now.soilTiles);
+      scene.setWoodNodes(now.woodNodes);
+      scene.setStoneNodes(now.stoneNodes);
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -369,6 +371,14 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useLayoutEffect(() => {
     sceneRef.current?.setSoil(soilTiles);
   }, [soilTiles]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setWoodNodes(woodNodes);
+  }, [woodNodes]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.setStoneNodes(stoneNodes);
+  }, [stoneNodes]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

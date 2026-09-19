@@ -4467,6 +4467,8 @@ export function StackAcresFarm() {
           {loaded && (
             <StackAcresTopdownWorld
               units={liveUnits}
+              woodNodes={woodNodes}
+              stoneNodes={stoneNodes}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}

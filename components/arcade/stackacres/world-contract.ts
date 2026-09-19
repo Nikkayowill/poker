@@ -17,6 +17,8 @@ import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
 import type { PipeNode } from "@/lib/stackacres/irrigation";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
+import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -325,6 +327,10 @@ export interface StackAcresWorldApi {
 
 export interface StackAcresWorldProps {
   units: StackAcresUnitSnapshot[];
+  /** The choppable trees, so a felled one shows as a stump until it regrows. */
+  woodNodes: readonly WoodNodeSnapshot[];
+  /** The Mine's boulders, so a mined-out one shows as rubble until it re-forms. */
+  stoneNodes: readonly StoneNodeSnapshot[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */

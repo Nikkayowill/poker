@@ -52,6 +52,10 @@ import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
+import { drawNodeTextures } from "./node-textures";
+import { NODE_ART, gatherKindOfTag, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
+import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 
 /**
  * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move or the thumb stick (joystick.tsx).
@@ -180,6 +184,8 @@ interface PropSpec {
   blocks: [number, number][];
   /** The part the wind moves, drawn over the rest at the same position. */
   sway?: { frame: string; amp: number; rustle: boolean };
+  /** Walked through, not around: no blocks, and it rustles when the farmer brushes it. */
+  passable?: boolean;
 }
 
 interface AreaSpec {
@@ -216,7 +222,8 @@ export interface TopdownCallbacks {
   onTreeTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on one of the Mine's three tagged boulders (see
    *  lib/stackacres/stone-nodes.ts's `STONE_NODE_IDS` and area.json's own
-   *  `tag: "stone:<id>"` props). `nodeId` is that id, unvalidated here --
+   *  `tag: "stone:<id>"` props). `nodeId` is the whole tag, which is the
+   *  server's node id (`stone:mine-1`), unvalidated here --
    *  the shell is what knows the real catalogue. Same split `onTreeTap`
    *  already takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
@@ -285,7 +292,8 @@ export class TopdownScene extends Phaser.Scene {
   private zoom = 1;
   private playerShadow!: Phaser.GameObjects.Ellipse;
   private animated: { sprite: Phaser.GameObjects.Image; frames: string[] }[] = [];
-  private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image }[] = [];
+  /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
+  private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse; cue: Phaser.GameObjects.Image | null }>();
   private soilImages: Phaser.GameObjects.Image[] = [];
   private unitNodes = new Map<string, UnitNode>();
@@ -355,6 +363,9 @@ export class TopdownScene extends Phaser.Scene {
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   private storyCues: StoryCues = {};
   private merchantPresent = false;
+  /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
+  private spent = new Map<string, number>();
+  private nextRegrowCheck = 0;
 
   constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
     super("stackacres-td");
@@ -379,6 +390,7 @@ export class TopdownScene extends Phaser.Scene {
 
   create(): void {
     for (const area of AREAS) this.specs.set(area, this.cache.json.get(`area:${area}`) as AreaSpec);
+    drawNodeTextures(this.textures);
     this.cameras.main.setRoundPixels(false).setZoom(this.zoom);
     this.time.addEvent({
       delay: WATER_FRAME_MS,
@@ -436,6 +448,7 @@ export class TopdownScene extends Phaser.Scene {
     this.easeCamera(delta);
     this.placeCamera();
     this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion);
+    this.regrowNodes(time);
     this.smoke.update(time, this.reducedMotion);
     this.daylight.update(time, this.reducedMotion);
     this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
@@ -606,11 +619,26 @@ export class TopdownScene extends Phaser.Scene {
     this.ground = this.keep(this.add.image(0, 0, `ground:${name}:${this.waterFrame % this.area.frames}`).setOrigin(0, 0).setDepth(-10));
     for (const spec of this.area.props) {
       const image = this.keep(this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setDepth(spec.y));
-      this.propImages.push({ spec, image });
+      let canopy: Phaser.GameObjects.Image | undefined;
       if (spec.frames.length > 1) this.animated.push({ sprite: image, frames: spec.frames });
       if (spec.sway) {
-        const part = this.keep(this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setDepth(spec.y + 0.5));
-        this.wind.add(part, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+        canopy = this.keep(this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setDepth(spec.y + 0.5));
+        this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+      } else if (spec.passable) {
+        // A bush has no separate top, so the whole sprite shivers.
+        this.wind.add(image, spec.x, spec.y, 0, true);
+      }
+      this.propImages.push({ spec, image, canopy });
+      const gather = gatherKindOfTag(spec.tag);
+      if (gather) {
+        // The stump or rubble, hidden until the node is spent. It keeps the tag so a tap still opens the popup.
+        const stump = this.keep(this.add.image(spec.x, spec.y, NODE_ART[gather].texture).setOrigin(0.5, 1).setDepth(spec.y).setVisible(false));
+        const middle = gather === "tree" ? spec.blocks[Math.floor(spec.blocks.length / 2)] : undefined;
+        this.propImages.push({
+          spec: { ...spec, w: stump.width, h: stump.height, ax: stump.width / 2, ay: stump.height, blocks: middle ? [middle] : [], sway: undefined },
+          image: stump,
+          stump: true,
+        });
       }
     }
     for (const npc of this.area.npcs) {
@@ -644,11 +672,13 @@ export class TopdownScene extends Phaser.Scene {
   /** The log across the north lane stands until the Crop Fields are unlocked, and blocks the way while it does. */
   private applyGates(): void {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
-    for (const { spec, image } of this.propImages) {
+    for (const { spec, image, canopy, stump } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
       const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.opened(detail);
-      const visible = !((spec.tag === "gate:oldfields" && this.cropFieldsUnlocked) || cleared);
+      const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
+      const visible = stump ? isSpent : !((spec.tag === "gate:oldfields" && this.cropFieldsUnlocked) || cleared || isSpent);
       image.setVisible(visible);
+      canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
     }
     this.grid = { width: this.area.width, height: this.area.height, tile: this.area.tile, blocked };
@@ -1270,7 +1300,7 @@ export class TopdownScene extends Phaser.Scene {
       case "tree":
         return cb.onTreeTap(detail ?? "", at);
       case "stone":
-        return cb.onStoneTap(detail ?? "", at);
+        return cb.onStoneTap(target.tag, at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":
@@ -1585,6 +1615,45 @@ export class TopdownScene extends Phaser.Scene {
     if (this.booted) this.applyGates();
   }
 
+  /** The choppable trees' latest snapshots: the ones not ready yet are stumps (lib/stackacres-td/gather-nodes.ts). */
+  setWoodNodes(nodes: readonly WoodNodeSnapshot[]): void {
+    this.setSpent("tree:", spentTrees(nodes, Date.now()));
+  }
+
+  /** The Mine's boulders' latest snapshots: the ones not ready yet are rubble. */
+  setStoneNodes(nodes: readonly StoneNodeSnapshot[]): void {
+    this.setSpent("stone:", spentStones(nodes, Date.now()));
+  }
+
+  /** Replaces the spent nodes whose tags start with `prefix`, and redraws when that changes anything. */
+  private setSpent(prefix: string, nodes: readonly SpentNode[]): void {
+    const before = new Set(this.spent.keys());
+    for (const tag of before) if (tag.startsWith(prefix)) this.spent.delete(tag);
+    for (const { tag, regrowAt } of nodes) this.spent.set(tag, regrowAt);
+    if (!this.booted) return;
+    this.applyGates();
+    if (this.reducedMotion) return;
+    // Settle the stump or rubble that just appeared.
+    for (const { spec, image, stump } of this.propImages) {
+      if (!stump || !spec.tag?.startsWith(prefix) || before.has(spec.tag) || !this.spent.has(spec.tag)) continue;
+      this.tweens.add({ targets: image, scaleY: { from: 1.35, to: 1 }, duration: 160, ease: "Quad.easeOut" });
+    }
+  }
+
+  /** Spent nodes stand again once their clock runs out, without waiting on a fresh read. */
+  private regrowNodes(time: number): void {
+    if (this.spent.size === 0 || time < this.nextRegrowCheck) return;
+    this.nextRegrowCheck = time + 1000;
+    const now = Date.now();
+    let grown = false;
+    for (const [tag, regrowAt] of this.spent) {
+      if (regrowAt > now) continue;
+      this.spent.delete(tag);
+      grown = true;
+    }
+    if (grown) this.applyGates();
+  }
+
   setSectors(sectors: SectorId[]): void {
     this.sectors = sectors;
     if (this.booted) this.applyGates();
@@ -1824,6 +1893,19 @@ export class TopdownScene extends Phaser.Scene {
 
   isWalking(): boolean {
     return this.path.length > 0 || this.stickWalking;
+  }
+
+  /** e2e only: how a tree or boulder (by its tag, like `tree:homestead-1`) is drawn right now, or null when this map has none. */
+  nodeDrawn(tag: string): "standing" | "spent" | null {
+    const parts = this.propImages.filter(({ spec }) => spec.tag === tag);
+    if (parts.length === 0) return null;
+    return parts.some(({ stump, image }) => stump && image.visible) ? "spent" : "standing";
+  }
+
+  /** e2e only: whether the farmer is stopped from walking onto this map point. */
+  isBlockedAt(at: Point): boolean {
+    const { tile, blocked } = this.grid;
+    return blocked.has(tileKey(Math.floor(at.x / tile), Math.floor(at.y / tile)));
   }
 
   /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the player's local clock. */

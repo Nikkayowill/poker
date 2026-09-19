@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * M12. The catalog has sold seven card backs since the store shipped, and

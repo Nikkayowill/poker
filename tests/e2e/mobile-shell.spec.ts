@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 /**
  * The phone lobby: three panes on a track, a tab bar, and a swipe.

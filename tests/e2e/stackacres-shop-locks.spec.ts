@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "./fixtures";
 
 /**
  * Ray's shelf, gated on what the farm has done -- from the outside.

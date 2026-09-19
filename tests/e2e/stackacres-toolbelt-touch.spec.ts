@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * The tool belt and the free camera under a thumb, on a phone held sideways.

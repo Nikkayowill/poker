@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 /**
  * The avatar menu is the only dropdown in the app and M4 moved most of the
@@ -9,13 +9,33 @@ import { expect, test, type Page } from "@playwright/test";
  * it closes, still looks completely fine in a screenshot.
  */
 
-async function openLobby(page: Page) {
+/**
+ * Entry that holds at any width.
+ *
+ * The menu itself is shell chrome and renders on every viewport; the hub grid
+ * does not. Below the shell's own 600px breakpoint the phone lobby replaces
+ * it (see tests/e2e/mobile-shell.spec.ts), so anything narrow has to stop
+ * here rather than wait for a grid that is never coming.
+ */
+async function enterLobby(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Play as guest" }).click();
+  // The trigger, not the player name beside it: the name is hidden by CSS on
+  // a narrow viewport, so gating on it would strand every phone-width spec.
+  await expect(trigger(page)).toBeVisible();
+}
+
+async function openLobby(page: Page) {
+  await enterLobby(page);
   // The hub only mounts once a profile exists, and the menu lives beside it.
   await expect(page.locator(".hub-grid")).toBeVisible();
-  await expect(page.locator(".hub-head h1")).toContainText("Pick your game,");
   await expect(page.locator(".app-menu-player-name")).toBeVisible();
+  // The heading carries no name: f9e4f04b moved the player's name up into
+  // .lobby-kicker on purpose (see the comment above the <h1> in lobby.tsx).
+  // Assert the name is rendered somewhere in the head rather than the exact
+  // headline copy, so a future wording pass does not fail this again.
+  await expect(page.locator(".hub-head h1")).toContainText("Pick your game");
+  await expect(page.locator(".hub-head .lobby-kicker")).not.toBeEmpty();
 }
 
 const trigger = (page: Page) => page.getByRole("button", { name: "Open player menu" });
@@ -92,19 +112,32 @@ test("choosing an item runs it and closes the menu", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: /edit player details/i })).toBeVisible();
 });
 
-test("the panel stays inside a 390px viewport", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  try {
-    const page = await context.newPage();
-    await openLobby(page);
+/**
+ * 640px, not a phone width. The avatar menu is desktop chrome: at or below
+ * 600px `usePhoneViewport` swaps DesktopHeader for the tab bar and this
+ * trigger does not render at all, so the old 390px version of this test was
+ * asserting the containment of a control that is not on the page. 640 is the
+ * narrowest viewport where the menu genuinely exists, which is exactly where
+ * an overflowing panel would first show up.
+ */
+const NARROW = { width: 640, height: 844 };
+
+test.describe("narrow viewport", () => {
+  // test.use rather than browser.newContext: a hand-built context skips the
+  // page fixture that closes the onboarding tour, and the tour would then sit
+  // on top of the very panel this measures.
+  test.use({ viewport: NARROW });
+
+  test("the panel stays inside a narrow viewport", async ({ page }) => {
+    // enterLobby, not openLobby: this test is about the menu, and pinning the
+    // desktop hub's own contents here would only couple it to the lobby.
+    await enterLobby(page);
     await trigger(page).click();
     await expect(panel(page)).toBeVisible();
 
     const box = (await panel(page).boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    expect(box.x + box.width).toBeLessThanOrEqual(NARROW.width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  } finally {
-    await context.close();
-  }
+  });
 });

@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./fixtures";
 
 /**
  * The 2.5D table is landscape-only. Portrait is a client-side orientation

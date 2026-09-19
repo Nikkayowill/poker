@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * The leaderboard's Friends tab: your own record against each friend.

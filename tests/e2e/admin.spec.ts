@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext } from "@playwright/test";
+import { expect, test, type BrowserContext } from "./fixtures";
 
 test("admin uses an HttpOnly session and bulk deletes a filtered profile group", async ({ browser }) => {
   const seedContexts: BrowserContext[] = [];

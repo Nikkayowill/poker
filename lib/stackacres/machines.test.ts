@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { canStartMachine, isMachineDone, machineProgress, rollMillDoubleOutput } from "./machines";
+import {
+  MACHINE_CATALOGUE,
+  canStartMachine,
+  isMachineDone,
+  machineProgress,
+  rollMillDoubleOutput,
+} from "./machines";
 import { RECIPE_CATALOGUE, canStartRecipe } from "./recipes";
+
+describe("MACHINE_CATALOGUE materials", () => {
+  it("gates the Mill and Loom on Wood, alongside Gold", () => {
+    expect(MACHINE_CATALOGUE.mill.materials).toEqual([{ item: "wood", quantity: 15 }]);
+    expect(MACHINE_CATALOGUE.loom.materials).toEqual([{ item: "wood", quantity: 25 }]);
+  });
+
+  it("gates the Feed Silo and Preserves Cellar on Stone, and nothing else", () => {
+    expect(MACHINE_CATALOGUE.feed_silo.materials).toEqual([{ item: "stone", quantity: 20 }]);
+    expect(MACHINE_CATALOGUE.cellar.materials).toEqual([{ item: "stone", quantity: 30 }]);
+    for (const kind of ["dairy", "vat", "oven", "stew_pot", "counter", "farm_kitchen"] as const) {
+      expect(MACHINE_CATALOGUE[kind].materials).toBeUndefined();
+    }
+  });
+});
 
 describe("canStartMachine", () => {
   it("requires the mill's full input batch, not just some of it", () => {

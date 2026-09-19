@@ -1679,6 +1679,144 @@
 
 .sa-fence-upgrade-yes:disabled { opacity: .6; cursor: default; }
 
+/* ---- the chop popup ----------------------------------------------------
+ * Same screen-pinned real-DOM shape as .sa-fence-upgrade above -- structure
+ * and interaction copied one for one; only the meter bar is new (see
+ * stackacres-chop-popup.tsx's own header for why it is a plain CSS
+ * animation rather than a rAF loop). */
+
+.sa-chop-popup {
+  position: absolute;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sa-chop-popup-pin {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border: var(--sa-outline-w) solid var(--sa-outline);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-wood, #a9784f);
+  box-shadow: var(--sa-drop);
+}
+
+.sa-chop-popup-card {
+  position: absolute;
+  left: 16px;
+  top: -18px;
+  width: 220px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur);
+  backdrop-filter: var(--sa-glass-blur);
+  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
+  color: var(--sa-ink);
+  pointer-events: auto;
+  animation: sa-radial-in 160ms var(--sa-bounce) backwards;
+}
+
+.sa-chop-popup-close {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sa-ink);
+  cursor: pointer;
+  opacity: .6;
+}
+
+.sa-chop-popup-close:hover { opacity: 1; }
+
+.sa-chop-popup-line {
+  margin: 0 18px 10px 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.sa-chop-meter {
+  position: relative;
+  height: 14px;
+  margin-bottom: 10px;
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  overflow: hidden;
+}
+
+.sa-chop-meter-sweet {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--sa-tint-corn);
+}
+
+.sa-chop-marker {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--sa-ink);
+  animation-name: sa-chop-sweep;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes sa-chop-sweep {
+  from { left: 0; }
+  to { left: calc(100% - 4px); }
+}
+
+.sa-chop-popup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sa-chop-popup-swing,
+.sa-chop-popup-no {
+  flex: 1;
+  min-height: var(--sa-tap);
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--sa-ease-out),
+    box-shadow var(--duration-fast) var(--sa-ease-out);
+}
+
+.sa-chop-popup-swing {
+  background: var(--sa-tint-corn);
+  box-shadow: var(--sa-glass-rim-lit);
+  color: var(--sa-ink);
+}
+
+.sa-chop-popup-no {
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  color: var(--sa-ink);
+}
+
+.sa-chop-popup-swing:hover:not(:disabled),
+.sa-chop-popup-no:hover { filter: brightness(1.05); }
+
+.sa-chop-popup-swing:disabled { opacity: .6; cursor: default; }
+
 /* ---- the NPC friendship gift dialogue ---------------------------------
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
  * a separate block rather than a shared class because the "greeting" phase
@@ -3662,7 +3800,6 @@
   align-items: center;
   justify-content: center;
   background: var(--sa-choc-rim);
-  cursor: pointer;
   user-select: none;
   transition: opacity 300ms ease-out;
   opacity: 1;
@@ -3713,16 +3850,23 @@
   text-shadow: 0 2px 10px rgba(0, 0, 0, .65);
 }
 
-/* The one authored moment on this surface: the splash's prompt breathes, and
-   nothing else on the screen animates on a loop. It is a key waiting to be
-   pressed, drawn as one -- the same block, the same travel -- so the first
-   thing a player ever touches here teaches the grammar every other button
-   uses. */
-.sa-play-prompt {
-  display: inline-flex;
-  align-items: center;
+/* The entry menu: Play / Profile / Settings. Play keeps the old prompt's
+   weight (it is still the one thing most players tap), Profile and Settings
+   are secondary, smaller affordances beside it. */
+.sa-play-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   margin-top: 4px;
+  width: min(280px, 80vw);
+}
+
+.sa-play-menu-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 12px 26px;
   border: 1px solid var(--sa-glass-line-lit);
   border-radius: var(--sa-r-block);
@@ -3730,12 +3874,30 @@
   -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
   backdrop-filter: var(--sa-glass-blur-ctl);
   box-shadow: var(--sa-glass-rim-lit), var(--sa-drop-lg);
+  color: var(--sa-ink);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  cursor: pointer;
+}
+
+.sa-play-menu-item:active {
+  transform: scale(.98);
+  box-shadow: var(--sa-glass-rim-press);
+}
+
+.sa-play-menu-item:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.sa-play-menu-primary {
+  font-size: 19px;
+  font-weight: 800;
   animation: sa-breathe 2.4s var(--sa-ease-out) infinite;
 }
 
-.sa-play-screen:active .sa-play-prompt {
-  transform: scale(.98);
-  box-shadow: var(--sa-glass-rim-press);
+.sa-play-menu-primary:active {
   animation: none;
 }
 
@@ -3745,28 +3907,41 @@
   90% { transform: translateY(0); }
 }
 
-.sa-play-text {
+/* The Settings panel's two toggle rows. A dedicated pair of classes rather
+   than reusing .mshell-row: that class is scoped to the lobby phone shell's
+   own max-width: 600px media query, and StackAcres never renders under
+   700px wide (it is landscape-locked), so it would never actually apply
+   here. */
+.sa-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--sa-r-block);
+  padding: 12px 14px;
+  background: transparent;
   color: var(--sa-ink);
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: .01em;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sa-play-pulse {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--sa-outline);
-  border-radius: 50%;
-  /* --neon-accent never existed in the token set and background is not
-     inherited, so this dot was transparent for its whole life. */
-  background: var(--sa-roof);
-  animation: sa-pulse 1.5s cubic-bezier(.4, 0, .6, 1) infinite;
+.sa-settings-row:hover,
+.sa-settings-row:focus-visible {
+  background: var(--sa-glass-fill-ctl);
 }
 
-@keyframes sa-pulse {
-  0%, 100% { opacity: .55; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.25); }
+.sa-settings-row-label {
+  flex-grow: 1;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.sa-settings-row-value {
+  color: var(--sa-lit-roof);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* Motion in the DOM layer is the toast, the drawer, the sheet and the splash
@@ -4945,8 +5120,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sa-play-pulse,
-  .sa-play-prompt { animation: none; }
+  .sa-play-menu-primary { animation: none; }
   .sa-toast { animation: none; opacity: 1; }
   .sa-sheet { animation: none; }
   .sa-sheet-scrim { animation: none; }

@@ -46,7 +46,7 @@ async function grantAndOpenStackAcres(
   });
 
   await page.goto("/games/stackacres");
-  await page.getByRole("button", { name: "Tap to start StackAcres" }).click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
   await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
   // Stand a few steps below him so he's on screen; the tap still walks the farmer up before the dialogue opens.
   await page.evaluate(() => {

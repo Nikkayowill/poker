@@ -275,7 +275,9 @@ type CorePainterName =
   | "ico-camera"
   | "ico-telephoto"
   | "ico-fieldnotes"
-  | "ico-trailphoto";
+  | "ico-trailphoto"
+  | "ico-wood"
+  | "ico-stone";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -2219,6 +2221,39 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#7a5636");
     ell(c, 12.9, 9.3, 0.9, 1.2, -0.15);
     F(c, "#5c3f26");
+  }),
+
+  "ico-wood": painter(24, 24, (c) => {
+    rr(c, 3, 9, 18, 6, 1.4);
+    F(c, lin(c, 3, 9, 3, 15, [[0, "#b98450"], [1, "#8a5c33"]]));
+    stroke(c, "#5c3c22", 1);
+    ell(c, 3.9, 12, 1.4, 2.2);
+    F(c, "#e8c79a");
+    ell(c, 3.9, 12, 0.6, 1);
+    F(c, "#8a5c33");
+    ell(c, 20.1, 12, 1.4, 2.2);
+    F(c, "#e8c79a");
+    ell(c, 20.1, 12, 0.6, 1);
+    F(c, "#8a5c33");
+  }),
+
+  // A mined boulder chunk, off one of the Mine's tagged nodes
+  // (lib/stackacres/stone-nodes.ts). Two overlapping lumps read as a chunk
+  // rather than a single rounded pebble, with a lighter facet on each for a
+  // cheap sense of cut stone rather than a smooth river rock.
+  "ico-stone": painter(24, 24, (c) => {
+    ell(c, 10.5, 15, 6.5, 5, -0.08);
+    F(c, "#8a8f97");
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
+    F(c, "#797e87");
+    ell(c, 9, 12.5, 2.6, 1.7, -0.2);
+    F(c, "#a7acb3");
+    ell(c, 14.5, 11, 2, 1.3, 0.15);
+    F(c, "#9298a0");
+    stroke(c, "#5b5f66", 1);
+    ell(c, 10.5, 15, 6.5, 5, -0.08);
+    stroke(c, "#5b5f66", 1);
+    ell(c, 15, 13.5, 5, 4.2, 0.1);
   }),
 
   "ico-bushels": painter(24, 24, (c) => {

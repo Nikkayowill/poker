@@ -48,7 +48,7 @@ export function StackAcresToolbelt({
   onOpenSeeds,
 }: StackAcresToolbeltProps) {
   return (
-    <div className="sa-toolbelt" role="radiogroup" aria-label="Tool belt">
+    <div className="sa-toolbelt" data-tour="sa-tool-belt" role="radiogroup" aria-label="Tool belt">
       {BELT_TOOLS.map((tool) => {
         const def = BELT_TOOL_DEFS[tool];
         const isHeld = held === tool;

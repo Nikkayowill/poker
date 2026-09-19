@@ -108,7 +108,7 @@ async function openFarm(browser: Browser): Promise<{ page: Page; errors: string[
   });
 
   await page.goto("/games/stackacres");
-  await page.locator(".sa-play-screen").click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
   await page.waitForFunction(() => "__stackacres" in window, null, { timeout: 60_000 });
   await page.waitForTimeout(2_000);
   for (let attempt = 0; attempt < 6; attempt += 1) {

@@ -66,18 +66,16 @@ export const NIBBLE_MAX_MS = 3500;
 /**
  * Where the float sits, as an offset from the farmer's own feet.
  *
- * MEASURED OFF THE RIG, not chosen. The `fish_left`/`fish_right` frames draw
- * the rod AND a line hanging from its tip, and that line ends at exactly
- * (-18, +3) from where he stands. Putting the float anywhere else meant
- * drawing a second line to it, so a cast showed two: the artist's, hanging
- * straight down, and ours, angled off to the water.
+ * MEASURED OFF THE ART, not chosen. The PixelLab cast (art/stackacres-td/
+ * pixellab) draws its float at (-17, -2) from where he stands in the rod-out
+ * frame. The build takes that float out of the art, because it's only in the
+ * last frame and the fight would blink it, and this one sits where it was.
  *
- * So the float goes where the art already says the line ends, and the scene
- * draws no line at all. The cast spot was moved 4px north to suit (see
- * scene.ts's `DOCK_CAST_SPOT`), which is what puts this point in open water.
+ * The scene draws no line. `DOCK_CAST_SPOT` moved 5px south when this moved
+ * 5px north, so the float lands on the same open water as before.
  */
-export const LINE_END_DX = -18;
-export const LINE_END_DY = 3;
+export const LINE_END_DX = -17;
+export const LINE_END_DY = -2;
 /** How far the bobber rides up and down while nothing is biting. */
 export const BOBBER_BOB_PX = 1.5;
 export const BOBBER_BOB_MS = 900;

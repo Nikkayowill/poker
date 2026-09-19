@@ -103,15 +103,15 @@ const CROP_FIELDS_GATE_APPROACH: Point = { x: 232, y: 80 };
  * corner, on the shore itself, with open water immediately west.
  *
  * Its own spot rather than the anchor below every other prop, for two reasons.
- * A cast has to be sideways -- the rig throws a rod left or right and has no
+ * A cast has to be sideways -- the farmer throws a rod left or right and has no
  * pose for throwing one at the camera (see lib/stackacres-td/fishing-cast.ts).
  * And the prop's usual step-up-from-below anchor lands out on the dirt road,
  * a pier's width from the pond, which put the bobber down on the planks.
  * Measured against the composited Homestead art, not guessed: tile (12, 25)
- * is walkable, and the point the rig's own fishing line ends at from here
- * (see `bobberSpot`) sits in open water with a clear margin all round.
+ * is walkable, and the float's spot from here (see `bobberSpot`) sits in open
+ * water with a clear margin all round.
  */
-const DOCK_CAST_SPOT: Point = { x: 200, y: 404 };
+const DOCK_CAST_SPOT: Point = { x: 200, y: 409 };
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
   wallow: { x: 636, y: 344 },
@@ -127,7 +127,9 @@ const PENS: Partial<Record<ZoneId, { area: TopdownArea; spots: string; cols: num
   wallow: { area: "fold", spots: "sheep-spots", cols: 5, rowGap: 26 },
   oxfields: { area: "pasture", spots: "cattle-spots", cols: 5, rowGap: 36 },
 };
-const WALK_SPEED = 72; // px/s; the rig's walk frames were timed for 44
+const WALK_SPEED = 72; // px/s
+/** The farmer's 8-frame walk (art/stackacres-td/pixellab) is timed for full walking speed, so it plays at 1x there. */
+const WALK_TIMED_FOR = 72;
 const WATER_FRAME_MS = 170;
 const REACH = 26; // how close the farmer stands before the shell's menu opens
 const TAP_SLOP = 14; // css px a finger may drift and still count as a tap
@@ -142,7 +144,11 @@ const ZOOM_SETTLE_EPSILON = 0.01;
 
 type Dir = "down" | "up" | "left" | "right";
 
-/** The rig's sheets start with walk_down/up/left/right, four frames each; frame 1 of a walk is both feet down. */
+/**
+ * Every character sheet starts with walk_down/up/left/right, four frames each; frame 1 of each is the standing
+ * pose. The farmer's walk tags point at his 8-frame walk further down the sheet, but these four slots stay, so
+ * every frame index here and in fishing-cast.ts means the same thing on every sheet.
+ */
 const STANDING: Record<Dir, string> = { down: "1", up: "5", left: "9", right: "13" };
 
 /**
@@ -484,7 +490,7 @@ export class TopdownScene extends Phaser.Scene {
     // action animation owns the sprite until it finishes; the walk resumes after.
     if (this.acting) return;
     const key = `walk_${this.facing}`;
-    const timeScale = speed / 44;
+    const timeScale = speed / WALK_TIMED_FOR;
     if (this.player.anims.currentAnim?.key !== key || !this.player.anims.isPlaying) {
       this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
       this.player.play({ key, repeat: -1, timeScale });

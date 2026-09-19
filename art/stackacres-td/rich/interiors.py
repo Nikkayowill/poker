@@ -68,6 +68,17 @@ def _rug(c, x0, y0, x1, y1, field, border):
         c.put(x, y1, "linen", 3.6)
 
 
+def doormat(w):
+    """The straw mat laid outside a door, woven like the one just inside it."""
+    c = Canvas(w, 10)
+    for y in range(10):
+        for x in range(w):
+            weave = (x + y) % 3
+            rim = y in (0, 9) or x in (0, w - 1)
+            c.put(x, y, "straw", (2.4 if rim else 3.8) + (0.7 if weave == 0 else -0.5 if weave == 2 else 0))
+    return c.image()
+
+
 def _lantern(c, lx, ly):
     """A lantern hanging on the back wall at (lx, ly): hook, iron cap, warm glass. Returns its light point."""
     c.put(lx, ly - 3, "stone", 3.4)
@@ -329,6 +340,12 @@ def barn(for_game=False):
     a.add(S.barrel(), 32, 146, (5, 2))
     a.add(S.crate(), 54, 154, (6, 2))
     a.add(sack("khaki"), 214, 156, (5, 2))
+    a.add(S.crate(), 30, 112, (6, 2))
+    a.add(sack("tan"), 50, 120, (5, 2))
+    a.add(S.barrel(), 36, 128, (5, 2))
+    a.add(S.hay_bale(), 244, 118, (9, 2))
+    a.add(S.hay_bale(), 264, 118, (9, 2))
+    a.add(S.barrel(), 226, 132, (5, 2))
     a.door("homestead", DOOR_X0, H * T - 8, DOOR_X1 - DOOR_X0, 8, (360, 174))
     a.spawn = ARRIVE
     return a
@@ -571,6 +588,11 @@ def workshop(for_game=False):
     a.add(S.woodpile(), 38, 150, (13, 2))
     a.add(S.crate(), 256, 152, (6, 2))
     a.add(S.crate(), 256, 136, (6, 2))
-    a.door("homestead", DOOR_X0, H * T - 8, DOOR_X1 - DOOR_X0, 8, (504, 172))
+    a.add(S.barrel(), 30, 112, (5, 2))
+    a.add(sack("tan"), 50, 118, (5, 2))
+    a.add(S.crate(), 32, 128, (6, 2))
+    a.add(S.woodpile(), 252, 112, (13, 2))
+    a.add(sack("khaki"), 226, 124, (5, 2))
+    a.door("homestead", DOOR_X0, H * T - 8, DOOR_X1 - DOOR_X0, 8, (488, 172))
     a.spawn = ARRIVE
     return a

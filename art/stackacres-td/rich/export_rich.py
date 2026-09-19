@@ -68,6 +68,18 @@ LIGHTS = {
 }
 
 
+# A straw mat outside each door on the Homestead: (door centre x, mat top y, width). Laid into the ground picture
+# after it is drawn, and the same step is what patched the committed ground-*.png.
+DOORMATS = {"homestead": [(360, 151, 32), (488, 151, 24)]}
+
+
+def lay_doormats(img, area_name):
+    for cx, top, w in DOORMATS.get(area_name, ()):
+        mat = interiors.doormat(w).convert("RGBA")
+        img.paste(mat, (cx - w // 2, top), mat)
+    return img
+
+
 def patch():
     build_area.patch("".join(open(m.__file__).read() for m in PLAYABLE))
     smoke = props.smoke
@@ -102,7 +114,7 @@ def export_area(module, out_root):
     for f in range(kit.FRAMES):
         path = os.path.join(out, f"ground-{f}.png")
         if f < frames:
-            to_image(sc.ground_image(f)).save(path)
+            lay_doormats(to_image(sc.ground_image(f)), area.name).save(path)
         elif os.path.exists(path):
             os.remove(path)
 

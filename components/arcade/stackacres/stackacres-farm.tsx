@@ -3665,7 +3665,6 @@ export function StackAcresFarm() {
     },
     [act, takeProcessingDelta],
   );
-  const onSowWheat = useCallback(() => workshopAct({ action: "sow-wheat" }), [workshopAct]);
   const onPlaceMachine = useCallback(
     async (kind: MachineKind) => {
       const result = await workshopAct({ action: "place-machine", kind });
@@ -5517,13 +5516,11 @@ export function StackAcresFarm() {
       {showWorkshop && !showVat && (
         <WorkshopModal
           inventory={processing.inventory}
-          wheatPlots={processing.wheatPlots}
           machines={processing.machines}
           vat={vat}
           goldBalance={profile?.goldBalance ?? 0}
           unlimitedGold={profile?.unlimitedGold ?? false}
           isPending={isPending}
-          onSowWheat={onSowWheat}
           onPlaceMachine={onPlaceMachine}
           onProcess={onProcessRecipe}
           onWork={onWork}

@@ -8,7 +8,6 @@ import { WATER_CAPACITY } from "./water-can";
 import { SYNERGY_PERKS } from "./synergy-perks";
 import { MACHINE_CATALOGUE } from "./machines";
 import { RECIPE_CATALOGUE } from "./recipes";
-import { WHEAT_DURATION_MS, WHEAT_SEED_COST, type StackAcresWheatPlotSnapshot } from "./wheat-plot";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
@@ -107,33 +106,7 @@ function machine(overrides: Partial<MachineView> = {}): MachineView {
   };
 }
 
-function wheatPlot(id: string): StackAcresWheatPlotSnapshot {
-  return {
-    id,
-    startedAt: NOW.toISOString(),
-    readyAt: new Date(NOW.getTime() + WHEAT_DURATION_MS).toISOString(),
-    ready: false,
-    progress: 0,
-  };
-}
-
 describe("predictStackAcresAction: the processing track", () => {
-  it("sows wheat: debits the seed and adds a plot due WHEAT_DURATION_MS out", () => {
-    const patch = predictStackAcresAction({ action: "sow-wheat" }, ctx({ profile: profile({ goldBalance: 100 }) }));
-    expect(patch?.profile?.goldBalance).toBe(100 - WHEAT_SEED_COST);
-    expect(patch?.wheatPlots).toHaveLength(1);
-    expect(Date.parse(patch!.wheatPlots![0].readyAt)).toBe(NOW.getTime() + WHEAT_DURATION_MS);
-    expect(patch?.contract).toBeNull();
-  });
-
-  it("refuses to sow past the plot cap or without the seed money", () => {
-    const full = ctx({ wheatPlots: [wheatPlot("a"), wheatPlot("b"), wheatPlot("c")] });
-    expect(predictStackAcresAction({ action: "sow-wheat" }, full)).toBeNull();
-    expect(
-      predictStackAcresAction({ action: "sow-wheat" }, ctx({ profile: profile({ goldBalance: WHEAT_SEED_COST - 1 }) })),
-    ).toBeNull();
-  });
-
   it("places a machine: debits its price, adds an idle row, keeps the open contract", () => {
     const contract = { id: "c1", status: "open" } as FarmPredictContext["contract"];
     const patch = predictStackAcresAction(
@@ -600,7 +573,7 @@ describe("predictStackAcresAction: removing a soil tile", () => {
 
   it("takes the crop standing on that tile with it, and leaves an unrelated one alone", () => {
     const onBedA = unit({ id: "crop-a", stock: "corn", soilSlot: 0 });
-    const onBedB = unit({ id: "crop-b", stock: "wheatsheaf", soilSlot: 1 });
+    const onBedB = unit({ id: "crop-b", stock: "wheat", soilSlot: 1 });
     const patch = predictStackAcresAction(
       { action: "remove-soil-tile", tx: 0, ty: 0 },
       ctx({ soilTiles: [bedA, bedB], units: [onBedA, onBedB] }),
@@ -610,7 +583,7 @@ describe("predictStackAcresAction: removing a soil tile", () => {
   });
 
   it("does not touch the unit list when the lifted bed was bare", () => {
-    const elsewhere = unit({ id: "crop-b", stock: "wheatsheaf", soilSlot: 1 });
+    const elsewhere = unit({ id: "crop-b", stock: "wheat", soilSlot: 1 });
     const patch = predictStackAcresAction(
       { action: "remove-soil-tile", tx: 0, ty: 0 },
       ctx({ soilTiles: [bedA, bedB], units: [elsewhere] }),

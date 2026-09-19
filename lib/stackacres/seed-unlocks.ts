@@ -1,8 +1,8 @@
 /**
  * Which kitchen or farm building opens each crop's seeds in Ray's shop.
  *
- * Wheat is always open (it grows on the Workshop's Wheat Plot, not from shop
- * seed). Every other crop opens when the player has built what uses it, so a
+ * Wheat is always open (3 Gold a seed, it is what the Mill runs on). Every
+ * other crop opens when the player has built what uses it, so a
  * seed never appears before the reason to grow it. Derived from the machines
  * the player owns, so there is nothing to store and nothing to migrate.
  *
@@ -30,8 +30,7 @@ export const SEED_UNLOCKS: Readonly<Record<StackAcresCrop, readonly MachineKind[
   celery: ["stew_pot", "counter"],
   eggplant: ["oven"],
   broccoli: ["oven"],
-  // Retired from the shop (./scope.ts); listed only so the table is total.
-  wheatsheaf: [],
+  wheat: [],
 };
 
 /** The buildings `crop` still needs, in table order. Empty once it is open. */

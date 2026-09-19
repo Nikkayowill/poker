@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_CROPS } from "./catalogue";
 import { MACHINE_KINDS, type MachineKind } from "./machines";
-import { STACKACRES_RETIRED_CROPS } from "./scope";
 import { SEED_UNLOCKS, isSeedUnlocked, seedLockLine, seedsOpenedBy, seedsOpenedLine } from "./seed-unlocks";
 
 const built = (...kinds: MachineKind[]) => new Set<MachineKind>(kinds);
 
 describe("seed locks", () => {
-  it("gates every crop still sold behind at least one real building", () => {
+  it("keeps wheat open from the start, since the Mill runs on it", () => {
+    expect(isSeedUnlocked("wheat", built())).toBe(true);
+    expect(seedLockLine("wheat", built())).toBeNull();
+  });
+
+  it("gates every other crop behind at least one real building", () => {
     for (const crop of STACKACRES_CROPS) {
-      if (STACKACRES_RETIRED_CROPS.includes(crop)) continue;
+      if (crop === "wheat") continue;
       expect(SEED_UNLOCKS[crop].length).toBeGreaterThan(0);
       for (const kind of SEED_UNLOCKS[crop]) expect(MACHINE_KINDS).toContain(kind);
     }

@@ -10,6 +10,7 @@ import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/in
 import {
   machineItemIcon,
   machineItemLabel,
+  machineItemNoun,
   machineItemSellPrice,
   type MachineItemId,
   type MachineProcessedItem,
@@ -26,22 +27,16 @@ import { seedsOpenedLine } from "@/lib/stackacres/seed-unlocks";
 import { RECIPE_CATALOGUE, RECIPE_VERB, isInstantRecipe, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
 import { FEED_SILO_DAILY_FEEDS } from "@/lib/stackacres/feed-silo";
 import { STACKACRES_WORKSHOP_SHELF_ITEMS, isActiveMachine } from "@/lib/stackacres/scope";
-import {
-  WHEAT_PLOT_CAP,
-  WHEAT_SEED_COST,
-  WHEAT_YIELD_QUANTITY,
-  isWheatPlotReady,
-  wheatPlotProgress,
-  type StackAcresWheatPlotSnapshot,
-} from "@/lib/stackacres/wheat-plot";
+import { WHEAT_YIELD_QUANTITY } from "@/lib/stackacres/wheat-plot";
 import { machineOfKind, workDue } from "@/lib/stackacres/workshop";
 import { StackAcresIcon } from "./stackacres-icon";
 import type { PainterName } from "./stackacres-art";
 
 /**
- * The Workshop: the processing track in one sheet. The wheat field, the four
- * machines, the shelf everything sits on between steps, and the animals whose
- * produce could go here instead of to the harvest's Gold.
+ * The Workshop: the processing track in one sheet. The machines, and the
+ * shelf everything sits on between steps. Wheat is NOT planted here: it is a
+ * crop, sown on the soil beds like any other, and only lands on this shelf
+ * once harvested.
  *
  * Every one of these actions has existed on the server since the Mill
  * shipped; this is the first control that can reach any of them. It is a
@@ -51,14 +46,14 @@ import type { PainterName } from "./stackacres-art";
  * board next door already established that a thing with nowhere on the map
  * to stand opens as a sheet from the signpost.
  *
- * THE IDLE-WORKER PASS. `work` is what brings ripe wheat in and collects a
- * finished Mill run, and nothing on the farm was ever asking for it. This
- * sheet does, in two ways: a key the player can press, and an effect below
- * that fires it once the moment something falls due while the sheet is open
- * -- with a back-off, so a phone clock a second ahead of the server cannot
- * turn "still ripe by my clock" into a request every tick.
+ * THE IDLE-WORKER PASS. `work` collects a finished Mill run, and nothing on
+ * the farm was asking for it. This sheet does, in two ways: a key the player
+ * can press, and an effect below that fires it once the moment a run falls
+ * due while the sheet is open -- with a back-off, so a phone clock a second
+ * ahead of the server cannot turn "still done by my clock" into a request
+ * every tick.
  *
- * Optimistic: `sow-wheat`, `place-machine`, `process` and `sell`'s inventory
+ * Optimistic: `place-machine`, `process` and `sell`'s inventory
  * half are all predicted in lib/stackacres/optimistic-actions.ts and rolled
  * back by the farm on a refusal, so a press answers before the round trip.
  * `sell`'s Gold and `work` both wait for the real answer -- a Mill's double
@@ -92,7 +87,6 @@ export interface WorkshopModalProps {
   /** The shelf, straight off the last server response (or the optimistic
    *  layer's guess at it, which the farm rolls back on a refusal). */
   inventory: StackAcresInventory;
-  wheatPlots: readonly StackAcresWheatPlotSnapshot[];
   machines: readonly MachineView[];
   /** Null until a Fermenting Vat is placed. */
   vat: VatContainer | null;
@@ -101,7 +95,6 @@ export interface WorkshopModalProps {
   /** Whether a given intent is mid-flight -- the farm's own per-intent
    *  pending set, so one key greys on its own action only. */
   isPending: (intent: string) => boolean;
-  onSowWheat: () => Promise<WorkshopActionResult>;
   onPlaceMachine: (kind: MachineKind) => Promise<WorkshopActionResult>;
   onProcess: (recipe: RecipeId) => Promise<WorkshopActionResult>;
   onWork: () => Promise<WorkshopActionResult>;
@@ -140,12 +133,59 @@ function icon(item: MachineItemId): PainterName {
 /** What the Feed Silo does, in one line. */
 const SILO_LINE = "Feeds hungry animals from your barn while you're away";
 
-/** "3 Wheat → 1 Flour · 20s" / "2 Eggs + 1 Milk + 1 Flour → 1 Cake · instant". */
-function recipeLine(recipe: RecipeId): string {
+/** One plain sentence per machine: what it does and why it is worth building. */
+const MACHINE_JOB: Partial<Record<MachineKind, string>> = {
+  mill: "Grinds Wheat from your beds into Flour, which sells for more and goes into Cakes. Also grinds Corn into Cattle Feed.",
+  dairy: "Turns Milk into Cheese, or Eggs, Milk and Flour into a Cake. Both sell for more than the raw goods.",
+  loom: "Weaves Wool into Cloth.",
+  vat: `Seal ${machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)} inside and let it age. The longer it sits, the more Gold it is worth.`,
+  feed_silo: SILO_LINE,
+};
+
+/** Where an ingredient comes from, for a player who is short of it. */
+const ITEM_SOURCE: Partial<Record<MachineItemId, string>> = {
+  wheat: "your beds (Wheat seed is at Ray's)",
+  flour: "the Mill",
+  milk: "your cows",
+  eggs: "your hens",
+  wool: "your sheep",
+  cheese: "the Dairy",
+};
+
+function shortfalls(recipe: RecipeId, inventory: StackAcresInventory) {
+  return RECIPE_CATALOGUE[recipe].inputs
+    .map((input) => ({ item: input.item, short: input.quantity - inventoryQuantity(inventory, input.item) }))
+    .filter((entry) => entry.short > 0);
+}
+
+/** "3 Wheat (you have 1) -> 1 Flour, takes 20s". The have-count is what tells
+ *  a player why the button below is grey and what to go and get. */
+function RecipeLine({ recipe, inventory }: { recipe: RecipeId; inventory: StackAcresInventory }) {
   const def = RECIPE_CATALOGUE[recipe];
-  const pace = isInstantRecipe(recipe) ? "instant" : `${Math.round(def.processingMs / 1000)}s`;
-  const inputs = def.inputs.map((input) => machineItemLabel(input.item, input.quantity)).join(" + ");
-  return `${inputs} → ${machineItemLabel(def.output.item, def.output.quantity)} · ${pace}`;
+  const pace = isInstantRecipe(recipe) ? "instant" : `takes ${Math.round(def.processingMs / 1000)}s`;
+  return (
+    <p className="sa-workshop-recipe">
+      <span className="sa-workshop-recipe-in">
+        {def.inputs.map((input, index) => {
+          const have = inventoryQuantity(inventory, input.item);
+          return (
+            <span key={input.item} className={clsx("sa-workshop-recipe-item", { "is-short": have < input.quantity })}>
+              {index > 0 && " + "}
+              {machineItemLabel(input.item, input.quantity)}
+              <em> (have {have})</em>
+            </span>
+          );
+        })}
+      </span>
+      <span className="sa-workshop-recipe-out">
+        <span className="sa-workshop-recipe-arrow" aria-hidden="true">
+          →{" "}
+        </span>
+        {machineItemLabel(def.output.item, def.output.quantity)}
+        <em> · {pace}</em>
+      </span>
+    </p>
+  );
 }
 
 function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>["work"]>): string | null {
@@ -166,13 +206,11 @@ function workNote(work: NonNullable<Extract<WorkshopActionResult, { ok: true }>[
 
 export function WorkshopModal({
   inventory,
-  wheatPlots,
   machines,
   vat,
   goldBalance,
   unlimitedGold,
   isPending,
-  onSowWheat,
   onPlaceMachine,
   onProcess,
   onWork,
@@ -208,10 +246,8 @@ export function WorkshopModal({
   const closeAll = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(closeAll);
 
-  // Ticks once a second only while there is a clock to draw -- a growing
-  // plot, a Mill run, or an aging vat -- same guard the vat's own sheet takes.
-  const anythingTimed =
-    wheatPlots.length > 0 || machines.some((machine) => machine.status === "working") || vat?.status === "aging";
+  // Ticks once a second only while there is a clock to draw -- a Mill run, or an aging vat -- same guard the vat's own sheet takes.
+  const anythingTimed = machines.some((machine) => machine.status === "working") || vat?.status === "aging";
   useEffect(() => {
     if (!anythingTimed) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -219,9 +255,18 @@ export function WorkshopModal({
   }, [anythingTimed]);
 
   const nowDate = new Date(now);
-  const due = workDue(wheatPlots, machines, now);
-  const ripeCount = wheatPlots.filter((plot) => isWheatPlotReady(plot, nowDate)).length;
+  const due = workDue(machines, now);
   const affords = (cost: number) => unlimitedGold || goldBalance >= cost;
+  // Only what the player holds, plus the row that just sold out so its Gold
+  // burst has somewhere to play.
+  const shelfItems = STACKACRES_WORKSHOP_SHELF_ITEMS.filter(
+    (item) => inventoryQuantity(inventory, item) > 0 || sellPayout?.item === item,
+  );
+  useEffect(() => {
+    if (!sellPayout) return;
+    const id = window.setTimeout(() => setSellPayout(null), 1800);
+    return () => window.clearTimeout(id);
+  }, [sellPayout]);
 
   /** Runs one of the handed-down promises and answers in this sheet's own
    *  note -- the page's banner sits behind the scrim. */
@@ -242,10 +287,6 @@ export function WorkshopModal({
     [],
   );
 
-  const handleSow = useCallback(
-    () => run(onSowWheat, () => `Sown. Wheat takes a while; the field brings it in for you.`),
-    [run, onSowWheat],
-  );
   const handlePlace = useCallback(
     (kind: MachineKind) => run(() => onPlaceMachine(kind), () => `${MACHINE_CATALOGUE[kind].label} built.`),
     [run, onPlaceMachine],
@@ -325,9 +366,8 @@ export function WorkshopModal({
         </header>
 
         <p className="sa-sheet-note">
-          Everything you gather lands here. Sell it as it is, or make it into something worth
-          more first. The Mill turns Wheat into Flour, and the Dairy bakes Eggs, Milk and Flour
-          into a Cake.
+          Turn what your farm grows into things that sell for more. Anything you leave as it is can
+          be sold from the shelf.
         </p>
 
         {note && (
@@ -336,257 +376,211 @@ export function WorkshopModal({
           </p>
         )}
 
-        <p className="sa-group-label">On the shelf</p>
-        <ul className="sa-workshop-shelf">
-          {STACKACRES_WORKSHOP_SHELF_ITEMS.map((item) => {
-            const quantity = inventoryQuantity(inventory, item);
-            const sellIntent = `sell:${item}:${quantity}`;
-            return (
-              <li key={item}>
-                {sellPayout?.item === item && (
-                  <ContractPayout key={sellPayout.nonce} gold={sellPayout.gold} influence={0} />
-                )}
-                <StackAcresIcon name={icon(item)} size={20} />
-                <span>{machineItemLabel(item, quantity)}</span>
-                {quantity > 0 && (
-                  <button
-                    type="button"
-                    className="sa-cta sa-workshop-sell"
-                    disabled={isPending(sellIntent)}
-                    onClick={contain(() => void handleSell(item, quantity))}
-                  >
-                    Sell · {(machineItemSellPrice(item) * quantity).toLocaleString()} Gold
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="sa-workshop-body">
+          <div className="sa-workshop-col">
+            <p className="sa-group-label">Your goods</p>
+            {shelfItems.length === 0 ? (
+              <p className="sa-workshop-empty">
+                Nothing yet. Wheat from your beds, and Eggs and Milk from your animals, show up here.
+              </p>
+            ) : (
+              <ul className="sa-workshop-shelf">
+                {shelfItems.map((item) => {
+                  const quantity = inventoryQuantity(inventory, item);
+                  const sellIntent = `sell:${item}:${quantity}`;
+                  return (
+                    <li key={item}>
+                      {sellPayout?.item === item && (
+                        <ContractPayout key={sellPayout.nonce} gold={sellPayout.gold} influence={0} />
+                      )}
+                      <StackAcresIcon name={icon(item)} size={20} />
+                      <span className="sa-workshop-shelf-name">{machineItemLabel(item, quantity)}</span>
+                      {quantity > 0 && (
+                        <button
+                          type="button"
+                          className="sa-cta sa-workshop-sell"
+                          disabled={isPending(sellIntent)}
+                          onClick={contain(() => void handleSell(item, quantity))}
+                        >
+                          Sell {(machineItemSellPrice(item) * quantity).toLocaleString()} Gold
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
 
-        <p className="sa-group-label">Wheat field</p>
-        <ul className="sa-workshop-plots">
-          {wheatPlots.map((plot) => {
-            const ripe = isWheatPlotReady(plot, nowDate);
-            const progress = wheatPlotProgress(plot, nowDate);
-            return (
-              <li key={plot.id} className={clsx("sa-workshop-plot", { "is-ripe": ripe })}>
-                <StackAcresIcon name="ico-wheat" size={22} />
-                <span className="sa-contract-bar" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${progress})` }} />
-                </span>
-                <span className="sa-contract-count">
-                  {ripe ? <strong>Ripe</strong> : formatCountdown(Date.parse(plot.readyAt) - now)}
-                </span>
-              </li>
-            );
-          })}
-          {Array.from({ length: Math.max(0, WHEAT_PLOT_CAP - wheatPlots.length) }).map((_, i) => (
-            <li key={`empty-${i}`} className="sa-workshop-plot is-empty">
-              Empty bed
-            </li>
-          ))}
-        </ul>
-        <div className="sa-workshop-actions">
-          <button
-            type="button"
-            className="sa-cta"
-            disabled={isPending("sow-wheat") || wheatPlots.length >= WHEAT_PLOT_CAP || !affords(WHEAT_SEED_COST)}
-            onClick={contain(() => void handleSow())}
-          >
-            {wheatPlots.length >= WHEAT_PLOT_CAP
-              ? "Field is full"
-              : affords(WHEAT_SEED_COST)
-                ? `Sow wheat · ${WHEAT_SEED_COST} Gold`
-                : `Wheat seed costs ${WHEAT_SEED_COST} Gold`}
-          </button>
-          {ripeCount > 0 && (
-            <button type="button" className="sa-cta" disabled={isPending("work")} onClick={contain(() => void handleWork())}>
-              Bring in {ripeCount === 1 ? "the ripe wheat" : `${ripeCount} ripe beds`}
-            </button>
-          )}
-        </div>
+          </div>
 
-        <p className="sa-group-label">Machines</p>
-        <div className="sa-stock-cards sa-workshop-machines">
-          {visibleMachineKinds.map((kind) => {
-            const def = MACHINE_CATALOGUE[kind];
-            const machine = machineOfKind(machines, kind);
-            const recipes = recipesForMachine(kind);
-            const placeIntent = `place-machine:${kind}`;
+          <div className="sa-workshop-col">
+            <p className="sa-group-label">Machines</p>
+            <div className="sa-stock-cards sa-workshop-machines">
+              {visibleMachineKinds.map((kind) => {
+                const def = MACHINE_CATALOGUE[kind];
+                const machine = machineOfKind(machines, kind);
+                const recipes = recipesForMachine(kind);
+                const placeIntent = `place-machine:${kind}`;
+                const job = MACHINE_JOB[kind];
 
-            if (!machine) {
-              return (
-                <article key={kind} className="sa-stock-card sa-workshop-machine is-unbuilt">
-                  <h3>{def.label}</h3>
-                  {kind === "vat" ? (
-                    <p className="sa-stock-terms">
-                      Seal {machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}, let it age, open it for Gold
-                    </p>
-                  ) : kind === "feed_silo" ? (
-                    <p className="sa-stock-terms">{SILO_LINE}</p>
-                  ) : recipes.length > 0 ? (
-                    recipes.map((recipe) => (
-                      <p className="sa-stock-terms" key={recipe}>
-                        {recipeLine(recipe)}
-                      </p>
-                    ))
-                  ) : (
-                    <p className="sa-stock-terms">Not built yet</p>
-                  )}
-                  {seedsOpenedLine(kind) && <p className="sa-stock-wanted">{seedsOpenedLine(kind)}</p>}
-                  <button
-                    type="button"
-                    className="sa-cta"
-                    disabled={isPending(placeIntent) || !affords(def.placeCost)}
-                    onClick={contain(() => void handlePlace(kind))}
-                  >
-                    {affords(def.placeCost) ? (
-                      <>
-                        Build · {def.placeCost.toLocaleString()} Gold
-                      </>
-                    ) : (
-                      <>
-                        <Lock size={14} aria-hidden="true" /> {def.placeCost.toLocaleString()} Gold
-                      </>
-                    )}
-                  </button>
-                </article>
-              );
-            }
-
-            if (kind === "feed_silo") {
-              const left = machine.autoFeedsLeft ?? FEED_SILO_DAILY_FEEDS;
-              return (
-                <article key={kind} className="sa-stock-card sa-workshop-machine">
-                  <h3>{def.label}</h3>
-                  <p className="sa-stock-terms">{SILO_LINE}</p>
-                  <p className="sa-stock-yield">
-                    {left} of {FEED_SILO_DAILY_FEEDS} auto-feeds left today
-                  </p>
-                </article>
-              );
-            }
-
-            if (kind === "vat") {
-              const status =
-                !vat || vat.status === "empty"
-                  ? "Empty"
-                  : vat.status === "aging"
-                    ? vat.nextTier && vat.msUntilNextTier !== null
-                      ? `Aging · ${formatCountdown(Math.max(0, Date.parse(vat.manifest!.sealedAt) + vat.nextTier.durationMs - now))} until ${vat.nextTier.label}`
-                      : "Aging"
-                    : `${vat.currentTier?.label ?? "Aged"} · ${vat.collectibleGoldValue.toLocaleString()} Gold`;
-              return (
-                <article
-                  key={kind}
-                  className={clsx("sa-stock-card sa-workshop-machine", {
-                    "is-working": vat?.status === "aging",
-                    "is-done": vat?.status === "collectible",
-                  })}
-                >
-                  <h3>{def.label}</h3>
-                  <p className="sa-stock-terms">{status}</p>
-                  <p className="sa-stock-yield">
-                    <span>Holds </span>
-                    {machineItemLabel(VAT_INPUT_ITEM, VAT_INPUT_QUANTITY)}
-                    <span> on the shelf: </span>
-                    {inventoryQuantity(inventory, VAT_INPUT_ITEM).toLocaleString()}
-                  </p>
-                  <button type="button" className="sa-cta" onClick={contain(onOpenVat)}>
-                    {vat?.status === "collectible" ? (
-                      <>
-                        <Coins size={16} aria-hidden="true" /> Open the vat
-                      </>
-                    ) : (
-                      "Open the vat"
-                    )}
-                  </button>
-                </article>
-              );
-            }
-
-            const done = isMachineDone(machine, nowDate);
-            const progress = machineProgress(machine, nowDate);
-            const running = machine.status === "working" && !done;
-            return (
-              <article
-                key={kind}
-                className={clsx("sa-stock-card sa-workshop-machine", { "is-working": running, "is-done": done })}
-              >
-                <h3>{def.label}</h3>
-                {recipes.length > 0 ? (
-                  recipes.map((recipe) => (
-                    <p className="sa-stock-terms" key={recipe}>
-                      {recipeLine(recipe)}
-                    </p>
-                  ))
-                ) : (
-                  <p className="sa-stock-terms">Idle</p>
-                )}
-                {done && machine.recipeId && (
-                  <p className="sa-stock-yield">
-                    {machineItemLabel(RECIPE_CATALOGUE[machine.recipeId].output.item, machine.unitsProcessing)}
-                    <span> ready</span>
-                  </p>
-                )}
-                {running && machine.readyAt && (
-                  <>
-                    <p className="sa-stock-yield">
-                      <span>Running · </span>
-                      {formatCountdown(Date.parse(machine.readyAt) - now)}
-                    </p>
-                    <span className="sa-contract-bar" aria-hidden="true">
-                      <span style={{ transform: `scaleX(${progress ?? 0})` }} />
-                    </span>
-                  </>
-                )}
-                {done ? (
-                  <button type="button" className="sa-cta" disabled={isPending("work")} onClick={contain(() => void handleWork())}>
-                    Collect
-                  </button>
-                ) : running ? (
-                  <button type="button" className="sa-cta" disabled>
-                    Running
-                  </button>
-                ) : (
-                  // One button per recipe this machine kind runs -- the
-                  // Dairy has two (Cheese, Cake), everything else has one.
-                  recipes.map((recipe) => {
-                    const recipeDef = RECIPE_CATALOGUE[recipe];
-                    const enough = recipeDef.inputs.every(
-                      (input) => inventoryQuantity(inventory, input.item) >= input.quantity,
-                    );
-                    const inputsLabel = recipeDef.inputs
-                      .map((input) => machineItemLabel(input.item, input.quantity))
-                      .join(" + ");
-                    return (
+                if (!machine) {
+                  return (
+                    <article key={kind} className="sa-stock-card sa-workshop-machine is-unbuilt">
+                      <h3>{def.label}</h3>
+                      {job && <p className="sa-workshop-job">{job}</p>}
+                      {kind !== "vat" && kind !== "feed_silo" &&
+                        recipes.map((recipe) => <RecipeLine key={recipe} recipe={recipe} inventory={inventory} />)}
+                      {seedsOpenedLine(kind) && <p className="sa-stock-wanted">{seedsOpenedLine(kind)}</p>}
                       <button
-                        key={recipe}
                         type="button"
                         className="sa-cta"
-                        disabled={isPending(`process:${recipe}`) || !enough}
-                        onClick={contain(() => void handleProcess(recipe))}
+                        disabled={isPending(placeIntent) || !affords(def.placeCost)}
+                        onClick={contain(() => void handlePlace(kind))}
                       >
-                        {enough
-                          ? `${RECIPE_VERB[recipe]} ${inputsLabel}`
-                          : `Needs ${inputsLabel}`}
+                        {affords(def.placeCost) ? (
+                          <>Build · {def.placeCost.toLocaleString()} Gold</>
+                        ) : (
+                          <>
+                            <Lock size={14} aria-hidden="true" /> {def.placeCost.toLocaleString()} Gold to build
+                          </>
+                        )}
                       </button>
-                    );
-                  })
-                )}
-              </article>
-            );
-          })}
+                    </article>
+                  );
+                }
+
+                if (kind === "feed_silo") {
+                  const left = machine.autoFeedsLeft ?? FEED_SILO_DAILY_FEEDS;
+                  return (
+                    <article key={kind} className="sa-stock-card sa-workshop-machine">
+                      <h3>{def.label}</h3>
+                      <p className="sa-workshop-job">{SILO_LINE}</p>
+                      <p className="sa-stock-yield">
+                        {left} of {FEED_SILO_DAILY_FEEDS} auto-feeds left today
+                      </p>
+                    </article>
+                  );
+                }
+
+                if (kind === "vat") {
+                  const status =
+                    !vat || vat.status === "empty"
+                      ? "Empty"
+                      : vat.status === "aging"
+                        ? vat.nextTier && vat.msUntilNextTier !== null
+                          ? `Aging · ${formatCountdown(Math.max(0, Date.parse(vat.manifest!.sealedAt) + vat.nextTier.durationMs - now))} until ${vat.nextTier.label}`
+                          : "Aging"
+                        : `${vat.currentTier?.label ?? "Aged"} · ${vat.collectibleGoldValue.toLocaleString()} Gold`;
+                  return (
+                    <article
+                      key={kind}
+                      className={clsx("sa-stock-card sa-workshop-machine", {
+                        "is-working": vat?.status === "aging",
+                        "is-done": vat?.status === "collectible",
+                      })}
+                    >
+                      <h3>{def.label}</h3>
+                      {job && <p className="sa-workshop-job">{job}</p>}
+                      <p className="sa-stock-yield">{status}</p>
+                      <p className="sa-stock-terms">
+                        You have {inventoryQuantity(inventory, VAT_INPUT_ITEM).toLocaleString()}{" "}
+                        {machineItemNoun(VAT_INPUT_ITEM, inventoryQuantity(inventory, VAT_INPUT_ITEM))}
+                      </p>
+                      <button type="button" className="sa-cta" onClick={contain(onOpenVat)}>
+                        {vat?.status === "collectible" ? (
+                          <>
+                            <Coins size={16} aria-hidden="true" /> Open the vat
+                          </>
+                        ) : (
+                          "Open the vat"
+                        )}
+                      </button>
+                    </article>
+                  );
+                }
+
+                const done = isMachineDone(machine, nowDate);
+                const progress = machineProgress(machine, nowDate);
+                const running = machine.status === "working" && !done;
+                return (
+                  <article
+                    key={kind}
+                    className={clsx("sa-stock-card sa-workshop-machine", { "is-working": running, "is-done": done })}
+                  >
+                    <h3>{def.label}</h3>
+                    {job && <p className="sa-workshop-job">{job}</p>}
+                    {!done && !running && recipes.length === 0 && <p className="sa-stock-terms">Idle</p>}
+                    {done && machine.recipeId && (
+                      <p className="sa-stock-yield">
+                        {machineItemLabel(RECIPE_CATALOGUE[machine.recipeId].output.item, machine.unitsProcessing)}
+                        <span> ready</span>
+                      </p>
+                    )}
+                    {running && machine.readyAt && (
+                      <>
+                        <p className="sa-stock-yield">
+                          <span>Running · </span>
+                          {formatCountdown(Date.parse(machine.readyAt) - now)}
+                        </p>
+                        <span className="sa-contract-bar" aria-hidden="true">
+                          <span style={{ transform: `scaleX(${progress ?? 0})` }} />
+                        </span>
+                      </>
+                    )}
+                    {done ? (
+                      <button type="button" className="sa-cta" disabled={isPending("work")} onClick={contain(() => void handleWork())}>
+                        Collect
+                      </button>
+                    ) : running ? (
+                      <button type="button" className="sa-cta" disabled>
+                        Running
+                      </button>
+                    ) : (
+                      // One recipe block per thing this machine makes -- the
+                      // Dairy has two (Cheese, Cake), everything else has one.
+                      recipes.map((recipe) => {
+                        const missing = shortfalls(recipe, inventory);
+                        const output = RECIPE_CATALOGUE[recipe].output;
+                        const sources = [
+                          ...new Set(missing.map((entry) => ITEM_SOURCE[entry.item]).filter((v): v is string => !!v)),
+                        ];
+                        return (
+                          <div key={recipe} className="sa-workshop-recipe-block">
+                            <RecipeLine recipe={recipe} inventory={inventory} />
+                            <button
+                              type="button"
+                              className="sa-cta"
+                              disabled={isPending(`process:${recipe}`) || missing.length > 0}
+                              onClick={contain(() => void handleProcess(recipe))}
+                            >
+                              {missing.length === 0
+                                ? `${RECIPE_VERB[recipe]} ${machineItemLabel(output.item, output.quantity)}`
+                                : `Need ${missing
+                                    .map((entry) => `${entry.short} more ${machineItemNoun(entry.item, entry.short)}`)
+                                    .join(" + ")}`}
+                            </button>
+                            {sources.length > 0 && (
+                              <p className="sa-workshop-source">Get it from {sources.join(" and ")}.</p>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+            {hiddenMachineKindCount > 0 && (
+              <button
+                type="button"
+                className="sa-cta sa-workshop-more"
+                onClick={contain(() => setShowMoreMachines(true))}
+              >
+                More machines ({hiddenMachineKindCount})
+              </button>
+            )}
+          </div>
         </div>
-        {hiddenMachineKindCount > 0 && (
-          <button
-            type="button"
-            className="sa-cta sa-workshop-more"
-            onClick={contain(() => setShowMoreMachines(true))}
-          >
-            More machines ({hiddenMachineKindCount})
-          </button>
-        )}
       </section>
     </div>
   );

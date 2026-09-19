@@ -1,5 +1,5 @@
 /**
- * The whole inventory item space: everything a harvest, a Wheat Plot or a
+ * The whole inventory item space: everything a harvest or a
  * machine can put in a player's shelf, and what each sells for.
  *
  * THIS USED TO BE A SEPARATE ITEM SPACE FROM ./items.ts, on purpose: harvest
@@ -12,13 +12,11 @@
  * `MachineItemId` below is the wider one a recipe, the inventory itself, or
  * the Sell action needs.
  *
- * WHEAT WAS THE ONE ITEM THAT WAS NEITHER. It is not a `StackAcresItem` (it
- * is grown on its own Wheat Plot table, not a stocked unit -- see
- * ./wheat-plot.ts's header for why that stayed a separate system) and it is
- * not a `MachineProcessedItem` (nothing makes it; the Mill consumes it). The
- * pond's three catchable fish (./fishing.ts) joined it there for the same
- * reason: caught off the dock, not grown or crafted, with nothing consuming
- * them either. `MACHINE_RAW_ITEMS` is that leftover-id bucket now.
+ * WHEAT IS A `StackAcresItem` NOW: one item, one id, the crop's own harvest
+ * and what the Mill consumes. What is left in `MACHINE_RAW_ITEMS` is the
+ * pond's three catchable fish (./fishing.ts), meat, pelt, wood and stone:
+ * caught, hunted or chopped rather than grown or crafted, with nothing
+ * consuming them either.
  *
  * The only door from a crafted good back to Gold used to be a fulfilled
  * Contract (./contracts.ts). That is still true for Flour/Cheese/Cloth, and
@@ -46,7 +44,7 @@ import { FISH_SPECIES } from "./fishing";
  *  crafted, and each is a required material on its own blueprints
  *  (./machines.ts's `woodCost`/`stoneCost`) rather than something a recipe
  *  consumes. */
-export const MACHINE_RAW_ITEMS = ["wheat", ...FISH_SPECIES, "meat", "pelt", "wood", "stone"] as const;
+export const MACHINE_RAW_ITEMS = [...FISH_SPECIES, "meat", "pelt", "wood", "stone"] as const;
 export const MACHINE_PROCESSED_ITEMS = [
   "flour",
   "cheese",
@@ -73,6 +71,7 @@ export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
 export type MachineItemId = StackAcresItem | MachineRawItem | MachineProcessedItem;
 
 export const MACHINE_ITEM_IDS: readonly MachineItemId[] = [
+  "wheat",
   ...MACHINE_RAW_ITEMS,
   ...MACHINE_PROCESSED_ITEMS,
 ];
@@ -134,7 +133,6 @@ export interface MachineItemDef {
 export const MACHINE_ITEM_CATALOGUE: Readonly<
   Record<MachineRawItem | MachineProcessedItem, MachineItemDef>
 > = {
-  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
   // Common/uncommon/rare, same feel as the Vat's aging tiers -- see
   // ./fishing.ts's FISH_WEIGHTS for the odds these prices are tuned against.
   bluegill: { label: "Bluegill", plural: "Bluegill", icon: "ico-fish-bluegill", sellPrice: 15 },
@@ -171,8 +169,8 @@ export const MACHINE_ITEM_CATALOGUE: Readonly<
   cloth: { label: "Cloth", plural: "Cloth", icon: "ico-cloth", sellPrice: 320 },
   cake: { label: "Cake", plural: "Cakes", icon: "ico-cake", sellPrice: 400 },
   // Above Flour's 40, so baking a Flour always beats selling it. There is no
-  // bread art yet, so it borrows the wheat sheaf icon.
-  bread: { label: "Bread", plural: "Bread", icon: "ico-wheatsheaf", sellPrice: 55 },
+  // bread art yet, so it borrows the wheat icon.
+  bread: { label: "Bread", plural: "Bread", icon: "ico-wheat", sellPrice: 55 },
   // Above the 10 Gold its five crops sell for raw. No stew art yet, so it
   // borrows the potato icon.
   stew: { label: "Hearty Stew", plural: "Hearty Stew", icon: "ico-potato", sellPrice: 30 },

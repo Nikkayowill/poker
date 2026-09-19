@@ -13,11 +13,7 @@
  * CROP ROSTER (2026-09-12): the 22 CraftPix crop ids are gone -- replaced
  * outright by the 16 Gr8FarmPack crop ids (see ./catalogue.ts's own header),
  * item id == crop id (StackAcresCrop in ./catalogue.ts) == icon suffix ==
- * sprite file prefix, all identical on purpose, same as before. "wheatsheaf"
- * here is a DIFFERENT item from machine-items.ts's own "wheat" (the Wheat
- * Plot's raw material) -- that one comes off the wheat-plot side table, not a
- * stocked unit, and the two never mix in one inventory row despite the
- * similar name (see catalogue.ts's header for why the ids had to differ).
+ * sprite file prefix, all identical on purpose, same as before.
  */
 
 import { STACKACRES_STOCK, type StackAcresStock } from "./catalogue";
@@ -42,7 +38,7 @@ export const STACKACRES_ITEMS = [
   "tomato",
   "corn",
   "eggplant",
-  "wheatsheaf",
+  "wheat",
 ] as const;
 
 export type StackAcresItem = (typeof STACKACRES_ITEMS)[number];
@@ -93,19 +89,13 @@ export const STACKACRES_ITEM_CATALOGUE: Readonly<Record<StackAcresItem, StackAcr
   green_bean: { label: "Green Bean", plural: "Green Beans", icon: "ico-green_bean", sellPrice: 25 },
   tomato: { label: "Tomato", plural: "Tomatoes", icon: "ico-tomato", sellPrice: 25 },
 
-  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. ---- */
+  /* ---- Tier 3 (slow/valuable): sellPrice 44, yield quantity 5. Wheat is the
+   * exception below: sellPrice 4, quantity 4. ---- */
   corn: { label: "Corn", plural: "Corn", icon: "ico-corn", sellPrice: 44 },
   eggplant: { label: "Eggplant", plural: "Eggplants", icon: "ico-eggplant", sellPrice: 44 },
-  // Own icon, "ico-wheatsheaf" -- NOT machine-items.ts's "ico-wheat" glyph,
-  // which is a plain hand-drawn painter with no real sprite behind it. This
-  // crop has real Gr8FarmPack art (wheatsheaf2.png) and gets the same
-  // sprite-backed icon treatment every other crop here does.
-  // "Wheat Sheaf", not "Wheat": machine-items.ts's own `wheat` (the Wheat
-  // Plot's raw material, 4g) was ALSO labelled "Wheat", so the store's Sell tab
-  // listed two different things under one name at 44g and 4g and read as a
-  // pricing bug. The id already diverged for the same collision; the label just
-  // never followed.
-  wheatsheaf: { label: "Wheat Sheaf", plural: "Wheat Sheaves", icon: "ico-wheatsheaf", sellPrice: 44 },
+  // The one Wheat: what the Wheat crop pays and what the Mill grinds. Sells for
+  // 4, so Flour (3 Wheat -> 40) is always the better use. Sprite-backed icon.
+  wheat: { label: "Wheat", plural: "Wheat", icon: "ico-wheat", sellPrice: 4 },
 };
 
 /** What one finished unit brings in. */
@@ -137,7 +127,7 @@ export const STACKACRES_YIELDS: Readonly<Record<StackAcresStock, StackAcresYield
   tomato: { item: "tomato", quantity: 4 },
   corn: { item: "corn", quantity: 5 },
   eggplant: { item: "eggplant", quantity: 5 },
-  wheatsheaf: { item: "wheatsheaf", quantity: 5 },
+  wheat: { item: "wheat", quantity: 4 },
 };
 
 /** What one of `item` sells for. */

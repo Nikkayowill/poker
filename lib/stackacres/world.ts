@@ -127,7 +127,7 @@ const STOCK_ZONE: Readonly<Record<StackAcresStock, ZoneId>> = {
   tomato: "farmstead",
   corn: "farmstead",
   eggplant: "farmstead",
-  wheatsheaf: "farmstead",
+  wheat: "farmstead",
   pig: "wallow",
   cattle: "oxfields",
 };

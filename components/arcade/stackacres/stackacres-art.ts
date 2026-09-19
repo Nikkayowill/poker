@@ -203,9 +203,9 @@ type CorePainterName =
   | "tomato0"
   | "tomato1"
   | "tomato2"
-  | "wheatsheaf0"
-  | "wheatsheaf1"
-  | "wheatsheaf2"
+  | "wheat0"
+  | "wheat1"
+  | "wheat2"
   | "cropShadow"
   | "soilBed"
   | "soilCollar"
@@ -241,11 +241,8 @@ type CorePainterName =
   | "ico-egg"
   | "ico-fleece"
   | "ico-milk"
-  // All 16 crops' seed-strip/shop icons. "ico-wheat" here is a SEPARATE,
-  // plain hand-drawn painter (machine-items.ts's raw wheat glyph) -- the
-  // wheatsheaf crop gets its own "ico-wheatsheaf" instead of reusing it, so
-  // its icon draws the same real sprite art the field does, same as every
-  // other crop.
+  // All 16 crops' seed-strip/shop icons, drawn from the same real sprite art
+  // the field uses.
   | "ico-bell_pepper"
   | "ico-broccoli"
   | "ico-cabbage"
@@ -262,7 +259,6 @@ type CorePainterName =
   | "ico-spinach"
   | "ico-tomato"
   | "ico-wheat"
-  | "ico-wheatsheaf"
   | "ico-flour"
   | "ico-cheese"
   | "ico-cloth"
@@ -432,7 +428,7 @@ const [potato0, potato1, potato2] = simpleCropFrames(9, 17, RAMPS.cream);
 const [radish0, radish1, radish2] = simpleCropFrames(11, 18, RAMPS.roof);
 const [spinach0, spinach1, spinach2] = simpleCropFrames(13, 13, RAMPS.leaf);
 const [tomato0, tomato1, tomato2] = simpleCropFrames(16, 22, RAMPS.roof);
-const [wheatsheaf0, wheatsheaf1, wheatsheaf2] = simpleCropFrames(10, 29, RAMPS.straw);
+const [wheat0, wheat1, wheat2] = simpleCropFrames(10, 29, RAMPS.straw);
 
 /** A small flat silhouette, tinted by `mat`. Used directly for a couple of
  *  non-crop badges, and as `cropIcon`'s own fallback below for the moment
@@ -545,7 +541,7 @@ export const CROP_ICON_SPRITE: Readonly<Record<string, PainterSpriteName>> = {
   "ico-radish": "radish2",
   "ico-spinach": "spinach2",
   "ico-tomato": "tomato2",
-  "ico-wheatsheaf": "wheatsheaf2",
+  "ico-wheat": "wheat2",
 };
 
 /** `CROP_ICON_SPRITE`'s counterpart for an icon whose backing sprite isn't a
@@ -760,7 +756,7 @@ const CROP_FIELD_FRAME: Readonly<Record<CropArt, readonly [Painter, Painter, Pai
   radish: [radish0, radish1, radish2],
   spinach: [spinach0, spinach1, spinach2],
   tomato: [tomato0, tomato1, tomato2],
-  wheatsheaf: [wheatsheaf0, wheatsheaf1, wheatsheaf2],
+  wheat: [wheat0, wheat1, wheat2],
 };
 
 /** Paints one plant frame so its own anchor (`p.ax`, `p.ay` -- (0.5, 1) for
@@ -1492,9 +1488,9 @@ const DRAWN: Record<PainterName, Painter> = {
   tomato0,
   tomato1,
   tomato2,
-  wheatsheaf0,
-  wheatsheaf1,
-  wheatsheaf2,
+  wheat0,
+  wheat1,
+  wheat2,
 
   // The grounding pool under a crop's own feet -- every other standee on the
   // map (the `isLivestock` branch in stackacres-scene.ts) plants a `shadow`
@@ -2309,8 +2305,6 @@ const DRAWN: Record<PainterName, Painter> = {
   // All 16 crops' seed-strip/shop icons -- each crop's own mature-stage
   // sprite via `cropIcon` (see that function's own header), tinted by the
   // same ramp as a fallback for the instant before that sprite loads.
-  // "ico-wheat" is a separate, plain painter below (machine-items.ts's raw
-  // wheat) -- the wheatsheaf crop gets its own "ico-wheatsheaf" instead.
   "ico-bell_pepper": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-bell_pepper"], RAMPS.roof)),
   "ico-broccoli": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-broccoli"], RAMPS.pine)),
   "ico-cabbage": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-cabbage"], RAMPS.cream)),
@@ -2326,31 +2320,7 @@ const DRAWN: Record<PainterName, Painter> = {
   "ico-radish": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-radish"], RAMPS.roof)),
   "ico-spinach": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-spinach"], RAMPS.leaf)),
   "ico-tomato": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-tomato"], RAMPS.roof)),
-  "ico-wheatsheaf": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-wheatsheaf"], RAMPS.straw)),
-
-  // The processing track's two items. Named by MACHINE_ITEM_CATALOGUE in
-  // lib/stackacres/machine-items.ts since it was written; these are the
-  // painters that finally make that name resolve. Not spriteBacked, and NOT
-  // shared with the plantable Wheat crop -- that one has its own
-  // "ico-wheatsheaf" above (see items.ts's own comment on why).
-  "ico-wheat": painter(24, 24, (c) => {
-    c.beginPath();
-    c.moveTo(12, 22);
-    c.lineTo(12, 7);
-    stroke(c, "#b8862f", 1.6);
-    // Grains up both sides of the stalk, tightening toward the tip so the
-    // head reads as an ear rather than a ladder.
-    for (let k = 0; k < 5; k += 1) {
-      const y = 17 - k * 2.5;
-      const spread = 3.4 - k * 0.45;
-      for (const side of [-1, 1] as const) {
-        ell(c, 12 + side * spread, y, 2.1, 1.2, side * 0.75);
-        F(c, lin(c, 8, 4, 16, 20, [[0, "#f2c94c"], [1, "#d9a83a"]]));
-      }
-    }
-    ell(c, 12, 5.5, 1.5, 2.4);
-    F(c, "#f2c94c");
-  }),
+  "ico-wheat": painter(24, 24, cropIcon(CROP_ICON_SPRITE["ico-wheat"], RAMPS.straw)),
 
   "ico-flour": painter(24, 24, (c) => {
     // A tied sack, the shape a Mill's output is stored and carried in.
@@ -2703,9 +2673,9 @@ export const PAINTERS: Record<PainterName, Painter> = {
   tomato0: spriteBacked("tomato0", DRAWN.tomato0),
   tomato1: spriteBacked("tomato1", DRAWN.tomato1),
   tomato2: spriteBacked("tomato2", DRAWN.tomato2),
-  wheatsheaf0: spriteBacked("wheatsheaf0", DRAWN.wheatsheaf0),
-  wheatsheaf1: spriteBacked("wheatsheaf1", DRAWN.wheatsheaf1),
-  wheatsheaf2: spriteBacked("wheatsheaf2", DRAWN.wheatsheaf2),
+  wheat0: spriteBacked("wheat0", DRAWN.wheat0),
+  wheat1: spriteBacked("wheat1", DRAWN.wheat1),
+  wheat2: spriteBacked("wheat2", DRAWN.wheat2),
 };
 
 /**

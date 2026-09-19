@@ -169,7 +169,7 @@ const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
 /** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
 const TURN_LEAN = 0.6;
 
-const DRAWN_CROPS = new Set(["carrot", "potato", "radish", "wheatsheaf"]);
+const DRAWN_CROPS = new Set(["carrot", "potato", "radish", "wheat"]);
 
 interface PropSpec {
   frame: string;

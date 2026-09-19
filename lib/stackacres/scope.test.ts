@@ -5,7 +5,6 @@ import { buyOptionsForZone } from "./district-panel";
 import { ZONE_IDS } from "./zones";
 import {
   STACKACRES_ACTIVE_LIVESTOCK,
-  STACKACRES_RETIRED_CROPS,
   STACKACRES_WORKSHOP_SHELF_ITEMS,
   isActiveMachine,
   isActiveStock,
@@ -13,18 +12,15 @@ import {
 import { isMachineItem } from "./machine-items";
 
 describe("isActiveStock", () => {
-  it("is true for every crop but the Wheat Sheaf, plus all three livestock kinds", () => {
+  it("is true for every crop, plus all three livestock kinds", () => {
     expect(STACKACRES_STOCK.filter(isActiveStock).sort()).toEqual(
-      [...STACKACRES_CROPS.filter((crop) => crop !== "wheatsheaf"), "cattle", "hen", "pig"].sort(),
+      [...STACKACRES_CROPS, "cattle", "hen", "pig"].sort(),
     );
     expect([...STACKACRES_ACTIVE_LIVESTOCK].sort()).toEqual(["cattle", "hen", "pig"]);
   });
 
-  it("shows every crop but the retired Wheat Sheaf, and the sheep pen", () => {
-    for (const crop of STACKACRES_CROPS) {
-      expect(isActiveStock(crop), crop).toBe(!STACKACRES_RETIRED_CROPS.includes(crop));
-    }
-    expect(STACKACRES_RETIRED_CROPS).toEqual(["wheatsheaf"]);
+  it("shows every crop, wheat included, and the sheep pen", () => {
+    for (const crop of STACKACRES_CROPS) expect(isActiveStock(crop), crop).toBe(true);
     expect(isActiveStock("pig")).toBe(true);
   });
 });
@@ -60,7 +56,7 @@ describe("buyOptionsForZone under the active scope", () => {
     expect(buyOptionsForZone("henhaven", ctx).map((o) => o.stock)).toEqual(["hen"]);
     expect(buyOptionsForZone("oxfields", ctx).map((o) => o.stock)).toEqual(["cattle"]);
     expect(buyOptionsForZone("farmstead", ctx).map((o) => o.stock).sort()).toEqual(
-      STACKACRES_CROPS.filter((crop) => crop !== "wheatsheaf").sort(),
+      [...STACKACRES_CROPS].sort(),
     );
     expect(buyOptionsForZone("wallow", ctx).map((o) => o.stock)).toEqual(["pig"]);
   });

@@ -2230,7 +2230,6 @@ describe("the currency wall", () => {
       "seal-vat",
       "sell",
       "set-kitchen-order",
-      "sow-wheat",
       "start-blueprint",
       "stock",
       "story-meet",
@@ -4567,11 +4566,13 @@ describe("Chapter 1: the bread basket", () => {
     expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
   });
 
-  it("takes the Wheat Sheaf off Ray's seed shelf", async () => {
-    const { token } = await funded();
-    await expect(buyStackAcresSeed(token, { crop: "wheatsheaf", quantity: 1 }, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
+  it("sells wheat seed from the start, with no building needed", async () => {
+    const { token, id } = await funded();
+    const before = await balance(token);
+    const seedsBefore = (await readStackAcresSeedStock(id)).wheat ?? 0;
+    await buyStackAcresSeed(token, { crop: "wheat", quantity: 2 }, T0);
+    expect(await balance(token)).toBe(before - 6);
+    expect((await readStackAcresSeedStock(id)).wheat).toBe(seedsBefore + 2);
   });
 });
 
@@ -5133,10 +5134,10 @@ describe("fixes from the chapter review", () => {
     expect(hen.feedBonus).toBe(1);
   });
 
-  it("refuses to sell a retired Wheat Sheaf outright and takes no Gold", async () => {
+  it("refuses to sell wheat outright and takes no Gold", async () => {
     const { token } = await funded();
     const before = await balance(token);
-    await expect(buyStackAcresStock(token, { stock: "wheatsheaf" }, T0)).rejects.toThrow("any more");
+    await expect(buyStackAcresStock(token, { stock: "wheat" }, T0)).rejects.toThrow("sown from seed");
     expect(await balance(token)).toBe(before);
   });
 });

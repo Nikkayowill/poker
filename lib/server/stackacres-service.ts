@@ -362,7 +362,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { STACKACRES_RETIRED_CROPS, isActiveStock } from "@/lib/stackacres/scope";
+import { isActiveStock } from "@/lib/stackacres/scope";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
 import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitchen";
@@ -2480,11 +2480,6 @@ export async function buyStackAcresStock(
   if (!isStackAcresStock(input.stock)) throw new StackAcresRequestError("Not a real stock.", 400);
   const stock: StackAcresStock = input.stock;
   const def = STACKACRES_CATALOGUE[stock];
-  // Tier 1 is worked by hand, not owned: it is off this shelf entirely. Refused
-  // here rather than only hidden on the client, and before any Gold moves.
-  if (STACKACRES_RETIRED_CROPS.includes(stock)) {
-    throw new StackAcresRequestError(`Ray doesn't sell ${def.label} any more.`, 400);
-  }
   if (!stackacresStockOwnableOutright(stock)) {
     throw new StackAcresRequestError(`${def.label} is sown from seed, never bought outright.`, 400);
   }
@@ -4457,9 +4452,11 @@ export async function harvestStackAcres(
 /* ------------------------------------------------------------------ */
 
 /**
- * Sows one wheat plot, with Gold. A pure sink, same category as
- * `stockStackAcres`'s seed -- see lib/stackacres/wheat-plot.ts's header for
- * why this cannot simply be a sixth `StackAcresStock`.
+ * LEGACY: sows one wheat plot, with Gold. Wheat is a bed crop now, so no route
+ * or client reaches this; it stays only so `workStackAcres` keeps a tested path
+ * for collecting any plot that was sown before that. Delete it with the
+ * `homestead_wheat_plots` table once none are left (there were none in flight
+ * on 2026-09-19).
  */
 export async function sowStackAcresWheat(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);

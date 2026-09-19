@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  stackacresStockOwnableOutright,
   STACKACRES_CAPACITY_PRICE,
   STACKACRES_RETIRE_REFUND,
   STACKACRES_SEED_MULTIPLE_TO_OWN,
@@ -71,7 +72,9 @@ describe("the round trip", () => {
     // wide means yields would have to rise by an order of magnitude, or the
     // outright multiple fall by one, before a single cycle paid for the animal
     // -- either of which is a deliberate act, not a slip.
-    const ratios = STACKACRES_STOCK.map((stock) => goldStockRoundTrip(stock));
+    // Only stock that can be bought outright: seed-only crops (tier 1, wheat)
+    // have an outright price on paper but nobody can pay it.
+    const ratios = STACKACRES_STOCK.filter(stackacresStockOwnableOutright).map((stock) => goldStockRoundTrip(stock));
     expect(Math.max(...ratios)).toBeLessThan(0.1);
   });
 

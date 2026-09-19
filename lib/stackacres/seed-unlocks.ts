@@ -57,6 +57,18 @@ export function seedLockedMessage(crop: StackAcresCrop, built: ReadonlySet<Machi
   return `${STACKACRES_CATALOGUE[crop].label} seed is locked. ${line}.`;
 }
 
+/** The seeds that are open now but wouldn't be without `kinds`, as "Opens Potato, Carrot and Onion seeds". */
+export function seedsOpenedBy(kinds: readonly MachineKind[], built: ReadonlySet<MachineKind>): string | null {
+  const without = new Set([...built].filter((kind) => !kinds.includes(kind)));
+  const crops = (Object.keys(SEED_UNLOCKS) as StackAcresCrop[]).filter(
+    (crop) => SEED_UNLOCKS[crop].length > 0 && isSeedUnlocked(crop, built) && !isSeedUnlocked(crop, without),
+  );
+  if (crops.length === 0) return null;
+  const labels = crops.map((crop) => STACKACRES_CATALOGUE[crop].label);
+  const list = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  return `Opens ${list} seeds`;
+}
+
 /** "Opens Potato, Carrot and Onion seeds", for a building's own card. Null
  *  when the building opens no seeds. Crops that need a second building too
  *  are still listed: this one is part of what opens them. */

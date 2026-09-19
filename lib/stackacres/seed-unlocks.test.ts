@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STACKACRES_CROPS } from "./catalogue";
 import { MACHINE_KINDS, type MachineKind } from "./machines";
-import { SEED_UNLOCKS, isSeedUnlocked, seedLockLine, seedsOpenedLine } from "./seed-unlocks";
+import { SEED_UNLOCKS, isSeedUnlocked, seedLockLine, seedsOpenedBy, seedsOpenedLine } from "./seed-unlocks";
 
 const built = (...kinds: MachineKind[]) => new Set<MachineKind>(kinds);
 
@@ -38,5 +38,22 @@ describe("seed locks", () => {
     expect(seedsOpenedLine("mill")).toBe("Opens Corn and Green Bean seeds");
     expect(seedsOpenedLine("oven")).toBe("Opens Eggplant and Broccoli seeds");
     expect(seedsOpenedLine("dairy")).toBeNull();
+  });
+});
+
+describe("seedsOpenedBy", () => {
+  it("lists only the seeds that are actually open now", () => {
+    expect(seedsOpenedBy(["stew_pot"], new Set<MachineKind>(["stew_pot"]))).toBe("Opens Potato, Carrot and Onion seeds");
+  });
+
+  it("adds the seeds that needed two buildings once the second one is built", () => {
+    const line = seedsOpenedBy(["counter"], new Set<MachineKind>(["stew_pot", "counter"]));
+    expect(line).toContain("Lettuce");
+    expect(line).toContain("Tomato");
+    expect(line).not.toContain("Potato");
+  });
+
+  it("is null when the buildings open nothing", () => {
+    expect(seedsOpenedBy(["dairy"], new Set<MachineKind>(["dairy"]))).toBeNull();
   });
 });

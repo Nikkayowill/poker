@@ -13,6 +13,12 @@
  *   tile names exactly one world tile, so nothing about placement rules moves.
  *   art/stackacres-td/areas/rig/oldfields.py draws the field at the same spot.
  *
+ *   THE HOMESTEAD STARTER BEDS (lib/stackacres/soil.ts's `homeStarterSoilTiles`)
+ *   are their own small lattice, pinned the same way onto the Homestead map
+ *   itself at `HOME_BEDS_ORIGIN` -- they are not Crop Fields ground, so they
+ *   do not share `FIELD_ORIGIN`, and a farm's soil map can hold tiles that
+ *   resolve on either map depending which one a tile's (tx, ty) falls in.
+ *
  *   A FEW LANDMARKS the shell asks for by world point (the Hen Haven trough for
  *   the feed drag, the dock end for fishing) map to where those things are
  *   drawn in the Homestead.
@@ -20,7 +26,12 @@
  * Anything else has no place on the playable maps yet and maps to null.
  */
 
-import { SOIL_TILE } from "@/lib/stackacres/soil";
+import {
+  HOME_STARTER_COLS,
+  HOME_STARTER_ORIGIN,
+  HOME_STARTER_TILE_COUNT,
+  SOIL_TILE,
+} from "@/lib/stackacres/soil";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
@@ -79,4 +90,51 @@ export function worldToMap(world: WorldPoint): MapPoint | null {
 /** A soil tile's top-left corner in Old Fields map pixels. */
 export function soilTileToMap(tx: number, ty: number): { x: number; y: number } {
   return fieldWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
+}
+
+/**
+ * The free Homestead starter beds (lib/stackacres/soil.ts's
+ * `homeStarterSoilTiles`), pinned onto the Homestead map itself rather than
+ * the Old Fields -- these are not Crop Fields ground, so they get their own
+ * small origin instead of `FIELD_ORIGIN`.
+ *
+ * `HOME_BEDS_ORIGIN` is the same corner the Homestead's own decorative
+ * "homebeds" zones already sit on (public/stackacres-td/areas/homestead/
+ * area.json), a few pixels in from that zone's own edge so the lattice reads
+ * as sitting inside the drawn dirt patch rather than overhanging it.
+ */
+const HOME_BEDS_ORIGIN = { x: 64, y: 240 } as const;
+
+/** The starter lattice's own world-unit corner, restated from
+ *  `HOME_STARTER_ORIGIN` in tile units rather than copied as a literal, so
+ *  moving that lattice in soil.ts moves where it draws too. */
+const HOME_BEDS_WORLD_ORIGIN = { x: HOME_STARTER_ORIGIN.tx * SOIL_TILE, y: HOME_STARTER_ORIGIN.ty * SOIL_TILE };
+
+const HOME_BEDS_ROWS = Math.ceil(HOME_STARTER_TILE_COUNT / HOME_STARTER_COLS);
+const HOME_BEDS_SIZE = { width: HOME_STARTER_COLS * SOIL_TILE, height: HOME_BEDS_ROWS * SOIL_TILE };
+
+/** Whether a world point falls inside the starter lattice's own small patch. */
+export function inHomeStarterBeds(world: WorldPoint): boolean {
+  return (
+    world.x >= HOME_BEDS_WORLD_ORIGIN.x &&
+    world.y >= HOME_BEDS_WORLD_ORIGIN.y &&
+    world.x < HOME_BEDS_WORLD_ORIGIN.x + HOME_BEDS_SIZE.width &&
+    world.y < HOME_BEDS_WORLD_ORIGIN.y + HOME_BEDS_SIZE.height
+  );
+}
+
+/** A starter-bed world point, in Homestead map pixels. */
+export function homeBedsWorldToMap(world: WorldPoint): { x: number; y: number } {
+  return { x: world.x - HOME_BEDS_WORLD_ORIGIN.x + HOME_BEDS_ORIGIN.x, y: world.y - HOME_BEDS_WORLD_ORIGIN.y + HOME_BEDS_ORIGIN.y };
+}
+
+/** A Homestead map pixel, as a starter-bed world point, or null when it is off the lattice. */
+export function homeBedsMapToWorld(map: { x: number; y: number }): WorldPoint | null {
+  const world = { x: map.x - HOME_BEDS_ORIGIN.x + HOME_BEDS_WORLD_ORIGIN.x, y: map.y - HOME_BEDS_ORIGIN.y + HOME_BEDS_WORLD_ORIGIN.y };
+  return inHomeStarterBeds(world) ? world : null;
+}
+
+/** A starter bed's top-left corner in Homestead map pixels. */
+export function homeStarterTileToMap(tx: number, ty: number): { x: number; y: number } {
+  return homeBedsWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
 }

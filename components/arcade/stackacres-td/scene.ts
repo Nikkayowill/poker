@@ -12,6 +12,10 @@ import {
 import {
   fieldMapToWorld,
   fieldWorldToMap,
+  homeBedsMapToWorld,
+  homeBedsWorldToMap,
+  homeStarterTileToMap,
+  inHomeStarterBeds,
   soilTileToMap,
   worldToMap,
   type TopdownArea,
@@ -199,6 +203,17 @@ export interface TopdownCallbacks {
   onWellTap: (at: TapPoint) => void;
   onDockTap: (at: TapPoint) => void;
   onThicketTap: (at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's own choppable trees (see
+   *  lib/stackacres/tree-nodes.ts's `WOOD_NODE_IDS` and area.json's own
+   *  `tag: "tree:<id>"` props). `nodeId` is that id, unvalidated here --
+   *  the shell is what knows the real catalogue. */
+  onTreeTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Mine's three tagged boulders (see
+   *  lib/stackacres/stone-nodes.ts's `STONE_NODE_IDS` and area.json's own
+   *  `tag: "stone:<id>"` props). `nodeId` is that id, unvalidated here --
+   *  the shell is what knows the real catalogue. Same split `onTreeTap`
+   *  already takes. */
+  onStoneTap: (nodeId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMerchantTap: () => void;
   onMonkTap: (at: TapPoint) => void;
@@ -658,15 +673,44 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ soil and units
 
+  /** Which map, if any, `this.areaName` draws soil on, and how a tile's
+   *  world corner lands there. The Old Fields hold every purchased Crop
+   *  Fields bed; the Homestead holds only the free starter lattice
+   *  (`homeStarterSoilTiles`) -- see lib/stackacres-td/field.ts's own header
+   *  on why the two never share an origin. */
+  private soilToMapFor(areaName: string): ((tx: number, ty: number) => { x: number; y: number }) | null {
+    if (areaName === "oldfields") return soilTileToMap;
+    if (areaName === "homestead") return homeStarterTileToMap;
+    return null;
+  }
+
+  /** The inverse of `soilToMapFor`, for a map pixel on the current area: which
+   *  soil world point (if any) it names. Null off both lattices, or in any
+   *  area that has no beds at all. */
+  private mapToSoilWorld(map: { x: number; y: number }): WorldPoint | null {
+    if (this.areaName === "oldfields") return fieldMapToWorld(map);
+    if (this.areaName === "homestead") return homeBedsMapToWorld(map);
+    return null;
+  }
+
   private drawSoil(): void {
     for (const image of this.soilImages) image.destroy();
     this.soilImages = [];
-    if (this.areaName !== "oldfields") return;
+    const toMap = this.soilToMapFor(this.areaName);
+    if (!toMap) return;
+    // Both maps share one lattice key space (soil.ts's `soilTileKey`), so the
+    // neighbour mask below only ever lights up for a tile actually drawn on
+    // THIS map: a Crop Fields bed and a starter bed are never adjacent (see
+    // `HOME_STARTER_ORIGIN`'s own comment), so cross-map neighbours never
+    // exist to mask against in the first place.
     const map = createSoilMap(this.soil);
+    const onThisMap = (tile: SoilTile) =>
+      this.areaName === "oldfields" ? !inHomeStarterBeds({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE }) : inHomeStarterBeds({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE });
     for (const tile of this.soil) {
+      if (!onThisMap(tile)) continue;
       const has = (dx: number, dy: number) => map.has(soilTileKey(tile.tx + dx, tile.ty + dy));
       const mask = (has(0, -1) ? 1 : 0) | (has(1, 0) ? 2 : 0) | (has(0, 1) ? 4 : 0) | (has(-1, 0) ? 8 : 0);
-      const at = soilTileToMap(tile.tx, tile.ty);
+      const at = toMap(tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
       const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
       // A bean-fed bed reads a touch greener until the next crop spends it.
@@ -679,9 +723,16 @@ export class TopdownScene extends Phaser.Scene {
     if (unit.housedIn) return null;
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
-      if (this.areaName !== "oldfields") return null;
       const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
-      return fieldWorldToMap(world);
+      // A slotted crop resolves to whichever bed its slot names -- the Old
+      // Fields' purchased lattice or the Homestead's own starter one -- and
+      // only draws on the map that bed actually stands on. The slot-less
+      // fallback inside `cropSpot` always lands inside `CROP_FIELD_BEDS`
+      // (see that function's own header), so it only ever draws in the Old
+      // Fields.
+      if (this.areaName === "oldfields" && !inHomeStarterBeds(world)) return fieldWorldToMap(world);
+      if (this.areaName === "homestead" && inHomeStarterBeds(world)) return homeBedsWorldToMap(world);
+      return null;
     }
     const pen = PENS[zone];
     if (pen && this.areaName === pen.area) {
@@ -730,15 +781,13 @@ export class TopdownScene extends Phaser.Scene {
       if (!at) continue;
       seen.add(unit.id);
       let tileKey: string | null = null;
-      if (this.areaName === "oldfields") {
-        const world = fieldMapToWorld(at);
-        if (world) {
-          const { tx, ty } = soilTileAt(world.x, world.y);
-          tileKey = soilTileKey(tx, ty);
-          this.unitTiles.set(tileKey, unit.id);
-          this.tileOfUnit.set(unit.id, { tx, ty });
-          this.occupiedTiles.add(tileKey);
-        }
+      const world = this.mapToSoilWorld(at);
+      if (world) {
+        const { tx, ty } = soilTileAt(world.x, world.y);
+        tileKey = soilTileKey(tx, ty);
+        this.unitTiles.set(tileKey, unit.id);
+        this.tileOfUnit.set(unit.id, { tx, ty });
+        this.occupiedTiles.add(tileKey);
       }
       const frame = this.unitFrame(unit);
       const cue = this.unitCue(unit);
@@ -1088,6 +1137,21 @@ export class TopdownScene extends Phaser.Scene {
         if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
         return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
       }
+      // The Homestead's own free starter beds -- the small functional patch
+      // inside the "homebeds" zone's larger, mostly decorative dirt (see
+      // lib/stackacres-td/field.ts's own header). A tap that lands off the
+      // real lattice falls through to the plain "tag" target below, which
+      // `fire()`'s `case "homebeds"` still answers with the old deny line.
+      if (zone.tag === "homebeds") {
+        const world = homeBedsMapToWorld(map);
+        if (!world) return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
+        const { tx, ty } = soilTileAt(world.x, world.y);
+        const centre = homeBedsWorldToMap({ x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 });
+        const planted = this.unitTiles.get(soilTileKey(tx, ty));
+        const node = planted ? this.unitNodes.get(planted) : undefined;
+        if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
+        return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
+      }
       if (zone.tag === "hen-spots") continue;
       return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
     }
@@ -1197,6 +1261,10 @@ export class TopdownScene extends Phaser.Scene {
         return this.beginCast();
       case "thicket":
         return cb.onThicketTap(at);
+      case "tree":
+        return cb.onTreeTap(detail ?? "", at);
+      case "stone":
+        return cb.onStoneTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":
@@ -1250,7 +1318,7 @@ export class TopdownScene extends Phaser.Scene {
    * a walk across the yard fires nothing.
    */
   private useSquare(stroke: boolean): void {
-    const world = fieldMapToWorld(this.pos);
+    const world = this.mapToSoilWorld(this.pos);
     const tile = world ? soilTileAt(world.x, world.y) : null;
     const key = tile ? soilTileKey(tile.tx, tile.ty) : null;
     if (stroke && (key === null || key === this.stroked)) return;

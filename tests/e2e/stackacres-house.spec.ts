@@ -34,7 +34,7 @@ async function openStackAcres(context: import("@playwright/test").BrowserContext
     }
   });
   await page.goto("/games/stackacres");
-  await page.getByRole("button", { name: "Tap to start StackAcres" }).click();
+  await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
   await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
   // The camera eases onto the farmer after boot; a tap before it lands can miss.
   await page.waitForTimeout(1500);

@@ -58,3 +58,34 @@ export const TABLE_TOUR_STEPS: DriveStep[] = [
     },
   },
 ];
+
+/**
+ * StackAcres' half. The farm itself is a canvas (StackAcresTopdownWorld), so
+ * there is no per-crop or per-NPC DOM node to point at -- `farm-world` covers
+ * the whole canvas and its copy calls out what lives inside it (beds, Ray,
+ * the barn) rather than inventing a selector that doesn't exist. `tool-belt`
+ * and `gold-balance` are real DOM chrome pinned over that canvas.
+ */
+export const STACKACRES_TOUR_STEPS: DriveStep[] = [
+  {
+    element: '[data-tour="sa-tool-belt"]',
+    popover: {
+      title: "Your tool belt",
+      description: "Whatever's held here decides what a tap does. Switch tools any time — the hoe tills, the can waters, the pouch sows.",
+    },
+  },
+  {
+    element: '[data-tour="sa-farm-world"]',
+    popover: {
+      title: "Tap to work the land",
+      description: "Tap the ground to walk there, or tap a bed, animal, or building to use it. Find Ray at the barn — that's the supply store.",
+    },
+  },
+  {
+    element: '[data-tour="sa-gold-balance"]',
+    popover: {
+      title: "One shared balance",
+      description: "This is the same Gold from the tables. Spend it here on land, buildings and stock — win it back at the tables.",
+    },
+  },
+];

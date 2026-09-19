@@ -106,7 +106,7 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
     HTMLMediaElement.prototype.pause = () => {};
   });
   await page.goto("/games/stackacres");
-  await page.locator(".sa-play-screen").click({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
   await page.waitForFunction(() => "__stackacres" in window, null, { timeout: 60_000 });
   await page.waitForTimeout(3_000);
   await dismissRay(page);

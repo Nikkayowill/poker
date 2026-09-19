@@ -76,7 +76,12 @@ async function balance(token: string): Promise<number> {
  * somewhere the plant isn't.
  */
 async function sowCropOnKnownTile(token: string) {
-  const view = await stockStackAcres(token, { stock: "corn" }, T0);
+  // Names the bed `funded()` lays down explicitly -- a fresh farm also
+  // carries the free Homestead starter beds now (lib/stackacres/soil.ts's
+  // `homeStarterSoilTiles`), and an unnamed sow would land on one of those
+  // instead, off whatever pipe network this test built around the known bed.
+  const knownBed = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+  const view = await stockStackAcres(token, { stock: "corn", tile: knownBed }, T0);
   const unit = view.units.filter((u) => u.stock === "corn").at(-1);
   if (!unit) throw new Error("no corn unit");
   const soil = createSoilMap(view.soilTiles);

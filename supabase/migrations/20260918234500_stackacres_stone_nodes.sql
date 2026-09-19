@@ -46,7 +46,11 @@ on conflict (node_id) do nothing;
 alter table public.homestead_stone_nodes enable row level security;
 -- No policy is added: every access goes through the security-definer RPCs
 -- below via the service role, the same posture every other StackAcres
--- table with no direct client read/write takes.
+-- table with no direct client read/write takes. RLS-with-no-policy already
+-- denies anon/authenticated by default, but revoke the table grants too --
+-- same belt-and-suspenders posture homestead_wood_nodes takes in this same
+-- PR, and this codebase has been bitten before by relying on RLS alone.
+revoke all on public.homestead_stone_nodes from anon, authenticated;
 
 create or replace function public.mine_stackacres_stone_node(
   p_node_id text,

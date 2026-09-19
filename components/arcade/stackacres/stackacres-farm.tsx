@@ -52,6 +52,7 @@ import {
   sellSound,
   sowSound,
   toolSound,
+  townFavorSound,
   travelSound,
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
@@ -255,6 +256,8 @@ import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
+import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
+import { StackAcresChapterCard, StackAcresGoalChip, StackAcresGoalsSheet } from "./stackacres-chapters";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -1092,6 +1095,9 @@ export function StackAcresFarm() {
     () => Object.fromEntries(SECRET_ITEM_IDS.map((id) => [id, false])) as Record<SecretItemId, boolean>,
   );
   const [showMap, setShowMap] = useState(false);
+  const [showGoals, setShowGoals] = useState(false);
+  /** The chapter Ray is congratulating the player on, or null. */
+  const [chapterCard, setChapterCard] = useState<Chapter | null>(null);
   /** Where the farmer stood when the map was opened, for its "you are here". */
   const [mapHere, setMapHere] = useState<MapPlaceId>("farmstead");
   const [showStore, setShowStore] = useState(false);
@@ -2999,6 +3005,15 @@ export function StackAcresFarm() {
     () => new Set(processing.machines.map((machine) => machine.kind)),
     [processing.machines],
   );
+  const builtKindsRef = useRef(builtKinds);
+  useEffect(() => {
+    builtKindsRef.current = builtKinds;
+  });
+  const chapters = useMemo(
+    () => chapterViews(builtKinds, { gold, inventory: processing.inventory }),
+    [builtKinds, gold, processing.inventory],
+  );
+  const chapterNow = currentChapter(chapters);
   /** Ray's seed shelf: open seeds first, then locked ones, each in catalogue order. */
   const shopSeeds = useMemo(() => {
     const active = STACKACRES_CROPS.filter(isActiveStock);
@@ -3652,7 +3667,17 @@ export function StackAcresFarm() {
   );
   const onSowWheat = useCallback(() => workshopAct({ action: "sow-wheat" }), [workshopAct]);
   const onPlaceMachine = useCallback(
-    (kind: MachineKind) => workshopAct({ action: "place-machine", kind }),
+    async (kind: MachineKind) => {
+      const result = await workshopAct({ action: "place-machine", kind });
+      // Only once the server has said yes, so a refused build never celebrates.
+      const finished = result.ok ? chapterFinishedBy(kind, new Set([...builtKindsRef.current, kind])) : null;
+      if (finished) {
+        setChapterCard(finished);
+        townFavorSound();
+        world.current?.emote("farmer", "sparkle");
+      }
+      return result;
+    },
     [workshopAct],
   );
   const onProcessRecipe = useCallback(
@@ -4387,6 +4412,9 @@ export function StackAcresFarm() {
           <button type="button" className="htp-trigger" onClick={openMap}>
             <MapPin size={13} aria-hidden="true" /> Map
           </button>
+          {chapterNow && (
+            <StackAcresGoalChip view={chapterNow} onOpen={() => { panelSound(); setShowGoals(true); }} />
+          )}
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps
@@ -5407,6 +5435,18 @@ export function StackAcresFarm() {
           onRunFarmKitchen={onRunFarmKitchen}
           onEat={onEat}
         />
+      )}
+
+      {showGoals && (
+        <StackAcresGoalsSheet
+          views={chapters}
+          currentNumber={chapterNow?.chapter.number ?? null}
+          onClose={() => { panelSound(); setShowGoals(false); }}
+        />
+      )}
+
+      {chapterCard && (
+        <StackAcresChapterCard chapter={chapterCard} built={builtKinds} next={chapterNow} onClose={() => setChapterCard(null)} />
       )}
 
       {showMap && (

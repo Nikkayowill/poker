@@ -483,7 +483,7 @@
 .sa-theme .floor-bar > * { pointer-events: auto; }
 
 .sa-theme .floor-bar-left {
-  gap: 8px;
+  gap: 16px;
   align-items: stretch;
 }
 
@@ -497,8 +497,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 38px;
-  padding: 0 13px;
+  min-height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-block);
   background: var(--sa-glass-fill-open);
@@ -981,16 +981,16 @@
 }
 
 /* ---- the tool belt ----------------------------------------------------
-   Where the single Mow key used to sit, now a row of four slots: hand, hoe,
-   watering can, seed pouch (stackacres-toolbelt.tsx). A row rather than the old
-   vertical stack, because the belt is read left to right as a set of jobs and
-   four stacked keys ran down into the map. */
+   Four slots stacked down the left edge: hand, hoe, watering can, seed pouch
+   (stackacres-toolbelt.tsx). A column keeps the belt out of the top row, which
+   is already full of the back link, Map and the goal chip on a short phone. */
 .sa-toolbelt {
   position: absolute;
   top: calc(var(--sa-header-h) + 10px);
   left: calc(10px + var(--safe-left));
   z-index: 3;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
 }
@@ -1039,12 +1039,12 @@
 
 /* ---- the seed wheel ---------------------------------------------------
    The gel dock's glass row, kept, minus its drag (stackacres-seed-wheel.tsx).
-   Anchored under the belt instead of at a tap, because the pouch is what opens
-   it and the pouch is up here. */
+   Anchored beside the belt's pouch slot (the fourth, bottom of the column)
+   instead of at a tap, because the pouch is what opens it. */
 .sa-seed-wheel {
   position: absolute;
-  top: calc(var(--sa-header-h) + 10px + var(--sa-tap) + 8px);
-  left: calc(10px + var(--safe-left));
+  top: calc(var(--sa-header-h) + 10px + 3 * (var(--sa-tap) + 6px));
+  left: calc(10px + var(--safe-left) + var(--sa-tap) + 8px);
   z-index: 4;
   display: flex;
   align-items: center;
@@ -5291,9 +5291,9 @@
   .sa-theme .floor-bar { padding-bottom: 6px; }
   .sa-feed,
   .sa-theme .gold-balance.floor-wallet,
-  .sa-music-toggle,
+  .sa-music-toggle { min-height: 34px; font-size: 13.5px; }
   .sa-theme .floor-back,
-  .sa-theme .htp-trigger { min-height: 34px; font-size: 13.5px; }
+  .sa-theme .htp-trigger { font-size: 13.5px; }
   .sa-music-toggle { width: 34px; }
   .sa-shell .sa-heading-logo { width: 170px; }
 
@@ -5816,13 +5816,13 @@
 .sa-goal {
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 38px;
-  min-width: 150px;
+  min-height: 32px;
+  min-width: 130px;
   max-width: 240px;
-  padding: 3px 11px;
+  padding: 2px 9px;
   border: 1px solid var(--sa-glass-line);
   border-radius: var(--sa-r-chip);
   background: var(--sa-glass-fill-open);
@@ -5831,7 +5831,7 @@
   box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
   color: var(--sa-ink);
   font-family: var(--sa-font);
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 .sa-goal:active { box-shadow: var(--sa-glass-rim-press); }
@@ -5853,6 +5853,5 @@
 .sa-chapter-next { color: var(--sa-ink-soft); }
 
 @media (max-height: 520px) {
-  .sa-goal { min-width: 130px; padding: 2px 9px; }
   .sa-goals-list { max-height: calc(100vh - 110px); overflow-y: auto; padding: 2px 20px 16px; }
 }

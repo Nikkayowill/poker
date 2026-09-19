@@ -1092,6 +1092,26 @@ button:disabled { cursor: wait; opacity: .62; }
   flex: 0 0 auto;
 }
 
+/* Above phone width the hero sits in flow over the card and the two centre
+   together, so the logo can't land on the cast's faces at any height. */
+@media (min-width: 601px) {
+  .account-entry-page {
+    padding: calc(clamp(20px, 4vh, 48px) + var(--safe-top)) 24px 24px;
+  }
+  .entry-hero {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    flex: 0 0 auto;
+    width: min(100%, 380px);
+    /* Shrinks on short screens so a laptop fits the form without scrolling. */
+    height: clamp(150px, 25vh, 230px);
+    margin: auto 0 calc(clamp(150px, 25vh, 230px) * -.26);
+  }
+  .account-entry-page > .account-entry-card { margin: 0 0 auto; }
+}
+
 /* The last row on the page: the legal links, nothing else (X-style --
    content in the middle, "fluff" as the footer). Sibling of
    .account-entry-card, which carries `margin: auto 0`, so in this flex

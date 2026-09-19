@@ -83,7 +83,7 @@ export const STACKACRES_JUICE_STYLES: Readonly<Record<StackAcresStock, JuiceShar
   // Tier 3.
   corn: { ramp: "corn", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
   eggplant: { ramp: "pine", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
-  wheatsheaf: { ramp: "straw", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
+  wheat: { ramp: "straw", shardCount: 12, shardRadius: 2.6, speed: { min: 100, max: 200 }, gravity: 420, lifeMs: { min: 420, max: 680 } },
 
   hen: {
     ramp: "chalk",

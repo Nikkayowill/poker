@@ -70,9 +70,13 @@ describe("wantedForLine", () => {
     expect(wantedForLine("flour")).toBe("For: Cake, Bread");
   });
 
-  it("says nothing for a crop nothing uses", () => {
-    expect(recipesUsing("wheatsheaf")).toEqual([]);
-    expect(wantedForLine("wheatsheaf")).toBeNull();
+  it("says nothing for an item nothing uses", () => {
+    expect(recipesUsing("pelt")).toEqual([]);
+    expect(wantedForLine("pelt")).toBeNull();
+  });
+
+  it("tells a wheat seed card that the Mill grinds it", () => {
+    expect(wantedForLine("wheat")).toContain("Flour");
   });
 
   it("lists hen feed and fishing bait beside the recipes", () => {

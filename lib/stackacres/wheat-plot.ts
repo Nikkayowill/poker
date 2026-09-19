@@ -1,4 +1,9 @@
 /**
+ * LEGACY. Wheat is a bed crop now (`wheat` in ./catalogue.ts, sown on the soil
+ * beds like any other), and nothing sows a plot any more. This module and the
+ * `homestead_wheat_plots` table remain only so a plot sown before that can still
+ * be brought in by `work`.
+ *
  * Wheat: the one raw crop grown for a Mill rather than for Gold.
  *
  * A DELIBERATELY SEPARATE ROW FROM `StackAcresUnitRow` (./units.ts), not an

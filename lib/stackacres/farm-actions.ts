@@ -93,8 +93,7 @@ export type Action =
   | { action: "upgrade-tool" }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
-  // `sow-wheat` and `place-machine` spend Gold; the rest move inventory only.
-  | { action: "sow-wheat" }
+  // `place-machine` spends Gold; the rest move inventory only.
   | { action: "place-machine"; kind: MachineKind }
   // One batch. Instant for a Dairy or a Loom; a Mill enqueues and `work`
   // collects it.

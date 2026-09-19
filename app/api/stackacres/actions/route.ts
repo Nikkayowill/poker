@@ -58,7 +58,6 @@ import {
   chopStackAcresWoodTree,
   mineStackAcresStoneNode,
   catchStackAcresFish,
-  sowStackAcresWheat,
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
@@ -114,7 +113,7 @@ export const runtime = "nodejs";
  * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
  * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
- * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`, `sow-wheat`,
+ * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
  * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
  * `place-pipe` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -320,7 +319,6 @@ const bodySchema = z.discriminatedUnion("action", [
     item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),
   }),
   // Processing: wheat, machines, Town Contracts. Move no Gold.
-  z.object({ action: z.literal("sow-wheat") }),
   z.object({
     action: z.literal("place-machine"),
     kind: z.enum(MACHINE_KINDS as unknown as [string, ...string[]]),
@@ -640,8 +638,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":
       return buyStackAcresFeed(token, { itemId: action.itemId, quantity: action.quantity }, now);
-    case "sow-wheat":
-      return sowStackAcresWheat(token, now);
     case "place-machine":
       return placeStackAcresMachine(token, action.kind, now);
     case "work":

@@ -42,14 +42,9 @@
  * see each tier's own comment below; TIER1/TIER2/TIER3's own numbers are
  * untouched by this swap, only which crop sits in which tier changed.
  *
- * `wheatsheaf`, not `wheat`: the obvious id collides with two things already
- * in this codebase named plain `wheat` -- machine-items.ts's MACHINE_RAW_ITEMS
- * wheat (the Wheat Plot's own raw material, a separate system from a stocked
- * unit) and paths.ts's `wheatField` waypoint id. Since a StackAcresItem's item
- * id equals its stock id, a crop literally named `wheat` would shadow the
- * Wheat Plot's own wheat everywhere a MachineItemId is looked up. Label stays
- * "Wheat"; only the id moved, same divergence pattern `brokoly`/"Broccoli"
- * already used below and still uses.
+ * WHEAT is the one crop grown for the Mill rather than for Gold: cheap,
+ * five minutes, four to a bed (see WHEAT below). It is a bed crop like any
+ * other; the Workshop's own separate "wheat plots" are gone.
  */
 
 import type { StackAcresShopLock } from "./shop-locks";
@@ -74,7 +69,8 @@ export const STACKACRES_CROPS = [
   // Tier 3 (slow/valuable): 120 seed / 4h / 90m thirst / 200 muck.
   "corn",
   "eggplant",
-  "wheatsheaf",
+  // Wheat: 3 seed / 5m / 4 to a bed. Its own numbers, see WHEAT below.
+  "wheat",
 ] as const;
 export const STACKACRES_LIVESTOCK = ["hen", "pig", "cattle"] as const;
 
@@ -200,6 +196,10 @@ export interface StackAcresStockDef {
  */
 const TIER1 = { seedCost: 1, durationMs: 15 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 2, ownableOutright: false } as const;
 const TIER2 = { seedCost: 55, durationMs: 90 * 60 * 1000, hungerMs: null, thirstMs: 40 * 60 * 1000, spoils: false, muckFee: 90, ownableOutright: true } as const;
+/** The first crop anyone grows: 3 Gold of seed, ripe in 5 minutes. Thirst is
+ *  longer than the cycle, so wheat never needs water. Sown from seed, never
+ *  bought outright, like tier 1. Muck fee is twice the net (4 x 4 - 3 = 13). */
+const WHEAT = { seedCost: 3, durationMs: 5 * 60 * 1000, hungerMs: null, thirstMs: 8 * 60 * 1000, spoils: false, muckFee: 26, ownableOutright: false } as const;
 const TIER3 = { seedCost: 120, durationMs: 4 * 60 * 60 * 1000, hungerMs: null, thirstMs: 90 * 60 * 1000, spoils: false, muckFee: 200, ownableOutright: true } as const;
 
 /**
@@ -228,9 +228,7 @@ export const STACKACRES_CATALOGUE: Readonly<Record<StackAcresStock, StackAcresSt
   // ---- Tier 3 (slow/valuable). ----
   corn: { label: "Corn", ...TIER3 },
   eggplant: { label: "Eggplant", ...TIER3 },
-  // "Wheat Sheaf", keyed as wheatsheaf -- both the id AND the label collide with
-  // machine-items.ts's raw `wheat`, which sells for 4g against this one's 44g.
-  wheatsheaf: { label: "Wheat Sheaf", ...TIER3 },
+  wheat: { label: "Wheat", ...WHEAT },
 
   hen: {
     label: "Hen Coop",

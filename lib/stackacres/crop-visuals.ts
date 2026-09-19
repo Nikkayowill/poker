@@ -109,7 +109,7 @@ const CROP_FOOT: Readonly<Record<CropArt, { readonly dx: number; readonly dy: nu
   radish: { dx: 0, dy: 0 },
   spinach: { dx: 0, dy: 0 },
   tomato: { dx: 0, dy: 0 },
-  wheatsheaf: { dx: 0, dy: 0 },
+  wheat: { dx: 0, dy: 0 },
 };
 
 /**
@@ -175,7 +175,7 @@ const CROP_BOX: Readonly<Record<CropArt, { readonly w: number; readonly h: numbe
   radish: { w: 11, h: 18 },
   spinach: { w: 13, h: 13 },
   tomato: { w: 16, h: 22 },
-  wheatsheaf: { w: 10, h: 29 },
+  wheat: { w: 10, h: 29 },
 };
 
 /**

@@ -4613,17 +4613,33 @@
 .sa-vat-actions .sa-cta { width: 100%; }
 
 /* ---- the Workshop sheet (WorkshopModal.tsx) ----------------------------
-   The processing track in one sheet: the shelf, the wheat field, the four
-   machine cards and the animals that could be sent here. Rides the same
+   The processing track in one sheet: the shelf and the machine cards. Rides the same
    chrome as the town board (sa-contracts-note, sa-contract-bar) and the
    supply store's cards (sa-stock-card) rather than growing its own. */
 
-/* The shelf: six counts in a row that wraps. A count is the number the
-   thumb is after, so it leads; the name confirms it. */
+/* Two columns once there is room (a tablet, or a phone on its side): your
+   goods on the left, the machines on the right. In
+   portrait it is one column in that same order. */
+.sa-workshop-col { min-width: 0; }
+
+.sa-workshop-hint,
+.sa-workshop-empty,
+.sa-workshop-job {
+  margin: 6px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.sa-workshop-job { margin-top: 4px; }
+
+/* The shelf: one row per thing you are holding, with its own Sell key. */
 .sa-workshop-shelf {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
@@ -4633,66 +4649,30 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
   border: 1px solid var(--sa-glass-line-soft);
   border-radius: var(--sa-r-chip);
   background: var(--sa-glass-fill-quiet);
-  color: var(--sa-ink-soft);
-  font-size: 12.5px;
-  font-weight: 700;
-}
-
-.sa-workshop-shelf strong {
   color: var(--sa-ink);
+  font-size: 14px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
-.sa-workshop-plots {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
+.sa-workshop-shelf-name { flex: 1; min-width: 0; }
 
-.sa-workshop-plot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-}
-
-.sa-workshop-plot.is-empty {
-  color: var(--sa-ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-  font-style: italic;
-}
-
-/* A ripe bed's bar turns corn: full, and worth pressing for. */
-.sa-workshop-plot.is-ripe .sa-contract-bar > span {
-  background: var(--sa-corn);
-  box-shadow: inset 0 -3px 0 var(--sa-corn-rim);
-}
-
-.sa-workshop-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sa-workshop-actions .sa-cta {
-  flex: 1 1 180px;
+.sa-workshop-shelf .sa-workshop-sell {
+  flex: none;
+  margin-top: 0;
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 13.5px;
 }
 
 /* A machine card: unbuilt reads as plain glass, running gets a leaf ring,
    done gets the corn ring the posted contract uses for "press this". */
-.sa-workshop-machine.is-unbuilt h3 {
-  color: var(--sa-ink-soft);
-}
+.sa-workshop-machine.is-unbuilt h3 { color: var(--sa-ink-soft); }
 
 .sa-workshop-machine.is-working {
   background: var(--sa-tint-leaf);
@@ -4707,6 +4687,73 @@
 .sa-workshop-machine .sa-contract-bar {
   display: block;
   margin-top: 8px;
+}
+
+/* "3 Wheat (have 1) -> 1 Flour, takes 20s". What is missing goes red-brown so
+   the reason for a grey key is on the same line as the key. */
+.sa-workshop-recipe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin: 8px 0 0;
+  color: var(--sa-ink);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sa-workshop-recipe em {
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.sa-workshop-recipe-item.is-short em { color: var(--sa-ink); font-weight: 800; }
+.sa-workshop-recipe-out { white-space: nowrap; }
+.sa-workshop-recipe-arrow { color: var(--sa-ink-soft); }
+
+.sa-workshop-recipe-block { display: flex; flex-direction: column; margin-top: auto; }
+.sa-workshop-recipe-block + .sa-workshop-recipe-block { margin-top: 10px; }
+.sa-workshop-recipe-block .sa-cta { margin-top: 8px; }
+.sa-workshop-source {
+  margin: 4px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+@media (min-width: 700px) {
+  .sa-workshop { width: min(100%, 920px); }
+
+  .sa-workshop-body {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 4px 20px;
+    align-items: start;
+  }
+
+  .sa-workshop-shelf { grid-template-columns: 1fr; }
+  .sa-workshop-machines { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+}
+
+/* A phone on its side is about 390px tall with the sheet taking 92% of it, so
+   everything gives back height: tighter type, shorter keys, less air. The keys
+   keep a 40px+ floor. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-workshop { padding-bottom: 12px; }
+  .sa-workshop .sa-sheet-head { padding-top: 6px; padding-bottom: 6px; }
+  .sa-workshop .sa-sheet-note { margin-top: 4px; font-size: 13px; line-height: 1.3; }
+  .sa-workshop .sa-group-label { margin-top: 10px; }
+  .sa-workshop-hint,
+  .sa-workshop-empty,
+  .sa-workshop-job { font-size: 12.5px; line-height: 1.3; }
+  .sa-workshop .sa-cta { min-height: 42px; padding: 6px 14px; font-size: 14.5px; }
+  .sa-workshop .sa-stock-card { padding: 10px 12px 12px; }
+  .sa-workshop .sa-stock-card h3 { font-size: 16px; }
+  .sa-workshop-recipe { margin-top: 6px; font-size: 13px; }
+  .sa-workshop-shelf li { padding-top: 3px; padding-bottom: 3px; }
+  .sa-workshop-machines { gap: 8px; }
 }
 
 .sa-workshop-divert {

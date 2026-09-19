@@ -45,7 +45,7 @@
  * responsiveness the pipe brush already has, instead of waiting on a round
  * trip before the next tile in the stroke can even be evaluated.
  *
- * The processing track (`sow-wheat`, `place-machine`, `process`) is predicted
+ * The processing track (`place-machine`, `process`) is predicted
  * too: each is plain arithmetic on the shelf, a plot list or a machine row,
  * and the Workshop sheet is a scrim over the map, so a press that waited on a
  * round trip would have nothing else on screen to hide behind. `sell`'s
@@ -133,12 +133,7 @@ import {
 } from "./machines";
 import { applyRecipeOptimistically } from "./optimistic-recipe";
 import { RECIPE_CATALOGUE, isInstantRecipe } from "./recipes";
-import {
-  WHEAT_DURATION_MS,
-  WHEAT_PLOT_CAP,
-  WHEAT_SEED_COST,
-  type StackAcresWheatPlotSnapshot,
-} from "./wheat-plot";
+import type { StackAcresWheatPlotSnapshot } from "./wheat-plot";
 
 /** A machine as the view carries it: the snapshot plus the server's own
  *  "could start now" read of the shelf. */
@@ -814,19 +809,6 @@ export function predictStackAcresAction(
       // `order`, not a coordinate, so it keeps resolving to the same bed
       // once that bed's tx/ty change (see soil.ts's `soilSlotSpot`).
       return { soilTiles: [...soil.values()] };
-    }
-    case "sow-wheat": {
-      if (ctx.wheatPlots.length >= WHEAT_PLOT_CAP) return null;
-      const profile = debited(ctx, WHEAT_SEED_COST);
-      if (!profile) return null;
-      const plot: StackAcresWheatPlotSnapshot = {
-        id: newOptimisticUnitId(),
-        startedAt: new Date(ctx.nowMs).toISOString(),
-        readyAt: new Date(ctx.nowMs + WHEAT_DURATION_MS).toISOString(),
-        ready: false,
-        progress: 0,
-      };
-      return { profile, ...processingPatch(ctx, { wheatPlots: [...ctx.wheatPlots, plot] }) };
     }
     case "place-machine": {
       // One of each kind, and a flat cap -- the same two refusals the server

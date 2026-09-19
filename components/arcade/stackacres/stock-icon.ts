@@ -29,7 +29,7 @@ export const STOCK_ICON: Readonly<Record<StackAcresStock, PainterName>> = {
   radish: "ico-radish",
   spinach: "ico-spinach",
   tomato: "ico-tomato",
-  wheatsheaf: "ico-wheatsheaf",
+  wheat: "ico-wheat",
   hen: "hen",
   pig: "sheep",
   cattle: "cow",

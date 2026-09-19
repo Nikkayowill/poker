@@ -237,9 +237,9 @@ export const SPRITE_ART = {
   tomato0: "/stackacres/sprites/tomato0.webp",
   tomato1: "/stackacres/sprites/tomato1.webp",
   tomato2: "/stackacres/sprites/tomato2.webp",
-  wheatsheaf0: "/stackacres/sprites/wheatsheaf0.webp",
-  wheatsheaf1: "/stackacres/sprites/wheatsheaf1.webp",
-  wheatsheaf2: "/stackacres/sprites/wheatsheaf2.webp",
+  wheat0: "/stackacres/sprites/wheatsheaf0.webp",
+  wheat1: "/stackacres/sprites/wheatsheaf1.webp",
+  wheat2: "/stackacres/sprites/wheatsheaf2.webp",
   // The three rungs of the equipment ladder (lib/stackacres/equipment.ts).
   // These already shipped -- the store shelf has been showing them as plain
   // `<img>` since the ladder landed -- but nothing ever put them on the canvas,

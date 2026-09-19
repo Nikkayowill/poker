@@ -385,18 +385,16 @@ def export_common(out_root):
 
 
 def export_characters(out_root):
-    characters.main()
-    out = os.path.join(out_root, "characters")
-    os.makedirs(out, exist_ok=True)
-    src = characters.OUT
-    for name in characters.rig.CHARACTERS:
-        shutil.copyfile(os.path.join(src, f"{name}-sheet.png"), os.path.join(out, f"{name}.png"))
-        data = json.load(open(os.path.join(src, f"{name}-sheet.json")))
-        # Phaser's createFromAseprite looks frames up by index, so the array export is re-keyed (as export.py does).
-        data["frames"] = {str(i): {k: v for k, v in f.items() if k != "filename"} for i, f in enumerate(data["frames"])}
-        with open(os.path.join(out, f"{name}.json"), "w") as fh:
-            json.dump(data, fh, separators=(",", ":"))
-    print("characters ->", out)
+    # The people are PixelLab art now (art/stackacres-td/pixellab/build.py), not the rig's. Loaded by path:
+    # rich/ has its own `build` module.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "pixellab_build", os.path.join(os.path.dirname(HERE), "pixellab", "build.py"))
+    pixellab_build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pixellab_build)
+    pixellab_build.OUT = os.path.join(out_root, "characters")
+    pixellab_build.main()
+    print("characters ->", pixellab_build.OUT)
 
 
 def export_portraits(out_root):

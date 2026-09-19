@@ -85,7 +85,32 @@ generated decor (`decor.py`) and every character reshaded on the rig's own poses
 - **Rig animations are 4 frames each.** The old note that Kayo wanted depth from mechanics, not
   animation polish, is overturned: see "Direction since 2026-09-16" above.
 
-## Characters: `characters/rig/`
+## Characters now: `pixellab/` (2026-09-19)
+
+The people the game shows are PixelLab art, not the rig. Kayo asked for Stardew-level characters; the rig's
+hand-placed grids couldn't get there, and he picked PixelLab's look at today's size (about 19x31, light skin and
+blue eyes for the farmer, who will be customizable). PixelLab's terms give us the output for any use, commercial
+included.
+
+- `pixellab/source/<name>/` is what PixelLab made, as downloaded (`fetch.py <name> <character id>`): the
+  standing views (`rotations/south|east|north.png`) and, for the farmer, `animations/<anim>/<view>/`.
+- `pixellab/build.py` turns that into `public/stackacres-td/characters/<name>.png/json` in the rig's old layout,
+  so every frame index the game uses still holds. Its docstring has the details: the farmer's walk and idle are
+  "tightened" (lined up with the standing pose, one head and chest on every frame, colours snapped) because
+  PixelLab redraws the whole body each frame and it boiled; tool actions are anchored at the feet; Ray, Brayden
+  and the Pilgrim have their skin swapped for brown, since PixelLab drew them light.
+- `pixellab/fix_ray_back.py` repaints Ray's back view, which PixelLab drew as a second front.
+- Everyone but the farmer only stands, breathes and turns, so they have standing views and a built breath.
+  The farmer has walk (8 frames), idle, harvest, water, chop and fish. `shoot` is his standing pose: nothing
+  plays it.
+- `pixellab/portraits/farmer.png` is the dialogue portrait Kayo kept. Nothing shows a farmer portrait yet, and
+  everyone else's portraits are still `rich/portraits.py`.
+- `rich/export_rich.py` builds characters through `pixellab/build.py`.
+
+Known gaps: the others came from PixelLab's cheaper standard mode (the trial ran out), so they're taller and
+slimmer than the farmer; their portraits don't match their new look yet.
+
+## Characters, before: `characters/rig/`
 
 **Rebuild everything:** `art/stackacres-td/characters/rig/build.sh`
 It runs `rig.py` (frames to `build/<name>.json`, `build/<name>-expected.png`, previews, contact

@@ -1173,6 +1173,21 @@ export async function spendGoldByProfileLedgered(
 }
 
 /**
+ * `spendGoldByProfileLedgered` in the `PlayerProfile | null` shape the older
+ * `spendGoldByProfile` call sites were written against: the caller's profile
+ * with its new balance, or null when they can't afford the stake.
+ */
+export async function spendStakeLedgered(
+  profile: PlayerProfile,
+  amount: number,
+  correlationId: string,
+  reason: string,
+): Promise<PlayerProfile | null> {
+  const debited = await spendGoldByProfileLedgered(profile.id, amount, correlationId, reason);
+  return debited.success ? { ...profile, goldBalance: debited.goldBalance } : null;
+}
+
+/**
  * Same guarded credit as `creditGoldByProfile`, plus the same ledger and
  * idempotency `spendGoldByProfileLedgered` has. A settlement, a refund on
  * failed creation, and the reconciliation sweep's own refund should all call

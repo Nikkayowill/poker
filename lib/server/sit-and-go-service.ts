@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createTournamentGame, SEAT_COUNT } from "@/lib/game/engine";
 import { isStakesTier, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
@@ -9,7 +10,14 @@ import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { createStoredGame, getStoredGame } from "./game-store";
 import { recordMultiWayResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
-import { creditGoldByProfile, ensureProfile, getPublicProfilesByIds, spendGoldByProfile } from "./profile-store";
+import {
+  confirmGoldDebitLedgered,
+  creditGoldByProfile,
+  creditGoldByProfileLedgered,
+  ensureProfile,
+  getPublicProfilesByIds,
+  spendStakeLedgered,
+} from "./profile-store";
 import { awardWager } from "./progression-store";
 import {
   cancelEmptySitAndGoTable,
@@ -260,7 +268,8 @@ export async function openSitAndGoTable(
   }
 
   const entryFee = TIER_CONFIG[tier].minBuyIn;
-  const debited = await spendGoldByProfile(profile.id, entryFee);
+  const feeCorrelationId = `sit_and_go_open_fee:${randomUUID()}`;
+  const debited = await spendStakeLedgered(profile, entryFee, feeCorrelationId, "sit_and_go_open");
   if (!debited) {
     throw new SitAndGoRequestError(`You need ${entryFee.toLocaleString()} Gold to open this table.`, 400);
   }
@@ -270,9 +279,11 @@ export async function openSitAndGoTable(
     table = await createSitAndGoTableRow(profile.id, tier, entryFee);
     await claimSitAndGoSeat(table.id, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, entryFee).catch((refundError) => {
-      console.error("sit_and_go.open_refund_failed", { profileId: profile.id, entryFee, error: refundError });
-    });
+    await creditGoldByProfileLedgered(profile.id, entryFee, feeCorrelationId, "sit_and_go_open_refund").catch(
+      (refundError) => {
+        console.error("sit_and_go.open_refund_failed", { profileId: profile.id, entryFee, error: refundError });
+      },
+    );
     // Same reasoning as cribbage's openCribbageTable: the table row can
     // persist even though seating the host in it fails right after, and a
     // host-less 'waiting' row would sit in the lobby list forever with no
@@ -282,6 +293,11 @@ export async function openSitAndGoTable(
     if (error instanceof SitAndGoTableNotJoinable) throw new SitAndGoRequestError(error.message, 409);
     throw error;
   }
+
+  // The host is seated, so this fee can legitimately wait uncredited until the table deals.
+  await confirmGoldDebitLedgered(feeCorrelationId).catch((confirmError) => {
+    console.error("sit_and_go.open_confirm_failed", { profileId: profile.id, feeCorrelationId, error: confirmError });
+  });
 
   const seats = await getSitAndGoSeats(table.id);
   return { table: tableView(table, seats, profile.id), profile: debited };
@@ -398,7 +414,8 @@ export async function joinSitAndGoTable(
   }
 
   // Rule 1: the joiner's entry fee leaves before their seat exists.
-  const debited = await spendGoldByProfile(profile.id, table.entryFee);
+  const feeCorrelationId = `sit_and_go_join_fee:${randomUUID()}`;
+  const debited = await spendStakeLedgered(profile, table.entryFee, feeCorrelationId, "sit_and_go_join");
   if (!debited) {
     throw new SitAndGoRequestError(`You need ${table.entryFee.toLocaleString()} Gold to join this table.`, 400);
   }
@@ -406,17 +423,28 @@ export async function joinSitAndGoTable(
   try {
     await claimSitAndGoSeat(tableId, profile.id, token);
   } catch (error) {
-    await creditGoldByProfile(profile.id, table.entryFee).catch((refundError) => {
-      console.error("sit_and_go.join_refund_failed", {
-        tableId,
-        profileId: profile.id,
-        entryFee: table.entryFee,
-        error: refundError,
-      });
-    });
+    await creditGoldByProfileLedgered(profile.id, table.entryFee, feeCorrelationId, "sit_and_go_join_refund").catch(
+      (refundError) => {
+        console.error("sit_and_go.join_refund_failed", {
+          tableId,
+          profileId: profile.id,
+          entryFee: table.entryFee,
+          error: refundError,
+        });
+      },
+    );
     if (error instanceof SitAndGoTableNotJoinable) throw new SitAndGoRequestError(error.message, 409);
     throw error;
   }
+
+  await confirmGoldDebitLedgered(feeCorrelationId).catch((confirmError) => {
+    console.error("sit_and_go.join_confirm_failed", {
+      tableId,
+      profileId: profile.id,
+      feeCorrelationId,
+      error: confirmError,
+    });
+  });
 
   const dealt = await dealSitAndGoTableIfReady(tableId);
   const current = dealt ?? (await getSitAndGoTableById(tableId)) ?? table;

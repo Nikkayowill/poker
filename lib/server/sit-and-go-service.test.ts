@@ -53,6 +53,13 @@ async function group(n: number) {
 }
 
 /** Registers all 6 players; the 6th join deals the table. Returns the dealt view. */
+/** This profile's memory-mode gold_ledger rows, keyed `${correlationId}:${kind}` like the real unique index. */
+function ledgerRows(profileId: string) {
+  return [...(globalThis.__riverGoldLedger ?? new Map()).entries()]
+    .filter(([, row]) => row.profileId === profileId)
+    .map(([key, row]) => ({ key, amount: row.amount, kind: row.kind }));
+}
+
 async function registerSix(players: Array<{ token: string }>): Promise<SitAndGoTableView> {
   const { table: opened } = await openSitAndGoTable(players[0].token, TIER);
   let last = opened;
@@ -144,6 +151,35 @@ describe("opening and joining", () => {
     const { table: full } = await joinSitAndGoTable(players[5].token, opened.id);
     expect(full.status).toBe("active");
     expect(full.seatedCount).toBe(6);
+  });
+});
+
+describe("Gold ledger", () => {
+  it("records each entry fee as a ledgered debit the reconcile sweep can see", async () => {
+    const { players: [host, joiner] } = await group(2);
+    const { table } = await openSitAndGoTable(host.token, TIER);
+    await joinSitAndGoTable(joiner.token, table.id);
+
+    const [hostRow] = ledgerRows(host.id);
+    expect(hostRow.key).toMatch(/^sit_and_go_open_fee:.+:debit$/);
+    expect(hostRow.amount).toBe(-ENTRY_FEE);
+    const [joinerRow] = ledgerRows(joiner.id);
+    expect(joinerRow.key).toMatch(/^sit_and_go_join_fee:.+:debit$/);
+    expect(joinerRow.amount).toBe(-ENTRY_FEE);
+  });
+
+  it("refunds a join that finds the table already dealt against the same ledger entry", async () => {
+    const { players } = await group(6);
+    const full = await registerSix(players);
+    const late = await funded();
+    const before = await balance(late.token);
+
+    await expect(joinSitAndGoTable(late.token, full.id)).rejects.toBeInstanceOf(SitAndGoRequestError);
+    expect(await balance(late.token)).toBe(before);
+    const rows = ledgerRows(late.id);
+    expect(rows.map((r) => r.kind).sort()).toEqual(["credit", "debit"]);
+    const correlationIds = rows.map((r) => r.key.replace(/:(debit|credit)$/, ""));
+    expect(correlationIds[0]).toBe(correlationIds[1]);
   });
 });
 

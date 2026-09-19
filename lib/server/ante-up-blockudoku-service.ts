@@ -1,5 +1,5 @@
 import "server-only";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import {
   MIN_ANTE_UP_WAGER,
@@ -30,7 +30,13 @@ import {
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 import { applyAchievementEvent } from "./achievement-store";
 import { applyMissionEvent } from "./mission-store";
-import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
+import {
+  confirmGoldDebitLedgered,
+  creditGoldByProfile,
+  creditGoldByProfileLedgered,
+  ensureProfile,
+  spendStakeLedgered,
+} from "./profile-store";
 import { awardWager } from "./progression-store";
 
 /**
@@ -170,7 +176,11 @@ export async function openAnteUpBlockudoku(
   }
 
   // Rule 1: the wager leaves first. Null is "cannot afford", not an error.
-  const debited = wagerInput > 0 ? await spendGoldByProfile(profile.id, wagerInput) : profile;
+  const wagerCorrelationId = `ante_up_blockudoku_wager:${randomUUID()}`;
+  const debited =
+    wagerInput > 0
+      ? await spendStakeLedgered(profile, wagerInput, wagerCorrelationId, "ante_up_blockudoku_wager")
+      : profile;
   if (!debited) {
     throw new AnteUpBlockudokuRequestError(
       `You need ${wagerInput.toLocaleString()} Gold to wager this.`,
@@ -195,14 +205,34 @@ export async function openAnteUpBlockudoku(
   } catch (error) {
     // The attempt never came into existence, so the player must not have paid for it.
     if (wagerInput > 0) {
-      await creditGoldByProfile(profile.id, wagerInput).catch((refundError) => {
-        console.error("ante_up_blockudoku.open_refund_failed", { profileId: profile.id, wager: wagerInput, error: refundError });
+      await creditGoldByProfileLedgered(
+        profile.id,
+        wagerInput,
+        wagerCorrelationId,
+        "ante_up_blockudoku_wager_refund",
+      ).catch((refundError) => {
+        console.error("ante_up_blockudoku.open_refund_failed", {
+          profileId: profile.id,
+          wager: wagerInput,
+          error: refundError,
+        });
       });
     }
     if (error instanceof ActiveAnteUpAttemptExists) {
       throw new AnteUpBlockudokuRequestError(error.message, 409);
     }
     throw error;
+  }
+
+  // The attempt exists now, so the reconcile sweep must leave this debit alone.
+  if (wagerInput > 0) {
+    await confirmGoldDebitLedgered(wagerCorrelationId).catch((confirmError) => {
+      console.error("ante_up_blockudoku.open_confirm_failed", {
+        profileId: profile.id,
+        wagerCorrelationId,
+        error: confirmError,
+      });
+    });
   }
 
   // Only a real wager earns XP; nothing was risked on a free attempt.

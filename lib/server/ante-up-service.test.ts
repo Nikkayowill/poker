@@ -31,6 +31,13 @@ async function funded(gold = 50_000) {
   return { token, id: profile.id };
 }
 
+/** This profile's memory-mode gold_ledger rows, keyed `${correlationId}:${kind}` like the real unique index. */
+function ledgerRows(profileId: string) {
+  return [...(globalThis.__riverGoldLedger ?? new Map()).entries()]
+    .filter(([, row]) => row.profileId === profileId)
+    .map(([key, row]) => ({ key, amount: row.amount, kind: row.kind }));
+}
+
 async function balance(token: string): Promise<number> {
   return (await ensureProfile(token)).goldBalance;
 }
@@ -67,11 +74,20 @@ describe("wagering", () => {
     expect(await balance(token)).toBe(before - 1000);
   });
 
+  it("records the wager as a ledgered debit the reconcile sweep can see", async () => {
+    const { token, id } = await funded();
+    await openAnteUpAttempt(token, "easy", 1000);
+    const [row] = ledgerRows(id);
+    expect(row.key).toMatch(/^ante_up_wager:.+:debit$/);
+    expect(row.amount).toBe(-1000);
+  });
+
   it("lets a zero wager through with no debit", async () => {
-    const { token } = await funded();
+    const { token, id } = await funded();
     const before = await balance(token);
     await openAnteUpAttempt(token, "easy", 0);
     expect(await balance(token)).toBe(before);
+    expect(ledgerRows(id)).toEqual([]);
   });
 
   it("refuses a nonzero wager under the floor, without touching the wallet", async () => {

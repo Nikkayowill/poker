@@ -58,6 +58,9 @@ export function daylightAt(hour: number): Daylight {
   return { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b), lamps: mix(a.lamps, b.lamps) };
 }
 
+/** Inside the barn or the workshop: lamplit and a touch warm at any hour, lanterns always burning. */
+export const INDOORS: Daylight = { r: 1, g: 0.96, b: 0.88, lamps: 0.8 };
+
 /** Perceived brightness of a tint, 0..1. */
 export function brightness(light: Daylight): number {
   return 0.299 * light.r + 0.587 * light.g + 0.114 * light.b;

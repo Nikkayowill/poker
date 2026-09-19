@@ -211,3 +211,68 @@ test("the thumb stick walks him, stops him at the log, and takes him through an 
     await close();
   }
 });
+
+test("the barn and the workshop are walked into, and their menus open inside", async ({ browser }) => {
+  const { page, errors, close } = await openFarm(browser);
+  try {
+    const scene = () =>
+      page.evaluate(() => {
+        const s = (window as unknown as Handle).__stackacres.scene;
+        return { pos: { ...s.pos }, area: s.areaName, walking: s.isWalking() };
+      });
+    const tapMap = async (x: number, y: number) => {
+      const at = await page.evaluate((p) => (window as unknown as Handle).__stackacres.scene.clientPointFor(p.x, p.y), { x, y });
+      await page.touchscreen.tap(at.x, at.y);
+    };
+
+    // Tapping the barn walks him through its doors, and Ray's counter inside opens the store.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 360, y: 180 }));
+    await page.waitForTimeout(300);
+    // Watch the outgoing view's opacity frame by frame: going through a door dissolves, it doesn't cut.
+    await page.evaluate(() => {
+      const w = window as unknown as { __veil: number[]; __stackacres: { scene: { children: { list: { texture?: { key: string }; alpha: number }[] } } } };
+      w.__veil = [];
+      const sample = () => {
+        const veil = w.__stackacres.scene.children.list.find((c) => c.texture?.key === "travel-grab");
+        if (veil) w.__veil.push(veil.alpha);
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await tapMap(360, 132);
+    await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("barn");
+    // A doorway holds the farmer for the dissolve, and the room's name shows on the HUD while it clears.
+    await expect(page.locator(".sa-place-tag")).toHaveText("Barn");
+    await page.screenshot({ path: test.info().outputPath("barn-name-tag.png") });
+    await page.waitForTimeout(600);
+    const veil = await page.evaluate(() => (window as unknown as { __veil: number[] }).__veil);
+    expect(veil.length).toBeGreaterThan(2);
+    expect(veil.some((a) => a > 0.05 && a < 0.95)).toBe(true);
+    expect(veil[veil.length - 1]).toBeLessThan(0.3);
+    await page.screenshot({ path: test.info().outputPath("inside-barn.png") });
+    await tapMap(144, 86);
+    await expect(page.getByRole("dialog", { name: "Supply store" })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("dialog", { name: "Supply store" }).getByRole("button", { name: "Close" }).click();
+
+    // Out through the doorway, back in front of the barn: to the mat first, since the view follows him down.
+    await tapMap(144, 150);
+    await expect.poll(async () => (await scene()).walking, { timeout: 15_000 }).toBe(false);
+    await page.waitForTimeout(300);
+    await tapMap(144, 172);
+    await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("homestead");
+    expect((await scene()).pos.y).toBeGreaterThan(160);
+
+    // The workshop: in through its doors, and the workbench opens the recipes.
+    await page.waitForTimeout(600);
+    await tapMap(488, 132);
+    await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("workshop");
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: test.info().outputPath("inside-workshop.png") });
+    await tapMap(144, 90);
+    await expect(page.locator(".sa-workshop")).toBeVisible({ timeout: 15_000 });
+
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+});

@@ -634,6 +634,12 @@ def barn():
     return s.outline(), (cx, bottom + 2)
 
 
+def workshop():
+    """The DB16 rig never drew the workshop: only rich/buildings.py does. The DB16 comparison render shows the
+    windmill that stood on this spot before it."""
+    return windmill()
+
+
 def windmill():
     """The old mill: stone tower, one broken sail, and the jammed gear on its side."""
     w, h = 64, 88

@@ -359,7 +359,7 @@ export interface StackAcresWorldProps {
   /** A finger landed on the signpost, the Town Board's entryway now that
    *  the places list is gone. */
   onSignpostTap: () => void;
-  /** A finger landed on the Workshop building. */
+  /** The workbench inside the workshop was tapped: the Workshop's recipes. */
   onWorkshopTap: () => void;
   /** A finger landed on the yard's well. Fills the watering can. */
   onWellTap: (at: TapPoint) => void;
@@ -448,6 +448,8 @@ export interface StackAcresWorldProps {
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;
+  /** The farmer went through a door or a gate and arrived somewhere: its name, for a tag on the HUD. */
+  onPlaceEntered: (name: string) => void;
   /** The cutter in hand, which sets the mow swathe and how long it stays cut. */
   cutter: StackAcresCutter;
   /** The Synergy Tree's `automated_logistics` multiplier on the farmhand's

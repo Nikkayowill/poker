@@ -144,6 +144,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
           onCropFieldsLockedTap: (at) => p().onCropFieldsLockedTap(at),
           onViewMoved: () => p().onViewMoved(),
+          onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
         },
         host,

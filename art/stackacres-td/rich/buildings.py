@@ -379,7 +379,9 @@ def barn():
     for x, y, lv in ((cx - 4, 0, 5.2), (cx - 3, 0, 4.8), (cx - 2, 0, 4.4), (cx + 2, 0, 3.6), (cx + 3, 0, 3.0),
                      (cx - 5, 1, 4.0)):
         c.put(x, y, "gold", lv)
-    return c.outline().image(), (cx, bottom + 2)
+    img = c.outline().image()
+    img.info["lights"] = [(48, 40, "lantern")]
+    return img, (cx, bottom + 2)
 
 
 # ------------------------------------------------------------------ windmill

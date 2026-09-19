@@ -28,7 +28,8 @@ The economy layer is already renderer-agnostic, which is what makes that possibl
 | Animation | Water, streams, the waterfall, smoke and the campfire animate (4 frames, `views/*.gif`). Animals do not |
 | Tiled/Phaser export | Done without Tiled (`areas/rig/export.py`) |
 | Game engine (Phase 1) | **Live at `/games/stackacres`.** The isometric world was deleted on 2026-09-16 (Kayo: "rid of the old isometric") |
-| Interiors, minigame scenes, the other crops, animal animation | Not started, deliberately |
+| Interiors | **The barn and the workshop** (2026-09-17): walked into through their doors (`rich/interiors.py`). Ray's counter opens the store and the workbench opens the Workshop. A real timber-framed workshop replaced the windmill that stood in for it |
+| Minigame scenes, the other crops, animal animation, Ray's house and the greenhouse inside | Not started, deliberately |
 
 Review pages:
 - **Every area and sprite, drawn:** https://claude.ai/artifact/KBcywDhr8Q9tmdSviZmX4F (newest; Kayo has not seen it yet)
@@ -110,8 +111,9 @@ Done (2026-09-16, PRs #539, #540 and the cutover):
 - **Dev handle**: outside production, `window.__stackacres = { scene, game }` once the map is
   up. The e2e specs use the scene's `placeFarmer`, `clientPointFor`, `npcPoint` and
   `isWalking`; ChronoDevPanel steps `game`'s clocks.
-- **Two scenes** (`scene.ts`): the Homestead (barn = store, signpost = contracts, windmill
-  = workshop, well, dock, greenhouse footing, Ray, the player's house, the Pilgrim, Pierre and Ivy
+- **Two scenes** (`scene.ts`, since joined by the other areas and the barn and workshop
+  interiors): the Homestead (barn = store and workshop = recipes, both walked into through
+  their doors; signpost = contracts, well, dock, greenhouse footing, Ray, the player's house, the Pilgrim, Pierre and Ivy
   when unlocked, the Merchant when visiting, Hen Haven with the player's real hens, the loose
   board secret, the gates) and the Old Fields, which ARE the live Crop Fields tile for tile
   (`lib/stackacres-td/field.ts`, tested). The fallen log blocks the north lane until

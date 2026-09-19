@@ -27,6 +27,7 @@ def build(for_game=False):
     a.line("path", (6, 11), (MW, 11))                  # the farm road past both doors to the east exit
     a.rect("path", 6, 10, 11, 11)                      # apron at Ray's door
     a.rect("path", 20, 10, 25, 11)                     # apron at the barn doors
+    a.rect("path", 30, 10, 33, 11)                     # apron at the workshop doors
     a.line("path", (14, 0), (14, 11))                  # north lane to the fallen log
     a.line("path", (14, 12), (14, MH))                 # south lane: the shore road
     a.line("path", (35, 11), (35, 8))                  # spur to the greenhouse footing
@@ -51,6 +52,10 @@ def build(for_game=False):
     a.add(kit.barn(), 360, 150, (48, 5), tag="barn")
     a.add(kit.workshop(), 488, 147, (36, 5), tag="workshop")
     a.add(props.smoke(), 503, 72)                       # the workshop's own stove is lit
+    # Walk in through the doors. A door's exit is named for the building's tag, which is how a tap on the
+    # building knows to walk inside rather than open a menu at the door (scene.ts).
+    a.door("barn", 340, 144, 40, 12, (144, 150))       # arriving just inside, on the mat (interiors.ARRIVE)
+    a.door("workshop", 480, 144, 16, 12, (144, 150))
     a.add(kit.greenhouse_ruin(), 600, 116, ground=True)
     a.zone("greenhouse", 560, 60, 80, 56)
     a.add(kit.well(), 186, 160, (10, 3), tag="well")
@@ -73,8 +78,8 @@ def build(for_game=False):
     a.exit("townsquare", 694, 168, 10, 32, (22, 216))  # the east road, past the broken cart
     a.add(kit.hay_bale(), 298, 150, (9, 2))            # farm clutter so the yard isn't bare
     a.add(kit.hay_bale(), 290, 164, (9, 2))
-    a.add(kit.crate(), 432, 150, (7, 2))
-    a.add(kit.crate(), 446, 156, (7, 2))
+    a.add(kit.crate(), 422, 150, (7, 2))
+    a.add(kit.crate(), 436, 156, (7, 2))
     a.add(kit.barrel(), 72, 150, (6, 2))
     a.add(kit.woodpile(), 52, 164, (13, 2))
     a.add(kit.trough(), 600, 318, (11, 2))

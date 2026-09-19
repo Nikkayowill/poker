@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "./fixtures";
 
 /**
  * The farm must cost a poker player nothing until they open it. StackAcres is

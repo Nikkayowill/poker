@@ -84,6 +84,23 @@ async function checkRateLimitRedis(
 }
 
 /**
+ * Lifts the limiters for a local E2E run, and only there.
+ *
+ * The suite creates a guest per test and POST /api/profile allows ten a
+ * minute per IP. Every spec runs from 127.0.0.1, so past the first handful
+ * they start failing on entry -- which looks like a broken app rather than a
+ * spent bucket, and is why specs pass alone and fail as a suite.
+ *
+ * Guarded on NODE_ENV so a production build ignores the flag even if it is
+ * somehow set: `next build` fixes NODE_ENV to "production", so there is no
+ * deployment in which this can return true. Same shape as the
+ * RIVER_TURN_TIMEOUT_MS knob playwright.config.ts already sets, for the same
+ * reason -- see its own comment there.
+ */
+const limitsLifted = process.env.NODE_ENV !== "production"
+  && process.env.RIVER_DISABLE_RATE_LIMITS === "1";
+
+/**
  * Fixed-window limiter keyed by source IP. Cookies are bearer identifiers
  * supplied by the caller, so they must never be the only input to a limiter:
  * an attacker could otherwise mint a fresh cookie value for every request.
@@ -98,6 +115,7 @@ export async function checkRateLimit(
   limit: number,
   windowMs: number,
 ): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
+  if (limitsLifted) return { ok: true };
   if (redis) return checkRateLimitRedis(key, limit, windowMs);
   return checkRateLimitInMemory(key, limit, windowMs);
 }

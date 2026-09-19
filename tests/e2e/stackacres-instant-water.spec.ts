@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * Hoe, sow and water one bed back to back on a slow server, and the ground has

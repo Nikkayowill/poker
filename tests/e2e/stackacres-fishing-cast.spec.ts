@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * A cast, end to end in a real engine: tapping the dock walks the farmer out

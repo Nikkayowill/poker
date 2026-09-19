@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "./fixtures";
 
 /**
  * Mining a Stone node, from the outside.

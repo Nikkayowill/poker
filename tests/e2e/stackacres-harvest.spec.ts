@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "./fixtures";
 
 /**
  * StackAcres' single-currency harvest, from the outside.

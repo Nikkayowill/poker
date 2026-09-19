@@ -61,6 +61,12 @@ export default defineConfig({
       // the hand is dealt, and the margin shrinks every time the suite grows.
       // Timeout behaviour is unit-tested with injected time; see engine.ts.
       RIVER_TURN_TIMEOUT_MS: "120000",
+      // Every spec creates a guest and they all come from 127.0.0.1, so the
+      // ten-a-minute bucket on POST /api/profile is spent within the first
+      // few files and the rest fail on entry. The limiter itself is unit
+      // tested (lib/server/rate-limit.test.ts) and the flag cannot take
+      // effect in a production build -- see limitsLifted in rate-limit.ts.
+      RIVER_DISABLE_RATE_LIMITS: "1",
     },
   },
 });

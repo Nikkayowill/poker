@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "./fixtures";
 
 /**
  * The unit id a browser invents, arriving at the route.

@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * The top-down map, in a real engine: a real tap walks the farmer, he holds

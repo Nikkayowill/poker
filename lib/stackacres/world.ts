@@ -44,7 +44,7 @@ import { soilSlotSpot, soilTileRect, type SoilMap } from "./soil";
 // Another strict leaf (it imports nothing at all), so this is a plain value
 // import with no cycle to worry about. Holds the Farmstead yard's offset --
 // see ./yard.ts on why sixty literals are wrapped rather than rewritten.
-import { CROP_FIELD, yardPoint, yardRect } from "./yard";
+import { CROP_FIELD, yardRect } from "./yard";
 
 /** One art unit, in device pixels of the baked vector art at zoom 1. */
 export const STACKACRES_TILE = 16;

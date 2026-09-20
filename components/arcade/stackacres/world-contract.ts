@@ -8,10 +8,9 @@ import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
-import type { FenceTier, WildlifeTimeOfDay } from "@/lib/stackacres/wildlife";
+import type { FenceTier } from "@/lib/stackacres/wildlife";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
-import type { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
@@ -170,26 +169,7 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
-  /** Starts the Pixel Pilgrim's bow, optimistically -- called only from his
-   *  dialogue's own "yes", before the `pray` request has answered. See
-   *  lib/stackacres/monk.ts and stackacres-scene.ts's `playMonkPrayer`. */
-  playMonkPrayer: () => void;
-  /** Steps the camera inside the Greenhouse (lib/stackacres/greenhouse.ts),
-   *  narrowing its bounds to the interior -- the shell's own cue, once it
-   *  has decided the Greenhouse is built (an unbuilt one opens a build panel
-   *  instead; see `onGreenhouseTap`). */
-  enterGreenhouse: () => void;
-  /** Steps back out to the open world. Also what a tap outside the
-   *  sub-grid's own six slots does on its own, from inside the scene. */
-  exitGreenhouse: () => void;
-  /** A tap that became a real action, never a refused one: registers one hit
-   *  with the Frenzy Heat Combo Engine and throws its cosmetic feedback at
-   *  the unit's own live position. `baseYieldGold` is a DISPLAY ESTIMATE,
-   *  meaningful only for a "collect" tap -- see lib/stackacres/frenzy.ts's
-   *  own header for why this never touches a real payout. */
-  registerFrenzyTap: (unitId: string, baseYieldGold?: number) => void;
-  /** The farmer acts out a water, harvest or planting drop where he stands.
-   *  Only the top-down world has a farmer; the isometric world ignores it. */
+  /** The farmer acts out a water, harvest or planting drop where he stands. */
   farmerAction: (action: FarmerAction) => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
    *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
@@ -265,16 +245,9 @@ export interface StackAcresWorldApi {
    *  pixels, the same space a `PointerEvent` carries. */
   tapAt: (clientX: number, clientY: number) => void;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
-   *  rebuild" shape as `setSoil` above. `setWildlifeTimeOfDay`
-   *  drives the day/night population swap (the shell's own `timeOfDay()`
-   *  poll); `setFenceTier`/`setLivestockHealth` hydrate one district's saved
-   *  defense state, called once per segment/zone on load and again right
-   *  after a successful upgrade. */
-  setWildlifeTimeOfDay: (tod: WildlifeTimeOfDay) => void;
-  /** The weather the ambience engine should sound like right now -- see
-   *  StackAcresScene's own `getAudibleWeather` for why this can read CLEAR
-   *  even while it is actually raining. */
-  getAudibleWeather: () => StackAcresWeather;
+   *  rebuild" shape as `setSoil` above: `setFenceTier`/`setLivestockHealth`
+   *  hydrate one district's saved defense state, called once per
+   *  segment/zone on load and again right after a successful upgrade. */
   setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
   setLivestockHealth: (zone: ZoneId, health: number) => void;
   /** Every Mechanical Forage Drone this profile owns, by id --
@@ -284,13 +257,6 @@ export interface StackAcresWorldApi {
    *  render. Passing the unchanged list twice is a harmless no-op (the
    *  scene's own `setDroneHangar` diffs against what it already has). */
   setDroneHangar: (droneIds: string[]) => void;
-  /** Wants (or stops wanting) the delivery truck on the lot -- same
-   *  "push, never rebuild" contract as `setSoil`, called whenever
-   *  `StackAcresView.contract`'s presence flips. `immediate` skips the
-   *  drive-in animation, for the one case that is not a genuinely observed
-   *  transition (a contract already open on page load) -- see the scene's
-   *  own `setTruckPresent` doc comment. */
-  setTruckPresent: (wanted: boolean, immediate?: boolean) => void;
   /** Parks every drone's forage drops for `durationMs` -- they keep flying,
    *  they just stop finding anything. Called when the server refuses a claim
    *  with `day-capped`: the farm cannot pay another Gold piece today, so the
@@ -299,20 +265,6 @@ export interface StackAcresWorldApi {
   /** A world point as pixels inside the field, for pointing a drag tool at a
    *  fixed spot. Null until the scene has booted. */
   fieldPointFor: (x: number, y: number) => TapPoint | null;
-  /** Holds (or releases) the barn's door-open tap frame for as long as the
-   *  Supply Store sheet it opens is on screen, instead of letting it revert
-   *  on its own short timer -- called from an effect on `showStore`. See
-   *  stackacres-scene.ts's `setBarnHeldOpen`. */
-  setBarnHeldOpen: (held: boolean) => void;
-  /** Same contract as `setBarnHeldOpen`, for the player's house and the
-   *  panel its own tap opens. */
-  setHouseHeldOpen: (held: boolean) => void;
-  /** Same contract again, for Ray himself (the traveler, not the house) and
-   *  his own story dialogue bubble. See `setTravelerRayHeldOpen`. */
-  setTravelerRayHeldOpen: (held: boolean) => void;
-  /** Same contract again, for the Greenhouse and the panel its own tap
-   *  opens. See `setGreenhouseHeldOpen`. */
-  setGreenhouseHeldOpen: (held: boolean) => void;
 }
 
 export interface StackAcresWorldProps {
@@ -379,18 +331,9 @@ export interface StackAcresWorldProps {
    *  mode; the map only reports the tap, the same split `onTreeTap` already
    *  takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
-  /** A finger landed on the Greenhouse's own footprint, from OUTSIDE it --
-   *  the shell's cue to decide whether to open a build panel or call
-   *  `enterGreenhouse` (see the api handle above). */
+  /** A finger landed on the Greenhouse's own footprint: the shell's cue to
+   *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
-  /** A finger landed on one of the Greenhouse's own six slots, and ONLY while
-   *  the scene is stepped inside it (`enterGreenhouse`). Row 0 is nearest the
-   *  door -- see lib/stackacres/greenhouse.ts's `greenhouseSlotLocal`. */
-  onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
-  /** A finger landed on the delivery truck, while it is actually parked at
-   *  its dock (see `setTruckPresent` on the imperative handle). Opens the
-   *  same Town Contracts sheet `onSignpostTap` does. */
-  onTruckTap: () => void;
   /** A finger landed on the Pixel Pilgrim himself. Fires no bow and
    *  reaches no server by itself -- this is only the cue to open his
    *  dialogue; see stackacres-farm.tsx's `onWorldMonkTap`. */

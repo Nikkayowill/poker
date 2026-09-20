@@ -4792,39 +4792,11 @@
   .sa-workshop-machines { gap: 8px; }
 }
 
-.sa-workshop-divert {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
 
-.sa-workshop-divert li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--sa-glass-line-soft);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-  color: var(--sa-ink);
-  font-size: 13.5px;
-  font-weight: 700;
-}
 
-.sa-workshop-divert li > span {
-  flex: 1;
-}
 
-.sa-workshop-divert .sa-cta {
-  margin-top: 0;
-  min-height: 40px;
-  padding: 6px 14px;
-  font-size: 14px;
-}
+
+
 
 /* ---- the Synergy Tree ------------------------------------------------- */
 
@@ -5140,79 +5112,35 @@
  * A glass token that floats next to whatever was tapped, with a curved arrow
  * to where it has to be dropped. See stackacres-drag-affordance.tsx. Water
  * is tinted blue and feed is tinted corn, and everything else is shared. */
-.sa-drag {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  pointer-events: none;
-  --drag-tint: rgba(64, 168, 228, .34);
-  --drag-particle: #6fc6f2;
-}
 
-.sa-drag.is-feed {
-  --drag-tint: rgba(236, 176, 58, .34);
-  --drag-particle: #e8b84a;
-}
 
-.sa-drag.is-dragging .sa-drag-arrow { opacity: .35; }
-.sa-drag.is-settling .sa-drag-arrow { opacity: 0; }
 
-@keyframes sa-drag-march {
-  to { stroke-dashoffset: -12; }
-}
 
-.sa-drag.is-settling .sa-drag-target { animation: none; opacity: 0; transition: opacity .3s var(--sa-ease-out); }
 
-@keyframes sa-drag-pulse {
-  0%, 100% { transform: scale(.94); }
-  50% { transform: scale(1.06); }
-}
 
-.sa-drag.is-dragging .sa-drag-token {
-  --grow: 1.12;
-  transition: none;
-  cursor: grabbing;
-}
+
+
+
+
+
+
+
+
 
 /* On a good drop the can tips over the soil and the scoop shakes out over
    the trough, then both fade. */
-.sa-drag.is-water.is-settling .sa-drag-token {
-  transform: translate3d(calc(var(--x) + 20px), calc(var(--y) - 34px), 0) translate(-50%, -50%) rotate(-40deg);
-  transition: transform .09s var(--sa-ease-out);
-  animation: sa-drag-fade .18s ease-in forwards;
-}
 
-.sa-drag.is-feed.is-settling .sa-drag-token {
-  transform: translate3d(var(--x), calc(var(--y) - 30px), 0) translate(-50%, -50%) rotate(18deg);
-  transition: transform .08s var(--sa-ease-out);
-  animation: sa-drag-fade .18s ease-in forwards;
-}
 
-@keyframes sa-drag-fade {
-  0%, 55% { opacity: 1; }
-  100% { opacity: 0; }
-}
 
-.sa-drag.is-feed .sa-drag-burst i {
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  border-radius: 40%;
-}
 
-@keyframes sa-drag-ring {
-  0% { opacity: .9; transform: scale(.4); }
-  100% { opacity: 0; transform: scale(1.4); }
-}
+
+
+
+
+
 
 /* The can's level in the HUD, next to feed. Roof-red once it runs dry. */
 .sa-water.is-empty strong { color: var(--sa-lit-roof); }
-
-@media (prefers-reduced-motion: reduce) {
-  .sa-drag-arrow-line,
-  .sa-drag-target { animation: none; }
-  .sa-drag-token { transition: none; }
-}
 
 /* ---- landscape phones (MUST STAY LAST) -------------------------------
    Height is the scarce axis here: at 844x390 every band of chrome above the

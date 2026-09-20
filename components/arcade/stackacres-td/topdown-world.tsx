@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
-import { StackAcresWeather } from "@/lib/stackacres/weather";
 import type { Point } from "@/lib/stackacres-td/movement";
 // Type-only, so neither Phaser nor the gauge scene lands in this file's
 // bundle: both are loaded at runtime by the effect below.
@@ -24,13 +23,13 @@ import type { TopdownScene } from "./scene";
  * the thumb stick does the same for the square under his feet, and held down it
  * strokes a whole row.
  *
- * What it does not draw yet, and so ignores from the contract: the scythe (`tool`, `cutter`), the farmhand, irrigation pipes,
- * wildlife and fences, drones and the delivery truck, the greenhouse interior,
- * moving a bed group by hold-and-drag, and every district other than the
- * Homestead and the Crop Fields. Those api methods are no-ops below, each
- * named, so the gap is visible rather than silent. None of them has a belt slot
- * either: a key that silently does nothing is what the belt exists to stop, so
- * the scythe and the pipe stay off it until this file draws them.
+ * What it does not draw yet, and so ignores from the contract: the scythe
+ * (`tool`, `cutter`), the farmhand, irrigation pipes, wildlife and fences,
+ * drones, and moving a bed group by hold-and-drag. Those api methods are
+ * no-ops below, each named, so the gap is visible rather than silent. None of
+ * them has a belt slot either: a key that silently does nothing is what the
+ * belt exists to stop, so the scythe and the pipe stay off it until this file
+ * draws them. Every area IS drawn now (scene.ts's own list).
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
@@ -233,24 +232,13 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
-      // Not drawn in the top-down preview yet (see this file's header).
       farmerAction: (action) => sceneRef.current?.farmerAction(action),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
-      registerFrenzyTap: () => undefined,
-      playMonkPrayer: () => undefined,
-      enterGreenhouse: () => undefined,
-      exitGreenhouse: () => undefined,
-      setWildlifeTimeOfDay: () => undefined,
-      getAudibleWeather: () => StackAcresWeather.CLEAR,
+      // Not drawn yet (see this file's header).
       setFenceTier: () => undefined,
       setLivestockHealth: () => undefined,
       setDroneHangar: () => undefined,
-      setTruckPresent: () => undefined,
       holdDroneForage: () => undefined,
-      setBarnHeldOpen: () => undefined,
-      setHouseHeldOpen: () => undefined,
-      setTravelerRayHeldOpen: () => undefined,
-      setGreenhouseHeldOpen: () => undefined,
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),
       startFishingGauge: (request) => {
         const game = gameRef.current;

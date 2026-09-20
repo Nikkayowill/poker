@@ -31,13 +31,11 @@ import {
   setAmbienceHerd,
   setAmbiencePlace,
   setAmbienceRiverUnlocked,
-  setAmbienceWeather,
   setFarmSfxMuted,
   startAmbience,
   stopAmbience,
 } from "@/lib/audio/stackacres-ambience";
 import { timeOfDay } from "@/lib/audio/stackacres-music";
-import { StackAcresWeather } from "@/lib/stackacres/weather";
 import {
   buySound,
   collectSound,
@@ -1960,57 +1958,11 @@ export function StackAcresFarm() {
     return () => window.clearInterval(timer);
   }, [anyWorking]);
 
-  // The barn's door-open tap frame holds for as long as the Supply Store
-  // sheet it opens is up, not just its own short timer -- see
-  // StackAcresWorldApi's `setBarnHeldOpen` doc.
-  useEffect(() => {
-    world.current?.setBarnHeldOpen(showStore);
-  }, [showStore]);
-
-  // Same contract, for the player's house and the panel its own tap opens.
-  useEffect(() => {
-    world.current?.setHouseHeldOpen(showHouse);
-  }, [showHouse]);
-
-  // Same contract again, for the Greenhouse and the panel its own tap opens.
-  useEffect(() => {
-    world.current?.setGreenhouseHeldOpen(showGreenhouse);
-  }, [showGreenhouse]);
-
-
   // The bed actually standing at the tap, if any -- the one thing that
   // decides both what the ring/strip offers (a crop needs an empty bed to
   // land on; bare ground only ever offers to till one) and, via
   // `onRadialSeed`, which tile a planting names. Null on bare ground, same
   // as it is outside the Crop Fields entirely.
-  /** Whether the truck exists at all is a plain function of whether a Town
-   *  Contract is open -- see lib/stackacres/delivery-truck.ts's own module
-   *  doc for why the truck holds no opinion of its own about that fact.
-   *  `truckKnownRef` skips the drive-in animation exactly once: the very
-   *  first time this effect runs, so a player who opens the farm with a
-   *  contract already posted sees the truck simply standing at its dock
-   *  rather than replaying an eleven-second arrival on every page load.
-   *  Every later transition -- a fresh request, or a fulfilled contract
-   *  clearing -- plays the real drive, because by then the ref is already
-   *  true. */
-  const truckKnownRef = useRef(false);
-  const truckWanted = processing.contract !== null;
-  useEffect(() => {
-    // `world.current` is null until the scene has actually booted -- and the
-    // first response (with the first `truckWanted` value it ever carries)
-    // routinely lands before that: `refresh()` fires on mount, the same
-    // frame `<StackAcresWorld>` starts mounting, and a same-machine fetch
-    // resolves well inside Phaser's own boot time. Depending on `worldReady`
-    // too, and guarding the whole body on `world.current` rather than just
-    // optional-chaining the call, is what turns that from "the truck's first
-    // real state change is silently dropped" into "try again once the world
-    // exists" -- optional-chaining alone still marks `truckKnownRef` done
-    // and never gets a second chance.
-    if (!world.current) return;
-    world.current.setTruckPresent(truckWanted, truckWanted && !truckKnownRef.current);
-    truckKnownRef.current = true;
-  }, [truckWanted, worldReady]);
-
   /**
    * The travelers' story controller, reached from inside `act` before the
    * hook that owns it exists -- `useStackAcresStory`'s own `submit` prop is
@@ -2676,15 +2628,6 @@ export function StackAcresFarm() {
     storyRef.current = story;
   });
 
-  // Ray himself (the traveler standing near his house), not the house --
-  // his own story dialogue bubble is what `story.dialogue` tracks. Same
-  // held-open contract `setBarnHeldOpen`/`setHouseHeldOpen` document,
-  // driven off a different open/close signal. See `setTravelerRayHeldOpen`.
-  const rayTravelerDialogueOpen = story.dialogue?.traveler === "ray";
-  useEffect(() => {
-    world.current?.setTravelerRayHeldOpen(rayTravelerDialogueOpen);
-  }, [rayTravelerDialogueOpen]);
-
   // Shows/hides each traveler as their own unlock is met (nobody stands on
   // the farm before that -- see `paintTravelers`/`setTravelerUnlocks` in
   // stackacres-scene.ts), then hangs a quest badge over every one who's
@@ -2747,7 +2690,6 @@ export function StackAcresFarm() {
    * handling), never a new tap point.
    */
   const onMonkPray = useCallback(() => {
-    world.current?.playMonkPrayer();
     void act({ action: "pray" });
   }, [act]);
 
@@ -3357,17 +3299,6 @@ export function StackAcresFarm() {
     setShowContracts(true);
   }, []);
 
-  /** A finger landed on the parked delivery truck -- a second door to the
-   *  same Town Contracts sheet `onWorldSignpostTap` opens, not a different
-   *  feature. The truck only exists in the scene at all while a contract is
-   *  open (see `setTruckPresent` below), so tapping it can only ever mean
-   *  "I'm here for the order," the exact same intent as walking up to the
-   *  signpost. */
-  const onWorldTruckTap = useCallback(() => {
-    panelSound();
-    setShowContracts(true);
-  }, []);
-
   /** A finger landed on the Workshop building. Same shape
    *  as `onWorldBarnTap`. */
   const onWorldWorkshopTap = useCallback(() => {
@@ -3452,29 +3383,13 @@ export function StackAcresFarm() {
   const onWorldGreenhouseTap = useCallback(() => {
     panelSound();
     setShowGreenhouse(true);
-    if (greenhouseBuilt) world.current?.enterGreenhouse();
-  }, [greenhouseBuilt]);
-
-  /**
-   * A finger landed on one of the Greenhouse's own six slots, while the scene
-   * is already stepped inside it. The panel -- already open by the time this
-   * can fire -- is the real interactive surface for a slot (same "a real DOM
-   * row does what the tap does" split every other structure on this map
-   * already takes; see stackacres-world.tsx's own header); this only
-   * guarantees it is showing.
-   */
-  const onWorldGreenhouseSlotTap = useCallback(() => {
-    setShowGreenhouse(true);
   }, []);
 
-  /** Steps back to the open world and closes the panel, in that order --
-   *  the same "sound, then close" shape `onWorldBarnTap`'s own modal takes
-   *  on the way out (see its `onClose` below). A no-op camera-wise if the
-   *  Greenhouse was never built and the camera never stepped inside. */
+  /** Closes the Greenhouse panel, sound first, the same shape
+   *  `onWorldBarnTap`'s own modal takes on the way out. */
   const closeGreenhouse = useCallback(() => {
     panelSound();
     setShowGreenhouse(false);
-    world.current?.exitGreenhouse();
   }, []);
 
   const onBuildGreenhouse = useCallback(() => {
@@ -3877,7 +3792,6 @@ export function StackAcresFarm() {
       switch (action.kind) {
         case "water":
           if (voice) waterSound();
-          world.current?.registerFrenzyTap(action.unitId);
           // `tapBatched` sends the first press straight away and folds anything
           // within the window behind it into one plural request, so a lone crop
           // never pays for a batch it is not part of.
@@ -3885,14 +3799,6 @@ export function StackAcresFarm() {
           return;
         case "collect": {
           const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
-          // Display-only, and registered per bed either way so a stroked row
-          // builds the frenzy meter the same as tapping each one would.
-          world.current?.registerFrenzyTap(
-            action.unitId,
-            picked
-              ? STACKACRES_YIELDS[picked.stock].quantity * itemSellPrice(STACKACRES_YIELDS[picked.stock].item)
-              : undefined,
-          );
           // NOT batched, even mid-stroke: the Critical Harvest Cascade chains off
           // THIS request's own settled result, and a batched send has no promise
           // to hand back to the press that joined it.
@@ -3973,34 +3879,6 @@ export function StackAcresFarm() {
   useEffect(() => {
     setAmbiencePlace(tod);
   }, [tod]);
-  // Wildlife Ecosystem & Nighttime Predator Defense reads the SAME `tod`
-  // ambience already computes, rather than polling `timeOfDay()` a second
-  // time -- see wildlife.ts's own header for why the two must never be
-  // able to disagree about whether it is night.
-  useEffect(() => {
-    world.current?.setWildlifeTimeOfDay(tod);
-  }, [tod]);
-
-  /**
-   * The ambience engine agreeing with the sky: birdsong continuing under a
-   * rain overlay is the same "picture and soundtrack disagree" bug as the
-   * farm's mute button not covering the music used to be. Polled rather than
-   * pushed on a state change, because weather rolls on the scene's own clock
-   * (lib/stackacres/weather.ts) and nothing on the React side is told when it
-   * turns over -- 2s is fast next to weather's own 45s minimum hold and the
-   * tint's own 2.6s crossfade, so a shower is never audibly late to start.
-   */
-  useEffect(() => {
-    if (!hasStarted) return;
-    const apply = () => {
-      const weather = world.current?.getAudibleWeather() ?? StackAcresWeather.CLEAR;
-      setAmbienceWeather(weather === StackAcresWeather.GOLD_RUSH_RAIN ? "rain" : "clear");
-    };
-    apply();
-    const timer = window.setInterval(apply, 2_000);
-    return () => window.clearInterval(timer);
-  }, [hasStarted]);
-
   /**
    * The river bed: a permanent, farm-wide fact (has the Sheep Pens' mud
    * hollow been cleared), not a positional one -- see
@@ -4397,8 +4275,6 @@ export function StackAcresFarm() {
               onTreeTap={onWorldTreeTap}
               onStoneTap={onWorldStoneTap}
               onGreenhouseTap={onWorldGreenhouseTap}
-              onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
-              onTruckTap={onWorldTruckTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onHouseTap={onWorldHouseTap}

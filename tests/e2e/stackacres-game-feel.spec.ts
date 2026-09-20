@@ -276,3 +276,50 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     await close();
   }
 });
+
+test("the house is walked into as a room that floats whole on screen, and its kitchen opens inside", async ({ browser }) => {
+  const { page, errors, close } = await openFarm(browser);
+  try {
+    const scene = () =>
+      page.evaluate(() => {
+        const s = (window as unknown as Handle).__stackacres.scene;
+        const cam = (s as unknown as { cameras: { main: { zoom: number; worldView: { width: number; height: number } } } }).cameras.main;
+        return { pos: { ...s.pos }, area: s.areaName, walking: s.isWalking(), zoom: cam.zoom, view: { w: cam.worldView.width, h: cam.worldView.height } };
+      });
+    const tapMap = async (x: number, y: number) => {
+      const at = await page.evaluate((p) => (window as unknown as Handle).__stackacres.scene.clientPointFor(p.x, p.y), { x, y });
+      await page.touchscreen.tap(at.x, at.y);
+    };
+
+    // Tapping the house walks him in through its red door.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 120, y: 172 }));
+    await page.waitForTimeout(1500); // the camera takes a moment to settle on him
+    await tapMap(120, 132); // the house's lower wall by its door: its upper wall is above the top of the screen
+    await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("farmhouse");
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: test.info().outputPath("inside-house.png") });
+
+    // The room floats: a whole zoom, with all of it (20 x 11 tiles) in view rather than stretched or cropped.
+    const inside = await scene();
+    expect(Number.isInteger(inside.zoom)).toBe(true);
+    expect(inside.view.w).toBeGreaterThanOrEqual(320);
+    expect(inside.view.h).toBeGreaterThanOrEqual(176);
+
+    // The kitchen run along the back wall opens the house panel.
+    await tapMap(128, 80);
+    await expect(page.getByRole("dialog", { name: "Your house" })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("dialog", { name: "Your house" }).getByRole("button", { name: "Close" }).click();
+
+    // Out through the doorway, back in front of the house.
+    await tapMap(160, 150);
+    await expect.poll(async () => (await scene()).walking, { timeout: 15_000 }).toBe(false);
+    await page.waitForTimeout(300);
+    await tapMap(160, 172);
+    await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("homestead");
+    expect((await scene()).pos.y).toBeGreaterThan(160);
+
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+});

@@ -56,6 +56,7 @@ def build(for_game=False):
     # building knows to walk inside rather than open a menu at the door (scene.ts).
     a.door("barn", 340, 144, 40, 12, (192, 150))       # arriving just inside, on the mat (interiors.BARN.arrive)
     a.door("workshop", 480, 144, 16, 12, (48, 134))     # (interiors.WORKSHOP.arrive)
+    a.door("farmhouse", 112, 144, 16, 12, (160, 150))   # (interiors.HOUSE.arrive)
     a.add(kit.greenhouse_ruin(), 600, 116, ground=True)
     a.zone("greenhouse", 560, 60, 80, 56)
     a.add(kit.well(), 186, 160, (10, 3), tag="well")

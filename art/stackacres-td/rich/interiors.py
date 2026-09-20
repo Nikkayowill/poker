@@ -427,12 +427,7 @@ def _workshop_face(c, room, board_x, stove_x):
         for y in range(22, 30):
             for x in range(x0, x0 + 6):
                 c.put(x, y, ramp if y > 23 else "stone", (4.2 if y > 23 else 4.6) - (x - x0) * 0.35)
-    for y in range(0, WALL_FACE + 4):                              # the stovepipe, up through the ceiling
-        for k, lv in enumerate((3.2, 2.4, 1.6, 1.0)):
-            c.put(stove_x - 2 + k, y, "coal", lv)
-        if y % 12 == 5:
-            c.put(stove_x - 3, y, "coal", 2.4)
-            c.put(stove_x + 2, y, "coal", 1.4)
+    _stovepipe(c, stove_x)
 
 
 def _sawdust(c, room, bench_x, seed):
@@ -620,3 +615,274 @@ def workshop(for_game=False):
     a.spawn = room.arrive
     return a
 
+
+
+# ------------------------------------------------------------------ the player's house
+
+HOUSE = Room(20, 11, (144, 176))   # a wide room with the kitchen along the back wall and the door in the middle
+
+
+def _stovepipe(c, x):
+    """A stovepipe up the back wall and through the ceiling."""
+    for y in range(0, WALL_FACE + 4):
+        for k, lv in enumerate((3.2, 2.4, 1.6, 1.0)):
+            c.put(x - 2 + k, y, "coal", lv)
+        if y % 12 == 5:
+            c.put(x - 3, y, "coal", 2.4)
+            c.put(x + 2, y, "coal", 1.4)
+
+
+def _house_face(c, room, stove_x):
+    """The back wall: plaster over a panelled skirting, a shelf of plates and jars, a framed sampler, the stovepipe."""
+    for y in range(WALL_TOP, WALL_FACE):
+        for x in range(T, room.w * T - T):
+            level = 4.6 + (noise1(x, y * 2, 11, 81) - 0.5) * 0.6 - (y - WALL_TOP) * 0.012
+            c.put(x, y, "linen", level)
+    for x in range(T, room.w * T - T):                            # a rail, then vertical panelling below it
+        c.put(x, 36, "wood", 4.8)
+        c.put(x, 37, "wood", 3.0)
+        for y in range(38, WALL_FACE):
+            panel = (x - T) // 10
+            bx = (x - T) % 10
+            level = 3.0 + (hash2(panel, 0, 83) - 0.5) * 0.5 - (y - 38) * 0.03
+            c.put(x, y, "wood", 1.4 if bx == 0 else level + 0.6 if bx == 1 else level)
+        c.put(x, WALL_FACE - 1, "wood", 1.2)
+    sx0, sx1 = 76, 176                                              # the shelf: plates on edge, jars, a mug
+    for x in range(sx0, sx1):
+        c.put(x, 26, "wood", 5.0)
+        c.put(x, 27, "wood", 2.4)
+    for i, x0 in enumerate(range(sx0 + 6, sx0 + 46, 9)):
+        for y in range(16, 26):
+            for x in range(x0, x0 + 7):
+                d = math.hypot(x - (x0 + 3), y - 21)
+                if d <= 4.6:
+                    rim = ("blue", "teal")[i % 2]
+                    c.put(x, y, rim if d > 3.0 else "white", 3.2 if d > 3.0 else 6.0 - d * 0.2)
+    for i, (ramp, x0) in enumerate((("orange", 130), ("red", 140), ("gold", 150), ("leaf", 160))):
+        for y in range(17 + (i % 2), 26):
+            for x in range(x0, x0 + 7):
+                edge = x in (x0, x0 + 6)
+                c.put(x, y, "glass" if y < 19 + (i % 2) else ramp, 1.8 if edge else 4.4 - (x - x0) * 0.3)
+        c.put(x0 + 3, 16 + (i % 2), "wood", 3.0)
+    px0, px1, py0, py1 = 190, 212, 14, 32                            # a framed sampler
+    for y in range(py0, py1):
+        for x in range(px0, px1):
+            edge = x in (px0, px1 - 1) or y in (py0, py1 - 1)
+            c.put(x, y, "wood", 4.4 if edge else 5.6)
+    for y in range(py0 + 3, py1 - 3):
+        for x in range(px0 + 3, px1 - 3):
+            c.put(x, y, "red" if (x + y) % 5 == 0 else "linen", 4.6 if (x + y) % 5 == 0 else 5.4)
+    c.put((px0 + px1) // 2, py0 + 9, "leaf", 4.4)
+    _stovepipe(c, stove_x)
+
+
+def kitchen_counter():
+    """The kitchen run: a tiled backsplash, a butcher-block top with a pot, a loaf, a bowl of tomatoes and a jug,
+    and cupboard doors with brass knobs."""
+    w, h = 96, 40
+    c = Canvas(w, h)
+    for y in range(4, 13):                                        # the tiled backsplash
+        for x in range(1, w - 1):
+            tile = (x // 6 + y // 5) % 2
+            edge = x % 6 == 0 or y % 5 == 4
+            c.put(x, y, "teal", 2.0 if edge else 3.8 + tile * 0.7 - (y - 4) * 0.05)
+    for y in range(13, 20):                                       # the butcher-block top
+        for x in range(0, w):
+            level = 5.2 - (y - 13) * 0.3 - x / w * 0.8 + (noise1(x * 2, y, 8, 84) - 0.5) * 0.5
+            if y == 13:
+                level += 0.7
+            c.put(x, y, "wood", level)
+    for x in range(0, w):
+        c.put(x, 20, "wood", 1.3)
+    for y in range(21, 37):                                       # cupboard doors
+        for x in range(2, w - 2):
+            col = (x - 2) % 30
+            frame = col in (0, 29) or y in (21, 36)
+            panel = 4 < col < 25 and 24 < y < 33
+            level = 4.6 if col == 0 else 2.0 if (frame or panel and (col in (5, 24) or y in (25, 32))) else 3.4 - (y - 21) * 0.03
+            c.put(x, y, "wood", level)
+    for x0 in (12, 44, 74):                                       # brass knobs
+        c.put(x0 + 8, 28, "gold", 5.0)
+        c.put(x0 + 9, 28, "gold", 3.0)
+    for x in range(2, w - 2):
+        c.put(x, 37, "wood", 0.9)
+        c.put(x, 38, "wood", 0.9)
+    for y in range(4, 14):                                        # a cast-iron pot
+        for x in range(8, 26):
+            if y == 4 and x not in (10, 11, 22, 23):
+                continue
+            edge = x in (8, 25) or y == 13
+            if y >= 6 or x in (10, 11, 22, 23):
+                c.put(x, y, "coal", 1.4 if edge else 3.0 - abs(x - 14) * 0.08)
+    for x in range(9, 25):
+        c.put(x, 6, "coal", 3.6)
+    for y in range(8, 14):                                        # a loaf, scored across the top
+        for x in range(36, 54):
+            wid = 8.5 - abs(y - 11) * 1.5
+            if abs(x - 45) <= wid:
+                c.put(x, y, "orange", 4.4 - abs(x - 45) * 0.08 - (0.7 if y > 11 else 0))
+    for x in (41, 45, 49):
+        c.put(x, 9, "tan", 5.4)
+        c.put(x + 1, 10, "tan", 4.4)
+    for y in range(9, 14):                                        # a bowl of tomatoes
+        for x in range(62, 80):
+            if abs(x - 71) <= 8 - (y - 9) * 0.9:
+                c.put(x, y, "linen", 5.0 - abs(x - 71) * 0.1)
+    for tx, ty in ((66, 7), (71, 6), (76, 7), (69, 9), (74, 9)):
+        for dy in range(3):
+            for dx in range(4):
+                if not (dy == 0 and dx in (0, 3)) and not (dy == 2 and dx in (0, 3)):
+                    c.put(tx + dx, ty + dy, "red", 4.8 - dx * 0.6 - dy * 0.3)
+        c.put(tx + 1, ty - 1, "leaf", 4.0)
+    for y in range(3, 13):                                        # a blue jug
+        for x in range(84, 91):
+            if y < 5 and x not in (86, 87, 88):
+                continue
+            c.put(x, y, "blue", 4.6 - (x - 84) * 0.55 - (0.0 if y > 5 else 0.6))
+    return c.outline().image(), (w // 2, h - 3)
+
+
+def dining_table():
+    """A plank table under a red-and-cream check cloth, two bowls of stew and a candle."""
+    w, h = 54, 36
+    c = Canvas(w, h)
+    for y in range(9, 28):
+        for x in range(2, w - 2):
+            check = ((x - 2) // 5 + (y - 9) // 5) % 2
+            level = 5.0 - (y - 9) * 0.05 - x / w * 0.5
+            if y == 9:
+                level += 0.6
+            c.put(x, y, "red" if check == 0 else "linen", level - (0.4 if check == 0 else 0))
+    for y in range(28, 33):                                       # the cloth hanging over the front edge
+        for x in range(4, w - 4):
+            fold = (x // 6) % 2
+            check = ((x - 4) // 5) % 2
+            c.put(x, y, "red" if check == 0 else "linen", 3.0 - (y - 28) * 0.25 - fold * 0.5)
+    for x in (7, w - 9):                                          # legs below the cloth
+        for y in range(33, 36):
+            c.put(x, y, "wood", 2.0)
+            c.put(x + 1, y, "wood", 1.2)
+    for bx in (10, 34):                                           # bowls of stew
+        for y in range(13, 19):
+            for x in range(bx, bx + 12):
+                if abs(x - (bx + 5.5)) <= 5.8 - abs(y - 15) * 0.6:
+                    c.put(x, y, "linen" if y > 16 else "orange", 5.4 - abs(x - (bx + 5.5)) * 0.15)
+    for y in range(10, 20):                                       # a candle in a jar
+        for x in range(24, 30):
+            c.put(x, y, "glass" if y > 13 else "linen", 4.2 - (x - 24) * 0.4)
+    c.put(26, 9, "lamp", 5.6)
+    c.put(27, 9, "gold", 5.0)
+    c.put(26, 8, "orange", 5.4)
+    return c.outline().image(), (w // 2, h - 1)
+
+
+def chair(side):
+    """A ladder-back chair seen from above and the side: `side` is where its back stands, "west" or "east"."""
+    w, h = 14, 22
+    c = Canvas(w, h)
+    x0, x1 = (0, 4) if side == "west" else (10, 14)
+    for y in range(2, 12):                                        # the back, with its rungs
+        for x in range(x0, x1):
+            c.put(x, y, "wood", 4.0 - abs(x - (x0 + 1.5)) * 0.4 - (0.9 if y % 4 == 0 else 0))
+    sx0, sx1 = (3, 13) if side == "west" else (1, 11)
+    for y in range(10, 17):                                       # the seat
+        for x in range(sx0, sx1):
+            c.put(x, y, "wood", 5.0 - (y - 10) * 0.3 - (0.6 if y == 16 else 0))
+    for lx in (sx0 + 1, sx1 - 3):                                 # front legs
+        for y in range(17, 21):
+            c.put(lx, y, "wood", 2.4)
+            c.put(lx + 1, y, "wood", 1.4)
+    return c.outline().image(), (w // 2, h - 1)
+
+
+def bed():
+    """A bed with its head to the back wall: a headboard, a pillow, a blue patchwork quilt and a footboard."""
+    w, h = 42, 58
+    c = Canvas(w, h)
+    for y in range(0, 8):                                         # the headboard
+        for x in range(0, w):
+            c.put(x, y, "wood", 4.4 - y * 0.35 - (0.7 if x % 6 == 0 else 0))
+    for y in range(8, 54):                                        # the mattress and the sheet
+        for x in range(2, w - 2):
+            c.put(x, y, "linen", 5.2 - (y - 8) * 0.02 - (0.6 if x in (2, w - 3) else 0))
+    for y in range(10, 22):                                       # the pillow
+        for x in range(6, w - 6):
+            if abs(x - w / 2) <= 15 - max(0, 3 - (y - 10)) - max(0, (y - 18)) * 1.2:
+                c.put(x, y, "white", 6.0 - (y - 10) * 0.12 - abs(x - w / 2) * 0.03)
+    for y in range(24, 52):                                       # the quilt: a patchwork of blues
+        for x in range(2, w - 2):
+            patch = ((x - 2) // 7 + (y - 24) // 7) % 3
+            ramp = ("denim", "blue", "teal")[patch]
+            level = 4.2 - (y - 24) * 0.02 - (0.9 if (x - 2) % 7 == 0 or (y - 24) % 7 == 0 else 0)
+            if y == 24:
+                level += 0.6
+            c.put(x, y, ramp, level)
+    for y in range(52, 58):                                       # the footboard
+        for x in range(0, w):
+            c.put(x, y, "wood", 4.6 - (y - 52) * 0.5 - (0.7 if x % 6 == 0 else 0))
+    for y in range(8, 54):                                        # the side rails
+        c.put(0, y, "wood", 4.0)
+        c.put(1, y, "wood", 2.6)
+        c.put(w - 1, y, "wood", 2.0)
+        c.put(w - 2, y, "wood", 3.0)
+    return c.outline().image(), (w // 2, h - 1)
+
+
+def cellar_hatch():
+    """A trapdoor set flush in the floor with an iron ring, for the cellar below."""
+    w, h = 32, 18
+    c = Canvas(w, h)
+    for y in range(0, h):
+        for x in range(0, w):
+            edge = x in (0, w - 1) or y in (0, h - 1)
+            seam = y % 6 == 5
+            board = (x + (y // 6) * 11) // 16
+            level = 0.9 if edge else 2.2 if seam else 3.8 + (hash2(board, y // 6, 87) - 0.5) * 0.7 + (noise1(x, y * 3, 6, 86) - 0.5) * 0.4
+            c.put(x, y, "wood", level)
+    for y in range(1, h - 1):                                     # the gap where the lid meets the boards around it
+        c.put(1, y, "wood", 1.6)
+        c.put(w - 2, y, "wood", 1.6)
+    for x in range(1, w - 1):
+        c.put(x, 1, "wood", 1.6)
+        c.put(x, h - 2, "wood", 1.6)
+    for y in (4, h - 6):                                          # hinge straps down the left edge
+        for x in range(2, 9):
+            c.put(x, y, "coal", 2.4)
+        c.put(8, y, "coal", 3.4)
+    for x in range(20, 27):                                       # the pull ring, with its shadow
+        for y in range(6, 12):
+            d = math.hypot(x - 23.0, y - 8.5)
+            if 2.0 <= d <= 3.4:
+                c.put(x, y, "stone", 5.4 - (x - 20) * 0.4)
+    for x in range(21, 26):
+        c.put(x, 12, "wood", 1.0)
+    return c.outline().image(), (w // 2, h - 1)
+
+
+def house(for_game=False):
+    """Kitchen along the back wall (the counter and stove open the house panel), the bed in the corner, a table set
+    for supper and the cellar hatch in the floor."""
+    room = HOUSE
+    a = Area("farmhouse", room.w, room.h)
+    a.indoor = True
+    a.rect("cobble", 0, 0, room.w, room.h)
+    stove_x = 252
+
+    def face(c):
+        _house_face(c, room, stove_x)
+
+    a.add(shell(room, face, (40, 218), (66, 228), (48, 110, 144, 148, "teal", "linen"), 90, floor=4.0), 0, 0, ground=True)
+    _enclose(a, room)
+    a.add(kitchen_counter(), 128, 92, (34, 3), tag="farmhouse")
+    a.add(stove(), stove_x, 78, (9, 2), tag="farmhouse")
+    a.add(bed(), 46, 108, (18, 4))
+    a.add(dining_table(), 96, 140, (22, 3))
+    a.add(chair("west"), 62, 138, (5, 2))
+    a.add(chair("east"), 132, 138, (5, 2))
+    a.add(cellar_hatch(), 226, 138, None, tag="farmhouse")
+    a.add(S.woodpile(), 274, 108, (13, 2))
+    a.add(S.barrel(), 282, 148, (5, 2))
+    a.add(sack("tan"), 262, 152, (5, 2))
+    a.door("homestead", room.door0, room.h * T - 8, room.door1 - room.door0, 8, (120, 172))
+    a.spawn = room.arrive
+    return a

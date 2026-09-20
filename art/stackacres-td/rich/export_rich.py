@@ -59,13 +59,12 @@ from pal import Canvas, hash2  # noqa: E402
 PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
 # Rooms walked into through a Homestead door; drawn only by rich/, so they skip the DB16 sprite patching.
 INTERIORS = [SimpleNamespace(__name__="barn", build=interiors.barn),
-             SimpleNamespace(__name__="workshop", build=interiors.workshop)]
+             SimpleNamespace(__name__="workshop", build=interiors.workshop),
+             SimpleNamespace(__name__="farmhouse", build=interiors.house)]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
 # Light points in a tagged prop's own sprite pixels: where its windows and lamps are. The barn and the workshop
 # carry theirs on their sprites (buildings.py), since their tags are also on the counter and the bench inside.
-LIGHTS = {
-    "farmhouse": [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")],
-}
+LIGHTS = {}
 
 
 # A straw mat outside each door on the Homestead: (door centre x, mat top y, width). Laid into the ground picture

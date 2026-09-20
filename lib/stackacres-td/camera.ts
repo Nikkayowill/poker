@@ -44,6 +44,16 @@ export function zoomRange(canvasW: number, canvasH: number, mapW: number, mapH: 
   return { min, max: Math.max(min, fitZoom + EXTRA_ZOOM_IN) };
 }
 
+/**
+ * The zoom a room is walked at: the largest whole zoom at which all of it still fits on screen, so a small room
+ * floats in the middle of the screen with dark around it, at the crispest scale it can have, instead of being
+ * stretched to fill it or cropped and scrolled. A room bigger than the follow zoom allows is held to its range.
+ */
+export function roomZoom(canvasW: number, canvasH: number, mapW: number, mapH: number, fitZoom: number): number {
+  const whole = Math.floor(Math.min(canvasW / Math.max(1, mapW), canvasH / Math.max(1, mapH)));
+  return clampZoom(whole, zoomRange(canvasW, canvasH, mapW, mapH, fitZoom));
+}
+
 export function clampZoom(zoom: number, range: ZoomRange): number {
   return Math.min(range.max, Math.max(range.min, zoom));
 }

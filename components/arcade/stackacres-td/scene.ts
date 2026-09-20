@@ -5,6 +5,7 @@ import {
   clampZoom,
   ease,
   nearestWholeZoom,
+  roomZoom,
   settled,
   zoomRange,
   type ZoomRange,
@@ -79,7 +80,7 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  */
 
 const ASSETS = "/stackacres-td";
-const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop"];
+const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
 const ENRICHED_SOIL_TINT = 0xd6f0b4;
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
 const AREA_NAMES: Record<TopdownArea, string> = {
@@ -93,6 +94,7 @@ const AREA_NAMES: Record<TopdownArea, string> = {
   townsquare: "Town Square",
   barn: "Barn",
   workshop: "Workshop",
+  farmhouse: "Your House",
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
@@ -1066,8 +1068,18 @@ export class TopdownScene extends Phaser.Scene {
       this.area.height * this.area.tile,
       this.fitZoom,
     );
-    this.zoomTarget = this.fitZoom;
-    this.applyZoom(this.fitZoom);
+    this.zoomTarget = this.followZoom();
+    this.applyZoom(this.zoomTarget);
+  }
+
+  /**
+   * The zoom that rides the farmer here. Outside it is the screen's own; in a room it is the crispest whole zoom
+   * that still shows all of it, so a small room floats in the middle of the screen instead of filling it.
+   */
+  private followZoom(): number {
+    if (!this.area.indoor) return this.fitZoom;
+    const cam = this.cameras.main;
+    return roomZoom(cam.width, cam.height, this.area.width * this.area.tile, this.area.height * this.area.tile, this.fitZoom);
   }
 
   /** Where the camera is centred right now, in map pixels. */
@@ -1867,7 +1879,7 @@ export class TopdownScene extends Phaser.Scene {
       this.area.height * this.area.tile,
       zoom,
     );
-    const next = this.zoomedByPlayer ? nearestWholeZoom(this.zoom, this.zooms) : zoom;
+    const next = this.zoomedByPlayer ? nearestWholeZoom(this.zoom, this.zooms) : this.followZoom();
     this.zoomTarget = next;
     this.applyZoom(next);
   }

@@ -45,7 +45,8 @@ export type TopdownArea =
   | "mine"
   | "townsquare"
   | "barn"
-  | "workshop";
+  | "workshop"
+  | "farmhouse";
 
 export interface MapPoint {
   area: TopdownArea;

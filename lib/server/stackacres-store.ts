@@ -1893,7 +1893,11 @@ export async function adjustStackAcresInventory(
     p_delta: delta,
   });
   if (error) {
-    if (error.code === "23514") return null;
+    // A spend the shelf cannot cover comes back as a check violation: a
+    // refusal. A credit cannot overdraw anything, so a check violation on one
+    // means the table's item list does not know this item. That is a broken
+    // setup, not a refusal, and it has to be loud.
+    if (error.code === "23514" && delta < 0) return null;
     throw new Error(`Could not update your stores: ${error.message}`);
   }
   return data === null ? null : Number(data);

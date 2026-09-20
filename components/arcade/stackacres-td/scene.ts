@@ -5,6 +5,7 @@ import {
   clampZoom,
   ease,
   nearestWholeZoom,
+  roomZoom,
   settled,
   zoomRange,
   type ZoomRange,
@@ -58,7 +59,8 @@ import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 
 /**
- * The top-down farm: the Homestead and the Old Fields, walked with tap-to-move or the thumb stick (joystick.tsx).
+ * The top-down farm: the Homestead, the areas past its gates, and the barn and workshop inside their doors, walked
+ * with tap-to-move or the thumb stick (joystick.tsx).
  *
  * It answers the shell's callbacks (../stackacres/world-contract.ts). Tapping a
  * thing walks the farmer over to it first, and the shell's menu opens when he
@@ -78,8 +80,26 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  */
 
 const ASSETS = "/stackacres-td";
-const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare"];
+const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
 const ENRICHED_SOIL_TINT = 0xd6f0b4;
+/** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
+const AREA_NAMES: Record<TopdownArea, string> = {
+  homestead: "The Homestead",
+  oldfields: "Crop Fields",
+  fold: "The Fold",
+  pasture: "Cattle Pasture",
+  coast: "Coastal Market",
+  oak: "The Ancestral Oak",
+  mine: "Mine Entrance",
+  townsquare: "Town Square",
+  barn: "Barn",
+  workshop: "Workshop",
+  farmhouse: "Your House",
+};
+/** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
+const TRAVEL_MS = 320;
+/** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
+const TRAVEL_DEPTH = 20_000;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
@@ -200,6 +220,8 @@ interface AreaSpec {
   blocked: [number, number][];
   zones: { tag: string; x: number; y: number; w: number; h: number }[];
   exits: { to: TopdownArea; x: number; y: number; w: number; h: number; spawn: Point }[];
+  /** An interior (the barn, the workshop): lamplit at every hour, no critters or weather. */
+  indoor: boolean;
   lights: LightPoint[];
   emitters: Emitter[];
   ambient: AmbientSpec;
@@ -237,6 +259,8 @@ export interface TopdownCallbacks {
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   onCropFieldsLockedTap: (at: TapPoint) => void;
   onViewMoved: () => void;
+  /** The farmer has just gone through a door or a gate: the shell shows where he has arrived. */
+  onPlaceEntered: (name: string) => void;
   /** The world has taken the farmer for a cast, or given him back. The shell
    *  stands the thumb stick and the Use key down for the duration: they are
    *  refused anyway, and leaving them lit reads as the game having frozen. */
@@ -354,6 +378,8 @@ export class TopdownScene extends Phaser.Scene {
   private people!: PeopleLife;
   /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day, cues and walking stay. */
   private reducedMotion = false;
+  /** Set from the step through a door until its dissolve ends; taps and the stick wait meanwhile. */
+  private travelling = false;
 
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
@@ -441,7 +467,9 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    if (this.stick) this.walkByStick(delta);
+    if (this.travelling) {
+      // Nothing to walk: the farmer is between two places.
+    } else if (this.stick) this.walkByStick(delta);
     else if (this.path.length > 0) this.walk(delta);
     if (this.useDown && this.isWalking()) this.useSquare(true);
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
@@ -451,7 +479,7 @@ export class TopdownScene extends Phaser.Scene {
     this.regrowNodes(time);
     this.smoke.update(time, this.reducedMotion);
     this.daylight.update(time, this.reducedMotion);
-    this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
+    if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.people.update(
       time,
       { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
@@ -514,15 +542,66 @@ export class TopdownScene extends Phaser.Scene {
 
   /** Stepping into an exit to an area he may enter takes him there. */
   private takeExit(at: Point): boolean {
+    if (this.travelling) return false;
     const exit = this.area.exits.find(
       (e) => at.x >= e.x && at.x < e.x + e.w && at.y >= e.y && at.y < e.y + e.h && this.canEnter(e.to),
     );
     if (!exit) return false;
     this.path = [];
     this.pending = null;
-    this.enterArea(exit.to, exit.spawn);
-    this.callbacks.onViewMoved();
+    this.travelTo(exit.to, exit.spawn);
     return true;
+  }
+
+  /**
+   * Goes through a door or a gate: the outgoing view is grabbed, the next place is built underneath, and the grab
+   * pushes in (pulls back, leaving a room) while it dissolves, and the shell is told the place's name to show. If
+   * the grab never arrives (a hidden tab), the place still changes.
+   */
+  private travelTo(to: TopdownArea, spawn: Point): void {
+    this.travelling = true;
+    const leaving = this.area.indoor;
+    let done = false;
+    const go = (grab: HTMLImageElement | null): void => {
+      if (done) return;
+      done = true;
+      this.enterArea(to, spawn);
+      this.callbacks.onViewMoved();
+      this.callbacks.onPlaceEntered(AREA_NAMES[to]);
+      if (grab && !this.reducedMotion) this.dissolve(grab, leaving);
+      else this.travelling = false;
+    };
+    if (this.reducedMotion) {
+      go(null);
+      return;
+    }
+    this.game.renderer.snapshot((grab) => go(grab instanceof HTMLImageElement ? grab : null));
+    this.time.delayedCall(250, () => go(null));
+  }
+
+  private dissolve(grab: HTMLImageElement, pullBack: boolean): void {
+    const key = "travel-grab";
+    if (this.textures.exists(key)) this.textures.remove(key);
+    this.textures.addImage(key, grab);
+    const cam = this.cameras.main;
+    const veil = this.add.image(cam.width / 2, cam.height / 2, key).setScrollFactor(0).setDepth(TRAVEL_DEPTH);
+    const end = pullBack ? 0.9 : 1.22;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: TRAVEL_MS,
+      ease: "Quad.easeOut",
+      onUpdate: (tween) => {
+        const t = tween.getValue() ?? 0;
+        // Phaser zooms about the camera's centre, so the veil is sized in the zoomed-away units to cover the view.
+        const scale = 1 + (end - 1) * t;
+        veil.setDisplaySize((cam.width / cam.zoom) * scale, (cam.height / cam.zoom) * scale).setAlpha(1 - t);
+      },
+      onComplete: () => {
+        veil.destroy();
+        this.travelling = false;
+      },
+    });
   }
 
   /** Bought land can only be walked into once it is owned, whatever path the farmer found to its edge. */
@@ -654,7 +733,7 @@ export class TopdownScene extends Phaser.Scene {
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();
-    this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights);
+    this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights, this.area.indoor);
     this.smoke.build(this.area.emitters);
     this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
 
@@ -989,8 +1068,18 @@ export class TopdownScene extends Phaser.Scene {
       this.area.height * this.area.tile,
       this.fitZoom,
     );
-    this.zoomTarget = this.fitZoom;
-    this.applyZoom(this.fitZoom);
+    this.zoomTarget = this.followZoom();
+    this.applyZoom(this.zoomTarget);
+  }
+
+  /**
+   * The zoom that rides the farmer here. Outside it is the screen's own; in a room it is the crispest whole zoom
+   * that still shows all of it, so a small room floats in the middle of the screen instead of filling it.
+   */
+  private followZoom(): number {
+    if (!this.area.indoor) return this.fitZoom;
+    const cam = this.cameras.main;
+    return roomZoom(cam.width, cam.height, this.area.width * this.area.tile, this.area.height * this.area.tile, this.fitZoom);
   }
 
   /** Where the camera is centred right now, in map pixels. */
@@ -1082,7 +1171,7 @@ export class TopdownScene extends Phaser.Scene {
 
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
-    if (!this.booted) return;
+    if (!this.booted || this.travelling) return;
     // A cast owns the farmer until it resolves. Before the fish is on, a tap
     // anywhere reels the line back in; after it, the tap is swallowed and the
     // gauge has the screen.
@@ -1095,6 +1184,18 @@ export class TopdownScene extends Phaser.Scene {
     const rect = this.host.getBoundingClientRect();
     const map = this.cssToMap(clientX - rect.left, clientY - rect.top);
     const target = this.targetAt(map);
+    // A building with a door (the barn, the workshop) is walked into: its exit is named for the building's tag,
+    // and what opens its menu stands inside.
+    const door = target.kind === "tag" ? this.area.exits.find((e) => e.to === target.tag) : undefined;
+    if (door) {
+      const inside = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
+      this.pending = null;
+      this.path = findPath(this.grid, this.pos, inside);
+      if (this.path.length === 0) return;
+      this.callbacks.onViewMoved();
+      this.drawMarker(inside);
+      return;
+    }
     // On the Crop Fields he walks ONTO the bed, because the belt works the
     // square under his feet and there is no menu left for him to stand clear of.
     // An animal in a pen still gets approached from below rather than stood on.
@@ -1778,7 +1879,7 @@ export class TopdownScene extends Phaser.Scene {
       this.area.height * this.area.tile,
       zoom,
     );
-    const next = this.zoomedByPlayer ? nearestWholeZoom(this.zoom, this.zooms) : zoom;
+    const next = this.zoomedByPlayer ? nearestWholeZoom(this.zoom, this.zooms) : this.followZoom();
     this.zoomTarget = next;
     this.applyZoom(next);
   }

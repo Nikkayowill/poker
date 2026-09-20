@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { NIGHT_FLOOR, brightness, daylightAt, hourOf, tintColor } from "./daylight";
+import { INDOORS, NIGHT_FLOOR, brightness, daylightAt, hourOf, tintColor } from "./daylight";
+
+describe("INDOORS", () => {
+  it("is warm, readable and lamplit", () => {
+    expect(INDOORS.r).toBeGreaterThan(INDOORS.b);
+    expect(brightness(INDOORS)).toBeGreaterThan(0.9);
+    expect(INDOORS.lamps).toBeGreaterThan(0);
+  });
+});
 
 describe("daylightAt", () => {
   it("leaves midday untouched, with the lamps out", () => {

@@ -255,7 +255,9 @@ def farmhouse():
             n = noise1(x, y, 3, 61)
             if n > 0.5 + (wall_bottom - y) * 0.018 + (x - 3) * 0.04:
                 c.put(x, y, "leaf2" if n > 0.72 else "leaf", 2.2 + n * 3.2 - (y - eave - 30) * 0.03)
-    return c.outline().image(), (w // 2, wall_bottom + 2)
+    img = c.outline().image()
+    img.info["lights"] = [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")]
+    return img, (w // 2, wall_bottom + 2)
 
 
 # ------------------------------------------------------------------ barn
@@ -379,7 +381,9 @@ def barn():
     for x, y, lv in ((cx - 4, 0, 5.2), (cx - 3, 0, 4.8), (cx - 2, 0, 4.4), (cx + 2, 0, 3.6), (cx + 3, 0, 3.0),
                      (cx - 5, 1, 4.0)):
         c.put(x, y, "gold", lv)
-    return c.outline().image(), (cx, bottom + 2)
+    img = c.outline().image()
+    img.info["lights"] = [(48, 40, "lantern")]
+    return img, (cx, bottom + 2)
 
 
 # ------------------------------------------------------------------ windmill

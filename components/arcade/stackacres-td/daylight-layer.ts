@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { brightness, daylightAt, hourOf, tintColor, type Daylight } from "@/lib/stackacres-td/daylight";
+import { INDOORS, brightness, daylightAt, hourOf, tintColor, type Daylight } from "@/lib/stackacres-td/daylight";
 
 /** A window, porch lamp or lantern that glows when it gets dark, exported per area by rich/export_rich.py. */
 export interface LightPoint {
@@ -32,6 +32,8 @@ export class DaylightLayer {
   private light: Daylight = daylightAt(12);
   private sampledAt = Number.NEGATIVE_INFINITY;
   private readonly webgl: boolean;
+  /** An interior: its fixed lamplight instead of the clock's. */
+  private indoor = false;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -41,7 +43,8 @@ export class DaylightLayer {
   }
 
   /** Called on entering an area, after the area's objects were cleared. */
-  build(mapWidth: number, mapHeight: number, lights: readonly LightPoint[]): void {
+  build(mapWidth: number, mapHeight: number, lights: readonly LightPoint[], indoor: boolean): void {
+    this.indoor = indoor;
     this.overlay = this.keep(
       this.scene.add.rectangle(-32, -32, mapWidth + 64, mapHeight + 64, 0xffffff).setOrigin(0, 0).setDepth(DAYLIGHT_DEPTH),
     );
@@ -74,7 +77,7 @@ export class DaylightLayer {
     if (!this.overlay) return;
     if (timeMs - this.sampledAt >= SAMPLE_MS) {
       this.sampledAt = timeMs;
-      this.light = daylightAt(this.hour());
+      this.light = this.indoor ? INDOORS : daylightAt(this.hour());
       if (this.webgl) this.overlay.setFillStyle(tintColor(this.light), 1);
       else this.overlay.setFillStyle(0x1c2350, (1 - brightness(this.light)) * 0.9);
     }

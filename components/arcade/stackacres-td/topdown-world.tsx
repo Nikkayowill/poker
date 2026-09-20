@@ -144,6 +144,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
           onCropFieldsLockedTap: (at) => p().onCropFieldsLockedTap(at),
           onViewMoved: () => p().onViewMoved(),
+          onPlaceEntered: (name) => p().onPlaceEntered(name),
           onInputLocked: setCastLocked,
         },
         host,
@@ -186,9 +187,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       const fit = () => {
         if (!instance.isBooted) return;
         const next = size();
+        // Resized first, so the scene works out its zoom (a room's depends on the canvas) from the new size.
+        if (instance.scale.width !== next.width || instance.scale.height !== next.height) instance.scale.resize(next.width, next.height);
         scene.setZoom(next.zoom);
-        if (instance.scale.width === next.width && instance.scale.height === next.height) return;
-        instance.scale.resize(next.width, next.height);
       };
       instance.events.once("ready", fit);
       observer = new ResizeObserver(fit);

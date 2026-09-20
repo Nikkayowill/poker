@@ -3247,6 +3247,16 @@ export function StackAcresFarm() {
   // The view moving under whatever is pinned to it closes both screen-
   // anchored panels the same way -- neither is anchored to the world, so
   // both go away rather than drift off what they were opened on.
+  // Where the farmer just arrived, for a moment. The counter keys the tag, so going through two doors quickly
+  // replays it rather than leaving the first one fading.
+  const [placeTag, setPlaceTag] = useState<{ name: string; n: number } | null>(null);
+  const onPlaceEntered = useCallback((name: string) => setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 })), []);
+  useEffect(() => {
+    if (!placeTag) return;
+    const timer = window.setTimeout(() => setPlaceTag(null), 1900);
+    return () => window.clearTimeout(timer);
+  }, [placeTag]);
+
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
     setFencePopup(null);
@@ -4405,6 +4415,11 @@ export function StackAcresFarm() {
 
   return (
     <main className="duel-shell ante-shell sa-shell">
+      {placeTag && (
+        <div key={placeTag.n} className="sa-place-tag" role="status">
+          {placeTag.name}
+        </div>
+      )}
       <header className="floor-bar">
         <div className="floor-bar-left">
           <FloorBackLink />
@@ -4529,6 +4544,7 @@ export function StackAcresFarm() {
               onLockedSectorTap={onWorldLockedTap}
               onCropFieldsLockedTap={onWorldCropFieldsLockedTap}
               onViewMoved={onViewMoved}
+              onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}
               irrigation={irrigation}
               onDroneForageCollected={onDroneForageCollected}

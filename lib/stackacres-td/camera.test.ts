@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampCentre, clampZoom, ease, nearestWholeZoom, settled, zoomRange } from "./camera";
+import { clampCentre, clampZoom, ease, nearestWholeZoom, roomZoom, settled, zoomRange } from "./camera";
 
 // The Old Fields at 44 x 40 tiles of 16px, on a phone-sized canvas at dpr 3.
 const OLD_FIELDS = { w: 44 * 16, h: 40 * 16 };
@@ -98,5 +98,28 @@ describe("settled", () => {
   it("stops the ease once the gap is under the epsilon", () => {
     expect(settled(99.9, 100, 0.25)).toBe(true);
     expect(settled(99, 100, 0.25)).toBe(false);
+  });
+});
+
+describe("roomZoom", () => {
+  // A landscape phone at dpr 3, and the follow zoom topdown-world.tsx picks for it.
+  const LANDSCAPE = { w: 2532, h: 1170 };
+
+  it("shows a small room whole at the crispest whole zoom that fits it", () => {
+    expect(roomZoom(LANDSCAPE.w, LANDSCAPE.h, 240, 160, 7)).toBe(7);
+    expect(roomZoom(LANDSCAPE.w, LANDSCAPE.h, 320, 176, 7)).toBe(6);
+  });
+
+  it("drops below the follow zoom for a room the follow zoom would crop", () => {
+    // 384 x 176 at zoom 7 is 2688 x 1232: wider and taller than the screen. Zoom 6 shows all of it.
+    expect(roomZoom(LANDSCAPE.w, LANDSCAPE.h, 384, 176, 7)).toBe(6);
+  });
+
+  it("never pushes a tiny room in past the range a pinch could reach", () => {
+    expect(roomZoom(LANDSCAPE.w, LANDSCAPE.h, 96, 64, 7)).toBe(9);
+  });
+
+  it("is always a whole number, which keeps the art crisp", () => {
+    expect(Number.isInteger(roomZoom(2000, 913, 300, 170, 5))).toBe(true);
   });
 });

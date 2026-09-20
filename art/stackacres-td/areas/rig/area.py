@@ -34,6 +34,9 @@ class Area:
         self.tags = {}       # item index -> what tapping it does, e.g. "barn", "gate:oldfields"
         self.zones = []      # (tag, x, y, w, h) in pixels: tappable ground with no sprite of its own
         self.exits = []      # (to area, x, y, w, h, spawn x, spawn y): walk in here, arrive there
+        self.doorways = set()  # (tx, ty) a building's own footprint leaves open, so its door can be walked into
+        self.solid = set()   # (tx, ty) that never walk: an interior's walls
+        self.indoor = False  # an interior: lit by its lamps whatever the hour, and no weather or critters
 
     # ---- terrain, authored on the (w+1) x (h+1) vertex grid
 
@@ -80,6 +83,16 @@ class Area:
 
     def exit(self, to, x, y, w, h, spawn):
         self.exits.append((to, x, y, w, h) + tuple(spawn))
+
+    def door(self, to, x, y, w, h, spawn):
+        """An exit through a building's door: the tiles under it are opened in the building's footprint."""
+        self.exit(to, x, y, w, h, spawn)
+        self.doorways.update((tx, ty) for ty in range(y // T, (y + h - 1) // T + 1)
+                             for tx in range(x // T, (x + w - 1) // T + 1))
+
+    def wall(self, tx0, ty0, tx1, ty1):
+        """Tiles that never walk, inclusive."""
+        self.solid.update((tx, ty) for ty in range(ty0, ty1 + 1) for tx in range(tx0, tx1 + 1))
 
     def trees(self, spots, seed=0):
         """spots: (x, y, kind) with kind in spruce, spruce_big, round."""

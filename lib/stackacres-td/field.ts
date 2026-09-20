@@ -35,7 +35,18 @@ import {
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
-export type TopdownArea = "homestead" | "oldfields" | "fold" | "pasture" | "coast" | "oak" | "mine" | "townsquare";
+export type TopdownArea =
+  | "homestead"
+  | "oldfields"
+  | "fold"
+  | "pasture"
+  | "coast"
+  | "oak"
+  | "mine"
+  | "townsquare"
+  | "barn"
+  | "workshop"
+  | "farmhouse";
 
 export interface MapPoint {
   area: TopdownArea;

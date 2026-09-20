@@ -21,6 +21,7 @@ import json
 import os
 import shutil
 import sys
+from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RIG = os.path.join(os.path.dirname(HERE), "areas", "rig")
@@ -37,6 +38,7 @@ import critters  # noqa: E402
 import decor  # noqa: E402
 import export as rig_export  # noqa: E402
 import extras  # noqa: E402
+import interiors  # noqa: E402
 import fold  # noqa: E402
 import homestead  # noqa: E402
 import mine  # noqa: E402
@@ -55,17 +57,26 @@ from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
 PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
+# Rooms walked into through a Homestead door; drawn only by rich/, so they skip the DB16 sprite patching.
+INTERIORS = [SimpleNamespace(__name__="barn", build=interiors.barn),
+             SimpleNamespace(__name__="workshop", build=interiors.workshop),
+             SimpleNamespace(__name__="farmhouse", build=interiors.house)]
 TAP_CLEARANCE = 24   # map px of open space critters keep around anything a player taps
-# Light points in a tagged prop's own sprite pixels: where its windows and lamps are.
-LIGHTS = {
-    "farmhouse": [(17, 60, "window"), (65, 60, "window"), (34, 58, "lamp")],
-    "barn": [(48, 40, "lantern")],
-    # workshop: no entry here any more -- buildings.workshop() bakes its own
-    # two window lights into img.info["lights"] (the branch above already
-    # reads that), so a manual entry here would add a stray third light at
-    # the old windmill's window position, which doesn't exist on this
-    # building.
-}
+# Light points in a tagged prop's own sprite pixels: where its windows and lamps are. The barn and the workshop
+# carry theirs on their sprites (buildings.py), since their tags are also on the counter and the bench inside.
+LIGHTS = {}
+
+
+# A straw mat outside each door on the Homestead: (door centre x, mat top y, width). Laid into the ground picture
+# after it is drawn, and the same step is what patched the committed ground-*.png.
+DOORMATS = {"homestead": [(360, 151, 32), (488, 151, 24)]}
+
+
+def lay_doormats(img, area_name):
+    for cx, top, w in DOORMATS.get(area_name, ()):
+        mat = interiors.doormat(w).convert("RGBA")
+        img.paste(mat, (cx - w // 2, top), mat)
+    return img
 
 
 def patch():
@@ -91,7 +102,8 @@ def to_image(arr):
 def export_area(module, out_root):
     area = module.build(for_game=True)
     before_decor = len(area.items)
-    decor.decorate(area)
+    if not area.indoor:                                   # no grass, pebbles or butterflies on a floor
+        decor.decorate(area)
     build.assert_redrawn(area)
     ground = terrain.Ground(area)
     sc = scene.Scene(area, ground, static_only=True)
@@ -101,7 +113,7 @@ def export_area(module, out_root):
     for f in range(kit.FRAMES):
         path = os.path.join(out, f"ground-{f}.png")
         if f < frames:
-            to_image(sc.ground_image(f)).save(path)
+            lay_doormats(to_image(sc.ground_image(f)), area.name).save(path)
         elif os.path.exists(path):
             os.remove(path)
 
@@ -127,7 +139,8 @@ def export_area(module, out_root):
             named.append((frame_names[-1], img))
         entry = {"frame": frame_names[0], "frames": frame_names, "x": it["bx"], "y": it["by"], "ax": it["ax"],
                  "ay": it["ay"], "w": imgs[0].width, "h": imgs[0].height,
-                 "blocks": rig_export.prop_blocks(imgs, (it["ax"], it["ay"]), it["bx"], it["by"], area)}
+                 "blocks": [b for b in rig_export.prop_blocks(imgs, (it["ax"], it["ay"]), it["bx"], it["by"], area)
+                            if tuple(b) not in area.doorways]}
         if source[0].info.get("passable"):
             entry["passable"] = True
             entry["blocks"] = []
@@ -150,6 +163,10 @@ def export_area(module, out_root):
             named.append((name, Image.fromarray(arr, "RGBA")))
             entries.append({"frame": name, "frames": [name], "x": it["bx"], "y": it["by"] + 1, "ax": it["bx"] - x0,
                             "ay": it["by"] + 1 - y0, "w": arr.shape[1], "h": arr.shape[0], "blocks": []})
+    for imgs, (ax, ay), bx, by, _, is_ground, _ in area.items:  # lamps painted into a ground picture (a room's walls)
+        if is_ground:
+            for lx, ly, kind in imgs[0].info.get("lights", ()):
+                lights.append({"kind": kind, "x": bx - ax + lx, "y": by - ay + ly})
     sheet, atlas_json = rig_export.atlas(named, "props.png")
     sheet.save(os.path.join(out, "props.png"))
     with open(os.path.join(out, "props.json"), "w") as fh:
@@ -161,7 +178,8 @@ def export_area(module, out_root):
         "spawn": {"x": spawn[0], "y": spawn[1]},
         "props": entries,
         "npcs": [{"name": n, "x": x, "y": y} for n, x, y in area.npcs if n != "farmer"],
-        "blocked": rig_export.ground_blocked(area, owner),
+        "blocked": sorted({tuple(b) for b in rig_export.ground_blocked(area, owner)} | area.solid),
+        "indoor": area.indoor,
         "zones": [{"tag": t, "x": x, "y": y, "w": w, "h": h} for t, x, y, w, h in area.zones],
         "exits": [{"to": to, "x": x, "y": y, "w": w, "h": h, "spawn": {"x": sx, "y": sy}}
                   for to, x, y, w, h, sx, sy in area.exits],
@@ -415,7 +433,7 @@ def main():
     if args[:1] == ["--out"]:
         out_root, args = args[1], args[2:]
     patch()
-    for module in PLAYABLE:
+    for module in PLAYABLE + INTERIORS:
         if not args or module.__name__ in args:
             export_area(module, out_root)
     export_common(out_root)

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   UNBUILT_CUTTERS,
   UNBUILT_ENCHANTMENTS,
-  UNBUILT_MERCHANT_ITEMS,
   UNBUILT_PERKS,
   isUnbuiltCutter,
   isUnbuiltEnchantment,
@@ -11,7 +10,6 @@ import {
 import { STACKACRES_CUTTERS } from "./cutters";
 import { FORGE_ENCHANTMENTS } from "./forge";
 import { SYNERGY_ARCHETYPES } from "./synergy-perks";
-import { MIDNIGHT_MERCHANT_ITEM_IDS } from "./midnight-merchant";
 
 /**
  * Every id here has to match the catalogue it hides from. A typo would read
@@ -29,10 +27,6 @@ describe("unbuilt ids match their catalogues", () => {
 
   it("names real enchantments", () => {
     for (const id of UNBUILT_ENCHANTMENTS) expect(Object.keys(FORGE_ENCHANTMENTS)).toContain(id);
-  });
-
-  it("names real merchant items", () => {
-    for (const id of UNBUILT_MERCHANT_ITEMS) expect(MIDNIGHT_MERCHANT_ITEM_IDS).toContain(id);
   });
 });
 

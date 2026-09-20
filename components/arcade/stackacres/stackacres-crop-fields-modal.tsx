@@ -2,6 +2,7 @@
 
 import { Check, Coins, Lock, X } from "lucide-react";
 import clsx from "clsx";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { cropFieldsUnlockCheck, CROP_FIELDS_PROMISE } from "@/lib/stackacres/crop-fields";
 
 /**
@@ -28,7 +29,7 @@ export interface StackAcresCropFieldsModalProps {
   /** Null while the profile has not loaded; the price still shows. */
   goldBalance: number | null;
   unlimitedGold: boolean;
-  /** Bushels still owed on the land already held. Non-zero blocks the sale,
+  /** Gold still owed on the land already held. Non-zero blocks the sale,
    *  the same rule the server applies -- you settle up before you buy more. */
   upkeepOutstanding: number;
   busy: boolean;
@@ -46,6 +47,10 @@ export function StackAcresCropFieldsModal({
   onUnlock,
   onClose,
 }: StackAcresCropFieldsModalProps) {
+  // Escape and a backdrop tap close this, same as every other sheet. Without
+  // it the only way out was the small X, and the one button below can be a
+  // disabled "Not yet".
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose, !busy);
   const check = cropFieldsUnlockCheck({ unlocked, unitCount });
   // The land fee is a requirement like any other, and shown as one rather
   // than as an error after the fact -- a player who taps Clear and is told
@@ -55,7 +60,7 @@ export function StackAcresCropFieldsModal({
     ...(upkeepOutstanding > 0
       ? [
           {
-            label: `Settle ${upkeepOutstanding.toLocaleString()} Bushels of land maintenance`,
+            label: `Settle ${upkeepOutstanding.toLocaleString()} Gold of land maintenance`,
             met: false,
           },
         ]
@@ -64,7 +69,13 @@ export function StackAcresCropFieldsModal({
   const ready = check.ok && upkeepOutstanding <= 0;
 
   return (
-    <div className="sa-sheet-scrim" role="dialog" aria-modal="true" aria-label="Unlock the Crop Fields">
+    <div
+      className="sa-sheet-scrim"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Unlock the Crop Fields"
+      onMouseDown={onBackdropMouseDown}
+    >
       <div className="sa-sheet sa-clear-sheet">
         <header className="sa-sheet-head">
           <div>
@@ -73,7 +84,7 @@ export function StackAcresCropFieldsModal({
             </p>
             <h2>The Crop Fields</h2>
           </div>
-          <button type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
+          <button ref={closeButtonRef} type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
             <X size={20} aria-hidden="true" />
           </button>
         </header>

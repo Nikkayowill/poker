@@ -10,6 +10,7 @@ import {
   SYNERGY_PERKS,
   type SynergyArchetype,
 } from "@/lib/stackacres/synergy-perks";
+import { isUnbuiltPerk } from "@/lib/stackacres/unbuilt";
 import type { ContractActionResult } from "./TownContractsModal";
 
 /**
@@ -45,6 +46,8 @@ export interface SynergyOverlayProps {
   onUnlock: (archetype: SynergyArchetype) => Promise<ContractActionResult>;
   /** Posts `activate-synergy-perk`. Moves no Gold, only the loadout. */
   onActivate: (archetype: SynergyArchetype, slot: number) => Promise<ContractActionResult>;
+  /** Closes the sheet. The farm owns whether it is open; see `SynergyBadge`. */
+  onClose: () => void;
 }
 
 /** Consumed here rather than travelling on, same pointer-containment
@@ -76,12 +79,45 @@ function nextMilestone(unlocked: SynergyArchetype[], active: SynergyArchetype[])
   return "Every perk you own is working for you";
 }
 
-export function SynergyOverlay({ unlocked, active, busy, onUnlock, onActivate }: SynergyOverlayProps) {
-  const [open, setOpen] = useState(false);
+/**
+ * The badge alone. On a phone this sits inside the HUD's "More" drawer, which
+ * closes on any tap inside it, so the sheet cannot live in here: opening it
+ * and unmounting it would be the same tap. The farm owns `open` and renders
+ * the sheet, the same split the Prestige, Forge and Crossbreed badges use.
+ */
+export function SynergyBadge({
+  active,
+  unlocked,
+  onOpen,
+}: {
+  active: SynergyArchetype[];
+  unlocked: SynergyArchetype[];
+  onOpen: () => void;
+}) {
+  const milestone = useMemo(() => nextMilestone(unlocked, active), [unlocked, active]);
+  return (
+    <button
+      type="button"
+      className={clsx("sa-synergy-badge", { "has-active": active.length > 0 })}
+      onClick={onOpen}
+      title={`Synergy Tree. ${milestone}`}
+    >
+      <Zap size={16} aria-hidden="true" />
+      <strong>
+        {active.length}/{SYNERGY_MAX_ACTIVE_SLOTS}
+      </strong>
+      <span className="sa-sr">
+        Synergy Tree, {active.length} of {SYNERGY_MAX_ACTIVE_SLOTS} perks active. {milestone}
+      </span>
+    </button>
+  );
+}
+
+export function SynergyOverlay({ unlocked, active, busy, onUnlock, onActivate, onClose }: SynergyOverlayProps) {
   const [pendingArchetype, setPendingArchetype] = useState<SynergyArchetype | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(close);
 
   const milestone = useMemo(() => nextMilestone(unlocked, active), [unlocked, active]);
@@ -129,22 +165,7 @@ export function SynergyOverlay({ unlocked, active, busy, onUnlock, onActivate }:
 
   return (
     <>
-      <button
-        type="button"
-        className={clsx("sa-synergy-badge", { "has-active": active.length > 0 })}
-        onClick={() => setOpen(true)}
-        title="Synergy Tree"
-      >
-        <Zap size={16} aria-hidden="true" />
-        <strong>
-          {active.length}/{SYNERGY_MAX_ACTIVE_SLOTS}
-        </strong>
-        <span className="sa-sr">
-          Synergy Tree, {active.length} of {SYNERGY_MAX_ACTIVE_SLOTS} perks active
-        </span>
-      </button>
-
-      {open && (
+      {(
         <div
           className="sa-sheet-scrim"
           role="presentation"
@@ -197,7 +218,11 @@ export function SynergyOverlay({ unlocked, active, busy, onUnlock, onActivate }:
             )}
 
             <ul className="sa-contracts-board">
-              {SYNERGY_ARCHETYPES.map((archetype) => {
+              {SYNERGY_ARCHETYPES.filter(
+                // A perk nothing reads yet stays off the list unless this
+                // player already paid for it (lib/stackacres/unbuilt.ts).
+                (archetype) => !isUnbuiltPerk(archetype) || unlocked.includes(archetype),
+              ).map((archetype) => {
                 const def = SYNERGY_PERKS[archetype];
                 const isUnlocked = unlocked.includes(archetype);
                 const isActive = active.includes(archetype);

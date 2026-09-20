@@ -689,9 +689,8 @@ export function TownContractsModal({
         )}
 
         <p className="sa-sheet-note">
-          A delivery pays out of the same daily Gold allowance a harvest does. On a day that has
-          already sent out its allowance the order keeps until midnight UTC — nothing is lost and
-          nothing is taken.
+          A delivery pays in Gold and earns Town Influence, which lowers Ray&apos;s prices on tools,
+          cutters and feed. One order is open at a time, and it keeps until you fill it.
         </p>
       </section>
     </div>

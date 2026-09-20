@@ -5,6 +5,8 @@ import clsx from "clsx";
 import { Cog, Coins, Lock } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { ContractPayout } from "./contract-payout";
+import { BuildCostLines } from "./build-cost-lines";
+import { buildCost, buildShortfall, costSummary } from "@/lib/stackacres/build-cost";
 import { VAT_INPUT_ITEM, VAT_INPUT_QUANTITY, type VatContainer } from "@/lib/stackacres/aging";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import {
@@ -424,6 +426,8 @@ export function WorkshopModal({
                 const job = MACHINE_JOB[kind];
 
                 if (!machine) {
+                  const cost = buildCost(kind, unlimitedGold ? Number.POSITIVE_INFINITY : goldBalance, inventory);
+                  const short = buildShortfall(cost);
                   return (
                     <article key={kind} className="sa-stock-card sa-workshop-machine is-unbuilt">
                       <h3>{def.label}</h3>
@@ -431,17 +435,19 @@ export function WorkshopModal({
                       {kind !== "vat" && kind !== "feed_silo" &&
                         recipes.map((recipe) => <RecipeLine key={recipe} recipe={recipe} inventory={inventory} />)}
                       {seedsOpenedLine(kind) && <p className="sa-stock-wanted">{seedsOpenedLine(kind)}</p>}
+                      <BuildCostLines cost={cost} />
+                      {short && <p className="sa-build-short">{short}</p>}
                       <button
                         type="button"
                         className="sa-cta"
-                        disabled={isPending(placeIntent) || !affords(def.placeCost)}
+                        disabled={isPending(placeIntent) || !cost.affordable}
                         onClick={contain(() => void handlePlace(kind))}
                       >
-                        {affords(def.placeCost) ? (
-                          <>Build · {def.placeCost.toLocaleString()} Gold</>
+                        {cost.affordable ? (
+                          <>Build · {costSummary(cost)}</>
                         ) : (
                           <>
-                            <Lock size={14} aria-hidden="true" /> {def.placeCost.toLocaleString()} Gold to build
+                            <Lock size={14} aria-hidden="true" /> {costSummary(cost)} to build
                           </>
                         )}
                       </button>

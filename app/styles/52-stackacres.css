@@ -4713,6 +4713,42 @@
 .sa-workshop-recipe-out { white-space: nowrap; }
 .sa-workshop-recipe-arrow { color: var(--sa-ink-soft); }
 
+/* What a machine costs to build, and what the player already has of it.
+   Same read as the recipe line above: a short part is the loud one. */
+.sa-build-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 8px 0 0;
+  color: var(--sa-ink);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.sa-build-where {
+  flex-basis: 100%;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sa-build-cost em {
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.sa-build-cost-item.is-short em { color: var(--sa-ink); font-weight: 800; }
+
+.sa-build-short {
+  margin: 4px 0 0;
+  color: var(--sa-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 .sa-workshop-recipe-block { display: flex; flex-direction: column; margin-top: auto; }
 .sa-workshop-recipe-block + .sa-workshop-recipe-block { margin-top: 10px; }
 .sa-workshop-recipe-block .sa-cta { margin-top: 8px; }

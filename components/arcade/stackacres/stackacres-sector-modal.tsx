@@ -2,6 +2,7 @@
 
 import { Check, Coins, Lock, X } from "lucide-react";
 import clsx from "clsx";
+import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
   STACKACRES_SECTORS,
   sectorClearCheck,
@@ -41,7 +42,7 @@ export interface StackAcresSectorModalProps {
   /** Null while the profile has not loaded; the price still shows. */
   goldBalance: number | null;
   unlimitedGold: boolean;
-  /** Bushels still owed on the land already held. Non-zero blocks the sale,
+  /** Gold still owed on the land already held. Non-zero blocks the sale,
    *  the same rule the server applies -- you settle up before you buy more. */
   upkeepOutstanding: number;
   busy: boolean;
@@ -64,6 +65,10 @@ export function StackAcresSectorModal({
   onClear,
   onClose,
 }: StackAcresSectorModalProps) {
+  // Escape and a backdrop tap close this, same as every other sheet. Without
+  // it the only way out was the small X, and a gate sheet often has no button
+  // at all.
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose, !busy);
   const def = STACKACRES_SECTORS[sector];
   const check = sectorClearCheck(sector, { unlocked, unitCount });
   // The land fee is a requirement like any other, and shown as one rather
@@ -74,7 +79,7 @@ export function StackAcresSectorModal({
     ...(upkeepOutstanding > 0
       ? [
           {
-            label: `Settle ${upkeepOutstanding.toLocaleString()} Bushels of land maintenance`,
+            label: `Settle ${upkeepOutstanding.toLocaleString()} Gold of land maintenance`,
             met: false,
           },
         ]
@@ -91,6 +96,7 @@ export function StackAcresSectorModal({
         role="dialog"
         aria-modal="true"
         aria-label={sectorLabel(sector)}
+        onMouseDown={onBackdropMouseDown}
       >
         <div className="sa-sheet sa-clear-sheet">
           <header className="sa-sheet-head">
@@ -100,7 +106,7 @@ export function StackAcresSectorModal({
               </p>
               <h2>{sectorLabel(sector)}</h2>
             </div>
-            <button type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
+            <button ref={closeButtonRef} type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
               <X size={20} aria-hidden="true" />
             </button>
           </header>
@@ -124,6 +130,7 @@ export function StackAcresSectorModal({
       role="dialog"
       aria-modal="true"
       aria-label={`Clear ${sectorLabel(sector)}`}
+      onMouseDown={onBackdropMouseDown}
     >
       <div className="sa-sheet sa-clear-sheet">
         <header className="sa-sheet-head">
@@ -133,7 +140,7 @@ export function StackAcresSectorModal({
             </p>
             <h2>{sectorLabel(sector)}</h2>
           </div>
-          <button type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
+          <button ref={closeButtonRef} type="button" className="sa-sheet-close" aria-label="Leave it" onClick={onClose}>
             <X size={20} aria-hidden="true" />
           </button>
         </header>

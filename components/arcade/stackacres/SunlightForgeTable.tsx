@@ -12,6 +12,7 @@ import {
   forgeMaterialStatus,
   type ForgeEnchantmentDef,
 } from "@/lib/stackacres/forge";
+import { isUnbuiltEnchantment } from "@/lib/stackacres/unbuilt";
 import { removeFromInventory, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import { machineItemLabel } from "@/lib/stackacres/machine-items";
 
@@ -153,7 +154,11 @@ export function SunlightForgeTable({
 
   const slots = useMemo<readonly ForgeSlotView[]>(
     () =>
-      Object.values(FORGE_ENCHANTMENTS).map((def) => {
+      Object.values(FORGE_ENCHANTMENTS)
+        // An enchantment whose effect nothing reads stays off the table
+        // unless it is already forged (lib/stackacres/unbuilt.ts).
+        .filter((def) => !isUnbuiltEnchantment(def.id) || ownedSet.has(def.id))
+        .map((def) => {
         const owned = ownedSet.has(def.id);
         const status = forgeMaterialStatus(def, effectiveInventory);
         return {
@@ -348,9 +353,8 @@ export function SunlightForgeTable({
         </ul>
 
         <p className="sa-sheet-note">
-          <Sparkles size={13} aria-hidden="true" /> A crit still pays out of the same daily Gold
-          allowance a harvest does, forged or not -- an enchanted tool reaches the same wall
-          sooner, never further.
+          <Sparkles size={13} aria-hidden="true" /> An enchantment is permanent and works on every
+          harvest from here on, whichever spade is in hand.
         </p>
       </section>
     </div>

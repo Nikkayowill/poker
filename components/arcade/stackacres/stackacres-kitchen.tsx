@@ -15,6 +15,8 @@ import { machineItemIcon, machineItemLabel, machineItemNoun, type MachineItemId 
 import { RECIPE_CATALOGUE, RECIPE_VERB, recipesForMachine, type RecipeId } from "@/lib/stackacres/recipes";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
 import { missingLine, recipeIngredients } from "@/lib/stackacres/recipe-uses";
+import { BuildCostLines } from "./build-cost-lines";
+import { buildCost, buildShortfall, costSummary } from "@/lib/stackacres/build-cost";
 import {
   FARM_KITCHEN_BANK,
   FARM_KITCHEN_RECIPES,
@@ -164,18 +166,24 @@ export function StackAcresKitchen({
   const buildCard = (kind: MachineKind, pitch: string) => {
     const def = MACHINE_CATALOGUE[kind];
     const opens = seedsOpenedLine(kind);
+    // A null balance means "not loaded yet", which the Gold gate below has
+    // always treated as affordable rather than blocking the button.
+    const cost = buildCost(kind, goldBalance ?? Number.POSITIVE_INFINITY, inventory);
+    const short = buildShortfall(cost);
     return (
       <div className="sa-stock-card sa-kitchen-card is-unbuilt" key={kind}>
         <h3>{def.label}</h3>
         <p className="sa-stock-terms">{pitch}</p>
         {opens && <p className="sa-kitchen-opens">{opens}.</p>}
+        <BuildCostLines cost={cost} />
+        {short && <p className="sa-build-short">{short}</p>}
         <button
           type="button"
           className="sa-cta"
-          disabled={busy(`place-machine:${kind}`) || (goldBalance !== null && goldBalance < def.placeCost)}
+          disabled={busy(`place-machine:${kind}`) || !cost.affordable}
           onClick={() => void run(() => onBuild(kind), `The ${def.label} is ready!`)}
         >
-          Build · {def.placeCost.toLocaleString()} Gold
+          Build · {costSummary(cost)}
         </button>
       </div>
     );

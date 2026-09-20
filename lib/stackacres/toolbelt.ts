@@ -195,7 +195,7 @@ function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
 }
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
-  if (!target.tile) return blocked("Seeds only go in the Crop Fields.");
+  if (!target.tile) return blocked("Seeds go in a soil bed.");
   if (target.unit) return blocked("Something is already growing here.");
   if (!target.bedded) return blocked("Break the ground with the hoe first.");
   if (!ctx.seed) return blocked("Tap the seed pouch to pick what to sow.");

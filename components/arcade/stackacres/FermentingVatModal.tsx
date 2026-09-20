@@ -326,9 +326,8 @@ export function FermentingVatModal({
             </div>
 
             <p className="sa-sheet-note">
-              A collection pays out of the same daily Gold allowance a harvest does. On a day that has
-              already sent out its allowance the batch keeps sealed until midnight UTC — nothing is
-              lost and nothing is taken.
+              A sealed batch keeps ageing until you collect it. The longer it sits, the more Gold it
+              is worth, so there is never a reason to rush one out.
             </p>
           </>
         )}

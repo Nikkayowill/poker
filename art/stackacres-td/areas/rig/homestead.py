@@ -54,8 +54,8 @@ def build(for_game=False):
     a.add(props.smoke(), 503, 72)                       # the workshop's own stove is lit
     # Walk in through the doors. A door's exit is named for the building's tag, which is how a tap on the
     # building knows to walk inside rather than open a menu at the door (scene.ts).
-    a.door("barn", 340, 144, 40, 12, (144, 150))       # arriving just inside, on the mat (interiors.ARRIVE)
-    a.door("workshop", 480, 144, 16, 12, (144, 150))
+    a.door("barn", 340, 144, 40, 12, (192, 150))       # arriving just inside, on the mat (interiors.BARN.arrive)
+    a.door("workshop", 480, 144, 16, 12, (48, 134))     # (interiors.WORKSHOP.arrive)
     a.add(kit.greenhouse_ruin(), 600, 116, ground=True)
     a.zone("greenhouse", 560, 60, 80, 56)
     a.add(kit.well(), 186, 160, (10, 3), tag="well")

@@ -250,15 +250,15 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     expect(veil.some((a) => a > 0.05 && a < 0.95)).toBe(true);
     expect(veil[veil.length - 1]).toBeLessThan(0.3);
     await page.screenshot({ path: test.info().outputPath("inside-barn.png") });
-    await tapMap(144, 86);
+    await tapMap(280, 80);
     await expect(page.getByRole("dialog", { name: "Supply store" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("dialog", { name: "Supply store" }).getByRole("button", { name: "Close" }).click();
 
     // Out through the doorway, back in front of the barn: to the mat first, since the view follows him down.
-    await tapMap(144, 150);
+    await tapMap(192, 150);
     await expect.poll(async () => (await scene()).walking, { timeout: 15_000 }).toBe(false);
     await page.waitForTimeout(300);
-    await tapMap(144, 172);
+    await tapMap(192, 172);
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("homestead");
     expect((await scene()).pos.y).toBeGreaterThan(160);
 
@@ -268,7 +268,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("workshop");
     await page.waitForTimeout(600);
     await page.screenshot({ path: test.info().outputPath("inside-workshop.png") });
-    await tapMap(144, 90);
+    await tapMap(132, 90);
     await expect(page.locator(".sa-workshop")).toBeVisible({ timeout: 15_000 });
 
     expect(errors).toEqual([]);

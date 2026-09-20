@@ -12,11 +12,29 @@ from area import Area
 from pal import Canvas, hash2, noise1
 
 T = 16
-W, H = 18, 11                      # tiles
+class Room:
+    """A room's footprint: its size in tiles and where its doorway sits in the front wall (px)."""
+
+    def __init__(self, w, h, door):
+        self.w, self.h = w, h
+        self.door0, self.door1 = door
+        self.front = h * T - 10                                   # the front wall's top edge (px)
+        self.arrive = ((door[0] + door[1]) // 2, self.front - 16)  # just inside the door, where a player walking in lands
+
+
 WALL_TOP, WALL_FACE = 6, 50        # the ceiling beam's foot and the back wall's foot (px)
-DOOR_X0, DOOR_X1 = 128, 160        # the doorway in the front wall (px)
-FRONT = H * T - 10                 # the front wall's top edge (px)
-ARRIVE = (144, 150)                # just inside the door, where a player walking in lands
+BARN = Room(24, 11, (176, 208))    # long but no taller than the screen, with the doorway in the middle of the front wall
+WORKSHOP = Room(15, 10, (32, 64))  # small and square, with the doorway in the corner
+
+
+class _Shifted:
+    """A canvas drawn on with every x moved over: a decoration drawn at fixed pixels, hung somewhere else on the wall."""
+
+    def __init__(self, c, dx):
+        self.c, self.dx = c, dx
+
+    def put(self, x, y, ramp, level):
+        self.c.put(x + self.dx, y, ramp, level)
 
 
 def _planks(c, x0, y0, x1, y1, seed, base):
@@ -100,12 +118,12 @@ def _lantern(c, lx, ly):
     return (lx, ly + 3, "lantern")
 
 
-def shell(face, windows, lanterns, rug, seed, floor=4.0):
+def shell(room, face, windows, lanterns, rug, seed, floor=4.0):
     """The room's picture. `face(c)` paints the back wall; `windows` are the x of 14px windows in it; `lanterns` the x
     of lanterns hung on it; `rug` is (x0, y0, x1, y1, field ramp, border ramp)."""
-    w, h = W * T, H * T
+    w, h = room.w * T, room.h * T
     c = Canvas(w, h)
-    _planks(c, T, WALL_FACE, w - T, FRONT, seed, floor)
+    _planks(c, T, WALL_FACE, w - T, room.front, seed, floor)
     face(c)
     for wx in windows:
         for y in range(15, 36):
@@ -155,89 +173,90 @@ def shell(face, windows, lanterns, rug, seed, floor=4.0):
         for y in range(8, h, 16):
             for x in range(side + 2, side + T - 2):
                 c.put(x, y, "wood", 1.0)
-    for y in range(FRONT, h):                                    # the front wall's top, broken by the doorway
+    for y in range(room.front, h):                                    # the front wall's top, broken by the doorway
         for x in range(0, w):
-            if DOOR_X0 <= x < DOOR_X1:
+            if room.door0 <= x < room.door1:
                 continue
-            level = 4.6 if y == FRONT else 1.8 + (hash2(x // 6, y, seed) - 0.5) * 0.4
+            level = 4.6 if y == room.front else 1.8 + (hash2(x // 6, y, seed) - 0.5) * 0.4
             c.put(x, y, "wood", level)
-    for y in range(FRONT, h):                                    # door posts and the threshold
-        for x in range(DOOR_X0 - 3, DOOR_X0):
-            c.put(x, y, "wood", (5.0, 3.8, 2.4)[x - DOOR_X0 + 3])
-        for x in range(DOOR_X1, DOOR_X1 + 3):
-            c.put(x, y, "wood", (1.4, 2.8, 2.0)[x - DOOR_X1])
-        for x in range(DOOR_X0, DOOR_X1):
-            c.put(x, y, "wood", 2.8 - (y - FRONT) * 0.08)
-    for y in range(FRONT - 16, FRONT + 2):                       # the doormat
-        for x in range(DOOR_X0 + 3, DOOR_X1 - 3):
+    for y in range(room.front, h):                                    # door posts and the threshold
+        for x in range(room.door0 - 3, room.door0):
+            c.put(x, y, "wood", (5.0, 3.8, 2.4)[x - room.door0 + 3])
+        for x in range(room.door1, room.door1 + 3):
+            c.put(x, y, "wood", (1.4, 2.8, 2.0)[x - room.door1])
+        for x in range(room.door0, room.door1):
+            c.put(x, y, "wood", 2.8 - (y - room.front) * 0.08)
+    for y in range(room.front - 16, room.front + 2):                       # the doormat
+        for x in range(room.door0 + 3, room.door1 - 3):
             weave = (x + y) % 3
-            rim = y in (FRONT - 16, FRONT + 1) or x in (DOOR_X0 + 3, DOOR_X1 - 4)
+            rim = y in (room.front - 16, room.front + 1) or x in (room.door0 + 3, room.door1 - 4)
             c.put(x, y, "straw", (2.4 if rim else 3.8) + (0.7 if weave == 0 else -0.5 if weave == 2 else 0))
     img = c.image()
     img.info["lights"] = lights
     return img, (0, 0)
 
 
-def _enclose(a):
+def _enclose(a, room):
     """The room's walls: the back wall's three rows, both sides, and the front wall either side of the doorway."""
-    a.wall(0, 0, W - 1, 2)
-    a.wall(0, 0, 0, H - 1)
-    a.wall(W - 1, 0, W - 1, H - 1)
-    a.wall(0, H - 1, DOOR_X0 // T - 1, H - 1)
-    a.wall(DOOR_X1 // T, H - 1, W - 1, H - 1)
+    a.wall(0, 0, room.w - 1, 2)
+    a.wall(0, 0, 0, room.h - 1)
+    a.wall(room.w - 1, 0, room.w - 1, room.h - 1)
+    a.wall(0, room.h - 1, room.door0 // T - 1, room.h - 1)
+    a.wall(room.door1 // T, room.h - 1, room.w - 1, room.h - 1)
 
 
 # ------------------------------------------------------------------ the barn
 
-def _barn_face(c):
+def _barn_face(c, room, sign_x):
     for y in range(WALL_TOP, WALL_FACE):
-        for x in range(T, W * T - T):
+        for x in range(T, room.w * T - T):
             board = (x - T) // 7
             bx = (x - T) % 7
             level = 2.6 + (hash2(board, 0, 41) - 0.5) * 0.6 + (noise1(x * 3, y, 9, 42 + board) - 0.5) * 0.7
             level = 0.9 if bx == 0 else level + 0.7 if bx == 1 else level
             c.put(x, y, "barnred", level)
-    for x in range(T, W * T - T):                                # a beam along the wall and the skirting
+    for x in range(T, room.w * T - T):                                # a beam along the wall and the skirting
         for y, lv in ((38, 4.6), (39, 3.4), (40, 1.6), (46, 3.8), (47, 3.0), (48, 2.4), (49, 1.4)):
-            c.put(x, y, "wood", lv - (x / (W * T)) * 0.6)
+            c.put(x, y, "wood", lv - (x / (room.w * T)) * 0.6)
+    sign = _Shifted(c, sign_x - 144)
     bx0, bx1 = 118, 170                                           # the shop sign: a carrot and a coin
     for y in range(9, 30):
         for x in range(bx0, bx1):
             edge = x in (bx0, bx1 - 1) or y in (9, 29)
-            c.put(x, y, "tan", 2.0 if edge else 4.8 - (y - 9) * 0.05 - (x - bx0) * 0.012)
+            sign.put(x, y, "tan", 2.0 if edge else 4.8 - (y - 9) * 0.05 - (x - bx0) * 0.012)
     for k in range(11):                                            # carrot
         for j in range(max(1, 4 - k // 3)):
-            c.put(128 + k, 17 + j + k // 4, "orange", 4.8 - j * 0.9)
+            sign.put(128 + k, 17 + j + k // 4, "orange", 4.8 - j * 0.9)
     for x, y in ((126, 15), (127, 14), (128, 15), (125, 14), (128, 13), (126, 16)):
-        c.put(x, y, "leaf", 4.2)
+        sign.put(x, y, "leaf", 4.2)
     for y in range(12, 27):                                        # coin
         for x in range(146, 162):
             d = math.hypot(x - 153.5, y - 19)
             if d <= 6.6:
-                c.put(x, y, "gold", 4.6 - (x - 153.5 + y - 19) * 0.18 if d < 5.2 else 2.4)
+                sign.put(x, y, "gold", 4.6 - (x - 153.5 + y - 19) * 0.18 if d < 5.2 else 2.4)
     for y in range(16, 23):
-        c.put(153, y, "gold", 2.2)
+        sign.put(153, y, "gold", 2.2)
     for y in range(12, 37):                                        # a pitchfork and a rake on pegs
         c.put(24, y, "wood", 4.4)
         c.put(25, y, "wood", 2.6)
     for x, y in ((21, 12), (24, 11), (27, 12), (21, 13), (27, 13), (21, 14), (27, 14), (22, 15), (26, 15), (23, 15), (25, 15)):
         c.put(x, y, "stone", 5.0)
     for y in range(14, 37):
-        c.put(262, y, "wood", 4.4)
-        c.put(263, y, "wood", 2.6)
-    for x in range(256, 270):
+        c.put(room.w * T - 26, y, "wood", 4.4)
+        c.put(room.w * T - 25, y, "wood", 2.6)
+    for x in range(room.w * T - 32, room.w * T - 18):
         c.put(x, 14, "stone", 4.4)
         if x % 2 == 0:
             c.put(x, 15, "stone", 3.0)
             c.put(x, 16, "stone", 2.0)
 
 
-def _straw_scatter(c, seed):
+def _straw_scatter(c, room, seed):
     """Loose straw on the barn floor, thickest by the bales."""
     for k in range(260):
-        x = T + int(hash2(k, 0, seed) * (W * T - 2 * T))
-        y = WALL_FACE + 4 + int(hash2(k, 1, seed) * (FRONT - WALL_FACE - 22))
-        near_bales = x > 200
+        x = T + int(hash2(k, 0, seed) * (room.w * T - 2 * T))
+        y = WALL_FACE + 4 + int(hash2(k, 1, seed) * (room.front - WALL_FACE - 22))
+        near_bales = x > room.w * T - 88
         if not near_bales and hash2(k, 2, seed) < 0.55:
             continue
         dx = 1 if hash2(k, 3, seed) < 0.5 else -1
@@ -319,53 +338,56 @@ def sack(ramp="khaki"):
 
 
 def barn(for_game=False):
-    a = Area("barn", W, H)
+    """Long and low: Ray's counter at the right end, a feed bay down the left, stock stacked at both ends."""
+    room = BARN
+    a = Area("barn", room.w, room.h)
     a.indoor = True
-    a.rect("cobble", 0, 0, W, H)                                 # under the room picture: not grass, so nothing grows
+    a.rect("cobble", 0, 0, room.w, room.h)                       # under the room picture: not grass, so nothing grows
+    counter_x = 280
 
     def face(c):
-        _barn_face(c)
-        _straw_scatter(c, 61)
+        _barn_face(c, room, counter_x)
+        _straw_scatter(c, room, 61)
 
-    a.add(shell(face, (40, 224), (92, 196), (104, 96, 184, 124, "red", "gold"), 60), 0, 0, ground=True)
-    _enclose(a)
-    a.add(counter(), 144, 90, (30, 3), tag="barn")
-    for x, y, ramp in ((28, 66, "khaki"), (44, 70, "tan"), (32, 82, "khaki"), (58, 64, "tan")):
+    a.add(shell(room, face, (40, 110, 322), (76, 226, 340), (counter_x - 40, 96, counter_x + 40, 124, "red", "gold"), 60), 0, 0, ground=True)
+    _enclose(a, room)
+    a.add(counter(), counter_x, 90, (30, 3), tag="barn")
+    for x, y, ramp in ((28, 66, "khaki"), (44, 70, "tan"), (32, 82, "khaki"), (58, 64, "tan")):   # the seed stock
         a.add(sack(ramp), x, y, (5, 2))
     a.add(S.barrel(), 80, 66, (5, 2))
-    a.add(S.crate(), 214, 66, (6, 2))
-    for x, y in ((238, 64), (258, 64), (248, 78), (238, 92), (258, 92)):
+    a.add(S.crate(), 222, 66, (6, 2))
+    for x, y in ((330, 64), (350, 64), (340, 78), (330, 92), (350, 92)):                          # bales stacked at the far end
         a.add(S.hay_bale(), x, y, (9, 2))
-    a.add(S.trough(), 244, 150, (11, 2))
-    a.add(S.barrel(), 32, 146, (5, 2))
-    a.add(S.crate(), 54, 154, (6, 2))
-    a.add(sack("khaki"), 214, 156, (5, 2))
-    a.add(S.crate(), 30, 112, (6, 2))
-    a.add(sack("tan"), 50, 120, (5, 2))
-    a.add(S.barrel(), 36, 128, (5, 2))
-    a.add(S.hay_bale(), 244, 118, (9, 2))
-    a.add(S.hay_bale(), 264, 118, (9, 2))
-    a.add(S.barrel(), 226, 132, (5, 2))
-    a.door("homestead", DOOR_X0, H * T - 8, DOOR_X1 - DOOR_X0, 8, (360, 174))
-    a.spawn = ARRIVE
+    for x, y in ((40, 116), (60, 116), (50, 130)):                                                # the feed bay
+        a.add(S.hay_bale(), x, y, (9, 2))
+    a.add(S.trough(), 104, 128, (11, 2))
+    a.add(S.trough(), 152, 128, (11, 2))
+    a.add(S.hay_bale(), 108, 110, (9, 2))
+    a.add(S.hay_bale(), 128, 110, (9, 2))
+    a.add(S.barrel(), 30, 152, (5, 2))
+    a.add(S.crate(), 54, 158, (6, 2))
+    a.add(sack("khaki"), 80, 160, (5, 2))
+    a.add(S.barrel(), 246, 150, (5, 2))
+    a.add(S.crate(), 268, 158, (6, 2))
+    a.add(S.trough(), 322, 152, (11, 2))
+    a.add(sack("tan"), 352, 142, (5, 2))
+    a.door("homestead", room.door0, room.h * T - 8, room.door1 - room.door0, 8, (360, 174))
+    a.spawn = room.arrive
     return a
-
 
 # ------------------------------------------------------------------ the workshop
 
-STOVE_X = 236
-
-
-def _workshop_face(c):
+def _workshop_face(c, room, board_x, stove_x):
     for y in range(WALL_TOP, WALL_FACE):
-        for x in range(T, W * T - T):
+        for x in range(T, room.w * T - T):
             row, ry = (y - WALL_TOP) // 5, (y - WALL_TOP) % 5
             level = 3.8 + (hash2(row, (x + row * 13) // 34, 61) - 0.5) * 0.8 + (noise1(x, y * 4, 13, 62) - 0.5) * 0.5
             level = 1.6 if ry == 4 else level + 0.6 if ry == 0 else level
-            c.put(x, y, "tan", level - x / (W * T) * 0.7)
-    for x in range(T, W * T - T):
+            c.put(x, y, "tan", level - x / (room.w * T) * 0.7)
+    for x in range(T, room.w * T - T):
         for y, lv in ((46, 3.6), (47, 2.8), (48, 2.2), (49, 1.2)):
             c.put(x, y, "wood", lv)
+    board = _Shifted(c, board_x - 144)
     px0, px1, py0, py1 = 108, 180, 10, 38                          # the pegboard and its tools
     for y in range(py0, py1):
         for x in range(px0, px1):
@@ -373,30 +395,30 @@ def _workshop_face(c):
             level = 2.2 if edge else 3.6 - (y - py0) * 0.03
             if not edge and (x - px0) % 4 == 2 and (y - py0) % 4 == 2:
                 level = 1.8                                      # peg holes
-            c.put(x, y, "wood", level)
+            board.put(x, y, "wood", level)
     for y in range(13, 33):                                        # a hand saw
         for x in range(114, 120 - (y - 13) // 7):
-            c.put(x, y, "stone", 5.8 - (x - 114) * 0.4)
+            board.put(x, y, "stone", 5.8 - (x - 114) * 0.4)
     for y in range(13, 17):
-        c.put(120, y, "tan", 5.0)
-        c.put(121, y, "tan", 3.6)
+        board.put(120, y, "tan", 5.0)
+        board.put(121, y, "tan", 3.6)
     for y in range(15, 34):                                        # a hammer
-        c.put(132, y, "tan", 5.0)
-        c.put(133, y, "tan", 3.4)
+        board.put(132, y, "tan", 5.0)
+        board.put(133, y, "tan", 3.4)
     for x in range(127, 139):
-        c.put(x, 14, "stone", 5.2)
-        c.put(x, 15, "stone", 3.4)
+        board.put(x, 14, "stone", 5.2)
+        board.put(x, 15, "stone", 3.4)
     for t in range(18):                                            # a wrench
-        c.put(146 + t * 0.5, 14 + t, "stone", 5.2)
-        c.put(147 + t * 0.5, 14 + t, "stone", 3.2)
+        board.put(146 + t * 0.5, 14 + t, "stone", 5.2)
+        board.put(147 + t * 0.5, 14 + t, "stone", 3.2)
     for x, y in ((144, 13), (148, 13), (144, 14), (148, 14)):
-        c.put(x, y, "stone", 4.4)
+        board.put(x, y, "stone", 4.4)
     for y in range(14, 34):                                        # a chisel and a square
-        c.put(160, y, "tan" if y > 26 else "stone", 5.0 if y > 26 else 5.4)
+        board.put(160, y, "tan" if y > 26 else "stone", 5.0 if y > 26 else 5.4)
     for y in range(14, 30):
-        c.put(170, y, "stone", 5.0)
+        board.put(170, y, "stone", 5.0)
     for x in range(170, 177):
-        c.put(x, 29, "stone", 5.0)
+        board.put(x, 29, "stone", 5.0)
     for x in range(44, 90):                                        # a shelf of paint tins
         c.put(x, 30, "wood", 5.0)
         c.put(x, 31, "wood", 2.4)
@@ -407,17 +429,17 @@ def _workshop_face(c):
                 c.put(x, y, ramp if y > 23 else "stone", (4.2 if y > 23 else 4.6) - (x - x0) * 0.35)
     for y in range(0, WALL_FACE + 4):                              # the stovepipe, up through the ceiling
         for k, lv in enumerate((3.2, 2.4, 1.6, 1.0)):
-            c.put(STOVE_X - 2 + k, y, "coal", lv)
+            c.put(stove_x - 2 + k, y, "coal", lv)
         if y % 12 == 5:
-            c.put(STOVE_X - 3, y, "coal", 2.4)
-            c.put(STOVE_X + 2, y, "coal", 1.4)
+            c.put(stove_x - 3, y, "coal", 2.4)
+            c.put(stove_x + 2, y, "coal", 1.4)
 
 
-def _sawdust(c, seed):
+def _sawdust(c, room, bench_x, seed):
     """Shavings and sawdust around where the work gets done."""
     for k in range(110):
-        x = 96 + int(hash2(k, 0, seed) * 150)
-        y = 100 + int(hash2(k, 1, seed) * 56)
+        x = bench_x - 48 + int(hash2(k, 0, seed) * 150)
+        y = 100 + int(hash2(k, 1, seed) * (room.front - 104))
         if hash2(k, 2, seed) < 0.75:
             c.put(x, y, "straw", 3.6 + hash2(k, 3, seed) * 1.2)
         else:
@@ -569,30 +591,32 @@ def sawhorse():
 
 
 def workshop(for_game=False):
-    a = Area("workshop", W, H)
+    """Small and square: everything within reach of the bench, the stove in the corner, the door low on the left."""
+    room = WORKSHOP
+    a = Area("workshop", room.w, room.h)
     a.indoor = True
-    a.rect("cobble", 0, 0, W, H)
+    a.rect("cobble", 0, 0, room.w, room.h)
+    bench_x, stove_x = 132, 200
 
     def face(c):
-        _workshop_face(c)
-        _sawdust(c, 71)
+        _workshop_face(c, room, bench_x, stove_x)
+        _sawdust(c, room, bench_x, 71)
 
-    a.add(shell(face, (22, 190), (96, 188), (104, 104, 184, 130, "denim", "linen"), 70, floor=3.6), 0, 0, ground=True)
-    _enclose(a)
-    a.add(workbench(), 144, 96, (30, 3), tag="workshop")
-    a.add(stove(), STOVE_X, 76, (9, 2))
-    a.add(spinning_wheel(), 36, 78, (9, 2))
-    a.add(churn(), 62, 72, (5, 2))
-    a.add(S.barrel(), 82, 68, (5, 2))
-    a.add(sawhorse(), 220, 140, (14, 2))
-    a.add(S.woodpile(), 38, 150, (13, 2))
-    a.add(S.crate(), 256, 152, (6, 2))
-    a.add(S.crate(), 256, 136, (6, 2))
-    a.add(S.barrel(), 30, 112, (5, 2))
-    a.add(sack("tan"), 50, 118, (5, 2))
-    a.add(S.crate(), 32, 128, (6, 2))
-    a.add(S.woodpile(), 252, 112, (13, 2))
-    a.add(sack("khaki"), 226, 124, (5, 2))
-    a.door("homestead", DOOR_X0, H * T - 8, DOOR_X1 - DOOR_X0, 8, (488, 172))
-    a.spawn = ARRIVE
+    a.add(shell(room, face, (22,), (60, 176), (bench_x - 40, 104, bench_x + 40, 130, "denim", "linen"), 70, floor=3.6), 0, 0, ground=True)
+    _enclose(a, room)
+    a.add(workbench(), bench_x, 96, (30, 3), tag="workshop")
+    a.add(stove(), stove_x, 76, (9, 2))
+    a.add(spinning_wheel(), 34, 80, (9, 2))
+    a.add(churn(), 56, 76, (5, 2))
+    a.add(S.barrel(), 76, 68, (5, 2))
+    a.add(sawhorse(), 190, 130, (14, 2))
+    a.add(S.crate(), 214, 108, (6, 2))
+    a.add(S.crate(), 214, 124, (6, 2))
+    a.add(S.woodpile(), 196, 148, (13, 2))
+    a.add(sack("tan"), 88, 140, (5, 2))
+    a.add(S.barrel(), 106, 144, (5, 2))
+    a.add(sack("khaki"), 26, 106, (5, 2))
+    a.door("homestead", room.door0, room.h * T - 8, room.door1 - room.door0, 8, (488, 172))
+    a.spawn = room.arrive
     return a
+

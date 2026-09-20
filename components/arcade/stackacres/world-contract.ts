@@ -137,7 +137,7 @@ export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 export type FarmerAction = "water" | "harvest" | "plant";
 
 /** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
-export type EmoteTarget = "farmer" | "ray" | "pilgrim" | "merchant" | TravelerId;
+export type EmoteTarget = "farmer" | "ray" | "pilgrim" | TravelerId;
 /** Stardew's emote set is the reference; each is a small icon bubble in the common atlas. */
 export type EmoteKind = "heart" | "exclaim" | "question" | "note" | "sleep" | "sweat" | "sparkle";
 
@@ -234,19 +234,9 @@ export interface StackAcresWorldApi {
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
-  /** Adds or removes the Midnight Merchant's own picture from the lot.
-   *  PUSHED rather than a prop-driven effect's usual shape because
-   *  stackacres-farm.tsx already owns the render decision itself
-   *  (`MidnightMerchantManager.isRendered()`) and only needs to tell the
-   *  scene when that boolean actually flips -- the same "push, never
-   *  rebuild" contract `setToolTier` already uses for
-   *  its own props, exposed through the imperative handle instead of a
-   *  prop because it is closer in shape to `popUnit`/`floatAt` (a command
-   *  fired from an event) than to a value the scene must always reflect. */
-  setMerchant: (present: boolean) => void;
   /** Hangs a quest badge ("!" to offer, "?" ready to hand in) over each
    *  traveler named, and takes down the rest. Same "push, never rebuild"
-   *  contract as `setMerchant`: stackacres-farm.tsx calls this whenever its
+   *  contract as `setSoil`: stackacres-farm.tsx calls this whenever its
    *  story view changes, and an unchanged badge is a no-op. */
   setStoryCues: (cues: StoryCues) => void;
   /** Shows or hides each traveler as their own unlock is met -- nobody
@@ -275,7 +265,7 @@ export interface StackAcresWorldApi {
    *  pixels, the same space a `PointerEvent` carries. */
   tapAt: (clientX: number, clientY: number) => void;
   /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
-   *  rebuild" shape as `setMerchant`/`setSoil` above. `setWildlifeTimeOfDay`
+   *  rebuild" shape as `setSoil` above. `setWildlifeTimeOfDay`
    *  drives the day/night population swap (the shell's own `timeOfDay()`
    *  poll); `setFenceTier`/`setLivestockHealth` hydrate one district's saved
    *  defense state, called once per segment/zone on load and again right
@@ -289,13 +279,13 @@ export interface StackAcresWorldApi {
   setLivestockHealth: (zone: ZoneId, health: number) => void;
   /** Every Mechanical Forage Drone this profile owns, by id --
    *  `StackAcresView.droneHangar.drones` mapped to their ids. PUSHED, same
-   *  "push, never rebuild" contract as `setMerchant`: stackacres-farm.tsx
+   *  "push, never rebuild" contract as `setSoil`: stackacres-farm.tsx
    *  calls this when the view's own drone list changes, not on every
    *  render. Passing the unchanged list twice is a harmless no-op (the
    *  scene's own `setDroneHangar` diffs against what it already has). */
   setDroneHangar: (droneIds: string[]) => void;
   /** Wants (or stops wanting) the delivery truck on the lot -- same
-   *  "push, never rebuild" contract as `setMerchant`, called whenever
+   *  "push, never rebuild" contract as `setSoil`, called whenever
    *  `StackAcresView.contract`'s presence flips. `immediate` skips the
    *  drive-in animation, for the one case that is not a genuinely observed
    *  transition (a contract already open on page load) -- see the scene's
@@ -397,9 +387,6 @@ export interface StackAcresWorldProps {
    *  the scene is stepped inside it (`enterGreenhouse`). Row 0 is nearest the
    *  door -- see lib/stackacres/greenhouse.ts's `greenhouseSlotLocal`. */
   onGreenhouseSlotTap: (row: number, col: number, at: TapPoint) => void;
-  /** A finger landed on the Midnight Merchant, while he is actually
-   *  standing on the lot (see `setMerchant` on the imperative handle). */
-  onMerchantTap: () => void;
   /** A finger landed on the delivery truck, while it is actually parked at
    *  its dock (see `setTruckPresent` on the imperative handle). Opens the
    *  same Town Contracts sheet `onSignpostTap` does. */

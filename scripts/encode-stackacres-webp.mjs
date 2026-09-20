@@ -41,7 +41,6 @@ const PIXEL_ART = new Set([
   "traveler-wes.png",
   "traveler-bea.png",
   "traveler-leo.png",
-  "midnight-merchant.png",
 ]);
 
 /**

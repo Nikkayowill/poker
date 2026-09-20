@@ -160,7 +160,7 @@ export function isForgeEnchantmentId(value: string): value is keyof typeof FORGE
 
 /** Every catalogue id, for the route's own wire-level `z.enum` -- the same
  *  "validate against a fixed list up front" posture every sibling catalogue
- *  action (Midnight Merchant, Mythic Blueprints) already takes. */
+ *  action (Mythic Blueprints) already takes. */
 export const FORGE_ENCHANTMENT_IDS = Object.keys(FORGE_ENCHANTMENTS);
 
 export interface StackAcresForgedStats extends ForgeBaseStats {

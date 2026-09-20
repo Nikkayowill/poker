@@ -361,7 +361,6 @@ export const SPRITE_ART = {
   barbCorner: "/stackacres/sprites/barbCorner.webp",
   // Not an environment prop: a standing NPC, so pixel-art STYLE matching the
   // travelers above rather than the organic-isometric prop contract.
-  midnightMerchant: "/stackacres/sprites/midnight-merchant.webp",
 } as const;
 
 export type SpriteName = keyof typeof SPRITE_ART;

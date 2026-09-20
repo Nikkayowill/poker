@@ -198,16 +198,6 @@ import {
   type CrossbreedHarvestSettlement,
 } from "@/lib/stackacres/crossbreeding";
 import { SynergyBadge, SynergyOverlay } from "./SynergyOverlay";
-import {
-  MidnightMerchantStorefront,
-  type MidnightMerchantPurchaseResult,
-} from "./midnight-merchant-storefront";
-import {
-  MidnightMerchantManager,
-  type MidnightMerchantItemId,
-  type MidnightMerchantRenderSnapshot,
-  type MidnightMerchantSnapshot,
-} from "@/lib/stackacres/midnight-merchant";
 import { StackAcresHudOverflow } from "./stackacres-hud-overflow";
 import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
@@ -541,21 +531,6 @@ interface StackAcresResponse {
   /** Whether the Crop Fields (lib/stackacres/crop-fields.ts) have been
    *  unlocked. Same "absent means not yet" posture as `greenhouseBuilt`. */
   cropFieldsUnlocked?: boolean;
-  /** The Midnight Merchant's current visit, straight through from the
-   *  server every response carries it on. `null` (not merely absent) means
-   *  "confirmed no visit right now" -- see `MidnightMerchantManager.
-   *  applySnapshot`'s own header for why that distinction from a plain
-   *  missing field matters. Absent only from a response old enough to
-   *  predate the feature. */
-  midnightMerchant?: MidnightMerchantSnapshot | null;
-  /** Set only by a successful `midnight-merchant-buy` response; every other
-   *  action's response leaves this undefined. */
-  midnightMerchantPurchase?: {
-    itemId: string;
-    pricePaid: number;
-    purchaseStreak: number;
-    remaining: number;
-  };
   /** Purchased soil beds (lib/stackacres/soil.ts). Absent only from a
    *  response old enough to predate the feature, which `applyResponse` reads
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
@@ -900,10 +875,9 @@ export function StackAcresFarm() {
   });
   const [showPrestige, setShowPrestige] = useState(false);
   // What the last successful `prestige-reset` bought, read once by the modal
-  // through `onPrestigeReset`'s own return value -- the same sidecar-ref
-  // shape `lastMerchantPurchase` uses, for the same reason: `act`'s return
-  // type is the fixed `ContractActionResult` shared by every action, and
-  // this is the one extra field a reset's own answer carries beyond it.
+  // through `onPrestigeReset`'s own return value: `act`'s return type is the
+  // fixed `ContractActionResult` shared by every action, and this is the one
+  // extra field a reset's own answer carries beyond it.
   const lastPrestigeReset = useRef<StackAcresPrestigeResetResult | null>(null);
   // The Sunlight Forge. Seeded to "nothing forged yet" -- the same standing
   // a brand-new farm's own first read comes back with.
@@ -1177,41 +1151,6 @@ export function StackAcresFarm() {
    *  stone-nodes.ts. Same "fresh player" empty-until-first-response posture
    *  as `woodNodes` above. */
   const [stoneNodes, setStoneNodes] = useState<StoneNodeSnapshot[]>([]);
-  const [showMerchant, setShowMerchant] = useState(false);
-  /** Owns this farm's entire Midnight Merchant render state -- see
-   *  lib/stackacres/midnight-merchant.ts's own header. One instance per
-   *  mount, never recreated: `applySnapshot`'s "same visit vs. a new one"
-   *  distinction depends on comparing against whatever the LAST snapshot
-   *  was, and a fresh instance on every render would lose that memory and
-   *  replay the arrival animation on every unrelated re-render. */
-  const merchantManager = useRef(new MidnightMerchantManager());
-  /**
-   * The manager's own derived render state, mirrored into real React state
-   * rather than read from `merchantManager.current` during render.
-   *
-   * `merchantManager` itself stays a plain mutable class instance for the
-   * same reason `FarmhandStateMachine`'s is -- a value ticked every second
-   * has no business being reconstructed through `setState` every second --
-   * but reading a ref's `.current` IN THE RENDER BODY is exactly what the
-   * `react-hooks/refs` rule exists to catch: React does not know a render
-   * depends on it, so a change to it alone would never schedule the
-   * re-render this component needs to show it. `merchantSnapshot` is the
-   * fix: every place that mutates the manager (the tick interval below, and
-   * `applySnapshot` inside `applyResponse`) immediately mirrors its fresh
-   * `.snapshot()` into this state right after, in an effect or a handler,
-   * never during render -- so React always knows exactly when to repaint. */
-  const [merchantSnapshot, setMerchantSnapshot] = useState<MidnightMerchantRenderSnapshot>({
-    state: "absent",
-    msRemaining: 0,
-    urgent: false,
-    visit: null,
-  });
-  /** Sidecar for `act`'s fixed `ContractActionResult` return shape -- see
-   *  `onBuyFromMerchant`, and `tapAnchor` above for the same "extra
-   *  information the generic action layer does not carry" pattern already
-   *  used in this file. Read exactly once, synchronously, right after the
-   *  `act` call that set it -- nothing else in this component writes it. */
-  const lastMerchantPurchase = useRef<{ pricePaid: number } | null>(null);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
   const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
@@ -1545,9 +1484,9 @@ export function StackAcresFarm() {
     [pendingIntents],
   );
   /** Whether any in-flight intent is `prefix` or `prefix:...` -- for a modal
-   *  or menu that fires a family of intents (every synergy archetype, every
-   *  merchant item) and greys the whole surface while one is settling, while
-   *  the rest of the screen stays live. */
+   *  or menu that fires a family of intents (every synergy archetype, say)
+   *  and greys the whole surface while one is settling, while the rest of
+   *  the screen stays live. */
   const pendingByPrefix = useCallback(
     (prefix: string) => {
       for (const intent of pendingIntents) {
@@ -1749,25 +1688,8 @@ export function StackAcresFarm() {
     if (data.woodNodes) setWoodNodes(data.woodNodes);
     if (data.stoneNodes) setStoneNodes(data.stoneNodes);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
-    // meaningful answer here ("confirmed no visit"), and treating it like a
-    // missing field would mean a visit that just expired could never be
-    // told apart from a response too old to carry the field at all. See
-    // `midnightMerchant`'s own doc comment on StackAcresResponse.
-    if (data.midnightMerchant !== undefined) {
-      merchantManager.current.applySnapshot(data.midnightMerchant);
-      const next = merchantManager.current.snapshot();
-      setMerchantSnapshot(next);
-      // A visit ending while its own sheet is open closes that sheet here,
-      // in the same handler that just learned the visit is gone, rather
-      // than a second effect watching for it -- setting it to `false` when
-      // it is already `false` is a no-op React bails out of on its own.
-      if (!next.visit) setShowMerchant(false);
-    }
-    if (data.midnightMerchantPurchase) {
-      lastMerchantPurchase.current = { pricePaid: data.midnightMerchantPurchase.pricePaid };
-    }
-    // `!== undefined` for the same reason as the merchant above: null is the
-    // real "no vat placed" answer, and an optimistic patch carries no field.
+    // `!== undefined` rather than a truthiness check: null is the real
+    // "no vat placed" answer, and an optimistic patch carries no field.
     if (data.vat !== undefined) setVat(data.vat);
     if (data.cellar !== undefined) setCellar(data.cellar);
     if (data.work || data.processed || data.sold || data.vatCollected) {
@@ -1829,7 +1751,6 @@ export function StackAcresFarm() {
       farmhandSpeedMultiplier,
       secrets,
       secretDonations,
-      merchantVisit: merchantSnapshot.visit,
       greenhouseBuilt,
       cropFieldsUnlocked,
       irrigation,
@@ -1860,7 +1781,6 @@ export function StackAcresFarm() {
       farmhandSpeedMultiplier,
       secrets,
       secretDonations,
-      merchantSnapshot,
       greenhouseBuilt,
       cropFieldsUnlocked,
       irrigation,
@@ -1872,9 +1792,7 @@ export function StackAcresFarm() {
   /**
    * A copy of every farm atom an optimistic patch might touch, taken the
    * instant before a guess is applied. Restored verbatim when the server
-   * refuses or the request never lands -- see `act`. The merchant VISIT is
-   * deliberately out: no predictor moves it, and it carries its own
-   * arriving/departing animation state that a blunt restore would jar.
+   * refuses or the request never lands -- see `act`.
    */
   const captureFarmSnapshot = useCallback(
     () => ({
@@ -2041,34 +1959,6 @@ export function StackAcresFarm() {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
-
-  // The Merchant's own clock -- unconditional, unlike the interval above:
-  // a visit can be live with every animal idle, and `tick` is a cheap no-op
-  // whenever there is nothing to age down (see its own early return). The
-  // fresh snapshot is mirrored into React state immediately, in the same
-  // callback that mutated the manager -- never read from the ref during
-  // render (see `merchantSnapshot`'s own declaration for why that matters).
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      merchantManager.current.tick(1000);
-      const next = merchantManager.current.snapshot();
-      setMerchantSnapshot(next);
-      if (!next.visit) setShowMerchant(false);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  // Pushed to the scene only when the render decision actually flips, the
-  // same "push, never rebuild" contract setToolTier already follows -- see
-  // StackAcresWorldApi's own `setMerchant` doc. useLayoutEffect: this mirrors
-  // a field `applyResponse` just set in the same commit as whatever DOM
-  // reacted to it, and a passive effect would paint the scene a beat behind
-  // that DOM -- see stackacres-world.tsx's `setUnits` comment for the flash
-  // that lag reads as.
-  const merchantRendered = merchantSnapshot.state !== "absent";
-  useLayoutEffect(() => {
-    world.current?.setMerchant(merchantRendered);
-  }, [merchantRendered]);
 
   // The barn's door-open tap frame holds for as long as the Supply Store
   // sheet it opens is up, not just its own short timer -- see
@@ -2799,10 +2689,9 @@ export function StackAcresFarm() {
   // the farm before that -- see `paintTravelers`/`setTravelerUnlocks` in
   // stackacres-scene.ts), then hangs a quest badge over every one who's
   // unlocked and has one to show -- "!" to offer, "?" ready to hand in,
-  // nothing while mid-quest or done. Same "push, never rebuild" contract
-  // `setMerchant` keeps: an unchanged unlock set or cue set is a no-op on
-  // the scene's own side. useLayoutEffect for the same reason `setMerchant`
-  // above is one -- `story.view` is server-confirmed the same way.
+  // nothing while mid-quest or done. "Push, never rebuild": an unchanged
+  // unlock set or cue set is a no-op on the scene's own side.
+  // useLayoutEffect because `story.view` is server-confirmed.
   useLayoutEffect(() => {
     if (!story.view) return;
     const unlocked: Record<string, boolean> = {};
@@ -3552,20 +3441,6 @@ export function StackAcresFarm() {
     [act, energy],
   );
 
-  /** A finger landed on the Midnight Merchant. Guarded on `isInteractive()`
-   *  (true only in the steady `"present"` state, see
-   *  lib/stackacres/midnight-merchant.ts) rather than trusting the scene's
-   *  own gate alone -- the scene only calls this while its OWN
-   *  `merchantNode` exists, which can be one tick ahead of or behind this
-   *  component's render of `merchantSnapshot` by construction (the scene is
-   *  pushed to via an effect, not read synchronously), so a tap arriving in
-   *  that gap must not open a sheet for a visit already gone. */
-  const onWorldMerchantTap = useCallback(() => {
-    if (!merchantManager.current.isInteractive()) return;
-    panelSound();
-    setShowMerchant(true);
-  }, []);
-
   /**
    * A finger landed on the Greenhouse's own footprint, from outside it
    * (lib/stackacres/greenhouse.ts). Opens the same panel either way -- built
@@ -3682,7 +3557,7 @@ export function StackAcresFarm() {
 
   /**
    * The Workshop's actions, adapted from `act`'s fixed `ContractActionResult`
-   * shape the way `onBuyFromMerchant` below is: `lastProcessing` is where the
+   * shape: `lastProcessing` is where the
    * answer's own "what this call just did" lands, taken once, right after
    * the call that set it. Cleared first so a stale delta from an earlier
    * call can never be read as this one's.
@@ -3750,29 +3625,10 @@ export function StackAcresFarm() {
   );
 
   /**
-   * The Merchant's own purchase, adapted from `act`'s fixed
-   * `ContractActionResult` shape to `MidnightMerchantPurchaseResult` --
-   * see `lastMerchantPurchase`'s own doc comment for why the price paid
-   * has to travel by that sidecar rather than through `act`'s return value
-   * directly. A refusal's message is passed straight through unchanged:
-   * this component never rewords a reason the server already gave in
-   * plain language (see buyFromMidnightMerchant's own three refusal
-   * messages).
-   */
-  const onBuyFromMerchant = useCallback(
-    async (itemId: MidnightMerchantItemId): Promise<MidnightMerchantPurchaseResult> => {
-      const result = await act({ action: "midnight-merchant-buy", itemId });
-      if (!result.ok) return { ok: false, message: result.message };
-      return { ok: true, pricePaid: lastMerchantPurchase.current?.pricePaid ?? 0 };
-    },
-    [act],
-  );
-
-  /**
    * The Prestige Reset Valve's own request, adapted from `act`'s fixed
-   * `ContractActionResult` shape to `StackAcresPrestigeActionResult` for the
-   * same reason `onBuyFromMerchant` above does -- `lastPrestigeReset` is
-   * where the extra field (what THIS reset just bought) lands.
+   * `ContractActionResult` shape to `StackAcresPrestigeActionResult` --
+   * `lastPrestigeReset` is where the extra field (what THIS reset just
+   * bought) lands.
    */
   const onPrestigeReset = useCallback(async (): Promise<StackAcresPrestigeActionResult> => {
     const result = await act({ action: "prestige-reset", confirm: true });
@@ -3784,10 +3640,9 @@ export function StackAcresFarm() {
   }, [act]);
 
   /** The Sunlight Forge's own request. `act`'s fixed `ContractActionResult`
-   *  shape is already exactly `ForgeActionResult` -- there is no extra
-   *  field to adapt out of a sidecar the way `onPrestigeReset`/
-   *  `onBuyFromMerchant` need, since `forge` above already carries the
-   *  resulting owned-list on the same response. */
+   *  shape is already exactly `ForgeActionResult` -- there is no extra field
+   *  to adapt out of a sidecar the way `onPrestigeReset` needs, since `forge`
+   *  above already carries the resulting owned-list on the same response. */
   const onForgeEnchantment = useCallback(
     (enchantmentId: string): Promise<ForgeActionResult> =>
       act({ action: "forge-enchantment", itemId: enchantmentId }),
@@ -4543,7 +4398,6 @@ export function StackAcresFarm() {
               onStoneTap={onWorldStoneTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onGreenhouseSlotTap={onWorldGreenhouseSlotTap}
-              onMerchantTap={onWorldMerchantTap}
               onTruckTap={onWorldTruckTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
@@ -5635,29 +5489,6 @@ export function StackAcresFarm() {
           onPlant={onPlantCrossbreed}
           onHarvest={onHarvestCrossbreed}
           onClose={() => { panelSound(); setShowCrossbreed(false); }}
-        />
-      )}
-      {/*
-       * OVERRIDES Ray's board rather than composing with it: `showMerchant`
-       * and `showContracts` are two independent booleans, but a visit's
-       * window is short and the two sheets share the identical `.sa-sheet-
-       * scrim`, so a player is never meant to have both open at once in
-       * practice -- see midnight-merchant-storefront.tsx's own header.
-       * Gated on `merchantSnapshot.visit` rather than on `showMerchant`
-       * alone: a visit that expires while its sheet is open (the countdown
-       * hit zero, or a second browser tab bought the last one) must close
-       * this sheet on the very next snapshot rather than show stale stock
-       * with nothing left to load it from.
-       */}
-      {showMerchant && merchantSnapshot.visit && (
-        <MidnightMerchantStorefront
-          visit={merchantSnapshot.visit}
-          msRemainingLocal={merchantSnapshot.msRemaining}
-          urgent={merchantSnapshot.urgent}
-          goldBalance={profile?.unlimitedGold ? Number.POSITIVE_INFINITY : profile?.goldBalance ?? 0}
-          busy={pendingByPrefix("midnight-merchant-buy")}
-          onBuy={onBuyFromMerchant}
-          onClose={() => { panelSound(); setShowMerchant(false); }}
         />
       )}
     </main>

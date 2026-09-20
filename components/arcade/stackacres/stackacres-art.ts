@@ -2549,7 +2549,6 @@ export const PAINTERS: Record<PainterName, Painter> = {
   barbEndEast: spriteBacked("barbEndEast", DRAWN.barbEndEast),
   barbStraight1: spriteBacked("barbStraight1", DRAWN.barbStraight1),
   barbStraight2: spriteBacked("barbStraight2", DRAWN.barbStraight2),
-  midnightMerchant: spriteBacked("midnightMerchant", DRAWN.midnightMerchant),
   // The wild scenery. `treeRound` in three ramps was the cheapest thing in
   // this file and the weakest thing on the map -- three tones, three puffs,
   // one silhouette, and the woodland pass below multiplied it by about three,

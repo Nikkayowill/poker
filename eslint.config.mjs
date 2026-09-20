@@ -13,7 +13,7 @@ export default defineConfig([
   // Farm server code reaches the rest of the app only through the wallet, so
   // StackAcres can move to its own database later without untangling it.
   {
-    files: ["lib/server/stackacres-*.ts", "lib/server/midnight-merchant*.ts", "lib/server/stone-node-store.ts"],
+    files: ["lib/server/stackacres-*.ts", "lib/server/stone-node-store.ts"],
     ignores: ["**/*.test.ts"],
     rules: {
       "no-restricted-imports": [
@@ -22,7 +22,7 @@ export default defineConfig([
           patterns: [
             {
               regex:
-                "^(\\./|@/lib/server/)(?!(stackacres-|midnight-merchant)|(stone-node-store|supabase-admin|profile-store|arcade-request)$)",
+                "^(\\./|@/lib/server/)(?!(stackacres-)|(stone-node-store|supabase-admin|profile-store|arcade-request)$)",
               message: "StackAcres server code may only use other lib/server modules through profile-store.",
             },
           ],

@@ -316,50 +316,6 @@ export function barnHitAt(x: number, y: number): boolean {
 }
 
 /**
- * Where the Midnight Merchant stands when a visit is live -- a fixed spot in
- * the yard, off to the barn's east side, clear of the barn footprint
- * (x 71..145). The Merchant is a TEMPORARY visitor and has no
- * `PropPlacement` entry in props.ts's
- * `YARD_PROPS` -- that array is for permanent scenery only, painted once at
- * boot; the scene's own `setMerchant` (stackacres-scene.ts) adds and removes
- * this one picture at runtime, the same reconciled-node mechanism `setUnits`
- * already uses for livestock, rather than the "paint every YARD_PROPS entry
- * once at create()" mechanism the barn and Ray use. See that method's own
- * header for why a temporary NPC needed a node it could destroy, not a
- * static array entry it never could.
- */
-export const MIDNIGHT_MERCHANT_SPOT: WorldPoint = yardPoint(230, 20);
-
-/** The same 25.125x40 box every standing chibi character on this map shares
- *  (props.ts's `STANDING_CHARACTER_SHADOW` sizes its shadow off the same
- *  build) -- restated here rather than imported from props.ts, since that
- *  module's `PROP_SIZE` is keyed by `PropKind` and the Merchant, being
- *  temporary, is deliberately not a member of that closed set (see the doc
- *  comment above). */
-const MIDNIGHT_MERCHANT_FOOTPRINT: WorldRect = {
-  x: MIDNIGHT_MERCHANT_SPOT.x - 25.125 / 2,
-  y: MIDNIGHT_MERCHANT_SPOT.y - 40,
-  width: 25.125,
-  height: 40,
-};
-
-/** Whether a tapped ground point lands on the Midnight Merchant's spot.
- *  Checked by the scene ONLY while a visit is actually live (see
- *  `StackAcresScene`'s pointer-up handler) -- when no visit is on, this
- *  function is simply never called, rather than being called and refused,
- *  so a tap on empty ground where the Merchant sometimes stands falls
- *  through to `growAreaAt` exactly as it would if this feature did not
- *  exist. */
-export function midnightMerchantHitAt(x: number, y: number): boolean {
-  return (
-    x >= MIDNIGHT_MERCHANT_FOOTPRINT.x &&
-    x <= MIDNIGHT_MERCHANT_FOOTPRINT.x + MIDNIGHT_MERCHANT_FOOTPRINT.width &&
-    y >= MIDNIGHT_MERCHANT_FOOTPRINT.y &&
-    y <= MIDNIGHT_MERCHANT_FOOTPRINT.y + MIDNIGHT_MERCHANT_FOOTPRINT.height
-  );
-}
-
-/**
  * Ray's house -- a proper building now rather than a standing figure (see
  * stackacres-sprites.ts's `rayHouse`/`rayHouseOpen`), and a big one: Kayo's
  * call was close to the barn, bigger than his old standing spot, not exiled
@@ -369,7 +325,7 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
  * building this size: every gap AT the barn's own east side (where
  * Ray's old, much smaller footprint -- props.ts's former
  * `{ x: 178, y: 20 }` -- used to sit, between the silo and the crates,
- * the log pile and the Midnight Merchant's spot) is too narrow for anything
+ * the log pile and the yard's east edge) is too narrow for anything
  * bigger than his old 25-wide box; north of the barn, over its own roofline,
  * is the only stretch wide AND clear.
  *
@@ -391,7 +347,7 @@ export function midnightMerchantHitAt(x: number, y: number): boolean {
 export const RAY_HOUSE_FOOTPRINT: WorldRect = yardRect(72, -133, 90, 44);
 
 /** Whether a tapped ground point lands on Ray's house, as opposed to the barn
- *  well west of it -- same shape as `midnightMerchantHitAt`. */
+ *  well west of it. */
 export function rayHouseHitAt(x: number, y: number): boolean {
   return (
     x >= RAY_HOUSE_FOOTPRINT.x &&

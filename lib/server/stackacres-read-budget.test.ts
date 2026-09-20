@@ -73,7 +73,6 @@ describe("the StackAcres read budget", () => {
     // catch one of them being silently dropped in a future edit rather than
     // properly folded in or left as its own call.
     expect(body).toContain("listActiveSynergyArchetypes(profile.id)");
-    expect(body).toContain("readMidnightMerchantVisit(profile.id, now)");
     expect(body).toContain("readStackAcresLifetimeGross(profile.id)");
   });
 

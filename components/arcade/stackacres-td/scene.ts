@@ -100,7 +100,7 @@ const AREA_NAMES: Record<TopdownArea, string> = {
 const TRAVEL_MS = 320;
 /** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
 const TRAVEL_DEPTH = 20_000;
-const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "merchant", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
+const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
 /** Every district with a scene of its own behind a gate on the Homestead (or the Fold). */
@@ -250,7 +250,6 @@ export interface TopdownCallbacks {
    *  already takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
-  onMerchantTap: () => void;
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
   onHouseTap: (at: TapPoint) => void;
@@ -388,7 +387,6 @@ export class TopdownScene extends Phaser.Scene {
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   private storyCues: StoryCues = {};
-  private merchantPresent = false;
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
   private spent = new Map<string, number>();
   private nextRegrowCheck = 0;
@@ -764,7 +762,6 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   private npcVisible(name: string): boolean {
-    if (name === "merchant") return this.merchantPresent;
     if ((TRAVELERS_ON_MAP as readonly string[]).includes(name)) return this.travelerUnlocks[name as TravelerId] === true;
     return true;
   }
@@ -1376,7 +1373,6 @@ export class TopdownScene extends Phaser.Scene {
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
       else if (target.name === "pilgrim") cb.onMonkTap(at);
-      else if (target.name === "merchant") cb.onMerchantTap();
       else cb.onTravelerTap(target.name as TravelerId, at);
       return;
     }
@@ -1772,11 +1768,6 @@ export class TopdownScene extends Phaser.Scene {
 
   setStoryCues(cues: StoryCues): void {
     this.storyCues = cues;
-    if (this.booted) this.applyNpcs();
-  }
-
-  setMerchant(present: boolean): void {
-    this.merchantPresent = present;
     if (this.booted) this.applyNpcs();
   }
 

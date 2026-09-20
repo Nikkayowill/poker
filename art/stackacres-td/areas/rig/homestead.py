@@ -167,7 +167,6 @@ def build(for_game=False):
     a.character("pierre", 336, 226)                    # farmstead travelers
     a.character("ivy", 540, 108)
     if for_game:
-        a.character("merchant", 312, 180)              # shown only while the Midnight Merchant is visiting
     return a
 
 

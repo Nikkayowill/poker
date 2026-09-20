@@ -78,7 +78,7 @@ https://claude.ai/artifact/KKdRejByajLnJELNBP1j7x
 - **Buildings you enter:** Ray's House, the Barn, the Old Mill, and the Greenhouse once raised (see Interiors).
 - **Outdoors:** two crop beds (88 tillable tiles), Hen Haven's pen and coop, and the pond and dock for fishing (existing `catch-fish`).
 - **Secrets:** all three from `secrets.ts` are placed: the well, the loose board by the barn, and the jammed gear on the mill.
-- **People and objects:** the Pixel Pilgrim by the pond (not drawn yet), the Midnight Merchant's spot by the road on its timed visits, and the Town Contracts board at the signpost, reachable from day one exactly as contracts are today.
+- **People and objects:** the Pixel Pilgrim by the pond (not drawn yet) and the Town Contracts board at the signpost, reachable from day one exactly as contracts are today.
 - **Crossbreeding Bed:** outdoors near the greenhouse footing. Not inside the greenhouse, because that would gate it behind `greenhouse_raised`, which is a logic change.
 
 ### The Old Fields

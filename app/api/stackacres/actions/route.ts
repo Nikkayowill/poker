@@ -19,7 +19,6 @@ import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
-import { MIDNIGHT_MERCHANT_ITEM_IDS } from "@/lib/stackacres/midnight-merchant";
 import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
@@ -28,7 +27,6 @@ import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
   activateStackAcresSynergyPerk,
   buildStackAcresGreenhouse,
-  buyFromMidnightMerchant,
   buyStackAcresFeed,
   buyStackAcresStock,
   clearStackAcresSector,
@@ -114,8 +112,8 @@ export const runtime = "nodejs";
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
  * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
- * `place-machine`, `unlock-synergy-perk`, `midnight-merchant-buy`,
- * `place-pipe` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
+ * `place-machine`, `unlock-synergy-perk`, `place-pipe` and
+ * `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
  * ceiling -- see `sellStackAcresItem`, `fulfillStackAcresTownContract` and
  * `collectStackAcresVat` in lib/server/stackacres-service.ts. There is no
@@ -123,10 +121,7 @@ export const runtime = "nodejs";
  * and if it pays, does it reserve against the ceiling first" is the question
  * a new action has to answer, and a new payer that does not reserve first is
  * the change to stop over. `activate-synergy-perk` moves no Gold at all --
- * see below. `midnight-merchant-buy` is worth reading twice: it spends Gold
- * but NEVER reserves against the daily payout ceiling, because it is not a
- * payout at all -- Gold only ever leaves the caller here, through the same
- * `spend_gold_by_profile` every other spend in this list already uses.
+ * see below.
  *
  * `collect`, `work`, `process`, `request-contract`, `build-greenhouse`,
  * `remove-pipe` and `remove-soil-tile` move no Gold at all -- inventory only
@@ -401,16 +396,6 @@ const bodySchema = z.discriminatedUnion("action", [
     // unbounded" posture `collect`'s own unitIds cap takes.
     amount: z.number().int().min(1).max(999),
   }),
-  // The Midnight Merchant: a temporary NPC visit, spawned server-side off a
-  // critical harvest (see harvestStackAcres's step 3c), never by a client
-  // request. This is the only action the visit exposes -- there is no
-  // client-named "spawn" or "expire". Spends Gold, at a price that climbs
-  // 20% per item already sold this same visit; see
-  // lib/stackacres/midnight-merchant.ts's `priceForNextPurchase`.
-  z.object({
-    action: z.literal("midnight-merchant-buy"),
-    itemId: z.enum(MIDNIGHT_MERCHANT_ITEM_IDS as unknown as [string, ...string[]]),
-  }),
   // The Prestige Reset Valve. Moves no Gold; wipes the grid and every
   // resource stockpile riding on it in exchange for a permanent harvest
   // multiplier -- see prestigeResetStackAcres's own header. `confirm: true`
@@ -676,8 +661,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return startStackAcresMythicBlueprint(token, action.structureId, now);
     case "contribute-blueprint":
       return contributeToStackAcresMythicBlueprint(token, action.structureId, action.itemId, action.amount, now);
-    case "midnight-merchant-buy":
-      return buyFromMidnightMerchant(token, action.itemId, now);
     case "prestige-reset":
       return prestigeResetStackAcres(token, now);
     case "forge-enchantment":

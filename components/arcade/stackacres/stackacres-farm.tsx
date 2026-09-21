@@ -3604,7 +3604,7 @@ export function StackAcresFarm() {
       // optimistic patch inside `act` lands in the same tick, so the swing and
       // the change on the ground are one beat rather than two.
       const animation = beltAnimation(action);
-      if (animation) world.current?.farmerAction(animation);
+      if (animation) world.current?.farmerAction(animation, square.at);
       tapAnchor.current = square.at;
       // A stroke crosses four or five beds a second, so the tool's sound plays
       // once at the top of a run rather than once per bed; the continuous swing

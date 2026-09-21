@@ -131,7 +131,7 @@ export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
  *  its own copy of the rule. */
 export type TravelerUnlocks = Readonly<Record<TravelerId, boolean>>;
 
-export type FarmerAction = "water" | "harvest" | "plant";
+export type FarmerAction = "water" | "harvest" | "hoe" | "plant";
 
 /** Who an emote bubble pops up over: the farmer, or a person on the map by their rig name. */
 export type EmoteTarget = "farmer" | "ray" | "pilgrim" | TravelerId;
@@ -167,8 +167,8 @@ export interface StackAcresWorldApi {
    * alone -- see `critFlashLabel` in lib/stackacres/juice.ts.
    */
   celebrateCrit: (unitId: string, multiplier: number) => void;
-  /** The farmer acts out a water, harvest or planting drop where he stands. */
-  farmerAction: (action: FarmerAction) => void;
+  /** The farmer acts out a water, harvest, hoe or planting drop where he stands. */
+  farmerAction: (action: FarmerAction, impact?: TapPoint) => void;
   /** A small emote bubble over someone's head for a moment: a heart when a gift lands, a note when a
    *  traveler's story moves on. Nothing happens when that person isn't on the map the player is looking at. */
   emote: (who: EmoteTarget, kind: EmoteKind) => void;

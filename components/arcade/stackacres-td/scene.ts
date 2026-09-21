@@ -1419,7 +1419,10 @@ export class TopdownScene extends Phaser.Scene {
         }
         return cb.onLockedSectorTap(detail as ZoneId, at);
       case "homebeds":
-        this.floatAt(at, "Crops grow in the Crop Fields, up the north lane", "deny");
+        // Off the working lattice, but the free starter beds are right here:
+        // pointing north at locked, 15,000 Gold land is the last thing a new
+        // player needs.
+        this.floatAt(at, "Tap one of the neat squares to work a bed", "deny");
         return;
     }
   }

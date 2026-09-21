@@ -16,7 +16,6 @@ import {
   Dna,
   Lock,
   MapPin,
-  RotateCcw,
   Sparkles,
   Wand2,
   X,
@@ -198,7 +197,7 @@ import {
   type CrossbreedBedView,
   type CrossbreedHarvestSettlement,
 } from "@/lib/stackacres/crossbreeding";
-import { SynergyOverlay } from "./SynergyOverlay";
+import { SynergyBadge, SynergyOverlay } from "./SynergyOverlay";
 import {
   MidnightMerchantStorefront,
   type MidnightMerchantPurchaseResult,
@@ -280,6 +279,7 @@ import {
   type StackAcresBuyableCutter,
   type StackAcresCutter,
 } from "@/lib/stackacres/cutters";
+import { isUnbuiltCutter } from "@/lib/stackacres/unbuilt";
 import {
   evaluateStackAcresShopLock,
   type StackAcresShopProgress,
@@ -721,7 +721,9 @@ const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "soil", label: "Soil", icon: "ico-plant" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
-  { id: "drone", label: "Drone", icon: "ico-drone" },
+  // No Drone tab: the hangar and its forage run are no-ops in the farm, so a
+  // 1.2M Gold purchase could never bring anything back
+  // (lib/stackacres/unbuilt.ts). The tab returns with the drone itself.
   { id: "sell", label: "Sell", icon: "ico-gold" },
 ];
 
@@ -858,6 +860,14 @@ export function StackAcresFarm() {
   const [cutters, setCutters] = useState<StackAcresCutter[]>([STACKACRES_STARTING_CUTTER]);
   const [pickedCutter, setPickedCutter] = useState<StackAcresCutter | null>(null);
   const cutter = heldStackAcresCutter(pickedCutter, cutters);
+  const visibleCutters = useMemo(
+    () =>
+      STACKACRES_CUTTERS.filter(
+        (id) =>
+          !isUnbuiltCutter(id) || (id !== STACKACRES_STARTING_CUTTER && cutters.includes(id)),
+      ),
+    [cutters],
+  );
   useEffect(() => {
     // Deferred a tick, same as Ray's hello below: react-hooks/set-state-in-effect
     // rejects a synchronous setState in the effect body.
@@ -899,6 +909,7 @@ export function StackAcresFarm() {
   // a brand-new farm's own first read comes back with.
   const [forge, setForge] = useState<readonly string[]>([]);
   const [showForge, setShowForge] = useState(false);
+  const [showSynergy, setShowSynergy] = useState(false);
   // The Crossbreeding Bed. Seeded empty -- the same standing a brand-new
   // farm's own first read comes back with. `lastCrossbreedHarvest` is the
   // same sidecar-ref shape `lastPrestigeReset` uses, for the same reason:
@@ -1101,6 +1112,17 @@ export function StackAcresFarm() {
   /** Where the farmer stood when the map was opened, for its "you are here". */
   const [mapHere, setMapHere] = useState<MapPlaceId>("farmstead");
   const [showStore, setShowStore] = useState(false);
+  // Escape closes the store, same as every sheet that uses useModalDismiss.
+  // The store lives inline in this component rather than in its own file, so
+  // it carries its own listener instead of that hook.
+  useEffect(() => {
+    if (!showStore) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowStore(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showStore]);
   /** Which shelf of the Supply Store is showing. One category on screen at
    *  a time instead of every shelf stacked in one long scroll -- see the
    *  store's own render block below for why. */
@@ -4362,26 +4384,16 @@ export function StackAcresFarm() {
         <strong>{water}</strong>
         <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
-      <SynergyOverlay
+      <SynergyBadge
         unlocked={synergyUnlocked}
         active={synergyActive}
-        busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
-        onUnlock={onUnlockSynergyPerk}
-        onActivate={onActivateSynergyPerk}
+        onOpen={() => { panelSound(); setShowSynergy(true); }}
       />
-      {/* The Prestige Reset Valve's own entry point -- a standing badge
-          rather than a buried menu item, since the multiplier it shows is
-          worth seeing at a glance every session, not only when a player
-          goes looking for the valve itself. */}
-      <button
-        type="button"
-        className="sa-prestige-badge"
-        onClick={() => { panelSound(); setShowPrestige(true); }}
-        title="Prestige Reset Valve"
-      >
-        <RotateCcw size={13} aria-hidden="true" />
-        <strong>{prestige.multiplier.toFixed(4)}x</strong>
-      </button>
+      {/* The Prestige Reset Valve's entry point is off the HUD until the
+          valve is redesigned: as it stands it multiplies manual sales only,
+          so it pays a player to stop using contracts, the Vat and the Farm
+          Kitchen, which is backwards for an investment farm. A multiplier
+          already earned keeps applying to sales. */}
       {/* The Sunlight Forge's own entry point -- same standing-badge posture
           as the Prestige valve above it, since a forged enchantment is also
           a permanent, session-spanning upgrade worth a glance rather than a
@@ -4878,7 +4890,16 @@ export function StackAcresFarm() {
       </div>
 
       {showStore && (
-        <div className="sa-store-scrim" role="dialog" aria-modal="true" aria-label="Supply store">
+        <div
+          className="sa-store-scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Supply store"
+          onMouseDown={(event) => {
+            // The backdrop itself, never a press that bubbled out of the card.
+            if (event.currentTarget === event.target) { panelSound(); setShowStore(false); }
+          }}
+        >
           <div className="sa-store-card">
             {/* One line: a small Ray portrait, the store's own brand (not his
                 name -- see stackacres-ray-welcome.tsx for where his own voice
@@ -5265,9 +5286,11 @@ export function StackAcresFarm() {
                   {/* Grass cutters, kept apart from the spades so a spade
                       never mows the meadow. An owned one gets a Use button,
                       the same swap the picker beside the Mow key offers. */}
+                  {visibleCutters.length > 0 && (
+                  <>
                   <StoreShelf icon="ico-scythe">Cut the Grass</StoreShelf>
                   <div className="sa-stock-cards">
-                    {STACKACRES_CUTTERS.map((id) => {
+                    {visibleCutters.map((id) => {
                       const def = stackacresCutterDef(id);
                       const owned = cutters.includes(id);
                       const lock = evaluateStackAcresShopLock(def, shopProgress);
@@ -5326,6 +5349,8 @@ export function StackAcresFarm() {
                       );
                     })}
                   </div>
+                  </>
+                  )}
                 </>
               )}
 
@@ -5573,6 +5598,17 @@ export function StackAcresFarm() {
           busy={isPending("prestige-reset")}
           onReset={onPrestigeReset}
           onClose={() => { panelSound(); setShowPrestige(false); }}
+        />
+      )}
+
+      {showSynergy && (
+        <SynergyOverlay
+          unlocked={synergyUnlocked}
+          active={synergyActive}
+          busy={pendingByPrefix("unlock-synergy-perk") || pendingByPrefix("activate-synergy-perk")}
+          onUnlock={onUnlockSynergyPerk}
+          onActivate={onActivateSynergyPerk}
+          onClose={() => { panelSound(); setShowSynergy(false); }}
         />
       )}
 

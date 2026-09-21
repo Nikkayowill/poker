@@ -105,6 +105,7 @@ import {
   SOIL_BAGS_PER_PURCHASE,
   SOIL_PLOTS_PER_BAG,
   SOIL_DEFAULT_TIER,
+  SOIL_TIERS,
   soilTierDef,
   type SoilStock,
   type SoilTier,
@@ -342,19 +343,6 @@ const DEFAULT_RETRY_AFTER_SECONDS = 5;
  *  clear before sending anyway and letting `act` answer. Bounded so a stuck
  *  request can never hold a player's taps forever -- see `flushBatch`. */
 const BATCH_FLUSH_ATTEMPTS = 3;
-
-/**
- * The tiers Ray's shelf actually sells, as opposed to `SOIL_TIERS` (every
- * tier the game engine knows about). The Soil tab shows one card -- "Soil
- * bag," the base `dirt` tier -- rather than the old three-tier ladder.
- * The Crop Fields' own gel dock plants that same `dirt` tier directly, with
- * no tier picker of its own: Enriched Substrate and Hydro Soil are not
- * deleted from the engine (a farm that already holds a bed of either keeps
- * its growth bonus / self-watering perk), but nothing on the shelf or in the
- * dock offers planting one anymore -- keeping a plot hydrated is the pipe
- * network's job now, not a soil purchase.
- */
-const STORE_SOIL_TIERS: readonly SoilTier[] = ["dirt"];
 
 /**
  * The Pixel Pilgrim's own opening lines -- formal, devout, and clear that he
@@ -4658,7 +4646,7 @@ export function StackAcresFarm() {
                     pick the spot first.
                   </p>
                   <div className="sa-stock-cards">
-                    {STORE_SOIL_TIERS.map((tier) => {
+                    {SOIL_TIERS.map((tier) => {
                       const def = soilTierDef(tier);
                       const held = soilStock[tier] ?? 0;
                       // Tier-blind by design (see farm-actions.ts's `intentOf`):

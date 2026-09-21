@@ -95,10 +95,8 @@ import {
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotTile,
-  soilTileAt,
   soilTileKey,
   soilTileRect,
-  soilTileTier,
   type SoilMap,
   type SoilTile,
   type SoilTileCoord,
@@ -106,8 +104,6 @@ import {
 import {
   SOIL_BAGS_PER_PURCHASE,
   SOIL_PLOTS_PER_BAG,
-  soilGrowthMultiplier,
-  soilSelfHydrates,
   soilTierDef,
   soilTierPrice,
   toSoilTier,
@@ -814,39 +810,23 @@ function irrigableCrops(
 }
 
 /**
- * The whole hydration picture for one farm: the pipe network, plus the crops
- * standing on a self-watering bed.
+ * The whole hydration picture for one farm: which working crops a water source
+ * reaches right now. Today the only source is the pipe network.
  *
  * ONE PLACE, called by every site that needs it (`snapshots`, the view
- * builder, the pipe-removal before-shot and `recomputeIrrigation`). Those four
- * used to each call `recalculatePipeConnections` themselves, which was fine
- * while pipes were the only water source and is exactly the kind of thing
- * that rots the moment a second one exists -- miss one site and a crop's
- * `isWatered` disagrees with itself depending on which action last answered.
+ * builder, the pipe-removal before-shot and `recomputeIrrigation`), so a crop's
+ * `isWatered` cannot disagree with itself depending on which action last
+ * answered. A second water source is added here and nowhere else.
  */
 function irrigationGridFor(
   rows: readonly StoredStackAcresUnit[],
   pipes: Parameters<typeof recalculatePipeConnections>[0]["tiles"],
   soil: SoilMap,
 ): NetworkGrid {
-  const crops = irrigableCrops(rows, soil);
-  const grid = recalculatePipeConnections({ tiles: pipes, crops });
-
-  const selfWatered = new Set<string>();
-  for (const crop of crops) {
-    const { tx, ty } = soilTileAt(crop.worldX, crop.worldY);
-    const tile = soil.get(soilTileKey(tx, ty));
-    if (tile && soilSelfHydrates(soilTileTier(tile))) selfWatered.add(crop.unitId);
-  }
-  if (selfWatered.size === 0) return grid;
-
-  return {
-    ...grid,
-    irrigatedUnitIds: new Set<string>([...grid.irrigatedUnitIds, ...selfWatered]),
-  };
+  return recalculatePipeConnections({ tiles: pipes, crops: irrigableCrops(rows, soil) });
 }
 
-/** Which of `rows` a pipe or hydro bed waters right now. Every readiness and
+/** Which of `rows` a water source reaches right now. Every readiness and
  *  dryness check on the server has to be given this, or a piped crop reads as
  *  dry: its `lastWateredAt` only moves on a layout change. */
 async function irrigatedUnitIdsFor(
@@ -884,7 +864,7 @@ async function stampIrrigatedCrops(
   );
 }
 
-/** A crop just sown onto a bed a pipe or hydro soil already reaches is
+/** A crop just sown onto a bed a water source already reaches is
  *  watered from the start, so a null `lastWateredAt` only ever means seed
  *  nobody has watered. */
 async function waterIrrigatedCrops(profileId: string, now: Date): Promise<void> {
@@ -1403,7 +1383,7 @@ async function assignSoilSlot(
   const enriched = isSoilTileEnriched(tileRow);
   return {
     slot,
-    growthMultiplier: soilGrowthMultiplier(soilTileTier(tileRow)) * enrichedGrowthMultiplier(enriched),
+    growthMultiplier: enrichedGrowthMultiplier(enriched),
     enriched,
   };
 }
@@ -2497,7 +2477,7 @@ export async function buyStackAcresStock(
   }
 
   await spendSoilEnrichment(profile.id, soilAssignment.slot, soilAssignment.enriched);
-  // A pipe or hydro bed under the new crop waters it from the start.
+  // A water source under the new crop waters it from the start.
   await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
 }
@@ -2646,7 +2626,7 @@ export async function stockStackAcres(
       //
       // The soil term is snapshotted by the same act of writing `ready_at`:
       // once the row carries an absolute instant, retuning
-      // `SOIL_TIER_DEFS[...].growthMultiplier` cannot reach back and change
+      // `ENRICHED_GROWTH_MULTIPLIER` cannot reach back and change
       // what an already-growing crop returns -- the rule the Ante Up wager
       // ladders and `GREENHOUSE_GROWTH_MULTIPLIER` both state for themselves.
       // Rounded once, at the end, so the two multipliers cannot each round.
@@ -2700,7 +2680,7 @@ export async function stockStackAcres(
   }
 
   await spendSoilEnrichment(profile.id, soilAssignment.slot, soilAssignment.enriched);
-  // A pipe or hydro bed under the new crop waters it from the start.
+  // A water source under the new crop waters it from the start.
   await waterIrrigatedCrops(profile.id, now);
   return view(debited, now);
 }
@@ -2774,9 +2754,7 @@ export async function stockStackAcresGroup(
 
     const tileRow = soilSlotTile(soil, slot);
     const enriched = tileRow ? isSoilTileEnriched(tileRow) : false;
-    const growthMultiplier = tileRow
-      ? soilGrowthMultiplier(soilTileTier(tileRow)) * enrichedGrowthMultiplier(enriched)
-      : 1;
+    const growthMultiplier = enrichedGrowthMultiplier(enriched);
     const durationMs = Math.round(def.durationMs * growthMultiplier);
 
     try {
@@ -3276,7 +3254,7 @@ export async function waterStackAcres(
   //
   // Returning early rather than watering is what keeps the guard: nothing is
   // written, so the thirst clock is not reset and there is no free top-up to
-  // farm. No water is spent on this path either. A crop a pipe or hydro bed
+  // farm. No water is spent on this path either. A crop a water source
   // waters is never dry, so watering it is the same no-op.
   const rows = await listStackAcresUnits(profile.id);
   const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
@@ -4186,7 +4164,7 @@ export async function harvestStackAcres(
     const restart = row.permanent
       ? {
           readyAt: new Date(now.getTime() + STACKACRES_CATALOGUE[row.stock].durationMs),
-          // A pipe or hydro bed waters the new cycle from its start.
+          // A water source waters the new cycle from its start.
           wateredAt: irrigated.has(row.id) ? now : null,
         }
       : null;
@@ -5367,11 +5345,6 @@ async function recomputeIrrigation(
     listStackAcresSoilTiles(profileId),
   ]);
   const grid = irrigationGridFor(rows, pipes, soilMapFor(purchasedSoil));
-  // Only the PIPE topology is persisted -- `grid.irrigatedUnitIds` may now
-  // also hold crops a hydro bed waters, which is not a fact about any pipe.
-  // Syncing the whole grid is still right: the sync writes connector frames
-  // and hydration onto pipe rows, and a hydro-watered crop adds no pipe row
-  // for it to touch.
   await syncStackAcresPipeNetwork(profileId, grid);
 
   await stampIrrigatedCrops(rows, new Set<string>([...grid.irrigatedUnitIds, ...alsoStamp]), now);
@@ -5393,12 +5366,6 @@ async function recomputeIrrigation(
  * expensive square for a cheap one. Gold itself never moves here -- it left
  * at the shelf (`buyStackAcresSoil`), which is why every refusal below only
  * ever refunds a bag, never Gold.
- *
- * A tier is no longer purely cosmetic -- Enriched shortens a crop's cycle and
- * Hydro waters its own tile -- but BOTH effects are applied elsewhere and
- * neither is read here: growth is baked into `ready_at` at sow
- * (`stockStackAcres`), and hydration is resolved by `recomputeIrrigation`.
- * That split is why this function still moves nothing but a bag and one row.
  *
  * Bounded to the two places a bed can mean anything -- the Crop Fields
  * (`CROP_FIELD_BEDS`) and the Homestead's two grass paddocks (`HOME_PLOTS`) --

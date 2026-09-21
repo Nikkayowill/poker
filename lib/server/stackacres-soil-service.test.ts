@@ -16,10 +16,11 @@ import {
 import {
   SOIL_BAGS_PER_PURCHASE,
   SOIL_PLOTS_PER_BAG,
+  SOIL_TIERS,
   soilTierPrice,
   type SoilTier,
 } from "@/lib/stackacres/soil-tiers";
-import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
   adjustStackAcresSeedStock,
@@ -236,27 +237,6 @@ describe("placeStackAcresSoilTile — spends a square of soil, never Gold", () =
     expect(await balance(token)).toBe(afterFirst);
   });
 
-  it("refuses a bed of a different tier on an occupied coordinate and returns that bag too", async () => {
-    const token = await funded();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
-    await buyStackAcresSoil(token, { tier: "enriched", quantity: 1 }, T0);
-    const { tx, ty } = cropFieldTile();
-    await placeStackAcresSoilTile(token, { tx, ty, tier: "dirt" }, T0);
-    const afterFirst = await balance(token);
-
-    await expect(
-      placeStackAcresSoilTile(token, { tx, ty, tier: "enriched" }, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    // Neither moved into the wrong place: one dirt square spent on the bed
-    // that landed, the enriched square refunded untouched.
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({
-      dirt: P - 1,
-      enriched: P,
-    });
-    expect(await balance(token)).toBe(afterFirst);
-  });
-
   it("refuses with an empty shelf and points at the shop", async () => {
     const token = await funded();
     const start = await balance(token);
@@ -284,17 +264,17 @@ describe("buyStackAcresSoil — Ray's shelf", () => {
     const token = await funded();
     const start = await balance(token);
 
-    const view = await buyStackAcresSoil(token, { tier: "enriched", quantity: 3 }, T0);
+    const view = await buyStackAcresSoil(token, { tier: "dirt", quantity: 3 }, T0);
 
-    expect(await balance(token)).toBe(start - soilTierPrice("enriched") * 3);
-    expect(view.soilStock.enriched).toBe(3 * P);
+    expect(await balance(token)).toBe(start - soilTierPrice("dirt") * 3);
+    expect(view.soilStock.dirt).toBe(3 * P);
   });
 
   it("refuses when Gold is short and shelves nothing", async () => {
     const token = await funded(10);
 
     await expect(
-      buyStackAcresSoil(token, { tier: "hydro", quantity: 1 }, T0),
+      buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
 
     expect(await balance(token)).toBe(10);
@@ -568,7 +548,7 @@ describe("soil tiers", () => {
   const CELL_A = cropFieldTile();
 
   it("lays each tier onto the map with its tier recorded", async () => {
-    for (const tier of ["dirt", "enriched", "hydro"] as const) {
+    for (const tier of SOIL_TIERS) {
       __resetStackAcresSoilTilesForTest();
       __resetStackAcresSoilStockForTest();
       const token = await stocked(tier, 1);
@@ -591,40 +571,6 @@ describe("soil tiers", () => {
     expect(view.soilStock.dirt ?? 0).toBe(P - 1);
   });
 
-  // The whole point of Enriched. The shortened span is written into `ready_at`
-  // at sow, so a later retune of the tier table cannot reach a crop already
-  // in the ground.
-  it("shortens a crop's cycle when it is sown into an enriched bed", async () => {
-    const base = STACKACRES_CATALOGUE.corn.durationMs;
-
-    // A plain dirt bed is the baseline. Both sows name CELL_A explicitly --
-    // a fresh farm also carries the free Homestead starter beds now (see
-    // lib/stackacres/soil.ts's `homeStarterSoilTiles`), and an unnamed sow
-    // would land on one of those, plain-tiered, rather than on CELL_A.
-    const plainToken = await sowingFarm();
-    await buyStackAcresSoil(plainToken, { tier: "dirt", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(plainToken, { ...CELL_A, tier: "dirt" }, T0);
-    const plain = (await stockStackAcres(plainToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!;
-    expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
-    expect(plain.soilSlot).toBe(0);
-
-    const richToken = await sowingFarm();
-    await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(richToken, { ...CELL_A, tier: "enriched" }, T0);
-    const rich = (await stockStackAcres(richToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!;
-
-    // The one PURCHASED bed on this farm, so slot 0 is CELL_A -- the
-    // enriched bed. Purchased order counting is untouched by the starter
-    // beds (they are never persisted -- see stackacres-soil-store.ts's own
-    // header), so this is still 0, not offset by the six starter beds.
-    expect(rich.soilSlot).toBe(0);
-    expect(Date.parse(rich.readyAt) - T0.getTime()).toBe(Math.round(base * 0.8));
-  });
-
   // A crop needs a bed under it (2026-09-09): with every bed already
   // growing something -- Crop Fields or Homestead starter alike -- the sow
   // is refused outright, and the seed it would have spent stays on the
@@ -644,36 +590,6 @@ describe("soil tiers", () => {
     const after = await readStackAcres(token, T0);
     expect(after.units.filter((u) => u.stock === "corn")).toHaveLength(0);
     expect(after.seedStock.corn).toBe(before);
-  });
-
-  // Hydro waters its own tile, feeding the same `irrigated` flag a pipe does.
-  // No pipe is placed here at all: that is the point.
-  it("keeps a crop on a hydro bed watered with no pipe anywhere", async () => {
-    const thirstMs = STACKACRES_CATALOGUE.corn.thirstMs ?? 0;
-    const wellPastThirst = new Date(T0.getTime() + thirstMs * 1.5);
-
-    // Both sows name CELL_A explicitly -- see the enriched-bed test above on
-    // why an unnamed sow can no longer be trusted to land there.
-    const dryToken = await sowingFarm();
-    await buyStackAcresSoil(dryToken, { tier: "dirt", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(dryToken, { ...CELL_A, tier: "dirt" }, T0);
-    const dryId = (await stockStackAcres(dryToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!.id;
-    const dried = (await readStackAcres(dryToken, wellPastThirst)).units.find((u) => u.id === dryId);
-    expect(dried?.state).toBe("dry");
-
-    const hydroToken = await sowingFarm();
-    await buyStackAcresSoil(hydroToken, { tier: "hydro", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(hydroToken, { ...CELL_A, tier: "hydro" }, T0);
-    const hydroId = (await stockStackAcres(hydroToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!.id;
-    const still = (await readStackAcres(hydroToken, wellPastThirst)).units.find(
-      (u) => u.id === hydroId,
-    );
-    expect(still?.state).toBe("working");
-    expect(still?.isWatered).toBe(true);
   });
 });
 

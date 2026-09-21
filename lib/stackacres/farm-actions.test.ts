@@ -36,7 +36,7 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
   it("has a cue for every action that spends Gold or shelf stock with no toast of its own", () => {
     expect(purchaseCueText({ action: "expand-capacity", stock: "hen" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-feed", itemId: "grain", quantity: 1 })).toBeTruthy();
-    expect(purchaseCueText({ action: "buy-soil", tier: "enriched", quantity: 1 })).toBeTruthy();
+    expect(purchaseCueText({ action: "buy-soil", tier: "dirt", quantity: 1 })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-seed", crop: "corn", quantity: 1 })).toBeTruthy();
     expect(purchaseCueText({ action: "upgrade-tool" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-cutter", cutter: "mower" })).toBeTruthy();

@@ -463,7 +463,7 @@ export async function createStackAcresUnit(
     readyAt: Date;
     lastFedAt: Date | null;
     /** Null for a crop sown as dry seed, and for livestock, which never runs
-     *  dry. Set only when a pipe or hydro bed already waters the crop. */
+     *  dry. Set only when a water source already waters the crop. */
     lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
@@ -692,7 +692,7 @@ export async function collectStackAcresUnit(
     // A re-sown crop goes back in as dry seed (`wateredAt` null) exactly as a
     // freshly stocked one does, and its first water restarts the clock from
     // there (see `seedClockOnFirstWater`), so the time it sat ripe is never
-    // charged. The caller passes `wateredAt` only when a pipe or hydro bed
+    // charged. The caller passes `wateredAt` only when a water source
     // already waters it. `last_fed_at` deliberately does NOT get reset (see
     // the doc comment above): an animal can be fed at any time, so being
     // hungry the moment it restarts costs the player a serving and nothing

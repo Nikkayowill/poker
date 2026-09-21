@@ -97,7 +97,7 @@ describe("the hoe", () => {
     expect(resolveBeltAction("hoe", planted, ctx())).toMatchObject({ kind: "nothing", why: "blocked" });
   });
 
-  it("refuses off the Crop Fields, where there is no bed to lay", () => {
+  it("refuses off the paddocks and the Crop Fields, where there is no bed to lay", () => {
     expect(resolveBeltAction("hoe", offField, ctx())).toMatchObject({ kind: "nothing", why: "blocked" });
   });
 

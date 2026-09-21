@@ -103,6 +103,7 @@ import {
 } from "@/lib/stackacres/soil";
 import {
   SOIL_BAGS_PER_PURCHASE,
+  SOIL_PLOTS_PER_BAG,
   SOIL_DEFAULT_TIER,
   soilTierDef,
   type SoilStock,
@@ -140,6 +141,7 @@ import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_HITS_TO_FELL, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import { HITS_TO_BREAK as STONE_HITS_TO_BREAK, type StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import { forageYieldLabel, type ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import { StackAcresChopPopup } from "./stackacres-chop-popup";
 import {
   ACTION_BATCH_WINDOW_MS,
@@ -199,7 +201,6 @@ import { STOCK_ICON } from "./stock-icon";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
-import { StackAcresCropFieldsModal } from "./stackacres-crop-fields-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
 import { StackAcresStoryDialogue } from "./stackacres-story-dialogue";
 import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stackacres/story/use-stackacres-story";
@@ -207,7 +208,6 @@ import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
-import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
@@ -499,6 +499,13 @@ interface StackAcresResponse {
   /** Every Stone boulder's current mine state, always present -- see
    *  lib/stackacres/stone-nodes.ts's `StoneNodeSnapshot`. */
   stoneNodes?: StoneNodeSnapshot[];
+  /** Set by a `gather-forage` response to what THIS pick took. Null means
+   *  the bush was already bare. Every other action's answer leaves this
+   *  undefined. */
+  foraged?: { nodeId: string; crop: StackAcresCrop; quantity: number } | null;
+  /** Every forage bush's current state, always present -- see
+   *  lib/stackacres/forage.ts's `ForageNodeSnapshot`. */
+  forageNodes?: ForageNodeSnapshot[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -528,7 +535,7 @@ interface StackAcresResponse {
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
    *  `StackAcresView.soilTiles`'s own doc comment. */
   soilTiles?: SoilTile[];
-  /** Unplaced bags per tier. Absent on a response predating Ray's soil shelf,
+  /** Unplaced squares of soil per tier. Absent on a response predating Ray's soil shelf,
    *  which reads as an empty barn. */
   soilStock?: SoilStock;
   /** Unplanted crop seeds per crop id. Absent on a response predating Ray's
@@ -950,7 +957,7 @@ export function StackAcresFarm() {
    *  starter grant was removed (see lib/stackacres/soil.ts's own "starter
    *  kit" section). */
   const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
-  /** Bags bought from Ray but not laid down yet. Plain object rather than a Map
+  /** Soil bought from Ray but not laid down yet, in squares. Plain object rather than a Map
    *  so a response can replace it wholesale. */
   const [soilStock, setSoilStock] = useState<SoilStock>({});
   /** Crop seeds bought from Ray but not planted yet -- the ownership filter
@@ -982,11 +989,6 @@ export function StackAcresFarm() {
   const [cellar, setCellar] = useState<VatContainer | null>(null);
   /** The wild district a finger just landed on, if the clearing modal is up. */
   const [clearing, setClearing] = useState<SectorId | null>(null);
-  /** `clearing`'s own twin for the Crop Fields -- see
-   *  StackAcresCropFieldsModal's own header on why they need a separate
-   *  modal and a separate open flag since the 2026-09-08 district merge. */
-  const [cropFieldsModalOpen, setCropFieldsModalOpen] = useState(false);
-
   const [loaded, setLoaded] = useState(false);
   const [worldReady, setWorldReady] = useState(false);
   /**
@@ -1096,6 +1098,9 @@ export function StackAcresFarm() {
    *  stone-nodes.ts. Same "fresh player" empty-until-first-response posture
    *  as `woodNodes` above. */
   const [stoneNodes, setStoneNodes] = useState<StoneNodeSnapshot[]>([]);
+  /** The forage bushes' ready/crop/respawn state, same "state lives in the
+   *  snapshot, never in the component" posture as `woodNodes` above. */
+  const [forageNodes, setForageNodes] = useState<ForageNodeSnapshot[]>([]);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
   const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
@@ -1632,6 +1637,7 @@ export function StackAcresFarm() {
     if (typeof data.cropFieldsUnlocked === "boolean") setCropFieldsUnlocked(data.cropFieldsUnlocked);
     if (data.woodNodes) setWoodNodes(data.woodNodes);
     if (data.stoneNodes) setStoneNodes(data.stoneNodes);
+    if (data.forageNodes) setForageNodes(data.forageNodes);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // `!== undefined` rather than a truthiness check: null is the real
     // "no vat placed" answer, and an optimistic patch carries no field.
@@ -1699,6 +1705,9 @@ export function StackAcresFarm() {
       // This profile's placed soil.
       soilTiles,
       soilStock,
+      // The bushes, so a pick can name the seed it is about to take and turn
+      // the bush picked-over without waiting on the round trip.
+      forageNodes,
       inventory: processing.inventory,
       wheatPlots: processing.wheatPlots,
       machines: processing.machines,
@@ -1712,6 +1721,7 @@ export function StackAcresFarm() {
       energy,
       capacity,
       seedStock,
+      forageNodes,
       toolTier,
       cutters,
       sectors,
@@ -2309,6 +2319,18 @@ export function StackAcresFarm() {
           if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
           if (broke) setMinePopup(null);
         }
+        // A pick fills the SEED shelf, not the inventory, and moves no Gold
+        // either way. A bush someone else had already picked leaves
+        // `foraged` null: no float, no toast, just the fresh `forageNodes`
+        // state applied above -- which is what turns the bush picked-over on
+        // screen, so the tap is still answered.
+        if (body.action === "gather-forage" && data.foraged) {
+          const { crop, quantity } = data.foraged;
+          const label = forageYieldLabel(crop, quantity);
+          waterSound();
+          setLastCollect({ text: `+${label}`, nonce: Date.now() });
+          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
+        }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
         // dispatch itself). This is the SECOND, more celebratory beat --
@@ -2875,15 +2897,18 @@ export function StackAcresFarm() {
   const travelToPlace = useCallback(
     (id: MapPlaceId) => {
       setShowMap(false);
+      // The Crop Fields are not a place with a gate on it any more -- they
+      // are overgrown ground the player walks straight onto and breaks
+      // himself (see stackacres-service.ts's `placeStackAcresSoilTile`), so
+      // this only aims the camera at them.
       if (id === "cropfields") {
         travelSound();
         world.current?.focusZone("cropfields");
-        setCropFieldsModalOpen(!cropFieldsUnlocked);
         return;
       }
       travel(id);
     },
-    [travel, cropFieldsUnlocked],
+    [travel],
   );
 
   /** The map button: the farmer's own place is read off the scene here, on the
@@ -2899,18 +2924,20 @@ export function StackAcresFarm() {
     () =>
       mapPlaceStates(
       mapHere,
-      (id) => (id === "cropfields" ? cropFieldsUnlocked : isSectorUnlocked(id, sectors)),
+      // The Crop Fields are always walkable now; nothing is bought to open
+      // them, so they never carry a locked label either.
+      (id) => id === "cropfields" || isSectorUnlocked(id, sectors),
       (id) => {
-        if (id === "cropfields") {
-          return `Unlock for ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold`;
-        }
+        // Never reached for the Crop Fields -- they are open above -- but the
+        // map's id space is wider than a district's, so it is said here.
+        if (id === "cropfields") return null;
         const traveler = WILD_AREA_TRAVELER[id];
         if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
         const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
         return `Clear for ${check.cost.toLocaleString()} Gold`;
       },
     ),
-    [mapHere, cropFieldsUnlocked, sectors, units.length],
+    [mapHere, sectors, units.length],
   );
 
   // The view moving under whatever is pinned to it closes both screen-
@@ -3262,13 +3289,6 @@ export function StackAcresFarm() {
     setClearing(zone);
   }, []);
 
-  /** `onWorldLockedTap`'s own twin for the Crop Fields -- see
-   *  StackAcresCropFieldsModal's own header. */
-  const onWorldCropFieldsLockedTap = useCallback(() => {
-    panelSound();
-    setCropFieldsModalOpen(true);
-  }, []);
-
   /**
    * The town board's two actions, handed down as promises rather than as
    * fire-and-forget calls: the sheet debits its own shelf before either goes
@@ -3421,12 +3441,6 @@ export function StackAcresFarm() {
     },
     [act],
   );
-
-  const onUnlockCropFields = useCallback(() => {
-    buySound();
-    setCropFieldsModalOpen(false);
-    void act({ action: "unlock-crop-fields" });
-  }, [act]);
 
   /**
    * Tilling a bed straight out of the radial ring, or dragged across N tiles
@@ -3839,6 +3853,31 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /**
+   * A finger landed on one of the Homestead's forage bushes.
+   *
+   * NO POPUP, unlike a tree or a boulder, and that asymmetry is the point:
+   * chopping and mining are timed swings that need a meter to play against,
+   * where picking a bush is one stoop. Putting a dialog in front of it would
+   * turn the cheapest action on the farm into the one with the most chrome.
+   * So this fires the pick straight off, and the optimistic layer paints the
+   * seed before the server answers (lib/stackacres/optimistic-actions.ts).
+   */
+  const onWorldForageTap = useCallback(
+    (nodeId: string, at: TapPoint) => {
+      const bush = forageNodes.find((node) => node.nodeId === nodeId);
+      // A bare bush says so rather than sending a request the server will
+      // only refuse: the picked-over art is already on screen, so a silent
+      // no-op would read as a dropped tap.
+      if (bush && !bush.ready) {
+        world.current?.floatAt(at, "Picked over", "deny");
+        return;
+      }
+      void act({ action: "gather-forage", nodeId });
+    },
+    [act, forageNodes],
+  );
+
   /** A finger landed on one of the Mine's own boulders. Same split as
    *  `onWorldTreeTap` -- opens the shared swing popup in mine mode on
    *  whichever node the map named. */
@@ -4071,6 +4110,7 @@ export function StackAcresFarm() {
               units={liveUnits}
               woodNodes={woodNodes}
               stoneNodes={stoneNodes}
+              forageNodes={forageNodes}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}
@@ -4089,6 +4129,7 @@ export function StackAcresFarm() {
               onThicketTap={onWorldThicketTap}
               onTreeTap={onWorldTreeTap}
               onStoneTap={onWorldStoneTap}
+              onForageTap={onWorldForageTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
@@ -4096,9 +4137,7 @@ export function StackAcresFarm() {
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
-              cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}
-              onCropFieldsLockedTap={onWorldCropFieldsLockedTap}
               onViewMoved={onViewMoved}
               onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}
@@ -4608,8 +4647,9 @@ export function StackAcresFarm() {
               {storeTab === "soil" && (
                 <>
                   <p className="sa-sheet-note">
-                    Buy bags here, then tap bare ground in the Crop Fields to lay a bed. A bed you
-                    take up again is spent, so pick the spot first.
+                    Each bag makes {SOIL_PLOTS_PER_BAG} plots. Buy some here, then hoe bare grass by
+                    the house or in the Crop Fields to lay one. A bed you take up again is spent, so
+                    pick the spot first.
                   </p>
                   <div className="sa-stock-cards">
                     {STORE_SOIL_TIERS.map((tier) => {
@@ -4626,7 +4666,7 @@ export function StackAcresFarm() {
                           <h3>{def.label}</h3>
                           <p className="sa-stock-terms">{def.blurb}</p>
                           <p className="sa-stock-yield">
-                            <StoreCost amount={def.price} /> / bag
+                            <StoreCost amount={def.price} /> / bag of {SOIL_PLOTS_PER_BAG}
                           </p>
                           <BuyQuantityControls
                             unitPrice={def.price}
@@ -4639,7 +4679,7 @@ export function StackAcresFarm() {
                             }}
                           />
                           <p className="sa-sheet-note">
-                            {held} in the barn
+                            {held} {held === 1 ? "plot" : "plots"} left in the barn
                           </p>
                         </div>
                       );
@@ -4983,19 +5023,6 @@ export function StackAcresFarm() {
           opener={clearingOpener}
           onClear={onClearSector}
           onClose={() => { panelSound(); setClearing(null); }}
-        />
-      )}
-
-      {cropFieldsModalOpen && (
-        <StackAcresCropFieldsModal
-          unlocked={cropFieldsUnlocked}
-          unitCount={units.length}
-          goldBalance={profile?.goldBalance ?? null}
-          unlimitedGold={profile?.unlimitedGold === true}
-          upkeepOutstanding={upkeep.due}
-          busy={pendingByPrefix("unlock-crop-fields")}
-          onUnlock={onUnlockCropFields}
-          onClose={() => { panelSound(); setCropFieldsModalOpen(false); }}
         />
       )}
 

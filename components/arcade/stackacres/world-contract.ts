@@ -16,6 +16,7 @@ import type { SoilTile } from "@/lib/stackacres/soil";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -253,6 +254,9 @@ export interface StackAcresWorldProps {
   woodNodes: readonly WoodNodeSnapshot[];
   /** The Mine's boulders, so a mined-out one shows as rubble until it re-forms. */
   stoneNodes: readonly StoneNodeSnapshot[];
+  /** The Homestead's forage bushes, so a picked one shows as a bare stub
+   *  until its seed heads come back. */
+  forageNodes: readonly ForageNodeSnapshot[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */
@@ -311,6 +315,11 @@ export interface StackAcresWorldProps {
    *  mode; the map only reports the tap, the same split `onTreeTap` already
    *  takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's four forage bushes (see
+   *  lib/stackacres/forage.ts). No popup opens: the shell sends the pick
+   *  straight off, because a pick is one stoop rather than a timed swing.
+   *  The map only reports the tap, same split `onTreeTap` takes. */
+  onForageTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
@@ -336,17 +345,9 @@ export interface StackAcresWorldProps {
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
-  /** Whether the Crop Fields have been unlocked (lib/stackacres/crop-fields.ts)
-   *  -- the `sectors` equivalent for ground that is not a `SectorId` any more
-   *  since the 2026-09-08 district merge folded it into the Farmstead. */
-  cropFieldsUnlocked: boolean;
   /** A finger landed anywhere on land that has not been cleared -- the offer
    *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
-  /** `onLockedSectorTap`'s own twin for the Crop Fields -- see
-   *  StackAcresSceneCallbacks' own doc comment on why they need a separate
-   *  callback since the 2026-09-08 district merge. */
-  onCropFieldsLockedTap: (at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;

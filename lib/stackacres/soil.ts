@@ -254,7 +254,7 @@ export type PlantSoilTileResult =
 
 /**
  * Buys one bed: a one-tile plot at `coord`, tier-priced
- * (`SOIL_TILE_PRICE_GOLD`-scaled per tier), refused outright if a bed
+ * (`SOIL_BAG_PRICE_GOLD`-scaled per tier), refused outright if a bed
  * already stands there.
  *
  * USED TO grow an existing bed by one more of its dozen planting squares
@@ -635,6 +635,43 @@ export function homeStarterSoilTiles(): SoilTile[] {
   }));
 }
 
+/** An inclusive rectangle of soil tiles. */
+export interface SoilTileRect {
+  tx0: number;
+  ty0: number;
+  tx1: number;
+  ty1: number;
+}
+
+/**
+ * The Homestead's two grass paddocks, either side of the north lane: the only
+ * ground on the Homestead where the hoe will break a bed.
+ *
+ * They sit on the SAME far-off lattice as the six starter beds
+ * (`HOME_STARTER_ORIGIN`, tile 100,100), which is what keeps them apart from
+ * the Crop Fields' own tiles and stops `soilTileGroup`'s 4-neighbour walk ever
+ * joining the two. Tile 100,100 is the west paddock's top-left square, so the
+ * starter beds are simply the first six squares of it.
+ *
+ * Restated from art/stackacres-td/areas/rig/homestead.py's WEST_BED (map tiles
+ * 4..11 x 15..20) and EAST_BED (19..26 x 15..19) through the origin above: map
+ * tile (mx, my) is soil tile (mx + 96, my + 85). field.test.ts holds these
+ * inside the map's "homebeds" zones, so moving a paddock in the rig without
+ * moving it here fails a test rather than a player's tap.
+ *
+ * Wider than the six free beds on purpose: there is no painted bed here any
+ * more (#596), so the paddock is bare grass and the player breaks their own.
+ */
+export const HOME_PLOTS: readonly SoilTileRect[] = [
+  { tx0: 100, ty0: 100, tx1: 107, ty1: 105 },
+  { tx0: 115, ty0: 100, tx1: 122, ty1: 104 },
+];
+
+/** Whether `(tx, ty)` is a square of the Homestead's grass paddocks. */
+export function isHomePlotTile(tx: number, ty: number): boolean {
+  return HOME_PLOTS.some((r) => tx >= r.tx0 && tx <= r.tx1 && ty >= r.ty0 && ty <= r.ty1);
+}
+
 /** Whether `(tx, ty)` names one of the free Homestead starter beds -- the one
  *  case `stockStackAcres` (lib/server/stackacres-service.ts) lets a crop go
  *  into the ground before the Crop Fields are unlocked. */
@@ -659,7 +696,7 @@ export function isHomeStarterSoilTile(tx: number, ty: number): boolean {
  * at sow, hydration is resolved by the irrigation recompute. Nothing in THIS
  * file reads a tier for anything but passing it along.
  */
-export const SOIL_TILE_PRICE_GOLD = 167;
+export const SOIL_BAG_PRICE_GOLD = 100;
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice -- one plant per bed                               */

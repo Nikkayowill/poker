@@ -94,8 +94,9 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   const unlocked = await adminContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } });
   expect(unlocked.ok()).toBe(true);
   await admitFarmer(farmerContext, adminContext.request);
-  for (let bird = 0; bird < 2; bird += 1) await farmAction(farmerContext, { action: "stock", stock: "hen" });
-  await farmAction(farmerContext, { action: "unlock-crop-fields" });
+  // No Crop Fields unlock to buy any more -- the land is walked onto and
+  // broken with the hoe, which is what records the flag. All this farm needs
+  // is soil to lay and seed to sow.
   await farmAction(farmerContext, { action: "buy-soil", tier: "dirt", quantity: 4 });
   await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
   await before(farmerContext);

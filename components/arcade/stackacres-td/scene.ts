@@ -15,8 +15,8 @@ import {
   fieldWorldToMap,
   homeBedsMapToWorld,
   homeBedsWorldToMap,
-  homeStarterTileToMap,
-  inHomeStarterBeds,
+  homePlotTileToMap,
+  inHomePlots,
   soilTileToMap,
   worldToMap,
   type TopdownArea,
@@ -39,6 +39,7 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
+import { bedIsWet, soilTint } from "@/lib/stackacres/soil-moisture";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
@@ -54,7 +55,8 @@ import { DaylightLayer, type LightPoint } from "./daylight-layer";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
 import { drawNodeTextures } from "./node-textures";
-import { NODE_ART, gatherKindOfTag, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
+import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 
@@ -81,7 +83,6 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 
 const ASSETS = "/stackacres-td";
 const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
-const ENRICHED_SOIL_TINT = 0xd6f0b4;
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
 const AREA_NAMES: Record<TopdownArea, string> = {
   homestead: "The Homestead",
@@ -120,8 +121,6 @@ const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
   mine: "mine",
   townsquare: "townsquare",
 };
-/** Where to stand on the Homestead in front of the Crop Fields' north gate while it is still shut. */
-const CROP_FIELDS_GATE_APPROACH: Point = { x: 232, y: 80 };
 /**
  * Where a cast is thrown from: the shoulder of grass at the pier's north-east
  * corner, on the shore itself, with open water immediately west.
@@ -249,6 +248,13 @@ export interface TopdownCallbacks {
    *  the shell is what knows the real catalogue. Same split `onTreeTap`
    *  already takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's four forageable bushes (see
+   *  lib/stackacres/forage.ts's `FORAGE_NODE_IDS` and area.json's own
+   *  `tag: "forage:<id>"` props). `nodeId` is that id, unvalidated here --
+   *  the shell is what knows the real catalogue, same split `onTreeTap`
+   *  already takes. Unlike a chop or a mine this opens no popup: picking a
+   *  bush is one stoop, not a timed swing. */
+  onForageTap: (nodeId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
@@ -256,7 +262,6 @@ export interface TopdownCallbacks {
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
-  onCropFieldsLockedTap: (at: TapPoint) => void;
   onViewMoved: () => void;
   /** The farmer has just gone through a door or a gate: the shell shows where he has arrived. */
   onPlaceEntered: (name: string) => void;
@@ -318,7 +323,11 @@ export class TopdownScene extends Phaser.Scene {
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse; cue: Phaser.GameObjects.Image | null }>();
-  private soilImages: Phaser.GameObjects.Image[] = [];
+  /** The drawn beds, each with what its tint is made of: which tile it is (so
+   *  the crop standing on it can be found again) and whether it is enriched. */
+  private soilImages: { key: string; image: Phaser.GameObjects.Image; enriched: boolean }[] = [];
+  /** Beds with water in them, by tile key -- see lib/stackacres/soil-moisture.ts. */
+  private wetTiles = new Set<string>();
   private unitNodes = new Map<string, UnitNode>();
   /** Soil tile key -> the crop standing on it, so a tap on the bed square picks the crop. */
   private unitTiles = new Map<string, string>();
@@ -383,7 +392,6 @@ export class TopdownScene extends Phaser.Scene {
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
   private soil: SoilTile[] = [];
-  private cropFieldsUnlocked = false;
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   private storyCues: StoryCues = {};
@@ -686,6 +694,7 @@ export class TopdownScene extends Phaser.Scene {
     this.people.clear();
     this.npcSprites.clear();
     this.soilImages = [];
+    this.wetTiles.clear();
     this.unitNodes.clear();
     this.preview = null;
     this.marker = null;
@@ -746,14 +755,17 @@ export class TopdownScene extends Phaser.Scene {
     return object;
   }
 
-  /** The log across the north lane stands until the Crop Fields are unlocked, and blocks the way while it does. */
+  /** Which props are standing, and so which tiles they block. The log that
+   *  used to lie across the north lane is gone for good: the Crop Fields are
+   *  not bought any more, they are overgrown ground the player walks onto and
+   *  breaks himself, so nothing bars the way north. */
   private applyGates(): void {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
     for (const { spec, image, canopy, stump } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
       const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.opened(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
-      const visible = stump ? isSpent : !((spec.tag === "gate:oldfields" && this.cropFieldsUnlocked) || cleared || isSpent);
+      const visible = stump ? isSpent : !(spec.tag === "gate:oldfields" || cleared || isSpent);
       image.setVisible(visible);
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -792,7 +804,7 @@ export class TopdownScene extends Phaser.Scene {
    *  on why the two never share an origin. */
   private soilToMapFor(areaName: string): ((tx: number, ty: number) => { x: number; y: number }) | null {
     if (areaName === "oldfields") return soilTileToMap;
-    if (areaName === "homestead") return homeStarterTileToMap;
+    if (areaName === "homestead") return homePlotTileToMap;
     return null;
   }
 
@@ -806,7 +818,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   private drawSoil(): void {
-    for (const image of this.soilImages) image.destroy();
+    for (const bed of this.soilImages) bed.image.destroy();
     this.soilImages = [];
     const toMap = this.soilToMapFor(this.areaName);
     if (!toMap) return;
@@ -817,7 +829,7 @@ export class TopdownScene extends Phaser.Scene {
     // exist to mask against in the first place.
     const map = createSoilMap(this.soil);
     const onThisMap = (tile: SoilTile) =>
-      this.areaName === "oldfields" ? !inHomeStarterBeds({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE }) : inHomeStarterBeds({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE });
+      this.areaName === "oldfields" ? !inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE }) : inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE });
     for (const tile of this.soil) {
       if (!onThisMap(tile)) continue;
       const has = (dx: number, dy: number) => map.has(soilTileKey(tile.tx + dx, tile.ty + dy));
@@ -825,9 +837,21 @@ export class TopdownScene extends Phaser.Scene {
       const at = toMap(tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
       const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
-      // A bean-fed bed reads a touch greener until the next crop spends it.
-      if (isSoilTileEnriched(tile)) image.setTint(ENRICHED_SOIL_TINT);
-      this.soilImages.push(this.keep(image));
+      this.soilImages.push({ key: soilTileKey(tile.tx, tile.ty), image: this.keep(image), enriched: isSoilTileEnriched(tile) });
+    }
+    // Beds are redrawn from scratch here, so they come out of this loop
+    // untinted; `wetTiles` is whatever the last unit draw worked out, and
+    // `drawUnits` (the caller's next line, every time soil changes) puts it
+    // right the moment a crop moves on or off one of them.
+    this.applySoilMoisture();
+  }
+
+  /** Paint what is true of each bed onto it: a bean-fed one greener, a
+   *  watered one darker. Cheap enough to run on every unit draw -- it is a
+   *  `setTint` per bed and touches nothing else. */
+  private applySoilMoisture(): void {
+    for (const bed of this.soilImages) {
+      bed.image.setTint(soilTint({ enriched: bed.enriched, wet: this.wetTiles.has(bed.key) }));
     }
   }
 
@@ -842,8 +866,8 @@ export class TopdownScene extends Phaser.Scene {
       // fallback inside `cropSpot` always lands inside `CROP_FIELD_BEDS`
       // (see that function's own header), so it only ever draws in the Old
       // Fields.
-      if (this.areaName === "oldfields" && !inHomeStarterBeds(world)) return fieldWorldToMap(world);
-      if (this.areaName === "homestead" && inHomeStarterBeds(world)) return homeBedsWorldToMap(world);
+      if (this.areaName === "oldfields" && !inHomePlots(world)) return fieldWorldToMap(world);
+      if (this.areaName === "homestead" && inHomePlots(world)) return homeBedsWorldToMap(world);
       return null;
     }
     const pen = PENS[zone];
@@ -888,6 +912,7 @@ export class TopdownScene extends Phaser.Scene {
     this.occupiedTiles = new Set();
     this.unitTiles.clear();
     this.tileOfUnit.clear();
+    this.wetTiles = new Set();
     for (const unit of this.units) {
       const at = this.unitPlacement(unit);
       if (!at) continue;
@@ -900,6 +925,7 @@ export class TopdownScene extends Phaser.Scene {
         this.unitTiles.set(tileKey, unit.id);
         this.tileOfUnit.set(unit.id, { tx, ty });
         this.occupiedTiles.add(tileKey);
+        if (bedIsWet(unit)) this.wetTiles.add(tileKey);
       }
       const frame = this.unitFrame(unit);
       const cue = this.unitCue(unit);
@@ -936,6 +962,11 @@ export class TopdownScene extends Phaser.Scene {
       [...this.unitNodes].map(([id, node]): [string, Phaser.GameObjects.Image] => [id, node.sprite]),
       this.time.now,
     );
+    // The ground under the crops, now that this draw knows which of them have
+    // water in them. It has to be here rather than in `drawSoil`: a crop going
+    // dry or being watered changes no soil row at all, so the bed only hears
+    // about it through the unit pass.
+    this.applySoilMoisture();
   }
 
   private bob(image: Phaser.GameObjects.Image): void {
@@ -1271,11 +1302,11 @@ export class TopdownScene extends Phaser.Scene {
         if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
         return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
       }
-      // The Homestead's own free starter beds -- the small functional patch
-      // inside the "homebeds" zone's larger, mostly decorative dirt (see
-      // lib/stackacres-td/field.ts's own header). A tap that lands off the
-      // real lattice falls through to the plain "tag" target below, which
-      // `fire()`'s `case "homebeds"` still answers with the old deny line.
+      // The Homestead's grass paddocks: bare grass the hoe can break a bed
+      // in (lib/stackacres/soil.ts's `HOME_PLOTS`, and lib/stackacres-td/
+      // field.ts's own header). The zone is exactly the paddock, so a tap that
+      // resolves to no square (there is none today) falls through to the plain
+      // "tag" target below, which `fire()`'s `case "homebeds"` answers.
       if (zone.tag === "homebeds") {
         const world = homeBedsMapToWorld(map);
         if (!world) return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
@@ -1398,6 +1429,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onTreeTap(detail ?? "", at);
       case "stone":
         return cb.onStoneTap(target.tag, at);
+      case "forage":
+        return cb.onForageTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":
@@ -1406,8 +1439,6 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
       case "pen":
         return cb.onGroundTap(detail as ZoneId, at, penFeedSpot(detail as ZoneId));
-      case "gate":
-        return this.cropFieldsUnlocked ? undefined : cb.onCropFieldsLockedTap(at);
       case "locked":
         if (this.sectors.includes(detail as SectorId)) {
           this.floatAt(at, "That land isn't in this preview yet", "deny");
@@ -1415,10 +1446,8 @@ export class TopdownScene extends Phaser.Scene {
         }
         return cb.onLockedSectorTap(detail as ZoneId, at);
       case "homebeds":
-        // Off the working lattice, but the free starter beds are right here:
-        // pointing north at locked, 15,000 Gold land is the last thing a new
-        // player needs.
-        this.floatAt(at, "Tap one of the neat squares to work a bed", "deny");
+        // Just off the grass the hoe works, on the paddock's margin.
+        this.floatAt(at, "Step onto the grass to hoe a bed", "deny");
         return;
     }
   }
@@ -1710,11 +1739,6 @@ export class TopdownScene extends Phaser.Scene {
     return true;
   }
 
-  setCropFieldsUnlocked(unlocked: boolean): void {
-    this.cropFieldsUnlocked = unlocked;
-    if (this.booted) this.applyGates();
-  }
-
   /** The choppable trees' latest snapshots: the ones not ready yet are stumps (lib/stackacres-td/gather-nodes.ts). */
   setWoodNodes(nodes: readonly WoodNodeSnapshot[]): void {
     this.setSpent("tree:", spentTrees(nodes, Date.now()));
@@ -1723,6 +1747,12 @@ export class TopdownScene extends Phaser.Scene {
   /** The Mine's boulders' latest snapshots: the ones not ready yet are rubble. */
   setStoneNodes(nodes: readonly StoneNodeSnapshot[]): void {
     this.setSpent("stone:", spentStones(nodes, Date.now()));
+  }
+
+  /** The forage bushes' latest snapshots: the ones not ready yet are picked
+   *  over (lib/stackacres-td/gather-nodes.ts's `PICKED_ART`). */
+  setForageNodes(nodes: readonly ForageNodeSnapshot[]): void {
+    this.setSpent("forage:", spentForage(nodes, Date.now()));
   }
 
   /** Replaces the spent nodes whose tags start with `prefix`, and redraws when that changes anything. */
@@ -1898,13 +1928,12 @@ export class TopdownScene extends Phaser.Scene {
   focusZone(zone: MapPlaceId): void {
     if (!this.booted) return;
     // The Crop Fields are ground on the Homestead rather than a district, so
-    // they are not in SECTOR_AREAS: open, walk into the field; shut, stand at
-    // the north gate, where a tap says what opens it.
+    // they are not in SECTOR_AREAS -- and they are not gated either, so this
+    // always walks straight out into the field.
     if (zone === "cropfields") {
       this.path = [];
       this.pending = null;
-      if (this.cropFieldsUnlocked) this.enterArea("oldfields", this.specs.get("oldfields")!.spawn);
-      else this.enterArea("homestead", CROP_FIELDS_GATE_APPROACH);
+      this.enterArea("oldfields", this.specs.get("oldfields")!.spawn);
       this.callbacks.onViewMoved();
       return;
     }

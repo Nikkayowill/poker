@@ -1296,7 +1296,13 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     // Off the same derived `sectors`, influence and flags Ray's shop locks
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
-    story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, { tool }),
+    story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, {
+      tool,
+      sectorsCleared: cleared.length,
+      soilBeds: soilTiles.length,
+      enchantments: forgedEnchantments.length,
+      crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
+    }),
     woodNodes: WOOD_NODE_IDS.map((id) => woodNodeSnapshot(id, woodNodeStates[id] ?? freshWoodNodeState(), now)),
     stoneNodes: stoneNodeRows.map((row) => stoneNodeSnapshot(row, now)),
     revision,
@@ -2823,16 +2829,13 @@ export async function stockStackAcresGroup(
   const land = await readLand(profile.id);
   const zone = stockZone(stock);
   requireOpenSector(land.sectors, zone, `${def.label}s`);
-  // Same standalone Crop Fields gate `stockStackAcres` checks -- every crop
-  // is zoned to the always-open Farmstead (stockZone's own header), so its
-  // real lock is this one, not `requireOpenSector` above.
-  if (zone === "farmstead" && !(await readStackAcresCropFieldsUnlocked(profile.id))) {
-    throw new StackAcresRequestError(
-      "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
+  // Same standalone Crop Fields gate `stockStackAcres` checks, and with the
+  // same starter-bed exemption it makes: the free Homestead beds were never
+  // the Crop Fields' ground and are sowable from the first minute. Applied
+  // per tile below rather than as one blanket refusal, which is what used to
+  // stop a new player walking a row across their own starter patch.
+  const cropFieldsUnlocked =
+    zone === "farmstead" ? await readStackAcresCropFieldsUnlocked(profile.id) : true;
 
   const [purchased, units] = await Promise.all([
     listStackAcresSoilTiles(profile.id),
@@ -2851,6 +2854,8 @@ export async function stockStackAcresGroup(
     const tileKey = soilTileKey(tile.tx, tile.ty);
     if (seenTiles.has(tileKey)) continue;
     seenTiles.add(tileKey);
+
+    if (!cropFieldsUnlocked && !isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
 
     const slot = soilSlotForTile(soil, tile.tx, tile.ty);
     if (slot === null || takenSlots.has(slot)) continue;
@@ -2898,8 +2903,12 @@ export async function stockStackAcresGroup(
   }
 
   if (plantedCount === 0) {
+    // Nothing landed. Say which of the two reasons it was, rather than
+    // blaming a race for a locked field.
     throw new StackAcresRequestError(
-      `${def.label}'s bed just filled. Try tapping bare ground again.`,
+      cropFieldsUnlocked
+        ? `${def.label}'s bed just filled. Try tapping bare ground again.`
+        : "The Crop Fields are still under wild growth. Unlock them before you sow anything there.",
       409,
       { round: await snapshots(profile.id, now) },
     );
@@ -6053,12 +6062,25 @@ export async function turnInStackAcresTravelerQuest(
   const profile = await ensureProfile(token);
 
   for (let attempt = 0; attempt < STORY_WRITE_ATTEMPTS; attempt += 1) {
-    const [current, inventory, tool] = await Promise.all([
+    // The durable half of `StoryFacts`: work a player can only do once is
+    // read off the farm here rather than counted, so doing it before the
+    // quest was accepted still counts. See StoryFacts' own header.
+    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds] = await Promise.all([
       readStackAcresStory(profile.id),
       readStackAcresInventory(profile.id),
       readStackAcresToolTier(profile.id),
+      readStackAcresSectors(profile.id),
+      listStackAcresSoilTiles(profile.id),
+      listOwnedForgeEnchantmentIds(profile.id),
+      readStackAcresCrossbreedInventory(profile.id),
     ]);
-    const result = applyTurnIn(current.story, traveler, inventory, { tool });
+    const result = applyTurnIn(current.story, traveler, inventory, {
+      tool,
+      sectorsCleared: cleared.length,
+      soilBeds: soilTiles.length,
+      enchantments: forgeEnchantmentIdsFromOwned(enchantments).length,
+      crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
+    });
     if (result.outcome === "not-met") {
       throw new StackAcresRequestError(`Say hello to ${name} first.`, 409, {
         round: await snapshots(profile.id, now),

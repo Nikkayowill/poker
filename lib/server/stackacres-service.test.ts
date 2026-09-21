@@ -114,7 +114,7 @@ import {
   placeStackAcresSoilTile as laySoilBed,
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import { HOME_STARTER_TILE_COUNT, SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
+import { HOME_STARTER_TILE_COUNT, SOIL_TILE, homeStarterSoilTiles, soilTileAt } from "@/lib/stackacres/soil";
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
@@ -1010,6 +1010,32 @@ describe("group-planting a >=2x2 block", () => {
       stockStackAcresGroup(token, { stock: "carrot", tiles: block2x2 }, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
     expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(1000 - 4);
+  });
+
+  it("walks a row across the free starter beds before the Crop Fields open", async () => {
+    // What a brand-new player actually does: hold Use and step along their
+    // own six free beds. The single-tap path always allowed this; the group
+    // path refused it outright, which is the bug.
+    const { token, id } = await funded(2_000, { land: [], cropFieldsUnlocked: false, beds: false });
+    await adjustStackAcresSeedStock(id, "wheat", -1000);
+    await adjustStackAcresSeedStock(id, "wheat", 3);
+    const starters = homeStarterSoilTiles().slice(0, 3).map(({ tx, ty }) => ({ tx, ty }));
+
+    const view = await stockStackAcresGroup(token, { stock: "wheat", tiles: starters }, T0);
+    expect(view.units.filter((u) => u.stock === "wheat")).toHaveLength(3);
+    expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(0);
+  });
+
+  it("still refuses ground outside the starter beds while the Crop Fields are locked", async () => {
+    const { token, id } = await funded(2_000, { land: [], cropFieldsUnlocked: false, beds: false });
+    await adjustStackAcresSeedStock(id, "wheat", -1000);
+    await adjustStackAcresSeedStock(id, "wheat", 3);
+
+    await expect(
+      stockStackAcresGroup(token, { stock: "wheat", tiles: block2x2 }, T0),
+    ).rejects.toThrow(/still under wild growth/);
+    // No seed spent on ground that was never sowable.
+    expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(3);
   });
 
   it("refuses livestock -- there is no bed lattice to group over", async () => {

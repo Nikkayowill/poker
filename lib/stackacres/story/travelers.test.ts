@@ -111,7 +111,7 @@ describe("TRAVELER_QUESTS", () => {
     expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([
       { kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 },
     ]);
-    expect(TRAVELER_QUESTS.leo[1].objectives.map((objective) => objective.kind)).toEqual(["pipes", "forge"]);
+    expect(TRAVELER_QUESTS.leo[1].objectives.map((objective) => objective.kind)).toEqual(["contracts", "forge"]);
   });
 
   it("labels objectives as one imperative line", () => {

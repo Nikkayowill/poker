@@ -31,8 +31,10 @@ const RUNNING_FARM: StackAcresShopProgress = {
   cropFieldsUnlocked: true,
 };
 
-const TROWEL: StoryFacts = { tool: "trowel" };
-const IRON: StoryFacts = { tool: "iron-shovel" };
+/** A farm that has done none of the once-only work yet. */
+const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 } as const;
+const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
+const IRON: StoryFacts = { tool: "iron-shovel", ...BARE };
 
 function met(story: StoredStory, id: TravelerId, progress: StackAcresShopProgress = RUNNING_FARM): StoredStory {
   const result = meetTraveler(story, id, progress);
@@ -44,12 +46,15 @@ function events(story: StoredStory, list: readonly StoryEvent[]): StoredStory {
   return list.reduce(applyStoryEvent, story);
 }
 
-/** Drives one traveler's whole line with whatever it asks for. */
+/** Drives one traveler's whole line with whatever it asks for. Once-only
+ *  work is supplied as a farm fact, never as an event -- that is the whole
+ *  point of reading it live (see StoryFacts). */
 function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInventory = {}): StoredStory {
   let next = met(story, id);
   for (const quest of TRAVELER_QUESTS[id]) {
     const feed: StoryEvent[] = [];
     const stock: StackAcresInventory = { ...inventory };
+    const facts = { tool: "iron-shovel", ...BARE } as { -readonly [K in keyof StoryFacts]: StoryFacts[K] };
     for (const objective of quest.objectives) {
       switch (objective.kind) {
         case "harvest":
@@ -80,22 +85,19 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
           for (let i = 0; i < objective.target; i++) feed.push({ kind: "secret-zone-tapped", zoneId: "loose-board" });
           break;
         case "clear-sector":
-          for (let i = 0; i < objective.target; i++) feed.push({ kind: "sector-cleared", sector: "wallow" });
-          break;
-        case "pipes":
-          for (let i = 0; i < objective.target; i++) feed.push({ kind: "pipe-placed", pipe: "pipe" });
+          facts.sectorsCleared = objective.target;
           break;
         case "soil":
-          feed.push({ kind: "soil-placed", count: objective.target });
+          facts.soilBeds = objective.target;
           break;
         case "contracts":
           for (let i = 0; i < objective.target; i++) feed.push({ kind: "contract-fulfilled" });
           break;
         case "forge":
-          for (let i = 0; i < objective.target; i++) feed.push({ kind: "enchantment-forged" });
+          facts.enchantments = objective.target;
           break;
         case "crossbreed":
-          for (let i = 0; i < objective.target; i++) feed.push({ kind: "crossbreed-harvested", item: "golden_maize" });
+          facts.crossbreeds = objective.target;
           break;
         case "deliver":
           stock[objective.item] = objective.target;
@@ -105,7 +107,7 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
       }
     }
     next = events(next, feed);
-    const result = applyTurnIn(next, id, stock, IRON);
+    const result = applyTurnIn(next, id, stock, facts);
     expect(result.outcome, `${quest.id}`).not.toBe("not-ready");
     next = result.story;
   }
@@ -124,7 +126,7 @@ describe("freshStory", () => {
 describe("meetTraveler", () => {
   it("opens the first quest with zeroed counters", () => {
     const story = met(freshStory(), "ray", FRESH_FARM);
-    expect(story.travelers.ray).toEqual({ met: true, questIndex: 0, counts: [0, 0] });
+    expect(story.travelers.ray).toEqual({ met: true, questIndex: 0, counts: [0] });
   });
 
   it("refuses a locked traveler and leaves the story untouched", () => {
@@ -160,9 +162,9 @@ describe("applyStoryEvent", () => {
   it("ticks only the objectives an event matches, capped at target", () => {
     const story = met(freshStory(), "ray", FRESH_FARM);
     const watered = applyStoryEvent(story, { kind: "watered", count: 3 });
-    expect(watered.travelers.ray.counts).toEqual([0, 3]);
+    expect(watered.travelers.ray.counts).toEqual([3]);
     const over = applyStoryEvent(watered, { kind: "watered", count: 9 });
-    expect(over.travelers.ray.counts).toEqual([0, 5]);
+    expect(over.travelers.ray.counts).toEqual([3]);
     expect(applyStoryEvent(over, { kind: "watered", count: 1 })).toBe(over);
   });
 
@@ -175,10 +177,10 @@ describe("applyStoryEvent", () => {
     let story = met(freshStory(), "ray", FRESH_FARM);
     story = met(story, "bea");
     story = applyStoryEvent(story, { kind: "watered", count: 4 });
-    expect(story.travelers.ray.counts).toEqual([0, 4]);
+    expect(story.travelers.ray.counts).toEqual([3]);
     expect(story.travelers.bea.counts).toEqual([0]);
     story = applyStoryEvent(story, { kind: "harvested", stock: "bell_pepper", count: 4 });
-    expect(story.travelers.ray.counts).toEqual([0, 4]);
+    expect(story.travelers.ray.counts).toEqual([3]);
     expect(story.travelers.bea.counts).toEqual([4]);
   });
 
@@ -186,6 +188,48 @@ describe("applyStoryEvent", () => {
     const story = met(freshStory(), "pierre");
     const after = applyStoryEvent(story, { kind: "harvested", stock: "potato", count: 5 });
     expect(after).toBe(story);
+  });
+});
+
+describe("work already done still counts", () => {
+  /**
+   * The softlock this fixes. Miles' second quest asks for a cleared district,
+   * and only two districts can ever be cleared. A player who cleared both
+   * before he turned up had nothing left to clear, and a counter that only
+   * ticks while the quest is open could never reach 1.
+   */
+  it("accepts a district cleared before the quest was ever offered", () => {
+    let story = met(freshStory(), "miles", RUNNING_FARM);
+    // Finish his first quest the ordinary way.
+    story = events(story, [
+      { kind: "secret-zone-tapped", zoneId: "loose-board" },
+      { kind: "secret-zone-tapped", zoneId: "wishing-well" },
+      { kind: "secret-zone-tapped", zoneId: "windmill-gear" },
+    ]);
+    story = applyTurnIn(story, "miles", {}, TROWEL).story;
+
+    // No `sector-cleared` event ever reaches this story: the clearing
+    // happened long before Miles arrived. The farm says so instead.
+    const cleared: StoryFacts = { ...TROWEL, sectorsCleared: 2 };
+    expect(applyTurnIn(story, "miles", {}, TROWEL).outcome).toBe("not-ready");
+    expect(applyTurnIn(story, "miles", {}, cleared).outcome).toBe("completed");
+  });
+
+  it("shows that work on the rendered view too, with nothing counted", () => {
+    let story = met(freshStory(), "miles", RUNNING_FARM);
+    story = events(story, [
+      { kind: "secret-zone-tapped", zoneId: "loose-board" },
+      { kind: "secret-zone-tapped", zoneId: "wishing-well" },
+      { kind: "secret-zone-tapped", zoneId: "windmill-gear" },
+    ]);
+    story = applyTurnIn(story, "miles", {}, TROWEL).story;
+    const view = storyView(story, RUNNING_FARM, {}, { ...TROWEL, sectorsCleared: 1 });
+    expect(view.travelers.miles.quest?.objectives[0]).toEqual({
+      label: "Clear a district of wild growth",
+      have: 1,
+      need: 1,
+    });
+    expect(view.travelers.miles.ready).toBe(true);
   });
 });
 
@@ -225,7 +269,7 @@ describe("applyTurnIn", () => {
     const story = met(freshStory(), "brayden");
     expect(applyTurnIn(story, "brayden", {}, TROWEL).outcome).toBe("not-ready");
     expect(applyTurnIn(story, "brayden", {}, IRON).outcome).toBe("advanced");
-    expect(applyTurnIn(story, "brayden", {}, { tool: "golden-spade" }).outcome).toBe("advanced");
+    expect(applyTurnIn(story, "brayden", {}, { tool: "golden-spade", ...BARE }).outcome).toBe("advanced");
   });
 
   it("grants the reward once, on the last quest", () => {
@@ -236,14 +280,13 @@ describe("applyTurnIn", () => {
   it("does not duplicate a reward already held", () => {
     let story: StoredStory = { ...freshStory(), items: ["rays_heritage_cap"] };
     story = met(story, "ray", FRESH_FARM);
-    story = events(story, [
-      { kind: "soil-placed", count: 3 },
-      { kind: "watered", count: 5 },
-    ]);
+    story = applyStoryEvent(story, { kind: "watered", count: 3 });
+    story = applyTurnIn(story, "ray", {}, TROWEL).story;
+    story = applyStoryEvent(story, { kind: "processed", recipe: "flour", count: 1 });
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
     story = applyStoryEvent(story, { kind: "harvested", stock: "carrot", count: 10 });
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
-    story = applyStoryEvent(story, { kind: "sector-cleared", sector: "wallow" });
+    story = applyStoryEvent(story, { kind: "contract-fulfilled" });
     const last = applyTurnIn(story, "ray", {}, TROWEL);
     expect(last.outcome).toBe("completed");
     expect(last.granted).toBeNull();
@@ -272,12 +315,9 @@ describe("storyView", () => {
       done: false,
       quest: {
         index: 0,
-        total: 3,
+        total: 4,
         title: "First Furrows",
-        objectives: [
-          { label: "Lay 3 soil beds", have: 0, need: 3 },
-          { label: "Water 5 crops", have: 2, need: 5 },
-        ],
+        objectives: [{ label: "Water 3 crops", have: 2, need: 3 }],
       },
       ready: false,
     });
@@ -318,8 +358,8 @@ describe("applyEventToView", () => {
     story = met(story, "pierre");
     const view = storyView(story, RUNNING_FARM, { potato: 2 }, TROWEL);
     const ticked = applyEventToView(view, { kind: "watered", count: 5 });
-    expect(ticked.travelers.ray.quest?.objectives[1]).toEqual({ label: "Water 5 crops", have: 5, need: 5 });
-    expect(ticked.travelers.ray.ready).toBe(false);
+    expect(ticked.travelers.ray.quest?.objectives[0]).toEqual({ label: "Water 3 crops", have: 3, need: 3 });
+    expect(ticked.travelers.ray.ready).toBe(true);
     expect(ticked.travelers.pierre).toBe(view.travelers.pierre);
     const harvested = applyEventToView(ticked, { kind: "harvested", stock: "potato", count: 3 });
     expect(harvested.travelers.pierre.quest?.objectives[0].have).toBe(2);

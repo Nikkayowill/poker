@@ -115,6 +115,10 @@ export function meetTraveler(story: StoredStory, id: TravelerId, progress: Stack
 function advanceCounts(quest: StoryQuest, counts: readonly number[], event: StoryEvent): readonly number[] {
   let changed = false;
   const next = quest.objectives.map((objective, i) => {
+    // Live objectives are read off the farm at turn-in, so a count here would
+    // be a second, weaker answer to the same question. Same skip
+    // `applyEventToView` makes on the client's copy.
+    if (!isCounterObjective(objective)) return counts[i];
     const step = objectiveAdvance(objective, event);
     if (step === 0) return counts[i];
     const value = Math.min(objective.target, counts[i] + step);
@@ -146,9 +150,26 @@ export function applyStoryEvent(story: StoredStory, event: StoryEvent): StoredSt
 /* Turning in                                                          */
 /* ------------------------------------------------------------------ */
 
-/** What a turn-in reads beyond the inventory. Permanent facts only. */
+/**
+ * What a turn-in reads beyond the inventory. Permanent facts only.
+ *
+ * Counters only tick while a quest is open, so anything a player can finish
+ * ONCE is a trap if it is counted: clear both districts before Ray asks, or
+ * forge all three enchantments before Brayden does, and there is nothing left
+ * to do and no way to finish. Those objectives read the farm itself instead,
+ * the same way `deliver` and `hold-tool` always have, so work already done
+ * counts and no order of play can strand a quest.
+ */
 export interface StoryFacts {
   readonly tool: StackAcresToolTier;
+  /** Districts cleared of wild growth. */
+  readonly sectorsCleared: number;
+  /** Soil beds bought and laid. */
+  readonly soilBeds: number;
+  /** Permanent enchantments forged. */
+  readonly enchantments: number;
+  /** Hybrids brought in off the Crossbreeding Bed. */
+  readonly crossbreeds: number;
 }
 
 /** How much of one objective the player has right now. Counters are the
@@ -165,6 +186,15 @@ export function objectiveHave(
       return inventory[objective.item] ?? 0;
     case "hold-tool":
       return toolMeets(facts.tool, objective.tool) ? 1 : 0;
+    // Once-only work, read off the farm rather than counted -- see StoryFacts.
+    case "clear-sector":
+      return facts.sectorsCleared;
+    case "soil":
+      return facts.soilBeds;
+    case "forge":
+      return facts.enchantments;
+    case "crossbreed":
+      return facts.crossbreeds;
     default:
       return count;
   }

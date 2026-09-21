@@ -83,14 +83,14 @@ describe("STORY_DIALOGUE", () => {
 
   it("saves the fanfare for the last turn-in", () => {
     expect(storyNode("ray.q1.done").vibratePattern).toBe(HAPTIC_DOUBLE);
-    expect(storyNode("ray.q3.done").vibratePattern).toBe(HAPTIC_FANFARE);
+    expect(storyNode("ray.q4.done").vibratePattern).toBe(HAPTIC_FANFARE);
     expect(storyNode("ray.q2.progress").vibratePattern).toBe(HAPTIC_TICK);
     expect(storyNode("ray.hello").vibratePattern).toBe(HAPTIC_DOUBLE);
   });
 
   it("throws on an id nobody wrote", () => {
     expect(() => storyNode("bleep.hello")).toThrow();
-    expect(() => storyNode("ray.q4.done")).toThrow();
+    expect(() => storyNode("ray.q5.done")).toThrow();
   });
 });
 

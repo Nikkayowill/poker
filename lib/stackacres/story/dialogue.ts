@@ -91,8 +91,13 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
     quests: [
       {
         progress:
-          "Lay a few beds and get some water on them. The ground here is stubborn until it's wet, then it'll give you anything.",
-        done: "Look at that. Soil turned, water down. That's the first honest day's work this place has seen in a long while.",
+          "Get some water on those beds by the house. The ground here is stubborn until it's wet, then it'll give you anything.",
+        done: "Look at that. Water down, seed in. That's the first honest day's work this place has seen in a long while.",
+      },
+      {
+        progress:
+          "Wheat's only wheat until you mill it. Put up a mill in the workshop and run a batch through. You'll want timber off those trees first.",
+        done: "Flour. That's the whole trick of this place: nothing leaves here as the thing it grew as.",
       },
       {
         progress: "Now let it grow. Ten of anything, doesn't matter what. A farm is patience with a fence around it.",
@@ -100,8 +105,8 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       },
       {
         progress:
-          "The old fields have gone to bush since I passed. Clear one of them back. The oxen would've done it in a morning, but you'll manage.",
-        done: "Cleared. Same ground I broke with the team, and now you've broken it again. Here, take my cap. It's kept the sun off this family for a long time.",
+          "The town posts what it wants on the board by the road. Fill one of their orders. That's how they learn your name out here.",
+        done: "Word travels. They'll ask for you by name now. Here, take my cap. It's kept the sun off this family for a long time.",
       },
     ],
     home: "Go on and see to your guests. Strange folk, but lost is lost, and we've always kept a door open here.",

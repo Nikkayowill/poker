@@ -36,7 +36,6 @@ export type StoryObjective =
   | { readonly kind: "fish"; readonly target: number }
   | { readonly kind: "secret-zones"; readonly target: number }
   | { readonly kind: "clear-sector"; readonly target: number }
-  | { readonly kind: "pipes"; readonly target: number }
   | { readonly kind: "soil"; readonly target: number }
   | { readonly kind: "contracts"; readonly target: number }
   | { readonly kind: "forge"; readonly target: number }
@@ -46,9 +45,27 @@ export type StoryObjective =
 
 export type StoryObjectiveKind = StoryObjective["kind"];
 
-/** Objectives the event stream advances. The other two are read at turn-in. */
+/**
+ * Objectives read off the farm rather than counted from the event stream.
+ *
+ * `deliver` and `hold-tool` always were. The other four are work a player can
+ * only finish ONCE: clear a district, lay the beds, forge an enchantment,
+ * breed a hybrid. Counting those strands the quest for anyone who did them
+ * before the quest was offered, because there is then nothing left to do.
+ * See `StoryFacts` in ./state.ts.
+ */
+export const LIVE_OBJECTIVE_KINDS: readonly StoryObjectiveKind[] = [
+  "deliver",
+  "hold-tool",
+  "clear-sector",
+  "soil",
+  "forge",
+  "crossbreed",
+];
+
+/** Objectives the event stream advances. The rest are read at turn-in. */
 export function isCounterObjective(objective: StoryObjective): boolean {
-  return objective.kind !== "deliver" && objective.kind !== "hold-tool";
+  return !LIVE_OBJECTIVE_KINDS.includes(objective.kind);
 }
 
 /** How far one event moves one objective. Zero for an unrelated pair. */
@@ -74,8 +91,6 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "secret-zone-tapped" ? 1 : 0;
     case "clear-sector":
       return event.kind === "sector-cleared" ? 1 : 0;
-    case "pipes":
-      return event.kind === "pipe-placed" ? 1 : 0;
     case "soil":
       return event.kind === "soil-placed" ? event.count : 0;
     case "contracts":
@@ -124,8 +139,6 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Find ${objective.target} hidden spots on the farm`;
     case "clear-sector":
       return objective.target === 1 ? "Clear a district of wild growth" : `Clear ${objective.target} districts of wild growth`;
-    case "pipes":
-      return `Lay ${objective.target} irrigation tiles`;
     case "soil":
       return `Lay ${objective.target} soil beds`;
     case "contracts":
@@ -152,26 +165,33 @@ export interface StoryQuest {
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
   ray: [
+    // Ray teaches the opening loop in the order a new player can actually do
+    // it, on the six free starter beds: water, mill, harvest, sell to the
+    // town. His old first quest asked for three NEW beds, which the server
+    // refuses until the Crop Fields are bought, so his line could never start.
     {
       id: "ray.q1",
       title: "First Furrows",
-      objectives: [
-        { kind: "soil", target: 3 },
-        { kind: "water", target: 5 },
-      ],
+      objectives: [{ kind: "water", target: 3 }],
       turnInLabel: "Show him the beds",
     },
     {
       id: "ray.q2",
+      title: "First Flour",
+      objectives: [{ kind: "process", recipe: "flour", target: 1 }],
+      turnInLabel: "Show him the flour",
+    },
+    {
+      id: "ray.q3",
       title: "A Full Basket",
       objectives: [{ kind: "harvest-any-crop", target: 10 }],
       turnInLabel: "Show him the harvest",
     },
     {
-      id: "ray.q3",
-      title: "Clearing the Debris",
-      objectives: [{ kind: "clear-sector", target: 1 }],
-      turnInLabel: "Walk the cleared land",
+      id: "ray.q4",
+      title: "First Order",
+      objectives: [{ kind: "contracts", target: 1 }],
+      turnInLabel: "Tell him about the order",
     },
   ],
   pierre: [
@@ -232,8 +252,8 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
     {
       id: "barnaby.q2",
       title: "Pressure Lines",
-      objectives: [{ kind: "pipes", target: 4 }],
-      turnInLabel: "Show him the pipework",
+      objectives: [{ kind: "water", target: 25 }],
+      turnInLabel: "Show him the rounds",
     },
   ],
   arthur: [
@@ -324,7 +344,7 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       id: "leo.q2",
       title: "Light the Beacon",
       objectives: [
-        { kind: "pipes", target: 6 },
+        { kind: "contracts", target: 3 },
         { kind: "forge", target: 1 },
       ],
       turnInLabel: "Light it",

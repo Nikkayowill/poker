@@ -45,7 +45,6 @@ import {
   muckSound,
   panelSound,
   refusedSound,
-  retireSound,
   sellSound,
   sowSound,
   toolSound,
@@ -81,7 +80,6 @@ import {
 } from "@/lib/stackacres/secrets";
 import {
   HOME_SECTOR,
-  STACKACRES_SECTORS,
   isSectorUnlocked,
   sectorClearCheck,
   type SectorId,
@@ -153,12 +151,12 @@ import {
   type StackAcresPrestigeView,
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
-import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
+import { PEN_ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
 import { STACKACRES_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import type { PainterName } from "./stackacres-art";
-import { StackAcresBuySection, StackAcresUnitRows } from "./stackacres-district-panel";
+import { StackAcresBuySection } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
@@ -302,12 +300,12 @@ const PROVISIONAL_WAIT_PASSES = 3;
  * beside the finger to seed something there. Nothing opens, nothing has to be
  * travelled to first, and `place` follows the finger rather than the other
  * way round. lib/stackacres/tap-action.ts is what decides which of those a
- * given tap is, off the same `unitRowAction` the sidebar rows use, so the
- * two surfaces can never disagree about what a unit affords.
+ * given tap is, off `unitRowAction`, which is the one place that decides
+ * what a unit affords.
  *
- * The sidebar (./stackacres-district-panel.tsx) is for the deep end now:
- * capacity bought with Gold, stock bought outright, and the district's own
- * standing list. It no longer opens on its own -- travelling flies the
+ * The sidebar that used to hold the deep end is gone. Buying outright and
+ * expanding capacity moved to the Supply Store's Livestock shelf. Travelling
+ * flies the
  * camera and nothing else -- so the old tap-district / wait / find-the-row /
  * press-Collect loop is gone. Its unit rows STAY, and are not redundant:
  * they remain the only keyboard and screen-reader path to everything a tap
@@ -604,10 +602,6 @@ interface StackAcresResponse {
  * the same vector painter the icon beside a barn row uses, at a size a thumb
  * can find while moving -- the shelves are now told apart by picture first and
  * by wording second.
- *
- * The district drawer's own headings ("What's here", "Buy") deliberately do
- * NOT take one: there are two of them, they are the whole content of a narrow
- * panel, and a badge on each is decoration on something nobody was lost in.
  */
 function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode }) {
   return (
@@ -628,11 +622,11 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * shelf that still scrolls (it is Ray's whole catalogue), and that is fine:
  * a player who opened it already knows it is nothing but seeds.
  *
- * Livestock reuses the exact same `buyOptionsForZone`/`StackAcresBuySection`
- * pair the map's signpost drawer already uses, just fed every livestock zone
- * that's currently unlocked instead of only whichever one you're standing in
- * -- hens/pigs/cattle used to be buyable only by travelling to their own
- * district (Hen Haven, the Fold, Ox Fields).
+ * Livestock reuses the `buyOptionsForZone`/`StackAcresBuySection` pair the
+ * deleted signpost drawer used, fed every livestock zone that's currently
+ * unlocked rather than only whichever one you're standing in -- hens/pigs/
+ * cattle used to be buyable only by travelling to their own district (Hen
+ * Haven, the Fold, Ox Fields).
  *
  * "Sell" is the odd one out: every other tab spends Gold, this one is the
  * only place in the whole store that pays it. It reuses `onSell` wholesale
@@ -1211,12 +1205,6 @@ export function StackAcresFarm() {
    * second "which plot is selected" any more.
    */
   const [place, setPlace] = useState<ZoneId>("farmstead");
-  // The district panel used to sit open over the map at all times, and then
-  // to open whenever a player travelled anywhere. It is deep management now
-  // -- capacity, buying outright, the standing list -- so it only opens when
-  // it is actually asked for: the Manage button, or the radial menu's own
-  // handoff. Travelling flies the camera and nothing else.
-  const [panelOpen, setPanelOpen] = useState(false);
   /**
    * Where the finger that started the request in flight landed, so the reward
    * floats out of the thing that was tapped rather than out of the middle of
@@ -1380,9 +1368,6 @@ export function StackAcresFarm() {
       else pendingOptimisticUnitIds.current.set(id, count - 1);
     }
   }, []);
-  // Which unit is mid-"are you sure" for retiring. Never a plain confirm():
-  // retiring refunds nothing, so it has to be two deliberate taps.
-  const [retiringUnitId, setRetiringUnitId] = useState<string | null>(null);
   useEffect(() => () => { mounted.current = false; }, []);
 
   /**
@@ -2719,21 +2704,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  const onCollect = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      // Silent on the press on purpose: the collection announces itself when
-      // it lands (in `act`), with the voice of the animal that actually paid
-      // out. A chrome click in front of that is one sound too many, and it is
-      // the app's click rather than the farm's.
-      //
-      // Batched: this row sits in a list of rows, so it gets pressed down the
-      // list faster than one round trip. Before, the second press was refused
-      // as a duplicate of the first (every `collect` shares one intent) and
-      // did nothing at all.
-      tapBatched("collect", unit.id);
-    },
-    [tapBatched],
-  );
   /**
    * Bring in everything that is ready, in one act. This is the only control
    * that can earn a Bountiful Harvest: the synergy is a property of what was
@@ -2746,61 +2716,6 @@ export function StackAcresFarm() {
     void act({ action: "collect" });
   }, [act]);
 
-  // Feed/water/clear used to tend the tapped unit locally here, ahead of the
-  // network, via a dedicated `tendLocally`. That is now `act`'s own job --
-  // `predictStackAcresAction` runs the identical `optimisticallyFedUnit`/
-  // `optimisticallyWateredUnit` math the instant the request is sent, so a
-  // second local tend here would double-apply it. These handlers now only
-  // supply the press's own sound.
-  const onFeed = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      feedSound(unit.stock);
-      const zone = stockZone(unit.stock);
-      // Feeding is per pen now, so the side panel's Feed feeds the whole pen.
-      if (PEN_ZONE_IDS.includes(zone)) void act({ action: "feed-pen", zone });
-      else void act({ action: "feed", unitId: unit.id });
-    },
-    [act],
-  );
-  const onWater = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      if (water < 1) {
-        refusedSound();
-        setError("Your watering can is empty. Fill it at the well.");
-        return;
-      }
-      waterSound();
-      // Batched, same as `onCollect` above: a row in a list of rows. The can
-      // itself is still checked per press, and the server clamps a batch to
-      // whatever water is actually left (`predictStackAcresAction` does the
-      // same locally), exactly as a group drop already does.
-      tapBatched("water", unit.id);
-    },
-    [tapBatched, water],
-  );
-  const onClear = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      muckSound();
-      void act({ action: "clear", unitId: unit.id });
-    },
-    [act],
-  );
-  const onArmRetire = useCallback((unit: StackAcresUnitSnapshot) => {
-    panelSound();
-    setRetiringUnitId(unit.id);
-  }, []);
-  const onCancelRetire = useCallback(() => {
-    panelSound();
-    setRetiringUnitId(null);
-  }, []);
-  const onConfirmRetire = useCallback(
-    (unit: StackAcresUnitSnapshot) => {
-      retireSound();
-      setRetiringUnitId(null);
-      void act({ action: "retire", unitId: unit.id });
-    },
-    [act],
-  );
 
   const onSeed = useCallback(
     (stock: StackAcresStock) => {
@@ -2824,29 +2739,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** The backpack's three uses for a held secret item -- see the "Hidden
-   *  secrets" panel section below. */
-  const onDonateSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      panelSound();
-      void act({ action: "donate-secret-item", itemId });
-    },
-    [act],
-  );
-  const onConsumeSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      goldSound();
-      void act({ action: "consume-secret-item", itemId });
-    },
-    [act],
-  );
-  const onTradeSecretItem = useCallback(
-    (itemId: SecretItemId) => {
-      buySound();
-      void act({ action: "trade-secret-item", itemId });
-    },
-    [act],
-  );
 
   const travel = useCallback(
     (zone: ZoneId) => {
@@ -2972,8 +2864,7 @@ export function StackAcresFarm() {
    * A finger landed on a unit's own picture. It pops immediately -- before
    * anything has been sent, which is the whole point: the farm answers the
    * touch, and the network answers a moment later. What happens next is
-   * `tapActionFor`'s call, off the same `unitRowAction` the sidebar's rows
-   * read, so the map and the list can never disagree.
+   * `tapActionFor`'s call, off `unitRowAction`.
    *
    * A refusal never leaves the browser. There is no room on a canvas for a
    * disabled button with a title attribute explaining itself, so the reason
@@ -3643,12 +3534,6 @@ export function StackAcresFarm() {
     [act],
   );
 
-  /** The ring's own way through to the deep end -- Manage on the radial menu
-   *  is the only door into the drawer now. */
-  const openPanel = useCallback(() => {
-    panelSound();
-    setPanelOpen(true);
-  }, []);
 
   const districtUnits = useMemo(
     () => liveUnits.filter((unit) => stockZone(unit.stock) === place),
@@ -3713,11 +3598,6 @@ export function StackAcresFarm() {
     () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
     [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
-  const buyOptions: BuyOption[] = useMemo(
-    () => buyOptionsForZone(place, { units: liveUnits, gold, capacity }),
-    [place, liveUnits, gold, capacity],
-  );
-
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --
    *  the store is opened from the barn, not from standing in a district, so
@@ -3912,9 +3792,6 @@ export function StackAcresFarm() {
     );
   }
 
-  const district = STACKACRES_ZONES[place];
-  const placeLocked = !isSectorUnlocked(place, sectors);
-
 
   // Everything in .sa-hud besides Gold and the upkeep-owed pill -- see the
   // header's own comment for why this is one fragment referenced from either
@@ -4059,14 +3936,9 @@ export function StackAcresFarm() {
         {/* The world. Everything after it inside .sa-field is chrome pinned
             over the canvas; the canvas itself is the only thing that moves
             when the player drags. */}
-        {/* `data-drawer` is read by 52-stackacres.css so the signpost rail can
-            give up the drawer's column while it is open -- five signs do not
-            fit beside a 320px drawer on a phone, and the one that fell off the
-            end was Ray's, which is the only way into the store. */}
         <div
           ref={fieldRef}
           className="sa-field"
-          data-drawer={panelOpen ? "open" : "shut"}
           data-tour="sa-farm-world"
         >
           {loaded && (
@@ -4156,10 +4028,6 @@ export function StackAcresFarm() {
                 setSeedWheelOpen(false);
               }}
               onClose={() => setSeedWheelOpen(false)}
-              onManage={() => {
-                setSeedWheelOpen(false);
-                openPanel();
-              }}
             />
           )}
 
@@ -4276,145 +4144,6 @@ export function StackAcresFarm() {
             </button>
           )}
 
-          {/* The district panel: deep management, not the way you play.
-              The fast loop is on the canvas now -- tap a ripe crop to collect
-              it, tap empty ground to seed it -- so this no longer opens itself
-              when a player travels somewhere. Manage on the radial menu is
-              how it comes back, and it holds what a tap has no business
-              doing: Gold spends, and the full standing list. That list is
-              also the keyboard and screen-reader path to every canvas tap,
-              which is why it is still here rather than deleted along with
-              the loop it used to be. */}
-          <aside
-            id="sa-district-panel"
-            className={clsx("sa-district-panel", { "is-open": panelOpen })}
-            data-zone={place}
-            aria-label={`${district.label} panel`}
-            inert={!panelOpen}
-          >
-            <div className="sa-panel-head">
-              <div className="sa-ray-row">
-                <img src="/stackacres/sprites/grandfather-ray-portrait.webp" alt="" className="sa-ray-portrait" />
-                <span className="sa-ray-name">Ray</span>
-              </div>
-              <button
-                type="button"
-                className="sa-panel-close"
-                aria-label="Close panel"
-                onClick={() => { panelSound(); setPanelOpen(false); }}
-              >
-                <X size={20} aria-hidden="true" />
-              </button>
-            </div>
-            <h2 className="sa-district-title">{district.label}</h2>
-            <p className="sa-district-blurb">{district.blurb}</p>
-
-            {/* A small, secondary section -- shown on every district, since a
-                held secret item is not tied to any one of them -- for whatever
-                Hidden secrets has turned up. Hidden entirely while nothing is
-                held, so a player who never finds one never sees an empty
-                backpack taking up room on this panel. */}
-            {SECRET_ITEM_IDS.filter((itemId) => (secrets.held[itemId] ?? 0) > 0).map((itemId) => {
-              const item = SECRET_ITEM_CATALOGUE[itemId];
-              const held = secrets.held[itemId] ?? 0;
-              return (
-                <div className="sa-panel-section" key={itemId}>
-                  <h3 className="sa-group-label">Hidden secrets</h3>
-                  <p className="sa-panel-note">
-                    {item.icon} {held} {held === 1 ? item.label : `${item.label}s`} -- {item.blurb}
-                  </p>
-                  <div className="sa-buy-actions">
-                    <button
-                      type="button"
-                      className="sa-buy-btn"
-                      disabled={isPending(`donate-secret-item:${itemId}`)}
-                      onClick={() => onDonateSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">Donate to Ray</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="sa-buy-btn is-gold"
-                      disabled={isPending(`consume-secret-item:${itemId}`) || secrets.boostArmed}
-                      onClick={() => onConsumeSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">
-                        {secrets.boostArmed ? "A boost is already armed" : "Consume for a crit boost"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="sa-buy-btn is-expand"
-                      disabled={isPending(`trade-secret-item:${itemId}`)}
-                      onClick={() => onTradeSecretItem(itemId)}
-                    >
-                      <span className="sa-buy-label">Trade to Ray for Land Maintenance</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Wild land has no farm on it to manage, so the drawer offers
-                the one thing that IS available there rather than a buy list
-                for pens that do not exist and a standing list that is always
-                empty. It is the same modal a tap on the trees opens -- there
-                is exactly one way to buy land, reached from two places. */}
-            {placeLocked ? (
-              <div className="sa-panel-section">
-                <h3 className="sa-group-label">Uncleared land</h3>
-                <p className="sa-panel-note">{STACKACRES_SECTORS[place].promise}</p>
-                <button
-                  type="button"
-                  className="sa-cta"
-                  onClick={() => { panelSound(); setClearing(place); }}
-                >
-                  What would clearing it cost?
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Buy comes first now. Seeding one cycle is the one thing on
-                    this panel a tap on the map also does; buying outright and
-                    expanding capacity are Gold, are permanent, and are the reason
-                    to open this at all -- so they lead, rather than sitting under
-                    a list of things you could have collected by touching them. */}
-                <div className="sa-panel-section">
-                  <h3 className="sa-group-label">Buy &amp; expand</h3>
-                  <StackAcresBuySection
-                    options={buyOptions}
-                    isPending={isPending}
-                    onSeed={onSeed}
-                    onBuyOutright={onBuyOutright}
-                    onExpand={onExpand}
-                  />
-                </div>
-
-                <div className="sa-panel-section">
-                  <h3 className="sa-group-label">What&apos;s here</h3>
-                  <p className="sa-panel-note">
-                    Tap anything on the map to collect, feed, water or clear it. These rows do the
-                    same, and are how you retire something you own outright.
-                  </p>
-                  <StackAcresUnitRows
-                    units={districtUnits}
-                    nowMs={nowMs}
-                    feed={feed}
-                    gold={gold}
-                    isPending={isPending}
-                    armedUnitId={retiringUnitId}
-                    onCollect={onCollect}
-                    onFeed={onFeed}
-                    onWater={onWater}
-                    onClear={onClear}
-                    onArmRetire={onArmRetire}
-                    onConfirmRetire={onConfirmRetire}
-                    onCancelRetire={onCancelRetire}
-                  />
-                </div>
-              </>
-            )}
-          </aside>
         </div>
       </div>
 

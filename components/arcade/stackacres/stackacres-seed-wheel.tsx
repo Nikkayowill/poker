@@ -20,6 +20,11 @@ import { StackAcresIcon } from "./stackacres-icon";
  * the touch straight back to the browser for native horizontal scrolling
  * (`.sa-seed-wheel` sets `touch-action: pan-x` over the token's own `none`),
  * which is what the old dock had to fight with `rowGesture` to fake.
+ *
+ * An empty wheel used to offer a button through to Ray's shop. Seeds come off
+ * the farmyard's berry bushes now (lib/stackacres/forage.ts), which is both
+ * free and the first thing a new farm can do, so the empty row just says where
+ * to look and does not send anyone shopping.
  */
 
 export interface SeedWheelItem {
@@ -37,12 +42,11 @@ export interface StackAcresSeedWheelProps {
   picked: StackAcresCrop | null;
   onPick: (stock: StackAcresCrop) => void;
   onClose: () => void;
-  /** "Nothing on hand" hands off to Ray's shop, the same way the dock's empty row did. */
-  onManage: () => void;
 }
 
-export function StackAcresSeedWheel({ items, picked, onPick, onClose, onManage }: StackAcresSeedWheelProps) {
+export function StackAcresSeedWheel({ items, picked, onPick, onClose }: StackAcresSeedWheelProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
+  const empty = items.length === 0;
 
   // Opens with the row focused, and Escape closes it, the same as every other
   // sheet on this screen.
@@ -57,15 +61,18 @@ export function StackAcresSeedWheel({ items, picked, onPick, onClose, onManage }
 
   return (
     <div className="sa-seed-wheel" role="group" aria-label="Seeds">
-      <button type="button" className="sa-gel-close" aria-label="Close" onClick={onClose}>
+      <button
+        type="button"
+        className="sa-gel-close"
+        aria-label="Close"
+        ref={empty ? firstRef : undefined}
+        onClick={onClose}
+      >
         ×
       </button>
-      {items.length === 0 ? (
+      {empty ? (
         <div className="sa-gel-empty">
-          <p>No seeds on hand.</p>
-          <button type="button" className="sa-cta" ref={firstRef} onClick={onManage}>
-            Visit Ray&apos;s shop
-          </button>
+          <p>No seeds on hand. Pick the berry bushes around the farmyard.</p>
         </div>
       ) : (
         <div className={clsx("sa-gel-scroll", { "is-scrollable": items.length > 3 })}>

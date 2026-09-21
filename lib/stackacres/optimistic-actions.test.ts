@@ -75,7 +75,6 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     secretDonations: {} as FarmPredictContext["secretDonations"],
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
-    irrigation: [],
     soilTiles: [],
     soilStock: {},
     inventory: {},
@@ -591,28 +590,6 @@ describe("predictStackAcresAction: removing a soil tile", () => {
   });
 });
 
-describe("predictStackAcresAction: aiming a pipe stub", () => {
-  const stub = { tx: 2, ty: 3, kind: "pipe" as const, mask: 0, hydrated: false, distance: null, facing: null };
-  const well = { tx: 9, ty: 9, kind: "well" as const, mask: 0, hydrated: true, distance: 0, facing: null };
-
-  it("turns the one stub and touches nothing else -- no Gold, no recompute", () => {
-    const patch = predictStackAcresAction(
-      { action: "aim-pipe", tx: 2, ty: 3, facing: 8 },
-      ctx({ irrigation: [stub, well], profile: profile({ goldBalance: 0 }) }),
-    );
-    expect(patch?.profile).toBeUndefined();
-    expect(patch?.irrigation).toEqual([{ ...stub, facing: 8 }, well]);
-  });
-
-  it("guesses nothing for a well or for empty ground", () => {
-    expect(
-      predictStackAcresAction({ action: "aim-pipe", tx: 9, ty: 9, facing: 1 }, ctx({ irrigation: [stub, well] })),
-    ).toBeNull();
-    expect(
-      predictStackAcresAction({ action: "aim-pipe", tx: 0, ty: 0, facing: 1 }, ctx({ irrigation: [stub, well] })),
-    ).toBeNull();
-  });
-});
 
 describe("predictStackAcresAction: collect", () => {
   it("removes a ready one-cycle unit, moving no Gold", () => {

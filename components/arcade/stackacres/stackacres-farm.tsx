@@ -64,7 +64,6 @@ import {
   type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
-import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
 import { buyOptionsForZone, lockedLivestock, type BuyOption } from "@/lib/stackacres/district-panel";
 import {
   STACKACRES_ITEM_CATALOGUE,
@@ -160,9 +159,6 @@ import {
   type StackAcresPrestigeView,
 } from "@/lib/stackacres/prestige";
 import { FORGE_ENCHANTMENTS } from "@/lib/stackacres/forge";
-import {
-  type PipeNode,
-} from "@/lib/stackacres/irrigation";
 import { PEN_ZONE_IDS, STACKACRES_ZONES, type ZoneId } from "@/lib/stackacres/zones";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { useOnboardingTour } from "@/lib/onboarding/use-onboarding-tour";
@@ -201,8 +197,6 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { STOCK_ICON } from "./stock-icon";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
-import { StackAcresFenceUpgradePopup } from "./stackacres-fence-upgrade-popup";
-import type { FenceTier } from "@/lib/stackacres/wildlife";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresCropFieldsModal } from "./stackacres-crop-fields-modal";
@@ -567,21 +561,6 @@ interface StackAcresResponse {
     outcome: GiftOutcome | "insufficient-item";
     grantedKeepsake: KeepsakeId | null;
   };
-  /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
-   *  from the farm's own milestone ladder, lib/stackacres/shop-locks.ts) and
-   *  every drone this profile owns.
-   *  Absent only from a response old enough to predate the feature, which
-   *  `applyResponse` reads as "no drones yet, hangar unconfirmed" -- the
-   *  same "old response, nothing changes" posture every other optional
-   *  field here takes. */
-  droneHangar?: { unlocked: boolean; drones: { droneId: string; deployedAt: string }[] };
-  /** Set only by a successful `deploy-drone` response; every other action's
-   *  answer leaves this undefined. `droneHangar` above already carries the
-   *  resulting ownership list -- this is only which one was just bought. */
-  droneDeploy?: { droneId: string };
-  /** Set only by a successful `collect-drone-forage` response; every other
-   *  action's answer leaves this undefined. */
-  droneForage?: { droneId: string; reward: number };
   /** The Prestige Reset Valve's own standing: how many times pulled, the
    *  live multiplier, and gross production still needed before the next
    *  pull. Always present on a current server, same as `upkeep` above --
@@ -610,12 +589,6 @@ interface StackAcresResponse {
    *  reads back for its own "what did this breed" line, the plant shape is
    *  never read (the bed repainting IS its confirmation). */
   crossbreedResult?: CrossbreedHarvestSettlement | { planted: unknown };
-  /** The irrigation pipe network, straight off `StackAcresView.irrigation`.
-   *  Always present on a current server, same as `prestige`/`forge` above --
-   *  optional only so a bundle old enough to predate the feature keeps
-   *  working, which `applyResponse` reads as "no pipes yet". See
-   *  lib/stackacres/irrigation.ts. */
-  irrigation?: readonly PipeNode[];
   /** Ray's Mythic Blueprints: one entry per structure in the catalogue,
    *  present whether or not the player has started it, shaped identically to
    *  `BlueprintCardView` (mythic-blueprint-dashboard.tsx's own client-local
@@ -686,7 +659,7 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * Workshop shelf just never listed the sixteen crops or the three raw
  * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "livestock" | "soil" | "feed" | "equipment" | "drone" | "sell";
+type StoreTab = "seeds" | "livestock" | "soil" | "feed" | "equipment" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "seeds", label: "Seeds", icon: "ico-carrot" },
@@ -694,9 +667,6 @@ const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "soil", label: "Soil", icon: "ico-plant" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
-  // No Drone tab: the hangar and its forage run are no-ops in the farm, so a
-  // 1.2M Gold purchase could never bring anything back
-  // (lib/stackacres/unbuilt.ts). The tab returns with the drone itself.
   { id: "sell", label: "Sell", icon: "ico-gold" },
 ];
 
@@ -889,9 +859,6 @@ export function StackAcresFarm() {
   const [crossbreed, setCrossbreed] = useState<CrossbreedBedView>(emptyCrossbreedBedView);
   const [showCrossbreed, setShowCrossbreed] = useState(false);
   const lastCrossbreedHarvest = useRef<CrossbreedHarvestSettlement | null>(null);
-  // The irrigation pipe network. Seeded empty -- the same standing a
-  // brand-new farm's own first read comes back with.
-  const [irrigation, setIrrigation] = useState<readonly PipeNode[]>([]);
   // Ray's Mythic Blueprints. Seeded empty -- the dashboard only ever opens
   // from a player press well after mount, by which point the first poll has
   // long since landed, the same posture `forge` above takes.
@@ -922,24 +889,11 @@ export function StackAcresFarm() {
       };
   const [monkDialogue, setMonkDialogue] = useState<MonkDialogueState | null>(null);
   /**
-   * The fence-upgrade popup: opened by `onWorldFenceSegmentTap`, closed by
-   * "Not now", the next world tap (`onViewMoved`), or a successful upgrade.
-   * Unlike the monk dialogue, it holds no separate "result" phase -- a
-   * successful upgrade just closes it, since there is nothing more to say
-   * once the fence line is already whichever tier a re-tap would show.
-   */
-  const [fencePopup, setFencePopup] = useState<
-    | { zone: ZoneId; segmentIndex: number; at: TapPoint; tier: FenceTier; durability: number; version: number }
-    | null
-  >(null);
-  const [fenceUpgradeBusy, setFenceUpgradeBusy] = useState(false);
-  /**
    * The chop popup: opened by `onWorldTreeTap`, closed by "Not now"/"Close",
    * or the next world tap (`onViewMoved`). Holds only the tapped node's id
    * and where to anchor the popup -- its live ready/hits/respawn state is
    * read straight off `woodNodes` every render, the same "state lives in the
-   * one server-derived list, the popup just names which entry" split
-   * `fencePopup` would take if fence segments were already in one list too.
+   * one server-derived list, the popup just names which entry" split.
    */
   const [chopPopup, setChopPopup] = useState<{ nodeId: string; at: TapPoint } | null>(null);
   /** The mine popup: same split as `chopPopup` above, but for one of the
@@ -1004,13 +958,6 @@ export function StackAcresFarm() {
    *  carrying, see `cropFieldGelItems`. Same plain-object shape as
    *  `soilStock` and for the same reason. */
   const [seedStock, setSeedStock] = useState<SeedStock>({});
-  /** The Mechanical Forage Drone hangar: whether it is unlocked and every
-   *  drone this profile owns. Starts closed/empty, same as every other
-   *  gated feature here, until the first response confirms otherwise. */
-  const [droneHangar, setDroneHangar] = useState<{
-    unlocked: boolean;
-    drones: { droneId: string; deployedAt: string }[];
-  }>({ unlocked: false, drones: [] });
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
    * The processing track (wheat, mills, the one open Town Contract), held as
@@ -1705,7 +1652,6 @@ export function StackAcresFarm() {
     if (data.crossbreedResult && "hybridItem" in data.crossbreedResult) {
       lastCrossbreedHarvest.current = data.crossbreedResult;
     }
-    if (data.irrigation) setIrrigation(data.irrigation);
     if (data.blueprints) setBlueprints(data.blueprints);
     // Every response carries the FULL purchased list, not a diff, so a feed
     // or a water tap that never touched the soil still hands this a fresh
@@ -1717,7 +1663,6 @@ export function StackAcresFarm() {
     }
     if (data.soilStock) setSoilStock(data.soilStock);
     if (data.seedStock) setSeedStock(data.seedStock);
-    if (data.droneHangar) setDroneHangar(data.droneHangar);
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
   }, [acceptRevision]);
@@ -1751,8 +1696,7 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      irrigation,
-      // This profile's placed soil, same posture as `irrigation` above.
+      // This profile's placed soil.
       soilTiles,
       soilStock,
       inventory: processing.inventory,
@@ -1781,7 +1725,6 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      irrigation,
       soilTiles,
       soilStock,
     ],
@@ -1827,7 +1770,6 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      irrigation,
       soilTiles,
       soilStock,
     }),
@@ -1852,7 +1794,6 @@ export function StackAcresFarm() {
       secretDonations,
       greenhouseBuilt,
       cropFieldsUnlocked,
-      irrigation,
       soilTiles,
       soilStock,
     ],
@@ -1892,7 +1833,6 @@ export function StackAcresFarm() {
     setSoilTiles(snap.soilTiles);
     setSoilStock(snap.soilStock);
     setCropFieldsUnlocked(snap.cropFieldsUnlocked);
-    setIrrigation(snap.irrigation);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -2440,20 +2380,6 @@ export function StackAcresFarm() {
             }
           }
         }
-        // A drone's own vacuum animation already played (the scene's local-
-        // optimistic half, see `onDroneForageCollected`); this is only the
-        // confirmed amount, once the server's own cooldown/ceiling check
-        // has actually settled it. A refusal leaves `data.droneForage`
-        // undefined and this block simply does not run -- there is nothing
-        // to roll back on the canvas, since the pull was cosmetic either
-        // way. `setLastCollect`, not `floatAt`: a drone's own drop sits
-        // wherever it is patrolling on the map, not at a finger's tap
-        // point, so the fixed celebration toast is the honest fit rather
-        // than a floating text anchored to nothing.
-        if (body.action === "collect-drone-forage" && data.droneForage && data.droneForage.reward > 0) {
-          goldSound();
-          setLastCollect({ text: `🛰️ Drone forage: +${data.droneForage.reward} Gold`, nonce: Date.now() });
-        }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {
           goldSound();
           setLastCollect({
@@ -2692,116 +2618,6 @@ export function StackAcresFarm() {
   const onMonkPray = useCallback(() => {
     void act({ action: "pray" });
   }, [act]);
-
-  /* ---------------------------------------------------------------- */
-  /* Wildlife Ecosystem & Nighttime Predator Defense                    */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * A finger landed on one bay of a district's own fence line. Reads that
-   * bay's current tier/durability/version fresh (rather than trusting
-   * whatever the live simulation last saw) before opening the popup, so a
-   * stale client can never offer an upgrade against a version the server
-   * has already moved past.
-   *
-   * A SEPARATE fetch from `act`, deliberately: this feature's route
-   * (`/api/stackacres/defense`) answers in a different shape than
-   * `StackAcresResponse`, and folding it into `act`'s response handling
-   * would mean teaching that one large function a second response contract
-   * for a feature with no Gold/unit-list side effects of its own.
-   */
-  const onWorldFenceSegmentTap = useCallback((zone: ZoneId, segmentIndex: number, at: TapPoint) => {
-    setMonkDialogue(null);
-    void (async () => {
-      try {
-        const response = await fetch(
-          `/api/stackacres/defense?zone=${zone}&segmentIndex=${segmentIndex}`,
-          { cache: "no-store" },
-        );
-        if (!response.ok || !mounted.current) return;
-        const data = (await response.json()) as {
-          segment?: { tier: FenceTier; durability: number; version: number };
-        };
-        if (!data.segment) return;
-        setFencePopup({
-          zone,
-          segmentIndex,
-          at,
-          tier: data.segment.tier,
-          durability: data.segment.durability,
-          version: data.segment.version,
-        });
-      } catch {
-        // A failed read just means the popup does not open -- nothing was
-        // asked of the server, so there is nothing to undo.
-      }
-    })();
-  }, []);
-
-  /** The only path that ever sends `upgrade-fence`. On success, pushes the
-   *  new tier straight into the live simulation (`setFenceTier`) so a
-   *  predator testing that bay a moment later already sees it, rather than
-   *  waiting on a reload. On a lost race (409, someone else's tap landed
-   *  first), the response still carries the segment as it now stands --
-   *  the popup re-renders from that truth instead of just erroring. */
-  const onUpgradeFence = useCallback(() => {
-    if (!fencePopup) return;
-    const { zone, segmentIndex, version, at } = fencePopup;
-    setFenceUpgradeBusy(true);
-    void (async () => {
-      try {
-        const response = await fetch("/api/stackacres/defense", {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "upgrade-fence", zone, segmentIndex, version }),
-        });
-        const data = (await response.json().catch(() => ({}))) as {
-          segment?: { tier: FenceTier; durability: number; version: number };
-          error?: string;
-        };
-        if (!mounted.current) return;
-        if (!response.ok) {
-          refusedSound();
-          if (data.segment) {
-            world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
-            setFencePopup({ zone, segmentIndex, at, ...data.segment });
-          }
-          setError(data.error ?? "Could not upgrade that fence.");
-          return;
-        }
-        if (data.segment) {
-          world.current?.setFenceTier(zone, segmentIndex, data.segment.tier, data.segment.durability);
-        }
-        panelSound();
-        setFencePopup(null);
-      } catch {
-        if (mounted.current) setError("Could not upgrade that fence.");
-      } finally {
-        if (mounted.current) setFenceUpgradeBusy(false);
-      }
-    })();
-  }, [fencePopup]);
-
-  /* ---------------------------------------------------------------- */
-  /* The Mechanical Forage Drone                                        */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * The scene's own local-optimistic vacuum animation just started on a
-   * spawned drop -- fire the real claim immediately, exactly as
-   * `onDroneForageCollected`'s own doc comment on StackAcresSceneCallbacks
-   * describes. `void act(...)`: a refusal (the drone's own cooldown losing
-   * a race, or the daily Gold ceiling) repaints nothing that needs undoing
-   * here -- there was never an optimistic Gold change to roll back, only a
-   * cosmetic pull that already played.
-   */
-  const onDroneForageCollected = useCallback(
-    (droneId: string) => {
-      void act({ action: "collect-drone-forage", droneId });
-    },
-    [act],
-  );
 
   /* ---------------------------------------------------------------- */
   /* NPC friendship                                                     */
@@ -3112,7 +2928,6 @@ export function StackAcresFarm() {
 
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
-    setFencePopup(null);
     setChopPopup(null);
     setGiftDialogue(null);
     story.close();
@@ -4280,7 +4095,6 @@ export function StackAcresFarm() {
               onHouseTap={onWorldHouseTap}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
-              onFenceSegmentTap={onWorldFenceSegmentTap}
               sectors={sectors}
               cropFieldsUnlocked={cropFieldsUnlocked}
               onLockedSectorTap={onWorldLockedTap}
@@ -4288,8 +4102,6 @@ export function StackAcresFarm() {
               onViewMoved={onViewMoved}
               onPlaceEntered={onPlaceEntered}
               soilTiles={mergedSoilTiles}
-              irrigation={irrigation}
-              onDroneForageCollected={onDroneForageCollected}
               api={world}
             />
           )}
@@ -4362,23 +4174,8 @@ export function StackAcresFarm() {
             />
           )}
 
-          {/* The fence-upgrade popup, same screen-anchored treatment as the
-              seed menu and the monk dialogue above. */}
-          {fencePopup && (
-            <StackAcresFenceUpgradePopup
-              at={fencePopup.at}
-              zone={fencePopup.zone}
-              segmentIndex={fencePopup.segmentIndex}
-              tier={fencePopup.tier}
-              durability={fencePopup.durability}
-              busy={fenceUpgradeBusy}
-              onUpgrade={onUpgradeFence}
-              onClose={() => setFencePopup(null)}
-            />
-          )}
-
           {/* The chop popup, same screen-anchored treatment as the
-              fence-upgrade popup above. Missing from `woodNodes` only for the
+              monk dialogue above. Missing from `woodNodes` only for the
               instant before the first response lands; a fresh node reads as
               standing and full-health, so this never needs a loading state. */}
           {chopPopup && (
@@ -5081,59 +4878,6 @@ export function StackAcresFarm() {
                   </div>
                   </>
                   )}
-                </>
-              )}
-
-              {storeTab === "drone" && (
-                <>
-                  {/* Requirement's UI half: the hangar and its Gold,
-                      hangar-locked state, and cost were all live server-side
-                      already (see stackacres-drone-service.ts) with nothing
-                      on the sheet to tap -- this is that missing button.
-                      Locked shown greyed rather than hidden, same "the shelf
-                      says what it wants" rule the Feed rows follow. */}
-                  <p className="sa-sheet-note">
-                    A Mechanical Forage Drone patrols a district&apos;s outer edge on its own and
-                    vacuums up whatever forage it finds along the way. Deploying one is a standing
-                    purchase, not a single-use item — each drone you own keeps patrolling until you
-                    leave the farm.
-                  </p>
-                  <div className="sa-stock-cards">
-                    <div className={droneHangar.unlocked ? "sa-stock-card" : "sa-stock-card is-locked"}>
-                      <h3>Mechanical Forage Drone</h3>
-                      <p className="sa-stock-terms">
-                        {droneHangar.drones.length > 0
-                          ? `${droneHangar.drones.length} patrolling now`
-                          : "None deployed yet"}
-                      </p>
-                      <p className="sa-stock-yield">
-                        <StoreCost amount={DRONE_DEPLOY_COST_GOLD} />
-                      </p>
-                      {!droneHangar.unlocked && (
-                        <p className="sa-lock-hint" id="sa-lock-hint-drone">
-                          <Lock size={13} aria-hidden="true" />
-                          <span>Earn every one of the farm&apos;s milestones to unlock the hangar.</span>
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        className="sa-cta"
-                        disabled={
-                          !droneHangar.unlocked ||
-                          isPending("deploy-drone") ||
-                          (!(profile?.unlimitedGold ?? false) && gold < DRONE_DEPLOY_COST_GOLD)
-                        }
-                        aria-describedby={!droneHangar.unlocked ? "sa-lock-hint-drone" : undefined}
-                        onClick={() => { buySound(); void act({ action: "deploy-drone" }); }}
-                      >
-                        {!droneHangar.unlocked
-                          ? "Locked"
-                          : (profile?.unlimitedGold ?? false) || gold >= DRONE_DEPLOY_COST_GOLD
-                            ? "Deploy"
-                            : "Not enough Gold"}
-                      </button>
-                    </div>
-                  </div>
                 </>
               )}
 

@@ -21,14 +21,6 @@ describe("intentOf: the processing track", () => {
     expect(intentOf({ action: "collect-vat" })).toBe("collect-vat");
   });
 
-  it("still keys a pipe on its tile, not on its kind", () => {
-    expect(intentOf({ action: "place-pipe", tx: 3, ty: -2, kind: "well" })).toBe("place-pipe:3,-2");
-  });
-
-  it("keys an aim on its tile too, never on the direction", () => {
-    expect(intentOf({ action: "aim-pipe", tx: 3, ty: -2, facing: 4 })).toBe("aim-pipe:3,-2");
-    expect(intentOf({ action: "aim-pipe", tx: 3, ty: -2, facing: 8 })).toBe("aim-pipe:3,-2");
-  });
 });
 
 describe("purchaseCueText: the instant toast a spend gets", () => {
@@ -64,8 +56,6 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
     expect(purchaseCueText({ action: "place-soil-tile", tx: 0, ty: 0 })).toBeNull();
     expect(purchaseCueText({ action: "remove-soil-tile", tx: 0, ty: 0 })).toBeNull();
     expect(purchaseCueText({ action: "move-soil-tile-group", tx: 0, ty: 0, toTx: 1, toTy: 0 })).toBeNull();
-    expect(purchaseCueText({ action: "place-pipe", tx: 0, ty: 0, kind: "pipe" })).toBeNull();
-    expect(purchaseCueText({ action: "remove-pipe", tx: 0, ty: 0 })).toBeNull();
   });
 
   it("has no cue for an action that moves no Gold or shelf stock", () => {

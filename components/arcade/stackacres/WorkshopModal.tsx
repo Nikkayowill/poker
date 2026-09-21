@@ -258,7 +258,6 @@ export function WorkshopModal({
 
   const nowDate = new Date(now);
   const due = workDue(machines, now);
-  const affords = (cost: number) => unlimitedGold || goldBalance >= cost;
   // Only what the player holds, plus the row that just sold out so its Gold
   // burst has somewhere to play.
   const shelfItems = STACKACRES_WORKSHOP_SHELF_ITEMS.filter(

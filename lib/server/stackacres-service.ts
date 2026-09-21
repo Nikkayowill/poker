@@ -80,10 +80,7 @@ import {
 // comment on PIPE_PLACE_COST for why.
 export { PIPE_PLACE_COST } from "@/lib/stackacres/irrigation";
 import {
-  aimStackAcresPipe,
   listStackAcresPipes,
-  placeStackAcresPipe,
-  removeStackAcresPipe,
   stackAcresPipeFromBatchRow,
   syncStackAcresPipeNetwork,
   type PipeDbRow,
@@ -475,14 +472,6 @@ import {
   type StackAcresShopProgress,
 } from "@/lib/stackacres/shop-locks";
 import { applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
-import { DRONE_DEPLOY_COST_GOLD } from "@/lib/stackacres/drone";
-import {
-  collectDroneForage,
-  deployDrone,
-  isDroneHangarUnlocked,
-  listDrones,
-} from "./stackacres-drone-service";
-import { stackAcresDroneFromBatchRow, type StoredDrone } from "./stackacres-drone-store";
 
 /**
  * Everything between a StackAcres request and the player's purse.
@@ -739,18 +728,6 @@ export interface StackAcresView {
   /** The Preserves Cellar (Chapter 5): null until placed, otherwise the jars
    *  aging inside it, on its own slower ladder. Same shape as `vat`. */
   cellar: VatContainer | null;
-  /** The Mechanical Forage Drone hangar: whether it is unlocked (derived
-   *  from the farm's own milestone ladder, lib/stackacres/shop-locks.ts --
-   *  see `isDroneHangarUnlocked` in stackacres-drone-service.ts) and every
-   *  drone this profile owns. A drone's own live tile/patrol/charge is
-   *  NEVER in this snapshot -- that is client-side, ephemeral state owned
-   *  entirely by lib/stackacres/drone.ts, the same split `units` takes with
-   *  a critter's own wander position. This is ownership only: what the
-   *  scene needs to know to decide how many drones to spawn and where. */
-  droneHangar: {
-    unlocked: boolean;
-    drones: { droneId: string; deployedAt: string }[];
-  };
   /** The travelers' story (lib/stackacres/story/): every traveler's unlock,
    *  quest and readiness as this server derives it, and the story items
    *  held. The bubble renders straight off this; a tap never asks the
@@ -1059,7 +1036,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
           listStackAcresAgingManifests(profile.id),
           readStackAcresCutters(profile.id),
           readStackAcresStory(profile.id),
-          listDrones(profile.id),
           readStackAcresEnergy(profile.id),
         ] as const),
   ]);
@@ -1096,7 +1072,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   let agingManifests: StoredVatManifest[];
   let cutters: StackAcresCutter[];
   let storedStory: StoredStoryRow;
-  let droneRows: StoredDrone[];
   let storedEnergy: StoredStackAcresEnergy | null;
 
   if (batch) {
@@ -1154,9 +1129,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     agingManifests = (batch.aging_manifests as unknown as VatManifestDbRow[]).map(vatManifestFromRow);
     cutters = stackAcresCuttersFromBatchRows(batch.cutters as { cutter: unknown }[]);
     storedStory = stackAcresStoryFromBatchRow(batch.story as { story: StoredStory; version: number | string } | null);
-    droneRows = (batch.drones as { drone_id: string; profile_id: string; deployed_at: string; last_forage_at: string | null }[]).map(
-      stackAcresDroneFromBatchRow,
-    );
     storedEnergy = stackAcresEnergyFromBatchRow(
       (batch.energy ?? null) as { level: number | string; updated_at: string; version: number | string } | null,
     );
@@ -1194,7 +1166,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       agingManifests,
       cutters,
       storedStory,
-      droneRows,
       storedEnergy,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
@@ -1202,7 +1173,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
       StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
       StoredPipe[], StoredSoilTile[], SoilStock, SeedStock, StoredDevotionRow, StoredFriendshipRow[],
-      StoredVatManifest[], StackAcresCutter[], StoredStoryRow, StoredDrone[],
+      StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
     ];
   }
@@ -1228,11 +1199,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   };
   const vat = agingContainer("vat", AGING_TIERS);
   const cellar = agingContainer("cellar", CELLAR_AGING_TIERS);
-  // `droneRows` came off the same batch (or its fallback array) above --
-  // `isDroneHangarUnlocked` is pure and synchronous, so it needs no read of
-  // its own here, it takes the same progress shape passed to `storyView`
-  // below.
-  const droneHangarUnlocked = isDroneHangarUnlocked({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked });
   const settledEnergy = settleEnergy(storedEnergy, now);
   return {
     units,
@@ -1289,10 +1255,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     friendship,
     vat,
     cellar,
-    droneHangar: {
-      unlocked: droneHangarUnlocked,
-      drones: droneRows.map((drone) => ({ droneId: drone.droneId, deployedAt: drone.deployedAt })),
-    },
     // Off the same derived `sectors`, influence and flags Ray's shop locks
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
@@ -1494,12 +1456,6 @@ export type StackAcresActionResult = StackAcresView & {
     multiplier: number;
     gold: number;
   };
-  /** Set by `deployStackAcresDrone` on a successful deploy; every other
-   *  action leaves this undefined. */
-  droneDeploy?: { droneId: string };
-  /** Set by `collectStackAcresDroneForage` on a successful claim; every
-   *  other action leaves this undefined. */
-  droneForage?: { droneId: string; reward: number };
   /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
    *  other action leaves this undefined. */
   fishCaught?: { species: FishSpecies };
@@ -5413,136 +5369,6 @@ async function recomputeIrrigation(
 }
 
 /**
- * Places one irrigation tile (a well or a length of pipe) on the
- * STACKACRES_TILE lattice, spending Gold. Rule 1: the Gold leaves first; a
- * placement that cannot land -- layout full, the one well slot already
- * taken, or a lost race -- refunds it.
- */
-export async function placeStackAcresPipeTile(
-  token: string,
-  input: { tx: number; ty: number; kind: PipeKind },
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const tx = Math.trunc(input.tx);
-  const ty = Math.trunc(input.ty);
-  const cost = PIPE_PLACE_COST[input.kind];
-
-  // No pipe or well inside a pen -- Henhaven, Oxfields and Wallow are
-  // GROW_AREA entries the same as any other district, but irrigation
-  // belongs to the Crop Fields and the open farm, not inside a hen/ox/hog
-  // enclosure. The client already keeps a drag or a tap from reaching this
-  // far (stackacres-scene.ts's `pipeLayableWorldTile`, and the radial menu's
-  // own `pipeExtraActions`), so this is the authoritative backstop -- a
-  // forged or replayed request had nothing else stopping it, since this
-  // function otherwise never checked geography at all. Runs before the Gold
-  // debit below, unlike the cap/well checks further down: those need a
-  // store round trip and so debit-then-refund, but pen membership is a pure
-  // function of `tx`/`ty` with no race to guard against.
-  //
-  // `tx`/`ty` are pipe TILE indices, not world units -- `pipeTileCenter`
-  // converts back, the same way `soilTileRect` does for soil's own
-  // geography check just below.
-  const tileCentre = pipeTileCenter(tx, ty);
-  const zone = growAreaAt(tileCentre.x, tileCentre.y);
-  if (zone && PEN_ZONE_IDS.includes(zone)) {
-    throw new StackAcresRequestError(
-      `${input.kind === "well" ? "A well" : "Pipe"} cannot be laid inside a pen.`,
-      400,
-    );
-  }
-
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error.
-  const debited = await spendGoldByProfile(profile.id, cost);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `${input.kind === "well" ? "A well" : "A length of pipe"} costs ${cost.toLocaleString()} Gold.`,
-      400,
-    );
-  }
-
-  let placed: Awaited<ReturnType<typeof placeStackAcresPipe>>;
-  try {
-    placed = await placeStackAcresPipe(profile.id, tx, ty, input.kind);
-  } catch (error) {
-    await refundGold(profile.id, cost);
-    throw error;
-  }
-  if (!placed) {
-    await refundGold(profile.id, cost);
-    throw new StackAcresRequestError(
-      input.kind === "well"
-        ? "This farm already has a well."
-        : "That pipe could not be placed.",
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  await recomputeIrrigation(profile.id, now);
-  await recordStoryEvents(profile.id, [{ kind: "pipe-placed", pipe: input.kind }]);
-  return view(debited, now);
-}
-
-/**
- * Removes one irrigation tile. Not a payout and not refunded -- a placed
- * tile is a spent sink. The recompute afterwards freezes any crop that was
- * only growing because this tile watered it, from now rather than
- * retroactively.
- */
-export async function removeStackAcresPipeTile(
-  token: string,
-  input: { tx: number; ty: number },
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const tx = Math.trunc(input.tx);
-  const ty = Math.trunc(input.ty);
-
-  const [unitsBefore, pipesBefore, soilBefore] = await Promise.all([
-    listStackAcresUnits(profile.id),
-    listStackAcresPipes(profile.id),
-    listStackAcresSoilTiles(profile.id),
-  ]);
-  const before = irrigationGridFor(unitsBefore, pipesBefore, soilMapFor(soilBefore));
-
-  await removeStackAcresPipe(profile.id, tx, ty);
-  await recomputeIrrigation(profile.id, now, before.irrigatedUnitIds);
-  return view(profile, now);
-}
-
-/**
- * Points one lone pipe stub -- lib/stackacres/irrigation.ts's `PipeFacing`,
- * cosmetic only. No Gold moves and no recompute runs: the aim is not part
- * of the network (`mask`/`hydrated`/`distance` never read it), so there is
- * nothing for `recomputeIrrigation` to settle. Refuses a coordinate with no
- * pipe on it (or the well) rather than silently doing nothing, so a stale
- * tap gets told; a tile already aimed that way is a plain no-op success,
- * since asking twice is not a mistake.
- */
-export async function aimStackAcresPipeTile(
-  token: string,
-  input: { tx: number; ty: number; facing: PipeFacing },
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const tx = Math.trunc(input.tx);
-  const ty = Math.trunc(input.ty);
-
-  const touched = await aimStackAcresPipe(profile.id, tx, ty, input.facing);
-  if (!touched) {
-    const pipes = await listStackAcresPipes(profile.id);
-    const existing = pipes.find((pipe) => pipe.tx === tx && pipe.ty === ty);
-    if (!existing || existing.kind !== "pipe") {
-      throw new StackAcresRequestError("There is no pipe there to aim.", 409, {
-        round: await snapshots(profile.id, now),
-      });
-    }
-  }
-  return view(profile, now);
-}
-
-/**
  * Spends one bag on the Crop Fields' own lattice: a brand new one-tile bed
  * on bare ground. Rule 1, in bags: the bag leaves before the outcome is
  * known, and anything that stops the bed landing -- it is already occupied,
@@ -6120,66 +5946,6 @@ export async function turnInStackAcresTravelerQuest(
   throw new StackAcresRequestError(`${name} was mid-sentence. Try again.`, 409, {
     round: await snapshots(profile.id, now),
   });
-}
-
-/**
- * Deploys one Mechanical Forage Drone for the caller, at
- * `DRONE_DEPLOY_COST_GOLD` flat. Both progression invariants live in
- * `deployDrone` (./stackacres-drone-service.ts): the hangar's derived,
- * milestone-based unlock gate is checked before any Gold moves, and the
- * debit + ownership row are one atomic RPC, mirroring
- * `unlockStackAcresSynergyPerk`'s own shape just above.
- */
-export async function deployStackAcresDrone(token: string, now = new Date()): Promise<StackAcresActionResult> {
-  const profile = await ensureProfile(token);
-  const progress = await readShopProgress(profile.id);
-  const result = await deployDrone(profile.id, now, progress);
-  if (!result.success) {
-    const message =
-      result.reason === "hangar_locked"
-        ? "The drone hangar isn't built yet -- keep growing the farm to unlock it."
-        : `A drone costs ${DRONE_DEPLOY_COST_GOLD.toLocaleString()} Gold.`;
-    throw new StackAcresRequestError(message, result.reason === "hangar_locked" ? 409 : 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return { ...(await view(profile, now)), droneDeploy: { droneId: result.droneId } };
-}
-
-/** Every drone the caller currently owns, and whether the hangar itself is
- *  unlocked -- read-only, no Gold moves, safe to poll from the shelf the
- *  same way `readShopProgress` is. */
-export async function listStackAcresDrones(
-  token: string,
-): Promise<{ hangarUnlocked: boolean; drones: StoredDrone[] }> {
-  const profile = await ensureProfile(token);
-  const [progress, drones] = await Promise.all([readShopProgress(profile.id), listDrones(profile.id)]);
-  return { hangarUnlocked: isDroneHangarUnlocked(progress), drones };
-}
-
-/**
- * Claims one forage pickup swept up by an already-deployed drone. See
- * `collectDroneForage`'s own doc comment for the full picture: local-
- * optimistic on the client, re-verified (ownership, cooldown) inside one
- * locked transaction on the server before a single Gold piece moves.
- */
-export async function collectStackAcresDroneForage(
-  token: string,
-  droneId: string,
-  now = new Date(),
-): Promise<StackAcresActionResult> {
-  const profile = await ensureProfile(token);
-  const result = await collectDroneForage(profile.id, droneId, now);
-  if (!result.success) {
-    const message =
-      result.reason === "cooling_down"
-        ? "That drone is still recharging its magnets."
-        : "There is no such drone here.";
-    throw new StackAcresRequestError(message, result.reason === "no_such_drone" ? 404 : 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  return { ...(await view(profile, now)), droneForage: { droneId, reward: result.reward } };
 }
 
 /** Maps a thrown error to the response every StackAcres route sends. */

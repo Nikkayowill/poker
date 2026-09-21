@@ -3,7 +3,8 @@
 
 44x32 tiles. Ray's house and the barn face a shared farmyard; one lane runs from the
 shore road in the south through the yard to the north gate, where a fallen log blocks
-the way to the Old Fields. Crop beds flank the lane, the pond and dock sit south-west,
+the way to the Old Fields. The ground either side of the lane is bare for the
+player to hoe, the pond and dock sit south-west,
 Hen Haven east, and the east road ends at a broken cart before Town Square. Three more
 exits: the west trail (brambles) to the Ancestral Oak, the hill trail (rockfall) to the
 Mine, and Hen Haven's back gate (overgrown hedge) to the Fold. A stream comes out of the
@@ -13,7 +14,6 @@ the characters standing in them, animated views, and the shared tileset.
 """
 import os
 
-import crops
 import kit
 import props
 from area import AREAS, Area, T
@@ -36,8 +36,8 @@ def build(for_game=False):
     a.line("path", (15, 22), (28, 22))                 # spur to Hen Haven's gate
     a.line("path", (0, 12), (6, 12))                   # west trail into the woods
     a.line("path", (41, 21), (MW, 21))                 # Hen Haven's back gate, east to the Fold
-    a.rect("soil", *WEST_BED)
-    a.rect("soil", *EAST_BED)
+    # No tilled beds are painted here any more: the player hoes their own,
+    # so the ground under WEST_BED/EAST_BED stays plain grass.
     a.ellipse("water", 7, 26, 4.6, 3.2)                # the pond, with a lobe reaching the dock
     a.ellipse("water", 10, 26.5, 2.6, 2.0)
     a.line("stream", (1, 0), (1, 7), width=1)          # the stream: down the west side, under the bridge, into the pond
@@ -93,25 +93,13 @@ def build(for_game=False):
     a.add(kit.fence(44, vertical=True), 643, 414)
     a.add(kit.coop(), 520, 334, (14, 3), tag="pen:henhaven")
     a.zone("pen:henhaven", 470, 290, 172, 124)
-    for tx0, ty0, tx1, ty1 in (WEST_BED, EAST_BED):   # the home beds are a kitchen garden; crops go in the Old Fields
+    for tx0, ty0, tx1, ty1 in (WEST_BED, EAST_BED):   # where the game lets a player break ground near the house
         a.zone("homebeds", tx0 * T - 8, ty0 * T - 8, (tx1 - tx0 + 1) * T, (ty1 - ty0 + 1) * T)
     if for_game:                                       # the game draws the player's real hens and crops itself
         a.zone("hen-spots", 500, 330, 130, 70)
     else:
         for i, (x, y) in enumerate(((560, 350), (590, 372), (540, 390), (610, 330))):
             a.add(kit.hen(i % 2 == 0), x, y, (4, 1))
-
-    for bed, (x0, y0, x1, y1) in enumerate((WEST_BED, EAST_BED)):
-        if for_game:
-            break
-        for ty in range(y0, y1 + 1):
-            name = ("wheat" if ty - y0 < 2 else "radish") if bed else ("carrot", "potato")[(ty - y0) // 2 % 2]
-            for tx in range(x0, x1 + 1):
-                roll = kit.hash2(tx, ty, 21 + bed)
-                if roll < 0.12:
-                    continue
-                stage = 0 if roll < 0.3 else 1 if roll < 0.55 else 2
-                a.add(crops.crop(name, stage), tx * T, ty * T + 4)
 
     def kind(x, y):
         r = kit.hash2(x, y, 5)
@@ -166,7 +154,6 @@ def build(for_game=False):
     a.character("pilgrim", 64, 484)
     a.character("pierre", 336, 226)                    # farmstead travelers
     a.character("ivy", 540, 108)
-    if for_game:
     return a
 
 

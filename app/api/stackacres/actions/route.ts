@@ -653,6 +653,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = performance.now();
   // Every action here moves one purse at most once and the guards make
   // replays idempotent; 60/min covers a fast restocking ritual plus feeding
   // and watering with a wide margin.
@@ -712,7 +713,19 @@ export async function POST(request: NextRequest) {
       () => run(token, action, now),
       now,
     );
-    return withRequestSessionCookie(request, NextResponse.json(result), token);
+    // Serialized once so the log can say how big the answer was.
+    const payload = JSON.stringify(result);
+    console.info("stackacres.action", {
+      action: action.action,
+      ms: Math.round(performance.now() - startedAt),
+      bytes: payload.length,
+      attempt: Number(request.headers.get("x-action-attempt")) || 1,
+    });
+    return withRequestSessionCookie(
+      request,
+      new NextResponse(payload, { headers: { "Content-Type": "application/json" } }),
+      token,
+    );
   } catch (error) {
     return withRequestSessionCookie(request, toStackAcresErrorResponse(error), token);
   }

@@ -281,6 +281,7 @@ import {
   type FarmPredictContext,
   type MachineView,
 } from "@/lib/stackacres/optimistic-actions";
+import { sendActionWithRetry } from "@/lib/stackacres/action-retry";
 import { mergeIncomingStackAcresUnits, touchedUnitIds } from "@/lib/stackacres/unit-merge";
 
 /** A promise and the handle that settles it, for a gate another call has to
@@ -2059,12 +2060,18 @@ export function StackAcresFarm() {
         for (const event of storyEventsForAction(body, { units: unitsRef.current })) {
           storyRef.current?.noteEvent(event);
         }
-        const response = await fetch("/api/stackacres/actions", {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, key }),
-        });
+        // A lost answer is retried under the same key with the guess still on
+        // screen; the server replays a write that already landed.
+        const { response, data } = await sendActionWithRetry<Partial<StackAcresResponse>>(
+          (attempt, signal) =>
+            fetch("/api/stackacres/actions", {
+              method: "POST",
+              cache: "no-store",
+              signal,
+              headers: { "Content-Type": "application/json", "X-Action-Attempt": String(attempt) },
+              body: JSON.stringify({ ...body, key }),
+            }),
+        );
         if (response.status === 429) {
           // Rejected before it reached the farm, so the server applied
           // nothing -- but this browser did, so put the guess back.
@@ -2084,7 +2091,6 @@ export function StackAcresFarm() {
           window.location.reload();
           return { ok: false, message: "Your pass expired. Reloading." };
         }
-        const data = (await response.json()) as Partial<StackAcresResponse>;
         answered = true;
         if (!mounted.current) return { ok: false, message: "Left the farm." };
         if (!response.ok) {

@@ -92,12 +92,6 @@
  * brown for weather-worn) but no affordance ring: nothing is ever "selected"
  * and no held tool acts on a unit -- only the scythe, which targets ground.
  *
- * The .sa-district-panel drawer is deep management now (Gold spends, the
- * standing list) rather than the way the game is played, so it no longer opens
- * itself on arrival -- the peg is how it comes back. Its unit rows stay
- * because they are the keyboard and screen-reader path to everything a canvas
- * tap does.
- *
  * The world is vector art, not a tile sheet: every sprite is a Canvas2D painter
  * (components/arcade/stackacres/stackacres-art.ts) baked into a Phaser texture
  * at boot and drawn at the browser's own device pixel ratio, so it is smooth at
@@ -406,8 +400,7 @@
      had no notch. The canvas bleeding under a notch it can't see costs
      nothing (it's a picture); every overlay that actually needs protecting
      -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
-     -- .floor-bar, .sa-ground-tools, .sa-side,
-     .sa-district-panel -- reads
+     -- .floor-bar, .sa-ground-tools, .sa-side -- read
      var(--safe-left)/var(--safe-right) itself instead.
 
      --safe-top/--safe-bottom used to be in this padding too, which is what
@@ -701,8 +694,7 @@
 /* ---- the thumb stick --------------------------------------------------
  * Bottom-right, where a right thumb rests with the phone on its side
  * (stackacres-td/joystick.tsx). Touch screens only: a mouse clicks where it
- * wants to go. It gives way while the district drawer is out, which runs
- * down that same side. */
+ * wants to go. */
 .sa-joystick {
   --kx: 0px;
   --ky: 0px;
@@ -730,8 +722,6 @@
 @media (pointer: coarse) {
   .sa-joystick { display: block; }
 }
-
-.sa-field[data-drawer="open"] .sa-joystick { display: none; }
 
 .sa-joystick.is-held { opacity: 1; }
 
@@ -787,8 +777,7 @@
  * Bottom right, just inboard of the thumb stick, so a right thumb can hold it
  * down and still walk: that pairing is what makes stroking a whole row possible
  * (stackacres-td/use-key.tsx). Shown on a mouse too, unlike the stick, because it
- * is the only way to work the square underfoot without tapping it. It gives way
- * to the district drawer the same way the stick does. */
+ * is the only way to work the square underfoot without tapping it. */
 .sa-use-key {
   position: absolute;
   right: calc(max(22px, var(--safe-right) + 10px) + 128px);
@@ -813,8 +802,6 @@
   opacity: .78;
   transition: opacity var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
 }
-
-.sa-field[data-drawer="open"] .sa-use-key { display: none; }
 
 .sa-use-key svg {
   width: 46px;
@@ -849,8 +836,8 @@
 /* The screen shown while the Phaser scene boots: just the wordmark, breathing
    gently, over a solid dark ground -- no farm art, no flavor text, nothing
    that hints at the layout underneath. `z-index` here is deliberate and
-   matters: everything else in .sa-field (toolbelt, signpost, camera buttons,
-   the district panel tab) carries its own z-index up to 5 for stacking
+   matters: everything else in .sa-field (toolbelt, signpost, camera buttons)
+   carries its own z-index up to 5 for stacking
    *among themselves*, and without a higher one here those later DOM siblings
    painted on TOP of this overlay -- the very "you can see all the elements
    while it's loading" bug this screen exists to prevent. Fills .sa-field
@@ -910,9 +897,6 @@
 .sa-music-toggle,
 .sa-belt-slot,
 .sa-use-key,
-.sa-panel-close,
-.sa-unit-action,
-.sa-unit-link,
 .sa-buy-btn,
 .sa-harvest-all,
 .sa-gel-token,
@@ -932,8 +916,6 @@
 .sa-theme .htp-trigger:active,
 .sa-music-toggle:active,
 .sa-belt-slot:active,
-.sa-panel-close:active,
-.sa-unit-action:not(:disabled):active,
 .sa-buy-btn:not(:disabled):active,
 .sa-harvest-all:not(:disabled):active,
 .sa-gel-token:not(:disabled):active,
@@ -952,9 +934,6 @@
 .sa-music-toggle:focus-visible,
 .sa-belt-slot:focus-visible,
 .sa-use-key:focus-visible,
-.sa-panel-close:focus-visible,
-.sa-unit-action:focus-visible,
-.sa-unit-link:focus-visible,
 .sa-buy-btn:focus-visible,
 .sa-harvest-all:focus-visible,
 .sa-gel-token:focus-visible,
@@ -971,7 +950,6 @@
    you cannot afford rather than as a rendering artefact.
    Every disabled button on this surface still carries a `title` saying why
    (see district-panel.ts's `seedReason`). */
-.sa-unit-action:disabled,
 .sa-buy-btn:disabled,
 .sa-harvest-all:disabled,
 .sa-gel-token:disabled,
@@ -2104,355 +2082,6 @@
 
 .sa-story-dialogue-yes:disabled { opacity: .6; cursor: default; }
 
-/* ---- the district drawer ---------------------------------------------
- * Travelling to a district (the signpost) IS the selection -- there is no plot
- * to tap any more -- so this is a drawer on the right edge rather than
- * something that tracks a position on the canvas.
- *
- * It is closed by default and it stays closed. On a 390px-tall landscape phone
- * a permanently docked 300px sidebar is a third of the world gone, so it opens
- * only from the radial menu's Manage button rather than sitting docked.
- *
- * `visibility` (not just the transform) keeps it out of the tab order and off
- * screen readers while shut, on top of the `inert` the component already sets.
- */
-
-.sa-district-panel {
-  position: absolute;
-  top: calc(var(--sa-header-h) + 10px);
-  right: max(10px, var(--safe-right));
-  /* Clears the zoom keys in the corner below, so both stay usable at once. */
-  bottom: calc(var(--sa-tap) + 22px);
-  z-index: 3;
-  width: min(320px, 46%);
-  padding: 0 0 12px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-panel);
-  background: var(--sa-glass-fill-open);
-  -webkit-backdrop-filter: var(--sa-glass-blur);
-  backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim), var(--sa-drop-lg);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  pointer-events: auto;
-  transform: translateX(calc(100% + 24px));
-  visibility: hidden;
-  transition:
-    transform var(--duration-slower) var(--sa-ease-out),
-    visibility var(--duration-slower);
-}
-
-/* The overshoot is spent on the way in only. */
-.sa-district-panel.is-open {
-  transform: translateX(0);
-  visibility: visible;
-  transition:
-    transform 340ms var(--sa-bounce),
-    visibility 340ms;
-}
-
-/* ---- the harvest key -------------------------------------------------- */
-
-/* Bring the whole farm in at once. It is the only button on the canvas that
-   is corn rather than paper, because it is the only one that PAYS, and a
-   money key that looks like every other key is one nobody finds.
-   It sits bottom-centre: a thumb arriving at "I want my Gold" should not
-   have to pick it out of anything else down there, and it is absent
-   entirely when nothing is ready, so the spot is either the answer or
-   empty. */
-.sa-harvest-all {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--sa-tap);
-  padding: 9px 20px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-tint-corn);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop);
-  color: var(--sa-ink);
-  font-size: 15.5px;
-  font-weight: 800;
-  letter-spacing: -.005em;
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-/* The press above sets its own transform, which would drop the -50% centring
-   and throw the key to the right. Restated with the translate kept. */
-.sa-harvest-all:not(:disabled):active {
-  transform: translateX(-50%) scale(.98);
-}
-
-.sa-harvest-all .sa-ico { width: 22px; height: 22px; }
-
-/* The drawer's own header band, carrying the ground colour of the district it
-   is describing -- the same values the signpost swatches use, so the board you
-   tapped and the drawer that opened are visibly the same place. The colour is
-   mixed INTO the glass rather than painted over it: a solid band is the one
-   thing that would make the top of this drawer read as a different material
-   from the rest of it. Sticky, because the drawer scrolls and the close button
-   has to stay reachable at the bottom of a long buy list. */
-.sa-panel-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid var(--sa-glass-line-soft);
-  border-radius: calc(var(--sa-r-panel) - 1px) calc(var(--sa-r-panel) - 1px) 0 0;
-  /* The zone's colour rides ON the head's own fill rather than replacing it
-     (`--sa-zone-wash`, set per district below): a wash on its own is 26%
-     of a colour and nothing else, which let every row scrolling under the
-     head be read straight through it. */
-  background: linear-gradient(var(--sa-zone-wash, transparent), var(--sa-zone-wash, transparent)), var(--sa-glass-fill-head);
-  -webkit-backdrop-filter: var(--sa-glass-blur-head);
-  backdrop-filter: var(--sa-glass-blur-head);
-}
-
-.sa-district-panel[data-zone="farmstead"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-farmstead) 26%, transparent); }
-.sa-district-panel[data-zone="henhaven"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-henhaven) 26%, transparent); }
-.sa-district-panel[data-zone="meadow"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-meadow) 26%, transparent); }
-.sa-district-panel[data-zone="oxfields"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-oxfields) 26%, transparent); }
-.sa-district-panel[data-zone="wallow"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-wallow) 26%, transparent); }
-.sa-district-panel[data-zone="townsquare"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-townsquare) 26%, transparent); }
-.sa-district-panel[data-zone="mine"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-mine) 26%, transparent); }
-.sa-district-panel[data-zone="coast"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-coast) 26%, transparent); }
-.sa-district-panel[data-zone="oak"] { --sa-zone-wash: color-mix(in srgb, var(--sa-zone-oak) 26%, transparent); }
-
-.sa-panel-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--sa-tap);
-  height: var(--sa-tap);
-  min-height: 0;
-  flex: none;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-glass-fill-ctl);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-ink);
-  cursor: pointer;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-.sa-district-title {
-  margin: 12px 14px 2px;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -.01em;
-  line-height: 1.1;
-  color: var(--sa-ink);
-}
-
-.sa-district-blurb {
-  margin: 0 14px 12px;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-/* One line of orientation under a section heading -- quieter than the rows it
-   introduces, and the same brown-on-cream the district's own blurb uses. */
-.sa-panel-note {
-  margin: 2px 0 10px;
-  color: var(--sa-ink-soft);
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.35;
-  text-wrap: pretty;
-}
-
-.sa-panel-section {
-  margin: 12px 14px 0;
-  padding-top: 12px;
-  /* A divider between two shelves: the same hairline the panel is edged
-     with, never an outline around one. */
-  border-top: 1px solid var(--sa-glass-line-soft);
-}
-
-.sa-panel-section:first-of-type {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.sa-district-empty {
-  margin: 6px 0 0;
-  color: var(--sa-ink-soft);
-  font-size: 13.5px;
-  font-weight: 600;
-  text-wrap: pretty;
-}
-
-/* ---- what's here: owned units ----------------------------------------- */
-
-.sa-unit-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Not a key: a row is a division OF the panel, not an object sitting on it.
-   It takes the quiet fill and a single lit line along its top, so the one
-   thing in it that IS pressable -- its action -- is the only thing standing
-   up. */
-.sa-unit-row {
-  display: grid;
-  grid-template-columns: 34px 1fr auto;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
-  border-radius: var(--sa-r-block);
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
-}
-
-/* Ripe. The row itself lights up, so a district with something to collect
-   reads from the doorway rather than needing the state line to be read. */
-.sa-unit-row[data-state="ready"] {
-  background: var(--sa-tint-corn);
-  box-shadow: inset 0 0 0 1px var(--sa-corn), inset 0 1px 0 rgba(255, 255, 255, .3);
-}
-
-.sa-unit-icon { display: flex; }
-.sa-unit-icon .sa-ico { width: 30px; height: 30px; }
-
-.sa-unit-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.sa-unit-name {
-  color: var(--sa-ink);
-  font-size: 14px;
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sa-unit-state {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--sa-ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-
-/* State colours are the world's own, lifted to the step that reads as light
-   ink on glass -- the `rim` tones these used to carry were picked to sit on a
-   cream board and go invisible on a dark pane. */
-.sa-unit-state[data-state="ready"] { color: var(--sa-lit-corn); }
-.sa-unit-state[data-state="hungry"] { color: var(--sa-lit-carrot); }
-.sa-unit-state[data-state="dry"] { color: var(--sa-lit-water); }
-.sa-unit-state[data-state="mucked"] { color: var(--sa-ink-soft); }
-
-.sa-unit-action {
-  min-height: 38px;
-  padding: 6px 13px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-block);
-  background: var(--sa-glass-fill-ctl);
-  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
-  backdrop-filter: var(--sa-glass-blur-ctl);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-ink);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    transform var(--duration-fast) var(--sa-ease-out),
-    box-shadow var(--duration-fast) var(--sa-ease-out);
-}
-
-/* A tint does the telling now, not four solid fills: same glass, same lit
-   rim, a different hue mixed into it and carried by the lettering. */
-.sa-unit-action.is-primary {
-  background: var(--sa-tint-corn);
-  box-shadow: var(--sa-glass-rim-lit);
-  color: var(--sa-lit-corn);
-}
-
-.sa-unit-action.is-warn {
-  background: var(--sa-tint-carrot);
-  box-shadow: var(--sa-glass-rim-lit);
-  color: var(--sa-lit-carrot);
-}
-
-/* Watering: the same shape as Feed, in the pond's blue rather than the
-   carrot's orange, because the two are the same kind of tending on two tracks
-   and a player should be able to tell at a glance which one a row is asking
-   for. */
-.sa-unit-action.is-water {
-  background: var(--sa-tint-water);
-  box-shadow: var(--sa-glass-rim-lit);
-  color: var(--sa-lit-water);
-}
-
-/* Destructive-adjacent (clear a mucked unit, confirm a retire): one warning
-   colour in the system, the roof red the barn is painted in. */
-.sa-unit-action.is-bad {
-  background: var(--sa-tint-roof);
-  box-shadow: var(--sa-glass-rim-lit);
-  color: var(--sa-lit-roof);
-}
-
-/* Retiring is not an action anyone came here to take, so its key is unpainted
-   board rather than a colour competing with Collect two rows above. */
-.sa-unit-action.is-ghost {
-  background: var(--sa-glass-fill-quiet);
-  box-shadow: var(--sa-glass-rim-sm);
-  color: var(--sa-ink-soft);
-}
-
-.sa-unit-confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
-
-/* "Keep them" -- the way out of the retire confirmation. A link rather than a
-   second block, because two blocks side by side is two equal choices and this
-   pair is deliberately not equal. Padded to the touch floor all the same. */
-.sa-unit-link {
-  min-height: 32px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: var(--sa-r-block);
-  background: transparent;
-  color: var(--sa-ink-soft);
-  font-size: 12.5px;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
 /* ---- buy ---------------------------------------------------------------
  * One block per stock kind this district sells. The rule is separation, not
  * decoration: seeding with Bushels and buying outright with Gold are genuinely
@@ -3365,35 +2994,6 @@
 .sa-stock-card .sa-tool-art { align-self: center; width: 84px; height: 84px; }
 
 /* ---- Ray ------------------------------------------------------------- */
-
-/* Ray's byline: his portrait plus his name, on the district
-   drawer he still fronts in the fiction. A plain row, not a speech-bubble
-   affordance. The supply store carries the app's own StackAcres Supply Co.
-   brand instead now -- see `.sa-store-head` below -- but keeps his portrait
-   as its mark. */
-.sa-ray-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.sa-ray-portrait {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--sa-glass-line);
-  border-radius: var(--sa-r-chip);
-  object-fit: cover;
-  object-position: top center;
-  background: var(--sa-glass-fill-ctl);
-}
-
-.sa-ray-name {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--sa-ink);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-}
 
 /* The one-time welcome (stackacres-ray-welcome.tsx): his portrait, centred and
    a good deal bigger than the byline above, since this is the one place he is
@@ -5091,8 +4691,6 @@
      spring in, and the component throws no motes at all (it checks the same
      query in JS and counts straight to the total). */
   .sa-contract-ticker { animation: none; }
-  .sa-district-panel,
-  .sa-district-panel.is-open { transition-duration: 1ms; }
   /* The ring still appears at once; it just does not spring in. Keeping the
      transform means the buttons stay centred on their own arc points. */
   .sa-radial-btn { animation: none; }
@@ -5172,9 +4770,6 @@
   /* The drawer is the tallest thing on a short landscape phone. It gives back
      padding rather than width: a narrower drawer wraps every buy button onto
      two lines, which costs more height than the padding saved. */
-  .sa-district-panel { top: calc(var(--sa-header-h) + 8px); }
-  .sa-district-title { margin: 10px 12px 2px; font-size: 19px; }
-  .sa-district-blurb { margin: 0 12px 10px; font-size: 12.5px; }
   .sa-panel-section { margin: 10px 12px 0; padding-top: 10px; }
 
   .sa-toast { font-size: 17px; padding: 7px 17px; }

@@ -71,9 +71,6 @@ import {
   forgeStackAcresToolEnchantment,
   plantStackAcresCrossbreedBed,
   harvestStackAcresCrossbreedBed,
-  aimStackAcresPipeTile,
-  placeStackAcresPipeTile,
-  removeStackAcresPipeTile,
   buyStackAcresSoil,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
@@ -83,8 +80,6 @@ import {
   giveStackAcresGift,
   sealStackAcresVat,
   collectStackAcresVat,
-  deployStackAcresDrone,
-  collectStackAcresDroneForage,
   meetStackAcresTraveler,
   turnInStackAcresTravelerQuest,
 } from "@/lib/server/stackacres-service";
@@ -112,8 +107,7 @@ export const runtime = "nodejs";
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
  * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
- * `place-machine`, `unlock-synergy-perk`, `place-pipe` and
- * `place-soil-tile` all spend; `sell`, `fulfill-contract`
+ * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
  * ceiling -- see `sellStackAcresItem`, `fulfillStackAcresTownContract` and
  * `collectStackAcresVat` in lib/server/stackacres-service.ts. There is no
@@ -123,12 +117,11 @@ export const runtime = "nodejs";
  * the change to stop over. `activate-synergy-perk` moves no Gold at all --
  * see below.
  *
- * `collect`, `work`, `process`, `request-contract`, `build-greenhouse`,
- * `remove-pipe` and `remove-soil-tile` move no Gold at all -- inventory only
+ * `collect`, `work`, `process`, `request-contract`, `build-greenhouse` and
+ * `remove-soil-tile` move no Gold at all -- inventory only
  * (`build-greenhouse` spends processing-track Flour/Cloth; see
- * buildStackAcresGreenhouse's own header). Neither `remove-pipe` nor
- * `remove-soil-tile` is a refund: a placed irrigation tile or soil bed is a
- * spent sink, like a placed Mill. So do the four hidden-secrets actions
+ * buildStackAcresGreenhouse's own header). `remove-soil-tile` is not a
+ * refund: a placed soil bed is a spent sink, like a placed Mill. So do the four hidden-secrets actions
  * (`tap-secret-zone`, `donate-secret-item`, `consume-secret-item`,
  * `trade-secret-item`): a discovered Lucky Poker Dice only ever reshapes a
  * probability (`consume-secret-item`, folded into `collect`'s own crit roll)
@@ -431,33 +424,6 @@ const bodySchema = z.discriminatedUnion("action", [
     stock: z.enum(STACKACRES_STOCK as unknown as [string, ...string[]]),
   }),
   z.object({ action: z.literal("harvest-crossbreed"), plotId: z.string().uuid() }),
-  // The irrigation pipe network. `place-pipe` spends Gold -- a construction
-  // sink, like `place-machine`, refunded only if the tile cannot land;
-  // `remove-pipe` moves no Gold. Hydration itself is free (a hydrated pipe
-  // watering a crop costs nothing, the same as tapping `water`), so this
-  // adds one spender and no payer. Coordinates are the STACKACRES_TILE
-  // lattice (floor(worldX / 16)); the range is bounded so a fabricated
-  // coordinate cannot push the layout somewhere the camera can never reach.
-  z.object({
-    action: z.literal("place-pipe"),
-    tx: z.number().int().min(-512).max(512),
-    ty: z.number().int().min(-512).max(512),
-    kind: z.enum(["well", "pipe"]),
-  }),
-  z.object({
-    action: z.literal("remove-pipe"),
-    tx: z.number().int().min(-512).max(512),
-    ty: z.number().int().min(-512).max(512),
-  }),
-  // Points a lone pipe stub one way. Cosmetic -- moves no Gold, changes no
-  // hydration (lib/stackacres/irrigation.ts's `PipeFacing`) -- so the only
-  // thing worth bounding is the same coordinate range as place-pipe.
-  z.object({
-    action: z.literal("aim-pipe"),
-    tx: z.number().int().min(-512).max(512),
-    ty: z.number().int().min(-512).max(512),
-    facing: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8)]),
-  }),
   // Placeable soil beds (lib/stackacres/soil.ts): the SOIL_TILE lattice
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
@@ -522,14 +488,6 @@ const bodySchema = z.discriminatedUnion("action", [
     npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
     item: z.enum(GIFTABLE_ITEMS as unknown as [string, ...string[]]),
   }),
-  // Mechanical Forage Drone: a flat-fee deploy, gated on the hangar's own
-  // derived milestone unlock (see stackacres-drone-service.ts).
-  z.object({ action: z.literal("deploy-drone") }),
-  // A drone id, not a tile or a collectible id: the server re-derives
-  // whether that drone is actually eligible (owned, off cooldown) rather
-  // than trusting anything the client claims about where it is or what it
-  // swept up.
-  z.object({ action: z.literal("collect-drone-forage"), droneId: z.string().uuid() }),
   // The travelers' story (lib/stackacres/story/). Neither moves Gold:
   // `story-meet` accepts a traveler's first quest, `story-turn-in` hands the
   // active one in, debiting only the items it asked for and paying a story
@@ -669,12 +627,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return plantStackAcresCrossbreedBed(token, { row: action.row, col: action.col, stock: action.stock }, now);
     case "harvest-crossbreed":
       return harvestStackAcresCrossbreedBed(token, action.plotId, now);
-    case "place-pipe":
-      return placeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, kind: action.kind }, now);
-    case "remove-pipe":
-      return removeStackAcresPipeTile(token, { tx: action.tx, ty: action.ty }, now);
-    case "aim-pipe":
-      return aimStackAcresPipeTile(token, { tx: action.tx, ty: action.ty, facing: action.facing }, now);
     case "place-soil-tile":
       return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty, tier: action.tier }, now);
     case "buy-soil":
@@ -693,10 +645,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return prayAtStackAcresShrine(token, now);
     case "give-gift":
       return giveStackAcresGift(token, action.npc, action.item, now);
-    case "deploy-drone":
-      return deployStackAcresDrone(token, now);
-    case "collect-drone-forage":
-      return collectStackAcresDroneForage(token, action.droneId, now);
     case "story-meet":
       return meetStackAcresTraveler(token, action.traveler, now);
     case "story-turn-in":

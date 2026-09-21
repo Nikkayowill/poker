@@ -235,10 +235,6 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       farmerAction: (action) => sceneRef.current?.farmerAction(action),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
       // Not drawn yet (see this file's header).
-      setFenceTier: () => undefined,
-      setLivestockHealth: () => undefined,
-      setDroneHangar: () => undefined,
-      holdDroneForage: () => undefined,
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),
       startFishingGauge: (request) => {
         const game = gameRef.current;

@@ -3,11 +3,9 @@ import { join } from "path";
 import { describe, expect, it } from "vitest";
 
 // Farm SQL that moves Gold inside its own transaction can't follow the farm into a
-// separate database. These five predate the rule; new farm Gold goes through
+// separate database. These two predate the rule; new farm Gold goes through
 // profile-store's ledgered functions from TypeScript instead.
 const KNOWN_FARM_GOLD_FUNCTIONS = [
-  "collect_stackacres_drone_forage",
-  "deploy_stackacres_drone",
   "forge_stackacres_enchantment",
   "unlock_stackacres_perk",
 ];

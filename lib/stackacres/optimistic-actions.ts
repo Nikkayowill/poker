@@ -87,7 +87,6 @@ import { nextToolTier, toolUpgradePrice, type StackAcresToolTier } from "./equip
 import { ownedStackAcresCutters, stackacresCutterDef, type StackAcresCutter } from "./cutters";
 import { applyInfluenceDiscount } from "./influence-tiers";
 import type { StackAcresUpkeepState } from "./upkeep";
-import { PIPE_PLACE_COST, recalculatePipeConnections, type PipeNode, type PlacedPipe } from "./irrigation";
 import {
   createSoilMap,
   moveSoilTileGroup,
@@ -170,9 +169,6 @@ export interface FarmPredictContext {
    *  posture as `greenhouseBuilt`: a permanent flag, not a `SectorId`, since
    *  the 2026-09-08 district merge folded that district into the Farmstead. */
   cropFieldsUnlocked: boolean;
-  /** The irrigation pipe network, straight off the component's own state --
-   *  what `place-pipe`/`remove-pipe` recompute against. See ./irrigation.ts. */
-  irrigation: readonly PipeNode[];
   /** This profile's placed soil beds, straight off the component's own state.
    *  What `place-soil-tile`/`remove-soil-tile` add to or remove from. */
   soilTiles: readonly SoilTile[];
@@ -209,7 +205,6 @@ export interface FarmStatePatch {
   influence?: number;
   greenhouseBuilt?: boolean;
   cropFieldsUnlocked?: boolean;
-  irrigation?: readonly PipeNode[];
   soilTiles?: SoilTile[];
   soilStock?: SoilStock;
   contract?: StackAcresContractRow | null;
@@ -691,51 +686,6 @@ export function predictStackAcresAction(
       // an insufficient shelf refuses server-side and the snapshot restores.
       if (ctx.greenhouseBuilt) return null;
       return { greenhouseBuilt: true };
-    }
-    case "place-pipe": {
-      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
-      if (existing) return null;
-      // Only one well per farm (see stackacres-farm.tsx's `pipeExtraActions`
-      // `hasWell` check) -- a second dig here would guess a tile the server
-      // is certain to refuse.
-      if (body.kind === "well" && ctx.irrigation.some((node) => node.kind === "well")) return null;
-      const profile = debited(ctx, PIPE_PLACE_COST[body.kind]);
-      if (!profile) return null;
-      // `facing` carried through for every tile already down, so a recompute
-      // never silently un-aims a stub that is still lone after this lands.
-      const tiles: PlacedPipe[] = [
-        ...ctx.irrigation.map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind, facing: node.facing })),
-        { tx: body.tx, ty: body.ty, kind: body.kind },
-      ];
-      // Crop-free on purpose: mask/hydration/distance are pure tile topology,
-      // and this predictor never guesses which crop that newly waters -- the
-      // server's own response settles that, same as every other unit field.
-      const grid = recalculatePipeConnections({ tiles, crops: [] });
-      return { irrigation: grid.nodes, profile };
-    }
-    case "remove-pipe": {
-      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
-      if (!existing) return null;
-      // No Gold moves here -- a placed tile is a spent sink, not a refundable
-      // one (see irrigation.ts's own `PIPE_PLACE_COST` doc comment).
-      const tiles: PlacedPipe[] = ctx.irrigation
-        .filter((node) => node.tx !== body.tx || node.ty !== body.ty)
-        .map((node) => ({ tx: node.tx, ty: node.ty, kind: node.kind, facing: node.facing }));
-      const grid = recalculatePipeConnections({ tiles, crops: [] });
-      return { irrigation: grid.nodes };
-    }
-    case "aim-pipe": {
-      // Cosmetic and topology-free: no recompute, no Gold -- the one node's
-      // `facing` moves and nothing else does (see irrigation.ts's own
-      // `PipeFacing` doc). A well, or a coordinate with nothing on it, is a
-      // tap the server is certain to refuse, so nothing is guessed for it.
-      const existing = ctx.irrigation.find((node) => node.tx === body.tx && node.ty === body.ty);
-      if (!existing || existing.kind !== "pipe") return null;
-      return {
-        irrigation: ctx.irrigation.map((node) =>
-          node === existing ? { ...node, facing: body.facing } : node,
-        ),
-      };
     }
     case "place-soil-tile": {
       const tier = body.tier ?? SOIL_DEFAULT_TIER;

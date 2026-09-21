@@ -24,7 +24,6 @@ import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
 import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
-import type { PipeFacing, PipeKind } from "./irrigation";
 import type { ZoneId } from "./zones";
 import type { TravelerId } from "./story/travelers";
 
@@ -172,16 +171,6 @@ export type Action =
   // `harvest-crossbreed` moves no Gold, a hybrid is inventory not a payout.
   | { action: "plant-crossbreed"; row: number; col: number; stock: StackAcresStock }
   | { action: "harvest-crossbreed"; plotId: string }
-  // The irrigation pipe network. `tx`/`ty` are STACKACRES_TILE lattice
-  // coordinates (floor(worldX / PIPE_TILE)), not world units -- see
-  // lib/stackacres/irrigation.ts's `pipeTileAt`. `place-pipe` spends Gold
-  // (PIPE_PLACE_COST); `remove-pipe` moves none.
-  | { action: "place-pipe"; tx: number; ty: number; kind: PipeKind }
-  | { action: "remove-pipe"; tx: number; ty: number }
-  // Points a lone pipe tile one way (lib/stackacres/irrigation.ts's
-  // `PipeFacing`). Cosmetic, moves no Gold, and keyed on the tile by the
-  // `tx` branch of `intentOf` the same way place/remove are.
-  | { action: "aim-pipe"; tx: number; ty: number; facing: PipeFacing }
   // Ray's Mythic Blueprints. Neither moves Gold -- a stage is filled from
   // the processing inventory, same as a Town Contract. See
   // lib/server/stackacres-blueprint-service.ts's own header.

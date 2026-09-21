@@ -52,14 +52,14 @@ describe("the StackAcres read budget", () => {
     return body.slice(start, end);
   };
 
-  it("the memory-mode fallback still reads a player's farm in 34 per-profile round trips", () => {
+  it("the memory-mode fallback still reads a player's farm in 33 per-profile round trips", () => {
     // One line per read, so this counts the reads rather than the tables --
     // two of them (the secret ledger, friendship) are nested Promise.all's
     // over a list that is length 1 today and will not stay that way.
     // Meaningless for latency in memory mode (no network round trip exists
     // to save), but this is still the list a new farm table's read has to
     // join, or it silently only reads with a live Supabase configured.
-    expect(fallbackArray().split("(profile.id").length - 1).toBe(34);
+    expect(fallbackArray().split("(profile.id").length - 1).toBe(33);
   });
 
   it("the live-Supabase branch reads the same farm in one batch call plus three RPC-only exceptions", () => {

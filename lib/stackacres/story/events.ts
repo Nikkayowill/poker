@@ -24,7 +24,6 @@
 import type { StackAcresStock } from "../catalogue";
 import type { CrossbreedItem } from "../crossbreed-items";
 import type { FishSpecies } from "../fishing";
-import type { PipeKind } from "../irrigation";
 import type { RecipeId } from "../recipes";
 import type { HiddenZoneId } from "../secrets";
 import type { SectorId } from "../sectors";
@@ -38,7 +37,6 @@ export type StoryEvent =
   | { readonly kind: "fish-caught"; readonly species: FishSpecies }
   | { readonly kind: "secret-zone-tapped"; readonly zoneId: HiddenZoneId }
   | { readonly kind: "sector-cleared"; readonly sector: SectorId }
-  | { readonly kind: "pipe-placed"; readonly pipe: PipeKind }
   | { readonly kind: "soil-placed"; readonly count: number }
   | { readonly kind: "contract-fulfilled" }
   | { readonly kind: "enchantment-forged" }

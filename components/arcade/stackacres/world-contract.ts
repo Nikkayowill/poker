@@ -8,13 +8,11 @@ import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
-import type { FenceTier } from "@/lib/stackacres/wildlife";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
-import type { PipeNode } from "@/lib/stackacres/irrigation";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
@@ -244,24 +242,6 @@ export interface StackAcresWorldApi {
    *  seed menu's dismissal scrim needs this. `clientX`/`clientY` are CSS
    *  pixels, the same space a `PointerEvent` carries. */
   tapAt: (clientX: number, clientY: number) => void;
-  /** Wildlife Ecosystem & Nighttime Predator Defense -- same "push, never
-   *  rebuild" shape as `setSoil` above: `setFenceTier`/`setLivestockHealth`
-   *  hydrate one district's saved defense state, called once per
-   *  segment/zone on load and again right after a successful upgrade. */
-  setFenceTier: (zone: ZoneId, segmentIndex: number, tier: FenceTier, durability: number) => void;
-  setLivestockHealth: (zone: ZoneId, health: number) => void;
-  /** Every Mechanical Forage Drone this profile owns, by id --
-   *  `StackAcresView.droneHangar.drones` mapped to their ids. PUSHED, same
-   *  "push, never rebuild" contract as `setSoil`: stackacres-farm.tsx
-   *  calls this when the view's own drone list changes, not on every
-   *  render. Passing the unchanged list twice is a harmless no-op (the
-   *  scene's own `setDroneHangar` diffs against what it already has). */
-  setDroneHangar: (droneIds: string[]) => void;
-  /** Parks every drone's forage drops for `durationMs` -- they keep flying,
-   *  they just stop finding anything. Called when the server refuses a claim
-   *  with `day-capped`: the farm cannot pay another Gold piece today, so the
-   *  fleet has nothing to fetch until the allowance refills. */
-  holdDroneForage: (durationMs: number) => void;
   /** A world point as pixels inside the field, for pointing a drag tool at a
    *  fixed spot. Null until the scene has booted. */
   fieldPointFor: (x: number, y: number) => TapPoint | null;
@@ -353,14 +333,6 @@ export interface StackAcresWorldProps {
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
-  /** A finger landed on one bay of a district's fence line -- the cue to
-   *  open the fence-upgrade popup. Optional: a caller that never wires it
-   *  simply never opts into the fence hit-test at all (see
-   *  StackAcresSceneCallbacks.onFenceSegmentTap's own doc). */
-  onFenceSegmentTap?: (zone: ZoneId, segmentIndex: number, at: TapPoint) => void;
-  /** Informational: the Wildlife Manager's own predator simulation lowered
-   *  a district's livestock health. The shell's cue to persist it. */
-  onLivestockDamaged?: (zone: ZoneId, health: number) => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
@@ -395,15 +367,5 @@ export interface StackAcresWorldProps {
    *  only ever pushes what it is handed straight into the scene, the same
    *  "push, never rebuild" contract `sectors` above already follows. */
   soilTiles: readonly SoilTile[];
-  /** The irrigation pipe network, straight off `StackAcresView.irrigation` --
-   *  pushed straight through to the scene's own `setIrrigation`, the same
-   *  "push, never rebuild" contract `soilTiles` above already follows (the
-   *  scene diffs against what it already drew via `diffPipeGrid`, so a
-   *  reference that has not moved repaints nothing). */
-  irrigation: readonly PipeNode[];
-  /** A patrolling drone just started its vacuum animation on a spawned
-   *  drop -- see StackAcresSceneCallbacks.onDroneForageCollected's own doc
-   *  comment for why this fires before the animation finishes. */
-  onDroneForageCollected: (droneId: string) => void;
   api: Ref<StackAcresWorldApi | null>;
 }

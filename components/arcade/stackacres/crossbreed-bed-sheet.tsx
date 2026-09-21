@@ -65,7 +65,8 @@ export interface CrossbreedBedSheetProps {
   seedStock: SeedStock;
   goldBalance: number;
   unlimitedGold: boolean;
-  /** Crops need the Crop Fields open, the same gate an open-air sow has. */
+  /** Crops need the Crop Fields milestone -- ground broken out there, which
+   *  is what records it now (see `placeStackAcresSoilTile`). */
   cropFieldsUnlocked: boolean;
   /** Something else on the page is already talking to the server. */
   busy: boolean;

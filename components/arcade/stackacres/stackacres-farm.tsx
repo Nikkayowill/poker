@@ -101,15 +101,6 @@ import {
   soilTilesEqual,
   type SoilTile,
 } from "@/lib/stackacres/soil";
-import {
-  SOIL_BAGS_PER_PURCHASE,
-  SOIL_PLOTS_PER_BAG,
-  SOIL_DEFAULT_TIER,
-  SOIL_TIERS,
-  soilTierDef,
-  type SoilStock,
-  type SoilTier,
-} from "@/lib/stackacres/soil-tiers";
 
 import type { StackAcresContractRow } from "@/lib/stackacres/contracts";
 import { emptyInventory, inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
@@ -216,7 +207,6 @@ import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from ".
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { StackAcresSeedWheel, type SeedWheelItem } from "./stackacres-seed-wheel";
 import {
-  BELT_DEFAULT_TIER,
   BELT_TOOL_DEFS,
   beltAnimation,
   resolveBeltAction,
@@ -524,9 +514,6 @@ interface StackAcresResponse {
    *  as "no purchased tiles yet" -- starter tiles are never carried here, see
    *  `StackAcresView.soilTiles`'s own doc comment. */
   soilTiles?: SoilTile[];
-  /** Unplaced squares of soil per tier. Absent on a response predating Ray's soil shelf,
-   *  which reads as an empty barn. */
-  soilStock?: SoilStock;
   /** Unplanted crop seeds per crop id. Absent on a response predating Ray's
    *  seed shelf, which reads as an empty shelf. */
   seedStock?: SeedStock;
@@ -655,12 +642,11 @@ function StoreShelf({ icon, children }: { icon: PainterName; children: ReactNode
  * Workshop shelf just never listed the sixteen crops or the three raw
  * animal goods. This tab is that missing listing, not a new mechanic.
  */
-type StoreTab = "seeds" | "livestock" | "soil" | "feed" | "equipment" | "sell";
+type StoreTab = "seeds" | "livestock" | "feed" | "equipment" | "sell";
 
 const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
   { id: "seeds", label: "Seeds", icon: "ico-carrot" },
   { id: "livestock", label: "Livestock", icon: "ico-egg" },
-  { id: "soil", label: "Soil", icon: "ico-plant" },
   { id: "feed", label: "Feed", icon: "ico-feed" },
   { id: "equipment", label: "Tools", icon: "ico-scythe" },
   { id: "sell", label: "Sell", icon: "ico-gold" },
@@ -946,13 +932,9 @@ export function StackAcresFarm() {
    *  starter grant was removed (see lib/stackacres/soil.ts's own "starter
    *  kit" section). */
   const [soilTiles, setSoilTiles] = useState<SoilTile[]>([]);
-  /** Soil bought from Ray but not laid down yet, in squares. Plain object rather than a Map
-   *  so a response can replace it wholesale. */
-  const [soilStock, setSoilStock] = useState<SoilStock>({});
   /** Crop seeds bought from Ray but not planted yet -- the ownership filter
    *  that keeps the gel dock from ever offering a crop the player isn't
-   *  carrying, see `cropFieldGelItems`. Same plain-object shape as
-   *  `soilStock` and for the same reason. */
+   *  carrying, see `cropFieldGelItems`. */
   const [seedStock, setSeedStock] = useState<SeedStock>({});
   const [upkeep, setUpkeep] = useState<StackAcresUpkeepState>(() => upkeepState(0, 0));
   /**
@@ -1656,7 +1638,6 @@ export function StackAcresFarm() {
     if (data.soilTiles) {
       setSoilTiles((prev) => (soilTilesEqual(prev, data.soilTiles!) ? prev : data.soilTiles!));
     }
-    if (data.soilStock) setSoilStock(data.soilStock);
     if (data.seedStock) setSeedStock(data.seedStock);
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
@@ -1693,7 +1674,6 @@ export function StackAcresFarm() {
       cropFieldsUnlocked,
       // This profile's placed soil.
       soilTiles,
-      soilStock,
       // The bushes, so a pick can name the seed it is about to take and turn
       // the bush picked-over without waiting on the round trip.
       forageNodes,
@@ -1725,7 +1705,6 @@ export function StackAcresFarm() {
       greenhouseBuilt,
       cropFieldsUnlocked,
       soilTiles,
-      soilStock,
     ],
   );
 
@@ -1752,9 +1731,7 @@ export function StackAcresFarm() {
       capacity,
       // seedStock IS guessed at by the "stock" predictor above, so a
       // refused or dropped planting has to be able to put the spent seed
-      // back. soilTiles/soilStock now join it: place-soil-tile spends a bag
-      // (soilStock) and adds a bed (soilTiles) optimistically, same as
-      // place-pipe does for irrigation below.
+      // back. soilTiles joins it: place-soil-tile adds a bed optimistically.
       seedStock,
       sectors,
       upkeep,
@@ -1770,7 +1747,6 @@ export function StackAcresFarm() {
       greenhouseBuilt,
       cropFieldsUnlocked,
       soilTiles,
-      soilStock,
     }),
     [
       units,
@@ -1794,7 +1770,6 @@ export function StackAcresFarm() {
       greenhouseBuilt,
       cropFieldsUnlocked,
       soilTiles,
-      soilStock,
     ],
   );
   type FarmSnapshot = ReturnType<typeof captureFarmSnapshot>;
@@ -1830,7 +1805,6 @@ export function StackAcresFarm() {
     setSecretDonations(snap.secretDonations);
     setGreenhouseBuilt(snap.greenhouseBuilt);
     setSoilTiles(snap.soilTiles);
-    setSoilStock(snap.soilStock);
     setCropFieldsUnlocked(snap.cropFieldsUnlocked);
   }, []);
 
@@ -3445,13 +3419,11 @@ export function StackAcresFarm() {
    * of that, not a stand-in for a picture that has not arrived yet.
    */
   const onPlaceSoilTile = useCallback(
-    (tx: number, ty: number, tier: SoilTier = SOIL_DEFAULT_TIER) => {
+    (tx: number, ty: number) => {
       buySound();
       setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
-      // The tier names WHICH bed; the server reads its price from
-      // SOIL_TIER_DEFS, so nothing here has to send (or can lie about) a cost.
       const key = `${tx},${ty}`;
-      const request = act({ action: "place-soil-tile", tx, ty, tier });
+      const request = act({ action: "place-soil-tile", tx, ty });
       // Held only until this exact request settles -- see
       // `pendingSoilPlacements`'s own header -- so `onRadialSeed` can wait
       // out a till it just fired before planting the same bed.
@@ -3580,8 +3552,6 @@ export function StackAcresFarm() {
           shelfFeed: processing.inventory,
           gold,
           nowMs,
-          soilStock,
-          tier: BELT_DEFAULT_TIER,
           seed,
           seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
         },
@@ -3645,7 +3615,7 @@ export function StackAcresFarm() {
           void act({ action: "clear", unitId: action.unitId });
           return;
         case "till":
-          onPlaceSoilTile(action.tx, action.ty, action.tier);
+          onPlaceSoilTile(action.tx, action.ty);
           return;
         case "lift":
           setArmedLift(null);
@@ -3661,7 +3631,7 @@ export function StackAcresFarm() {
           return;
       }
     },
-    [act, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, soilStock, triggerCascade, water],
+    [act, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
@@ -4168,7 +4138,6 @@ export function StackAcresFarm() {
             seed={seed}
             seedIcon={seed ? STOCK_ICON[seed] : null}
             seedsHeld={seed ? seedStock[seed] ?? 0 : 0}
-            soilHeld={soilStock[BELT_DEFAULT_TIER] ?? 0}
             water={water}
             onOpenSeeds={() => {
               panelSound();
@@ -4635,50 +4604,6 @@ export function StackAcresFarm() {
                       ))}
                     </div>
                   )}
-                </>
-              )}
-
-              {storeTab === "soil" && (
-                <>
-                  <p className="sa-sheet-note">
-                    Each bag makes {SOIL_PLOTS_PER_BAG} plots. Buy some here, then hoe bare grass by
-                    the house or in the Crop Fields to lay one. A bed you take up again is spent, so
-                    pick the spot first.
-                  </p>
-                  <div className="sa-stock-cards">
-                    {SOIL_TIERS.map((tier) => {
-                      const def = soilTierDef(tier);
-                      const held = soilStock[tier] ?? 0;
-                      // Tier-blind by design (see farm-actions.ts's `intentOf`):
-                      // one soil purchase in flight, of any tier or size, holds
-                      // every tier's buttons here rather than just this one's.
-                      // (Moot while the shop sells one tier, but this stays
-                      // correct if a second one is ever added back.)
-                      const pending = isPending("buy-soil");
-                      return (
-                        <div key={tier} className="sa-stock-card">
-                          <h3>{def.label}</h3>
-                          <p className="sa-stock-terms">{def.blurb}</p>
-                          <p className="sa-stock-yield">
-                            <StoreCost amount={def.price} /> / bag of {SOIL_PLOTS_PER_BAG}
-                          </p>
-                          <BuyQuantityControls
-                            unitPrice={def.price}
-                            maxQuantity={SOIL_BAGS_PER_PURCHASE}
-                            gold={gold}
-                            pending={pending}
-                            onBuy={(quantity) => {
-                              buySound();
-                              void act({ action: "buy-soil", tier, quantity });
-                            }}
-                          />
-                          <p className="sa-sheet-note">
-                            {held} {held === 1 ? "plot" : "plots"} left in the barn
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </>
               )}
 

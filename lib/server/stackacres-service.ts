@@ -101,22 +101,11 @@ import {
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import {
-  SOIL_BAGS_PER_PURCHASE,
-  SOIL_PLOTS_PER_BAG,
-  soilTierDef,
-  soilTierPrice,
-  toSoilTier,
-  type SoilTier,
-} from "@/lib/stackacres/soil-tiers";
+import { SOIL_DEFAULT_TIER } from "@/lib/stackacres/soil-tiers";
 import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
-  adjustStackAcresSoilStock,
   listStackAcresSoilTiles,
-  readStackAcresSoilStock,
-  stackAcresSoilStockFromBatchRows,
   stackAcresSoilTileFromBatchRow,
-  type SoilStock,
   type SoilTileDbRow,
   type StoredSoilTile,
   placeStackAcresSoilTile as placeSoilTileRow,
@@ -715,9 +704,6 @@ export interface StackAcresView {
    *  (lib/stackacres/soil.ts) -- every one of it, since the free starter
    *  grant was removed (see that file's own "starter kit" section). */
   soilTiles: SoilTile[];
-  /** Bags of each soil tier bought from Ray but not laid down yet
-   *  (`homestead_soil_stock`). A missing tier and 0 mean the same thing. */
-  soilStock: SoilStock;
   /** Seeds of each crop bought from Ray but not planted yet
    *  (`homestead_seed_stock`). A missing crop and 0 mean the same thing.
    *  Livestock is never a key here -- see SeedStock's own doc comment. */
@@ -1037,7 +1023,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
           readStackAcresCrossbreedInventory(profile.id),
           listStackAcresPipes(profile.id),
           listStackAcresSoilTiles(profile.id),
-          readStackAcresSoilStock(profile.id),
           readStackAcresSeedStock(profile.id),
           readStackAcresDevotion(profile.id),
           // Nested Promise.all for the same reason SECRET_ITEM_IDS's own read
@@ -1076,7 +1061,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   let crossbreedInventory: Partial<Record<CrossbreedItem, number>>;
   let pipeRows: StoredPipe[];
   let soilTiles: StoredSoilTile[];
-  let soilStock: SoilStock;
   let seedStock: SeedStock;
   let storedDevotion: StoredDevotionRow;
   let storedFriendships: StoredFriendshipRow[];
@@ -1125,7 +1109,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     );
     pipeRows = (batch.pipes as unknown as PipeDbRow[]).map(stackAcresPipeFromBatchRow);
     soilTiles = (batch.soil_tiles as unknown as SoilTileDbRow[]).map(stackAcresSoilTileFromBatchRow);
-    soilStock = stackAcresSoilStockFromBatchRows(batch.soil_stock as { tier: string; quantity: number | string }[]);
     seedStock = stackAcresSeedStockFromBatchRows(batch.seed_stock as { crop: string; quantity: number | string }[]);
     storedDevotion = stackAcresDevotionFromBatchRow(
       batch.devotion as { streak: number | string; last_prayed_day: string | null; claimed_rungs: number[] | null } | null,
@@ -1170,7 +1153,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       crossbreedInventory,
       pipeRows,
       soilTiles,
-      soilStock,
       seedStock,
       storedDevotion,
       storedFriendships,
@@ -1183,7 +1165,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
       number, number, number[], SynergyArchetype[], boolean, boolean, Record<BlueprintId, BlueprintView>,
       StackAcresPrestigeState, string[], StoredCrossbreedPlot[], Partial<Record<CrossbreedItem, number>>,
-      StoredPipe[], StoredSoilTile[], SoilStock, SeedStock, StoredDevotionRow, StoredFriendshipRow[],
+      StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
     ];
@@ -1260,7 +1242,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     },
     irrigation: [...irrigationGrid.nodes],
     soilTiles: mergedSoilTiles(soilTiles),
-    soilStock,
     seedStock,
     devotion: devotionView(storedDevotion, now),
     friendship,
@@ -2839,7 +2820,7 @@ export async function retireStackAcresStock(
 
 /** Buys shipments of feed. Pure sink: Gold out, servings in.
  *
- * Bulk, same as `buyStackAcresSoil`/`buyStackAcresSeed`: a `quantity` up to
+ * Bulk, same as `buyStackAcresSeed`: a `quantity` up to
  * STACKACRES_FEED_SHIPMENTS_PER_PURCHASE moves in one request instead of one
  * shipment per click, so a player mashing Buy no longer races the server's
  * own round trip and gets back fewer shipments than presses. */
@@ -5353,38 +5334,27 @@ async function recomputeIrrigation(
 }
 
 /**
- * Spends one bag on the Crop Fields' own lattice: a brand new one-tile bed
- * on bare ground. Rule 1, in bags: the bag leaves before the outcome is
- * known, and anything that stops the bed landing -- it is already occupied,
- * or (rarely) a race for a bare cell -- refunds it. See `plantSoilTile` in
- * lib/stackacres/soil.ts, the pure version of this same decision.
- *
- * THE TIER SETS THE PRICE, and it is read from the tier table rather than
- * from the request: the client sends WHICH bag it is spending, never what
- * that bag costs. `toSoilTier` degrades an unknown id to the cheapest tier,
- * so a malformed or hostile body can only ever under-buy, never get an
- * expensive square for a cheap one. Gold itself never moves here -- it left
- * at the shelf (`buyStackAcresSoil`), which is why every refusal below only
- * ever refunds a bag, never Gold.
+ * Breaks ground: a brand new one-tile bed on bare ground. Free -- the hoe
+ * costs nothing, so nothing is spent and nothing is refunded. See
+ * `plantSoilTile` in lib/stackacres/soil.ts, the pure version of this same
+ * decision.
  *
  * Bounded to the two places a bed can mean anything -- the Crop Fields
  * (`CROP_FIELD_BEDS`) and the Homestead's two grass paddocks (`HOME_PLOTS`) --
- * never trusting the client's tapped coordinate blindly, the same posture
- * `place-pipe`'s tile-lattice bounds take one layer up (there the bound is a
- * generous rectangle around the whole map). That bound is the WHOLE check:
- * neither place is bought, so there is no unlock to refuse against. Breaking
- * the first bed in the Crop Fields is what records that milestone; a bed on
- * the Homestead's grass does not, since it is not Crop Fields ground.
+ * never trusting the client's tapped coordinate blindly. That bound is the
+ * WHOLE check: neither place is bought, so there is no unlock to refuse
+ * against. Breaking the first bed in the Crop Fields is what records that
+ * milestone; a bed on the Homestead's grass does not, since it is not Crop
+ * Fields ground.
  */
 export async function placeStackAcresSoilTile(
   token: string,
-  input: { tx: number; ty: number; tier?: unknown },
+  input: { tx: number; ty: number },
   now = new Date(),
 ): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
-  const tier = toSoilTier(input.tier);
 
   const area = CROP_FIELD_BEDS;
   const rect = soilTileRect(tx, ty);
@@ -5401,33 +5371,15 @@ export async function placeStackAcresSoilTile(
     );
   }
 
-  // Rule 1, in bags rather than Gold: the thing being spent leaves before the
-  // bed exists, and anything that stops the bed existing puts it back. No Gold
-  // moves here at all -- it left at the shop (`buyStackAcresSoil`).
-  const remaining = await adjustStackAcresSoilStock(profile.id, tier, -1);
-  if (remaining === null) {
-    throw new StackAcresRequestError(
-      `No ${soilTierDef(tier).label} left. Buy a bag from Ray's supply store first.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  let outcome: Awaited<ReturnType<typeof placeSoilTileRow>>;
-  try {
-    // The slots the crops are holding, so the new bed's order clears them --
-    // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
-    // memory store is the only one that needs the read, and the RPC does the
-    // same arithmetic in SQL.
-    outcome = await placeSoilTileRow(profile.id, tx, ty, tier, async () =>
-      (await listStackAcresUnits(profile.id))
-        .map((unit) => unit.soilSlot)
-        .filter((slot): slot is number => slot !== null),
-    );
-  } catch (error) {
-    await refundSoilBag(profile.id, tier);
-    throw error;
-  }
+  // The slots the crops are holding, so the new bed's order clears them --
+  // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
+  // memory store is the only one that needs the read, and the RPC does the
+  // same arithmetic in SQL.
+  const outcome = await placeSoilTileRow(profile.id, tx, ty, SOIL_DEFAULT_TIER, async () =>
+    (await listStackAcresUnits(profile.id))
+      .map((unit) => unit.soilSlot)
+      .filter((slot): slot is number => slot !== null),
+  );
   if (outcome.kind === "created") {
     // Breaking ground in the Crop Fields IS clearing them -- there is no
     // gate, no price and no modal any more, so the milestone the rest of the
@@ -5445,10 +5397,8 @@ export async function placeStackAcresSoilTile(
     return view(profile, now);
   }
 
-  // Every other outcome spent nothing: refund the bag. Both remaining
-  // outcomes ("occupied" and a lost race for the same bare cell) read as
-  // the same thing to the player -- there is already a bed there.
-  await refundSoilBag(profile.id, tier);
+  // Both remaining outcomes ("occupied" and a lost race for the same bare
+  // cell) read as the same thing to the player -- there is already a bed there.
   throw new StackAcresRequestError("There is already a bed there.", 409, {
     round: await snapshots(profile.id, now),
   });
@@ -5520,70 +5470,6 @@ export async function moveStackAcresSoilTileGroup(
   }
 
   return view(profile, now);
-}
-
-/**
- * Buys bags of one soil tier at Ray's supply store. Rule 1: the Gold leaves
- * before the bags exist, and a failed credit refunds it.
- *
- * A BAG IS `SOIL_PLOTS_PER_BAG` SQUARES, and the shelf counts squares: the
- * price is per bag, the stock that lands is `quantity * SOIL_PLOTS_PER_BAG`,
- * and `placeStackAcresSoilTile` spends one square at a time. Farms that
- * bought single-square bags before this keep exactly the beds they paid for.
- *
- * THE SHOP NEVER TOUCHES THE MAP. It sells soil; `placeStackAcresSoilTile`
- * decides where a square goes and spends it. That split is why this function has no
- * coordinate and no district check, and why a bought bag is never lost by
- * tapping the wrong ground -- a refused placement returns the bag to the shelf.
- *
- * The price is read from `SOIL_TIER_DEFS`, never from the request. An unknown
- * tier degrades to the cheapest via `toSoilTier`, so a hostile body can only
- * ever under-buy.
- */
-export async function buyStackAcresSoil(
-  token: string,
-  input: { tier?: unknown; quantity?: unknown },
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-  const tier = toSoilTier(input.tier);
-  const quantity = Math.trunc(typeof input.quantity === "number" ? input.quantity : 1);
-  if (!Number.isFinite(quantity) || quantity < 1 || quantity > SOIL_BAGS_PER_PURCHASE) {
-    throw new StackAcresRequestError(
-      `Buy between 1 and ${SOIL_BAGS_PER_PURCHASE} bags at a time.`,
-      400,
-    );
-  }
-  const cost = soilTierPrice(tier) * quantity;
-
-  const debited = await spendGoldByProfile(profile.id, cost);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `${quantity} x ${soilTierDef(tier).label} costs ${cost.toLocaleString()} Gold.`,
-      400,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  try {
-    const held = await adjustStackAcresSoilStock(profile.id, tier, quantity * SOIL_PLOTS_PER_BAG);
-    // A credit cannot go negative, so null here means the row moved under us
-    // rather than "not enough" -- either way no bags landed, so the Gold goes
-    // back.
-    if (held === null) throw new Error("Could not shelve that soil.");
-  } catch (error) {
-    await refundGold(profile.id, cost);
-    throw error;
-  }
-
-  return view(debited, now);
-}
-
-/** Puts one square of soil back after a placement that could not land. Never throws, for
- *  the same reason `refundGold` never does: this IS the failure path, and a
- *  second failure here would hide the first. */
-async function refundSoilBag(profileId: string, tier: SoilTier): Promise<void> {
-  await adjustStackAcresSoilStock(profileId, tier, 1).catch(() => null);
 }
 
 /**

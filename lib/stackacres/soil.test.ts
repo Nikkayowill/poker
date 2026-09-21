@@ -21,7 +21,6 @@ import {
   HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
   SOIL_TILE,
-  SOIL_BAG_PRICE_GOLD,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
@@ -664,17 +663,6 @@ describe("the farmhand's view of the field", () => {
     const empty = soilTileState({ tx: 99, ty: 99, order: 9, origin: "purchased" }, crops);
     expect(empty.occupied).toBe(false);
     expect(empty.crops).toEqual([]);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/* Placing a purchased tile costs Gold, flat                          */
-/* ------------------------------------------------------------------ */
-
-describe("SOIL_BAG_PRICE_GOLD", () => {
-  it("is a flat, positive price with no ladder", () => {
-    expect(SOIL_BAG_PRICE_GOLD).toBeGreaterThan(0);
-    expect(Number.isInteger(SOIL_BAG_PRICE_GOLD)).toBe(true);
   });
 });
 

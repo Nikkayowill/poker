@@ -78,7 +78,6 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
     soilTiles: [],
-    soilStock: {},
     forageNodes: [],
     inventory: {},
     wheatPlots: [],
@@ -562,13 +561,12 @@ describe("predictStackAcresAction: buying and selling stock", () => {
 describe("predictStackAcresAction: laying a soil tile", () => {
   const inFields = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
 
-  it("lays the bed, spends the bag, and clears the Crop Fields with it", () => {
+  it("lays the bed, and clears the Crop Fields with it", () => {
     const patch = predictStackAcresAction(
       { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
-      ctx({ soilStock: { dirt: 2 } }),
+      ctx(),
     );
     expect(patch?.soilTiles).toHaveLength(1);
-    expect(patch?.soilStock).toEqual({ dirt: 1 });
     // Breaking the first ground out there IS the unlock, so the browser shows
     // it straight away rather than waiting for the round trip.
     expect(patch?.cropFieldsUnlocked).toBe(true);
@@ -577,17 +575,18 @@ describe("predictStackAcresAction: laying a soil tile", () => {
   it("does not claim the Crop Fields for a bed laid on the Homestead", () => {
     const patch = predictStackAcresAction(
       { action: "place-soil-tile", tx: HOME_STARTER_ORIGIN.tx, ty: HOME_STARTER_ORIGIN.ty },
-      ctx({ soilStock: { dirt: 1 } }),
+      ctx(),
     );
     expect(patch?.soilTiles).toHaveLength(1);
     expect(patch?.cropFieldsUnlocked).toBe(false);
   });
 
-  it("refuses with no bag of that tier on the shelf", () => {
+  it("refuses a coordinate that already has a bed", () => {
+    const bed = { tx: inFields.tx, ty: inFields.ty, order: 0, origin: "purchased" as const };
     expect(
       predictStackAcresAction(
         { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
-        ctx({ soilStock: {} }),
+        ctx({ soilTiles: [bed] }),
       ),
     ).toBeNull();
   });

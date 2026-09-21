@@ -99,7 +99,7 @@ import {
   type SoilTile,
 } from "./soil";
 import { enrichesSoil, isSoilTileEnriched } from "./soil-enrich";
-import { SOIL_DEFAULT_TIER, type SoilStock } from "./soil-tiers";
+import { SOIL_DEFAULT_TIER } from "./soil-tiers";
 import {
   optimisticallyFedUnit,
   optimisticallyRestartedUnit,
@@ -172,10 +172,6 @@ export interface FarmPredictContext {
   /** This profile's placed soil beds, straight off the component's own state.
    *  What `place-soil-tile`/`remove-soil-tile` add to or remove from. */
   soilTiles: readonly SoilTile[];
-  /** Unplaced bags per tier, straight off the component's own state. What
-   *  `place-soil-tile` spends one of -- see ./soil-tiers.ts's own header on
-   *  why a bag and Gold are never the same debit. */
-  soilStock: SoilStock;
   /** The forage bushes, straight off the component's own state. What
    *  `gather-forage` reads to know which seed a bush is carrying -- the crop
    *  is in the snapshot precisely so this guess is the real answer rather
@@ -211,7 +207,6 @@ export interface FarmStatePatch {
   greenhouseBuilt?: boolean;
   cropFieldsUnlocked?: boolean;
   soilTiles?: SoilTile[];
-  soilStock?: SoilStock;
   forageNodes?: ForageNodeSnapshot[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
@@ -684,9 +679,6 @@ export function predictStackAcresAction(
       return { greenhouseBuilt: true };
     }
     case "place-soil-tile": {
-      const tier = body.tier ?? SOIL_DEFAULT_TIER;
-      const held = ctx.soilStock[tier] ?? 0;
-      if (held < 1) return null;
       const soil = createSoilMap(ctx.soilTiles);
       // Every slot a crop currently holds, so the new bed's order clears
       // them all -- see `nextSoilOrder` on why max-plus-one over the beds
@@ -694,11 +686,10 @@ export function predictStackAcresAction(
       const claimed = ctx.units
         .map((unit) => unit.soilSlot)
         .filter((slot): slot is number => slot !== null);
-      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, tier, claimed);
+      const result = plantSoilTile(soil, { tx: body.tx, ty: body.ty }, SOIL_DEFAULT_TIER, claimed);
       if (result.kind !== "created") return null;
       return {
         soilTiles: [...ctx.soilTiles, result.tile],
-        soilStock: { ...ctx.soilStock, [tier]: held - 1 },
         // Breaking ground in the Crop Fields IS clearing them, and the server
         // records the flag off this same placement -- so the browser predicts
         // it rather than waiting a round trip to find out the land is his.
@@ -711,8 +702,7 @@ export function predictStackAcresAction(
     case "remove-soil-tile": {
       const existing = ctx.soilTiles.find((t) => t.tx === body.tx && t.ty === body.ty);
       if (!existing) return null;
-      // No bag comes back -- a placed tile is a spent sink, not a refundable
-      // one (see soil.ts's own `SOIL_BAG_PRICE_GOLD` doc comment).
+      // Nothing is refunded; breaking ground was free to begin with.
       const soilTiles = ctx.soilTiles.filter((t) => t.tx !== body.tx || t.ty !== body.ty);
       // A crop standing on the lifted bed goes with it -- the same
       // `soilSlotOnTile` question stackacres-service.ts asks server-side

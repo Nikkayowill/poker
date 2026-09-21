@@ -26,8 +26,6 @@ function ctx(over: Partial<BeltContext> = {}): BeltContext {
     feed: 5,
     gold: 1000,
     nowMs: NOW,
-    soilStock: { dirt: 3 },
-    tier: "dirt",
     seed: "carrot",
     seedsHeld: 4,
     ...over,
@@ -79,7 +77,7 @@ describe("the hand", () => {
 
 describe("the hoe", () => {
   it("lays a bed on bare field ground", () => {
-    expect(resolveBeltAction("hoe", bareGround, ctx())).toEqual({ kind: "till", tx: 4, ty: 7, tier: "dirt" });
+    expect(resolveBeltAction("hoe", bareGround, ctx())).toEqual({ kind: "till", tx: 4, ty: 7 });
   });
 
   it("asks before lifting a bed that is already down, then lifts it", () => {
@@ -101,10 +99,11 @@ describe("the hoe", () => {
     expect(resolveBeltAction("hoe", offField, ctx())).toMatchObject({ kind: "nothing", why: "blocked" });
   });
 
-  it("refuses when the barn has no soil of the tier in hand", () => {
-    expect(resolveBeltAction("hoe", bareGround, ctx({ soilStock: { dirt: 0 } }))).toMatchObject({
-      kind: "nothing",
-      why: "blocked",
+  it("digs with nothing else in hand: the hoe is free", () => {
+    expect(resolveBeltAction("hoe", bareGround, ctx({ gold: 0, seedsHeld: 0 }))).toEqual({
+      kind: "till",
+      tx: 4,
+      ty: 7,
     });
   });
 });

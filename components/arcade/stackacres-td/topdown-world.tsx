@@ -223,7 +223,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),
-      placeSoilAt: (x, y, tier) => sceneRef.current?.placeSoilAt(x, y, tier) ?? false,
+      placeSoilAt: (x, y) => sceneRef.current?.placeSoilAt(x, y) ?? false,
       removeSoilAt: (x, y) => sceneRef.current?.removeSoilAt(x, y) ?? false,
       previewSoilAt: (world) => sceneRef.current?.previewSoilAt(world),
       tapAt: (clientX, clientY) => sceneRef.current?.tapAt(clientX, clientY),

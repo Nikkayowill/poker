@@ -44,8 +44,8 @@ export interface StackAcresUnitRow {
   /**
    * Crops only. Null for livestock, which drink from their own trough.
    *
-   * Null on a CROP means seed nobody has watered: sown onto a bed no pipe or
-   * hydro soil reaches, and not watered since. Its growing clock has not
+   * Null on a CROP means seed nobody has watered: sown onto a bed no water
+   * source reaches, and not watered since. Its growing clock has not
    * started yet (see `seedClockOnFirstWater`).
    */
   lastWateredAt: string | null;

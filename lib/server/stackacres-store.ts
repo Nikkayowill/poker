@@ -835,8 +835,7 @@ export async function retireStackAcresUnit(current: StoredStackAcresUnit): Promi
  * Deletes a unit row outright -- any status, permanent or not -- version-
  * guarded. No refund: see `removeStackAcresSoilTile` in
  * stackacres-service.ts, the only caller. Lifting the bed a crop stands on
- * takes the crop with it, the same spent-sink rule the bed itself already
- * follows (see `SOIL_BAG_PRICE_GOLD`'s own doc comment on soil.ts). A lost
+ * takes the crop with it. A lost
  * race -- the unit already moved on, harvested or cleared or retired out
  * from under this -- returns null rather than throwing, the same contract
  * `retireStackAcresUnit`/`clearStackAcresMuck` above already keep.

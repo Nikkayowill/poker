@@ -96,8 +96,7 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   await admitFarmer(farmerContext, adminContext.request);
   // No Crop Fields unlock to buy any more -- the land is walked onto and
   // broken with the hoe, which is what records the flag. All this farm needs
-  // is soil to lay and seed to sow.
-  await farmAction(farmerContext, { action: "buy-soil", tier: "dirt", quantity: 4 });
+  // is seed to sow.
   await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
   await before(farmerContext);
 
@@ -166,7 +165,7 @@ test("an established crop watered on a slow server turns the moment the can is u
   // Hoed and sown over the API, so the page opens on a seed that is already a
   // real row on the server: the plain case the original complaint was about.
   const farm = await openSlowFarm(browser, async (context) => {
-    await farmAction(context, { action: "place-soil-tile", tx: BED_TILE.tx, ty: BED_TILE.ty, tier: "dirt" });
+    await farmAction(context, { action: "place-soil-tile", tx: BED_TILE.tx, ty: BED_TILE.ty });
     await farmAction(context, { action: "stock", stock: "carrot", tx: BED_TILE.tx, ty: BED_TILE.ty });
   });
   try {

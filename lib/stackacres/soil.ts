@@ -253,8 +253,7 @@ export type PlantSoilTileResult =
   | { kind: "occupied" };
 
 /**
- * Buys one bed: a one-tile plot at `coord`, tier-priced
- * (`SOIL_BAG_PRICE_GOLD`-scaled per tier), refused outright if a bed
+ * Breaks one bed: a free one-tile plot at `coord`, refused outright if a bed
  * already stands there.
  *
  * USED TO grow an existing bed by one more of its dozen planting squares
@@ -679,24 +678,6 @@ export function isHomeStarterSoilTile(tx: number, ty: number): boolean {
   return tx >= HOME_STARTER_ORIGIN.tx && tx < HOME_STARTER_ORIGIN.tx + HOME_STARTER_COLS &&
     ty >= HOME_STARTER_ORIGIN.ty && ty < HOME_STARTER_ORIGIN.ty + Math.ceil(HOME_STARTER_TILE_COUNT / HOME_STARTER_COLS);
 }
-
-/**
- * Gold cost of one PLAIN purchased bed -- `SOIL_DEFAULT_TIER`'s own price,
- * restated here because this constant predates tiers. soil-tiers.test.ts
- * holds the two equal, so repricing the plain bed in one place cannot drift
- * from the other.
- *
- * Flat per bed -- no ladder, no scaling with how many a player already owns.
- * A bed still does not gate how many crops can be grown (see the file
- * header), so there is no economy reason for a rising price the way land or
- * capacity have one. What a bed is no longer is purely cosmetic: since
- * ./soil-tiers.ts, the TIER a bed is bought at can shorten a crop's cycle and
- * water its own tile. Those effects belong to the tier, not to this price,
- * and both are applied outside this module -- growth is baked into `ready_at`
- * at sow, hydration is resolved by the irrigation recompute. Nothing in THIS
- * file reads a tier for anything but passing it along.
- */
-export const SOIL_BAG_PRICE_GOLD = 100;
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice -- one plant per bed                               */

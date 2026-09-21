@@ -2212,7 +2212,6 @@ describe("the currency wall", () => {
       "buy-cutter",
       "buy-feed",
       "buy-seed",
-      "buy-soil",
       "buy-stock",
       "catch-fish",
       "chop-tree",
@@ -2309,15 +2308,9 @@ describe("the currency wall", () => {
     // buys an irrigation tile, refunded only when the tile cannot land;
     // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
     // is spent). Irrigation's own hydration -- a wet pipe watering a crop --
-    // moves nothing, the same as tapping `water`. SOIL IS THE ONE PAIR THAT
-    // SPLITS ITS SPEND FROM ITS PLACEMENT: `buy-soil` is the sink (tier price
-    // x quantity, refunded only if the bags cannot be shelved) and it never
-    // touches a coordinate, while `place-soil-tile` moves NO GOLD AT ALL --
-    // it spends a bag off `homestead_soil_stock` and hands the bag back if
-    // the cell is taken. So soil costs the player exactly once, at Ray's
-    // shelf, and a mis-tap on the map can never cost Gold. `remove-soil-tile`
-    // moves neither Gold nor a bag: a laid bed is spent, matching
-    // `remove-pipe`. `move-soil-tile-group` moves no Gold either -- a
+    // moves nothing, the same as tapping `water`. SOIL IS FREE:
+    // `place-soil-tile` and `remove-soil-tile` move no Gold and no stock, since
+    // the hoe costs nothing. `move-soil-tile-group` moves no Gold either -- a
     // hold-tap relocation only rewrites tx/ty on rows that already exist
     // (see moveStackAcresSoilTileGroup's own header), nothing is spent and
     // nothing is refunded. `give-gift` moves no Gold

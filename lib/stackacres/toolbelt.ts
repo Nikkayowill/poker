@@ -22,7 +22,6 @@
  */
 
 import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
-import { SOIL_DEFAULT_TIER, type SoilTier } from "./soil-tiers";
 import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
@@ -50,7 +49,7 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
   },
   hoe: {
     label: "Hoe",
-    hint: "Break new ground. Lays one bed from the soil in your barn.",
+    hint: "Break new ground. Tap bare grass to dig a bed.",
     icon: "ico-hoe",
   },
   can: {
@@ -90,9 +89,6 @@ export interface BeltContext {
   shelfFeed?: StackAcresInventory;
   gold: number;
   nowMs: number;
-  /** Beds on the shelf, per tier, and which tier the hoe lays. */
-  soilStock: Partial<Record<SoilTier, number>>;
-  tier: SoilTier;
   /** The crop on the seed wheel, and how many of it are held. Livestock is bought
    *  from a shop, never sown, so the pouch only ever holds a crop. */
   seed: StackAcresCrop | null;
@@ -112,7 +108,7 @@ export type BeltAction =
   | { kind: "feed"; unitId: string }
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
-  | { kind: "till"; tx: number; ty: number; tier: SoilTier }
+  | { kind: "till"; tx: number; ty: number }
   /** The hoe on a bare bed, first press: ask before lifting it. */
   | { kind: "arm-lift"; tx: number; ty: number; reason: string }
   | { kind: "lift"; tx: number; ty: number }
@@ -191,8 +187,7 @@ function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
     if (target.armed) return { kind: "lift", tx, ty };
     return { kind: "arm-lift", tx, ty, reason: "Press again to lift this bed." };
   }
-  if ((ctx.soilStock[ctx.tier] ?? 0) < 1) return blocked("No soil left in the barn. Buy some from Ray.");
-  return { kind: "till", tx, ty, tier: ctx.tier };
+  return { kind: "till", tx, ty };
 }
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
@@ -203,6 +198,3 @@ function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);
   return { kind: "plant", tx: target.tile.tx, ty: target.tile.ty, stock: ctx.seed };
 }
-
-/** The tier the hoe lays when nothing else has been picked. */
-export const BELT_DEFAULT_TIER = SOIL_DEFAULT_TIER;

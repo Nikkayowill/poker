@@ -22,7 +22,6 @@ import type { MachineItemId } from "./machine-items";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
-import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
 import type { TravelerId } from "./story/travelers";
@@ -123,12 +122,9 @@ export type Action =
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
-  // coordinates, not world units -- see soilTileAt. Gold moves at the shop
-  // (`buy-soil`, priced from SOIL_TIER_DEFS server-side) and nowhere else:
-  // `place-soil-tile` spends a BAG of the named tier, and `remove-soil-tile`
-  // spends nothing and refunds nothing.
-  | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
-  | { action: "buy-soil"; tier: SoilTier; quantity: number }
+  // coordinates, not world units -- see soilTileAt. Breaking ground is free:
+  // neither action spends or refunds anything.
+  | { action: "place-soil-tile"; tx: number; ty: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
@@ -205,8 +201,7 @@ export function intentOf(body: Action): string {
   // A seed purchase for one crop must never dedupe against or block a
   // purchase of a different crop -- checked before the generic fallback,
   // which would otherwise collapse every crop's buy onto one shared
-  // "buy-seed" intent the way soil's own tier-blind intent already does
-  // (a gap that is fine at 3 soil tiers and would not be at 22 crops).
+  // "buy-seed" intent.
   if ("crop" in body) return `${body.action}:${body.crop}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
@@ -281,8 +276,6 @@ export function purchaseCueText(body: Action): string | null {
       return "Capacity expanded!";
     case "buy-feed":
       return "Feed delivered!";
-    case "buy-soil":
-      return "Soil delivered!";
     case "buy-seed":
       return "Seeds delivered!";
     case "upgrade-tool":

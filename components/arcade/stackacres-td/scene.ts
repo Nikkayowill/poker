@@ -1723,11 +1723,11 @@ export class TopdownScene extends Phaser.Scene {
     return [...this.soil];
   }
 
-  placeSoilAt(x: number, y: number, tier?: SoilTier): boolean {
+  placeSoilAt(x: number, y: number): boolean {
     const { tx, ty } = soilTileAt(x, y);
     if (this.soil.some((t) => t.tx === tx && t.ty === ty)) return false;
     const order = this.soil.reduce((max, t) => Math.max(max, t.order), 0) + 1;
-    this.setSoil([...this.soil, { tx, ty, order, origin: "purchased", tier }]);
+    this.setSoil([...this.soil, { tx, ty, order, origin: "purchased" }]);
     return true;
   }
 

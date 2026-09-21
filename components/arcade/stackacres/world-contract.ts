@@ -13,7 +13,6 @@ import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
-import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
@@ -231,7 +230,7 @@ export interface StackAcresWorldApi {
    *  must always reflect. */
   soilTiles: () => SoilTile[];
   setSoil: (tiles: readonly SoilTile[]) => void;
-  placeSoilAt: (x: number, y: number, tier?: SoilTier) => boolean;
+  placeSoilAt: (x: number, y: number) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
   /** Outlines the tile a pending bed will actually land on, snapped through
    *  the same `soilTileAt` the placement uses. `null` clears it. Pushed from

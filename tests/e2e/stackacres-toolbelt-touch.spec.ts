@@ -291,12 +291,8 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
     await admitFarmer(farmerContext, adminContext.request, 400_000);
 
     // The Crop Fields are open ground now -- nothing is paid to get in, and
-    // laying the first bed out there is itself what clears them. Soil is the
-    // only thing this farm still has to buy.
-    const soil = await farmerContext.request.post("/api/stackacres/actions", {
-      data: { action: "buy-soil", tier: "dirt", quantity: 4 },
-    });
-    expect(soil.ok(), "could not buy soil").toBe(true);
+    // laying the first bed out there is itself what clears them. The hoe is
+    // free, so there is nothing to buy first.
 
     const { page, errors } = await openFarm(farmerContext);
 

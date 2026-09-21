@@ -199,6 +199,25 @@ export function hasSoilTile(soil: SoilMap, tx: number, ty: number): boolean {
   return soil.has(soilTileKey(tx, ty));
 }
 
+/**
+ * Stardew's `HoeDirt` derives its dirt frame from a four-bit cardinal
+ * neighbour mask. Keep that rule in the domain layer so the renderer is not
+ * the authority for how beds connect. Diagonal beds do not connect.
+ */
+export const SOIL_NEIGHBOR_N = 1;
+export const SOIL_NEIGHBOR_E = 2;
+export const SOIL_NEIGHBOR_S = 4;
+export const SOIL_NEIGHBOR_W = 8;
+
+export function soilNeighborMask(soil: SoilMap, tx: number, ty: number): number {
+  let mask = 0;
+  if (hasSoilTile(soil, tx, ty - 1)) mask |= SOIL_NEIGHBOR_N;
+  if (hasSoilTile(soil, tx + 1, ty)) mask |= SOIL_NEIGHBOR_E;
+  if (hasSoilTile(soil, tx, ty + 1)) mask |= SOIL_NEIGHBOR_S;
+  if (hasSoilTile(soil, tx - 1, ty)) mask |= SOIL_NEIGHBOR_W;
+  return mask;
+}
+
 /** Whether a world point is standing on placed soil. */
 export function onSoil(soil: SoilMap, x: number, y: number): boolean {
   const { tx, ty } = soilTileAt(x, y);

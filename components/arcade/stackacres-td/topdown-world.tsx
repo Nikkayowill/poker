@@ -233,7 +233,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       // A drag pans and a pinch zooms (scene.ts's free-camera section); these are the same moves without a gesture.
       zoomBy: (factor) => sceneRef.current?.zoomBy(factor),
       recenter: () => sceneRef.current?.recenter(),
-      farmerAction: (action) => sceneRef.current?.farmerAction(action),
+      farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
       // Not drawn yet (see this file's header).
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),

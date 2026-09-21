@@ -119,7 +119,7 @@ const blocked = (reason: string): BeltAction => ({ kind: "nothing", reason, why:
 const waiting = (reason: string): BeltAction => ({ kind: "nothing", reason, why: "waiting" });
 
 /** Which farmer animation acts a belt action out, or null when nothing is sent. */
-export function beltAnimation(action: BeltAction): "water" | "harvest" | "plant" | null {
+export function beltAnimation(action: BeltAction): "water" | "harvest" | "hoe" | "plant" | null {
   switch (action.kind) {
     case "water":
       return "water";
@@ -127,8 +127,9 @@ export function beltAnimation(action: BeltAction): "water" | "harvest" | "plant"
     case "clear":
       return "harvest";
     case "till":
-    case "plant":
     case "lift":
+      return "hoe";
+    case "plant":
       return "plant";
     default:
       return null;

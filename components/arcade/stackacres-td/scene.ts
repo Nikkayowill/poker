@@ -37,7 +37,7 @@ import {
   type CastPhase,
   type CastSide,
 } from "@/lib/stackacres-td/fishing-cast";
-import { SOIL_TILE, createSoilMap, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
+import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { bedIsWet, soilTint } from "@/lib/stackacres/soil-moisture";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
@@ -176,12 +176,13 @@ const STANDING: Record<Dir, string> = { down: "1", up: "5", left: "9", right: "1
 
 /**
  * Which rig animation acts out each drop, and how many extra times it plays.
- * Planting is the hoe stroke (the rig's `chop`): the harvest pose pulls a
- * carrot up, which would read as the opposite of sowing.
+ * Hoeing and planting share the rig's `chop` motion, but remain separate
+ * actions so the hoe can add a ground impact without making planting dusty.
  */
 const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
   water: { anim: "water", repeat: 1 },
   harvest: { anim: "harvest", repeat: 0 },
+  hoe: { anim: "chop", repeat: 0 },
   plant: { anim: "chop", repeat: 0 },
 };
 
@@ -832,8 +833,7 @@ export class TopdownScene extends Phaser.Scene {
       this.areaName === "oldfields" ? !inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE }) : inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE });
     for (const tile of this.soil) {
       if (!onThisMap(tile)) continue;
-      const has = (dx: number, dy: number) => map.has(soilTileKey(tile.tx + dx, tile.ty + dy));
-      const mask = (has(0, -1) ? 1 : 0) | (has(1, 0) ? 2 : 0) | (has(0, 1) ? 4 : 0) | (has(-1, 0) ? 8 : 0);
+      const mask = soilNeighborMask(map, tile.tx, tile.ty);
       const at = toMap(tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
       const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
@@ -1374,13 +1374,39 @@ export class TopdownScene extends Phaser.Scene {
    * one continuous job rather than a row of beds changing on their own; `playWalk`
    * stands back for the duration (see `acting`).
    */
-  farmerAction(action: FarmerAction): void {
+  farmerAction(action: FarmerAction, impact?: TapPoint): void {
     if (!this.booted || this.cast) return;
     const { anim, repeat } = ACTIONS[action];
+    if (action === "hoe" && impact) this.hoeImpactAt(this.cssToMap(impact.x, impact.y));
     this.stand();
     this.acting = true;
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
     this.player.play({ key: `${anim}_${this.facing}`, repeat });
+  }
+
+  /** A small, cheap ground response for the hoe stroke. It is local-only juice:
+   * the server still decides whether the bed was actually created or lifted. */
+  private hoeImpactAt(at: Point): void {
+    const ring = this.keep(this.add.ellipse(at.x, at.y, 7, 3, 0xc58a55, 0.45).setDepth(at.y + 0.2));
+    const clods = [-4, 0, 4].map((dx, index) =>
+      this.keep(
+        this.add
+          .rectangle(at.x + dx, at.y - 1, 2, 2, index === 1 ? 0xe0ad6c : 0x9b653d, 0.9)
+          .setDepth(at.y + 0.3),
+      ),
+    );
+    this.tweens.add({
+      targets: [ring, ...clods],
+      alpha: 0,
+      scaleX: 1.8,
+      scaleY: 1.8,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => {
+        ring.destroy();
+        for (const clod of clods) clod.destroy();
+      },
+    });
   }
 
   private fire(target: Target): void {

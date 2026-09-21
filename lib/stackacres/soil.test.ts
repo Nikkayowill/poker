@@ -37,6 +37,7 @@ import {
   removeSoilTile,
   soilCapacity,
   soilSignedDistance,
+  soilNeighborMask,
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotPoint,
@@ -118,6 +119,7 @@ describe("restated constants stay tied to their sources", () => {
     expect(SOIL_EDGE_BAND).toBeLessThan(SOIL_TILE);
   });
 });
+
 
 /* ------------------------------------------------------------------ */
 /* The coordinate map                                                  */
@@ -214,6 +216,33 @@ describe("the coordinate map tracks what was placed", () => {
       { tx: 5, ty: 5, order: 1, origin: "starter" },
     ]);
     expect(orderedSoilTiles(soil).map((t) => t.order)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("soilNeighborMask", () => {
+  const tile = (tx: number, ty: number, order = 0): SoilTile => ({
+    tx,
+    ty,
+    order,
+    origin: "purchased",
+  });
+
+  it("uses Stardew's cardinal bit order", () => {
+    const soil = createSoilMap([
+      tile(0, 0),
+      tile(0, -1, 1),
+      tile(1, 0, 2),
+      tile(0, 1, 3),
+      tile(-1, 0, 4),
+    ]);
+
+    expect(soilNeighborMask(soil, 0, 0)).toBe(15);
+  });
+
+  it("ignores diagonal beds", () => {
+    const soil = createSoilMap([tile(0, 0), tile(1, 1, 1)]);
+
+    expect(soilNeighborMask(soil, 0, 0)).toBe(0);
   });
 });
 

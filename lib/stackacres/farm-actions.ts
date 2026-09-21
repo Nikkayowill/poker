@@ -16,7 +16,6 @@ import type { StackAcresBuyableCutter } from "./cutters";
 import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
-import type { MidnightMerchantItemId } from "./midnight-merchant";
 import type { NpcId } from "./friendship";
 import type { CellarItem } from "./aging";
 import type { MachineItemId } from "./machine-items";
@@ -120,7 +119,6 @@ export type Action =
   // `activate-synergy-perk` moves no Gold, only the loadout.
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
-  | { action: "midnight-merchant-buy"; itemId: MidnightMerchantItemId }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
   // coordinates, not world units -- see soilTileAt. Gold moves at the shop
   // (`buy-soil`, priced from SOIL_TIER_DEFS server-side) and nowhere else:
@@ -300,8 +298,6 @@ export function purchaseCueText(body: Action): string | null {
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
-    case "midnight-merchant-buy":
-      return "Bought!";
     case "clear-sector":
       return "Clearing the land…";
     case "unlock-crop-fields":

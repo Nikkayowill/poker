@@ -2212,7 +2212,6 @@ describe("the currency wall", () => {
       "fulfill-contract",
       "give-gift",
       "harvest-crossbreed",
-      "midnight-merchant-buy",
       "mine-stone",
       "move-soil-tile-group",
       "place-machine",
@@ -2285,10 +2284,7 @@ describe("the currency wall", () => {
     // roll `collect` already makes, never a new payer. `plant-crossbreed` spends
     // (a seed or Gold, the same split `stock` takes) and `harvest-crossbreed`
     // moves no Gold at all: a hybrid is credited to its own inventory table
-    // inside the settlement RPC, never to the purse. `midnight-merchant-buy` spends too, via
-    // `redeemMidnightMerchantItem`, which reaches `spend_gold_by_profile`
-    // inside its own row-locked RPC (see
-    // supabase/migrations/20260905130000_stackacres_midnight_merchant.sql).
+    // inside the settlement RPC, never to the purse.
     // `prestige-reset` moves no Gold either; what it moves is the whole grid,
     // irreversibly, for a permanent multiplier on every future `sell`.
     // `place-pipe` is a pure sink, same category as `place-machine` -- it

@@ -151,5 +151,5 @@ Not built yet, in the order they should land:
 5. Remove `visitors.ts`, `stackacres-visitor-greeting.tsx`, and the ten
    `visitor*` prop kinds once the scene draws the new cast.
 
-The Pixel Pilgrim, the Midnight Merchant, the farmhand, and Ray's gift
+The Pixel Pilgrim, the farmhand, and Ray's gift
 friendship are separate systems and stay as they are.

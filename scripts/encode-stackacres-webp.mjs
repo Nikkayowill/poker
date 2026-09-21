@@ -21,7 +21,7 @@ import { readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** The two directories that hold the farm's plates. */
-const ROOTS = ["public/stackacres/sprites", "public/stackacres/tiles"];
+const ROOTS = ["public/stackacres/sprites"];
 
 /**
  * True pixel art: hard edges a lossy encoder would blur, and small enough
@@ -41,7 +41,6 @@ const PIXEL_ART = new Set([
   "traveler-wes.png",
   "traveler-bea.png",
   "traveler-leo.png",
-  "midnight-merchant.png",
 ]);
 
 /**

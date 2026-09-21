@@ -318,18 +318,6 @@ import {
 import { bumpStackAcresRevision, readStackAcresRevision } from "./stackacres-revision-store";
 import { creditGoldByProfile, ensureProfile, spendGoldByProfile } from "./profile-store";
 import {
-  readMidnightMerchantVisit,
-  redeemMidnightMerchantItem,
-  spawnMidnightMerchantVisit,
-} from "./midnight-merchant-store";
-import {
-  MIDNIGHT_MERCHANT_WINDOW_MS,
-  isMidnightMerchantItemId,
-  shouldSpawnMidnightMerchantOnCriticalHarvest,
-  type MidnightMerchantItemId,
-  type MidnightMerchantSnapshot,
-} from "@/lib/stackacres/midnight-merchant";
-import {
   critBonusQuantity,
   nextToolTier,
   rollHarvestCrit,
@@ -703,11 +691,6 @@ export interface StackAcresView {
    *  the same "every key present, missing means never started" posture
    *  `secretDonations` above already takes for a never-donated item. */
   blueprints: Record<BlueprintId, BlueprintView>;
-  /** The Midnight Merchant's current visit, or null when the NPC is not on
-   *  the lot right now. See lib/stackacres/midnight-merchant.ts -- this is
-   *  the ENTIRE surface the client's own render manager is allowed to trust;
-   *  a snapshot here is server-confirmed, never a local guess. */
-  midnightMerchant: MidnightMerchantSnapshot | null;
   /** The Prestige Reset Valve's permanent state: how many times it has been
    *  pulled, the live harvest multiplier it bought, and how much further
    *  gross production is needed before it can be pulled again. See
@@ -1018,11 +1001,10 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   // slot does nothing; `listDrones` must never be called a second time here,
   // or every live-Supabase view() pays for a real, wasted extra round trip
   // whose result nothing reads.
-  const [batch, activeSynergies, midnightMerchant, lifetimeGross, woodNodeStates, stoneNodeRows, fallback] =
+  const [batch, activeSynergies, lifetimeGross, woodNodeStates, stoneNodeRows, fallback] =
     await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
     listActiveSynergyArchetypes(profile.id),
-    readMidnightMerchantVisit(profile.id, now),
     readStackAcresLifetimeGross(profile.id),
     // Not part of the big batch RPC (see this file's own header on why the
     // three reads above aren't either) -- a small, fixed-size table read
@@ -1289,7 +1271,6 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     greenhouseBuilt,
     cropFieldsUnlocked,
     blueprints,
-    midnightMerchant,
     prestige: {
       prestigeCount: prestige.prestigeCount,
       multiplier: prestige.multiplier,
@@ -1467,14 +1448,6 @@ export type StackAcresActionResult = StackAcresView & {
    *  this specific call just do" confirmation a toast reads off of. */
   synergyUnlock?: unknown;
   synergyActivate?: unknown;
-  /** Set by `buyFromMidnightMerchant` on a successful purchase; every other
-   *  action leaves this undefined. */
-  midnightMerchantPurchase?: {
-    itemId: string;
-    pricePaid: number;
-    purchaseStreak: number;
-    remaining: number;
-  };
   /** Set by `prestigeResetStackAcres` to what THIS reset just bought -- never
    *  named `prestige`, which is StackAcresView's own always-present current
    *  standing and would collide with it in this intersection. */
@@ -1566,9 +1539,6 @@ function replayDelta(result: StackAcresActionResult): Record<string, unknown> | 
   if (result.discovery !== undefined) delta.discovery = result.discovery;
   if (result.synergyUnlock !== undefined) delta.synergyUnlock = result.synergyUnlock;
   if (result.synergyActivate !== undefined) delta.synergyActivate = result.synergyActivate;
-  if (result.midnightMerchantPurchase !== undefined) {
-    delta.midnightMerchantPurchase = result.midnightMerchantPurchase;
-  }
   if (result.prestigeReset !== undefined) delta.prestigeReset = result.prestigeReset;
   if (result.forgeResult !== undefined) delta.forgeResult = result.forgeResult;
   if (result.crossbreedResult !== undefined) delta.crossbreedResult = result.crossbreedResult;
@@ -3030,68 +3000,6 @@ export async function buyStackAcresFeed(
 }
 
 /**
- * Buys one unit of `itemId` from the caller's currently-active Midnight
- * Merchant visit, at whatever price the visit's own purchase streak dictates
- * (see lib/stackacres/midnight-merchant.ts's `priceForNextPurchase`).
- *
- * UNLIKE `buyStackAcresFeed` just above, this is not a debit-then-create pair
- * needing its own refund-on-failure: `redeemMidnightMerchantItem` reaches a
- * SINGLE RPC (`redeem_midnight_merchant_item`) that locks the visit, prices
- * the purchase, spends the Gold, and decrements stock all inside one Postgres
- * transaction. There is nothing here for a thrown error between two writes to
- * leave half-applied, so this function has no `refundGold` call to make --
- * that is a property of the RPC's own design, not a shortcut being taken.
- *
- * Every refusal reason the RPC can return becomes a distinct, specific
- * message rather than one generic "could not buy that" -- a player who reads
- * "sold out" and one who reads "too expensive" need different next actions,
- * and folding them into one string would cost the storefront the ability to
- * tell them apart.
- */
-export async function buyFromMidnightMerchant(
-  token: string,
-  itemId: string,
-  now = new Date(),
-): Promise<StackAcresActionResult> {
-  if (!isMidnightMerchantItemId(itemId)) {
-    throw new StackAcresRequestError("The Midnight Merchant doesn't carry that.", 400);
-  }
-  const profile = await ensureProfile(token);
-
-  const result = await redeemMidnightMerchantItem(
-    profile.id,
-    itemId as MidnightMerchantItemId,
-    spendGoldByProfile,
-    now,
-  );
-
-  if (!result.success) {
-    const round = await snapshots(profile.id, now);
-    if (result.reason === "no_merchant") {
-      throw new StackAcresRequestError("The Midnight Merchant has already moved on.", 409, { round });
-    }
-    if (result.reason === "sold_out") {
-      throw new StackAcresRequestError("That's the last one -- already sold.", 409, { round });
-    }
-    throw new StackAcresRequestError(
-      `That costs ${(result.pricePaid ?? 0).toLocaleString()} Gold.`,
-      400,
-      { round },
-    );
-  }
-
-  return {
-    ...(await view(await ensureProfile(token), now)),
-    midnightMerchantPurchase: {
-      itemId,
-      pricePaid: result.pricePaid ?? 0,
-      purchaseStreak: result.purchaseStreak,
-      remaining: result.remaining,
-    },
-  };
-}
-
-/**
  * What feeding a unit right now pushes its readyAt to, and whether that write
  * also needs to catch the row's startedAt up to a fast-forwarded spoil cycle.
  * Shared by `feedStackAcres` and `feedStackAcresPen` so both feeding paths
@@ -4328,25 +4236,6 @@ export async function harvestStackAcres(
   // `critChance`, not the tool's own base chance, so an armed dice boost
   // actually applies.
   const critical = rollHarvestCrit(tool, Math.random, critChance);
-
-  // Step 3b. The Midnight Merchant: a second, independent roll riding the
-  // same critical roll above -- never a second guarded write, and never
-  // gold- or streak-affecting on its own (`spawnMidnightMerchantVisit` only
-  // ever seeds a fresh stock list at zero purchases; it cannot pay out or
-  // spend anything by itself). Best-effort and swallowed on failure for the
-  // same reason the dice-boost
-  // disarm below is: the harvest itself is already settled and credited, and
-  // an NPC failing to show up must not turn that into an error response.
-  // Idempotent against a visit already in progress (`spawnMidnightMerchantVisit`
-  // returns false rather than resetting one), so a player who is mid-visit
-  // when a second critical lands simply keeps the visit they have.
-  if (critical && shouldSpawnMidnightMerchantOnCriticalHarvest(Math.random)) {
-    try {
-      await spawnMidnightMerchantVisit(profile.id, "critical_harvest", MIDNIGHT_MERCHANT_WINDOW_MS, now);
-    } catch (error) {
-      console.error("stackacres.midnight_merchant_spawn_failed", { profileId: profile.id, error });
-    }
-  }
 
   if (diceBoostArmed) {
     // Disarmed unconditionally, whether or not the roll above actually

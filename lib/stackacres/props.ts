@@ -325,7 +325,7 @@ export const PROP_SHADOW: Record<PropKind, PropSize> = {
 /**
  * The shadow pool a standing chibi character reads at (the forty-unit build
  * every `PropSize`-height-38 human on this map shares -- see `PROP_SIZE`'s
- * own comment above): the Pixel Pilgrim and the Midnight Merchant both stand
+ * own comment above): the Pixel Pilgrim stands
  * on this exact pool rather than each owning a slightly different one, since
  * neither is a `PropKind` of its own (see MIDNIGHT_MERCHANT_SPOT's doc
  * comment in ./world.ts for why a temporary NPC and a shrine's own character

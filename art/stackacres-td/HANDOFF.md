@@ -20,7 +20,7 @@ The economy layer is already renderer-agnostic, which is what makes that possibl
 | Piece | State |
 |---|---|
 | Characters: Ray and the default player farmer | **Approved.** 6 animations × 4 directions, Aseprite files and sheets built |
-| The other 12 people (10 travelers, Pixel Pilgrim, Midnight Merchant) | **On the same rig** since Kayo's review ("same quality and same structure as Ray"): `characters/rig/wardrobe.py`. 96 frames each, sheets built, checks pass. Not yet reviewed |
+| The other 11 people (10 travelers, Pixel Pilgrim) | **On the same rig** since Kayo's review ("same quality and same structure as Ray"): `characters/rig/wardrobe.py`. 96 frames each, sheets built, checks pass. Not yet reviewed |
 | The Homestead (first area) | **Approved** ("maps look great"), then the exits, the Pilgrim, a stream with a bridge, chimney smoke and real crops were added. **Ray is NOT a ghost** (Kayo overturned that) |
 | Area map | Written in `AREAS.md`, Kayo: "otherwise the maps look great" |
 | The other 7 areas | **Drawn.** Kayo liked them; streams added to the Coast and a waterfall to the Mine |
@@ -114,7 +114,7 @@ Done (2026-09-16, PRs #539, #540 and the cutover):
 - **Two scenes** (`scene.ts`, since joined by the other areas and the barn and workshop
   interiors): the Homestead (barn = store and workshop = recipes, both walked into through
   their doors; signpost = contracts, well, dock, greenhouse footing, Ray, the player's house, the Pilgrim, Pierre and Ivy
-  when unlocked, the Merchant when visiting, Hen Haven with the player's real hens, the loose
+  when unlocked, Hen Haven with the player's real hens, the loose
   board secret, the gates) and the Old Fields, which ARE the live Crop Fields tile for tile
   (`lib/stackacres-td/field.ts`, tested). The fallen log blocks the north lane until
   `cropFieldsUnlocked`; tapping it opens the unlock.

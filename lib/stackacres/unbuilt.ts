@@ -4,9 +4,9 @@
  * Each of these is priced, buyable and inert: the top-down world draws no
  * cutter swathe, no drone and no farmhand (see
  * components/arcade/stackacres-td/topdown-world.tsx, where those hooks are
- * named no-ops), and nothing anywhere reads a Midnight Merchant trinket. A
- * shop row that takes Gold for nothing is worse than a missing one, so they
- * come off the shelves until the thing they promise exists.
+ * named no-ops). A shop row that takes Gold for nothing is worse than a
+ * missing one, so they come off the shelves until the thing they promise
+ * exists.
  *
  * A READ-SIDE FILTER ONLY, the same posture ./scope.ts takes: nothing is
  * deleted, no migration is needed, and a player who already owns one keeps it
@@ -27,13 +27,6 @@ export const UNBUILT_PERKS: readonly string[] = ["automated_logistics"];
  *  scythe's reach, and the scythe is not on the belt. */
 export const UNBUILT_ENCHANTMENTS: readonly string[] = ["quickened_haft"];
 
-/** Midnight Merchant trinkets with no consumer anywhere. */
-export const UNBUILT_MERCHANT_ITEMS: readonly string[] = [
-  "gilded_scarecrow",
-  "lucky_horseshoe",
-  "moonlit_lantern",
-];
-
 /** The Forage Drone: buyable at 1.2M, and its hangar and forage hooks are
  *  no-ops, so it can never bring anything back. */
 export const DRONE_IS_UNBUILT = true;
@@ -48,8 +41,4 @@ export function isUnbuiltPerk(id: string): boolean {
 
 export function isUnbuiltEnchantment(id: string): boolean {
   return UNBUILT_ENCHANTMENTS.includes(id);
-}
-
-export function isUnbuiltMerchantItem(id: string): boolean {
-  return UNBUILT_MERCHANT_ITEMS.includes(id);
 }

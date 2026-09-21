@@ -9,7 +9,6 @@ const KNOWN_FARM_GOLD_FUNCTIONS = [
   "collect_stackacres_drone_forage",
   "deploy_stackacres_drone",
   "forge_stackacres_enchantment",
-  "redeem_midnight_merchant_item",
   "unlock_stackacres_perk",
 ];
 

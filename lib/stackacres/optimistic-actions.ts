@@ -109,7 +109,6 @@ import {
   withoutStackAcresUnit,
   type StackAcresUnitSnapshot,
 } from "./units";
-import { priceForNextPurchase, type MidnightMerchantSnapshot } from "./midnight-merchant";
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
@@ -166,7 +165,6 @@ export interface FarmPredictContext {
   farmhandSpeedMultiplier: number;
   secrets: { held: Partial<Record<SecretItemId, number>>; boostArmed: boolean };
   secretDonations: Record<SecretItemId, boolean>;
-  merchantVisit: MidnightMerchantSnapshot | null;
   greenhouseBuilt: boolean;
   /** Whether the Crop Fields (./crop-fields.ts) have been unlocked. Same
    *  posture as `greenhouseBuilt`: a permanent flag, not a `SectorId`, since
@@ -687,18 +685,6 @@ export function predictStackAcresAction(
         secrets: { held: decrementHeldSecret(ctx.secrets.held, body.itemId), boostArmed: ctx.secrets.boostArmed },
         upkeep: { ...ctx.upkeep, paidToday: target, due: ctx.upkeep.fee - target },
       };
-    }
-    case "midnight-merchant-buy": {
-      const visit = ctx.merchantVisit;
-      const line = visit?.stock.find((s) => s.itemId === body.itemId);
-      if (!visit || !line || line.remaining < 1) return null;
-      const price = priceForNextPurchase(line.basePrice, visit.purchaseStreak);
-      const profile = debited(ctx, price);
-      if (!profile) return null;
-      // The visit itself (streak, remaining stock) is deliberately not
-      // predicted -- it is small, infrequent, and the real answer is one
-      // round trip away; only the Gold it costs moves instantly.
-      return { profile };
     }
     case "build-greenhouse": {
       // No material check here (this layer keeps no inventory state) --

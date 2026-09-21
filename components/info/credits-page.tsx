@@ -61,13 +61,6 @@ export function CreditsPage() {
               NPC is Throneless&rsquo;s <em>Ranger</em>, from Kayo&rsquo;s own
               2021 Ludum Dare 48 entry.
             </li>
-            <li>
-              <strong>Legacy tile art</strong> — a handful of unused tiles
-              still sitting in the project (public/stackacres/tiles/) were
-              sliced from Kenney&rsquo;s <em>Tiny Farm</em> asset pack
-              (kenney.nl), released under CC0 1.0 — public domain, credited
-              here anyway.
-            </li>
           </ul>
         </section>
 

@@ -4,5 +4,5 @@ Ray is drawn as himself: he is not a ghost (Kayo, 2026-09-16)."""
 
 RIG_CHARACTERS = ["ray", "farmer"]
 TRAVELERS = ["pierre", "miles", "skye", "barnaby", "arthur", "brayden", "ivy", "wes", "bea", "leo"]
-OTHERS = ["pilgrim", "merchant"]
+OTHERS = ["pilgrim"]
 CAST = RIG_CHARACTERS + TRAVELERS + OTHERS

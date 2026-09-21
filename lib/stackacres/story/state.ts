@@ -9,7 +9,7 @@
  * `applyTurnIn` and persist `story` from the result. The client calls the
  * same functions on its own copy so a counter can tick before the round
  * trip lands, and the server's answer overwrites it on arrival. Same split
- * ../friendship.ts and ../midnight-merchant.ts already take.
+ * ../friendship.ts already takes.
  *
  * Rewards are story items only (./items.ts). A turn-in never credits Gold
  * and never grants a machine item; the currency wall in

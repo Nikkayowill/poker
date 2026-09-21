@@ -6,7 +6,7 @@
  * not change shape -- it is the same 420x470 it has always been -- so the move
  * is a pure translation, and roughly sixty hand-placed literals inside it move
  * with it: the barn, the windmill, the scarecrow, the well, Ray,
- * the midnight merchant's spot, the monk's shrine and post, the greenhouse
+ * the monk's shrine and post, the greenhouse
  * plot, the wheat field, the three hidden zones, the farmhand's base, the
  * contract drop, the lamp posts, the mailbox, the signpost, the stone wall,
  * and the whole pond with its dock, lilies, reeds, ripples and duck orbit.

@@ -29,7 +29,6 @@ function greeting(name: string, hour: number): EmoteKind {
   if (hour >= 22 || hour < 5) return "sleep";
   if (name === "ray") return "heart";
   if (name === "pilgrim") return "sparkle";
-  if (name === "merchant") return "question";
   return "note";
 }
 

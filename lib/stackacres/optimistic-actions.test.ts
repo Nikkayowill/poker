@@ -73,7 +73,6 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     farmhandSpeedMultiplier: 1,
     secrets: { held: {}, boostArmed: false },
     secretDonations: {} as FarmPredictContext["secretDonations"],
-    merchantVisit: null,
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
     irrigation: [],

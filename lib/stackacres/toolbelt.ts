@@ -69,8 +69,9 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
 
 /**
  * The square a tool is about to be used on: whatever the farmer walked to, or
- * the one he is facing when the Use key is pressed. `tile` is null off the
- * Crop Fields, where there is no bed to lay or sow.
+ * the one he is facing when the Use key is pressed. `tile` is null anywhere a
+ * bed cannot go -- off the Homestead's grass paddocks and the Crop Fields --
+ * where there is no bed to lay or sow.
  */
 export interface BeltTarget {
   unit: StackAcresUnitSnapshot | null;
@@ -184,7 +185,7 @@ function canAction(target: BeltTarget, ctx: BeltContext): BeltAction {
  * never throw one away.
  */
 function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
-  if (!target.tile) return blocked("Beds only go in the Crop Fields.");
+  if (!target.tile) return blocked("Beds go on the grass by the house, or in the Crop Fields.");
   const { tx, ty } = target.tile;
   if (target.bedded) {
     if (target.unit) return blocked("Something is growing here. Pick it first.");

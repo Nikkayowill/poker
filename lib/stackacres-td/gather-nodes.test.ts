@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { REGROW_MS } from "@/lib/stackacres/stone-nodes";
 import { WOOD_RESPAWN_MS } from "@/lib/stackacres/wood";
-import { NODE_ART, gatherKindOfTag, spentStones, spentTrees } from "./gather-nodes";
+import { FORAGE_REGROW_MS } from "@/lib/stackacres/forage";
+import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees } from "./gather-nodes";
 
 const node = <Id extends string>(nodeId: Id, ready: boolean, respawnProgress: number | null) => ({
   nodeId,
   ready,
   hitsRemaining: ready ? 3 : 0,
+  respawnProgress,
+});
+
+const forage = (nodeId: "homestead-1" | "homestead-2", ready: boolean, respawnProgress: number | null) => ({
+  nodeId,
+  ready,
+  crop: "radish" as const,
   respawnProgress,
 });
 
@@ -45,10 +53,23 @@ describe("spentStones", () => {
   });
 });
 
+describe("spentForage", () => {
+  it("leaves a bush that still carries seed alone", () => {
+    expect(spentForage([forage("homestead-1", true, null)], 0)).toEqual([]);
+  });
+
+  it("makes a picked-over stub of one that is still coming back", () => {
+    const [bush] = spentForage([forage("homestead-2", false, 0.25)], 100);
+    expect(bush.tag).toBe("forage:homestead-2");
+    expect(bush.regrowAt).toBe(100 + FORAGE_REGROW_MS * 0.75);
+  });
+});
+
 describe("gatherKindOfTag", () => {
-  it("names trees and boulders", () => {
+  it("names trees, boulders and bushes", () => {
     expect(gatherKindOfTag("tree:homestead-2")).toBe("tree");
     expect(gatherKindOfTag("stone:mine-1")).toBe("stone");
+    expect(gatherKindOfTag("forage:homestead-1")).toBe("forage");
   });
 
   it("ignores every other tag", () => {
@@ -56,6 +77,7 @@ describe("gatherKindOfTag", () => {
     expect(gatherKindOfTag("barn")).toBeNull();
     expect(gatherKindOfTag("tree:")).toBeNull();
     expect(gatherKindOfTag("stone:")).toBeNull();
+    expect(gatherKindOfTag("forage:")).toBeNull();
   });
 });
 

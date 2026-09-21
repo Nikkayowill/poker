@@ -290,18 +290,9 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
     expect(unlocked.ok()).toBe(true);
     await admitFarmer(farmerContext, adminContext.request, 400_000);
 
-    // The Crop Fields start as uncleared land behind two gates: a couple of
-    // things already growing, and the unlock fee. Both paid over the API.
-    for (let bird = 0; bird < 2; bird += 1) {
-      const stocked = await farmerContext.request.post("/api/stackacres/actions", {
-        data: { action: "stock", stock: "hen" },
-      });
-      expect(stocked.ok(), "could not stock a hen").toBe(true);
-    }
-    const opened = await farmerContext.request.post("/api/stackacres/actions", {
-      data: { action: "unlock-crop-fields" },
-    });
-    expect(opened.ok(), "could not unlock the Crop Fields").toBe(true);
+    // The Crop Fields are open ground now -- nothing is paid to get in, and
+    // laying the first bed out there is itself what clears them. Soil is the
+    // only thing this farm still has to buy.
     const soil = await farmerContext.request.post("/api/stackacres/actions", {
       data: { action: "buy-soil", tier: "dirt", quantity: 4 },
     });

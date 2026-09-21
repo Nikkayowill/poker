@@ -16,17 +16,19 @@ import {
   meadowTileAt,
 } from "./zones";
 import {
+  HOME_PLOTS,
   HOME_STARTER_ORIGIN,
   HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
   SOIL_TILE,
-  SOIL_TILE_PRICE_GOLD,
+  SOIL_BAG_PRICE_GOLD,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
   getClosestHarvestableCrop,
   hasSoilTile,
   homeStarterSoilTiles,
+  isHomePlotTile,
   isHomeStarterSoilTile,
   nextSoilOrder,
   onSoil,
@@ -669,10 +671,10 @@ describe("the farmhand's view of the field", () => {
 /* Placing a purchased tile costs Gold, flat                          */
 /* ------------------------------------------------------------------ */
 
-describe("SOIL_TILE_PRICE_GOLD", () => {
+describe("SOIL_BAG_PRICE_GOLD", () => {
   it("is a flat, positive price with no ladder", () => {
-    expect(SOIL_TILE_PRICE_GOLD).toBeGreaterThan(0);
-    expect(Number.isInteger(SOIL_TILE_PRICE_GOLD)).toBe(true);
+    expect(SOIL_BAG_PRICE_GOLD).toBeGreaterThan(0);
+    expect(Number.isInteger(SOIL_BAG_PRICE_GOLD)).toBe(true);
   });
 });
 
@@ -1151,5 +1153,41 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
       soilTileInCropFieldBeds,
     );
     expect(outside.kind).toBe("out-of-bounds");
+  });
+});
+
+
+describe("HOME_PLOTS -- the Homestead's grass paddocks", () => {
+  it("hold every free starter bed, so those six are simply the paddock's first squares", () => {
+    for (const tile of homeStarterSoilTiles()) expect(isHomePlotTile(tile.tx, tile.ty)).toBe(true);
+  });
+
+  it("are bigger than the starter beds, which is the point: bare grass to hoe", () => {
+    const squares = HOME_PLOTS.reduce((n, r) => n + (r.tx1 - r.tx0 + 1) * (r.ty1 - r.ty0 + 1), 0);
+    expect(squares).toBeGreaterThan(HOME_STARTER_TILE_COUNT * 4);
+  });
+
+  it("has no square on the Crop Fields' lattice", () => {
+    for (const r of HOME_PLOTS) {
+      for (let ty = r.ty0; ty <= r.ty1; ty++) {
+        for (let tx = r.tx0; tx <= r.tx1; tx++) expect(soilTileInCropFieldBeds(tx, ty)).toBe(false);
+      }
+    }
+  });
+
+  it("keeps the two paddocks a gap apart, so a bed group never spans the lane", () => {
+    const [west, east] = HOME_PLOTS;
+    expect(east.tx0 - west.tx1).toBeGreaterThan(1);
+    const soil = createSoilMap([
+      { tx: west.tx1, ty: west.ty0, order: 0, origin: "purchased" },
+      { tx: east.tx0, ty: east.ty0, order: 1, origin: "purchased" },
+    ]);
+    expect(soilTileGroup(soil, west.tx1, west.ty0)).toHaveLength(1);
+  });
+
+  it("says off-paddock tiles are not paddock tiles", () => {
+    expect(isHomePlotTile(HOME_PLOTS[0].tx0 - 1, HOME_PLOTS[0].ty0)).toBe(false);
+    expect(isHomePlotTile(HOME_PLOTS[0].tx0, HOME_PLOTS[0].ty1 + 1)).toBe(false);
+    expect(isHomePlotTile(0, 0)).toBe(false);
   });
 });

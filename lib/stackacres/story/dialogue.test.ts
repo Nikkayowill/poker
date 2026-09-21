@@ -12,7 +12,7 @@ import { TRAVELER_QUESTS } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
-const LOCKED: TravelerStoryView = { unlocked: false, hint: "Unlock the Crop Fields", met: false, done: false, quest: null, ready: false };
+const LOCKED: TravelerStoryView = { unlocked: false, hint: "Break ground in the Crop Fields", met: false, done: false, quest: null, ready: false };
 const UNMET: TravelerStoryView = { ...LOCKED, unlocked: true, hint: null };
 const DONE: TravelerStoryView = { ...UNMET, met: true, done: true };
 

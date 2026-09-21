@@ -42,6 +42,7 @@ import {
   prayAtStackAcresShrine,
   giveStackAcresGift,
   buyStackAcresSeed,
+  gatherStackAcresForage,
   catchStackAcresFish,
   eatStackAcresFoodAction,
   processStackAcresRecipeAction,
@@ -55,6 +56,7 @@ import {
 } from "./stackacres-service";
 import { resetStoneNodeStoreForTests } from "./stone-node-store";
 import { HITS_TO_BREAK, REGROW_MS } from "@/lib/stackacres/stone-nodes";
+import { FORAGE_REGROW_MS, FORAGE_SEEDS_PER_PICK, nextForageCrop } from "@/lib/stackacres/forage";
 import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
@@ -117,6 +119,7 @@ import {
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   stackacresCapacityPrice,
+  type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { hungryAtFor } from "@/lib/stackacres/units";
@@ -1019,15 +1022,17 @@ describe("group-planting a >=2x2 block", () => {
     expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(0);
   });
 
-  it("still refuses ground outside the starter beds while the Crop Fields are locked", async () => {
+  it("refuses bare ground with no bed on it, and spends no seed doing so", async () => {
+    // Nothing about the Crop Fields gates this any more -- they are cleared by
+    // being worked, not bought. What is still refused is sowing onto ground
+    // nobody has broken: a tile with no bed has no slot to hold a crop.
     const { token, id } = await funded(2_000, { land: [], cropFieldsUnlocked: false, beds: false });
     await adjustStackAcresSeedStock(id, "wheat", -1000);
     await adjustStackAcresSeedStock(id, "wheat", 3);
 
     await expect(
       stockStackAcresGroup(token, { stock: "wheat", tiles: block2x2 }, T0),
-    ).rejects.toThrow(/still under wild growth/);
-    // No seed spent on ground that was never sowable.
+    ).rejects.toThrow(StackAcresRequestError);
     expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(3);
   });
 
@@ -2226,6 +2231,8 @@ describe("the currency wall", () => {
       "feed-pen",
       "forge-enchantment",
       "fulfill-contract",
+      // Moves no Gold in either direction: a pick fills the seed shelf.
+      "gather-forage",
       "give-gift",
       "harvest-crossbreed",
       "mine-stone",
@@ -2249,8 +2256,7 @@ describe("the currency wall", () => {
       "story-turn-in",
       "tap-secret-zone",
       "trade-secret-item",
-      "unlock-crop-fields",
-      "unlock-synergy-perk",
+        "unlock-synergy-perk",
       "upgrade-tool",
       "water",
       "work",
@@ -2283,9 +2289,7 @@ describe("the currency wall", () => {
     // inventory, and only `sell` turns that into Gold. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own. `unlock-crop-fields` is a
-    // pure sink too, same category as `clear-sector` (see
-    // lib/stackacres/crop-fields.ts). `unlock-synergy-perk` is a
+    // against -- never a Gold credit of their own. `unlock-synergy-perk` is a
     // pure sink, same category as `upgrade-tool`; `activate-synergy-perk`
     // moves no Gold at all, same category as `work`. Neither Synergy Tree
     // perk that touches a payout (`sunlight_harvester`'s crit chance,
@@ -5124,5 +5128,75 @@ describe("mineStackAcresStoneNode", () => {
     const otherNode = await mineStackAcresStoneNode(token, "stone:mine-2", "hit", T0);
     expect(otherNode.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
     expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterFirstBroken + 1);
+  });
+});
+
+describe("gatherStackAcresForage", () => {
+  const seedsOf = (view: StackAcresView, crop: StackAcresCrop) => view.seedStock[crop] ?? 0;
+
+  it("rejects an unknown bush", async () => {
+    const { token } = await funded();
+    await expect(gatherStackAcresForage(token, "homestead-9", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("puts the seed the bush was carrying on the shelf, and moves no Gold", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    expect(bush.ready).toBe(true);
+
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(picked.foraged).toEqual({
+      nodeId: bush.nodeId,
+      crop: bush.crop,
+      quantity: FORAGE_SEEDS_PER_PICK,
+    });
+    expect(seedsOf(picked, bush.crop)).toBe(
+      seedsOf(await readStackAcres(token, T0), bush.crop),
+    );
+    // Free in both directions: a pick is not a purchase.
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("ignores the seed ladder -- a foraged crop needs no building", async () => {
+    const { token } = await funded();
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    // The same crop Ray would refuse to sell, because nothing that uses it
+    // is built (see lib/stackacres/seed-unlocks.ts).
+    await expect(
+      buyStackAcresSeed(token, { crop: bush.crop, quantity: 1 }, T0),
+    ).rejects.toThrow("locked");
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(picked.foraged?.crop).toBe(bush.crop);
+  });
+
+  it("goes bare after a pick and refuses another until it has come back", async () => {
+    const { token } = await funded();
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    const after = picked.forageNodes.find((node) => node.nodeId === bush.nodeId);
+    expect(after?.ready).toBe(false);
+    // Already showing the NEXT seed, so the bush reads as changed rather
+    // than merely emptied.
+    expect(after?.crop).toBe(nextForageCrop(bush.crop));
+
+    const seedsBefore = seedsOf(picked, bush.crop);
+    const refused = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(refused.foraged).toBeNull();
+    expect(seedsOf(refused, bush.crop)).toBe(seedsBefore);
+
+    const later = new Date(T0.getTime() + FORAGE_REGROW_MS + 1000);
+    const again = await gatherStackAcresForage(token, bush.nodeId, later);
+    expect(again.foraged?.crop).toBe(nextForageCrop(bush.crop));
+  });
+
+  it("keeps the four bushes independent", async () => {
+    const { token } = await funded();
+    const bushes = (await readStackAcres(token, T0)).forageNodes;
+    await gatherStackAcresForage(token, bushes[0].nodeId, T0);
+    const other = await gatherStackAcresForage(token, bushes[1].nodeId, T0);
+    expect(other.foraged?.crop).toBe(bushes[1].crop);
   });
 });

@@ -273,17 +273,13 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     const t0 = await jumpTo(chrono, token, new Date("2026-09-10T12:00:00.000Z"));
     const day0 = exchange.stackacresExchangeDay(t0);
 
-    // The Crop Fields require 2 units already going, unlocked through their
-    // own standalone flag now rather than a sector clear (2026-09-08 merge
-    // into the Farmstead -- see lib/stackacres/crop-fields.ts). Wallow needs
-    // 4 units of its own but no longer needs the Crop Fields cleared first
-    // (see SECTOR_LADDER's own header on why `wallow.requires` is null now).
-    // Two hens satisfy the Crop Fields' own unit gate; two carrots (which
-    // need the Crop Fields unlocked to sow at all) bring the running total to
-    // four for Wallow.
+    // The Crop Fields are not bought any more -- breaking ground out there
+    // is what records the flag (see `placeStackAcresSoilTile`) -- so this
+    // records it directly rather than walking a purchase that no longer
+    // exists. Wallow needs 4 units of its own: two hens and two carrots.
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
-    await service.unlockStackAcresCropFields(token, t0);
+    await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);

@@ -1869,70 +1869,6 @@ export async function clearStackAcresSector(
 }
 
 /**
- * Unlocks the Crop Fields, exactly once: the same shape as
- * `clearStackAcresSector` immediately above (Gold leaves first, the
- * permanent row is recorded, a lost race refunds), but against
- * lib/stackacres/crop-fields.ts's standalone flag rather than a sector --
- * see that module's own header on why the Crop Fields could not stay a
- * `homestead_sectors` row once they merged into the Farmstead district.
- */
-export async function unlockStackAcresCropFields(
-  token: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  const profile = await ensureProfile(token);
-
-  const [unlocked, units] = await Promise.all([
-    readStackAcresCropFieldsUnlocked(profile.id),
-    listStackAcresUnits(profile.id),
-  ]);
-  const check = cropFieldsUnlockCheck({ unlocked, unitCount: units.length });
-  if (check.alreadyOpen) {
-    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  if (!check.ok) {
-    // The first thing still missing, worded exactly as the modal's own
-    // checklist words it -- both read the same `cropFieldsUnlockCheck`.
-    const missing = check.requirements.find((requirement) => !requirement.met);
-    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
-  // spendGoldByProfile is the authority.
-  const debited = await spendGoldByProfile(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `Unlocking the Crop Fields costs ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold.`,
-      400,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  let recorded: boolean;
-  try {
-    recorded = await recordStackAcresCropFieldsUnlocked(profile.id, now);
-  } catch (error) {
-    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-    throw error;
-  }
-  if (!recorded) {
-    // Another tab unlocked it between the check above and now. The Crop
-    // Fields are theirs either way; this request must not have been charged
-    // for it.
-    await refundGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD);
-    throw new StackAcresRequestError("The Crop Fields are already yours.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  return view(debited, now);
-}
-
-/**
  * Builds the Greenhouse, exactly once: debits `GREENHOUSE_BUILD_COST`
  * (lib/stackacres/greenhouse.ts) out of the processing-track inventory and
  * records the permanent row, both inside `buildStackAcresGreenhouseRow`'s own
@@ -5937,6 +5873,16 @@ export async function turnInStackAcresTravelerQuest(
       });
     }
     if (written === "ok") {
+      // Ray's own reward for a full basket: the Crop Fields, for nothing.
+      // After the story write, never before -- a failed write must not hand
+      // out land. Already-open is the ordinary answer on a retry, not an
+      // error, so `recordStackAcresCropFieldsUnlocked`'s false is ignored.
+      if (quest.opensCropFields) {
+        await recordStackAcresCropFieldsUnlocked(profile.id, now).catch((error) => {
+          console.error("stackacres.story_crop_fields_unlock_failed", { profileId: profile.id, error });
+          return false;
+        });
+      }
       return {
         ...(await view(profile, now)),
         storyResult: { traveler, outcome: result.outcome, granted: result.granted },

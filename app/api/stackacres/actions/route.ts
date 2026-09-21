@@ -31,7 +31,6 @@ import {
   buyStackAcresStock,
   clearStackAcresSector,
   clearStackAcresUnit,
-  unlockStackAcresCropFields,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
@@ -105,7 +104,7 @@ export const runtime = "nodejs";
  * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
  * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
- * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
+ * safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
  * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -193,10 +192,6 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("clear-sector"),
     sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
   }),
-  // No field, unlike `clear-sector`: there is only one such flag, not one
-  // per district. Gold, once, permanent -- see unlockStackAcresCropFields's
-  // own header on why this is not a `clear-sector` variant.
-  z.object({ action: z.literal("unlock-crop-fields") }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -531,8 +526,6 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return expandStackAcresCapacity(token, action.stock, now);
     case "clear-sector":
       return clearStackAcresSector(token, action.sector, now);
-    case "unlock-crop-fields":
-      return unlockStackAcresCropFields(token, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "buy-cutter":

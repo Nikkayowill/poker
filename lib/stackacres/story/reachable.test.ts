@@ -76,6 +76,15 @@ describe("every quest asks for something reachable", () => {
     }
   });
 
+  it("has Ray open the Crop Fields, so the land is never a 15,000 Gold wall", () => {
+    const opens = TRAVELER_IDS.flatMap((id) =>
+      TRAVELER_QUESTS[id].filter((quest) => quest.opensCropFields).map((quest) => quest.id),
+    );
+    // Exactly one quest may hand over the land, or "who opens this" has no
+    // single answer.
+    expect(opens).toEqual(["ray.q3"]);
+  });
+
   it("gives Ray a first quest a brand-new farm can finish", () => {
     // Six free starter beds, a watering can and 3 Gold wheat is the whole of
     // a new farm. Watering is the only verb all of that supports.

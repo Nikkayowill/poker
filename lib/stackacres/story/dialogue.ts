@@ -101,7 +101,7 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
       },
       {
         progress: "Now let it grow. Ten of anything, doesn't matter what. A farm is patience with a fence around it.",
-        done: "A full basket. You've got the hands for this. I always figured you would.",
+        done: "A full basket. You've got the hands for this. Come on, those old fields up the lane are yours now. Six beds won't hold a farmer like you.",
       },
       {
         progress:

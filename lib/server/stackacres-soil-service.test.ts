@@ -27,7 +27,6 @@ import {
   readStackAcres,
   removeStackAcresSoilTile,
   stockStackAcres,
-  unlockStackAcresCropFields,
 } from "./stackacres-service";
 import {
   __resetStackAcresForTest,
@@ -147,23 +146,15 @@ describe("the free Homestead starter beds", () => {
     );
   });
 
-  it("leaves the Crop Fields' own 15,000 Gold unlock and its bag-purchase gate untouched", async () => {
-    expect(CROP_FIELDS_UNLOCK_COST_GOLD).toBe(15_000);
+  it("still charges for a Crop Fields bed once the land itself is open", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
-    await adjustGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD - profile.goldBalance);
-    // Two units first (`CROP_FIELDS_UNLOCK_REQUIRES_UNITS`) -- a crop sown on
-    // a free starter bed counts the same as any other.
-    await adjustStackAcresSeedStock(profile.id, "carrot", 2);
-    const beds = homeStarterSoilTiles();
-    await stockStackAcres(token, { stock: "carrot", tile: beds[0] }, T0);
-    await stockStackAcres(token, { stock: "carrot", tile: beds[1] }, T0);
+    // Ray hands the land over now (story/quests.ts's `opensCropFields`), so
+    // this only needs the flag set, not his whole line walked.
+    await recordStackAcresCropFieldsUnlocked(profile.id, T0);
 
-    const view = await unlockStackAcresCropFields(token, T0);
-    expect(view.cropFieldsUnlocked).toBe(true);
-
-    // Unlocking does not hand out a free Crop Fields bed either -- placing one
-    // there still spends a bag bought at Ray's shop.
+    // Opening the land hands out no free bed: placing one there still spends
+    // a bag bought at Ray's shop.
     await expect(placeStackAcresSoilTile(token, cropFieldTile(), T0)).rejects.toThrow(/Ray/);
   });
 });

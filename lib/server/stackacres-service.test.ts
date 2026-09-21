@@ -2249,7 +2249,6 @@ describe("the currency wall", () => {
       "story-turn-in",
       "tap-secret-zone",
       "trade-secret-item",
-      "unlock-crop-fields",
       "unlock-synergy-perk",
       "upgrade-tool",
       "water",

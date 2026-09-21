@@ -624,16 +624,6 @@ export function predictStackAcresAction(
       if (!profile) return null;
       return { sectors: [...ctx.sectors, body.sector], profile };
     }
-    case "unlock-crop-fields": {
-      const check = cropFieldsUnlockCheck({
-        unlocked: ctx.cropFieldsUnlocked,
-        unitCount: ctx.units.length,
-      });
-      if (check.alreadyOpen || !check.ok) return null;
-      const profile = debited(ctx, check.cost);
-      if (!profile) return null;
-      return { cropFieldsUnlocked: true, profile };
-    }
     case "unlock-synergy-perk": {
       if (ctx.synergyUnlocked.includes(body.archetype)) return null;
       const profile = debited(ctx, SYNERGY_PERKS[body.archetype].unlockCostGold);

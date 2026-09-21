@@ -25,7 +25,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *     pig scenario uses `pig` (hunger 2h, duration 4h, `spoils: false`)
  *     to demonstrate the ordinary freeze-until-fed mechanic instead, which
  *     genuinely goes hungry mid-cycle without voiding anything.
- *   * `clearStackAcresSector` (Wallow, Ox Fields) and `unlockStackAcresCropFields`
+ *   * `clearStackAcresSector` (Wallow, Ox Fields)
  *     (the Crop Fields' own standalone gate, since the 2026-09-08 merge into
  *     the Farmstead) both refuse until the player already has enough
  *     working-or-mucked units elsewhere (`requiresUnits`,
@@ -283,7 +283,7 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     // four for Wallow.
     await service.stockStackAcres(token, { stock: "hen" }, t0);
     await service.stockStackAcres(token, { stock: "hen" }, t0);
-    await service.unlockStackAcresCropFields(token, t0);
+    await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);

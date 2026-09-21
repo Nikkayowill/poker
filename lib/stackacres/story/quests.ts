@@ -161,6 +161,15 @@ export interface StoryQuest {
   readonly objectives: readonly StoryObjective[];
   /** The affirmative button on the turn-in bubble. */
   readonly turnInLabel: string;
+  /**
+   * Turning this one in opens the Crop Fields, for nothing.
+   *
+   * The land used to cost 15,000 Gold against a 2,000 Gold start, which is a
+   * wall a new farm cannot see past. Ray walks them out there instead, once
+   * they have worked the six free beds well enough to need the room. Every
+   * later piece of land still costs Gold.
+   */
+  readonly opensCropFields?: true;
 }
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
@@ -186,6 +195,7 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "A Full Basket",
       objectives: [{ kind: "harvest-any-crop", target: 10 }],
       turnInLabel: "Show him the harvest",
+      opensCropFields: true,
     },
     {
       id: "ray.q4",

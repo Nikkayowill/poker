@@ -207,7 +207,6 @@ import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
 import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
-import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
@@ -2901,9 +2900,7 @@ export function StackAcresFarm() {
       mapHere,
       (id) => (id === "cropfields" ? cropFieldsUnlocked : isSectorUnlocked(id, sectors)),
       (id) => {
-        if (id === "cropfields") {
-          return `Unlock for ${CROP_FIELDS_UNLOCK_COST_GOLD.toLocaleString()} Gold`;
-        }
+        if (id === "cropfields") return "Ray opens these for you";
         const traveler = WILD_AREA_TRAVELER[id];
         if (traveler) return `Opens when ${TRAVELER_CATALOGUE[traveler].name} arrives`;
         const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
@@ -3421,12 +3418,6 @@ export function StackAcresFarm() {
     },
     [act],
   );
-
-  const onUnlockCropFields = useCallback(() => {
-    buySound();
-    setCropFieldsModalOpen(false);
-    void act({ action: "unlock-crop-fields" });
-  }, [act]);
 
   /**
    * Tilling a bed straight out of the radial ring, or dragged across N tiles
@@ -4988,13 +4979,6 @@ export function StackAcresFarm() {
 
       {cropFieldsModalOpen && (
         <StackAcresCropFieldsModal
-          unlocked={cropFieldsUnlocked}
-          unitCount={units.length}
-          goldBalance={profile?.goldBalance ?? null}
-          unlimitedGold={profile?.unlimitedGold === true}
-          upkeepOutstanding={upkeep.due}
-          busy={pendingByPrefix("unlock-crop-fields")}
-          onUnlock={onUnlockCropFields}
           onClose={() => { panelSound(); setCropFieldsModalOpen(false); }}
         />
       )}

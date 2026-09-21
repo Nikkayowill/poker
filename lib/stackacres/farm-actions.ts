@@ -30,7 +30,6 @@ import type { TravelerId } from "./story/travelers";
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
   | { action: "clear-sector"; sector: SectorId }
-  | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
@@ -289,8 +288,6 @@ export function purchaseCueText(body: Action): string | null {
       return "Perk unlocked!";
     case "clear-sector":
       return "Clearing the land…";
-    case "unlock-crop-fields":
-      return "Crop Fields unlocked!";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

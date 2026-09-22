@@ -3643,22 +3643,6 @@
   font-weight: 700;
 }
 
-/* The timber the clear also spends, under its Gold price. Land costs Wood
-   now (lib/stackacres/sectors.ts's `materials`) and the sheet has to say so
-   before the button does. */
-.sa-clear-materials {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-.sa-clear-materials > li.is-met { color: var(--sa-ink-soft); }
-.sa-clear-materials span { font-weight: 400; color: var(--sa-ink-soft); }
-
 /* A pen slot's timber, beside its Gold, on the Expand button. */
 .sa-buy-price .is-short { color: var(--sa-ink); font-weight: 800; }
 

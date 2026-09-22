@@ -10,8 +10,6 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { STACKACRES_ZONES } from "@/lib/stackacres/zones";
-import { costLines, costSummary } from "@/lib/stackacres/build-cost";
-import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 
 /**
  * What a tap on wild ground opens: what this land would become, what clearing
@@ -44,10 +42,6 @@ export interface StackAcresSectorModalProps {
   /** Null while the profile has not loaded; the price still shows. */
   goldBalance: number | null;
   unlimitedGold: boolean;
-  /** The processing inventory, for the timber line. Clearing land costs Wood
-   *  as well as Gold now (lib/stackacres/sectors.ts's `materials`), and a
-   *  price the sheet does not show is a refusal waiting to happen. */
-  inventory: StackAcresInventory;
   /** Gold still owed on the land already held. Non-zero blocks the sale,
    *  the same rule the server applies -- you settle up before you buy more. */
   upkeepOutstanding: number;
@@ -65,7 +59,6 @@ export function StackAcresSectorModal({
   unitCount,
   goldBalance,
   unlimitedGold,
-  inventory,
   upkeepOutstanding,
   busy,
   opener,
@@ -81,12 +74,6 @@ export function StackAcresSectorModal({
   // The land fee is a requirement like any other, and shown as one rather
   // than as an error after the fact -- a player who taps Clear and is told
   // about a bill they were never shown has been ambushed by their own farm.
-  // The materials, worked out by the same helper the build buttons use, so
-  // "Chop the trees around the farm" is worded once for the whole game.
-  // Gold is dropped from the list: it has its own line above, with the
-  // balance beside it.
-  const allLines = costLines(def.clearCost, def.materials ?? [], goldBalance ?? 0, inventory);
-  const timber = allLines.filter((line) => line.label !== "Gold");
   const requirements = [
     ...check.requirements,
     ...(upkeepOutstanding > 0
@@ -98,12 +85,7 @@ export function StackAcresSectorModal({
         ]
       : []),
   ];
-  // The timber counts toward readiness, unlike the Gold. Gold is the app's
-  // own shared balance and the server's refusal is what teaches a player they
-  // are short (see the header); Wood is farm-local, the line above already
-  // shows how much is in the barn, and a Clear button the route would then
-  // refuse is the exact failure this sheet exists to prevent.
-  const ready = check.ok && upkeepOutstanding <= 0 && timber.every((line) => line.met);
+  const ready = check.ok && upkeepOutstanding <= 0;
 
   // A wild area is never sold: its gate opens when its traveler arrives, so
   // this says who that is and what to do next. No price, no button.
@@ -177,20 +159,6 @@ export function StackAcresSectorModal({
           </span>
         </p>
 
-        {timber.length > 0 && (
-          <ul className="sa-clear-materials">
-            {timber.map((line) => (
-              <li key={line.label} className={line.met ? "is-met" : undefined}>
-                <strong>
-                  {line.have.toLocaleString()} / {line.need.toLocaleString()}
-                </strong>{" "}
-                {line.label}
-                {!line.met && line.source && <span> · {line.source}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-
         {requirements.length > 0 && (
           <ul className="sa-clear-reqs">
             {requirements.map((requirement) => (
@@ -214,7 +182,7 @@ export function StackAcresSectorModal({
           disabled={busy || !ready}
           onClick={() => onClear(sector)}
         >
-          {ready ? `Clear the land · ${costSummary({ lines: allLines })}` : "Not yet"}
+          {ready ? `Clear the land · ${def.clearCost.toLocaleString()} Gold` : "Not yet"}
         </button>
         <p className="sa-sheet-note">
           Clearing is permanent and is not refunded. What it buys is the ground itself — the pens

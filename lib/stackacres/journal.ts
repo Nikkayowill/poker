@@ -316,9 +316,7 @@ function journalReach(input: JournalInput): JournalReachStep[] {
       flag,
       label: STACKACRES_QUEST_LABELS[flag],
       done: earned.has(flag),
-      cost: def
-        ? costSummary({ lines: costLines(def.clearCost, def.materials ?? [], input.gold, input.inventory) })
-        : null,
+      cost: def ? `${def.clearCost.toLocaleString()} Gold` : null,
       brings: travelersOnFlag(flag),
     };
   });

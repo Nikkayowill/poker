@@ -1911,54 +1911,6 @@ describe("expanding capacity", () => {
   });
 });
 
-describe("materials on the land ladder", () => {
-  it("spends the Fold's timber as well as its Gold", async () => {
-    const { token, id } = await funded(500_000, { land: [] });
-    for (let i = 0; i < STACKACRES_SECTORS.wallow.requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "wheat" }, T0);
-    }
-    const timber = STACKACRES_SECTORS.wallow.materials![0];
-    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
-    const goldBefore = await balance(token);
-
-    await clearStackAcresSector(token, "wallow", T0);
-
-    expect((await readStackAcresInventory(id)).wood).toBe(woodBefore - timber.quantity);
-    expect(await balance(token)).toBe(goldBefore - STACKACRES_SECTORS.wallow.clearCost);
-  });
-
-  it("refuses the Fold with no timber for it, and leaves the land unclaimed", async () => {
-    const { token, id } = await funded(500_000, { land: [] });
-    for (let i = 0; i < STACKACRES_SECTORS.wallow.requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "wheat" }, T0);
-    }
-    await adjustStackAcresInventory(id, "wood", -((await readStackAcresInventory(id)).wood ?? 0));
-    const before = await balance(token);
-
-    await expect(clearStackAcresSector(token, "wallow", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-    expect(await readStackAcresSectors(id)).not.toContain("wallow");
-  });
-
-  // Rule 1's other half, on the biggest purchase in the game.
-  it("puts the Pasture's timber back when the purse is short", async () => {
-    const { token, id } = await funded(STACKACRES_SECTORS.oxfields.clearCost - 1, {
-      land: ["wallow"],
-    });
-    for (let i = 0; i < STACKACRES_SECTORS.oxfields.requiresUnits; i += 1) {
-      await stockStackAcres(token, { stock: "wheat" }, T0);
-    }
-    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
-
-    await expect(clearStackAcresSector(token, "oxfields", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(woodBefore);
-  });
-});
-
 describe("grass cutters", () => {
   const MOWER_PRICE = STACKACRES_CUTTER_DEFS.mower.price ?? 0;
 

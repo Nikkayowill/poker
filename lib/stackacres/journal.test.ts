@@ -348,8 +348,8 @@ describe("the expansion track", () => {
 
   it("prices the two flags that are land clears, and only those", () => {
     const view = journalView(FRESH);
-    expect(view.reach.find((step) => step.flag === "cleared_wallow")?.cost).toBe("45,000 Gold + 30 Wood");
-    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.cost).toBe("100,000 Gold + 60 Wood");
+    expect(view.reach.find((step) => step.flag === "cleared_wallow")?.cost).toBe("45,000 Gold");
+    expect(view.reach.find((step) => step.flag === "cleared_oxfields")?.cost).toBe("100,000 Gold");
     // The other three are acts, not purchases.
     expect(view.reach.find((step) => step.flag === "town_trusted")?.cost).toBeNull();
     expect(view.reach.find((step) => step.flag === "crop_fields_unlocked")?.cost).toBeNull();

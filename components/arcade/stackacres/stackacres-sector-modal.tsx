@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Coins, Lock, X } from "lucide-react";
+import { Axe, Check, Lock, X } from "lucide-react";
 import clsx from "clsx";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
@@ -10,6 +10,7 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { STACKACRES_ZONES } from "@/lib/stackacres/zones";
+import { landClearingLine } from "@/lib/stackacres/land-clearing";
 
 /**
  * What a tap on wild ground opens: what this land would become, what clearing
@@ -49,7 +50,8 @@ export interface StackAcresSectorModalProps {
   /** For a wild area: the traveler whose arrival opens its gate, and what
    *  the player still has to do first (null once nothing is missing). */
   opener: { name: string; hint: string | null } | null;
-  onClear: (sector: SectorId) => void;
+  /** How far the clearing has got (lib/stackacres/land-clearing.ts). */
+  progress: { cleared: number; total: number };
   onClose: () => void;
 }
 
@@ -62,7 +64,7 @@ export function StackAcresSectorModal({
   upkeepOutstanding,
   busy,
   opener,
-  onClear,
+  progress,
   onClose,
 }: StackAcresSectorModalProps) {
   // Escape and a backdrop tap close this, same as every other sheet. Without
@@ -149,14 +151,9 @@ export function StackAcresSectorModal({
         <p className="sa-clear-promise">{def.promise}</p>
 
         <p className="sa-clear-price">
-          <Coins size={18} aria-hidden="true" />
-          <strong>{def.clearCost.toLocaleString()}</strong>
-          <span>
-            Gold to clear it, once
-            {goldBalance !== null && !unlimitedGold && (
-              <> · you have {goldBalance.toLocaleString()}</>
-            )}
-          </span>
+          <Axe size={18} aria-hidden="true" />
+          <strong>{landClearingLine(progress)}</strong>
+          <span>Nobody sells this land. Walk on and cut down what is standing.</span>
         </p>
 
         {requirements.length > 0 && (
@@ -176,17 +173,9 @@ export function StackAcresSectorModal({
           </ul>
         )}
 
-        <button
-          type="button"
-          className="sa-cta sa-clear-cta"
-          disabled={busy || !ready}
-          onClick={() => onClear(sector)}
-        >
-          {ready ? `Clear the land · ${def.clearCost.toLocaleString()} Gold` : "Not yet"}
-        </button>
         <p className="sa-sheet-note">
-          Clearing is permanent and is not refunded. What it buys is the ground itself — the pens
-          and fields on it are still bought one at a time.
+          Every tree and boulder you break pays into the barn. Anything you would rather not swing
+          at can be blown instead, for Gold. The land is yours when the last of it is down.
         </p>
       </div>
     </div>

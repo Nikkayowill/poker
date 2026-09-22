@@ -28,7 +28,6 @@ import type { TravelerId } from "./story/travelers";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
-  | { action: "clear-sector"; sector: SectorId }
   | { action: "build-greenhouse" }
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
@@ -75,6 +74,10 @@ export type Action =
   // minigame's own timing verdict (lib/stackacres/chop.ts) -- it changes how
   // much Wood the swing pays, never whether it lands.
   | { action: "chop-tree"; nodeId: string; sweet: boolean }
+  // Clearing land: one swing at what is standing on it, or Gold to blow it.
+  // Land is never bought; the sector opens when the last one comes down.
+  | { action: "work-land"; obstacleId: string; sweet: boolean }
+  | { action: "demolish-land"; obstacleId: string }
   // One swing at one of the Mine's boulders (lib/stackacres/stone-nodes.ts):
   // fills the shelf with Stone, same posture as `chop-tree`. `quality` is
   // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
@@ -285,8 +288,6 @@ export function purchaseCueText(body: Action): string | null {
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
-    case "clear-sector":
-      return "Clearing the land…";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

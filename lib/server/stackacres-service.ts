@@ -270,6 +270,9 @@ import {
   wheatPlotFromRow,
   machineFromRow,
   vatManifestFromRow,
+  getOrCreateStackAcresLandObstacle,
+  listStackAcresLandObstacleStates,
+  writeStackAcresLandObstacle,
   getOrCreateStackAcresWoodNode,
   writeStackAcresWoodNodeSwing,
   listStackAcresWoodNodeStates,
@@ -324,6 +327,7 @@ import {
   MACHINE_ITEM_CATALOGUE,
   machineItemLabel,
   machineItemNoun,
+  type MachineRawItem,
   type MaterialCost,
 } from "@/lib/stackacres/machine-items";
 import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
@@ -346,6 +350,21 @@ import { isFarmKitchenRecipe, planFarmKitchen } from "@/lib/stackacres/farm-kitc
 import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks";
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
+import {
+  CLEARABLE_SECTORS,
+  LAND_OBSTACLES,
+  LAND_SWING_ENERGY,
+  TOO_TIRED_TO_CLEAR,
+  demolishLandObstacle,
+  demolitionPrice,
+  freshLandObstacleState,
+  landClearingProgress,
+  landObstacle,
+  isClearableSector,
+  landObstacleSnapshot,
+  swingAtLandObstacle,
+  type LandObstacleSnapshot,
+} from "@/lib/stackacres/land-clearing";
 import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import {
   FORAGE_NODE_IDS,
@@ -757,6 +776,11 @@ export interface StackAcresView {
    *  crop is in the snapshot rather than only in the pick's answer so the
    *  client can name the seed before it is picked. */
   forageNodes: ForageNodeSnapshot[];
+  /** What is still standing on the land being cleared
+   *  (lib/stackacres/land-clearing.ts). One entry per obstacle on every
+   *  sector that is taken by clearing it, down or not, so the map can draw
+   *  the field and the sheet can count the job. */
+  landObstacles: LandObstacleSnapshot[];
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -979,6 +1003,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     woodNodeStates,
     stoneNodeRows,
     forageNodeStates,
+    landObstacleStates,
     fallback,
   ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
@@ -998,6 +1023,10 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     // (see FORAGE_NODE_IDS) run alongside the rest rather than folded into
     // `read_homestead_batch`.
     listStackAcresForageNodeStates(profile.id),
+    // Same again for what is still standing on land being cleared
+    // (lib/stackacres/land-clearing.ts): only obstacles this farm has swung
+    // at have rows, so a farm that never walked onto the Fold reads none.
+    listStackAcresLandObstacleStates(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1270,6 +1299,11 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     forageNodes: FORAGE_NODE_IDS.map((id) =>
       forageNodeSnapshot(id, forageNodeStates[id] ?? freshForageNodeState(), now),
     ),
+    landObstacles: CLEARABLE_SECTORS.flatMap((sector) =>
+      LAND_OBSTACLES[sector].map((obstacle) =>
+        landObstacleSnapshot(obstacle, landObstacleStates[obstacle.id] ?? freshLandObstacleState(obstacle.kind)),
+      ),
+    ),
     revision,
   };
 }
@@ -1459,6 +1493,18 @@ export type StackAcresActionResult = StackAcresView & {
     multiplier: number;
     gold: number;
   };
+  /** Set by `workStackAcresLand`/`demolishStackAcresLand` to what THIS blow
+   *  did: what it paid, whether the obstacle came down, and whether that was
+   *  the last one standing on the sector. Null when the blow found nothing
+   *  left to hit. */
+  landCleared?: {
+    obstacleId: string;
+    sector: SectorId;
+    item: MachineRawItem | null;
+    quantity: number;
+    cleared: boolean;
+    sectorOpened: boolean;
+  } | null;
   /** Set by `catchStackAcresFish` to which fish THIS cast landed -- every
    *  other action leaves this undefined. */
   fishCaught?: { species: FishSpecies };
@@ -1788,91 +1834,6 @@ function requireOpenSector(sectors: readonly SectorId[], zone: ZoneId, what: str
   );
 }
 
-/**
- * Clears a sector: the one-off Gold price of turning wild ground into land
- * you can farm.
- *
- * A pure Gold SINK, permanent, and never refunded once the row lands -- the
- * same category as `expandStackAcresCapacity`, and the reason the asymmetry
- * note at the top of this file is untouched by it.
- *
- * Rule 1 the whole way down: the requirements are checked before a piece of
- * Gold moves, the Gold leaves before the land is recorded, and every failure
- * after the debit refunds. The permanent thing here is a single row with the
- * (profile, sector) primary key as its idempotency guard, so two tabs
- * clearing the same land together pay for it once and the loser is refunded.
- */
-export async function clearStackAcresSector(
-  token: string,
-  sectorInput: string,
-  now = new Date(),
-): Promise<StackAcresView> {
-  if (!(ZONE_IDS as readonly string[]).includes(sectorInput)) {
-    throw new StackAcresRequestError("There is no such place.", 400);
-  }
-  const sector = sectorInput as SectorId;
-  const def = STACKACRES_SECTORS[sector];
-  const profile = await ensureProfile(token);
-
-  // Owing rent on the land you have is a reason not to be sold more of it,
-  // and this settles the bill on the way past -- and hands over the two
-  // answers the requirement check is about to ask for.
-  const { sectors, units } = await readLand(profile.id);
-  const check = sectorClearCheck(sector, { unlocked: sectors, unitCount: units.length });
-  if (check.wild) {
-    // Ground the 2026-09-07 map re-lay reserved with no system under it yet
-    // (see ./lib/stackacres/sectors.ts's `SectorState`). Refused here as well
-    // as in the modal so a hand-rolled POST cannot buy an empty field, and so
-    // the two can never word it differently -- both read `sectorClearCheck`.
-    throw new StackAcresRequestError(
-      `There is nothing to clear at ${sectorLabel(sector)} yet.`,
-      409,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-  if (check.alreadyOpen) {
-    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-  if (!check.ok) {
-    // The first thing still missing, worded exactly as the modal's own
-    // checklist words it -- both read the same `sectorClearCheck`.
-    const missing = check.requirements.find((requirement) => !requirement.met);
-    throw new StackAcresRequestError(missing?.label ?? "Not yet.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  // Rule 1: the stake leaves before the land is recorded.
-  const debited = await spendGoldByProfile(profile.id, def.clearCost);
-  if (!debited) {
-    throw new StackAcresRequestError(
-      `Clearing ${sectorLabel(sector)} costs ${def.clearCost.toLocaleString()} Gold.`,
-      400,
-      { round: await snapshots(profile.id, now) },
-    );
-  }
-
-  let recorded: boolean;
-  try {
-    recorded = await recordStackAcresSectorCleared(profile.id, sector, now);
-  } catch (error) {
-    await refundGold(profile.id, def.clearCost);
-    throw error;
-  }
-  if (!recorded) {
-    // Another tab cleared it between the check above and now. The land is
-    // theirs either way; this request must not have been charged for it.
-    await refundGold(profile.id, def.clearCost);
-    throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  await recordStoryEvents(profile.id, [{ kind: "sector-cleared", sector }]);
-  return view(debited, now);
-}
 
 /**
  * Builds the Greenhouse, exactly once: debits `GREENHOUSE_BUILD_COST`
@@ -3534,6 +3495,143 @@ export async function bagStackAcresQuarry(
   await adjustStackAcresInventory(profile.id, "meat", meat);
   await adjustStackAcresInventory(profile.id, "pelt", pelt);
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
+}
+
+/**
+ * One swing at something standing on land being cleared
+ * (lib/stackacres/land-clearing.ts).
+ *
+ * This is how land is taken. There is no purchase: the sector opens by
+ * itself the moment its last obstacle comes down, which is what
+ * `openIfCleared` below does. The swing pays its materials into the barn the
+ * same way a chopped tree does.
+ *
+ * Energy goes before the swing and comes back if the swing turns out not to
+ * land, the same order `catchStackAcresFish` keeps. Version-guarded, so two
+ * rapid taps cannot both land the blow that clears the same obstacle.
+ */
+export async function workStackAcresLand(
+  token: string,
+  obstacleIdInput: string,
+  sweet: boolean,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const obstacle = landObstacle(obstacleIdInput);
+  if (!obstacle) throw new StackAcresRequestError("There is nothing there.", 400);
+  const profile = await ensureProfile(token);
+  await assertLandReachable(profile.id, obstacle.sector, now);
+
+  const spent = await moveStackAcresEnergy(profile.id, -LAND_SWING_ENERGY, now);
+  if (!spent) throw new StackAcresRequestError(TOO_TIRED_TO_CLEAR, 400, { round: await snapshots(profile.id, now) });
+
+  const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
+  const swing = swingAtLandObstacle(obstacle.kind, current, now, sweet);
+  const written = swing ? await writeStackAcresLandObstacle(current, swing.nextState) : null;
+  if (!swing || !written) {
+    // Already down, or another tap got there first. Nothing happened, so the
+    // energy goes back.
+    await moveStackAcresEnergy(profile.id, LAND_SWING_ENERGY, now);
+    return { ...(await view(profile, now)), landCleared: null };
+  }
+
+  if (swing.item && swing.quantity > 0) {
+    await adjustStackAcresInventory(profile.id, swing.item, swing.quantity);
+  }
+  const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.sector, now) : false;
+  return {
+    ...(await view(profile, now)),
+    landCleared: {
+      obstacleId: obstacle.id,
+      sector: obstacle.sector,
+      item: swing.item,
+      quantity: swing.quantity,
+      cleared: swing.cleared,
+      sectorOpened: opened,
+    },
+  };
+}
+
+/**
+ * Blowing one obstacle instead of working it: the one place Gold leaves on
+ * the way to owning land. It pays no materials -- there is nothing left to
+ * pick up -- and it is priced per swing still owed, so work already done is
+ * never wasted.
+ *
+ * Rule 1: the Gold leaves before the obstacle does, and comes back if the
+ * guarded write finds the obstacle already gone.
+ */
+export async function demolishStackAcresLand(
+  token: string,
+  obstacleIdInput: string,
+  now = new Date(),
+): Promise<StackAcresActionResult> {
+  const obstacle = landObstacle(obstacleIdInput);
+  if (!obstacle) throw new StackAcresRequestError("There is nothing there.", 400);
+  const profile = await ensureProfile(token);
+  await assertLandReachable(profile.id, obstacle.sector, now);
+
+  const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
+  const price = demolitionPrice(obstacle.kind, current);
+  const next = demolishLandObstacle(current, now);
+  if (!next || price <= 0) {
+    return { ...(await view(profile, now)), landCleared: null };
+  }
+
+  const debited = await spendGoldByProfile(profile.id, price);
+  if (!debited) {
+    throw new StackAcresRequestError(`Blowing that costs ${price.toLocaleString()} Gold.`, 400, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const written = await writeStackAcresLandObstacle(current, next);
+  if (!written) {
+    await refundGold(profile.id, price);
+    return { ...(await view(profile, now)), landCleared: null };
+  }
+
+  const opened = await openIfCleared(profile.id, obstacle.sector, now);
+  return {
+    ...(await view(profile, now)),
+    landCleared: {
+      obstacleId: obstacle.id,
+      sector: obstacle.sector,
+      item: null,
+      quantity: 0,
+      cleared: true,
+      sectorOpened: opened,
+    },
+  };
+}
+
+/** The Pasture is reached through the Fold, so its ground cannot be worked
+ *  until the Fold is open. The map says the same thing with a fence. */
+async function assertLandReachable(profileId: string, sector: SectorId, now: Date): Promise<void> {
+  const requires = STACKACRES_SECTORS[sector].requires;
+  if (!requires) return;
+  const { sectors } = await readLand(profileId);
+  if (isSectorUnlocked(requires, sectors)) return;
+  throw new StackAcresRequestError(`${sectorLabel(requires)} comes first.`, 409, {
+    round: await snapshots(profileId, now),
+  });
+}
+
+/** Records the sector as cleared once nothing is left standing on it. No
+ *  Gold moves: the land was taken by the work, not bought. */
+async function openIfCleared(profileId: string, sector: SectorId, now: Date): Promise<boolean> {
+  if (!isClearableSector(sector)) return false;
+  const states = await listStackAcresLandObstacleStates(profileId);
+  const progress = landClearingProgress(
+    sector,
+    LAND_OBSTACLES[sector].map((obstacle) => ({
+      id: obstacle.id,
+      cleared: states[obstacle.id]?.clearedAt != null,
+    })),
+  );
+  if (!progress.done) return false;
+  const recorded = await recordStackAcresSectorCleared(profileId, sector, now);
+  if (recorded) await recordStoryEvents(profileId, [{ kind: "sector-cleared", sector }]);
+  return recorded;
 }
 
 /**

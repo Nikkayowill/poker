@@ -230,6 +230,11 @@ import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
 import { buildingCueDoors } from "@/lib/stackacres/building-cues";
+import {
+  isClearableSector,
+  landClearingProgress,
+  type LandObstacleSnapshot,
+} from "@/lib/stackacres/land-clearing";
 import { journalView } from "@/lib/stackacres/journal";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -486,6 +491,7 @@ interface StackAcresResponse {
   /** Every forage bush's current state, always present -- see
    *  lib/stackacres/forage.ts's `ForageNodeSnapshot`. */
   forageNodes?: ForageNodeSnapshot[];
+  landObstacles?: LandObstacleSnapshot[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -1069,6 +1075,9 @@ export function StackAcresFarm() {
   /** The forage bushes' ready/crop/respawn state, same "state lives in the
    *  snapshot, never in the component" posture as `woodNodes` above. */
   const [forageNodes, setForageNodes] = useState<ForageNodeSnapshot[]>([]);
+  /** What is still standing on land being cleared, same posture again
+   *  (lib/stackacres/land-clearing.ts). */
+  const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
   const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
@@ -1597,6 +1606,7 @@ export function StackAcresFarm() {
     if (data.woodNodes) setWoodNodes(data.woodNodes);
     if (data.stoneNodes) setStoneNodes(data.stoneNodes);
     if (data.forageNodes) setForageNodes(data.forageNodes);
+    if (data.landObstacles) setLandObstacles(data.landObstacles);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // `!== undefined` rather than a truthiness check: null is the real
     // "no vat placed" answer, and an optimistic patch carries no field.
@@ -2553,6 +2563,15 @@ export function StackAcresFarm() {
     world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
 
+  /** How far this sector's clearing has got, for its sheet. */
+  const clearingProgress = useMemo(
+    () =>
+      clearing && isClearableSector(clearing)
+        ? landClearingProgress(clearing, landObstacles)
+        : { cleared: 0, total: 0 },
+    [clearing, landObstacles],
+  );
+
   /** Who a closed wild gate is waiting on, for its sheet. */
   const clearingOpener = useMemo(() => {
     const traveler = clearing ? WILD_AREA_TRAVELER[clearing] : undefined;
@@ -3300,15 +3319,6 @@ export function StackAcresFarm() {
   const onContributeBlueprint = useCallback(
     (structureId: BlueprintId, itemId: MachineItemId, amount: number): Promise<BlueprintActionResult> =>
       act({ action: "contribute-blueprint", structureId, itemId, amount }),
-    [act],
-  );
-
-  const onClearSector = useCallback(
-    (sector: SectorId) => {
-      buySound();
-      setClearing(null);
-      void act({ action: "clear-sector", sector });
-    },
     [act],
   );
 
@@ -4742,7 +4752,7 @@ export function StackAcresFarm() {
           upkeepOutstanding={upkeep.due}
           busy={pendingByPrefix("clear-sector")}
           opener={clearingOpener}
-          onClear={onClearSector}
+          progress={clearingProgress}
           onClose={() => { panelSound(); setClearing(null); }}
         />
       )}

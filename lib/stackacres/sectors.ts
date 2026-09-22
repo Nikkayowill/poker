@@ -46,7 +46,6 @@ import { STACKACRES_BASE_CAP, STACKACRES_STOCK, capFor, isStackAcresCrop, type S
 import { nearPath } from "./paths";
 import type { StackAcresUnitSnapshot } from "./units";
 import { seededRandom, stockZone, type SceneryKind, type WorldRect } from "./world";
-import type { MaterialCost } from "./machine-items";
 import { STACKACRES_ZONES, type ZoneId } from "./zones";
 // A strict leaf (imports nothing), so a plain value import with no cycle to
 // work around. The Crop Fields' own ground, for `cropFieldOvergrowth`.
@@ -138,27 +137,6 @@ export interface SectorDef {
   state: SectorState;
   /** Gold to clear it, once, forever. 0 for the Farmstead, which is home. */
   clearCost: number;
-  /**
-   * Gathered materials the clear ALSO spends, on top of `clearCost`.
-   *
-   * WHY LAND COSTS TIMBER. Wood and Stone used to have a lifetime sink of
-   * forty and fifty units -- four one-time buildings -- after which the
-   * trees and the boulders had no reason to exist. Land is the one purchase
-   * a player keeps making, so it is where gathering earns a place in the
-   * whole game rather than the first hour. Gold prices are untouched: this
-   * adds a second axis, it does not reprice the ladder.
-   *
-   * TIMBER ONLY, NEVER STONE, on both rungs, for two reasons that happen to
-   * agree. The first is reachability: Stone is in the Mine, the Mine opens
-   * on a milestone count, and the Fold is itself one of the milestones, so a
-   * land gate that asked for Stone could be reached before its own Stone
-   * was. The second is that the Mine's three boulders are GLOBAL rows shared
-   * by every player (lib/server/stone-node-store.ts), so Stone belongs on
-   * one-time purchases -- the Feed Silo and the Preserves Cellar -- and not
-   * on anything a player comes back to. The Homestead's four trees are per
-   * profile and choppable from the first minute, so Wood is safe anywhere.
-   */
-  materials?: readonly MaterialCost[];
   /** The sector that has to be cleared first, or null for the first rung.
    *  Null on the Farmstead too, which is never locked to begin with. */
   requires: SectorId | null;
@@ -214,9 +192,6 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     id: "wallow",
     state: "claimable",
     clearCost: 45_000,
-    // Fencing and a shelter: timber only, because the Mine may still be shut
-    // at this rung. See `materials` on SectorDef.
-    materials: [{ item: "wood", quantity: 30 }],
     // Used to be "meadow" -- see `SECTOR_LADDER`'s own header on why the
     // Crop Fields' unlock is no longer a sector this can chain off.
     requires: null,
@@ -227,8 +202,6 @@ export const STACKACRES_SECTORS: Readonly<Record<SectorId, SectorDef>> = {
     id: "oxfields",
     state: "claimable",
     clearCost: 100_000,
-    // A bigger pen, longer fence lines and a loafing shed.
-    materials: [{ item: "wood", quantity: 60 }],
     requires: "wallow",
     requiresUnits: 6,
     promise: "Cleared, this becomes your Cattle Pens — the best-paying stock on the farm.",

@@ -291,14 +291,6 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
-    // Clearing land costs timber now as well as Gold (lib/stackacres/
-    // sectors.ts's `materials`). A playthrough chops for it; this simulation
-    // is about clocks and fees, so it puts the Wood straight in the barn.
-    await store.adjustStackAcresInventory(
-      profile.id,
-      "wood",
-      (sectors.STACKACRES_SECTORS.wallow.materials ?? []).reduce((total, m) => total + m.quantity, 0),
-    );
     const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
 
     const [clearedSectors, capacity, cropFieldsUnlocked] = await Promise.all([

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTRACT_PASSES_PER_DAY,
   CONTRACT_RUNGS,
   canFulfillContract,
+  contractPassSpent,
+  isStackAcresContractStatus,
   contractProgress,
   drawContract,
   isPostedRung,
@@ -104,5 +107,28 @@ describe("the town kitchen orders (Chapter 5)", () => {
     );
     expect([...drawn].sort()).toEqual(["pickles", "salsa", "sauce"]);
     expect(drawContract(["sauerkraut"])).toBeNull();
+  });
+});
+
+describe("passing on an order", () => {
+  it("is spent for the rest of the day once used, and free again tomorrow", () => {
+    expect(contractPassSpent(null, "2026-09-21")).toBe(false);
+    expect(contractPassSpent("2026-09-21", "2026-09-21")).toBe(true);
+    expect(contractPassSpent("2026-09-20", "2026-09-21")).toBe(false);
+  });
+
+  // One a day, and named rather than inlined so the sheet, the service and
+  // this test cannot drift on the number.
+  it("allows exactly one a day", () => {
+    expect(CONTRACT_PASSES_PER_DAY).toBe(1);
+  });
+
+  it("recognises the three terminal states and nothing else", () => {
+    for (const status of ["open", "fulfilled", "passed"]) {
+      expect(isStackAcresContractStatus(status)).toBe(true);
+    }
+    for (const status of ["cancelled", "PASSED", ""]) {
+      expect(isStackAcresContractStatus(status)).toBe(false);
+    }
   });
 });

@@ -3643,6 +3643,25 @@
   font-weight: 700;
 }
 
+/* The timber the clear also spends, under its Gold price. Land costs Wood
+   now (lib/stackacres/sectors.ts's `materials`) and the sheet has to say so
+   before the button does. */
+.sa-clear-materials {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.sa-clear-materials > li.is-met { color: var(--sa-ink-soft); }
+.sa-clear-materials span { font-weight: 400; color: var(--sa-ink-soft); }
+
+/* A pen slot's timber, beside its Gold, on the Expand button. */
+.sa-buy-price .is-short { color: var(--sa-ink); font-weight: 800; }
+
 /* The checklist. Every line comes from `sectorClearCheck`, which the server
    calls too -- see the modal's own header on why the wording lives there. */
 .sa-clear-reqs {
@@ -5347,6 +5366,98 @@
 .sa-goals-list ul li.is-built { color: var(--sa-ink-soft); }
 .sa-chapter-opened { font-weight: 700; }
 .sa-chapter-next { color: var(--sa-ink-soft); }
+
+/* The Journal sheet: one line at the top, then the two tracks. */
+.sa-journal { display: grid; gap: 14px; padding: 2px 27px 27px; }
+.sa-journal-now {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-block);
+  background: var(--sa-glass-fill-ctl);
+}
+.sa-journal-now img { width: 52px; height: 52px; image-rendering: pixelated; }
+.sa-journal-now-line { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.4; }
+.sa-journal-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sa-ink-soft);
+}
+.sa-journal-block > h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sa-ink-soft);
+}
+.sa-journal-standing { font-size: 11px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+.sa-journal .sa-goals-list { padding: 0; }
+.sa-journal .sa-goals-list h4 { margin: 0; font-size: 14px; }
+.sa-journal-step-head { font-weight: 700; }
+.sa-journal-place { font-weight: 400; color: var(--sa-ink-soft); }
+.sa-journal-costs { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.sa-journal-costs > span.is-met { color: var(--sa-ink-soft); }
+.sa-journal-source,
+.sa-journal-opens { display: block; font-size: 11px; color: var(--sa-ink-soft); }
+.sa-journal-reach { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.sa-journal-reach > li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; opacity: 0.72; }
+.sa-journal-reach > li.is-done { opacity: 1; }
+.sa-journal-tick { display: grid; place-items: center; height: 16px; color: var(--sa-ink); }
+.sa-journal-foot { margin: 6px 0 0; font-size: 11px; color: var(--sa-ink-soft); }
+.sa-journal-callers { display: grid; gap: 3px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.sa-journal-callers > li.is-ready { color: var(--sa-ink); font-weight: 700; }
+.sa-journal-chip .sa-goal-line { font-weight: 700; }
+.sa-journal-waiting { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.sa-journal-waiting > li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  opacity: 0.74;
+  font-variant-numeric: tabular-nums;
+}
+.sa-journal-waiting > li.is-ready { opacity: 1; }
+.sa-journal-waiting-label { font-weight: 700; }
+.sa-journal-waiting-detail { color: var(--sa-ink-soft); }
+.sa-journal-waiting > li.is-ready .sa-journal-waiting-detail { color: var(--sa-ink); }
+.sa-journal-meter {
+  grid-column: 1 / -1;
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+.sa-journal-meter > span { display: block; height: 100%; background: var(--sa-ink-soft); }
+.sa-journal-waiting > li.is-ready .sa-journal-meter > span { background: var(--sa-ink); }
+.sa-journal-costs > span { display: inline-flex; align-items: center; gap: 3px; }
+
+/* One scroller, and it is the modal's. The goals sheet this replaced was a
+   single list, so giving that list its own max-height was harmless; the
+   Journal is three blocks inside the same modal, and a scroller per block
+   leaves the player dragging one pane past another. */
+.sa-journal,
+.sa-journal .sa-goals-list { max-height: none; overflow: visible; }
+
+@media (max-height: 520px) {
+  .sa-journal { padding: 2px 20px 16px; }
+  .sa-journal-now img { width: 40px; height: 40px; }
+  .sa-journal-now { grid-template-columns: 40px 1fr; }
+}
 
 @media (max-height: 520px) {
   .sa-goals-list { max-height: calc(100vh - 110px); overflow-y: auto; padding: 2px 20px 16px; }

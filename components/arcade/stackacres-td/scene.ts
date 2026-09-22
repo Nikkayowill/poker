@@ -47,7 +47,8 @@ import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/trav
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
-import type { StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
+import type { BuildingCueDoors, StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
+import type { BuildingDoor } from "@/lib/stackacres/building-cues";
 import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
@@ -396,6 +397,8 @@ export class TopdownScene extends Phaser.Scene {
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   private storyCues: StoryCues = {};
+  private buildingCues: BuildingCueDoors = {};
+  private buildingCueImages: Phaser.GameObjects.Image[] = [];
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
   private spent = new Map<string, number>();
   private nextRegrowCheck = 0;
@@ -691,6 +694,7 @@ export class TopdownScene extends Phaser.Scene {
     this.layer = [];
     this.animated = [];
     this.propImages = [];
+    this.buildingCueImages = [];
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
@@ -747,6 +751,7 @@ export class TopdownScene extends Phaser.Scene {
 
     this.applyGates();
     this.applyNpcs();
+    this.applyBuildingCues();
     this.drawSoil();
     this.drawUnits();
   }
@@ -793,6 +798,27 @@ export class TopdownScene extends Phaser.Scene {
         );
         this.bob(node.cue);
       }
+    }
+  }
+
+  /**
+   * The badge over a building whose inside has something finished in it
+   * (lib/stackacres/building-cues.ts). Anchored to the prop rather than to
+   * the door, so it floats clear of the roof instead of sitting on the wall,
+   * and only drawn where that building actually stands.
+   */
+  private applyBuildingCues(): void {
+    for (const image of this.buildingCueImages) image.destroy();
+    this.buildingCueImages = [];
+    for (const door of Object.keys(this.buildingCues) as BuildingDoor[]) {
+      if (this.buildingCues[door] !== true) continue;
+      const prop = this.propImages.find(({ spec }) => spec.tag === door);
+      if (!prop) continue;
+      const badge = this.keep(
+        this.add.image(prop.image.x + prop.spec.w / 2, prop.spec.y - 40, "common", "cue_ready").setDepth(10_000),
+      );
+      this.bob(badge);
+      this.buildingCueImages.push(badge);
     }
   }
 
@@ -1825,6 +1851,11 @@ export class TopdownScene extends Phaser.Scene {
   setStoryCues(cues: StoryCues): void {
     this.storyCues = cues;
     if (this.booted) this.applyNpcs();
+  }
+
+  setBuildingCues(doors: BuildingCueDoors): void {
+    this.buildingCues = doors;
+    if (this.booted) this.applyBuildingCues();
   }
 
   popUnit(unitId: string): void {

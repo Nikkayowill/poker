@@ -90,8 +90,39 @@ export interface StackAcresContractRow {
   quantity: number;
   goldReward: number;
   influenceReward: number;
-  status: "open" | "fulfilled";
+  status: StackAcresContractStatus;
   createdAt: string;
+}
+
+/**
+ * Three terminal states, not two.
+ *
+ * `passed` is the release valve on a board that is one slot wide and has no
+ * cancel: a rung the farm can make but the player does not want would
+ * otherwise sit there until it was filled. It is capped at one per UTC day
+ * (`contractPassSpent` below), because an uncapped pass is a reroll button
+ * and the single slot exists precisely to stop the board becoming an
+ * arbitrage puzzle.
+ */
+export type StackAcresContractStatus = "open" | "fulfilled" | "passed";
+
+export function isStackAcresContractStatus(value: string): value is StackAcresContractStatus {
+  return value === "open" || value === "fulfilled" || value === "passed";
+}
+
+/** One a day. Named rather than inlined so the rule reads the same in the
+ *  service, the sheet and the tests. */
+export const CONTRACT_PASSES_PER_DAY = 1;
+
+/**
+ * Whether today's pass is already gone.
+ *
+ * Takes the day strings rather than dates so the caller owns the clock, the
+ * same posture every other timed rule in StackAcres takes. `lastPassDay` is
+ * null for a player who has never passed one.
+ */
+export function contractPassSpent(lastPassDay: string | null, today: string): boolean {
+  return lastPassDay !== null && lastPassDay === today;
 }
 
 /** A source of numbers in [0, 1). Injected so a test can make it boring --

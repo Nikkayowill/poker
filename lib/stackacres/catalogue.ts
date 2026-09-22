@@ -47,6 +47,7 @@
  * other; the Workshop's own separate "wheat plots" are gone.
  */
 
+import type { MaterialCost } from "./machine-items";
 import type { StackAcresShopLock } from "./shop-locks";
 
 export const STACKACRES_CROPS = [
@@ -395,4 +396,29 @@ export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresLivestock, num
 
 export function stackacresCapacityPrice(stock: StackAcresLivestock): number {
   return STACKACRES_CAPACITY_PRICE[stock];
+}
+
+/**
+ * The timber a pen slot ALSO costs, on top of its Gold price.
+ *
+ * THE ONLY REPEATABLE MATERIAL SINK IN THE GAME, and that is the job it is
+ * here to do: nine slots across the three kinds, so chopping still pays for
+ * something long after the Mill and the Loom are up (see ./sectors.ts's
+ * `materials` for the rest of the argument).
+ *
+ * WOOD ONLY, NEVER STONE, and the reason is not balance. Stone's three
+ * boulders are GLOBAL rows shared by every player on the server
+ * (lib/server/stone-node-store.ts), so a cost a player pays over and over
+ * would put them in a queue behind strangers. The four trees are per
+ * profile, so Wood can be asked for repeatedly without anyone else's farm
+ * deciding how long it takes. Stone stays on one-time purchases.
+ */
+export const STACKACRES_CAPACITY_MATERIALS: Readonly<Record<StackAcresLivestock, readonly MaterialCost[]>> = {
+  hen: [{ item: "wood", quantity: 5 }],
+  pig: [{ item: "wood", quantity: 10 }],
+  cattle: [{ item: "wood", quantity: 15 }],
+};
+
+export function stackacresCapacityMaterials(stock: StackAcresLivestock): readonly MaterialCost[] {
+  return STACKACRES_CAPACITY_MATERIALS[stock];
 }

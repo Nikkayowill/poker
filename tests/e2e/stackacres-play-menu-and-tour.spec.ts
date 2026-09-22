@@ -58,7 +58,11 @@ test("the entry screen offers Play, Profile and Settings without leaving StackAc
     await page.getByRole("button", { name: /Settings/ }).click();
     const settingsDialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsDialog).toBeVisible();
-    await expect(page.getByRole("button", { name: "Play", exact: true })).toBeHidden();
+    // "In place" means the entry screen is still underneath and the farm has
+    // not booted -- not that the menu is unmounted. The panel is an overlay
+    // over the same screen, so the Play button stays in the page behind it.
+    expect(page.url()).toContain("/games/stackacres");
+    expect(await page.evaluate(() => "__stackacres" in window)).toBe(false);
     const soundRow = settingsDialog.getByRole("button", { name: /Sound/ });
     const before = await soundRow.textContent();
     await soundRow.click();

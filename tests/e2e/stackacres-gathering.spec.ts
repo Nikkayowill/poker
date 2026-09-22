@@ -69,7 +69,10 @@ test("felling a tree in the game leaves a stump, and only that tree", async ({ c
   expect(await sceneCall(page, "isBlockedAt", TREE_3_OUTER)).toBe(true);
   await sceneCall(page, "placeFarmer", "homestead", { x: TREE_3.x, y: TREE_3.y + 40 });
   await page.waitForTimeout(500);
-  const point = await sceneCall(page, "clientPointFor", TREE_3.x, TREE_3.y - 6);
+  // The trunk BASE, not the canopy. Tree 3 stands at the top edge of the map,
+  // where the camera cannot scroll any further up, so its crown sits behind
+  // the HUD's own chips -- a click there lands on a button, not the canvas.
+  const point = await sceneCall(page, "clientPointFor", TREE_3.x, TREE_3.y);
   await page.mouse.click(point.x, point.y);
 
   const popup = page.getByRole("dialog", { name: "Tree" });

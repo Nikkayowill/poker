@@ -46,7 +46,9 @@ describe("TRAVELER_CATALOGUE", () => {
     expect(TRAVELER_CATALOGUE.miles.unlock).toEqual({ kind: "milestone", count: 1 });
     expect(TRAVELER_CATALOGUE.skye.unlock).toEqual({ kind: "milestone", count: 2 });
     expect(TRAVELER_CATALOGUE.barnaby.unlock).toEqual({ kind: "milestone", count: 2 });
-    expect(TRAVELER_CATALOGUE.brayden.unlock).toEqual({ kind: "milestone", count: 3 });
+    // Brayden arrives a rung before his cohort: he opens the Mine, and the
+    // Mine is the only Stone on the farm. See his entry for why.
+    expect(TRAVELER_CATALOGUE.brayden.unlock).toEqual({ kind: "milestone", count: 2 });
     expect(TRAVELER_CATALOGUE.ivy.unlock).toEqual({ kind: "milestone", count: 3 });
     expect(TRAVELER_CATALOGUE.bea.unlock).toEqual({ kind: "milestone", count: 4 });
     expect(TRAVELER_CATALOGUE.arthur.unlock).toEqual({ kind: "flag", flag: "town_trusted" });

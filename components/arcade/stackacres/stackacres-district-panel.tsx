@@ -94,11 +94,29 @@ export function StackAcresBuySection({ options, isPending, onSeed, onBuyOutright
               <button
                 type="button"
                 className="sa-buy-btn is-expand"
-                disabled={isPending(`expand-capacity:${option.stock}`)}
+                // Short of timber is a refusal the server would make anyway,
+                // and the count is right there on the button -- same posture
+                // the land-clearing sheet takes. Gold is still left to the
+                // server, as everywhere else in this app.
+                disabled={
+                  isPending(`expand-capacity:${option.stock}`) ||
+                  option.expand.timber.have < option.expand.timber.need
+                }
                 onClick={() => onExpand(option.stock)}
               >
                 <span className="sa-buy-label">Expand capacity</span>
-                <span className="sa-buy-price">{option.expand.cost.toLocaleString()} Gold</span>
+                <span className="sa-buy-price">
+                  {option.expand.cost.toLocaleString()} Gold
+                  {/* A pen slot costs timber too, and it is the one material
+                      cost a player pays over and over -- so the button says
+                      what is in the barn, not just what the slot wants. */}
+                  {option.expand.timber.need > 0 && (
+                    <span className={option.expand.timber.have >= option.expand.timber.need ? undefined : "is-short"}>
+                      {" + "}
+                      {option.expand.timber.need} Wood ({option.expand.timber.have})
+                    </span>
+                  )}
+                </span>
               </button>
             )}
           </div>

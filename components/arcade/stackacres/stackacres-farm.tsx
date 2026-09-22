@@ -227,7 +227,10 @@ import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
-import { StackAcresChapterCard, StackAcresGoalChip, StackAcresGoalsSheet } from "./stackacres-chapters";
+import { StackAcresChapterCard } from "./stackacres-chapters";
+import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
+import { buildingCueDoors } from "@/lib/stackacres/building-cues";
+import { journalView } from "@/lib/stackacres/journal";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
 import { StackAcresTopdownWorld } from "../stackacres-td/topdown-world";
@@ -3164,6 +3167,11 @@ export function StackAcresFarm() {
     [act],
   );
 
+  const onPassContract = useCallback(
+    () => act({ action: "pass-contract" }),
+    [act],
+  );
+
   /**
    * The Workshop's actions, adapted from `act`'s fixed `ContractActionResult`
    * shape: `lastProcessing` is where the
@@ -3598,6 +3606,73 @@ export function StackAcresFarm() {
     () => ({ sectors, influence, greenhouseBuilt, cropFieldsUnlocked }),
     [sectors, influence, greenhouseBuilt, cropFieldsUnlocked],
   );
+
+  /**
+   * The Journal (lib/stackacres/journal.ts): the chip's line and the sheet
+   * behind it, both off one derivation so they cannot say different things.
+   *
+   * It reads `liveUnits` rather than `units`, so a crop the optimistic layer
+   * has already moved off dry is off the "gone dry" line at the same instant
+   * the bed on screen darkens. Nothing here is fetched and nothing is stored.
+   */
+  const journal = useMemo(
+    () =>
+      journalView({
+        gold,
+        inventory: processing.inventory,
+        built: builtKinds,
+        units: liveUnits,
+        contract: processing.contract,
+        vat,
+        cellar,
+        story: storyView,
+        progress: shopProgress,
+        machines: processing.machines,
+        woodNodes,
+        stoneNodes,
+        forageNodes,
+        nowMs,
+      }),
+    [
+      gold,
+      processing.inventory,
+      processing.contract,
+      processing.machines,
+      builtKinds,
+      liveUnits,
+      vat,
+      cellar,
+      storyView,
+      shopProgress,
+      woodNodes,
+      stoneNodes,
+      forageNodes,
+      nowMs,
+    ],
+  );
+
+  /**
+   * The badge over the Workshop and the farmhouse: the same thing the
+   * Journal's "collect" line is about, hung on the door it is behind
+   * (lib/stackacres/building-cues.ts).
+   *
+   * Pushed off two booleans rather than off the record itself, because
+   * `nowMs` ticks every second and a fresh object every tick would tear the
+   * badge down and rebuild it, losing its bob.
+   */
+  const waitingDoors = useMemo(
+    () => buildingCueDoors({ machines: processing.machines, vat, cellar, nowMs }),
+    [processing.machines, vat, cellar, nowMs],
+  );
+  const workshopWaiting = waitingDoors.workshop === true;
+  const houseWaiting = waitingDoors.farmhouse === true;
+  useEffect(() => {
+    world.current?.setBuildingCues({
+      ...(workshopWaiting ? { workshop: true as const } : {}),
+      ...(houseWaiting ? { farmhouse: true as const } : {}),
+    });
+  }, [workshopWaiting, houseWaiting]);
+
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --
    *  the store is opened from the barn, not from standing in a district, so
@@ -3610,8 +3685,10 @@ export function StackAcresFarm() {
     () =>
       Array.from(new Set(STACKACRES_LIVESTOCK.map(stockZone)))
         .filter((zone) => isSectorUnlocked(zone, sectors))
-        .flatMap((zone) => buyOptionsForZone(zone, { units: liveUnits, gold, capacity })),
-    [sectors, liveUnits, gold, capacity],
+        .flatMap((zone) =>
+          buyOptionsForZone(zone, { units: liveUnits, gold, capacity, inventory: processing.inventory }),
+        ),
+    [sectors, liveUnits, gold, capacity, processing.inventory],
   );
   const lockedPens = useMemo(() => lockedLivestock(sectors), [sectors]);
 
@@ -3638,9 +3715,8 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
-  // The Workshop's "something is ready" dot lived on the deleted places list
-  // (`workshopAttention`, lib/stackacres/workshop.ts). If it comes back, it
-  // belongs on the windmill sprite as a glow.
+  // The Workshop's "something is ready" dot used to live on the deleted
+  // places list; it hangs over the building itself now (`waitingDoors` above).
 
   /**
    * A finger landed on the brush at the Ancestral Oak. From here it is a
@@ -3866,9 +3942,7 @@ export function StackAcresFarm() {
           <button type="button" className="htp-trigger" onClick={openMap}>
             <MapPin size={13} aria-hidden="true" /> Map
           </button>
-          {chapterNow && (
-            <StackAcresGoalChip view={chapterNow} onOpen={() => { panelSound(); setShowGoals(true); }} />
-          )}
+          <StackAcresJournalChip view={journal} onOpen={() => { panelSound(); setShowGoals(true); }} />
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps
@@ -4640,11 +4714,7 @@ export function StackAcresFarm() {
       )}
 
       {showGoals && (
-        <StackAcresGoalsSheet
-          views={chapters}
-          currentNumber={chapterNow?.chapter.number ?? null}
-          onClose={() => { panelSound(); setShowGoals(false); }}
-        />
+        <StackAcresJournalSheet view={journal} onClose={() => { panelSound(); setShowGoals(false); }} />
       )}
 
       {chapterCard && (
@@ -4666,6 +4736,7 @@ export function StackAcresFarm() {
           unitCount={units.length}
           goldBalance={profile?.goldBalance ?? null}
           unlimitedGold={profile?.unlimitedGold === true}
+          inventory={processing.inventory}
           upkeepOutstanding={upkeep.due}
           busy={pendingByPrefix("clear-sector")}
           opener={clearingOpener}
@@ -4692,9 +4763,10 @@ export function StackAcresFarm() {
           inventory={processing.inventory}
           contract={processing.contract}
           influence={influence}
-          busy={isPending("fulfill-contract") || isPending("request-contract")}
+          busy={isPending("fulfill-contract") || isPending("request-contract") || isPending("pass-contract")}
           onSettle={onSettleContract}
           onRequest={onRequestContract}
+          onPass={onPassContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
           unlockedSectors={sectors}
           onTravel={travel}

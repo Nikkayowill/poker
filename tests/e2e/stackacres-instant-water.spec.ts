@@ -97,6 +97,12 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   // No Crop Fields unlock to buy any more -- the land is walked onto and
   // broken with the hoe, which is what records the flag. All this farm needs
   // is seed to sow.
+  //
+  // The Stew Pot first: Ray will not sell Carrot seed until something on the
+  // farm uses it (lib/stackacres/seed-unlocks.ts), and wheat is the wrong
+  // crop for a watering test -- its thirst outlasts its five-minute cycle,
+  // so it never goes dry.
+  await farmAction(farmerContext, { action: "place-machine", kind: "stew_pot" });
   await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
   await before(farmerContext);
 

@@ -10,6 +10,7 @@ import {
   STACKACRES_MUCK_CHANCE,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
   capFor,
+  stackacresCapacityMaterials,
   stackacresCapacityPrice,
   isLivestock,
   isStackAcresCrop,
@@ -225,6 +226,8 @@ import {
   readStackAcresInfluence,
   readStackAcresInventory,
   readStackAcresOpenContract,
+  readStackAcresLastContractPassDay,
+  passStackAcresContract as passStoredContract,
   adjustStackAcresInfluence,
   adjustStackAcresInventory,
   startStackAcresMachine,
@@ -321,7 +324,7 @@ import {
   MACHINE_ITEM_CATALOGUE,
   machineItemLabel,
   machineItemNoun,
-  type MachineRawItem,
+  type MaterialCost,
 } from "@/lib/stackacres/machine-items";
 import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import {
@@ -440,7 +443,12 @@ import {
   type CrossbreedPlotView,
 } from "@/lib/stackacres/crossbreeding";
 import type { CrossbreedItem } from "@/lib/stackacres/crossbreed-items";
-import { canFulfillContract, drawContract, type StackAcresContractRow } from "@/lib/stackacres/contracts";
+import {
+  canFulfillContract,
+  contractPassSpent,
+  drawContract,
+  type StackAcresContractRow,
+} from "@/lib/stackacres/contracts";
 import {
   RECIPE_CATALOGUE,
   isInstantRecipe,
@@ -1836,10 +1844,22 @@ export async function clearStackAcresSector(
     });
   }
 
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
-  // spendGoldByProfile is the authority.
+  // Rule 1: every stake leaves before the land is recorded, materials first
+  // and Gold second -- the same order (and the same helper) a machine
+  // placement uses. Clearing ground now costs timber, and the Pasture stone
+  // too: see lib/stackacres/sectors.ts's `materials` for why land is where
+  // gathering earns a place in the whole game.
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    def.materials ?? [],
+    now,
+    (material) =>
+      `Clearing ${sectorLabel(sector)} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+
   const debited = await spendGoldByProfile(profile.id, def.clearCost);
   if (!debited) {
+    await refundMaterials();
     throw new StackAcresRequestError(
       `Clearing ${sectorLabel(sector)} costs ${def.clearCost.toLocaleString()} Gold.`,
       400,
@@ -1852,12 +1872,14 @@ export async function clearStackAcresSector(
     recorded = await recordStackAcresSectorCleared(profile.id, sector, now);
   } catch (error) {
     await refundGold(profile.id, def.clearCost);
+    await refundMaterials();
     throw error;
   }
   if (!recorded) {
     // Another tab cleared it between the check above and now. The land is
     // theirs either way; this request must not have been charged for it.
     await refundGold(profile.id, def.clearCost);
+    await refundMaterials();
     throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
       round: await snapshots(profile.id, now),
     });
@@ -1961,10 +1983,22 @@ export async function expandStackAcresCapacity(
   }
 
   const price = stackacresCapacityPrice(stock);
-  // Rule 1: the Gold leaves first. Null is "cannot afford", not an error --
-  // spendGoldByProfile is the authority.
+  // Rule 1: every stake leaves before the slot exists, materials first and
+  // Gold second. A pen slot is the ONE repeatable material cost in the game
+  // (nine of them across the three kinds), which is what keeps the trees
+  // worth chopping after the Mill and the Loom are up -- see
+  // STACKACRES_CAPACITY_MATERIALS for why it is timber and never stone.
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    stackacresCapacityMaterials(stock),
+    now,
+    (material) =>
+      `Another ${def.label} slot needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
+
   const debited = await spendGoldByProfile(profile.id, price);
   if (!debited) {
+    await refundMaterials();
     throw new StackAcresRequestError(`Expanding ${def.label} capacity costs ${price.toLocaleString()} Gold.`, 400);
   }
 
@@ -1973,6 +2007,7 @@ export async function expandStackAcresCapacity(
     // Lost the race against the DB's own 0..3 bound (another tab expanded
     // this same kind between the read above and now): refund.
     await refundGold(profile.id, price);
+    await refundMaterials();
     throw new StackAcresRequestError(`Every ${def.label} slot is already expanded.`, 409, {
       round: await snapshots(profile.id, now),
     });
@@ -4319,6 +4354,42 @@ export async function sowStackAcresWheat(token: string, now = new Date()): Promi
 
 /** Places a machine outright, with Gold. A pure sink, never sold back --
  *  same category as `expandStackAcresCapacity`. */
+/**
+ * Spends a purchase's gathered materials, and hands back the undo.
+ *
+ * ONE HELPER FOR THE THREE BUYERS (a machine, a land clear, a pen slot), so
+ * rule 1's refund path is written once. Materials go before Gold everywhere
+ * this is used: a handful of Wood is cheaper to put back than a Gold spend
+ * that then fails, and `adjustStackAcresInventory` returning null is the
+ * authority on "not enough", never a count read beforehand.
+ *
+ * A short line throws, having already put back whatever left. The returned
+ * `refund` is for the caller's own later failures (the Gold spend, the write
+ * the spend paid for) and is safe to call once.
+ */
+async function spendStackAcresMaterials(
+  profileId: string,
+  materials: readonly MaterialCost[],
+  now: Date,
+  short: (material: MaterialCost) => string,
+): Promise<{ refund: () => Promise<void> }> {
+  const taken: MaterialCost[] = [];
+  const refund = async (): Promise<void> => {
+    for (const material of taken) {
+      await adjustStackAcresInventory(profileId, material.item, material.quantity);
+    }
+  };
+  for (const material of materials) {
+    const remaining = await adjustStackAcresInventory(profileId, material.item, -material.quantity);
+    if (remaining === null) {
+      await refund();
+      throw new StackAcresRequestError(short(material), 400, { round: await snapshots(profileId, now) });
+    }
+    taken.push(material);
+  }
+  return { refund };
+}
+
 export async function placeStackAcresMachine(
   token: string,
   kindInput: string,
@@ -4349,28 +4420,17 @@ export async function placeStackAcresMachine(
   // Rule 1: every stake leaves before the machine exists. Materials go
   // first (cheaper to refund a handful of Wood or Stone than Gold if the
   // Gold spend then comes up short), Gold second.
-  const materials = def.materials ?? [];
-  const debitedMaterials: { item: MachineRawItem; quantity: number }[] = [];
-  for (const material of materials) {
-    const remaining = await adjustStackAcresInventory(profile.id, material.item, -material.quantity);
-    if (remaining === null) {
-      for (const already of debitedMaterials) {
-        await adjustStackAcresInventory(profile.id, already.item, already.quantity);
-      }
-      throw new StackAcresRequestError(
-        `A ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
-        400,
-        { round: await snapshots(profile.id, now) },
-      );
-    }
-    debitedMaterials.push(material);
-  }
+  const { refund: refundMaterials } = await spendStackAcresMaterials(
+    profile.id,
+    def.materials ?? [],
+    now,
+    (material) =>
+      `A ${def.label} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
+  );
 
   const debited = await spendGoldByProfile(profile.id, def.placeCost);
   if (!debited) {
-    for (const material of debitedMaterials) {
-      await adjustStackAcresInventory(profile.id, material.item, material.quantity);
-    }
+    await refundMaterials();
     throw new StackAcresRequestError(`A ${def.label} costs ${def.placeCost.toLocaleString()} Gold.`, 400, {
       round: await snapshots(profile.id, now),
     });
@@ -4380,9 +4440,7 @@ export async function placeStackAcresMachine(
     await createStackAcresMachine(profile.id, kind, now);
   } catch (error) {
     await refundGold(profile.id, def.placeCost);
-    for (const material of debitedMaterials) {
-      await adjustStackAcresInventory(profile.id, material.item, material.quantity);
-    }
+    await refundMaterials();
     throw error;
   }
 
@@ -5043,6 +5101,72 @@ export async function requestStackAcresContract(
   // A null here means a concurrent tab posted one first -- not an error, the
   // view below simply shows whichever one won.
   await createStackAcresContract(profile.id, def);
+
+  return view(profile, now);
+}
+
+/**
+ * Passes on the open contract and draws another, at most once per UTC day.
+ *
+ * MOVES NOTHING. No Gold, no goods, no Influence -- a pass is the release
+ * valve on a board that is one slot wide and has no cancel (see
+ * lib/stackacres/contracts.ts's header), so it is the one contract path with
+ * no money ordering to get right.
+ *
+ * THE DAY LIMIT IS READ OFF THE ROWS, not stored as a counter: the newest
+ * passed contract's `resolved_at` is when the last pass was spent. Same
+ * "derive it from a permanent fact" posture as the milestone flags, and it
+ * means there is no counter to reset at midnight.
+ *
+ * The status guard on the write is what makes a double-tapped pass spend one
+ * day rather than two: the second request finds the row already passed and
+ * is refused before it can draw anything.
+ */
+export async function passStackAcresContract(
+  token: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+
+  const existing = await readStackAcresOpenContract(profile.id);
+  if (!existing) {
+    throw new StackAcresRequestError("There is no contract to pass on.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  const today = stackacresExchangeDay(now);
+  if (contractPassSpent(await readStackAcresLastContractPassDay(profile.id), today)) {
+    throw new StackAcresRequestError(
+      "You have already passed on an order today. The town will hold this one until tomorrow.",
+      409,
+      { round: await snapshots(profile.id, now) },
+    );
+  }
+
+  const passed = await passStoredContract(existing, now);
+  if (!passed) {
+    // Another tab resolved it first -- filled or passed. Either way this
+    // request must not also spend the day.
+    throw new StackAcresRequestError("That contract is already settled.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  // Draw the replacement the same way `requestStackAcresContract` does, off
+  // what this farm can actually make. A farm with no machine left to make
+  // anything simply ends up with an empty board, exactly as it would after
+  // filling one.
+  const machines = await listStackAcresMachines(profile.id);
+  const producible = [
+    ...new Set(
+      machines.flatMap((machine) =>
+        recipesForMachine(machine.kind).map((recipe) => RECIPE_CATALOGUE[recipe].output.item),
+      ),
+    ),
+  ];
+  const def = drawContract(producible, Math.random);
+  if (def) await createStackAcresContract(profile.id, def);
 
   return view(profile, now);
 }

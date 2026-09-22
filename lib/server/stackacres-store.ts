@@ -19,6 +19,11 @@ import {
   type MachineItemId,
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
+import {
+  isStackAcresContractStatus,
+  type StackAcresContractStatus,
+} from "@/lib/stackacres/contracts";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
@@ -2491,12 +2496,15 @@ export interface StoredContract {
   quantity: number;
   goldReward: number;
   influenceReward: number;
-  status: "open" | "fulfilled";
+  status: StackAcresContractStatus;
   createdAt: string;
+  /** When it stopped being open, for either terminal status. Null while
+   *  open, and null on every row that predates the column. */
+  resolvedAt: string | null;
 }
 
 const CONTRACT_COLUMNS =
-  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
+  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at, resolved_at";
 
 export interface ContractDbRow {
   id: string;
@@ -2507,6 +2515,7 @@ export interface ContractDbRow {
   influence_reward: number | string;
   status: string;
   created_at: string;
+  resolved_at?: string | null;
 }
 
 export function contractFromRow(row: ContractDbRow): StoredContract {
@@ -2517,8 +2526,9 @@ export function contractFromRow(row: ContractDbRow): StoredContract {
     quantity: Number(row.quantity),
     goldReward: Number(row.gold_reward),
     influenceReward: Number(row.influence_reward),
-    status: row.status === "fulfilled" ? "fulfilled" : "open",
+    status: isStackAcresContractStatus(row.status) ? row.status : "open",
     createdAt: String(row.created_at),
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
   };
 }
 
@@ -2578,6 +2588,7 @@ export async function createStackAcresContract(
       influenceReward: def.influenceReward,
       status: "open",
       createdAt: now,
+      resolvedAt: null,
     };
     memoryContracts.set(contract.id, { ...contract });
     return { ...contract };
@@ -2613,23 +2624,78 @@ export async function createStackAcresContract(
 export async function fulfillStackAcresContract(current: StoredContract): Promise<StoredContract | null> {
   const supabase = adminClient();
 
+  return resolveStackAcresContract(current, "fulfilled", new Date(), "settle");
+}
+
+/**
+ * Marks a contract passed, exactly once, and frees the board.
+ *
+ * Same status guard as fulfilling, and for the same reason: two tabs racing
+ * the same contract must resolve it once. Nothing is spent and nothing is
+ * paid -- a pass is the release valve on a one-slot board, rate-limited to
+ * one a UTC day by the service (see `contractPassSpent`), never by this.
+ */
+export async function passStackAcresContract(
+  current: StoredContract,
+  now: Date,
+): Promise<StoredContract | null> {
+  return resolveStackAcresContract(current, "passed", now, "pass");
+}
+
+/** The open -> terminal write both resolutions share. Guarded on `status =
+ *  'open'`, so it returns the row at most once however many callers race. */
+async function resolveStackAcresContract(
+  current: StoredContract,
+  status: "fulfilled" | "passed",
+  now: Date,
+  verb: "settle" | "pass",
+): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  const resolvedAt = now.toISOString();
+
   if (!supabase) {
     const stored = memoryContracts.get(current.id);
     if (!stored || stored.status !== "open") return null;
-    const updated: StoredContract = { ...stored, status: "fulfilled" };
+    const updated: StoredContract = { ...stored, status, resolvedAt };
     memoryContracts.set(current.id, { ...updated });
     return { ...updated };
   }
 
   const { data, error } = await supabase
     .from("homestead_contracts")
-    .update({ status: "fulfilled" })
+    .update({ status, resolved_at: resolvedAt })
     .eq("id", current.id)
     .eq("status", "open")
     .select(CONTRACT_COLUMNS)
     .maybeSingle();
-  if (error) throw new Error(`Could not settle that contract: ${error.message}`);
+  if (error) throw new Error(`Could not ${verb} that contract: ${error.message}`);
   return data ? contractFromRow(data as ContractDbRow) : null;
+}
+
+/**
+ * The UTC day of this player's most recent PASSED contract, or null if they
+ * have never passed one. What the once-a-day rule is measured against.
+ */
+export async function readStackAcresLastContractPassDay(profileId: string): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const passed = [...memoryContracts.values()]
+      .filter((contract) => contract.profileId === profileId && contract.status === "passed" && contract.resolvedAt)
+      .sort((a, b) => Date.parse(b.resolvedAt!) - Date.parse(a.resolvedAt!));
+    return passed.length > 0 ? stackacresExchangeDay(new Date(passed[0].resolvedAt!)) : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .select("resolved_at")
+    .eq("profile_id", profileId)
+    .eq("status", "passed")
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your town board history: ${error.message}`);
+  const resolvedAt = (data as { resolved_at: string | null } | null)?.resolved_at ?? null;
+  return resolvedAt ? stackacresExchangeDay(new Date(resolvedAt)) : null;
 }
 
 /* ------------------------------------------------------------------ */

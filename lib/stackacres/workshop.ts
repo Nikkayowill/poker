@@ -1,8 +1,8 @@
 /**
  * What the Workshop sheet (components/arcade/stackacres/WorkshopModal.tsx)
  * derives from the farm before it draws anything: whether the idle-worker
- * pass has anything to settle, and whether the signpost's entry deserves a
- * dot.
+ * pass has anything to settle. The badge over the building itself is
+ * ./building-cues.ts now.
  *
  * Pure and clock-free, same posture as ./machines.ts:
  * every function takes `nowMs` rather than reading a clock, so the sheet's
@@ -12,7 +12,6 @@
  */
 
 import { isMachineDone, type MachineKind, type StackAcresMachineSnapshot } from "./machines";
-import type { VatContainer } from "./aging";
 
 /** The one machine of `kind` the player has placed, or null. The database's
  *  `homestead_machines_one_per_kind` index is what makes "the one" true. */
@@ -44,18 +43,4 @@ export function workDue(
   nowMs: number,
 ): boolean {
   return finishedMachineCount(machines, nowMs) > 0;
-}
-
-/**
- * Whether the signpost's Workshop entry should wear a dot: something in
- * there is waiting on the player. Presence, not a count, same convention
- * `contractPosted` and `blueprintInProgress` take.
- */
-export function workshopAttention(input: {
-  readonly machines: readonly Pick<StackAcresMachineSnapshot, "status" | "readyAt">[];
-  readonly vat: Pick<VatContainer, "status"> | null;
-  readonly nowMs: number;
-}): boolean {
-  if (workDue(input.machines, input.nowMs)) return true;
-  return input.vat?.status === "collectible";
 }

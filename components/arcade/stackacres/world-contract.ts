@@ -7,6 +7,7 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
+import type { BuildingDoor } from "@/lib/stackacres/building-cues";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -125,6 +126,10 @@ export type StoryCue = "available" | "ready";
 /** One badge per traveler that has one; a missing key means none. */
 export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
 
+/** One flag per building door with something finished behind it
+ *  (lib/stackacres/building-cues.ts). A missing key means nothing waiting. */
+export type BuildingCueDoors = Readonly<Partial<Record<BuildingDoor, true>>>;
+
 
 /** One flag per traveler: has their unlock been met yet. Read straight off
  *  `StackAcresStoryView.travelers[id].unlocked`, so the scene never keeps
@@ -217,6 +222,10 @@ export interface StackAcresWorldApi {
    *  contract as `setSoil`: stackacres-farm.tsx calls this whenever its
    *  story view changes, and an unchanged badge is a no-op. */
   setStoryCues: (cues: StoryCues) => void;
+  /** Hangs a "ready" badge over the Workshop or the farmhouse when something
+   *  inside them has finished. Same "push, never rebuild" contract as
+   *  `setStoryCues`. */
+  setBuildingCues: (doors: BuildingCueDoors) => void;
   /** Shows or hides each traveler as their own unlock is met -- nobody
    *  stands on the farm before that. Same "push, never rebuild" contract as
    *  `setStoryCues`: called with the full eleven-entry record whenever the

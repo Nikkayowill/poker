@@ -34,6 +34,7 @@ import {
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
+  passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processRecipe,
@@ -118,6 +119,7 @@ import {
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
+  stackacresCapacityMaterials,
   stackacresCapacityPrice,
   type StackAcresCrop,
   type StackAcresStock,
@@ -1867,6 +1869,94 @@ describe("expanding capacity", () => {
     );
     expect(await balance(token)).toBe(before);
   });
+
+  // A pen slot is the one repeatable material cost in the game: it is what
+  // keeps the four trees worth chopping after the Mill and the Loom are up.
+  it("spends the slot's timber as well as its Gold", async () => {
+    const { token, id } = await funded();
+    const timber = stackacresCapacityMaterials("hen")[0];
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+    const goldBefore = await balance(token);
+
+    await expandStackAcresCapacity(token, "hen", T0);
+
+    expect((await readStackAcresInventory(id)).wood).toBe(woodBefore - timber.quantity);
+    expect(await balance(token)).toBe(goldBefore - stackacresCapacityPrice("hen"));
+  });
+
+  it("refuses a slot with no timber for it, and takes no Gold", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "wood", -((await readStackAcresInventory(id)).wood ?? 0));
+    const before = await balance(token);
+
+    await expect(expandStackAcresCapacity(token, "hen", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(0);
+  });
+
+  // Rule 1's other half: a stake that leaves for something that then fails
+  // has to come back. The purse is one Gold short, so the timber is already
+  // gone by the time the Gold spend refuses.
+  it("puts the timber back when the Gold spend comes up short", async () => {
+    const price = stackacresCapacityPrice("cattle");
+    const { token, id } = await funded(price - 1);
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+
+    await expect(expandStackAcresCapacity(token, "cattle", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(woodBefore);
+  });
+});
+
+describe("materials on the land ladder", () => {
+  it("spends the Fold's timber as well as its Gold", async () => {
+    const { token, id } = await funded(500_000, { land: [] });
+    for (let i = 0; i < STACKACRES_SECTORS.wallow.requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "wheat" }, T0);
+    }
+    const timber = STACKACRES_SECTORS.wallow.materials![0];
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+    const goldBefore = await balance(token);
+
+    await clearStackAcresSector(token, "wallow", T0);
+
+    expect((await readStackAcresInventory(id)).wood).toBe(woodBefore - timber.quantity);
+    expect(await balance(token)).toBe(goldBefore - STACKACRES_SECTORS.wallow.clearCost);
+  });
+
+  it("refuses the Fold with no timber for it, and leaves the land unclaimed", async () => {
+    const { token, id } = await funded(500_000, { land: [] });
+    for (let i = 0; i < STACKACRES_SECTORS.wallow.requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "wheat" }, T0);
+    }
+    await adjustStackAcresInventory(id, "wood", -((await readStackAcresInventory(id)).wood ?? 0));
+    const before = await balance(token);
+
+    await expect(clearStackAcresSector(token, "wallow", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+    expect(await readStackAcresSectors(id)).not.toContain("wallow");
+  });
+
+  // Rule 1's other half, on the biggest purchase in the game.
+  it("puts the Pasture's timber back when the purse is short", async () => {
+    const { token, id } = await funded(STACKACRES_SECTORS.oxfields.clearCost - 1, {
+      land: ["wallow"],
+    });
+    for (let i = 0; i < STACKACRES_SECTORS.oxfields.requiresUnits; i += 1) {
+      await stockStackAcres(token, { stock: "wheat" }, T0);
+    }
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+
+    await expect(clearStackAcresSector(token, "oxfields", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(woodBefore);
+  });
 });
 
 describe("grass cutters", () => {
@@ -2236,6 +2326,9 @@ describe("the currency wall", () => {
       "harvest-crossbreed",
       "mine-stone",
       "move-soil-tile-group",
+      // Moves no Gold either way: turning an order down and drawing another
+      // is the release valve on a one-slot board, capped at one a UTC day.
+      "pass-contract",
       "place-machine",
       "place-soil-tile",
       "plant-crossbreed",
@@ -3266,6 +3359,58 @@ describe("Town Contracts", () => {
     expect(await balance(token)).toBe(before);
   });
 
+  describe("passing on one", () => {
+    const TOMORROW = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
+
+    it("closes the order, draws another, and moves no Gold", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      const first = (await requestStackAcresContract(token, T0)).contract!;
+      const before = await balance(token);
+
+      const after = await passStackAcresContract(token, T0);
+
+      expect(after.contract).not.toBeNull();
+      expect(after.contract!.id).not.toBe(first.id);
+      expect(after.contract!.status).toBe("open");
+      expect(await balance(token)).toBe(before);
+    });
+
+    it("allows one a UTC day and no more", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await requestStackAcresContract(token, T0);
+
+      await passStackAcresContract(token, T0);
+      await expect(passStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+      // Later the same UTC day is still the same day.
+      await expect(
+        passStackAcresContract(token, new Date(T0.getTime() + 6 * 60 * 60 * 1000)),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+    });
+
+    it("gives the pass back the next UTC day", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await requestStackAcresContract(token, T0);
+      await passStackAcresContract(token, T0);
+
+      const tomorrow = await passStackAcresContract(token, TOMORROW);
+      expect(tomorrow.contract).not.toBeNull();
+    });
+
+    it("refuses when the board is empty, and does not spend the day", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+
+      await expect(passStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      // The day is intact: a real order can still be passed.
+      await requestStackAcresContract(token, T0);
+      expect((await passStackAcresContract(token, T0)).contract).not.toBeNull();
+    });
+
+  });
 });
 
 describe("recipes", () => {

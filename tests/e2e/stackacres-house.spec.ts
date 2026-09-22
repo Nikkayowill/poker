@@ -1,9 +1,15 @@
-import { expect, test } from "./fixtures";
+import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
- * The player's house and Ray are two separate taps. The house opens the
- * house panel (the kitchen); Ray opens only his own dialogue, never the
- * kitchen. Also checks the barn's Livestock tab shows the locked pens greyed.
+ * The player's house and Ray are two separate taps. Ray opens only his own
+ * dialogue, never the kitchen. Also checks the barn's Livestock tab shows the
+ * locked pens greyed.
+ *
+ * The house, the barn and the workshop are WALK-IN interiors: a tap on the
+ * building walks the farmer through its door (scene.ts's `tapAt` treats a tag
+ * that matches an exit as a door), and the menu is opened by tapping the
+ * counter once inside. Prop coordinates in area.json are centre-x, bottom-y,
+ * which is how the outside tap and the inside tap below are worked out.
  */
 
 interface TopdownHandle {
@@ -14,13 +20,15 @@ interface TopdownHandle {
   };
 }
 
-/** Where the house and the barn stand on the Homestead (public/stackacres-td/areas/homestead/area.json). */
-const HOUSE = { x: 120, y: 120 };
-const BARN = { x: 360, y: 120 };
+/** The buildings on the Homestead, and the counter inside each one. */
+const HOUSE = { door: { x: 120, y: 140 }, counter: { x: 128, y: 75 } };
+const BARN = { door: { x: 360, y: 130 }, counter: { x: 280, y: 75 } };
+/** Long enough for the walk plus the door dissolve. */
+const WALK_MS = 2_500;
 
 test.use({ viewport: { width: 932, height: 430 } });
 
-async function openStackAcres(context: import("@playwright/test").BrowserContext, page: import("@playwright/test").Page) {
+async function openStackAcres(context: BrowserContext, page: Page) {
   const { profile } = (await (await context.request.post("/api/profile")).json()) as { profile: { id: string } };
   expect((await context.request.post("/api/admin/session", { data: { secret: "playwright-admin-secret" } })).ok()).toBe(true);
   expect(
@@ -40,12 +48,7 @@ async function openStackAcres(context: import("@playwright/test").BrowserContext
   await page.waitForTimeout(1500);
 }
 
-async function tapWorld(page: import("@playwright/test").Page, at: { x: number; y: number }, standAt: { x: number; y: number }) {
-  await page.evaluate((stand) => {
-    (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", stand);
-  }, standAt);
-  // Read the screen point only once the camera has settled on him.
-  await page.waitForTimeout(500);
+async function tapWorld(page: Page, at: { x: number; y: number }) {
   const point = await page.evaluate(
     (target) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.clientPointFor(target.x, target.y),
     at,
@@ -53,32 +56,42 @@ async function tapWorld(page: import("@playwright/test").Page, at: { x: number; 
   await page.mouse.click(point.x, point.y);
 }
 
-test("tapping the house opens your house, and tapping Ray never does", async ({ context, page }) => {
+/** Through the door, then up to the counter. */
+async function enter(page: Page, building: typeof HOUSE) {
+  await tapWorld(page, building.door);
+  await page.waitForTimeout(WALK_MS);
+  await tapWorld(page, building.counter);
+  await page.waitForTimeout(WALK_MS);
+}
+
+test("Ray never opens the kitchen, and the counter inside the house does", async ({ context, page }) => {
   await openStackAcres(context, page);
 
-  await tapWorld(page, HOUSE, { x: HOUSE.x, y: HOUSE.y + 55 });
-  const house = page.getByRole("dialog", { name: "Your house" });
+  // Ray, out on the Homestead, opens his own bubble and nothing else.
+  const ray = await page.evaluate(() =>
+    (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.npcPoint("ray"),
+  );
+  if (!ray) throw new Error("Ray isn't on the Homestead");
+  await tapWorld(page, ray);
+  await expect(page.getByRole("dialog", { name: /Ray/ })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Your House" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Kitchen" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await enter(page, HOUSE);
+  const house = page.getByRole("dialog", { name: "Your House" });
   await expect(house).toBeVisible();
   for (const tab of ["Cook", "Eat", "Cellar", "Farm Kitchen"]) {
     await expect(house.getByRole("tab", { name: tab })).toBeVisible();
   }
   await house.getByRole("button", { name: "Close" }).click();
   await expect(house).toBeHidden();
-
-  const ray = await page.evaluate(() =>
-    (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.npcPoint("ray"),
-  );
-  if (!ray) throw new Error("Ray isn't on the Homestead");
-  await tapWorld(page, ray, { x: ray.x + 32, y: ray.y + 24 });
-  await expect(page.getByRole("dialog", { name: /Ray/ })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Your house" })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Kitchen" })).toHaveCount(0);
 });
 
 test("the barn's Livestock tab shows the sheep and cattle pens greyed until their land is cleared", async ({ context, page }) => {
   await openStackAcres(context, page);
 
-  await tapWorld(page, BARN, { x: BARN.x, y: BARN.y + 55 });
+  await enter(page, BARN);
   const store = page.getByRole("dialog", { name: "Supply store" });
   await expect(store).toBeVisible();
   await store.getByRole("tab", { name: "Livestock" }).click();

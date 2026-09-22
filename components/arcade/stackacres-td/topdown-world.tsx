@@ -220,6 +220,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       celebrateCrit: (unitId) => sceneRef.current?.celebrate([unitId]),
       floatAt: (at, text, tone) => sceneRef.current?.floatAt(at, text, tone),
       setStoryCues: (cues) => sceneRef.current?.setStoryCues(cues),
+      setBuildingCues: (doors) => sceneRef.current?.setBuildingCues(doors),
       setTravelerUnlocks: (unlocked) => sceneRef.current?.setTravelerUnlocks(unlocked),
       soilTiles: () => sceneRef.current?.soilTiles() ?? [],
       setSoil: (tiles) => sceneRef.current?.setSoil(tiles),

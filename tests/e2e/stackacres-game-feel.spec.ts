@@ -361,7 +361,8 @@ test("a door wears a badge while something inside it is finished", async ({ brow
           .map((child) => ({ x: Math.round(child.x), y: Math.round(child.y) }));
       });
 
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 236, y: 196 }));
+    // Standing in front of the Workshop, so the badge is in frame.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 488, y: 200 }));
     await page.waitForTimeout(300);
     // Nothing is finished on a farm this new, so nothing is hanging anywhere.
     expect(await badges()).toEqual([]);
@@ -371,13 +372,17 @@ test("a door wears a badge while something inside it is finished", async ({ brow
         { workshop: true },
       ),
     );
-    // Over the Workshop's roof, not over its door: the prop is 82 wide and its
+    // High on the Workshop's front, over its door: the prop is 82 wide and its
     // bottom sits at y 147 (public/stackacres-td/areas/homestead/area.json).
+    // Above the roof would be off the top of the screen while he stands in
+    // front of it, because the camera stops at the edge of the map.
     const hung = await badges();
+    await page.screenshot({ path: test.info().outputPath("workshop-badge.png") });
     expect(hung).toHaveLength(1);
     expect(hung[0].x).toBeGreaterThan(470);
     expect(hung[0].x).toBeLessThan(510);
-    expect(hung[0].y).toBeLessThan(100);
+    expect(hung[0].y).toBeGreaterThan(90);
+    expect(hung[0].y).toBeLessThan(125);
 
     await page.evaluate(() =>
       (window as unknown as { __stackacres: { scene: { setBuildingCues: (d: Record<string, true>) => void } } }).__stackacres.scene.setBuildingCues(

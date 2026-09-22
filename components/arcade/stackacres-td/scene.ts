@@ -815,7 +815,7 @@ export class TopdownScene extends Phaser.Scene {
       const prop = this.propImages.find(({ spec }) => spec.tag === door);
       if (!prop) continue;
       const badge = this.keep(
-        this.add.image(prop.image.x + prop.spec.w / 2, prop.image.y - 8, "common", "cue_ready").setDepth(10_000),
+        this.add.image(prop.image.x + prop.spec.w / 2, prop.spec.y - 40, "common", "cue_ready").setDepth(10_000),
       );
       this.bob(badge);
       this.buildingCueImages.push(badge);

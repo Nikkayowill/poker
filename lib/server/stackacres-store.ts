@@ -30,6 +30,11 @@ import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/li
 import { isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import { freshWoodNodeState, type WoodNodeState } from "@/lib/stackacres/wood";
 import {
+  freshLandObstacleState,
+  landObstacle,
+  type LandObstacleState,
+} from "@/lib/stackacres/land-clearing";
+import {
   freshForageNodeState,
   isForageNodeId,
   type ForageNodeId,
@@ -121,6 +126,7 @@ declare global {
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
   var __riverRoomStackAcresWoodNodes: Map<string, StoredWoodNode> | undefined;
+  var __riverRoomStackAcresLandObstacles: Map<string, StoredLandObstacle> | undefined;
   var __riverRoomStackAcresForageNodes: Map<string, StoredForageNode> | undefined;
 }
 
@@ -267,6 +273,12 @@ globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
 globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
 
+/** Land obstacles (lib/stackacres/land-clearing.ts), keyed the same way. A
+ *  missing entry is a standing, untouched obstacle. */
+const memoryLandObstacles =
+  globalThis.__riverRoomStackAcresLandObstacles ?? new Map<string, StoredLandObstacle>();
+globalThis.__riverRoomStackAcresLandObstacles = memoryLandObstacles;
+
 /** Forageable bushes (lib/stackacres/forage.ts), keyed the same way. */
 const memoryForageNodes =
   globalThis.__riverRoomStackAcresForageNodes ?? new Map<string, StoredForageNode>();
@@ -297,6 +309,7 @@ export function __resetStackAcresForTest(): void {
   memoryFriendship.clear();
   memoryWoodNodes.clear();
   memoryForageNodes.clear();
+  memoryLandObstacles.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -3547,6 +3560,152 @@ export async function listStackAcresWoodNodeStates(
   for (const row of (data ?? []) as WoodNodeDbRow[]) {
     const node = woodNodeFromRow(row);
     result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Land obstacles (lib/stackacres/land-clearing.ts)                    */
+/* ------------------------------------------------------------------ */
+
+export interface StoredLandObstacle extends LandObstacleState {
+  profileId: string;
+  obstacleId: string;
+  version: number;
+}
+
+const LAND_OBSTACLE_COLUMNS = "profile_id, obstacle_id, hits_remaining, cleared_at, version";
+
+interface LandObstacleDbRow {
+  profile_id: string;
+  obstacle_id: string;
+  hits_remaining: number | string;
+  cleared_at: string | null;
+  version: number | string;
+}
+
+function landObstacleFromRow(row: LandObstacleDbRow): StoredLandObstacle {
+  return {
+    profileId: String(row.profile_id),
+    obstacleId: String(row.obstacle_id),
+    hitsRemaining: Number(row.hits_remaining),
+    clearedAt: row.cleared_at ? String(row.cleared_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** One obstacle's state, created standing the first time this farm swings at
+ *  it. Same lazy create as `getOrCreateStackAcresWoodNode`. */
+export async function getOrCreateStackAcresLandObstacle(
+  profileId: string,
+  obstacleId: string,
+): Promise<StoredLandObstacle> {
+  const known = landObstacle(obstacleId);
+  if (!known) throw new Error(`No such obstacle: ${obstacleId}`);
+  const supabase = adminClient();
+  const key = `${profileId}:${obstacleId}`;
+
+  if (!supabase) {
+    const existing = memoryLandObstacles.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredLandObstacle = {
+      profileId,
+      obstacleId,
+      version: 1,
+      ...freshLandObstacleState(known.kind),
+    };
+    memoryLandObstacles.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("obstacle_id", obstacleId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look at that: ${error.message}`);
+  if (data) return landObstacleFromRow(data as LandObstacleDbRow);
+
+  const seed = freshLandObstacleState(known.kind);
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_land_obstacles")
+    .insert({
+      profile_id: profileId,
+      obstacle_id: obstacleId,
+      hits_remaining: seed.hitsRemaining,
+      cleared_at: seed.clearedAt,
+      version: 1,
+    })
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the create race with another tab: whoever won is the truth.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_land_obstacles")
+      .select(LAND_OBSTACLE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("obstacle_id", obstacleId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not reach that: ${insertError.message}`);
+    return landObstacleFromRow(raced as LandObstacleDbRow);
+  }
+  return landObstacleFromRow(inserted as LandObstacleDbRow);
+}
+
+/** One swing (or one demolition), guarded on the row's own version, so two
+ *  rapid taps cannot both land the blow that clears it and both be paid. */
+export async function writeStackAcresLandObstacle(
+  current: StoredLandObstacle,
+  next: LandObstacleState,
+): Promise<StoredLandObstacle | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.obstacleId}`;
+    const stored = memoryLandObstacles.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredLandObstacle = { ...stored, ...next, version };
+    memoryLandObstacles.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .update({ hits_remaining: next.hitsRemaining, cleared_at: next.clearedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("obstacle_id", current.obstacleId)
+    .eq("version", current.version)
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not clear that: ${error.message}`);
+  return data ? landObstacleFromRow(data as LandObstacleDbRow) : null;
+}
+
+/** Every obstacle this farm has touched, for the snapshot. Write-free: an
+ *  obstacle with no row is standing, which the caller fills in. */
+export async function listStackAcresLandObstacleStates(
+  profileId: string,
+): Promise<Record<string, LandObstacleState>> {
+  const supabase = adminClient();
+  const result: Record<string, LandObstacleState> = {};
+  if (!supabase) {
+    for (const [key, row] of memoryLandObstacles) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[row.obstacleId] = { hitsRemaining: row.hitsRemaining, clearedAt: row.clearedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your land: ${error.message}`);
+  for (const row of (data ?? []) as LandObstacleDbRow[]) {
+    const stored = landObstacleFromRow(row);
+    result[stored.obstacleId] = { hitsRemaining: stored.hitsRemaining, clearedAt: stored.clearedAt };
   }
   return result;
 }

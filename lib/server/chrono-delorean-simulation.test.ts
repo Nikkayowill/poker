@@ -291,7 +291,10 @@ describe("Chrono-DeLorean Mode driving a multi-day StackAcres run", () => {
     await store.recordStackAcresCropFieldsUnlocked(profile.id, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
     await service.stockStackAcres(token, { stock: "carrot" }, t0);
-    const afterWallow = await service.clearStackAcresSector(token, "wallow", t0);
+    // Land is cleared by working it now, not bought. This simulation is
+    // about clocks and fees, so it records the Fold as cleared directly.
+    await store.recordStackAcresSectorCleared(profile.id, "wallow", t0);
+    const afterWallow = await service.readStackAcres(token, t0);
 
     const [clearedSectors, capacity, cropFieldsUnlocked] = await Promise.all([
       store.readStackAcresSectors(profile.id),

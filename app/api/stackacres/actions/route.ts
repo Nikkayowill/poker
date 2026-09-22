@@ -30,7 +30,8 @@ import {
   buildStackAcresGreenhouse,
   buyStackAcresFeed,
   buyStackAcresStock,
-  clearStackAcresSector,
+  workStackAcresLand,
+  demolishStackAcresLand,
   clearStackAcresUnit,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
@@ -137,12 +138,12 @@ export const runtime = "nodejs";
  * a probability an existing roll already makes, inside `collect` and `work`
  * respectively, and neither moves Gold.
  *
- * `clear-sector` is the one piece of land buying that came back: three of the
- * four districts start under wild growth, and clearing one is a permanent,
- * unrefunded Gold spend. Keeping cleared land then costs a daily fee, netted
- * off whichever action next pays the player any Gold (see
- * `netUpkeepFromPayout`, lib/server/stackacres-service.ts), not something any
- * one action here asks for.
+ * LAND IS NEVER SOLD. A sector opens when the last thing standing on it has
+ * been cut down (`work-land`, which spends energy and pays the barn).
+ * `demolish-land` is the one Gold spend on that road: blowing one obstacle
+ * instead of swinging at it, priced per swing still owed. Keeping cleared
+ * land then costs a daily fee, netted off whichever action next pays the
+ * player any Gold (see `netUpkeepFromPayout`, lib/server/stackacres-service.ts).
  *
  * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
  * "inventory only" either: it is the one action with no undo, trading the
@@ -188,11 +189,11 @@ const intentKeySchema = z.string().min(8).max(100).optional();
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
-  // Buying a district's wild ground outright. Gold, once, permanent.
-  z.object({
-    action: z.literal("clear-sector"),
-    sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
-  }),
+  // Clearing land. `work-land` is one swing and costs energy; `demolish-land`
+  // spends Gold instead. Neither names a sector: the obstacle id says which
+  // land it stands on, so a request cannot claim a field it has not worked.
+  z.object({ action: z.literal("work-land"), obstacleId: z.string().min(3).max(40), sweet: z.boolean() }),
+  z.object({ action: z.literal("demolish-land"), obstacleId: z.string().min(3).max(40) }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -523,8 +524,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
   switch (action.action) {
     case "expand-capacity":
       return expandStackAcresCapacity(token, action.stock, now);
-    case "clear-sector":
-      return clearStackAcresSector(token, action.sector, now);
+    case "work-land":
+      return workStackAcresLand(token, action.obstacleId, action.sweet, now);
+    case "demolish-land":
+      return demolishStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "buy-cutter":

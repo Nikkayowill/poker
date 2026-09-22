@@ -40,7 +40,6 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
     expect(purchaseCueText({ action: "upgrade-tool" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-cutter", cutter: "mower" })).toBeTruthy();
     expect(purchaseCueText({ action: "unlock-synergy-perk", archetype: "sunlight_harvester" })).toBeTruthy();
-    expect(purchaseCueText({ action: "clear-sector", sector: "mine" })).toBeTruthy();
     expect(purchaseCueText({ action: "build-greenhouse" })).toBeTruthy();
     expect(purchaseCueText({ action: "forge-enchantment", itemId: "gilded-tine" })).toBeTruthy();
     expect(purchaseCueText({ action: "deploy-drone" })).toBeTruthy();

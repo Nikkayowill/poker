@@ -46,6 +46,7 @@ import oak  # noqa: E402
 import coast  # noqa: E402
 import townsquare  # noqa: E402
 import kit  # noqa: E402
+import lpc_ground  # noqa: E402
 import oldfields  # noqa: E402
 import pasture  # noqa: E402
 import portraits  # noqa: E402
@@ -53,6 +54,7 @@ import props  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
 import terrain  # noqa: E402
+import area as area_mod  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
@@ -72,15 +74,63 @@ LIGHTS = {}
 DOORMATS = {"homestead": [(360, 151, 32), (488, 151, 24)]}
 
 
-def lay_doormats(img, area_name):
+def lay_doormats(img, area_name, scale=1):
     for cx, top, w in DOORMATS.get(area_name, ()):
         mat = interiors.doormat(w).convert("RGBA")
-        img.paste(mat, (cx - w // 2, top), mat)
+        if scale != 1:
+            mat = mat.resize((mat.width * scale, mat.height * scale), Image.NEAREST)
+        img.paste(mat, ((cx - w // 2) * scale, top * scale), mat)
     return img
+
+
+def lpc_ground_image(area, sc, ground):
+    """The ground picture, with the terrain painted from the LPC atlas.
+
+    Everything that is not terrain is unchanged and simply drawn twice the
+    size, so it lands back at its own scale on screen once the engine halves
+    the picture. The terrain is the only thing that actually gains detail --
+    which is the point, and why no coordinate anywhere had to move.
+
+    Pond reflections are the one thing left behind for now: they are computed
+    against the procedural water's own pixels. Shadows are not -- they are a
+    mask over the whole map and scale up cleanly.
+    """
+    names = ["grass"] + terrain.ORDER
+    tiles = lpc_ground.tile_materials(ground.owner, names, area.w, area.h)
+    img = lpc_ground.paint(tiles, area.w, area.h)
+    d = np.clip(sc.dark, 0, 1.4)
+    strength = np.where(d > 1, 0.82 + (d - 1) * 0.4, d * 0.82)
+    strength = strength.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)[..., None]
+    img = img * (1 - strength) + img * scene.SHADOW_TINT * strength
+    for it in sc.items:
+        if not it["ground"]:
+            continue
+        arr = it["arrs"][0]
+        big = arr.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)
+        scene._blit(img, big, it["x"] * lpc_ground.SCALE, it["y"] * lpc_ground.SCALE)
+    return img
+
+
+def game_character_frame(name):
+    """An empty frame where a character stands, for the GAME export only.
+
+    The game never uses the picture. A character reaches it as a name and a
+    position (`area.npcs`), the engine loads the art itself from
+    public/stackacres-td/characters/, the export skips characters when it
+    writes props, and their shadows are not baked because people move. Asking
+    characters.py to draw one here would build the whole Aseprite chain to
+    produce an image that is then thrown away.
+
+    The review render is the opposite case: it exists to show the people, so it
+    keeps `build.rich_character_frame`, which reads the real sheet and fails if
+    it is not there.
+    """
+    return Image.new("RGBA", (48, 48)), (24, 44)
 
 
 def patch():
     build_area.patch("".join(open(m.__file__).read() for m in PLAYABLE))
+    area_mod.character_frame = game_character_frame
     smoke = props.smoke
 
     def smoke_emitter():
@@ -109,12 +159,15 @@ def export_area(module, out_root):
     sc = scene.Scene(area, ground, static_only=True)
     out = os.path.join(out_root, "areas", area.name)
     os.makedirs(out, exist_ok=True)
-    frames = kit.FRAMES if ground.wet.any() else 1
-    for f in range(kit.FRAMES):
+    # One ground frame, not four. The four were water shimmer, and the LPC
+    # picture is twice the size in each direction -- four of them would be the
+    # kind of texture budget that crashed a phone before. The pond will get its
+    # movement back from the engine rather than from four baked copies.
+    lay_doormats(to_image(lpc_ground_image(area, sc, ground)), area.name, lpc_ground.SCALE).save(
+        os.path.join(out, "ground-0.png"))
+    for f in range(1, kit.FRAMES):
         path = os.path.join(out, f"ground-{f}.png")
-        if f < frames:
-            lay_doormats(to_image(sc.ground_image(f)), area.name).save(path)
-        elif os.path.exists(path):
+        if os.path.exists(path):
             os.remove(path)
 
     names = ["grass"] + terrain.ORDER
@@ -174,7 +227,7 @@ def export_area(module, out_root):
 
     spawn = area.spawn or (area.w * T // 2, area.h * T // 2)
     data = {
-        "name": area.name, "width": area.w, "height": area.h, "tile": T, "frames": frames,
+        "name": area.name, "width": area.w, "height": area.h, "tile": T, "frames": 1,
         "spawn": {"x": spawn[0], "y": spawn[1]},
         "props": entries,
         "npcs": [{"name": n, "x": x, "y": y} for n, x, y in area.npcs if n != "farmer"],
@@ -191,7 +244,7 @@ def export_area(module, out_root):
         json.dump(data, fh, separators=(",", ":"))
     print(area.name, "->", out, "|", len(entries), "props,", len(data["npcs"]), "npcs,", len(data["blocked"]), "blocked tiles,",
           len(lights), "lights,", len(emitters), "emitters,", len(data["ambient"]["meadow"]), "meadow and",
-          len(data["ambient"]["pond"]), "pond tiles,", len(canopies), "canopies,", sum(1 for e in entries if "sway" in e), "swaying,", frames, "ground frames")
+          len(data["ambient"]["pond"]), "pond tiles,", len(canopies), "canopies,", sum(1 for e in entries if "sway" in e), "swaying,", 1, "ground frame")
 
 
 def ambient_tiles(area, ground, entries):

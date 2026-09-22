@@ -17,6 +17,7 @@ import type { SoilTile } from "@/lib/stackacres/soil";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
+import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -265,6 +266,9 @@ export interface StackAcresWorldProps {
   /** The Homestead's forage bushes, so a picked one shows as a bare stub
    *  until its seed heads come back. */
   forageNodes: readonly ForageNodeSnapshot[];
+  /** What is still standing on land being cleared, so a felled obstacle
+   *  disappears and an emptied sector stops being overgrown. */
+  landObstacles: readonly LandObstacleSnapshot[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */
@@ -328,6 +332,11 @@ export interface StackAcresWorldProps {
    *  straight off, because a pick is one stoop rather than a timed swing.
    *  The map only reports the tap, same split `onTreeTap` takes. */
   onForageTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on something standing on land still being cleared (see
+   *  lib/stackacres/land-clearing.ts). The shell opens the swing popup on
+   *  that obstacle, which is also where Gold can blow it instead; the map
+   *  only reports the tap, same split `onTreeTap` takes. */
+  onLandTap: (obstacleId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;

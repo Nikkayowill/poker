@@ -82,6 +82,7 @@ import {
   HOME_SECTOR,
   isSectorUnlocked,
   sectorClearCheck,
+  sectorLabel,
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
@@ -231,8 +232,10 @@ import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
 import { buildingCueDoors } from "@/lib/stackacres/building-cues";
 import {
+  LAND_OBSTACLE_DEFS,
   isClearableSector,
   landClearingProgress,
+  landObstacle,
   type LandObstacleSnapshot,
 } from "@/lib/stackacres/land-clearing";
 import { journalView } from "@/lib/stackacres/journal";
@@ -481,6 +484,18 @@ interface StackAcresResponse {
    *  means the node was already broken and had not yet regrown. Every other
    *  action's answer leaves this undefined. */
   stoneMined?: { landed: boolean; broke: boolean; amount: number };
+  /** What one swing at (or one blast on) something standing on unclaimed
+   *  land did -- see lib/server/stackacres-service.ts's `workStackAcresLand`.
+   *  Null when nothing landed, the same "a lost race says nothing" posture
+   *  `woodChopped` takes. */
+  landCleared?: {
+    obstacleId: string;
+    sector: SectorId;
+    item: MachineItemId | null;
+    quantity: number;
+    cleared: boolean;
+    sectorOpened: boolean;
+  } | null;
   /** Every Stone boulder's current mine state, always present -- see
    *  lib/stackacres/stone-nodes.ts's `StoneNodeSnapshot`. */
   stoneNodes?: StoneNodeSnapshot[];
@@ -885,6 +900,10 @@ export function StackAcresFarm() {
    *  Mine's three boulders (lib/stackacres/stone-nodes.ts) -- its live
    *  ready/hits/respawn state is read straight off `stoneNodes`. */
   const [minePopup, setMinePopup] = useState<{ nodeId: string; at: TapPoint } | null>(null);
+  /** The clearing popup: the same swing popup again, on whatever is standing
+   *  on land being cleared (lib/stackacres/land-clearing.ts). The one that
+   *  also offers Gold, because an obstacle can be blown instead of worked. */
+  const [landPopup, setLandPopup] = useState<{ obstacleId: string; at: TapPoint } | null>(null);
   // NPC friendship. Seeded to a fresh player's own answer for every NPC that
   // has one -- the same "fresh player" seed devotion above uses -- rather
   // than an empty object, so a render before the first read lands never has
@@ -1675,6 +1694,9 @@ export function StackAcresFarm() {
       // The bushes, so a pick can name the seed it is about to take and turn
       // the bush picked-over without waiting on the round trip.
       forageNodes,
+      // What is still standing on land being cleared, so a swing counts down
+      // under the finger.
+      landObstacles,
       inventory: processing.inventory,
       wheatPlots: processing.wheatPlots,
       machines: processing.machines,
@@ -1689,6 +1711,7 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       forageNodes,
+      landObstacles,
       toolTier,
       cutters,
       sectors,
@@ -2285,6 +2308,19 @@ export function StackAcresFarm() {
           if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
           if (broke) setMinePopup(null);
         }
+        // Clearing land answers in the same shape, whether the swing was
+        // worked or the obstacle was blown: the materials float out of what
+        // broke, and the sector opening is the bigger beat that replaces the
+        // per-swing toast.
+        if (data.landCleared) {
+          const { item, quantity, cleared, sectorOpened, sector } = data.landCleared;
+          const label = item && quantity > 0 ? machineItemLabel(item, quantity) : null;
+          waterSound();
+          if (sectorOpened) setLastCollect({ text: `${sectorLabel(sector)} is yours!`, nonce: Date.now() });
+          else if (label) setLastCollect({ text: cleared ? `Down it comes! +${label}` : `+${label}`, nonce: Date.now() });
+          if (anchor && label) world.current?.floatAt(anchor, `+${label}`, "gain");
+          if (cleared) setLandPopup(null);
+        }
         // A pick fills the SEED shelf, not the inventory, and moves no Gold
         // either way. A bush someone else had already picked leaves
         // `foraged` null: no float, no toast, just the fresh `forageNodes`
@@ -2562,6 +2598,25 @@ export function StackAcresFarm() {
     world.current?.setTravelerUnlocks(unlocked as TravelerUnlocks);
     world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
+
+  /**
+   * What the clearing popup is looking at, read fresh on every render so a
+   * swing that just landed counts down in place. Null once it is down, which
+   * closes the popup: there is nothing left to swing at.
+   */
+  const landStanding = useMemo(() => {
+    if (!landPopup) return null;
+    const obstacle = landObstacle(landPopup.obstacleId);
+    if (!obstacle) return null;
+    const snapshot = landObstacles.find((candidate) => candidate.id === obstacle.id);
+    if (snapshot?.cleared) return null;
+    const def = LAND_OBSTACLE_DEFS[obstacle.kind];
+    return {
+      kind: obstacle.kind,
+      hitsRemaining: snapshot?.hitsRemaining ?? def.hits,
+      demolitionPrice: snapshot?.demolitionPrice ?? def.hits * def.goldPerHit,
+    };
+  }, [landPopup, landObstacles]);
 
   /** How far this sector's clearing has got, for its sheet. */
   const clearingProgress = useMemo(
@@ -3828,6 +3883,36 @@ export function StackAcresFarm() {
     [act],
   );
 
+  /** A finger landed on something standing on land being cleared. Same split
+   *  as `onWorldTreeTap`: the map reports which obstacle, the popup reads its
+   *  live state off `landObstacles`. */
+  const onWorldLandTap = useCallback((obstacleId: string, at: TapPoint) => {
+    setLandPopup({ obstacleId, at });
+  }, []);
+
+  /** The only path that ever sends `work-land`. `sweet` is the popup's own
+   *  verdict on the swing's timing -- it changes what the swing pays into the
+   *  barn, never whether it lands. */
+  const onLandSwing = useCallback(
+    (obstacleId: string, at: TapPoint, sweet: boolean) => {
+      // The Wood or Stone floats out of what was hit, not out of the popup.
+      tapAnchor.current = at;
+      void act({ action: "work-land", obstacleId, sweet });
+    },
+    [act],
+  );
+
+  /** Gold instead of a swing. The popup closes on the way out: there is
+   *  nothing left standing to swing at. */
+  const onLandDemolish = useCallback(
+    (obstacleId: string) => {
+      buySound();
+      setLandPopup(null);
+      void act({ action: "demolish-land", obstacleId });
+    },
+    [act],
+  );
+
   // stackacres-scene.ts fires onReady synchronously once the scene is built
   // and the camera framed -- before Phaser's own render loop has actually
   // painted that frame to the canvas. Waiting two rAF ticks closes that gap
@@ -4034,6 +4119,7 @@ export function StackAcresFarm() {
               woodNodes={woodNodes}
               stoneNodes={stoneNodes}
               forageNodes={forageNodes}
+              landObstacles={landObstacles}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}
@@ -4053,6 +4139,7 @@ export function StackAcresFarm() {
               onTreeTap={onWorldTreeTap}
               onStoneTap={onWorldStoneTap}
               onForageTap={onWorldForageTap}
+              onLandTap={onWorldLandTap}
               onGreenhouseTap={onWorldGreenhouseTap}
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
@@ -4171,6 +4258,28 @@ export function StackAcresFarm() {
               busy={pendingByPrefix(`mine-stone:${minePopup.nodeId}`)}
               onSwing={(sweet) => onMineSwing(minePopup.nodeId, sweet)}
               onClose={() => setMinePopup(null)}
+            />
+          )}
+
+          {/* Clearing land: the same swing popup a third time, so a tree on
+              the Fold plays exactly like the trees on the Homestead. The
+              boulder swings on the mine meter and everything else on the chop
+              meter, and this is the only one of the three with a price on it
+              -- `demolish` is the Gold way past one obstacle. */}
+          {landPopup && landStanding && (
+            <StackAcresChopPopup
+              at={landPopup.at}
+              kind={landStanding.kind === "boulder" ? "mine" : "chop"}
+              label={LAND_OBSTACLE_DEFS[landStanding.kind].label}
+              node={{ ready: true, hitsRemaining: landStanding.hitsRemaining, respawnProgress: null }}
+              busy={pendingByPrefix(`work-land:${landPopup.obstacleId}`)}
+              demolish={{
+                price: landStanding.demolitionPrice,
+                affordable: (profile?.unlimitedGold ?? false) || (profile?.goldBalance ?? 0) >= landStanding.demolitionPrice,
+                onDemolish: () => onLandDemolish(landPopup.obstacleId),
+              }}
+              onSwing={(sweet) => onLandSwing(landPopup.obstacleId, landPopup.at, sweet)}
+              onClose={() => setLandPopup(null)}
             />
           )}
 
@@ -4747,10 +4856,7 @@ export function StackAcresFarm() {
           sector={clearing}
           unlocked={sectors}
           unitCount={units.length}
-          goldBalance={profile?.goldBalance ?? null}
-          unlimitedGold={profile?.unlimitedGold === true}
           upkeepOutstanding={upkeep.due}
-          busy={pendingByPrefix("clear-sector")}
           opener={clearingOpener}
           progress={clearingProgress}
           onClose={() => { panelSound(); setClearing(null); }}

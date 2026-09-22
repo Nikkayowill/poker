@@ -1795,6 +1795,29 @@
 
 .sa-chop-popup-swing:disabled { opacity: .6; cursor: default; }
 
+/* The Gold way past one obstacle on land being cleared. Its own row under
+ * the swing, not a third button beside it: paying is the exception, and it
+ * should never be the one a thumb hits by accident. */
+.sa-chop-popup-blow {
+  width: 100%;
+  margin-top: 8px;
+  min-height: var(--sa-tap);
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-quiet);
+  box-shadow: var(--sa-glass-rim-sm);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  color: var(--sa-ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sa-chop-popup-blow:hover:not(:disabled) { filter: brightness(1.05); }
+
+.sa-chop-popup-blow:disabled { opacity: .5; cursor: default; }
+
 /* ---- the NPC friendship gift dialogue ---------------------------------
  * Same screen-anchored speech-bubble posture as .sa-monk-dialogue above --
  * a separate block rather than a shared class because the "greeting" phase

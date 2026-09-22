@@ -41,7 +41,7 @@ import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, ty
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { bedIsWet, soilTint } from "@/lib/stackacres/soil-moisture";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
-import type { SectorId } from "@/lib/stackacres/sectors";
+import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
@@ -57,6 +57,12 @@ import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
+import { LAND_BOULDER_ART, dealLandObstacles, type LandObstaclePlacement } from "@/lib/stackacres-td/land-obstacles";
+import {
+  LAND_OBSTACLES,
+  isClearableSector,
+  type LandObstacleSnapshot,
+} from "@/lib/stackacres/land-clearing";
 import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
@@ -114,6 +120,16 @@ const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
   mine: "mine",
   townsquare: "townsquare",
 };
+/**
+ * Whether the six districts are off the map (Kayo, 2026-09-22, PR #609).
+ *
+ * Polish is going into the Homestead alone for now, so nothing behind
+ * AREA_SECTOR can be walked into and no overgrown gate opens. Everything
+ * those fields need is built and tested behind it -- see `enterable` -- so
+ * turning this off is the whole of bringing them back.
+ */
+const HOMESTEAD_ONLY: boolean = true;
+
 const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
   fold: "wallow",
   pasture: "oxfields",
@@ -257,6 +273,10 @@ export interface TopdownCallbacks {
    *  already takes. Unlike a chop or a mine this opens no popup: picking a
    *  bush is one stoop, not a timed swing. */
   onForageTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on something standing on land still being cleared
+   *  (lib/stackacres/land-clearing.ts). `obstacleId` is that obstacle's
+   *  id; the shell opens the swing popup, same split `onTreeTap` takes. */
+  onLandTap: (obstacleId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
@@ -401,6 +421,9 @@ export class TopdownScene extends Phaser.Scene {
   private buildingCueImages: Phaser.GameObjects.Image[] = [];
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
   private spent = new Map<string, number>();
+  /** Ids of the obstacles already cleared off unclaimed land. Unlike a
+   *  chopped tree, nothing here comes back, so this only ever grows. */
+  private landDown = new Set<string>();
   private nextRegrowCheck = 0;
 
   constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
@@ -614,11 +637,33 @@ export class TopdownScene extends Phaser.Scene {
     });
   }
 
-  /** Only the Homestead itself (and its own interiors) are open right now --
-   *  the other districts are staying off the map while polish focuses on the
-   *  Homestead alone (Kayo, 2026-09-22), so a gate behind AREA_SECTOR never opens. */
+  /** Whichever path the farmer found to its edge, some land still cannot be
+   *  walked into. */
   private canEnter(area: TopdownArea): boolean {
-    return AREA_SECTOR[area] === undefined;
+    const sector = AREA_SECTOR[area];
+    return sector === undefined || this.enterable(sector);
+  }
+
+  /**
+   * Land the farmer may walk onto. Nothing is bought any more: ground you
+   * have not cleared is walked onto, since walking onto it is how the
+   * clearing gets done. The one order left is the map's own -- the Pasture
+   * is reached through the Fold, so the Fold opens first.
+   *
+   * SHUT AT THE TOP for now. Polish is only going into the Homestead, so the
+   * six districts are off the map (Kayo, 2026-09-22, PR #609) and the
+   * clearing built underneath this is dormant rather than gone. Dropping the
+   * HOMESTEAD_ONLY line is the whole of putting the Fold and the Pasture
+   * back, and it puts their overgrown gates back with them: `applyGates`
+   * reads the same answer, so a hedge never opens onto ground the farmer is
+   * then stopped at.
+   */
+  private enterable(zone: ZoneId): boolean {
+    if (HOMESTEAD_ONLY) return false;
+    if (this.opened(zone)) return true;
+    if (!isClearableSector(zone)) return false;
+    const requires = STACKACRES_SECTORS[zone].requires;
+    return requires === null || this.opened(requires);
   }
 
   /** A wild area opens with its traveler (the shell pushes `travelerUnlocks`); bought land opens when owned. */
@@ -733,6 +778,7 @@ export class TopdownScene extends Phaser.Scene {
         });
       }
     }
+    this.buildLandObstacles();
     for (const npc of this.area.npcs) {
       const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
       this.anims.createFromAseprite(npc.name, undefined, sprite);
@@ -762,6 +808,111 @@ export class TopdownScene extends Phaser.Scene {
     return object;
   }
 
+  /**
+   * What is standing on land still being cleared (lib/stackacres/land-clearing.ts).
+   *
+   * The obstacle LIST is the server's. Where each one stands is worked out
+   * here, because the map is the only thing that knows which tiles are free
+   * (lib/stackacres-td/land-obstacles.ts). It is dealt off the area's STATIC
+   * footprint -- every prop's blocked tiles whether that prop is visible
+   * right now or not -- so the layout cannot shift under the player as
+   * obstacles come down or a gate opens.
+   */
+  private buildLandObstacles(): void {
+    const sector = AREA_SECTOR[this.areaName];
+    if (sector === undefined || !isClearableSector(sector)) return;
+    const { tile } = this.area;
+    const blocked = new Set<string>();
+    for (const [tx, ty] of this.area.blocked) blocked.add(tileKey(tx, ty));
+    for (const spec of this.area.props) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
+    // A doorway, and the tile he lands on coming through one, stay open: a
+    // boulder dealt onto the way in would wall the field off from itself.
+    const keepClear = this.area.exits.map((exit) => ({
+      x: exit.x - tile,
+      y: exit.y - tile,
+      width: exit.w + tile * 2,
+      height: exit.h + tile * 2,
+    }));
+    keepClear.push({ x: this.area.spawn.x - tile, y: this.area.spawn.y - tile, width: tile * 2, height: tile * 2 });
+    const placements = dealLandObstacles(
+      LAND_OBSTACLES[sector],
+      {
+        width: this.area.width,
+        height: this.area.height,
+        tile,
+        blocked,
+        keepClear,
+        from: { tx: Math.floor(this.area.spawn.x / tile), ty: Math.floor(this.area.spawn.y / tile) },
+      },
+      this.area.width * 31 + this.area.height,
+    );
+    for (const placement of placements) this.buildLandObstacle(placement);
+  }
+
+  /**
+   * One obstacle, built as an ordinary tagged prop so the tap test, the
+   * blocked tiles and the gate pass all treat it like anything else standing
+   * on the map.
+   *
+   * Trees and scrub are the area's own art, copied off its atlas: the Fold
+   * and the Pasture are already ringed with both, so an overgrown field is
+   * drawn in exactly the trees that grow there. Only the boulder is drawn by
+   * hand, because neither field's atlas holds a rock.
+   */
+  private buildLandObstacle(placement: LandObstaclePlacement): void {
+    const tag = `land:${placement.id}`;
+    const blocks: [number, number][] = [[placement.tx, placement.ty]];
+    if (placement.kind === "boulder") {
+      const image = this.keep(
+        this.add.image(placement.x, placement.y, LAND_BOULDER_ART.texture).setOrigin(0.5, 1).setDepth(placement.y),
+      );
+      const spec: PropSpec = {
+        frame: LAND_BOULDER_ART.texture,
+        frames: [],
+        x: placement.x,
+        y: placement.y,
+        ax: image.width / 2,
+        ay: image.height,
+        w: image.width,
+        h: image.height,
+        tag,
+        blocks,
+      };
+      this.propImages.push({ spec, image });
+      return;
+    }
+    const template = this.landTemplate(placement);
+    if (!template) return;
+    const sheet = `props:${this.areaName}`;
+    const image = this.keep(
+      this.add
+        .image(placement.x - template.ax, placement.y - template.ay, sheet, template.frame)
+        .setOrigin(0, 0)
+        .setDepth(placement.y),
+    );
+    let canopy: Phaser.GameObjects.Image | undefined;
+    if (template.sway) {
+      canopy = this.keep(this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setDepth(placement.y + 0.5));
+      this.wind.add(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
+    } else {
+      this.wind.add(image, placement.x, placement.y, 0, true);
+    }
+    this.propImages.push({ spec: { ...template, x: placement.x, y: placement.y, tag, blocks }, image, canopy });
+  }
+
+  /** A tree or a bush off this area's own atlas to stand in for one
+   *  obstacle. Picked by the obstacle's own id, so it is the same tree on
+   *  every device, and from untagged props only -- a gate or a choppable
+   *  tree is not scenery to copy. */
+  private landTemplate(placement: LandObstaclePlacement): PropSpec | null {
+    const wanted = (spec: PropSpec) => (placement.kind === "tree" ? spec.h >= 30 : spec.h <= 18);
+    const candidates = this.area.props.filter((spec) => spec.tag === undefined && spec.sway !== undefined && wanted(spec));
+    if (candidates.length === 0) return null;
+    let hash = 0;
+    for (const character of placement.id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    return candidates[hash % candidates.length];
+  }
+
   /** Which props are standing, and so which tiles they block. The log that
    *  used to lie across the north lane is gone for good: the Crop Fields are
    *  not bought any more, they are overgrown ground the player walks onto and
@@ -770,9 +921,13 @@ export class TopdownScene extends Phaser.Scene {
     const blocked = new Set(this.area.blocked.map(([tx, ty]) => tileKey(tx, ty)));
     for (const { spec, image, canopy, stump } of this.propImages) {
       const [kind, detail] = (spec.tag ?? "").split(":") as [string, ZoneId | undefined];
-      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.opened(detail);
+      // Overgrowth across a gate stands until the land behind it can be
+      // walked onto -- which, for land that is cleared rather than bought, is
+      // from the first second (see `enterable`).
+      const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.enterable(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
-      const visible = stump ? isSpent : !(spec.tag === "gate:oldfields" || cleared || isSpent);
+      const down = kind === "land" && detail !== undefined && this.landDown.has(detail);
+      const visible = stump ? isSpent : !(spec.tag === "gate:oldfields" || cleared || isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -1484,6 +1639,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onStoneTap(target.tag, at);
       case "forage":
         return cb.onForageTap(detail ?? "", at);
+      case "land":
+        return cb.onLandTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
       case "farmhouse":
@@ -1837,6 +1994,35 @@ export class TopdownScene extends Phaser.Scene {
     if (grown) this.applyGates();
   }
 
+  /** What is still standing on land being cleared, straight off the
+   *  snapshot. Nothing here regrows, so an obstacle only ever goes from
+   *  standing to down -- and the one that just went down falls on screen
+   *  rather than blinking out. */
+  setLandObstacles(snapshots: readonly LandObstacleSnapshot[]): void {
+    const down = new Set(snapshots.filter((snapshot) => snapshot.cleared).map((snapshot) => snapshot.id));
+    const fell = [...down].filter((id) => !this.landDown.has(id));
+    this.landDown = down;
+    if (!this.booted) return;
+    this.applyGates();
+    if (this.reducedMotion) return;
+    for (const id of fell) {
+      for (const { spec, image, canopy } of this.propImages) {
+        if (spec.tag !== `land:${id}`) continue;
+        for (const target of [image, canopy]) {
+          if (!target) continue;
+          target.setVisible(true).setAlpha(1);
+          this.tweens.add({
+            targets: target,
+            alpha: 0,
+            duration: 220,
+            ease: "Quad.easeIn",
+            onComplete: () => target.setVisible(false).setAlpha(1),
+          });
+        }
+      }
+    }
+  }
+
   setSectors(sectors: SectorId[]): void {
     this.sectors = sectors;
     if (this.booted) this.applyGates();
@@ -1999,10 +2185,12 @@ export class TopdownScene extends Phaser.Scene {
     if (sectorArea) {
       this.path = [];
       this.pending = null;
-      // Open: go there. Not yet: stand at its gate on the Homestead, where tapping the gate says what opens it.
-      if (this.opened(zone)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
-      // The Pasture's gate is the fallen fence inside the Fold, which itself may still be shut.
-      else if (zone === "oxfields" && this.opened("wallow")) this.enterArea("fold", { x: 396, y: 184 });
+      // Land that is cleared rather than bought is walked straight onto,
+      // overgrown or not. A district he cannot enter leaves him at its gate
+      // instead, and the Pasture's gate is inside the Fold -- so a shut Fold
+      // sends him to the Fold's own gate on the Homestead, never through it.
+      if (this.canEnter(sectorArea)) this.enterArea(sectorArea, this.specs.get(sectorArea)!.spawn);
+      else if (zone === "oxfields" && this.canEnter("fold")) this.enterArea("fold", { x: 396, y: 184 });
       else this.enterArea("homestead", GATE_APPROACH[zone === "oxfields" ? "wallow" : zone]!);
       this.callbacks.onViewMoved();
       return;
@@ -2082,6 +2270,14 @@ export class TopdownScene extends Phaser.Scene {
     const parts = this.propImages.filter(({ spec }) => spec.tag === tag);
     if (parts.length === 0) return null;
     return parts.some(({ stump, image }) => stump && image.visible) ? "spent" : "standing";
+  }
+
+  /** e2e only: where one obstacle on land being cleared is standing, or null
+   *  once it is down (or is not on this map). */
+  landObstaclePoint(id: string): Point | null {
+    const part = this.propImages.find(({ spec }) => spec.tag === `land:${id}`);
+    if (!part || !part.image.visible) return null;
+    return { x: part.spec.x, y: part.spec.y - 6 };
   }
 
   /** e2e only: whether the farmer is stopped from walking onto this map point. */

@@ -204,3 +204,27 @@ export function landClearingProgress(
 export function landClearingLine(progress: { cleared: number; total: number }): string {
   return `${progress.cleared} of ${progress.total} cleared`;
 }
+
+/** One obstacle's state as the client holds it: off the snapshot list it was
+ *  last handed, or fresh when it has never been touched. Same "an obstacle
+ *  with no row yet is standing" rule `landClearingProgress` takes. */
+export function landObstacleStateOf(
+  snapshots: readonly LandObstacleSnapshot[],
+  obstacle: LandObstacle,
+): LandObstacleState {
+  const snapshot = snapshots.find((candidate) => candidate.id === obstacle.id);
+  if (!snapshot) return freshLandObstacleState(obstacle.kind);
+  return { hitsRemaining: snapshot.hitsRemaining, clearedAt: snapshot.cleared ? "optimistic" : null };
+}
+
+/** The same list with one obstacle moved on, for an optimistic guess. */
+export function withLandObstacleState(
+  snapshots: readonly LandObstacleSnapshot[],
+  obstacle: LandObstacle,
+  next: LandObstacleState,
+): LandObstacleSnapshot[] {
+  const updated = landObstacleSnapshot(obstacle, next);
+  const known = snapshots.some((candidate) => candidate.id === obstacle.id);
+  if (!known) return [...snapshots, updated];
+  return snapshots.map((candidate) => (candidate.id === obstacle.id ? updated : candidate));
+}

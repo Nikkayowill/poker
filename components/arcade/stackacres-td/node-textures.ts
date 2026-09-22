@@ -1,9 +1,12 @@
 import type Phaser from "phaser";
 import { NODE_ART } from "@/lib/stackacres-td/gather-nodes";
+import { LAND_BOULDER_ART } from "@/lib/stackacres-td/land-obstacles";
 
-/** Paints what a spent tree or boulder leaves behind (the `stump` and `rubble` textures) once. */
+/** Paints the hand-drawn pieces once: what a spent tree or boulder leaves
+ *  behind (the `stump` and `rubble` textures), and the boulder standing on
+ *  land still being cleared, which no field atlas holds. */
 export function drawNodeTextures(textures: Phaser.Textures.TextureManager): void {
-  for (const { texture, rows, colors } of Object.values(NODE_ART)) {
+  for (const { texture, rows, colors } of [...Object.values(NODE_ART), LAND_BOULDER_ART]) {
     if (textures.exists(texture)) continue;
     const canvas = textures.createCanvas(texture, rows[0].length, rows.length);
     if (!canvas) continue;

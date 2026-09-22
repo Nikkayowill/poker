@@ -249,6 +249,31 @@ describe("what filled up while you were away", () => {
     expect(view.waiting[0].fill).toBeCloseTo(0.75);
   });
 
+  it("gives each room one row: what is running in it, and what is finished", () => {
+    const mill = {
+      id: "m1",
+      kind: "mill" as const,
+      status: "working" as const,
+      startedAt: "2026-09-21T11:00:00.000Z",
+      readyAt: "2026-09-21T11:30:00.000Z",
+      recipeId: null,
+      unitsProcessing: 1,
+      done: true,
+      progress: 1,
+      autoFeedsLeft: null,
+      standingRecipe: null,
+      kitchenSince: null,
+    };
+    const [finished] = journalView(farm({ machines: [mill] })).waiting;
+    expect(finished).toMatchObject({ label: "The Workshop", detail: "1 finished, waiting to be taken", ready: true });
+
+    const still = { ...mill, readyAt: "2026-09-21T13:00:00.000Z", done: false };
+    expect(journalView(farm({ machines: [still] })).waiting[0]).toMatchObject({
+      detail: "1 still running",
+      ready: false,
+    });
+  });
+
   it("shows the cellar filling, then ready", () => {
     const aging = { ...container("aging"), manifest: { item: "pickles", quantity: 9 } } as unknown as VatContainer;
     const [row] = journalView(farm({ cellar: aging })).waiting;

@@ -32,14 +32,14 @@
  */
 
 import { CHAPTERS } from "./chapters";
-import { buildCost, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
+import { buildCost, buildPlace, costLines, costSummary, type BuildCost, type BuildPlace } from "./build-cost";
 import { STACKACRES_CATALOGUE, isLivestock } from "./catalogue";
 import { canFulfillContract, type StackAcresContractRow } from "./contracts";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { machineItemLabel } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
-import { buildingCues } from "./building-cues";
+import { buildingCues, finishedRunCount, roomHasMachines } from "./building-cues";
 import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { seedsOpenedLine } from "./seed-unlocks";
@@ -384,6 +384,29 @@ function journalWaiting(input: JournalInput): JournalWaiting[] {
             : "Empty",
       fill: null,
       ready: input.vat.status === "collectible",
+    });
+  }
+
+  // The machines in each room, as one row per room rather than one per
+  // machine: what the player wants back for is "is there anything in there",
+  // and the room's own sheet lists the rest.
+  for (const [place, label] of [["Workshop", "The Workshop"], ["House", "The kitchen"]] as const) {
+    if (!roomHasMachines(input.machines, place)) continue;
+    const finished = finishedRunCount(input.machines, place, input.nowMs);
+    const running = input.machines.filter(
+      (machine) => buildPlace(machine.kind) === place && machine.status === "working",
+    ).length;
+    rows.push({
+      key: `runs-${place}`,
+      label,
+      detail:
+        finished > 0
+          ? `${finished} finished, waiting to be taken`
+          : running > 0
+            ? `${running} still running`
+            : "Nothing on",
+      fill: null,
+      ready: finished > 0,
     });
   }
 

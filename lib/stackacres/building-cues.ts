@@ -44,6 +44,24 @@ export interface BuildingCueInput {
   readonly nowMs: number;
 }
 
+/** How many runs have finished in one room. The vat and the cellar are left
+ *  out: their readiness lives on their container, so they get their own line. */
+export function finishedRunCount(
+  machines: readonly StackAcresMachineSnapshot[],
+  place: BuildPlace,
+  nowMs: number,
+): number {
+  const now = new Date(nowMs);
+  return machines.filter(
+    (machine) => !OWN_LINE.has(machine.kind) && buildPlace(machine.kind) === place && isMachineDone(machine, now),
+  ).length;
+}
+
+/** Whether any machine at all stands in a room, so a row about it is honest. */
+export function roomHasMachines(machines: readonly StackAcresMachineSnapshot[], place: BuildPlace): boolean {
+  return machines.some((machine) => !OWN_LINE.has(machine.kind) && buildPlace(machine.kind) === place);
+}
+
 /**
  * Everything waiting behind a door right now, worst first: a loss-free but
  * finished thing before a merely banked one.
@@ -60,9 +78,7 @@ export function buildingCues(input: BuildingCueInput): readonly BuildingCue[] {
   }
 
   for (const place of ["Workshop", "House"] as const) {
-    const finished = input.machines.filter(
-      (machine) => !OWN_LINE.has(machine.kind) && buildPlace(machine.kind) === place && isMachineDone(machine, now),
-    ).length;
+    const finished = finishedRunCount(input.machines, place, input.nowMs);
     if (finished === 0) continue;
     const room = place === "Workshop" ? "the Workshop" : "the kitchen";
     cues.push({

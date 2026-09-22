@@ -3715,9 +3715,8 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
-  // The Workshop's "something is ready" dot lived on the deleted places list
-  // (`workshopAttention`, lib/stackacres/workshop.ts). If it comes back, it
-  // belongs on the windmill sprite as a glow.
+  // The Workshop's "something is ready" dot used to live on the deleted
+  // places list; it hangs over the building itself now (`waitingDoors` above).
 
   /**
    * A finger landed on the brush at the Ancestral Oak. From here it is a

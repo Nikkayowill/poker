@@ -33,14 +33,14 @@ import type { TopdownScene } from "./scene";
  *
  * Pixel art at a whole-number zoom: the canvas is the host at full device
  * resolution, and the camera zooms by the largest whole number that still
- * shows 16 tiles across and 10 down. Rendering at device resolution rather
+ * shows 20 tiles across and 13 down. Rendering at device resolution rather
  * than one canvas pixel per art pixel is what lets the farmer and the camera
  * glide a device pixel at a time; at art resolution every step was a 4px jump
  * and the farmer shook against the ground (see scene.ts's `placeCamera`).
  */
 
-export const MIN_TILES_ACROSS = 16;
-export const MIN_TILES_DOWN = 10;
+export const MIN_TILES_ACROSS = 20;
+export const MIN_TILES_DOWN = 13;
 
 /** Device pixels per CSS pixel, capped so a 3x screen does not bake a canvas
  *  nobody can afford. Read in one place so every layer drawn on this canvas

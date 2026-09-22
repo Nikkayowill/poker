@@ -2782,7 +2782,10 @@ export function StackAcresFarm() {
     setShowMap(true);
   }, []);
 
-  /** Every place, in map order, with whose gate is shut and what opens it. */
+  /** Every place, in map order, with whose gate is shut and what opens it.
+   *  Only the Homestead and its own Crop Fields are on the map right now --
+   *  the other districts are staying off the map while polish focuses on the
+   *  Homestead alone (Kayo, 2026-09-22). */
   const mapPlaces = useMemo(
     () =>
       mapPlaceStates(
@@ -2799,7 +2802,7 @@ export function StackAcresFarm() {
         const check = sectorClearCheck(id, { unlocked: sectors, unitCount: units.length });
         return `Clear for ${check.cost.toLocaleString()} Gold`;
       },
-    ),
+    ).filter((place) => place.id === "farmstead" || place.id === "cropfields"),
     [mapHere, sectors, units.length],
   );
 
@@ -4767,8 +4770,6 @@ export function StackAcresFarm() {
           onRequest={onRequestContract}
           onPass={onPassContract}
           onClose={() => { panelSound(); setShowContracts(false); }}
-          unlockedSectors={sectors}
-          onTravel={travel}
         />
       )}
       {/* The vat's sheet replaces the Workshop while it is up rather than

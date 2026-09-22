@@ -614,10 +614,11 @@ export class TopdownScene extends Phaser.Scene {
     });
   }
 
-  /** Bought land can only be walked into once it is owned, whatever path the farmer found to its edge. */
+  /** Only the Homestead itself (and its own interiors) are open right now --
+   *  the other districts are staying off the map while polish focuses on the
+   *  Homestead alone (Kayo, 2026-09-22), so a gate behind AREA_SECTOR never opens. */
   private canEnter(area: TopdownArea): boolean {
-    const sector = AREA_SECTOR[area];
-    return sector === undefined || this.opened(sector);
+    return AREA_SECTOR[area] === undefined;
   }
 
   /** A wild area opens with its traveler (the shell pushes `travelerUnlocks`); bought land opens when owned. */

@@ -229,6 +229,7 @@ import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
+import { buildingCueDoors } from "@/lib/stackacres/building-cues";
 import { journalView } from "@/lib/stackacres/journal";
 import { wantedForLine } from "@/lib/stackacres/recipe-uses";
 import { useStackAcresMusic } from "./use-stackacres-music";
@@ -3649,6 +3650,28 @@ export function StackAcresFarm() {
       nowMs,
     ],
   );
+
+  /**
+   * The badge over the Workshop and the farmhouse: the same thing the
+   * Journal's "collect" line is about, hung on the door it is behind
+   * (lib/stackacres/building-cues.ts).
+   *
+   * Pushed off two booleans rather than off the record itself, because
+   * `nowMs` ticks every second and a fresh object every tick would tear the
+   * badge down and rebuild it, losing its bob.
+   */
+  const waitingDoors = useMemo(
+    () => buildingCueDoors({ machines: processing.machines, vat, cellar, nowMs }),
+    [processing.machines, vat, cellar, nowMs],
+  );
+  const workshopWaiting = waitingDoors.workshop === true;
+  const houseWaiting = waitingDoors.farmhouse === true;
+  useEffect(() => {
+    world.current?.setBuildingCues({
+      ...(workshopWaiting ? { workshop: true as const } : {}),
+      ...(houseWaiting ? { farmhouse: true as const } : {}),
+    });
+  }, [workshopWaiting, houseWaiting]);
 
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --

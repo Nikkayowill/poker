@@ -39,6 +39,7 @@ import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS } from "./equipment";
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { machineItemLabel } from "./machine-items";
 import type { MachineKind, StackAcresMachineSnapshot } from "./machines";
+import { buildingCues } from "./building-cues";
 import { FARM_KITCHEN_BANK, farmKitchenBanked } from "./farm-kitchen";
 import { FEED_SILO_DAILY_FEEDS } from "./feed-silo";
 import { seedsOpenedLine } from "./seed-unlocks";
@@ -463,12 +464,9 @@ function candidateCues(input: JournalInput, chapters: readonly JournalChapter[])
     cues.push(cue("hungry", `${kinds.join(" and ")} need feeding before they go off their cycle.`, "The pens"));
   }
 
-  if (input.cellar?.status === "collectible") {
-    cues.push(cue("collect", "The jars in the cellar have finished aging.", "House"));
-  }
-  if (input.vat?.status === "collectible") {
-    cues.push(cue("collect", "There's a batch sitting ready in the vat.", "Workshop"));
-  }
+  // Everything that finished behind a door, in the same words as the badge
+  // hanging over that door (./building-cues.ts).
+  for (const waiting of buildingCues(input)) cues.push(cue("collect", waiting.line, waiting.where));
 
   const contract = input.contract;
   if (contract && canFulfillContract(inventoryQuantity(input.inventory, contract.item), contract)) {

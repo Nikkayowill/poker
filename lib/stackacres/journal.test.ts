@@ -116,6 +116,26 @@ describe("the one line", () => {
     ).toBe("hungry");
   });
 
+  it("counts a finished machine run as something to collect, and says where", () => {
+    const mill = {
+      id: "m1",
+      kind: "mill" as const,
+      status: "working" as const,
+      startedAt: "2026-09-21T11:00:00.000Z",
+      readyAt: "2026-09-21T11:30:00.000Z",
+      recipeId: null,
+      unitsProcessing: 1,
+      done: true,
+      progress: 1,
+      autoFeedsLeft: null,
+      standingRecipe: null,
+      kitchenSince: null,
+    };
+    const view = journalView(farm({ machines: [mill] }));
+    expect(view.now.kind).toBe("collect");
+    expect(view.now.where).toBe("Workshop");
+  });
+
   it("puts a finished cellar above a fillable order", () => {
     expect(
       cueFor({ cellar: container("collectible"), contract: order("flour", 2), inventory: holding("flour", 4) }),

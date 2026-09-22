@@ -22,16 +22,13 @@ import { landClearingLine } from "@/lib/stackacres/land-clearing";
  * tap has to carry all three, and this is where they live.
  *
  * THE CHECKLIST IS NOT WRITTEN HERE. Every line comes from
- * `sectorClearCheck`, which the server calls before a piece of Gold moves --
- * see `clearStackAcresSector`. A modal that promised something the route then
- * refused is the failure this arrangement exists to make impossible, and it
- * is why the wording lives on the requirement rather than in either caller.
+ * `sectorClearCheck`, so the sheet and the server can never word the same
+ * requirement two different ways.
  *
- * Gold affordability is deliberately NOT checked, the same posture every
- * other Gold spend in this app takes (see lib/stackacres/district-panel.ts's
- * header): the button stays live and the server's refusal is what tells a
- * player they are short. The balance is shown beside the price so it is
- * rarely a surprise.
+ * NO PRICE AND NO BUTTON, since land stopped being for sale
+ * (lib/stackacres/land-clearing.ts). Clearing happens out on the land itself,
+ * one swing at a time, so all this sheet owes the player is what the ground
+ * will become and how far the work has got.
  */
 
 export interface StackAcresSectorModalProps {
@@ -40,13 +37,9 @@ export interface StackAcresSectorModalProps {
   unlocked: readonly SectorId[];
   /** Crops and animals going, for the "keep N going" line. */
   unitCount: number;
-  /** Null while the profile has not loaded; the price still shows. */
-  goldBalance: number | null;
-  unlimitedGold: boolean;
-  /** Gold still owed on the land already held. Non-zero blocks the sale,
-   *  the same rule the server applies -- you settle up before you buy more. */
+  /** Gold still owed on the land already held, shown as a job to do like
+   *  any other requirement. */
   upkeepOutstanding: number;
-  busy: boolean;
   /** For a wild area: the traveler whose arrival opens its gate, and what
    *  the player still has to do first (null once nothing is missing). */
   opener: { name: string; hint: string | null } | null;
@@ -59,10 +52,7 @@ export function StackAcresSectorModal({
   sector,
   unlocked,
   unitCount,
-  goldBalance,
-  unlimitedGold,
   upkeepOutstanding,
-  busy,
   opener,
   progress,
   onClose,
@@ -70,12 +60,11 @@ export function StackAcresSectorModal({
   // Escape and a backdrop tap close this, same as every other sheet. Without
   // it the only way out was the small X, and a gate sheet often has no button
   // at all.
-  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose, !busy);
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose, true);
   const def = STACKACRES_SECTORS[sector];
   const check = sectorClearCheck(sector, { unlocked, unitCount });
   // The land fee is a requirement like any other, and shown as one rather
-  // than as an error after the fact -- a player who taps Clear and is told
-  // about a bill they were never shown has been ambushed by their own farm.
+  // than as an error after the fact.
   const requirements = [
     ...check.requirements,
     ...(upkeepOutstanding > 0
@@ -87,8 +76,6 @@ export function StackAcresSectorModal({
         ]
       : []),
   ];
-  const ready = check.ok && upkeepOutstanding <= 0;
-
   // A wild area is never sold: its gate opens when its traveler arrives, so
   // this says who that is and what to do next. No price, no button.
   if (check.wild) {

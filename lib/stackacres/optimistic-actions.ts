@@ -73,7 +73,7 @@ import {
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import type { StackAcresContractRow } from "./contracts";
-import { sectorClearCheck, type SectorId } from "./sectors";
+import type { SectorId } from "./sectors";
 import { decrementHeldSecret, nextUpkeepPaidAfterDiceTrade, type SecretItemId } from "./secrets";
 import {
   SYNERGY_MAX_ACTIVE_SLOTS,
@@ -111,7 +111,19 @@ import {
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
-import { removeFromInventory, type StackAcresInventory } from "./inventory";
+import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import {
+  LAND_SWING_ENERGY,
+  demolitionPrice,
+  demolishLandObstacle,
+  landClearingProgress,
+  landObstacle,
+  landObstacleStateOf,
+  swingAtLandObstacle,
+  withLandObstacleState,
+  type ClearableSectorId,
+  type LandObstacleSnapshot,
+} from "./land-clearing";
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
@@ -177,6 +189,10 @@ export interface FarmPredictContext {
    *  is in the snapshot precisely so this guess is the real answer rather
    *  than a placeholder (./forage.ts's header). */
   forageNodes: readonly ForageNodeSnapshot[];
+  /** What is still standing on land being cleared. A swing reads the
+   *  obstacle's own swings-left off here so the popup counts down under the
+   *  finger rather than waiting on the round trip. */
+  landObstacles: readonly LandObstacleSnapshot[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -208,6 +224,7 @@ export interface FarmStatePatch {
   cropFieldsUnlocked?: boolean;
   soilTiles?: SoilTile[];
   forageNodes?: ForageNodeSnapshot[];
+  landObstacles?: LandObstacleSnapshot[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
@@ -331,6 +348,18 @@ function processingPatch(
     // Dairy key lights up the instant the milk it needs lands.
     machines: machines.map((machine) => ({ ...machine, canStart: canStartMachine(inventory, machine.kind) })),
   };
+}
+
+/** The sector itself, when the swing that just landed was the last one it
+ *  was waiting on. No Gold moves: the land was taken by the work. */
+function openedSectorPatch(
+  ctx: FarmPredictContext,
+  sector: ClearableSectorId,
+  landObstacles: readonly LandObstacleSnapshot[],
+): Pick<FarmStatePatch, "sectors"> {
+  if (ctx.sectors.includes(sector)) return {};
+  if (!landClearingProgress(sector, landObstacles).done) return {};
+  return { sectors: [...ctx.sectors, sector] };
 }
 
 /** Takes what hens and cattle ate off the shelf for a feeding, through `processingPatch`
@@ -815,6 +844,43 @@ export function predictStackAcresAction(
       if (!body.bait) return { energy };
       const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
       return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
+    }
+    case "work-land": {
+      // One swing at something standing on land being cleared. Fully
+      // predicted, and it has to be: this is the action a player repeats
+      // dozens of times in a row, so a swing that waited on the server would
+      // make clearing a field feel like filling in a form.
+      const obstacle = landObstacle(body.obstacleId);
+      if (!obstacle) return null;
+      const now = new Date(ctx.nowMs);
+      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now, body.sweet);
+      if (!swing) return null;
+      // Energy first, same order the server keeps -- a swing nobody has the
+      // energy for never happened, so nothing else here is guessed either.
+      const energy = applyEnergyDelta(ctx.energy, -LAND_SWING_ENERGY, now);
+      if (!energy) return null;
+      const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, swing.nextState);
+      const inventory =
+        swing.item && swing.quantity > 0 ? addToInventory(ctx.inventory, swing.item, swing.quantity) : ctx.inventory;
+      return {
+        energy,
+        landObstacles,
+        ...processingPatch(ctx, { inventory }),
+        ...openedSectorPatch(ctx, obstacle.sector, landObstacles),
+      };
+    }
+    case "demolish-land": {
+      // Gold's one way onto this road. Rule 1 all the same: the balance drops
+      // before the obstacle does, and a refusal rolls both back together.
+      const obstacle = landObstacle(body.obstacleId);
+      if (!obstacle) return null;
+      const state = landObstacleStateOf(ctx.landObstacles, obstacle);
+      const next = demolishLandObstacle(state, new Date(ctx.nowMs));
+      if (!next) return null;
+      const profile = debited(ctx, demolitionPrice(obstacle.kind, state));
+      if (!profile) return null;
+      const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, next);
+      return { profile, landObstacles, ...openedSectorPatch(ctx, obstacle.sector, landObstacles) };
     }
     case "gather-forage": {
       // Fully predicted, which almost nothing that yields something else is.

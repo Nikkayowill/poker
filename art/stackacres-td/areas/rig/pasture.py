@@ -25,7 +25,7 @@ def build(for_game=False):
     a.add(kit.barrel(), 300, 114, (6, 2))
     for x in (40, 90, 140):
         a.add(props.hitching_post(), x, 182, (5, 2))
-    a.add(kit.trough(), 60, 210, (11, 2))
+    a.add(kit.trough(), 60, 178, (11, 2))     # beside the posts, OFF the road in
 
     a.add(kit.fence(336), 372, 130)                    # the pasture
     a.add(kit.fence(336), 372, 354)

@@ -10,7 +10,9 @@ import {
   landClearingProgress,
   landObstacle,
   landObstacleSnapshot,
+  landObstacleStateOf,
   swingAtLandObstacle,
+  withLandObstacleState,
   type LandObstacleKind,
 } from "./land-clearing";
 import { STACKACRES_SECTORS } from "./sectors";
@@ -139,5 +141,43 @@ describe("how far the job has got", () => {
       clearedAt: NOW.toISOString(),
     });
     expect(landClearingProgress("wallow", [stranger]).cleared).toBe(0);
+  });
+});
+
+describe("what the client holds between reads", () => {
+  const obstacle = LAND_OBSTACLES.wallow[0];
+
+  it("reads an obstacle nobody has touched as standing and full", () => {
+    expect(landObstacleStateOf([], obstacle)).toEqual(freshLandObstacleState(obstacle.kind));
+  });
+
+  it("reads the swings left off the snapshot it was handed", () => {
+    const snapshot = landObstacleSnapshot(obstacle, { hitsRemaining: 2, clearedAt: null });
+    expect(landObstacleStateOf([snapshot], obstacle).hitsRemaining).toBe(2);
+    expect(landObstacleStateOf([snapshot], obstacle).clearedAt).toBeNull();
+  });
+
+  it("reads a cleared one as cleared", () => {
+    const snapshot = landObstacleSnapshot(obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() });
+    expect(landObstacleStateOf([snapshot], obstacle).clearedAt).not.toBeNull();
+  });
+
+  it("adds an obstacle the list had never seen", () => {
+    const next = withLandObstacleState([], obstacle, { hitsRemaining: 3, clearedAt: null });
+    expect(next).toHaveLength(1);
+    expect(next[0]).toEqual(landObstacleSnapshot(obstacle, { hitsRemaining: 3, clearedAt: null }));
+  });
+
+  it("replaces one it had, and leaves the rest alone", () => {
+    const other = LAND_OBSTACLES.wallow[1];
+    const before = [
+      landObstacleSnapshot(obstacle, freshLandObstacleState(obstacle.kind)),
+      landObstacleSnapshot(other, freshLandObstacleState(other.kind)),
+    ];
+    const next = withLandObstacleState(before, obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() });
+    expect(next).toHaveLength(2);
+    expect(next[0].cleared).toBe(true);
+    expect(next[0].demolitionPrice).toBe(0);
+    expect(next[1]).toEqual(before[1]);
   });
 });

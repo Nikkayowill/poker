@@ -13,7 +13,6 @@
 
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
-import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
@@ -242,6 +241,10 @@ export function intentOf(body: Action): string {
   if ("kind" in body) return `${body.action}:${body.kind}`;
   // Chopping one tree must never dedupe against or block chopping another.
   if ("nodeId" in body) return `${body.action}:${body.nodeId}`;
+  // Same for one tree standing on land being cleared and the boulder beside
+  // it: clearing a field is a long run of presses across many obstacles, and
+  // collapsing them onto one intent would drop every second swing.
+  if ("obstacleId" in body) return `${body.action}:${body.obstacleId}`;
   return body.action;
 }
 
@@ -288,6 +291,8 @@ export function purchaseCueText(body: Action): string | null {
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
+    case "demolish-land":
+      return "Blasting it out…";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

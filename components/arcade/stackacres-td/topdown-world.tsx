@@ -70,7 +70,7 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, api } =
+  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, api } =
     props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
@@ -98,9 +98,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes });
+  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles });
   useEffect(() => {
-    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes };
+    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles };
   });
 
   useEffect(() => {
@@ -135,6 +135,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onTreeTap: (nodeId, at) => p().onTreeTap(nodeId, at),
           onStoneTap: (nodeId, at) => p().onStoneTap(nodeId, at),
           onForageTap: (nodeId, at) => p().onForageTap(nodeId, at),
+          onLandTap: (obstacleId, at) => p().onLandTap(obstacleId, at),
           onGreenhouseTap: () => p().onGreenhouseTap(),
           onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
@@ -182,6 +183,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setWoodNodes(now.woodNodes);
       scene.setStoneNodes(now.stoneNodes);
       scene.setForageNodes(now.forageNodes);
+      scene.setLandObstacles(now.landObstacles);
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -364,6 +366,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setForageNodes(forageNodes);
   }, [forageNodes]);
+
+  useEffect(() => {
+    sceneRef.current?.setLandObstacles(landObstacles);
+  }, [landObstacles]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

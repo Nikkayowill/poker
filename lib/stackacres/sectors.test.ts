@@ -20,7 +20,16 @@ import {
 } from "./sectors";
 import { CROP_FIELD } from "./yard";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
-import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
+import {
+  STACKACRES_LIVESTOCK,
+  STACKACRES_STOCK,
+  capFor,
+  stackacresCapacityMaterials,
+  stackacresCapacityPrice,
+  type StackAcresLivestock,
+  type StackAcresStock,
+} from "./catalogue";
+import { isMachineRawItem } from "./machine-items";
 import { nearPath } from "./paths";
 // Test-only, and Phaser-free at runtime (that module imports Phaser as a
 // TYPE only): the scene's painter table, so overgrowth can be held to what
@@ -361,5 +370,75 @@ describe("cropFieldOvergrowth", () => {
   it("mixes canopy, scrub and ground cover rather than one repeated tree", () => {
     const kinds = new Set(cropFieldOvergrowth().map((item) => item.kind));
     expect(kinds.size).toBeGreaterThan(4);
+  });
+});
+
+describe("what a land clear costs in materials", () => {
+  it("asks for timber on both rungs of the ladder, on top of the Gold", () => {
+    for (const id of SECTOR_LADDER) {
+      const materials = STACKACRES_SECTORS[id].materials ?? [];
+      expect(materials.length).toBeGreaterThan(0);
+      for (const material of materials) expect(isMachineRawItem(material.item)).toBe(true);
+    }
+  });
+
+  /**
+   * THE RULE THAT STOPS A DEAD END. Stone is mined in the Mine, the Mine
+   * opens on a milestone count, and clearing the Fold is itself one of the
+   * milestones -- so a land gate priced in Stone could be reached before its
+   * own Stone was. Stone's three boulders are also global rows shared by
+   * every player, which is the second reason it stays on one-time buildings.
+   */
+  it("never asks for Stone, which lives behind a gate the ladder itself opens", () => {
+    for (const id of SECTOR_IDS) {
+      for (const material of STACKACRES_SECTORS[id].materials ?? []) {
+        expect(material.item).not.toBe("stone");
+      }
+    }
+  });
+
+  it("asks nothing of home ground or of the wild places, which are never bought", () => {
+    for (const id of SECTOR_IDS) {
+      const def = STACKACRES_SECTORS[id];
+      if (def.state === "claimable") continue;
+      expect(def.materials ?? []).toEqual([]);
+    }
+  });
+
+  it("costs more timber the further out the land is, same as the Gold does", () => {
+    const wood = (id: SectorId) =>
+      (STACKACRES_SECTORS[id].materials ?? []).find((material) => material.item === "wood")?.quantity ?? 0;
+    for (let i = 1; i < SECTOR_LADDER.length; i += 1) {
+      expect(wood(SECTOR_LADDER[i])).toBeGreaterThan(wood(SECTOR_LADDER[i - 1]));
+      expect(STACKACRES_SECTORS[SECTOR_LADDER[i]].clearCost).toBeGreaterThan(
+        STACKACRES_SECTORS[SECTOR_LADDER[i - 1]].clearCost,
+      );
+    }
+  });
+});
+
+describe("what a pen slot costs in materials", () => {
+  it("asks every kind for timber, and the dearer the stock the more of it", () => {
+    const wood = (stock: StackAcresLivestock) =>
+      stackacresCapacityMaterials(stock).find((material) => material.item === "wood")?.quantity ?? 0;
+    for (const stock of STACKACRES_LIVESTOCK) expect(wood(stock)).toBeGreaterThan(0);
+    const byPrice = [...STACKACRES_LIVESTOCK].sort(
+      (a, b) => stackacresCapacityPrice(a) - stackacresCapacityPrice(b),
+    );
+    for (let i = 1; i < byPrice.length; i += 1) {
+      expect(wood(byPrice[i])).toBeGreaterThan(wood(byPrice[i - 1]));
+    }
+  });
+
+  // Repeatable, unlike every other material cost in the game: nine slots
+  // across the three kinds. That is the whole point -- it is what keeps the
+  // trees worth chopping once the Mill and the Loom are up. Stone cannot do
+  // this job because its boulders are shared by every player on the server.
+  it("never asks for Stone, because a pen slot is bought again and again", () => {
+    for (const stock of STACKACRES_LIVESTOCK) {
+      for (const material of stackacresCapacityMaterials(stock)) {
+        expect(material.item).toBe("wood");
+      }
+    }
   });
 });

@@ -159,6 +159,9 @@ export interface TownContractsModalProps {
   onSettle: () => Promise<ContractActionResult>;
   /** Posts `request-contract`. Moves nothing; asks the town to post one. */
   onRequest: () => Promise<ContractActionResult>;
+  /** Posts `pass-contract`: turns this order down and draws another. Moves
+   *  nothing either, and the server allows one a UTC day. */
+  onPass: () => Promise<ContractActionResult>;
   onClose: () => void;
   /**
    * The map, folded into the board now that the places list is gone.
@@ -250,6 +253,7 @@ export function TownContractsModal({
   busy,
   onSettle,
   onRequest,
+  onPass,
   onClose,
   unlockedSectors,
   onTravel,
@@ -453,6 +457,24 @@ export function TownContractsModal({
       setSettling(false);
     }
   }, [busy, settling, onRequest]);
+
+  /** Turns the open order down. Same shape as asking for one: nothing moves,
+   *  so there is nothing to guess and nothing to roll back. The day limit is
+   *  the server's to enforce, and its refusal is what says so. */
+  const handlePassContract = useCallback(async (): Promise<void> => {
+    if (busy || settling) return;
+    setNote({ tone: "pending", text: "Sending it back…" });
+    setSettling(true);
+    try {
+      const result = await onPass();
+      if (!result.ok) setNote({ tone: "refused", text: result.message });
+      else setNote(null);
+    } catch {
+      setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
+    } finally {
+      setSettling(false);
+    }
+  }, [busy, settling, onPass]);
 
   const working = busy || settling;
 
@@ -688,9 +710,25 @@ export function TownContractsModal({
           </button>
         )}
 
+        {/* The release valve on a one-slot board. Always offered while an
+            order is open: whether today's pass is still going is the
+            server's answer, and asking for it is how you find out -- the
+            same posture every Gold-priced button here takes. */}
+        {contract !== null && (
+          <button
+            type="button"
+            className="sa-cta is-ghost sa-contracts-pass"
+            disabled={working}
+            onClick={contain(() => void handlePassContract())}
+          >
+            Pass on this one
+          </button>
+        )}
+
         <p className="sa-sheet-note">
           A delivery pays in Gold and earns Town Influence, which lowers Ray&apos;s prices on tools,
-          cutters and feed. One order is open at a time, and it keeps until you fill it.
+          cutters and feed. One order is open at a time, and it keeps until you fill it. You can
+          pass on one order a day.
         </p>
       </section>
     </div>

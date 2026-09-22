@@ -144,7 +144,7 @@ test("a tap walks the farmer without shaking, and his actions play", async ({ br
   }
 });
 
-test("the thumb stick walks him, stops him at the log, and takes him through an exit", async ({ browser }) => {
+test("the thumb stick walks him, stops him when let go, and carries him between areas", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);
   try {
     const stick = page.locator(".sa-joystick");
@@ -188,16 +188,15 @@ test("the thumb stick walks him, stops him at the log, and takes him through an 
     await page.waitForTimeout(300);
     expect((await scene()).pos).toEqual(stopped.pos);
 
-    // Up the north lane: the fallen log stands until the Crop Fields are bought, and his feet stop at it.
+    // Up the north lane and straight out to the Crop Fields. A fallen log
+    // used to bar this until the land was bought for 15,000 Gold; the Crop
+    // Fields are overgrown ground the player walks onto and breaks with the
+    // hoe now, so the lane is open from the first minute and the log is gone.
     await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), start);
     await page.waitForTimeout(200);
     await push(0, -50);
-    await page.waitForTimeout(3_000);
-    const blocked = await scene();
+    await expect.poll(async () => (await scene()).area, { timeout: 5_000 }).toBe("oldfields");
     await touch("touchEnd");
-    expect(blocked.area).toBe("homestead");
-    expect(blocked.pos.y).toBeGreaterThan(48);
-    expect(blocked.pos.y).toBeLessThan(56);
 
     // The Old Fields' south exit leads home, open to anyone standing in the fields.
     await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("oldfields", { x: 352, y: 596 }));

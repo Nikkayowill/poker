@@ -112,6 +112,7 @@ export type Action =
   // below is the one that pays, and it reserves against the same flat daily
   // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
   | { action: "request-contract" }
+  | { action: "pass-contract" }
   | { action: "fulfill-contract" }
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }

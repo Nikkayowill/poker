@@ -64,6 +64,21 @@ export const MACHINE_PROCESSED_ITEMS = [
 ] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
+
+/**
+ * A gathered material a purchase spends alongside its Gold.
+ *
+ * ONE SHAPE FOR EVERY BUYER, and it lives here because this file owns the
+ * item ids and imports nothing: a machine (./machines.ts), a land clear
+ * (./sectors.ts) and a pen slot (./catalogue.ts) all cost the same kind of
+ * thing, and a second hand-written interface per buyer is how the three
+ * would drift. `lib/server/stackacres-service.ts` spends all three through
+ * one helper for the same reason.
+ */
+export interface MaterialCost {
+  readonly item: MachineRawItem;
+  readonly quantity: number;
+}
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
 
 /** Every item that can sit in the shared inventory: what a unit yields, plus

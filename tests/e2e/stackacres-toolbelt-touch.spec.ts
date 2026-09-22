@@ -245,7 +245,13 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
 
     // The wheel only has anything on it once the barn holds seed. Bought over
     // the API rather than through Ray's shop: getting there is setup, not what
-    // this is testing.
+    // this is testing. The Stew Pot comes first because Ray will not sell
+    // Carrot seed until something on the farm uses it
+    // (lib/stackacres/seed-unlocks.ts).
+    const potted = await farmerContext.request.post("/api/stackacres/actions", {
+      data: { action: "place-machine", kind: "stew_pot" },
+    });
+    expect(potted.ok(), "could not build the Stew Pot").toBe(true);
     const bought = await farmerContext.request.post("/api/stackacres/actions", {
       data: { action: "buy-seed", crop: "carrot", quantity: 1 },
     });

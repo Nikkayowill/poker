@@ -22,6 +22,23 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "./fix
 
 const ADMIN_SECRET = "playwright-admin-secret";
 
+/** The barn on the Homestead, and the shop counter inside it. Prop
+ *  coordinates are centre-x, bottom-y. */
+const BARN_DOOR = { x: 360, y: 130 };
+const BARN_COUNTER = { x: 280, y: 75 };
+const WALK_MS = 2_500;
+
+async function tapWorld(page: import("@playwright/test").Page, at: { x: number; y: number }) {
+  const point = await page.evaluate(
+    (target) =>
+      (
+        window as unknown as { __stackacres: { scene: { clientPointFor: (x: number, y: number) => { x: number; y: number } } } }
+      ).__stackacres.scene.clientPointFor(target.x, target.y),
+    at,
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
 async function admitFarmer(context: BrowserContext, admin: APIRequestContext, gold: number) {
   const created = await context.request.post("/api/profile");
   expect(created.ok()).toBe(true);
@@ -120,11 +137,23 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     await admitFarmer(farmerContext, adminContext.request, 5_000_000);
 
     const page = await farmerContext.newPage();
+    // Ray's welcome is a first-visit localStorage flag and a fresh context
+    // always gets it; skipping it from the start is steadier than racing the
+    // card that sits over the very world this test has to tap.
+    await page.addInitScript(() => window.localStorage.setItem("sa-ray-welcomed", "1"));
     await page.goto("/games/stackacres");
-    await page.getByRole("button", { name: /tap|play|start/i }).first().click();
-    await page.getByRole("button", { name: /Thanks, Ray/i }).click();
+    await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
+    await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
+    await page.waitForTimeout(1500);
 
-    await page.getByRole("button", { name: /Buy from Ray/i }).click();
+    // The store is behind the barn door: tap the barn to walk in, then tap
+    // the counter inside. See tests/e2e/stackacres-house.spec.ts.
+    await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
+    await page.waitForTimeout(1500);
+    await tapWorld(page, BARN_DOOR);
+    await page.waitForTimeout(WALK_MS);
+    await tapWorld(page, BARN_COUNTER);
+    await page.waitForTimeout(WALK_MS);
     const sheet = page.getByRole("dialog", { name: "Supply store" });
     await expect(sheet).toBeVisible();
 
@@ -141,7 +170,7 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     await expect(bulk.getByText("Requires: Clear the Fold")).toBeVisible();
     // Priced while locked, on purpose -- you cannot decide to save up for a
     // number you have never been shown.
-    await expect(bulk.getByText(/280 Gold/)).toBeVisible();
+    await expect(bulk.locator(".sa-store-cost").first()).toHaveText("280");
     await expect(bulk.getByRole("button", { name: "Locked" })).toBeDisabled();
 
     // The cheapest shipment is the shelf's floor and carries no gate at all.
@@ -155,7 +184,9 @@ test("the supply store shows a locked row greyed, named and told what it wants",
     const rung = sheet.locator(".sa-stock-card", { hasText: "Iron Shovel" });
     await expect(rung).toHaveClass(/is-locked/);
     await expect(rung.getByText(/Requires 1 farm milestone \(0 done\)/)).toBeVisible();
-    await expect(rung.getByText(/next: Unlock the Crop Fields/)).toBeVisible();
+    // The Crop Fields stopped being a 15,000 Gold purchase: they are overgrown
+    // ground the player breaks with the hoe, so the label names the act.
+    await expect(rung.getByText(/next: Break ground in the Crop Fields/)).toBeVisible();
     await expect(rung.getByRole("button", { name: "Locked" })).toBeDisabled();
   } finally {
     await farmerContext.close();

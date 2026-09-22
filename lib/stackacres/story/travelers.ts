@@ -112,7 +112,13 @@ export const TRAVELER_CATALOGUE: Readonly<Record<TravelerId, TravelerDef>> = {
     title: "The Blocky Excavator",
     origin: "A world of metre cubes, where you dig straight down and hope.",
     zone: "mine",
-    unlock: levelUnlock(4),
+    // A rung earlier than the rest of his cohort, and deliberately: Brayden's
+    // arrival is what opens the Mine (`WILD_AREA_TRAVELER`), and the Mine is
+    // the only Stone on the farm. At level 4 the Feed Silo (12,000 Gold plus
+    // 20 Stone) was affordable long before its Stone was reachable, which
+    // reads as a broken price rather than a goal. Level 3 puts Stone in hand
+    // at about the time a player can pay for the thing it builds.
+    unlock: levelUnlock(3),
     reward: "glitched_drill_bit",
   },
   ivy: {

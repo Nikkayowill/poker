@@ -9,8 +9,8 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "./fix
  *     unit tests read the source, this actually sends them;
  *   * a seeded unit really debits Gold over HTTP, at the catalogue price,
  *     against the same wallet the poker tables spend;
- *   * the read route really carries `upkeep` and `exchange` to the client,
- *     which is what the store sheet renders;
+ *   * the read route really carries `upkeep` and the processing inventory to
+ *     the client, and no longer carries the removed `exchange` block;
  *   * and the Harvest key is absent while nothing is ready, which is the one
  *     piece of the design that cannot be asserted from the server.
  *
@@ -26,6 +26,23 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "./fix
  */
 
 const ADMIN_SECRET = "playwright-admin-secret";
+
+/** The barn on the Homestead, and the shop counter inside it. Prop
+ *  coordinates are centre-x, bottom-y. */
+const BARN_DOOR = { x: 360, y: 130 };
+const BARN_COUNTER = { x: 280, y: 75 };
+const WALK_MS = 2_500;
+
+async function tapWorld(page: import("@playwright/test").Page, at: { x: number; y: number }) {
+  const point = await page.evaluate(
+    (target) =>
+      (
+        window as unknown as { __stackacres: { scene: { clientPointFor: (x: number, y: number) => { x: number; y: number } } } }
+      ).__stackacres.scene.clientPointFor(target.x, target.y),
+    at,
+  );
+  await page.mouse.click(point.x, point.y);
+}
 
 /** Mints a session, then has the admin let that profile into StackAcres and
  *  top up its purse. Access is per-profile now: without it, every route 401s. */
@@ -68,20 +85,23 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     expect(opened.ok()).toBe(true);
     const view = (await opened.json()) as {
       units: unknown[];
-      exchange: { ceiling: number; remaining: number };
       upkeep: { plots: number; fee: number; due: number };
+      inventory: Record<string, number>;
+      exchange?: unknown;
       bushels?: unknown;
-      inventory?: unknown;
     };
     expect(view.units).toEqual([]);
-    expect(view.exchange.ceiling).toBe(15_000);
-    expect(view.exchange.remaining).toBe(15_000);
     // The Farmstead's own three slots are exactly the free base, so a farm
     // that has cleared nothing never sees a bill.
     expect(view.upkeep).toMatchObject({ plots: 3, fee: 0, due: 0 });
-    // And the second currency is not merely unused -- it is not in the payload.
+    // Neither removed currency is merely unused: neither is in the payload.
+    // The flat daily Gold ceiling went with `exchange` on 2026-09-12 (see
+    // lib/stackacres/exchange.ts's header), and Bushels before it.
+    expect(view.exchange).toBeUndefined();
     expect(view.bushels).toBeUndefined();
-    expect(view.inventory).toBeUndefined();
+    // The processing inventory IS carried: it is what the Sell tab, the
+    // Workshop and the build buttons all read.
+    expect(view.inventory).toEqual({});
 
     // Seeding spends Gold, at the catalogue's price, from the real wallet.
     const before = (await (await api.get("/api/profile")).json()) as {
@@ -113,15 +133,20 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
     });
     expect(walled.status()).toBe(409);
 
-    // The two actions the rewrite removed are rejected by the schema, not
-    // quietly accepted and ignored.
-    for (const gone of [
-      { action: "sell", item: "eggs", quantity: 1 },
-      { action: "exchange", bushels: 10 },
-    ]) {
-      const refused = await api.post("/api/stackacres/actions", { data: gone });
-      expect(refused.status()).toBe(400);
-    }
+    // `exchange` was removed with the second currency and is rejected by the
+    // schema, not quietly accepted and ignored.
+    const exchanged = await api.post("/api/stackacres/actions", { data: { action: "exchange", bushels: 10 } });
+    expect(exchanged.status()).toBe(400);
+
+    // `sell` came BACK (the Sell tab), so it is a real action again -- and
+    // selling something never held is refused rather than paid for. That
+    // refusal is the hole the wood/stone migration closed: the RPC used to
+    // write a zero row and return 0, which every caller read as success.
+    const nothing = await api.post("/api/stackacres/actions", {
+      data: { action: "sell", item: "eggs", quantity: 1 },
+    });
+    expect(nothing.status()).toBe(409);
+    expect((await nothing.json()) as { error?: string }).toMatchObject({ error: "Not enough on hand." });
 
     // Nothing is ready for another fifteen minutes, so the collect route says
     // so rather than paying for a unit still growing.
@@ -136,7 +161,7 @@ test("StackAcres runs on Gold alone: seeding debits it, and the sell/exchange ac
   }
 });
 
-test("the farm screen shows the day's allowance and its maintenance, and no Harvest key until something is ready", async ({
+test("the farm screen keeps one purse, hides the Harvest key until something is ready, and prices feed in Gold", async ({
   browser,
 }) => {
   const adminContext = await browser.newContext();
@@ -154,19 +179,14 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     });
 
     const page = await farmerContext.newPage();
+    // Ray's welcome is a first-visit localStorage flag and a fresh context
+    // always gets it; skipping it from the start is steadier than racing the
+    // card that sits over the very world this test has to tap.
+    await page.addInitScript(() => window.localStorage.setItem("sa-ray-welcomed", "1"));
     await page.goto("/games/stackacres");
-
-    // The tap-to-play splash gates everything, and is also the autoplay
-    // unlock -- nothing renders behind it until a real gesture lands.
-    await page.getByRole("button", { name: /tap|play|start/i }).first().click();
-
-    // Then Ray says hello. It is a first-visit localStorage flag,
-    // so a fresh browser context ALWAYS gets it, and his card sits over the
-    // signpost rail -- including over the very button this test needs next.
-    // Dismissing it explicitly rather than force-clicking through it: a click
-    // that has to be forced past an overlay is a click a real thumb could not
-    // make either, and that is worth failing on.
-    await page.getByRole("button", { name: /Thanks, Ray/i }).click();
+    await page.getByRole("button", { name: "Play", exact: true }).click({ timeout: 15_000 });
+    await page.waitForFunction(() => Boolean((window as unknown as { __stackacres?: unknown }).__stackacres));
+    await page.waitForTimeout(1500);
 
     // Nothing is ready, so the Harvest key is not on the canvas at all. A
     // permanently-visible disabled key is chrome a player learns to skip.
@@ -177,20 +197,22 @@ test("the farm screen shows the day's allowance and its maintenance, and no Harv
     await expect(page.locator(".sa-purse")).toHaveCount(0);
     await expect(page.locator(".sa-theme .gold-balance").first()).toBeVisible();
 
-    await page.getByRole("button", { name: /Buy from Ray/i }).click();
+    // The store is behind the barn door: tap the barn to walk in, then tap
+    // the counter inside. See tests/e2e/stackacres-house.spec.ts.
+    await tapWorld(page, BARN_DOOR);
+    await page.waitForTimeout(WALK_MS);
+    await tapWorld(page, BARN_COUNTER);
+    await page.waitForTimeout(WALK_MS);
     const sheet = page.getByRole("dialog", { name: "Supply store" });
     await expect(sheet).toBeVisible();
-    // The day's Gold ceiling and land maintenance sit in a compact status
-    // strip above the tabs now, visible without picking a shelf.
-    await expect(sheet.getByText(/15,000 Gold left today/)).toBeVisible();
-    await expect(sheet.getByText(/Land maintenance/i)).toBeVisible();
-    await expect(sheet.getByText(/Paid up/i)).toBeVisible();
 
     // Feed is its own tab now, one of five shelves instead of the whole
     // sheet stacked in one scroll -- and it is still priced in Gold, with
     // no exchange window in sight.
     await sheet.getByRole("tab", { name: "Feed" }).click();
-    await expect(sheet.getByText(/96 Gold/)).toBeVisible();
+    // A price is a coin badge and a number (`StoreCost`), not the words
+    // "96 Gold" it used to spell out.
+    await expect(sheet.locator(".sa-stock-card", { hasText: "Feed Sack" }).locator(".sa-store-cost").first()).toHaveText("96");
     await expect(sheet.getByText(/Exchange window/i)).toHaveCount(0);
     await expect(sheet.getByText(/Bushels/i)).toHaveCount(0);
   } finally {

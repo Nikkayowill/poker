@@ -60,6 +60,7 @@ import {
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
+  passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processStackAcresRecipeAction,
@@ -328,6 +329,8 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // One a UTC day, and it moves nothing. See passStackAcresContract.
+  z.object({ action: z.literal("pass-contract") }),
   // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
   // inside the vat's own manifest; `collect-vat` is the one action here that
   // pays -- through the same daily ceiling `fulfill-contract` does. See
@@ -584,6 +587,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token, now);
+    case "pass-contract":
+      return passStackAcresContract(token, now);
     case "seal-vat":
       return sealStackAcresVat(token, now);
     case "collect-vat":

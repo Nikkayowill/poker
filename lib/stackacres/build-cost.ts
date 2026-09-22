@@ -12,7 +12,7 @@
 
 import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import { MACHINE_CATALOGUE, type MachineKind } from "./machines";
-import { machineItemNoun, type MachineItemId } from "./machine-items";
+import { machineItemNoun, type MachineItemId, type MaterialCost } from "./machine-items";
 
 /** Where a machine is built. The Mill and the Feed Silo go up in the
  *  Workshop, the Oven and the Cellar in the player's own kitchen, and a
@@ -58,16 +58,23 @@ export interface BuildCost {
   affordable: boolean;
 }
 
-export function buildCost(
-  kind: MachineKind,
+/**
+ * Gold first, then materials in the order they are listed.
+ *
+ * SHARED BY EVERY BUYER, not only machines: a land clear (./sectors.ts) and a
+ * pen slot (./catalogue.ts) spend the same shape, and the screen has to tell
+ * a player where Wood comes from in the same words wherever it asks for it.
+ */
+export function costLines(
+  goldNeed: number,
+  materials: readonly MaterialCost[],
   gold: number,
   inventory: StackAcresInventory,
-): BuildCost {
-  const def = MACHINE_CATALOGUE[kind];
+): BuildLine[] {
   const lines: BuildLine[] = [
-    { label: "Gold", have: gold, need: def.placeCost, met: gold >= def.placeCost, source: null },
+    { label: "Gold", have: gold, need: goldNeed, met: gold >= goldNeed, source: null },
   ];
-  for (const material of def.materials ?? []) {
+  for (const material of materials) {
     const have = inventoryQuantity(inventory, material.item);
     lines.push({
       label: machineItemNoun(material.item, material.quantity),
@@ -77,7 +84,22 @@ export function buildCost(
       source: SOURCE[material.item] ?? null,
     });
   }
-  return { kind, name: def.label, place: PLACE[kind], lines, affordable: lines.every((line) => line.met) };
+  return lines;
+}
+
+/** Whether every line is met, and nothing is asked for that is not there. */
+export function affordable(lines: readonly BuildLine[]): boolean {
+  return lines.every((line) => line.met);
+}
+
+export function buildCost(
+  kind: MachineKind,
+  gold: number,
+  inventory: StackAcresInventory,
+): BuildCost {
+  const def = MACHINE_CATALOGUE[kind];
+  const lines = costLines(def.placeCost, def.materials ?? [], gold, inventory);
+  return { kind, name: def.label, place: PLACE[kind], lines, affordable: affordable(lines) };
 }
 
 export function buildPlace(kind: MachineKind): BuildPlace {
@@ -85,21 +107,21 @@ export function buildPlace(kind: MachineKind): BuildPlace {
 }
 
 /** Everything the build spends, short or not: "200 Gold + 15 Wood". */
-export function costSummary(cost: BuildCost): string {
+export function costSummary(cost: { lines: readonly BuildLine[] }): string {
   return cost.lines.map((line) => `${line.need.toLocaleString()} ${line.label}`).join(" + ");
 }
 
 /** The lines still short, worst first, so a button can lead with the real
  *  blocker rather than the first thing in the list. */
-export function shortLines(cost: BuildCost): BuildLine[] {
+export function shortLines(cost: { lines: readonly BuildLine[] }): BuildLine[] {
   return cost.lines
     .filter((line) => !line.met)
     .sort((a, b) => a.have / a.need - b.have / b.need);
 }
 
 /** One sentence saying what is missing and where to get it, or null when the
- *  player can build it now. */
-export function buildShortfall(cost: BuildCost): string | null {
+ *  player can afford it now. */
+export function buildShortfall(cost: { lines: readonly BuildLine[] }): string | null {
   const short = shortLines(cost);
   if (short.length === 0) return null;
   const parts = short.map((line) => `${(line.need - line.have).toLocaleString()} more ${line.label}`);

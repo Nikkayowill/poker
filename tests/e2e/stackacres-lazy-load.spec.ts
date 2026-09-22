@@ -46,6 +46,9 @@ async function admitFarmer(context: BrowserContext, admin: APIRequestContext) {
 function isFarmAsset(url: string): boolean {
   return (
     url.includes("/stackacres/")
+    // The top-down rewrite's own art tree. It is a sibling of /stackacres/,
+    // not a child, so the line above never matched a single tile of it.
+    || url.includes("/stackacres-td/")
     || url.includes("/audio/stackacres/")
     || url.includes("/games/stackacres")
     || /phaser/i.test(url)
@@ -108,8 +111,12 @@ test("the lobby does not fetch the farm until the tile is clicked", async ({ bro
     await page.waitForURL("**/games/stackacres");
     await expect(page.locator("canvas")).toBeVisible({ timeout: 60_000 });
 
-    const sprites = requested.filter((entry) => entry.includes("/stackacres/sprites/"));
-    expect(sprites.length).toBeGreaterThan(0);
+    // Art from either tree counts: the farm draws from /stackacres-td/ now,
+    // and /stackacres/sprites/ still holds the shop and HUD icons.
+    const art = requested.filter(
+      (entry) => entry.includes("/stackacres/sprites/") || entry.includes("/stackacres-td/"),
+    );
+    expect(art.length, `nothing was pulled down:\n  ${requested.join("\n  ")}`).toBeGreaterThan(0);
   } finally {
     await playerContext.close();
     await adminContext.close();

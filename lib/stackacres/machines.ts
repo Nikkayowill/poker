@@ -29,7 +29,7 @@
 import { canStartRecipe, recipesForMachine, type RecipeId } from "./recipes";
 import type { StackAcresInventory } from "./inventory";
 import { siloFeedsLeft } from "./feed-silo";
-import type { MachineRawItem } from "./machine-items";
+import type { MaterialCost } from "./machine-items";
 import { stackacresExchangeDay } from "./exchange";
 
 export const MACHINE_KINDS = ["mill", "dairy", "loom", "vat", "oven", "stew_pot", "counter", "feed_silo", "cellar", "farm_kitchen"] as const;
@@ -40,13 +40,9 @@ export function isMachineKind(value: string): value is MachineKind {
 }
 
 /** One material line a machine's placement also spends, alongside its Gold
- *  `placeCost` -- the same shape ./blueprints.ts's `BlueprintRequirement`
- *  takes, kept as its own narrower interface here rather than imported so
- *  this file never has to import from ./blueprints.ts for one field. */
-export interface MachineMaterialCost {
-  readonly item: MachineRawItem;
-  readonly quantity: number;
-}
+ *  `placeCost`. The shape is ./machine-items.ts's now, shared with land
+ *  clears and pen slots; the old name is kept so call sites read the same. */
+export type MachineMaterialCost = MaterialCost;
 
 export interface MachineDef {
   label: string;

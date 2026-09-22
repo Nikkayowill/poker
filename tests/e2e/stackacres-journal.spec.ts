@@ -2,7 +2,6 @@ import { expect, test, type BrowserContext, type Page } from "./fixtures";
 
 /**
  * The Journal: the one sheet that answers "what now, and why does it matter",
- * and the land-clearing sheet that has to price its timber the same way.
  *
  * Three blocks. The top line is the reactive one, so it is checked against a
  * farm state the test sets up rather than against a fixed string: a brand new
@@ -89,36 +88,6 @@ test("the sheet shows both tracks: the buildings and the reach", async ({ contex
     await expect(sheet.locator(".sa-journal-reach")).toContainText(flag);
   }
   await expect(sheet.locator(".sa-journal-reach")).toContainText("Brings Knight Arthur");
-  // Land costs timber now as well as Gold, so the ladder names both.
-  await expect(sheet.locator(".sa-journal-reach")).toContainText("45,000 Gold + 30 Wood");
+  await expect(sheet.locator(".sa-journal-reach")).toContainText("45,000 Gold");
   await expect(sheet.locator(".sa-journal-foot")).toContainText("Chef Pierre");
-});
-
-test("clearing land names its timber, and will not offer a clear without it", async ({ context, page }) => {
-  await openStackAcres(context, page);
-
-  // The Fold's gate, on the Homestead's eastern edge. Prop coordinates are
-  // centre-x, bottom-y (public/stackacres-td/areas/homestead/area.json).
-  await page.evaluate(
-    () =>
-      (
-        window as unknown as { __stackacres: { scene: { placeFarmer: (a: string, at: { x: number; y: number }) => void } } }
-      ).__stackacres.scene.placeFarmer("homestead", { x: 640, y: 380 }),
-  );
-  await page.waitForTimeout(600);
-  const point = await page.evaluate(
-    () =>
-      (
-        window as unknown as { __stackacres: { scene: { clientPointFor: (x: number, y: number) => { x: number; y: number } } } }
-      ).__stackacres.scene.clientPointFor(660, 350),
-  );
-  await page.mouse.click(point.x, point.y);
-
-  const sheet = page.getByRole("dialog", { name: /Clear The Fold/ });
-  await expect(sheet).toBeVisible({ timeout: 10_000 });
-  await expect(sheet.locator(".sa-clear-materials")).toContainText("0 / 30 Wood");
-  await expect(sheet.locator(".sa-clear-materials")).toContainText("Chop the trees around the farm");
-  // No timber, so no button -- the sheet never offers a clear the route
-  // would then refuse.
-  await expect(sheet.getByRole("button", { name: "Not yet" })).toBeDisabled();
 });

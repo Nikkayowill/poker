@@ -403,8 +403,7 @@ export function stackacresCapacityPrice(stock: StackAcresLivestock): number {
  *
  * THE ONLY REPEATABLE MATERIAL SINK IN THE GAME, and that is the job it is
  * here to do: nine slots across the three kinds, so chopping still pays for
- * something long after the Mill and the Loom are up (see ./sectors.ts's
- * `materials` for the rest of the argument).
+ * something long after the Mill and the Loom are up.
  *
  * WOOD ONLY, NEVER STONE, and the reason is not balance. Stone's three
  * boulders are GLOBAL rows shared by every player on the server

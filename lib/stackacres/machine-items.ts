@@ -68,12 +68,10 @@ export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
 /**
  * A gathered material a purchase spends alongside its Gold.
  *
- * ONE SHAPE FOR EVERY BUYER, and it lives here because this file owns the
- * item ids and imports nothing: a machine (./machines.ts), a land clear
- * (./sectors.ts) and a pen slot (./catalogue.ts) all cost the same kind of
- * thing, and a second hand-written interface per buyer is how the three
- * would drift. `lib/server/stackacres-service.ts` spends all three through
- * one helper for the same reason.
+ * One shape for every buyer, and it lives here because this file owns the
+ * item ids and imports nothing: a machine (./machines.ts) and a pen slot
+ * (./catalogue.ts) cost the same kind of thing, and the service spends both
+ * through one helper so they cannot drift.
  */
 export interface MaterialCost {
   readonly item: MachineRawItem;

@@ -1844,22 +1844,9 @@ export async function clearStackAcresSector(
     });
   }
 
-  // Rule 1: every stake leaves before the land is recorded, materials first
-  // and Gold second -- the same order (and the same helper) a machine
-  // placement uses. Clearing ground now costs timber, and the Pasture stone
-  // too: see lib/stackacres/sectors.ts's `materials` for why land is where
-  // gathering earns a place in the whole game.
-  const { refund: refundMaterials } = await spendStackAcresMaterials(
-    profile.id,
-    def.materials ?? [],
-    now,
-    (material) =>
-      `Clearing ${sectorLabel(sector)} needs ${material.quantity.toLocaleString()} ${machineItemNoun(material.item, material.quantity)}.`,
-  );
-
+  // Rule 1: the stake leaves before the land is recorded.
   const debited = await spendGoldByProfile(profile.id, def.clearCost);
   if (!debited) {
-    await refundMaterials();
     throw new StackAcresRequestError(
       `Clearing ${sectorLabel(sector)} costs ${def.clearCost.toLocaleString()} Gold.`,
       400,
@@ -1872,14 +1859,12 @@ export async function clearStackAcresSector(
     recorded = await recordStackAcresSectorCleared(profile.id, sector, now);
   } catch (error) {
     await refundGold(profile.id, def.clearCost);
-    await refundMaterials();
     throw error;
   }
   if (!recorded) {
     // Another tab cleared it between the check above and now. The land is
     // theirs either way; this request must not have been charged for it.
     await refundGold(profile.id, def.clearCost);
-    await refundMaterials();
     throw new StackAcresRequestError(`${sectorLabel(sector)} is already yours.`, 409, {
       round: await snapshots(profile.id, now),
     });
@@ -4357,7 +4342,7 @@ export async function sowStackAcresWheat(token: string, now = new Date()): Promi
 /**
  * Spends a purchase's gathered materials, and hands back the undo.
  *
- * ONE HELPER FOR THE THREE BUYERS (a machine, a land clear, a pen slot), so
+ * ONE HELPER FOR BOTH BUYERS (a machine, a pen slot), so
  * rule 1's refund path is written once. Materials go before Gold everywhere
  * this is used: a handful of Wood is cheaper to put back than a Gold spend
  * that then fails, and `adjustStackAcresInventory` returning null is the

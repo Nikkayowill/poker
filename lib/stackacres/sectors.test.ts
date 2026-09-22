@@ -373,43 +373,9 @@ describe("cropFieldOvergrowth", () => {
   });
 });
 
-describe("what a land clear costs in materials", () => {
-  it("asks for timber on both rungs of the ladder, on top of the Gold", () => {
-    for (const id of SECTOR_LADDER) {
-      const materials = STACKACRES_SECTORS[id].materials ?? [];
-      expect(materials.length).toBeGreaterThan(0);
-      for (const material of materials) expect(isMachineRawItem(material.item)).toBe(true);
-    }
-  });
-
-  /**
-   * THE RULE THAT STOPS A DEAD END. Stone is mined in the Mine, the Mine
-   * opens on a milestone count, and clearing the Fold is itself one of the
-   * milestones -- so a land gate priced in Stone could be reached before its
-   * own Stone was. Stone's three boulders are also global rows shared by
-   * every player, which is the second reason it stays on one-time buildings.
-   */
-  it("never asks for Stone, which lives behind a gate the ladder itself opens", () => {
-    for (const id of SECTOR_IDS) {
-      for (const material of STACKACRES_SECTORS[id].materials ?? []) {
-        expect(material.item).not.toBe("stone");
-      }
-    }
-  });
-
-  it("asks nothing of home ground or of the wild places, which are never bought", () => {
-    for (const id of SECTOR_IDS) {
-      const def = STACKACRES_SECTORS[id];
-      if (def.state === "claimable") continue;
-      expect(def.materials ?? []).toEqual([]);
-    }
-  });
-
-  it("costs more timber the further out the land is, same as the Gold does", () => {
-    const wood = (id: SectorId) =>
-      (STACKACRES_SECTORS[id].materials ?? []).find((material) => material.item === "wood")?.quantity ?? 0;
+describe("what a land clear costs", () => {
+  it("costs more Gold the further out the land is", () => {
     for (let i = 1; i < SECTOR_LADDER.length; i += 1) {
-      expect(wood(SECTOR_LADDER[i])).toBeGreaterThan(wood(SECTOR_LADDER[i - 1]));
       expect(STACKACRES_SECTORS[SECTOR_LADDER[i]].clearCost).toBeGreaterThan(
         STACKACRES_SECTORS[SECTOR_LADDER[i - 1]].clearCost,
       );

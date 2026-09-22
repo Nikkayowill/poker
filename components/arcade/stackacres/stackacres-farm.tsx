@@ -4736,7 +4736,6 @@ export function StackAcresFarm() {
           unitCount={units.length}
           goldBalance={profile?.goldBalance ?? null}
           unlimitedGold={profile?.unlimitedGold === true}
-          inventory={processing.inventory}
           upkeepOutstanding={upkeep.due}
           busy={pendingByPrefix("clear-sector")}
           opener={clearingOpener}

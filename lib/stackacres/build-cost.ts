@@ -61,9 +61,8 @@ export interface BuildCost {
 /**
  * Gold first, then materials in the order they are listed.
  *
- * SHARED BY EVERY BUYER, not only machines: a land clear (./sectors.ts) and a
- * pen slot (./catalogue.ts) spend the same shape, and the screen has to tell
- * a player where Wood comes from in the same words wherever it asks for it.
+ * Shared with the pen slot (./catalogue.ts), which spends the same shape, so
+ * "where does Wood come from" is worded once for the whole game.
  */
 export function costLines(
   goldNeed: number,

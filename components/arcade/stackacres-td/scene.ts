@@ -753,7 +753,17 @@ export class TopdownScene extends Phaser.Scene {
     this.areaName = name;
     this.area = this.specs.get(name)!;
 
-    this.ground = this.keep(this.add.image(0, 0, `ground:${name}:${this.waterFrame % this.area.frames}`).setOrigin(0, 0).setDepth(-10));
+    // The ground picture is drawn at the LPC atlas's own 32px per tile while the
+    // map is authored at 16 units per tile, so it is sized to the map rather
+    // than to its own pixels. That is the whole of the resolution change: twice
+    // the texels per world unit, same size on screen, and no coordinate moved.
+    this.ground = this.keep(
+      this.add
+        .image(0, 0, `ground:${name}:${this.waterFrame % this.area.frames}`)
+        .setOrigin(0, 0)
+        .setDepth(-10)
+        .setDisplaySize(this.area.width * this.area.tile, this.area.height * this.area.tile),
+    );
     for (const spec of this.area.props) {
       const image = this.keep(this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setDepth(spec.y));
       let canopy: Phaser.GameObjects.Image | undefined;

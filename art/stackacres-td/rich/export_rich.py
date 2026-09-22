@@ -229,42 +229,76 @@ def ambient_tiles(area, ground, entries):
 # ------------------------------------------------------------------ shared sprites
 
 def soil_tile(tier, mask):
-    """One bed tile, matching the rich terrain's tilled soil. mask bits: 1 N, 2 E, 4 S, 8 W neighbour is soil."""
+    """One bed tile, drawn OVER the ground. mask bits: 1 N, 2 E, 4 S, 8 W neighbour is soil.
+
+    A hoed bed used to read as a black box dropped on the lawn. Three things did
+    that, and this fixes all three:
+
+    - **The furrows stopped a pixel short of each edge**, so every join between
+      two beds had a seam down it and a patch read as a grid of boxes rather
+      than one dug field. They run the full width now and line up across tiles,
+      because the furrow phase (`y % 4`) divides the tile size.
+    - **The bed was outlined**, with painted grass and a near-black line of soil
+      one pixel inside the north and west edges. Nothing is painted at the edge
+      any more: those pixels are left TRANSPARENT, so the map's own grass shows
+      through, tufts and all, and the bed ends in whatever was already growing
+      there instead of in a drawn border. The edge wanders a pixel in and out so
+      it is not a ruled line.
+    - **The corners were square.** An outside corner is bitten back now, so a
+      patch of beds ends in a curve.
+
+    The soil itself is a shade lighter and warmer than it was, so it reads as
+    turned earth rather than a hole.
+    """
+    # Which pixels the bed does NOT cover: they stay transparent and the ground
+    # underneath is the edge. Built before anything is drawn, so no pixel has to
+    # be painted and then taken back.
+    cut = set()
+
+    def fringe(side, seed):
+        for i in range(T):
+            for d in range(1 + (1 if hash2(i, seed, 7) < 0.34 else 0)):
+                cut.add({"n": (i, d), "s": (i, T - 1 - d), "w": (d, i), "e": (T - 1 - d, i)}[side])
+
+    for bit, side, seed in ((1, "n", 11), (4, "s", 12), (8, "w", 13), (2, "e", 14)):
+        if not mask & bit:
+            fringe(side, seed)
+
+    # Outside corners only: where BOTH of a corner's sides are open. An inside
+    # corner belongs to the neighbour that is still there, so it stays square.
+    for a, b, cx, cy in ((1, 8, 0, 0), (1, 2, T - 1, 0), (4, 8, 0, T - 1), (4, 2, T - 1, T - 1)):
+        if mask & a or mask & b:
+            continue
+        sx, sy = (1 if cx == 0 else -1), (1 if cy == 0 else -1)
+        for dx, dy in ((0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2)):
+            cut.add((cx + dx * sx, cy + dy * sy))
+
     c = Canvas(T, T)
     for y in range(T):
         for x in range(T):
-            furrow = y % 4 == 2 and 1 <= x <= 14
-            ridge = y % 4 == 1 and 1 <= x <= 14
+            if (x, y) in cut:
+                continue
+            furrow = y % 4 == 2
+            ridge = y % 4 == 1
+            # A pixel with bare ground on the far side of it sits in the shade of
+            # the cut edge: one step darker, never the black line it used to be.
+            edge = any((x + dx, y + dy) in cut for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
             if tier == "dirt":
-                level = 1.0 if furrow else 3.6 if ridge else 2.5 + (hash2(x, y, 1) - 0.5) * 0.8
-                c.put(x, y, "soil", level)
+                level = 1.5 if furrow else 3.9 if ridge else 2.9 + (hash2(x, y, 1) - 0.5) * 0.8
+                c.put(x, y, "soil", level - 0.7 if edge else level)
             elif tier == "enriched":
-                level = 0.3 if furrow else 2.6 if ridge else 1.6 + (hash2(x, y, 2) - 0.5) * 0.8
-                c.put(x, y, "soil", level)
-                if not furrow and hash2(x, y, 3) < 0.07:
+                level = 0.8 if furrow else 2.9 if ridge else 2.0 + (hash2(x, y, 2) - 0.5) * 0.8
+                c.put(x, y, "soil", level - 0.6 if edge else level)
+                if not furrow and not edge and hash2(x, y, 3) < 0.07:
                     c.put(x, y, "straw", 2.6)
-                elif not furrow and hash2(x, y, 4) < 0.05:
+                elif not furrow and not edge and hash2(x, y, 4) < 0.05:
                     c.put(x, y, "moss", 2.2)
             else:
                 if furrow:
                     c.put(x, y, "water", 3.2 if x % 5 != 1 else 6.2)
                 else:
-                    c.put(x, y, "soil", 3.8 if ridge else 2.2 + (hash2(x, y, 5) - 0.5) * 0.6)
-    if not mask & 1:
-        for x in range(T):
-            c.put(x, 0, "grass", 1.4)
-            c.put(x, 1, "soil", 0.5)
-    if not mask & 8:
-        for y in range(T):
-            c.put(0, y, "grass", 1.4)
-            if y:
-                c.put(1, y, "soil", 0.7)
-    if not mask & 4:
-        for x in range(T):
-            c.put(x, T - 1, "soil", 4.3)
-    if not mask & 2:
-        for y in range(T):
-            c.put(T - 1, y, "soil", 3.9)
+                    level = 3.8 if ridge else 2.4 + (hash2(x, y, 5) - 0.5) * 0.6
+                    c.put(x, y, "soil", level - 0.6 if edge else level)
     return c.image()
 
 

@@ -115,3 +115,31 @@ describe("woodNodeSnapshot", () => {
     });
   });
 });
+
+describe("a better axe", () => {
+  const NOW = new Date("2026-09-26T12:00:00Z");
+
+  function fell(damage: number): number[] {
+    const paid: number[] = [];
+    let state = freshWoodNodeState();
+    for (;;) {
+      const swing = swingAtWoodNode(state, NOW, damage)!;
+      paid.push(swing.woodGained);
+      state = swing.nextState;
+      if (swing.felled) return paid;
+    }
+  }
+
+  it("takes fewer swings and pays the same Wood", () => {
+    expect(fell(1)).toEqual([2, 2, 4]);
+    expect(fell(2)).toEqual([4, 4]);
+    expect(fell(3)).toEqual([8]);
+  });
+
+  it("finishes a tree the old axe started", () => {
+    const started = swingAtWoodNode(freshWoodNodeState(), NOW, 1)!.nextState;
+    const finished = swingAtWoodNode(started, NOW, 3)!;
+    expect(finished.felled).toBe(true);
+    expect(finished.woodGained).toBe(6);
+  });
+});

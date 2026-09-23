@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  AXE_LEVEL_DEFS,
+  AXE_SWING_ENERGY,
+  nextAxeLevel,
+  swingsToFell,
+  type AxeLevel,
+  type AxePayment,
+} from "@/lib/stackacres/axe";
+import { WOOD_HITS_TO_FELL } from "@/lib/stackacres/wood";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
 import { Cog, Coins, Lock } from "lucide-react";
@@ -105,7 +114,76 @@ export interface WorkshopModalProps {
   onSell: (item: MachineItemId, quantity: number) => Promise<WorkshopActionResult>;
   /** Opens the vat's own sheet on top of this one. */
   onOpenVat: () => void;
+  /** The axe held, and the Workshop's way to a better one (lib/stackacres/axe.ts). */
+  axe: AxeLevel;
+  onUpgradeAxe: (pay: AxePayment) => Promise<WorkshopActionResult>;
   onClose: () => void;
+}
+
+function swingsLine(level: AxeLevel): string {
+  const swings = swingsToFell(WOOD_HITS_TO_FELL, level);
+  return `${swings} swing${swings === 1 ? "" : "s"}`;
+}
+
+/** The axe held and the next one: made here from Wood and Stone, or bought here for Gold. */
+function AxeCard({
+  axe,
+  inventory,
+  gold,
+  pending,
+  onUpgrade,
+}: {
+  axe: AxeLevel;
+  inventory: StackAcresInventory;
+  gold: number;
+  pending: boolean;
+  onUpgrade: (pay: AxePayment) => void;
+}) {
+  const next = nextAxeLevel(axe);
+  const def = next ? AXE_LEVEL_DEFS[next] : null;
+  const materials = def?.materials ?? [];
+  const short = materials
+    .map((material) => ({ ...material, short: material.quantity - inventoryQuantity(inventory, material.item) }))
+    .filter((material) => material.short > 0);
+  const canBuy = def?.gold !== null && def?.gold !== undefined && gold >= def.gold;
+  return (
+    <article className="sa-stock-card sa-workshop-machine">
+      <h3>{AXE_LEVEL_DEFS[axe].label}</h3>
+      <p className="sa-workshop-job">
+        Fells a tree in {swingsLine(axe)}. Every swing uses {AXE_SWING_ENERGY} energy.
+      </p>
+      {def && next ? (
+        <>
+          <p className="sa-stock-wanted">
+            A {def.label} fells one in {swingsLine(next)}, for the same Wood.
+          </p>
+          <button
+            type="button"
+            className="sa-cta"
+            disabled={pending || short.length > 0}
+            onClick={contain(() => onUpgrade("materials"))}
+          >
+            Make · {materials.map((material) => machineItemLabel(material.item, material.quantity)).join(" + ")}
+          </button>
+          {short.length > 0 && (
+            <p className="sa-build-short">
+              Need {short.map((material) => machineItemLabel(material.item, material.short)).join(" and ")} more
+            </p>
+          )}
+          <button
+            type="button"
+            className="sa-cta"
+            disabled={pending || !canBuy}
+            onClick={contain(() => onUpgrade("gold"))}
+          >
+            {canBuy ? "Buy" : <Lock size={14} aria-hidden="true" />} · {def.gold?.toLocaleString()} Gold
+          </button>
+        </>
+      ) : (
+        <p className="sa-stock-yield">The best axe there is.</p>
+      )}
+    </article>
+  );
 }
 
 type Note = { readonly tone: "paid" | "refused" | "pending"; readonly text: string };
@@ -218,6 +296,8 @@ export function WorkshopModal({
   onWork,
   onSell,
   onOpenVat,
+  axe,
+  onUpgradeAxe,
   onClose,
 }: WorkshopModalProps) {
   const [now, setNow] = useState(() => Date.now());
@@ -321,6 +401,15 @@ export function WorkshopModal({
     [run, onSell],
   );
 
+  const handleUpgradeAxe = useCallback(
+    (pay: AxePayment) =>
+      run(
+        () => onUpgradeAxe(pay),
+        () => `Your ${AXE_LEVEL_DEFS[nextAxeLevel(axe) ?? axe].label} is ready.`,
+      ),
+    [run, onUpgradeAxe, axe],
+  );
+
   // The automatic pass: once, the moment something falls due, and then not
   // again for AUTO_WORK_BACKOFF_MS however the clocks disagree. The farm's
   // own in-flight set already drops a press that lands while one is out.
@@ -412,6 +501,14 @@ export function WorkshopModal({
               </ul>
             )}
 
+            <p className="sa-group-label">Your axe</p>
+            <AxeCard
+              axe={axe}
+              inventory={inventory}
+              gold={unlimitedGold ? Number.POSITIVE_INFINITY : goldBalance}
+              pending={isPending("upgrade-axe")}
+              onUpgrade={(pay) => void handleUpgradeAxe(pay)}
+            />
           </div>
 
           <div className="sa-workshop-col">

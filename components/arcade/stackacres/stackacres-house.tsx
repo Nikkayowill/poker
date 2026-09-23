@@ -54,7 +54,7 @@ export function StackAcresHouse({ error, onClose, ...kitchen }: StackAcresHouseP
         <header className="sa-store-head">
           <House size={20} aria-hidden="true" className="sa-house-mark" />
           <h2>Your House</h2>
-          <span className="sa-house-energy" title="Energy. Fishing uses it. Eat to fill it up.">
+          <span className="sa-house-energy" title="Energy. Fishing, chopping and clearing land use it. Eat to fill it up.">
             Energy <strong>{kitchen.energy}</strong>/{ENERGY_MAX}
           </span>
           <button type="button" className="sa-store-close" aria-label="Close" onClick={onClose}>

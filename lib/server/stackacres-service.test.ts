@@ -53,6 +53,8 @@ import {
   sealStackAcresVat,
   setStackAcresKitchenOrder,
   mineStackAcresStoneNode,
+  chopStackAcresWoodTree,
+  upgradeStackAcresAxe,
   type StackAcresActionResult,
   type StackAcresView,
 } from "./stackacres-service";
@@ -94,12 +96,14 @@ import {
   createStackAcresMachine,
   buildStackAcresGreenhouseRow,
   readStackAcresEnergy,
+  readStackAcresAxeLevel,
   readStackAcresInventory,
   writeStackAcresEnergy,
   listStackAcresMachines,
   writeStackAcresSiloFeeds,
 } from "./stackacres-store";
 import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH, energyAt } from "@/lib/stackacres/energy";
+import { AXE_SWING_ENERGY } from "@/lib/stackacres/axe";
 import {
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
@@ -2318,6 +2322,7 @@ describe("the currency wall", () => {
       "tap-secret-zone",
       "trade-secret-item",
         "unlock-synergy-perk",
+      "upgrade-axe",
       "upgrade-tool",
       "water",
       "work",
@@ -5253,5 +5258,80 @@ describe("gatherStackAcresForage", () => {
     await gatherStackAcresForage(token, bushes[0].nodeId, T0);
     const other = await gatherStackAcresForage(token, bushes[1].nodeId, T0);
     expect(other.foraged?.crop).toBe(bushes[1].crop);
+  });
+});
+
+describe("the axe", () => {
+  const TREE = "homestead-1";
+
+  it("fells a tree in three swings with the starting axe, for 2 energy a swing", async () => {
+    const { token, id } = await funded();
+    const before = (await readStackAcresInventory(id)).wood ?? 0;
+    const swings = [];
+    for (let i = 0; i < 3; i += 1) swings.push(await chopStackAcresWoodTree(token, TREE, T0));
+    expect(swings.map((swing) => swing.woodChopped?.felled)).toEqual([false, false, true]);
+    expect(swings[2].energy.level).toBe(ENERGY_MAX - 3 * AXE_SWING_ENERGY);
+    expect(((await readStackAcresInventory(id)).wood ?? 0) - before).toBe(8);
+  });
+
+  it("will not swing when worn out, and takes nothing for the refusal", async () => {
+    const { token, id } = await funded();
+    const stored = await readStackAcresEnergy(id);
+    await writeStackAcresEnergy(id, stored?.version ?? 0, { level: 1, updatedAt: T0.toISOString() });
+    const before = await readStackAcresInventory(id);
+
+    await expect(chopStackAcresWoodTree(token, TREE, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await readStackAcresInventory(id)).toEqual(before);
+    expect((await readStackAcresEnergy(id))?.level).toBe(1);
+  });
+
+  it("gives the energy back for a swing at a stump", async () => {
+    const { token } = await funded();
+    for (let i = 0; i < 3; i += 1) await chopStackAcresWoodTree(token, TREE, T0);
+    const miss = await chopStackAcresWoodTree(token, TREE, T0);
+    expect(miss.woodChopped).toBeNull();
+    expect(miss.energy.level).toBe(ENERGY_MAX - 3 * AXE_SWING_ENERGY);
+  });
+
+  it("is made at the Workshop from Wood, and then fells a tree in two swings for the same Wood", async () => {
+    const { token, id } = await funded();
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+
+    const made = await upgradeStackAcresAxe(token, "materials", T0);
+    expect(made.axeUpgraded).toEqual({ from: 1, to: 2, pay: "materials" });
+    expect(made.axe).toBe(2);
+    const woodAfterAxe = (await readStackAcresInventory(id)).wood ?? 0;
+    expect(woodBefore - woodAfterAxe).toBe(30);
+
+    const first = await chopStackAcresWoodTree(token, TREE, T0);
+    const second = await chopStackAcresWoodTree(token, TREE, T0);
+    expect([first.woodChopped?.felled, second.woodChopped?.felled]).toEqual([false, true]);
+    expect(((await readStackAcresInventory(id)).wood ?? 0) - woodAfterAxe).toBe(8);
+  });
+
+  it("can be bought for Gold instead, one level at a time", async () => {
+    const { token, id } = await funded(1_000_000);
+    const before = await balance(token);
+
+    await upgradeStackAcresAxe(token, "gold", T0);
+    const top = await upgradeStackAcresAxe(token, "gold", T0);
+
+    expect(top.axeUpgraded).toEqual({ from: 2, to: 3, pay: "gold" });
+    expect(await balance(token)).toBe(before - 1_500 - 8_000);
+    expect(await readStackAcresAxeLevel(id)).toBe(3);
+    await expect(upgradeStackAcresAxe(token, "gold", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect(await balance(token)).toBe(before - 1_500 - 8_000);
+    // The best axe fells a tree in one.
+    expect((await chopStackAcresWoodTree(token, TREE, T0)).woodChopped).toMatchObject({ felled: true, quantity: 8 });
+  });
+
+  it("takes nothing when the farm is short", async () => {
+    const { token, id } = await funded(0);
+    await adjustStackAcresInventory(id, "wood", -((await readStackAcresInventory(id)).wood ?? 0) + 5);
+
+    await expect(upgradeStackAcresAxe(token, "materials", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(upgradeStackAcresAxe(token, "gold", T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    expect((await readStackAcresInventory(id)).wood).toBe(5);
+    expect(await readStackAcresAxeLevel(id)).toBe(1);
   });
 });

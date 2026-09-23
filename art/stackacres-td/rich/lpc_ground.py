@@ -155,16 +155,16 @@ def paint(tiles, w, h, water=None):
     return img
 
 
-# Small things lying in the grass, from the pack. Pixel boxes in the terrain atlas. Stones come up
-# far more often than leaves or plants: pebbles are what makes open grass read as ground rather than
-# a green sheet, and thinning them was the first thing noticed.
+# Small things lying in the grass, from the pack. Pixel boxes in the terrain atlas. Kept SPARSE: at
+# half the squares the stones and leaves read as litter on a lawn (Kayo, 2026-09-23: "garbage"), and
+# Stardew's open grass carries only the odd weed. Stones on the grass are the exception, not the rule.
 STONES = [(493, 3, 17, 9), (489, 41, 19, 9), (585, 41, 19, 9), (515, 480, 16, 9), (523, 491, 18, 15)]
 GREENERY = [
     (419, 453, 11, 7), (424, 465, 8, 13), (433, 467, 10, 10), (416, 481, 11, 9), (419, 497, 8, 12),
     (434, 497, 11, 13), (385, 577, 17, 15), (681, 42, 15, 13), (201, 810, 15, 13),
 ]
-SCATTER_CHANCE = 0.5      # of a square with grass all round it getting something
-STONE_SHARE = 0.65        # of those, the share that are stones
+SCATTER_CHANCE = 0.06     # of a square with grass all round it getting something
+STONE_SHARE = 0.25        # of those, the share that are stones
 
 
 def _hash(x, y, salt):
@@ -214,7 +214,6 @@ def _tile_box(box):
 # The pack's pond-in-grass set (terrain_atlas tiles 6..8 x 11..13). Its middle tile is open water;
 # the four around it are the shoreline, one per side the grass is on, with the row or column where
 # each turns from shore to water (measured off the tiles: where half of that row or column is water).
-WATER_FILL = (7, 12)
 SHORES = {
     # side the grass is on: (tile, shoreline row/column, "row" or "col", +1 if water lies at larger indices)
     "north": ((7, 11), 16, "row", +1),
@@ -223,60 +222,111 @@ SHORES = {
     "east": ((8, 12), 13, "col", -1),
 }
 SHORE_OUT, SHORE_IN = 10, 18     # how far either side of the waterline the pack's shoreline is laid, in px
-RIPPLE = np.array([0.0, 207.0, 223.0])
+EDGE_REACH = 6                   # how far out over the water the pack's blades and contact line are kept, in px
+WATER_BLUE = np.array([21.0, 108.0, 153.0])   # the pack's open water, one flat colour
+
+# The lake, drawn the way Stardew Valley draws its water (measured off the game's own tiles, 2026-09-23):
+# a flat body with sparse lighter flecks, darker deep water with a one-step rim round it, the bottom's
+# stones showing where it is shallow, and nothing like a smooth gradient. The pack's blue is the body.
+# The engine lays a moving film of light over all of it (components/arcade/stackacres-td/water-film.ts).
+LAKE = {
+    "shelf": np.array([40.0, 134.0, 162.0]),    # a hand's depth of water over the sand at the edge
+    "body": WATER_BLUE,
+    "fleck": np.array([46.0, 132.0, 170.0]),
+    "rim": np.array([16.0, 84.0, 134.0]),
+    "deep": np.array([10.0, 58.0, 106.0]),
+    "deep_fleck": np.array([18.0, 80.0, 128.0]),
+}
+SHELF = 7          # px of shallow water in from the waterline, give or take its wander
+DEEP_FROM = 34     # px in from the waterline before deep water can start
+RIM = 3            # px of rim between the body and the deep water
+DEEP_MIN = 900     # px: a patch of deep water smaller than this is dropped
+FLECKS = 0.012     # share of open-water pixels that are a lighter fleck
+BOTTOM_STONES = 0.1   # chance a map square of shallow-ish water has a stone lying on the bottom
 
 
-def _classify_shore(tile):
-    """How much of each shoreline pixel to lay over the ground on the GRASS side of the waterline: the
-    fringe of dark grass hanging over the edge, the earth bank, the foam and ripples, all of it; the
-    plain grass of the pack's pond tile, none, so the farm's own grass shows there instead of a band of
-    a slightly different green round every pond."""
-    r, g, b = tile[..., 0], tile[..., 1], tile[..., 2]
-    watery = b > r + 30
-    bank = (r > 80) & (r > g - 10) & (b < 100)
-    fringe = (g < 115) & (r < 40)
-    return np.where(watery | bank | fringe, 1.0, 0.0)
-
-
-def _paint_water(img, water):
-    """The pond and the stream: their own smooth shape, the pack's water, and the pack's shoreline.
-
-    WHY NOT TILES. Water is the one thing a 3x3 tile set cannot draw: it has square corners and no
-    diagonal, so a round pond comes out as a staircase, and a stream one square wide is shore on both
-    sides with no water in it. So the SHAPE comes from rich/terrain.py's per-pixel owner grid, which
-    draws both as smooth, wandering curves.
-
-    WHY THE PACK'S SHORELINE ANYWAY. A curve filled with flat blue is a hole in the grass. What makes the
-    pack's pond read as water is its shoreline: dark grass hanging over the edge, an earth bank on the
-    far shore, bright ripples along the rim. So every pixel near the waterline is taken from the pack's
-    own shoreline tile for whichever side the grass is on, at the row that is the same distance from
-    that tile's waterline. Round a curve the side changes smoothly, so the samples are blended by how
-    much the shore faces each way. The bank shows on a north shore and not a south one because that is
-    how the pack drew it: from above, you see the far bank, not the near one.
-    """
+def water_geometry(water):
+    """The water at picture resolution: which pixels are water, how far each is in from the waterline in
+    picture px (negative out on the land), and the unit direction pointing from the land into the water.
+    Shared by the painter and by the export's film mask, which has to agree with it to the pixel."""
     from scipy.ndimage import distance_transform_edt, gaussian_filter
 
     mask = np.repeat(np.repeat(water.astype(np.float64), SCALE, axis=0), SCALE, axis=1)
     inside = gaussian_filter(mask, 1.2) > 0.5            # smooth the doubled steps off the outline
-    if not inside.any():
-        return
     d = np.where(inside, distance_transform_edt(inside) - 0.5, -(distance_transform_edt(~inside) - 0.5))
     field = gaussian_filter(inside.astype(np.float64), 3.0)
     gy, gx = np.gradient(field)
     norm = np.hypot(gx, gy) + 1e-9
-    nx, ny = gx / norm, gy / norm                          # points from the grass into the water
+    return inside, d, gx / norm, gy / norm
 
-    H, W = mask.shape
+
+def _lake_colour(inside, d):
+    """The lake's own colour, before the shoreline goes on.
+
+    Shallow, body, rim, deep: four steps, no gradient. A gradient is a smooth wash and reads as a filter
+    over the map; steps read as drawn water. The shallow shelf wanders in width and has grain at its edge,
+    so it follows the shore without being a contour line of it. The deep water is broad blobs with a clean
+    edge and a rim a step lighter, the way Stardew's deep patches are drawn, and it takes over entirely
+    far out, so the lake gets darker as it runs off the top of the map.
+    """
+    from scipy.ndimage import binary_dilation, binary_opening, label
+    from pal import fbm
+
+    H, W = d.shape
     ys, xs = np.mgrid[0:H, 0:W]
+    grain = (_hash(xs, ys, 73) - 0.5) * 4.0
+    shelf = inside & (d + (fbm(xs, ys, 26, 71) - 0.5) * 12.0 + grain < SHELF)
+    blobs = fbm(xs, ys, 110, 72) + np.clip((d - DEEP_FROM) / 220.0, 0, 1)
+    deep = inside & (d > DEEP_FROM) & (blobs > 0.78)
+    deep = binary_opening(deep, iterations=3)             # no slivers of deep water
+    parts, count = label(deep)
+    sizes = np.bincount(parts.ravel())
+    deep = deep & (sizes[parts] >= DEEP_MIN)              # and no stray little pools of it
+    rim = binary_dilation(deep, iterations=RIM) & inside & ~deep & ~shelf
+    fleck = _hash(xs, ys, 74) < FLECKS
 
-    # Open water: the pack's water, with the odd short ripple across it the way the pack draws them.
-    fill = _tile(*WATER_FILL)[..., :3]
-    tex = np.tile(fill, (H // TILE + 1, W // TILE + 1, 1))[:H, :W]
-    ripple = (_hash(xs // 7, ys // 3, 51) < 0.035) & (d > 4)
-    tex = np.where(ripple[..., None], tex * 0.35 + RIPPLE * 0.65, tex)
-    img[:] = np.where(inside[..., None], tex, img)
+    out = np.broadcast_to(LAKE["body"], (H, W, 3)).copy()
+    out[fleck] = LAKE["fleck"]
+    out[rim] = LAKE["rim"]
+    out[deep] = LAKE["deep"]
+    out[deep & fleck] = LAKE["deep_fleck"]
+    out[shelf] = LAKE["shelf"]
+    return out, deep | rim
 
-    # The shoreline, sampled from the pack's four shore tiles and blended by which way the shore faces.
+
+def _bottom_stones(img, inside, d, deep):
+    """Stones lying on the bottom where the water is shallow enough to see them: the pack's own grass
+    stones, sunk into the water's colour so they sit under the surface rather than on it."""
+    stones = [_tile_box(box) for box in STONES]
+    H, W = inside.shape
+    for ty in range(H // TILE):
+        for tx in range(W // TILE):
+            if _hash(tx, ty, 81) > BOTTOM_STONES:
+                continue
+            piece = stones[int(_hash(tx, ty, 82) * len(stones)) % len(stones)]
+            ph, pw = piece.shape[:2]
+            x0 = tx * TILE + int(_hash(tx, ty, 83) * (TILE - pw))
+            y0 = ty * TILE + int(_hash(tx, ty, 84) * (TILE - ph))
+            under = d[y0:y0 + ph, x0:x0 + pw]
+            if under.min() < SHELF + 4 or under.max() > DEEP_FROM + 30 or deep[y0:y0 + ph, x0:x0 + pw].any():
+                continue
+            a = piece[..., 3:4] / 255.0 * 0.5
+            patch = img[y0:y0 + ph, x0:x0 + pw]
+            img[y0:y0 + ph, x0:x0 + pw] = patch * (1 - a) + (piece[..., :3] * 0.5 + LAKE["body"] * 0.5) * a
+
+
+def _shoreline(d, nx, ny):
+    """The pack's shoreline laid along the waterline: the colour, and how much of each pixel it covers.
+
+    Sampled from the pack's own shoreline tile for whichever side the grass is on, at the row that is
+    the same distance from that tile's waterline. Round a curve the side changes smoothly, so the samples
+    are blended by how much the shore faces each way. On the water side only what the pack drew there
+    counts (the blades hanging over, the foam, the ripples), never its flat blue, which would paint over
+    the shallows, and only up to EDGE_REACH px out: the side tiles' ripple strokes run far into the water
+    and, laid along a diagonal shore, smear into long streaks.
+    """
+    H, W = d.shape
+    ys, xs = np.mgrid[0:H, 0:W]
     band = (d > -SHORE_OUT) & (d < SHORE_IN)
     di = np.round(d).astype(int)
     weights = {"north": np.maximum(ny, 0), "south": np.maximum(-ny, 0), "west": np.maximum(nx, 0), "east": np.maximum(-nx, 0)}
@@ -292,13 +342,75 @@ def _paint_water(img, water):
         else:
             rows, cols = ys % TILE, across
         sample = tile[rows, cols, :3]
-        # On the water side everything the pack drew is meant: blades over the water, foam, ripples.
-        a = np.where(d > 0, tile[rows, cols, 3] / 255.0, keep[rows, cols] * tile[rows, cols, 3] / 255.0)
+        drawn = (np.abs(sample - WATER_BLUE).sum(-1) > 12) & (d < EDGE_REACH)
+        a = np.where(d > 0, drawn * tile[rows, cols, 3] / 255.0, keep[rows, cols] * tile[rows, cols, 3] / 255.0)
         w = weights[side] / total
         colour += sample * w[..., None]
         cover += a * w
-    cover = np.where(band, cover, 0.0)[..., None]
+    return colour, np.where(band, cover, 0.0)
+
+
+def _classify_shore(tile):
+    """How much of each shoreline pixel to lay over the ground on the GRASS side of the waterline: the
+    fringe of dark grass hanging over the edge, the earth bank, the foam and ripples, all of it; the
+    plain grass of the pack's pond tile, none, so the farm's own grass shows there instead of a band of
+    a slightly different green round every pond."""
+    r, g, b = tile[..., 0], tile[..., 1], tile[..., 2]
+    watery = b > r + 30
+    bank = (r > 80) & (r > g - 10) & (b < 100)
+    fringe = (g < 115) & (r < 40)
+    return np.where(watery | bank | fringe, 1.0, 0.0)
+
+
+def _paint_water(img, water):
+    """The pond and the stream: their own smooth shape, the lake's own water, and the pack's shoreline.
+
+    WHY NOT TILES. Water is the one thing a 3x3 tile set cannot draw: it has square corners and no
+    diagonal, so a round pond comes out as a staircase, and a stream one square wide is shore on both
+    sides with no water in it. So the SHAPE comes from rich/terrain.py's per-pixel owner grid, which
+    draws both as smooth, wandering curves.
+
+    WHY THE PACK'S SHORELINE ANYWAY. A curve filled with flat blue is a hole in the grass. What makes the
+    pack's pond read as water is its shoreline: dark grass hanging over the edge, an earth bank on the
+    far shore, bright ripples along the rim (see `_shoreline`). The bank shows on a north shore and not a
+    south one because that is how the pack drew it: from above, you see the far bank, not the near one.
+    """
+    inside, d, nx, ny = water_geometry(water)
+    if not inside.any():
+        return
+    lake, deep = _lake_colour(inside, d)
+    img[:] = np.where(inside[..., None], lake, img)
+    _bottom_stones(img, inside, d, deep)
+    colour, cover = _shoreline(d, nx, ny)
+    cover = cover[..., None]
     img[:] = img * (1 - cover) + colour * cover
+
+
+# Foam: Stardew's dashed light line a pixel or two out from every shore, two sets of dashes that take
+# turns once a second. Here it runs just outside the pack's own blades and contact line.
+FOAM_FROM, FOAM_TO = 5.5, 7.0    # px out from the waterline
+FOAM_DASH = 5                    # px along the shore per dash
+FOAM_KEEP = 0.75                 # share of dash slots that have a dash, so the line is broken unevenly
+
+
+def water_layers(water):
+    """What the engine's water layer needs to know about each picture pixel, at picture resolution.
+
+    `inside`: the water itself, as painted.
+    `film`: where the engine's film of light may lie. On the water, and off the shoreline the pack draws
+    over its edge, which in Stardew sits on a layer above the film. The export also takes out whatever
+    else lies on the water, like the dock and the lily pads.
+    `foam`: 0, or which set of foam dashes (1 or 2) the pixel belongs to. The engine shows one at a time.
+    """
+    inside, d, nx, ny = water_geometry(water)
+    _, cover = _shoreline(d, nx, ny)
+    film = inside & (cover < 0.35)
+    H, W = d.shape
+    ys, xs = np.mgrid[0:H, 0:W]
+    along = np.floor((xs * np.abs(ny) + ys * np.abs(nx)) / FOAM_DASH).astype(np.int64)
+    line = film & (d >= FOAM_FROM) & (d < FOAM_TO) & (_hash(along, 0, 91) < FOAM_KEEP)
+    foam = np.where(line, 1 + (along % 2), 0).astype(np.uint8)
+    return inside, film, foam
 
 
 def bed_tile(mask, material="path"):

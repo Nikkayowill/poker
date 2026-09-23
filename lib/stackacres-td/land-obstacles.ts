@@ -189,24 +189,30 @@ export function dealLandObstacles(
   return [];
 }
 
-/**
- * The boulder and the scrub, from the LPC terrain pack
- * (art/stackacres-td/lpc/terrain/terrain_atlas.png, CC-BY-SA 3.0 / GPL 3.0,
- * credited in its Attribution.txt), cut into public/stackacres-td/common/.
- * Drawn at half size like every pack piece: the pack is 32px a tile, the map
- * 16. Trees are still the area's own, off its atlas.
- */
+/** Boulder and scrub pictures, built from the LPC terrain pack by art/stackacres-td/rich/lpc_land.py and drawn at half size. */
 export const LAND_ART_SCALE = 0.5;
 const LAND_ART: Readonly<Record<"boulder" | "scrub", readonly string[]>> = {
-  boulder: ["land-boulder-0", "land-boulder-1"],
-  scrub: ["land-scrub"],
+  boulder: ["land-boulder-0", "land-boulder-1", "land-boulder-2", "land-boulder-3"],
+  scrub: ["land-scrub-0", "land-scrub-1", "land-scrub-2", "land-scrub-3", "land-scrub-4", "land-scrub-5"],
 };
 export const LAND_TEXTURES: readonly string[] = [...LAND_ART.boulder, ...LAND_ART.scrub];
 
-/** Which picture a boulder or a scrub stands as, picked by its id so it is the same one on every device. */
-export function landTexture(kind: "boulder" | "scrub", id: string): string {
+export interface LandArt {
+  readonly texture: string;
+  /** Drawn mirrored. */
+  readonly flip: boolean;
+}
+
+/** Picked by id so every device draws the same field; the hash is stirred so sequential ids don't get sequential pictures. */
+export function landArt(kind: "boulder" | "scrub", id: string): LandArt {
   const pool = LAND_ART[kind];
   let hash = 0;
   for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return pool[hash % pool.length];
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x7feb352d);
+  hash ^= hash >>> 15;
+  hash = Math.imul(hash, 0x846ca68b);
+  hash ^= hash >>> 16;
+  const pick = (hash >>> 0) % (pool.length * 2);
+  return { texture: pool[pick % pool.length], flip: pick >= pool.length };
 }

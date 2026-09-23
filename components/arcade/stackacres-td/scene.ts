@@ -39,6 +39,7 @@ import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { axeSound, doorSound, floorStepSound, grassStepSound, pickSound, piecesSound } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
+import type { WaterSpec } from "@/lib/stackacres-td/water";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
 import { SWING_STRIKE_MS, swingToolFor, type SwingTool } from "@/lib/stackacres-td/swing";
 import { OrbBursts } from "./orb-burst";
@@ -69,15 +70,18 @@ import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-c
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
+import { SunlightLayer } from "./sunlight-layer";
+import { WaterFilm } from "./water-film";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
+import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
 import {
   LAND_ART_SCALE,
   LAND_TEXTURES,
   dealLandObstacles,
-  landTexture,
+  landArt,
   type LandObstaclePlacement,
 } from "@/lib/stackacres-td/land-obstacles";
 import {
@@ -101,12 +105,15 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  *   areas/<area>/ground-<f>.png   terrain, ground items, cast shadows, reflections; one per water frame (`frames`)
  *   areas/<area>/props.*          standing props, with what tapping each one does (`tag`) and a swaying part (`sway`)
  *   areas/<area>/area.json        props, NPCs, spawn, zones, exits, water that blocks walking, lights, emitters
+ *   areas/<area>/water.png        where the lake's film of light and foam lie (water-film.ts), for an area with water
  *   common/sprites.*              soil, crops, hens, emote bubbles, lamp glows, smoke puffs
+ *   common/water-film.png         the film of light's ten frames
  *   characters/<name>.*           the rig's sheets, reshaded
  * The player's real beds, crops and hens are drawn on top from the shell's props.
  *
  * Life runs here rather than in baked frames (docs/stackacres-premium-life.md): the time of day
- * (daylight-layer.ts), the wind (wind-sway.ts), chimney smoke (chimney-smoke.ts), critters (ambient-life.ts), and
+ * (daylight-layer.ts), the wind (wind-sway.ts), the light moving on the lake (water-film.ts), chimney smoke
+ * (chimney-smoke.ts), critters (ambient-life.ts), and
  * people and hens breathing, blinking, pecking and greeting the farmer with emotes (people-life.ts).
  */
 
@@ -289,6 +296,9 @@ interface AreaSpec {
   lights: LightPoint[];
   emitters: Emitter[];
   ambient: AmbientSpec;
+  /** The lake's film-of-light mask (water-film.ts): null where the area has no water. Missing from an area
+   *  not exported since the film was added, which is every area but the Homestead; those get no film. */
+  water?: WaterSpec | null;
 }
 
 export interface TopdownCallbacks {
@@ -381,7 +391,9 @@ export class TopdownScene extends Phaser.Scene {
   private areaName: TopdownArea = "homestead";
   private area!: AreaSpec;
   private grid!: Grid;
-  private layer: Phaser.GameObjects.GameObject[] = [];
+  /** Everything drawn for the current area, torn down when he leaves it.
+   *  Each object leaves this set when it is destroyed (see `keep`). */
+  private layer = new Set<Phaser.GameObjects.GameObject>();
   private ground!: Phaser.GameObjects.Image;
   private player!: Phaser.GameObjects.Sprite;
   /** Where the farmer really is. His sprite and the camera are both snapped from this to device pixels. */
@@ -393,10 +405,12 @@ export class TopdownScene extends Phaser.Scene {
   private falls: Phaser.GameObjects.TileSprite[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
+  /** Fades whatever tall thing he is standing behind. */
+  private readonly seeThrough = new SeeThrough(this);
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
-  private soilImages: { key: string; image: Phaser.GameObjects.Image; enriched: boolean }[] = [];
+  private soilImages = new Map<string, { image: Phaser.GameObjects.Image; frame: string; enriched: boolean }>();
   /** The beds drawn last time, and on which map. A bed missing from here is
    *  one that has just been broken, and drops in; every other bed is only
    *  being redrawn (a neighbour joined it, or the soil list refreshed). */
@@ -457,9 +471,11 @@ export class TopdownScene extends Phaser.Scene {
   private stickWalking = false;
   private daylight!: DaylightLayer;
   private clockSource: (() => number) | null = null;
+  private sunlight!: SunlightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
   private life!: AmbientLife;
+  private water!: WaterFilm;
   private people!: PeopleLife;
   /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day and walking stay. */
   private reducedMotion = false;
@@ -471,6 +487,8 @@ export class TopdownScene extends Phaser.Scene {
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
   private soil: SoilTile[] = [];
+  /** `soil` keyed by tile, built once per soil change rather than once per crop per draw. */
+  private soilMap = createSoilMap([]);
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
@@ -505,6 +523,7 @@ export class TopdownScene extends Phaser.Scene {
       // An area ships only as many ground frames as its water needs, so load them once its JSON says how many.
       this.load.once(`filecomplete-json-area:${area}`, (_key: string, _type: string, data: AreaSpec) => {
         for (let f = 0; f < data.frames; f++) this.load.image(`ground:${area}:${f}`, `${ASSETS}/areas/${area}/ground-${f}.png`);
+        if (data.water) this.load.image(`water:${area}`, `${ASSETS}/areas/${area}/water.png`);
       });
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
@@ -513,6 +532,7 @@ export class TopdownScene extends Phaser.Scene {
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
+    this.load.image("water-film", `${ASSETS}/common/water-film.png`);
     for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
@@ -551,8 +571,10 @@ export class TopdownScene extends Phaser.Scene {
     });
     this.daylight = new DaylightLayer(this, (object) => this.keep(object));
     if (this.clockSource) this.daylight.setSource(this.clockSource);
+    this.sunlight = new SunlightLayer(this, (object) => this.keep(object), this.wind);
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
+    this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.orbs = new OrbBursts(this, () => ({
       x: this.player.x,
@@ -591,13 +613,16 @@ export class TopdownScene extends Phaser.Scene {
     this.smoke.update(time, this.reducedMotion);
     this.orbs.update(time);
     this.daylight.update(time, this.reducedMotion);
+    this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
+    this.water.update(time, this.reducedMotion);
     this.people.update(
       time,
       { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
       this.daylight.hour(),
       this.reducedMotion,
     );
+    this.seeThrough.update(this.pos, delta, this.reducedMotion);
   }
 
   private walk(delta: number): void {
@@ -633,7 +658,8 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     // Pushed into a wall: stand facing it, so he reads as blocked rather than walking on the spot.
-    if (this.stickWalking || this.player.frame.name !== STANDING[this.facing]) this.stand();
+    // Not mid-swing or mid-job, which would cut it short; it stands him itself when it ends.
+    if (!this.acting && (this.stickWalking || this.player.frame.name !== STANDING[this.facing])) this.stand();
     this.stickWalking = false;
   }
 
@@ -815,8 +841,8 @@ export class TopdownScene extends Phaser.Scene {
       this.callbacks.onInputLocked(false);
     }
     this.acting = false;
-    for (const object of this.layer) object.destroy();
-    this.layer = [];
+    for (const object of [...this.layer]) object.destroy();
+    this.layer.clear();
     this.animated = [];
     this.falls = [];
     this.propImages = [];
@@ -828,7 +854,7 @@ export class TopdownScene extends Phaser.Scene {
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
-    this.soilImages = [];
+    this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
     this.wetTiles.clear();
@@ -838,6 +864,8 @@ export class TopdownScene extends Phaser.Scene {
 
     this.areaName = name;
     this.area = this.specs.get(name)!;
+    // Before any tree is built: each canopy hands the sun its top as it is made.
+    this.sunlight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.indoor);
 
     // Beyond the map's edges is forest, not the dark behind the world: the camera
     // is not fenced to the map, so a pan or a walk to an edge would otherwise look
@@ -877,6 +905,7 @@ export class TopdownScene extends Phaser.Scene {
           this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y + 0.5),
         );
         this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+        this.sunlight.lightCanopy(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
       } else if (spec.passable) {
         // A bush has no separate top, so the whole sprite shivers.
         this.wind.add(image, spec.x, spec.y, 0, true);
@@ -909,6 +938,11 @@ export class TopdownScene extends Phaser.Scene {
       }
     }
     this.buildLandObstacles();
+    this.seeThrough.track(
+      this.area.indoor
+        ? []
+        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
+    );
     for (const npc of this.area.npcs) {
       const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
       this.anims.createFromAseprite(npc.name, undefined, sprite);
@@ -933,6 +967,7 @@ export class TopdownScene extends Phaser.Scene {
     this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights, this.area.indoor, `props:${name}`);
     this.smoke.build(this.area.emitters);
     this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
+    this.water.build(this.area.water, `water:${name}`);
 
     this.applyGates();
     this.applyNpcs();
@@ -942,7 +977,10 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   private keep<T extends Phaser.GameObjects.GameObject>(object: T): T {
-    this.layer.push(object);
+    this.layer.add(object);
+    // Beds, crop sprites, clods and pieces are destroyed all the time on one
+    // area; without this the set only ever grew until he walked out.
+    object.once(Phaser.GameObjects.Events.DESTROY, () => this.layer.delete(object));
     return object;
   }
 
@@ -1000,20 +1038,21 @@ export class TopdownScene extends Phaser.Scene {
    *
    * Trees are the area's own art, copied off its atlas, so an overgrown field
    * is drawn in exactly the trees that grow around it. Boulders and scrub are
-   * the terrain pack's own rock and bush (`landTexture`); scrub is walked up
-   * to and rustles like any bush.
+   * built from the terrain pack's rocks, bushes and stumps (`landArt`); scrub
+   * is walked up to and rustles like any bush.
    */
   private buildLandObstacle(placement: LandObstaclePlacement): void {
     const tag = `land:${placement.id}`;
     this.landKinds.set(placement.id, placement.kind);
     const blocks: [number, number][] = [[placement.tx, placement.ty]];
     if (placement.kind !== "tree") {
-      const texture = landTexture(placement.kind, placement.id);
+      const { texture, flip } = landArt(placement.kind, placement.id);
       const image = this.keep(
         this.add
           .image(placement.x, placement.y, texture)
           .setOrigin(0.5, 1)
           .setScale(LAND_ART_SCALE)
+          .setFlipX(flip)
           .setDepth(placement.y),
       );
       if (placement.kind === "scrub") this.wind.add(image, placement.x, placement.y, 0, true);
@@ -1049,6 +1088,7 @@ export class TopdownScene extends Phaser.Scene {
         this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setScale(template.scale).setDepth(placement.y + 0.5),
       );
       this.wind.add(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
+      this.sunlight.lightCanopy(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
     } else {
       this.wind.add(image, placement.x, placement.y, 0, true);
     }
@@ -1146,15 +1186,23 @@ export class TopdownScene extends Phaser.Scene {
     return this.hasBed(tx, ty) || isBedSquare(tx, ty) ? { tx, ty } : null;
   }
 
+  /**
+   * Beds are diffed against what is already drawn: a bed that stays keeps its
+   * image (its frame changes when a neighbour joins it), a new one is drawn
+   * and dropped in, a gone one is destroyed. Redrawing every bed on every
+   * change cut the last bed's drop-in short each time the next one was hoed.
+   */
   private drawSoil(): void {
-    for (const bed of this.soilImages) bed.image.destroy();
-    this.soilImages = [];
-    if (this.areaName !== "homestead") return;
+    if (this.areaName !== "homestead") {
+      for (const bed of this.soilImages.values()) bed.image.destroy();
+      this.soilImages.clear();
+      return;
+    }
     // On the first draw of a map every bed is "new", and none of them were
     // just broken -- they were already there when he walked in.
     const sameMap = this.drawnBedsArea === this.areaName;
     const drawn = new Set<string>();
-    const map = createSoilMap(this.soil);
+    const map = this.soilMap;
     for (const tile of this.soil) {
       const at = this.soilTilePoint(tile.tx, tile.ty);
       if (!at) continue;
@@ -1162,22 +1210,39 @@ export class TopdownScene extends Phaser.Scene {
       drawn.add(key);
       const mask = soilNeighborMask(map, tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
+      const frame = `soil_${tier}_${mask}`;
+      const enriched = isSoilTileEnriched(tile);
+      const standing = this.soilImages.get(key);
+      if (standing) {
+        if (standing.frame !== frame) {
+          // Same 32px frame size, so the scale (and any drop-in still running
+          // on it) is left alone.
+          standing.image.setFrame(frame);
+          standing.frame = frame;
+        }
+        standing.enriched = enriched;
+        continue;
+      }
       // The pack's 32px dirt drawn into a 16-unit square, like the ground under
       // it, so a hoed square and the road beside it are the same texels.
       // Centred rather than cornered so a new one grows out of its own middle.
       const image = this.add
-        .image(at.x + SOIL_TILE / 2, at.y + SOIL_TILE / 2, "common", `soil_${tier}_${mask}`)
+        .image(at.x + SOIL_TILE / 2, at.y + SOIL_TILE / 2, "common", frame)
         .setDisplaySize(SOIL_TILE, SOIL_TILE)
         .setDepth(-5);
       if (sameMap && !this.drawnBeds.has(key)) this.dropBedIn(image);
-      this.soilImages.push({ key, image: this.keep(image), enriched: isSoilTileEnriched(tile) });
+      this.soilImages.set(key, { image: this.keep(image), frame, enriched });
+    }
+    for (const [key, bed] of this.soilImages) {
+      if (drawn.has(key)) continue;
+      bed.image.destroy();
+      this.soilImages.delete(key);
     }
     this.drawnBeds = drawn;
     this.drawnBedsArea = this.areaName;
-    // Beds are redrawn from scratch here, so they come out of this loop
-    // untinted; `wetTiles` is whatever the last unit draw worked out, and
-    // `drawUnits` (the caller's next line, every time soil changes) puts it
-    // right the moment a crop moves on or off one of them.
+    // New beds come out of this loop untinted; `wetTiles` is whatever the last
+    // unit draw worked out, and `drawUnits` (the caller's next line, every
+    // time soil changes) puts it right the moment a crop moves on or off one.
     this.applySoilMoisture();
   }
 
@@ -1185,8 +1250,8 @@ export class TopdownScene extends Phaser.Scene {
    *  watered one darker. Cheap enough to run on every unit draw -- it is a
    *  `setTint` per bed and touches nothing else. */
   private applySoilMoisture(): void {
-    for (const bed of this.soilImages) {
-      bed.image.setTint(soilTint({ enriched: bed.enriched, wet: this.wetTiles.has(bed.key) }));
+    for (const [key, bed] of this.soilImages) {
+      bed.image.setTint(soilTint({ enriched: bed.enriched, wet: this.wetTiles.has(key) }));
     }
   }
 
@@ -1194,7 +1259,7 @@ export class TopdownScene extends Phaser.Scene {
     if (unit.housedIn) return null;
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
-      const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
+      const world = cropSpot("farmstead", unit.id, { soil: this.soilMap, slot: unit.soilSlot ?? null });
       // A slotted crop stands on whichever bed its slot names, and every bed is
       // on the Homestead's one grid.
       return this.areaName === "homestead" ? soilWorldToMap(world) : null;
@@ -1614,6 +1679,8 @@ export class TopdownScene extends Phaser.Scene {
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
       if (!image.getBounds().contains(map.x, map.y)) continue;
+      // Faded because he's behind it, so the tap is for what's behind.
+      if (this.seeThrough.passesTap(image, map)) continue;
       // The dock is walked to from its dry end and cast from side-on, so it
       // wants its own spot rather than the step-up-from-below every other prop
       // is approached with. The face point is due west along the planks, which
@@ -1675,11 +1742,20 @@ export class TopdownScene extends Phaser.Scene {
 
   private stand(): void {
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+    // Stopping an animation never fires its "complete", so a swing cut short
+    // here has to be let go of here too. Left set, `tapAt` ignored every tap.
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onSwingDone);
+    this.swing = null;
     this.player.anims.stop();
     this.acting = false;
     this.player.setFrame(STANDING[this.facing]);
     this.people.stood(this.time.now);
   }
+
+  private onSwingDone = (): void => {
+    this.swing = null;
+    this.onActionDone();
+  };
 
   private onActionDone = (): void => {
     this.acting = false;
@@ -1755,10 +1831,7 @@ export class TopdownScene extends Phaser.Scene {
     this.acting = true;
     this.swing = { tag, strikeAt: this.time.now + SWING_STRIKE_MS };
     this.swungAt.set(tag, this.time.now);
-    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      this.swing = null;
-      this.onActionDone();
-    });
+    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onSwingDone);
     this.player.play({ key: `${tool}_${this.facing}`, repeat: 0 });
     this.time.delayedCall(SWING_STRIKE_MS, () => this.strike(tag, tool));
     return true;
@@ -2000,7 +2073,7 @@ export class TopdownScene extends Phaser.Scene {
     if (push) this.homeCamera();
     if (push && !was) this.callbacks.onViewMoved();
     if (!push && was) {
-      if (this.stickWalking && this.path.length === 0) this.stand();
+      if (this.stickWalking && this.path.length === 0 && !this.acting) this.stand();
       this.stickWalking = false;
     }
   }
@@ -2199,6 +2272,7 @@ export class TopdownScene extends Phaser.Scene {
 
   setSoil(tiles: readonly SoilTile[]): void {
     this.soil = [...tiles];
+    this.soilMap = createSoilMap(this.soil);
     if (!this.booted) return;
     this.applyGates();
     this.drawSoil();
@@ -2691,6 +2765,13 @@ export class TopdownScene extends Phaser.Scene {
     const part = this.propImages.find(({ spec }) => spec.tag === `land:${id}`);
     if (!part || !part.image.visible) return null;
     return { x: part.spec.x, y: part.spec.y - 6 };
+  }
+
+  /** e2e only: where a tagged prop meets the ground and how opaque it is drawn right now, or null when this map has none. */
+  propSight(tag: string): { base: Point; alpha: number } | null {
+    const part = this.propImages.find(({ spec, stump }) => spec.tag === tag && !stump);
+    if (!part) return null;
+    return { base: { x: part.spec.x, y: part.spec.y }, alpha: part.image.alpha };
   }
 
   /** e2e only: whether the farmer is stopped from walking onto this map point. */

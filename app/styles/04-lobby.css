@@ -1918,7 +1918,7 @@ button:disabled { cursor: wait; opacity: .62; }
   --tile-tint: rgba(255,255,255,.02);
   image-rendering: pixelated;
 }
-.hub-tile-stackacres-logo { width: 150px; height: auto; margin-bottom: 1px; }
+.hub-tile-stackacres-logo { width: 186px; max-width: 100%; height: auto; margin-bottom: 1px; image-rendering: pixelated; }
 /* Same 10px kicker voice the hero's category line uses (.hub-tile-kicker),
    standing in for the blurb on a tile nobody can open yet. */
 .hub-tile-soon { color: #9d93b8 !important; font-weight: 650; letter-spacing: .2em; text-transform: uppercase; }

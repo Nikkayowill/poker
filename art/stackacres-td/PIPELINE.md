@@ -257,3 +257,20 @@ roles `A a` are a second garment or hat accent. `rig.py` merges these into its `
   variables. Write a script file and run `python3 /abs/path/script.py`.
 - `cd` doesn't persist between Bash calls, so use absolute paths.
 - Pillow 12.3: `Image.getdata()` is deprecated; use `get_flattened_data()`.
+
+## The Homestead's trees and hill (2026-09-23)
+
+- **Trees** come off bluecarrot16's "[LPC] Trees" sheet (`lpc/trees/trees-green.png`, CC-BY-SA 3.0,
+  every artist in `CREDITS-trees.txt`). `rich/lpc_trees.py` names each one by its pixel box in
+  `BROADLEAF`; `YARD` is what the choppable trees and the wild land's obstacles draw from, `WALL`
+  what the treeline round the map is made of (a pine every fifth). The sheet's darkest oaks were
+  tried in the wall and came out black at map scale; the wall keeps to the bright ones and is
+  exported `undimmed`, since every tree in it stands in the next one's shadow.
+- **The hill** is `rich/lpc_cliffs.py`, built from Sharm's grass-topped LPC cliffs
+  (`lpc/terrain/LPC_cliffs_grass.png`): a seamless face slice laid end to end, the lip's dark edge
+  and hanging blades over it (the sheet's flat grass is cut away so the map's own grass shows), and
+  the cave mouth dropped in. `areas/rig/homestead.py` lays it as ground along the north-east corner,
+  walls the tiles it covers, ends the lake short of it, and puts the mine's exit at the cave.
+- The export runs in a fresh worktree now (characters come from `pixellab/build.py`, no Aseprite
+  chain); `--out` to a scratch dir and copy `areas/homestead/*` and `common/forest.png` back, never
+  `common/sprites.*`.

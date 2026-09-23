@@ -29,7 +29,12 @@ import os
 import numpy as np
 from PIL import Image
 
-ATLAS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lpc", "terrain", "terrain_atlas.png")
+LPC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lpc")
+ATLAS = os.path.join(LPC, "terrain", "terrain_atlas.png")
+# bluecarrot16's "[LPC] Trees" (CC-BY-SA 3.0, every artist named in lpc/trees/CREDITS-trees.txt): the
+# broadleaf trees the farm is planted with. The terrain atlas has one oak; Stardew's farm is a crowd of
+# round green crowns with the leaves showing, and this sheet has forty of them in the pack's own hand.
+TREE_SHEET = os.path.join(LPC, "trees", "trees-green.png")
 SCALE = 0.5
 
 # Whole trees, trunk and all, by their pixel box in the atlas: found by
@@ -43,6 +48,28 @@ TREES = {
 # overlapping the next so no trunk is ever seen between them.
 CROWNS = [(772, 485, 85, 91), (870, 501, 85, 91)]
 BUSH = (865, 400, 94, 80)
+# The broadleaf trees off the trees sheet, by pixel box: picked for a round crown with the leaves drawn in
+# clumps and a warm trunk, which is what reads as Stardew's. Sizes are in pack px, so on the map a 96px
+# tree is three tiles wide. Ordered small to large.
+BROADLEAF = {
+    "clump":   (388, 224, 84, 124),      # bright clumped crown, thin trunk
+    "clump2":  (485, 226, 89, 121),      # its sibling, lit from the left
+    "round":   (128, 104, 95, 117),      # lush round crown
+    "lit":     (544, 96, 96, 112),       # pale-lit clumps
+    "oak":     (424, 96, 112, 124),      # big lush oak
+    "orange":  (321, 352, 93, 154),      # bright crown on an orange trunk
+    "dark":    (418, 352, 119, 151),     # dark crown, thick trunk
+    "soft":    (709, 224, 119, 128),     # soft blue-green crown
+    "lush":    (0, 535, 150, 169),       # big lush crown, roots showing
+    "domed":   (161, 530, 124, 165),     # round with a lit top
+    "elder":   (301, 512, 165, 179),     # old oak, light leaves over dark, big roots
+    "elder2":  (835, 533, 155, 164),
+}
+YARD = ["round", "oak", "orange", "domed", "lit", "lush"]                # the choppable trees and the wild land's
+# The treeline round the map. The sheet's darker oaks ("elder", "dark", "lush") were tried here and came out as
+# black masses at map scale; Stardew's edge is bright green with teal shadow, so these are the bright ones.
+WALL = ["oak", "clump", "round", "soft", "orange", "clump2", "lit"]
+CANOPY = (551, 718, 242, 289)                                            # a dense dark canopy: the forest beyond the edge
 
 # How far the wind carries the top of each kind, in map px at full lean: the
 # engine turns it into a bend from the base (components/arcade/stackacres-td/
@@ -51,6 +78,7 @@ BUSH = (865, 400, 94, 80)
 BEND = {"pine": 2.0, "oak": 2.6, "broadleaf": 3.0, "crown": 1.4, "bush": 1.8}
 
 _sheet = None
+_trees = None
 
 
 def sheet():
@@ -60,9 +88,28 @@ def sheet():
     return _sheet
 
 
-def _cut(box):
+def tree_sheet():
+    global _trees
+    if _trees is None:
+        _trees = Image.open(TREE_SHEET).convert("RGBA")
+    return _trees
+
+
+def _cut(box, src=None):
     x, y, w, h = box
-    return sheet().crop((x, y, x + w, y + h))
+    return (src or sheet()).crop((x, y, x + w, y + h))
+
+
+def _no_shadow(img):
+    """The trees sheet draws a grey ground shadow under every tree; the rig casts its own, so it goes."""
+    arr = np.array(img)
+    grey = (arr[..., 3] < 255) & (arr[..., 3] > 0)
+    arr[grey, 3] = 0
+    return Image.fromarray(arr, "RGBA")
+
+
+def broadleaf(name):
+    return _no_shadow(_cut(BROADLEAF[name], tree_sheet()))
 
 
 def _leaves(img):
@@ -105,14 +152,18 @@ def spruce(seed=0, big=False):
 
 
 def round_tree(seed=0):
-    """What the rig asks for as a round tree: the pack's oak or its smaller broadleaf, by seed."""
-    kind = "oak" if seed % 3 else "broadleaf"
-    return _made(_cut(TREES[kind]), kind, False)
+    """What the rig asks for as a round tree: one of the yard's broadleaf trees, by seed."""
+    return _made(broadleaf(YARD[seed % len(YARD)]), "oak", False)
 
 
 def crown(seed=0):
-    """A pine crown for the forest wall round the map's edge: no trunk, since the next crown hides it."""
-    return _made(_cut(CROWNS[seed % len(CROWNS)]), "crown", False)
+    """A tree for the wall round the map's edge: a big broadleaf, with a pine every so often so the
+    wall is not one green. Each overlaps the next, so their trunks mostly hide."""
+    made = _made(_cut(TREES["pine"]), "pine", False) if seed % 5 == 3 else _made(broadleaf(WALL[seed % len(WALL)]), "broadleaf", False)
+    # A tree in the wall always stands in the next tree's shadow; the export's dimming of props that do
+    # would turn the whole edge of the map one dark green, so the wall keeps its own colours.
+    made[0].info["undimmed"] = True
+    return made
 
 
 def bush(seed=0):
@@ -137,8 +188,9 @@ def forest_tile():
     """
     n = FOREST_TILE
     tile = Image.new("RGBA", (n, n), FOREST_FLOOR)
-    crowns = [_cut(box) for box in CROWNS]
-    step_x, step_y = 64, 52
+    canopy = _no_shadow(_cut(CANOPY, tree_sheet()))
+    crowns = [canopy.crop((0, 0, canopy.width, canopy.height - 90)), _cut(CROWNS[0])]
+    step_x, step_y = 96, 64
     spots = []
     for row in range(-1, n // step_y + 2):
         for col in range(-1, n // step_x + 2):

@@ -26,6 +26,7 @@ import terrain
 T = 16
 CLEARANCE = 12            # map px kept between a new piece and anything already standing
 EXIT_CLEARANCE = 24       # and between a new piece and any doorway
+PAD_CLEARANCE = 10        # map px kept between a lily pad and the dock
 
 
 def _hash(x, y, salt):
@@ -85,13 +86,18 @@ def decorate(area, ground):
                 put(lpc_props.flower(n + k), bx + dx, by + dy, (3, 1))
 
     # More lily pads on the pond, well in from its edge. The pond, not the stream: a stream is too narrow to float one.
+    # Never on the dock or anything else already lying on the water.
+    flat = [(bx - ax, by - ay, imgs[0].width, imgs[0].height)
+            for imgs, (ax, ay), bx, by, _, ground_level, _ in area.items if ground_level]
     water = owner == terrain.CODE["water"]
     ys, xs = np.nonzero(water)
     for k in range(0, len(xs), max(1, len(xs) // 40)):
         x, y = int(xs[k]), int(ys[k])
         inner = all(0 <= y + dy < height and 0 <= x + dx < width and water[y + dy, x + dx]
                     for dx, dy in ((-10, 0), (10, 0), (0, -10), (0, 10)))
-        if inner and _hash(x, y, 41) < 0.12 and all(abs(x - tx) >= 18 or abs(y - ty) >= 18 for tx, ty in taken):
+        on_flat = any(fx - PAD_CLEARANCE <= x < fx + fw + PAD_CLEARANCE and fy - PAD_CLEARANCE <= y < fy + fh + PAD_CLEARANCE
+                      for fx, fy, fw, fh in flat)
+        if inner and not on_flat and _hash(x, y, 41) < 0.12 and all(abs(x - tx) >= 18 or abs(y - ty) >= 18 for tx, ty in taken):
             area.add(lpc_props.lily_pad(), x, y, ground=True)
             taken.append((x, y))
     return area

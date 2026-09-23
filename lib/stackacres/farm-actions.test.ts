@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intentOf, purchaseCueText } from "./farm-actions";
+import { intentOf, purchaseCueText, unitsBeingCollected } from "./farm-actions";
 
 describe("intentOf: the processing track", () => {
   it("keeps two recipes and two machine kinds apart", () => {
@@ -21,6 +21,33 @@ describe("intentOf: the processing track", () => {
     expect(intentOf({ action: "collect-vat" })).toBe("collect-vat");
   });
 
+});
+
+describe("intentOf: farm taps that must not swallow each other", () => {
+  it("keeps harvests of two different crops apart", () => {
+    expect(intentOf({ action: "collect", unitIds: ["a"] })).not.toBe(intentOf({ action: "collect", unitIds: ["b"] }));
+    expect(intentOf({ action: "collect", unitIds: ["b", "a"] })).toBe(intentOf({ action: "collect", unitIds: ["a", "b"] }));
+    expect(intentOf({ action: "collect" })).toBe("collect");
+  });
+
+  it("keeps sowings of one crop on two beds apart", () => {
+    const here = intentOf({ action: "stock", stock: "carrot", tx: 1, ty: 2 });
+    const there = intentOf({ action: "stock", stock: "carrot", tx: 3, ty: 2 });
+    expect(here).not.toBe(there);
+    expect(intentOf({ action: "stock", stock: "carrot", inGreenhouse: true })).not.toBe(intentOf({ action: "stock", stock: "carrot" }));
+    expect(intentOf({ action: "stock", stock: "carrot", tiles: [{ tx: 1, ty: 2 }, { tx: 2, ty: 2 }] })).not.toBe(here);
+  });
+
+  it("reads back which crops an in-flight harvest already names", () => {
+    const intents = [
+      intentOf({ action: "collect", unitIds: ["a", "b"] }),
+      intentOf({ action: "collect", unitIds: ["c"] }),
+      intentOf({ action: "collect" }),
+      "collect-vat",
+      "water:d",
+    ];
+    expect([...unitsBeingCollected(intents)].sort()).toEqual(["a", "b", "c"]);
+  });
 });
 
 describe("purchaseCueText: the instant toast a spend gets", () => {

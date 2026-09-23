@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { StackAcresFarmDynamic } from "@/components/arcade/stackacres/stackacres-farm-dynamic";
-import { stackAcresDisplay } from "@/components/arcade/stackacres/stackacres-font";
+import { stackAcresDisplay, stackAcresPixel } from "@/components/arcade/stackacres/stackacres-font";
 import { StackAcresLock } from "@/components/arcade/stackacres/stackacres-lock";
 import { ChronoDevPanel } from "@/components/dev/ChronoDevPanel";
 import { tokenHasStackAcresAccess } from "@/lib/server/stackacres-access";
@@ -69,8 +69,8 @@ export default async function StackAcresPage() {
   /**
    * `.sa-theme` is where the farm's whole visual world is declared (the
    * material tokens, the radii, the lift depths -- see
-   * app/styles/52-stackacres.css) and `stackAcresDisplay.variable` is what
-   * puts Baloo 2 behind `--font-sa-display` for everything inside it.
+   * app/styles/52-stackacres.css), and the two font variables put Baloo 2 and
+   * Pixelify Sans behind `--font-sa-display` and `--font-sa-pixel`.
    *
    * It wraps the page rather than living on `.sa-shell` because two of the
    * farm's own screens are not inside `.sa-shell`: the tap-to-play splash
@@ -80,7 +80,7 @@ export default async function StackAcresPage() {
    * adding no box of its own to a layout that is measured in dvh.
    */
   return (
-    <div className={`sa-theme ${stackAcresDisplay.variable}`}>
+    <div className={`sa-theme ${stackAcresDisplay.variable} ${stackAcresPixel.variable}`}>
       {allowed ? <StackAcresFarmDynamic /> : <StackAcresLock playerId={profile?.id ?? null} />}
       {/* `.sa-theme` above is `display: contents` (see its own comment) and
           generates no box of its own, so ChronoDevPanel is a SIBLING of

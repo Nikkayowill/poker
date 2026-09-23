@@ -6,10 +6,7 @@
  * expensive request (one fan-out per call; see lib/server/
  * stackacres-service.ts). The top-down farmer walks between targets, so a
  * player queues up taps faster than he arrives: five ready crops is five
- * requests. Worse, `intentOf` in ./farm-actions.ts keys a `collect` with
- * `unitIds` on the bare action name, so the SECOND harvest tap inside the
- * first one's round trip is currently dropped by the in-flight duplicate
- * guard -- the player taps a ready crop and nothing happens.
+ * requests.
  *
  * Both the route and ./optimistic-actions.ts already speak the plural:
  * `collect` takes `unitIds` (1..64) and `water` takes an anchor `unitId`
@@ -134,9 +131,7 @@ export function reopenActionBatch(
  *
  * `intentBusy` is the caller's answer to "is a request with this body's own
  * intent already in the air?" -- true, and the leading tap is queued instead
- * of sent, because `intentOf` collapses every `collect` onto one intent and
- * the in-flight guard would otherwise refuse this press outright. That is the
- * silent dropped harvest tap this module exists to end.
+ * of sent, since the in-flight guard would otherwise refuse it outright.
  */
 export function coalesceActionTap(
   window: ActionBatchWindow | null,

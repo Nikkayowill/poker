@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
@@ -166,7 +167,7 @@ export function SitAndGoShell() {
   useEffect(() => {
     if (table?.status !== "active" || !table.gameId || redirected.current) return;
     redirected.current = true;
-    router.push(`/?table=${table.gameId}`);
+    navigateWithOrb(() => router.push(`/?table=${table.gameId}`));
   }, [table, router]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

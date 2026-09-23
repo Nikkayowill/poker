@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Coins, Eraser, HelpCircle, Pencil } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
@@ -10,6 +10,7 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useActionQueue } from "@/components/shared/use-action-queue";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { ANTE_UP_TIERS, MIN_ANTE_UP_WAGER, type AnteUpSnapshot } from "@/lib/arcade/ante-up";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
@@ -25,6 +26,7 @@ import {
   type SudokuDifficulty,
 } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Ante Up: Sudoku, the solo half of Ante Up.
@@ -49,6 +51,12 @@ interface AnteUpResponse {
   attempt: AnteUpSnapshot | null;
   profile: PlayerProfile;
   error?: string;
+}
+
+/** A digit the player has put down that the server has not answered yet. */
+interface PendingFill {
+  index: number;
+  value: number;
 }
 
 /** How often the shell re-reads a live attempt, so the clock still settles even with no fill sent. */
@@ -90,18 +98,17 @@ export function AnteUpSudoku() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // Same guard duel-shell.tsx keeps: true while the player's own action is in
-  // flight, so a background poll landing in the middle of it cannot paint the
-  // pre-action state back over what the action's own response is about to
-  // paint forward. Without it a digit briefly vanishes and reappears.
+  // Guards start and resign against a double click. Poll ordering and board
+  // versions live in `sequence`, which also covers the queued fills.
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<AnteUpSnapshot>());
 
   const applyResponse = useCallback((data: Partial<AnteUpResponse>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   /**
    * The background poll: reads the live attempt, sets no busy flag.
@@ -112,7 +119,8 @@ export function AnteUpSudoku() {
    * used to lack, leaving a rate-limited response dropped silently forever.
    */
   const refresh = useCallback(async (): Promise<number | null> => {
-    if (sending.current) return null;
+    const ticket = sequence.beginRead();
+    if (!ticket) return null;
     try {
       const response = await fetch("/api/ante-up", { cache: "no-store" });
       if (response.status === 429) {
@@ -121,7 +129,7 @@ export function AnteUpSudoku() {
         return seconds * 1000;
       }
       const data = (await response.json()) as Partial<AnteUpResponse>;
-      if (!mounted.current || sending.current) return null;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is a few seconds away.
@@ -129,11 +137,12 @@ export function AnteUpSudoku() {
       if (mounted.current) setLoaded(true);
     }
     return null;
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
-  /** A player-initiated action: start, fill, resign. Sets busy; a 409 still applies its payload. */
+  /** A player-initiated action: start or resign. Sets busy; a 409 still applies its payload. */
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -144,26 +153,103 @@ export function AnteUpSudoku() {
         body: JSON.stringify(body),
       });
       const data = (await response.json()) as Partial<AnteUpResponse> & { round?: AnteUpSnapshot };
-      if (!mounted.current) return { wrong: false };
+      if (!mounted.current) return;
       if (!response.ok) {
-        // A wrong digit is ordinary play: the board takes the updated state
-        // (the mistake counter moved) and shrugs, same treatment Sudoku's own
-        // board gives it. Anything else is a real refusal.
-        const wrong = !!data.round && data.round.status === "active";
-        if (data.round) setAttempt(data.round);
-        if (!wrong) setError(data.error ?? "That did not go through.");
-        return { wrong };
+        if (data.round) applyResponse({ attempt: data.round });
+        setError(data.error ?? "That did not go through.");
+        return;
       }
       applyResponse(data);
-      return { wrong: false };
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
-      return { wrong: false };
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
+
+  /**
+   * A committed digit answers its own cell (drop its notes) and rules itself
+   * out as a candidate in every peer cell, the bookkeeping a solver does by hand.
+   */
+  const clearPeerNotes = useCallback((cellIndex: number, value: number) => {
+    setNotes((prev) => {
+      let changed = false;
+      const next: Record<number, Set<number>> = {};
+      for (const [key, digits] of Object.entries(prev)) {
+        const index = Number(key);
+        if (index === cellIndex) { changed = true; continue; }
+        const isPeer =
+          rowOf(index) === rowOf(cellIndex) ||
+          columnOf(index) === columnOf(cellIndex) ||
+          boxOf(index) === boxOf(cellIndex);
+        if (isPeer && digits.has(value)) {
+          changed = true;
+          const filtered = new Set(digits);
+          filtered.delete(value);
+          if (filtered.size > 0) next[index] = filtered;
+        } else {
+          next[index] = digits;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  /**
+   * Sends one queued digit against the newest board. Returns false to drop the
+   * rest of the queue, which only happens once the attempt is over or unreachable.
+   */
+  const sendFill = useCallback(async ({ index, value }: PendingFill): Promise<boolean> => {
+    if (!mounted.current) return false;
+    const before = sequence.latest();
+    try {
+      const response = await fetch("/api/ante-up/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "fill", version: sequence.version(), index, value }),
+      });
+      const data = (await response.json()) as Partial<AnteUpResponse> & { round?: AnteUpSnapshot };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        if (value !== 0) {
+          play("ui");
+          clearPeerNotes(index, value);
+        }
+        return true;
+      }
+      if (data.round) applyResponse({ attempt: data.round });
+      if (data.round?.status === "active") {
+        // Still live, so either a wrong digit or a board that moved. Only a
+        // wrong digit raises the mistake count, so only that one shakes.
+        if (data.round.mistakes > (before?.mistakes ?? 0)) {
+          setRejected(index);
+          window.setTimeout(() => setRejected(null), 420);
+        }
+        return true;
+      }
+      setError(data.error ?? "That did not go through.");
+      return false;
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, clearPeerNotes, play, sequence]);
+
+  const fills = useActionQueue<PendingFill>(sequence, sendFill);
+
+  // The server's entries with every digit still on the wire drawn on top, so a
+  // tap shows at once. A wrong one is taken back when its answer lands.
+  const entries = useMemo(() => {
+    if (!attempt) return [];
+    if (fills.pending.length === 0) return attempt.entries;
+    const next = [...attempt.entries];
+    for (const fill of fills.pending) next[fill.index] = fill.value;
+    return next;
+  }, [attempt, fills.pending]);
 
   // Initial read, deferred a tick: the idiom every arcade table and the duel
   // shell share, since a fetch fired straight from an effect body sets state
@@ -207,60 +293,22 @@ export function AnteUpSudoku() {
     if (sending.current) return;
     setSelected(null);
     setNotes({});
+    fills.clear();
     void send("/api/ante-up", { difficulty, wager });
   };
 
-  const fill = async (value: number) => {
-    // sending.current, not just busy: busy is React state and hasn't
-    // committed yet for a second click landing in the same tick as the
-    // first, which let two fills race to the server. sending.current is set
-    // synchronously the instant send() starts.
-    if (!attempt || selected === null || sending.current || !active) return;
-    if (attempt.puzzle[selected] !== 0) return;
-    const cellIndex = selected;
-    const result = await send("/api/ante-up/actions", {
-      action: "fill",
-      version: attempt.version,
-      index: cellIndex,
-      value,
-    });
-    if (result?.wrong) {
-      setRejected(cellIndex);
-      window.setTimeout(() => setRejected(null), 420);
-    } else if (value !== 0) {
-      play("ui");
-      // A committed digit answers this cell (drop its own notes entirely) and
-      // rules itself out as a candidate everywhere it now shares a row,
-      // column or box: the same bookkeeping a solver does by hand once a
-      // number lands.
-      setNotes((prev) => {
-        let changed = false;
-        const next: Record<number, Set<number>> = {};
-        for (const [key, digits] of Object.entries(prev)) {
-          const index = Number(key);
-          if (index === cellIndex) { changed = true; continue; }
-          const isPeer =
-            rowOf(index) === rowOf(cellIndex) ||
-            columnOf(index) === columnOf(cellIndex) ||
-            boxOf(index) === boxOf(cellIndex);
-          if (isPeer && digits.has(value)) {
-            changed = true;
-            const filtered = new Set(digits);
-            filtered.delete(value);
-            if (filtered.size > 0) next[index] = filtered;
-          } else {
-            next[index] = digits;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }
+  // Queued rather than refused while an earlier digit is on the wire, so a
+  // fast solver's taps all land in order, each on the newest board.
+  const fill = (value: number) => {
+    if (!attempt || selected === null || !active) return;
+    if (attempt.puzzle[selected] !== 0 || entries[selected] === value) return;
+    fills.push({ index: selected, value });
   };
 
   /** Toggles one candidate digit in the selected cell, notes mode's version of `fill`. */
   const toggleNote = (digit: number) => {
     if (!attempt || selected === null) return;
-    if (attempt.puzzle[selected] !== 0 || attempt.entries[selected] !== 0) return;
+    if (attempt.puzzle[selected] !== 0 || entries[selected] !== 0) return;
     tapSound();
     const cellIndex = selected;
     setNotes((prev) => {
@@ -285,6 +333,7 @@ export function AnteUpSudoku() {
 
   const resign = () => {
     if (sending.current) return;
+    fills.clear();
     void send("/api/ante-up/actions", { action: "resign" });
   };
   const playAgain = () => { setAttempt(null); setSelected(null); setNotes({}); };
@@ -444,7 +493,7 @@ export function AnteUpSudoku() {
           <div className="sk-grid" role="grid" aria-label="Sudoku grid">
             {Array.from({ length: SUDOKU_CELLS }, (_, index) => {
               const given = attempt.puzzle[index];
-              const entry = attempt.entries[index];
+              const entry = entries[index];
               const value = given || entry;
               const isSelected = selected === index;
               const peer =
@@ -453,7 +502,7 @@ export function AnteUpSudoku() {
                   columnOf(selected) === columnOf(index) ||
                   boxOf(selected) === boxOf(index));
               const twin = selected !== null && value !== 0
-                && value === (attempt.puzzle[selected] || attempt.entries[selected]);
+                && value === (attempt.puzzle[selected] || entries[selected]);
               const cellNotes = value === 0 ? notes[index] : undefined;
 
               return (
@@ -536,7 +585,7 @@ export function AnteUpSudoku() {
                     type="button"
                     className="sk-key"
                     disabled={busy || selected === null}
-                    onClick={() => (notesMode ? toggleNote(digit) : void fill(digit))}
+                    onClick={() => (notesMode ? toggleNote(digit) : fill(digit))}
                   >
                     {digit}
                   </button>
@@ -546,7 +595,7 @@ export function AnteUpSudoku() {
                   className="sk-key sk-key-erase"
                   disabled={busy || selected === null}
                   aria-label={notesMode ? "Clear notes" : "Erase"}
-                  onClick={() => (notesMode ? clearNotes() : void fill(0))}
+                  onClick={() => (notesMode ? clearNotes() : fill(0))}
                 >
                   <Eraser size={15} aria-hidden="true" />
                 </button>

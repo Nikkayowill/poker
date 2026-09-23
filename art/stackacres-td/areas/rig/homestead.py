@@ -4,7 +4,7 @@
 44x70 tiles, authored as two blocks. The north half is the Crop Fields, the 32x32
 soil field the player hoes and plants (`CROP_FIELD_BEDS` in lib/stackacres/world.ts,
 laid out tile for tile from map tile (FIELD_TX, FIELD_TY)), with Ray's old shed and
-plough in the margin and a field road along its south fence. The south half is the
+plough in the margin and a field road along its south edge. The south half is the
 farmyard: Ray's house and the barn facing a shared yard, the pond and dock south-west,
 Hen Haven east, and one lane running the whole height of the map, from the shore road
 in the south, through the yard, up to the field gate.
@@ -31,7 +31,7 @@ MW, MH = 44, 70
 # -16..15 on both axes, with world tile (-16, -16) at map tile (FIELD_TX, FIELD_TY).
 # lib/stackacres-td/field.ts holds the same two numbers and must move with them.
 FIELD_TX, FIELD_TY, FIELD_TILES = 6, 2, 32
-FIELD_ROAD = FIELD_TY + FIELD_TILES + 2                 # the field road, along the south fence
+FIELD_ROAD = FIELD_TY + FIELD_TILES + 2                 # the field road, along the south edge
 
 # Rows the farmyard starts down the map. lib/stackacres-td/field.ts's HOME_SHIFT is this
 # same number: every Homestead landmark it pins moved down by exactly this much.
@@ -63,10 +63,6 @@ def _fields(a):
     a.add(kit.rock(True), 76, 70, (5, 2))                              # boulders either side of the pool
     a.add(kit.rock(False), 6, 88, (5, 2))
 
-    a.add(kit.fence(size - 4, vertical=True), fx - 6, fy + size + 2)   # west and east rails
-    a.add(kit.fence(size - 4, vertical=True), fx + size + 6, fy + size + 2)
-    a.add(kit.fence(116), fx - 4, fy + size + 10)                      # south rail, open at the lane
-    a.add(kit.fence(348), LANE_TX * T + 40, fy + size + 10)
 
     a.add(props.shed_old(), 64, 300, (30, 5))                          # Ray's old shed and plough
     a.add(props.plough(), 66, 364, (18, 3))
@@ -146,12 +142,6 @@ def _farmyard(a, for_game):
     a.add(kit.woodpile(), 52, 164, (13, 2))
     a.add(kit.trough(), 600, 318, (11, 2))
 
-    a.add(kit.fence(176), 552, 288)                    # Hen Haven
-    a.add(kit.fence(176), 552, 414)
-    a.add(kit.fence(48, vertical=True), 467, 344)
-    a.add(kit.fence(32, vertical=True), 467, 414)
-    a.add(kit.fence(42, vertical=True), 643, 328)      # east fence, split around the back gate
-    a.add(kit.fence(44, vertical=True), 643, 414)
     a.add(kit.coop(), 520, 334, (14, 3), tag="pen:henhaven")
     a.zone("pen:henhaven", 470, 290, 172, 124)
     # No paddock zones: the hoe works on any grass on the map now, and which squares

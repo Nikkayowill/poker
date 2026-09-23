@@ -47,6 +47,7 @@ import oak  # noqa: E402
 import coast  # noqa: E402
 import townsquare  # noqa: E402
 import kit  # noqa: E402
+import fence_pieces  # noqa: E402
 import lpc_ground  # noqa: E402
 import lpc_decor  # noqa: E402
 import lpc_props  # noqa: E402
@@ -553,6 +554,7 @@ def export_common(out_root):
     # across a whole backdrop, and a texture that is repeated has to be one of its own.
     lpc_trees.forest_tile().save(os.path.join(out, "forest.png"))
     lpc_props.waterfall_sheet().save(os.path.join(out, "waterfall.png"))
+    fence_pieces.fence_sheet(kit).save(os.path.join(out, "fence.png"))
     with open(os.path.join(out, "sprites.json"), "w") as fh:
         json.dump(atlas_json, fh, separators=(",", ":"))
     print("common ->", out, "|", len(named), "frames")

@@ -100,7 +100,20 @@ import {
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import { isHoeableSoilTile } from "@/lib/stackacres/hoeable";
+import { isHoeableSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import {
+  FENCE_FULL,
+  FENCE_NEEDS_WOOD,
+  FENCE_NOT_HERE,
+  fenceKey,
+  isFenceableMapTile,
+  type FencePiece,
+} from "@/lib/stackacres/fences";
+import {
+  listStackAcresFences,
+  placeStackAcresFence as placeFenceRow,
+  removeStackAcresFence as removeFenceRow,
+} from "./stackacres-fence-store";
 import { SOIL_DEFAULT_TIER } from "@/lib/stackacres/soil-tiers";
 import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -780,6 +793,8 @@ export interface StackAcresView {
    *  sector that is taken by clearing it, down or not, so the map can draw
    *  the field and the sheet can count the job. */
   landObstacles: LandObstacleSnapshot[];
+  /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
+  fences: FencePiece[];
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -1003,6 +1018,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     stoneNodeRows,
     forageNodeStates,
     landObstacleStates,
+    fences,
     fallback,
   ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
@@ -1026,6 +1042,8 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     // (lib/stackacres/land-clearing.ts): only obstacles this farm has swung
     // at have rows, so a farm that never walked onto the Fold reads none.
     listStackAcresLandObstacleStates(profile.id),
+    // And the fences this farm has built: a small per-profile table read.
+    listStackAcresFences(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1303,6 +1321,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
         landObstacleSnapshot(obstacle, landObstacleStates[obstacle.id] ?? freshLandObstacleState(obstacle.kind)),
       ),
     ),
+    fences,
     revision,
   };
 }
@@ -3496,6 +3515,53 @@ export async function bagStackAcresQuarry(
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
+const FENCE_IN_THE_WAY = "There's a fence there.";
+
+/** Whether this farm has a fence piece on the map square under a soil tile. */
+async function fencedSoilTile(profileId: string, tx: number, ty: number): Promise<boolean> {
+  const { mx, my } = soilToMapTile(tx, ty);
+  return (await listStackAcresFences(profileId)).some((piece) => piece.tx === mx && piece.ty === my);
+}
+
+/**
+ * Puts one fence piece up on a Homestead map square (lib/stackacres/fences.ts).
+ *
+ * Open grass only, and never on a bed. The Wood leaves in the same
+ * transaction the piece goes up in (`place_homestead_fence`), so there is
+ * nothing to refund. No Gold moves.
+ */
+export async function placeStackAcresFencePiece(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const tx = Math.trunc(input.tx);
+  const ty = Math.trunc(input.ty);
+  if (!isFenceableMapTile(tx, ty)) throw new StackAcresRequestError(FENCE_NOT_HERE, 400);
+  const { tx: sx, ty: sy } = mapToSoilTile(tx, ty);
+  const beds = await listStackAcresSoilTiles(profile.id);
+  if (isHomeStarterSoilTile(sx, sy) || beds.some((bed) => bed.tx === sx && bed.ty === sy)) {
+    throw new StackAcresRequestError("There's a bed there.", 409, { round: await snapshots(profile.id, now) });
+  }
+  const outcome = await placeFenceRow(profile.id, tx, ty);
+  if (outcome === "short") throw new StackAcresRequestError(FENCE_NEEDS_WOOD, 400, { round: await snapshots(profile.id, now) });
+  if (outcome === "full") throw new StackAcresRequestError(FENCE_FULL, 409, { round: await snapshots(profile.id, now) });
+  // "taken" is a second tap on a piece that already went up: nothing to say.
+  return view(profile, now);
+}
+
+/** Pulls one fence piece up and gives its Wood back, in one transaction (`remove_homestead_fence`). */
+export async function removeStackAcresFencePiece(
+  token: string,
+  input: { tx: number; ty: number },
+  now = new Date(),
+): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  await removeFenceRow(profile.id, Math.trunc(input.tx), Math.trunc(input.ty));
+  return view(profile, now);
+}
+
 /**
  * One swing at something standing on land being cleared
  * (lib/stackacres/land-clearing.ts).
@@ -5574,6 +5640,9 @@ export async function placeStackAcresSoilTile(
       round: await snapshots(profile.id, now),
     });
   }
+  if (await fencedSoilTile(profile.id, tx, ty)) {
+    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
+  }
   const inMeadow = soilTileInCropFieldBeds(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
@@ -5660,6 +5729,11 @@ export async function moveStackAcresSoilTileGroup(
     throw new StackAcresRequestError("There is already a bed there.", 409, {
       round: await snapshots(profile.id, now),
     });
+  }
+
+  const fenced = new Set((await listStackAcresFences(profile.id)).map((piece) => fenceKey(piece.tx, piece.ty)));
+  if (plan.moves.some(({ to }) => { const { mx, my } = soilToMapTile(to.tx, to.ty); return fenced.has(fenceKey(mx, my)); })) {
+    throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
   }
 
   const outcome = await moveSoilTileGroupRow(profile.id, plan.moves);

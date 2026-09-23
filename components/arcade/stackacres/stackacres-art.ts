@@ -273,7 +273,8 @@ type CorePainterName =
   | "ico-fieldnotes"
   | "ico-trailphoto"
   | "ico-wood"
-  | "ico-stone";
+  | "ico-stone"
+  | "ico-fence";
 
 // The drawing shorthands (rr, ell, lin, rad, F, poly, stroke, leaf, painter)
 // and the shared light (litMass) live in ./art-kit.ts, so the per-area art
@@ -2231,6 +2232,20 @@ const DRAWN: Record<PainterName, Painter> = {
     F(c, "#e8c79a");
     ell(c, 20.1, 12, 0.6, 1);
     F(c, "#8a5c33");
+  }),
+
+  // The Fence tool: two posts and two rails, in the Wood icon's browns.
+  "ico-fence": painter(24, 24, (c) => {
+    for (const y of [9, 14]) {
+      rr(c, 3, y, 18, 3, 0.8);
+      F(c, "#b98450");
+      stroke(c, "#5c3c22", 1);
+    }
+    for (const x of [5, 16]) {
+      rr(c, x, 5, 4, 15, 1);
+      F(c, lin(c, x, 5, x + 4, 5, [[0, "#c79560"], [1, "#8a5c33"]]));
+      stroke(c, "#5c3c22", 1);
+    }
   }),
 
   // A mined boulder chunk, off one of the Mine's tagged nodes

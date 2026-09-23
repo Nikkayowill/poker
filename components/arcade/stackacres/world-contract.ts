@@ -1,3 +1,4 @@
+import type { FencePiece } from "@/lib/stackacres/fences";
 import type { Ref } from "react";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
@@ -252,6 +253,8 @@ export interface StackAcresWorldProps {
   /** What is still standing on land being cleared, so a felled obstacle
    *  disappears and an emptied sector stops being overgrown. */
   landObstacles: readonly LandObstacleSnapshot[];
+  /** Every fence piece the farm has put up, by Homestead map square (lib/stackacres/fences.ts). */
+  fences: readonly FencePiece[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */

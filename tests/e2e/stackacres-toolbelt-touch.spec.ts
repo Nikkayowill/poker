@@ -261,7 +261,7 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
 
     const { page, errors } = await openFarm(farmerContext);
 
-    const pouch = page.locator(".sa-belt-slot").last();
+    const pouch = page.getByRole("radio", { name: /^Seed pouch/ });
     await expect(pouch).toBeVisible();
     await pouch.click();
 

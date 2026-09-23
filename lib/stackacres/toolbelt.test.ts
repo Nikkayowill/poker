@@ -28,13 +28,15 @@ function ctx(over: Partial<BeltContext> = {}): BeltContext {
     nowMs: NOW,
     seed: "carrot",
     seedsHeld: 4,
+    wood: 10,
     ...over,
   };
 }
 
-const bareBed: BeltTarget = { unit: null, tile: { tx: 4, ty: 7 }, bedded: true };
-const bareGround: BeltTarget = { unit: null, tile: { tx: 4, ty: 7 }, bedded: false };
-const offField: BeltTarget = { unit: null, tile: null, bedded: false };
+const bareBed: BeltTarget = { unit: null, tile: { tx: 4, ty: 7 }, bedded: true, fenced: false };
+const bareGround: BeltTarget = { unit: null, tile: { tx: 4, ty: 7 }, bedded: false, fenced: false };
+const offField: BeltTarget = { unit: null, tile: null, bedded: false, fenced: false };
+const fencedGround: BeltTarget = { unit: null, tile: { tx: 4, ty: 7 }, bedded: false, fenced: true };
 
 describe("the watering can", () => {
   it("waters a dry crop", () => {
@@ -144,5 +146,29 @@ describe("beltAnimation", () => {
     expect(beltAnimation({ kind: "plant", tx: 0, ty: 0, stock: "carrot" })).toBe("plant");
     expect(beltAnimation({ kind: "nothing", reason: "no", why: "blocked" })).toBeNull();
     expect(beltAnimation({ kind: "idle" })).toBeNull();
+  });
+});
+
+describe("the fence", () => {
+  it("puts a piece up on open grass", () => {
+    expect(resolveBeltAction("fence", bareGround, ctx())).toEqual({ kind: "fence", tx: 4, ty: 7 });
+  });
+
+  it("wants its Wood first", () => {
+    expect(resolveBeltAction("fence", bareGround, ctx({ wood: 1 }))).toMatchObject({ kind: "nothing", why: "blocked" });
+  });
+
+  it("stays off beds and off the road", () => {
+    expect(resolveBeltAction("fence", bareBed, ctx())).toMatchObject({ kind: "nothing" });
+    expect(resolveBeltAction("fence", offField, ctx())).toMatchObject({ kind: "nothing" });
+  });
+
+  it("asks once before taking a piece down, then takes it", () => {
+    expect(resolveBeltAction("fence", fencedGround, ctx())).toMatchObject({ kind: "arm-unfence" });
+    expect(resolveBeltAction("fence", { ...fencedGround, armed: true }, ctx())).toEqual({ kind: "unfence", tx: 4, ty: 7 });
+  });
+
+  it("keeps the hoe off a fenced square", () => {
+    expect(resolveBeltAction("hoe", fencedGround, ctx())).toMatchObject({ kind: "nothing" });
   });
 });

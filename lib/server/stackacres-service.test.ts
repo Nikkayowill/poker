@@ -2291,12 +2291,15 @@ describe("the currency wall", () => {
       // Moves no Gold either way: turning an order down and drawing another
       // is the release valve on a one-slot board, capped at one a UTC day.
       "pass-contract",
+      // Moves no Gold either way: a fence piece takes Wood and gives it back.
+      "place-fence",
       "place-machine",
       "place-soil-tile",
       "plant-crossbreed",
       "pray",
       "prestige-reset",
       "process",
+      "remove-fence",
       "remove-soil-tile",
       "request-contract",
       "retire",

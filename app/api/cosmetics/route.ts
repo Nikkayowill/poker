@@ -5,6 +5,7 @@ import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { getPlayerStanding } from "@/lib/server/stats-store";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
       stats: standing?.stats ?? { handsWon: 0, totalChipsWon: 0 },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load the collection.";
+    const message = publicErrorMessage(error, "Could not load the collection.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

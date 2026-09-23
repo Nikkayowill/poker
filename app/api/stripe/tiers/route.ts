@@ -6,6 +6,7 @@ import { ensureProfile } from "@/lib/server/profile-store";
 import { pendingAcceptances } from "@/lib/server/legal-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
       pendingDocuments: pending.map((slug) => LEGAL_DOCUMENTS[slug]),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load support options.";
+    const message = publicErrorMessage(error, "Could not load support options.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

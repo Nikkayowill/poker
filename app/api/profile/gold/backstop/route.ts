@@ -4,6 +4,7 @@ import { persistenceMode } from "@/lib/server/game-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { CHEAPEST_TIER, TIER_CONFIG } from "@/lib/game/tiers";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     const profile = await claimBackstopGold(token, TIER_CONFIG[CHEAPEST_TIER].minBuyIn);
     return NextResponse.json({ profile, persistence: persistenceMode() });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not top up your Gold.";
+    const message = publicErrorMessage(error, "Could not top up your Gold.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { blockProfile, unblockProfile } from "@/lib/server/friends-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ blocked: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not block that player.";
+    const message = publicErrorMessage(error, "Could not block that player.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -61,7 +62,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ unblocked: await unblockProfile(auth.profile.id, parsed.data.profileId) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not unblock that player.";
+    const message = publicErrorMessage(error, "Could not unblock that player.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -14,6 +14,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { withRequestSessionCookie } from "@/lib/server/session";
 import { resolvePlayerForTableEntry } from "@/lib/server/table-entry";
 import { resolveTierEntry } from "@/lib/server/tier-entry";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
     });
     return withRequestSessionCookie(request, response, token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not find you a table.";
+    const message = publicErrorMessage(error, "Could not find you a table.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

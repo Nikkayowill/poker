@@ -73,8 +73,8 @@ export async function readStackAcresSeedStock(profileId: string): Promise<SeedSt
  * move would go negative -- "you have none in stock" for a spend, and a lost
  * race for two plantings racing the last seed.
  *
- * Null, never a throw, for the same reason `spendGoldByProfile` and
- * `adjustStackAcresSoilStock` return null on an empty balance: the caller's
+ * Null, never a throw, for the same reason `spendGoldByProfile` returns null on
+ * an empty balance: the caller's
  * job is to refuse the action cleanly, and a refusal is not an error
  * condition.
  */

@@ -30,12 +30,11 @@ from PIL import Image
 import crops
 import homestead
 import kit
-import oldfields
 from area import CHARACTERS, T
 from kit import Sprite
 
 WALKABLE_GROUND = {"grass", "sand", "gravel", "mud", "cobble", "path", "soil"}
-PLAYABLE = [homestead, oldfields]
+PLAYABLE = [homestead]
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
 
 

@@ -1,42 +1,41 @@
 import { randomUUID } from "crypto";
+import {
+  isHoeableMapTile,
+  mapToSoilTile,
+} from "@/lib/stackacres/hoeable";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
+import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
   HOME_STARTER_TILE_COUNT,
   SOIL_TILE,
-  SOIL_TILE_PRICE_GOLD,
   createSoilMap,
   homeStarterSoilTiles,
+  isHomeStarterSoilTile,
   soilSlotTile,
   soilTileAt,
   type SoilTile,
 } from "@/lib/stackacres/soil";
-import { SOIL_BAGS_PER_PURCHASE, soilTierPrice, type SoilTier } from "@/lib/stackacres/soil-tiers";
-import { STACKACRES_CATALOGUE, STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
+import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
 import {
   __resetStackAcresSeedStockForTest,
   adjustStackAcresSeedStock,
 } from "./stackacres-seed-store";
-import { CROP_FIELDS_UNLOCK_COST_GOLD } from "@/lib/stackacres/crop-fields";
 import {
   StackAcresRequestError,
-  buyStackAcresSoil,
   moveStackAcresSoilTileGroup,
   placeStackAcresSoilTile,
   readStackAcres,
   removeStackAcresSoilTile,
   stockStackAcres,
-  unlockStackAcresCropFields,
 } from "./stackacres-service";
 import {
   __resetStackAcresForTest,
   recordStackAcresCropFieldsUnlocked,
 } from "./stackacres-store";
 import {
-  __resetStackAcresSoilStockForTest,
   __resetStackAcresSoilTilesForTest,
-  readStackAcresSoilStock,
 } from "./stackacres-soil-store";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
 import { adjustGold, ensureProfile } from "./profile-store";
@@ -50,10 +49,9 @@ async function funded(gold = 500_000) {
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
   if (delta !== 0) await adjustGold(profile.id, delta);
-  // The Crop Fields' own bed-tiling and crop-stocking routes are gated on the
-  // standalone unlock now (lib/stackacres/crop-fields.ts) -- this file's own
-  // tests all predate that gate and assume a farm ready to till/sow.
-  await recordStackAcresCropFieldsUnlocked(profile.id, T0);
+  // Nothing is recorded about the Crop Fields here: tiling and sowing out
+  // there are not gated any more, and the flag is what breaking the ground
+  // SETS, which is the thing several of these tests are checking.
   return token;
 }
 
@@ -67,7 +65,6 @@ async function balance(token: string): Promise<number> {
  *  own "starter kit" section). */
 async function sowingFarm(gold = 500_000) {
   __resetStackAcresSoilTilesForTest();
-  __resetStackAcresSoilStockForTest();
   const token = randomUUID();
   const profile = await ensureProfile(token);
   const delta = gold - profile.goldBalance;
@@ -91,24 +88,40 @@ function cropFieldTile(offset = 0) {
   return { tx: centre.tx + offset, ty: centre.ty };
 }
 
+/**
+ * The `nth` bare grass square on the Homestead outside the Crop Fields and clear of the six
+ * starter beds, read off the real map (lib/stackacres/hoeable.ts) rather than written down, so
+ * a redrawn map cannot leave this pointing at a road.
+ */
+function grassTile(nth = 0) {
+  let seen = -1;
+  for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+    for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+      if (!isHoeableMapTile(mx, my)) continue;
+      const tile = mapToSoilTile(mx, my);
+      if (soilTileInCropFieldBeds(tile.tx, tile.ty) || isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
+      seen += 1;
+      if (seen === nth) return tile;
+    }
+  }
+  throw new Error("no bare grass on the Homestead");
+}
+
+/** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py:
+ *  the north lane through the yard (farmyard tile 14, 7) and the middle of the pond
+ *  (farmyard 7, 26), both pushed down the 38 rows the Crop Fields add above the yard. */
+const ROAD_MAP_TILE = { mx: 14, my: 7 + 38 };
+const POND_MAP_TILE = { mx: 7, my: 26 + 38 };
+
 /** Well outside every district -- generously far, not just off one edge. */
 const FAR_AWAY = { tx: 10_000, ty: 10_000 };
 
 beforeEach(() => {
   __resetStackAcresForTest();
   __resetStackAcresSoilTilesForTest();
-  __resetStackAcresSoilStockForTest();
   __resetStackAcresSeedStockForTest();
   __resetStackAcresIntentsForTest();
 });
-
-/** A funded farm holding `bags` of `tier`, ready to lay beds. Soil is paid for
- *  at Ray's shelf now, so every placement test needs stock first. */
-async function stocked(tier: SoilTier = "dirt", bags = 4, gold = 500_000) {
-  const token = await funded(gold);
-  await buyStackAcresSoil(token, { tier, quantity: bags }, T0);
-  return token;
-}
 
 describe("the free Homestead starter beds", () => {
   it("exist on a genuinely fresh profile, before any Gold is spent or the Crop Fields are unlocked", async () => {
@@ -147,92 +160,88 @@ describe("the free Homestead starter beds", () => {
     );
   });
 
-  it("leaves the Crop Fields' own 15,000 Gold unlock and its bag-purchase gate untouched", async () => {
-    expect(CROP_FIELDS_UNLOCK_COST_GOLD).toBe(15_000);
+  it("lets a brand new player break ground in the Crop Fields with nothing bought", async () => {
     const token = randomUUID();
-    const profile = await ensureProfile(token);
-    await adjustGold(profile.id, CROP_FIELDS_UNLOCK_COST_GOLD - profile.goldBalance);
-    // Two units first (`CROP_FIELDS_UNLOCK_REQUIRES_UNITS`) -- a crop sown on
-    // a free starter bed counts the same as any other.
-    await adjustStackAcresSeedStock(profile.id, "carrot", 2);
-    const beds = homeStarterSoilTiles();
-    await stockStackAcres(token, { stock: "carrot", tile: beds[0] }, T0);
-    await stockStackAcres(token, { stock: "carrot", tile: beds[1] }, T0);
+    await ensureProfile(token);
 
-    const view = await unlockStackAcresCropFields(token, T0);
-    expect(view.cropFieldsUnlocked).toBe(true);
+    const view = await placeStackAcresSoilTile(token, cropFieldTile(), T0);
 
-    // Unlocking does not hand out a free Crop Fields bed either -- placing one
-    // there still spends a bag bought at Ray's shop.
-    await expect(placeStackAcresSoilTile(token, cropFieldTile(), T0)).rejects.toThrow(/Ray/);
+    expect(view.soilTiles.some((t) => t.origin === "purchased")).toBe(true);
   });
 });
 
-describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
-  it("lays a bed, takes one bag off the shelf, and moves no Gold", async () => {
-    const token = await stocked("dirt", 2);
+describe("clearing the Crop Fields -- the first bed IS the unlock", () => {
+  it("lays a bed out there with no unlock, no modal and no 15,000 Gold", async () => {
+    const token = await funded();
+    expect((await readStackAcres(token, T0)).cropFieldsUnlocked).toBe(false);
+    const goldBefore = await balance(token);
+
+    const view = await placeStackAcresSoilTile(token, cropFieldTile(), T0);
+
+    expect(view.cropFieldsUnlocked).toBe(true);
+    expect(await balance(token)).toBe(goldBefore);
+  });
+
+  it("sows a crop out there straight after, with nothing else unlocked", async () => {
+    const token = await funded();
+    const profile = await ensureProfile(token);
+    await adjustStackAcresSeedStock(profile.id, "carrot", 1);
+    const tile = cropFieldTile();
+    await placeStackAcresSoilTile(token, tile, T0);
+
+    const view = await stockStackAcres(token, { stock: "carrot", tile }, T0);
+
+    expect(view.units.some((unit) => unit.stock === "carrot")).toBe(true);
+  });
+
+  it("keeps the Crop Fields once cleared, even if every bed is lifted again", async () => {
+    const token = await funded();
+    const tile = cropFieldTile();
+    await placeStackAcresSoilTile(token, tile, T0);
+
+    const view = await removeStackAcresSoilTile(token, tile, T0);
+
+    expect(view.cropFieldsUnlocked).toBe(true);
+  });
+});
+
+describe("placeStackAcresSoilTile: breaking ground is free", () => {
+  it("lays a bed and moves no Gold", async () => {
+    const token = await funded();
     const start = await balance(token);
     const { tx, ty } = cropFieldTile();
 
     const view = await placeStackAcresSoilTile(token, { tx, ty }, T0);
 
-    // Soil was paid for at the shop; laying it costs nothing further.
     expect(await balance(token)).toBe(start);
-    expect(view.soilStock.dirt).toBe(1);
     expect(
       view.soilTiles.some((t) => t.tx === tx && t.ty === ty && t.origin === "purchased"),
     ).toBe(true);
   });
 
-  it("refuses a second bed on an occupied coordinate and returns the bag", async () => {
-    const token = await stocked("dirt", 2);
+  it("lays more beds than a soil bag ever held", async () => {
+    const token = await funded();
+    for (let i = 0; i < 12; i += 1) {
+      await placeStackAcresSoilTile(token, cropFieldTile(i), T0);
+    }
+    expect((await readStackAcres(token, T0)).soilTiles.filter((t) => t.origin === "purchased")).toHaveLength(12);
+  });
+
+  it("refuses a second bed on an occupied coordinate", async () => {
+    const token = await funded();
     const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
-    const afterFirst = await balance(token);
 
     await expect(placeStackAcresSoilTile(token, { tx, ty }, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
 
-    // One bed, not two -- the second bag never landed, and came back.
     const view = await readStackAcres(token, T0);
     expect(view.soilTiles.filter((t) => t.tx === tx && t.ty === ty)).toHaveLength(1);
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({ dirt: 1 });
-    expect(await balance(token)).toBe(afterFirst);
   });
 
-  it("refuses a bed of a different tier on an occupied coordinate and returns that bag too", async () => {
+  it("refuses a tile off the Homestead entirely", async () => {
     const token = await funded();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
-    await buyStackAcresSoil(token, { tier: "enriched", quantity: 1 }, T0);
-    const { tx, ty } = cropFieldTile();
-    await placeStackAcresSoilTile(token, { tx, ty, tier: "dirt" }, T0);
-    const afterFirst = await balance(token);
-
-    await expect(
-      placeStackAcresSoilTile(token, { tx, ty, tier: "enriched" }, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    // Neither bag moved off the shelf into the wrong place: the dirt bag
-    // spent on the bed that landed, the enriched one refunded untouched.
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({
-      dirt: 0,
-      enriched: 1,
-    });
-    expect(await balance(token)).toBe(afterFirst);
-  });
-
-  it("refuses with an empty shelf and points at the shop", async () => {
-    const token = await funded();
-    const start = await balance(token);
-    const { tx, ty } = cropFieldTile();
-
-    await expect(placeStackAcresSoilTile(token, { tx, ty }, T0)).rejects.toThrow(/Ray/);
-    expect(await balance(token)).toBe(start);
-  });
-
-  it("refuses a tile outside the Crop Fields, and keeps the bag", async () => {
-    const token = await stocked("dirt", 1);
     const start = await balance(token);
 
     await expect(placeStackAcresSoilTile(token, FAR_AWAY, T0)).rejects.toBeInstanceOf(
@@ -240,60 +249,21 @@ describe("placeStackAcresSoilTile — spends a bag, never Gold", () => {
     );
 
     expect(await balance(token)).toBe(start);
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({ dirt: 1 });
   });
-});
 
-describe("buyStackAcresSoil — Ray's shelf", () => {
-  it("charges tier price x quantity and shelves the bags", async () => {
+  it("records the bed as plain dirt", async () => {
     const token = await funded();
-    const start = await balance(token);
+    const cell = cropFieldTile();
 
-    const view = await buyStackAcresSoil(token, { tier: "enriched", quantity: 3 }, T0);
+    const view = await placeStackAcresSoilTile(token, cell, T0);
 
-    expect(await balance(token)).toBe(start - soilTierPrice("enriched") * 3);
-    expect(view.soilStock.enriched).toBe(3);
-  });
-
-  it("refuses when Gold is short and shelves nothing", async () => {
-    const token = await funded(10);
-
-    await expect(
-      buyStackAcresSoil(token, { tier: "hydro", quantity: 1 }, T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-
-    expect(await balance(token)).toBe(10);
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({});
-  });
-
-  // Every money-moving route needs an upper bound on a body-supplied quantity;
-  // the Ante Up farming fix landed after finding routes bounded only by the
-  // player's own balance.
-  it("bounds the quantity a single purchase may name", async () => {
-    const token = await funded();
-    for (const quantity of [0, -5, SOIL_BAGS_PER_PURCHASE + 1]) {
-      await expect(
-        buyStackAcresSoil(token, { tier: "dirt", quantity }, T0),
-      ).rejects.toBeInstanceOf(StackAcresRequestError);
-    }
-    expect(await readStackAcresSoilStock((await ensureProfile(token)).id)).toEqual({});
-  });
-
-  it("reads the price from the tier table, not the request", async () => {
-    const token = await funded();
-    const start = await balance(token);
-
-    // An unknown tier degrades to the cheapest, so a hostile body under-buys.
-    const view = await buyStackAcresSoil(token, { tier: "gold-plated", quantity: 1 }, T0);
-
-    expect(await balance(token)).toBe(start - SOIL_TILE_PRICE_GOLD);
-    expect(view.soilStock.dirt).toBe(1);
+    expect(view.soilTiles.find((t) => t.tx === cell.tx && t.ty === cell.ty)?.tier).toBe("dirt");
   });
 });
 
 describe("removeStackAcresSoilTile", () => {
   it("removes a purchased tile and refunds nothing", async () => {
-    const token = await stocked("dirt", 1);
+    const token = await funded();
     const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
     const afterPlace = await balance(token);
@@ -313,7 +283,6 @@ describe("removeStackAcresSoilTile", () => {
 
   it("takes the crop standing on the bed with it, no refund of its seed", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
     const { tx, ty } = cropFieldTile();
     await placeStackAcresSoilTile(token, { tx, ty }, T0);
     const crop = STACKACRES_CROPS[0];
@@ -333,7 +302,6 @@ describe("removeStackAcresSoilTile", () => {
 
   it("leaves an unrelated crop alone when a different bed is lifted", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 2 }, T0);
     const bedA = cropFieldTile(0);
     const bedB = cropFieldTile(1);
     await placeStackAcresSoilTile(token, bedA, T0);
@@ -354,7 +322,6 @@ describe("removeStackAcresSoilTile", () => {
   // order now, so the survivors do not move.
   it("leaves every other crop standing on the same bed when one is lifted", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 4 }, T0);
     const beds = [cropFieldTile(0), cropFieldTile(1), cropFieldTile(2), cropFieldTile(3)];
     for (const bed of beds) await placeStackAcresSoilTile(token, bed, T0);
 
@@ -390,7 +357,7 @@ describe("removeStackAcresSoilTile", () => {
 
 describe("moveStackAcresSoilTileGroup", () => {
   it("moves a bed to a bare coordinate and refunds/spends nothing", async () => {
-    const token = await stocked("dirt", 1);
+    const token = await funded();
     const from = cropFieldTile();
     await placeStackAcresSoilTile(token, from, T0);
     const afterPlace = await balance(token);
@@ -405,7 +372,6 @@ describe("moveStackAcresSoilTileGroup", () => {
 
   it("carries the bed's crop with it -- same unit, same soilSlot, no removal", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
     const from = cropFieldTile();
     await placeStackAcresSoilTile(token, from, T0);
     const crop = STACKACRES_CROPS[0];
@@ -424,7 +390,7 @@ describe("moveStackAcresSoilTileGroup", () => {
   });
 
   it("moves the whole contiguous group by the same offset, not just the tapped tile", async () => {
-    const token = await stocked("dirt", 2);
+    const token = await funded();
     const anchor = cropFieldTile();
     const neighbour = { tx: anchor.tx + 1, ty: anchor.ty };
     await placeStackAcresSoilTile(token, anchor, T0);
@@ -452,7 +418,7 @@ describe("moveStackAcresSoilTileGroup", () => {
   });
 
   it("refuses a destination already held by another bed", async () => {
-    const token = await stocked("dirt", 2);
+    const token = await funded();
     // Three tiles apart, deliberately NOT touching -- adjacent beds would
     // form one contiguous group (see the "moves the whole contiguous group"
     // test above), and this test wants two genuinely separate ones.
@@ -471,7 +437,7 @@ describe("moveStackAcresSoilTileGroup", () => {
   });
 
   it("refuses a destination outside the Crop Fields", async () => {
-    const token = await stocked("dirt", 1);
+    const token = await funded();
     const from = cropFieldTile();
     await expect(
       moveStackAcresSoilTileGroup(token, { tx: from.tx, ty: from.ty, toTx: FAR_AWAY.tx, toTy: FAR_AWAY.ty }, T0),
@@ -479,7 +445,7 @@ describe("moveStackAcresSoilTileGroup", () => {
   });
 
   it("refuses tapping the same spot as the destination", async () => {
-    const token = await stocked("dirt", 1);
+    const token = await funded();
     const from = cropFieldTile();
     await placeStackAcresSoilTile(token, from, T0);
     await expect(
@@ -490,7 +456,7 @@ describe("moveStackAcresSoilTileGroup", () => {
 
 describe("SOIL_TILE lattice bounds check", () => {
   it("accepts a tile fully inside the Crop Fields and refuses one straddling its edge", async () => {
-    const token = await stocked("dirt", 1);
+    const token = await funded();
     const inside = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
     await expect(placeStackAcresSoilTile(token, inside, T0)).resolves.toBeTruthy();
   });
@@ -500,64 +466,6 @@ describe("soil tiers", () => {
   // The one bed each test in this block places, so its tier is the whole
   // slot space and every sow in here lands on it.
   const CELL_A = cropFieldTile();
-
-  it("lays each tier onto the map with its tier recorded", async () => {
-    for (const tier of ["dirt", "enriched", "hydro"] as const) {
-      __resetStackAcresSoilTilesForTest();
-      __resetStackAcresSoilStockForTest();
-      const token = await stocked(tier, 1);
-
-      const view = await placeStackAcresSoilTile(token, { ...CELL_A, tier }, T0);
-
-      expect(view.soilTiles.find((t) => t.tx === CELL_A.tx && t.ty === CELL_A.ty)?.tier).toBe(tier);
-      expect(view.soilStock[tier] ?? 0).toBe(0);
-    }
-  });
-
-  // The price comes from the tier table, never from the request body, so a
-  // malformed or hostile tier can only ever under-buy.
-  it("degrades an unknown tier to the plain bed, spending a plain bag", async () => {
-    const token = await stocked("dirt", 1);
-
-    const view = await placeStackAcresSoilTile(token, { ...CELL_A, tier: "gold-plated" }, T0);
-
-    expect(view.soilTiles.find((t) => t.tx === CELL_A.tx && t.ty === CELL_A.ty)?.tier).toBe("dirt");
-    expect(view.soilStock.dirt ?? 0).toBe(0);
-  });
-
-  // The whole point of Enriched. The shortened span is written into `ready_at`
-  // at sow, so a later retune of the tier table cannot reach a crop already
-  // in the ground.
-  it("shortens a crop's cycle when it is sown into an enriched bed", async () => {
-    const base = STACKACRES_CATALOGUE.corn.durationMs;
-
-    // A plain dirt bed is the baseline. Both sows name CELL_A explicitly --
-    // a fresh farm also carries the free Homestead starter beds now (see
-    // lib/stackacres/soil.ts's `homeStarterSoilTiles`), and an unnamed sow
-    // would land on one of those, plain-tiered, rather than on CELL_A.
-    const plainToken = await sowingFarm();
-    await buyStackAcresSoil(plainToken, { tier: "dirt", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(plainToken, { ...CELL_A, tier: "dirt" }, T0);
-    const plain = (await stockStackAcres(plainToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!;
-    expect(Date.parse(plain.readyAt) - T0.getTime()).toBe(base);
-    expect(plain.soilSlot).toBe(0);
-
-    const richToken = await sowingFarm();
-    await buyStackAcresSoil(richToken, { tier: "enriched", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(richToken, { ...CELL_A, tier: "enriched" }, T0);
-    const rich = (await stockStackAcres(richToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!;
-
-    // The one PURCHASED bed on this farm, so slot 0 is CELL_A -- the
-    // enriched bed. Purchased order counting is untouched by the starter
-    // beds (they are never persisted -- see stackacres-soil-store.ts's own
-    // header), so this is still 0, not offset by the six starter beds.
-    expect(rich.soilSlot).toBe(0);
-    expect(Date.parse(rich.readyAt) - T0.getTime()).toBe(Math.round(base * 0.8));
-  });
 
   // A crop needs a bed under it (2026-09-09): with every bed already
   // growing something -- Crop Fields or Homestead starter alike -- the sow
@@ -579,42 +487,11 @@ describe("soil tiers", () => {
     expect(after.units.filter((u) => u.stock === "corn")).toHaveLength(0);
     expect(after.seedStock.corn).toBe(before);
   });
-
-  // Hydro waters its own tile, feeding the same `irrigated` flag a pipe does.
-  // No pipe is placed here at all: that is the point.
-  it("keeps a crop on a hydro bed watered with no pipe anywhere", async () => {
-    const thirstMs = STACKACRES_CATALOGUE.corn.thirstMs ?? 0;
-    const wellPastThirst = new Date(T0.getTime() + thirstMs * 1.5);
-
-    // Both sows name CELL_A explicitly -- see the enriched-bed test above on
-    // why an unnamed sow can no longer be trusted to land there.
-    const dryToken = await sowingFarm();
-    await buyStackAcresSoil(dryToken, { tier: "dirt", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(dryToken, { ...CELL_A, tier: "dirt" }, T0);
-    const dryId = (await stockStackAcres(dryToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!.id;
-    const dried = (await readStackAcres(dryToken, wellPastThirst)).units.find((u) => u.id === dryId);
-    expect(dried?.state).toBe("dry");
-
-    const hydroToken = await sowingFarm();
-    await buyStackAcresSoil(hydroToken, { tier: "hydro", quantity: 1 }, T0);
-    await placeStackAcresSoilTile(hydroToken, { ...CELL_A, tier: "hydro" }, T0);
-    const hydroId = (await stockStackAcres(hydroToken, { stock: "corn", tile: CELL_A }, T0)).units
-      .filter((u) => u.stock === "corn")
-      .at(-1)!.id;
-    const still = (await readStackAcres(hydroToken, wellPastThirst)).units.find(
-      (u) => u.id === hydroId,
-    );
-    expect(still?.state).toBe("working");
-    expect(still?.isWatered).toBe(true);
-  });
 });
 
 describe("stockStackAcres — plants the bed the player actually tapped", () => {
   it("lands on the named tile rather than the lowest free slot", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 3 }, T0);
     const bedA = cropFieldTile(0);
     const bedB = cropFieldTile(1);
     const bedC = cropFieldTile(2);
@@ -640,7 +517,6 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
 
   it("falls back to the lowest free slot when the named tile has no bed", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 1 }, T0);
     await placeStackAcresSoilTile(token, cropFieldTile(), T0);
 
     // FAR_AWAY names no bed at all -- a stale or bogus tap, not a refusal.
@@ -653,7 +529,6 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
 
   it("falls back to the lowest free slot when the named tile is already standing on", async () => {
     const token = await sowingFarm();
-    await buyStackAcresSoil(token, { tier: "dirt", quantity: 2 }, T0);
     const bedA = cropFieldTile(0);
     const bedB = cropFieldTile(1);
     await placeStackAcresSoilTile(token, bedA, T0);
@@ -666,5 +541,82 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     const view = await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
     const second = view.units.filter((u) => u.stock === "corn").at(-1)!;
     expect(second.soilSlot).toBe(homeStarterSoilTiles()[0].order);
+  });
+});
+
+describe("the hoe works on any grass on the Homestead", () => {
+  it("lays a bed on bare grass and moves no Gold", async () => {
+    const token = await funded();
+    const goldBefore = await balance(token);
+    const tile = grassTile();
+
+    const view = await placeStackAcresSoilTile(token, tile, T0);
+
+    expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(true);
+    expect(await balance(token)).toBe(goldBefore);
+  });
+
+  it("works well away from where the paddocks used to be", async () => {
+    // The first bare grass on the map is up in the treeline margin, the last
+    // is down by the shore: nowhere near the two patches by the house.
+    const token = await funded();
+    for (const tile of [grassTile(0), grassTile(400), grassTile(900)]) {
+      const view = await placeStackAcresSoilTile(token, tile, T0);
+      expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(true);
+    }
+  });
+
+  it("does NOT clear the Crop Fields -- that milestone is for ground broken out there", async () => {
+    const token = await funded();
+
+    const view = await placeStackAcresSoilTile(token, grassTile(), T0);
+
+    expect(view.cropFieldsUnlocked).toBe(false);
+  });
+
+  it("takes a crop straight away, with no Crop Fields and nothing else unlocked", async () => {
+    const token = await funded();
+    const profile = await ensureProfile(token);
+    await adjustStackAcresSeedStock(profile.id, "carrot", 1);
+    const tile = grassTile();
+    await placeStackAcresSoilTile(token, tile, T0);
+
+    const view = await stockStackAcres(token, { stock: "carrot", tile }, T0);
+
+    expect(view.units.some((u) => u.stock === "carrot")).toBe(true);
+    expect(view.cropFieldsUnlocked).toBe(false);
+  });
+
+  it("can be lifted again like any bed the player laid", async () => {
+    const token = await funded();
+    const tile = grassTile();
+    await placeStackAcresSoilTile(token, tile, T0);
+
+    const view = await removeStackAcresSoilTile(token, tile, T0);
+
+    expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(false);
+  });
+
+  it("refuses the road and the pond", async () => {
+    const token = await funded();
+    for (const { mx, my } of [ROAD_MAP_TILE, POND_MAP_TILE]) {
+      expect(isHoeableMapTile(mx, my)).toBe(false);
+      await expect(placeStackAcresSoilTile(token, mapToSoilTile(mx, my), T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
+    }
+  });
+
+  it("refuses a square one of the six free starter beds already holds", async () => {
+    // Those beds are never stored, so the database's one-bed-per-square rule
+    // cannot see them. Without this refusal a dug bed would land on top of one.
+    const token = await funded();
+    const [starter] = homeStarterSoilTiles();
+
+    await expect(placeStackAcresSoilTile(token, { tx: starter.tx, ty: starter.ty }, T0)).rejects.toMatchObject({
+      status: 409,
+    });
+    const view = await readStackAcres(token, T0);
+    expect(view.soilTiles.filter((t) => t.tx === starter.tx && t.ty === starter.ty)).toHaveLength(1);
   });
 });

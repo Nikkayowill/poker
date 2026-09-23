@@ -1,10 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-// TEMPORARY -- see the mount at the bottom of this file.
-import { ViewportProbe } from "@/components/debug/viewport-probe";
 import { AppShell } from "@/components/shell/app-shell";
 import { BrowserChromeWidth } from "@/components/shell/browser-chrome-width";
-import { ViewportFit } from "@/components/shell/viewport-fit";
 
 /*
  * The text half of every search result and unfurled link. This said
@@ -30,7 +27,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    // Not "black-translucent". On iOS 26 that style plus viewportFit "cover"
+    // makes an installed app 47px short at the bottom until you rotate
+    // (WebKit bug 301108), and nothing inside the page can paint that strip.
+    // "default" gives the status bar its own theme-color band instead.
+    statusBarStyle: "default",
     title: "StackChips",
   },
   // The opengraph-image.tsx file convention supplies the image itself; this
@@ -137,21 +138,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             layout only ever swaps `{children}`, not itself. See its own file
             for why the state that used to live in poker-app.tsx moved here. */}
         <AppShell>{children}</AppShell>
-        {/* TEMPORARY -- remove with components/debug/viewport-probe.tsx and
-            app/debug/safe-area once the installed-PWA cold-launch nav gap is
-            resolved. Renders nothing; records the launch viewport timeline so
-            /debug/safe-area can read it back after the fact. */}
-        <ViewportProbe />
-        {/* Cancels the short layout viewport an installed iOS PWA reports
-            at cold launch, so the app fills the screen without waiting for
-            a rotation. See the file for why this is not the reflow-forcing
-            that was tried and reverted three times. */}
-        <ViewportFit />
         {/* Gives the table back the width a mobile browser's own toolbar
             borrows from 100dvh in landscape, so a browser tab doesn't
             pillarbox the short-landscape stage more narrowly than the
-            installed PWA does. See the file for why this is the mirror of
-            ViewportFit rather than a duplicate of it. */}
+            installed PWA does. */}
         <BrowserChromeWidth />
       </body>
     </html>

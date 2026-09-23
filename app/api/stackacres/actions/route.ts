@@ -16,6 +16,7 @@ import { FARM_KITCHEN_RECIPES } from "@/lib/stackacres/farm-kitchen";
 import { HIDDEN_ZONE_IDS, SECRET_ITEM_IDS } from "@/lib/stackacres/secrets";
 import { WOOD_NODE_IDS } from "@/lib/stackacres/tree-nodes";
 import { STONE_NODE_IDS } from "@/lib/stackacres/stone-nodes";
+import { FORAGE_NODE_IDS } from "@/lib/stackacres/forage";
 import { SYNERGY_ARCHETYPES, SYNERGY_MAX_ACTIVE_SLOTS } from "@/lib/stackacres/synergy-perks";
 import { MYTHIC_BLUEPRINT_IDS } from "@/lib/stackacres/blueprints";
 import { ALL_MACHINE_ITEM_IDS, MACHINE_ITEM_IDS } from "@/lib/stackacres/machine-items";
@@ -29,9 +30,9 @@ import {
   buildStackAcresGreenhouse,
   buyStackAcresFeed,
   buyStackAcresStock,
-  clearStackAcresSector,
+  workStackAcresLand,
+  demolishStackAcresLand,
   clearStackAcresUnit,
-  unlockStackAcresCropFields,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
   expandStackAcresCapacity,
@@ -54,11 +55,13 @@ import {
   drawStackAcresWater,
   bagStackAcresQuarry,
   chopStackAcresWoodTree,
+  gatherStackAcresForage,
   mineStackAcresStoneNode,
   catchStackAcresFish,
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
+  passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processStackAcresRecipeAction,
@@ -71,7 +74,6 @@ import {
   forgeStackAcresToolEnchantment,
   plantStackAcresCrossbreedBed,
   harvestStackAcresCrossbreedBed,
-  buyStackAcresSoil,
   placeStackAcresSoilTile,
   removeStackAcresSoilTile,
   moveStackAcresSoilTileGroup,
@@ -88,7 +90,6 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { stackacresLocked } from "@/lib/server/stackacres-access";
 import { readSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 import { resolveChronoNow } from "@/lib/server/chrono-delorean";
-import { SOIL_BAGS_PER_PURCHASE, SOIL_TIERS } from "@/lib/stackacres/soil-tiers";
 
 export const runtime = "nodejs";
 
@@ -105,7 +106,7 @@ export const runtime = "nodejs";
  * `collect` (harvest) MOVES NO GOLD AT ALL any more -- it always credits
  * inventory, for every item, not just wheat/milk/wool. FIFTEEN ACTIONS SPEND
  * GOLD and exactly THREE PAY IT OUT, and that asymmetry is what keeps this
- * safe. `expand-capacity`, `clear-sector`, `unlock-crop-fields`, `stock`,
+ * safe. `expand-capacity`, `clear-sector`, `stock`,
  * `buy-stock`, `buy-feed`, `clear`, `upgrade-tool`, `buy-cutter`,
  * `place-machine`, `unlock-synergy-perk` and `place-soil-tile` all spend; `sell`, `fulfill-contract`
  * and `collect-vat` pay, all three under the SAME flat per-player daily
@@ -137,12 +138,12 @@ export const runtime = "nodejs";
  * a probability an existing roll already makes, inside `collect` and `work`
  * respectively, and neither moves Gold.
  *
- * `clear-sector` is the one piece of land buying that came back: three of the
- * four districts start under wild growth, and clearing one is a permanent,
- * unrefunded Gold spend. Keeping cleared land then costs a daily fee, netted
- * off whichever action next pays the player any Gold (see
- * `netUpkeepFromPayout`, lib/server/stackacres-service.ts), not something any
- * one action here asks for.
+ * LAND IS NEVER SOLD. A sector opens when the last thing standing on it has
+ * been cut down (`work-land`, which spends energy and pays the barn).
+ * `demolish-land` is the one Gold spend on that road: blowing one obstacle
+ * instead of swinging at it, priced per swing still owed. Keeping cleared
+ * land then costs a daily fee, netted off whichever action next pays the
+ * player any Gold (see `netUpkeepFromPayout`, lib/server/stackacres-service.ts).
  *
  * `prestige-reset` moves no Gold either, and is not like `work`/`process`'s
  * "inventory only" either: it is the one action with no undo, trading the
@@ -188,15 +189,11 @@ const intentKeySchema = z.string().min(8).max(100).optional();
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
-  // Buying a district's wild ground outright. Gold, once, permanent.
-  z.object({
-    action: z.literal("clear-sector"),
-    sector: z.enum(ZONE_IDS as unknown as [string, ...string[]]),
-  }),
-  // No field, unlike `clear-sector`: there is only one such flag, not one
-  // per district. Gold, once, permanent -- see unlockStackAcresCropFields's
-  // own header on why this is not a `clear-sector` variant.
-  z.object({ action: z.literal("unlock-crop-fields") }),
+  // Clearing land. `work-land` is one swing and costs energy; `demolish-land`
+  // spends Gold instead. Neither names a sector: the obstacle id says which
+  // land it stands on, so a request cannot claim a field it has not worked.
+  z.object({ action: z.literal("work-land"), obstacleId: z.string().min(3).max(40), sweet: z.boolean() }),
+  z.object({ action: z.literal("demolish-land"), obstacleId: z.string().min(3).max(40) }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -282,6 +279,15 @@ const bodySchema = z.discriminatedUnion("action", [
     nodeId: z.enum(STONE_NODE_IDS),
     quality: z.enum(["hit", "sweet"]),
   }),
+  // One pick at one of the Homestead's forage bushes. Fills the SEED shelf,
+  // not the inventory, and moves no Gold. There is no `quality` here and no
+  // crop either: which seed a bush carries is a pure function of its own
+  // stored pick count (lib/stackacres/forage.ts), so the client never gets
+  // to name the prize.
+  z.object({
+    action: z.literal("gather-forage"),
+    nodeId: z.enum(FORAGE_NODE_IDS),
+  }),
   z.object({ action: z.literal("clear"), unitId: unitIdSchema }),
   z.object({
     action: z.literal("buy-feed"),
@@ -324,6 +330,8 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("request-contract") }),
   z.object({ action: z.literal("fulfill-contract") }),
+  // One a UTC day, and it moves nothing. See passStackAcresContract.
+  z.object({ action: z.literal("pass-contract") }),
   // The Fermenting Vat. `seal-vat` spends Cheese (never Gold) and locks it
   // inside the vat's own manifest; `collect-vat` is the one action here that
   // pays -- through the same daily ceiling `fulfill-contract` does. See
@@ -428,25 +436,12 @@ const bodySchema = z.discriminatedUnion("action", [
   // (floor(worldX / 64), floor(worldY / 64)), same bounding posture as
   // place-pipe above -- the coordinate range is generous but not unbounded,
   // and placeStackAcresSoilTile itself is what actually confines a tile to
-  // the Crop Fields. `place-soil-tile` spends Gold -- how MUCH is set by the
-  // tier and read from SOIL_TIER_DEFS on the server, never from the body, so
-  // the client only ever names which bed it wants. `remove-soil-tile` moves
-  // none. The tier is optional so a client from before tiers shipped still
-  // places a plain bed.
+  // the Crop Fields. Breaking ground is free: `place-soil-tile` and
+  // `remove-soil-tile` move no Gold and no stock.
   z.object({
     action: z.literal("place-soil-tile"),
     tx: z.number().int().min(-512).max(512),
     ty: z.number().int().min(-512).max(512),
-    tier: z.enum(SOIL_TIERS).optional(),
-  }),
-  // Ray's soil shelf. SPENDS Gold (tier price x quantity, both read from
-  // SOIL_TIER_DEFS on the server) and moves no coordinate; `place-soil-tile`
-  // below now spends a BAG rather than Gold, so soil costs the player exactly
-  // once, here.
-  z.object({
-    action: z.literal("buy-soil"),
-    tier: z.enum(SOIL_TIERS),
-    quantity: z.number().int().min(1).max(SOIL_BAGS_PER_PURCHASE),
   }),
   z.object({
     action: z.literal("remove-soil-tile"),
@@ -529,10 +524,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
   switch (action.action) {
     case "expand-capacity":
       return expandStackAcresCapacity(token, action.stock, now);
-    case "clear-sector":
-      return clearStackAcresSector(token, action.sector, now);
-    case "unlock-crop-fields":
-      return unlockStackAcresCropFields(token, now);
+    case "work-land":
+      return workStackAcresLand(token, action.obstacleId, action.sweet, now);
+    case "demolish-land":
+      return demolishStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "buy-cutter":
@@ -575,6 +570,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return bagStackAcresQuarry(token, now);
     case "chop-tree":
       return chopStackAcresWoodTree(token, action.nodeId, action.sweet, now);
+    case "gather-forage":
+      return gatherStackAcresForage(token, action.nodeId, now);
     case "mine-stone":
       return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
     case "clear":
@@ -593,6 +590,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return requestStackAcresContract(token, now);
     case "fulfill-contract":
       return fulfillStackAcresTownContract(token, now);
+    case "pass-contract":
+      return passStackAcresContract(token, now);
     case "seal-vat":
       return sealStackAcresVat(token, now);
     case "collect-vat":
@@ -628,9 +627,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "harvest-crossbreed":
       return harvestStackAcresCrossbreedBed(token, action.plotId, now);
     case "place-soil-tile":
-      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty, tier: action.tier }, now);
-    case "buy-soil":
-      return buyStackAcresSoil(token, { tier: action.tier, quantity: action.quantity }, now);
+      return placeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "remove-soil-tile":
       return removeStackAcresSoilTile(token, { tx: action.tx, ty: action.ty }, now);
     case "move-soil-tile-group":

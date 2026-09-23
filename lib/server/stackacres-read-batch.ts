@@ -47,7 +47,6 @@ export interface StackAcresReadBatch {
   aging_manifests: Record<string, unknown>[];
   cutters: Record<string, unknown>[];
   story: Record<string, unknown> | null;
-  drones: Record<string, unknown>[];
   /** Absent until the Chapter 1 migration redefines the batch. */
   energy?: Record<string, unknown> | null;
 }

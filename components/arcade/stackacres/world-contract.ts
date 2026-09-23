@@ -7,15 +7,17 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
+import type { BuildingDoor } from "@/lib/stackacres/building-cues";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { PainterName } from "./stackacres-art";
 import type { WorldPoint } from "@/lib/stackacres/world";
 import type { SoilTile } from "@/lib/stackacres/soil";
-import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
+import type { LandObstacleSnapshot } from "@/lib/stackacres/land-clearing";
 
 /**
  * What the farm shell (stackacres-farm.tsx) hands the map under it, and what it
@@ -125,6 +127,10 @@ export type StoryCue = "available" | "ready";
 /** One badge per traveler that has one; a missing key means none. */
 export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
 
+/** One flag per building door with something finished behind it
+ *  (lib/stackacres/building-cues.ts). A missing key means nothing waiting. */
+export type BuildingCueDoors = Readonly<Partial<Record<BuildingDoor, true>>>;
+
 
 /** One flag per traveler: has their unlock been met yet. Read straight off
  *  `StackAcresStoryView.travelers[id].unlocked`, so the scene never keeps
@@ -217,6 +223,10 @@ export interface StackAcresWorldApi {
    *  contract as `setSoil`: stackacres-farm.tsx calls this whenever its
    *  story view changes, and an unchanged badge is a no-op. */
   setStoryCues: (cues: StoryCues) => void;
+  /** Hangs a "ready" badge over the Workshop or the farmhouse when something
+   *  inside them has finished. Same "push, never rebuild" contract as
+   *  `setStoryCues`. */
+  setBuildingCues: (doors: BuildingCueDoors) => void;
   /** Shows or hides each traveler as their own unlock is met -- nobody
    *  stands on the farm before that. Same "push, never rebuild" contract as
    *  `setStoryCues`: called with the full eleven-entry record whenever the
@@ -230,7 +240,7 @@ export interface StackAcresWorldApi {
    *  must always reflect. */
   soilTiles: () => SoilTile[];
   setSoil: (tiles: readonly SoilTile[]) => void;
-  placeSoilAt: (x: number, y: number, tier?: SoilTier) => boolean;
+  placeSoilAt: (x: number, y: number) => boolean;
   removeSoilAt: (x: number, y: number) => boolean;
   /** Outlines the tile a pending bed will actually land on, snapped through
    *  the same `soilTileAt` the placement uses. `null` clears it. Pushed from
@@ -253,6 +263,12 @@ export interface StackAcresWorldProps {
   woodNodes: readonly WoodNodeSnapshot[];
   /** The Mine's boulders, so a mined-out one shows as rubble until it re-forms. */
   stoneNodes: readonly StoneNodeSnapshot[];
+  /** The Homestead's forage bushes, so a picked one shows as a bare stub
+   *  until its seed heads come back. */
+  forageNodes: readonly ForageNodeSnapshot[];
+  /** What is still standing on land being cleared, so a felled obstacle
+   *  disappears and an emptied sector stops being overgrown. */
+  landObstacles: readonly LandObstacleSnapshot[];
   tool: StackAcresTool;
   /** Fired once, by nonce, to trigger the gold-burst effect on one unit --
    *  the client-side twin of a confirmed collect. */
@@ -311,6 +327,16 @@ export interface StackAcresWorldProps {
    *  mode; the map only reports the tap, the same split `onTreeTap` already
    *  takes. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on one of the Homestead's four forage bushes (see
+   *  lib/stackacres/forage.ts). No popup opens: the shell sends the pick
+   *  straight off, because a pick is one stoop rather than a timed swing.
+   *  The map only reports the tap, same split `onTreeTap` takes. */
+  onForageTap: (nodeId: string, at: TapPoint) => void;
+  /** A finger landed on something standing on land still being cleared (see
+   *  lib/stackacres/land-clearing.ts). The shell opens the swing popup on
+   *  that obstacle, which is also where Gold can blow it instead; the map
+   *  only reports the tap, same split `onTreeTap` takes. */
+  onLandTap: (obstacleId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */
   onGreenhouseTap: () => void;
@@ -336,17 +362,9 @@ export interface StackAcresWorldProps {
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];
-  /** Whether the Crop Fields have been unlocked (lib/stackacres/crop-fields.ts)
-   *  -- the `sectors` equivalent for ground that is not a `SectorId` any more
-   *  since the 2026-09-08 district merge folded it into the Farmstead. */
-  cropFieldsUnlocked: boolean;
   /** A finger landed anywhere on land that has not been cleared -- the offer
    *  to buy it, answered by the clearing modal in stackacres-farm.tsx. */
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
-  /** `onLockedSectorTap`'s own twin for the Crop Fields -- see
-   *  StackAcresSceneCallbacks' own doc comment on why they need a separate
-   *  callback since the 2026-09-08 district merge. */
-  onCropFieldsLockedTap: (at: TapPoint) => void;
   /** The camera moved, so anything the shell pinned to a screen position is
    *  now pointing at the wrong part of the world. */
   onViewMoved: () => void;

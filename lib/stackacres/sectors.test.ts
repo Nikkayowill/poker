@@ -20,7 +20,16 @@ import {
 } from "./sectors";
 import { CROP_FIELD } from "./yard";
 import { STACKACRES_UPKEEP_FREE_PLOTS } from "./upkeep";
-import { STACKACRES_STOCK, capFor, type StackAcresStock } from "./catalogue";
+import {
+  STACKACRES_LIVESTOCK,
+  STACKACRES_STOCK,
+  capFor,
+  stackacresCapacityMaterials,
+  stackacresCapacityPrice,
+  type StackAcresLivestock,
+  type StackAcresStock,
+} from "./catalogue";
+import { isMachineRawItem } from "./machine-items";
 import { nearPath } from "./paths";
 // Test-only, and Phaser-free at runtime (that module imports Phaser as a
 // TYPE only): the scene's painter table, so overgrowth can be held to what
@@ -361,5 +370,41 @@ describe("cropFieldOvergrowth", () => {
   it("mixes canopy, scrub and ground cover rather than one repeated tree", () => {
     const kinds = new Set(cropFieldOvergrowth().map((item) => item.kind));
     expect(kinds.size).toBeGreaterThan(4);
+  });
+});
+
+describe("what a land clear costs", () => {
+  it("costs more Gold the further out the land is", () => {
+    for (let i = 1; i < SECTOR_LADDER.length; i += 1) {
+      expect(STACKACRES_SECTORS[SECTOR_LADDER[i]].clearCost).toBeGreaterThan(
+        STACKACRES_SECTORS[SECTOR_LADDER[i - 1]].clearCost,
+      );
+    }
+  });
+});
+
+describe("what a pen slot costs in materials", () => {
+  it("asks every kind for timber, and the dearer the stock the more of it", () => {
+    const wood = (stock: StackAcresLivestock) =>
+      stackacresCapacityMaterials(stock).find((material) => material.item === "wood")?.quantity ?? 0;
+    for (const stock of STACKACRES_LIVESTOCK) expect(wood(stock)).toBeGreaterThan(0);
+    const byPrice = [...STACKACRES_LIVESTOCK].sort(
+      (a, b) => stackacresCapacityPrice(a) - stackacresCapacityPrice(b),
+    );
+    for (let i = 1; i < byPrice.length; i += 1) {
+      expect(wood(byPrice[i])).toBeGreaterThan(wood(byPrice[i - 1]));
+    }
+  });
+
+  // Repeatable, unlike every other material cost in the game: nine slots
+  // across the three kinds. That is the whole point -- it is what keeps the
+  // trees worth chopping once the Mill and the Loom are up. Stone cannot do
+  // this job because its boulders are shared by every player on the server.
+  it("never asks for Stone, because a pen slot is bought again and again", () => {
+    for (const stock of STACKACRES_LIVESTOCK) {
+      for (const material of stackacresCapacityMaterials(stock)) {
+        expect(material.item).toBe("wood");
+      }
+    }
   });
 });

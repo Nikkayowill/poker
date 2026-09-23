@@ -2,7 +2,7 @@
 """Renders any area through the rich pipeline for review, next to its DB16 original.
 
 Usage: python3 build_area.py <area> [<area> ...]   (area script names in areas/rig: fold, pasture, coast, oak, mine, townsquare,
-homestead, oldfields)
+homestead)
 
 Writes rich/out/areas/<area>/{db16,rich}/: <area>.png, <area>-2x.png and views/*.png at 4x. Every sprite an area script
 uses must have a rich version: the rig's props/creatures functions are swapped for the same-named ones in the area_*.py

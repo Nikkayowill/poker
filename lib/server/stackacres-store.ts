@@ -19,11 +19,27 @@ import {
   type MachineItemId,
   type MachineProcessedItem,
 } from "@/lib/stackacres/machine-items";
+import {
+  isStackAcresContractStatus,
+  type StackAcresContractStatus,
+} from "@/lib/stackacres/contracts";
+import { stackacresExchangeDay } from "@/lib/stackacres/exchange";
 import type { StackAcresInventory } from "@/lib/stackacres/inventory";
 import type { StackAcresWheatPlotRow } from "@/lib/stackacres/wheat-plot";
 import { isMachineKind, type MachineKind, type StackAcresMachineRow } from "@/lib/stackacres/machines";
 import { isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import { freshWoodNodeState, type WoodNodeState } from "@/lib/stackacres/wood";
+import {
+  freshLandObstacleState,
+  landObstacle,
+  type LandObstacleState,
+} from "@/lib/stackacres/land-clearing";
+import {
+  freshForageNodeState,
+  isForageNodeId,
+  type ForageNodeId,
+  type ForageNodeState,
+} from "@/lib/stackacres/forage";
 import { isRecipeId, type RecipeId } from "@/lib/stackacres/recipes";
 import type { AgingManifest } from "@/lib/stackacres/aging";
 import {
@@ -110,6 +126,8 @@ declare global {
   var __riverRoomStackAcresEnergy: Map<string, StoredStackAcresEnergy> | undefined;
   var __riverRoomStackAcresStory: Map<string, { story: StoredStory; version: number }> | undefined;
   var __riverRoomStackAcresWoodNodes: Map<string, StoredWoodNode> | undefined;
+  var __riverRoomStackAcresLandObstacles: Map<string, StoredLandObstacle> | undefined;
+  var __riverRoomStackAcresForageNodes: Map<string, StoredForageNode> | undefined;
 }
 
 const memoryUnits = globalThis.__riverRoomStackAcresUnits ?? new Map<string, StoredStackAcresUnit>();
@@ -255,6 +273,17 @@ globalThis.__riverRoomStackAcresFriendship = memoryFriendship;
 const memoryWoodNodes = globalThis.__riverRoomStackAcresWoodNodes ?? new Map<string, StoredWoodNode>();
 globalThis.__riverRoomStackAcresWoodNodes = memoryWoodNodes;
 
+/** Land obstacles (lib/stackacres/land-clearing.ts), keyed the same way. A
+ *  missing entry is a standing, untouched obstacle. */
+const memoryLandObstacles =
+  globalThis.__riverRoomStackAcresLandObstacles ?? new Map<string, StoredLandObstacle>();
+globalThis.__riverRoomStackAcresLandObstacles = memoryLandObstacles;
+
+/** Forageable bushes (lib/stackacres/forage.ts), keyed the same way. */
+const memoryForageNodes =
+  globalThis.__riverRoomStackAcresForageNodes ?? new Map<string, StoredForageNode>();
+globalThis.__riverRoomStackAcresForageNodes = memoryForageNodes;
+
 /** Test seam only: the memory branch is process-global. */
 export function __resetStackAcresForTest(): void {
   memoryUnits.clear();
@@ -279,6 +308,8 @@ export function __resetStackAcresForTest(): void {
   memoryDevotion.clear();
   memoryFriendship.clear();
   memoryWoodNodes.clear();
+  memoryForageNodes.clear();
+  memoryLandObstacles.clear();
 }
 
 /** Test seam only: what the memory-branch collection ledger recorded. */
@@ -450,7 +481,7 @@ export async function createStackAcresUnit(
     readyAt: Date;
     lastFedAt: Date | null;
     /** Null for a crop sown as dry seed, and for livestock, which never runs
-     *  dry. Set only when a pipe or hydro bed already waters the crop. */
+     *  dry. Set only when a water source already waters the crop. */
     lastWateredAt: Date | null;
     /** True when this was bought outright with Gold rather than sown. */
     permanent: boolean;
@@ -679,7 +710,7 @@ export async function collectStackAcresUnit(
     // A re-sown crop goes back in as dry seed (`wateredAt` null) exactly as a
     // freshly stocked one does, and its first water restarts the clock from
     // there (see `seedClockOnFirstWater`), so the time it sat ripe is never
-    // charged. The caller passes `wateredAt` only when a pipe or hydro bed
+    // charged. The caller passes `wateredAt` only when a water source
     // already waters it. `last_fed_at` deliberately does NOT get reset (see
     // the doc comment above): an animal can be fed at any time, so being
     // hungry the moment it restarts costs the player a serving and nothing
@@ -822,8 +853,7 @@ export async function retireStackAcresUnit(current: StoredStackAcresUnit): Promi
  * Deletes a unit row outright -- any status, permanent or not -- version-
  * guarded. No refund: see `removeStackAcresSoilTile` in
  * stackacres-service.ts, the only caller. Lifting the bed a crop stands on
- * takes the crop with it, the same spent-sink rule the bed itself already
- * follows (see `SOIL_TILE_PRICE_GOLD`'s own doc comment on soil.ts). A lost
+ * takes the crop with it. A lost
  * race -- the unit already moved on, harvested or cleared or retired out
  * from under this -- returns null rather than throwing, the same contract
  * `retireStackAcresUnit`/`clearStackAcresMuck` above already keep.
@@ -2479,12 +2509,15 @@ export interface StoredContract {
   quantity: number;
   goldReward: number;
   influenceReward: number;
-  status: "open" | "fulfilled";
+  status: StackAcresContractStatus;
   createdAt: string;
+  /** When it stopped being open, for either terminal status. Null while
+   *  open, and null on every row that predates the column. */
+  resolvedAt: string | null;
 }
 
 const CONTRACT_COLUMNS =
-  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at";
+  "id, profile_id, item, quantity, gold_reward, influence_reward, status, created_at, resolved_at";
 
 export interface ContractDbRow {
   id: string;
@@ -2495,6 +2528,7 @@ export interface ContractDbRow {
   influence_reward: number | string;
   status: string;
   created_at: string;
+  resolved_at?: string | null;
 }
 
 export function contractFromRow(row: ContractDbRow): StoredContract {
@@ -2505,8 +2539,9 @@ export function contractFromRow(row: ContractDbRow): StoredContract {
     quantity: Number(row.quantity),
     goldReward: Number(row.gold_reward),
     influenceReward: Number(row.influence_reward),
-    status: row.status === "fulfilled" ? "fulfilled" : "open",
+    status: isStackAcresContractStatus(row.status) ? row.status : "open",
     createdAt: String(row.created_at),
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
   };
 }
 
@@ -2566,6 +2601,7 @@ export async function createStackAcresContract(
       influenceReward: def.influenceReward,
       status: "open",
       createdAt: now,
+      resolvedAt: null,
     };
     memoryContracts.set(contract.id, { ...contract });
     return { ...contract };
@@ -2601,23 +2637,78 @@ export async function createStackAcresContract(
 export async function fulfillStackAcresContract(current: StoredContract): Promise<StoredContract | null> {
   const supabase = adminClient();
 
+  return resolveStackAcresContract(current, "fulfilled", new Date(), "settle");
+}
+
+/**
+ * Marks a contract passed, exactly once, and frees the board.
+ *
+ * Same status guard as fulfilling, and for the same reason: two tabs racing
+ * the same contract must resolve it once. Nothing is spent and nothing is
+ * paid -- a pass is the release valve on a one-slot board, rate-limited to
+ * one a UTC day by the service (see `contractPassSpent`), never by this.
+ */
+export async function passStackAcresContract(
+  current: StoredContract,
+  now: Date,
+): Promise<StoredContract | null> {
+  return resolveStackAcresContract(current, "passed", now, "pass");
+}
+
+/** The open -> terminal write both resolutions share. Guarded on `status =
+ *  'open'`, so it returns the row at most once however many callers race. */
+async function resolveStackAcresContract(
+  current: StoredContract,
+  status: "fulfilled" | "passed",
+  now: Date,
+  verb: "settle" | "pass",
+): Promise<StoredContract | null> {
+  const supabase = adminClient();
+  const resolvedAt = now.toISOString();
+
   if (!supabase) {
     const stored = memoryContracts.get(current.id);
     if (!stored || stored.status !== "open") return null;
-    const updated: StoredContract = { ...stored, status: "fulfilled" };
+    const updated: StoredContract = { ...stored, status, resolvedAt };
     memoryContracts.set(current.id, { ...updated });
     return { ...updated };
   }
 
   const { data, error } = await supabase
     .from("homestead_contracts")
-    .update({ status: "fulfilled" })
+    .update({ status, resolved_at: resolvedAt })
     .eq("id", current.id)
     .eq("status", "open")
     .select(CONTRACT_COLUMNS)
     .maybeSingle();
-  if (error) throw new Error(`Could not settle that contract: ${error.message}`);
+  if (error) throw new Error(`Could not ${verb} that contract: ${error.message}`);
   return data ? contractFromRow(data as ContractDbRow) : null;
+}
+
+/**
+ * The UTC day of this player's most recent PASSED contract, or null if they
+ * have never passed one. What the once-a-day rule is measured against.
+ */
+export async function readStackAcresLastContractPassDay(profileId: string): Promise<string | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const passed = [...memoryContracts.values()]
+      .filter((contract) => contract.profileId === profileId && contract.status === "passed" && contract.resolvedAt)
+      .sort((a, b) => Date.parse(b.resolvedAt!) - Date.parse(a.resolvedAt!));
+    return passed.length > 0 ? stackacresExchangeDay(new Date(passed[0].resolvedAt!)) : null;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_contracts")
+    .select("resolved_at")
+    .eq("profile_id", profileId)
+    .eq("status", "passed")
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read your town board history: ${error.message}`);
+  const resolvedAt = (data as { resolved_at: string | null } | null)?.resolved_at ?? null;
+  return resolvedAt ? stackacresExchangeDay(new Date(resolvedAt)) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -3469,6 +3560,308 @@ export async function listStackAcresWoodNodeStates(
   for (const row of (data ?? []) as WoodNodeDbRow[]) {
     const node = woodNodeFromRow(row);
     result[node.nodeId] = { hitsRemaining: node.hitsRemaining, felledAt: node.felledAt };
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Land obstacles (lib/stackacres/land-clearing.ts)                    */
+/* ------------------------------------------------------------------ */
+
+export interface StoredLandObstacle extends LandObstacleState {
+  profileId: string;
+  obstacleId: string;
+  version: number;
+}
+
+const LAND_OBSTACLE_COLUMNS = "profile_id, obstacle_id, hits_remaining, cleared_at, version";
+
+interface LandObstacleDbRow {
+  profile_id: string;
+  obstacle_id: string;
+  hits_remaining: number | string;
+  cleared_at: string | null;
+  version: number | string;
+}
+
+function landObstacleFromRow(row: LandObstacleDbRow): StoredLandObstacle {
+  return {
+    profileId: String(row.profile_id),
+    obstacleId: String(row.obstacle_id),
+    hitsRemaining: Number(row.hits_remaining),
+    clearedAt: row.cleared_at ? String(row.cleared_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** One obstacle's state, created standing the first time this farm swings at
+ *  it. Same lazy create as `getOrCreateStackAcresWoodNode`. */
+export async function getOrCreateStackAcresLandObstacle(
+  profileId: string,
+  obstacleId: string,
+): Promise<StoredLandObstacle> {
+  const known = landObstacle(obstacleId);
+  if (!known) throw new Error(`No such obstacle: ${obstacleId}`);
+  const supabase = adminClient();
+  const key = `${profileId}:${obstacleId}`;
+
+  if (!supabase) {
+    const existing = memoryLandObstacles.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredLandObstacle = {
+      profileId,
+      obstacleId,
+      version: 1,
+      ...freshLandObstacleState(known.kind),
+    };
+    memoryLandObstacles.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("obstacle_id", obstacleId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look at that: ${error.message}`);
+  if (data) return landObstacleFromRow(data as LandObstacleDbRow);
+
+  const seed = freshLandObstacleState(known.kind);
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_land_obstacles")
+    .insert({
+      profile_id: profileId,
+      obstacle_id: obstacleId,
+      hits_remaining: seed.hitsRemaining,
+      cleared_at: seed.clearedAt,
+      version: 1,
+    })
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the create race with another tab: whoever won is the truth.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_land_obstacles")
+      .select(LAND_OBSTACLE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("obstacle_id", obstacleId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not reach that: ${insertError.message}`);
+    return landObstacleFromRow(raced as LandObstacleDbRow);
+  }
+  return landObstacleFromRow(inserted as LandObstacleDbRow);
+}
+
+/** One swing (or one demolition), guarded on the row's own version, so two
+ *  rapid taps cannot both land the blow that clears it and both be paid. */
+export async function writeStackAcresLandObstacle(
+  current: StoredLandObstacle,
+  next: LandObstacleState,
+): Promise<StoredLandObstacle | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.obstacleId}`;
+    const stored = memoryLandObstacles.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredLandObstacle = { ...stored, ...next, version };
+    memoryLandObstacles.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .update({ hits_remaining: next.hitsRemaining, cleared_at: next.clearedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("obstacle_id", current.obstacleId)
+    .eq("version", current.version)
+    .select(LAND_OBSTACLE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not clear that: ${error.message}`);
+  return data ? landObstacleFromRow(data as LandObstacleDbRow) : null;
+}
+
+/** Every obstacle this farm has touched, for the snapshot. Write-free: an
+ *  obstacle with no row is standing, which the caller fills in. */
+export async function listStackAcresLandObstacleStates(
+  profileId: string,
+): Promise<Record<string, LandObstacleState>> {
+  const supabase = adminClient();
+  const result: Record<string, LandObstacleState> = {};
+  if (!supabase) {
+    for (const [key, row] of memoryLandObstacles) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[row.obstacleId] = { hitsRemaining: row.hitsRemaining, clearedAt: row.clearedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_land_obstacles")
+    .select(LAND_OBSTACLE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your land: ${error.message}`);
+  for (const row of (data ?? []) as LandObstacleDbRow[]) {
+    const stored = landObstacleFromRow(row);
+    result[stored.obstacleId] = { hitsRemaining: stored.hitsRemaining, clearedAt: stored.clearedAt };
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Forageable bushes (lib/stackacres/forage.ts)                        */
+/* ------------------------------------------------------------------ */
+
+export interface StoredForageNode extends ForageNodeState {
+  profileId: string;
+  nodeId: ForageNodeId;
+  version: number;
+}
+
+const FORAGE_NODE_COLUMNS = "profile_id, node_id, picks, picked_at, version";
+
+interface ForageNodeDbRow {
+  profile_id: string;
+  node_id: string;
+  picks: number | string;
+  picked_at: string | null;
+  version: number | string;
+}
+
+function forageNodeFromRow(row: ForageNodeDbRow): StoredForageNode {
+  return {
+    profileId: String(row.profile_id),
+    // Cast rather than refuse: an id this build does not know is a row from
+    // a newer deploy, and dropping it here would silently reset that bush.
+    nodeId: row.node_id as ForageNodeId,
+    picks: Number(row.picks),
+    pickedAt: row.picked_at ? String(row.picked_at) : null,
+    version: Number(row.version),
+  };
+}
+
+/** Reads one bush, creating an untouched row the first time a profile picks
+ *  it -- the same lazy-create `getOrCreateStackAcresWoodNode` does, and for
+ *  the same reason: seeding four rows for every profile that has never
+ *  walked the yard is four rows of nothing. */
+export async function getOrCreateStackAcresForageNode(
+  profileId: string,
+  nodeId: ForageNodeId,
+): Promise<StoredForageNode> {
+  const supabase = adminClient();
+  const key = `${profileId}:${nodeId}`;
+
+  if (!supabase) {
+    const existing = memoryForageNodes.get(key);
+    if (existing) return { ...existing };
+    const fresh: StoredForageNode = { profileId, nodeId, version: 1, ...freshForageNodeState() };
+    memoryForageNodes.set(key, { ...fresh });
+    return { ...fresh };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId)
+    .eq("node_id", nodeId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that bush: ${error.message}`);
+  if (data) return forageNodeFromRow(data as ForageNodeDbRow);
+
+  const seed = freshForageNodeState();
+  const { data: inserted, error: insertError } = await supabase
+    .from("homestead_forage_nodes")
+    .insert({
+      profile_id: profileId,
+      node_id: nodeId,
+      picks: seed.picks,
+      picked_at: seed.pickedAt,
+      version: 1,
+    })
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (insertError) {
+    // Lost the race to create the row (two tabs on the same fresh bush):
+    // whoever won is the truth, read it back.
+    const { data: raced, error: racedError } = await supabase
+      .from("homestead_forage_nodes")
+      .select(FORAGE_NODE_COLUMNS)
+      .eq("profile_id", profileId)
+      .eq("node_id", nodeId)
+      .maybeSingle();
+    if (racedError || !raced) throw new Error(`Could not find that bush: ${insertError.message}`);
+    return forageNodeFromRow(raced as ForageNodeDbRow);
+  }
+  return forageNodeFromRow(inserted as ForageNodeDbRow);
+}
+
+/**
+ * Writes one pick, guarded on the row's own version -- the identical
+ * compare-and-swap `writeStackAcresWoodNodeSwing` uses, and load-bearing for
+ * the same reason: a double-tap (or a retried request) must not pay seed
+ * twice off one bush. The second write's `.eq("version", ...)` matches
+ * nothing and comes back null, and the caller pays nothing.
+ */
+export async function writeStackAcresForagePick(
+  current: StoredForageNode,
+  next: ForageNodeState,
+): Promise<StoredForageNode | null> {
+  const supabase = adminClient();
+  const version = current.version + 1;
+
+  if (!supabase) {
+    const key = `${current.profileId}:${current.nodeId}`;
+    const stored = memoryForageNodes.get(key);
+    if (!stored || stored.version !== current.version) return null;
+    const updated: StoredForageNode = { ...stored, ...next, version };
+    memoryForageNodes.set(key, { ...updated });
+    return { ...updated };
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .update({ picks: next.picks, picked_at: next.pickedAt, version })
+    .eq("profile_id", current.profileId)
+    .eq("node_id", current.nodeId)
+    .eq("version", current.version)
+    .select(FORAGE_NODE_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(`Could not pick that bush: ${error.message}`);
+  return data ? forageNodeFromRow(data as ForageNodeDbRow) : null;
+}
+
+/** Every bush's state for one profile, for the view snapshot. A bush with no
+ *  row has never been picked, which is exactly `freshForageNodeState()`, so
+ *  this read stays write-free (see this repo's "keep game reads write-free"
+ *  rule) and leaves the create to the first actual pick. */
+export async function listStackAcresForageNodeStates(
+  profileId: string,
+): Promise<Partial<Record<ForageNodeId, ForageNodeState>>> {
+  const supabase = adminClient();
+  const result: Partial<Record<ForageNodeId, ForageNodeState>> = {};
+
+  if (!supabase) {
+    for (const [key, node] of memoryForageNodes) {
+      if (!key.startsWith(`${profileId}:`)) continue;
+      result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("homestead_forage_nodes")
+    .select(FORAGE_NODE_COLUMNS)
+    .eq("profile_id", profileId);
+  if (error) throw new Error(`Could not load your bushes: ${error.message}`);
+  for (const row of (data ?? []) as ForageNodeDbRow[]) {
+    // Here a stale id IS dropped, unlike the single-node read above: this
+    // feeds a snapshot keyed by the ids this build knows, and an unknown key
+    // would render nothing anyway.
+    if (!isForageNodeId(String(row.node_id))) continue;
+    const node = forageNodeFromRow(row);
+    result[node.nodeId] = { picks: node.picks, pickedAt: node.pickedAt };
   }
   return result;
 }

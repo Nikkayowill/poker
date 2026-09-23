@@ -27,7 +27,9 @@ interface TopdownHandle {
 }
 
 /** The Old Fields' south gate, and a bare bed square just inside the fence above it. */
-const OLD_FIELDS_GATE = { x: 352, y: 596 };
+// Just inside the Crop Fields, which are the north half of the Homestead now
+// rather than a map of their own. BARE_BED is a field square a few tiles up.
+const CROP_FIELDS_GATE = { x: 352, y: 540 };
 const BARE_BED = { x: 352, y: 520 };
 
 const ADMIN_SECRET = "playwright-admin-secret";
@@ -245,7 +247,13 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
 
     // The wheel only has anything on it once the barn holds seed. Bought over
     // the API rather than through Ray's shop: getting there is setup, not what
-    // this is testing.
+    // this is testing. The Stew Pot comes first because Ray will not sell
+    // Carrot seed until something on the farm uses it
+    // (lib/stackacres/seed-unlocks.ts).
+    const potted = await farmerContext.request.post("/api/stackacres/actions", {
+      data: { action: "place-machine", kind: "stew_pot" },
+    });
+    expect(potted.ok(), "could not build the Stew Pot").toBe(true);
     const bought = await farmerContext.request.post("/api/stackacres/actions", {
       data: { action: "buy-seed", crop: "carrot", quantity: 1 },
     });
@@ -277,7 +285,7 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
   }
 });
 
-test("the hoe breaks ground under the farmer's feet from the Use key", async ({ browser }) => {
+test("the hoe breaks ground in front of the farmer from the Use key", async ({ browser }) => {
   const adminContext = await browser.newContext();
   const farmerContext = await browser.newContext({
     viewport: LANDSCAPE_PHONE,
@@ -290,29 +298,16 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
     expect(unlocked.ok()).toBe(true);
     await admitFarmer(farmerContext, adminContext.request, 400_000);
 
-    // The Crop Fields start as uncleared land behind two gates: a couple of
-    // things already growing, and the unlock fee. Both paid over the API.
-    for (let bird = 0; bird < 2; bird += 1) {
-      const stocked = await farmerContext.request.post("/api/stackacres/actions", {
-        data: { action: "stock", stock: "hen" },
-      });
-      expect(stocked.ok(), "could not stock a hen").toBe(true);
-    }
-    const opened = await farmerContext.request.post("/api/stackacres/actions", {
-      data: { action: "unlock-crop-fields" },
-    });
-    expect(opened.ok(), "could not unlock the Crop Fields").toBe(true);
-    const soil = await farmerContext.request.post("/api/stackacres/actions", {
-      data: { action: "buy-soil", tier: "dirt", quantity: 4 },
-    });
-    expect(soil.ok(), "could not buy soil").toBe(true);
+    // The Crop Fields are open ground now -- nothing is paid to get in, and
+    // laying the first bed out there is itself what clears them. The hoe is
+    // free, so there is nothing to buy first.
 
     const { page, errors } = await openFarm(farmerContext);
 
-    // Stand him on a bare bed square out in the Old Fields.
+    // Stand him on a bare bed square out in the Crop Fields.
     await page.evaluate(
-      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate),
-      OLD_FIELDS_GATE,
+      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
+      CROP_FIELDS_GATE,
     );
     await page.waitForTimeout(300);
     const bedPoint = await page.evaluate(
@@ -328,7 +323,7 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
       { timeout: 15_000 },
     );
 
-    // Pick up the hoe, then press Use. The bed appears under him with no menu
+    // Pick up the hoe, then press Use. The bed appears in front of him with no menu
     // in between and nothing to drag.
     const hoe = page.locator(".sa-belt-slot").nth(1);
     await expect(hoe).toHaveAttribute("aria-label", /hoe/i);

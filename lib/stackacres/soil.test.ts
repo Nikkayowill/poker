@@ -20,7 +20,6 @@ import {
   HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
   SOIL_TILE,
-  SOIL_TILE_PRICE_GOLD,
   buildCropInstances,
   createSoilMap,
   getClosestDryCrop,
@@ -279,10 +278,9 @@ describe("homeStarterSoilTiles -- the free Homestead starter beds", () => {
   });
 
   it("cannot be flood-filled together with a Crop Fields bed", () => {
-    // A purchased bed comfortably inside the Crop Fields, right next to a
-    // starter tile's own coordinate space would be a bug; this holds the two
-    // far enough apart that a relocation group seeded from either one can
-    // never walk into the other.
+    // Every bed shares one grid now, so this is about distance on it: the
+    // starter beds sit by the house and the Crop Fields are the far end of
+    // the map, so a relocation group seeded from one never reaches the other.
     const soil = createSoilMap([
       { tx: 0, ty: 0, order: 0, origin: "purchased" },
       ...homeStarterSoilTiles(),
@@ -365,12 +363,12 @@ describe("plantSoilTile", () => {
     expect(soilCapacity(soil)).toBe(1);
   });
 
-  it("refuses a second bed on an occupied coordinate, tier-blind", () => {
+  it("refuses a second bed on an occupied coordinate", () => {
     const soil = createSoilMap();
-    plantSoilTile(soil, { tx: 0, ty: 0 }, "enriched");
+    plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt");
     expect(plantSoilTile(soil, { tx: 0, ty: 0 }, "dirt")).toEqual({ kind: "occupied" });
     // The refusal never touched the bed standing there.
-    expect(soilTileTier(soilSlotTile(soil, 0)!)).toBe("enriched");
+    expect(soilTileTier(soilSlotTile(soil, 0)!)).toBe("dirt");
     expect(soilCapacity(soil)).toBe(1);
   });
 
@@ -666,17 +664,6 @@ describe("the farmhand's view of the field", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Placing a purchased tile costs Gold, flat                          */
-/* ------------------------------------------------------------------ */
-
-describe("SOIL_TILE_PRICE_GOLD", () => {
-  it("is a flat, positive price with no ladder", () => {
-    expect(SOIL_TILE_PRICE_GOLD).toBeGreaterThan(0);
-    expect(Number.isInteger(SOIL_TILE_PRICE_GOLD)).toBe(true);
-  });
-});
-
-/* ------------------------------------------------------------------ */
 /* soilTilesEqual: the client's skip-a-repaint check                  */
 /* ------------------------------------------------------------------ */
 
@@ -717,7 +704,8 @@ describe("soilTilesEqual", () => {
 
   it("reads a missing tier as the plain bed", () => {
     expect(soilTileTier({ tier: undefined })).toBe("dirt");
-    expect(soilTileTier({ tier: "enriched" })).toBe("enriched");
+    // A tier this build no longer knows degrades to the plain bed.
+    expect(soilTileTier({ tier: "hydro" as never })).toBe("dirt");
   });
 
   it("hands out the lowest free slot, and null once the soil is full", () => {
@@ -752,11 +740,10 @@ describe("soilTilesEqual", () => {
   it("puts a fixed slot on the bed whose order it is", () => {
     const soil = createSoilMap([
       { tx: 0, ty: 0, order: 0, origin: "purchased" },
-      { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "enriched" },
+      { tx: 1, ty: 0, order: 1, origin: "purchased" },
     ]);
     expect(soilSlotTile(soil, 0)).toMatchObject({ tx: 0, ty: 0 });
     expect(soilSlotTile(soil, 1)).toMatchObject({ tx: 1, ty: 0 });
-    expect(soilTileTier(soilSlotTile(soil, 1)!)).toBe("enriched");
 
     // A slot no bed carries is null, not a wrap onto some other bed's
     // square. The wrap that used to be here is what made a removal look
@@ -1037,17 +1024,6 @@ describe("group-planting: plantableTileGroup", () => {
     expect(plantableTileGroup(soil, 0, 0, occupiedAt)).toEqual([]);
   });
 
-  it("stops at a tier boundary -- a mixed-tier block never merges", () => {
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "purchased", tier: "dirt" },
-      { tx: 1, ty: 0, order: 1, origin: "purchased", tier: "dirt" },
-      { tx: 0, ty: 1, order: 2, origin: "purchased", tier: "enriched" },
-      { tx: 1, ty: 1, order: 3, origin: "purchased", tier: "enriched" },
-    ]);
-    // Only the two "dirt" tiles qualify from (0,0) -- a straight run, under
-    // the 4-tile floor.
-    expect(plantableTileGroup(soil, 0, 0, neverOccupied)).toEqual([]);
-  });
 });
 
 describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () => {
@@ -1080,13 +1056,13 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
 
   it("plans and executes a single tile's move, preserving order/origin/tier", () => {
     const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 3, origin: "purchased", tier: "hydro" },
+      { tx: 0, ty: 0, order: 3, origin: "purchased", tier: "dirt" },
     ]);
     const plan = planSoilGroupRelocation(soil, 0, 0, 4, 7, alwaysInBounds);
     expect(plan).toEqual({ kind: "ok", moves: [{ from: { tx: 0, ty: 0 }, to: { tx: 4, ty: 7 } }] });
     expect(plan.kind === "ok" && moveSoilTileGroup(soil, plan.moves)).toBe(true);
     expect(hasSoilTile(soil, 0, 0)).toBe(false);
-    expect(soil.get(soilTileKey(4, 7))).toEqual({ tx: 4, ty: 7, order: 3, origin: "purchased", tier: "hydro" });
+    expect(soil.get(soilTileKey(4, 7))).toEqual({ tx: 4, ty: 7, order: 3, origin: "purchased", tier: "dirt" });
   });
 
   it("slides a whole contiguous group by the same offset", () => {
@@ -1151,5 +1127,19 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
       soilTileInCropFieldBeds,
     );
     expect(outside.kind).toBe("out-of-bounds");
+  });
+});
+
+
+describe("the starter beds on the shared grid", () => {
+  it("are nowhere near the Crop Fields", () => {
+    for (const tile of homeStarterSoilTiles()) expect(soilTileInCropFieldBeds(tile.tx, tile.ty)).toBe(false);
+  });
+
+  it("are one tidy block, three wide", () => {
+    const tiles = homeStarterSoilTiles();
+    expect(tiles).toHaveLength(HOME_STARTER_TILE_COUNT);
+    expect(new Set(tiles.map((t) => t.tx)).size).toBe(3);
+    expect(new Set(tiles.map((t) => soilTileKey(t.tx, t.ty))).size).toBe(HOME_STARTER_TILE_COUNT);
   });
 });

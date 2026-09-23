@@ -64,6 +64,19 @@ export const MACHINE_PROCESSED_ITEMS = [
 ] as const;
 
 export type MachineRawItem = (typeof MACHINE_RAW_ITEMS)[number];
+
+/**
+ * A gathered material a purchase spends alongside its Gold.
+ *
+ * One shape for every buyer, and it lives here because this file owns the
+ * item ids and imports nothing: a machine (./machines.ts) and a pen slot
+ * (./catalogue.ts) cost the same kind of thing, and the service spends both
+ * through one helper so they cannot drift.
+ */
+export interface MaterialCost {
+  readonly item: MachineRawItem;
+  readonly quantity: number;
+}
 export type MachineProcessedItem = (typeof MACHINE_PROCESSED_ITEMS)[number];
 
 /** Every item that can sit in the shared inventory: what a unit yields, plus

@@ -11,6 +11,15 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
+import { HOME_STARTER_ORIGIN, SOIL_TILE, soilTileAt } from "./soil";
+import { CROP_FIELD_BEDS } from "./world";
+import {
+  LAND_OBSTACLES,
+  LAND_OBSTACLE_DEFS,
+  LAND_SWING_ENERGY,
+  freshLandObstacleState,
+  landObstacleSnapshot,
+} from "./land-clearing";
 import {
   createsStackAcresUnit,
   isOptimisticUnitId,
@@ -76,7 +85,8 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     greenhouseBuilt: false,
     cropFieldsUnlocked: false,
     soilTiles: [],
-    soilStock: {},
+    forageNodes: [],
+    landObstacles: [],
     inventory: {},
     wheatPlots: [],
     machines: [],
@@ -556,6 +566,40 @@ describe("predictStackAcresAction: buying and selling stock", () => {
   });
 });
 
+describe("predictStackAcresAction: laying a soil tile", () => {
+  const inFields = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+
+  it("lays the bed, and clears the Crop Fields with it", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+      ctx(),
+    );
+    expect(patch?.soilTiles).toHaveLength(1);
+    // Breaking the first ground out there IS the unlock, so the browser shows
+    // it straight away rather than waiting for the round trip.
+    expect(patch?.cropFieldsUnlocked).toBe(true);
+  });
+
+  it("does not claim the Crop Fields for a bed laid on the Homestead", () => {
+    const patch = predictStackAcresAction(
+      { action: "place-soil-tile", tx: HOME_STARTER_ORIGIN.tx, ty: HOME_STARTER_ORIGIN.ty },
+      ctx(),
+    );
+    expect(patch?.soilTiles).toHaveLength(1);
+    expect(patch?.cropFieldsUnlocked).toBe(false);
+  });
+
+  it("refuses a coordinate that already has a bed", () => {
+    const bed = { tx: inFields.tx, ty: inFields.ty, order: 0, origin: "purchased" as const };
+    expect(
+      predictStackAcresAction(
+        { action: "place-soil-tile", tx: inFields.tx, ty: inFields.ty },
+        ctx({ soilTiles: [bed] }),
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("predictStackAcresAction: removing a soil tile", () => {
   const bedA = { tx: 0, ty: 0, order: 0, origin: "purchased" as const };
   const bedB = { tx: 1, ty: 0, order: 1, origin: "purchased" as const };
@@ -873,5 +917,99 @@ describe("withResolvedUnitIds", () => {
 
   it("leaves an action that names no unit alone", () => {
     expect(withResolvedUnitIds({ action: "draw-water" }, swap)).toEqual({ action: "draw-water" });
+  });
+});
+
+describe("clearing land", () => {
+  const tree = LAND_OBSTACLES.wallow.find((obstacle) => obstacle.kind === "tree")!;
+  const def = LAND_OBSTACLE_DEFS.tree;
+
+  /** Every obstacle on the Fold down except `standing`. */
+  function foldAllButOne(standingId: string) {
+    return LAND_OBSTACLES.wallow.map((obstacle) =>
+      obstacle.id === standingId
+        ? landObstacleSnapshot(obstacle, { hitsRemaining: 1, clearedAt: null })
+        : landObstacleSnapshot(obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() }),
+    );
+  }
+
+  it("spends energy, pays the barn and counts the swing down", () => {
+    const patch = predictStackAcresAction(
+      { action: "work-land", obstacleId: tree.id, sweet: false },
+      ctx({ energy: { level: 50, updatedAt: NOW.toISOString() } }),
+    );
+    expect(patch?.energy?.level).toBe(50 - LAND_SWING_ENERGY);
+    expect(patch?.inventory?.wood).toBe(def.perHit);
+    const guessed = patch?.landObstacles?.find((obstacle) => obstacle.id === tree.id);
+    expect(guessed?.hitsRemaining).toBe(def.hits - 1);
+    expect(guessed?.cleared).toBe(false);
+    // No Gold moves on the way to owning land.
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("pays the sweet-swing bonus the same way the server does", () => {
+    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: true }, ctx());
+    expect(patch?.inventory?.wood).toBe(def.perHit + 1);
+  });
+
+  it("refuses a swing nobody has the energy for", () => {
+    const flat = ctx({ energy: { level: 1, updatedAt: NOW.toISOString() } });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, flat)).toBeNull();
+  });
+
+  it("refuses a swing at something already down", () => {
+    const down = ctx({
+      landObstacles: [landObstacleSnapshot(tree, { hitsRemaining: 0, clearedAt: NOW.toISOString() })],
+    });
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, down)).toBeNull();
+  });
+
+  it("refuses an obstacle that is not on the map", () => {
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: "nowhere-99", sweet: false }, ctx())).toBeNull();
+  });
+
+  it("opens the sector on the swing that takes the last one down, for no Gold", () => {
+    const last = LAND_OBSTACLES.wallow[0];
+    const patch = predictStackAcresAction(
+      { action: "work-land", obstacleId: last.id, sweet: false },
+      ctx({ landObstacles: foldAllButOne(last.id) }),
+    );
+    expect(patch?.sectors).toContain("wallow");
+    expect(patch?.profile).toBeUndefined();
+  });
+
+  it("leaves the sector shut while anything is still standing", () => {
+    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, ctx());
+    expect(patch?.sectors).toBeUndefined();
+  });
+
+  it("debits the demolition price and takes the obstacle straight down", () => {
+    const fresh = freshLandObstacleState(tree.kind);
+    const price = def.hits * def.goldPerHit;
+    const patch = predictStackAcresAction(
+      { action: "demolish-land", obstacleId: tree.id },
+      ctx({ profile: profile({ goldBalance: price }), landObstacles: [landObstacleSnapshot(tree, fresh)] }),
+    );
+    expect(patch?.profile?.goldBalance).toBe(0);
+    expect(patch?.landObstacles?.find((obstacle) => obstacle.id === tree.id)?.cleared).toBe(true);
+    // Blowing it pays nothing into the barn: there is nothing left to pick up.
+    expect(patch?.inventory).toBeUndefined();
+  });
+
+  it("charges only the swings still owed", () => {
+    const half = landObstacleSnapshot(tree, { hitsRemaining: 1, clearedAt: null });
+    const patch = predictStackAcresAction(
+      { action: "demolish-land", obstacleId: tree.id },
+      ctx({ profile: profile({ goldBalance: 10_000 }), landObstacles: [half] }),
+    );
+    expect(patch?.profile?.goldBalance).toBe(10_000 - def.goldPerHit);
+  });
+
+  it("refuses a demolition the purse will not cover", () => {
+    const patch = predictStackAcresAction(
+      { action: "demolish-land", obstacleId: tree.id },
+      ctx({ profile: profile({ goldBalance: 10 }) }),
+    );
+    expect(patch).toBeNull();
   });
 });

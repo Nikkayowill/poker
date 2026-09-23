@@ -11,11 +11,15 @@ import type { TapPoint } from "./world-contract";
  * shape as StackAcresFenceUpgradePopup -- anchored at the tap point, closed
  * by Escape or its own button, not a canvas overlay.
  *
- * ONE COMPONENT, TWO KINDS. Chopping and mining share the exact same
- * sweep-and-press mechanic (lib/stackacres/chop.ts) and the same markup and
- * CSS classes (`.sa-chop-*`, unrenamed on purpose -- see that file's own
- * header) -- only the sweep speed, the sweet zone, and a handful of copy
- * strings differ per `kind`.
+ * ONE COMPONENT, THREE JOBS. Chopping, mining and clearing land share the
+ * exact same sweep-and-press mechanic (lib/stackacres/chop.ts) and the same
+ * markup and CSS classes (`.sa-chop-*`, unrenamed on purpose -- see that
+ * file's own header) -- only the sweep speed, the sweet zone, and a handful
+ * of copy strings differ per `kind`. Clearing land reuses the whole thing on
+ * purpose: a tree standing on the Fold should feel like the trees the player
+ * has been chopping all along, not like a second, unfamiliar mechanic. What
+ * it adds is one extra button, `demolish` -- the Gold way past an obstacle
+ * the player would rather not swing at.
  *
  * THE SWING ITSELF is timed against a marker sweeping the bar on a plain CSS
  * animation (`.sa-chop-marker`), not a rAF loop -- there is nothing here for
@@ -41,6 +45,14 @@ export interface StackAcresChopPopupProps {
   kind: SwingKind;
   node: SwingNodeSnapshot;
   busy: boolean;
+  /** What the card calls what is being swung at, when it is not simply the
+   *  tree or the boulder `kind` already names -- scrub on unclaimed land is
+   *  chopped with the chop meter but is not a tree. */
+  label?: string;
+  /** Land being cleared only: blow this one obstacle instead of swinging at
+   *  it, priced per swing it still owes. Left out everywhere else -- a tree
+   *  you chop for Wood has nothing to buy. */
+  demolish?: { price: number; affordable: boolean; onDemolish: () => void };
   onSwing: (sweet: boolean) => void;
   onClose: () => void;
 }
@@ -70,7 +82,7 @@ function respawnHint(kind: SwingKind, progress: number): string {
   return copy.fresh;
 }
 
-export function StackAcresChopPopup({ at, kind, node, busy, onSwing, onClose }: StackAcresChopPopupProps) {
+export function StackAcresChopPopup({ at, kind, node, busy, label, demolish, onSwing, onClose }: StackAcresChopPopupProps) {
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const { sweepMs, sweetZone } = SWING_PROFILES[kind];
   // Lazy initializer, same "read the clock once, at mount" pattern this
@@ -100,7 +112,7 @@ export function StackAcresChopPopup({ at, kind, node, busy, onSwing, onClose }: 
   return (
     <div className="sa-chop-popup" style={{ left: `${at.x}px`, top: `${at.y}px` }}>
       <span className="sa-chop-popup-pin" aria-hidden="true" />
-      <div className="sa-chop-popup-card" role="dialog" aria-label={COPY[kind].label}>
+      <div className="sa-chop-popup-card" role="dialog" aria-label={label ?? COPY[kind].label}>
         <button type="button" className="sa-chop-popup-close" aria-label="Close" onClick={onClose}>
           ×
         </button>
@@ -127,6 +139,16 @@ export function StackAcresChopPopup({ at, kind, node, busy, onSwing, onClose }: 
                 Not now
               </button>
             </div>
+            {demolish && (
+              <button
+                type="button"
+                className="sa-chop-popup-blow"
+                disabled={busy || !demolish.affordable}
+                onClick={demolish.onDemolish}
+              >
+                Blow it · {demolish.price.toLocaleString()} Gold
+              </button>
+            )}
           </>
         ) : (
           <div className="sa-chop-popup-actions">

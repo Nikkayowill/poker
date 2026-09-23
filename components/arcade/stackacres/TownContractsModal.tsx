@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import clsx from "clsx";
-import { Check, Coins, Compass, Lock, ScrollText, Sparkles } from "lucide-react";
+import { Check, Coins, Lock, ScrollText, Sparkles } from "lucide-react";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import {
   CONTRACT_RUNGS,
@@ -11,8 +11,6 @@ import {
   type ContractDef,
   type StackAcresContractRow,
 } from "@/lib/stackacres/contracts";
-import { isSectorUnlocked, type SectorId } from "@/lib/stackacres/sectors";
-import { zonesByDistance, type ZoneId } from "@/lib/stackacres/zones";
 import {
   inventoryQuantity,
   removeFromInventory,
@@ -159,16 +157,10 @@ export interface TownContractsModalProps {
   onSettle: () => Promise<ContractActionResult>;
   /** Posts `request-contract`. Moves nothing; asks the town to post one. */
   onRequest: () => Promise<ContractActionResult>;
+  /** Posts `pass-contract`: turns this order down and draws another. Moves
+   *  nothing either, and the server allows one a UTC day. */
+  onPass: () => Promise<ContractActionResult>;
   onClose: () => void;
-  /**
-   * The map, folded into the board now that the places list is gone.
-   * Players find places by roaming, and this is the one spot that still
-   * names them all for anyone who wants it. A district not in here is still
-   * listed and still travelled to, with a lock on it.
-   */
-  unlockedSectors: readonly SectorId[];
-  /** Flies the camera to a district's gate and closes this sheet. */
-  onTravel: (zone: ZoneId) => void;
 }
 
 /** A message the sheet is showing about its own last action. The page's error
@@ -250,9 +242,8 @@ export function TownContractsModal({
   busy,
   onSettle,
   onRequest,
+  onPass,
   onClose,
-  unlockedSectors,
-  onTravel,
 }: TownContractsModalProps) {
   /**
    * The optimistic debit, as the individual requirement lines it was applied
@@ -272,16 +263,6 @@ export function TownContractsModal({
 
   const closeAll = useCallback(() => onClose(), [onClose]);
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(closeAll, !settling);
-
-  /** A place was picked off the map below. Travels, then closes the sheet,
-   *  since there is nothing left to do here once the camera is moving. */
-  const travelTo = useCallback(
-    (zone: ZoneId) => {
-      onTravel(zone);
-      closeAll();
-    },
-    [onTravel, closeAll],
-  );
 
   /** The shelf as the player should see it: what the server last said, less
    *  anything currently out on an unanswered request. */
@@ -454,6 +435,24 @@ export function TownContractsModal({
     }
   }, [busy, settling, onRequest]);
 
+  /** Turns the open order down. Same shape as asking for one: nothing moves,
+   *  so there is nothing to guess and nothing to roll back. The day limit is
+   *  the server's to enforce, and its refusal is what says so. */
+  const handlePassContract = useCallback(async (): Promise<void> => {
+    if (busy || settling) return;
+    setNote({ tone: "pending", text: "Sending it back…" });
+    setSettling(true);
+    try {
+      const result = await onPass();
+      if (!result.ok) setNote({ tone: "refused", text: result.message });
+      else setNote(null);
+    } catch {
+      setNote({ tone: "refused", text: "The town did not answer. Try again in a moment." });
+    } finally {
+      setSettling(false);
+    }
+  }, [busy, settling, onPass]);
+
   const working = busy || settling;
 
   return (
@@ -494,32 +493,6 @@ export function TownContractsModal({
             Done
           </button>
         </header>
-
-        {/* The map. Every district, with a lock on the ones not cleared yet.
-            Picking one flies the camera there and closes this sheet. */}
-        <section className="sa-board-map" aria-label="Places">
-          <p className="sa-board-map-kicker">
-            <Compass size={13} aria-hidden="true" /> The map
-          </p>
-          <ul className="sa-board-map-list">
-            {zonesByDistance().map((zone) => {
-              const cleared = isSectorUnlocked(zone.id, unlockedSectors);
-              return (
-                <li key={zone.id}>
-                  <button
-                    type="button"
-                    className={clsx("sa-board-map-item", { "is-wild": !cleared })}
-                    title={cleared ? zone.blurb : `${zone.blurb} Not cleared yet.`}
-                    onClick={contain(() => travelTo(zone.id))}
-                  >
-                    <span>{zone.label}</span>
-                    {!cleared && <Lock size={12} aria-hidden="true" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
 
         <p className="sa-sheet-note">
           The town posts one order at a time. Fill it and it pays in Gold and in standing —
@@ -688,9 +661,25 @@ export function TownContractsModal({
           </button>
         )}
 
+        {/* The release valve on a one-slot board. Always offered while an
+            order is open: whether today's pass is still going is the
+            server's answer, and asking for it is how you find out -- the
+            same posture every Gold-priced button here takes. */}
+        {contract !== null && (
+          <button
+            type="button"
+            className="sa-cta is-ghost sa-contracts-pass"
+            disabled={working}
+            onClick={contain(() => void handlePassContract())}
+          >
+            Pass on this one
+          </button>
+        )}
+
         <p className="sa-sheet-note">
           A delivery pays in Gold and earns Town Influence, which lowers Ray&apos;s prices on tools,
-          cutters and feed. One order is open at a time, and it keeps until you fill it.
+          cutters and feed. One order is open at a time, and it keeps until you fill it. You can
+          pass on one order a day.
         </p>
       </section>
     </div>

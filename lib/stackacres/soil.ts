@@ -272,8 +272,7 @@ export type PlantSoilTileResult =
   | { kind: "occupied" };
 
 /**
- * Buys one bed: a one-tile plot at `coord`, tier-priced
- * (`SOIL_TILE_PRICE_GOLD`-scaled per tier), refused outright if a bed
+ * Breaks one bed: a free one-tile plot at `coord`, refused outright if a bed
  * already stands there.
  *
  * USED TO grow an existing bed by one more of its dozen planting squares
@@ -615,16 +614,17 @@ export const HOME_STARTER_TILE_COUNT = 6;
 export const HOME_STARTER_COLS = 3;
 
 /**
- * Where the starter lattice sits, chosen to be far outside `CROP_FIELD_BEDS`
- * (roughly tx/ty -16..16 -- see world.ts's own header on that rect) so a
- * starter bed can never occupy the same cell as a purchased one, and, since
- * `soilTileGroup` walks 4-neighbours with no area filter of its own, can
- * never be flood-filled into the same relocation group as one either.
- * soil.test.ts holds both of those apart. Exported for the identical reason
- * `HOME_STARTER_COLS` is: lib/stackacres-td/field.ts needs the real corner,
- * not a restated one, to pin the Homestead's own map pixels to it.
+ * Where the six starter beds sit: the top-left of the grass west of the north
+ * lane, in front of the house (Homestead map tile 4, 53).
+ *
+ * On the ONE soil grid every bed shares (lib/stackacres/hoeable.ts), not on a
+ * far-off lattice of their own as they used to be. That old lattice existed to
+ * keep a starter bed from ever sharing a square with a dug one, back when the
+ * hoe only worked in two paddocks. The hoe works on any grass now, so that
+ * separation is kept the direct way instead: `isHomeStarterSoilTile` is a
+ * square the server refuses to dig (see `placeStackAcresSoilTile`).
  */
-export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: 100, ty: 100 };
+export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: -18, ty: 35 };
 
 /**
  * The starter beds themselves, fixed and hand-numbered rather than derived
@@ -661,24 +661,6 @@ export function isHomeStarterSoilTile(tx: number, ty: number): boolean {
   return tx >= HOME_STARTER_ORIGIN.tx && tx < HOME_STARTER_ORIGIN.tx + HOME_STARTER_COLS &&
     ty >= HOME_STARTER_ORIGIN.ty && ty < HOME_STARTER_ORIGIN.ty + Math.ceil(HOME_STARTER_TILE_COUNT / HOME_STARTER_COLS);
 }
-
-/**
- * Gold cost of one PLAIN purchased bed -- `SOIL_DEFAULT_TIER`'s own price,
- * restated here because this constant predates tiers. soil-tiers.test.ts
- * holds the two equal, so repricing the plain bed in one place cannot drift
- * from the other.
- *
- * Flat per bed -- no ladder, no scaling with how many a player already owns.
- * A bed still does not gate how many crops can be grown (see the file
- * header), so there is no economy reason for a rising price the way land or
- * capacity have one. What a bed is no longer is purely cosmetic: since
- * ./soil-tiers.ts, the TIER a bed is bought at can shorten a crop's cycle and
- * water its own tile. Those effects belong to the tier, not to this price,
- * and both are applied outside this module -- growth is baked into `ready_at`
- * at sow, hydration is resolved by the irrigation recompute. Nothing in THIS
- * file reads a tier for anything but passing it along.
- */
-export const SOIL_TILE_PRICE_GOLD = 167;
 
 /* ------------------------------------------------------------------ */
 /* The slot lattice -- one plant per bed                               */

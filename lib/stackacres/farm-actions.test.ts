@@ -36,13 +36,10 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
   it("has a cue for every action that spends Gold or shelf stock with no toast of its own", () => {
     expect(purchaseCueText({ action: "expand-capacity", stock: "hen" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-feed", itemId: "grain", quantity: 1 })).toBeTruthy();
-    expect(purchaseCueText({ action: "buy-soil", tier: "enriched", quantity: 1 })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-seed", crop: "corn", quantity: 1 })).toBeTruthy();
     expect(purchaseCueText({ action: "upgrade-tool" })).toBeTruthy();
     expect(purchaseCueText({ action: "buy-cutter", cutter: "mower" })).toBeTruthy();
     expect(purchaseCueText({ action: "unlock-synergy-perk", archetype: "sunlight_harvester" })).toBeTruthy();
-    expect(purchaseCueText({ action: "clear-sector", sector: "mine" })).toBeTruthy();
-    expect(purchaseCueText({ action: "unlock-crop-fields" })).toBeTruthy();
     expect(purchaseCueText({ action: "build-greenhouse" })).toBeTruthy();
     expect(purchaseCueText({ action: "forge-enchantment", itemId: "gilded-tine" })).toBeTruthy();
     expect(purchaseCueText({ action: "deploy-drone" })).toBeTruthy();

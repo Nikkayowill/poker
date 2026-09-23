@@ -22,7 +22,6 @@
  */
 
 import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
-import { SOIL_DEFAULT_TIER, type SoilTier } from "./soil-tiers";
 import { tapActionFor } from "./tap-action";
 import type { StackAcresUnitSnapshot } from "./units";
 import type { StackAcresInventory } from "./inventory";
@@ -50,7 +49,7 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
   },
   hoe: {
     label: "Hoe",
-    hint: "Break new ground. Lays one bed from the soil in your barn.",
+    hint: "Break new ground. Tap bare grass to dig a bed.",
     icon: "ico-hoe",
   },
   can: {
@@ -69,8 +68,9 @@ export const BELT_TOOL_DEFS: Readonly<Record<BeltTool, BeltToolDef>> = {
 
 /**
  * The square a tool is about to be used on: whatever the farmer walked to, or
- * the one he is facing when the Use key is pressed. `tile` is null off the
- * Crop Fields, where there is no bed to lay or sow.
+ * the one he is facing when the Use key is pressed. `tile` is null anywhere a
+ * bed cannot go -- off the Homestead's grass paddocks and the Crop Fields --
+ * where there is no bed to lay or sow.
  */
 export interface BeltTarget {
   unit: StackAcresUnitSnapshot | null;
@@ -89,9 +89,6 @@ export interface BeltContext {
   shelfFeed?: StackAcresInventory;
   gold: number;
   nowMs: number;
-  /** Beds on the shelf, per tier, and which tier the hoe lays. */
-  soilStock: Partial<Record<SoilTier, number>>;
-  tier: SoilTier;
   /** The crop on the seed wheel, and how many of it are held. Livestock is bought
    *  from a shop, never sown, so the pouch only ever holds a crop. */
   seed: StackAcresCrop | null;
@@ -111,7 +108,7 @@ export type BeltAction =
   | { kind: "feed"; unitId: string }
   | { kind: "water"; unitId: string }
   | { kind: "clear"; unitId: string }
-  | { kind: "till"; tx: number; ty: number; tier: SoilTier }
+  | { kind: "till"; tx: number; ty: number }
   /** The hoe on a bare bed, first press: ask before lifting it. */
   | { kind: "arm-lift"; tx: number; ty: number; reason: string }
   | { kind: "lift"; tx: number; ty: number }
@@ -184,15 +181,14 @@ function canAction(target: BeltTarget, ctx: BeltContext): BeltAction {
  * never throw one away.
  */
 function hoeAction(target: BeltTarget, ctx: BeltContext): BeltAction {
-  if (!target.tile) return blocked("Beds only go in the Crop Fields.");
+  if (!target.tile) return blocked("Beds go on the grass by the house, or in the Crop Fields.");
   const { tx, ty } = target.tile;
   if (target.bedded) {
     if (target.unit) return blocked("Something is growing here. Pick it first.");
     if (target.armed) return { kind: "lift", tx, ty };
     return { kind: "arm-lift", tx, ty, reason: "Press again to lift this bed." };
   }
-  if ((ctx.soilStock[ctx.tier] ?? 0) < 1) return blocked("No soil left in the barn. Buy some from Ray.");
-  return { kind: "till", tx, ty, tier: ctx.tier };
+  return { kind: "till", tx, ty };
 }
 
 function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
@@ -203,6 +199,3 @@ function seedAction(target: BeltTarget, ctx: BeltContext): BeltAction {
   if (ctx.seedsHeld < 1) return blocked(`No ${STACKACRES_CATALOGUE[ctx.seed].label} seeds left.`);
   return { kind: "plant", tx: target.tile.tx, ty: target.tile.ty, stock: ctx.seed };
 }
-
-/** The tier the hoe lays when nothing else has been picked. */
-export const BELT_DEFAULT_TIER = SOIL_DEFAULT_TIER;

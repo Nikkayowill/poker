@@ -18,8 +18,7 @@
  * sides for a reason that has nothing to do with the screen's actual width.
  *
  * WHAT THIS DOES. Measures the gap between the physical screen height and
- * the reported viewport height, the same comparison viewport-fit.tsx makes
- * for the opposite (installed-app) case, and hands it to CSS as
+ * the reported viewport height and hands it to CSS as
  * `--browser-chrome-px`. `06-table.css` and `12-responsive.css` add it back
  * into the `100dvh` term ONLY where that term is used to size a WIDTH
  * (`--table-height-cap`, the landscape shell's width formula) and never
@@ -28,15 +27,8 @@
  * the table reclaims the width the toolbar cost it, without pretending the
  * toolbar isn't there for anything that needs the room it actually occupies.
  *
- * WHY THIS IS THE MIRROR OF viewport-fit.tsx, NOT A DUPLICATE OF IT. That
- * file measures the opposite case (an installed PWA reporting a viewport
- * shorter than the screen it fills, with no chrome to blame) and deliberately
- * returns 0 for every browser tab -- reaching into a browser's real toolbar
- * would draw the app's own chrome underneath it. This one measures only
- * browser tabs and returns 0 for every installed PWA, for the same reason
- * pointed the other way: a standalone app already gets the full-width box
- * this hook exists to recover, so there is nothing here to compensate for.
- * The two hooks can never both be non-zero on the same launch.
+ * It returns 0 on every installed PWA: a standalone app already gets the
+ * full-width box, so there is nothing to compensate for.
  */
 
 import { useEffect } from "react";
@@ -80,9 +72,9 @@ function measure(): number {
 
 export function BrowserChromeWidth() {
   useEffect(() => {
-    // Same coalescing rationale as viewport-fit.tsx: skip the write (and the
-    // full-document restyle it triggers) unless the measurement actually
-    // moved, and read once per frame rather than once per event.
+    // Skip the write (and the full-document restyle it triggers) unless the
+    // measurement actually moved, and read once per frame rather than once
+    // per event.
     let written: number | null = null;
     let frame = 0;
 

@@ -61,6 +61,24 @@ export function CreditsPage() {
               NPC is Throneless&rsquo;s <em>Ranger</em>, from Kayo&rsquo;s own
               2021 Ludum Dare 48 entry.
             </li>
+            <li>
+              <strong>The people of StackAcres</strong> — the farmer, Ray and
+              the travelers are built from the{" "}
+              <a href="https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator">
+                Universal LPC Spritesheet Character Generator
+              </a>
+              , art from the Liberated Pixel Cup collection on OpenGameArt.
+              Drawn by Benjamin K. Smith (BenCreating), bluecarrot16, Durrani,
+              Eliza Wyatt (ElizaWy), Evert, Inboxninja, JaidynReiman, Joe
+              White, Johannes Sjölund (wulax), Manuel Riecke (MrBeast), Marcel
+              van de Steeg (MadMarcel), Matthew Krohn (makrohn), Michael
+              Whitlock (bigbeargames), MuffinElZangano, Napsio (Vitruvian
+              Studio), Nila122, Pierre Vigier (pvigier), Stephen Challener
+              (Redshrike), TheraHedwig and Tuomo Untinen (reemax), under CC0,
+              OGA-BY 3.0, CC-BY 3.0 and CC-BY 4.0. The full list, layer by
+              layer, is in{" "}
+              <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
+            </li>
           </ul>
         </section>
 

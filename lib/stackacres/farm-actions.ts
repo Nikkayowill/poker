@@ -13,7 +13,6 @@
 
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
-import type { SectorId } from "./sectors";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
 import type { SynergyArchetype } from "./synergy-perks";
 import type { NpcId } from "./friendship";
@@ -22,15 +21,12 @@ import type { MachineItemId } from "./machine-items";
 import type { MachineKind } from "./machines";
 import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
-import type { SoilTier } from "./soil-tiers";
 import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
 import type { TravelerId } from "./story/travelers";
 
 export type Action =
   | { action: "expand-capacity"; stock: StackAcresStock }
-  | { action: "clear-sector"; sector: SectorId }
-  | { action: "unlock-crop-fields" }
   | { action: "build-greenhouse" }
   // `tx`/`ty` name the bed `onRadialSeed` tapped, when the tap named a real
   // bed -- see `predictStackAcresAction`'s "stock" case in
@@ -77,11 +73,20 @@ export type Action =
   // minigame's own timing verdict (lib/stackacres/chop.ts) -- it changes how
   // much Wood the swing pays, never whether it lands.
   | { action: "chop-tree"; nodeId: string; sweet: boolean }
+  // Clearing land: one swing at what is standing on it, or Gold to blow it.
+  // Land is never bought; the sector opens when the last one comes down.
+  | { action: "work-land"; obstacleId: string; sweet: boolean }
+  | { action: "demolish-land"; obstacleId: string }
   // One swing at one of the Mine's boulders (lib/stackacres/stone-nodes.ts):
   // fills the shelf with Stone, same posture as `chop-tree`. `quality` is
   // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
   // -- it changes how much Stone the swing pays, never whether it lands.
   | { action: "mine-stone"; nodeId: string; quality: "hit" | "sweet" }
+  // One pick at one of the Homestead's forage bushes (lib/stackacres/forage.ts):
+  // fills the SEED shelf, not the inventory, and moves no Gold. No timing
+  // verdict and no crop: the bush's own pick count decides which seed comes
+  // off it, so there is nothing here for a client to name.
+  | { action: "gather-forage"; nodeId: string }
   | { action: "clear"; unitId: string }
   | { action: "buy-feed"; itemId: string; quantity: number }
   // Sells any inventory item -- raw harvest or crafted good -- for Gold, at
@@ -109,6 +114,7 @@ export type Action =
   // below is the one that pays, and it reserves against the same flat daily
   // ceiling a harvest does. See lib/server/stackacres-service.ts's header.
   | { action: "request-contract" }
+  | { action: "pass-contract" }
   | { action: "fulfill-contract" }
   | { action: "tap-secret-zone"; zoneId: HiddenZoneId }
   | { action: "donate-secret-item"; itemId: SecretItemId }
@@ -119,12 +125,9 @@ export type Action =
   | { action: "unlock-synergy-perk"; archetype: SynergyArchetype }
   | { action: "activate-synergy-perk"; archetype: SynergyArchetype; slot: number }
   // Placeable soil beds (./soil.ts). `tx`/`ty` are SOIL_TILE lattice
-  // coordinates, not world units -- see soilTileAt. Gold moves at the shop
-  // (`buy-soil`, priced from SOIL_TIER_DEFS server-side) and nowhere else:
-  // `place-soil-tile` spends a BAG of the named tier, and `remove-soil-tile`
-  // spends nothing and refunds nothing.
-  | { action: "place-soil-tile"; tx: number; ty: number; tier?: SoilTier }
-  | { action: "buy-soil"; tier: SoilTier; quantity: number }
+  // coordinates, not world units -- see soilTileAt. Breaking ground is free:
+  // neither action spends or refunds anything.
+  | { action: "place-soil-tile"; tx: number; ty: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
@@ -201,8 +204,7 @@ export function intentOf(body: Action): string {
   // A seed purchase for one crop must never dedupe against or block a
   // purchase of a different crop -- checked before the generic fallback,
   // which would otherwise collapse every crop's buy onto one shared
-  // "buy-seed" intent the way soil's own tier-blind intent already does
-  // (a gap that is fine at 3 soil tiers and would not be at 22 crops).
+  // "buy-seed" intent.
   if ("crop" in body) return `${body.action}:${body.crop}`;
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
@@ -239,6 +241,10 @@ export function intentOf(body: Action): string {
   if ("kind" in body) return `${body.action}:${body.kind}`;
   // Chopping one tree must never dedupe against or block chopping another.
   if ("nodeId" in body) return `${body.action}:${body.nodeId}`;
+  // Same for one tree standing on land being cleared and the boulder beside
+  // it: clearing a field is a long run of presses across many obstacles, and
+  // collapsing them onto one intent would drop every second swing.
+  if ("obstacleId" in body) return `${body.action}:${body.obstacleId}`;
   return body.action;
 }
 
@@ -277,8 +283,6 @@ export function purchaseCueText(body: Action): string | null {
       return "Capacity expanded!";
     case "buy-feed":
       return "Feed delivered!";
-    case "buy-soil":
-      return "Soil delivered!";
     case "buy-seed":
       return "Seeds delivered!";
     case "upgrade-tool":
@@ -287,10 +291,8 @@ export function purchaseCueText(body: Action): string | null {
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
-    case "clear-sector":
-      return "Clearing the land…";
-    case "unlock-crop-fields":
-      return "Crop Fields unlocked!";
+    case "demolish-land":
+      return "Blasting it out…";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

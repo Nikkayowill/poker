@@ -20,6 +20,7 @@ interface TopdownHandle {
     placeFarmer: (area: string, at: { x: number; y: number }) => void;
     isWalking: () => boolean;
     farmerAction: (action: "water" | "harvest" | "plant") => void;
+    currentPlace: () => string;
     pos: { x: number; y: number };
     areaName: string;
     player: { x: number; y: number; anims: { currentAnim: { key: string } | null } };
@@ -87,11 +88,25 @@ async function openFarm(browser: Browser): Promise<{ page: Page; errors: string[
   return { page, errors, close };
 }
 
+/** How many times a series turns back on itself, ignoring sub-pixel noise. */
+function reversals(values: number[]): number {
+  let heading = 0;
+  let turns = 0;
+  for (let i = 1; i < values.length; i += 1) {
+    const step = values[i] - values[i - 1];
+    if (Math.abs(step) < 0.01) continue;
+    const way = Math.sign(step);
+    if (heading !== 0 && way !== heading) turns += 1;
+    heading = way;
+  }
+  return turns;
+}
+
 test("a tap walks the farmer without shaking, and his actions play", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);
   try {
     // Open grass in the middle of the Homestead, then a real tap down and to the right of him.
-    const start = { x: 236, y: 196 };
+    const start = { x: 236, y: 804 };
     await page.evaluate((at) => {
       (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at);
     }, start);
@@ -104,25 +119,31 @@ test("a tap walks the farmer without shaking, and his actions play", async ({ br
     // Where he's drawn relative to the camera, every rendered frame of the walk.
     await page.evaluate(() => {
       const { scene, game } = (window as unknown as Handle).__stackacres;
-      const offsets = new Set<string>();
-      (window as unknown as { __offsets: Set<string> }).__offsets = offsets;
+      const offsets: { x: number; y: number }[] = [];
+      (window as unknown as { __offsets: { x: number; y: number }[] }).__offsets = offsets;
       const sample = () => {
         if (!scene.isWalking()) return;
         const cam = scene.cameras.main;
-        offsets.add(`${(scene.player.x - cam.scrollX).toFixed(3)},${(scene.player.y - cam.scrollY).toFixed(3)}`);
+        offsets.push({ x: scene.player.x - cam.scrollX, y: scene.player.y - cam.scrollY });
       };
       game.events.on("postrender", sample);
     });
     await page.touchscreen.tap(target.x, target.y);
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __offsets: Set<string> }).__offsets.size)).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __offsets: { x: number }[] }).__offsets.length)).toBeGreaterThan(0);
     await page.waitForFunction(() => !(window as unknown as Handle).__stackacres.scene.isWalking());
 
     const walk = await page.evaluate(() => ({
-      offsets: [...(window as unknown as { __offsets: Set<string> }).__offsets],
+      offsets: [...(window as unknown as { __offsets: { x: number; y: number }[] }).__offsets],
       at: (window as unknown as Handle).__stackacres.scene.pos,
     }));
     expect(walk.at.x).toBeGreaterThan(start.x + 40);
-    expect(walk.offsets).toHaveLength(1);
+    // He either holds still on screen while the ground moves under him, or he
+    // crosses a view that already shows the whole farm and so has nothing left
+    // to scroll -- the Homestead fits across a landscape phone at the 20x13
+    // minimum view. Both are steady. The shake was a reversal: he slid back
+    // against the screen every few frames, so that is what this counts.
+    expect(reversals(walk.offsets.map((offset) => offset.x))).toBe(0);
+    expect(reversals(walk.offsets.map((offset) => offset.y))).toBe(0);
 
     for (const [action, anim] of [
       ["water", "water"],
@@ -144,7 +165,7 @@ test("a tap walks the farmer without shaking, and his actions play", async ({ br
   }
 });
 
-test("the thumb stick walks him, stops him at the log, and takes him through an exit", async ({ browser }) => {
+test("the thumb stick walks him, stops him when let go, and carries him between areas", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);
   try {
     const stick = page.locator(".sa-joystick");
@@ -165,9 +186,13 @@ test("the thumb stick walks him, stops him at the log, and takes him through an 
         const s = (window as unknown as Handle).__stackacres.scene;
         return { pos: { ...s.pos }, area: s.areaName, walking: s.isWalking(), anim: s.player.anims.currentAnim?.key ?? null };
       });
+    // Which part of the one map he is standing on. The Crop Fields stopped being
+    // a scene of their own, so "am I in the fields" is this rather than `area`.
+    const place = () =>
+      page.evaluate(() => (window as unknown as Handle).__stackacres.scene.currentPlace());
 
     // Open grass in the middle of the Homestead; push right.
-    const start = { x: 236, y: 196 };
+    const start = { x: 236, y: 804 };
     await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), start);
     await page.waitForTimeout(300);
     await push(50, 0);
@@ -188,22 +213,24 @@ test("the thumb stick walks him, stops him at the log, and takes him through an 
     await page.waitForTimeout(300);
     expect((await scene()).pos).toEqual(stopped.pos);
 
-    // Up the north lane: the fallen log stands until the Crop Fields are bought, and his feet stop at it.
+    // Up the north lane and straight out to the Crop Fields. A fallen log used
+    // to bar this until the land was bought for 15,000 Gold, and the fields
+    // were a scene of their own behind it. They are the north half of this
+    // same map now, so walking up the lane never loads anything: the farmer
+    // simply ends up standing on the field.
     await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), start);
     await page.waitForTimeout(200);
     await push(0, -50);
-    await page.waitForTimeout(3_000);
-    const blocked = await scene();
+    await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("cropfields");
+    expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");
-    expect(blocked.area).toBe("homestead");
-    expect(blocked.pos.y).toBeGreaterThan(48);
-    expect(blocked.pos.y).toBeLessThan(56);
 
-    // The Old Fields' south exit leads home, open to anyone standing in the fields.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("oldfields", { x: 352, y: 596 }));
+    // And back down the same lane to the yard, still without a load.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 232, y: 592 }));
     await page.waitForTimeout(200);
     await push(0, 50);
-    await expect.poll(async () => (await scene()).area, { timeout: 3_000 }).toBe("homestead");
+    await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("farmstead");
+    expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");
 
     expect(errors).toEqual([]);
@@ -226,7 +253,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     };
 
     // Tapping the barn walks him through its doors, and Ray's counter inside opens the store.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 360, y: 180 }));
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 360, y: 788 }));
     await page.waitForTimeout(300);
     // Watch the outgoing view's opacity frame by frame: going through a door dissolves, it doesn't cut.
     await page.evaluate(() => {
@@ -292,7 +319,7 @@ test("the house is walked into as a room that floats whole on screen, and its ki
     };
 
     // Tapping the house walks him in through its red door.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 120, y: 172 }));
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 120, y: 780 }));
     await page.waitForTimeout(1500); // the camera takes a moment to settle on him
     await tapMap(120, 132); // the house's lower wall by its door: its upper wall is above the top of the screen
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("farmhouse");
@@ -317,6 +344,60 @@ test("the house is walked into as a room that floats whole on screen, and its ki
     await tapMap(160, 172);
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("homestead");
     expect((await scene()).pos.y).toBeGreaterThan(160);
+
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test("a door wears a badge while something inside it is finished", async ({ browser }) => {
+  const { page, errors, close } = await openFarm(browser);
+  try {
+    const badges = () =>
+      page.evaluate(() => {
+        const w = window as unknown as {
+          __stackacres: {
+            scene: {
+              setBuildingCues: (doors: Record<string, true>) => void;
+              children: { list: { frame?: { name: string }; x: number; y: number }[] };
+            };
+          };
+        };
+        return w.__stackacres.scene.children.list
+          .filter((child) => child.frame?.name === "cue_ready")
+          .map((child) => ({ x: Math.round(child.x), y: Math.round(child.y) }));
+      });
+
+    // Standing in front of the Workshop, so the badge is in frame.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 488, y: 808 }));
+    await page.waitForTimeout(300);
+    // Nothing is finished on a farm this new, so nothing is hanging anywhere.
+    expect(await badges()).toEqual([]);
+
+    await page.evaluate(() =>
+      (window as unknown as { __stackacres: { scene: { setBuildingCues: (d: Record<string, true>) => void } } }).__stackacres.scene.setBuildingCues(
+        { workshop: true },
+      ),
+    );
+    // High on the Workshop's front, over its door: the prop is 82 wide and its
+    // bottom sits at y 147 (public/stackacres-td/areas/homestead/area.json).
+    // Above the roof would be off the top of the screen while he stands in
+    // front of it, because the camera stops at the edge of the map.
+    const hung = await badges();
+    await page.screenshot({ path: test.info().outputPath("workshop-badge.png") });
+    expect(hung).toHaveLength(1);
+    expect(hung[0].x).toBeGreaterThan(470);
+    expect(hung[0].x).toBeLessThan(510);
+    expect(hung[0].y).toBeGreaterThan(90);
+    expect(hung[0].y).toBeLessThan(125);
+
+    await page.evaluate(() =>
+      (window as unknown as { __stackacres: { scene: { setBuildingCues: (d: Record<string, true>) => void } } }).__stackacres.scene.setBuildingCues(
+        {},
+      ),
+    );
+    expect(await badges()).toEqual([]);
 
     expect(errors).toEqual([]);
   } finally {

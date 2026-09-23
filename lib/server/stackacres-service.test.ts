@@ -7,7 +7,8 @@ import {
   activateStackAcresSynergyPerk,
   buyStackAcresFeed,
   buyStackAcresStock,
-  clearStackAcresSector,
+  workStackAcresLand,
+  demolishStackAcresLand,
   clearStackAcresUnit,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
@@ -34,6 +35,7 @@ import {
   placeStackAcresMachine,
   workStackAcres,
   requestStackAcresContract,
+  passStackAcresContract,
   fulfillStackAcresTownContract,
   sellStackAcresItem,
   processRecipe,
@@ -42,6 +44,7 @@ import {
   prayAtStackAcresShrine,
   giveStackAcresGift,
   buyStackAcresSeed,
+  gatherStackAcresForage,
   catchStackAcresFish,
   eatStackAcresFoodAction,
   processStackAcresRecipeAction,
@@ -55,6 +58,7 @@ import {
 } from "./stackacres-service";
 import { resetStoneNodeStoreForTests } from "./stone-node-store";
 import { HITS_TO_BREAK, REGROW_MS } from "@/lib/stackacres/stone-nodes";
+import { FORAGE_REGROW_MS, FORAGE_SEEDS_PER_PICK, nextForageCrop } from "@/lib/stackacres/forage";
 import type { StackAcresShopProgress } from "@/lib/stackacres/shop-locks";
 import { INFLUENCE_TIERS, applyInfluenceDiscount } from "@/lib/stackacres/influence-tiers";
 import { __resetStackAcresIntentsForTest } from "./stackacres-intent-store";
@@ -96,6 +100,13 @@ import {
   writeStackAcresSiloFeeds,
 } from "./stackacres-store";
 import { ENERGY_MAX, FISHING_CAST_ENERGY, TOO_TIRED_TO_FISH, energyAt } from "@/lib/stackacres/energy";
+import {
+  LAND_OBSTACLES,
+  LAND_OBSTACLE_DEFS,
+  LAND_SWING_ENERGY,
+  demolitionPrice,
+  freshLandObstacleState,
+} from "@/lib/stackacres/land-clearing";
 import { isFishSpecies } from "@/lib/stackacres/fishing";
 import {
   STACKACRES_PRESTIGE_BASE_MULTIPLIER,
@@ -116,7 +127,9 @@ import {
   STACKACRES_FEED,
   STACKACRES_MAX_EXTRA_CAP,
   STACKACRES_SEED_BAGS_PER_PURCHASE,
+  stackacresCapacityMaterials,
   stackacresCapacityPrice,
+  type StackAcresCrop,
   type StackAcresStock,
 } from "@/lib/stackacres/catalogue";
 import { hungryAtFor } from "@/lib/stackacres/units";
@@ -1019,15 +1032,17 @@ describe("group-planting a >=2x2 block", () => {
     expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(0);
   });
 
-  it("still refuses ground outside the starter beds while the Crop Fields are locked", async () => {
+  it("refuses bare ground with no bed on it, and spends no seed doing so", async () => {
+    // Nothing about the Crop Fields gates this any more -- they are cleared by
+    // being worked, not bought. What is still refused is sowing onto ground
+    // nobody has broken: a tile with no bed has no slot to hold a crop.
     const { token, id } = await funded(2_000, { land: [], cropFieldsUnlocked: false, beds: false });
     await adjustStackAcresSeedStock(id, "wheat", -1000);
     await adjustStackAcresSeedStock(id, "wheat", 3);
 
     await expect(
       stockStackAcresGroup(token, { stock: "wheat", tiles: block2x2 }, T0),
-    ).rejects.toThrow(/still under wild growth/);
-    // No seed spent on ground that was never sowable.
+    ).rejects.toThrow(StackAcresRequestError);
     expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(3);
   });
 
@@ -1862,6 +1877,46 @@ describe("expanding capacity", () => {
     );
     expect(await balance(token)).toBe(before);
   });
+
+  // A pen slot is the one repeatable material cost in the game: it is what
+  // keeps the four trees worth chopping after the Mill and the Loom are up.
+  it("spends the slot's timber as well as its Gold", async () => {
+    const { token, id } = await funded();
+    const timber = stackacresCapacityMaterials("hen")[0];
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+    const goldBefore = await balance(token);
+
+    await expandStackAcresCapacity(token, "hen", T0);
+
+    expect((await readStackAcresInventory(id)).wood).toBe(woodBefore - timber.quantity);
+    expect(await balance(token)).toBe(goldBefore - stackacresCapacityPrice("hen"));
+  });
+
+  it("refuses a slot with no timber for it, and takes no Gold", async () => {
+    const { token, id } = await funded();
+    await adjustStackAcresInventory(id, "wood", -((await readStackAcresInventory(id)).wood ?? 0));
+    const before = await balance(token);
+
+    await expect(expandStackAcresCapacity(token, "hen", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect(await balance(token)).toBe(before);
+    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(0);
+  });
+
+  // Rule 1's other half: a stake that leaves for something that then fails
+  // has to come back. The purse is one Gold short, so the timber is already
+  // gone by the time the Gold spend refuses.
+  it("puts the timber back when the Gold spend comes up short", async () => {
+    const price = stackacresCapacityPrice("cattle");
+    const { token, id } = await funded(price - 1);
+    const woodBefore = (await readStackAcresInventory(id)).wood ?? 0;
+
+    await expect(expandStackAcresCapacity(token, "cattle", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+    expect((await readStackAcresInventory(id)).wood ?? 0).toBe(woodBefore);
+  });
 });
 
 describe("grass cutters", () => {
@@ -2207,17 +2262,18 @@ describe("the currency wall", () => {
       "buy-cutter",
       "buy-feed",
       "buy-seed",
-      "buy-soil",
       "buy-stock",
       "catch-fish",
       "chop-tree",
       "clear",
-      "clear-sector",
       "collect",
       "collect-cellar",
       "collect-vat",
       "consume-secret-item",
       "contribute-blueprint",
+      // The one place Gold leaves on the way to owning land: blowing what is
+      // standing on it instead of swinging at it. Land itself is never sold.
+      "demolish-land",
       "donate-secret-item",
       "draw-water",
       "eat",
@@ -2226,10 +2282,15 @@ describe("the currency wall", () => {
       "feed-pen",
       "forge-enchantment",
       "fulfill-contract",
+      // Moves no Gold in either direction: a pick fills the seed shelf.
+      "gather-forage",
       "give-gift",
       "harvest-crossbreed",
       "mine-stone",
       "move-soil-tile-group",
+      // Moves no Gold either way: turning an order down and drawing another
+      // is the release valve on a one-slot board, capped at one a UTC day.
+      "pass-contract",
       "place-machine",
       "place-soil-tile",
       "plant-crossbreed",
@@ -2249,11 +2310,12 @@ describe("the currency wall", () => {
       "story-turn-in",
       "tap-secret-zone",
       "trade-secret-item",
-      "unlock-crop-fields",
-      "unlock-synergy-perk",
+        "unlock-synergy-perk",
       "upgrade-tool",
       "water",
       "work",
+      // Moves no Gold: a swing at what stands on wild land pays the barn.
+      "work-land",
     ]);
 
     // The claim that actually matters, held separately from the list so it
@@ -2283,9 +2345,7 @@ describe("the currency wall", () => {
     // inventory, and only `sell` turns that into Gold. The
     // four hidden-secrets actions are included too, which move an item count
     // or reshape a probability/target an existing payer already reserves
-    // against -- never a Gold credit of their own. `unlock-crop-fields` is a
-    // pure sink too, same category as `clear-sector` (see
-    // lib/stackacres/crop-fields.ts). `unlock-synergy-perk` is a
+    // against -- never a Gold credit of their own. `unlock-synergy-perk` is a
     // pure sink, same category as `upgrade-tool`; `activate-synergy-perk`
     // moves no Gold at all, same category as `work`. Neither Synergy Tree
     // perk that touches a payout (`sunlight_harvester`'s crit chance,
@@ -2305,15 +2365,9 @@ describe("the currency wall", () => {
     // buys an irrigation tile, refunded only when the tile cannot land;
     // `remove-pipe` moves no Gold at all and is not a refund (a placed tile
     // is spent). Irrigation's own hydration -- a wet pipe watering a crop --
-    // moves nothing, the same as tapping `water`. SOIL IS THE ONE PAIR THAT
-    // SPLITS ITS SPEND FROM ITS PLACEMENT: `buy-soil` is the sink (tier price
-    // x quantity, refunded only if the bags cannot be shelved) and it never
-    // touches a coordinate, while `place-soil-tile` moves NO GOLD AT ALL --
-    // it spends a bag off `homestead_soil_stock` and hands the bag back if
-    // the cell is taken. So soil costs the player exactly once, at Ray's
-    // shelf, and a mis-tap on the map can never cost Gold. `remove-soil-tile`
-    // moves neither Gold nor a bag: a laid bed is spent, matching
-    // `remove-pipe`. `move-soil-tile-group` moves no Gold either -- a
+    // moves nothing, the same as tapping `water`. SOIL IS FREE:
+    // `place-soil-tile` and `remove-soil-tile` move no Gold and no stock, since
+    // the hoe costs nothing. `move-soil-tile-group` moves no Gold either -- a
     // hold-tap relocation only rewrites tx/ty on rows that already exist
     // (see moveStackAcresSoilTileGroup's own header), nothing is spent and
     // nothing is refunded. `give-gift` moves no Gold
@@ -2681,116 +2735,94 @@ describe("clearing land", () => {
     expect(unitOf(view, "hen").state).toBe("working");
   });
 
-  it("holds the first rung shut until enough stock is going", async () => {
-    const { token } = await greenfield();
-    const before = await balance(token);
+  /** Every blow it takes to clear a whole sector by hand, with the clock
+   *  moved on between swings so energy regrows the way it would over days. */
+  async function clearByHand(token: string, sector: "wallow" | "oxfields") {
+    let at = T0.getTime();
+    for (const obstacle of LAND_OBSTACLES[sector]) {
+      for (let swing = 0; swing < LAND_OBSTACLE_DEFS[obstacle.kind].hits; swing += 1) {
+        at += 12 * 60 * 1000;
+        await workStackAcresLand(token, obstacle.id, false, new Date(at));
+      }
+    }
+    return new Date(at);
+  }
 
-    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
+  it("pays the barn for every blow, and spends energy for it", async () => {
+    const { token, id } = await greenfield();
+    const before = await readStackAcresInventory(id);
+
+    const result = await workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, false, T0);
+
+    const gained = result.landCleared;
+    expect(gained?.quantity).toBeGreaterThan(0);
+    const after = await readStackAcresInventory(id);
+    expect((after[gained!.item!] ?? 0) - (before[gained!.item!] ?? 0)).toBe(gained!.quantity);
+    expect(result.energy.level).toBe(ENERGY_MAX - LAND_SWING_ENERGY);
+  });
+
+  it("will not let a worn-out farm swing, and takes nothing for the refusal", async () => {
+    const { token, id } = await greenfield();
+    const stored = await readStackAcresEnergy(id);
+    await writeStackAcresEnergy(id, stored?.version ?? 0, { level: 1, updatedAt: T0.toISOString() });
+    const before = await readStackAcresInventory(id);
+
+    await expect(workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, false, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
-    expect(await balance(token)).toBe(before);
+    expect(await readStackAcresInventory(id)).toEqual(before);
   });
 
-  it("sells the first rung once its requirements are met, and takes the Gold", async () => {
+  it("opens the land when the last thing on it comes down, and charges no Gold at all", async () => {
     const { token, id } = await greenfield();
-    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
     const before = await balance(token);
 
-    const view = await clearStackAcresSector(token, FIRST, T0);
+    const finishedAt = await clearByHand(token, "wallow");
 
-    expect(view.sectors).toContain(FIRST);
-    expect(await balance(token)).toBe(before - STACKACRES_SECTORS[FIRST].clearCost);
-    expect(await readStackAcresSectors(id)).toEqual([FIRST]);
-  });
-
-  it("lets the land it just sold be stocked", async () => {
-    const { token } = await greenfield();
-    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
-    await clearStackAcresSector(token, FIRST, T0);
-
-    // Pig is the Fold's (FIRST's) own stock -- proving the land just sold is
-    // genuinely usable, not just listed.
-    const view = await stockStackAcres(token, { stock: "pig" }, T0);
+    expect(await readStackAcresSectors(id)).toContain("wallow");
+    expect(await balance(token)).toBe(before);
+    // And the land is genuinely usable, not just listed.
+    const view = await stockStackAcres(token, { stock: "pig" }, finishedAt);
     expect(unitOf(view, "pig").state).toBe("working");
   });
 
-  it("holds a later rung shut until the one before it is cleared", async () => {
-    // Requirements met on units, Gold in hand, and still refused: the ladder
-    // is the thing being tested, not the price. Two rungs since the
-    // 2026-09-08 district merge (see SECTOR_LADDER's own header) -- SECOND
-    // (Ox Fields) names FIRST (the Fold) in its own `requires`, so trying it
-    // first is refused until FIRST is actually cleared.
-    const { token } = await greenfield();
-    await stockToward(token, STACKACRES_SECTORS[SECOND].requiresUnits);
-
-    const before = await balance(token);
-    await expect(clearStackAcresSector(token, SECOND, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await balance(token)).toBe(before);
-
-    // FIRST cleared, and now SECOND goes through.
-    await clearStackAcresSector(token, FIRST, T0);
-    await clearStackAcresSector(token, SECOND, T0);
-    expect((await readStackAcres(token, T0)).sectors).toContain(SECOND);
-  });
-
-  it("charges for the same land once, and refunds the tab that lost the race", async () => {
-    const { token } = await greenfield();
-    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
-    const before = await balance(token);
-
-    await clearStackAcresSector(token, FIRST, T0);
-    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-
-    expect(await balance(token)).toBe(before - STACKACRES_SECTORS[FIRST].clearCost);
-  });
-
-  it("refuses land nobody can afford, and creates nothing", async () => {
-    // Exactly enough to meet the sector's stock requirement and not a Gold
-    // more. Seed costs Gold now, so "no money at all" would fail one step
-    // earlier than the step under test.
-    const { token, id } = await greenfield(
-      stockTowardCost(STACKACRES_SECTORS[FIRST].requiresUnits),
-    );
-    await stockToward(token, STACKACRES_SECTORS[FIRST].requiresUnits);
-    expect(await balance(token)).toBe(0);
-
-    await expect(clearStackAcresSector(token, FIRST, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-    expect(await readStackAcresSectors(id)).toEqual([]);
-  });
-
-  it("refuses a district that does not exist", async () => {
-    const { token } = await greenfield();
-    await expect(clearStackAcresSector(token, "the-moon", T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
-  });
-
-  it("carries a farm that already keeps stock on land the gate never existed for", async () => {
-    // The live-farm clause. A player who bought cattle before land was gated
-    // must not wake up locked out of Ox Fields, and this holds it without any
-    // backfill having had to get it right.
+  it("blows one for Gold instead, which pays nothing into the barn", async () => {
     const { token, id } = await greenfield();
-    await createStackAcresUnit(id, {
-      stock: "cattle",
-      stake: CATTLE.seedCost,
-      yieldQuantity: STACKACRES_YIELDS.cattle.quantity,
-      startedAt: T0,
-      readyAt: new Date(T0.getTime() + CATTLE.durationMs),
-      lastFedAt: T0,
-      lastWateredAt: null,
-      permanent: false,
-    });
+    const obstacle = LAND_OBSTACLES.wallow[0];
+    const price = demolitionPrice(obstacle.kind, freshLandObstacleState(obstacle.kind));
+    const goldBefore = await balance(token);
+    const barnBefore = await readStackAcresInventory(id);
 
-    const view = await readStackAcres(token, T0);
-    expect(view.sectors).toContain("oxfields");
-    // And it is genuinely usable, not just listed.
-    await expect(stockStackAcres(token, { stock: "cattle" }, T0)).resolves.toBeTruthy();
+    const result = await demolishStackAcresLand(token, obstacle.id, T0);
+
+    expect(result.landCleared?.cleared).toBe(true);
+    expect(await balance(token)).toBe(goldBefore - price);
+    expect(await readStackAcresInventory(id)).toEqual(barnBefore);
+  });
+
+  it("charges for the same rubble once", async () => {
+    const { token } = await greenfield();
+    const obstacle = LAND_OBSTACLES.wallow[0];
+    await demolishStackAcresLand(token, obstacle.id, T0);
+    const after = await balance(token);
+
+    await demolishStackAcresLand(token, obstacle.id, T0);
+
+    expect(await balance(token)).toBe(after);
+  });
+
+  it("holds the Pasture shut while the Fold is still wild", async () => {
+    const { token } = await greenfield();
+    await expect(
+      workStackAcresLand(token, LAND_OBSTACLES.oxfields[0].id, false, T0),
+    ).rejects.toBeInstanceOf(StackAcresRequestError);
+  });
+
+  it("refuses something that is not on the map", async () => {
+    const { token } = await greenfield();
+    await expect(workStackAcresLand(token, "the-moon-01", false, T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
   });
 });
 
@@ -3269,6 +3301,58 @@ describe("Town Contracts", () => {
     expect(await balance(token)).toBe(before);
   });
 
+  describe("passing on one", () => {
+    const TOMORROW = new Date(T0.getTime() + 24 * 60 * 60 * 1000);
+
+    it("closes the order, draws another, and moves no Gold", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      const first = (await requestStackAcresContract(token, T0)).contract!;
+      const before = await balance(token);
+
+      const after = await passStackAcresContract(token, T0);
+
+      expect(after.contract).not.toBeNull();
+      expect(after.contract!.id).not.toBe(first.id);
+      expect(after.contract!.status).toBe("open");
+      expect(await balance(token)).toBe(before);
+    });
+
+    it("allows one a UTC day and no more", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await requestStackAcresContract(token, T0);
+
+      await passStackAcresContract(token, T0);
+      await expect(passStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+      // Later the same UTC day is still the same day.
+      await expect(
+        passStackAcresContract(token, new Date(T0.getTime() + 6 * 60 * 60 * 1000)),
+      ).rejects.toBeInstanceOf(StackAcresRequestError);
+    });
+
+    it("gives the pass back the next UTC day", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+      await requestStackAcresContract(token, T0);
+      await passStackAcresContract(token, T0);
+
+      const tomorrow = await passStackAcresContract(token, TOMORROW);
+      expect(tomorrow.contract).not.toBeNull();
+    });
+
+    it("refuses when the board is empty, and does not spend the day", async () => {
+      const { token } = await funded();
+      await placeStackAcresMachine(token, "mill", T0);
+
+      await expect(passStackAcresContract(token, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+
+      // The day is intact: a real order can still be passed.
+      await requestStackAcresContract(token, T0);
+      expect((await passStackAcresContract(token, T0)).contract).not.toBeNull();
+    });
+
+  });
 });
 
 describe("recipes", () => {
@@ -5124,5 +5208,75 @@ describe("mineStackAcresStoneNode", () => {
     const otherNode = await mineStackAcresStoneNode(token, "stone:mine-2", "hit", T0);
     expect(otherNode.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
     expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterFirstBroken + 1);
+  });
+});
+
+describe("gatherStackAcresForage", () => {
+  const seedsOf = (view: StackAcresView, crop: StackAcresCrop) => view.seedStock[crop] ?? 0;
+
+  it("rejects an unknown bush", async () => {
+    const { token } = await funded();
+    await expect(gatherStackAcresForage(token, "homestead-9", T0)).rejects.toBeInstanceOf(
+      StackAcresRequestError,
+    );
+  });
+
+  it("puts the seed the bush was carrying on the shelf, and moves no Gold", async () => {
+    const { token } = await funded();
+    const before = await balance(token);
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    expect(bush.ready).toBe(true);
+
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(picked.foraged).toEqual({
+      nodeId: bush.nodeId,
+      crop: bush.crop,
+      quantity: FORAGE_SEEDS_PER_PICK,
+    });
+    expect(seedsOf(picked, bush.crop)).toBe(
+      seedsOf(await readStackAcres(token, T0), bush.crop),
+    );
+    // Free in both directions: a pick is not a purchase.
+    expect(await balance(token)).toBe(before);
+  });
+
+  it("ignores the seed ladder -- a foraged crop needs no building", async () => {
+    const { token } = await funded();
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    // The same crop Ray would refuse to sell, because nothing that uses it
+    // is built (see lib/stackacres/seed-unlocks.ts).
+    await expect(
+      buyStackAcresSeed(token, { crop: bush.crop, quantity: 1 }, T0),
+    ).rejects.toThrow("locked");
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(picked.foraged?.crop).toBe(bush.crop);
+  });
+
+  it("goes bare after a pick and refuses another until it has come back", async () => {
+    const { token } = await funded();
+    const bush = (await readStackAcres(token, T0)).forageNodes[0];
+    const picked = await gatherStackAcresForage(token, bush.nodeId, T0);
+    const after = picked.forageNodes.find((node) => node.nodeId === bush.nodeId);
+    expect(after?.ready).toBe(false);
+    // Already showing the NEXT seed, so the bush reads as changed rather
+    // than merely emptied.
+    expect(after?.crop).toBe(nextForageCrop(bush.crop));
+
+    const seedsBefore = seedsOf(picked, bush.crop);
+    const refused = await gatherStackAcresForage(token, bush.nodeId, T0);
+    expect(refused.foraged).toBeNull();
+    expect(seedsOf(refused, bush.crop)).toBe(seedsBefore);
+
+    const later = new Date(T0.getTime() + FORAGE_REGROW_MS + 1000);
+    const again = await gatherStackAcresForage(token, bush.nodeId, later);
+    expect(again.foraged?.crop).toBe(nextForageCrop(bush.crop));
+  });
+
+  it("keeps the four bushes independent", async () => {
+    const { token } = await funded();
+    const bushes = (await readStackAcres(token, T0)).forageNodes;
+    await gatherStackAcresForage(token, bushes[0].nodeId, T0);
+    const other = await gatherStackAcresForage(token, bushes[1].nodeId, T0);
+    expect(other.foraged?.crop).toBe(bushes[1].crop);
   });
 });

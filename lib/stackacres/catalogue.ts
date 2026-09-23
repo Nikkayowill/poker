@@ -47,6 +47,7 @@
  * other; the Workshop's own separate "wheat plots" are gone.
  */
 
+import type { MaterialCost } from "./machine-items";
 import type { StackAcresShopLock } from "./shop-locks";
 
 export const STACKACRES_CROPS = [
@@ -98,8 +99,7 @@ export function isStackAcresCrop(value: string): value is StackAcresCrop {
 /**
  * Seeds of each crop bought from Ray's shop but not yet planted, keyed by
  * crop id. A missing key and an explicit 0 mean the same thing everywhere
- * this is read -- the same convention SoilStock (./soil-tiers.ts) already
- * carries for bags of soil.
+ * this is read.
  *
  * LIVESTOCK IS NOT HERE. A Hen Coop/Sheep Pen/Cattle Pen is still stocked
  * straight for Gold via `stockStackAcres`'s unchanged path -- there is no
@@ -108,9 +108,8 @@ export function isStackAcresCrop(value: string): value is StackAcresCrop {
 export type SeedStock = Partial<Record<StackAcresCrop, number>>;
 
 /** The most seed bags one purchase may buy -- same ceiling-on-a-single-request
- *  reasoning as SOIL_BAGS_PER_PURCHASE (see that constant's own comment):
- *  every money-moving route needs an upper bound on a body-supplied quantity
- *  that isn't just the player's own balance. */
+ *  reasoning as the feed cap below: every money-moving route needs an upper
+ *  bound on a body-supplied quantity that isn't just the player's own balance. */
 export const STACKACRES_SEED_BAGS_PER_PURCHASE = 20;
 
 export interface StackAcresStockDef {
@@ -317,8 +316,7 @@ export const STACKACRES_FEED: Readonly<Record<string, StackAcresFeedDef>> = {
 export const STACKACRES_FEED_IDS = Object.keys(STACKACRES_FEED);
 
 /** The most shipments one purchase may buy -- same ceiling-on-a-single-request
- *  reasoning as SOIL_BAGS_PER_PURCHASE and STACKACRES_SEED_BAGS_PER_PURCHASE
- *  above. */
+ *  reasoning as STACKACRES_SEED_BAGS_PER_PURCHASE above. */
 export const STACKACRES_FEED_SHIPMENTS_PER_PURCHASE = 20;
 
 /**
@@ -398,4 +396,28 @@ export const STACKACRES_CAPACITY_PRICE: Readonly<Record<StackAcresLivestock, num
 
 export function stackacresCapacityPrice(stock: StackAcresLivestock): number {
   return STACKACRES_CAPACITY_PRICE[stock];
+}
+
+/**
+ * The timber a pen slot ALSO costs, on top of its Gold price.
+ *
+ * THE ONLY REPEATABLE MATERIAL SINK IN THE GAME, and that is the job it is
+ * here to do: nine slots across the three kinds, so chopping still pays for
+ * something long after the Mill and the Loom are up.
+ *
+ * WOOD ONLY, NEVER STONE, and the reason is not balance. Stone's three
+ * boulders are GLOBAL rows shared by every player on the server
+ * (lib/server/stone-node-store.ts), so a cost a player pays over and over
+ * would put them in a queue behind strangers. The four trees are per
+ * profile, so Wood can be asked for repeatedly without anyone else's farm
+ * deciding how long it takes. Stone stays on one-time purchases.
+ */
+export const STACKACRES_CAPACITY_MATERIALS: Readonly<Record<StackAcresLivestock, readonly MaterialCost[]>> = {
+  hen: [{ item: "wood", quantity: 5 }],
+  pig: [{ item: "wood", quantity: 10 }],
+  cattle: [{ item: "wood", quantity: 15 }],
+};
+
+export function stackacresCapacityMaterials(stock: StackAcresLivestock): readonly MaterialCost[] {
+  return STACKACRES_CAPACITY_MATERIALS[stock];
 }

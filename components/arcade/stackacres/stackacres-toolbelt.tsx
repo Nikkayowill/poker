@@ -30,8 +30,6 @@ export interface StackAcresToolbeltProps {
   seedIcon: PainterName | null;
   /** Seeds of it on hand, shown on the slot so an empty pouch is visible before it is used. */
   seedsHeld: number;
-  /** Beds on the shelf, shown on the hoe for the same reason. */
-  soilHeld: number;
   /** Water left in the can. */
   water: number;
   onOpenSeeds: () => void;
@@ -43,7 +41,6 @@ export function StackAcresToolbelt({
   seed,
   seedIcon,
   seedsHeld,
-  soilHeld,
   water,
   onOpenSeeds,
 }: StackAcresToolbeltProps) {
@@ -56,7 +53,7 @@ export function StackAcresToolbelt({
         // What the slot draws, and the little number in its corner. The pouch
         // borrows the crop's own icon once one is picked.
         const icon = (pouch && seedIcon ? seedIcon : def.icon) as PainterName;
-        const count = pouch ? (seed ? seedsHeld : null) : tool === "hoe" ? soilHeld : tool === "can" ? water : null;
+        const count = pouch ? (seed ? seedsHeld : null) : tool === "can" ? water : null;
         const label = pouch && seed ? `Seed pouch: ${seed.replace(/_/g, " ")}` : def.label;
         return (
           <button

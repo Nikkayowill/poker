@@ -13,7 +13,7 @@ import { adminClient } from "./supabase-admin";
  * The ones that CREATE something are not covered by anything, because there is
  * no row yet to guard: `stock` and `buy-stock` insert a new unit and debit for
  * it, `buy-feed` adds servings and debits, `expand-capacity` buys a slot and
- * `clear-sector` buys land, both debiting Gold. A duplicate delivery of any of
+ * `demolish-land` blows one obstacle, both debiting Gold. A duplicate delivery of any of
  * those is a straight double spend, and no version column can see it. `sell`
  * and `exchange` sit in between -- both are bounded (by the barn, by the daily
  * ceiling), but a duplicate still moves real produce and real Gold.

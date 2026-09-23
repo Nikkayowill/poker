@@ -8,9 +8,7 @@ import {
 } from "@/lib/stackacres/soil";
 import {
   SOIL_DEFAULT_TIER,
-  isSoilTier,
   toSoilTier,
-  type SoilStock,
   type SoilTier,
 } from "@/lib/stackacres/soil-tiers";
 import { adminClient } from "./supabase-admin";
@@ -290,103 +288,4 @@ export async function moveStackAcresSoilTiles(
     throw new Error(`Could not move that bed: ${error.message}`);
   }
   return { kind: "moved", tiles: ((data ?? []) as SoilTileDbRow[]).map(fromRow) };
-}
-
-/* ------------------------------------------------------------------ */
-/* Ray's soil shelf: bags bought but not laid down yet                 */
-/* ------------------------------------------------------------------ */
-
-/**
- * Unplaced bags per tier, in `homestead_soil_stock`.
- *
- * SEPARATE FROM THE TILE TABLE ABOVE on purpose: one is a map, the other is a
- * purse. Buying moves Gold and never touches a coordinate; placing moves a
- * coordinate and never touches Gold. Keeping them apart is what stops a
- * failed placement from having to reason about a refund in two currencies.
- */
-export type { SoilStock } from "@/lib/stackacres/soil-tiers";
-
-declare global {
-  var __riverRoomStackAcresSoilStock: Map<string, Map<SoilTier, number>> | undefined;
-}
-
-const memorySoilStock =
-  globalThis.__riverRoomStackAcresSoilStock ?? new Map<string, Map<SoilTier, number>>();
-globalThis.__riverRoomStackAcresSoilStock = memorySoilStock;
-
-/** Test seam: drop every in-memory soil shelf. */
-export function __resetStackAcresSoilStockForTest(): void {
-  memorySoilStock.clear();
-}
-
-function memoryStock(profileId: string): Map<SoilTier, number> {
-  let held = memorySoilStock.get(profileId);
-  if (!held) {
-    held = new Map<SoilTier, number>();
-    memorySoilStock.set(profileId, held);
-  }
-  return held;
-}
-
-/** Same drop-unrecognized-tiers fold `readStackAcresSoilStock` runs below,
- *  pulled out for the batch RPC path. */
-export function stackAcresSoilStockFromBatchRows(rows: { tier: string; quantity: number | string }[]): SoilStock {
-  const out: SoilStock = {};
-  for (const row of rows) {
-    // Unknown tiers are DROPPED rather than degraded to dirt here: unlike a
-    // placed bed (which exists on the map and must render somehow), an
-    // unrecognised bag has nothing to show and folding it into the dirt count
-    // would hand the player free plain beds for a tier we retired.
-    if (isSoilTier(row.tier)) out[row.tier] = Number(row.quantity);
-  }
-  return out;
-}
-
-export async function readStackAcresSoilStock(profileId: string): Promise<SoilStock> {
-  const supabase = adminClient();
-  if (!supabase) {
-    return Object.fromEntries(memoryStock(profileId)) as SoilStock;
-  }
-  const { data, error } = await supabase
-    .from("homestead_soil_stock")
-    .select("tier, quantity")
-    .eq("profile_id", profileId);
-  if (error) throw new Error(`Could not read the soil shelf: ${error.message}`);
-  return stackAcresSoilStockFromBatchRows((data ?? []) as { tier: string; quantity: number | string }[]);
-}
-
-/**
- * Moves one tier's bag count. Returns the new quantity, or null when the move
- * would go negative -- which is "you have none in stock" for a spend, and a
- * lost race for two placements racing the last bag.
- *
- * Null, never a throw, for the same reason `spendGoldByProfile` returns null on
- * an empty purse: the caller's job is to refuse the action cleanly, and a
- * refusal is not an error condition.
- */
-export async function adjustStackAcresSoilStock(
-  profileId: string,
-  tier: SoilTier,
-  delta: number,
-): Promise<number | null> {
-  const supabase = adminClient();
-  if (!supabase) {
-    const held = memoryStock(profileId);
-    const next = (held.get(tier) ?? 0) + delta;
-    // Mirrors the DB's own `quantity >= 0` CHECK so dev behaves like prod.
-    if (next < 0) return null;
-    held.set(tier, next);
-    return next;
-  }
-  const { data, error } = await supabase.rpc("adjust_homestead_soil_stock", {
-    p_profile_id: profileId,
-    p_tier: tier,
-    p_delta: delta,
-  });
-  if (error) {
-    // 23514 is the quantity CHECK refusing to go negative.
-    if (error.code === "23514") return null;
-    throw new Error(`Could not move that soil stock: ${error.message}`);
-  }
-  return typeof data === "number" ? data : Number(data);
 }

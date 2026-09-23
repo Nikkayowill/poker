@@ -27,13 +27,14 @@ import {
   STACKACRES_LIVESTOCK,
   STACKACRES_MAX_EXTRA_CAP,
   isLivestock,
+  stackacresCapacityMaterials,
   stackacresCapacityPrice,
   type StackAcresStock,
 } from "./catalogue";
 import { stackacresStockOwnableOutright, stackacresStockPrice } from "./market";
 import { isActiveStock } from "./scope";
 import { shelfFeedFor } from "./feeding";
-import type { StackAcresInventory } from "./inventory";
+import { inventoryQuantity, type StackAcresInventory } from "./inventory";
 import type { StackAcresUnitSnapshot } from "./units";
 import { isSectorUnlocked, sectorLabel, type SectorId } from "./sectors";
 import { stockZone, stocksInZone } from "./world";
@@ -108,15 +109,23 @@ export interface BuyOption {
    *  all rather than a disabled one. */
   outrightCost: number | null;
   /** Null once capacity is already maxed, or for a crop, which never has
-   *  anything to expand. */
-  expand: { cost: number } | null;
+   *  anything to expand. `timber` is the Wood the slot also costs
+   *  (catalogue.ts's STACKACRES_CAPACITY_MATERIALS) and how much is in the
+   *  barn, so the button can name both halves of the price. */
+  expand: { cost: number; timber: { need: number; have: number } } | null;
 }
 
 /** What can be bought in this district, one entry per stock kind that lives
  *  there (./world.ts's `stocksInZone`). */
 export function buyOptionsForZone(
   zone: ZoneId,
-  context: { units: readonly StackAcresUnitSnapshot[]; gold: number; capacity: Readonly<Record<string, number>> },
+  context: {
+    units: readonly StackAcresUnitSnapshot[];
+    gold: number;
+    capacity: Readonly<Record<string, number>>;
+    /** The processing inventory, for the pen slot's timber line. */
+    inventory?: StackAcresInventory;
+  },
 ): BuyOption[] {
   // Only what the active scope sells this pass (./scope.ts). A hidden kind a
   // player already owns keeps working everywhere else -- this only stops the
@@ -151,7 +160,13 @@ export function buyOptionsForZone(
       // isLivestock(stock) is false whenever cap/atCap already are.
       expand:
         isLivestock(stock) && atCap && extraSlots < STACKACRES_MAX_EXTRA_CAP
-          ? { cost: stackacresCapacityPrice(stock) }
+          ? {
+              cost: stackacresCapacityPrice(stock),
+              timber: {
+                need: stackacresCapacityMaterials(stock).reduce((total, material) => total + material.quantity, 0),
+                have: inventoryQuantity(context.inventory ?? {}, "wood"),
+              },
+            }
           : null,
     };
   });

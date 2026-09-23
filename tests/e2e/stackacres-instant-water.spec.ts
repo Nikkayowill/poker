@@ -28,7 +28,9 @@ interface TopdownHandle {
   };
 }
 
-const OLD_FIELDS_GATE = { x: 352, y: 596 };
+// Just inside the Crop Fields, which are the north half of the Homestead now
+// rather than a map of their own. BARE_BED is a field square a few tiles up.
+const CROP_FIELDS_GATE = { x: 352, y: 540 };
 const BARE_BED = { x: 352, y: 520 };
 /** The bed tile BARE_BED sits on. */
 const BED_TILE = { tx: 0, ty: 14 };
@@ -94,9 +96,15 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   const unlocked = await adminContext.request.post("/api/admin/session", { data: { secret: ADMIN_SECRET } });
   expect(unlocked.ok()).toBe(true);
   await admitFarmer(farmerContext, adminContext.request);
-  for (let bird = 0; bird < 2; bird += 1) await farmAction(farmerContext, { action: "stock", stock: "hen" });
-  await farmAction(farmerContext, { action: "unlock-crop-fields" });
-  await farmAction(farmerContext, { action: "buy-soil", tier: "dirt", quantity: 4 });
+  // No Crop Fields unlock to buy any more -- the land is walked onto and
+  // broken with the hoe, which is what records the flag. All this farm needs
+  // is seed to sow.
+  //
+  // The Stew Pot first: Ray will not sell Carrot seed until something on the
+  // farm uses it (lib/stackacres/seed-unlocks.ts), and wheat is the wrong
+  // crop for a watering test -- its thirst outlasts its five-minute cycle,
+  // so it never goes dry.
+  await farmAction(farmerContext, { action: "place-machine", kind: "stew_pot" });
   await farmAction(farmerContext, { action: "buy-seed", crop: "carrot", quantity: 2 });
   await before(farmerContext);
 
@@ -129,8 +137,8 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   });
 
   await page.evaluate(
-    (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate),
-    OLD_FIELDS_GATE,
+    (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
+    CROP_FIELDS_GATE,
   );
   await page.waitForTimeout(300);
   const bedPoint = await page.evaluate(
@@ -165,7 +173,7 @@ test("an established crop watered on a slow server turns the moment the can is u
   // Hoed and sown over the API, so the page opens on a seed that is already a
   // real row on the server: the plain case the original complaint was about.
   const farm = await openSlowFarm(browser, async (context) => {
-    await farmAction(context, { action: "place-soil-tile", tx: BED_TILE.tx, ty: BED_TILE.ty, tier: "dirt" });
+    await farmAction(context, { action: "place-soil-tile", tx: BED_TILE.tx, ty: BED_TILE.ty });
     await farmAction(context, { action: "stock", stock: "carrot", tx: BED_TILE.tx, ty: BED_TILE.ty });
   });
   try {

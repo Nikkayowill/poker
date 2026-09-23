@@ -45,29 +45,44 @@ def _fields(a):
     """The north half: the Crop Fields and the margin around them."""
     fx, fy, size = FIELD_TX * T, FIELD_TY * T, FIELD_TILES * T
     a.line("path", (LANE_TX, FIELD_TY + FIELD_TILES + 1), (LANE_TX, MH))   # the lane, from the gate down to the yard
-    a.line("path", (1, FIELD_ROAD), (MW - 1, FIELD_ROAD))              # the field road
+    a.line("path", (4, FIELD_ROAD), (MW - 1, FIELD_ROAD))              # the field road, from the stream bank
     a.zone("field", fx, fy, size, size)
+
+    # The farm's water starts here: a waterfall off the top of the map into a pool,
+    # and the stream from the pool down the west side, past the end of the field
+    # road, into the farmyard's own stream (which picks it up at map row HOME_SHIFT).
+    a.add(props.ledge(6), 48, 48)                                      # the stone it pours over
+    a.solid.update((tx, ty) for tx in range(6) for ty in range(3))
+    a.add(props.waterfall(), 40, 64)
+    a.ellipse("water", 2.5, 4.3, 2.1, 1.4)
+    a.line("stream", (2, 5), (2, 14), width=1)
+    a.line("stream", (2, 14), (1, 22), width=1)
+    a.line("stream", (1, 22), (1, 30), width=1)
+    a.line("stream", (1, 30), (2, 36), width=1)
+    a.line("stream", (2, 36), (1, HOME_SHIFT), width=1)
+    a.add(kit.rock(True), 76, 70, (5, 2))                              # boulders either side of the pool
+    a.add(kit.rock(False), 6, 88, (5, 2))
 
     a.add(kit.fence(size - 4, vertical=True), fx - 6, fy + size + 2)   # west and east rails
     a.add(kit.fence(size - 4, vertical=True), fx + size + 6, fy + size + 2)
     a.add(kit.fence(116), fx - 4, fy + size + 10)                      # south rail, open at the lane
     a.add(kit.fence(348), LANE_TX * T + 40, fy + size + 10)
 
-    a.add(props.shed_old(), 48, 300, (30, 5))                          # Ray's old shed and plough
-    a.add(props.plough(), 50, 364, (18, 3))
+    a.add(props.shed_old(), 64, 300, (30, 5))                          # Ray's old shed and plough
+    a.add(props.plough(), 66, 364, (18, 3))
     a.add(props.scarecrow(), 60, 180, (7, 2))
-    a.add(kit.hay_bale(), 36, 430, (9, 2))
-    a.add(kit.hay_bale(), 58, 444, (9, 2))
+    a.add(kit.hay_bale(), 60, 430, (9, 2))
+    a.add(kit.hay_bale(), 80, 444, (9, 2))
     a.add(kit.crate(), 70, 500, (7, 2))
     a.add(kit.woodpile(), 660, 540, (13, 2))
-    for x, y, big in ((650, 300, True), (40, 610, False), (664, 140, False)):
+    for x, y, big in ((650, 300, True), (64, 610, False), (664, 140, False)):
         a.add(kit.rock(big), x, y, (5, 2))
-    for x, y in ((652, 420), (44, 120)):
+    for x, y in ((652, 420), (66, 120)):
         a.add(kit.stump(), x, y, (5, 2))
-    for x, y, k in ((120, 580, "W"), (560, 580, "Y"), (660, 470, "R"), (36, 220, "Y")):
+    for x, y, k in ((120, 580, "W"), (560, 580, "Y"), (660, 470, "R"), (66, 220, "Y")):
         a.add(kit.flowers(k), x, y, ground=True)
     # The margin either side of the field, so the walk up the lane is not bare.
-    for x, y in ((36, 268), (664, 232), (78, 560), (630, 600)):
+    for x, y in ((64, 268), (664, 232), (78, 560), (630, 600)):
         a.add(kit.bush(berries=False), x, y, (7, 2))
 
 
@@ -204,6 +219,8 @@ def _treelines(a):
 
     trees = []
     for x in range(10, MW * T, 22):                    # north edge, one tree deep: a second row would stand in the field
+        if x < 90:                                     # open over the waterfall and its pool
+            continue
         trees.append((x + jig(x, 0, 6), 30 + jig(x, 0, 7) // 2, kind(x, 0)))
     for y in range(84, MH * T - 30, 24):               # west line, on the far bank of the stream
         if HS + 166 < y < HS + 232:                    # the west trail's gap

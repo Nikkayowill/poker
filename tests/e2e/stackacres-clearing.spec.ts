@@ -70,6 +70,19 @@ async function standingObstacle(page: Page): Promise<{ id: string; at: { x: numb
   throw new Error("nothing is standing on the Fold");
 }
 
+/**
+ * Taps an obstacle until it is down. There is no popup: each tap is one swing
+ * (at most five, a boulder), and a tap mid-swing is ignored, so each waits for
+ * the swing before it to play out.
+ */
+async function swingUntilDown(page: Page, id: string, point: { x: number; y: number }): Promise<void> {
+  for (let swing = 1; swing < 6 && (await sceneCall(page, "landObstaclePoint", id)) !== null; swing += 1) {
+    await page.waitForTimeout(700);
+    await page.mouse.click(point.x, point.y);
+  }
+  await expect.poll(() => sceneCall(page, "landObstaclePoint", id), { timeout: 10_000 }).toBeNull();
+}
+
 test("what stands on the Fold is drawn, and a swing takes it down", async ({ context, page }) => {
   await openStackAcres(context, page);
 
@@ -86,28 +99,8 @@ test("what stands on the Fold is drawn, and a swing takes it down", async ({ con
   const point = await sceneCall(page, "clientPointFor", target.at.x, target.at.y);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.locator(".sa-chop-popup-card");
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  // The Gold way past it is offered beside the swing, never instead of it.
-  await expect(popup.locator(".sa-chop-popup-blow")).toContainText("Gold");
-
-  const line = popup.locator(".sa-chop-popup-line");
-  const before = await line.textContent();
-  const swing = popup.locator(".sa-chop-popup-swing");
-
-  // Swing until it comes down. The popup closes on the blow that clears it,
-  // and the count drops on every one before that -- optimistically, so this
-  // never waits on a round trip.
-  for (let hit = 0; hit < 6 && (await popup.count()) > 0 && (await popup.isVisible()); hit += 1) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    await page.waitForTimeout(400);
-  }
-
-  await expect(popup).toBeHidden();
-  expect(await sceneCall(page, "landObstaclePoint", target.id)).toBeNull();
+  await swingUntilDown(page, target.id, point);
   expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
-  expect(before).toMatch(/swing/);
 });
 
 /** The Crop Fields' own obstacle ids: 80 of them (lib/stackacres/land-clearing.ts). */
@@ -133,17 +126,6 @@ test("the Crop Fields start overgrown, and a swing clears a square", async ({ co
   const point = await sceneCall(page, "clientPointFor", target.at.x, target.at.y);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.locator(".sa-chop-popup-card");
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}/popup.png` });
-  const swing = popup.locator(".sa-chop-popup-swing");
-  for (let hit = 0; hit < 6 && (await popup.count()) > 0 && (await popup.isVisible()); hit += 1) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    await page.waitForTimeout(400);
-  }
-
-  await expect(popup).toBeHidden();
-  expect(await sceneCall(page, "landObstaclePoint", target.id)).toBeNull();
+  await swingUntilDown(page, target.id, point);
   expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
 });

@@ -65,6 +65,14 @@ function sceneCall<M extends SceneMethod>(page: Page, method: M, ...args: Parame
   ) as Promise<SceneResult<M>>;
 }
 
+/** How many swings a tree or boulder still owes, off the server's own snapshot. */
+async function hitsLeft(page: Page, list: "woodNodes" | "stoneNodes", nodeId: string): Promise<number> {
+  const view = (await (await page.request.get("/api/stackacres")).json()) as Record<string, { nodeId: string; hitsRemaining: number; ready: boolean }[] | undefined>;
+  const node = view[list]?.find((candidate) => candidate.nodeId === nodeId);
+  if (!node) return -1;
+  return node.ready ? node.hitsRemaining : 0;
+}
+
 test("felling a tree in the game leaves a stump, and only that tree", async ({ context, page }) => {
   await openStackAcres(context, page);
   expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
@@ -78,13 +86,13 @@ test("felling a tree in the game leaves a stump, and only that tree", async ({ c
   const point = await sceneCall(page, "clientPointFor", TREE_3.x, TREE_3.y);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.getByRole("dialog", { name: "Tree" });
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  const swing = popup.locator(".sa-chop-popup-swing");
-  for (let hit = 1; hit <= 3; hit++) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    if (hit < 3) expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
+  // No popup: each tap is one swing. The next tap waits for the server to count this one.
+  await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(2);
+  expect(await sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("standing");
+  for (const left of [1, 0]) {
+    await page.waitForTimeout(700);
+    await page.mouse.click(point.x, point.y);
+    await expect.poll(() => hitsLeft(page, "woodNodes", "homestead-3"), { timeout: 10_000 }).toBe(left);
   }
 
   await expect.poll(() => sceneCall(page, "nodeDrawn", "tree:homestead-3")).toBe("spent");
@@ -101,7 +109,7 @@ test("a tree felled earlier is already a stump when the farm opens", async ({ co
   ).toBe(true);
   for (let swing = 0; swing < 3; swing++) {
     const response = await context.request.post("/api/stackacres/actions", {
-      data: { action: "chop-tree", nodeId: "homestead-4", sweet: false },
+      data: { action: "chop-tree", nodeId: "homestead-4" },
     });
     expect(response.ok()).toBe(true);
   }
@@ -178,20 +186,18 @@ test("mining a boulder from the map pays Stone, and four swings leave rubble", a
   const point = await sceneCall(page, "clientPointFor", MINE_3.x, MINE_3.y - 6);
   await page.mouse.click(point.x, point.y);
 
-  const popup = page.getByRole("dialog", { name: "Boulder" });
-  await expect(popup).toBeVisible({ timeout: 10_000 });
-  const swing = popup.locator(".sa-chop-popup-swing");
-  for (let hit = 1; hit <= 4; hit++) {
-    await expect(swing).toBeEnabled();
-    await swing.click();
-    if (hit === 1) {
-      await expect
-        .poll(async () => {
-          const view = (await (await context.request.get("/api/stackacres")).json()) as { inventory?: Record<string, number> };
-          return view.inventory?.stone ?? 0;
-        })
-        .toBeGreaterThan(0);
-    }
+  // One tap, one pick swing, no popup.
+  await expect.poll(() => hitsLeft(page, "stoneNodes", "stone:mine-3"), { timeout: 10_000 }).toBe(3);
+  await expect
+    .poll(async () => {
+      const view = (await (await context.request.get("/api/stackacres")).json()) as { inventory?: Record<string, number> };
+      return view.inventory?.stone ?? 0;
+    })
+    .toBe(2);
+  for (const left of [2, 1, 0]) {
+    await page.waitForTimeout(700);
+    await page.mouse.click(point.x, point.y);
+    await expect.poll(() => hitsLeft(page, "stoneNodes", "stone:mine-3"), { timeout: 10_000 }).toBe(left);
   }
 
   await expect.poll(() => sceneCall(page, "nodeDrawn", "stone:mine-3")).toBe("spent");

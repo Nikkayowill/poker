@@ -31,7 +31,6 @@ import {
   buyStackAcresFeed,
   buyStackAcresStock,
   workStackAcresLand,
-  demolishStackAcresLand,
   clearStackAcresUnit,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
@@ -141,9 +140,7 @@ export const runtime = "nodejs";
  * respectively, and neither moves Gold.
  *
  * LAND IS NEVER SOLD. A sector opens when the last thing standing on it has
- * been cut down (`work-land`, which spends energy and pays the barn).
- * `demolish-land` is the one Gold spend on that road: blowing one obstacle
- * instead of swinging at it, priced per swing still owed. Keeping cleared
+ * been cut down (`work-land`, which spends energy and pays the barn). Keeping cleared
  * land then costs a daily fee, netted off whichever action next pays the
  * player any Gold (see `netUpkeepFromPayout`, lib/server/stackacres-service.ts).
  *
@@ -191,11 +188,10 @@ const intentKeySchema = z.string().min(8).max(100).optional();
 
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("expand-capacity"), stock: stockSchema }),
-  // Clearing land. `work-land` is one swing and costs energy; `demolish-land`
-  // spends Gold instead. Neither names a sector: the obstacle id says which
-  // land it stands on, so a request cannot claim a field it has not worked.
-  z.object({ action: z.literal("work-land"), obstacleId: z.string().min(3).max(40), sweet: z.boolean() }),
-  z.object({ action: z.literal("demolish-land"), obstacleId: z.string().min(3).max(40) }),
+  // Clearing land. `work-land` is one swing and costs energy. It names no
+  // sector: the obstacle id says which land it stands on, so a request cannot
+  // claim a field it has not worked.
+  z.object({ action: z.literal("work-land"), obstacleId: z.string().min(3).max(40) }),
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
@@ -261,29 +257,22 @@ const bodySchema = z.discriminatedUnion("action", [
   // server's own dice roll.
   z.object({ action: z.literal("bag-quarry") }),
   // One swing at a tree (lib/stackacres/wood.ts). Fills the shelf with Wood,
-  // same as a catch or a bagged stalk -- moves no Gold. `sweet` is the chop
-  // minigame's own client-side timing verdict (lib/stackacres/chop.ts); it
-  // only changes how much Wood the swing pays, never whether it lands.
+  // same as a catch or a bagged stalk -- moves no Gold.
   z.object({
     action: z.literal("chop-tree"),
     nodeId: z.enum(WOOD_NODE_IDS as unknown as [string, ...string[]]),
-    sweet: z.boolean(),
   }),
   // One swing at one of the Mine's Stone nodes. Fills the shelf with Stone,
-  // same as a catch or a bagged stalk -- moves no Gold. `quality` is the
-  // client's own timing grade off the shared chop/mine popup
-  // (lib/stackacres/chop.ts) and only ever changes how much Stone a landed
-  // swing pays out -- never whether it lands, which the node's own
-  // server-owned hit count and regrow window decide
+  // same as a catch or a bagged stalk -- moves no Gold. Whether it lands is
+  // the node's own server-owned hit count and regrow window
   // (lib/stackacres/stone-nodes.ts).
   z.object({
     action: z.literal("mine-stone"),
     nodeId: z.enum(STONE_NODE_IDS),
-    quality: z.enum(["hit", "sweet"]),
   }),
   // One pick at one of the Homestead's forage bushes. Fills the SEED shelf,
-  // not the inventory, and moves no Gold. There is no `quality` here and no
-  // crop either: which seed a bush carries is a pure function of its own
+  // not the inventory, and moves no Gold. There is no crop
+  // named here: which seed a bush carries is a pure function of its own
   // stored pick count (lib/stackacres/forage.ts), so the client never gets
   // to name the prize.
   z.object({
@@ -530,9 +519,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "expand-capacity":
       return expandStackAcresCapacity(token, action.stock, now);
     case "work-land":
-      return workStackAcresLand(token, action.obstacleId, action.sweet, now);
-    case "demolish-land":
-      return demolishStackAcresLand(token, action.obstacleId, now);
+      return workStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
     case "buy-cutter":
@@ -574,11 +561,11 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
     case "chop-tree":
-      return chopStackAcresWoodTree(token, action.nodeId, action.sweet, now);
+      return chopStackAcresWoodTree(token, action.nodeId, now);
     case "gather-forage":
       return gatherStackAcresForage(token, action.nodeId, now);
     case "mine-stone":
-      return mineStackAcresStoneNode(token, action.nodeId, action.quality, now);
+      return mineStackAcresStoneNode(token, action.nodeId, now);
     case "clear":
       return clearStackAcresUnit(token, action.unitId, now);
     case "buy-feed":

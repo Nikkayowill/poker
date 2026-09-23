@@ -303,25 +303,19 @@ export interface StackAcresWorldProps {
    *  tap. */
   onThicketTap: (at: TapPoint) => void;
   /** A finger landed on one of the Homestead's own choppable trees (see
-   *  lib/stackacres/tree-nodes.ts). The shell decides whether that id is a
-   *  real, currently-choppable node and opens the chop popup; the map only
-   *  reports the tap, the same split `onThicketTap` already takes. */
+   *  lib/stackacres/tree-nodes.ts). The farmer is already swinging his axe at
+   *  it, and the shell sends the swing; a stump still growing back never gets
+   *  here, the map says so itself. */
   onTreeTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on one of the Mine's three tagged boulders (see
-   *  lib/stackacres/stone-nodes.ts). The shell decides whether that id is a
-   *  real, currently-mineable node and opens the shared swing popup in mine
-   *  mode; the map only reports the tap, the same split `onTreeTap` already
-   *  takes. */
+   *  lib/stackacres/stone-nodes.ts). A pick swing, same split as `onTreeTap`. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on one of the Homestead's four forage bushes (see
-   *  lib/stackacres/forage.ts). No popup opens: the shell sends the pick
-   *  straight off, because a pick is one stoop rather than a timed swing.
-   *  The map only reports the tap, same split `onTreeTap` takes. */
+   *  lib/stackacres/forage.ts). The shell sends the pick straight off. */
   onForageTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on something standing on land still being cleared (see
-   *  lib/stackacres/land-clearing.ts). The shell opens the swing popup on
-   *  that obstacle, which is also where Gold can blow it instead; the map
-   *  only reports the tap, same split `onTreeTap` takes. */
+   *  lib/stackacres/land-clearing.ts). An axe or pick swing, same split as
+   *  `onTreeTap`. */
   onLandTap: (obstacleId: string, at: TapPoint) => void;
   /** A finger landed on the Greenhouse's own footprint: the shell's cue to
    *  open its panel, which shows either the build screen or the slots. */

@@ -29,14 +29,10 @@ export const WOOD_HITS_TO_FELL = 3;
  *  bottleneck resource. */
 export const WOOD_RESPAWN_MS = 8 * 60 * 1000;
 
-/** Wood one ordinary swing yields. */
-export const WOOD_PER_HIT = 1;
-/** Extra Wood a swing landed in the chop minigame's sweet zone yields, on
- *  top of `WOOD_PER_HIT`. */
-export const WOOD_SWEET_HIT_BONUS = 1;
-/** Extra Wood the swing that fells the tree yields, on top of whatever that
- *  swing's own timing already paid -- felling should read as the bigger
- *  moment, not just "one more swing". */
+/** Wood every swing yields. */
+export const WOOD_PER_HIT = 2;
+/** Extra Wood the swing that fells the tree yields, on top of `WOOD_PER_HIT`,
+ *  so felling reads as the bigger moment. */
 export const WOOD_FELL_BONUS = 2;
 
 /** One tree node's persisted state, as much of it as the pure math needs.
@@ -89,12 +85,6 @@ export function woodNodeRespawnProgress(state: WoodNodeState, now: Date): number
 
 /** What one swing on a choppable node does to its stored state.
  *
- *  `sweet` is the chop minigame's own verdict on the swing's timing (see
- *  ./chop.ts) -- it never changes whether the swing lands, only how much
- *  Wood it pays out, the same "client picks a quality flag, server still
- *  rolls/owns the real state" shape `catch-fish`'s `bait` boolean already
- *  takes in lib/server/stackacres-service.ts.
- *
  *  Returns null if `state` was not choppable at `now` at all -- the caller
  *  (the server route) treats that as a refusal, same as any other guarded
  *  write that finds nothing to do. */
@@ -107,7 +97,6 @@ export interface WoodSwingResult {
 export function swingAtWoodNode(
   state: WoodNodeState,
   now: Date,
-  sweet: boolean,
 ): WoodSwingResult | null {
   if (!isWoodNodeChoppable(state, now)) return null;
 
@@ -117,8 +106,7 @@ export function swingAtWoodNode(
 
   const hitsRemaining = standing.hitsRemaining - 1;
   const felled = hitsRemaining <= 0;
-  const woodGained =
-    WOOD_PER_HIT + (sweet ? WOOD_SWEET_HIT_BONUS : 0) + (felled ? WOOD_FELL_BONUS : 0);
+  const woodGained = WOOD_PER_HIT + (felled ? WOOD_FELL_BONUS : 0);
 
   const nextState: WoodNodeState = felled
     ? { hitsRemaining: 0, felledAt: now.toISOString() }

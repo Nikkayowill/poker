@@ -69,22 +69,16 @@ export type Action =
   // same posture as `catch-fish`.
   | { action: "bag-quarry" }
   // One swing at a tree (lib/stackacres/wood.ts): fills the shelf with Wood,
-  // same posture as `catch-fish`/`bag-quarry`. `sweet` is the chop
-  // minigame's own timing verdict (lib/stackacres/chop.ts) -- it changes how
-  // much Wood the swing pays, never whether it lands.
-  | { action: "chop-tree"; nodeId: string; sweet: boolean }
-  // Clearing land: one swing at what is standing on it, or Gold to blow it.
-  // Land is never bought; the sector opens when the last one comes down.
-  | { action: "work-land"; obstacleId: string; sweet: boolean }
-  | { action: "demolish-land"; obstacleId: string }
+  // same posture as `catch-fish`/`bag-quarry`.
+  | { action: "chop-tree"; nodeId: string }
+  // Clearing land: one swing at what is standing on it. Land is never
+  // bought; the sector opens when the last one comes down.
+  | { action: "work-land"; obstacleId: string }
   // One swing at one of the Mine's boulders (lib/stackacres/stone-nodes.ts):
-  // fills the shelf with Stone, same posture as `chop-tree`. `quality` is
-  // the shared swing minigame's own timing verdict (lib/stackacres/chop.ts)
-  // -- it changes how much Stone the swing pays, never whether it lands.
-  | { action: "mine-stone"; nodeId: string; quality: "hit" | "sweet" }
+  // fills the shelf with Stone, same posture as `chop-tree`.
+  | { action: "mine-stone"; nodeId: string }
   // One pick at one of the Homestead's forage bushes (lib/stackacres/forage.ts):
-  // fills the SEED shelf, not the inventory, and moves no Gold. No timing
-  // verdict and no crop: the bush's own pick count decides which seed comes
+  // fills the SEED shelf, not the inventory, and moves no Gold. No crop: the bush's own pick count decides which seed comes
   // off it, so there is nothing here for a client to name.
   | { action: "gather-forage"; nodeId: string }
   | { action: "clear"; unitId: string }
@@ -293,8 +287,6 @@ export function purchaseCueText(body: Action): string | null {
       return "New tool in hand!";
     case "unlock-synergy-perk":
       return "Perk unlocked!";
-    case "demolish-land":
-      return "Blasting it out…";
     case "build-greenhouse":
       return "Greenhouse begun!";
     case "forge-enchantment":

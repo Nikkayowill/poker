@@ -3653,7 +3653,7 @@ export async function getOrCreateStackAcresLandObstacle(
   return landObstacleFromRow(inserted as LandObstacleDbRow);
 }
 
-/** One swing (or one demolition), guarded on the row's own version, so two
+/** One swing, guarded on the row's own version, so two
  *  rapid taps cannot both land the blow that clears it and both be paid. */
 export async function writeStackAcresLandObstacle(
   current: StoredLandObstacle,

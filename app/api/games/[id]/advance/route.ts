@@ -65,7 +65,9 @@ export async function POST(
         });
       }
     }
-    const deadline = Date.parse(advanced.turnDeadlineAt ?? "");
+    // Measured on this clock, so a browser whose own clock runs fast knows how
+    // long to wait before asking again. A finished hand waits on nextHandAt.
+    const deadline = Date.parse(advanced.turnDeadlineAt ?? advanced.nextHandAt ?? "");
     const retryAfterMs = Number.isFinite(deadline)
       ? Math.max(0, deadline - Date.now())
       : null;

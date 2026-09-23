@@ -43,9 +43,14 @@ import {
   collectSound,
   expandSound,
   feedSound,
+  forageSound,
   goldSound,
+  hoeSound,
+  journalSound,
+  mapSound,
   muckSound,
   panelSound,
+  questStepSound,
   refusedSound,
   sellSound,
   sowSound,
@@ -54,6 +59,7 @@ import {
   travelSound,
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
+import { HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
 import {
   STACKACRES_CATALOGUE,
   STACKACRES_CROPS,
@@ -236,6 +242,7 @@ import {
   LAND_OBSTACLE_DEFS,
   isClearableSector,
   landClearingProgress,
+  type ClearingGround,
   landObstacle,
   type LandObstacleSnapshot,
 } from "@/lib/stackacres/land-clearing";
@@ -497,7 +504,7 @@ interface StackAcresResponse {
    *  `woodChopped` takes. */
   landCleared?: {
     obstacleId: string;
-    sector: SectorId;
+    ground: ClearingGround;
     item: MachineItemId | null;
     quantity: number;
     cleared: boolean;
@@ -2328,10 +2335,10 @@ export function StackAcresFarm() {
         // broke, and the sector opening is the bigger beat that replaces the
         // per-swing toast.
         if (data.landCleared) {
-          const { item, quantity, cleared, sectorOpened, sector } = data.landCleared;
+          const { item, quantity, cleared, sectorOpened, ground } = data.landCleared;
           const label = item && quantity > 0 ? machineItemLabel(item, quantity) : null;
           waterSound();
-          if (sectorOpened) setLastCollect({ text: `${sectorLabel(sector)} is yours!`, nonce: Date.now() });
+          if (sectorOpened && isClearableSector(ground)) setLastCollect({ text: `${sectorLabel(ground)} is yours!`, nonce: Date.now() });
           else if (label) setLastCollect({ text: cleared ? `Down it comes! +${label}` : `+${label}`, nonce: Date.now() });
           if (anchor && label) world.current?.floatAt(anchor, `+${label}`, "gain");
           if (cleared) setLandPopup(null);
@@ -2344,7 +2351,7 @@ export function StackAcresFarm() {
         if (body.action === "gather-forage" && data.foraged) {
           const { crop, quantity } = data.foraged;
           const label = forageYieldLabel(crop, quantity);
-          waterSound();
+          forageSound();
           setLastCollect({ text: `+${label}`, nonce: Date.now() });
           if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
         }
@@ -2407,7 +2414,7 @@ export function StackAcresFarm() {
         // own. This block is only the toast for a traveler's line finishing.
         if (body.action === "story-turn-in" && data.storyResult) {
           if (data.storyResult.outcome === "advanced") {
-            panelSound();
+            questStepSound();
             world.current?.emote(data.storyResult.traveler, "note");
           }
           if (data.storyResult.outcome === "completed") {
@@ -2855,7 +2862,7 @@ export function StackAcresFarm() {
   /** The map button: the farmer's own place is read off the scene here, on the
    *  press, since React has no way to observe him walking. */
   const openMap = useCallback(() => {
-    panelSound();
+    mapSound();
     setMapHere(world.current?.currentPlace() ?? "farmstead");
     setShowMap(true);
   }, []);
@@ -3391,7 +3398,6 @@ export function StackAcresFarm() {
    */
   const onPlaceSoilTile = useCallback(
     (tx: number, ty: number) => {
-      buySound();
       setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       const key = `${tx},${ty}`;
       const request = act({ action: "place-soil-tile", tx, ty });
@@ -3591,6 +3597,8 @@ export function StackAcresFarm() {
           void act({ action: "clear", unitId: action.unitId });
           return;
         case "till":
+          // On the blade's strike, the same beat the scene drops the clod on.
+          if (voice) window.setTimeout(hoeSound, HOE_STRIKE_MS);
           onPlaceSoilTile(action.tx, action.ty);
           return;
         case "lift":
@@ -4038,7 +4046,7 @@ export function StackAcresFarm() {
           <button type="button" className="htp-trigger" onClick={openMap}>
             <MapPin size={13} aria-hidden="true" /> Map
           </button>
-          <StackAcresJournalChip view={journal} onOpen={() => { panelSound(); setShowGoals(true); }} />
+          <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps
@@ -4846,7 +4854,7 @@ export function StackAcresFarm() {
         <StackAcresMapSheet
           places={mapPlaces}
           onTravel={travelToPlace}
-          onClose={() => { panelSound(); setShowMap(false); }}
+          onClose={() => { mapSound(); setShowMap(false); }}
         />
       )}
 

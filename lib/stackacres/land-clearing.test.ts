@@ -54,7 +54,7 @@ describe("what stands on a sector", () => {
   it("gives every obstacle its own id, and finds it again by that id", () => {
     const ids = CLEARABLE_SECTORS.flatMap((sector) => LAND_OBSTACLES[sector].map((o) => o.id));
     expect(new Set(ids).size).toBe(ids.length);
-    expect(landObstacle("wallow-01")?.sector).toBe("wallow");
+    expect(landObstacle("wallow-01")?.ground).toBe("wallow");
     expect(landObstacle("not-a-thing")).toBeNull();
   });
 

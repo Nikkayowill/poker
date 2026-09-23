@@ -41,11 +41,10 @@ import { RandomWalk, noiseSource, playVoice, type SynthVoice } from "./synth-voi
 import { respectSilentSwitch } from "./audio-session";
 
 /**
- * The two cues that are recordings rather than synthesis, and the animals.
+ * Every recording the farm plays: two ambience cues, the animals, and the
+ * action sounds that replaced some of the synth voices.
  *
- * Kept small on purpose. Every one of these is a file a phone has to fetch,
- * and each was generated because it is a sound that synthesis does badly: a
- * throat, or resonant timber under load.
+ * Kept small on purpose. Every one of these is a file a phone has to fetch.
  */
 const SAMPLE_FILES = {
   "windmill-creak": "/audio/stackacres/sfx/windmill-creak.mp3",
@@ -54,9 +53,48 @@ const SAMPLE_FILES = {
   "hen-fuss": "/audio/stackacres/sfx/hen-fuss.mp3",
   pig: "/audio/stackacres/sfx/sheep-bleat.mp3",
   cattle: "/audio/stackacres/sfx/cow-moo-near.mp3",
+  // Action recordings from the 400 Sounds Pack, picked by ear against the
+  // synth voices they replace. Trimmed and levelled to about -15dBFS peak,
+  // the same reference the synth action voices are trimmed to.
+  "hoe-crunch": "/audio/stackacres/sfx/hoe-crunch.mp3",
+  "seed-pat": "/audio/stackacres/sfx/seed-pat.mp3",
+  "water-splash": "/audio/stackacres/sfx/water-splash.mp3",
+  whoosh: "/audio/stackacres/sfx/whoosh.mp3",
+  "crate-drop": "/audio/stackacres/sfx/crate-drop.mp3",
+  "coins-small": "/audio/stackacres/sfx/coins-small.mp3",
+  "refuse-blip": "/audio/stackacres/sfx/refuse-blip.mp3",
+  "glass-ping": "/audio/stackacres/sfx/glass-ping.mp3",
+  "prestige-music-box": "/audio/stackacres/sfx/prestige-music-box.mp3",
+  "step-floor-1": "/audio/stackacres/sfx/step-floor-1.mp3",
+  "step-floor-2": "/audio/stackacres/sfx/step-floor-2.mp3",
+  "step-floor-3": "/audio/stackacres/sfx/step-floor-3.mp3",
+  "step-floor-4": "/audio/stackacres/sfx/step-floor-4.mp3",
+  "door-open": "/audio/stackacres/sfx/door-open.mp3",
+  "page-turn": "/audio/stackacres/sfx/page-turn.mp3",
+  "map-rustle": "/audio/stackacres/sfx/map-rustle.mp3",
+  "leaf-rustle": "/audio/stackacres/sfx/leaf-rustle.mp3",
+  "berry-pop": "/audio/stackacres/sfx/berry-pop.mp3",
+  "quest-chime": "/audio/stackacres/sfx/quest-chime.mp3",
 } as const;
 
 type SampleName = keyof typeof SAMPLE_FILES;
+
+const CUE_AND_ANIMAL_SAMPLES = ["windmill-creak", "gate-creak", "hen", "hen-fuss", "pig", "cattle"] as const;
+
+/** A recording that answers a press, as opposed to an ambience cue or an animal. */
+export type FarmSample = Exclude<SampleName, (typeof CUE_AND_ANIMAL_SAMPLES)[number]>;
+
+const FARM_SAMPLES = (Object.keys(SAMPLE_FILES) as SampleName[]).filter(
+  (name): name is FarmSample => !(CUE_AND_ANIMAL_SAMPLES as readonly string[]).includes(name),
+);
+
+/**
+ * How long after start the action recordings are fetched (about 230KB in
+ * all). Late enough to stay out of the boot burst, early enough to be in hand
+ * before most first taps. A press before then asks for its own file and is
+ * silent that once.
+ */
+const FARM_SAMPLE_PREFETCH_MS = 2500;
 
 function isSample(cue: AmbienceCueName): cue is AmbienceCueName & SampleName {
   return cue === "windmill-creak" || cue === "gate-creak";
@@ -182,6 +220,10 @@ class Ambience {
     this.applyPlan();
 
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    window.setTimeout(() => {
+      if (this.ctx !== ctx) return;
+      for (const name of FARM_SAMPLES) this.ensureSample(name);
+    }, FARM_SAMPLE_PREFETCH_MS);
     // A context created inside a gesture usually starts running, but Safari
     // can still hand one back suspended; resuming an already-running context
     // is a no-op, so this is unconditional rather than guarded.
@@ -254,6 +296,31 @@ class Ambience {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = 0.94 + Math.random() * 0.12;
+    source.connect(level);
+    source.start(ctx.currentTime + 0.005);
+    source.onended = () => level.disconnect();
+  }
+
+  /**
+   * Plays one action recording as a foreground answer to a press, through the
+   * same bus as the synth voices. A small pitch spread keeps a repeated tap
+   * (a footstep, a hoe stroke) from sounding like one sample on a loop.
+   */
+  playFarmSample(name: FarmSample, gain = 1, spread = 0.06): void {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return;
+    const buffer = this.buffers.get(name);
+    if (!buffer) {
+      this.ensureSample(name);
+      return;
+    }
+    const level = ctx.createGain();
+    level.gain.value = gain;
+    level.connect(bus);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 1 - spread / 2 + Math.random() * spread;
     source.connect(level);
     source.start(ctx.currentTime + 0.005);
     source.onended = () => level.disconnect();
@@ -692,6 +759,11 @@ export function setFarmSfxMuted(muted: boolean): void {
 /** Fires one synthesised action sound. See ./stackacres-sfx.ts for the intent-named callers. */
 export function playFarmVoice(voice: SynthVoice, gain?: number): void {
   ambience.playAction(voice, gain);
+}
+
+/** Fires one action recording. See ./stackacres-sfx.ts for the intent-named callers. */
+export function playFarmSample(name: FarmSample, gain?: number, spread?: number): void {
+  ambience.playFarmSample(name, gain, spread);
 }
 
 /** Fires one animal recording in the foreground, as an answer to a press. */

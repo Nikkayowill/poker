@@ -109,3 +109,41 @@ test("what stands on the Fold is drawn, and a swing takes it down", async ({ con
   expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
   expect(before).toMatch(/swing/);
 });
+
+/** The Crop Fields' own obstacle ids: 80 of them (lib/stackacres/land-clearing.ts). */
+const CROP_FIELD_IDS = Array.from({ length: 80 }, (_, i) => `cropfields-${String(i + 1).padStart(2, "0")}`);
+
+test("the Crop Fields start overgrown, and a swing clears a square", async ({ context, page }) => {
+  await openStackAcres(context, page);
+
+  let target: { id: string; at: { x: number; y: number } } | null = null;
+  for (const id of CROP_FIELD_IDS) {
+    const at = await sceneCall(page, "landObstaclePoint", id);
+    if (at) {
+      target = { id, at };
+      break;
+    }
+  }
+  if (!target) throw new Error("nothing is standing in the Crop Fields");
+  expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(true);
+
+  await sceneCall(page, "placeFarmer", "homestead", { x: target.at.x, y: target.at.y + 40 });
+  await page.waitForTimeout(600);
+  if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}/fields.png` });
+  const point = await sceneCall(page, "clientPointFor", target.at.x, target.at.y);
+  await page.mouse.click(point.x, point.y);
+
+  const popup = page.locator(".sa-chop-popup-card");
+  await expect(popup).toBeVisible({ timeout: 10_000 });
+  if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}/popup.png` });
+  const swing = popup.locator(".sa-chop-popup-swing");
+  for (let hit = 0; hit < 6 && (await popup.count()) > 0 && (await popup.isVisible()); hit += 1) {
+    await expect(swing).toBeEnabled();
+    await swing.click();
+    await page.waitForTimeout(400);
+  }
+
+  await expect(popup).toBeHidden();
+  expect(await sceneCall(page, "landObstaclePoint", target.id)).toBeNull();
+  expect(await sceneCall(page, "isBlockedAt", target.at)).toBe(false);
+});

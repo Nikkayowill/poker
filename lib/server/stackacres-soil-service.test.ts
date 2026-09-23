@@ -29,7 +29,10 @@ import {
   readStackAcres,
   removeStackAcresSoilTile,
   stockStackAcres,
+  workStackAcresLand,
 } from "./stackacres-service";
+import { OVERGROWN_SQUARE, cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
+import { LAND_OBSTACLES, LAND_OBSTACLE_DEFS, landObstacle } from "@/lib/stackacres/land-clearing";
 import {
   __resetStackAcresForTest,
   recordStackAcresCropFieldsUnlocked,
@@ -624,5 +627,39 @@ describe("the hoe works on any grass on the Homestead", () => {
     });
     const view = await readStackAcres(token, T0);
     expect(view.soilTiles.filter((t) => t.tx === starter.tx && t.ty === starter.ty)).toHaveLength(1);
+  });
+});
+
+describe("the Crop Fields start overgrown", () => {
+  beforeEach(() => {
+    __resetStackAcresForTest();
+    __resetStackAcresSoilTilesForTest();
+  });
+
+  const [first] = cropFieldObstaclePlacements();
+  const square = mapToSoilTile(first.tx, first.ty);
+
+  it("refuses to break a bed where something still stands", async () => {
+    const token = await funded();
+    await expect(placeStackAcresSoilTile(token, square, T0)).rejects.toThrow(OVERGROWN_SQUARE);
+  });
+
+  it("breaks the bed once that square is cleared, and the clearing pays the barn", async () => {
+    const token = await funded();
+    const obstacle = landObstacle(first.id)!;
+    let result = null;
+    for (let swing = 0; swing < LAND_OBSTACLE_DEFS[obstacle.kind].hits; swing += 1) {
+      result = await workStackAcresLand(token, first.id, false, T0);
+    }
+    expect(result?.landCleared).toMatchObject({ ground: "cropfields", cleared: true, sectorOpened: false });
+    const view = await placeStackAcresSoilTile(token, square, T0);
+    expect(view.soilTiles.some((tile) => tile.tx === square.tx && tile.ty === square.ty)).toBe(true);
+  });
+
+  it("shows every piece of it in the farm snapshot", async () => {
+    const token = await funded();
+    const view = await readStackAcres(token, T0);
+    const ids = view.landObstacles.filter((snapshot) => snapshot.ground === "cropfields").map((snapshot) => snapshot.id);
+    expect(ids.sort()).toEqual(LAND_OBSTACLES.cropfields.map((obstacle) => obstacle.id).sort());
   });
 });

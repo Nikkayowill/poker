@@ -4,7 +4,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import { Music2, Settings2, User, Volume2, VolumeX, X } from "lucide-react";
 import { playStackAcresMusic } from "@/lib/audio/stackacres-music";
-import { tapSound, selectSound } from "@/lib/audio/ui-sounds";
+import { tapSound, toggleSound } from "@/lib/audio/ui-sounds";
 import { useAppShell } from "@/components/shell/app-shell";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
@@ -153,7 +153,7 @@ function StackAcresSettingsPanel({
           <button
             type="button"
             className="sa-settings-row"
-            onClick={() => { selectSound(); onToggleSound(); }}
+            onClick={() => { toggleSound(); onToggleSound(); }}
           >
             {soundEnabled ? <Volume2 size={19} aria-hidden="true" /> : <VolumeX size={19} aria-hidden="true" />}
             <span className="sa-settings-row-label">Sound</span>
@@ -162,7 +162,7 @@ function StackAcresSettingsPanel({
           <button
             type="button"
             className="sa-settings-row"
-            onClick={() => { selectSound(); onToggleMenuMusic(); }}
+            onClick={() => { toggleSound(); onToggleMenuMusic(); }}
           >
             <Music2 size={19} aria-hidden="true" />
             <span className="sa-settings-row-label">Menu music</span>

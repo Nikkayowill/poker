@@ -1,3 +1,5 @@
+import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
+import { mapToSoilTile } from "./hoeable";
 import { describe, expect, it } from "vitest";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { STACKACRES_CATALOGUE } from "./catalogue";
@@ -598,6 +600,22 @@ describe("predictStackAcresAction: laying a soil tile", () => {
         ctx({ soilTiles: [bed] }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("predictStackAcresAction: the Crop Fields' overgrowth", () => {
+  const [first] = cropFieldObstaclePlacements();
+  const square = mapToSoilTile(first.tx, first.ty);
+
+  it("does not flash a bed where something still stands", () => {
+    expect(predictStackAcresAction({ action: "place-soil-tile", ...square }, ctx())).toBeNull();
+  });
+
+  it("breaks the bed once that obstacle is down", () => {
+    const obstacle = LAND_OBSTACLES.cropfields.find((o) => o.id === first.id)!;
+    const down = landObstacleSnapshot(obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() });
+    const patch = predictStackAcresAction({ action: "place-soil-tile", ...square }, ctx({ landObstacles: [down] }));
+    expect(patch?.soilTiles).toHaveLength(1);
   });
 });
 

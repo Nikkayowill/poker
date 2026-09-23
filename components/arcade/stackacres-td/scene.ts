@@ -37,7 +37,7 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { hoeSound } from "@/lib/audio/stackacres-sfx";
+import { doorSound, floorStepSound } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
@@ -55,6 +55,8 @@ import {
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import { fenceFrame, fenceKey, type FencePiece } from "@/lib/stackacres/fences";
+import { mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
@@ -71,7 +73,13 @@ import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
-import { LAND_BOULDER_ART, dealLandObstacles, type LandObstaclePlacement } from "@/lib/stackacres-td/land-obstacles";
+import {
+  LAND_ART_SCALE,
+  LAND_TEXTURES,
+  dealLandObstacles,
+  landTexture,
+  type LandObstaclePlacement,
+} from "@/lib/stackacres-td/land-obstacles";
 import {
   LAND_OBSTACLES,
   isClearableSector,
@@ -483,6 +491,7 @@ export class TopdownScene extends Phaser.Scene {
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
+    for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
     }
@@ -635,6 +644,7 @@ export class TopdownScene extends Phaser.Scene {
   private travelTo(to: TopdownArea, spawn: Point): void {
     this.travelling = true;
     const leaving = this.area.indoor;
+    if (leaving || this.specs.get(to)?.indoor) doorSound();
     let done = false;
     const go = (grab: HTMLImageElement | null): void => {
       if (done) return;
@@ -874,6 +884,15 @@ export class TopdownScene extends Phaser.Scene {
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
     this.anims.createFromAseprite("farmer", undefined, this.player);
+    // Floorboards indoors: a step on each foot's contact frame, the first and
+    // the middle of the walk cycle. Outside stays quiet for now.
+    if (this.area.indoor) {
+      let step = 0;
+      this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+        if (!anim.key.startsWith("walk_")) return;
+        if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) floorStepSound(step++);
+      });
+    }
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();
@@ -904,6 +923,12 @@ export class TopdownScene extends Phaser.Scene {
    * obstacles come down or a gate opens.
    */
   private buildLandObstacles(): void {
+    // The Crop Fields' overgrowth is dealt where the server can see it too, since
+    // it decides where the hoe may go (lib/stackacres/crop-field-obstacles.ts).
+    if (this.areaName === "homestead") {
+      for (const placement of cropFieldObstaclePlacements()) this.buildLandObstacle(placement);
+      return;
+    }
     const sector = AREA_SECTOR[this.areaName];
     if (sector === undefined || !isClearableSector(sector)) return;
     const { tile } = this.area;
@@ -939,28 +964,34 @@ export class TopdownScene extends Phaser.Scene {
    * blocked tiles and the gate pass all treat it like anything else standing
    * on the map.
    *
-   * Trees and scrub are the area's own art, copied off its atlas: the Fold
-   * and the Pasture are already ringed with both, so an overgrown field is
-   * drawn in exactly the trees that grow there. Only the boulder is drawn by
-   * hand, because neither field's atlas holds a rock.
+   * Trees are the area's own art, copied off its atlas, so an overgrown field
+   * is drawn in exactly the trees that grow around it. Boulders and scrub are
+   * the terrain pack's own rock and bush (`landTexture`); scrub is walked up
+   * to and rustles like any bush.
    */
   private buildLandObstacle(placement: LandObstaclePlacement): void {
     const tag = `land:${placement.id}`;
     const blocks: [number, number][] = [[placement.tx, placement.ty]];
-    if (placement.kind === "boulder") {
+    if (placement.kind !== "tree") {
+      const texture = landTexture(placement.kind, placement.id);
       const image = this.keep(
-        this.add.image(placement.x, placement.y, LAND_BOULDER_ART.texture).setOrigin(0.5, 1).setDepth(placement.y),
+        this.add
+          .image(placement.x, placement.y, texture)
+          .setOrigin(0.5, 1)
+          .setScale(LAND_ART_SCALE)
+          .setDepth(placement.y),
       );
+      if (placement.kind === "scrub") this.wind.add(image, placement.x, placement.y, 0, true);
       const spec: PropSpec = {
-        frame: LAND_BOULDER_ART.texture,
+        frame: texture,
         frames: [],
         x: placement.x,
         y: placement.y,
-        ax: image.width / 2,
-        ay: image.height,
-        w: image.width,
-        h: image.height,
-        scale: 1,
+        ax: image.displayWidth / 2,
+        ay: image.displayHeight,
+        w: image.displayWidth,
+        h: image.displayHeight,
+        scale: LAND_ART_SCALE,
         tag,
         blocks,
       };
@@ -989,13 +1020,12 @@ export class TopdownScene extends Phaser.Scene {
     this.propImages.push({ spec: { ...template, x: placement.x, y: placement.y, tag, blocks }, image, canopy });
   }
 
-  /** A tree or a bush off this area's own atlas to stand in for one
-   *  obstacle. Picked by the obstacle's own id, so it is the same tree on
-   *  every device, and from untagged props only -- a gate or a choppable
-   *  tree is not scenery to copy. */
+  /** A tree off this area's own atlas to stand in for one obstacle. Picked
+   *  by the obstacle's own id, so it is the same tree on every device, and
+   *  from untagged props only -- a gate or a choppable tree is not scenery to
+   *  copy. */
   private landTemplate(placement: LandObstaclePlacement): PropSpec | null {
-    const wanted = (spec: PropSpec) => (placement.kind === "tree" ? spec.h >= 30 : spec.h <= 18);
-    const candidates = this.area.props.filter((spec) => spec.tag === undefined && spec.sway !== undefined && wanted(spec));
+    const candidates = this.area.props.filter((spec) => spec.tag === undefined && spec.sway !== undefined && spec.h >= 30);
     if (candidates.length === 0) return null;
     let hash = 0;
     for (const character of placement.id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
@@ -1015,7 +1045,7 @@ export class TopdownScene extends Phaser.Scene {
       // from the first second (see `enterable`).
       const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.enterable(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
-      const down = kind === "land" && detail !== undefined && this.landDown.has(detail);
+      const down = kind === "land" && detail !== undefined && (this.landDown.has(detail) || this.bedOverObstacle(detail));
       const visible = stump ? isSpent : !(cleared || isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
@@ -1055,6 +1085,14 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** Whether a bed already stands on this soil tile. */
+  /** A bed dug in the Crop Fields before they were overgrown keeps its square: nothing stands on it. */
+  private bedOverObstacle(id: string): boolean {
+    const placement = cropFieldObstaclePlacements().find((candidate) => candidate.id === id);
+    if (!placement) return false;
+    const { tx, ty } = mapToSoilTile(placement.tx, placement.ty);
+    return this.hasBed(tx, ty);
+  }
+
   private hasBed(tx: number, ty: number): boolean {
     return this.soil.some((tile) => tile.tx === tx && tile.ty === ty);
   }
@@ -1629,10 +1667,7 @@ export class TopdownScene extends Phaser.Scene {
     // The puff goes up when the blade hits the ground, not when the swing starts.
     if (action === "hoe" && impact) {
       const at = this.cssToMap(impact.x, impact.y);
-      this.time.delayedCall(HOE_STRIKE_MS, () => {
-        this.hoeImpactAt(at);
-        hoeSound();
-      });
+      this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
     }
     this.stand();
     this.acting = true;
@@ -2038,6 +2073,7 @@ export class TopdownScene extends Phaser.Scene {
   setSoil(tiles: readonly SoilTile[]): void {
     this.soil = [...tiles];
     if (!this.booted) return;
+    this.applyGates();
     this.drawSoil();
     this.drawUnits();
   }

@@ -155,16 +155,16 @@ def paint(tiles, w, h, water=None):
     return img
 
 
-# Small things lying in the grass, from the pack. Pixel boxes in the terrain atlas. Stones come up
-# far more often than leaves or plants: pebbles are what makes open grass read as ground rather than
-# a green sheet, and thinning them was the first thing noticed.
+# Small things lying in the grass, from the pack. Pixel boxes in the terrain atlas. Kept SPARSE: at
+# half the squares the stones and leaves read as litter on a lawn (Kayo, 2026-09-23: "garbage"), and
+# Stardew's open grass carries only the odd weed. Stones on the grass are the exception, not the rule.
 STONES = [(493, 3, 17, 9), (489, 41, 19, 9), (585, 41, 19, 9), (515, 480, 16, 9), (523, 491, 18, 15)]
 GREENERY = [
     (419, 453, 11, 7), (424, 465, 8, 13), (433, 467, 10, 10), (416, 481, 11, 9), (419, 497, 8, 12),
     (434, 497, 11, 13), (385, 577, 17, 15), (681, 42, 15, 13), (201, 810, 15, 13),
 ]
-SCATTER_CHANCE = 0.5      # of a square with grass all round it getting something
-STONE_SHARE = 0.65        # of those, the share that are stones
+SCATTER_CHANCE = 0.06     # of a square with grass all round it getting something
+STONE_SHARE = 0.25        # of those, the share that are stones
 
 
 def _hash(x, y, salt):

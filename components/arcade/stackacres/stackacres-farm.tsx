@@ -240,6 +240,7 @@ import {
   LAND_OBSTACLE_DEFS,
   isClearableSector,
   landClearingProgress,
+  type ClearingGround,
   landObstacle,
   type LandObstacleSnapshot,
 } from "@/lib/stackacres/land-clearing";
@@ -495,7 +496,7 @@ interface StackAcresResponse {
    *  `woodChopped` takes. */
   landCleared?: {
     obstacleId: string;
-    sector: SectorId;
+    ground: ClearingGround;
     item: MachineItemId | null;
     quantity: number;
     cleared: boolean;
@@ -2318,10 +2319,10 @@ export function StackAcresFarm() {
         // broke, and the sector opening is the bigger beat that replaces the
         // per-swing toast.
         if (data.landCleared) {
-          const { item, quantity, cleared, sectorOpened, sector } = data.landCleared;
+          const { item, quantity, cleared, sectorOpened, ground } = data.landCleared;
           const label = item && quantity > 0 ? machineItemLabel(item, quantity) : null;
           waterSound();
-          if (sectorOpened) setLastCollect({ text: `${sectorLabel(sector)} is yours!`, nonce: Date.now() });
+          if (sectorOpened && isClearableSector(ground)) setLastCollect({ text: `${sectorLabel(ground)} is yours!`, nonce: Date.now() });
           else if (label) setLastCollect({ text: cleared ? `Down it comes! +${label}` : `+${label}`, nonce: Date.now() });
           if (anchor && label) world.current?.floatAt(anchor, `+${label}`, "gain");
           if (cleared) setLandPopup(null);

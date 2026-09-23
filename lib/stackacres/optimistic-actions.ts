@@ -96,6 +96,7 @@ import {
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotTile,
+  soilTileKey,
   type SoilTile,
 } from "./soil";
 import { enrichesSoil, isSoilTileEnriched } from "./soil-enrich";
@@ -113,6 +114,7 @@ import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
 import { isHoeableSoilTile } from "./hoeable";
+import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,
   demolitionPrice,
@@ -122,7 +124,8 @@ import {
   landObstacleStateOf,
   swingAtLandObstacle,
   withLandObstacleState,
-  type ClearableSectorId,
+  isClearableSector,
+  type ClearingGround,
   type LandObstacleSnapshot,
 } from "./land-clearing";
 import {
@@ -351,13 +354,21 @@ function processingPatch(
   };
 }
 
+/** Every obstacle already down, off the snapshots the client holds. */
+function clearedLandIds(landObstacles: readonly LandObstacleSnapshot[]): Set<string> {
+  return new Set(landObstacles.filter((snapshot) => snapshot.cleared).map((snapshot) => snapshot.id));
+}
+
 /** The sector itself, when the swing that just landed was the last one it
- *  was waiting on. No Gold moves: the land was taken by the work. */
+ *  was waiting on. No Gold moves: the land was taken by the work. The Crop
+ *  Fields are not a sector, so clearing them opens nothing. */
 function openedSectorPatch(
   ctx: FarmPredictContext,
-  sector: ClearableSectorId,
+  ground: ClearingGround,
   landObstacles: readonly LandObstacleSnapshot[],
 ): Pick<FarmStatePatch, "sectors"> {
+  if (!isClearableSector(ground)) return {};
+  const sector = ground;
   if (ctx.sectors.includes(sector)) return {};
   if (!landClearingProgress(sector, landObstacles).done) return {};
   return { sectors: [...ctx.sectors, sector] };
@@ -702,6 +713,7 @@ export function predictStackAcresAction(
       // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
       // on the road never flashes a bed the answer then takes away.
       if (!isHoeableSoilTile(body.tx, body.ty)) return null;
+      if (overgrownSoilTile(body.tx, body.ty, clearedLandIds(ctx.landObstacles))) return null;
       const soil = createSoilMap(ctx.soilTiles);
       // Every slot a crop currently holds, so the new bed's order clears
       // them all -- see `nextSoilOrder` on why max-plus-one over the beds
@@ -755,6 +767,11 @@ export function predictStackAcresAction(
         soilTileInCropFieldBeds,
       );
       if (plan.kind !== "ok") return null;
+      const cleared = clearedLandIds(ctx.landObstacles);
+      const holding = new Set(plan.moves.map((move) => soilTileKey(move.from.tx, move.from.ty)));
+      if (plan.moves.some(({ to }) => !holding.has(soilTileKey(to.tx, to.ty)) && overgrownSoilTile(to.tx, to.ty, cleared))) {
+        return null;
+      }
       if (!moveSoilTileGroup(soil, plan.moves)) return null;
       // Crop-free on purpose, same as place/remove-soil-tile above: no unit
       // moves here, only the beds -- a crop's `soilSlot` is its bed's own
@@ -870,7 +887,7 @@ export function predictStackAcresAction(
         energy,
         landObstacles,
         ...processingPatch(ctx, { inventory }),
-        ...openedSectorPatch(ctx, obstacle.sector, landObstacles),
+        ...openedSectorPatch(ctx, obstacle.ground, landObstacles),
       };
     }
     case "demolish-land": {
@@ -884,7 +901,7 @@ export function predictStackAcresAction(
       const profile = debited(ctx, demolitionPrice(obstacle.kind, state));
       if (!profile) return null;
       const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, next);
-      return { profile, landObstacles, ...openedSectorPatch(ctx, obstacle.sector, landObstacles) };
+      return { profile, landObstacles, ...openedSectorPatch(ctx, obstacle.ground, landObstacles) };
     }
     case "gather-forage": {
       // Fully predicted, which almost nothing that yields something else is.

@@ -2,7 +2,8 @@
  * Clearing land, which is how land is taken: you walk onto it and cut down
  * what is standing there. Nobody sells you a field.
  *
- * Each claimable sector carries a fixed set of obstacles. Every swing pays
+ * Each claimable sector carries a fixed set of obstacles, and so do the
+ * Crop Fields, which start overgrown. Every swing pays
  * out what it breaks (Wood from trees and scrub, Stone from boulders) and
  * costs a little energy, so an area is several sittings of real work. The
  * whole sector opens the moment its last obstacle goes down, for no Gold at
@@ -54,7 +55,7 @@ export const LAND_OBSTACLE_DEFS: Readonly<Record<LandObstacleKind, LandObstacleD
 export interface LandObstacle {
   readonly id: string;
   readonly kind: LandObstacleKind;
-  readonly sector: ClearableSectorId;
+  readonly ground: ClearingGround;
 }
 
 /** The sectors that are taken by clearing them. The wild places (the Oak,
@@ -67,44 +68,61 @@ export function isClearableSector(value: string): value is ClearableSectorId {
   return (CLEARABLE_SECTORS as readonly string[]).includes(value);
 }
 
+/**
+ * Everywhere obstacles stand: the two sectors, and the Crop Fields.
+ *
+ * The Crop Fields are not a sector (./sectors.ts says why) and are yours from
+ * the start, so clearing them opens nothing. What they give is room: the field
+ * starts overgrown, every square something stands on is a square the hoe
+ * cannot break, and the work of clearing it pays Wood and Stone.
+ */
+export const CLEARING_GROUNDS = [...CLEARABLE_SECTORS, "cropfields"] as const;
+export type ClearingGround = (typeof CLEARING_GROUNDS)[number];
+
 /** How much stands on each one, and in what mix. The Pasture is the bigger
- *  field and the later rung, so it is the longer job. */
-const SECTOR_MIX: Readonly<Record<ClearableSectorId, Readonly<Record<LandObstacleKind, number>>>> = {
+ *  field and the later rung, so it is the longer job. The Crop Fields are the
+ *  first job on the farm and meant to look properly overgrown, so theirs is the
+ *  most to stand anywhere, heavy on scrub, the two-swing kind. */
+const GROUND_MIX: Readonly<Record<ClearingGround, Readonly<Record<LandObstacleKind, number>>>> = {
   wallow: { tree: 12, boulder: 6, scrub: 6 },
   oxfields: { tree: 16, boulder: 9, scrub: 5 },
+  cropfields: { tree: 24, boulder: 16, scrub: 40 },
 };
 
 /**
- * The obstacle list for one sector: ids and kinds only, shuffled by a seed of
- * the sector's own name so the mix is scattered rather than sorted into
- * blocks. Where each one STANDS is the scene's business (it is the only
- * thing that knows which tiles are free), and the server never needs to know.
+ * The obstacle list for one ground: ids and kinds only, shuffled by a seed of
+ * its own name so the mix is scattered rather than sorted into
+ * blocks. Where each one STANDS is the map's business (it is the only
+ * thing that knows which tiles are free): the scene deals the sectors', and
+ * ./crop-field-obstacles.ts deals the Crop Fields', which the server reads
+ * too because it decides where the hoe may go.
  */
-function dealObstacles(sector: ClearableSectorId): LandObstacle[] {
-  const mix = SECTOR_MIX[sector];
+function dealObstacles(ground: ClearingGround): LandObstacle[] {
+  const mix = GROUND_MIX[ground];
   const kinds: LandObstacleKind[] = [];
   for (const kind of ["tree", "boulder", "scrub"] as const) {
     for (let i = 0; i < mix[kind]; i += 1) kinds.push(kind);
   }
-  const random = seededRandom(sector.length * 0x9e3779b1 + kinds.length);
+  const random = seededRandom(ground.length * 0x9e3779b1 + kinds.length);
   for (let i = kinds.length - 1; i > 0; i -= 1) {
     const j = Math.floor(random() * (i + 1));
     [kinds[i], kinds[j]] = [kinds[j], kinds[i]];
   }
   return kinds.map((kind, i) => ({
-    id: `${sector}-${String(i + 1).padStart(2, "0")}`,
+    id: `${ground}-${String(i + 1).padStart(2, "0")}`,
     kind,
-    sector,
+    ground,
   }));
 }
 
-export const LAND_OBSTACLES: Readonly<Record<ClearableSectorId, readonly LandObstacle[]>> = {
+export const LAND_OBSTACLES: Readonly<Record<ClearingGround, readonly LandObstacle[]>> = {
   wallow: dealObstacles("wallow"),
   oxfields: dealObstacles("oxfields"),
+  cropfields: dealObstacles("cropfields"),
 };
 
 const BY_ID = new Map<string, LandObstacle>(
-  CLEARABLE_SECTORS.flatMap((sector) => LAND_OBSTACLES[sector].map((obstacle) => [obstacle.id, obstacle] as const)),
+  CLEARING_GROUNDS.flatMap((ground) => LAND_OBSTACLES[ground].map((obstacle) => [obstacle.id, obstacle] as const)),
 );
 
 export function landObstacle(id: string): LandObstacle | null {
@@ -169,7 +187,7 @@ export function demolishLandObstacle(state: LandObstacleState, now: Date): LandO
 /** What one obstacle looks like to the client. */
 export interface LandObstacleSnapshot {
   readonly id: string;
-  readonly sector: ClearableSectorId;
+  readonly ground: ClearingGround;
   readonly kind: LandObstacleKind;
   readonly hitsRemaining: number;
   readonly cleared: boolean;
@@ -180,7 +198,7 @@ export interface LandObstacleSnapshot {
 export function landObstacleSnapshot(obstacle: LandObstacle, state: LandObstacleState): LandObstacleSnapshot {
   return {
     id: obstacle.id,
-    sector: obstacle.sector,
+    ground: obstacle.ground,
     kind: obstacle.kind,
     hitsRemaining: state.hitsRemaining,
     cleared: isLandObstacleCleared(state),

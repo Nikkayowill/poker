@@ -18,11 +18,10 @@ const ADMIN_SECRET = "playwright-admin-secret";
 const LANDSCAPE_PHONE = { width: 844, height: 390 };
 const GAUGE_SCENE_KEY = "stackacres-fishing";
 
-/** The dock on the Homestead, and dry ground a short walk east of it. */
-// Homestead map pixels. The farmyard sits HOME_SHIFT (38 tiles, 608px) down the
-// map now that the Crop Fields are the north half of it.
-const DOCK = { x: 196, y: 1029 };
-const NEAR_DOCK = { x: 268, y: 1032 };
+/** The dock on the Homestead, and dry ground a short walk south of it. */
+// Homestead map pixels: the mooring post at the end of the lake dock, and a spot on the lake path.
+const DOCK = { x: 405, y: 37 };
+const NEAR_DOCK = { x: 416, y: 120 };
 
 interface TopdownHandle {
   scene: {

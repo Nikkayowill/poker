@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cropFieldObstacleOnMapTile, cropFieldObstaclePlacements } from "./crop-field-obstacles";
-import { FIELD_MAP_TILE, isHoeableMapTile } from "./hoeable";
+import { isHoeableMapTile, isWildMapTile } from "./hoeable";
 import { LAND_OBSTACLES } from "./land-clearing";
 
 describe("the Crop Fields' overgrowth", () => {
@@ -10,13 +10,10 @@ describe("the Crop Fields' overgrowth", () => {
     expect(placements.map((p) => p.id).sort()).toEqual(LAND_OBSTACLES.cropfields.map((o) => o.id).sort());
   });
 
-  it("stands only on hoeable grass inside the field", () => {
+  it("stands only on hoeable grass out in the wild land", () => {
     for (const p of placements) {
       expect(isHoeableMapTile(p.tx, p.ty)).toBe(true);
-      expect(p.tx).toBeGreaterThanOrEqual(FIELD_MAP_TILE.tx);
-      expect(p.ty).toBeGreaterThanOrEqual(FIELD_MAP_TILE.ty);
-      expect(p.tx).toBeLessThan(FIELD_MAP_TILE.tx + 32);
-      expect(p.ty).toBeLessThan(FIELD_MAP_TILE.ty + 32);
+      expect(isWildMapTile(p.tx, p.ty)).toBe(true);
     }
   });
 

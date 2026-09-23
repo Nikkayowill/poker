@@ -21,13 +21,13 @@
  * Pure and renderer-free: the server imports this.
  */
 
-import { HOMESTEAD_HOEABLE_ROWS, HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
+import { HOMESTEAD_HOEABLE_ROWS, HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH, HOMESTEAD_WILD_ROWS } from "./homestead-ground";
 import { SOIL_TILE } from "./soil";
 import { CROP_FIELD_BEDS } from "./world";
 
-/** Map tile the Crop Fields' top-left soil tile is drawn on: FIELD_TX, FIELD_TY in
- *  art/stackacres-td/areas/rig/homestead.py. */
-export const FIELD_MAP_TILE = { tx: 6, ty: 2 } as const;
+/** Map tile soil tile (-16, -16), the corner of `CROP_FIELD_BEDS`, is drawn on. It only fixes
+ *  where the shared grid sits: soil tile (0, 0) lands on map tile (32, 22), the middle of the map. */
+export const FIELD_MAP_TILE = { tx: 16, ty: 6 } as const;
 
 /**
  * Soil tile (tx, ty) sits on Homestead map tile (tx + SOIL_TO_MAP.tx, ty + SOIL_TO_MAP.ty).
@@ -44,6 +44,18 @@ export const SOIL_TO_MAP = {
 export function isHoeableMapTile(mx: number, my: number): boolean {
   if (mx < 0 || my < 0 || mx >= HOMESTEAD_MAP_WIDTH || my >= HOMESTEAD_MAP_HEIGHT) return false;
   return HOMESTEAD_HOEABLE_ROWS[my]?.[mx] === "1";
+}
+
+/** Whether this map tile is out in the wild land round the yard, where the Crop Fields' overgrowth stands. */
+export function isWildMapTile(mx: number, my: number): boolean {
+  if (mx < 0 || my < 0 || mx >= HOMESTEAD_MAP_WIDTH || my >= HOMESTEAD_MAP_HEIGHT) return false;
+  return HOMESTEAD_WILD_ROWS[my]?.[mx] === "1";
+}
+
+/** Whether a bed on this soil tile is out in the wild land. The first one is the Crop Fields milestone. */
+export function isWildSoilTile(tx: number, ty: number): boolean {
+  const { mx, my } = soilToMapTile(tx, ty);
+  return isWildMapTile(mx, my);
 }
 
 /** The Homestead map tile a soil tile is drawn on. */

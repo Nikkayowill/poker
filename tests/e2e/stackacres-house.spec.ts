@@ -21,10 +21,10 @@ interface TopdownHandle {
 }
 
 /** The buildings on the Homestead, and the counter inside each one. */
-const HOUSE = { door: { x: 120, y: 748 }, counter: { x: 128, y: 75 } };
-const BARN = { door: { x: 360, y: 738 }, counter: { x: 280, y: 75 } };
+const HOUSE = { door: { x: 481, y: 280 }, counter: { x: 128, y: 75 } };
+const BARN = { door: { x: 640, y: 278 }, counter: { x: 280, y: 75 } };
 /** Long enough for the walk plus the door dissolve. */
-const WALK_MS = 2_500;
+const WALK_MS = 4_000;
 
 test.use({ viewport: { width: 932, height: 430 } });
 

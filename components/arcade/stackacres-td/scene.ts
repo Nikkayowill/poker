@@ -11,7 +11,6 @@ import {
   type ZoomRange,
 } from "@/lib/stackacres-td/camera";
 import {
-  fieldMapToWorld,
   isBedSquare,
   mapToSoilWorld,
   soilTileToMap,
@@ -54,7 +53,7 @@ import {
 } from "@/lib/stackacres-td/pull";
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
 import { fenceFrame, fenceKey, type FencePiece } from "@/lib/stackacres/fences";
-import { mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import { isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
@@ -110,10 +109,9 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  */
 
 const ASSETS = "/stackacres-td";
-/** Where the map sheet's "Crop Fields" button drops the farmer: just inside the
- *  field's south gate, on the lane up from the yard. Inside `CROP_FIELD_BEDS`
- *  on purpose, so `currentPlace` reads "you are here" off his feet. */
-const CROP_FIELDS_GATE = { x: 232, y: 520 } as const;
+/** Where the map sheet's "Crop Fields" button drops the farmer: on the south road where it
+ *  leaves the yard for the wild land, which is what the Crop Fields are now. */
+const CROP_FIELDS_GATE = { x: 512, y: 520 } as const;
 
 const AREAS: TopdownArea[] = ["homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
@@ -173,26 +171,21 @@ const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
   townsquare: "townsquare",
 };
 /**
- * Where a cast is thrown from: the shoulder of grass at the pier's north-east
- * corner, on the shore itself, with open water immediately west.
+ * Where a cast is thrown from: the far end of the lake dock, just east of the mooring post,
+ * with open water to the west.
  *
- * Its own spot rather than the anchor below every other prop, for two reasons.
- * A cast has to be sideways -- the farmer throws a rod left or right and has no
- * pose for throwing one at the camera (see lib/stackacres-td/fishing-cast.ts).
- * And the prop's usual step-up-from-below anchor lands out on the dirt road,
- * a pier's width from the pond, which put the bobber down on the planks.
- * Measured against the composited Homestead art, not guessed: tile (12, 25)
- * is walkable, and the float's spot from here (see `bobberSpot`) sits in open
- * water with a clear margin all round.
+ * Its own spot rather than the anchor below every other prop because a cast has to
+ * be sideways: the farmer throws a rod left or right and has no pose for throwing
+ * one at the camera (see lib/stackacres-td/fishing-cast.ts).
  */
-const DOCK_CAST_SPOT: Point = { x: 200, y: 409 };
+const DOCK_CAST_SPOT: Point = { x: 416, y: 44 };
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
-  wallow: { x: 636, y: 344 },
-  coast: { x: 232, y: 470 },
-  oak: { x: 104, y: 200 },
-  mine: { x: 660, y: 72 },
-  townsquare: { x: 640, y: 184 },
+  wallow: { x: 976, y: 480 },
+  coast: { x: 512, y: 660 },
+  oak: { x: 52, y: 320 },
+  mine: { x: 976, y: 176 },
+  townsquare: { x: 976, y: 320 },
 };
 
 /** Where each pen's animals stand: the area, its spots zone, and how the grid of them is laid out. */
@@ -2489,7 +2482,7 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     if (zone === "farmstead" || zone === "henhaven") {
-      const spawn = zone === "henhaven" ? { x: 450, y: 370 } : this.specs.get("homestead")!.spawn;
+      const spawn = zone === "henhaven" ? { x: 600, y: 500 } : this.specs.get("homestead")!.spawn;
       this.path = [];
       this.pending = null;
       this.enterArea("homestead", spawn);
@@ -2545,11 +2538,10 @@ export class TopdownScene extends Phaser.Scene {
     return AREA_SECTOR[this.areaName] ?? "farmstead";
   }
 
-  /** Whether a Homestead map point is out on the Crop Fields rather than down
-   *  in the farmyard. The two are one map, so "where am I" is a rectangle
-   *  test now instead of an area name. */
+  /** Whether a Homestead map point is out in the wild land round the yard, which is what the
+   *  Crop Fields are. */
   private onCropField(at: { x: number; y: number }): boolean {
-    return this.areaName === "homestead" && fieldMapToWorld(at) !== null;
+    return this.areaName === "homestead" && isWildMapTile(Math.floor(at.x / SOIL_TILE), Math.floor(at.y / SOIL_TILE));
   }
 
   /**

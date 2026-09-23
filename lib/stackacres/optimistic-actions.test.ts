@@ -1,5 +1,7 @@
 import { cropFieldObstaclePlacements } from "./crop-field-obstacles";
-import { mapToSoilTile } from "./hoeable";
+import { isWildMapTile, mapToSoilTile } from "./hoeable";
+import { isFenceableMapTile } from "./fences";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
 import { describe, expect, it } from "vitest";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { STACKACRES_CATALOGUE } from "./catalogue";
@@ -13,8 +15,7 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
-import { HOME_STARTER_ORIGIN, SOIL_TILE, soilTileAt } from "./soil";
-import { CROP_FIELD_BEDS } from "./world";
+import { HOME_STARTER_ORIGIN } from "./soil";
 import {
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
@@ -570,7 +571,16 @@ describe("predictStackAcresAction: buying and selling stock", () => {
 });
 
 describe("predictStackAcresAction: laying a soil tile", () => {
-  const inFields = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
+  // The first square out in the wild land with no overgrowth dealt onto it, off the real map.
+  const inFields = (() => {
+    const standing = new Set(cropFieldObstaclePlacements().map((p) => `${p.tx},${p.ty}`));
+    for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+      for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+        if (isWildMapTile(mx, my) && !standing.has(`${mx},${my}`)) return mapToSoilTile(mx, my);
+      }
+    }
+    throw new Error("no clear wild square on the Homestead");
+  })();
 
   it("lays the bed, and clears the Crop Fields with it", () => {
     const patch = predictStackAcresAction(
@@ -1034,8 +1044,15 @@ describe("clearing land", () => {
 });
 
 describe("predictStackAcresAction: fences", () => {
-  // Open grass south of the farmhouse (./homestead-ground.ts).
-  const grass = { tx: 20, ty: 51 };
+  // Open yard grass (./homestead-ground.ts): hoeable, not out in the wild land.
+  const grass = (() => {
+    for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT; ty++) {
+      for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH; tx++) {
+        if (isFenceableMapTile(tx, ty) && !isWildMapTile(tx, ty)) return { tx, ty };
+      }
+    }
+    throw new Error("no yard grass on the Homestead");
+  })();
 
   it("puts the piece up and takes its Wood under the finger", () => {
     const patch = predictStackAcresAction({ action: "place-fence", ...grass }, ctx({ inventory: { wood: 5 } }));

@@ -614,8 +614,8 @@ export const HOME_STARTER_TILE_COUNT = 6;
 export const HOME_STARTER_COLS = 3;
 
 /**
- * Where the six starter beds sit: the top-left of the grass west of the north
- * lane, in front of the house (Homestead map tile 4, 53).
+ * Where the six starter beds sit: the yard just south of the farm road, west of
+ * the lane down from the house (Homestead map tile 19, 23).
  *
  * On the ONE soil grid every bed shares (lib/stackacres/hoeable.ts), not on a
  * far-off lattice of their own as they used to be. That old lattice existed to
@@ -624,7 +624,7 @@ export const HOME_STARTER_COLS = 3;
  * separation is kept the direct way instead: `isHomeStarterSoilTile` is a
  * square the server refuses to dig (see `placeStackAcresSoilTile`).
  */
-export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: -18, ty: 35 };
+export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: -13, ty: 1 };
 
 /**
  * The starter beds themselves, fixed and hand-numbered rather than derived

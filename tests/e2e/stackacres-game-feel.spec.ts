@@ -105,8 +105,8 @@ function reversals(values: number[]): number {
 test("a tap walks the farmer without shaking, and his actions play", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);
   try {
-    // Open grass in the middle of the Homestead, then a real tap down and to the right of him.
-    const start = { x: 236, y: 804 };
+    // Open grass in the yard, then a real tap down and to the right of him.
+    const start = { x: 360, y: 408 };
     await page.evaluate((at) => {
       (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at);
     }, start);
@@ -191,8 +191,8 @@ test("the thumb stick walks him, stops him when let go, and carries him between 
     const place = () =>
       page.evaluate(() => (window as unknown as Handle).__stackacres.scene.currentPlace());
 
-    // Open grass in the middle of the Homestead; push right.
-    const start = { x: 236, y: 804 };
+    // Open grass in the yard; push right.
+    const start = { x: 456, y: 408 };
     await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), start);
     await page.waitForTimeout(300);
     await push(50, 0);
@@ -213,22 +213,21 @@ test("the thumb stick walks him, stops him when let go, and carries him between 
     await page.waitForTimeout(300);
     expect((await scene()).pos).toEqual(stopped.pos);
 
-    // Up the north lane and straight out to the Crop Fields. A fallen log used
-    // to bar this until the land was bought for 15,000 Gold, and the fields
-    // were a scene of their own behind it. They are the north half of this
-    // same map now, so walking up the lane never loads anything: the farmer
-    // simply ends up standing on the field.
-    await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), start);
+    // Off the bottom of the yard and straight out into the Crop Fields, the wild
+    // land round it. They are part of this same map, so walking out never loads
+    // anything: the farmer simply ends up standing in the wild. Column 16 has
+    // three clear wild squares under the yard's last row of grass.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 264, y: 488 }));
     await page.waitForTimeout(200);
-    await push(0, -50);
+    await push(0, 50);
     await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("cropfields");
     expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");
 
-    // And back down the same lane to the yard, still without a load.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 232, y: 592 }));
+    // And back up into the yard, still without a load.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 264, y: 536 }));
     await page.waitForTimeout(200);
-    await push(0, 50);
+    await push(0, -50);
     await expect.poll(async () => await place(), { timeout: 5_000 }).toBe("farmstead");
     expect((await scene()).area).toBe("homestead");
     await touch("touchEnd");
@@ -253,7 +252,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     };
 
     // Tapping the barn walks him through its doors, and Ray's counter inside opens the store.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 360, y: 788 }));
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 640, y: 304 }));
     await page.waitForTimeout(300);
     // Watch the outgoing view's opacity frame by frame: going through a door dissolves, it doesn't cut.
     await page.evaluate(() => {
@@ -266,7 +265,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
       };
       requestAnimationFrame(sample);
     });
-    await tapMap(360, 132);
+    await tapMap(640, 230);
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("barn");
     // A doorway holds the farmer for the dissolve, and the room's name shows on the HUD while it clears.
     await expect(page.locator(".sa-place-tag")).toHaveText("Barn");
@@ -291,7 +290,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
 
     // The workshop: in through its doors, and the workbench opens the recipes.
     await page.waitForTimeout(600);
-    await tapMap(488, 132);
+    await tapMap(350, 236);
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("workshop");
     await page.waitForTimeout(600);
     await page.screenshot({ path: test.info().outputPath("inside-workshop.png") });
@@ -319,9 +318,9 @@ test("the house is walked into as a room that floats whole on screen, and its ki
     };
 
     // Tapping the house walks him in through its red door.
-    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 120, y: 780 }));
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 481, y: 312 }));
     await page.waitForTimeout(1500); // the camera takes a moment to settle on him
-    await tapMap(120, 132); // the house's lower wall by its door: its upper wall is above the top of the screen
+    await tapMap(470, 262); // the house's front wall beside its door
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("farmhouse");
     await page.waitForTimeout(700);
     await page.screenshot({ path: test.info().outputPath("inside-house.png") });

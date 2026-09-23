@@ -60,7 +60,6 @@ import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   cropSpot,
   growAreaAt,
-  soilTileInCropFieldBeds,
   stockZone,
 } from "@/lib/stackacres/world";
 import {
@@ -100,7 +99,7 @@ import {
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import { isHoeableSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   FENCE_FULL,
   FENCE_NEEDS_WOOD,
@@ -5659,7 +5658,7 @@ export async function placeStackAcresSoilTile(
   if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
-  const inMeadow = soilTileInCropFieldBeds(tx, ty);
+  const inMeadow = isWildSoilTile(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
   // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
@@ -5671,7 +5670,7 @@ export async function placeStackAcresSoilTile(
       .filter((slot): slot is number => slot !== null),
   );
   if (outcome.kind === "created") {
-    // Breaking ground in the Crop Fields IS clearing them -- there is no
+    // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
     // gate, no price and no modal any more, so the milestone the rest of the
     // game hangs off (travellers arriving, the tool tiers, the crossbreeding
     // shelf) is recorded off the first bed rather than off a purchase. Once
@@ -5730,7 +5729,7 @@ export async function moveStackAcresSoilTileGroup(
   // ground itself, which is what records the flag in the first place.
   const purchased = await listStackAcresSoilTiles(profile.id);
   const soil = soilMapFor(purchased);
-  const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, soilTileInCropFieldBeds);
+  const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, isHoeableSoilTile);
 
   if (plan.kind === "empty") {
     throw new StackAcresRequestError("There is no bed there to move.", 400);

@@ -12,11 +12,11 @@ import { expect, test, type BrowserContext, type Page } from "./fixtures";
 test.use({ viewport: { width: 932, height: 430 } });
 
 const T = 16;
-/** Open grass in the farmyard, south of the house (lib/stackacres/homestead-ground.ts). */
-const GRASS = { tx: 20, ty: 51 };
-const BELT_GRASS = { tx: 28, ty: 51 };
-/** The lane down from the Crop Fields: road, not grass. */
-const ROAD = { tx: 14, ty: 48 };
+/** Open grass in the yard, south of the farm road (lib/stackacres/homestead-ground.ts). */
+const GRASS = { tx: 28, ty: 24 };
+const BELT_GRASS = { tx: 33, ty: 23 };
+/** The south road out of the yard: road, not grass. */
+const ROAD = { tx: 31, ty: 36 };
 
 interface Scene {
   clientPointFor: (x: number, y: number) => { x: number; y: number };

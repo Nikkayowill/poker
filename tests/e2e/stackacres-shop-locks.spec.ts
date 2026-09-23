@@ -24,9 +24,9 @@ const ADMIN_SECRET = "playwright-admin-secret";
 
 /** The barn on the Homestead, and the shop counter inside it. Prop
  *  coordinates are centre-x, bottom-y. */
-const BARN_DOOR = { x: 360, y: 738 };
+const BARN_DOOR = { x: 640, y: 278 };
 const BARN_COUNTER = { x: 280, y: 75 };
-const WALK_MS = 2_500;
+const WALK_MS = 4_000;
 
 async function tapWorld(page: import("@playwright/test").Page, at: { x: number; y: number }) {
   const point = await page.evaluate(

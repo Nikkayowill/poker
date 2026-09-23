@@ -28,12 +28,12 @@ interface TopdownHandle {
   };
 }
 
-// Just inside the Crop Fields, which are the north half of the Homestead now
-// rather than a map of their own. BARE_BED is a field square a few tiles up.
-const CROP_FIELDS_GATE = { x: 352, y: 540 };
-const BARE_BED = { x: 352, y: 520 };
+// Out in the Crop Fields, the wild land south of the yard: BARE_BED is a square with no
+// overgrowth dealt onto it (lib/stackacres/crop-field-obstacles.ts), and the farmer starts just below it.
+const CROP_FIELDS_GATE = { x: 456, y: 536 };
+const BARE_BED = { x: 456, y: 504 };
 /** The bed tile BARE_BED sits on. */
-const BED_TILE = { tx: 0, ty: 14 };
+const BED_TILE = { tx: -4, ty: 9 };
 const ADMIN_SECRET = "playwright-admin-secret";
 const LANDSCAPE_PHONE = { width: 844, height: 390 };
 /** Longer than any press below is allowed to take to show up. */

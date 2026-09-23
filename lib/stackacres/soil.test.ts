@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isWildSoilTile } from "./hoeable";
 
 import {
   growthStage,
@@ -265,9 +266,9 @@ describe("homeStarterSoilTiles -- the free Homestead starter beds", () => {
     for (const tile of homeStarterSoilTiles()) expect(tile.origin).toBe("starter");
   });
 
-  it("sits entirely outside the Crop Fields' own lattice", () => {
+  it("sits in the yard, not out in the Crop Fields' wild land", () => {
     for (const tile of homeStarterSoilTiles()) {
-      expect(soilTileInCropFieldBeds(tile.tx, tile.ty)).toBe(false);
+      expect(isWildSoilTile(tile.tx, tile.ty)).toBe(false);
     }
   });
 
@@ -1133,7 +1134,7 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
 
 describe("the starter beds on the shared grid", () => {
   it("are nowhere near the Crop Fields", () => {
-    for (const tile of homeStarterSoilTiles()) expect(soilTileInCropFieldBeds(tile.tx, tile.ty)).toBe(false);
+    for (const tile of homeStarterSoilTiles()) expect(isWildSoilTile(tile.tx, tile.ty)).toBe(false);
   });
 
   it("are one tidy block, three wide", () => {

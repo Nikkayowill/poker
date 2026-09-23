@@ -1,20 +1,18 @@
 import { randomUUID } from "crypto";
 import {
   isHoeableMapTile,
+  isWildMapTile,
   mapToSoilTile,
 } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
   HOME_STARTER_TILE_COUNT,
-  SOIL_TILE,
   createSoilMap,
   homeStarterSoilTiles,
   isHomeStarterSoilTile,
   soilSlotTile,
-  soilTileAt,
   type SoilTile,
 } from "@/lib/stackacres/soil";
 import { STACKACRES_CROPS } from "@/lib/stackacres/catalogue";
@@ -82,17 +80,30 @@ async function sowingFarm(gold = 500_000) {
   return token;
 }
 
-/** A tile comfortably inside the Crop Fields. */
+/**
+ * A spot out in the wild land (the Crop Fields) where every square these tests dig on or move a bed to
+ * is clear of overgrowth: four along the row, and the spots the moves below land on. Read off the real
+ * map so a redrawn map cannot leave a test digging on a road.
+ */
+const WILD_NEEDS = [[0, 0], [1, 0], [2, 0], [3, 0], [2, 3], [0, 4], [1, 4]] as const;
+const WILD_PATCH = (() => {
+  const standing = new Set(cropFieldObstaclePlacements().map((p) => `${p.tx},${p.ty}`));
+  const open = (mx: number, my: number) => isWildMapTile(mx, my) && !standing.has(`${mx},${my}`);
+  for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+    for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+      if (WILD_NEEDS.every(([dx, dy]) => open(mx + dx, my + dy))) return mapToSoilTile(mx, my);
+    }
+  }
+  throw new Error("no clear spot out in the wild land on the Homestead");
+})();
+
+/** A bed square out in the Crop Fields, `offset` squares along from the patch's corner. */
 function cropFieldTile(offset = 0) {
-  const centre = soilTileAt(
-    CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2,
-    CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2,
-  );
-  return { tx: centre.tx + offset, ty: centre.ty };
+  return { tx: WILD_PATCH.tx + offset, ty: WILD_PATCH.ty };
 }
 
 /**
- * Every bare grass square on the Homestead outside the Crop Fields and clear of the six starter
+ * Every bare grass square in the Homestead's yard, outside the wild land and clear of the six starter
  * beds, top to bottom, read off the real map (lib/stackacres/hoeable.ts) rather than written down,
  * so a redrawn map cannot leave a test pointing at a road.
  */
@@ -100,9 +111,9 @@ const BARE_GRASS = (() => {
   const tiles: { tx: number; ty: number }[] = [];
   for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
     for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
-      if (!isHoeableMapTile(mx, my)) continue;
+      if (!isHoeableMapTile(mx, my) || isWildMapTile(mx, my)) continue;
       const tile = mapToSoilTile(mx, my);
-      if (soilTileInCropFieldBeds(tile.tx, tile.ty) || isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
+      if (isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
       tiles.push(tile);
     }
   }
@@ -116,11 +127,10 @@ function grassTile(at = 0) {
   return BARE_GRASS[Math.round(at * (BARE_GRASS.length - 1))];
 }
 
-/** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py:
- *  the north lane through the yard (farmyard tile 14, 7) and the middle of the pond
- *  (farmyard 7, 26), both pushed down the 38 rows the Crop Fields add above the yard. */
-const ROAD_MAP_TILE = { mx: 14, my: 7 + 38 };
-const POND_MAP_TILE = { mx: 7, my: 26 + 38 };
+/** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py: the south road
+ *  out of the yard, and out in the lake. */
+const ROAD_MAP_TILE = { mx: 31, my: 36 };
+const POND_MAP_TILE = { mx: 30, my: 2 };
 
 /** Well outside every district -- generously far, not just off one edge. */
 const FAR_AWAY = { tx: 10_000, ty: 10_000 };
@@ -231,7 +241,7 @@ describe("placeStackAcresSoilTile: breaking ground is free", () => {
   it("lays more beds than a soil bag ever held", async () => {
     const token = await funded();
     for (let i = 0; i < 12; i += 1) {
-      await placeStackAcresSoilTile(token, cropFieldTile(i), T0);
+      await placeStackAcresSoilTile(token, grassTile(i / 11), T0);
     }
     expect((await readStackAcres(token, T0)).soilTiles.filter((t) => t.origin === "purchased")).toHaveLength(12);
   });
@@ -464,10 +474,9 @@ describe("moveStackAcresSoilTileGroup", () => {
 });
 
 describe("SOIL_TILE lattice bounds check", () => {
-  it("accepts a tile fully inside the Crop Fields and refuses one straddling its edge", async () => {
+  it("accepts a tile out in the Crop Fields", async () => {
     const token = await funded();
-    const inside = soilTileAt(CROP_FIELD_BEDS.x + SOIL_TILE, CROP_FIELD_BEDS.y + SOIL_TILE);
-    await expect(placeStackAcresSoilTile(token, inside, T0)).resolves.toBeTruthy();
+    await expect(placeStackAcresSoilTile(token, cropFieldTile(), T0)).resolves.toBeTruthy();
   });
 });
 

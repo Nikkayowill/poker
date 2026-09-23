@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import { tapSound } from "@/lib/audio/ui-sounds";
 import { browserSessionStorage } from "@/lib/profile/session-continuity";
 import { LeaveGameConfirmModal } from "@/components/leave-game-confirm-modal";
@@ -58,11 +59,11 @@ export function FloorBackLink({
   const navigateBack = () => {
     const store = browserSessionStorage();
     if (!store?.getItem(EMBEDDED_NAV_KEY)) {
-      router.push("/games");
+      navigateWithOrb(() => router.push("/games"));
       return;
     }
     store.removeItem(EMBEDDED_NAV_KEY);
-    router.back();
+    navigateWithOrb(() => router.back());
   };
 
   return (
@@ -70,6 +71,9 @@ export function FloorBackLink({
       <Link
         className="floor-back"
         href="/games"
+        // With a confirm, the click only opens the modal; its Leave button
+        // starts the orb instead.
+        data-orb={confirmLeave ? "off" : undefined}
         onClick={(event) => {
           tapSound();
           if (confirmLeave) {
@@ -81,7 +85,7 @@ export function FloorBackLink({
           if (!store?.getItem(EMBEDDED_NAV_KEY)) return;
           store.removeItem(EMBEDDED_NAV_KEY);
           event.preventDefault();
-          router.back();
+          navigateWithOrb(() => router.back());
         }}
       >
         ← Ante Up

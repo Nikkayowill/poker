@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import clsx from "clsx";
 import { Coins } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
@@ -157,7 +158,7 @@ export function HeadsUpShell() {
   // The whole reason this shell exists: the instant the match deals, hand
   // off to the real table. No in-shell match frame at all.
   useEffect(() => {
-    if (table?.gameId) router.push(`/?table=${table.gameId}`);
+    if (table?.gameId) navigateWithOrb(() => router.push(`/?table=${table.gameId}`));
   }, [table?.gameId, router]);
 
   const balance = profile?.unlimitedGold ? Infinity : profile?.goldBalance ?? 0;

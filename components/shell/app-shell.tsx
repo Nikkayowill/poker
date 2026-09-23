@@ -41,6 +41,7 @@ import { MUSIC_STORAGE_KEY, SOUND_STORAGE_KEY } from "@/lib/audio/sound-preferen
 import { parseEnabledFlag } from "@/lib/profile/stored-preference";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { LoadingScreen } from "@/components/loading/loading-screen";
+import { OrbTransitionLayer } from "@/components/loading/orb-transition-layer";
 import { PersistentChrome } from "@/components/shell/persistent-chrome";
 import { useAndroidBackButton } from "@/components/shell/use-android-back-button";
 import {
@@ -305,6 +306,7 @@ export function AppShell({ children }: { children: ReactNode }) {
        * the precedent.
        */}
       <LoadingScreen active={profileLoading && !profile} error={profileError} />
+      <OrbTransitionLayer />
     </AppShellContext.Provider>
   );
 }

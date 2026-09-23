@@ -17,6 +17,7 @@ Differences from the DB16 export:
   drop leaves.
 """
 
+import itertools
 import json
 import os
 import shutil
@@ -47,6 +48,9 @@ import coast  # noqa: E402
 import townsquare  # noqa: E402
 import kit  # noqa: E402
 import lpc_ground  # noqa: E402
+import lpc_decor  # noqa: E402
+import lpc_props  # noqa: E402
+import lpc_trees  # noqa: E402
 import pasture  # noqa: E402
 import portraits  # noqa: E402
 import props  # noqa: E402
@@ -69,8 +73,10 @@ LIGHTS = {}
 
 
 # A straw mat outside each door on the Homestead: (door centre x, mat top y, width). Laid into the ground picture
-# after it is drawn, and the same step is what patched the committed ground-*.png.
-DOORMATS = {"homestead": [(360, 151, 32), (488, 151, 24)]}
+# after it is drawn. The farmyard sits `homestead.HS` down the map under the Crop Fields, so the mats are placed
+# from that rather than from a y written down once: they were left at the farmyard's old height when the fields
+# were stacked above it, and ended up painted in the middle of the field with no mat at either door.
+DOORMATS = {"homestead": [(360, homestead.HS + 151, 32), (488, homestead.HS + 151, 24)]}
 
 
 def lay_doormats(img, area_name, scale=1):
@@ -161,7 +167,8 @@ def lpc_ground_image(area, sc, ground):
     """
     names = ["grass"] + terrain.ORDER
     tiles = lpc_ground.tile_materials(ground.owner, names, area.w, area.h)
-    img = lpc_ground.paint(tiles, area.w, area.h)
+    water = np.isin(ground.owner, [terrain.CODE["water"], terrain.CODE["stream"]])
+    img = lpc_ground.paint(tiles, area.w, area.h, water)
     d = np.clip(sc.dark, 0, 1.4)
     strength = np.where(d > 1, 0.82 + (d - 1) * 0.4, d * 0.82)
     strength = strength.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)[..., None]
@@ -169,8 +176,12 @@ def lpc_ground_image(area, sc, ground):
     for it in sc.items:
         if not it["ground"]:
             continue
-        arr = it["arrs"][0]
-        big = arr.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)
+        hires = area.items[it["i"]][0][0].info.get("hires")
+        if hires:
+            big = np.array(hires["img"].convert("RGBA"))
+        else:
+            arr = it["arrs"][0]
+            big = arr.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)
         scene._blit(img, big, it["x"] * lpc_ground.SCALE, it["y"] * lpc_ground.SCALE)
     return img
 
@@ -195,6 +206,14 @@ def game_character_frame(name):
 def patch():
     build_area.patch("".join(open(m.__file__).read() for m in PLAYABLE))
     area_mod.character_frame = game_character_frame
+    # Trees are the pack's now (lpc_trees.py): the rig still asks for a spruce or a round tree by name,
+    # and gets the LPC pine, oak or broadleaf. The small scattered things follow (lpc_props.py): each call
+    # takes the next of a steady count, so the same rock is the same rock on every export.
+    kit.spruce, kit.round_tree = lpc_trees.spruce, lpc_trees.round_tree
+    seeds = itertools.count(1)
+    kit.rock = lambda big=False: lpc_props.rock(big, next(seeds))
+    kit.bush = lambda seed=0, berries=False: lpc_props.bush(next(seeds), berries)
+    kit.stump, kit.lily_pad = lpc_props.stump, lpc_props.lily_pad
     smoke = props.smoke
 
     def smoke_emitter():
@@ -204,6 +223,7 @@ def patch():
         return frames
 
     props.smoke = smoke_emitter
+    props.waterfall, props.ledge = lpc_props.waterfall, lpc_props.ledge
 
 
 def to_image(arr):
@@ -220,6 +240,8 @@ def export_area(module, out_root):
         decor.decorate(area)
     build.assert_redrawn(area)
     ground = terrain.Ground(area)
+    if area.name == "homestead":
+        lpc_decor.decorate(area, ground)
     sc = scene.Scene(area, ground, static_only=True)
     out = os.path.join(out_root, "areas", area.name)
     os.makedirs(out, exist_ok=True)
@@ -245,26 +267,35 @@ def export_area(module, out_root):
         if it["name"] or (it["i"] >= before_decor and it["animated"]):
             continue
         sway = source[0].info.get("sway") if len(source) == 1 else None
+        # A pack tree (lpc_trees.py) arrives as a map-scale stand-in with its full-detail original attached.
+        # Everything measured -- size, footprint, shading -- comes off the stand-in; what goes into the atlas
+        # is the original, and `scale` tells the engine to draw it back down to map size.
+        hires = source[0].info.get("hires") if len(source) == 1 else None
+        scale = hires["scale"] if hires else 1
         shade = lambda img: Image.fromarray(sc.prop_frame({**it, "arrs": [np.array(img.convert("RGBA"))]}, 0))
         if sway:
-            imgs = [shade(sway["lower"])]
+            geo = [shade(sway["lower"])]
+            art = [shade(hires["lower"])] if hires else geo
         else:
-            imgs = [Image.fromarray(sc.prop_frame(it, f)) for f in range(len(it["arrs"]))]
+            geo = [Image.fromarray(sc.prop_frame(it, f)) for f in range(len(it["arrs"]))]
+            art = [shade(hires["img"])] if hires else geo
         frame_names = []
-        for f, img in enumerate(imgs):
+        for f, img in enumerate(art):
             frame_names.append(f"p{it['i']}_{f}")
             named.append((frame_names[-1], img))
         entry = {"frame": frame_names[0], "frames": frame_names, "x": it["bx"], "y": it["by"], "ax": it["ax"],
-                 "ay": it["ay"], "w": imgs[0].width, "h": imgs[0].height,
-                 "blocks": [b for b in rig_export.prop_blocks(imgs, (it["ax"], it["ay"]), it["bx"], it["by"], area)
+                 "ay": it["ay"], "w": geo[0].width, "h": geo[0].height, "scale": scale,
+                 "blocks": [b for b in rig_export.prop_blocks(geo, (it["ax"], it["ay"]), it["bx"], it["by"], area)
                             if tuple(b) not in area.doorways]}
         if source[0].info.get("passable"):
             entry["passable"] = True
             entry["blocks"] = []
+        if source[0].info.get("falls"):
+            entry["falls"] = source[0].info["falls"]
         if sway and sway.get("kind") == "broadleaf":
             canopies.append({"x": it["bx"], "y": it["by"] - 26})
         if sway:
-            named.append((f"s{it['i']}", shade(sway["upper"])))
+            named.append((f"s{it['i']}", shade(hires["upper"] if hires else sway["upper"])))
             entry["sway"] = {"frame": f"s{it['i']}", "amp": sway["amp"], "rustle": sway["rustle"]}
         for lx, ly, kind in source[0].info.get("lights", ()):
             lights.append({"kind": kind, "x": it["x"] + lx, "y": it["y"] + ly})
@@ -279,7 +310,7 @@ def export_area(module, out_root):
             name = f"t{it['i']}"
             named.append((name, Image.fromarray(arr, "RGBA")))
             entries.append({"frame": name, "frames": [name], "x": it["bx"], "y": it["by"] + 1, "ax": it["bx"] - x0,
-                            "ay": it["by"] + 1 - y0, "w": arr.shape[1], "h": arr.shape[0], "blocks": []})
+                            "ay": it["by"] + 1 - y0, "w": arr.shape[1], "h": arr.shape[0], "scale": 1, "blocks": []})
     for imgs, (ax, ay), bx, by, _, is_ground, _ in area.items:  # lamps painted into a ground picture (a room's walls)
         if is_ground:
             for lx, ly, kind in imgs[0].info.get("lights", ()):
@@ -514,6 +545,10 @@ def export_common(out_root):
         named.append((f"cloud_{seed}", critters.cloud_shadow(seed)))
     sheet, atlas_json = rig_export.atlas(named, "sprites.png")
     sheet.save(os.path.join(out, "sprites.png"))
+    # The forest beyond the map's edges, as its own picture rather than an atlas frame: the engine repeats it
+    # across a whole backdrop, and a texture that is repeated has to be one of its own.
+    lpc_trees.forest_tile().save(os.path.join(out, "forest.png"))
+    lpc_props.waterfall_sheet().save(os.path.join(out, "waterfall.png"))
     with open(os.path.join(out, "sprites.json"), "w") as fh:
         json.dump(atlas_json, fh, separators=(",", ":"))
     print("common ->", out, "|", len(named), "frames")

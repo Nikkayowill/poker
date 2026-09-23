@@ -4,6 +4,7 @@ import { purchaseCosmetic } from "@/lib/server/cosmetics-store";
 import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       token,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not complete that purchase.";
+    const message = publicErrorMessage(error, "Could not complete that purchase.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

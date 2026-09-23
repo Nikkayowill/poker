@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { stickVector, type Point } from "@/lib/stackacres-td/movement";
 
 /**
- * The thumb stick in the bottom-right corner, for phones. Tap-to-move still works everywhere else on the map.
+ * The thumb stick in the bottom-right corner, for phones: a plain ring and a knob, no arrows.
+ * Tap-to-move still works everywhere else on the map.
  *
  * A fixed base rather than one that appears under the thumb: young players need to see it before
  * they'll use it. A touch anywhere on the base walks at once in that direction, so a thumb that lands
@@ -14,7 +15,7 @@ import { stickVector, type Point } from "@/lib/stackacres-td/movement";
  */
 
 /** How far the knob's centre travels from the base's centre, in css px. */
-const REACH = 38;
+const REACH = 32;
 
 export function StackAcresJoystick({
   onStick,
@@ -104,12 +105,6 @@ export function StackAcresJoystick({
         if (held.current?.id === event.pointerId) release();
       }}
     >
-      <svg className="sa-joystick-arrows" viewBox="0 0 100 100" aria-hidden="true">
-        <path d="M50 9 L57 17 H43 Z" />
-        <path d="M50 91 L57 83 H43 Z" />
-        <path d="M9 50 L17 43 V57 Z" />
-        <path d="M91 50 L83 43 V57 Z" />
-      </svg>
       <span className="sa-joystick-knob" />
     </div>
   );

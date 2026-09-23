@@ -6,6 +6,7 @@ import { ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
 import { getActiveSeason, getLeaderboard, getPlayerStanding, type LeaderboardScope } from "@/lib/server/stats-store";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ game: "poker", scope, season, entries, mine });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load the leaderboard.";
+    const message = publicErrorMessage(error, "Could not load the leaderboard.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

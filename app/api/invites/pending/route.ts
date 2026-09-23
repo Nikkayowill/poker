@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { getPendingTableInvites, TABLE_INVITE_TTL_MS } from "@/lib/server/table-invite-store";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
     // nothing and gets nothing extra on the next poll.
     return NextResponse.json({ invites, ttlMs: TABLE_INVITE_TTL_MS });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your invites.";
+    const message = publicErrorMessage(error, "Could not load your invites.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

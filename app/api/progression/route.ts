@@ -4,6 +4,7 @@ import { dailyGrantFor, streakMultiplier, utcDayKey } from "@/lib/progression/st
 import { getProgression } from "@/lib/server/progression-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your progress.";
+    const message = publicErrorMessage(error, "Could not load your progress.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

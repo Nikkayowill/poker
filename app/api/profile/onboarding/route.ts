@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { completeOnboardingTour, ensureProfile } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     const profile = await ensureProfile(token);
     return NextResponse.json({ profile });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not save your tour progress.";
+    const message = publicErrorMessage(error, "Could not save your tour progress.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -242,7 +242,7 @@ def patch():
         return frames
 
     props.smoke = smoke_emitter
-    props.waterfall, props.ledge = lpc_props.waterfall, lpc_props.ledge
+    props.waterfall, props.ledge, props.rockfall = lpc_props.waterfall, lpc_props.ledge, lpc_props.rockfall
 
 
 def to_image(arr):
@@ -291,7 +291,9 @@ def export_area(module, out_root):
         # is the original, and `scale` tells the engine to draw it back down to map size.
         hires = source[0].info.get("hires") if len(source) == 1 else None
         scale = hires["scale"] if hires else 1
-        shade = lambda img: Image.fromarray(sc.prop_frame({**it, "arrs": [np.array(img.convert("RGBA"))]}, 0))
+        undimmed = bool(source[0].info.get("undimmed"))
+        shade = lambda img: img.convert("RGBA") if undimmed else Image.fromarray(
+            sc.prop_frame({**it, "arrs": [np.array(img.convert("RGBA"))]}, 0))
         if sway:
             geo = [shade(sway["lower"])]
             art = [shade(hires["lower"])] if hires else geo

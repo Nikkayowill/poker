@@ -23,6 +23,7 @@ from area import AREAS, Area, T
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "rich"))
 import farm_extras  # noqa: E402
 import gable_buildings  # noqa: E402
+import lpc_cliffs  # noqa: E402
 import lpc_trees  # noqa: E402
 
 MW, MH = 64, 44
@@ -34,9 +35,17 @@ CLEARED = [(15, 9, 48, 30), (1, 25, 11, 32), (51, 28, 60, 34)]
 BORDER = 2                                              # tiles of treeline round the west, east and south edges
 
 
+# The hill in the north-east corner: a rise of wooded land the lake stops short of, with its earth face
+# looking south over the mine trail. Tiles, inclusive; the face's foot is the row under HILL_ROWS.
+HILL_X0, HILL_ROWS = 52, 9
+HILL_FOOT = (HILL_ROWS + 1) * T
+CAVE_X = 976                                            # the middle of the cave mouth: the way to the mine
+
+
 def lake_line(x):
-    """How far down the map the lake reaches at map pixel x: its south shore. It runs off the top edge."""
-    taper = max(0.0, min(1.0, min(x - 96, 952 - x) / 90.0)) ** 0.5
+    """How far down the map the lake reaches at map pixel x: its south shore. It runs off the top edge,
+    and stops short of the hill in the north-east."""
+    taper = max(0.0, min(1.0, min(x - 96, HILL_X0 * T - 12 - x) / 90.0)) ** 0.5
     return (116 + 16 * math.sin(x * 0.029) + 9 * math.sin(x * 0.083 + 1.0)) * taper
 
 
@@ -51,16 +60,8 @@ def _terrain(a):
         for vx in range(MW + 1):
             if vy * T < lake_line(vx * T):
                 a.verts["water"].add((vx, vy))
-    roads = [
-        (15, 19, 32, 20), (30, 21, 40, 22), (38, 19, 63, 20), (38, 21, 39, 22),     # the farm road, both ways
-        (30, 17, 31, 20), (21, 17, 22, 18), (39, 17, 40, 18),                        # aprons at the three doors
-        (30, 23, 31, 25), (31, 25, 32, 43),                                          # south, out to the coast gate
-        (33, 26, 37, 27),                                                            # spur to Hen Haven
-        (25, 5, 26, 18),                                                             # up to the lake and the dock
-        (0, 19, 14, 20), (5, 21, 6, 26),                                             # west, to the oak gate and a clearing
-        (56, 21, 57, 28), (56, 29, 63, 30),                                          # east trail, to the Fold gate
-        (48, 10, 63, 11), (48, 12, 49, 18),                                          # north-east, to the mine gate
-    ]
+    # No roads (Kayo, 2026-09-23): the yard, the lake and the gates are all reached over the grass.
+    roads = []
     for x0, y0, x1, y1 in roads:
         a.rect("path", x0, y0, x1, y1)
 
@@ -158,15 +159,27 @@ def _gates(a):
     a.exit("townsquare", 1014, 304, 10, 32, (22, 216))
     a.add(props.brambles(), 26, 334, (20, 3), tag="locked:oak")
     a.exit("oak", 0, 304, 10, 32, (492, 216))
-    a.add(props.rockfall(), 1000, 190, (24, 4), tag="locked:mine")
-    a.exit("mine", 1014, 160, 10, 32, (88, 334))
+    a.add(props.rockfall(), CAVE_X, HILL_FOOT + 12, (24, 4), tag="locked:mine")
+    a.exit("mine", CAVE_X - 16, HILL_FOOT - 4, 32, 12, (88, 334))
     a.add(props.hedge_overgrown(), 1000, 494, (16, 3), tag="locked:wallow")
     a.exit("fold", 1014, 464, 10, 32, (22, 184))
     a.add(props.boardwalk_washed(), 512, 690, tag="locked:coast")
     a.exit("coast", 496, 694, 32, 10, (312, 22))
 
 
-GAPS = {"east": [(160, 192), (304, 336), (464, 496)], "west": [(304, 336)], "south": [(496, 528)]}
+GAPS = {"east": [(304, 336), (464, 496)], "west": [(304, 336)], "south": [(496, 528)]}
+
+
+def _hill(a):
+    """The north-east hill: its face along the top of the mine trail, the cave mouth the trail ends at,
+    and the trees standing on top of it. The land it covers never walks."""
+    x0 = HILL_X0 * T
+    width = MW * T - x0
+    a.add(lpc_cliffs.hill_face(width * 2, cave_at=(CAVE_X - x0) * 2), x0, HILL_FOOT, ground=True)
+    a.wall(HILL_X0, 0, MW - 1, HILL_ROWS)
+    # Kept clear of the cave, so the way in is always in plain sight.
+    for i, (x, y) in enumerate(((838, 156), (884, 60), (922, 104), (940, 52), (1010, 46), (868, 20), (990, 12), (850, 70))):
+        a.add(lpc_trees.crown(i * 5 + 1), x, y, (12, 4))
 
 
 def _treeline(a):
@@ -178,8 +191,8 @@ def _treeline(a):
     seed = 0
     for y in range(40, MH * T + 20, 30):
         for side, x in (("west", 8), ("west", 24), ("east", MW * T - 8), ("east", MW * T - 24)):
-            if gap(side, y):
-                continue
+            if gap(side, y) or (side == "east" and y < HILL_FOOT + 96):     # the hill stands there, and a tree
+                continue                                                    # below it would hang over the cave
             seed += 1
             a.add(lpc_trees.crown(seed), x + int(kit.hash2(x, y, 31) * 8) - 4, y, (11, 4))
     for x in range(20, MW * T, 30):
@@ -187,14 +200,14 @@ def _treeline(a):
             if gap("south", x):
                 continue
             seed += 1
-            a.add(lpc_trees.crown(seed), x + int(kit.hash2(x, y, 32) * 8) - 4, y, (11, 4))
+            a.add(lpc_trees.crown(seed), x + int(kit.hash2(x, y, 32) * 8) - 4, y - int(kit.hash2(x, y, 33) * 8), (11, 4))
         if lake_line(x) < 8:                            # the corners the lake doesn't reach
             seed += 1
             a.add(lpc_trees.crown(seed), x, 24, (11, 4))
     for tx in range(MW):
         for ty in range(MH):
             edge = tx < BORDER or tx >= MW - BORDER or ty >= MH - BORDER
-            if not edge:
+            if not edge or (tx >= HILL_X0 and ty <= HILL_ROWS):
                 continue
             px, py = tx * T + 8, ty * T + 8
             side = "west" if tx < BORDER else "east" if tx >= MW - BORDER else "south"
@@ -211,7 +224,9 @@ def _wild(a):
         for tx in range(MW):
             if tx < BORDER + 1 or tx >= MW - BORDER - 1 or ty >= MH - BORDER - 1:
                 continue
-            if _cleared(tx, ty) or ty * T < lake_line(tx * T + 8) + 2 * T:
+            if _cleared(tx, ty) or ty * T < lake_line(tx * T + 8) + 2 * T or (tx, ty) in a.solid:
+                continue
+            if tx >= HILL_X0 - 1 and ty <= HILL_ROWS + 1:            # the hill and the shadow at its foot
                 continue
             if any((tx + dx, ty + dy) in _ROAD for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
                 continue
@@ -227,6 +242,7 @@ def build(for_game=False):
     _buildings(a)
     _yard(a)
     _lake(a)
+    _hill(a)
     _gates(a)
     _treeline(a)
     _flowers(a)

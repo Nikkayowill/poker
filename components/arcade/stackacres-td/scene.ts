@@ -69,6 +69,7 @@ import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-c
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
+import { SunlightLayer } from "./sunlight-layer";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
 import { drawNodeTextures } from "./node-textures";
@@ -449,6 +450,7 @@ export class TopdownScene extends Phaser.Scene {
   /** The stick moved him on the last frame; false while it pushes him into a wall. */
   private stickWalking = false;
   private daylight!: DaylightLayer;
+  private sunlight!: SunlightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
   private life!: AmbientLife;
@@ -542,6 +544,7 @@ export class TopdownScene extends Phaser.Scene {
       motion.removeEventListener("change", onMotion);
     });
     this.daylight = new DaylightLayer(this, (object) => this.keep(object));
+    this.sunlight = new SunlightLayer(this, (object) => this.keep(object), this.wind);
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
@@ -582,6 +585,7 @@ export class TopdownScene extends Phaser.Scene {
     this.smoke.update(time, this.reducedMotion);
     this.orbs.update(time);
     this.daylight.update(time, this.reducedMotion);
+    this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.people.update(
       time,
@@ -829,6 +833,8 @@ export class TopdownScene extends Phaser.Scene {
 
     this.areaName = name;
     this.area = this.specs.get(name)!;
+    // Before any tree is built: each canopy hands the sun its top as it is made.
+    this.sunlight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.indoor);
 
     // Beyond the map's edges is forest, not the dark behind the world: the camera
     // is not fenced to the map, so a pan or a walk to an edge would otherwise look
@@ -868,6 +874,7 @@ export class TopdownScene extends Phaser.Scene {
           this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y + 0.5),
         );
         this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+        this.sunlight.lightCanopy(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
       } else if (spec.passable) {
         // A bush has no separate top, so the whole sprite shivers.
         this.wind.add(image, spec.x, spec.y, 0, true);
@@ -1040,6 +1047,7 @@ export class TopdownScene extends Phaser.Scene {
         this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setScale(template.scale).setDepth(placement.y + 0.5),
       );
       this.wind.add(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
+      this.sunlight.lightCanopy(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
     } else {
       this.wind.add(image, placement.x, placement.y, 0, true);
     }

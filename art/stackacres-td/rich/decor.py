@@ -392,26 +392,24 @@ def decorate(area):
                 standing = made[0].size != (9, 5)
                 place("foundation", made, x + int(hash2(s, k, 123) * 6), y1 + 3 + int(hash2(s, k, 124) * 3), standing)
 
+    # The open meadow: a few standing weeds and flower stalks, far apart. The flat patches and pebbles
+    # that used to go here read as litter on a lawn (Kayo, 2026-09-23), so the ground itself stays clean.
     patches = []
-    for cy in range(20, sp.H - 16, 30):                              # open meadow
-        for cx in range(20, sp.W - 16, 30):
-            if hash2(cx, cy, 130) > 0.62:
+    for cy in range(20, sp.H - 16, 40):
+        for cx in range(20, sp.W - 16, 40):
+            if hash2(cx, cy, 130) > 0.22:
                 continue
             kind = ("white", "straw", "pink", "blue")[int(hash2(cx, cy, 133) * 4)]
             r = hash2(cx, cy, 134)
             for attempt in range(3):
-                x = cx + int((hash2(cx, cy + attempt, 131) - 0.5) * 24)
-                y = cy + int((hash2(cx + attempt, cy, 132) - 0.5) * 24)
-                if r < 0.5:
-                    ok = place("wildflowers", flower_patch(cx + cy, kind), x, y, False)
-                    if ok:
-                        patches.append((x, y, kind))
-                elif r < 0.62:
-                    ok = place("pebbles", pebbles(cx * 5 + cy), x, y, False)
-                elif r < 0.82:
-                    ok = place("meadow weeds", weeds(cx * 3 + cy) if r < 0.72 else grass_clump(cx + cy), x, y, True)
+                x = cx + int((hash2(cx, cy + attempt, 131) - 0.5) * 32)
+                y = cy + int((hash2(cx + attempt, cy, 132) - 0.5) * 32)
+                if r < 0.6:
+                    ok = place("meadow weeds", weeds(cx * 3 + cy) if r < 0.3 else grass_clump(cx + cy), x, y, True)
                 else:
                     ok = place("meadow flowers", flower_stalks(cx + cy * 3, kind), x, y, True)
+                    if ok:
+                        patches.append((x, y, kind))
                 if ok:
                     break
 

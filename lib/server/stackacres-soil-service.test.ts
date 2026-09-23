@@ -123,7 +123,7 @@ function grassTile(at = 0) {
 
 /** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py: the south road
  *  out of the yard, and out in the lake. */
-const ROAD_MAP_TILE = { mx: 31, my: 36 };
+const HILL_MAP_TILE = { mx: 58, my: 5 };   // the north-east hill: walled land, no roads are left to test with
 const POND_MAP_TILE = { mx: 30, my: 2 };
 
 /** Well outside every district -- generously far, not just off one edge. */
@@ -587,9 +587,9 @@ describe("the hoe works on any grass on the Homestead", () => {
     expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(false);
   });
 
-  it("refuses the road and the pond", async () => {
+  it("refuses the hill and the pond", async () => {
     const token = await funded();
-    for (const { mx, my } of [ROAD_MAP_TILE, POND_MAP_TILE]) {
+    for (const { mx, my } of [HILL_MAP_TILE, POND_MAP_TILE]) {
       expect(isHoeableMapTile(mx, my)).toBe(false);
       await expect(placeStackAcresSoilTile(token, mapToSoilTile(mx, my), T0)).rejects.toBeInstanceOf(
         StackAcresRequestError,

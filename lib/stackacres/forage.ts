@@ -34,7 +34,7 @@
  * touches the database.
  */
 
-import { STACKACRES_CATALOGUE, type StackAcresCrop } from "./catalogue";
+import type { StackAcresCrop } from "./catalogue";
 
 /** The four Homestead bushes that carry berries in the art (`p128_0`,
  *  `p129_0`, `p131_0`, `p135_0`): the bare four stay scenery, so "has
@@ -211,10 +211,4 @@ export function forageNodeSnapshot(
     crop: forageCrop(nodeId, state.picks),
     respawnProgress: forageNodeRespawnProgress(state, now),
   };
-}
-
-/** "2 Radish seeds", for the pick's own toast. */
-export function forageYieldLabel(crop: StackAcresCrop, quantity: number): string {
-  const label = STACKACRES_CATALOGUE[crop].label;
-  return `${quantity} ${label} seed${quantity === 1 ? "" : "s"}`;
 }

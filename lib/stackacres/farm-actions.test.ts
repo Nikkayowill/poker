@@ -29,8 +29,8 @@ describe("purchaseCueText: the instant toast a spend gets", () => {
     expect(purchaseCueText({ action: "buy-stock", stock: "hen" })).toBe("Bought a Hen Coop!");
   });
 
-  it("says 'Seeded', not 'Bought', for an open-air crop", () => {
-    expect(purchaseCueText({ action: "stock", stock: "corn" })).toBe("Seeded Corn!");
+  it("has no toast for sowing a crop", () => {
+    expect(purchaseCueText({ action: "stock", stock: "corn" })).toBeNull();
   });
 
   it("has a cue for every action that spends Gold or shelf stock with no toast of its own", () => {

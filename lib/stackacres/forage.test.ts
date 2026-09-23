@@ -8,7 +8,6 @@ import {
   FORAGE_SEEDS_PER_PICK,
   forageCrop,
   forageNodeSnapshot,
-  forageYieldLabel,
   freshForageNodeState,
   isForageNodeId,
   isForageNodeReady,
@@ -110,12 +109,5 @@ describe("snapshots", () => {
     expect(snapshot.respawnProgress).toBeCloseTo(0.5);
     // Already showing what it will carry when it comes back.
     expect(snapshot.crop).toBe(forageCrop("homestead-2", 1));
-  });
-});
-
-describe("labels", () => {
-  it("pluralises the seed count", () => {
-    expect(forageYieldLabel("radish", 1)).toBe("1 Radish seed");
-    expect(forageYieldLabel("radish", 2)).toBe("2 Radish seeds");
   });
 });

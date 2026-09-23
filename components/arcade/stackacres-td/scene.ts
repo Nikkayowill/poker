@@ -37,7 +37,7 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { axeSound, doorSound, floorStepSound, pickSound, piecesSound } from "@/lib/audio/stackacres-sfx";
+import { axeSound, doorSound, floorStepSound, grassStepSound, pickSound, piecesSound } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
@@ -917,15 +917,14 @@ export class TopdownScene extends Phaser.Scene {
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
     this.anims.createFromAseprite("farmer", undefined, this.player);
-    // Floorboards indoors: a step on each foot's contact frame, the first and
-    // the middle of the walk cycle. Outside stays quiet for now.
-    if (this.area.indoor) {
-      let step = 0;
-      this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
-        if (!anim.key.startsWith("walk_")) return;
-        if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) floorStepSound(step++);
-      });
-    }
+    // A step on each foot's contact frame, the first and the middle of the
+    // walk cycle: floorboards indoors, grass outside.
+    const stepSound = this.area.indoor ? floorStepSound : grassStepSound;
+    let step = 0;
+    this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+      if (!anim.key.startsWith("walk_")) return;
+      if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) stepSound(step++);
+    });
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();

@@ -9,6 +9,9 @@
 
 type TimeOfDay = "day" | "dusk" | "night";
 
+// The tracks are levelled in the files themselves (about -36dB average), well
+// under the farm's sound effects. iOS ignores `audio.volume`, so a quieter
+// mix has to be baked in rather than set here.
 const MUSIC_CONFIG: Record<TimeOfDay, { file: string; fadeTime: number }> = {
   day: { file: "/audio/stackacres/day.mp3", fadeTime: 2000 },
   dusk: { file: "/audio/stackacres/dusk.mp3", fadeTime: 2000 },

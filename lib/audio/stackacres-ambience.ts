@@ -72,6 +72,10 @@ const SAMPLE_FILES = {
   "step-floor-2": "/audio/stackacres/sfx/step-floor-2.mp3",
   "step-floor-3": "/audio/stackacres/sfx/step-floor-3.mp3",
   "step-floor-4": "/audio/stackacres/sfx/step-floor-4.mp3",
+  "step-grass-1": "/audio/stackacres/sfx/step-grass-1.mp3",
+  "step-grass-2": "/audio/stackacres/sfx/step-grass-2.mp3",
+  "step-grass-3": "/audio/stackacres/sfx/step-grass-3.mp3",
+  "step-grass-4": "/audio/stackacres/sfx/step-grass-4.mp3",
   "door-open": "/audio/stackacres/sfx/door-open.mp3",
   "page-turn": "/audio/stackacres/sfx/page-turn.mp3",
   "map-rustle": "/audio/stackacres/sfx/map-rustle.mp3",
@@ -105,6 +109,9 @@ function isSample(cue: AmbienceCueName): cue is AmbienceCueName & SampleName {
 
 /** How often the scheduler wakes to look ahead, and how far ahead it looks. */
 const TICK_MS = 250;
+
+/** Gestures a browser lets resume a suspended AudioContext. */
+const UNLOCK_EVENTS = ["pointerdown", "touchend", "keydown"] as const;
 const LOOKAHEAD_S = 0.6;
 
 /**
@@ -183,6 +190,24 @@ class Ambience {
   private muted = false;
   private running = false;
 
+  /**
+   * Wakes the context on the next touch, click or key. The context is built
+   * in an effect after the splash tap, and iOS also parks it whenever the app
+   * goes to the background, and neither can be resumed outside a gesture.
+   * Every sound checks for a running context and skips otherwise, so without
+   * this the whole farm went quiet and stayed quiet.
+   */
+  private readonly unlock = (): void => {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === "running") return;
+    void ctx.resume().catch(() => {});
+    // iOS only counts the context as unlocked once something plays inside the gesture.
+    const blip = ctx.createBufferSource();
+    blip.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    blip.connect(ctx.destination);
+    blip.start();
+  };
+
   // -- lifecycle ------------------------------------------------------------
 
   async start(): Promise<void> {
@@ -223,6 +248,7 @@ class Ambience {
     this.applyPlan();
 
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    for (const type of UNLOCK_EVENTS) window.addEventListener(type, this.unlock, { capture: true, passive: true });
     window.setTimeout(() => {
       if (this.ctx !== ctx) return;
       for (const name of FARM_SAMPLES) this.ensureSample(name);
@@ -235,6 +261,7 @@ class Ambience {
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    for (const type of UNLOCK_EVENTS) window.removeEventListener(type, this.unlock, { capture: true });
     this.timer = null;
     for (const bed of this.beds.values()) this.teardownBed(bed);
     if (this.rainBed) this.teardownBed(this.rainBed);

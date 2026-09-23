@@ -94,7 +94,6 @@ import {
   type SectorId,
 } from "@/lib/stackacres/sectors";
 import { upkeepState, type StackAcresUpkeepState } from "@/lib/stackacres/upkeep";
-import { collectFloat } from "@/lib/stackacres/tap-action";
 import type { StackAcresUnitSnapshot } from "@/lib/stackacres/units";
 import type { StackAcresTool } from "@/lib/stackacres/tools";
 import { findCascadeTargets } from "@/lib/stackacres/harvest-cascade";
@@ -140,7 +139,7 @@ import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import type { StoneNodeSnapshot } from "@/lib/stackacres/stone-nodes";
-import { forageYieldLabel, type ForageNodeSnapshot } from "@/lib/stackacres/forage";
+import type { ForageNodeSnapshot } from "@/lib/stackacres/forage";
 import {
   ACTION_BATCH_WINDOW_MS,
   actionForUnits,
@@ -1965,15 +1964,6 @@ export function StackAcresFarm() {
         if (touchedIds.length > 0) releaseOptimisticUnitIds(touchedIds);
       };
       if (patch) applyResponse(patch, guessedIds);
-      // The unit resets instantly (above), but the payout itself is a dice
-      // roll this layer won't fake -- see predictStackAcresAction's header.
-      // A player who taps and hears/sees nothing until the round trip lands
-      // reads that gap as lag, so say the honest, numberless part out loud
-      // right away; the real toast overwrites this the moment the response
-      // is in, and a refusal below retracts it.
-      if (requested.action === "collect" && optimisticApplied) {
-        setLastCollect({ text: "Your gold will arrive in your wallet shortly...", nonce: Date.now() });
-      }
       // Every shop purchase without its own call-site toast gets one here --
       // see `purchaseCueText`'s own header for why this is the one place to
       // do it and which actions it deliberately skips.
@@ -2145,85 +2135,18 @@ export function StackAcresFarm() {
           // up once this call has fully returned -- see lastHarvestRef's own
           // header for why that has to happen outside this function.
           if (single) lastHarvestRef.current = { crit: harvest.crit, units: data.units ?? [] };
-          // Fired here rather than on the press because the ANIMAL is what
-          // makes this sound worth having, and only the response knows which
-          // unit actually paid out: a hen clucking as the eggs go in the
-          // basket is the moment the farm most needs to feel alive. A
-          // whole-farm sweep plays the loudest thing it brought in.
-          const sounded = single
-            ? unitsRef.current.find((candidate) => candidate.id === single)
-            : unitsRef.current.find((candidate) => candidate.state === "ready");
+          // A tapped crop already sounded on the press; a sweep sounds here
+          // with the loudest thing it brought in.
+          const sounded = single ? undefined : unitsRef.current.find((candidate) => candidate.state === "ready");
           if (sounded) collectSound(sounded.stock);
           if (single) setCelebrate({ unitId: single, nonce: Date.now() });
-          // The toast leads with what went into the barn, because that is
-          // what a harvest is now -- it pays no Gold, and selling is a
-          // separate choice made at the Workshop.
-          const tallyText = harvest.tally
-            .map((line) => itemLabel(line.item, line.quantity))
-            .join(", ");
-          // A weather-worn unit used to raise the same red banner a real
-          // refusal does, which read as a broken error over an ordinary farm
-          // event. It rides along on the same gold toast instead -- the mess
-          // itself keeps asking to be cleared via its cue bubble on the map,
-          // so the toast only has to give the player the heads-up once.
-          const muckedNote =
-            harvest.mucked > 0
-              ? harvest.mucked === 1
-                ? " -- 1 came up weather-worn, tap it to clear"
-                : ` -- ${harvest.mucked} came up weather-worn, tap them to clear`
-              : "";
-          setLastCollect({
-            text: `+${tallyText} to the barn${muckedNote}`,
-            nonce: Date.now(),
-          });
-          if (anchor) {
-            // A one-unit sweep floats its produce, which is what a tap on that
-            // animal was asking about. A whole-farm sweep floats a count:
-            // naming five kinds of produce over one thumb is unreadable.
-            const float =
-              single && harvest.tally.length === 1
-                ? collectFloat(harvest.tally[0].item, harvest.tally[0].quantity)
-                : { text: `+${harvest.units} brought in`, icon: "ico-harvest" };
-            world.current?.floatAt(anchor, float.text, "gain", float.icon as PainterName);
-          }
-          // A critical harvest gets its own line: a player who cannot see WHY
-          // the haul was bigger than usual has not really been told the
-          // ladder is working.
-          if (harvest.crit && harvest.critBonus.length > 0) {
-            goldSound();
-            setLastCollect({
-              text: `Rich pickings! +${harvest.critBonus
-                .map((line) => itemLabel(line.item, line.quantity))
-                .join(", ")}${muckedNote}`,
-              nonce: Date.now(),
-            });
-            // And the world's own answer to it, on the unit that got lucky:
-            // the crit flash names the exact multiple the ladder just paid.
-            // `1 + critBonus` rather than `critBonus`, because the label reads
-            // as a TOTAL ("CRIT! x2" for the Golden Spade's bonus of 1) -- see
-            // `critFlashLabel`. A whole-farm sweep has no single unit to hang
-            // this on, so it keeps the toast alone.
-            if (single) {
-              world.current?.celebrateCrit(
-                single,
-                1 + stackacresToolTierDef(toolTierRef.current).critBonus,
-              );
-            }
+          // A critical harvest shows on the crop itself: the crit flash names
+          // the multiple the ladder just paid. `1 + critBonus` because the
+          // label reads as a total ("CRIT! x2" for a bonus of 1).
+          if (single && harvest.crit && harvest.critBonus.length > 0) {
+            world.current?.celebrateCrit(single, 1 + stackacresToolTierDef(toolTierRef.current).critBonus);
           }
         }
-        // The other three a finger can start from the map. No produce to
-        // name, so the float just confirms the verb landed.
-        const done =
-          body.action === "feed"
-            ? "Fed"
-            : body.action === "water"
-              ? "Watered"
-              : body.action === "clear"
-                ? "Cleared"
-                : body.action === "stock"
-                  ? "Seeded"
-                  : null;
-        if (anchor && done) world.current?.floatAt(anchor, done, "gain");
         if (body.action === "upgrade-tool" && data.upgraded) {
           goldSound();
           setLastCollect({
@@ -2287,51 +2210,12 @@ export function StackAcresFarm() {
           });
           if (anchor) world.current?.floatAt(anchor, `+${meatLabel}, +${peltLabel}`, "gain");
         }
-        // A swing pays no Gold either -- it fills the shelf with Wood. A
-        // lost race (someone/something else felled it a beat earlier)
-        // leaves `woodChopped` null: no float, no toast, just the fresh
-        // `woodNodes` state already applied above by `applyResponse`.
-        if (body.action === "chop-tree" && data.woodChopped) {
-          const { quantity, felled } = data.woodChopped;
-          const label = machineItemLabel("wood", quantity);
-          waterSound();
-          setLastCollect({ text: felled ? `Timber! +${label}` : `+${label}`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
-        }
-        // Same shape again for a landed mining swing: fills the shelf with
-        // Stone, moves no Gold. A refused swing (the boulder was already
-        // broken) leaves `stoneMined.landed` false: no float, no toast, just
-        // the fresh `stoneNodes` state already applied above.
-        if (body.action === "mine-stone" && data.stoneMined?.landed) {
-          const { amount, broke } = data.stoneMined;
-          const label = machineItemLabel("stone", amount);
-          waterSound();
-          setLastCollect({ text: broke ? `Cracked! +${label}` : `+${label}`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
-        }
-        // Clearing land answers in the same shape, whether the swing was
-        // worked or the obstacle was blown: the materials float out of what
-        // broke, and the sector opening is the bigger beat that replaces the
-        // per-swing toast.
+        // Chopping, mining and clearing are answered in the scene: the swing,
+        // the strike and the pieces bursting into his hands. Only a sector
+        // opening gets a line of its own.
         if (data.landCleared) {
-          const { item, quantity, cleared, sectorOpened, ground } = data.landCleared;
-          const label = item && quantity > 0 ? machineItemLabel(item, quantity) : null;
-          waterSound();
+          const { sectorOpened, ground } = data.landCleared;
           if (sectorOpened && isClearableSector(ground)) setLastCollect({ text: `${sectorLabel(ground)} is yours!`, nonce: Date.now() });
-          else if (label) setLastCollect({ text: cleared ? `Down it comes! +${label}` : `+${label}`, nonce: Date.now() });
-          if (anchor && label) world.current?.floatAt(anchor, `+${label}`, "gain");
-        }
-        // A pick fills the SEED shelf, not the inventory, and moves no Gold
-        // either way. A bush someone else had already picked leaves
-        // `foraged` null: no float, no toast, just the fresh `forageNodes`
-        // state applied above -- which is what turns the bush picked-over on
-        // screen, so the tap is still answered.
-        if (body.action === "gather-forage" && data.foraged) {
-          const { crop, quantity } = data.foraged;
-          const label = forageYieldLabel(crop, quantity);
-          forageSound();
-          setLastCollect({ text: `+${label}`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+${label}`, "gain");
         }
         // The zone's own optimistic puff already fired on the press (see
         // stackacres-scene.ts's `secretDiscoveryPuff`, called from the
@@ -3159,6 +3043,8 @@ export function StackAcresFarm() {
     (unitId: string) => {
       // Six slots side by side in one panel: the same press-down-the-list
       // burst `onCollect` batches for, for the same reason.
+      const unit = unitsRef.current.find((candidate) => candidate.id === unitId);
+      if (unit) collectSound(unit.stock);
       tapBatched("collect", unitId);
     },
     [tapBatched],
@@ -3356,7 +3242,6 @@ export function StackAcresFarm() {
    */
   const onPlaceSoilTile = useCallback(
     (tx: number, ty: number) => {
-      setLastCollect({ text: "Staking out the bed…", nonce: Date.now() });
       const key = `${tx},${ty}`;
       const request = act({ action: "place-soil-tile", tx, ty });
       // Held only until this exact request settles -- see
@@ -3377,7 +3262,6 @@ export function StackAcresFarm() {
   const onRemoveSoilTile = useCallback(
     (tx: number, ty: number) => {
       buySound();
-      setLastCollect({ text: "Clearing the bed…", nonce: Date.now() });
       void act({ action: "remove-soil-tile", tx, ty });
     },
     [act],
@@ -3531,6 +3415,7 @@ export function StackAcresFarm() {
           return;
         case "collect": {
           const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
+          if (picked) collectSound(picked.stock);
           world.current?.pullCrop(action.unitId);
           // NOT batched, even mid-stroke: the Critical Harvest Cascade chains off
           // THIS request's own settled result, and a batched send has no promise
@@ -3591,7 +3476,6 @@ export function StackAcresFarm() {
   const onMoveSoilTileGroup = useCallback(
     (tx: number, ty: number, toTx: number, toTy: number) => {
       buySound();
-      setLastCollect({ text: "Shifting the bed…", nonce: Date.now() });
       void act({ action: "move-soil-tile-group", tx, ty, toTx, toTy });
     },
     [act],
@@ -3813,6 +3697,7 @@ export function StackAcresFarm() {
         world.current?.floatAt(at, "Picked over", "deny");
         return;
       }
+      forageSound();
       void act({ action: "gather-forage", nodeId });
     },
     [act, forageNodes],

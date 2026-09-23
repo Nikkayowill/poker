@@ -53,7 +53,6 @@ import {
   pullHopPoint,
 } from "@/lib/stackacres-td/pull";
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
-import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import { fenceFrame, fenceKey, type FencePiece } from "@/lib/stackacres/fences";
 import { mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";

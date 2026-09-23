@@ -21,6 +21,7 @@ import {
   retireStackAcresStock,
   runStackAcresAction,
   stockStackAcres,
+  placeStackAcresSoilTile,
   stockStackAcresGroup,
   tapStackAcresSecretZone,
   tradeStackAcresSecretItemToRay,
@@ -116,7 +117,22 @@ import {
   placeStackAcresSoilTile as laySoilBed,
 } from "./stackacres-soil-store";
 import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
-import { HOME_STARTER_TILE_COUNT, SOIL_TILE, homeStarterSoilTiles, soilTileAt } from "@/lib/stackacres/soil";
+import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
+import { isHoeableMapTile, isWildMapTile, mapToSoilTile } from "@/lib/stackacres/hoeable";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
+
+/** `n` bed squares side by side on open yard grass, read off the real map. */
+function yardRow(n: number): { tx: number; ty: number }[] {
+  const yard = (mx: number, my: number) => isHoeableMapTile(mx, my) && !isWildMapTile(mx, my);
+  for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+    for (let mx = 0; mx + n <= HOMESTEAD_MAP_WIDTH; mx++) {
+      if (Array.from({ length: n }, (_, i) => yard(mx + i, my)).every(Boolean)) {
+        return Array.from({ length: n }, (_, i) => mapToSoilTile(mx + i, my));
+      }
+    }
+  }
+  throw new Error("no open yard grass on the Homestead");
+}
 import {
   STACKACRES_BASE_CAP,
   STACKACRES_CATALOGUE,
@@ -473,14 +489,9 @@ describe("stocking", () => {
     expect(await balance(token)).toBe(before);
   });
 
-  // A brand new farm is no longer "nothing tilled" -- the free Homestead
-  // starter beds (lib/stackacres/soil.ts's `homeStarterSoilTiles`) are
-  // always there, `beds: false` or not. This fills every one of those first
-  // so there really is no bed left anywhere before asking for the refusal.
+  // A farm with no beds dug has nowhere to put a crop at all.
   it("refuses a crop with no bed left anywhere, and the seed comes back", async () => {
     const { token } = await funded(500_000, { beds: false });
-    const fillers = STACKACRES_CROPS.filter((crop) => crop !== "carrot").slice(0, HOME_STARTER_TILE_COUNT);
-    for (const filler of fillers) await stockStackAcres(token, { stock: filler }, T0);
     const seedsBefore = (await readStackAcres(token, T0)).seedStock.carrot;
 
     await expect(stockStackAcres(token, { stock: "carrot" }, T0)).rejects.toThrow(/bed/);
@@ -493,8 +504,6 @@ describe("stocking", () => {
   it("refuses a crop bought outright with no bed left anywhere, and the Gold comes back", async () => {
     const { token, id } = await funded(500_000, { beds: false });
     await createStackAcresMachine(id, "mill"); // Opens corn (seed-unlocks.ts).
-    const fillers = STACKACRES_CROPS.filter((crop) => crop !== "corn").slice(0, HOME_STARTER_TILE_COUNT);
-    for (const filler of fillers) await stockStackAcres(token, { stock: filler }, T0);
     const before = await balance(token);
 
     await expect(buyStackAcresStock(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
@@ -1015,16 +1024,17 @@ describe("group-planting a >=2x2 block", () => {
     expect((await readStackAcresSeedStock(id)).carrot ?? 0).toBe(1000 - 4);
   });
 
-  it("walks a row across the free starter beds before the Crop Fields open", async () => {
-    // What a brand-new player actually does: hold Use and step along their
-    // own six free beds. The single-tap path always allowed this; the group
-    // path refused it outright, which is the bug.
+  it("walks a row across beds dug in the yard before the Crop Fields open", async () => {
+    // What a brand-new player actually does: dig a few beds by the house, then
+    // hold Use and step along them. The single-tap path always allowed this;
+    // the group path once refused it outright, which was the bug.
     const { token, id } = await funded(2_000, { land: [], cropFieldsUnlocked: false, beds: false });
     await adjustStackAcresSeedStock(id, "wheat", -1000);
     await adjustStackAcresSeedStock(id, "wheat", 3);
-    const starters = homeStarterSoilTiles().slice(0, 3).map(({ tx, ty }) => ({ tx, ty }));
+    const row = yardRow(3);
+    for (const tile of row) await placeStackAcresSoilTile(token, tile, T0);
 
-    const view = await stockStackAcresGroup(token, { stock: "wheat", tiles: starters }, T0);
+    const view = await stockStackAcresGroup(token, { stock: "wheat", tiles: row }, T0);
     expect(view.units.filter((u) => u.stock === "wheat")).toHaveLength(3);
     expect((await readStackAcresSeedStock(id)).wheat ?? 0).toBe(0);
   });

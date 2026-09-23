@@ -166,8 +166,8 @@ export interface StoryQuest {
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
   ray: [
     // Ray teaches the opening loop in the order a new player can actually do
-    // it, on the six free starter beds: water, mill, harvest, sell to the
-    // town. His old first quest asked for three NEW beds, which the server
+    // it, on beds they dig themselves (digging is free): water, mill, harvest,
+    // sell to the town. His old first quest asked for three NEW beds, which the server
     // refused back when the Crop Fields had to be bought first, so his line
     // could never start.
     {

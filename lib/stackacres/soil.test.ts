@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { isWildSoilTile } from "./hoeable";
 
 import {
   growthStage,
@@ -17,8 +16,6 @@ import {
   meadowTileAt,
 } from "./zones";
 import {
-  HOME_STARTER_ORIGIN,
-  HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
   SOIL_TILE,
   buildCropInstances,
@@ -26,8 +23,6 @@ import {
   getClosestDryCrop,
   getClosestHarvestableCrop,
   hasSoilTile,
-  homeStarterSoilTiles,
-  isHomeStarterSoilTile,
   nextSoilOrder,
   onSoil,
   orderedSoilTiles,
@@ -247,69 +242,6 @@ describe("soilNeighborMask", () => {
 
 /* ------------------------------------------------------------------ */
 /* The Homestead starter beds -- reintroduced, small                   */
-/* ------------------------------------------------------------------ */
-
-describe("homeStarterSoilTiles -- the free Homestead starter beds", () => {
-  it("hands back a small, fixed number of beds, not the old 24-tile grant", () => {
-    const tiles = homeStarterSoilTiles();
-    expect(tiles).toHaveLength(HOME_STARTER_TILE_COUNT);
-    expect(HOME_STARTER_TILE_COUNT).toBeLessThan(24);
-    expect(HOME_STARTER_TILE_COUNT).toBeGreaterThanOrEqual(4);
-    expect(HOME_STARTER_TILE_COUNT).toBeLessThanOrEqual(8);
-  });
-
-  it("is deterministic -- the exact same tiles every call, nothing rolled per farm", () => {
-    expect(homeStarterSoilTiles()).toEqual(homeStarterSoilTiles());
-  });
-
-  it("marks every tile 'starter', never 'purchased'", () => {
-    for (const tile of homeStarterSoilTiles()) expect(tile.origin).toBe("starter");
-  });
-
-  it("sits in the yard, not out in the Crop Fields' wild land", () => {
-    for (const tile of homeStarterSoilTiles()) {
-      expect(isWildSoilTile(tile.tx, tile.ty)).toBe(false);
-    }
-  });
-
-  it("gives every starter tile a unique, negative order", () => {
-    const orders = homeStarterSoilTiles().map((t) => t.order);
-    expect(new Set(orders).size).toBe(orders.length);
-    for (const order of orders) expect(order).toBeLessThan(0);
-  });
-
-  it("cannot be flood-filled together with a Crop Fields bed", () => {
-    // Every bed shares one grid now, so this is about distance on it: the
-    // starter beds sit by the house and the Crop Fields are the far end of
-    // the map, so a relocation group seeded from one never reaches the other.
-    const soil = createSoilMap([
-      { tx: 0, ty: 0, order: 0, origin: "purchased" },
-      ...homeStarterSoilTiles(),
-    ]);
-    const group = soilTileGroup(soil, HOME_STARTER_ORIGIN.tx, HOME_STARTER_ORIGIN.ty);
-    expect(group.some((t) => t.tx === 0 && t.ty === 0)).toBe(false);
-  });
-});
-
-describe("isHomeStarterSoilTile", () => {
-  it("is true for every tile homeStarterSoilTiles hands back", () => {
-    for (const tile of homeStarterSoilTiles()) {
-      expect(isHomeStarterSoilTile(tile.tx, tile.ty)).toBe(true);
-    }
-  });
-
-  it("is false for a Crop Fields coordinate", () => {
-    const centre = soilTileAt(CROP_FIELD_BEDS.x + CROP_FIELD_BEDS.width / 2, CROP_FIELD_BEDS.y + CROP_FIELD_BEDS.height / 2);
-    expect(isHomeStarterSoilTile(centre.tx, centre.ty)).toBe(false);
-  });
-
-  it("is false for an arbitrary far-away coordinate", () => {
-    expect(isHomeStarterSoilTile(-10_000, -10_000)).toBe(false);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/* The slot lattice                                                    */
 /* ------------------------------------------------------------------ */
 
 describe("the slot lattice -- one plant per bed", () => {
@@ -1128,19 +1060,5 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
       soilTileInCropFieldBeds,
     );
     expect(outside.kind).toBe("out-of-bounds");
-  });
-});
-
-
-describe("the starter beds on the shared grid", () => {
-  it("are nowhere near the Crop Fields", () => {
-    for (const tile of homeStarterSoilTiles()) expect(isWildSoilTile(tile.tx, tile.ty)).toBe(false);
-  });
-
-  it("are one tidy block, three wide", () => {
-    const tiles = homeStarterSoilTiles();
-    expect(tiles).toHaveLength(HOME_STARTER_TILE_COUNT);
-    expect(new Set(tiles.map((t) => t.tx)).size).toBe(3);
-    expect(new Set(tiles.map((t) => soilTileKey(t.tx, t.ty))).size).toBe(HOME_STARTER_TILE_COUNT);
   });
 });

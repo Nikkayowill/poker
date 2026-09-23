@@ -15,7 +15,6 @@ import { RECIPE_CATALOGUE } from "./recipes";
 import { STACKACRES_FEED } from "./catalogue";
 import { toolUpgradePrice } from "./equipment";
 import { applyInfluenceDiscount } from "./influence-tiers";
-import { HOME_STARTER_ORIGIN } from "./soil";
 import {
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
@@ -592,11 +591,16 @@ describe("predictStackAcresAction: laying a soil tile", () => {
     expect(patch?.cropFieldsUnlocked).toBe(true);
   });
 
-  it("does not claim the Crop Fields for a bed laid on the Homestead", () => {
-    const patch = predictStackAcresAction(
-      { action: "place-soil-tile", tx: HOME_STARTER_ORIGIN.tx, ty: HOME_STARTER_ORIGIN.ty },
-      ctx(),
-    );
+  it("does not claim the Crop Fields for a bed laid in the yard", () => {
+    const yard = (() => {
+      for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+        for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+          if (isFenceableMapTile(mx, my) && !isWildMapTile(mx, my)) return mapToSoilTile(mx, my);
+        }
+      }
+      throw new Error("no yard grass on the Homestead");
+    })();
+    const patch = predictStackAcresAction({ action: "place-soil-tile", tx: yard.tx, ty: yard.ty }, ctx());
     expect(patch?.soilTiles).toHaveLength(1);
     expect(patch?.cropFieldsUnlocked).toBe(false);
   });

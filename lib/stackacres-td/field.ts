@@ -26,7 +26,7 @@
  */
 
 import { SOIL_TO_MAP, isHoeableSoilTile } from "@/lib/stackacres/hoeable";
-import { SOIL_TILE, isHomeStarterSoilTile } from "@/lib/stackacres/soil";
+import { SOIL_TILE } from "@/lib/stackacres/soil";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
@@ -91,10 +91,10 @@ export function soilTileToMap(tx: number, ty: number): { x: number; y: number } 
   return soilWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
 }
 
-/** Whether a bed can stand on this soil tile at all: grass the hoe may break, or
- *  one of the six free starter beds. Everywhere else is road, water or a roof. */
+/** Whether a bed can stand on this soil tile at all: grass the hoe may break.
+ *  Everywhere else is road, water or a roof. */
 export function isBedSquare(tx: number, ty: number): boolean {
-  return isHoeableSoilTile(tx, ty) || isHomeStarterSoilTile(tx, ty);
+  return isHoeableSoilTile(tx, ty);
 }
 
 /** A Crop Fields world point, in Homestead map pixels. */

@@ -8,10 +8,7 @@ import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/home
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  HOME_STARTER_TILE_COUNT,
   createSoilMap,
-  homeStarterSoilTiles,
-  isHomeStarterSoilTile,
   soilSlotTile,
   type SoilTile,
 } from "@/lib/stackacres/soil";
@@ -103,8 +100,7 @@ function cropFieldTile(offset = 0) {
 }
 
 /**
- * Every bare grass square in the Homestead's yard, outside the wild land and clear of the six starter
- * beds, top to bottom, read off the real map (lib/stackacres/hoeable.ts) rather than written down,
+ * Every bare grass square in the Homestead's yard, outside the wild land, top to bottom, read off the real map (lib/stackacres/hoeable.ts) rather than written down,
  * so a redrawn map cannot leave a test pointing at a road.
  */
 const BARE_GRASS = (() => {
@@ -112,9 +108,7 @@ const BARE_GRASS = (() => {
   for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
     for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
       if (!isHoeableMapTile(mx, my) || isWildMapTile(mx, my)) continue;
-      const tile = mapToSoilTile(mx, my);
-      if (isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
-      tiles.push(tile);
+      tiles.push(mapToSoilTile(mx, my));
     }
   }
   return tiles;
@@ -142,41 +136,30 @@ beforeEach(() => {
   __resetStackAcresIntentsForTest();
 });
 
-describe("the free Homestead starter beds", () => {
-  it("exist on a genuinely fresh profile, before any Gold is spent or the Crop Fields are unlocked", async () => {
+describe("a new farm opens on bare grass", () => {
+  it("has no beds at all until the player digs one", async () => {
     const token = randomUUID();
     await ensureProfile(token);
 
     const view = await readStackAcres(token, T0);
 
     expect(view.cropFieldsUnlocked).toBe(false);
-    expect(view.soilTiles.filter((t) => t.origin === "starter")).toHaveLength(HOME_STARTER_TILE_COUNT);
+    expect(view.soilTiles).toHaveLength(0);
   });
 
-  it("let a genuinely new player till and plant a real crop with no Gold spent and nothing unlocked", async () => {
+  it("lets a genuinely new player dig a bed and plant a real crop with no Gold spent", async () => {
     const token = randomUUID();
     const profile = await ensureProfile(token);
     await adjustStackAcresSeedStock(profile.id, "carrot", 1);
     const goldBefore = (await ensureProfile(token)).goldBalance;
-    const starterBed = homeStarterSoilTiles()[0];
+    const tile = grassTile();
 
-    const view = await stockStackAcres(token, { stock: "carrot", tile: starterBed }, T0);
+    await placeStackAcresSoilTile(token, tile, T0);
+    const view = await stockStackAcres(token, { stock: "carrot", tile }, T0);
 
-    const planted = view.units.find((u) => u.stock === "carrot");
-    expect(planted).toBeDefined();
-    expect(planted?.soilSlot).toBe(starterBed.order);
+    expect(view.units.find((u) => u.stock === "carrot")?.soilSlot).toBe(0);
     expect(view.cropFieldsUnlocked).toBe(false);
     expect((await ensureProfile(token)).goldBalance).toBe(goldBefore);
-  });
-
-  it("cannot be removed -- only a purchased bed can", async () => {
-    const token = randomUUID();
-    await ensureProfile(token);
-    const starterBed = homeStarterSoilTiles()[0];
-
-    await expect(removeStackAcresSoilTile(token, starterBed, T0)).rejects.toBeInstanceOf(
-      StackAcresRequestError,
-    );
   });
 
   it("lets a brand new player break ground in the Crop Fields with nothing bought", async () => {
@@ -485,18 +468,12 @@ describe("soil tiers", () => {
   // slot space and every sow in here lands on it.
   const CELL_A = cropFieldTile();
 
-  // A crop needs a bed under it (2026-09-09): with every bed already
-  // growing something -- Crop Fields or Homestead starter alike -- the sow
-  // is refused outright, and the seed it would have spent stays on the
-  // shelf, the same "a failed creation refunds" rule the insert path
-  // already follows, applied one step earlier. A brand new farm is no
-  // longer a case of "no bed anywhere" (that is the whole point of the free
-  // Homestead starter beds), so this fills all six of those first.
+  // A crop needs a bed under it (2026-09-09): with no bed free the sow is
+  // refused outright, and the seed it would have spent stays on the shelf,
+  // the same "a failed creation refunds" rule the insert path already follows.
+  // A brand new farm has no beds at all, so it is the plainest case of that.
   it("refuses a crop with no bed left anywhere, and keeps the seed", async () => {
     const token = await sowingFarm();
-    for (let i = 0; i < HOME_STARTER_TILE_COUNT; i += 1) {
-      await stockStackAcres(token, { stock: STACKACRES_CROPS[i] }, T0);
-    }
     const before = (await readStackAcres(token, T0)).seedStock.corn;
 
     await expect(stockStackAcres(token, { stock: "corn" }, T0)).rejects.toThrow(/bed/);
@@ -517,12 +494,8 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     await placeStackAcresSoilTile(token, bedB, T0);
     await placeStackAcresSoilTile(token, bedC, T0);
 
-    // Fills the lowest free slot on the farm the ordinary way -- no tile
-    // named. That is one of the free Homestead starter beds now (their
-    // negative orders sort ahead of every purchased one -- see
-    // lib/stackacres/soil.ts's own comment on `homeStarterSoilTiles`), not
-    // bed A, so this only occupies a starter bed and leaves every Crop
-    // Fields bed free for the real point of the test below.
+    // Fills the lowest free slot on the farm the ordinary way, no tile named:
+    // bed A, leaving B and C free for the real point of the test below.
     await stockStackAcres(token, { stock: "corn" }, T0);
 
     // Bed C named directly. This only proves anything if the crop lands on
@@ -538,11 +511,10 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     await placeStackAcresSoilTile(token, cropFieldTile(), T0);
 
     // FAR_AWAY names no bed at all -- a stale or bogus tap, not a refusal.
-    // The lowest free slot on a fresh farm is one of the free Homestead
-    // starter beds, ahead of the Crop Fields bed just placed.
+    // The lowest free slot is the one bed just dug.
     const view = await stockStackAcres(token, { stock: "corn", tile: FAR_AWAY }, T0);
     const unit = view.units.filter((u) => u.stock === "corn").at(-1)!;
-    expect(unit.soilSlot).toBe(homeStarterSoilTiles()[0].order);
+    expect(unit.soilSlot).toBe(0);
   });
 
   it("falls back to the lowest free slot when the named tile is already standing on", async () => {
@@ -555,10 +527,10 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
     await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
     // Naming bed A again -- something is already growing there, so this has
     // to fall through rather than double a crop onto one slot. The lowest
-    // free slot left is a Homestead starter bed, ahead of bed B.
+    // free slot left is bed B.
     const view = await stockStackAcres(token, { stock: "corn", tile: bedA }, T0);
     const second = view.units.filter((u) => u.stock === "corn").at(-1)!;
-    expect(second.soilSlot).toBe(homeStarterSoilTiles()[0].order);
+    expect(second.soilSlot).toBe(1);
   });
 });
 
@@ -623,19 +595,6 @@ describe("the hoe works on any grass on the Homestead", () => {
         StackAcresRequestError,
       );
     }
-  });
-
-  it("refuses a square one of the six free starter beds already holds", async () => {
-    // Those beds are never stored, so the database's one-bed-per-square rule
-    // cannot see them. Without this refusal a dug bed would land on top of one.
-    const token = await funded();
-    const [starter] = homeStarterSoilTiles();
-
-    await expect(placeStackAcresSoilTile(token, { tx: starter.tx, ty: starter.ty }, T0)).rejects.toMatchObject({
-      status: 409,
-    });
-    const view = await readStackAcres(token, T0);
-    expect(view.soilTiles.filter((t) => t.tx === starter.tx && t.ty === starter.ty)).toHaveLength(1);
   });
 });
 

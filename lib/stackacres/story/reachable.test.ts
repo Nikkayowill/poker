@@ -78,8 +78,8 @@ describe("every quest asks for something reachable", () => {
   });
 
   it("gives Ray a first quest a brand-new farm can finish", () => {
-    // Six free starter beds, a watering can and 3 Gold wheat is the whole of
-    // a new farm. Watering is the only verb all of that supports.
+    // Free digging, forage seed, a watering can and 3 Gold wheat is the whole
+    // of a new farm. Watering is the only verb all of that supports.
     const first = TRAVELER_QUESTS.ray[0];
     expect(first.objectives).toHaveLength(1);
     expect(first.objectives[0].kind).toBe("water");

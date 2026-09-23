@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isHoeableMapTile, isWildMapTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
-import { SOIL_TILE, homeStarterSoilTiles, soilTileAt } from "@/lib/stackacres/soil";
+import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
 import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
   FIELD_ORIGIN,
@@ -96,9 +96,10 @@ describe("the Crop Fields are the wild land round the yard", () => {
     expect(some(15, 32, 48, 40)).toBe(true);
   });
 
-  it("leaves the yard and the starter beds out of it", () => {
+  it("leaves the yard out of it", () => {
     expect(isWildMapTile(31, 21)).toBe(false);
-    for (const tile of homeStarterSoilTiles()) expect(isWildSoilTile(tile.tx, tile.ty)).toBe(false);
+    expect(isWildMapTile(28, 24)).toBe(false);
+    expect(isWildSoilTile(mapToSoilTile(28, 24).tx, mapToSoilTile(28, 24).ty)).toBe(false);
   });
 
   it("leaves nothing walking off to a separate Crop Fields map", () => {
@@ -107,14 +108,6 @@ describe("the Crop Fields are the wild land round the yard", () => {
 });
 
 describe("where a bed may go", () => {
-  it("stands the six free starter beds on real grass, not on the road", () => {
-    for (const tile of homeStarterSoilTiles()) {
-      const { mx, my } = soilToMapTile(tile.tx, tile.ty);
-      expect(isHoeableMapTile(mx, my), `starter bed at map ${mx},${my}`).toBe(true);
-      expect(isBedSquare(tile.tx, tile.ty)).toBe(true);
-    }
-  });
-
   it("covers a good share of the farm, and not all of it", () => {
     let grass = 0;
     for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
@@ -145,8 +138,9 @@ describe("where a bed may go", () => {
 
 describe("worldToMap", () => {
   it("puts any bed square on the Homestead", () => {
-    const [starter] = homeStarterSoilTiles();
-    const world = { x: starter.tx * SOIL_TILE + 8, y: starter.ty * SOIL_TILE + 8 };
+    const yard = mapToSoilTile(28, 24);
+    expect(isBedSquare(yard.tx, yard.ty)).toBe(true);
+    const world = { x: yard.tx * SOIL_TILE + 8, y: yard.ty * SOIL_TILE + 8 };
     expect(worldToMap(world)).toEqual({ area: "homestead", ...soilWorldToMap(world) });
     expect(worldToMap({ x: 0, y: 0 })?.area).toBe("homestead");
   });

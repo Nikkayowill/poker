@@ -348,6 +348,9 @@ const PROVISIONAL_WAIT_PASSES = 3;
 
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
+/** How long a refusal stays on screen before it fades out. */
+const NOTICE_MS = 3200;
+
 /** How many extra windows a batched flush may wait for its own intent to
  *  clear before sending anyway and letting `act` answer. Bounded so a stuck
  *  request can never hold a player's taps forever -- see `flushBatch`. */
@@ -991,6 +994,11 @@ export function StackAcresFarm() {
    */
   const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   // Nothing on the map reads a held StackAcresTool any more; the belt replaced it
   // (lib/stackacres/toolbelt.ts). Kept only to satisfy the world contract's own prop.
   const tool: StackAcresTool = "inspect";
@@ -3986,7 +3994,7 @@ export function StackAcresFarm() {
           {/* The tool belt, top left. The places list is gone and so is the old
               tool dock: Shop, Blueprints, Town Board and Workshop are walked up
               to (Ray, the signpost, the windmill), and the ground is worked with
-              whichever slot is held plus the Use key beside the thumb stick. */}
+              whichever slot is held plus the Use key across from the thumb stick. */}
           <StackAcresToolbelt
             held={belt}
             onPick={pickBeltTool}
@@ -4057,10 +4065,6 @@ export function StackAcresFarm() {
               onClose={story.close}
             />
           )}
-
-          <div className="sa-side">
-            {error && <p className="duel-error" role="alert">{error}</p>}
-          </div>
 
           {/* Bring the whole farm in at once.
               THIS IS THE ONLY CONTROL THAT CAN EARN A SYNERGY, and that is why
@@ -4158,10 +4162,6 @@ export function StackAcresFarm() {
                 </p>
               );
             })()}
-
-            {/* The page's own banner sits behind the scrim, so a refusal raised
-                by a button in here has to be answered in here. */}
-            {error && <p className="duel-error" role="alert">{error}</p>}
 
             <div className="sa-store-tabs" role="tablist" aria-label="Store shelf">
               {STORE_TABS.map((tab) => (
@@ -4558,7 +4558,6 @@ export function StackAcresFarm() {
 
       {showHouse && (
         <StackAcresHouse
-          error={error}
           onClose={() => { panelSound(); setShowHouse(false); }}
           energy={energyAt(energy, new Date(nowMs))}
           inventory={processing.inventory}
@@ -4717,6 +4716,15 @@ export function StackAcresFarm() {
           onHarvest={onHarvestCrossbreed}
           onClose={() => { panelSound(); setShowCrossbreed(false); }}
         />
+      )}
+
+      {/* Refusals pop up mid-screen, over any open sheet, and fade on their own.
+          The server only ever sends text written for the player
+          (lib/server/public-error.ts). */}
+      {error && (
+        <p className="sa-notice" role="alert">
+          {error}
+        </p>
       )}
     </main>
   );

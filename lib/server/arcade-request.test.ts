@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
 
 /**
@@ -53,6 +53,10 @@ describe("ArcadeRequestError", () => {
 });
 
 describe("toArcadeErrorResponse", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("answers a rejection with its own status and message", async () => {
     const response = toArcadeErrorResponse(new FakeRequestError("gone", 404), "fallback");
     expect(response.status).toBe(404);
@@ -87,13 +91,15 @@ describe("toArcadeErrorResponse", () => {
     expect(await body(response)).toEqual({ error: "Not enough Gold." });
   });
 
-  it("treats any other Error as a fault and passes its message on", async () => {
-    const response = toArcadeErrorResponse(new Error("relation does not exist"), "fallback");
+  it("never sends a fault's database text to the player", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = toArcadeErrorResponse(new Error("relation does not exist"), "That could not be worked.");
     expect(response.status).toBe(500);
-    expect(await body(response)).toEqual({ error: "relation does not exist" });
+    expect(await body(response)).toEqual({ error: "That could not be worked." });
   });
 
-  it("falls back only for a non-Error throw", async () => {
+  it("falls back for a non-Error throw", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const response = toArcadeErrorResponse("something odd", "That hand could not be played.");
     expect(response.status).toBe(500);
     expect(await body(response)).toEqual({ error: "That hand could not be played." });

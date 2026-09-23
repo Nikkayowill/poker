@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { getFriendsOverview, removeFriend } from "@/lib/server/friends-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(await getFriendsOverview(auth.profile.id));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your friends.";
+    const message = publicErrorMessage(error, "Could not load your friends.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -60,7 +61,7 @@ export async function DELETE(request: NextRequest) {
     const removed = await removeFriend(auth.profile.id, parsed.data.profileId);
     return NextResponse.json({ removed });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not remove that friend.";
+    const message = publicErrorMessage(error, "Could not remove that friend.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

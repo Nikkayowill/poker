@@ -72,13 +72,14 @@ import { DaylightLayer, type LightPoint } from "./daylight-layer";
 import { SunlightLayer } from "./sunlight-layer";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
+import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
 import {
   LAND_ART_SCALE,
   LAND_TEXTURES,
   dealLandObstacles,
-  landTexture,
+  landArt,
   type LandObstaclePlacement,
 } from "@/lib/stackacres-td/land-obstacles";
 import {
@@ -387,6 +388,8 @@ export class TopdownScene extends Phaser.Scene {
   private falls: Phaser.GameObjects.TileSprite[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
+  /** Fades whatever tall thing he is standing behind. */
+  private readonly seeThrough = new SeeThrough(this);
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
@@ -593,6 +596,7 @@ export class TopdownScene extends Phaser.Scene {
       this.daylight.hour(),
       this.reducedMotion,
     );
+    this.seeThrough.update(this.pos, delta, this.reducedMotion);
   }
 
   private walk(delta: number): void {
@@ -907,6 +911,11 @@ export class TopdownScene extends Phaser.Scene {
       }
     }
     this.buildLandObstacles();
+    this.seeThrough.track(
+      this.area.indoor
+        ? []
+        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
+    );
     for (const npc of this.area.npcs) {
       const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
       this.anims.createFromAseprite(npc.name, undefined, sprite);
@@ -998,20 +1007,21 @@ export class TopdownScene extends Phaser.Scene {
    *
    * Trees are the area's own art, copied off its atlas, so an overgrown field
    * is drawn in exactly the trees that grow around it. Boulders and scrub are
-   * the terrain pack's own rock and bush (`landTexture`); scrub is walked up
-   * to and rustles like any bush.
+   * built from the terrain pack's rocks, bushes and stumps (`landArt`); scrub
+   * is walked up to and rustles like any bush.
    */
   private buildLandObstacle(placement: LandObstaclePlacement): void {
     const tag = `land:${placement.id}`;
     this.landKinds.set(placement.id, placement.kind);
     const blocks: [number, number][] = [[placement.tx, placement.ty]];
     if (placement.kind !== "tree") {
-      const texture = landTexture(placement.kind, placement.id);
+      const { texture, flip } = landArt(placement.kind, placement.id);
       const image = this.keep(
         this.add
           .image(placement.x, placement.y, texture)
           .setOrigin(0.5, 1)
           .setScale(LAND_ART_SCALE)
+          .setFlipX(flip)
           .setDepth(placement.y),
       );
       if (placement.kind === "scrub") this.wind.add(image, placement.x, placement.y, 0, true);
@@ -1613,6 +1623,8 @@ export class TopdownScene extends Phaser.Scene {
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
       if (!image.getBounds().contains(map.x, map.y)) continue;
+      // Faded because he's behind it, so the tap is for what's behind.
+      if (this.seeThrough.passesTap(image, map)) continue;
       // The dock is walked to from its dry end and cast from side-on, so it
       // wants its own spot rather than the step-up-from-below every other prop
       // is approached with. The face point is due west along the planks, which
@@ -2688,6 +2700,13 @@ export class TopdownScene extends Phaser.Scene {
     const part = this.propImages.find(({ spec }) => spec.tag === `land:${id}`);
     if (!part || !part.image.visible) return null;
     return { x: part.spec.x, y: part.spec.y - 6 };
+  }
+
+  /** e2e only: where a tagged prop meets the ground and how opaque it is drawn right now, or null when this map has none. */
+  propSight(tag: string): { base: Point; alpha: number } | null {
+    const part = this.propImages.find(({ spec, stump }) => spec.tag === tag && !stump);
+    if (!part) return null;
+    return { base: { x: part.spec.x, y: part.spec.y }, alpha: part.image.alpha };
   }
 
   /** e2e only: whether the farmer is stopped from walking onto this map point. */

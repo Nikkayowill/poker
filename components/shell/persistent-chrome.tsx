@@ -9,6 +9,7 @@
  */
 
 import { usePathname, useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { browserSessionStorage } from "@/lib/profile/session-continuity";
 import { useAppShell } from "./app-shell";
@@ -38,14 +39,14 @@ export function PersistentChrome() {
       : null;
 
     const select = (index: number) => {
-      if (index === 1) { router.push("/games"); return; }
-      if (index === 2) { router.push("/leaderboard"); return; }
+      if (index === 1) { navigateWithOrb(() => router.push("/games")); return; }
+      if (index === 2) { navigateWithOrb(() => router.push("/leaderboard")); return; }
       try {
         browserSessionStorage()?.setItem(LOBBY_PANE_STORAGE_KEY, String(index));
       } catch {
         // Worst case this lands on whichever pane the shell last remembered.
       }
-      router.push("/");
+      navigateWithOrb(() => router.push("/"));
     };
 
     return <TabBar activeIndex={activeIndex} onSelect={select} profile={profile} />;

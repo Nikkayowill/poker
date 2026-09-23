@@ -14,6 +14,8 @@ import { usePhoneViewport } from "@/components/use-phone-viewport";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { STACKACRES_TILE_ADVERTISED } from "@/lib/stackacres/tile-advertised";
 import { AccountEntryCard } from "@/components/auth/account-entry-card";
+import { useEntryOrb } from "@/components/loading/use-entry-orb";
+import { startOrb } from "@/lib/loading/orb-transition";
 import { EntryHero } from "@/components/auth/entry-hero";
 import { SiteFooter } from "@/components/nav/site-footer";
 import { FriendsDrawer } from "@/components/social/friends-drawer";
@@ -197,6 +199,7 @@ export function Lobby({
   // controls for anyone (guest or registered) who hasn't seen them, and only
   // once the hub has actually rendered its real tiles.
   useOnboardingTour(profile, LOBBY_TOUR_STEPS, entryComplete && sessionReady);
+  useEntryOrb(entryComplete, signInPending);
 
   if (!entryComplete) {
     return (
@@ -210,12 +213,12 @@ export function Lobby({
           remember={rememberSession}
           error={error}
           onRememberChange={onRememberSessionChange}
-          onSignIn={onSaveProgress}
-          onEmailSignIn={onEmailSignIn}
-          onEmailSignUp={onEmailSignUp}
+          onSignIn={() => { startOrb(); onSaveProgress(); }}
+          onEmailSignIn={(email, password, token) => { startOrb(); onEmailSignIn(email, password, token); }}
+          onEmailSignUp={(email, password, token) => { startOrb(); onEmailSignUp(email, password, token); }}
           onForgotPassword={onForgotPassword}
-          onContinueAccount={onContinueAccount}
-          onContinueAsGuest={onContinueAsGuest}
+          onContinueAccount={() => { startOrb(); onContinueAccount(); }}
+          onContinueAsGuest={() => { startOrb(); onContinueAsGuest(); }}
           onSignOut={onSignOut}
         />
       </main>

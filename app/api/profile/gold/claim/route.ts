@@ -5,6 +5,7 @@ import { persistenceMode } from "@/lib/server/game-store";
 import { getProgression, recordDailyClaim } from "@/lib/server/progression-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       progression: await getProgression(profile.id),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not claim your daily Gold.";
+    const message = publicErrorMessage(error, "Could not claim your daily Gold.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

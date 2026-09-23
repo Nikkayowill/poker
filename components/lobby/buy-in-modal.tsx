@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateWithOrb } from "@/lib/loading/orb-transition";
 import clsx from "clsx";
 import { X } from "lucide-react";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -218,7 +219,7 @@ export function BuyInModal({
                   onConfirm(tier, buyIn);
                 } else {
                   onClose();
-                  router.push(`/games/${format === "heads-up" ? "heads-up" : "sit-and-go"}?tier=${tier}`);
+                  navigateWithOrb(() => router.push(`/games/${format === "heads-up" ? "heads-up" : "sit-and-go"}?tier=${tier}`));
                 }
               }}
             >

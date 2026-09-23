@@ -11,6 +11,7 @@ import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -75,7 +76,7 @@ export async function POST(
       retryAfterMs,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not advance the table.";
+    const message = publicErrorMessage(error, "Could not advance the table.");
     return NextResponse.json({ error: message }, { status: 409 });
   }
 }

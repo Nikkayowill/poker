@@ -750,9 +750,9 @@ button:disabled { cursor: wait; opacity: .62; }
 .arcade-marquee-bulbs-left { left: 6px; top: 22px; bottom: 22px; flex-direction: column-reverse; }
 
 /* The lit bulb is a layer over the dark one and only its opacity animates,
-   so the chase never repaints. Each bulb starts .1s after the one before it
-   (--bulb is its clockwise index, 36 bulbs x .1s = one 3.6s lap) and fades
-   rather than snapping, so the light glides round the sign. */
+   so the chase never repaints. Each bulb starts .25s after the one before it
+   (--bulb is its clockwise index, 36 bulbs x .25s = one 9s lap) and fades
+   rather than snapping, so the light drifts slowly round the sign. */
 .arcade-marquee-bulb {
   position: relative;
   width: 5px;
@@ -768,15 +768,15 @@ button:disabled { cursor: wait; opacity: .62; }
   background: var(--neon-yellow-bright);
   box-shadow: 0 0 6px var(--neon-yellow), 0 0 12px rgba(255, 210, 63, .6);
   opacity: .15;
-  animation: arcade-marquee-chase 3.6s linear infinite;
-  animation-delay: calc(var(--bulb) * -.1s);
+  animation: arcade-marquee-chase 9s linear infinite;
+  animation-delay: calc(var(--bulb) * -.25s);
   will-change: opacity;
 }
 
 @keyframes arcade-marquee-chase {
-  0%, 100% { opacity: .15; }
-  5% { opacity: 1; }
-  30% { opacity: .15; }
+  0%, 100% { opacity: .2; }
+  6% { opacity: .9; }
+  34% { opacity: .2; }
 }
 
 /* The wordmark's two words flicker on in turn, then hold steady. */

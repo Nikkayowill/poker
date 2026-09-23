@@ -154,3 +154,17 @@
   .app-loading-screen { transition: none; }
   .app-loading-bar-fill { transition: none; }
 }
+
+/* The page-change orb (components/loading/orb-transition-layer.tsx). It sits
+   above the boot loading screen and swallows taps only while the orb is
+   forming, so nothing on the old page gets a second tap mid-change. */
+.orb-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.orb-transition[data-phase="idle"] { display: none; }
+.orb-transition[data-phase="forming"] { pointer-events: auto; }

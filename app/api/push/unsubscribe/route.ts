@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { removePushSubscription } from "@/lib/server/push-subscription-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readSessionToken } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     await removePushSubscription(endpoint);
     return NextResponse.json({ unsubscribed: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not remove your subscription.";
+    const message = publicErrorMessage(error, "Could not remove your subscription.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

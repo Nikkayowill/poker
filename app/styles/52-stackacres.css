@@ -28,7 +28,7 @@
  *   - Nothing reaches for `--brand-*`, `--neon-*` or `--accent-*`. A violet
  *     glow over a cartoon farm is the same mistake as felt green in the lobby.
  * Outside `.sa-theme` this sheet changes nothing, and every shared class it
- * restyles (.floor-bar, .htp-trigger, .gold-balance, .duel-error,
+ * restyles (.floor-bar, .htp-trigger, .gold-balance,
  * .profile-modal) is qualified by `.sa-theme` for exactly that reason.
  *
  * ---- what the chrome is made of -------------------------------------
@@ -399,8 +399,8 @@
      guess, and guessing wrong still leaves a bare margin on the edge that
      had no notch. The canvas bleeding under a notch it can't see costs
      nothing (it's a picture); every overlay that actually needs protecting
-     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations, .sa-side,
-     -- .floor-bar, .sa-ground-tools, .sa-side -- read
+     -- .floor-bar, .sa-controls, .sa-camera, .sa-destinations,
+     -- .floor-bar, .sa-ground-tools -- read
      var(--safe-left)/var(--safe-right) itself instead.
 
      --safe-top/--safe-bottom used to be in this padding too, which is what
@@ -703,8 +703,8 @@
   right: max(22px, calc(var(--safe-right) + 10px));
   bottom: max(18px, calc(var(--safe-bottom) + 8px));
   z-index: 3;
-  width: 116px;
-  height: 116px;
+  width: 100px;
+  height: 100px;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
   background: var(--sa-glass-fill);
@@ -736,23 +736,13 @@
   pointer-events: none;
 }
 
-.sa-joystick-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: var(--sa-cream);
-  opacity: .7;
-  pointer-events: none;
-}
-
 .sa-joystick-knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 52px;
-  height: 52px;
-  margin: -26px 0 0 -26px;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
   background: color-mix(in srgb, var(--sa-cream) 82%, transparent);
@@ -774,19 +764,20 @@
 }
 
 /* ---- the Use key ------------------------------------------------------
- * Bottom right, just inboard of the thumb stick, so a right thumb can hold it
- * down and still walk: that pairing is what makes stroking a whole row possible
- * (stackacres-td/use-key.tsx). Shown on a mouse too, unlike the stick, because it
- * is the only way to work the square underfoot without tapping it. */
+ * Bottom left, across from the thumb stick: the right thumb walks while the
+ * left one chops, waters or harvests, and holding it down while walking is
+ * what strokes a whole row (stackacres-td/use-key.tsx). Shown on a mouse too,
+ * unlike the stick, because it is the only way to work the square underfoot
+ * without tapping it. */
 .sa-use-key {
   position: absolute;
-  right: calc(max(22px, var(--safe-right) + 10px) + 128px);
+  left: max(22px, calc(var(--safe-left) + 10px));
   bottom: max(18px, calc(var(--safe-bottom) + 8px));
   z-index: 3;
   display: grid;
   place-items: center;
-  width: 84px;
-  height: 84px;
+  width: 72px;
+  height: 72px;
   padding: 0;
   border: 1px solid var(--sa-glass-line);
   border-radius: 50%;
@@ -804,8 +795,8 @@
 }
 
 .sa-use-key svg {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   fill: color-mix(in srgb, var(--sa-cream) 82%, transparent);
   pointer-events: none;
 }
@@ -1158,38 +1149,47 @@
   100% { opacity: 0; transform: translate(-50%, -20px) scale(.96); }
 }
 
-/* ---- the error line -------------------------------------------------- */
-
-/* Floats over the map's bottom-left, above the toolbelt dock rather than
-   beside it -- the dock is the one thing on this screen a thumb is resting on,
-   and a banner that lands under it is a banner nobody reads. */
-.sa-side {
+/* ---- the refusal notice ----------------------------------------------
+ * Above the farmer, over any open sheet: the HUD's dark glass, darker, with a
+ * barn-red rim so it reads over bright grass. It never takes a tap, so it can't
+ * land on a thumb holding a control, and it fades on its own (NOTICE_MS in
+ * stackacres-farm.tsx). */
+.sa-notice {
   position: absolute;
-  left: max(10px, var(--safe-left));
-  bottom: calc(var(--sa-tap) + 22px);
-  width: min(330px, 52%);
-  pointer-events: none;
-}
-
-.sa-side > * { pointer-events: auto; }
-
-/* The shared error line is a translucent violet wash, tuned for a dark page.
-   Over bright grass it turns to mud and the words go with it; here it is the
-   farm's own glass, tinted with the roof red the world already uses for a
-   painted barn. */
-.sa-theme .duel-error {
+  top: 30%;
+  left: 50%;
+  z-index: 70;
+  width: max-content;
+  max-width: min(420px, calc(100% - 48px));
   margin: 0;
-  padding: 9px 14px;
-  border: 1px solid var(--sa-glass-line);
+  padding: 12px 20px;
+  border: 2px solid var(--sa-lit-roof);
   border-radius: var(--sa-r-block);
-  background: var(--sa-tint-roof);
+  background: rgba(20, 15, 10, .8);
   -webkit-backdrop-filter: var(--sa-glass-blur);
   backdrop-filter: var(--sa-glass-blur);
-  box-shadow: var(--sa-glass-rim), var(--sa-drop);
-  color: var(--sa-lit-roof);
-  font-size: 14px;
-  font-weight: 700;
-  text-wrap: pretty;
+  box-shadow: var(--sa-glass-rim-lit), var(--sa-drop-lg);
+  color: var(--sa-cream);
+  font-family: var(--sa-font);
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  text-wrap: balance;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: sa-notice 3.2s var(--sa-ease-out) forwards;
+}
+
+@keyframes sa-notice {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.85); }
+  8% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  14% { transform: translate(-50%, -50%) scale(1); }
+  85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(.97); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-notice { animation: none; }
 }
 
 /* Springs out of the tap on the same overshoot curve the drawer opens with.

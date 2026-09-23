@@ -206,8 +206,6 @@ button:disabled { cursor: wait; opacity: .62; }
      rendered before that), so it owns the full viewport rather than the
      `100vh - header` arithmetic .lobby still needs. --safe-top used to be
      cleared by the header's own padding; this page clears it itself now. */
-  /* Not --vp-short corrected; see .app-root in 02-app-shell.css for why a
-     viewport-unit height is already right and adding the shortfall broke it. */
   height: 100svh;
   overflow-y: auto;
   /* Same guard as .lobby: the backstop that keeps the next wide child from
@@ -1120,7 +1118,7 @@ button:disabled { cursor: wait; opacity: .62; }
 
    IT IS IN FLOW ON PURPOSE. DO NOT PIN IT AGAIN. This was
    `position: fixed; bottom: 0`, and then fixed plus
-   `translateY(var(--vp-short))` once the short-launch correction landed
+   a `translateY` correction once the short-launch workaround landed
    (PR #328). Both were reported by Kayo as a purple strip eating the links.
    Measured off the second report (IMG_3212, an installed iOS PWA on a
    390x844 iPhone, taken after #328 was live): the bar's border-top painted

@@ -82,7 +82,9 @@ export class SunlightLayer {
   private seeded = false;
   private viewCentre = { x: 0, y: 0 };
   private clouds: CloudShade[] = [];
-  private canopies: Phaser.GameObjects.Image[] = [];
+  /** Each lit top with the canopy it copies: it follows that canopy's alpha, so a tree the see-through
+   *  fade thins out (see-through.ts) takes its highlight down with it. */
+  private canopies: { lit: Phaser.GameObjects.Image; canopy: Phaser.GameObjects.Image }[] = [];
   private sun: Sunlight = sunlightAt(12);
   private sampledAt = Number.NEGATIVE_INFINITY;
   private lastTime = 0;
@@ -164,7 +166,7 @@ export class SunlightLayer {
     // The sun is high and to the left: only the top of the crown catches it.
     lit.setCrop(0, 0, canopy.frame.width, Math.round(canopy.frame.height * 0.55));
     this.wind.add(lit, x, y, amp, rustle);
-    this.canopies.push(lit);
+    this.canopies.push({ lit, canopy });
   }
 
   /** `view` is the camera's world view: the clouds live in and around it, since a shadow off screen lights nothing. */
@@ -175,8 +177,8 @@ export class SunlightLayer {
     if (timeMs - this.sampledAt >= SAMPLE_MS) {
       this.sampledAt = timeMs;
       this.sun = sunlightAt(hour);
-      for (const lit of this.canopies) lit.setAlpha(CANOPY_ALPHA * this.sun.canopy);
     }
+    for (const { lit, canopy } of this.canopies) lit.setAlpha(CANOPY_ALPHA * this.sun.canopy * canopy.alpha);
     // A screen-fixed object is still scaled by the camera's zoom, about the middle of the canvas: so the
     // visible screen, in the units these objects are placed in, is the canvas size over the zoom, centred
     // on the canvas's own middle. Everything below is measured in that box.

@@ -263,16 +263,14 @@ export function intentOf(body: Action): string {
  * same render (both are plain `setState` calls in one synchronous stack).
  * Also excludes anything that moves no Gold or shelf stock (`collect`,
  * `feed`, `water`, `retire`, the Workshop/Town Contract actions, ...) --
- * those already read as answered through their own sound, sprite change, or
- * (for `collect`) the "on its way" toast `act` sets independently.
+ * those already read as answered through their own sound or sprite change.
  */
 export function purchaseCueText(body: Action): string | null {
   switch (body.action) {
     case "stock":
       // A 50 Gold cycle, not the animal: "Bought a Hen Coop!" read as the 2,500 Gold outright buy.
-      return isLivestock(body.stock)
-        ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!`
-        : `Seeded ${STACKACRES_CATALOGUE[body.stock].label}!`;
+      // A crop going in is answered by the seed on the bed and its sound.
+      return isLivestock(body.stock) ? `Started a ${STACKACRES_CATALOGUE[body.stock].label} cycle!` : null;
     case "buy-stock":
       return `Bought a ${STACKACRES_CATALOGUE[body.stock].label}!`;
     case "expand-capacity":

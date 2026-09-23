@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StackAcresStock } from "./catalogue";
-import { collectFloat, tapActionFor, timeLeftLabel } from "./tap-action";
+import { tapActionFor, timeLeftLabel } from "./tap-action";
 import type { StackAcresUnitSnapshot, StackAcresUnitState } from "./units";
 
 const NOW = Date.parse("2026-09-04T12:00:00.000Z");
@@ -123,15 +123,5 @@ describe("timeLeftLabel", () => {
   it("says 'any moment' once due, and for an unparseable date", () => {
     expect(timeLeftLabel(new Date(NOW - 1).toISOString(), NOW)).toBe("any moment");
     expect(timeLeftLabel("not a date", NOW)).toBe("any moment");
-  });
-});
-
-describe("collectFloat", () => {
-  it("names the produce and hands back its own painter", () => {
-    expect(collectFloat("eggs", 4)).toEqual({ text: "+4 Eggs", icon: "ico-egg" });
-  });
-
-  it("uses the singular for one", () => {
-    expect(collectFloat("wool", 1).text).toBe("+1 Fleece");
   });
 });

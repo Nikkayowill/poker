@@ -39,6 +39,7 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
+import { hoeSound } from "@/lib/audio/stackacres-sfx";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import type { SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
@@ -155,6 +156,8 @@ const WALK_SPEED = 72; // px/s
 /** The farmer's 8-frame walk (art/stackacres-td/pixellab) is timed for full walking speed, so it plays at 1x there. */
 const WALK_TIMED_FOR = 72;
 const WATER_FRAME_MS = 170;
+/** The chop rig reaches the ground at the start of its third frame. */
+const HOE_STRIKE_MS = 300;
 const REACH = 26; // how close the farmer stands before the shell's menu opens
 const TAP_SLOP = 14; // css px a finger may drift and still count as a tap
 /** Share of the remaining gap the camera closes per frame easing back onto the farmer. */
@@ -1346,7 +1349,16 @@ export class TopdownScene extends Phaser.Scene {
   farmerAction(action: FarmerAction, impact?: TapPoint): void {
     if (!this.booted || this.cast) return;
     const { anim, repeat } = ACTIONS[action];
-    if (action === "hoe" && impact) this.hoeImpactAt(this.cssToMap(impact.x, impact.y));
+    // The ground feedback belongs to the blade hit, not the tap. The first
+    // two chop frames are the wind-up and lift; the third is where the hoe
+    // reaches the soil, matching the overhead Stardew-style beat.
+    if (action === "hoe" && impact) {
+      const at = this.cssToMap(impact.x, impact.y);
+      this.time.delayedCall(HOE_STRIKE_MS, () => {
+        this.hoeImpactAt(at);
+        hoeSound();
+      });
+    }
     this.stand();
     this.acting = true;
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);

@@ -19,8 +19,10 @@ const LANDSCAPE_PHONE = { width: 844, height: 390 };
 const GAUGE_SCENE_KEY = "stackacres-fishing";
 
 /** The dock on the Homestead, and dry ground a short walk east of it. */
-const DOCK = { x: 196, y: 421 };
-const NEAR_DOCK = { x: 268, y: 424 };
+// Homestead map pixels. The farmyard sits HOME_SHIFT (38 tiles, 608px) down the
+// map now that the Crop Fields are the north half of it.
+const DOCK = { x: 196, y: 1029 };
+const NEAR_DOCK = { x: 268, y: 1032 };
 
 interface TopdownHandle {
   scene: {

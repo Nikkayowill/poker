@@ -27,11 +27,14 @@ export const NO_TINT = 0xffffff;
 export const ENRICHED_SOIL_TINT = 0xd6f0b4;
 
 /**
- * Watered ground. Dark enough to tell apart at a glance from a few squares
- * off (about 58% of the art's own brightness), and warm rather than flat
- * grey, so it reads as damp earth instead of as something's shadow.
+ * Watered ground: the same dirt, a shade browner. A bed is the road's own
+ * tan dirt now (art/stackacres-td/rich/lpc_ground.py's `bed_tile`), and the
+ * old tint -- tuned for the dark beds that came before -- turned that grey,
+ * which read as a shadow falling on it. This one keeps the warmth and only
+ * pulls the green and blue down, so wet earth reads as damp soil. Slight on
+ * purpose, and still plain from a few squares away.
  */
-export const WET_SOIL_TINT = 0x968c84;
+export const WET_SOIL_TINT = 0xc09b78;
 
 /** As much of a bed's occupant as moisture cares about. */
 export interface BedOccupant {
@@ -77,4 +80,21 @@ export function blendTints(a: number, b: number): number {
 export function soilTint(bed: { enriched: boolean; wet: boolean }): number {
   const base = bed.enriched ? ENRICHED_SOIL_TINT : NO_TINT;
   return bed.wet ? blendTints(base, WET_SOIL_TINT) : base;
+}
+
+/** How far a crop has grown before its seeds give way to the first green. */
+export const SEEDS_UNTIL_PROGRESS = 0.2;
+
+/**
+ * Whether a crop still reads as seed pressed into the ground.
+ *
+ * From the moment it is sown, through its first watering, until it is a fifth
+ * of the way grown: long enough that watering a freshly planted square shows
+ * the earth darken under seeds the player can still see, short enough that
+ * the sprout arrives while they are still watching. A crop that goes thirsty
+ * part-way through growing is a plant by then, not seed, so it stays a plant.
+ */
+export function showsSeeds(unit: { state: StackAcresUnitState; progress: number | null }): boolean {
+  if (unit.state === "ready" || unit.state === "mucked") return false;
+  return (unit.progress ?? 0) < SEEDS_UNTIL_PROGRESS;
 }

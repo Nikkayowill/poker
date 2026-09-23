@@ -12,7 +12,7 @@ interface Handle {
 
 /** The house is a walk-in interior: tap the building to go through the door,
  *  then tap the kitchen counter inside. See tests/e2e/stackacres-house.spec.ts. */
-const HOUSE_DOOR = { x: 120, y: 140 };
+const HOUSE_DOOR = { x: 120, y: 748 };
 const HOUSE_COUNTER = { x: 128, y: 75 };
 const WALK_MS = 2_500;
 

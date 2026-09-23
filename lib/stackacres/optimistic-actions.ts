@@ -112,6 +112,7 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { isHoeableSoilTile } from "./hoeable";
 import {
   LAND_SWING_ENERGY,
   demolitionPrice,
@@ -698,6 +699,9 @@ export function predictStackAcresAction(
       return { greenhouseBuilt: true };
     }
     case "place-soil-tile": {
+      // The same ground the server allows (lib/stackacres/hoeable.ts), so a tap
+      // on the road never flashes a bed the answer then takes away.
+      if (!isHoeableSoilTile(body.tx, body.ty)) return null;
       const soil = createSoilMap(ctx.soilTiles);
       // Every slot a crop currently holds, so the new bed's order clears
       // them all -- see `nextSoilOrder` on why max-plus-one over the beds

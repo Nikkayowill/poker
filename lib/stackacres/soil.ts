@@ -614,16 +614,17 @@ export const HOME_STARTER_TILE_COUNT = 6;
 export const HOME_STARTER_COLS = 3;
 
 /**
- * Where the starter lattice sits, chosen to be far outside `CROP_FIELD_BEDS`
- * (roughly tx/ty -16..16 -- see world.ts's own header on that rect) so a
- * starter bed can never occupy the same cell as a purchased one, and, since
- * `soilTileGroup` walks 4-neighbours with no area filter of its own, can
- * never be flood-filled into the same relocation group as one either.
- * soil.test.ts holds both of those apart. Exported for the identical reason
- * `HOME_STARTER_COLS` is: lib/stackacres-td/field.ts needs the real corner,
- * not a restated one, to pin the Homestead's own map pixels to it.
+ * Where the six starter beds sit: the top-left of the grass west of the north
+ * lane, in front of the house (Homestead map tile 4, 53).
+ *
+ * On the ONE soil grid every bed shares (lib/stackacres/hoeable.ts), not on a
+ * far-off lattice of their own as they used to be. That old lattice existed to
+ * keep a starter bed from ever sharing a square with a dug one, back when the
+ * hoe only worked in two paddocks. The hoe works on any grass now, so that
+ * separation is kept the direct way instead: `isHomeStarterSoilTile` is a
+ * square the server refuses to dig (see `placeStackAcresSoilTile`).
  */
-export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: 100, ty: 100 };
+export const HOME_STARTER_ORIGIN: SoilTileCoord = { tx: -18, ty: 35 };
 
 /**
  * The starter beds themselves, fixed and hand-numbered rather than derived
@@ -651,43 +652,6 @@ export function homeStarterSoilTiles(): SoilTile[] {
     order: i - HOME_STARTER_TILE_COUNT,
     origin: "starter" as const,
   }));
-}
-
-/** An inclusive rectangle of soil tiles. */
-export interface SoilTileRect {
-  tx0: number;
-  ty0: number;
-  tx1: number;
-  ty1: number;
-}
-
-/**
- * The Homestead's two grass paddocks, either side of the north lane: the only
- * ground on the Homestead where the hoe will break a bed.
- *
- * They sit on the SAME far-off lattice as the six starter beds
- * (`HOME_STARTER_ORIGIN`, tile 100,100), which is what keeps them apart from
- * the Crop Fields' own tiles and stops `soilTileGroup`'s 4-neighbour walk ever
- * joining the two. Tile 100,100 is the west paddock's top-left square, so the
- * starter beds are simply the first six squares of it.
- *
- * Restated from art/stackacres-td/areas/rig/homestead.py's WEST_BED (map tiles
- * 4..11 x 15..20) and EAST_BED (19..26 x 15..19) through the origin above: map
- * tile (mx, my) is soil tile (mx + 96, my + 85). field.test.ts holds these
- * inside the map's "homebeds" zones, so moving a paddock in the rig without
- * moving it here fails a test rather than a player's tap.
- *
- * Wider than the six free beds on purpose: there is no painted bed here any
- * more (#596), so the paddock is bare grass and the player breaks their own.
- */
-export const HOME_PLOTS: readonly SoilTileRect[] = [
-  { tx0: 100, ty0: 100, tx1: 107, ty1: 105 },
-  { tx0: 115, ty0: 100, tx1: 122, ty1: 104 },
-];
-
-/** Whether `(tx, ty)` is a square of the Homestead's grass paddocks. */
-export function isHomePlotTile(tx: number, ty: number): boolean {
-  return HOME_PLOTS.some((r) => tx >= r.tx0 && tx <= r.tx1 && ty >= r.ty0 && ty <= r.ty1);
 }
 
 /** Whether `(tx, ty)` names one of the free Homestead starter beds -- the one

@@ -27,7 +27,9 @@ interface TopdownHandle {
 }
 
 /** The Old Fields' south gate, and a bare bed square just inside the fence above it. */
-const OLD_FIELDS_GATE = { x: 352, y: 596 };
+// Just inside the Crop Fields, which are the north half of the Homestead now
+// rather than a map of their own. BARE_BED is a field square a few tiles up.
+const CROP_FIELDS_GATE = { x: 352, y: 540 };
 const BARE_BED = { x: 352, y: 520 };
 
 const ADMIN_SECRET = "playwright-admin-secret";
@@ -283,7 +285,7 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
   }
 });
 
-test("the hoe breaks ground under the farmer's feet from the Use key", async ({ browser }) => {
+test("the hoe breaks ground in front of the farmer from the Use key", async ({ browser }) => {
   const adminContext = await browser.newContext();
   const farmerContext = await browser.newContext({
     viewport: LANDSCAPE_PHONE,
@@ -302,10 +304,10 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
 
     const { page, errors } = await openFarm(farmerContext);
 
-    // Stand him on a bare bed square out in the Old Fields.
+    // Stand him on a bare bed square out in the Crop Fields.
     await page.evaluate(
-      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate),
-      OLD_FIELDS_GATE,
+      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
+      CROP_FIELDS_GATE,
     );
     await page.waitForTimeout(300);
     const bedPoint = await page.evaluate(
@@ -321,7 +323,7 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
       { timeout: 15_000 },
     );
 
-    // Pick up the hoe, then press Use. The bed appears under him with no menu
+    // Pick up the hoe, then press Use. The bed appears in front of him with no menu
     // in between and nothing to drag.
     const hoe = page.locator(".sa-belt-slot").nth(1);
     await expect(hoe).toHaveAttribute("aria-label", /hoe/i);

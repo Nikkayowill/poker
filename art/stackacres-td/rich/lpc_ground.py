@@ -125,3 +125,63 @@ def paint(tiles, w, h):
             under = img[y0:y0 + TILE, x0:x0 + TILE]
             img[y0:y0 + TILE, x0:x0 + TILE] = under * (1 - a) + patch[..., :3] * a
     return img
+
+
+def bed_tile(mask, material="path"):
+    """One hoed square: the road's own dirt, with a bed's edge rather than a road's.
+
+    `mask` is the scene's 4-bit neighbour mask (1 N, 2 E, 4 S, 8 W: that side
+    is another bed).
+
+    The dirt is the fill tile of the same 3x3 block the road is painted from,
+    so a hoed square is the road's ground, texel for texel. The EDGE is not the
+    road's, on purpose. A road's edge pieces are mostly transparent margin with
+    pebbles scattered across it -- right for a lane four squares wide, wrong for
+    a bed one square wide, which came out as a ring of pebbles with no dirt in
+    it. A bed wants what a tilled square in Stardew has: solid dirt to within a
+    few pixels of the grass, a soft uneven rim, and rounded outside corners.
+
+    So each open side eats a few pixels of the square, by a depth that wanders
+    along the edge so it is never a ruled line, with a darker band just inside
+    it where the turned earth meets the grass. A side with a bed beyond it is
+    left alone, which is what lets a row of beds join into one strip.
+
+    Returns a TILE x TILE RGBA image, drawn at half size like the ground.
+    """
+    col0, row0 = BLOCKS[material]
+    fill = _tile(col0 + 1, row0 + 1)
+    n, e, s, w = bool(mask & 1), bool(mask & 2), bool(mask & 4), bool(mask & 8)
+
+    ys, xs = np.mgrid[0:TILE, 0:TILE].astype(np.float64) + 0.5
+    far = np.full((TILE, TILE), 99.0)
+    dist = far.copy()
+    # Distance in from each OPEN side, pushed in and out a little along it.
+    def wander(along, seed):
+        return 1.2 * np.sin(along * 0.9 + seed) + 0.8 * np.sin(along * 0.37 + seed * 2.1)
+    if not n:
+        dist = np.minimum(dist, ys - wander(xs, 1.0))
+    if not s:
+        dist = np.minimum(dist, (TILE - ys) - wander(xs, 2.0))
+    if not w:
+        dist = np.minimum(dist, xs - wander(ys, 3.0))
+    if not e:
+        dist = np.minimum(dist, (TILE - xs) - wander(ys, 4.0))
+    # Round an outside corner: where both sides meeting there are open.
+    radius = 9.0
+    for open_v, open_h, cx, cy in ((not n, not w, 0, 0), (not n, not e, TILE, 0),
+                                   (not s, not w, 0, TILE), (not s, not e, TILE, TILE)):
+        if not (open_v and open_h):
+            continue
+        ox = cx + (radius if cx == 0 else -radius)
+        oy = cy + (radius if cy == 0 else -radius)
+        inside = ((xs - ox) * (1 if cx == 0 else -1) < 0) & ((ys - oy) * (1 if cy == 0 else -1) < 0)
+        round_d = radius - np.hypot(xs - ox, ys - oy)
+        dist = np.where(inside, np.minimum(dist, round_d), dist)
+
+    CUT = 3.0        # px of grass left showing at an open edge
+    RIM = 2.5        # px of darker earth just inside it
+    alpha = np.clip(dist - CUT + 0.5, 0, 1)
+    shade = np.where(dist < CUT + RIM, 0.74, 1.0)
+    rgb = fill[..., :3] * shade[..., None]
+    out = np.dstack([rgb, alpha * 255.0])
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")

@@ -29,7 +29,7 @@ const ADMIN_SECRET = "playwright-admin-secret";
 
 /** The barn on the Homestead, and the shop counter inside it. Prop
  *  coordinates are centre-x, bottom-y. */
-const BARN_DOOR = { x: 360, y: 130 };
+const BARN_DOOR = { x: 360, y: 738 };
 const BARN_COUNTER = { x: 280, y: 75 };
 const WALK_MS = 2_500;
 

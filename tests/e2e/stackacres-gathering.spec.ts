@@ -13,19 +13,22 @@ interface Handle {
   };
 }
 
-/** Where things stand on the Homestead (public/stackacres-td/areas/homestead/area.json). */
-const TREE_3 = { x: 159, y: 29 };
+/** Where things stand on the Homestead (public/stackacres-td/areas/homestead/area.json).
+ *  The Crop Fields are the north half of this map now, so the farmyard is 608px
+ *  further down it than it used to be, and the four choppable trees stand in the
+ *  yard itself rather than in the north tree line that used to hide them. */
+const TREE_3 = { x: 566, y: 858 };
 /** Trunk tiles that only one tree stands on: tree 3's outer tile, and tree 4's middle one. */
-const TREE_3_OUTER = { x: 168, y: 24 };
-const TREE_4_MIDDLE = { x: 584, y: 24 };
+const TREE_3_OUTER = { x: 552, y: 850 };
+const TREE_4_MIDDLE = { x: 322, y: 1032 };
 /** Bush 1 of the four berried ones, which are the forage nodes (lib/stackacres/forage.ts). */
-const BUSH = { x: 208, y: 132 };
+const BUSH = { x: 208, y: 740 };
 /** Bush 2, picked by the forage test below so the walk-through test above keeps its own. */
-const FORAGE_BUSH = { x: 452, y: 250 };
+const FORAGE_BUSH = { x: 452, y: 858 };
 /** Boulders are shared by every player and the mining spec breaks the first, so this uses the third. It can only run once per server. */
 const MINE_3 = { x: 300, y: 236 };
 const MINE_3_TILE = { x: 296, y: 232 };
-const HOUSE_WALL = { x: 120, y: 136 };
+const HOUSE_WALL = { x: 120, y: 744 };
 
 test.use({ viewport: { width: 932, height: 430 } });
 

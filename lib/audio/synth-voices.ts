@@ -242,7 +242,6 @@ export type SynthVoice =
   | "refuse"
   | "panel-slide"
   | "tool-tap"
-  | "hoe-strike"
   | "dirt-pat"
   // A permanent-progress moment: a Prestige Reset, and nothing else -- see
   // this voice's own case below for why it is built differently from every
@@ -295,7 +294,6 @@ const VOICE_TRIM: Record<SynthVoice, number> = {
   refuse: 1.05,
   "panel-slide": 8.6,
   "tool-tap": 2.63,
-  "hoe-strike": 1.25,
   // Not run through the render harness the comment above describes -- these
   // three are estimated by ear against the closest measured shape
   // (`dirt-pat` and `leaf-snip` against the other noise-burst action cues,
@@ -653,33 +651,6 @@ export function playVoice(
           q: 0.7,
           type: "lowpass",
           env: { attack: 0.004, decay: 0.05, peak: 0.1 },
-        }),
-      );
-      break;
-    }
-    case "hoe-strike": {
-      // The hoe lands as a compact, earthy thunk: a low body for the blade
-      // meeting soil, gritty low-passed dirt, and a tiny metal edge transient.
-      // It is intentionally shorter and heavier than `dirt-pat`, which is a
-      // seed being pressed in rather than a tool hitting the ground.
-      parts.push(
-        tone(ctx, at, { freq: 118, sweepTo: 76, env: { attack: 0.002, decay: 0.13, peak: 0.24 } }),
-      );
-      parts.push(
-        noiseBurst(ctx, at, {
-          freq: 360,
-          sweepTo: 170,
-          q: 0.8,
-          type: "lowpass",
-          env: { attack: 0.002, decay: 0.1, peak: 0.17 },
-        }),
-      );
-      parts.push(
-        noiseBurst(ctx, at, {
-          freq: 1450,
-          sweepTo: 900,
-          q: 1.8,
-          env: { attack: 0.001, decay: 0.045, peak: 0.07 },
         }),
       );
       break;

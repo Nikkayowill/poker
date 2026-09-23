@@ -37,7 +37,7 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { hoeSound } from "@/lib/audio/stackacres-sfx";
+import { doorSound, floorStepSound } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
@@ -1628,10 +1628,7 @@ export class TopdownScene extends Phaser.Scene {
     // The puff goes up when the blade hits the ground, not when the swing starts.
     if (action === "hoe" && impact) {
       const at = this.cssToMap(impact.x, impact.y);
-      this.time.delayedCall(HOE_STRIKE_MS, () => {
-        this.hoeImpactAt(at);
-        hoeSound();
-      });
+      this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
     }
     this.stand();
     this.acting = true;

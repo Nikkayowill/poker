@@ -71,11 +71,6 @@ export function waterSound() {
   playFarmSample("water-splash", 0.9);
 }
 
-/** The hoe blade lands in the soil. Fired on the strike frame, not on tap. */
-export function hoeSound() {
-  playFarmVoice("hoe-strike", 1);
-}
-
 /** Clearing a mucked unit: the one genuinely laborious thing on the farm. */
 export function muckSound() {
   playFarmVoice("muck-clear", 1);

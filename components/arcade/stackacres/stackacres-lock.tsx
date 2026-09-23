@@ -35,7 +35,7 @@ export function StackAcresLock({ playerId }: { playerId: string | null }) {
               header. */}
           <div className="ante-lobby-heading">
             <h1 className="sr-only">StackAcres</h1>
-            <StackAcresLogo className="sa-heading-logo" aria-hidden="true" />
+            <StackAcresLogo className="sa-heading-logo" alt="" aria-hidden="true" />
           </div>
           <p>
             A farm of crops and livestock. It is still being built, so it opens one player at a

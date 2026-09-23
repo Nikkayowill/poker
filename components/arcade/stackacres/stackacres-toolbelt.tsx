@@ -5,6 +5,15 @@ import { BELT_TOOLS, BELT_TOOL_DEFS, type BeltTool } from "@/lib/stackacres/tool
 import type { StackAcresCrop } from "@/lib/stackacres/catalogue";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresIcon } from "./stackacres-icon";
+import { StackAcresPixelIcon, type PixelIconName } from "./stackacres-pixel-icon";
+
+const SLOT_ICON: Readonly<Record<BeltTool, PixelIconName>> = {
+  hand: "hand",
+  hoe: "hoe",
+  can: "can",
+  seeds: "pouch",
+  fence: "fence",
+};
 
 /**
  * The tool belt, top left: hand, hoe, watering can, seed pouch.
@@ -50,9 +59,9 @@ export function StackAcresToolbelt({
         const def = BELT_TOOL_DEFS[tool];
         const isHeld = held === tool;
         const pouch = tool === "seeds";
-        // What the slot draws, and the little number in its corner. The pouch
-        // borrows the crop's own icon once one is picked.
-        const icon = (pouch && seedIcon ? seedIcon : def.icon) as PainterName;
+        // The little number in the slot's corner. The pouch draws the crop it
+        // sows once one is picked.
+        const cropIcon = pouch && seedIcon ? seedIcon : null;
         const count = pouch ? (seed ? seedsHeld : null) : tool === "can" ? water : null;
         const label = pouch && seed ? `Seed pouch: ${seed.replace(/_/g, " ")}` : def.label;
         return (
@@ -74,7 +83,7 @@ export function StackAcresToolbelt({
               if (pouch && !seed) onOpenSeeds();
             }}
           >
-            <StackAcresIcon name={icon} size={20} />
+            {cropIcon ? <StackAcresIcon name={cropIcon} size={24} /> : <StackAcresPixelIcon name={SLOT_ICON[tool]} />}
             {count !== null && <span className="sa-belt-count">{count}</span>}
           </button>
         );

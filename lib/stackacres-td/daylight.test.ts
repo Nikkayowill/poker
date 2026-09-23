@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INDOORS, NIGHT_FLOOR, brightness, daylightAt, hourOf, tintColor } from "./daylight";
+import { INDOORS, NIGHT_FLOOR, brightness, daylightAt, hourOf, sunlightAt, tintColor } from "./daylight";
 
 describe("INDOORS", () => {
   it("is warm, readable and lamplit", () => {
@@ -10,8 +10,8 @@ describe("INDOORS", () => {
 });
 
 describe("daylightAt", () => {
-  it("leaves midday untouched, with the lamps out", () => {
-    expect(daylightAt(12)).toEqual({ r: 1, g: 1, b: 1, lamps: 0 });
+  it("keeps midday a touch warm, with the lamps out", () => {
+    expect(daylightAt(12)).toEqual({ r: 1, g: 0.99, b: 0.95, lamps: 0 });
   });
 
   it("turns midnight blue and lights the lamps", () => {
@@ -54,5 +54,27 @@ describe("hourOf and tintColor", () => {
 
   it("packs a tint as 0xRRGGBB", () => {
     expect(tintColor({ r: 1, g: 0.5, b: 0, lamps: 0 })).toBe(0xff8000);
+  });
+});
+
+describe("sunlightAt", () => {
+  it("has no sun at night and full sun mid-morning", () => {
+    expect(sunlightAt(2)).toEqual({ rays: 0, clouds: 0, canopy: 0 });
+    expect(sunlightAt(9)).toEqual({ rays: 1, clouds: 1, canopy: 1 });
+  });
+
+  it("throws its longest shafts with the low sun, thinner at midday, none by dusk", () => {
+    expect(sunlightAt(9).rays).toBeGreaterThan(sunlightAt(12.5).rays);
+    expect(sunlightAt(16.5).rays).toBeGreaterThan(sunlightAt(12.5).rays);
+    expect(sunlightAt(20).rays).toBe(0);
+    expect(sunlightAt(12.5).clouds).toBe(1);
+  });
+
+  it("eases between keys so every minute moves a little", () => {
+    const a = sunlightAt(6.5);
+    const b = sunlightAt(7);
+    expect(a.rays).toBeGreaterThan(0);
+    expect(b.rays).toBeGreaterThan(a.rays);
+    expect(b.rays).toBeLessThan(0.7);
   });
 });

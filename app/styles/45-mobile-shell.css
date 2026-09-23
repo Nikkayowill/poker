@@ -420,11 +420,9 @@
     line-height: 1.35;
   }
 
-  /* Stands in for a lucide icon in the row's leading slot -- the StackAcres
-     wordmark itself (components/brand/stackacres-logo.tsx), decorative at
-     this size rather than legible; the bold "StackAcres" beside it carries
-     the name. */
-  .mshell-stackacres-logo { flex-shrink: 0; width: 58px; height: auto; }
+  /* The StackAcres badge in the row's leading slot; the bold "StackAcres"
+     beside it carries the name. Shown under its drawn size, so it's smoothed. */
+  .mshell-stackacres-logo { flex-shrink: 0; width: 54px; height: auto; }
   .mshell-stackacres-soon {
     color: #93a1bb;
     font-size: 10px;

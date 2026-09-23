@@ -62,6 +62,26 @@ export function CreditsPage() {
               2021 Ludum Dare 48 entry.
             </li>
             <li>
+              <strong>The land of StackAcres</strong> — the ground, water,
+              rocks, bushes and the Homestead&rsquo;s hill are from the
+              Liberated Pixel Cup terrain set on OpenGameArt, drawn by Lanea
+              Zimmerman (Sharm), Daniel Eddeland, Casper Nilsson, Johann
+              Charlot, Skyler Robert Colladay, Stephen Challener (Redshrike),
+              Charles Sanchez (CharlesGabriel), Manuel Riecke (MrBeast) and
+              Daniel Armstrong (HughSpectrum), with the grass-topped cliffs
+              edited from Sharm&rsquo;s originals. The trees are{" "}
+              <a href="https://opengameart.org/content/lpc-trees">[LPC] Trees</a>{" "}
+              by bluecarrot16, Jetrel, Zabin, Hyptosis, Surt, Buch, Johann
+              Charlot, Stephen Challener, Gaurav Munjal, Ivan Voirol, Guido
+              Bos, Yar, Paulina Riva, William Thompson, Casper Nilsson,
+              ansimuz, qubodup, Bart K., Blarumyrran, Lanea Zimmerman, Leonard
+              Pabin, Chris Phillips, Barbara Rivera and Talosaurus. All under
+              CC-BY-SA 3.0 (some also GPL 3.0), full lists in{" "}
+              <a href="/stackacres-td/lpc/Attribution.txt">Attribution.txt</a>{" "}
+              and{" "}
+              <a href="/stackacres-td/lpc/CREDITS-trees.txt">CREDITS-trees.txt</a>.
+            </li>
+            <li>
               <strong>The people of StackAcres</strong> — the farmer, Ray and
               the travelers are built from the{" "}
               <a href="https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator">
@@ -78,6 +98,10 @@ export function CreditsPage() {
               OGA-BY 3.0, CC-BY 3.0 and CC-BY 4.0. The full list, layer by
               layer, is in{" "}
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
+            </li>
+            <li>
+              <strong>Lettering</strong> — Pixelify Sans by Stefie Justprince
+              and Baloo 2 by Ek Type, both under the SIL Open Font License.
             </li>
           </ul>
         </section>

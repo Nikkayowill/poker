@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdmobSsvVerificationError, processAdmobSsvCallback } from "@/lib/server/admob-ssv-service";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof AdmobSsvVerificationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    const message = error instanceof Error ? error.message : "Could not process the ad-view callback.";
+    const message = publicErrorMessage(error, "Could not process the ad-view callback.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -24,12 +24,10 @@ const HOUSE_TABS: { id: KitchenTab; label: string; icon: LucideIcon }[] = [
 ];
 
 export interface StackAcresHouseProps extends Omit<StackAcresKitchenProps, "tab"> {
-  /** A refusal from a button in here; the page's own banner sits behind the scrim. */
-  error: string | null;
   onClose: () => void;
 }
 
-export function StackAcresHouse({ error, onClose, ...kitchen }: StackAcresHouseProps) {
+export function StackAcresHouse({ onClose, ...kitchen }: StackAcresHouseProps) {
   const [tab, setTab] = useState<KitchenTab>("cook");
 
   useEffect(() => {
@@ -61,8 +59,6 @@ export function StackAcresHouse({ error, onClose, ...kitchen }: StackAcresHouseP
             <X size={16} aria-hidden="true" />
           </button>
         </header>
-
-        {error && <p className="duel-error" role="alert">{error}</p>}
 
         <div className="sa-store-tabs" role="tablist" aria-label="House room">
           {HOUSE_TABS.map(({ id, label, icon: Icon }) => (

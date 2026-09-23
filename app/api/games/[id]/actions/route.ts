@@ -11,6 +11,7 @@ import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
 import { settleHeadsUpIfFinished } from "@/lib/server/heads-up-service";
 import { readSessionToken } from "@/lib/server/session";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -193,7 +194,7 @@ export async function POST(
       throw applyError;
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "That action could not be completed.";
+    const message = publicErrorMessage(error, "That action could not be completed.");
     const status = message.includes("not seated") ? 403 : 409;
     return NextResponse.json({ error: message }, { status });
   }

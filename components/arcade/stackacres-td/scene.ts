@@ -48,6 +48,7 @@ import {
 } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
+import type { WaterSpec } from "@/lib/stackacres-td/water";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
 import { SWING_STRIKE_MS, swingToolFor, type SwingTool } from "@/lib/stackacres-td/swing";
 import {
@@ -87,15 +88,18 @@ import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-c
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
+import { SunlightLayer } from "./sunlight-layer";
+import { WaterFilm } from "./water-film";
 import { PeopleLife } from "./people-life";
 import { WindSway } from "./wind-sway";
+import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
 import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees, type SpentNode } from "@/lib/stackacres-td/gather-nodes";
 import {
   LAND_ART_SCALE,
   LAND_TEXTURES,
   dealLandObstacles,
-  landTexture,
+  landArt,
   type LandObstaclePlacement,
 } from "@/lib/stackacres-td/land-obstacles";
 import {
@@ -119,12 +123,15 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  *   areas/<area>/ground-<f>.png   terrain, ground items, cast shadows, reflections; one per water frame (`frames`)
  *   areas/<area>/props.*          standing props, with what tapping each one does (`tag`) and a swaying part (`sway`)
  *   areas/<area>/area.json        props, NPCs, spawn, zones, exits, water that blocks walking, lights, emitters
+ *   areas/<area>/water.png        where the lake's film of light and foam lie (water-film.ts), for an area with water
  *   common/sprites.*              soil, crops, hens, emote bubbles, lamp glows, smoke puffs
+ *   common/water-film.png         the film of light's ten frames
  *   characters/<name>.*           the rig's sheets, reshaded
  * The player's real beds, crops and hens are drawn on top from the shell's props.
  *
  * Life runs here rather than in baked frames (docs/stackacres-premium-life.md): the time of day
- * (daylight-layer.ts), the wind (wind-sway.ts), chimney smoke (chimney-smoke.ts), critters (ambient-life.ts), and
+ * (daylight-layer.ts), the wind (wind-sway.ts), the light moving on the lake (water-film.ts), chimney smoke
+ * (chimney-smoke.ts), critters (ambient-life.ts), and
  * people and hens breathing, blinking, pecking and greeting the farmer with emotes (people-life.ts).
  */
 
@@ -308,6 +315,9 @@ interface AreaSpec {
   lights: LightPoint[];
   emitters: Emitter[];
   ambient: AmbientSpec;
+  /** The lake's film-of-light mask (water-film.ts): null where the area has no water. Missing from an area
+   *  not exported since the film was added, which is every area but the Homestead; those get no film. */
+  water?: WaterSpec | null;
 }
 
 export interface TopdownCallbacks {
@@ -414,6 +424,8 @@ export class TopdownScene extends Phaser.Scene {
   private falls: Phaser.GameObjects.TileSprite[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
+  /** Fades whatever tall thing he is standing behind. */
+  private readonly seeThrough = new SeeThrough(this);
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
@@ -481,9 +493,11 @@ export class TopdownScene extends Phaser.Scene {
   /** The stick moved him on the last frame; false while it pushes him into a wall. */
   private stickWalking = false;
   private daylight!: DaylightLayer;
+  private sunlight!: SunlightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
   private life!: AmbientLife;
+  private water!: WaterFilm;
   private people!: PeopleLife;
   /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day and walking stay. */
   private reducedMotion = false;
@@ -529,6 +543,7 @@ export class TopdownScene extends Phaser.Scene {
       // An area ships only as many ground frames as its water needs, so load them once its JSON says how many.
       this.load.once(`filecomplete-json-area:${area}`, (_key: string, _type: string, data: AreaSpec) => {
         for (let f = 0; f < data.frames; f++) this.load.image(`ground:${area}:${f}`, `${ASSETS}/areas/${area}/ground-${f}.png`);
+        if (data.water) this.load.image(`water:${area}`, `${ASSETS}/areas/${area}/water.png`);
       });
       this.load.json(`area:${area}`, `${ASSETS}/areas/${area}/area.json`);
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
@@ -537,6 +552,7 @@ export class TopdownScene extends Phaser.Scene {
     this.load.image("forest", `${ASSETS}/common/forest.png`);
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
+    this.load.image("water-film", `${ASSETS}/common/water-film.png`);
     for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
@@ -574,8 +590,10 @@ export class TopdownScene extends Phaser.Scene {
       motion.removeEventListener("change", onMotion);
     });
     this.daylight = new DaylightLayer(this, (object) => this.keep(object));
+    this.sunlight = new SunlightLayer(this, (object) => this.keep(object), this.wind);
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
+    this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.drops = new ChunkDrops(
       this,
@@ -624,13 +642,16 @@ export class TopdownScene extends Phaser.Scene {
     this.smoke.update(time, this.reducedMotion);
     this.drops.update(time, delta);
     this.daylight.update(time, this.reducedMotion);
+    this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
+    this.water.update(time, this.reducedMotion);
     this.people.update(
       time,
       { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
       this.daylight.hour(),
       this.reducedMotion,
     );
+    this.seeThrough.update(this.pos, delta, this.reducedMotion);
   }
 
   private walk(delta: number): void {
@@ -871,6 +892,8 @@ export class TopdownScene extends Phaser.Scene {
 
     this.areaName = name;
     this.area = this.specs.get(name)!;
+    // Before any tree is built: each canopy hands the sun its top as it is made.
+    this.sunlight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.indoor);
 
     // Beyond the map's edges is forest, not the dark behind the world: the camera
     // is not fenced to the map, so a pan or a walk to an edge would otherwise look
@@ -910,6 +933,7 @@ export class TopdownScene extends Phaser.Scene {
           this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y + 0.5),
         );
         this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
+        this.sunlight.lightCanopy(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
       } else if (spec.passable) {
         // A bush has no separate top, so the whole sprite shivers.
         this.wind.add(image, spec.x, spec.y, 0, true);
@@ -942,6 +966,11 @@ export class TopdownScene extends Phaser.Scene {
       }
     }
     this.buildLandObstacles();
+    this.seeThrough.track(
+      this.area.indoor
+        ? []
+        : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
+    );
     for (const npc of this.area.npcs) {
       const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
       this.anims.createFromAseprite(npc.name, undefined, sprite);
@@ -967,6 +996,7 @@ export class TopdownScene extends Phaser.Scene {
     this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights, this.area.indoor);
     this.smoke.build(this.area.emitters);
     this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
+    this.water.build(this.area.water, `water:${name}`);
 
     this.applyGates();
     this.applyNpcs();
@@ -1034,20 +1064,21 @@ export class TopdownScene extends Phaser.Scene {
    *
    * Trees are the area's own art, copied off its atlas, so an overgrown field
    * is drawn in exactly the trees that grow around it. Boulders and scrub are
-   * the terrain pack's own rock and bush (`landTexture`); scrub is walked up
-   * to and rustles like any bush.
+   * built from the terrain pack's rocks, bushes and stumps (`landArt`); scrub
+   * is walked up to and rustles like any bush.
    */
   private buildLandObstacle(placement: LandObstaclePlacement): void {
     const tag = `land:${placement.id}`;
     this.landKinds.set(placement.id, placement.kind);
     const blocks: [number, number][] = [[placement.tx, placement.ty]];
     if (placement.kind !== "tree") {
-      const texture = landTexture(placement.kind, placement.id);
+      const { texture, flip } = landArt(placement.kind, placement.id);
       const image = this.keep(
         this.add
           .image(placement.x, placement.y, texture)
           .setOrigin(0.5, 1)
           .setScale(LAND_ART_SCALE)
+          .setFlipX(flip)
           .setDepth(placement.y),
       );
       if (placement.kind === "scrub") this.wind.add(image, placement.x, placement.y, 0, true);
@@ -1083,6 +1114,7 @@ export class TopdownScene extends Phaser.Scene {
         this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setScale(template.scale).setDepth(placement.y + 0.5),
       );
       this.wind.add(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
+      this.sunlight.lightCanopy(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
     } else {
       this.wind.add(image, placement.x, placement.y, 0, true);
     }
@@ -1648,6 +1680,8 @@ export class TopdownScene extends Phaser.Scene {
     for (const { spec, image } of this.propImages) {
       if (!spec.tag || !image.visible) continue;
       if (!image.getBounds().contains(map.x, map.y)) continue;
+      // Faded because he's behind it, so the tap is for what's behind.
+      if (this.seeThrough.passesTap(image, map)) continue;
       // The dock is walked to from its dry end and cast from side-on, so it
       // wants its own spot rather than the step-up-from-below every other prop
       // is approached with. The face point is due west along the planks, which
@@ -2983,6 +3017,13 @@ export class TopdownScene extends Phaser.Scene {
     const part = this.propImages.find(({ spec }) => spec.tag === `land:${id}`);
     if (!part || !part.image.visible) return null;
     return { x: part.spec.x, y: part.spec.y - 6 };
+  }
+
+  /** e2e only: where a tagged prop meets the ground and how opaque it is drawn right now, or null when this map has none. */
+  propSight(tag: string): { base: Point; alpha: number } | null {
+    const part = this.propImages.find(({ spec, stump }) => spec.tag === tag && !stump);
+    if (!part) return null;
+    return { base: { x: part.spec.x, y: part.spec.y }, alpha: part.image.alpha };
   }
 
   /** e2e only: whether the farmer is stopped from walking onto this map point. */

@@ -16,11 +16,12 @@ import { __resetStackAcresForTest, adjustStackAcresInventory } from "./stackacre
 
 const T0 = new Date("2026-09-24T12:00:00.000Z");
 
-/** Open grass, and a square that is not (the first of each on the map). */
+/** Open grass with open grass east of it (the bed test digs the next square over), and a square that is not. */
 function firstSquare(hoeable: boolean): { tx: number; ty: number } {
   for (let ty = 0; ty < HOMESTEAD_MAP_HEIGHT; ty += 1) {
-    for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH; tx += 1) {
-      if (isHoeableMapTile(tx, ty) === hoeable && (hoeable || ty > 40)) return { tx, ty };
+    for (let tx = 0; tx < HOMESTEAD_MAP_WIDTH - 1; tx += 1) {
+      if (isHoeableMapTile(tx, ty) !== hoeable) continue;
+      if (hoeable ? isHoeableMapTile(tx + 1, ty) : ty > 40) return { tx, ty };
     }
   }
   throw new Error("no such square");

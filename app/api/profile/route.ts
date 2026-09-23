@@ -8,6 +8,7 @@ import {
   readSessionToken,
   withRequestSessionCookie,
 } from "@/lib/server/session";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -60,9 +61,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Could not load your profile.";
+      publicErrorMessage(error, "Could not load your profile.");
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -92,9 +91,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Could not create your profile.";
+      publicErrorMessage(error, "Could not create your profile.");
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -139,9 +136,7 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Could not save your profile.";
+      publicErrorMessage(error, "Could not save your profile.");
 
     return NextResponse.json({ error: message }, { status: 500 });
   }

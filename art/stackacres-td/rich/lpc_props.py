@@ -56,6 +56,20 @@ def _made(hires, passable=False):
     return proxy, (round(bx * SCALE), round(by * SCALE))
 
 
+def rockfall(seed=0):
+    """The heap of boulders across the cave mouth while the mine is shut: three of the pack's big rocks,
+    in place of the rig's shaded-disc heap."""
+    rocks = [_cut(box) for box in ROCKS_BIG]
+    w = sum(r.width for r in rocks) - 16
+    h = max(r.height for r in rocks) + 10
+    img = Image.new("RGBA", (w, h))
+    x = 0
+    for i, r in enumerate(rocks):
+        img.alpha_composite(r, (x, h - r.height - (6 if i == 1 else 0)))
+        x += r.width - 8
+    return _made(img)
+
+
 def rock(big=False, seed=0):
     pool = ROCKS_BIG if big else ROCKS_SMALL
     return _made(_cut(pool[seed % len(pool)]))

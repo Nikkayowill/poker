@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRegisteredProfile } from "@/lib/server/api-auth";
 import { getOrCreateFriendInviteCode, regenerateFriendInviteCode } from "@/lib/server/friends-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
+import { publicErrorMessage } from "@/lib/server/public-error";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(await getOrCreateFriendInviteCode(auth.profile.id));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load your invite code.";
+    const message = publicErrorMessage(error, "Could not load your invite code.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(await regenerateFriendInviteCode(auth.profile.id));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create a new invite code.";
+    const message = publicErrorMessage(error, "Could not create a new invite code.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

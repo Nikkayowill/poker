@@ -59,6 +59,7 @@ import ripe_crops  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
 import terrain  # noqa: E402
+import water_film  # noqa: E402
 import area as area_mod  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
@@ -173,7 +174,7 @@ export const HOMESTEAD_WALKABLE_ROWS: readonly string[] = [
 
 
 def lpc_ground_image(area, sc, ground):
-    """The ground picture, with the terrain painted from the LPC atlas.
+    """The ground picture, with the terrain painted from the LPC atlas, and the water layer's mask.
 
     Everything that is not terrain is unchanged and simply drawn twice the
     size, so it lands back at its own scale on screen once the engine halves
@@ -183,6 +184,13 @@ def lpc_ground_image(area, sc, ground):
     Pond reflections are the one thing left behind for now: they are computed
     against the procedural water's own pixels. Shadows are not -- they are a
     mask over the whole map and scale up cleanly.
+
+    Anything lying flat on the water (the dock, the lily pads) throws a shadow
+    down onto the bottom, a little below it, the way Stardew's lily pads do: it
+    is what shows the water has depth under it. The film of light goes under
+    them, so they are cut out of the mask.
+
+    Returns the picture, and `water_mask(...)`'s layers for export_area to write.
     """
     names = ["grass"] + terrain.ORDER
     tiles = lpc_ground.tile_materials(ground.owner, names, area.w, area.h)
@@ -192,6 +200,9 @@ def lpc_ground_image(area, sc, ground):
     strength = np.where(d > 1, 0.82 + (d - 1) * 0.4, d * 0.82)
     strength = strength.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)[..., None]
     img = img * (1 - strength) + img * scene.SHADOW_TINT * strength
+    inside, film, foam = lpc_ground.water_layers(water)
+    flat = []
+    covered = np.zeros(inside.shape, bool)
     for it in sc.items:
         if not it["ground"]:
             continue
@@ -201,8 +212,53 @@ def lpc_ground_image(area, sc, ground):
         else:
             arr = it["arrs"][0]
             big = arr.repeat(lpc_ground.SCALE, axis=0).repeat(lpc_ground.SCALE, axis=1)
-        scene._blit(img, big, it["x"] * lpc_ground.SCALE, it["y"] * lpc_ground.SCALE)
-    return img
+        x, y = it["x"] * lpc_ground.SCALE, it["y"] * lpc_ground.SCALE
+        flat.append((big, x, y))
+        _stamp(covered, big[..., 3] > 0, x, y)
+    floating = np.zeros(inside.shape, bool)
+    for big, x, y in flat:
+        _stamp(floating, big[..., 3] > 0, x + FLOAT_SHADOW[0], y + FLOAT_SHADOW[1])
+    floating &= inside & ~covered
+    img = np.where(floating[..., None], img * FLOAT_SHADOW_TINT, img)
+    for big, x, y in flat:
+        scene._blit(img, big, x, y)
+    return img, (film & ~covered, np.where(covered, 0, foam))
+
+
+# How far below and to the right a thing lying on the water throws its shadow onto the bottom, in picture
+# px, and how dark that shadow is.
+FLOAT_SHADOW = (4, 8)
+FLOAT_SHADOW_TINT = np.array([0.62, 0.72, 0.8])
+
+
+def _stamp(mask, shape, x, y):
+    """OR boolean `shape` into `mask` with its top-left corner at (x, y), clipped to the mask."""
+    h, w = shape.shape
+    H, W = mask.shape
+    x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + w, W), min(y + h, H)
+    if x0 < x1 and y0 < y1:
+        mask[y0:y1, x0:x1] |= shape[y0 - y:y1 - y, x0 - x:x1 - x]
+
+
+def water_mask(film, foam):
+    """The engine's water layer mask (components/arcade/stackacres-td/water-film.ts), cut to the water's
+    own box: red is where the film of light lies, green which set of foam dashes (half or full) a pixel
+    is in. Opaque, so nothing in the browser premultiplies the channels away.
+
+    Returns the picture and its box in map units, or None for an area with no water. The box is kept to
+    whole map units, so the engine can lay it on the map without a half-pixel shift.
+    """
+    ys, xs = np.nonzero(film | (foam > 0))
+    if not len(xs):
+        return None
+    s = lpc_ground.SCALE
+    x0, y0 = int(xs.min()) // s * s, int(ys.min()) // s * s
+    x1, y1 = -(-(int(xs.max()) + 1) // s) * s, -(-(int(ys.max()) + 1) // s) * s
+    out = np.zeros((y1 - y0, x1 - x0, 4), np.uint8)
+    out[..., 0] = film[y0:y1, x0:x1] * 255
+    out[..., 1] = np.choose(foam[y0:y1, x0:x1], [0, 128, 255])
+    out[..., 3] = 255
+    return Image.fromarray(out, "RGBA"), {"x": x0 // s, "y": y0 // s, "w": (x1 - x0) // s, "h": (y1 - y0) // s}
 
 
 def game_character_frame(name):
@@ -268,8 +324,13 @@ def export_area(module, out_root):
     # picture is twice the size in each direction -- four of them would be the
     # kind of texture budget that crashed a phone before. The pond will get its
     # movement back from the engine rather than from four baked copies.
-    lay_doormats(to_image(lpc_ground_image(area, sc, ground)), area.name, lpc_ground.SCALE).save(
-        os.path.join(out, "ground-0.png"))
+    picture, (film, foam) = lpc_ground_image(area, sc, ground)
+    lay_doormats(to_image(picture), area.name, lpc_ground.SCALE).save(os.path.join(out, "ground-0.png"))
+    water = water_mask(film, foam)
+    if water:
+        water[0].save(os.path.join(out, "water.png"))
+    elif os.path.exists(os.path.join(out, "water.png")):
+        os.remove(os.path.join(out, "water.png"))
     for f in range(1, kit.FRAMES):
         path = os.path.join(out, f"ground-{f}.png")
         if os.path.exists(path):
@@ -360,6 +421,7 @@ def export_area(module, out_root):
         "lights": lights,
         "emitters": emitters,
         "ambient": {**ambient_tiles(area, ground, entries), "canopies": canopies},
+        "water": water[1] if water else None,
     }
     with open(os.path.join(out, "area.json"), "w") as fh:
         json.dump(data, fh, separators=(",", ":"))
@@ -578,6 +640,7 @@ def export_common(out_root):
     # across a whole backdrop, and a texture that is repeated has to be one of its own.
     lpc_trees.forest_tile().save(os.path.join(out, "forest.png"))
     lpc_props.waterfall_sheet().save(os.path.join(out, "waterfall.png"))
+    water_film.sheet().save(os.path.join(out, "water-film.png"))
     fence_pieces.fence_sheet(kit).save(os.path.join(out, "fence.png"))
     with open(os.path.join(out, "sprites.json"), "w") as fh:
         json.dump(atlas_json, fh, separators=(",", ":"))

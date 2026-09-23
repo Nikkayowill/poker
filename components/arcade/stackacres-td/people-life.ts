@@ -8,7 +8,7 @@ const GREET_REACH = 40;
 const GREET_COOLDOWN_MS = 90_000;
 /** How long the farmer stands still before he starts breathing and blinking. */
 const FARMER_IDLE_AFTER_MS = 1600;
-/** Emotes are UI: above the daylight tint and cue bubbles. */
+/** Emotes are UI: above the daylight tint. */
 const EMOTE_DEPTH = 10_001;
 const EMOTE_HOLD_MS = 1500;
 const EMOTE_FADE = [0.66, 0.33];
@@ -44,7 +44,7 @@ function greeting(name: string, hour: number): EmoteKind {
 export class PeopleLife {
   private npcs = new Map<string, Npc>();
   private hens = new Map<string, { sprite: Phaser.GameObjects.Image; base: string; next: number; until: number }>();
-  private emotes = new Map<EmoteTarget, { image: Phaser.GameObjects.Image; sprite: Phaser.GameObjects.Sprite; born: number; raised: boolean }>();
+  private emotes = new Map<EmoteTarget, { image: Phaser.GameObjects.Image; sprite: Phaser.GameObjects.Sprite; born: number }>();
   private stoodAt = 0;
 
   constructor(
@@ -83,12 +83,12 @@ export class PeopleLife {
     for (const id of this.hens.keys()) if (!seen.has(id)) this.hens.delete(id);
   }
 
-  emote(who: EmoteTarget, kind: EmoteKind, time: number, farmer: Phaser.GameObjects.Sprite, raised: (name: string) => boolean): void {
+  emote(who: EmoteTarget, kind: EmoteKind, time: number, farmer: Phaser.GameObjects.Sprite): void {
     const sprite = who === "farmer" ? farmer : this.npcs.get(who)?.sprite;
     if (!sprite?.visible) return;
     this.emotes.get(who)?.image.destroy();
     const image = this.keep(this.scene.add.image(0, 0, "common", `emote_${kind}`).setOrigin(0, 0).setDepth(EMOTE_DEPTH));
-    this.emotes.set(who, { image, sprite, born: time, raised: who !== "farmer" && raised(who) });
+    this.emotes.set(who, { image, sprite, born: time });
     this.placeEmote(this.emotes.get(who)!, time, false);
   }
 
@@ -97,7 +97,6 @@ export class PeopleLife {
     farmer: { sprite: Phaser.GameObjects.Sprite; x: number; y: number; facing: Dir; walking: boolean },
     hour: number,
     reducedMotion: boolean,
-    raised: (name: string) => boolean,
   ): void {
     for (const [name, npc] of this.npcs) {
       if (!npc.sprite.visible) continue;
@@ -114,7 +113,7 @@ export class PeopleLife {
       npc.facing = facing;
       if (near && !npc.near && time - npc.greetedAt > GREET_COOLDOWN_MS) {
         npc.greetedAt = time;
-        this.emote(name as EmoteTarget, greeting(name, hour), time, farmer.sprite, raised);
+        this.emote(name as EmoteTarget, greeting(name, hour), time, farmer.sprite);
       }
       npc.near = near;
     }
@@ -164,15 +163,15 @@ export class PeopleLife {
     }
   }
 
-  /** Over the head (higher when a cue bubble is already there), popping up 2px on arrival, fading in steps. */
+  /** Over the head, popping up 2px on arrival, fading in steps. */
   private placeEmote(
-    emote: { image: Phaser.GameObjects.Image; sprite: Phaser.GameObjects.Sprite; born: number; raised: boolean },
+    emote: { image: Phaser.GameObjects.Image; sprite: Phaser.GameObjects.Sprite; born: number },
     time: number,
     reducedMotion: boolean,
   ): void {
     const age = time - emote.born;
     const rise = reducedMotion ? 0 : age < 60 ? 2 : age < 120 ? 1 : 0;
-    const bottom = Math.round(emote.sprite.y) - (emote.raised ? 42 : 32);
+    const bottom = Math.round(emote.sprite.y) - 32;
     emote.image.setPosition(Math.round(emote.sprite.x) - Math.floor(emote.image.width / 2), bottom - emote.image.height + rise);
     const fading = age - EMOTE_HOLD_MS;
     emote.image.setAlpha(fading < 0 ? 1 : EMOTE_FADE[Math.min(EMOTE_FADE.length - 1, Math.floor(fading / EMOTE_FADE_STEP_MS))]);

@@ -50,6 +50,7 @@ import lpc_ground  # noqa: E402
 import pasture  # noqa: E402
 import portraits  # noqa: E402
 import props  # noqa: E402
+import ripe_crops  # noqa: E402
 import scene  # noqa: E402
 import sprites  # noqa: E402
 import terrain  # noqa: E402
@@ -485,6 +486,9 @@ def export_common(out_root):
             named.append((f"crop_{stock}_{stage}", extras.crop(art, stage)[0]))
     for stage in (0, 1, 2):
         named.append((f"crop_generic_{stage}", generic_crop(stage)))
+    # Every other crop grows as the generic plant and ripens into its own drawing.
+    for name in ripe_crops.RIPE:
+        named.append((f"crop_{name}_2", ripe_crops.ripe_crop(name)[0]))
     named.append(("crop_withered", withered()))
     named.append(("crop_seeds", seeds()))
     for side, left in (("left", True), ("right", False)):

@@ -38,7 +38,19 @@ import {
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
+import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
+import {
+  PULL_CATCH_MS,
+  PULL_GRIP_MS,
+  PULL_HANDS_ABOVE_FEET,
+  PULL_HELD_SCALE,
+  PULL_POP_MS,
+  PULL_RISE_MS,
+  PULL_RISE_PX,
+  PULL_SETTLE_MS,
+  pullHopPoint,
+} from "@/lib/stackacres-td/pull";
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
@@ -48,8 +60,7 @@ import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/trav
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
-import type { BuildingCueDoors, StackAcresSceneUnit, StoryCues, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
-import type { BuildingDoor } from "@/lib/stackacres/building-cues";
+import type { StackAcresSceneUnit, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
 import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
@@ -80,7 +91,7 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  *   areas/<area>/ground-<f>.png   terrain, ground items, cast shadows, reflections; one per water frame (`frames`)
  *   areas/<area>/props.*          standing props, with what tapping each one does (`tag`) and a swaying part (`sway`)
  *   areas/<area>/area.json        props, NPCs, spawn, zones, exits, water that blocks walking, lights, emitters
- *   common/sprites.*              soil, crops, hens, cue bubbles, lamp glows, smoke puffs
+ *   common/sprites.*              soil, crops, hens, emote bubbles, lamp glows, smoke puffs
  *   characters/<name>.*           the rig's sheets, reshaded
  * The player's real beds, crops and hens are drawn on top from the shell's props.
  *
@@ -111,7 +122,7 @@ const AREA_NAMES: Record<TopdownArea, string> = {
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
-/** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
+/** Above the daylight tint and the emote bubbles: the dissolving view is the screen's own. */
 const TRAVEL_DEPTH = 20_000;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
@@ -211,8 +222,6 @@ const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
 /** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
 const TURN_LEAN = 0.6;
 
-const DRAWN_CROPS = new Set(["carrot", "potato", "radish", "wheat"]);
-
 interface PropSpec {
   frame: string;
   frames: string[];
@@ -311,7 +320,6 @@ type Target =
 
 interface UnitNode {
   sprite: Phaser.GameObjects.Image;
-  cue: Phaser.GameObjects.Image | null;
   signature: string;
 }
 
@@ -349,7 +357,7 @@ export class TopdownScene extends Phaser.Scene {
   private animated: { sprite: Phaser.GameObjects.Image; frames: string[] }[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
-  private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse; cue: Phaser.GameObjects.Image | null }>();
+  private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
   private soilImages: { key: string; image: Phaser.GameObjects.Image; enriched: boolean }[] = [];
@@ -416,8 +424,10 @@ export class TopdownScene extends Phaser.Scene {
   private smoke!: ChimneySmoke;
   private life!: AmbientLife;
   private people!: PeopleLife;
-  /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day, cues and walking stay. */
+  /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day and walking stay. */
   private reducedMotion = false;
+  /** The give in his body when a picked crop lands in his hands (`squashFarmer`). */
+  private farmerSquash: Phaser.Tweens.Tween | null = null;
   /** Set from the step through a door until its dissolve ends; taps and the stick wait meanwhile. */
   private travelling = false;
 
@@ -426,9 +436,6 @@ export class TopdownScene extends Phaser.Scene {
   private soil: SoilTile[] = [];
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
-  private storyCues: StoryCues = {};
-  private buildingCues: BuildingCueDoors = {};
-  private buildingCueImages: Phaser.GameObjects.Image[] = [];
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
   private spent = new Map<string, number>();
   /** Ids of the obstacles already cleared off unclaimed land. Unlike a
@@ -528,7 +535,6 @@ export class TopdownScene extends Phaser.Scene {
       { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
       this.daylight.hour(),
       this.reducedMotion,
-      this.hasCue,
     );
   }
 
@@ -750,7 +756,6 @@ export class TopdownScene extends Phaser.Scene {
     this.layer = [];
     this.animated = [];
     this.propImages = [];
-    this.buildingCueImages = [];
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
@@ -804,7 +809,7 @@ export class TopdownScene extends Phaser.Scene {
       this.anims.createFromAseprite(npc.name, undefined, sprite);
       this.people.addNpc(npc.name, sprite);
       const shadow = this.keep(this.add.ellipse(npc.x + 1, npc.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
-      this.npcSprites.set(npc.name, { sprite, shadow, cue: null });
+      this.npcSprites.set(npc.name, { sprite, shadow });
     }
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
@@ -818,7 +823,6 @@ export class TopdownScene extends Phaser.Scene {
 
     this.applyGates();
     this.applyNpcs();
-    this.applyBuildingCues();
     this.drawSoil();
     this.drawUnits();
   }
@@ -965,36 +969,6 @@ export class TopdownScene extends Phaser.Scene {
       const visible = this.npcVisible(name);
       node.sprite.setVisible(visible);
       node.shadow.setVisible(visible);
-      node.cue?.destroy();
-      node.cue = null;
-      const cue = this.storyCues[name as TravelerId];
-      if (visible && cue) {
-        node.cue = this.keep(
-          this.add.image(node.sprite.x, node.sprite.y - 34, "common", cue === "ready" ? "cue_quest_ready" : "cue_available").setDepth(10_000),
-        );
-        this.bob(node.cue);
-      }
-    }
-  }
-
-  /**
-   * The badge over a building whose inside has something finished in it
-   * (lib/stackacres/building-cues.ts). Anchored to the prop rather than to
-   * the door, so it floats clear of the roof instead of sitting on the wall,
-   * and only drawn where that building actually stands.
-   */
-  private applyBuildingCues(): void {
-    for (const image of this.buildingCueImages) image.destroy();
-    this.buildingCueImages = [];
-    for (const door of Object.keys(this.buildingCues) as BuildingDoor[]) {
-      if (this.buildingCues[door] !== true) continue;
-      const prop = this.propImages.find(({ spec }) => spec.tag === door);
-      if (!prop) continue;
-      const badge = this.keep(
-        this.add.image(prop.image.x + prop.spec.w / 2, prop.spec.y - 40, "common", "cue_ready").setDepth(10_000),
-      );
-      this.bob(badge);
-      this.buildingCueImages.push(badge);
     }
   }
 
@@ -1106,14 +1080,7 @@ export class TopdownScene extends Phaser.Scene {
     if (unit.state === "mucked") return "crop_withered";
     if (showsSeeds(unit)) return "crop_seeds";
     const stage = unit.state === "ready" ? 2 : (unit.progress ?? 0) < 0.5 ? 0 : 1;
-    return DRAWN_CROPS.has(unit.stock) ? `crop_${unit.stock}_${stage}` : `crop_generic_${stage}`;
-  }
-
-  private unitCue(unit: StackAcresSceneUnit): string | null {
-    if (unit.state === "dry") return "cue_water";
-    if (unit.state === "hungry") return "cue_hungry";
-    if (unit.state === "ready") return "cue_ready";
-    return null;
+    return cropFrame(unit.stock, stage);
   }
 
   private drawUnits(): void {
@@ -1142,29 +1109,18 @@ export class TopdownScene extends Phaser.Scene {
         if (bedIsWet(unit)) this.wetTiles.add(tileKey);
       }
       const frame = this.unitFrame(unit);
-      const cue = this.unitCue(unit);
-      const signature = `${frame}|${cue}|${at.x},${at.y}`;
+      const signature = `${frame}|${at.x},${at.y}`;
       const existing = this.unitNodes.get(unit.id);
       if (existing?.signature === signature) continue;
       const isNew = !existing;
       existing?.sprite.destroy();
-      existing?.cue?.destroy();
       const animal = PENS[stockZone(unit.stock)] !== undefined;
       // A plant stands up out of the lower half of its square; seed lies in the
       // middle of it, so it sits on the dug earth rather than on the grass edge.
       const seed = frame === "crop_seeds";
       const baseY = animal ? at.y : seed ? at.y + 3 : at.y + 6;
       const sprite = this.keep(this.add.image(at.x, baseY, "common", frame).setOrigin(0.5, 1).setDepth(baseY));
-      let cueImage: Phaser.GameObjects.Image | null = null;
-      if (cue) {
-        // Above the plant, and never lower than the top of its square: seed is only a
-        // few pixels tall, and a bubble parked just over it would sit on the square
-        // and hide the very seeds it is asking the player to water.
-        const cueY = animal ? baseY - sprite.height - 5 : Math.min(baseY - sprite.height - 5, at.y - SOIL_TILE / 2 - 8);
-        cueImage = this.keep(this.add.image(at.x, cueY, "common", cue).setDepth(10_000));
-        this.bob(cueImage);
-      }
-      this.unitNodes.set(unit.id, { sprite, cue: cueImage, signature });
+      this.unitNodes.set(unit.id, { sprite, signature });
       // A crop this small, on a bed the farmer is standing right next to, is otherwise easy to
       // miss under his own swing and the toast that lands on the same spot -- see stackacres-farm.tsx's
       // "Seeded" toast. Skipped for a livestock purchase: those show up in Hen Haven, screens away
@@ -1176,7 +1132,6 @@ export class TopdownScene extends Phaser.Scene {
     for (const [id, node] of this.unitNodes) {
       if (seen.has(id)) continue;
       node.sprite.destroy();
-      node.cue?.destroy();
       this.unitNodes.delete(id);
     }
     this.people.syncHens(
@@ -1188,10 +1143,6 @@ export class TopdownScene extends Phaser.Scene {
     // dry or being watered changes no soil row at all, so the bed only hears
     // about it through the unit pass.
     this.applySoilMoisture();
-  }
-
-  private bob(image: Phaser.GameObjects.Image): void {
-    this.tweens.add({ targets: image, y: image.y - 2, duration: 520, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
   }
 
   // ------------------------------------------------------------------ input
@@ -1507,8 +1458,7 @@ export class TopdownScene extends Phaser.Scene {
     };
 
     for (const [id, node] of this.unitNodes) {
-      const onBubble = node.cue ? hitImage(node.cue, 2) : false;
-      if (hitImage(node.sprite, 3) || onBubble) consider({ kind: "unit", id, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } }, node.sprite.depth + 1000);
+      if (hitImage(node.sprite, 3)) consider({ kind: "unit", id, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } }, node.sprite.depth + 1000);
     }
     if (best) return (best as { target: Target }).target;
 
@@ -1593,12 +1543,10 @@ export class TopdownScene extends Phaser.Scene {
     this.people.stood(this.time.now);
   };
 
-  private hasCue = (name: string): boolean => Boolean(this.npcSprites.get(name)?.cue);
-
   /** An emote bubble over the farmer or someone on the map (see people-life.ts). */
   emote(who: EmoteTarget, kind: EmoteKind): void {
     if (!this.booted) return;
-    this.people.emote(who, kind, this.time.now, this.player, this.hasCue);
+    this.people.emote(who, kind, this.time.now, this.player);
   }
 
   /**
@@ -2130,14 +2078,130 @@ export class TopdownScene extends Phaser.Scene {
     this.applyGates();
   }
 
-  setStoryCues(cues: StoryCues): void {
-    this.storyCues = cues;
-    if (this.booted) this.applyNpcs();
+  /**
+   * A ripe crop is being picked: it comes out of the ground and into his hands
+   * in time with the harvest animation (lib/stackacres-td/pull.ts). Called
+   * before the request goes out. The sprite leaves `unitNodes` here, so the
+   * optimistic removal that follows finds nothing to destroy, and a refusal
+   * that puts the crop back simply draws it again.
+   */
+  pullCrop(unitId: string): void {
+    const node = this.unitNodes.get(unitId);
+    if (!node || !this.booted) return;
+    this.unitNodes.delete(unitId);
+    const crop = node.sprite;
+    if (this.reducedMotion) {
+      crop.destroy();
+      return;
+    }
+    this.tweens.killTweensOf(crop);
+    // Carried by its middle from here on, so it lands centred on his hands
+    // instead of standing up from them over his face.
+    const soil = { x: crop.x, y: crop.y };
+    crop.setScale(1).setOrigin(0.5, 0.5).setY(soil.y - crop.height / 2);
+    const ground = { x: crop.x, y: crop.y };
+    // His hands are in front of him: over his body, unless he has his back to us.
+    const inFront = (): number => this.player.depth + (this.facing === "up" ? -0.5 : 0.5);
+    const hands = (): Point => {
+      const reach = this.facing === "left" ? -5 : this.facing === "right" ? 5 : 0;
+      return { x: this.player.x + reach, y: this.player.y - PULL_HANDS_ABOVE_FEET };
+    };
+    // It holds on while he grips it at the bottom of his bend.
+    this.tweens.add({
+      targets: crop,
+      angle: { from: -8, to: 8 },
+      delay: PULL_GRIP_MS,
+      duration: (PULL_POP_MS - PULL_GRIP_MS) / 4,
+      yoyo: true,
+      repeat: 1,
+    });
+    this.time.delayedCall(PULL_POP_MS, () => {
+      if (!crop.active) return;
+      crop.setAngle(0);
+      this.hoeImpactAt({ x: soil.x, y: soil.y - 1 });
+      // Loose: up out of the soil, stretched by the pull.
+      this.tweens.add({
+        targets: crop,
+        y: ground.y - PULL_RISE_PX,
+        scaleX: 0.85,
+        scaleY: 1.2,
+        duration: PULL_RISE_MS,
+        ease: "Quad.easeOut",
+        onComplete: () => {
+          if (!crop.active) return;
+          const from = { x: crop.x, y: crop.y };
+          const stretched = { x: crop.scaleX, y: crop.scaleY };
+          crop.setDepth(inFront());
+          this.tweens.addCounter({
+            from: 0,
+            to: 1,
+            duration: PULL_CATCH_MS - PULL_POP_MS - PULL_RISE_MS,
+            ease: "Sine.easeIn",
+            onUpdate: (tween) => {
+              if (!crop.active) return;
+              const t = tween.getValue() ?? 1;
+              const at = pullHopPoint(t, from, hands());
+              // Settling from the pull's stretch to the size he holds it at.
+              crop
+                .setPosition(at.x, at.y)
+                .setScale(
+                  stretched.x + (PULL_HELD_SCALE - stretched.x) * t,
+                  stretched.y + (PULL_HELD_SCALE - stretched.y) * t,
+                )
+                .setDepth(inFront());
+            },
+            onComplete: () => this.catchCrop(crop, hands, inFront),
+          });
+        },
+      });
+    });
   }
 
-  setBuildingCues(doors: BuildingCueDoors): void {
-    this.buildingCues = doors;
-    if (this.booted) this.applyBuildingCues();
+  /**
+   * A give in his body that springs back. One at a time, always from his true
+   * size, so picks landing on top of each other in a stroke never leave him
+   * stuck squashed.
+   */
+  private squashFarmer(scaleX: number, scaleY: number, duration: number): void {
+    this.farmerSquash?.stop();
+    this.player.setScale(1);
+    this.farmerSquash = this.tweens.add({
+      targets: this.player,
+      scaleX,
+      scaleY,
+      duration,
+      yoyo: true,
+      ease: "Quad.easeOut",
+      onStop: () => this.player.setScale(1),
+    });
+  }
+
+  /** It lands in his hands with a squash, he gives with it, and it is tucked away. */
+  private catchCrop(crop: Phaser.GameObjects.Image, hands: () => Point, inFront: () => number): void {
+    if (!crop.active) return;
+    this.squashFarmer(1.04, 0.94, 70);
+    this.tweens.add({
+      targets: crop,
+      scaleX: PULL_HELD_SCALE * 1.25,
+      scaleY: PULL_HELD_SCALE * 0.75,
+      duration: 70,
+      yoyo: true,
+      ease: "Quad.easeOut",
+    });
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      delay: 140,
+      duration: PULL_SETTLE_MS - 140,
+      ease: "Quad.easeIn",
+      onUpdate: (tween) => {
+        if (!crop.active) return;
+        const k = tween.getValue() ?? 1;
+        const at = hands();
+        crop.setPosition(at.x, at.y + 4 * k).setScale(PULL_HELD_SCALE * (1 - 0.8 * k)).setAlpha(1 - k).setDepth(inFront());
+      },
+      onComplete: () => crop.destroy(),
+    });
   }
 
   popUnit(unitId: string): void {

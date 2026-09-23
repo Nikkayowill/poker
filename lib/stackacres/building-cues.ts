@@ -1,12 +1,10 @@
 /**
- * What is finished and waiting INSIDE a building, so its door can say so.
+ * What is finished and waiting INSIDE a building.
  *
  * The Workshop and the kitchen are walked into, so a finished Mill run, a
  * ready vat batch, aged jars and banked kitchen batches were all invisible
- * from the farm until the player happened to walk in.
- *
- * One answer, two renderings: journal.ts reads this for its "collect" line
- * and the map reads it for the badge over the door, so they cannot disagree.
+ * from the farm until the player happened to walk in. journal.ts reads this
+ * for its "collect" line. The map draws no badge over the door.
  * Pure and clock-free, same as ./machines.ts.
  */
 
@@ -105,12 +103,4 @@ export function buildingCues(input: BuildingCueInput): readonly BuildingCue[] {
   }
 
   return cues;
-}
-
-/** One flag per door with something behind it, for the scene's badges. A
- *  missing key means nothing is waiting there. */
-export function buildingCueDoors(input: BuildingCueInput): Readonly<Partial<Record<BuildingDoor, true>>> {
-  const doors: Partial<Record<BuildingDoor, true>> = {};
-  for (const cue of buildingCues(input)) doors[cue.door] = true;
-  return doors;
 }

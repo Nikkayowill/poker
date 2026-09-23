@@ -24,11 +24,12 @@ BOOTS = ("feet_boots_revised", "brown")
 ODD_ONES = ("leo", "barnaby")
 
 CAST = {
-    # The player. Straw hat, green shirt, denim overalls.
-    "farmer": dict(items=[BODY, ("heads_human_male", None), ("hair_plain", None),
+    # The player. Straw hat, green shirt, denim overalls. The teen build and rosy cheeks are Kayo's
+    # call: on the grown man's body he looked too macho for a cheerful farm game.
+    "farmer": dict(items=[BODY, ("heads_human_male", None), ("face_blush", "cheeks"), ("hair_plain", None),
                           ("torso_clothes_longsleeve", "forest"), ("torso_aprons_overalls", "blue"),
                           ("legs_pants2", "navy"), BOOTS, ("hat_cap_bonnie", "tan")],
-                   palette={"hair": "light_brown", "eye": "blue"}),
+                   body="teen", palette={"hair": "light_brown", "eye": "blue"}),
     # Ray, Kayo's great-grandfather: white beard, flat cap, red plaid, brown skin.
     "ray": dict(items=[BODY, ("heads_human_male_elderly", None), ("hair_plain", None),
                        ("beards_winter", None), ("torso_clothes_longsleeve", "maroon"),

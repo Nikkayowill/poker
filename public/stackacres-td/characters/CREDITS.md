@@ -40,6 +40,17 @@ CC-BY 3.0, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, GPL 2.0, GPL
   - https://opengameart.org/content/lpc-runcycle-for-male-muscular-and-pregnant-character-bases-with-modular-heads
   - https://opengameart.org/content/lpc-jump-expanded
   - https://opengameart.org/content/lpc-character-bases
+- **body/bodies/teen** - bluecarrot16, Evert, TheraHedwig, Benjamin K. Smith (BenCreating), MuffinElZangano, Durrani, Pierre Vigier (pvigier), Eliza Wyatt (ElizaWy), Matthew Krohn (makrohn), Johannes Sjölund (wulax), Stephen Challener (Redshrike) - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
+  - https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  - https://opengameart.org/content/lpc-medieval-fantasy-character-sprites
+  - https://opengameart.org/content/lpc-ladies
+  - https://opengameart.org/content/lpc-teen-unisex-base-clothes
+  - https://opengameart.org/content/lpc-jump-expanded
+  - https://opengameart.org/content/lpc-revised-character-basics
+  - https://opengameart.org/content/lpc-be-seated
+  - https://gitlab.com/vagabondgame/lpc-characters
+  - https://opengameart.org/content/lpc-male-jumping-animation-by-durrani
+  - https://opengameart.org/content/lpc-jump-expanded
 - **cape/tattered/bg** - Nila122, JaidynReiman - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
   - https://opengameart.org/content/lpc-curly-hair-elven-ears-white-cape-with-blue-trim-and-more
   - https://opengameart.org/content/lpc-roman-armor
@@ -70,6 +81,12 @@ CC-BY 3.0, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, GPL 2.0, GPL
 - **hat/pirate/bonnie** - bluecarrot16, JaidynReiman - OGA-BY 3.0
   - https://opengameart.org/content/lpc-pirates
   - https://opengameart.org/content/lpc-expanded-hats-facial-helmets
+- **head/faces** - JaidynReiman, ElizaWy, Stephen Challener (Redshrike) - OGA-BY 3.0
+  - https://github.com/ElizaWy/LPC/tree/main/Characters/Head
+  - https://opengameart.org/content/ulpc-expanded-expressions
+- **head/faces/male/blush** - JaidynReiman, ElizaWy, Stephen Challener (Redshrike) - OGA-BY 3.0
+  - https://github.com/ElizaWy/LPC/tree/main/Characters/Head
+  - https://opengameart.org/content/ulpc-expanded-expressions
 - **head/heads/human/female** - bluecarrot16, Benjamin K. Smith (BenCreating), Stephen Challener (Redshrike) - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
   - https://opengameart.org/content/
   - https://opengameart.org/content/lpc-character-bases
@@ -123,6 +140,14 @@ CC-BY 3.0, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, GPL 2.0, GPL
   - https://opengameart.org/content/lpc-expanded-simple-shirts
 - **torso/clothes/longsleeve/longsleeve/male** - JaidynReiman, Johannes Sjölund (wulax) - OGA-BY 3.0, CC-BY-SA 3.0, GPL 3.0
   - https://opengameart.org/content/lpc-medieval-fantasy-character-sprites
+  - http://opengameart.org/content/lpc-clothing-updates
+  - https://opengameart.org/content/lpc-revised-character-basics
+  - https://github.com/ElizaWy/LPC/tree/main/Characters/Clothing
+  - https://opengameart.org/content/lpc-expanded-sit-run-jump-more
+  - https://opengameart.org/content/lpc-expanded-simple-shirts
+- **torso/clothes/longsleeve/longsleeve/teen** - bluecarrot16, ElizaWy, JaidynReiman, Stephen Challener (Redshrike), Johannes Sjölund (wulax) - OGA-BY 3.0, GPL 3.0
+  - https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  - https://opengameart.org/content/lpc-teen-unisex-base-clothes
   - http://opengameart.org/content/lpc-clothing-updates
   - https://opengameart.org/content/lpc-revised-character-basics
   - https://github.com/ElizaWy/LPC/tree/main/Characters/Clothing

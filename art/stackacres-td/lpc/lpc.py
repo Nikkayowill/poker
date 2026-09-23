@@ -82,15 +82,24 @@ def definition(item):
         return json.load(fh)
 
 
-def layers(item, variant, body="male"):
-    """The (zPos, sheet directory, custom animation) rows an item contributes for this body type."""
+def layers(item, variant, body="male", head=None):
+    """The (zPos, sheet directory, custom animation) rows an item contributes for this body type.
+
+    A face is drawn per head shape, so its path names the head (`head/faces/${head}/happy/`), and
+    the definition's `replace_in_path` says which folder each head uses."""
     out = []
     d = definition(item)
+    subs = {k: table.get(head) for k, table in d.get("replace_in_path", {}).items()}
     for key in sorted(k for k in d if k.startswith("layer_")):
         layer = d[key]
         base = layer.get(body) or layer.get("male")
         if not base:
             continue
+        for k, v in subs.items():
+            if "${" + k + "}" in base:
+                if v is None:
+                    raise KeyError(f"{item} has no {k} folder for head {head!r}")
+                base = base.replace("${" + k + "}", v)
         out.append((layer["zPos"], base.rstrip("/"), layer.get("custom_animation")))
     return out
 
@@ -146,12 +155,26 @@ def materials(item):
 
 _SHEETS = {}
 
+# A face layer asked for as ("face_blush", "cheeks") draws only its rosy cheeks. LPC's blush face
+# also closes the eyes, and at 31px closed eyes read as no eyes at all. The cheeks are painted a
+# deeper rose first, since shrinking to 31px blends LPC's own peach back into the skin.
+ONLY = {"cheeks": {(255, 140, 104): (232, 84, 96)}}
 
-def sheet(path, mapping):
-    """One layer sheet, recoloured, kept in memory: the same body walks for every character."""
-    key = (path, tuple(sorted(mapping.items())))
+
+def sheet(path, mapping, only=None):
+    """One layer sheet, recoloured, kept in memory: the same body walks for every character.
+    `only` keeps just the pixels of those source colours, repainted as it says."""
+    key = (path, tuple(sorted(mapping.items())), tuple(sorted((only or {}).items())))
     if key not in _SHEETS:
-        _SHEETS[key] = recolor(Image.open(path).convert("RGBA"), mapping)
+        img = Image.open(path).convert("RGBA")
+        if only:
+            px = img.load()
+            for y in range(img.height):
+                for x in range(img.width):
+                    if px[x, y][3]:
+                        swap = only.get(px[x, y][:3])
+                        px[x, y] = (*swap, px[x, y][3]) if swap else (0, 0, 0, 0)
+        _SHEETS[key] = recolor(img, mapping)
     return _SHEETS[key]
 
 
@@ -179,6 +202,9 @@ class Character:
         self.body = body
         self.palette = palette or {}   # material -> ramp name, e.g. {"body": "brown", "hair": "white"}
         self._maps = {}
+        # The head's name as a face's `replace_in_path` spells it, e.g. "Human_Male".
+        heads = [i for i, _v in self.items if i.startswith("heads_")]
+        self.head = definition(heads[0])["name"].replace(" ", "_") if heads else None
 
     def _mapping(self, item, colour):
         """The colour swap for this layer: the character's skin, hair and eyes, plus this item's own
@@ -190,7 +216,7 @@ class Character:
             for m in mats & set(self.palette):
                 src, dst = ramp(m, self.palette[m])
                 table.update(dict(zip(src, dst)))
-            if colour and not has_variants(item):
+            if colour and colour not in ONLY and not has_variants(item):
                 for m in mats - {"body", "eye"}:
                     src, dst = ramp(m, colour)
                     table.update(dict(zip(src, dst)))
@@ -202,7 +228,7 @@ class Character:
         drawn, missing = [], []
         for item, colour in self.items:
             variant = colour if has_variants(item) else None
-            for z, rel, custom in layers(item, colour, self.body):
+            for z, rel, custom in layers(item, colour, self.body, self.head):
                 if custom:
                     missing.append((item, rel, "custom animation, not composited"))
                     continue
@@ -228,7 +254,7 @@ class Character:
             raise ValueError(f"nothing to draw for {animation}")
         row = 0 if animation in SINGLE_ROW else DIRS.index(direction)
         out = []
-        sheets = {p: sheet(p, self._mapping(item, colour)) for _z, p, item, colour, _s in drawn}
+        sheets = {p: sheet(p, self._mapping(item, colour), ONLY.get(colour)) for _z, p, item, colour, _s in drawn}
         width = min(im.width for _z, p, _i, _c, stand in drawn if not stand
                     for im in [sheets[p]]) if any(not d[4] for d in drawn) else FRAME
         for col in CYCLES[animation]:
@@ -252,7 +278,7 @@ class Character:
         drawn = []
         for item, colour in self.items:
             variant = colour if has_variants(item) else None
-            for z, rel, custom in layers(item, colour, self.body):
+            for z, rel, custom in layers(item, colour, self.body, self.head):
                 if custom and custom != name:
                     continue
                 path = (os.path.join(SHEETS, rel + ".png") if custom
@@ -267,7 +293,7 @@ class Character:
         for j, col in enumerate(spec["cols"]):
             frame = Image.new("RGBA", (size, size))
             for _z, path, item, colour, is_tool, stand in drawn:
-                img = sheet(path, self._mapping(item, colour))
+                img = sheet(path, self._mapping(item, colour), ONLY.get(colour))
                 if is_tool:
                     step = img.height // 4
                     x = (col if spec["from_single_animation"] else j) * step
@@ -293,7 +319,7 @@ class Character:
         """Attribution rows for everything this character draws, de-duplicated."""
         used = {}
         for item, variant in self.items:
-            used.setdefault(item, set()).update(rel for _z, rel, _c in layers(item, variant, self.body))
+            used.setdefault(item, set()).update(rel for _z, rel, _c in layers(item, variant, self.body, self.head))
         rows = OrderedDict()
         for item, rels in used.items():
             for row in credits_for(item, rels):

@@ -66,7 +66,9 @@ export function CreditsPage() {
               rocks, bushes and the Homestead&rsquo;s hill are from the
               Liberated Pixel Cup terrain set on OpenGameArt, drawn by Lanea
               Zimmerman (Sharm), Daniel Eddeland, Casper Nilsson, Johann
-              Charlot and Skyler Robert Colladay, with the grass-topped cliffs
+              Charlot, Skyler Robert Colladay, Stephen Challener (Redshrike),
+              Charles Sanchez (CharlesGabriel), Manuel Riecke (MrBeast) and
+              Daniel Armstrong (HughSpectrum), with the grass-topped cliffs
               edited from Sharm&rsquo;s originals. The trees are{" "}
               <a href="https://opengameart.org/content/lpc-trees">[LPC] Trees</a>{" "}
               by bluecarrot16, Jetrel, Zabin, Hyptosis, Surt, Buch, Johann
@@ -96,14 +98,6 @@ export function CreditsPage() {
               OGA-BY 3.0, CC-BY 3.0 and CC-BY 4.0. The full list, layer by
               layer, is in{" "}
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
-            </li>
-            <li>
-              <strong>The land</strong> — the ground, water, paths and props on
-              the map use Liberated Pixel Cup terrain art by Lanea Zimmerman
-              (Sharm), Daniel Eddeland, Casper Nilsson, Johann Charlot, Skyler
-              Robert Colladay, Stephen Challener (Redshrike), Charles Sanchez
-              (CharlesGabriel), Manuel Riecke (MrBeast) and Daniel Armstrong
-              (HughSpectrum), under CC-BY-SA 3.0 and GPL 3.0.
             </li>
             <li>
               <strong>Lettering</strong> — Pixelify Sans by Stefie Justprince

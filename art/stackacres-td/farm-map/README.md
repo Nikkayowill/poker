@@ -19,3 +19,21 @@ and dock (`../rich/farm_extras.py`) and leaves the wild land's trees, boulders a
 
 Everything but the buildings, flowers, dock and boat is the LPC terrain pack
 (`../lpc/terrain/Attribution.txt`).
+
+## The player-built Homestead
+
+The newer direction: every farm starts with just the house, and the player places, paves, plants
+and moves everything else. The land is clearings in the woods to find, not one open square.
+
+- `previews/explore-day1.png` is day one. The house sits in a clearing. Gaps in the trees lead to
+  oak woods with a fairy ring, a stone field and a hidden ring of standing stones. A footbridge
+  crosses the stream to a meadow with the ruined old greenhouse, and past the pond is a berry
+  thicket. There are no paths.
+- `previews/explore-later.png` is one player's farm on the same land a while later, with the barn,
+  workshop, paths, fields and orchard they put down.
+- `previews/explore-view-bridge.png` and `explore-view-glade-gap.png` are what a phone shows at once.
+
+`python3 explore.py` renders day one and the two views, and `STAGE=later python3 explore.py` renders the
+later farm. The woods are single trees with a slight tint each, never the repeating `forest_tile()`
+canopy, and they darken the further in you look. Like `farm_map.py`, this is a design render, not
+the game's map.

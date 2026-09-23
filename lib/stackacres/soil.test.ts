@@ -16,7 +16,6 @@ import {
   meadowTileAt,
 } from "./zones";
 import {
-  HOME_PLOTS,
   HOME_STARTER_ORIGIN,
   HOME_STARTER_TILE_COUNT,
   SOIL_EDGE_BAND,
@@ -27,7 +26,6 @@ import {
   getClosestHarvestableCrop,
   hasSoilTile,
   homeStarterSoilTiles,
-  isHomePlotTile,
   isHomeStarterSoilTile,
   nextSoilOrder,
   onSoil,
@@ -280,10 +278,9 @@ describe("homeStarterSoilTiles -- the free Homestead starter beds", () => {
   });
 
   it("cannot be flood-filled together with a Crop Fields bed", () => {
-    // A purchased bed comfortably inside the Crop Fields, right next to a
-    // starter tile's own coordinate space would be a bug; this holds the two
-    // far enough apart that a relocation group seeded from either one can
-    // never walk into the other.
+    // Every bed shares one grid now, so this is about distance on it: the
+    // starter beds sit by the house and the Crop Fields are the far end of
+    // the map, so a relocation group seeded from one never reaches the other.
     const soil = createSoilMap([
       { tx: 0, ty: 0, order: 0, origin: "purchased" },
       ...homeStarterSoilTiles(),
@@ -1134,37 +1131,15 @@ describe("hold-tap relocation: planSoilGroupRelocation / moveSoilTileGroup", () 
 });
 
 
-describe("HOME_PLOTS -- the Homestead's grass paddocks", () => {
-  it("hold every free starter bed, so those six are simply the paddock's first squares", () => {
-    for (const tile of homeStarterSoilTiles()) expect(isHomePlotTile(tile.tx, tile.ty)).toBe(true);
+describe("the starter beds on the shared grid", () => {
+  it("are nowhere near the Crop Fields", () => {
+    for (const tile of homeStarterSoilTiles()) expect(soilTileInCropFieldBeds(tile.tx, tile.ty)).toBe(false);
   });
 
-  it("are bigger than the starter beds, which is the point: bare grass to hoe", () => {
-    const squares = HOME_PLOTS.reduce((n, r) => n + (r.tx1 - r.tx0 + 1) * (r.ty1 - r.ty0 + 1), 0);
-    expect(squares).toBeGreaterThan(HOME_STARTER_TILE_COUNT * 4);
-  });
-
-  it("has no square on the Crop Fields' lattice", () => {
-    for (const r of HOME_PLOTS) {
-      for (let ty = r.ty0; ty <= r.ty1; ty++) {
-        for (let tx = r.tx0; tx <= r.tx1; tx++) expect(soilTileInCropFieldBeds(tx, ty)).toBe(false);
-      }
-    }
-  });
-
-  it("keeps the two paddocks a gap apart, so a bed group never spans the lane", () => {
-    const [west, east] = HOME_PLOTS;
-    expect(east.tx0 - west.tx1).toBeGreaterThan(1);
-    const soil = createSoilMap([
-      { tx: west.tx1, ty: west.ty0, order: 0, origin: "purchased" },
-      { tx: east.tx0, ty: east.ty0, order: 1, origin: "purchased" },
-    ]);
-    expect(soilTileGroup(soil, west.tx1, west.ty0)).toHaveLength(1);
-  });
-
-  it("says off-paddock tiles are not paddock tiles", () => {
-    expect(isHomePlotTile(HOME_PLOTS[0].tx0 - 1, HOME_PLOTS[0].ty0)).toBe(false);
-    expect(isHomePlotTile(HOME_PLOTS[0].tx0, HOME_PLOTS[0].ty1 + 1)).toBe(false);
-    expect(isHomePlotTile(0, 0)).toBe(false);
+  it("are one tidy block, three wide", () => {
+    const tiles = homeStarterSoilTiles();
+    expect(tiles).toHaveLength(HOME_STARTER_TILE_COUNT);
+    expect(new Set(tiles.map((t) => t.tx)).size).toBe(3);
+    expect(new Set(tiles.map((t) => soilTileKey(t.tx, t.ty))).size).toBe(HOME_STARTER_TILE_COUNT);
   });
 });

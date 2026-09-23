@@ -285,7 +285,7 @@ test("the seed pouch opens the wheel and a plain tap picks the crop", async ({ b
   }
 });
 
-test("the hoe breaks ground under the farmer's feet from the Use key", async ({ browser }) => {
+test("the hoe breaks ground in front of the farmer from the Use key", async ({ browser }) => {
   const adminContext = await browser.newContext();
   const farmerContext = await browser.newContext({
     viewport: LANDSCAPE_PHONE,
@@ -323,7 +323,7 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
       { timeout: 15_000 },
     );
 
-    // Pick up the hoe, then press Use. The bed appears under him with no menu
+    // Pick up the hoe, then press Use. The bed appears in front of him with no menu
     // in between and nothing to drag.
     const hoe = page.locator(".sa-belt-slot").nth(1);
     await expect(hoe).toHaveAttribute("aria-label", /hoe/i);

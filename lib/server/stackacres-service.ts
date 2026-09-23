@@ -58,7 +58,6 @@ import {
 } from "@/lib/stackacres/sectors";
 import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
-  CROP_FIELD_BEDS,
   cropSpot,
   growAreaAt,
   soilTileInCropFieldBeds,
@@ -90,18 +89,18 @@ import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
   createSoilMap,
   homeStarterSoilTiles,
-  isHomePlotTile,
+  isHomeStarterSoilTile,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
   soilSlotForTile,
   soilSlotOnTile,
   soilSlotTile,
   soilTileKey,
-  soilTileRect,
   type SoilMap,
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
+import { isHoeableSoilTile } from "@/lib/stackacres/hoeable";
 import { SOIL_DEFAULT_TIER } from "@/lib/stackacres/soil-tiers";
 import { enrichedGrowthMultiplier, enrichesSoil, isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -5546,13 +5545,17 @@ async function recomputeIrrigation(
  * `plantSoilTile` in lib/stackacres/soil.ts, the pure version of this same
  * decision.
  *
- * Bounded to the two places a bed can mean anything -- the Crop Fields
- * (`CROP_FIELD_BEDS`) and the Homestead's two grass paddocks (`HOME_PLOTS`) --
- * never trusting the client's tapped coordinate blindly. That bound is the
- * WHOLE check: neither place is bought, so there is no unlock to refuse
- * against. Breaking the first bed in the Crop Fields is what records that
- * milestone; a bed on the Homestead's grass does not, since it is not Crop
- * Fields ground.
+ * Any grass on the Homestead with nothing standing on it, read off the map
+ * itself (lib/stackacres/hoeable.ts) rather than off the client's tapped
+ * coordinate. Two refusals, and they are the whole check -- no land is bought,
+ * so there is no unlock to refuse against:
+ *
+ * - Not grass, or something stands there: the road, the pond, a building.
+ * - One of the six free starter beds already holds that square. Those are
+ *   never stored, so the database's own one-bed-per-square rule cannot see
+ *   them; without this a dug bed could land on top of one.
+ *
+ * Breaking the first bed inside the Crop Fields is what records that milestone.
  */
 export async function placeStackAcresSoilTile(
   token: string,
@@ -5563,20 +5566,15 @@ export async function placeStackAcresSoilTile(
   const tx = Math.trunc(input.tx);
   const ty = Math.trunc(input.ty);
 
-  const area = CROP_FIELD_BEDS;
-  const rect = soilTileRect(tx, ty);
-  const inMeadow =
-    rect.x >= area.x &&
-    rect.y >= area.y &&
-    rect.x + rect.width <= area.x + area.width &&
-    rect.y + rect.height <= area.y + area.height;
-  const inPaddock = isHomePlotTile(tx, ty);
-  if (!inMeadow && !inPaddock) {
-    throw new StackAcresRequestError(
-      "A bed can only be tilled on the grass by the house or in the Crop Fields.",
-      400,
-    );
+  if (!isHoeableSoilTile(tx, ty)) {
+    throw new StackAcresRequestError("The hoe only breaks grass.", 400);
   }
+  if (isHomeStarterSoilTile(tx, ty)) {
+    throw new StackAcresRequestError("There is already a bed there.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+  const inMeadow = soilTileInCropFieldBeds(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
   // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the

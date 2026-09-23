@@ -7,6 +7,8 @@ import {
   NO_TINT,
   soilTint,
   WET_SOIL_TINT,
+  showsSeeds,
+  SEEDS_UNTIL_PROGRESS,
 } from "./soil-moisture";
 
 describe("soil moisture", () => {
@@ -51,5 +53,31 @@ describe("soil moisture", () => {
     // Still the greener of the two wet looks: enrichment survives the soak.
     const green = (value: number) => ((value >> 8) & 0xff) - (value & 0xff);
     expect(green(wetEnriched)).toBeGreaterThan(green(WET_SOIL_TINT));
+  });
+});
+
+
+describe("showsSeeds -- a planted square shows its seeds until the first green", () => {
+  it("shows seeds the moment a crop is sown, before anyone has watered it", () => {
+    expect(showsSeeds({ state: "dry", progress: 0 })).toBe(true);
+  });
+
+  it("keeps them through the first watering, so the earth darkens under seeds you can see", () => {
+    expect(showsSeeds({ state: "working", progress: 0.02 })).toBe(true);
+    expect(showsSeeds({ state: "working", progress: SEEDS_UNTIL_PROGRESS - 0.01 })).toBe(true);
+  });
+
+  it("gives way to the sprout once the crop is a fifth grown", () => {
+    expect(showsSeeds({ state: "working", progress: SEEDS_UNTIL_PROGRESS })).toBe(false);
+    expect(showsSeeds({ state: "working", progress: 0.6 })).toBe(false);
+  });
+
+  it("keeps a crop that went thirsty part-way through growing a plant, not seed", () => {
+    expect(showsSeeds({ state: "dry", progress: 0.6 })).toBe(false);
+  });
+
+  it("never shows seeds on a ripe or a withered crop", () => {
+    expect(showsSeeds({ state: "ready", progress: 1 })).toBe(false);
+    expect(showsSeeds({ state: "mucked", progress: null })).toBe(false);
   });
 });

@@ -12,13 +12,10 @@ import {
 } from "@/lib/stackacres-td/camera";
 import {
   fieldMapToWorld,
-  fieldWorldToMap,
-  homeBedsMapToWorld,
-  homeBedsWorldToMap,
-  homePlotTileToMap,
-  inCropField,
-  inHomePlots,
+  isBedSquare,
+  mapToSoilWorld,
   soilTileToMap,
+  soilWorldToMap,
   worldToMap,
   type TopdownArea,
 } from "@/lib/stackacres-td/field";
@@ -40,7 +37,10 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { bedIsWet, soilTint } from "@/lib/stackacres/soil-moisture";
+import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
+import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
+import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
+import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
@@ -353,6 +353,11 @@ export class TopdownScene extends Phaser.Scene {
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
   private soilImages: { key: string; image: Phaser.GameObjects.Image; enriched: boolean }[] = [];
+  /** The beds drawn last time, and on which map. A bed missing from here is
+   *  one that has just been broken, and drops in; every other bed is only
+   *  being redrawn (a neighbour joined it, or the soil list refreshed). */
+  private drawnBeds = new Set<string>();
+  private drawnBedsArea: string | null = null;
   /** Beds with water in them, by tile key -- see lib/stackacres/soil-moisture.ts. */
   private wetTiles = new Set<string>();
   private unitNodes = new Map<string, UnitNode>();
@@ -995,44 +1000,64 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ soil and units
 
-  /** Where a soil tile is drawn, or null when it is on no lattice at all.
-   *
-   *  Both lattices are on the Homestead now that the Crop Fields are the north
-   *  half of it rather than a scene of their own, so which one a tile belongs
-   *  to is a question about the TILE: the paddocks hold the free starter beds
-   *  (`homeStarterSoilTiles`), the field holds everything dug up there. They
-   *  still keep separate origins -- see lib/stackacres-td/field.ts's header. */
+  /** Where a bed is drawn. Every bed is on the Homestead, on one grid
+   *  (lib/stackacres/hoeable.ts), so this is null only off the Homestead. It
+   *  draws whatever the server says exists: the grass map decides where a NEW
+   *  bed may go, never whether an existing one is shown. */
   private soilTilePoint(tx: number, ty: number): { x: number; y: number } | null {
-    if (this.areaName !== "homestead") return null;
-    const world = { x: tx * SOIL_TILE, y: ty * SOIL_TILE };
-    if (inHomePlots(world)) return homePlotTileToMap(tx, ty);
-    return inCropField(world) ? soilTileToMap(tx, ty) : null;
+    return this.areaName === "homestead" ? soilTileToMap(tx, ty) : null;
   }
 
-  /** The inverse, for a map pixel on the current area: which soil world point
-   *  (if any) it names. Null off both lattices, or in any area with no beds. */
-  private mapToSoilWorld(map: { x: number; y: number }): WorldPoint | null {
-    if (this.areaName !== "homestead") return null;
-    return fieldMapToWorld(map) ?? homeBedsMapToWorld(map);
+  /** The soil world point a Homestead map pixel names, or null off the Homestead. */
+  private soilWorldAt(map: { x: number; y: number }): WorldPoint | null {
+    return this.areaName === "homestead" ? mapToSoilWorld(map) : null;
+  }
+
+  /** Whether a bed already stands on this soil tile. */
+  private hasBed(tx: number, ty: number): boolean {
+    return this.soil.some((tile) => tile.tx === tx && tile.ty === ty);
+  }
+
+  /**
+   * The soil square under a Homestead map pixel, when it is one the belt can
+   * work: an existing bed, or grass the hoe may break. Null for the road, the
+   * pond, a roof, the hen pen -- anything that is not ground for a bed.
+   */
+  private soilSquareAt(map: { x: number; y: number }): { tx: number; ty: number } | null {
+    const world = this.soilWorldAt(map);
+    if (!world) return null;
+    const { tx, ty } = soilTileAt(world.x, world.y);
+    return this.hasBed(tx, ty) || isBedSquare(tx, ty) ? { tx, ty } : null;
   }
 
   private drawSoil(): void {
     for (const bed of this.soilImages) bed.image.destroy();
     this.soilImages = [];
     if (this.areaName !== "homestead") return;
-    // Both lattices share one key space (soil.ts's `soilTileKey`) and are now
-    // on one map, but they are still far apart: a Crop Fields bed and a
-    // starter bed are never adjacent (see `HOME_STARTER_ORIGIN`'s own
-    // comment), so the neighbour mask never joins one to the other.
+    // On the first draw of a map every bed is "new", and none of them were
+    // just broken -- they were already there when he walked in.
+    const sameMap = this.drawnBedsArea === this.areaName;
+    const drawn = new Set<string>();
     const map = createSoilMap(this.soil);
     for (const tile of this.soil) {
       const at = this.soilTilePoint(tile.tx, tile.ty);
       if (!at) continue;
+      const key = soilTileKey(tile.tx, tile.ty);
+      drawn.add(key);
       const mask = soilNeighborMask(map, tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
-      const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
-      this.soilImages.push({ key: soilTileKey(tile.tx, tile.ty), image: this.keep(image), enriched: isSoilTileEnriched(tile) });
+      // The pack's 32px dirt drawn into a 16-unit square, like the ground under
+      // it, so a hoed square and the road beside it are the same texels.
+      // Centred rather than cornered so a new one grows out of its own middle.
+      const image = this.add
+        .image(at.x + SOIL_TILE / 2, at.y + SOIL_TILE / 2, "common", `soil_${tier}_${mask}`)
+        .setDisplaySize(SOIL_TILE, SOIL_TILE)
+        .setDepth(-5);
+      if (sameMap && !this.drawnBeds.has(key)) this.dropBedIn(image);
+      this.soilImages.push({ key, image: this.keep(image), enriched: isSoilTileEnriched(tile) });
     }
+    this.drawnBeds = drawn;
+    this.drawnBedsArea = this.areaName;
     // Beds are redrawn from scratch here, so they come out of this loop
     // untinted; `wetTiles` is whatever the last unit draw worked out, and
     // `drawUnits` (the caller's next line, every time soil changes) puts it
@@ -1054,13 +1079,9 @@ export class TopdownScene extends Phaser.Scene {
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
       const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
-      // A slotted crop resolves to whichever bed its slot names -- a paddock
-      // bed or one out in the field -- and both are on the Homestead. The
-      // slot-less fallback inside `cropSpot` always lands inside
-      // `CROP_FIELD_BEDS` (see that function's own header).
-      if (this.areaName !== "homestead") return null;
-      if (inHomePlots(world)) return homeBedsWorldToMap(world);
-      return inCropField(world) ? fieldWorldToMap(world) : null;
+      // A slotted crop stands on whichever bed its slot names, and every bed is
+      // on the Homestead's one grid.
+      return this.areaName === "homestead" ? soilWorldToMap(world) : null;
     }
     const pen = PENS[zone];
     if (pen && this.areaName === pen.area) {
@@ -1083,6 +1104,7 @@ export class TopdownScene extends Phaser.Scene {
     if (zone === "wallow") return `sheep_${side}`;
     if (zone === "oxfields") return unit.id.charCodeAt(0) % 2 ? `cattle_${side}` : `cattle_${side}_plain`;
     if (unit.state === "mucked") return "crop_withered";
+    if (showsSeeds(unit)) return "crop_seeds";
     const stage = unit.state === "ready" ? 2 : (unit.progress ?? 0) < 0.5 ? 0 : 1;
     return DRAWN_CROPS.has(unit.stock) ? `crop_${unit.stock}_${stage}` : `crop_generic_${stage}`;
   }
@@ -1110,7 +1132,7 @@ export class TopdownScene extends Phaser.Scene {
       if (!at) continue;
       seen.add(unit.id);
       let tileKey: string | null = null;
-      const world = this.mapToSoilWorld(at);
+      const world = this.soilWorldAt(at);
       if (world) {
         const { tx, ty } = soilTileAt(world.x, world.y);
         tileKey = soilTileKey(tx, ty);
@@ -1128,11 +1150,18 @@ export class TopdownScene extends Phaser.Scene {
       existing?.sprite.destroy();
       existing?.cue?.destroy();
       const animal = PENS[stockZone(unit.stock)] !== undefined;
-      const baseY = animal ? at.y : at.y + 6;
+      // A plant stands up out of the lower half of its square; seed lies in the
+      // middle of it, so it sits on the dug earth rather than on the grass edge.
+      const seed = frame === "crop_seeds";
+      const baseY = animal ? at.y : seed ? at.y + 3 : at.y + 6;
       const sprite = this.keep(this.add.image(at.x, baseY, "common", frame).setOrigin(0.5, 1).setDepth(baseY));
       let cueImage: Phaser.GameObjects.Image | null = null;
       if (cue) {
-        cueImage = this.keep(this.add.image(at.x, baseY - sprite.height - 5, "common", cue).setDepth(10_000));
+        // Above the plant, and never lower than the top of its square: seed is only a
+        // few pixels tall, and a bubble parked just over it would sit on the square
+        // and hide the very seeds it is asking the player to water.
+        const cueY = animal ? baseY - sprite.height - 5 : Math.min(baseY - sprite.height - 5, at.y - SOIL_TILE / 2 - 8);
+        cueImage = this.keep(this.add.image(at.x, cueY, "common", cue).setDepth(10_000));
         this.bob(cueImage);
       }
       this.unitNodes.set(unit.id, { sprite, cue: cueImage, signature });
@@ -1416,19 +1445,42 @@ export class TopdownScene extends Phaser.Scene {
       this.drawMarker(inside);
       return;
     }
-    // On the Crop Fields he walks ONTO the bed, because the belt works the
-    // square under his feet and there is no menu left for him to stand clear of.
-    // An animal in a pen still gets approached from below rather than stood on.
-    const onField = target.kind === "field" || (target.kind === "unit" && this.onCropField(map));
+    // A bed, or a crop on one, is worked from the square beside it with him
+    // facing it -- Stardew's way (lib/stackacres-td/work-square.ts), so he never
+    // ends up standing on what he is working. Already beside it, he just turns
+    // and works it. An animal in a pen is still walked up to from below.
+    const from = this.pos;
+    const square = this.bedSquareOf(target);
+    if (square) {
+      const here = { mx: Math.floor(from.x / SOIL_TILE), my: Math.floor(from.y / SOIL_TILE) };
+      const facing = tileCentre(square, SOIL_TILE);
+      const worked = { ...target, face: facing } as Target;
+      this.pending = worked;
+      if (besideSquare(here, square)) {
+        this.path = [];
+        this.arrive();
+        return;
+      }
+      const spot = workSpot(square, from, SOIL_TILE, (mx, my) => this.isOpenTile(mx, my));
+      if (!spot) {
+        this.pending = null;
+        this.floatAt(this.mapToCss(facing), "Can't reach that from here", "deny");
+        return;
+      }
+      this.path = findPath(this.grid, from, tileCentre(spot, SOIL_TILE));
+      if (this.path.length === 0) {
+        this.arrive();
+        return;
+      }
+      this.callbacks.onViewMoved();
+      return;
+    }
     const goal =
       target.kind === "nothing"
         ? map
-        : onField
-          ? target.anchor
-          : target.kind === "unit"
-            ? { x: target.anchor.x, y: target.anchor.y + SOIL_TILE * 2 + 2 }
-            : target.anchor;
-    const from = this.pos;
+        : target.kind === "unit"
+          ? { x: target.anchor.x, y: target.anchor.y + SOIL_TILE * 2 + 2 }
+          : target.anchor;
     this.pending = target.kind === "nothing" ? null : target;
     if (this.pending && target.kind !== "nothing" && Math.hypot(target.anchor.x - from.x, target.anchor.y - from.y) <= REACH) {
       this.path = [];
@@ -1480,35 +1532,25 @@ export class TopdownScene extends Phaser.Scene {
     }
     if (best) return (best as { target: Target }).target;
 
+    // Any grass on the Homestead is ground the hoe can break, and any bed is
+    // ground a crop can stand on -- so a tap on either resolves to its square,
+    // whichever zone it falls in. A tap on a bed means its crop when it has one:
+    // a sprout is a few pixels, and the square is what a finger actually hits.
+    const square = this.soilSquareAt(map);
+    if (square) {
+      const { tx, ty } = square;
+      const middle = { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 };
+      const centre = soilWorldToMap(middle);
+      const planted = this.unitTiles.get(soilTileKey(tx, ty));
+      const node = planted ? this.unitNodes.get(planted) : undefined;
+      if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
+      return { kind: "field", anchor: centre, face: centre, world: middle };
+    }
+
     for (const zone of this.area.zones) {
       if (map.x < zone.x || map.y < zone.y || map.x >= zone.x + zone.w || map.y >= zone.y + zone.h) continue;
-      if (zone.tag === "field") {
-        const world = fieldMapToWorld(map);
-        if (!world) continue;
-        const { tx, ty } = soilTileAt(world.x, world.y);
-        const centre = fieldWorldToMap({ x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 });
-        // A tap anywhere on a planted bed means its crop:
-        // a sprout is a few pixels, and the bed square is what a finger actually hits.
-        const planted = this.unitTiles.get(soilTileKey(tx, ty));
-        const node = planted ? this.unitNodes.get(planted) : undefined;
-        if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
-        return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
-      }
-      // The Homestead's grass paddocks: bare grass the hoe can break a bed
-      // in (lib/stackacres/soil.ts's `HOME_PLOTS`, and lib/stackacres-td/
-      // field.ts's own header). The zone is exactly the paddock, so a tap that
-      // resolves to no square (there is none today) falls through to the plain
-      // "tag" target below, which `fire()`'s `case "homebeds"` answers.
-      if (zone.tag === "homebeds") {
-        const world = homeBedsMapToWorld(map);
-        if (!world) return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
-        const { tx, ty } = soilTileAt(world.x, world.y);
-        const centre = homeBedsWorldToMap({ x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 });
-        const planted = this.unitTiles.get(soilTileKey(tx, ty));
-        const node = planted ? this.unitNodes.get(planted) : undefined;
-        if (planted && node) return { kind: "unit", id: planted, anchor: { x: node.sprite.x, y: node.sprite.y - 2 }, face: { x: node.sprite.x, y: node.sprite.y - 2 } };
-        return { kind: "field", anchor: centre, face: centre, world: { x: tx * SOIL_TILE + SOIL_TILE / 2, y: ty * SOIL_TILE + SOIL_TILE / 2 } };
-      }
+      // The Crop Fields' own zone is handled above like any other grass.
+      if (zone.tag === "field") continue;
       if (zone.tag === "hen-spots") continue;
       return { kind: "tag", tag: zone.tag, anchor: { x: Math.round(map.x), y: Math.round(map.y) }, face: null };
     }
@@ -1569,11 +1611,36 @@ export class TopdownScene extends Phaser.Scene {
   farmerAction(action: FarmerAction, impact?: TapPoint): void {
     if (!this.booted || this.cast) return;
     const { anim, repeat } = ACTIONS[action];
-    if (action === "hoe" && impact) this.hoeImpactAt(this.cssToMap(impact.x, impact.y));
+    // The puff goes up when the blade hits the ground, not when the swing starts.
+    if (action === "hoe" && impact) {
+      const at = this.cssToMap(impact.x, impact.y);
+      this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
+    }
     this.stand();
     this.acting = true;
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
     this.player.play({ key: `${anim}_${this.facing}`, repeat });
+  }
+
+  /**
+   * A square that has just been broken drops into place: a clod of turned earth
+   * that spreads to the full square, landing as the hoe strikes (lib/stackacres-td/
+   * hoe.ts). The bed is already real -- this is only how it arrives. A player who
+   * has asked for less motion gets it at once.
+   */
+  private dropBedIn(image: Phaser.GameObjects.Image): void {
+    if (this.reducedMotion) return;
+    const full = image.scaleX;
+    image.setScale(full * BED_DROP_FROM).setAlpha(0);
+    this.tweens.add({
+      targets: image,
+      scaleX: full,
+      scaleY: full,
+      alpha: 1,
+      delay: HOE_STRIKE_MS,
+      duration: BED_DROP_MS,
+      ease: "Back.easeOut",
+    });
   }
 
   /** A small, cheap ground response for the hoe stroke. It is local-only juice:
@@ -1665,10 +1732,6 @@ export class TopdownScene extends Phaser.Scene {
           return;
         }
         return cb.onLockedSectorTap(detail as ZoneId, at);
-      case "homebeds":
-        // Just off the grass the hoe works, on the paddock's margin.
-        this.floatAt(at, "Step onto the grass to hoe a bed", "deny");
-        return;
     }
   }
 
@@ -1698,18 +1761,40 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /**
-   * Hands the shell the square he is on. A stroke skips a bed it has already
-   * worked and anything off the field, so walking a row fires once per bed and
-   * a walk across the yard fires nothing.
+   * Hands the shell the square in FRONT of him: one on, the way he is facing
+   * (lib/stackacres-td/work-square.ts). A stroke skips a square it has already
+   * worked and anything that is not ground for a bed, so walking a row with Use
+   * held breaks the ground just ahead of him once per square, and a walk across
+   * the yard fires nothing.
    */
   private useSquare(stroke: boolean): void {
-    const world = this.mapToSoilWorld(this.pos);
-    const tile = world ? soilTileAt(world.x, world.y) : null;
+    const front = tileCentre(facedTile(this.pos, this.facing, SOIL_TILE), SOIL_TILE);
+    const tile = this.soilSquareAt(front);
     const key = tile ? soilTileKey(tile.tx, tile.ty) : null;
     if (stroke && (key === null || key === this.stroked)) return;
     this.stroked = key;
     const unitId = key !== null ? this.unitTiles.get(key) ?? null : this.nearestUnit();
-    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(this.pos), stroke });
+    this.callbacks.onUseSquare({ tile, unitId, at: this.mapToCss(front), stroke });
+  }
+
+  /** The map square a bed target stands on: a bare bed or grass, or the bed a crop
+   *  grows in. Null for anything that is not worked on a bed -- an animal, a prop. */
+  private bedSquareOf(target: Target): MapTile | null {
+    if (target.kind === "field") {
+      const { tx, ty } = soilTileAt(target.world.x, target.world.y);
+      return soilToMapTile(tx, ty);
+    }
+    if (target.kind === "unit") {
+      const tile = this.tileOfUnit.get(target.id);
+      return tile ? soilToMapTile(tile.tx, tile.ty) : null;
+    }
+    return null;
+  }
+
+  /** Whether he can stand on this map square: on the map, and nothing blocking it. */
+  private isOpenTile(mx: number, my: number): boolean {
+    if (mx < 0 || my < 0 || mx >= this.grid.width || my >= this.grid.height) return false;
+    return !this.grid.blocked.has(tileKey(mx, my));
   }
 
   /** Off the field there are no beds, so Use reaches for whatever he is standing beside. */

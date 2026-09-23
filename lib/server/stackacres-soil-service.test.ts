@@ -1,13 +1,18 @@
 import { randomUUID } from "crypto";
+import {
+  isHoeableMapTile,
+  mapToSoilTile,
+} from "@/lib/stackacres/hoeable";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { CROP_FIELD_BEDS } from "@/lib/stackacres/world";
+import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
-  HOME_PLOTS,
   HOME_STARTER_TILE_COUNT,
   SOIL_TILE,
   createSoilMap,
   homeStarterSoilTiles,
+  isHomeStarterSoilTile,
   soilSlotTile,
   soilTileAt,
   type SoilTile,
@@ -83,12 +88,30 @@ function cropFieldTile(offset = 0) {
   return { tx: centre.tx + offset, ty: centre.ty };
 }
 
-/** A bare square on the Homestead's grass -- the first paddock's far corner, well past the
- *  six free starter beds at its top-left, so nothing is standing on it. */
-function paddockTile(paddock = 0) {
-  const r = HOME_PLOTS[paddock];
-  return { tx: r.tx1, ty: r.ty1 };
+/**
+ * The `nth` bare grass square on the Homestead outside the Crop Fields and clear of the six
+ * starter beds, read off the real map (lib/stackacres/hoeable.ts) rather than written down, so
+ * a redrawn map cannot leave this pointing at a road.
+ */
+function grassTile(nth = 0) {
+  let seen = -1;
+  for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+    for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+      if (!isHoeableMapTile(mx, my)) continue;
+      const tile = mapToSoilTile(mx, my);
+      if (soilTileInCropFieldBeds(tile.tx, tile.ty) || isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
+      seen += 1;
+      if (seen === nth) return tile;
+    }
+  }
+  throw new Error("no bare grass on the Homestead");
 }
+
+/** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py:
+ *  the north lane through the yard (farmyard tile 14, 7) and the middle of the pond
+ *  (farmyard 7, 26), both pushed down the 38 rows the Crop Fields add above the yard. */
+const ROAD_MAP_TILE = { mx: 14, my: 7 + 38 };
+const POND_MAP_TILE = { mx: 7, my: 26 + 38 };
 
 /** Well outside every district -- generously far, not just off one edge. */
 const FAR_AWAY = { tx: 10_000, ty: 10_000 };
@@ -217,7 +240,7 @@ describe("placeStackAcresSoilTile: breaking ground is free", () => {
     expect(view.soilTiles.filter((t) => t.tx === tx && t.ty === ty)).toHaveLength(1);
   });
 
-  it("refuses a tile outside the Crop Fields and the paddocks", async () => {
+  it("refuses a tile off the Homestead entirely", async () => {
     const token = await funded();
     const start = await balance(token);
 
@@ -521,22 +544,23 @@ describe("stockStackAcres — plants the bed the player actually tapped", () => 
   });
 });
 
-describe("the Homestead's grass paddocks -- hoe a bed anywhere on them", () => {
+describe("the hoe works on any grass on the Homestead", () => {
   it("lays a bed on bare grass and moves no Gold", async () => {
     const token = await funded();
     const goldBefore = await balance(token);
+    const tile = grassTile();
 
-    const view = await placeStackAcresSoilTile(token, paddockTile(), T0);
+    const view = await placeStackAcresSoilTile(token, tile, T0);
 
-    const tile = paddockTile();
     expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(true);
     expect(await balance(token)).toBe(goldBefore);
   });
 
-  it("works on both paddocks", async () => {
+  it("works well away from where the paddocks used to be", async () => {
+    // The first bare grass on the map is up in the treeline margin, the last
+    // is down by the shore: nowhere near the two patches by the house.
     const token = await funded();
-    for (const paddock of [0, 1]) {
-      const tile = paddockTile(paddock);
+    for (const tile of [grassTile(0), grassTile(400), grassTile(900)]) {
       const view = await placeStackAcresSoilTile(token, tile, T0);
       expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(true);
     }
@@ -545,7 +569,7 @@ describe("the Homestead's grass paddocks -- hoe a bed anywhere on them", () => {
   it("does NOT clear the Crop Fields -- that milestone is for ground broken out there", async () => {
     const token = await funded();
 
-    const view = await placeStackAcresSoilTile(token, paddockTile(), T0);
+    const view = await placeStackAcresSoilTile(token, grassTile(), T0);
 
     expect(view.cropFieldsUnlocked).toBe(false);
   });
@@ -554,7 +578,7 @@ describe("the Homestead's grass paddocks -- hoe a bed anywhere on them", () => {
     const token = await funded();
     const profile = await ensureProfile(token);
     await adjustStackAcresSeedStock(profile.id, "carrot", 1);
-    const tile = paddockTile();
+    const tile = grassTile();
     await placeStackAcresSoilTile(token, tile, T0);
 
     const view = await stockStackAcres(token, { stock: "carrot", tile }, T0);
@@ -565,7 +589,7 @@ describe("the Homestead's grass paddocks -- hoe a bed anywhere on them", () => {
 
   it("can be lifted again like any bed the player laid", async () => {
     const token = await funded();
-    const tile = paddockTile();
+    const tile = grassTile();
     await placeStackAcresSoilTile(token, tile, T0);
 
     const view = await removeStackAcresSoilTile(token, tile, T0);
@@ -573,18 +597,26 @@ describe("the Homestead's grass paddocks -- hoe a bed anywhere on them", () => {
     expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(false);
   });
 
-  it("refuses the lane between the paddocks and the grass past them", async () => {
+  it("refuses the road and the pond", async () => {
     const token = await funded();
-    const west = HOME_PLOTS[0];
-    const east = HOME_PLOTS[1];
-    const offGrass = [
-      { tx: west.tx1 + 1, ty: west.ty0 },
-      { tx: east.tx0 - 1, ty: east.ty0 },
-      { tx: west.tx0, ty: west.ty1 + 1 },
-      { tx: east.tx1 + 1, ty: east.ty1 },
-    ];
-    for (const tile of offGrass) {
-      await expect(placeStackAcresSoilTile(token, tile, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    for (const { mx, my } of [ROAD_MAP_TILE, POND_MAP_TILE]) {
+      expect(isHoeableMapTile(mx, my)).toBe(false);
+      await expect(placeStackAcresSoilTile(token, mapToSoilTile(mx, my), T0)).rejects.toBeInstanceOf(
+        StackAcresRequestError,
+      );
     }
+  });
+
+  it("refuses a square one of the six free starter beds already holds", async () => {
+    // Those beds are never stored, so the database's one-bed-per-square rule
+    // cannot see them. Without this refusal a dug bed would land on top of one.
+    const token = await funded();
+    const [starter] = homeStarterSoilTiles();
+
+    await expect(placeStackAcresSoilTile(token, { tx: starter.tx, ty: starter.ty }, T0)).rejects.toMatchObject({
+      status: 409,
+    });
+    const view = await readStackAcres(token, T0);
+    expect(view.soilTiles.filter((t) => t.tx === starter.tx && t.ty === starter.ty)).toHaveLength(1);
   });
 });

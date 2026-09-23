@@ -39,13 +39,12 @@ HOME_SHIFT = 38
 HS = HOME_SHIFT * T
 
 LANE_TX = 14                                            # the one lane, top of the map to the bottom
-WEST_BED, EAST_BED = (4, 15, 11, 20), (19, 15, 26, 19)  # farmyard rows; shifted with the rest
 
 
 def _fields(a):
     """The north half: the Crop Fields and the margin around them."""
     fx, fy, size = FIELD_TX * T, FIELD_TY * T, FIELD_TILES * T
-    a.line("path", (LANE_TX, FIELD_TY + FIELD_TILES), (LANE_TX, MH))   # the lane, down to the yard
+    a.line("path", (LANE_TX, FIELD_TY + FIELD_TILES + 1), (LANE_TX, MH))   # the lane, from the gate down to the yard
     a.line("path", (1, FIELD_ROAD), (MW - 1, FIELD_ROAD))              # the field road
     a.zone("field", fx, fy, size, size)
 
@@ -86,8 +85,7 @@ def _farmyard(a, for_game):
     a.line("path", (15, 22), (28, 22))                 # spur to Hen Haven's gate
     a.line("path", (0, 12), (6, 12))                   # west trail into the woods
     a.line("path", (41, 21), (MW, 21))                 # Hen Haven's back gate, east to the Fold
-    # No tilled beds are painted here: the player hoes their own, so the ground
-    # under WEST_BED/EAST_BED stays plain grass.
+    # No tilled beds are painted here: the player hoes their own, anywhere on the grass.
     a.ellipse("water", 7, 26, 4.6, 3.2)                # the pond, with a lobe reaching the dock
     a.ellipse("water", 10, 26.5, 2.6, 2.0)
     a.line("stream", (1, 0), (1, 7), width=1)          # the stream: down the west side, under the bridge, into the pond
@@ -141,11 +139,8 @@ def _farmyard(a, for_game):
     a.add(kit.fence(44, vertical=True), 643, 414)
     a.add(kit.coop(), 520, 334, (14, 3), tag="pen:henhaven")
     a.zone("pen:henhaven", 470, 290, 172, 124)
-    # The two grass paddocks where the hoe breaks a bed. The zone is exactly the paddock, so a tap
-    # anywhere on it reaches the hoe; lib/stackacres/soil.ts's HOME_PLOTS is the same rectangle in
-    # soil tiles, and lib/stackacres-td/field.test.ts holds the two together.
-    for tx0, ty0, tx1, ty1 in (WEST_BED, EAST_BED):
-        a.zone("homebeds", tx0 * T, ty0 * T, (tx1 - tx0 + 1) * T, (ty1 - ty0 + 1) * T)
+    # No paddock zones: the hoe works on any grass on the map now, and which squares
+    # count is written out from this map by export_rich.py (`write_hoeable`).
     if for_game:                                       # the game draws the player's real hens and crops itself
         a.zone("hen-spots", 500, 330, 130, 70)
     else:
@@ -208,10 +203,8 @@ def _treelines(a):
         return round((kit.hash2(x, y, seed) - 0.5) * 10)
 
     trees = []
-    for x in range(10, MW * T, 22):                    # north edge, above the Crop Fields
+    for x in range(10, MW * T, 22):                    # north edge, one tree deep: a second row would stand in the field
         trees.append((x + jig(x, 0, 6), 30 + jig(x, 0, 7) // 2, kind(x, 0)))
-        if kit.hash2(x, 1, 8) < 0.7:
-            trees.append((x + 11 + jig(x, 1, 6), 58 + jig(x, 1, 7) // 2, kind(x, 1)))
     for y in range(84, MH * T - 30, 24):               # west line, on the far bank of the stream
         if HS + 166 < y < HS + 232:                    # the west trail's gap
             continue

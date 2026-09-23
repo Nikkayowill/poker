@@ -89,22 +89,28 @@ function cropFieldTile(offset = 0) {
 }
 
 /**
- * The `nth` bare grass square on the Homestead outside the Crop Fields and clear of the six
- * starter beds, read off the real map (lib/stackacres/hoeable.ts) rather than written down, so
- * a redrawn map cannot leave this pointing at a road.
+ * Every bare grass square on the Homestead outside the Crop Fields and clear of the six starter
+ * beds, top to bottom, read off the real map (lib/stackacres/hoeable.ts) rather than written down,
+ * so a redrawn map cannot leave a test pointing at a road.
  */
-function grassTile(nth = 0) {
-  let seen = -1;
+const BARE_GRASS = (() => {
+  const tiles: { tx: number; ty: number }[] = [];
   for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
     for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
       if (!isHoeableMapTile(mx, my)) continue;
       const tile = mapToSoilTile(mx, my);
       if (soilTileInCropFieldBeds(tile.tx, tile.ty) || isHomeStarterSoilTile(tile.tx, tile.ty)) continue;
-      seen += 1;
-      if (seen === nth) return tile;
+      tiles.push(tile);
     }
   }
-  throw new Error("no bare grass on the Homestead");
+  return tiles;
+})();
+
+/** A bare grass square, `at` of the way down the list: 0 the first, 1 the last. Never an index
+ *  counted from a map that has since been redrawn. */
+function grassTile(at = 0) {
+  if (BARE_GRASS.length === 0) throw new Error("no bare grass on the Homestead");
+  return BARE_GRASS[Math.round(at * (BARE_GRASS.length - 1))];
 }
 
 /** Map tiles that are plainly not grass, from art/stackacres-td/areas/rig/homestead.py:
@@ -560,7 +566,7 @@ describe("the hoe works on any grass on the Homestead", () => {
     // The first bare grass on the map is up in the treeline margin, the last
     // is down by the shore: nowhere near the two patches by the house.
     const token = await funded();
-    for (const tile of [grassTile(0), grassTile(400), grassTile(900)]) {
+    for (const tile of [grassTile(0), grassTile(0.5), grassTile(1)]) {
       const view = await placeStackAcresSoilTile(token, tile, T0);
       expect(view.soilTiles.some((t) => t.tx === tile.tx && t.ty === tile.ty)).toBe(true);
     }

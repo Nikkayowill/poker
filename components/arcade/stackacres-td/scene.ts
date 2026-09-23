@@ -112,6 +112,13 @@ const AREA_NAMES: Record<TopdownArea, string> = {
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
+/** How far past each edge of an outdoor map the forest backdrop runs, in map units. */
+const BEYOND = 1600;
+/** The forest picture is the pack's 32px-per-tile art, drawn at the map's 16. */
+const FOREST_SCALE = 0.5;
+/** How fast a waterfall's water drops, in map units a second. */
+const FALL_SPEED = 40;
+
 /** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
 const TRAVEL_DEPTH = 20_000;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
@@ -223,12 +230,18 @@ interface PropSpec {
   ay: number;
   w: number;
   h: number;
+  /** What its picture is drawn at: 1 for the map's own one-pixel-per-unit art, 0.5 for the LPC pack's trees,
+   *  which are drawn at twice the map's resolution. `x`, `y`, `ax`, `ay`, `w` and `h` are map units either way. */
+  scale: number;
   tag?: string;
   blocks: [number, number][];
   /** The part the wind moves, drawn over the rest at the same position. */
   sway?: { frame: string; amp: number; rustle: boolean };
   /** Walked through, not around: no blocks, and it rustles when the farmer brushes it. */
   passable?: boolean;
+  /** A waterfall: the band of falling water, in map units down from the top of the picture, that the engine
+   *  covers with a moving copy of common/waterfall.png. */
+  falls?: { top: number; height: number };
 }
 
 interface AreaSpec {
@@ -348,6 +361,7 @@ export class TopdownScene extends Phaser.Scene {
   private zoom = 1;
   private playerShadow!: Phaser.GameObjects.Ellipse;
   private animated: { sprite: Phaser.GameObjects.Image; frames: string[] }[] = [];
+  private falls: Phaser.GameObjects.TileSprite[] = [];
   /** `canopy` is a tree's swaying top; `stump` marks what is drawn in place of a spent tree or boulder. */
   private propImages: { spec: PropSpec; image: Phaser.GameObjects.Image; canopy?: Phaser.GameObjects.Image; stump?: boolean }[] = [];
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse; cue: Phaser.GameObjects.Image | null }>();
@@ -453,6 +467,8 @@ export class TopdownScene extends Phaser.Scene {
       this.load.atlas(`props:${area}`, `${ASSETS}/areas/${area}/props.png`, `${ASSETS}/areas/${area}/props.json`);
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
+    this.load.image("forest", `${ASSETS}/common/forest.png`);
+    this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
     }
@@ -519,8 +535,9 @@ export class TopdownScene extends Phaser.Scene {
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
     this.easeCamera(delta);
     this.placeCamera();
-    this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion);
+    this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion, this.cameras.main.worldView);
     this.regrowNodes(time);
+    if (!this.reducedMotion) for (const fall of this.falls) fall.tilePositionY -= (delta / 1000) * FALL_SPEED / fall.tileScaleY;
     this.smoke.update(time, this.reducedMotion);
     this.daylight.update(time, this.reducedMotion);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
@@ -750,6 +767,7 @@ export class TopdownScene extends Phaser.Scene {
     for (const object of this.layer) object.destroy();
     this.layer = [];
     this.animated = [];
+    this.falls = [];
     this.propImages = [];
     this.buildingCueImages = [];
     this.wind.clear();
@@ -764,6 +782,22 @@ export class TopdownScene extends Phaser.Scene {
     this.areaName = name;
     this.area = this.specs.get(name)!;
 
+    // Beyond the map's edges is forest, not the dark behind the world: the camera
+    // is not fenced to the map, so a pan or a walk to an edge would otherwise look
+    // past it. One repeated picture, far enough out to cover the widest view at
+    // the lowest zoom, drawn under everything. Rooms go without: a room is meant to
+    // float in the dark.
+    if (!this.area.indoor) {
+      const w = this.area.width * this.area.tile;
+      const h = this.area.height * this.area.tile;
+      this.keep(
+        this.add
+          .tileSprite(-BEYOND, -BEYOND, w + BEYOND * 2, h + BEYOND * 2, "forest")
+          .setOrigin(0, 0)
+          .setTileScale(FOREST_SCALE)
+          .setDepth(-20),
+      );
+    }
     // The ground picture is drawn at the LPC atlas's own 32px per tile while the
     // map is authored at 16 units per tile, so it is sized to the map rather
     // than to its own pixels. That is the whole of the resolution change: twice
@@ -776,15 +810,31 @@ export class TopdownScene extends Phaser.Scene {
         .setDisplaySize(this.area.width * this.area.tile, this.area.height * this.area.tile),
     );
     for (const spec of this.area.props) {
-      const image = this.keep(this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setDepth(spec.y));
+      const image = this.keep(
+        this.add.image(spec.x - spec.ax, spec.y - spec.ay, `props:${name}`, spec.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y),
+      );
       let canopy: Phaser.GameObjects.Image | undefined;
       if (spec.frames.length > 1) this.animated.push({ sprite: image, frames: spec.frames });
       if (spec.sway) {
-        canopy = this.keep(this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setDepth(spec.y + 0.5));
+        canopy = this.keep(
+          this.add.image(image.x, image.y, `props:${name}`, spec.sway.frame).setOrigin(0, 0).setScale(spec.scale).setDepth(spec.y + 0.5),
+        );
         this.wind.add(canopy, spec.x, spec.y, spec.sway.amp, spec.sway.rustle);
       } else if (spec.passable) {
         // A bush has no separate top, so the whole sprite shivers.
         this.wind.add(image, spec.x, spec.y, 0, true);
+      }
+      if (spec.falls) {
+        // The drawn waterfall stays put under its lip and splash; the sheet between them is scrolled downward.
+        this.falls.push(
+          this.keep(
+            this.add
+              .tileSprite(image.x, image.y + spec.falls.top, spec.w, spec.falls.height, "waterfall")
+              .setOrigin(0, 0)
+              .setTileScale(spec.scale)
+              .setDepth(spec.y + 0.25),
+          ),
+        );
       }
       this.propImages.push({ spec, image, canopy });
       const gather = gatherKindOfTag(spec.tag);
@@ -896,6 +946,7 @@ export class TopdownScene extends Phaser.Scene {
         ay: image.height,
         w: image.width,
         h: image.height,
+        scale: 1,
         tag,
         blocks,
       };
@@ -909,11 +960,14 @@ export class TopdownScene extends Phaser.Scene {
       this.add
         .image(placement.x - template.ax, placement.y - template.ay, sheet, template.frame)
         .setOrigin(0, 0)
+        .setScale(template.scale)
         .setDepth(placement.y),
     );
     let canopy: Phaser.GameObjects.Image | undefined;
     if (template.sway) {
-      canopy = this.keep(this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setDepth(placement.y + 0.5));
+      canopy = this.keep(
+        this.add.image(image.x, image.y, sheet, template.sway.frame).setOrigin(0, 0).setScale(template.scale).setDepth(placement.y + 0.5),
+      );
       this.wind.add(canopy, placement.x, placement.y, template.sway.amp, template.sway.rustle);
     } else {
       this.wind.add(image, placement.x, placement.y, 0, true);

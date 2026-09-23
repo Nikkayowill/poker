@@ -1,11 +1,11 @@
 /**
- * The light over the top-down farm at a given local hour: a multiply tint for the whole view and how
+ * The light over the top-down farm at a given game hour: a multiply tint for the whole view and how
  * strongly windows and lamps glow.
  *
  * Shaped after Stardew Valley's lighting (decompiled Game1.cs): night is a gradual blue subtraction that
  * deepens over a couple of hours, never a snap, and lamps cancel it locally. Our night stays well lighter
- * than Stardew's so a young player can still read everything they might tap. Local time, like the music's
- * `timeOfDay()` (lib/audio/stackacres-music.ts): the farm is dark when the player's evening is.
+ * than Stardew's so a young player can still read everything they might tap. The hour is the farm clock's
+ * (lib/stackacres/clock.ts, a day every 13 minutes), the same one the music's `timeOfDay()` reads.
  * docs/stackacres-premium-life.md has the reasoning.
  */
 
@@ -26,7 +26,7 @@ const NIGHT = { r: 0.54, g: 0.6, b: 0.86, lamps: 1 };
 /** Not pure white: a touch less blue, so daylight reads warm the way Stardew's does. */
 const DAY = { r: 1, g: 0.99, b: 0.95, lamps: 0 };
 
-/** Keyframes by local hour. Between two keys the light eases, so every minute moves a little. */
+/** Keyframes by game hour. Between two keys the light eases, so every minute moves a little. */
 const KEYS: readonly Key[] = [
   { hour: 0, ...NIGHT },
   { hour: 4.5, ...NIGHT },
@@ -59,8 +59,25 @@ export function daylightAt(hour: number): Daylight {
   return { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b), lamps: mix(a.lamps, b.lamps) };
 }
 
-/** Inside the barn or the workshop: lamplit and a touch warm at any hour, lanterns always burning. */
-export const INDOORS: Daylight = { r: 1, g: 0.96, b: 0.88, lamps: 0.8 };
+/** Inside by day: plain and bright, the lamps barely on. */
+export const INDOOR_DAY: Daylight = { r: 1, g: 0.98, b: 0.94, lamps: 0.15 };
+/** Inside at night: lamplit and dim, still easy to read. */
+export const INDOOR_NIGHT: Daylight = { r: 0.66, g: 0.64, b: 0.84, lamps: 1 };
+
+/**
+ * Inside a room at a game hour. It goes from day to night as the lamps come on outside, so a room dims
+ * through the same dawn and dusk as the yard does.
+ */
+export function indoorDaylightAt(hour: number): Daylight {
+  const t = daylightAt(hour).lamps;
+  const mix = (x: number, y: number) => x + (y - x) * t;
+  return {
+    r: mix(INDOOR_DAY.r, INDOOR_NIGHT.r),
+    g: mix(INDOOR_DAY.g, INDOOR_NIGHT.g),
+    b: mix(INDOOR_DAY.b, INDOOR_NIGHT.b),
+    lamps: mix(INDOOR_DAY.lamps, INDOOR_NIGHT.lamps),
+  };
+}
 
 /** Perceived brightness of a tint, 0..1. */
 export function brightness(light: Daylight): number {

@@ -167,6 +167,11 @@ const FALL_SPEED = 40;
 
 /** Above the daylight tint and the cue bubbles: the dissolving view is the screen's own. */
 const TRAVEL_DEPTH = 20_000;
+/** Going to sleep: the sleepy bubble shows for a beat, the view fades out, stays dark a moment, fades back. */
+const SLEEP_BEAT_MS = 450;
+const SLEEP_FADE_MS = 900;
+const SLEEP_FADE_REDUCED_MS = 150;
+const SLEEP_DARK_MS = 700;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 
@@ -310,7 +315,7 @@ interface AreaSpec {
   blocked: [number, number][];
   zones: { tag: string; x: number; y: number; w: number; h: number }[];
   exits: { to: TopdownArea; x: number; y: number; w: number; h: number; spawn: Point }[];
-  /** An interior (the barn, the workshop): lamplit at every hour, no critters or weather. */
+  /** An interior (the barn, the workshop, the house): its own day and night light, no critters or weather. */
   indoor: boolean;
   lights: LightPoint[];
   emitters: Emitter[];
@@ -361,6 +366,8 @@ export interface TopdownCallbacks {
   onMonkTap: (at: TapPoint) => void;
   onRayTap: (at: TapPoint) => void;
   onHouseTap: (at: TapPoint) => void;
+  /** The bed in the farmhouse (a prop tagged `bed`): the farmer has walked up to it. */
+  onBedTap: (at: TapPoint) => void;
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
@@ -495,6 +502,7 @@ export class TopdownScene extends Phaser.Scene {
   /** The stick moved him on the last frame; false while it pushes him into a wall. */
   private stickWalking = false;
   private daylight!: DaylightLayer;
+  private clockSource: (() => number) | null = null;
   private sunlight!: SunlightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
@@ -594,6 +602,7 @@ export class TopdownScene extends Phaser.Scene {
       motion.removeEventListener("change", onMotion);
     });
     this.daylight = new DaylightLayer(this, (object) => this.keep(object));
+    if (this.clockSource) this.daylight.setSource(this.clockSource);
     this.sunlight = new SunlightLayer(this, (object) => this.keep(object), this.wind);
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
@@ -998,7 +1007,7 @@ export class TopdownScene extends Phaser.Scene {
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();
-    this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights, this.area.indoor);
+    this.daylight.build(this.area.width * this.area.tile, this.area.height * this.area.tile, this.area.lights, this.area.indoor, `props:${name}`);
     this.smoke.build(this.area.emitters);
     this.life.build(this.area.ambient, this.area.width * this.area.tile, this.area.height * this.area.tile);
     this.water.build(this.area.water, `water:${name}`);
@@ -2262,6 +2271,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onGreenhouseTap();
       case "farmhouse":
         return cb.onHouseTap(at);
+      case "bed":
+        return cb.onBedTap(at);
       case "secret":
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
       case "pen":
@@ -2285,7 +2296,7 @@ export class TopdownScene extends Phaser.Scene {
    * reaches it, which is how a row gets watered or hoed in one walk.
    */
   setUseHeld(down: boolean): void {
-    if (!this.booted) return;
+    if (!this.booted || this.travelling) return;
     // Same as a tap during a cast: it backs out of a line that has not been
     // taken yet, and does nothing once the fight has started.
     if (this.cast) {
@@ -3072,9 +3083,80 @@ export class TopdownScene extends Phaser.Scene {
     return blocked.has(tileKey(Math.floor(at.x / tile), Math.floor(at.y / tile)));
   }
 
-  /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the player's local clock. */
+  /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the farm clock. */
   setClock(hour: number | null): void {
     this.daylight.setOverride(hour);
+  }
+
+  /** Where the farm clock's hour is read from: the shell's `gameHourNow`, which knows this farm's offset. */
+  setClockSource(source: () => number): void {
+    // The shell hands this over as soon as the game exists, before `create` has built the daylight layer.
+    this.clockSource = source;
+    this.daylight?.setSource(source);
+  }
+
+  /**
+   * Sleep in the bed: a sleepy bubble, the view fades to black, `whileDark` runs (the shell moves the clock
+   * and asks the server), and at least a short beat of dark later the room comes back up in morning light
+   * with the farmer facing down. Taps, the stick and the Use key wait for the whole of it, the same way they
+   * wait out a trip through a door.
+   */
+  async sleep(whileDark: () => Promise<void> | void): Promise<void> {
+    // No fade to play (not booted, mid-door or mid-cast): the clock still moves.
+    if (!this.booted || this.travelling || this.cast) {
+      await whileDark();
+      return;
+    }
+    this.travelling = true;
+    this.path = [];
+    this.pending = null;
+    this.stick = null;
+    this.stickWalking = false;
+    this.useDown = false;
+    this.clearMarker();
+    this.stand();
+    this.callbacks.onInputLocked(true);
+    this.emote("farmer", "sleep");
+    const fadeMs = this.reducedMotion ? SLEEP_FADE_REDUCED_MS : SLEEP_FADE_MS;
+    const cam = this.cameras.main;
+    // Sized in the zoomed-away units like the travel veil, and oversized so a resize mid-fade stays covered.
+    // Not kept: nothing that rebuilds the area should take the dark away early.
+    const veil = this.add
+      .rectangle(cam.width / 2, cam.height / 2, (cam.width / cam.zoom) * 3, (cam.height / cam.zoom) * 3, 0x000000)
+      .setScrollFactor(0)
+      .setDepth(TRAVEL_DEPTH)
+      .setAlpha(0);
+    try {
+      await this.wait(SLEEP_BEAT_MS);
+      await this.fadeVeil(veil, 1, fadeMs);
+      const darkAt = performance.now();
+      try {
+        await whileDark();
+      } finally {
+        await this.wait(Math.max(0, SLEEP_DARK_MS - (performance.now() - darkAt)));
+        this.daylight.resample();
+        this.facing = "down";
+        this.stand();
+        await this.fadeVeil(veil, 0, fadeMs);
+      }
+    } finally {
+      veil.destroy();
+      this.travelling = false;
+      this.callbacks.onInputLocked(false);
+    }
+  }
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      if (ms <= 0) resolve();
+      else this.time.delayedCall(ms, resolve);
+    });
+  }
+
+  private fadeVeil(veil: Phaser.GameObjects.Rectangle, to: number, ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.tweens.add({ targets: veil, alpha: to, duration: ms, ease: "Sine.easeInOut", onComplete: () => resolve() });
+    });
   }
 
   /** Cloud shadows drifting over the map. Off by default until Kayo has seen them. */

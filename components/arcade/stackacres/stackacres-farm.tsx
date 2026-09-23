@@ -18,7 +18,9 @@ import clsx from "clsx";
 import {
   Dna,
   Lock,
+  Moon,
   Sparkles,
+  Sun,
   Wand2,
   X,
 } from "lucide-react";
@@ -195,6 +197,7 @@ import { StackAcresMusicToggle } from "./stackacres-music-toggle";
 import { StackAcresPlayScreen } from "./stackacres-play-screen";
 import { STOCK_ICON } from "./stock-icon";
 import { StackAcresMonkDialogue } from "./stackacres-monk-dialogue";
+import { StackAcresSleepDialogue } from "./stackacres-sleep-dialogue";
 import { StackAcresFriendshipDialogue } from "./stackacres-friendship-dialogue";
 import { StackAcresSectorModal } from "./stackacres-sector-modal";
 import { StackAcresRayWelcome } from "./stackacres-ray-welcome";
@@ -228,6 +231,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
+import { NOT_SLEEPY, canSleepAt, clockLabel, gameHourAt, isNightHour, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { AXE_SWING_ENERGY, TOO_TIRED_TO_CHOP, type AxeLevel, type AxePayment } from "@/lib/stackacres/axe";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
@@ -422,6 +426,9 @@ interface StackAcresResponse {
   /** The energy anchor (lib/stackacres/energy.ts). Absent from a response
    *  older than Chapter 1. */
   energy?: StackAcresEnergyAnchor;
+  /** The farm clock (lib/stackacres/clock.ts): this farm's offset and the
+   *  server's own now for the read. */
+  clock?: { offsetMs: number; serverNowMs: number };
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -834,6 +841,27 @@ export function StackAcresFarm() {
     level: ENERGY_START,
     updatedAt: new Date().toISOString(),
   }));
+  /**
+   * The farm clock (lib/stackacres/clock.ts): this farm's offset, and how far
+   * the server's clock is ahead of this device's. A ref, because the map reads
+   * it every frame through `gameHourNow`.
+   */
+  const clockRef = useRef({ offsetMs: 0, skewMs: 0 });
+  /** While a sleep is on its way, the offset it replaced. A response that
+   *  still carries that one was read before the sleep landed. */
+  const sleepingFrom = useRef<number | null>(null);
+  const gameHourNow = useCallback(
+    () => gameHourAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs),
+    [],
+  );
+  /** The hour the HUD clock shows, re-read every couple of seconds. */
+  const [clockHour, setClockHour] = useState(() => gameHourAt(Date.now(), 0));
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockHour(gameHourNow()), 2000);
+    return () => window.clearInterval(timer);
+  }, [gameHourNow]);
+  /** The bed's "Go to sleep?" card, where the bed was tapped, or null. */
+  const [sleepDialog, setSleepDialog] = useState<TapPoint | null>(null);
   /** The map's own box, so a drag tool can be kept inside it. */
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
@@ -1193,7 +1221,7 @@ export function StackAcresFarm() {
   // splash for the player's attention.
   useOnboardingTour(profile, STACKACRES_TOUR_STEPS, hasStarted && loaded && rayCheckDone && !showWelcome);
 
-  useStackAcresMusic(hasStarted);
+  useStackAcresMusic(hasStarted, gameHourNow);
 
   /**
    * The ambient soundscape, started by the same gesture the music is.
@@ -1613,6 +1641,13 @@ export function StackAcresFarm() {
     const fields = farmFieldsOf(data);
     confirmedFarm.current = { ...confirmedFarm.current, ...fields };
     layFarm(fields, { base: "next", keys: heldGuesses.current.heldBesides(own) });
+    if (data.clock) {
+      const { offsetMs, serverNowMs } = data.clock;
+      // Keep a sleep's own guess over a response read before it landed.
+      const stale = sleepingFrom.current !== null && offsetMs === sleepingFrom.current;
+      clockRef.current = { offsetMs: stale ? clockRef.current.offsetMs : offsetMs, skewMs: serverNowMs - Date.now() };
+      setClockHour(gameHourNow());
+    }
     if (data.axe) setAxe(data.axe);
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
@@ -1647,7 +1682,7 @@ export function StackAcresFarm() {
     }
     if (data.blueprints) setBlueprints(data.blueprints);
     if (data.story) setStoryView(data.story);
-  }, [acceptRevision, layFarm]);
+  }, [acceptRevision, layFarm, gameHourNow]);
 
   /**
    * Everything an optimistic prediction reads, gathered off live state. A
@@ -2439,6 +2474,51 @@ export function StackAcresFarm() {
     setShowHouse(true);
   }, []);
 
+  /** The bed: by night it offers sleep, by day it says when you can. */
+  const onWorldBedTap = useCallback(
+    (at: TapPoint) => {
+      if (!canSleepAt(gameHourNow())) {
+        refusedSound();
+        setError(NOT_SLEEPY);
+        return;
+      }
+      panelSound();
+      setSleepDialog(at);
+    },
+    [gameHourNow],
+  );
+
+  /**
+   * Sleep: the clock jumps to 6 AM here while the view is dark, then the
+   * server is asked. A refusal puts the old offset back, and `act` shows why.
+   * No toast on success: waking up to morning light is the answer.
+   */
+  const onSleep = useCallback(() => {
+    setSleepDialog(null);
+    const whileDark = async () => {
+      const from = clockRef.current.offsetMs;
+      sleepingFrom.current = from;
+      clockRef.current = {
+        ...clockRef.current,
+        offsetMs: offsetAfterSleep(Date.now() + clockRef.current.skewMs, from),
+      };
+      setClockHour(gameHourNow());
+      try {
+        const result = await act({ action: "sleep" });
+        if (!result.ok) {
+          clockRef.current = { ...clockRef.current, offsetMs: from };
+          setClockHour(gameHourNow());
+          // Another device may have slept already; read the farm's real clock.
+          window.setTimeout(() => void refresh(), 0);
+        }
+      } finally {
+        sleepingFrom.current = null;
+      }
+    };
+    if (world.current) void world.current.sleep(whileDark);
+    else void whileDark();
+  }, [act, gameHourNow, refresh]);
+
   /** The Eat tab in the player's house (./stackacres-kitchen.tsx). */
   const onEat = useCallback((item: FoodItem) => act({ action: "eat", item }), [act]);
   /** Built machine kinds, for the seed locks (lib/stackacres/seed-unlocks.ts). */
@@ -2616,6 +2696,7 @@ export function StackAcresFarm() {
   const onViewMoved = useCallback(() => {
     setMonkDialogue(null);
     setGiftDialogue(null);
+    setSleepDialog(null);
     story.close();
   }, [story]);
 
@@ -3364,18 +3445,21 @@ export function StackAcresFarm() {
 
   /**
    * The soundscape follows the player: which district they travelled to, and
-   * what hour it is. `timeOfDay` is the music's own, so the two layers can
-   * never disagree about whether it is night.
+   * what hour the farm clock says. `timeOfDay` is the music's own, so the two
+   * layers can never disagree about whether it is night.
    *
-   * Re-read on a slow interval rather than derived from `nowMs`: that clock
+   * Re-read on its own interval rather than derived from `nowMs`: that clock
    * only ticks while something is growing, so a farm sitting idle across 6pm
    * would keep its daylight birds until the player did something.
    */
-  const [tod, setTod] = useState(() => timeOfDay());
+  // The first read is before any snapshot, so it is the shared clock; the
+  // interval below picks up this farm's own offset.
+  const [tod, setTod] = useState(() => timeOfDay(gameHourAt(Date.now(), 0)));
   useEffect(() => {
-    const timer = window.setInterval(() => setTod(timeOfDay()), 60_000);
+    // A game day is 13 minutes, so the soundscape looks every 5 seconds.
+    const timer = window.setInterval(() => setTod(timeOfDay(gameHourNow())), 5_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [gameHourNow]);
   useEffect(() => {
     setAmbiencePlace(tod);
   }, [tod]);
@@ -3842,6 +3926,8 @@ export function StackAcresFarm() {
               onMonkTap={onWorldMonkTap}
               onRayTap={onWorldRayTap}
               onHouseTap={onWorldHouseTap}
+              onBedTap={onWorldBedTap}
+              clockHour={gameHourNow}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}
@@ -3865,6 +3951,14 @@ export function StackAcresFarm() {
               freed up. The page still needs its own heading for the a11y
               tree, just with no visual footprint to reclaim the space for. */}
           <h1 className="sr-only">StackAcres</h1>
+
+          {/* The farm clock, pinned under the top bar's right end. The bar is
+              already full on a narrow landscape phone, so the clock hangs
+              below it instead of pushing the Gold pill off screen. */}
+          <p className="sa-clock" title="Time on the farm. A day lasts 13 minutes. Sleep in your bed from 6 PM.">
+            {isNightHour(clockHour) ? <Moon size={14} aria-hidden="true" /> : <Sun size={14} aria-hidden="true" />}
+            <strong>{clockLabel(clockHour)}</strong>
+          </p>
 
           {lastCollect && (
             <p key={lastCollect.nonce} className="sa-toast" role="status">
@@ -3914,6 +4008,11 @@ export function StackAcresFarm() {
               onPray={onMonkPray}
               onClose={() => setMonkDialogue(null)}
             />
+          )}
+
+          {/* The bed's "Go to sleep?" card, pinned where the bed was tapped. */}
+          {sleepDialog && (
+            <StackAcresSleepDialogue at={sleepDialog} onSleep={onSleep} onClose={() => setSleepDialog(null)} />
           )}
 
           {/* NPC friendship's gift dialogue, same screen-anchored treatment

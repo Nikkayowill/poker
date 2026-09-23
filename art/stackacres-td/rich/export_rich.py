@@ -402,6 +402,10 @@ def export_area(module, out_root):
         if is_ground:
             for lx, ly, kind in imgs[0].info.get("lights", ()):
                 lights.append({"kind": kind, "x": bx - ax + lx, "y": by - ay + ly})
+    # A room's window sun (lpc_rooms.window_light): a picture in the atlas the engine lays on the floor by day.
+    for k, (img, x, y) in enumerate(getattr(area, "sunbeams", ())):
+        named.append((f"sun{k}", img))
+        lights.append({"kind": "sun", "x": x, "y": y, "frame": f"sun{k}", "scale": 0.5})
     sheet, atlas_json = rig_export.atlas(named, "props.png")
     sheet.save(os.path.join(out, "props.png"))
     with open(os.path.join(out, "props.json"), "w") as fh:

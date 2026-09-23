@@ -239,6 +239,13 @@ export interface StackAcresWorldApi {
   /** A world point as pixels inside the field, for pointing a drag tool at a
    *  fixed spot. Null until the scene has booted. */
   fieldPointFor: (x: number, y: number) => TapPoint | null;
+  /**
+   * Goes to sleep in the bed: a sleepy bubble, a fade to black, `whileDark`
+   * (the shell moves the clock and asks the server), then the room fades back
+   * up in morning light. Input waits for the whole of it. Resolves once the
+   * view is back; with no map to fade, it just runs `whileDark`.
+   */
+  sleep: (whileDark: () => Promise<void> | void) => Promise<void>;
 }
 
 export interface StackAcresWorldProps {
@@ -334,6 +341,12 @@ export interface StackAcresWorldProps {
   /** A finger landed on the player's house. Opens the house panel (the
    *  kitchen), never anything of Ray's -- see stackacres-farm.tsx's `onWorldHouseTap`. */
   onHouseTap: (at: TapPoint) => void;
+  /** The farmer walked up to the bed in the farmhouse. The shell decides
+   *  whether it is late enough to sleep. */
+  onBedTap: (at: TapPoint) => void;
+  /** The farm clock's game hour right now (lib/stackacres/clock.ts). The map
+   *  reads it for its light, its critters and who is sleepy. */
+  clockHour: () => number;
   /** A finger landed on one of the eleven story travelers (see
    *  lib/stackacres/story/placement.ts). `at` is the point over their head,
    *  where the dialogue bubble hangs; see stackacres-farm.tsx's

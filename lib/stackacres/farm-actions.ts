@@ -142,6 +142,9 @@ export type Action =
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
   | { action: "pray" }
+  // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
+  // sent from the bed's own "Sleep" button, and by night.
+  | { action: "sleep" }
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }

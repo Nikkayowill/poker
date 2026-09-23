@@ -22,7 +22,7 @@
  * before a gesture is a suspended one.
  */
 
-import { playFarmAnimal, playFarmVoice } from "./stackacres-ambience";
+import { playFarmAnimal, playFarmSample, playFarmVoice } from "./stackacres-ambience";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 
 /**
@@ -34,7 +34,7 @@ import type { StackAcresStock } from "@/lib/stackacres/catalogue";
  */
 export function sowSound() {
   playFarmVoice("sow-seed", 0.9);
-  window.setTimeout(() => playFarmVoice("dirt-pat", 0.7), 160);
+  window.setTimeout(() => playFarmSample("seed-pat", 0.6), 160);
 }
 
 /**
@@ -66,34 +66,19 @@ export function feedSound(stock: StackAcresStock) {
   }
 }
 
-/**
- * Watering a dry field: a can tipped over the row.
- *
- * Built out of `water-drop` rather than a new synth voice, and staggered
- * rather than played once, because one drop is a plink and three falling
- * away from each other is a pour. The gains descend so the can reads as
- * emptying -- an even three sounds like a machine.
- *
- * The one action cue with no animal in it, deliberately: nothing on the crop
- * track has a voice to answer with, and borrowing a hen for it would put a
- * bird in the Long Meadow, where there are none.
- *
- * `water-drop`'s own trim (synth-voices.ts's `VOICE_TRIM`) is calibrated to
- * the quiet ambience-cue reference, not the louder action-cue one, because
- * the same recipe also plays as a background river/wallow drip. Bumping that
- * shared trim would blast the ambience; these gains carry the ~4dB the
- * action instance needs on top of it instead, so the pour actually reads as
- * an action and not a background drip that happened to sync with the tap.
- */
+/** Watering a dry field: a splash over the row. */
 export function waterSound() {
-  playFarmVoice("water-drop", 1.4);
-  window.setTimeout(() => playFarmVoice("water-drop", 1.1), 90);
-  window.setTimeout(() => playFarmVoice("water-drop", 0.8), 200);
+  playFarmSample("water-splash", 0.9);
 }
 
 /** Clearing a mucked unit: the one genuinely laborious thing on the farm. */
 export function muckSound() {
   playFarmVoice("muck-clear", 1);
+}
+
+/** The hoe blade biting into the soil, on the swing's strike. */
+export function hoeSound() {
+  playFarmSample("hoe-crunch", 1);
 }
 
 /** Buying stock outright, or anything else that closes a purchase. */
@@ -108,7 +93,8 @@ export function goldSound() {
 
 /** Selling produce at the store: a crate going down on the counter. */
 export function sellSound() {
-  playFarmVoice("crate-down", 0.85);
+  playFarmSample("crate-drop", 0.8);
+  window.setTimeout(() => playFarmSample("coins-small", 0.6, 0), 220);
 }
 
 /** Paying Gold to raise a capacity ceiling: a new fence post going in. */
@@ -124,7 +110,7 @@ export function retireSound() {
 
 /** The scythe cutting standing grass. Fired per stroke, from the scene. */
 export function scytheSound() {
-  playFarmVoice("scythe-swish", 0.55);
+  playFarmSample("whoosh", 0.7);
 }
 
 /** Travelling to a district via the signpost. */
@@ -133,19 +119,17 @@ export function travelSound() {
 }
 
 /**
- * A refused action.
- *
- * A dull knock on wood, never a buzzer. Most refusals here are "you cannot
- * afford that yet", which is ordinary and frequent, and a harsh error tone
- * on an ordinary event trains a player to dread their own farm.
+ * A refused action, usually "you cannot afford that yet". A short soft blip
+ * rather than a buzzer: it is frequent and ordinary, and a harsh error tone
+ * would train a player to dread their own farm.
  */
 export function refusedSound() {
-  playFarmVoice("refuse", 0.8);
+  playFarmSample("refuse-blip", 1, 0);
 }
 
 /** The district drawer or the store sheet moving. */
 export function panelSound() {
-  playFarmVoice("panel-slide", 0.7);
+  playFarmSample("whoosh", 0.45);
 }
 
 /** Picking up a tool from the dock. */
@@ -154,25 +138,51 @@ export function toolSound() {
 }
 
 /**
- * A Town Favor rung reached.
- *
- * The town's own bell, struck twice, rather than `prestige-chime` -- that
- * voice is reserved for a Prestige Reset and nothing else. A rung-up is a
- * promotion in standing, which the town ringing for you fits better than a
- * chord meant for an irreversible choice.
+ * A Town Favor rung reached: a glass ping struck twice. Kept apart from
+ * `prestigeSound`, which is reserved for a Prestige Reset and nothing else.
  */
 export function townFavorSound() {
-  playFarmVoice("farm-bell", 1);
-  window.setTimeout(() => playFarmVoice("farm-bell", 0.75), 300);
+  playFarmSample("glass-ping", 0.6, 0);
+  window.setTimeout(() => playFarmSample("glass-ping", 0.45, 0), 300);
 }
 
 /**
- * A Prestige Reset going through.
- *
- * The one moment on this farm big enough for a chord rather than a single
- * cue -- everything else here answers a tap; this answers a permanent,
- * irreversible choice, and a `buy-latch`-sized click would undersell it.
+ * A Prestige Reset going through. The one moment on this farm big enough for
+ * a whole phrase rather than a single cue: it answers a permanent choice, not
+ * a tap.
  */
 export function prestigeSound() {
-  playFarmVoice("prestige-chime", 1);
+  playFarmSample("prestige-music-box", 0.8, 0);
+}
+
+/** One footstep indoors, on the floorboards of the house, barn or workshop. */
+export function floorStepSound(step: number) {
+  const names = ["step-floor-1", "step-floor-2", "step-floor-3", "step-floor-4"] as const;
+  playFarmSample(names[step % names.length], step % 2 ? 0.38 : 0.45);
+}
+
+/** Walking into or out of a building. */
+export function doorSound() {
+  playFarmSample("door-open", 0.6);
+}
+
+/** Opening the Journal. */
+export function journalSound() {
+  playFarmSample("page-turn", 0.7);
+}
+
+/** The area map opening or closing. */
+export function mapSound() {
+  playFarmSample("map-rustle", 0.7);
+}
+
+/** Picking a forage bush: the leaves, then the berries coming away. */
+export function forageSound() {
+  playFarmSample("leaf-rustle", 0.6);
+  window.setTimeout(() => playFarmSample("berry-pop", 0.5), 220);
+}
+
+/** A traveler's quest moving on a step. */
+export function questStepSound() {
+  playFarmSample("quest-chime", 0.7, 0);
 }

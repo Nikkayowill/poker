@@ -39,6 +39,7 @@ import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, ty
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
+import { doorSound, floorStepSound } from "@/lib/audio/stackacres-sfx";
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
 import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
@@ -604,6 +605,7 @@ export class TopdownScene extends Phaser.Scene {
   private travelTo(to: TopdownArea, spawn: Point): void {
     this.travelling = true;
     const leaving = this.area.indoor;
+    if (leaving || this.specs.get(to)?.indoor) doorSound();
     let done = false;
     const go = (grab: HTMLImageElement | null): void => {
       if (done) return;
@@ -809,6 +811,15 @@ export class TopdownScene extends Phaser.Scene {
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
     this.anims.createFromAseprite("farmer", undefined, this.player);
+    // Floorboards indoors: a step on each foot's contact frame, the first and
+    // the middle of the walk cycle. Outside stays quiet for now.
+    if (this.area.indoor) {
+      let step = 0;
+      this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+        if (!anim.key.startsWith("walk_")) return;
+        if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) floorStepSound(step++);
+      });
+    }
     this.playerShadow = this.keep(this.add.ellipse(spawn.x + 1, spawn.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
     this.setPlayerAt(spawn);
     this.resetCamera();

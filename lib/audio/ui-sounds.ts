@@ -1,5 +1,5 @@
 /**
- * The three chrome cues, named by what the press meant.
+ * The chrome cues, named by what the press meant.
  *
  * `SoundEffect` is the vocabulary; this is the intent. A call site reading
  * `selectSound()` says why it makes a noise, where `playSound("select")` only
@@ -9,6 +9,7 @@
  *
  *   tapSound()     you moved: a menu opened, a link was followed, a panel closed
  *   selectSound()  you chose: a mode, a tier, a toggle, a tab, state changed
+ *   toggleSound()  you flipped a sound or music switch
  *   gameOnSound()  you are in: a table or a game actually took you
  *
  * Something on the route has to have applied the mute first. `setSoundEnabled`
@@ -40,6 +41,11 @@ export function tapSound() {
 /** A choice that changed something: a mode, a tier, a toggle, a tab. */
 export function selectSound() {
   playSound("select");
+}
+
+/** A sound or music switch flipping, either way. */
+export function toggleSound() {
+  playSound("toggle");
 }
 
 /**

@@ -4,7 +4,7 @@ import { ArrowRight, Eye, EyeOff, LoaderCircle, LogOut, Mail } from "lucide-reac
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import type { PlayerProfile } from "@/lib/profile/types";
-import { StackChipsLogo } from "@/components/brand/stackchips-logo";
+import { ArcadeMarquee } from "@/components/brand/arcade-marquee";
 import { InstallLine } from "@/components/pwa/install-line";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import { TurnstileWidget } from "@/components/auth/turnstile-widget";
@@ -176,7 +176,7 @@ export function AccountEntryCard({
     <>
     <section className="account-entry-card" aria-labelledby="account-entry-title">
       <header className="entry-head">
-        <StackChipsLogo className="entry-logo" />
+        <ArcadeMarquee />
         <h1 id="account-entry-title">Play free. Stack chips.</h1>
 
         {!ready ? (

@@ -704,6 +704,95 @@ button:disabled { cursor: wait; opacity: .62; }
      a second glow on top of it just muddies the art. */
 }
 
+/* The wordmark as a lit arcade marquee (components/brand/arcade-marquee.tsx).
+   The sign box sits in front of the cast's chins, so they read as standing
+   behind the sign. Padding is kept tight because the form's height budget
+   (see the note above .account-entry-card h1) has almost no room to spare. */
+.arcade-marquee {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: clamp(260px, 86vw, 400px);
+  margin: 0 auto 14px;
+  padding: 18px 20px 13px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(44, 24, 84, .92), rgba(21, 10, 43, .94));
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 210, 63, .26),
+    inset 0 0 40px rgba(155, 63, 240, .28),
+    0 18px 44px -20px rgba(155, 63, 240, .75);
+}
+
+.arcade-marquee .arcade-marquee-logo { width: 100%; margin: 0; }
+
+.arcade-marquee-sub {
+  color: var(--neon-purple-bright);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px var(--neon-purple), 0 0 18px var(--neon-purple);
+}
+
+/* One strip of bulbs per side, numbered clockwise, so the bottom and left
+   strips run reversed. */
+.arcade-marquee-bulbs {
+  position: absolute;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.arcade-marquee-bulbs-top { top: 6px; left: 8px; right: 8px; }
+.arcade-marquee-bulbs-bottom { bottom: 6px; left: 8px; right: 8px; flex-direction: row-reverse; }
+.arcade-marquee-bulbs-right { right: 6px; top: 22px; bottom: 22px; flex-direction: column; }
+.arcade-marquee-bulbs-left { left: 6px; top: 22px; bottom: 22px; flex-direction: column-reverse; }
+
+.arcade-marquee-bulb {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4d3a18;
+  animation: arcade-marquee-chase 1.2s linear infinite;
+}
+.arcade-marquee-phase-1 { animation-delay: -.4s; }
+.arcade-marquee-phase-2 { animation-delay: -.8s; }
+
+@keyframes arcade-marquee-chase {
+  0%, 33% { background: var(--neon-yellow-bright); box-shadow: 0 0 6px var(--neon-yellow), 0 0 12px rgba(255, 210, 63, .6); }
+  34%, 100% { background: #4d3a18; box-shadow: none; }
+}
+
+/* The wordmark's two words flicker on in turn, then CHIPS buzzes now and
+   then like a real neon tube. */
+.arcade-marquee-logo g > path:first-child { animation: arcade-marquee-flick-on 1.1s .15s both; }
+.arcade-marquee-logo g > path:last-child {
+  animation: arcade-marquee-flick-on 1.1s .6s both, arcade-marquee-buzz 7s 2.6s infinite;
+}
+
+@keyframes arcade-marquee-flick-on {
+  0% { opacity: .06; }
+  8% { opacity: 1; }
+  12% { opacity: .15; }
+  22% { opacity: 1; }
+  26% { opacity: .35; }
+  34%, 100% { opacity: 1; }
+}
+
+@keyframes arcade-marquee-buzz {
+  0%, 90%, 100% { opacity: 1; }
+  91% { opacity: .35; }
+  92% { opacity: 1; }
+  94% { opacity: .5; }
+  95% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcade-marquee-bulb { animation: none; background: var(--neon-yellow-bright); opacity: .7; }
+  .arcade-marquee-logo g > path { animation: none !important; }
+}
+
 /* Lifted off the sky rather than off a card. The near shadow is the edge that
    keeps a serif's thin strokes off a star, the far one is the shade the
    headline casts on the ceiling behind it -- together they do the job the

@@ -276,7 +276,7 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     expect(veil.some((a) => a > 0.05 && a < 0.95)).toBe(true);
     expect(veil[veil.length - 1]).toBeLessThan(0.3);
     await page.screenshot({ path: test.info().outputPath("inside-barn.png") });
-    await tapMap(280, 80);
+    await tapMap(296, 88);
     await expect(page.getByRole("dialog", { name: "Supply store" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("dialog", { name: "Supply store" }).getByRole("button", { name: "Close" }).click();
 
@@ -288,13 +288,17 @@ test("the barn and the workshop are walked into, and their menus open inside", a
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("homestead");
     expect((await scene()).pos.y).toBeGreaterThan(160);
 
+    // Out of the barn he stands at its own door, the far side of the house from the workshop.
+    expect(Math.abs((await scene()).pos.x - 640)).toBeLessThan(24);
+
     // The workshop: in through its doors, and the workbench opens the recipes.
-    await page.waitForTimeout(600);
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", { x: 351, y: 300 }));
+    await page.waitForTimeout(1500);
     await tapMap(350, 236);
     await expect.poll(async () => (await scene()).area, { timeout: 15_000 }).toBe("workshop");
     await page.waitForTimeout(600);
     await page.screenshot({ path: test.info().outputPath("inside-workshop.png") });
-    await tapMap(132, 90);
+    await tapMap(120, 84);
     await expect(page.locator(".sa-workshop")).toBeVisible({ timeout: 15_000 });
 
     expect(errors).toEqual([]);
@@ -332,7 +336,7 @@ test("the house is walked into as a room that floats whole on screen, and its ki
     expect(inside.view.h).toBeGreaterThanOrEqual(176);
 
     // The kitchen run along the back wall opens the house panel.
-    await tapMap(128, 80);
+    await tapMap(56, 60);
     await expect(page.getByRole("dialog", { name: "Your house" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("dialog", { name: "Your house" }).getByRole("button", { name: "Close" }).click();
 

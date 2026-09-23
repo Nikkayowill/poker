@@ -1,11 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { INDOORS, NIGHT_FLOOR, brightness, daylightAt, hourOf, tintColor } from "./daylight";
+import {
+  INDOOR_DAY,
+  INDOOR_NIGHT,
+  NIGHT_FLOOR,
+  brightness,
+  daylightAt,
+  hourOf,
+  indoorDaylightAt,
+  tintColor,
+} from "./daylight";
 
-describe("INDOORS", () => {
-  it("is warm, readable and lamplit", () => {
-    expect(INDOORS.r).toBeGreaterThan(INDOORS.b);
-    expect(brightness(INDOORS)).toBeGreaterThan(0.9);
-    expect(INDOORS.lamps).toBeGreaterThan(0);
+describe("indoorDaylightAt", () => {
+  it("is plain and bright by day, lamps barely on", () => {
+    expect(indoorDaylightAt(12)).toEqual(INDOOR_DAY);
+    expect(brightness(indoorDaylightAt(12))).toBeGreaterThan(0.95);
+    expect(indoorDaylightAt(12).lamps).toBeLessThan(0.2);
+  });
+
+  it("is lamplit and dim at night, but still readable", () => {
+    expect(indoorDaylightAt(0)).toEqual(INDOOR_NIGHT);
+    expect(indoorDaylightAt(0).b).toBeGreaterThan(indoorDaylightAt(0).r);
+    expect(indoorDaylightAt(0).lamps).toBe(1);
+    expect(brightness(indoorDaylightAt(0))).toBeGreaterThan(NIGHT_FLOOR);
+  });
+
+  it("eases through dusk: dimmer and more lamplit as the evening goes on", () => {
+    const dusk = [18, 19, 19.5, 20, 21].map(indoorDaylightAt);
+    for (let i = 1; i < dusk.length; i++) {
+      expect(brightness(dusk[i])).toBeLessThanOrEqual(brightness(dusk[i - 1]));
+      expect(dusk[i].lamps).toBeGreaterThanOrEqual(dusk[i - 1].lamps);
+    }
+  });
+
+  it("changes gradually and never drops under the readability floor", () => {
+    for (let minute = 0; minute < 24 * 60; minute++) {
+      const a = indoorDaylightAt(minute / 60);
+      const b = indoorDaylightAt((minute + 1) / 60);
+      expect(brightness(a)).toBeGreaterThanOrEqual(NIGHT_FLOOR);
+      expect(Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)).toBeLessThan(0.02);
+      expect(Math.abs(a.lamps - b.lamps)).toBeLessThan(0.02);
+    }
   });
 });
 

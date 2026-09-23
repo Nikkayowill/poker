@@ -21,8 +21,10 @@ interface TopdownHandle {
 }
 
 /** The buildings on the Homestead, and the counter inside each one. */
-const HOUSE = { door: { x: 481, y: 280 }, counter: { x: 128, y: 75 } };
-const BARN = { door: { x: 640, y: 278 }, counter: { x: 280, y: 75 } };
+const HOUSE = { door: { x: 481, y: 280 }, counter: { x: 56, y: 60 } };
+const BARN = { door: { x: 640, y: 278 }, counter: { x: 296, y: 88 } };
+/** The bed in the house, by the far wall. */
+const BED = { x: 264, y: 80 };
 /** Long enough for the walk plus the door dissolve. */
 const WALK_MS = 4_000;
 
@@ -102,4 +104,22 @@ test("the barn's Livestock tab shows the sheep and cattle pens greyed until thei
 
   await store.getByRole("button", { name: "Unlock The Fold" }).click();
   await expect(page.getByText("Uncleared land")).toBeVisible();
+});
+
+test("the bed in the house is slept in by night and turns you away by day", async ({ context, page }) => {
+  await openStackAcres(context, page);
+  await tapWorld(page, HOUSE.door);
+  await page.waitForTimeout(WALK_MS);
+  await tapWorld(page, BED);
+  await page.waitForTimeout(WALK_MS);
+
+  // A game day is 13 minutes, so the test can land at any hour: by day the bed says when it can be slept in,
+  // from 6 PM it asks first. Both mean the bed was reached and heard.
+  const refusal = page.getByText("Not sleepy yet. You can sleep from 6 PM.");
+  const ask = page.getByRole("dialog", { name: "Go to sleep?" });
+  await expect(refusal.or(ask)).toBeVisible();
+  if (await ask.isVisible()) {
+    await ask.getByRole("button", { name: "Sleep", exact: true }).click();
+    await expect(page.locator(".sa-clock")).toHaveText(/6:00 AM/, { timeout: 10_000 });
+  }
 });

@@ -38,6 +38,7 @@ import {
   feedStackAcres,
   feedStackAcresPen,
   eatStackAcresFoodAction,
+  sleepStackAcres,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
@@ -303,6 +304,9 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("eat"),
     item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),
   }),
+  // Sleeps in the farmhouse bed: the farm clock jumps to 6 AM. The server
+  // reads the hour itself and refuses by day. Moves nothing else.
+  z.object({ action: z.literal("sleep") }),
   // Processing: wheat, machines, Town Contracts. Move no Gold.
   z.object({
     action: z.literal("place-machine"),
@@ -558,6 +562,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return catchStackAcresFish(token, action.bait, now);
     case "eat":
       return eatStackAcresFoodAction(token, action.item, now);
+    case "sleep":
+      return sleepStackAcres(token, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
     case "chop-tree":

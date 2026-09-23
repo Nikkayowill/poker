@@ -7,6 +7,8 @@
  * separate mute toggle for music itself.
  */
 
+import { gameHourAt } from "@/lib/stackacres/clock";
+
 type TimeOfDay = "day" | "dusk" | "night";
 
 // The tracks are levelled in the files themselves (about -36dB average), well
@@ -47,18 +49,13 @@ export function initStackAcresMusic(): void {
 }
 
 /**
- * Determine time of day based on a given timestamp or the current time.
- * Used to pick the current track and in tests.
- *
- * Times are arbitrary and can be tuned per your night-plan.md:
+ * Which track a farm clock hour (lib/stackacres/clock.ts, 0 to 24) gets:
  * - day: 6am - 5:59pm (6 to 18, 12 hours)
  * - dusk: 6pm - 8:59pm (18 to 21, 3 hours)
  * - night: 9pm - 5:59am (21 to 6, 9 hours)
+ * With no hour, it reads the shared clock before any sleep has moved it.
  */
-export function timeOfDay(timestamp?: number): TimeOfDay {
-  const date = new Date(timestamp || Date.now());
-  const hour = date.getHours();
-
+export function timeOfDay(hour: number = gameHourAt(Date.now(), 0)): TimeOfDay {
   if (hour >= 6 && hour < 18) return "day";
   if (hour >= 18 && hour < 21) return "dusk";
   return "night";

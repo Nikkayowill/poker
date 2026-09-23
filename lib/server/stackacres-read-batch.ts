@@ -49,6 +49,8 @@ export interface StackAcresReadBatch {
   story: Record<string, unknown> | null;
   /** Absent until the Chapter 1 migration redefines the batch. */
   energy?: Record<string, unknown> | null;
+  /** Absent until the clock migration (20260927090000) redefines the batch. */
+  clock?: Record<string, unknown> | null;
 }
 
 /**

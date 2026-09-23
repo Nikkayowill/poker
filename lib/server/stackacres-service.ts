@@ -86,6 +86,11 @@ import {
 } from "./stackacres-pipe-store";
 import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
+  readStackAcresClockOffset,
+  stackAcresClockFromBatchRow,
+  writeStackAcresClockOffset,
+} from "./stackacres-clock-store";
+import {
   createSoilMap,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
@@ -352,6 +357,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
+import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
@@ -792,6 +798,10 @@ export interface StackAcresView {
   landObstacles: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
   fences: FencePiece[];
+  /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
+   *  server's `now` for this read, so the client can correct for its own
+   *  clock being off. */
+  clock: { offsetMs: number; serverNowMs: number };
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -1080,6 +1090,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
           readStackAcresCutters(profile.id),
           readStackAcresStory(profile.id),
           readStackAcresEnergy(profile.id),
+          readStackAcresClockOffset(profile.id),
         ] as const),
   ]);
 
@@ -1115,6 +1126,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
   let cutters: StackAcresCutter[];
   let storedStory: StoredStoryRow;
   let storedEnergy: StoredStackAcresEnergy | null;
+  let clockOffset: number;
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1173,6 +1185,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     storedEnergy = stackAcresEnergyFromBatchRow(
       (batch.energy ?? null) as { level: number | string; updated_at: string; version: number | string } | null,
     );
+    clockOffset = stackAcresClockFromBatchRow((batch.clock ?? null) as { offset_ms: number | string } | null);
   } else {
     [
       rows,
@@ -1207,6 +1220,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       cutters,
       storedStory,
       storedEnergy,
+      clockOffset,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
@@ -1215,6 +1229,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
+      number,
     ];
   }
 
@@ -1315,6 +1330,7 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
       ),
     ),
     fences,
+    clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
   };
 }
@@ -3480,6 +3496,27 @@ export async function eatStackAcresFoodAction(
     }
   }
   throw new StackAcresRequestError("That moved on.", 409, { round: await snapshots(profile.id, now) });
+}
+
+/**
+ * Sleeps in the farmhouse bed: this farm's clock jumps to the next 6 AM
+ * (lib/stackacres/clock.ts). Only from 6 PM to 6 AM. It moves the clock
+ * offset and nothing else, so crops, animals, machines, energy and Gold carry
+ * on exactly as they were. The write is a compare-and-set on the old offset;
+ * a second sleep that loses the race re-reads, finds it morning, and is
+ * refused.
+ */
+export async function sleepStackAcres(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const nowMs = now.getTime();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const offset = await readStackAcresClockOffset(profile.id);
+    if (!canSleepAt(gameHourAt(nowMs, offset))) throw new StackAcresRequestError(NOT_SLEEPY, 409);
+    if (await writeStackAcresClockOffset(profile.id, offset, offsetAfterSleep(nowMs, offset), now)) {
+      return view(profile, now);
+    }
+  }
+  throw new StackAcresRequestError("That moved on.", 409);
 }
 
 /**

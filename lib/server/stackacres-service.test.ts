@@ -2311,6 +2311,8 @@ describe("the currency wall", () => {
       "seal-vat",
       "sell",
       "set-kitchen-order",
+      // Moves no Gold either way: only the farm clock's offset.
+      "sleep",
       "start-blueprint",
       "stock",
       "story-meet",

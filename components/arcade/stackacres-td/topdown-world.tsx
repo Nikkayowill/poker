@@ -140,6 +140,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onMonkTap: (at) => p().onMonkTap(at),
           onRayTap: (at) => p().onRayTap(at),
           onHouseTap: (at) => p().onHouseTap(at),
+          onBedTap: (at) => p().onBedTap(at),
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
@@ -185,6 +186,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setForageNodes(now.forageNodes);
       scene.setLandObstacles(now.landObstacles);
       scene.setFences(now.fences);
+      scene.setClockSource(() => p().clockHour());
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -238,6 +240,11 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       recenter: () => sceneRef.current?.recenter(),
       farmerAction: (action, impact) => sceneRef.current?.farmerAction(action, impact),
       emote: (who, kind) => sceneRef.current?.emote(who, kind),
+      sleep: async (whileDark) => {
+        const scene = sceneRef.current;
+        if (scene) await scene.sleep(whileDark);
+        else await whileDark();
+      },
       // Not drawn yet (see this file's header).
       endFishingCast: (outcome) => sceneRef.current?.endFishingCast(outcome),
       startFishingGauge: (request) => {

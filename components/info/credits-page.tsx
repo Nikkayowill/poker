@@ -79,6 +79,15 @@ export function CreditsPage() {
               layer, is in{" "}
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
             </li>
+            <li>
+              <strong>Inside the house, the barn and the workshop</strong> — the
+              walls, floors, windows, rugs and furniture are{" "}
+              <a href="https://github.com/ElizaWy/LPC">LPC Revised</a>, drawn by
+              Eliza Wyatt (ElizaWy), Lanea Zimmerman (Sharm), bluecarrot16,
+              Hyptosis, Richard Kettering (Jetrel) and YuriNikolai, under OGA-BY
+              3.0. Every sheet used is listed in{" "}
+              <a href="/stackacres-td/rooms-CREDITS.md">rooms-CREDITS.md</a>.
+            </li>
           </ul>
         </section>
 

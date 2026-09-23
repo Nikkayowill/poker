@@ -7,7 +7,6 @@ import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
-import type { BuildingDoor } from "@/lib/stackacres/building-cues";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
 import type { FishSpecies } from "@/lib/stackacres/fishing";
 import type { HuntingWeapon, QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -121,16 +120,6 @@ export interface HuntScopeRequest {
 /** How a fight ended, as the map needs to act it out. */
 export type FishingCastOutcome = "landed" | "escaped";
 
-/** What a traveler's badge says: a quest to offer, or one ready to hand in. */
-export type StoryCue = "available" | "ready";
-
-/** One badge per traveler that has one; a missing key means none. */
-export type StoryCues = Readonly<Partial<Record<TravelerId, StoryCue>>>;
-
-/** One flag per building door with something finished behind it
- *  (lib/stackacres/building-cues.ts). A missing key means nothing waiting. */
-export type BuildingCueDoors = Readonly<Partial<Record<BuildingDoor, true>>>;
-
 
 /** One flag per traveler: has their unlock been met yet. Read straight off
  *  `StackAcresStoryView.travelers[id].unlocked`, so the scene never keeps
@@ -154,6 +143,9 @@ export interface StackAcresWorldApi {
   /** The squash-and-stretch a tapped unit answers with, before the network
    *  has said anything at all. */
   popUnit: (unitId: string) => void;
+  /** A ripe crop is picked: it comes out of the ground and hops into the
+   *  farmer's hands. Called just before the collect goes out. */
+  pullCrop: (unitId: string) => void;
   /** Critical Harvest Cascade: the same gold-burst `celebrate` triggers for a
    *  solo unit, fanned out across several units with a stagger between each
    *  so a chain reads as a chain. See stackacres-scene.ts's own method. */
@@ -218,18 +210,9 @@ export interface StackAcresWorldApi {
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
-  /** Hangs a quest badge ("!" to offer, "?" ready to hand in) over each
-   *  traveler named, and takes down the rest. Same "push, never rebuild"
-   *  contract as `setSoil`: stackacres-farm.tsx calls this whenever its
-   *  story view changes, and an unchanged badge is a no-op. */
-  setStoryCues: (cues: StoryCues) => void;
-  /** Hangs a "ready" badge over the Workshop or the farmhouse when something
-   *  inside them has finished. Same "push, never rebuild" contract as
-   *  `setStoryCues`. */
-  setBuildingCues: (doors: BuildingCueDoors) => void;
   /** Shows or hides each traveler as their own unlock is met -- nobody
    *  stands on the farm before that. Same "push, never rebuild" contract as
-   *  `setStoryCues`: called with the full eleven-entry record whenever the
+   *  `setSoil`: called with the full eleven-entry record whenever the
    *  story view changes, a no-op where nothing flipped. */
   setTravelerUnlocks: (unlocked: TravelerUnlocks) => void;
   /** Placed soil beds (lib/stackacres/soil.ts), passed straight through to

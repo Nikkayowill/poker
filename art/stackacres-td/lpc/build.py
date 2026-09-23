@@ -36,7 +36,7 @@ LPC_HEIGHT = 50
 COLOURS, KEY = 48, (255, 0, 255)
 
 # Frame holds, kept from the rig so actions keep the timing the game was tuned against.
-DURATIONS = {"harvest": [120, 160, 120, 350], "water": [160, 160, 160, 160],
+DURATIONS = {"harvest": [110, 170, 170, 350], "water": [160, 160, 160, 160],
              "chop": [180, 120, 60, 260], "fish": [220, 90, 150, 500],
              "shoot": [150, 250, 200, 250]}
 IDLE_MS = [700, 500, 700, 500]
@@ -45,12 +45,39 @@ WALK_MS, STRIDE_MS = 150, 100
 # Which LPC animation and which of its frames each of the game's actions is cut from. `tools` are
 # added to the character for that action alone, so the hoe only exists while he is hoeing.
 ACTIONS = {
-    "harvest": dict(anim="thrust", cols=[1, 3, 4, 4], tools=[]),
+    "harvest": dict(poses="pick", tools=[]),
     "water": dict(anim="watering", cols=[0, 1, 4, 5], tools=[("tool_watering_can", None)]),
     "chop": dict(anim="thrust", cols=[1, 3, 5, 5], tools=[("tool_hoe", None)]),
     "fish": dict(custom="tool_rod", cols=[0, 2, 5, 8], tools=[("tool_rod", None)]),
     "shoot": dict(anim="shoot", cols=[1, 3, 6, 7], tools=[("weapon_ranged_bow_normal", None)]),
 }
+# Picking a crop has no LPC animation, so it is put together from poses LPC does draw: he bends down
+# to the plant, grips it, rises with his hands still low as it comes up, and holds it at his chest (lib/stackacres-td/pull.ts
+# times the crop to these frames). Facing us, LPC's hurt stumble is a real bend with the hands at the
+# ground. Every other way, it is the thrust pose with the body dropped at the hips (`bent`) so the
+# reaching hand goes down to the plant. Each entry is (animation, column, drop, lean) in LPC pixels;
+# lean is toward the way he faces.
+PICK = {
+    "down": [("hurt", 1, 0, 0), ("hurt", 2, 0, 0), ("hurt", 1, 0, 0), ("thrust", 3, 0, 0)],
+    "up": [("thrust", 4, 2, 0), ("thrust", 4, 5, 0), ("thrust", 4, 2, 0), ("thrust", 3, 0, 0)],
+    "left": [("thrust", 4, 2, 1), ("thrust", 4, 5, 2), ("thrust", 4, 2, 1), ("thrust", 3, 0, 0)],
+    "right": [("thrust", 4, 2, 1), ("thrust", 4, 5, 2), ("thrust", 4, 2, 1), ("thrust", 3, 0, 0)],
+}
+# Where LPC's legs start: everything above this row is the body that bends over them.
+WAIST = 46
+
+
+def bent(frame, drop, lean, facing):
+    """The body above the hips lowered by `drop` and pushed `lean` toward where he faces."""
+    if drop == 0 and lean == 0:
+        return frame
+    dx = -lean if facing == "left" else lean
+    out = Image.new("RGBA", frame.size)
+    out.alpha_composite(frame.crop((0, WAIST, frame.width, frame.height)), (0, WAIST))
+    out.alpha_composite(frame.crop((0, 0, frame.width, WAIST)), (dx, drop))
+    return out
+
+
 # The axe swing LPC draws on its oversize sheet. Nothing calls a chopping tag yet (the game's chop
 # is the hoe going into the ground), so it is here for the wood chopping that is being built.
 AXE = dict(custom="tool_axe", cols=[0, 3, 5, 8], tools=[("tool_axe", None)])
@@ -92,6 +119,11 @@ def frames_for(name, height):
     for action, how in ACTIONS.items():
         for d in DIRS:
             who = dressed(how["tools"])
+            if how.get("poses") == "pick":
+                got = [place(bent(who.frames(anim, d)[col].convert("RGBA"), drop, lean, d), height)
+                       for anim, col, drop, lean in PICK[d]]
+                out.append((action, d, got, DURATIONS[action]))
+                continue
             src = (who.custom_frames(how["custom"], d) if "custom" in how
                    else who.frames(how["anim"], d))
             ground = (GROUND[0] + 32, GROUND[1] + 32) if "custom" in how else GROUND

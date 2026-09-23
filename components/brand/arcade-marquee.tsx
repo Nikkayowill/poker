@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { StackChipsLogo } from "@/components/brand/stackchips-logo";
 
 /**
@@ -6,9 +7,9 @@ import { StackChipsLogo } from "@/components/brand/stackchips-logo";
  *
  * The bulbs are laid out by CSS alone (a flex row or column per side), so
  * there's nothing to measure and it renders the same on the server. They are
- * numbered clockwise from the top-left corner and each takes a phase of
- * `index % 3`, which is what makes the chase run round the frame. Keep the
- * total a multiple of 3 or the chase stutters where the loop closes.
+ * numbered clockwise from the top-left corner and each gets its number as
+ * `--bulb`, which the CSS turns into a staggered start so the light runs
+ * round the frame. The CSS lap length assumes 36 bulbs; change both together.
  */
 const TOP = 15;
 const SIDE = 3;
@@ -29,8 +30,8 @@ export function ArcadeMarquee() {
       {SIDES.map(({ side, count }) => (
         <span key={side} className={`arcade-marquee-bulbs arcade-marquee-bulbs-${side}`} aria-hidden="true">
           {Array.from({ length: count }, () => {
-            const phase = index++ % 3;
-            return <span key={index} className={`arcade-marquee-bulb arcade-marquee-phase-${phase}`} />;
+            const bulb = index++;
+            return <span key={bulb} className="arcade-marquee-bulb" style={{ "--bulb": bulb } as CSSProperties} />;
           })}
         </span>
       ))}

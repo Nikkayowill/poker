@@ -749,27 +749,39 @@ button:disabled { cursor: wait; opacity: .62; }
 .arcade-marquee-bulbs-right { right: 6px; top: 22px; bottom: 22px; flex-direction: column; }
 .arcade-marquee-bulbs-left { left: 6px; top: 22px; bottom: 22px; flex-direction: column-reverse; }
 
+/* The lit bulb is a layer over the dark one and only its opacity animates,
+   so the chase never repaints. Each bulb starts .1s after the one before it
+   (--bulb is its clockwise index, 36 bulbs x .1s = one 3.6s lap) and fades
+   rather than snapping, so the light glides round the sign. */
 .arcade-marquee-bulb {
+  position: relative;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #4d3a18;
-  animation: arcade-marquee-chase 1.2s linear infinite;
 }
-.arcade-marquee-phase-1 { animation-delay: -.4s; }
-.arcade-marquee-phase-2 { animation-delay: -.8s; }
+.arcade-marquee-bulb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--neon-yellow-bright);
+  box-shadow: 0 0 6px var(--neon-yellow), 0 0 12px rgba(255, 210, 63, .6);
+  opacity: .15;
+  animation: arcade-marquee-chase 3.6s linear infinite;
+  animation-delay: calc(var(--bulb) * -.1s);
+  will-change: opacity;
+}
 
 @keyframes arcade-marquee-chase {
-  0%, 33% { background: var(--neon-yellow-bright); box-shadow: 0 0 6px var(--neon-yellow), 0 0 12px rgba(255, 210, 63, .6); }
-  34%, 100% { background: #4d3a18; box-shadow: none; }
+  0%, 100% { opacity: .15; }
+  5% { opacity: 1; }
+  30% { opacity: .15; }
 }
 
-/* The wordmark's two words flicker on in turn, then CHIPS buzzes now and
-   then like a real neon tube. */
+/* The wordmark's two words flicker on in turn, then hold steady. */
 .arcade-marquee-logo g > path:first-child { animation: arcade-marquee-flick-on 1.1s .15s both; }
-.arcade-marquee-logo g > path:last-child {
-  animation: arcade-marquee-flick-on 1.1s .6s both, arcade-marquee-buzz 7s 2.6s infinite;
-}
+.arcade-marquee-logo g > path:last-child { animation: arcade-marquee-flick-on 1.1s .6s both; }
 
 @keyframes arcade-marquee-flick-on {
   0% { opacity: .06; }
@@ -780,16 +792,8 @@ button:disabled { cursor: wait; opacity: .62; }
   34%, 100% { opacity: 1; }
 }
 
-@keyframes arcade-marquee-buzz {
-  0%, 90%, 100% { opacity: 1; }
-  91% { opacity: .35; }
-  92% { opacity: 1; }
-  94% { opacity: .5; }
-  95% { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .arcade-marquee-bulb { animation: none; background: var(--neon-yellow-bright); opacity: .7; }
+  .arcade-marquee-bulb::after { animation: none; opacity: .7; }
   .arcade-marquee-logo g > path { animation: none !important; }
 }
 

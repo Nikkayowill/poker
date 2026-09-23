@@ -115,7 +115,6 @@ import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
 import { isHoeableSoilTile, mapToSoilTile } from "./hoeable";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
-import { isHoeableSoilTile } from "./hoeable";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,

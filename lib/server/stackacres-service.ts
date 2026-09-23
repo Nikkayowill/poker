@@ -3563,6 +3563,8 @@ export async function removeStackAcresFencePiece(
   const profile = await ensureProfile(token);
   await removeFenceRow(profile.id, Math.trunc(input.tx), Math.trunc(input.ty));
   return view(profile, now);
+}
+
 /** The obstacles this farm has cleared, off its stored rows. An obstacle with
  *  no row has never been touched, so it is standing. */
 function clearedObstacleIds(states: Readonly<Record<string, LandObstacleState>>): Set<string> {
@@ -5653,6 +5655,7 @@ export async function placeStackAcresSoilTile(
   }
   if (await fencedSoilTile(profile.id, tx, ty)) {
     throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
+  }
   if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }

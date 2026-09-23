@@ -8,7 +8,6 @@ import {
   buyStackAcresFeed,
   buyStackAcresStock,
   workStackAcresLand,
-  demolishStackAcresLand,
   clearStackAcresUnit,
   consumeStackAcresSecretItem,
   donateStackAcresSecretItem,
@@ -104,8 +103,6 @@ import {
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
   LAND_SWING_ENERGY,
-  demolitionPrice,
-  freshLandObstacleState,
 } from "@/lib/stackacres/land-clearing";
 import { isFishSpecies } from "@/lib/stackacres/fishing";
 import {
@@ -2271,9 +2268,6 @@ describe("the currency wall", () => {
       "collect-vat",
       "consume-secret-item",
       "contribute-blueprint",
-      // The one place Gold leaves on the way to owning land: blowing what is
-      // standing on it instead of swinging at it. Land itself is never sold.
-      "demolish-land",
       "donate-secret-item",
       "draw-water",
       "eat",
@@ -2745,7 +2739,7 @@ describe("clearing land", () => {
     for (const obstacle of LAND_OBSTACLES[sector]) {
       for (let swing = 0; swing < LAND_OBSTACLE_DEFS[obstacle.kind].hits; swing += 1) {
         at += 12 * 60 * 1000;
-        await workStackAcresLand(token, obstacle.id, false, new Date(at));
+        await workStackAcresLand(token, obstacle.id, new Date(at));
       }
     }
     return new Date(at);
@@ -2755,7 +2749,7 @@ describe("clearing land", () => {
     const { token, id } = await greenfield();
     const before = await readStackAcresInventory(id);
 
-    const result = await workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, false, T0);
+    const result = await workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, T0);
 
     const gained = result.landCleared;
     expect(gained?.quantity).toBeGreaterThan(0);
@@ -2770,7 +2764,7 @@ describe("clearing land", () => {
     await writeStackAcresEnergy(id, stored?.version ?? 0, { level: 1, updatedAt: T0.toISOString() });
     const before = await readStackAcresInventory(id);
 
-    await expect(workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, false, T0)).rejects.toBeInstanceOf(
+    await expect(workStackAcresLand(token, LAND_OBSTACLES.wallow[0].id, T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect(await readStackAcresInventory(id)).toEqual(before);
@@ -2789,41 +2783,16 @@ describe("clearing land", () => {
     expect(unitOf(view, "pig").state).toBe("working");
   });
 
-  it("blows one for Gold instead, which pays nothing into the barn", async () => {
-    const { token, id } = await greenfield();
-    const obstacle = LAND_OBSTACLES.wallow[0];
-    const price = demolitionPrice(obstacle.kind, freshLandObstacleState(obstacle.kind));
-    const goldBefore = await balance(token);
-    const barnBefore = await readStackAcresInventory(id);
-
-    const result = await demolishStackAcresLand(token, obstacle.id, T0);
-
-    expect(result.landCleared?.cleared).toBe(true);
-    expect(await balance(token)).toBe(goldBefore - price);
-    expect(await readStackAcresInventory(id)).toEqual(barnBefore);
-  });
-
-  it("charges for the same rubble once", async () => {
-    const { token } = await greenfield();
-    const obstacle = LAND_OBSTACLES.wallow[0];
-    await demolishStackAcresLand(token, obstacle.id, T0);
-    const after = await balance(token);
-
-    await demolishStackAcresLand(token, obstacle.id, T0);
-
-    expect(await balance(token)).toBe(after);
-  });
-
   it("holds the Pasture shut while the Fold is still wild", async () => {
     const { token } = await greenfield();
     await expect(
-      workStackAcresLand(token, LAND_OBSTACLES.oxfields[0].id, false, T0),
+      workStackAcresLand(token, LAND_OBSTACLES.oxfields[0].id, T0),
     ).rejects.toBeInstanceOf(StackAcresRequestError);
   });
 
   it("refuses something that is not on the map", async () => {
     const { token } = await greenfield();
-    await expect(workStackAcresLand(token, "the-moon-01", false, T0)).rejects.toBeInstanceOf(
+    await expect(workStackAcresLand(token, "the-moon-01", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
   });
@@ -5158,59 +5127,52 @@ describe("mineStackAcresStoneNode", () => {
   it("rejects an unknown node id without touching inventory", async () => {
     const { token, id } = await funded();
     const before = (await readStackAcresInventory(id)).stone ?? 0;
-    await expect(mineStackAcresStoneNode(token, "stone:mine-99", "hit", T0)).rejects.toBeInstanceOf(
+    await expect(mineStackAcresStoneNode(token, "stone:mine-99", T0)).rejects.toBeInstanceOf(
       StackAcresRequestError,
     );
     expect((await readStackAcresInventory(id)).stone ?? 0).toBe(before);
   });
 
-  it("rejects a bogus quality string", async () => {
-    const { token } = await funded();
-    await expect(
-      mineStackAcresStoneNode(token, "stone:mine-1", "critical", T0),
-    ).rejects.toBeInstanceOf(StackAcresRequestError);
-  });
-
-  it("credits Stone for a landed swing, more for a sweet one than a plain hit", async () => {
+  it("credits 2 Stone for every landed swing", async () => {
     const { token, id } = await funded();
     const before = (await readStackAcresInventory(id)).stone ?? 0;
-    const hit = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
-    expect(hit.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
-    const sweet = await mineStackAcresStoneNode(token, "stone:mine-2", "sweet", T0);
-    expect(sweet.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
-    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(before + 1 + 2);
+    const first = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
+    expect(first.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
+    const second = await mineStackAcresStoneNode(token, "stone:mine-2", T0);
+    expect(second.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(before + 4);
   });
 
   it("breaks a node after exactly HITS_TO_BREAK swings, and refuses further mining until it regrows", async () => {
     const { token, id } = await funded();
     for (let i = 0; i < HITS_TO_BREAK - 1; i += 1) {
-      const result = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+      const result = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
       expect(result.stoneMined?.broke).toBe(false);
     }
-    const felling = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
-    expect(felling.stoneMined).toEqual({ landed: true, broke: true, amount: 1 });
+    const felling = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
+    expect(felling.stoneMined).toEqual({ landed: true, broke: true, amount: 2 });
 
     const stoneAfterBreak = (await readStackAcresInventory(id)).stone ?? 0;
-    const refused = await mineStackAcresStoneNode(token, "stone:mine-1", "sweet", T0);
+    const refused = await mineStackAcresStoneNode(token, "stone:mine-1", T0);
     expect(refused.stoneMined).toEqual({ landed: false, broke: false, amount: 0 });
     // A refused swing pays nothing -- inventory does not move.
     expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterBreak);
 
     // Once REGROW_MS has fully elapsed the same node accepts a swing again.
     const later = new Date(T0.getTime() + REGROW_MS + 1000);
-    const regrown = await mineStackAcresStoneNode(token, "stone:mine-1", "hit", later);
-    expect(regrown.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
+    const regrown = await mineStackAcresStoneNode(token, "stone:mine-1", later);
+    expect(regrown.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
   });
 
   it("keeps each of the Mine's three nodes independent", async () => {
     const { token, id } = await funded();
     for (let i = 0; i < HITS_TO_BREAK; i += 1) {
-      await mineStackAcresStoneNode(token, "stone:mine-1", "hit", T0);
+      await mineStackAcresStoneNode(token, "stone:mine-1", T0);
     }
     const stoneAfterFirstBroken = (await readStackAcresInventory(id)).stone ?? 0;
-    const otherNode = await mineStackAcresStoneNode(token, "stone:mine-2", "hit", T0);
-    expect(otherNode.stoneMined).toEqual({ landed: true, broke: false, amount: 1 });
-    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterFirstBroken + 1);
+    const otherNode = await mineStackAcresStoneNode(token, "stone:mine-2", T0);
+    expect(otherNode.stoneMined).toEqual({ landed: true, broke: false, amount: 2 });
+    expect((await readStackAcresInventory(id)).stone ?? 0).toBe(stoneAfterFirstBroken + 2);
   });
 });
 

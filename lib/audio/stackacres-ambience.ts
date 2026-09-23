@@ -57,6 +57,9 @@ const SAMPLE_FILES = {
   // synth voices they replace. Trimmed and levelled to about -15dBFS peak,
   // the same reference the synth action voices are trimmed to.
   "hoe-crunch": "/audio/stackacres/sfx/hoe-crunch.mp3",
+  "axe-chop": "/audio/stackacres/sfx/axe-chop.mp3",
+  "pick-crack": "/audio/stackacres/sfx/pick-crack.mp3",
+  "pieces-gather": "/audio/stackacres/sfx/pieces-gather.mp3",
   "seed-pat": "/audio/stackacres/sfx/seed-pat.mp3",
   "water-splash": "/audio/stackacres/sfx/water-splash.mp3",
   whoosh: "/audio/stackacres/sfx/whoosh.mp3",

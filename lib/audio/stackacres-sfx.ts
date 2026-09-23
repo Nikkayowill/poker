@@ -81,6 +81,21 @@ export function hoeSound() {
   playFarmSample("hoe-crunch", 1);
 }
 
+/** The axe biting into a tree or scrub, on the swing's strike. */
+export function axeSound() {
+  playFarmSample("axe-chop", 1);
+}
+
+/** The pick cracking rock, on the swing's strike. */
+export function pickSound() {
+  playFarmSample("pick-crack", 1);
+}
+
+/** The pieces of something he broke arriving in his hands. */
+export function piecesSound() {
+  playFarmSample("pieces-gather", 0.8, 0);
+}
+
 /** Buying stock outright, or anything else that closes a purchase. */
 export function buySound() {
   playFarmVoice("buy-latch", 1);

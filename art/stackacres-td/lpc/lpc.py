@@ -270,16 +270,25 @@ class Character:
             out.append(frame)
         return out
 
-    def custom_frames(self, name, direction):
+    def custom_frames(self, name, direction, tool_edit=None):
         """Frames of one of LPC's oversize tool animations (CUSTOM): the tool comes from its own
-        128px sheet, everyone else from the standard animation the tool was drawn over."""
+        128px sheet, everyone else from the standard animation the tool was drawn over.
+
+        `tool_edit(bg, fg, direction)` reworks the tool's two layers of each frame together, which
+        is how the pickaxe swing becomes a hoe swing (hoe_head.py)."""
         spec = CUSTOM[name]
         size, row = spec["size"], DIRS.index(direction)
         drawn = []
         for item, colour in self.items:
             variant = colour if has_variants(item) else None
-            for z, rel, custom in layers(item, colour, self.body, self.head):
+            item_layers = layers(item, colour, self.body, self.head)
+            swung = any(custom == name for _z, _rel, custom in item_layers)
+            for z, rel, custom in item_layers:
                 if custom and custom != name:
+                    continue
+                # The tool as it is carried on a walk has no swing pose, and falling back to it
+                # would draw a second axe hanging at his side under the one he is swinging.
+                if swung and not custom:
                     continue
                 path = (os.path.join(SHEETS, rel + ".png") if custom
                         else sheet_path(rel, variant, FOLDERS[spec["base"]]))
@@ -291,7 +300,7 @@ class Character:
         drawn.sort(key=lambda t: t[0])
         out = []
         for j, col in enumerate(spec["cols"]):
-            frame = Image.new("RGBA", (size, size))
+            crops = []
             for _z, path, item, colour, is_tool, stand in drawn:
                 img = sheet(path, self._mapping(item, colour), ONLY.get(colour))
                 if is_tool:
@@ -302,7 +311,13 @@ class Character:
                 box = (x, row * step, x + step, row * step + step)
                 if box[2] > img.width or box[3] > img.height:
                     continue
-                frame.alpha_composite(img.crop(box), ((size - step) // 2, (size - step) // 2))
+                crops.append([img.crop(box), is_tool])
+            tools = [c for c in crops if c[1]]
+            if tool_edit and len(tools) == 2:
+                tools[0][0], tools[1][0] = tool_edit(tools[0][0], tools[1][0], direction)
+            frame = Image.new("RGBA", (size, size))
+            for img, _is_tool in crops:
+                frame.alpha_composite(img, ((size - img.width) // 2, (size - img.height) // 2))
             out.append(frame)
         return out
 

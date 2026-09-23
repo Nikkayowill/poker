@@ -19,7 +19,6 @@ import {
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
   LAND_SWING_ENERGY,
-  freshLandObstacleState,
   landObstacleSnapshot,
 } from "./land-clearing";
 import {
@@ -954,7 +953,7 @@ describe("clearing land", () => {
 
   it("spends energy, pays the barn and counts the swing down", () => {
     const patch = predictStackAcresAction(
-      { action: "work-land", obstacleId: tree.id, sweet: false },
+      { action: "work-land", obstacleId: tree.id },
       ctx({ energy: { level: 50, updatedAt: NOW.toISOString() } }),
     );
     expect(patch?.energy?.level).toBe(50 - LAND_SWING_ENERGY);
@@ -966,31 +965,26 @@ describe("clearing land", () => {
     expect(patch?.profile).toBeUndefined();
   });
 
-  it("pays the sweet-swing bonus the same way the server does", () => {
-    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: true }, ctx());
-    expect(patch?.inventory?.wood).toBe(def.perHit + 1);
-  });
-
   it("refuses a swing nobody has the energy for", () => {
     const flat = ctx({ energy: { level: 1, updatedAt: NOW.toISOString() } });
-    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, flat)).toBeNull();
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, flat)).toBeNull();
   });
 
   it("refuses a swing at something already down", () => {
     const down = ctx({
       landObstacles: [landObstacleSnapshot(tree, { hitsRemaining: 0, clearedAt: NOW.toISOString() })],
     });
-    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, down)).toBeNull();
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, down)).toBeNull();
   });
 
   it("refuses an obstacle that is not on the map", () => {
-    expect(predictStackAcresAction({ action: "work-land", obstacleId: "nowhere-99", sweet: false }, ctx())).toBeNull();
+    expect(predictStackAcresAction({ action: "work-land", obstacleId: "nowhere-99" }, ctx())).toBeNull();
   });
 
   it("opens the sector on the swing that takes the last one down, for no Gold", () => {
     const last = LAND_OBSTACLES.wallow[0];
     const patch = predictStackAcresAction(
-      { action: "work-land", obstacleId: last.id, sweet: false },
+      { action: "work-land", obstacleId: last.id },
       ctx({ landObstacles: foldAllButOne(last.id) }),
     );
     expect(patch?.sectors).toContain("wallow");
@@ -998,38 +992,8 @@ describe("clearing land", () => {
   });
 
   it("leaves the sector shut while anything is still standing", () => {
-    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id, sweet: false }, ctx());
+    const patch = predictStackAcresAction({ action: "work-land", obstacleId: tree.id }, ctx());
     expect(patch?.sectors).toBeUndefined();
-  });
-
-  it("debits the demolition price and takes the obstacle straight down", () => {
-    const fresh = freshLandObstacleState(tree.kind);
-    const price = def.hits * def.goldPerHit;
-    const patch = predictStackAcresAction(
-      { action: "demolish-land", obstacleId: tree.id },
-      ctx({ profile: profile({ goldBalance: price }), landObstacles: [landObstacleSnapshot(tree, fresh)] }),
-    );
-    expect(patch?.profile?.goldBalance).toBe(0);
-    expect(patch?.landObstacles?.find((obstacle) => obstacle.id === tree.id)?.cleared).toBe(true);
-    // Blowing it pays nothing into the barn: there is nothing left to pick up.
-    expect(patch?.inventory).toBeUndefined();
-  });
-
-  it("charges only the swings still owed", () => {
-    const half = landObstacleSnapshot(tree, { hitsRemaining: 1, clearedAt: null });
-    const patch = predictStackAcresAction(
-      { action: "demolish-land", obstacleId: tree.id },
-      ctx({ profile: profile({ goldBalance: 10_000 }), landObstacles: [half] }),
-    );
-    expect(patch?.profile?.goldBalance).toBe(10_000 - def.goldPerHit);
-  });
-
-  it("refuses a demolition the purse will not cover", () => {
-    const patch = predictStackAcresAction(
-      { action: "demolish-land", obstacleId: tree.id },
-      ctx({ profile: profile({ goldBalance: 10 }) }),
-    );
-    expect(patch).toBeNull();
   });
 });
 

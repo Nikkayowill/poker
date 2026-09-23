@@ -11,7 +11,7 @@
  * can hand it a fixed instant instead of patching Date.now().
  *
  * A node takes `HITS_TO_BREAK` swings to break, one swing per player tap
- * (each swing pays out Stone immediately -- see `SWING_YIELD` -- rather than
+ * (each swing pays out Stone immediately -- see `STONE_PER_SWING` -- rather than
  * banking it all for the felling blow, so an interrupted mining trip still
  * keeps whatever it already landed). A broken node regrows after
  * `REGROW_MS`: longer than an 8-minute tree regrow, because ore depleting
@@ -27,16 +27,8 @@ export const HITS_TO_BREAK = 4;
  *  the two materials should never feel like they refill in lockstep. */
 export const REGROW_MS = 18 * 60 * 1000;
 
-/** Plain swing vs a sweet-zone swing: the client's own timing grade changes
- *  how much Stone one swing yields, never whether the swing lands or the
- *  node's real hit count -- the server always decrements exactly one swing
- *  per accepted mine attempt regardless of `quality`. */
-export type SwingQuality = "hit" | "sweet";
-
-export const SWING_YIELD: Readonly<Record<SwingQuality, number>> = {
-  hit: 1,
-  sweet: 2,
-};
+/** Stone every landed swing yields. */
+export const STONE_PER_SWING = 2;
 
 export const STONE_NODE_IDS = ["stone:mine-1", "stone:mine-2", "stone:mine-3"] as const;
 export type StoneNodeId = (typeof STONE_NODE_IDS)[number];
@@ -88,7 +80,7 @@ export interface MiningSwingResult {
   readonly node: StoneNodeRow;
   /** Whether this swing was the one that broke the node. */
   readonly broke: boolean;
-  /** How much Stone this swing pays out, per `quality`. Zero when the swing
+  /** How much Stone this swing pays out. Zero when the swing
    *  did not land (the node was already broken and has not yet regrown). */
   readonly yield: number;
 }
@@ -102,7 +94,6 @@ export interface MiningSwingResult {
  */
 export function applyMiningSwing(
   node: StoneNodeRow,
-  quality: SwingQuality,
   now: Date,
 ): MiningSwingResult {
   const effective = effectiveNodeState(node, now);
@@ -119,7 +110,7 @@ export function applyMiningSwing(
       version: effective.version + 1,
     },
     broke,
-    yield: SWING_YIELD[quality],
+    yield: STONE_PER_SWING,
   };
 }
 
@@ -140,8 +131,8 @@ export function regrowLabel(node: StoneNodeRow, nowMs: number): string {
 /** What the client needs to render one boulder: whether it can be mined right
  *  now, how many swings are left before it breaks, and (while regrowing) how
  *  far along its respawn clock is. Same shape as ./wood.ts's
- *  `WoodNodeSnapshot`, on purpose -- the tap-a-node UI treats a tree and a
- *  boulder identically (lib/stackacres/chop.ts). */
+ *  `WoodNodeSnapshot`, on purpose: the tap-a-node UI treats a tree and a
+ *  boulder identically. */
 export interface StoneNodeSnapshot {
   readonly nodeId: StoneNodeId;
   readonly ready: boolean;

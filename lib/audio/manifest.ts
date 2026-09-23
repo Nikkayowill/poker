@@ -9,6 +9,7 @@
 export type SoundEffect =
   | "ui"
   | "select"
+  | "toggle"
   | "game-on"
   | "deal"
   | "card"
@@ -33,22 +34,16 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   //   ui      - you moved: a menu opened, a link was followed, a panel closed.
   //   select  - you chose: a mode, a tier, a toggle, a tab. Something changed.
   //   game-on - you are in: a table or a game actually took you.
-  // Keep it at three; a fourth would need a press meaning that isn't already
-  // one of these.
+  // A fourth, `toggle`, is the sound and music switches. Turning a sound off
+  // with a chime that says "you chose" felt wrong, so switches click instead.
   //
-  // Both files below are synthesized rather than sourced (built for the
-  // Ante Up neon-HUD redesign, then promoted app-wide), same reasoning
-  // `game-on` already used: a digital blip is easy to build and nothing on
-  // disk already sounded like one. `ui` (Ante_Tap.mp3) is a single 90ms sine
-  // (1600Hz + a quiet 3200Hz overtone); `select` (Ante_Select.mp3) is a
-  // rising two-note chime (D6 then G6). They replace the old
-  // Menu_clicks.mp3/Select_Tap.mp3 outright, not just at Ante Up -- every
-  // screen that calls tapSound()/selectSound() gets the new pair for free.
-  // StackAcres never calls either (it has its own separate synthesized SFX,
-  // see stackacres-sfx.ts), so it's untouched by construction, not by a
-  // carve-out here.
-  ui: "/sounds/Ante_Tap.mp3",
+  // `ui` and `toggle` come from the 400 Sounds Pack (UI/select_1 and
+  // UI/toggle_off), picked by ear against the old synthesized Ante_Tap.mp3.
+  // `select` (Ante_Select.mp3) is still the rising two-note chime (D6 then G6)
+  // built for the Ante Up redesign.
+  ui: "/sounds/Tap_Select1.mp3",
   select: "/sounds/Ante_Select.mp3",
+  toggle: "/sounds/Toggle.mp3",
   // Built rather than sourced: every unused file in public/sounds turned out
   // to be a byte-identical rename of a cue the table already plays, so there
   // was nothing on disk that could sound like arriving somewhere. This is the
@@ -111,6 +106,8 @@ const FILE_LEVEL_DB: Record<string, number> = {
   "/sounds/All_In.mp3": -21.9,
   "/sounds/Game_On.mp3": -25.6,
   "/sounds/Ante_Tap.mp3": -29.3,
+  "/sounds/Tap_Select1.mp3": -24.6,
+  "/sounds/Toggle.mp3": -39.5,
   "/sounds/Ante_Select.mp3": -23.3,
   "/sounds/TimeBank.mp3": -20.4,
   "/sounds/Your_Turn.mp3": -20.8,
@@ -178,6 +175,10 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // confirms the thing you pressed took, but it is still housekeeping and
   // still sits under every cue the hand itself makes.
   select: -34,
+  // The switch click has a long quiet tail, so its mean reads low. This takes
+  // it down by the same ~11dB `select` gets, which keeps the two at the
+  // balance they had when they were compared side by side.
+  toggle: -50,
   // Silent by design: no file, so the target is unused. Kept in the record
   // so adding an asset is one line and the compiler names the other.
   lose: -30,
@@ -217,7 +218,7 @@ export const AUDIBLE_EFFECTS = (Object.keys(SOUND_FILES) as SoundEffect[])
  * `primeChromeSounds` covers this list; `primeTableSounds` covers the rest and
  * runs when a game actually starts. See ./sound-effects.
  */
-export const CHROME_EFFECTS: readonly SoundEffect[] = ["ui", "select", "game-on"];
+export const CHROME_EFFECTS: readonly SoundEffect[] = ["ui", "select", "toggle", "game-on"];
 
 /**
  * Effects that repeat rather than play once. `check` is the one case: a live

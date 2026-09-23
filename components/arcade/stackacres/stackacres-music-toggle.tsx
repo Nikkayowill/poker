@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { Volume2, VolumeX } from "lucide-react";
-import { tapSound } from "@/lib/audio/ui-sounds";
+import { toggleSound } from "@/lib/audio/ui-sounds";
 import { setStackAcresMusicMuted } from "@/lib/audio/stackacres-music";
 import { setAmbienceMuted } from "@/lib/audio/stackacres-ambience";
 import { useStoredPreference } from "@/components/use-stored-preference";
@@ -41,7 +41,7 @@ export function StackAcresMusicToggle() {
   });
 
   const handleClick = useCallback(() => {
-    tapSound();
+    toggleSound();
     setMuted((current) => !current);
   }, [setMuted]);
 

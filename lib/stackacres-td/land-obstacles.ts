@@ -23,7 +23,6 @@
  */
 
 import type { LandObstacle } from "@/lib/stackacres/land-clearing";
-import type { NodeArt } from "./gather-nodes";
 import { seededRandom, type WorldRect } from "@/lib/stackacres/world";
 import { tileKey } from "./movement";
 
@@ -191,34 +190,23 @@ export function dealLandObstacles(
 }
 
 /**
- * The boulder.
- *
- * Trees and scrub are drawn straight off the area's own atlas -- the Fold and
- * the Pasture are ringed with trees and dotted with bushes already, and
- * standing one of those in the middle of the field is both free and a perfect
- * match. Neither field's atlas holds a rock big enough to swing at, though,
- * so this one is drawn here, in the Mine boulder's own four colours (see
- * `RUBBLE_ART`) so a cleared one leaves rubble that looks like what it came
- * from.
+ * The boulder and the scrub, from the LPC terrain pack
+ * (art/stackacres-td/lpc/terrain/terrain_atlas.png, CC-BY-SA 3.0 / GPL 3.0,
+ * credited in its Attribution.txt), cut into public/stackacres-td/common/.
+ * Drawn at half size like every pack piece: the pack is 32px a tile, the map
+ * 16. Trees are still the area's own, off its atlas.
  */
-export const LAND_BOULDER_ART: NodeArt = {
-  texture: "land-boulder",
-  colors: { O: "#19181b", h: "#9b96a7", m: "#514e5c", d: "#3f3d47" },
-  rows: [
-    "........OOOOOO........",
-    "......OOhhhhhhOO......",
-    "....OOhhhhhhmmmmOO....",
-    "....OhmmhhmmmmmmmO....",
-    "...OhmhhhmmmmmOmmmO...",
-    "..OhhhhmmmmmmmOmmmdO..",
-    "..OhhhmmmmmmmmmOdddO..",
-    ".OhhmmmmmmmmmmmOddddO.",
-    ".OhmmmmmmmmmmdddOdddO.",
-    ".OmmmmmmmmmmddddOdddO.",
-    ".OmmmmmmmmddddddOdddO.",
-    "OmmmmmmmmddddddddddddO",
-    "OmmmmmmddddddddddddddO",
-    "OmmmmddddddddddddddddO",
-    "OOOOOOOOOOOOOOOOOOOOOO",
-  ],
+export const LAND_ART_SCALE = 0.5;
+const LAND_ART: Readonly<Record<"boulder" | "scrub", readonly string[]>> = {
+  boulder: ["land-boulder-0", "land-boulder-1"],
+  scrub: ["land-scrub"],
 };
+export const LAND_TEXTURES: readonly string[] = [...LAND_ART.boulder, ...LAND_ART.scrub];
+
+/** Which picture a boulder or a scrub stands as, picked by its id so it is the same one on every device. */
+export function landTexture(kind: "boulder" | "scrub", id: string): string {
+  const pool = LAND_ART[kind];
+  let hash = 0;
+  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return pool[hash % pool.length];
+}

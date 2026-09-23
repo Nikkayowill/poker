@@ -350,7 +350,7 @@ import { isSeedUnlocked, seedLockedMessage } from "@/lib/stackacres/seed-unlocks
 import { QUARRY_CATALOGUE, pickQuarry, type QuarrySpecies } from "@/lib/stackacres/hunting";
 import { WOOD_NODE_IDS, isWoodNodeId, type WoodNodeId } from "@/lib/stackacres/tree-nodes";
 import {
-  CLEARABLE_SECTORS,
+  CLEARING_GROUNDS,
   LAND_OBSTACLES,
   LAND_SWING_ENERGY,
   TOO_TIRED_TO_CLEAR,
@@ -362,8 +362,11 @@ import {
   isClearableSector,
   landObstacleSnapshot,
   swingAtLandObstacle,
+  type ClearingGround,
   type LandObstacleSnapshot,
+  type LandObstacleState,
 } from "@/lib/stackacres/land-clearing";
+import { OVERGROWN_SQUARE, overgrownSoilTile } from "@/lib/stackacres/crop-field-obstacles";
 import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
 import {
   FORAGE_NODE_IDS,
@@ -1298,8 +1301,8 @@ async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<St
     forageNodes: FORAGE_NODE_IDS.map((id) =>
       forageNodeSnapshot(id, forageNodeStates[id] ?? freshForageNodeState(), now),
     ),
-    landObstacles: CLEARABLE_SECTORS.flatMap((sector) =>
-      LAND_OBSTACLES[sector].map((obstacle) =>
+    landObstacles: CLEARING_GROUNDS.flatMap((ground) =>
+      LAND_OBSTACLES[ground].map((obstacle) =>
         landObstacleSnapshot(obstacle, landObstacleStates[obstacle.id] ?? freshLandObstacleState(obstacle.kind)),
       ),
     ),
@@ -1498,7 +1501,7 @@ export type StackAcresActionResult = StackAcresView & {
    *  left to hit. */
   landCleared?: {
     obstacleId: string;
-    sector: SectorId;
+    ground: ClearingGround;
     item: MachineRawItem | null;
     quantity: number;
     cleared: boolean;
@@ -3496,6 +3499,12 @@ export async function bagStackAcresQuarry(
   return { ...(await view(profile, now)), quarryBagged: { species, meat, pelt } };
 }
 
+/** The obstacles this farm has cleared, off its stored rows. An obstacle with
+ *  no row has never been touched, so it is standing. */
+function clearedObstacleIds(states: Readonly<Record<string, LandObstacleState>>): Set<string> {
+  return new Set(Object.entries(states).filter(([, state]) => state.clearedAt !== null).map(([id]) => id));
+}
+
 /**
  * One swing at something standing on land being cleared
  * (lib/stackacres/land-clearing.ts).
@@ -3518,7 +3527,7 @@ export async function workStackAcresLand(
   const obstacle = landObstacle(obstacleIdInput);
   if (!obstacle) throw new StackAcresRequestError("There is nothing there.", 400);
   const profile = await ensureProfile(token);
-  await assertLandReachable(profile.id, obstacle.sector, now);
+  await assertLandReachable(profile.id, obstacle.ground, now);
 
   const spent = await moveStackAcresEnergy(profile.id, -LAND_SWING_ENERGY, now);
   if (!spent) throw new StackAcresRequestError(TOO_TIRED_TO_CLEAR, 400, { round: await snapshots(profile.id, now) });
@@ -3536,12 +3545,12 @@ export async function workStackAcresLand(
   if (swing.item && swing.quantity > 0) {
     await adjustStackAcresInventory(profile.id, swing.item, swing.quantity);
   }
-  const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.sector, now) : false;
+  const opened = swing.cleared ? await openIfCleared(profile.id, obstacle.ground, now) : false;
   return {
     ...(await view(profile, now)),
     landCleared: {
       obstacleId: obstacle.id,
-      sector: obstacle.sector,
+      ground: obstacle.ground,
       item: swing.item,
       quantity: swing.quantity,
       cleared: swing.cleared,
@@ -3567,7 +3576,7 @@ export async function demolishStackAcresLand(
   const obstacle = landObstacle(obstacleIdInput);
   if (!obstacle) throw new StackAcresRequestError("There is nothing there.", 400);
   const profile = await ensureProfile(token);
-  await assertLandReachable(profile.id, obstacle.sector, now);
+  await assertLandReachable(profile.id, obstacle.ground, now);
 
   const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
   const price = demolitionPrice(obstacle.kind, current);
@@ -3589,12 +3598,12 @@ export async function demolishStackAcresLand(
     return { ...(await view(profile, now)), landCleared: null };
   }
 
-  const opened = await openIfCleared(profile.id, obstacle.sector, now);
+  const opened = await openIfCleared(profile.id, obstacle.ground, now);
   return {
     ...(await view(profile, now)),
     landCleared: {
       obstacleId: obstacle.id,
-      sector: obstacle.sector,
+      ground: obstacle.ground,
       item: null,
       quantity: 0,
       cleared: true,
@@ -3604,9 +3613,11 @@ export async function demolishStackAcresLand(
 }
 
 /** The Pasture is reached through the Fold, so its ground cannot be worked
- *  until the Fold is open. The map says the same thing with a fence. */
-async function assertLandReachable(profileId: string, sector: SectorId, now: Date): Promise<void> {
-  const requires = STACKACRES_SECTORS[sector].requires;
+ *  until the Fold is open. The map says the same thing with a fence. The Crop
+ *  Fields are part of the farm itself, so nothing comes before them. */
+async function assertLandReachable(profileId: string, ground: ClearingGround, now: Date): Promise<void> {
+  if (ground === "cropfields") return;
+  const requires = STACKACRES_SECTORS[ground].requires;
   if (!requires) return;
   const { sectors } = await readLand(profileId);
   if (isSectorUnlocked(requires, sectors)) return;
@@ -3616,9 +3627,11 @@ async function assertLandReachable(profileId: string, sector: SectorId, now: Dat
 }
 
 /** Records the sector as cleared once nothing is left standing on it. No
- *  Gold moves: the land was taken by the work, not bought. */
-async function openIfCleared(profileId: string, sector: SectorId, now: Date): Promise<boolean> {
-  if (!isClearableSector(sector)) return false;
+ *  Gold moves: the land was taken by the work, not bought. The Crop Fields
+ *  were always yours, so clearing them opens nothing. */
+async function openIfCleared(profileId: string, ground: ClearingGround, now: Date): Promise<boolean> {
+  if (!isClearableSector(ground)) return false;
+  const sector = ground;
   const states = await listStackAcresLandObstacleStates(profileId);
   const progress = landClearingProgress(
     sector,
@@ -5574,6 +5587,9 @@ export async function placeStackAcresSoilTile(
       round: await snapshots(profile.id, now),
     });
   }
+  if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
+    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
+  }
   const inMeadow = soilTileInCropFieldBeds(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
@@ -5660,6 +5676,11 @@ export async function moveStackAcresSoilTileGroup(
     throw new StackAcresRequestError("There is already a bed there.", 409, {
       round: await snapshots(profile.id, now),
     });
+  }
+  const cleared = clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id));
+  const holding = new Set(plan.moves.map((move) => soilTileKey(move.from.tx, move.from.ty)));
+  if (plan.moves.some(({ to }) => !holding.has(soilTileKey(to.tx, to.ty)) && overgrownSoilTile(to.tx, to.ty, cleared))) {
+    throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
 
   const outcome = await moveSoilTileGroupRow(profile.id, plan.moves);

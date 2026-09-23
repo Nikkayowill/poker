@@ -27,7 +27,7 @@ import { CROP_FIELD_BEDS } from "./world";
 
 /** Map tile the Crop Fields' top-left soil tile is drawn on: FIELD_TX, FIELD_TY in
  *  art/stackacres-td/areas/rig/homestead.py. */
-const FIELD_MAP_TILE = { tx: 6, ty: 2 } as const;
+export const FIELD_MAP_TILE = { tx: 6, ty: 2 } as const;
 
 /**
  * Soil tile (tx, ty) sits on Homestead map tile (tx + SOIL_TO_MAP.tx, ty + SOIL_TO_MAP.ty).

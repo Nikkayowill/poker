@@ -186,6 +186,9 @@ export function Collection() {
         setNotice(`${item.name} is yours.`);
       } else {
         setEquipped(data.equipped);
+        // The shared profile carries `equipped` too, and the header avatar
+        // and the table read it from there.
+        setProfile((current) => (current ? { ...current, equipped: data.equipped } : current));
         setNotice(`${item.name} equipped.`);
       }
     } catch (caught) {
@@ -209,6 +212,7 @@ export function Collection() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "That didn't work.");
       setEquipped(data.equipped);
+      setProfile((current) => (current ? { ...current, equipped: data.equipped } : current));
       setNotice(cosmeticId ? "Chip design assigned." : "Back to the house default.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That didn't work.");

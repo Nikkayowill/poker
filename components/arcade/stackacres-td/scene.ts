@@ -36,13 +36,31 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { axeSound, doorSound, floorStepSound, grassStepSound, pickSound, piecesSound } from "@/lib/audio/stackacres-sfx";
+import {
+  axeSound,
+  doorSound,
+  floorStepSound,
+  grassStepSound,
+  pickSound,
+  piecesSound,
+  treeFallSound,
+  waterSound,
+} from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import type { WaterSpec } from "@/lib/stackacres-td/water";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
 import { SWING_STRIKE_MS, swingToolFor, type SwingTool } from "@/lib/stackacres-td/swing";
-import { OrbBursts } from "./orb-burst";
+import {
+  DROP_COLOURS,
+  DROP_FALL_MS,
+  POUR_FRAME_INDEX,
+  SPOUT,
+  dropPoint,
+  pourDrops,
+} from "@/lib/stackacres-td/water-pour";
+import { ChunkDrops } from "./chunk-drops";
+import { CHUNKS_PER_BREAK, FELL_MS, chunkRests, fallAngle, fallSide, type FallSide } from "@/lib/stackacres-td/chunks";
 import {
   PULL_CATCH_MS,
   PULL_GRIP_MS,
@@ -244,10 +262,16 @@ const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
   plant: { anim: "chop", repeat: 0 },
 };
 
-/** How many chips one swing knocks off. */
-const CHIP_PIECES = 12;
-/** A chip comes off the bottom of what is hit: the trunk, not the leaves. */
-const CHIP_BAND = { from: 0.6, to: 1 };
+/** How many chips one swing knocks off. Stardew's is one or two; they are only splinters. */
+const CHIP_PIECES = 2;
+/** Chips off a trunk and off a rock, from the stump's and the rubble's own colours. */
+const CHIP_COLOURS: Readonly<Record<SwingTool, readonly number[]>> = {
+  axe: [0xae6b33, 0x7f3c26, 0xc9b58a],
+  pick: [0x9b96a7, 0x514e5c, 0x3f3d47],
+  hoe: [0xc58a55, 0x9b653d],
+};
+/** Leaf greens off the Homestead's own trees. */
+const LEAF_COLOURS = [0x1f6c1f, 0x449328, 0x74b437] as const;
 /** How long after his swing the server's answer can come back and still break it apart on screen. */
 const RECENT_SWING_MS = 5000;
 /** Where on him the pieces go: about his chest, up from his feet. */
@@ -316,6 +340,10 @@ export interface TopdownCallbacks {
    *  `tag: "tree:<id>"` props). `nodeId` is that id, unvalidated here --
    *  the shell is what knows the real catalogue. */
   onTreeTap: (nodeId: string, at: TapPoint) => void;
+  /** Whether he has the energy for a swing that costs it: the axe, and any
+   *  swing on land being cleared. False once the shell has said why. Asked
+   *  before the swing, so a tired farmer never swings at nothing. */
+  maySwing: (at: TapPoint) => boolean;
   /** A finger landed on one of the Mine's three tagged boulders (see
    *  lib/stackacres/stone-nodes.ts's `STONE_NODE_IDS` and area.json's own
    *  `tag: "stone:<id>"` props). `nodeId` is the whole tag, which is the
@@ -431,6 +459,10 @@ export class TopdownScene extends Phaser.Scene {
   private stroked: string | null = null;
   /** An action animation is playing and must not be trampled by the walk cycle. */
   private acting = false;
+  /** Squares he has been asked to water that the can has not poured on yet. */
+  private pourQueue: Point[] = [];
+  /** The square the can last poured on, which it pours on again when it tips a second time. */
+  private lastPour: Point | null = null;
   /** The cast in progress, or null. Its presence is the input lock. */
   private cast: CastRun | null = null;
   /** The bite's kick, decaying to nothing. Applied in `placeCamera`, because
@@ -498,8 +530,8 @@ export class TopdownScene extends Phaser.Scene {
   private landDown = new Set<string>();
   /** What each obstacle on land being cleared is, so a tap knows to swing the axe or the pick. */
   private landKinds = new Map<string, LandObstaclePlacement["kind"]>();
-  /** Whatever broke, as the arcade's particle orb, flying into him in coins. */
-  private orbs!: OrbBursts;
+  /** What broke, lying on the ground in chunks until he walks near (./chunk-drops.ts). */
+  private drops!: ChunkDrops;
   /** The swing in the air: what it is at, and when the blade lands. */
   private swing: { tag: string; strikeAt: number } | null = null;
   /** Things that have come down while the blade was still in the air. They stay drawn until it lands. */
@@ -576,10 +608,20 @@ export class TopdownScene extends Phaser.Scene {
     this.life = new AmbientLife(this, (object) => this.keep(object));
     this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
-    this.orbs = new OrbBursts(this, () => ({
-      x: this.player.x,
-      y: this.player.y - PIECES_LAND_ABOVE_FEET,
-    }));
+    this.drops = new ChunkDrops(
+      this,
+      (object) => this.keep(object),
+      () => ({
+        feet: { x: this.player.x, y: this.player.y },
+        middle: { x: this.player.x, y: this.player.y - PIECES_LAND_ABOVE_FEET },
+        depth: this.player.depth,
+      }),
+      (_kind, last) => {
+        piecesSound();
+        if (last) this.squashFarmer(1.07, 0.91, 90);
+        else this.squashFarmer(1.03, 0.97, 50);
+      },
+    );
     // The cast's beats are cut out of the rig's own fishing tag, so they are
     // animations the sheet does not carry and this scene registers itself.
     // Once, here: an animation is a shared keyed thing in Phaser, and building
@@ -611,7 +653,7 @@ export class TopdownScene extends Phaser.Scene {
     this.regrowNodes(time);
     if (!this.reducedMotion) for (const fall of this.falls) fall.tilePositionY -= (delta / 1000) * FALL_SPEED / fall.tileScaleY;
     this.smoke.update(time, this.reducedMotion);
-    this.orbs.update(time);
+    this.drops.update(time, delta);
     this.daylight.update(time, this.reducedMotion);
     this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
@@ -850,7 +892,7 @@ export class TopdownScene extends Phaser.Scene {
     this.swing = null;
     this.holding.clear();
     this.swungAt.clear();
-    this.orbs.clear();
+    this.drops.clear();
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
@@ -958,6 +1000,7 @@ export class TopdownScene extends Phaser.Scene {
     const stepSound = this.area.indoor ? floorStepSound : grassStepSound;
     let step = 0;
     this.player.on(Phaser.Animations.Events.ANIMATION_UPDATE, (anim: Phaser.Animations.Animation, frame: Phaser.Animations.AnimationFrame) => {
+      if (anim.key.startsWith("water_") && frame.index === POUR_FRAME_INDEX) this.pour();
       if (!anim.key.startsWith("walk_")) return;
       if (frame.index === 1 || frame.index === Math.floor(anim.frames.length / 2) + 1) stepSound(step++);
     });
@@ -1742,6 +1785,9 @@ export class TopdownScene extends Phaser.Scene {
 
   private stand(): void {
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onPourDone);
+    this.pourQueue = [];
+    this.lastPour = null;
     // Stopping an animation never fires its "complete", so a swing cut short
     // here has to be let go of here too. Left set, `tapAt` ignored every tap.
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onSwingDone);
@@ -1779,15 +1825,125 @@ export class TopdownScene extends Phaser.Scene {
   farmerAction(action: FarmerAction, impact?: TapPoint): void {
     if (!this.booted || this.cast) return;
     const { anim, repeat } = ACTIONS[action];
+    const key = `${anim}_${this.facing}`;
+    const at = impact ? this.cssToMap(impact.x, impact.y) : null;
     // The puff goes up when the blade hits the ground, not when the swing starts.
-    if (action === "hoe" && impact) {
-      const at = this.cssToMap(impact.x, impact.y);
-      this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
+    if (action === "hoe" && at) this.time.delayedCall(HOE_STRIKE_MS, () => this.hoeImpactAt(at));
+    if (action === "water") {
+      // A held stroke asks again at every bed. Starting over each time, the can
+      // would never get as far as tipping, so it carries on and pours on them all.
+      if (this.acting && this.player.anims.isPlaying && this.player.anims.currentAnim?.key === key) {
+        if (at) this.pourQueue.push(at);
+        return;
+      }
+      this.stand();
+      if (at) this.pourQueue.push(at);
+      this.acting = true;
+      this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onPourDone);
+      this.player.play({ key, repeat });
+      return;
     }
     this.stand();
     this.acting = true;
     this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
-    this.player.play({ key: `${anim}_${this.facing}`, repeat });
+    this.player.play({ key, repeat });
+  }
+
+  /** The can has finished. Squares asked for after its last tip get one more round. */
+  private onPourDone = (): void => {
+    if (this.pourQueue.length > 0) {
+      this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onPourDone);
+      this.player.play({ key: `water_${this.facing}`, repeat: 0 });
+      return;
+    }
+    this.lastPour = null;
+    this.onActionDone();
+  };
+
+  /**
+   * The can is tipped (lib/stackacres-td/water-pour.ts). Water leaves the spout
+   * for the newest square; any square he walked past before the can tipped gets
+   * its splash too, so no bed in a stroke goes wet without water on it.
+   */
+  private pour(): void {
+    const fresh = this.pourQueue.length > 0;
+    const squares = fresh ? this.pourQueue : this.lastPour ? [this.lastPour] : [];
+    this.pourQueue = [];
+    if (squares.length === 0) return;
+    // One splash a tip on new ground; the second tip over the same bed is quiet.
+    if (fresh) waterSound();
+    this.lastPour = squares[squares.length - 1];
+    if (this.reducedMotion) return;
+    for (const square of squares.slice(0, -1)) this.splashOn(square, square);
+    this.pourOnto(this.lastPour);
+  }
+
+  private pourOnto(square: Point): void {
+    const facing = this.facing;
+    const { at, lift } = SPOUT[facing];
+    // In front of him, over the crop being watered; behind him when his back is to us.
+    const depth = facing === "up" ? this.player.depth - 0.5 : Math.max(this.player.depth + 0.5, square.y + 1);
+    for (const [index, drop] of pourDrops().entries()) {
+      this.time.delayedCall(drop.delay, () => {
+        // The spout is read as each drop leaves, so a stroke pours from where he is now.
+        const spout = { x: this.player.x + at.x, y: this.player.y + at.y };
+        const land = { x: square.x + drop.land.x, y: square.y + drop.land.y };
+        const bead = this.keep(this.add.rectangle(spout.x, spout.y, 1, 1, DROP_COLOURS[index % 2]).setDepth(depth));
+        this.tweens.addCounter({
+          from: 0,
+          to: 1,
+          duration: DROP_FALL_MS,
+          onUpdate: (tween) => {
+            const point = dropPoint(spout, lift, land, tween.getValue() ?? 1);
+            bead.setPosition(point.x, point.y);
+          },
+          onComplete: () => {
+            bead.destroy();
+            if (index === 0) this.splashOn(square, land);
+            else this.fleck(land);
+          },
+        });
+      });
+    }
+  }
+
+  /** Where the water hits: a ring on the soil and the soil darkening as it soaks in. */
+  private splashOn(square: Point, at: Point): void {
+    const soak = this.keep(this.add.ellipse(square.x, square.y, 12, 6, 0x2a1a10, 0.3).setDepth(-4.6));
+    const ring = this.keep(this.add.ellipse(at.x, at.y, 5, 2).setStrokeStyle(1, DROP_COLOURS[1], 0.9).setDepth(-4.5));
+    this.tweens.add({
+      targets: ring,
+      scaleX: 2.6,
+      scaleY: 2.6,
+      alpha: 0,
+      duration: 340,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+    this.tweens.add({
+      targets: soak,
+      alpha: 0,
+      delay: 180,
+      duration: 520,
+      ease: "Sine.easeIn",
+      onComplete: () => soak.destroy(),
+    });
+    this.fleck(at);
+  }
+
+  /** One drop bouncing off the soil. */
+  private fleck(at: Point): void {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const bit = this.keep(this.add.rectangle(at.x, at.y, 1, 1, DROP_COLOURS[0]).setDepth(-4.4));
+    this.tweens.add({
+      targets: bit,
+      x: at.x + side * 2,
+      y: at.y - 2,
+      alpha: 0,
+      duration: 160,
+      ease: "Quad.easeOut",
+      onComplete: () => bit.destroy(),
+    });
   }
 
   /**
@@ -1818,13 +1974,18 @@ export class TopdownScene extends Phaser.Scene {
    * then hears nothing. What the swing pays is the server's; this is only the
    * swing, the chips off the strike, and the burst if it comes down.
    */
-  private swingAt(tag: string): boolean {
+  private swingAt(tag: string, at: TapPoint): boolean {
     const [kind, detail = ""] = tag.split(":");
     const tool = swingToolFor(tag, kind === "land" ? this.landKinds.get(detail) : undefined);
     if (!tool) return false;
     const part = this.propImages.find(({ spec }) => spec.tag === tag);
     if (this.spent.has(tag)) {
       if (part) this.floatAt(this.mapToCss({ x: part.spec.x, y: part.spec.y - 16 }), kind === "stone" ? "Still re-forming" : "Still growing back", "deny");
+      return false;
+    }
+    // Mining the Mine is free; the axe and clearing land cost energy.
+    if (kind !== "stone" && !this.callbacks.maySwing(at)) {
+      this.emote("farmer", "sweat");
       return false;
     }
     this.stand();
@@ -1854,25 +2015,162 @@ export class TopdownScene extends Phaser.Scene {
       const x = image.x;
       this.tweens.add({ targets: image, x: { from: x + 1.5, to: x }, duration: 150, ease: "Sine.easeOut" });
     }
-    this.orbs.chips(parts[0].image, CHIP_PIECES, CHIP_BAND);
+    const base = { x: parts[0].spec.x, y: parts[0].spec.y };
+    this.chipsOff(base, tool);
+    // A hit shakes a few leaves loose from anything with a canopy.
+    const canopy = parts.find((part) => part.canopy)?.canopy;
+    if (canopy) this.leavesFall(canopy, 1 + Math.floor(Math.random() * 3));
+  }
+
+  /** Splinters off the strike, thrown away from him. They fall and fade: the
+   *  real pieces come when it breaks. */
+  private chipsOff(base: Point, tool: SwingTool): void {
+    const away = this.player.x > base.x ? -1 : 1;
+    const colours = CHIP_COLOURS[tool];
+    for (let i = 0; i < CHIP_PIECES; i++) {
+      const from = { x: base.x - away * 2, y: base.y - 5 - i * 2 };
+      const to = { x: from.x + away * (4 + Math.random() * 6), y: base.y + 1 + Math.random() * 3 };
+      const chip = this.keep(this.add.rectangle(from.x, from.y, 1, 1, colours[i % colours.length]).setDepth(base.y + 0.3));
+      this.tweens.addCounter({
+        from: 0,
+        to: 1,
+        duration: 360,
+        onUpdate: (tween) => {
+          const t = tween.getValue() ?? 1;
+          chip.setPosition(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t - 7 * t * (1 - t) * 2);
+        },
+        onComplete: () => {
+          this.tweens.add({ targets: chip, alpha: 0, delay: 120, duration: 120, onComplete: () => chip.destroy() });
+        },
+      });
+    }
+  }
+
+  /** A few leaves drifting down off a canopy, swaying as they go. */
+  private leavesFall(canopy: Phaser.GameObjects.Image, count: number, from?: Point): void {
+    for (let i = 0; i < count; i++) {
+      const x = from ? from.x + (Math.random() - 0.5) * 20 : canopy.x + canopy.displayWidth * (0.2 + Math.random() * 0.6);
+      const y = from ? from.y - Math.random() * 10 : canopy.y + canopy.displayHeight * (0.15 + Math.random() * 0.35);
+      const drop = from ? 6 + Math.random() * 6 : 14 + Math.random() * 10;
+      const leaf = this.keep(
+        this.add.rectangle(x, y, 2, 1, LEAF_COLOURS[i % LEAF_COLOURS.length]).setDepth(canopy.depth + 0.1),
+      );
+      const sway = (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 3);
+      this.tweens.addCounter({
+        from: 0,
+        to: 1,
+        duration: 900 + Math.random() * 400,
+        onUpdate: (tween) => {
+          const t = tween.getValue() ?? 1;
+          leaf.setPosition(x + Math.sin(t * Math.PI * 2) * sway, y + drop * t).setAlpha(t > 0.7 ? (1 - t) / 0.3 : 1);
+        },
+        onComplete: () => leaf.destroy(),
+      });
+    }
   }
 
   /**
-   * What was just felled, cleared or broken, as the arcade's orb: its picture
-   * is already hidden (or a stump now stands there), and the orb is made of
-   * that picture's pixels where it stood.
+   * What was just felled, cleared or broken. Its picture is already hidden (or
+   * a stump now stands there). A tree tips over away from him and breaks into
+   * three chunks where it lands; a rock or a bush breaks where it stood. The
+   * chunks wait on the ground until he walks near (./chunk-drops.ts).
    */
   private breakApart(tag: string): void {
     if (this.reducedMotion) return;
     const parts = this.propImages.filter(({ spec, stump }) => spec.tag === tag && !stump);
     const images = parts.flatMap(({ image, canopy }) => (canopy ? [image, canopy] : [image]));
     if (images.length === 0) return;
-    // Each coin that lands gives him a little bump, the way each one bumped the Gold pill.
-    this.orbs.burst(images, (index, last) => {
-      if (index === 0) piecesSound();
-      if (last) this.squashFarmer(1.07, 0.91, 90);
-      else this.squashFarmer(1.03, 0.97, 50);
+    const [kind, detail = ""] = tag.split(":");
+    const landKind = kind === "land" ? this.landKinds.get(detail) : undefined;
+    const base = { x: parts[0].spec.x, y: parts[0].spec.y };
+    if (kind === "tree" || landKind === "tree") {
+      this.fell(images, base, parts.find((part) => part.canopy)?.canopy);
+      return;
+    }
+    const wood = landKind === "scrub";
+    this.dustAt(base, wood ? CHIP_COLOURS.axe : CHIP_COLOURS.pick);
+    const rests = chunkRests(wood ? CHUNKS_PER_BREAK.scrub : CHUNKS_PER_BREAK.rock, null);
+    this.drops.drop(
+      wood ? "wood" : "stone",
+      { x: base.x, y: base.y - 2 },
+      rests.map((rest) => ({ x: base.x + rest.x, y: base.y + rest.y })),
+      this.time.now,
+    );
+  }
+
+  /**
+   * A tree going over: a copy of it pivots on its base, away from him, slowly
+   * and then fast. When it hits the ground the ground shakes, leaves fly, and
+   * it breaks into three chunks along where it lay.
+   */
+  private fell(images: Phaser.GameObjects.Image[], base: Point, canopy: Phaser.GameObjects.Image | undefined): void {
+    const side: FallSide = fallSide(this.player.x, base.x);
+    // Where each picture's top-left corner is, whatever its origin: the wind
+    // has already moved a canopy's origin to the base (./wind-sway.ts).
+    const corner = (image: Phaser.GameObjects.Image): Point => ({
+      x: image.x - image.originX * image.displayWidth,
+      y: image.y - image.originY * image.displayHeight,
     });
+    const top = Math.min(...images.map((image) => corner(image).y));
+    const height = Math.max(16, base.y - top);
+    const copies = images.map((image) => {
+      const { x, y } = corner(image);
+      return this.keep(
+        this.add
+          .image(base.x, base.y, image.texture.key, image.frame.name)
+          .setScale(image.scaleX, image.scaleY)
+          .setOrigin((base.x - x) / image.displayWidth, (base.y - y) / image.displayHeight)
+          .setDepth(image.depth),
+      );
+    });
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: FELL_MS,
+      onUpdate: (tween) => {
+        const angle = fallAngle(tween.getValue() ?? 1, side);
+        for (const copy of copies) copy.setRotation(angle);
+      },
+      onComplete: () => {
+        treeFallSound();
+        this.shake = { left: 1, ms: 160 };
+        const crown = { x: base.x + side * height * 0.7, y: base.y - 2 };
+        if (canopy) this.leavesFall(canopy, 10, crown);
+        this.dustAt({ x: base.x + side * height * 0.4, y: base.y }, CHIP_COLOURS.axe);
+        this.tweens.add({
+          targets: copies,
+          alpha: 0,
+          duration: 180,
+          onComplete: () => {
+            for (const copy of copies) copy.destroy();
+          },
+        });
+        const rests = chunkRests(CHUNKS_PER_BREAK.tree, side);
+        this.drops.drop(
+          "wood",
+          { x: base.x + side * height * 0.35, y: base.y - 3 },
+          rests.map((rest) => ({ x: base.x + rest.x, y: base.y + rest.y })),
+          this.time.now,
+        );
+      },
+    });
+  }
+
+  /** A puff where something broke or landed: a ring of specks thrown out low. */
+  private dustAt(at: Point, colours: readonly number[]): void {
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const speck = this.keep(this.add.rectangle(at.x, at.y - 1, 1, 1, colours[i % colours.length]).setDepth(at.y + 0.3));
+      this.tweens.add({
+        targets: speck,
+        x: at.x + Math.cos(angle) * (6 + Math.random() * 4),
+        y: at.y - 1 + Math.sin(angle) * 3 - 2,
+        alpha: 0,
+        duration: 320 + Math.random() * 120,
+        ease: "Quad.easeOut",
+        onComplete: () => speck.destroy(),
+      });
+    }
   }
 
   /**
@@ -1959,15 +2257,15 @@ export class TopdownScene extends Phaser.Scene {
       case "thicket":
         return cb.onThicketTap(at);
       case "tree":
-        if (!this.swingAt(target.tag)) return;
+        if (!this.swingAt(target.tag, at)) return;
         return cb.onTreeTap(detail ?? "", at);
       case "stone":
-        if (!this.swingAt(target.tag)) return;
+        if (!this.swingAt(target.tag, at)) return;
         return cb.onStoneTap(target.tag, at);
       case "forage":
         return cb.onForageTap(detail ?? "", at);
       case "land":
-        if (!this.swingAt(target.tag)) return;
+        if (!this.swingAt(target.tag, at)) return;
         return cb.onLandTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
@@ -2750,6 +3048,11 @@ export class TopdownScene extends Phaser.Scene {
 
   isWalking(): boolean {
     return this.path.length > 0 || this.stickWalking;
+  }
+
+  /** e2e only: how many chunks are on the ground or flying at him. */
+  chunksOut(): number {
+    return this.drops.count();
   }
 
   /** e2e only: how a tree or boulder (by its tag, like `tree:homestead-1`) is drawn right now, or null when this map has none. */

@@ -15,6 +15,7 @@ import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import { browserSupabase } from "@/lib/supabase/browser-client";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * The client half of cribbage: the open-table lobby, the waiting room, the
@@ -122,7 +123,8 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
     setImmersive(Boolean(table));
   }, [table, setImmersive]);
 
-  const sending = useRef(false);
+  // Keeps a poll that left before a join, leave or move from painting the older table back.
+  const [sequence] = useState(() => createRequestSequence<CribbageTable>());
   const mounted = useRef(true);
   /**
    * A timestamp (Date.now()-scale) refresh-driven sync must not fire before.
@@ -137,7 +139,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.tables) setOpenTables(data.tables);
-    if (data.table !== undefined) {
+    if (data.table !== undefined && sequence.admit(data.table)) {
       setTable((current) => {
         // Once a table completes, getActiveCribbageTableFor correctly stops
         // listing it as the caller's "active" table, but the player still
@@ -150,10 +152,11 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
         return data.table ?? null;
       });
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/cribbage", { cache: "no-store" });
       if (response.status === 429) {
@@ -163,18 +166,18 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
         return;
       }
       const data = (await response.json()) as Partial<LobbyResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is two seconds away.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   /** Sends an intent and takes whatever comes back as the new truth, the same "a 409 still resyncs" contract duel-shell.tsx keeps. */
   const send = useCallback(async (url: string, body: unknown) => {
-    sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -189,18 +192,18 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
       if (data.profile) setProfile(data.profile);
       if (!response.ok) {
         setError(data.error ?? "That did not go through.");
-        if (data.round) setTable(data.round);
+        if (data.round && sequence.admit(data.round)) setTable(data.round);
         return;
       }
-      if (data.table !== undefined) setTable(data.table);
+      if (data.table !== undefined && sequence.admit(data.table)) setTable(data.table);
       if (data.tables) setOpenTables(data.tables);
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
-      sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   useEffect(() => {
     mounted.current = true;

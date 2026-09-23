@@ -12,6 +12,7 @@ import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
 import { selectSound } from "@/lib/audio/ui-sounds";
 import { isStakesTier, STAKES_TIERS, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * The client half of a Sit & Go: the tier lobby, the waiting room, and the
@@ -75,7 +76,8 @@ export function SitAndGoShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sending = useRef(false);
+  // Keeps a poll that left before a join or leave from flipping the lobby back.
+  const [sequence] = useState(() => createRequestSequence());
   const mounted = useRef(true);
   const redirected = useRef(false);
   // Load-bearing even though its return value goes unused: this is what
@@ -87,11 +89,12 @@ export function SitAndGoShell() {
   useArcadeSound();
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/sit-and-go", { cache: "no-store" });
       const data = (await response.json()) as Partial<LobbyResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) {
         if (data.profile) setProfile(data.profile);
         if (data.tables) setOpenTables(data.tables);
@@ -102,10 +105,10 @@ export function SitAndGoShell() {
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   const send = useCallback(async (url: string, body: unknown) => {
-    sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -127,10 +130,10 @@ export function SitAndGoShell() {
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
-      sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   // The tier picked one level up, in the main buy-in flow's own format
   // picker (BuyInModal / MobileShell) -- `?tier=<id>`, carried straight

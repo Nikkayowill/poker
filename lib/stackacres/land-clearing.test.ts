@@ -9,6 +9,7 @@ import {
   landObstacle,
   landObstacleSnapshot,
   landObstacleStateOf,
+  landSwingDamage,
   swingAtLandObstacle,
   withLandObstacleState,
   type LandObstacleKind,
@@ -145,5 +146,35 @@ describe("what the client holds between reads", () => {
     expect(next).toHaveLength(2);
     expect(next[0].cleared).toBe(true);
     expect(next[1]).toEqual(before[1]);
+  });
+});
+
+describe("a better axe on land being cleared", () => {
+  const NOW = new Date("2026-09-26T12:00:00Z");
+
+  function clear(kind: LandObstacleKind, damage: number): { swings: number; paid: number } {
+    let state = freshLandObstacleState(kind);
+    let swings = 0;
+    let paid = 0;
+    for (;;) {
+      const swing = swingAtLandObstacle(kind, state, NOW, damage)!;
+      swings += 1;
+      paid += swing.quantity;
+      state = swing.nextState;
+      if (swing.cleared) return { swings, paid };
+    }
+  }
+
+  it("pays the same whatever the axe", () => {
+    for (const kind of ["tree", "scrub", "boulder"] as const) {
+      const base = clear(kind, 1).paid;
+      for (const level of [2, 3] as const) expect(clear(kind, landSwingDamage(kind, level)).paid).toBe(base);
+    }
+  });
+
+  it("saves swings on trees and scrub, never on a boulder", () => {
+    expect(clear("tree", landSwingDamage("tree", 3)).swings).toBeLessThan(clear("tree", 1).swings);
+    expect(clear("scrub", landSwingDamage("scrub", 2)).swings).toBe(1);
+    expect(landSwingDamage("boulder", 3)).toBe(1);
   });
 });

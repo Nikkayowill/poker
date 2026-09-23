@@ -1498,7 +1498,6 @@ export function PokerTable({
             <div className="timeout-toast"><TimerReset size={14} /> {timeoutFlash}</div>
           )}
           <ActionBar
-            key={game.version}
             game={game}
             pending={pending || connectionState !== "connected"}
             onAction={onAction}

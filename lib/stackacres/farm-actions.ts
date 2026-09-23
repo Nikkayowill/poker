@@ -11,6 +11,7 @@
  * app/api/stackacres/actions/route.ts is the wire authority.
  */
 
+import type { AxePayment } from "./axe";
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
@@ -88,6 +89,7 @@ export type Action =
   // harvest always credits inventory instead of Gold.
   | { action: "sell"; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
+  | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
@@ -313,6 +315,8 @@ export function purchaseCueText(body: Action): string | null {
       return "Seeds delivered!";
     case "upgrade-tool":
       return "Spade upgraded!";
+    case "upgrade-axe":
+      return "New axe in hand!";
     case "buy-cutter":
       return "New tool in hand!";
     case "unlock-synergy-perk":

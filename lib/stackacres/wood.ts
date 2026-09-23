@@ -94,9 +94,13 @@ export interface WoodSwingResult {
   readonly felled: boolean;
 }
 
+/** `damage` is how much of the tree's health the swing takes off (./axe.ts's
+ *  AXE_DAMAGE). `hitsRemaining` is that health, in level 1 swings. Wood is
+ *  paid per point taken off, so a tree pays the same whatever the axe. */
 export function swingAtWoodNode(
   state: WoodNodeState,
   now: Date,
+  damage = 1,
 ): WoodSwingResult | null {
   if (!isWoodNodeChoppable(state, now)) return null;
 
@@ -104,9 +108,10 @@ export function swingAtWoodNode(
   // the respawn already happened, this swing is the first of a new cycle.
   const standing: WoodNodeState = isWoodNodeFelled(state) ? freshWoodNodeState() : state;
 
-  const hitsRemaining = standing.hitsRemaining - 1;
+  const dealt = Math.min(Math.max(1, Math.trunc(damage)), Math.max(1, standing.hitsRemaining));
+  const hitsRemaining = standing.hitsRemaining - dealt;
   const felled = hitsRemaining <= 0;
-  const woodGained = WOOD_PER_HIT + (felled ? WOOD_FELL_BONUS : 0);
+  const woodGained = WOOD_PER_HIT * dealt + (felled ? WOOD_FELL_BONUS : 0);
 
   const nextState: WoodNodeState = felled
     ? { hitsRemaining: 0, felledAt: now.toISOString() }

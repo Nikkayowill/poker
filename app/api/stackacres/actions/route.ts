@@ -49,6 +49,7 @@ import {
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
+  upgradeStackAcresAxe,
   buyStackAcresCutter,
   waterStackAcres,
   waterStackAcresGroup,
@@ -196,6 +197,7 @@ const bodySchema = z.discriminatedUnion("action", [
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
+  z.object({ action: z.literal("upgrade-axe"), pay: z.enum(["materials", "gold"]) }),
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
@@ -526,6 +528,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return workStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
+    case "upgrade-axe":
+      return upgradeStackAcresAxe(token, action.pay, now);
     case "buy-cutter":
       return buyStackAcresCutter(token, action.cutter, now);
     case "build-greenhouse":

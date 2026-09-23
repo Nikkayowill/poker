@@ -1,6 +1,7 @@
 /**
- * Energy: a per-farm stat that only powers extras (fishing, for now).
- * Planting, watering, harvesting, feeding and selling never cost energy.
+ * Energy: a per-farm stat that powers the hard work: fishing, swinging the
+ * axe (./axe.ts) and clearing land (./land-clearing.ts). Planting, watering,
+ * harvesting, feeding and selling never cost energy.
  *
  * Stored lazily as a level plus the time that level was true, and computed
  * on read as a pure function of `now`, the same posture every other clock in

@@ -314,6 +314,10 @@ export interface StackAcresWorldProps {
    *  it, and the shell sends the swing; a stump still growing back never gets
    *  here, the map says so itself. */
   onTreeTap: (nodeId: string, at: TapPoint) => void;
+  /** Whether he has the energy for a swing that costs it: the axe, and any
+   *  swing on land being cleared. False once the shell has said why. Asked
+   *  before the swing, so a tired farmer never swings at nothing. */
+  maySwing: (at: TapPoint) => boolean;
   /** A finger landed on one of the Mine's three tagged boulders (see
    *  lib/stackacres/stone-nodes.ts). A pick swing, same split as `onTreeTap`. */
   onStoneTap: (nodeId: string, at: TapPoint) => void;

@@ -1,10 +1,19 @@
 "use client";
 
 import type { RealtimeChannel, Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useOptimistic,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import dynamic from "next/dynamic";
 import type { GameSnapshot, PlayerAction, PreActionType } from "@/lib/game/types";
 import { applyOptimisticAction } from "@/lib/game/optimistic-action";
+import { canResubmitStaleAction } from "@/lib/game/stale-action";
 import type { StakesTier } from "@/lib/game/tiers";
 import { accountsEnabled, authClient } from "@/lib/auth/client";
 import { oauthCallbackUrl, passwordResetCallbackUrl } from "@/lib/auth/oauth-redirect";
@@ -14,7 +23,13 @@ import {
   readRememberAuthSession,
   setRememberAuthSession,
 } from "@/lib/supabase/browser-client";
-import { planTurnClock, type TurnClockInput } from "@/lib/game/turn-clock";
+import {
+  classifyAdvance,
+  planAdvanceRetry,
+  planTurnClock,
+  type AdvanceOutcome,
+  type TurnClockInput,
+} from "@/lib/game/turn-clock";
 import {
   TABLE_STATE_CHANGED,
   parseTableStateChanged,
@@ -72,6 +87,7 @@ import { RewardedAdModal } from "@/components/rewards/rewarded-ad-modal";
 import { REWARDED_AD_ELIGIBLE_BELOW } from "@/lib/rewards/config";
 import type { RewardTrigger } from "@/lib/rewards/triggers";
 import type { ConnectionState } from "@/components/table/poker-table";
+import { TableLoadingSplash } from "@/components/table/table-loading-splash";
 import { useTableReactions } from "@/lib/game/use-table-reactions";
 
 /**
@@ -106,6 +122,18 @@ const NOTICE_VISIBLE_MS = 6_000;
 const MAX_REFRESH_RETRIES = 4;
 const REFRESH_RETRY_BASE_MS = 250;
 const REFRESH_RETRY_MAX_MS = 2_000;
+/**
+ * Failed reads in a row before the table says "Reconnecting" and locks the
+ * controls. One miss on a phone network is normal and the retry usually lands.
+ */
+const RECONNECTING_AFTER_FAILURES = 2;
+/**
+ * How many times a refresh that came back behind a newer broadcast goes again
+ * straight away. Bounded so a read that keeps lagging can't spin.
+ */
+const MAX_CATCH_UP_REFRESHES = 3;
+/** How long an error stays on the table before it clears itself. */
+const TABLE_ERROR_VISIBLE_MS = 4_000;
 
 /**
  * The trigger shown when the player opens "Free Gold" from the lobby menu.
@@ -126,6 +154,13 @@ const FREE_GOLD_TRIGGER: RewardTrigger = {
   detail: `You need ${REWARDED_AD_ELIGIBLE_BELOW.toLocaleString("en-US")} Gold to sit down at the cheapest table.`,
 };
 
+function subscribeToHistory(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+const readTableParam = () => new URLSearchParams(window.location.search).get("table");
+const readNoTableParam = () => null;
+
 export function PokerApp() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
   // A predicted view of `game` for the caller's own fold/call/raise/all-in,
@@ -137,8 +172,7 @@ export function PokerApp() {
   const [, startActionTransition] = useTransition();
   // A decision queued ahead of the player's own turn (act-in-advance, like
   // "Check/Fold" on other poker apps). Lives here rather than in ActionBar
-  // because that component remounts on every game.version -- i.e. on every
-  // action anyone at the table takes -- and would lose it immediately.
+  // because the effect that fires it when the turn arrives lives here too.
   const [armedPreAction, setArmedPreAction] = useState<PreActionType | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -151,6 +185,12 @@ export function PokerApp() {
   // route deferred finishing a Google sign-in because it would discard this
   // tab's own guest progress. See confirmRestoreConflict/cancelRestoreConflict.
   const [restoreConflict, setRestoreConflict] = useState(false);
+  // A `/?table=` link used to paint the whole lobby for the length of the
+  // first table fetch and then swap to the table. While that fetch is out the
+  // table's own loading splash shows instead. deepLinkSettled is the table id
+  // whose open attempt has finished, so a failed open falls back to the lobby.
+  const tableParam = useSyncExternalStore(subscribeToHistory, readTableParam, readNoTableParam);
+  const [deepLinkSettled, setDeepLinkSettled] = useState<string | null>(null);
 
   // The profile, the entry gate, and the fetch that keeps them current now
   // live in the persistent shell (components/shell/app-shell.tsx) -- this
@@ -286,6 +326,13 @@ export function PokerApp() {
     void action.then(refreshPushState);
   };
   const gameId = game?.id;
+  // At the table an error retires itself, since snapshots no longer clear it
+  // (see ingest). The lobby keeps its errors until the next attempt clears them.
+  useEffect(() => {
+    if (!error || !gameId) return;
+    const timer = window.setTimeout(() => setError(null), TABLE_ERROR_VISIBLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [error, gameId]);
   const mySeatId = game?.seats.find((seat) => seat.isMine)?.id ?? null;
   const { reactions, sendReaction, onCooldown: reactionCooldown } =
     useTableReactions(gameId ?? null, mySeatId);
@@ -447,7 +494,9 @@ export function PokerApp() {
         : data.game
     ));
     setConnectionState("connected");
-    setError(null);
+    // No setError(null) here. Every poll lands through this, so clearing it
+    // here wiped an action's error before anyone could read it. Table errors
+    // clear themselves instead; see TABLE_ERROR_VISIBLE_MS.
     // Present whenever the action spent or credited Gold (a buy-in, a
     // rebuy), so the navbar balance updates without a separate profile
     // re-fetch.
@@ -466,12 +515,25 @@ export function PokerApp() {
     return data as { game: GameSnapshot; persistence: string };
   }, [ingest]);
 
-  const advanceTable = useCallback(async (id: string) => {
-    const response = await fetch(`/api/games/${id}/advance`, { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? "Could not advance the table.");
-    if (data.game.id !== leftGameIdRef.current) ingest(data);
-    return data as { game: GameSnapshot; persistence: string; retryAfterMs: number | null };
+  // Never throws. The turn clock needs the status to decide whether a retry
+  // can help, so failures come back as a value instead.
+  const advanceTable = useCallback(async (id: string): Promise<
+    | { ok: true; game: GameSnapshot; retryAfterMs: number | null }
+    | { ok: false; status: number | null }
+  > => {
+    let response: Response;
+    try {
+      response = await fetch(`/api/games/${id}/advance`, { method: "POST" });
+    } catch {
+      return { ok: false, status: null };
+    }
+    const data = (await response.json().catch(() => null)) as
+      | { game?: GameSnapshot; persistence?: string; retryAfterMs?: number | null }
+      | null;
+    if (!response.ok || !data?.game) return { ok: false, status: response.status };
+    const game = data.game;
+    if (game.id !== leftGameIdRef.current) ingest({ game, persistence: data.persistence ?? "" });
+    return { ok: true, game, retryAfterMs: typeof data.retryAfterMs === "number" ? data.retryAfterMs : null };
   }, [ingest]);
 
   const joinByCode = useCallback(async (code: string, name?: string) => {
@@ -517,7 +579,10 @@ export function PokerApp() {
         .then(() => { consecutiveRetries = 0; })
         .catch(() => {
           if (disposed) return;
-          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+          // consecutiveRetries counts the retries already made, so this is
+          // the second failure in a row or later.
+          if (!window.navigator.onLine) setConnectionState("offline");
+          else if (consecutiveRetries + 1 >= RECONNECTING_AFTER_FAILURES) setConnectionState("reconnecting");
           if (consecutiveRetries >= MAX_REFRESH_RETRIES) {
             consecutiveRetries = 0;
             return;
@@ -571,10 +636,14 @@ export function PokerApp() {
     if (!tableId && !code) return;
     const timer = window.setTimeout(() => {
       const opened = tableId ? refresh(tableId, { force: true }) : joinByCode(code!);
-      void opened.catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Could not open that table.");
-        window.history.replaceState({}, "", "/");
-      });
+      void opened
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "Could not open that table.");
+          window.history.replaceState({}, "", "/");
+        })
+        .finally(() => {
+          if (tableId) setDeepLinkSettled(tableId);
+        });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [entryComplete, refresh, joinByCode]);
@@ -767,8 +836,10 @@ export function PokerApp() {
     let refreshRunning = false;
     let refreshQueued = false;
     let pendingVersion = gameVersionRef.current;
-    let consecutiveRetries = 0;
+    let consecutiveFailures = 0;
+    let catchUps = 0;
     let retryTimer: number | null = null;
+    let channelDropped = false;
 
     const clearRefreshRetry = () => {
       if (retryTimer === null) return;
@@ -776,19 +847,21 @@ export function PokerApp() {
       retryTimer = null;
     };
 
+    // Backoff is for failed reads only. A read that simply came back behind
+    // used to go through here too, so a busy bot table could show
+    // "Reconnecting" and lock the controls while every request was succeeding.
     const scheduleRefreshRetry = () => {
       if (disposed || retryTimer !== null) return;
-      if (consecutiveRetries >= MAX_REFRESH_RETRIES) {
-        refreshQueued = false;
-        consecutiveRetries = 0;
+      if (consecutiveFailures > MAX_REFRESH_RETRIES) {
+        // Out of retries. The next broadcast, tab return or online event asks again.
+        consecutiveFailures = 0;
         setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
         return;
       }
       const delay = Math.min(
-        REFRESH_RETRY_BASE_MS * 2 ** consecutiveRetries,
+        REFRESH_RETRY_BASE_MS * 2 ** Math.max(0, consecutiveFailures - 1),
         REFRESH_RETRY_MAX_MS,
       );
-      consecutiveRetries += 1;
       retryTimer = window.setTimeout(() => {
         retryTimer = null;
         refreshLatest();
@@ -804,26 +877,36 @@ export function PokerApp() {
       clearRefreshRetry();
       refreshRunning = true;
       refreshQueued = false;
+      let fetchedVersion: number | null = null;
       void refresh(gameId)
         .then((data) => {
-          if (data.game.version < pendingVersion) {
-            refreshQueued = true;
-            return;
-          }
-          consecutiveRetries = 0;
+          fetchedVersion = data.game.version;
+          consecutiveFailures = 0;
         })
         .catch(() => {
-          refreshQueued = true;
-          setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+          consecutiveFailures += 1;
+          if (disposed) return;
+          if (!window.navigator.onLine) setConnectionState("offline");
+          else if (consecutiveFailures >= RECONNECTING_AFTER_FAILURES) setConnectionState("reconnecting");
         })
         .finally(() => {
           refreshRunning = false;
           if (disposed) return;
-          if (refreshQueued) {
+          if (fetchedVersion === null) {
             scheduleRefreshRetry();
-          } else {
-            consecutiveRetries = 0;
+            return;
           }
+          // A newer broadcast landed while this was in flight. That is not a
+          // failure, so read again straight away instead of backing off.
+          if (refreshQueued || fetchedVersion < pendingVersion) {
+            catchUps += 1;
+            if (catchUps <= MAX_CATCH_UP_REFRESHES) {
+              refreshLatest();
+              return;
+            }
+          }
+          catchUps = 0;
+          refreshQueued = false;
         });
     };
 
@@ -843,12 +926,26 @@ export function PokerApp() {
         },
       )
       .subscribe((status) => {
-        if (status === "SUBSCRIBED") setConnectionState("connected");
+        // removeChannel in the cleanup below reports CLOSED after this table
+        // is already gone, and that must not flag a reconnect on the next one.
+        if (disposed) return;
+        if (status === "SUBSCRIBED") {
+          if (!channelDropped) {
+            setConnectionState("connected");
+            return;
+          }
+          // Back after a drop. Broadcasts sent while it was down are lost, so
+          // read the table again. The refresh marks the connection good.
+          channelDropped = false;
+          refreshLatest();
+          return;
+        }
         if (
           status === "CHANNEL_ERROR"
           || status === "TIMED_OUT"
           || status === "CLOSED"
         ) {
+          channelDropped = true;
           setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
         }
       });
@@ -898,25 +995,57 @@ export function PokerApp() {
     );
     if (plan.kind === "idle") return;
 
+    // A response that moves the table changes these deadlines, which re-runs
+    // this effect and cancels anything below. So a retry only ever happens
+    // while this exact deadline is still unresolved: the request failed, or
+    // it reached the server a moment before the server's clock said it was
+    // due. Before, both of those froze a bot table on "thinking 0s" because
+    // nothing asked again. planAdvanceRetry keeps the retries backed off.
+    const planned = { turnDeadlineAt, nextHandAt };
     let disposed = false;
-    const timeout = window.setTimeout(() => {
-      if (disposed) return;
+    let timer: number | null = null;
+    let attempt = 0;
+    let networkFailures = 0;
+
+    const retry = (outcome: AdvanceOutcome) => {
+      const next = planAdvanceRetry(outcome, attempt);
+      attempt += 1;
+      if (next.kind === "retry") timer = window.setTimeout(fire, next.delayMs);
+    };
+
+    function fire() {
+      timer = null;
+      if (disposed || !gameId) return;
       if (!window.navigator.onLine) {
         setConnectionState("offline");
+        retry({ kind: "failed", status: null });
         return;
       }
-      // Deliberately no retry timer. The response updates `version`, which
-      // re-runs this effect with the server's next deadline; a failure is
-      // picked up by the next snapshot. Retrying on a timer here is what made
-      // a stalled table generate traffic forever.
-      void advanceTable(gameId).catch(() => {
-        if (!disposed) setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+      void advanceTable(gameId).then((result) => {
+        if (disposed) return;
+        if (result.ok) {
+          networkFailures = 0;
+          retry(classifyAdvance(planned, result.game, result.retryAfterMs));
+          return;
+        }
+        // An error status means the server answered, so the connection is
+        // fine. Only a request that never got through counts toward
+        // "Reconnecting".
+        if (result.status === null) {
+          networkFailures += 1;
+          if (networkFailures >= RECONNECTING_AFTER_FAILURES) {
+            setConnectionState(window.navigator.onLine ? "reconnecting" : "offline");
+          }
+        }
+        retry({ kind: "failed", status: result.status });
       });
-    }, plan.delayMs);
+    }
+
+    timer = window.setTimeout(fire, plan.delayMs);
 
     return () => {
       disposed = true;
-      window.clearTimeout(timeout);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, [advanceTable, gameId, isSeated, turnDeadlineAt, nextHandAt, currentIsHuman, currentIsMine, myHumanRank]);
 
@@ -1001,25 +1130,42 @@ export function PokerApp() {
 
   const sendAction = async (action: PlayerAction) => {
     if (!game) return;
+    const base = game;
+    // The version this decision was made against. If the table moved on
+    // between the click and the request, the server declines rather than
+    // betting again on our behalf.
+    let expectedVersion = base.version;
     try {
-      const response = await fetch(`/api/games/${game.id}/actions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // The version this decision was made against. If the table moved on
-        // between the click and the request, the server declines rather than
-        // betting again on our behalf.
-        body: JSON.stringify({ action, expectedVersion: game.version }),
-      });
-      const data = await response.json();
-      if (response.status === 409 && data?.stale && data?.game) {
-        // Already applied. Adopt the server's state; this is not an error the
-        // player needs to see. Unless the player left in the meantime, see
-        // leftGameIdRef.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await fetch(`/api/games/${base.id}/actions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, expectedVersion }),
+        });
+        const data = await response.json();
+        if (response.status === 409 && data?.stale && data?.game) {
+          // Unless the player left in the meantime, see leftGameIdRef.
+          if (data.game.id === leftGameIdRef.current) return;
+          // Someone joining, leaving or rebuying also moves the version. If
+          // it is still the same turn and the same move is still legal, the
+          // action never landed, so send it once more against the new version.
+          if (attempt === 0 && canResubmitStaleAction(base, data.game, action)) {
+            expectedVersion = data.game.version;
+            continue;
+          }
+          ingest(data);
+          // Still our turn but the move no longer fits, so say so rather
+          // than letting the tap quietly vanish. Otherwise it was already
+          // applied or the turn is over, and the new state shows that.
+          if (action.type !== "rebuy" && data.game.legalActions) {
+            setError("The table changed before that went through. Try again.");
+          }
+          return;
+        }
+        if (!response.ok) throw new Error(data.error ?? "That action was not accepted.");
         if (data.game.id !== leftGameIdRef.current) ingest(data);
         return;
       }
-      if (!response.ok) throw new Error(data.error ?? "That action was not accepted.");
-      if (data.game.id !== leftGameIdRef.current) ingest(data);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That action was not accepted.");
     } finally {
@@ -1672,6 +1818,11 @@ export function PokerApp() {
     leave();
   };
 
+  const openingDeepLink = !game
+    && entryComplete
+    && tableParam !== null
+    && deepLinkSettled !== tableParam;
+
   return (
     <div className="app-root">
       {/* Unconditional, unlike the lobby-header bell above: a toast has to
@@ -1691,7 +1842,7 @@ export function PokerApp() {
           sign-in prompt stacked above them. It reappears the moment
           entryComplete flips true (guest or real account), same as every
           other lobby chrome gated on that flag below. */}
-      {!game && entryComplete && (
+      {!game && entryComplete && !openingDeepLink && (
         <header className={`lobby-header${navShowing ? " is-scrolling-up" : ""}`}>
           {/* The full "StackChips" wordmark, small: this is the lobby's own
               nav brand slot, not the app icon/favicon (that's the single "S"
@@ -1762,7 +1913,9 @@ export function PokerApp() {
             onArmPreAction={armPreAction}
           />
         )
-        : (
+        : openingDeepLink
+          ? <TableLoadingSplash active />
+          : (
           /* Unkeyed. It used to carry `key={profile.updatedAt}`, which made
              every profile write, every buy-in, cash-out, and daily claim,
              tear the whole hub down and rebuild it: the rank strip vanished

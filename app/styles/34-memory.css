@@ -38,6 +38,9 @@
   to { transform: none; opacity: 1; }
 }
 
+/* Tapped, waiting on the server to say what the card is. */
+.mm-tile-pending { transform: translateY(-3px); filter: brightness(1.15); }
+
 /* Paired off. Dimmed and ringed rather than removed: the board keeps its shape
    and the player can still see what they have taken, which is most of how the
    remaining tiles get located. */

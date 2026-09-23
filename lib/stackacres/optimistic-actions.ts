@@ -113,6 +113,8 @@ import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
 import { soilTileInCropFieldBeds, stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
+import { isHoeableSoilTile, mapToSoilTile } from "./hoeable";
+import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
 import { isHoeableSoilTile } from "./hoeable";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
@@ -197,6 +199,8 @@ export interface FarmPredictContext {
    *  obstacle's own swings-left off here so the popup counts down under the
    *  finger rather than waiting on the round trip. */
   landObstacles: readonly LandObstacleSnapshot[];
+  /** The fence pieces this farm has put up, by Homestead map square. */
+  fences: readonly FencePiece[];
   /** The processing track, straight off the component's own `processing`
    *  state. Always patched together with `contract` (see `processingPatch`)
    *  because the component applies the four as one unit. */
@@ -229,6 +233,7 @@ export interface FarmStatePatch {
   soilTiles?: SoilTile[];
   forageNodes?: ForageNodeSnapshot[];
   landObstacles?: LandObstacleSnapshot[];
+  fences?: FencePiece[];
   contract?: StackAcresContractRow | null;
   inventory?: StackAcresInventory;
   wheatPlots?: StackAcresWheatPlotSnapshot[];
@@ -865,6 +870,25 @@ export function predictStackAcresAction(
       if (!body.bait) return { energy };
       const inventory = removeFromInventory(ctx.inventory, FISHING_BAIT_ITEM, 1);
       return inventory ? { energy, ...processingPatch(ctx, { inventory }) } : null;
+    }
+    case "place-fence": {
+      // The same refusals the server makes, so a piece never flashes up and
+      // back down: open grass, no bed, no piece already, the cap, and the Wood.
+      if (!isFenceableMapTile(body.tx, body.ty)) return null;
+      if (ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
+      if (ctx.fences.length >= FENCE_CAP) return null;
+      const bed = mapToSoilTile(body.tx, body.ty);
+      if (ctx.soilTiles.some((tile) => tile.tx === bed.tx && tile.ty === bed.ty)) return null;
+      const inventory = removeFromInventory(ctx.inventory, "wood", FENCE_WOOD_COST);
+      if (!inventory) return null;
+      return { fences: [...ctx.fences, { tx: body.tx, ty: body.ty }], ...processingPatch(ctx, { inventory }) };
+    }
+    case "remove-fence": {
+      if (!ctx.fences.some((piece) => piece.tx === body.tx && piece.ty === body.ty)) return null;
+      return {
+        fences: ctx.fences.filter((piece) => piece.tx !== body.tx || piece.ty !== body.ty),
+        ...processingPatch(ctx, { inventory: addToInventory(ctx.inventory, "wood", FENCE_WOOD_COST) }),
+      };
     }
     case "work-land": {
       // One swing at something standing on land being cleared. Fully

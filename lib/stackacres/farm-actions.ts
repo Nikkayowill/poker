@@ -129,6 +129,8 @@ export type Action =
   // neither action spends or refunds anything.
   | { action: "place-soil-tile"; tx: number; ty: number }
   | { action: "remove-soil-tile"; tx: number; ty: number }
+  | { action: "place-fence"; tx: number; ty: number }
+  | { action: "remove-fence"; tx: number; ty: number }
   // Hold-tap lift, tap-to-drop: slides the contiguous group of beds touching
   // `(tx, ty)` so that tile lands on `(toTx, toTy)`, whatever crop stands on
   // it carried along. Free -- moves no Gold either way. The group itself is

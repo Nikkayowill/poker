@@ -89,6 +89,7 @@ function ctx(overrides: Partial<FarmPredictContext> = {}): FarmPredictContext {
     soilTiles: [],
     forageNodes: [],
     landObstacles: [],
+    fences: [],
     inventory: {},
     wheatPlots: [],
     machines: [],
@@ -1029,5 +1030,26 @@ describe("clearing land", () => {
       ctx({ profile: profile({ goldBalance: 10 }) }),
     );
     expect(patch).toBeNull();
+  });
+});
+
+describe("predictStackAcresAction: fences", () => {
+  // Open grass south of the farmhouse (./homestead-ground.ts).
+  const grass = { tx: 20, ty: 51 };
+
+  it("puts the piece up and takes its Wood under the finger", () => {
+    const patch = predictStackAcresAction({ action: "place-fence", ...grass }, ctx({ inventory: { wood: 5 } }));
+    expect(patch?.fences).toEqual([grass]);
+    expect(patch?.inventory?.wood).toBe(3);
+  });
+
+  it("guesses nothing it cannot pay for", () => {
+    expect(predictStackAcresAction({ action: "place-fence", ...grass }, ctx({ inventory: { wood: 1 } }))).toBeNull();
+  });
+
+  it("gives the Wood back as the piece comes down", () => {
+    const patch = predictStackAcresAction({ action: "remove-fence", ...grass }, ctx({ fences: [grass], inventory: { wood: 0 } }));
+    expect(patch?.fences).toEqual([]);
+    expect(patch?.inventory?.wood).toBe(2);
   });
 });

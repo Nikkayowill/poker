@@ -53,6 +53,8 @@ import {
   pullHopPoint,
 } from "@/lib/stackacres-td/pull";
 import { besideSquare, facedTile, tileCentre, workSpot, type MapTile } from "@/lib/stackacres-td/work-square";
+import { soilToMapTile } from "@/lib/stackacres/hoeable";
+import { fenceFrame, fenceKey, type FencePiece } from "@/lib/stackacres/fences";
 import { mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
@@ -130,7 +132,8 @@ const AREA_NAMES: Record<TopdownArea, string> = {
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
-/** Above the daylight tint and the emote bubbles: the dissolving view is the screen's own. */
+/** One fence frame (common/fence.png): a map square wide, two tall, with the post's foot this far down its own square. */
+const FENCE_FRAME = { width: 16, height: 32, foot: 12 } as const;
 /** How far past each edge of an outdoor map the forest backdrop runs, in map units. */
 const BEYOND = 1600;
 /** The forest picture is the pack's 32px-per-tile art, drawn at the map's 16. */
@@ -464,6 +467,9 @@ export class TopdownScene extends Phaser.Scene {
   /** Ids of the obstacles already cleared off unclaimed land. Unlike a
    *  chopped tree, nothing here comes back, so this only ever grows. */
   private landDown = new Set<string>();
+  /** The fence pieces the farm has put up, and what draws them. */
+  private fences: FencePiece[] = [];
+  private fenceImages: Phaser.GameObjects.Image[] = [];
   private nextRegrowCheck = 0;
 
   constructor(callbacks: TopdownCallbacks, host: HTMLElement) {
@@ -483,6 +489,7 @@ export class TopdownScene extends Phaser.Scene {
     }
     this.load.atlas("common", `${ASSETS}/common/sprites.png`, `${ASSETS}/common/sprites.json`);
     this.load.image("forest", `${ASSETS}/common/forest.png`);
+    this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
     for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
     for (const name of CHARACTERS) {
@@ -789,6 +796,8 @@ export class TopdownScene extends Phaser.Scene {
     this.people.clear();
     this.npcSprites.clear();
     this.soilImages = [];
+    for (const image of this.fenceImages) image.destroy();
+    this.fenceImages = [];
     this.wetTiles.clear();
     this.unitNodes.clear();
     this.preview = null;
@@ -894,6 +903,7 @@ export class TopdownScene extends Phaser.Scene {
     this.applyGates();
     this.applyNpcs();
     this.drawSoil();
+    this.drawFences();
     this.drawUnits();
   }
 
@@ -1041,6 +1051,8 @@ export class TopdownScene extends Phaser.Scene {
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
     }
+    // A fence piece stands on its square like anything else built there.
+    if (this.areaName === "homestead") for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
     this.grid = { width: this.area.width, height: this.area.height, tile: this.area.tile, blocked };
   }
 
@@ -2135,6 +2147,34 @@ export class TopdownScene extends Phaser.Scene {
    *  snapshot. Nothing here regrows, so an obstacle only ever goes from
    *  standing to down -- and the one that just went down falls on screen
    *  rather than blinking out. */
+  setFences(pieces: readonly FencePiece[]): void {
+    this.fences = [...pieces];
+    if (!this.booted) return;
+    this.applyGates();
+    this.drawFences();
+  }
+
+  /**
+   * Every piece as a post with its rails (lib/stackacres/fences.ts's
+   * `fenceFrame`), sorted in with everything else by the foot of its post.
+   * The frame is a map square wide and two tall: the square itself, and the
+   * one above it for the post's top and the rail up to the next piece.
+   */
+  private drawFences(): void {
+    for (const image of this.fenceImages) image.destroy();
+    this.fenceImages = [];
+    if (this.areaName !== "homestead") return;
+    const { tile } = this.area;
+    const standing = new Set(this.fences.map((piece) => fenceKey(piece.tx, piece.ty)));
+    for (const piece of this.fences) {
+      const image = this.add
+        .image(piece.tx * tile, (piece.ty + 1) * tile - FENCE_FRAME.height, "fence", fenceFrame(standing, piece.tx, piece.ty))
+        .setOrigin(0, 0)
+        .setDepth(piece.ty * tile + FENCE_FRAME.foot);
+      this.fenceImages.push(image);
+    }
+  }
+
   setLandObstacles(snapshots: readonly LandObstacleSnapshot[]): void {
     const down = new Set(snapshots.filter((snapshot) => snapshot.cleared).map((snapshot) => snapshot.id));
     const fell = [...down].filter((id) => !this.landDown.has(id));

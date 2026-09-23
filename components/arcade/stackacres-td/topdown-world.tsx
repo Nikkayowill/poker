@@ -70,7 +70,7 @@ function toSceneUnits(units: StackAcresUnitSnapshot[]): StackAcresSceneUnit[] {
 }
 
 export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
-  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, api } =
+  const { units, celebrate, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences, api } =
     props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<TopdownScene | null>(null);
@@ -98,9 +98,9 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
-  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles });
+  const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences });
   useEffect(() => {
-    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles };
+    latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences };
   });
 
   useEffect(() => {
@@ -184,6 +184,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setStoneNodes(now.stoneNodes);
       scene.setForageNodes(now.forageNodes);
       scene.setLandObstacles(now.landObstacles);
+      scene.setFences(now.fences);
 
       const fit = () => {
         if (!instance.isBooted) return;
@@ -369,6 +370,10 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   useEffect(() => {
     sceneRef.current?.setLandObstacles(landObstacles);
   }, [landObstacles]);
+
+  useEffect(() => {
+    sceneRef.current?.setFences(fences);
+  }, [fences]);
 
   useLayoutEffect(() => {
     if (celebrate) sceneRef.current?.celebrate([celebrate.unitId]);

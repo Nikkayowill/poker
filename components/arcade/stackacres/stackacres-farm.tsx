@@ -1,5 +1,7 @@
 "use client";
 
+import { fenceKey, type FencePiece } from "@/lib/stackacres/fences";
+import { soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   useCallback,
   useEffect,
@@ -304,6 +306,12 @@ function settleable(): { promise: Promise<void>; settle: () => void } {
  *  refused. One is the real case (the create that made it); the extra
  *  passes only cover a create that started while we were already waiting,
  *  and the bound is what stops a busy farm holding a tap open forever. */
+/** The fence key of the map square under a soil square: the belt works soil squares, fences stand on map squares. */
+function soilSquareFenceKey(tile: { tx: number; ty: number }): string {
+  const { mx, my } = soilToMapTile(tile.tx, tile.ty);
+  return fenceKey(mx, my);
+}
+
 const PROVISIONAL_WAIT_PASSES = 3;
 
 /**
@@ -513,6 +521,8 @@ interface StackAcresResponse {
    *  lib/stackacres/forage.ts's `ForageNodeSnapshot`. */
   forageNodes?: ForageNodeSnapshot[];
   landObstacles?: LandObstacleSnapshot[];
+  /** Every fence piece this farm has put up, by Homestead map square. */
+  fences?: FencePiece[];
   /** Set (to an item id or null) by a `tap-secret-zone` response only --
    *  absent from every other action's answer. */
   discovery?: SecretItemId | null;
@@ -1103,6 +1113,9 @@ export function StackAcresFarm() {
   /** What is still standing on land being cleared, same posture again
    *  (lib/stackacres/land-clearing.ts). */
   const [landObstacles, setLandObstacles] = useState<LandObstacleSnapshot[]>([]);
+  const [fences, setFences] = useState<FencePiece[]>([]);
+  /** Which map squares hold a piece, for the belt's "is there a fence here". */
+  const fencedSquares = useMemo(() => new Set(fences.map((piece) => fenceKey(piece.tx, piece.ty))), [fences]);
   /** Same sidecar for the Workshop and the vat: what the last processing
    *  call's answer said it did. `takeProcessingDelta` reads and clears it. */
   const lastProcessing = useRef<Pick<StackAcresResponse, "work" | "processed" | "sold" | "vatCollected"> | null>(null);
@@ -1632,6 +1645,7 @@ export function StackAcresFarm() {
     if (data.stoneNodes) setStoneNodes(data.stoneNodes);
     if (data.forageNodes) setForageNodes(data.forageNodes);
     if (data.landObstacles) setLandObstacles(data.landObstacles);
+    if (data.fences) setFences(data.fences);
     // `!== undefined` on purpose, not a truthiness check: `null` is a real,
     // `!== undefined` rather than a truthiness check: null is the real
     // "no vat placed" answer, and an optimistic patch carries no field.
@@ -1703,6 +1717,7 @@ export function StackAcresFarm() {
       // What is still standing on land being cleared, so a swing counts down
       // under the finger.
       landObstacles,
+      fences,
       inventory: processing.inventory,
       wheatPlots: processing.wheatPlots,
       machines: processing.machines,
@@ -1718,6 +1733,7 @@ export function StackAcresFarm() {
       seedStock,
       forageNodes,
       landObstacles,
+      fences,
       toolTier,
       cutters,
       sectors,
@@ -3506,6 +3522,7 @@ export function StackAcresFarm() {
           armed: Boolean(
             square.tile && armedLift && armedLift.tx === square.tile.tx && armedLift.ty === square.tile.ty,
           ),
+          fenced: square.tile ? fencedSquares.has(soilSquareFenceKey(square.tile)) : false,
         },
         {
           water,
@@ -3515,13 +3532,16 @@ export function StackAcresFarm() {
           nowMs,
           seed,
           seedsHeld: seed ? seedStock[seed] ?? 0 : 0,
+          wood: processing.inventory.wood ?? 0,
         },
       );
       // Anything that is not the second half of a lift disarms it, so an armed
       // bed never sits waiting through a walk across the farm.
-      if (action.kind !== "arm-lift" && action.kind !== "lift" && armedLift) setArmedLift(null);
+      if (action.kind !== "arm-lift" && action.kind !== "lift" && action.kind !== "arm-unfence" && action.kind !== "unfence" && armedLift) {
+        setArmedLift(null);
+      }
       if (action.kind === "idle") return;
-      if (action.kind === "arm-lift") {
+      if (action.kind === "arm-lift" || action.kind === "arm-unfence") {
         if (square.stroke) return;
         setArmedLift({ tx: action.tx, ty: action.ty });
         world.current?.floatAt(square.at, action.reason, "deny");
@@ -3593,9 +3613,21 @@ export function StackAcresFarm() {
           }
           onSowTile(action.tx, action.ty, action.stock);
           return;
+        case "fence": {
+          if (voice) buySound();
+          const { mx, my } = soilToMapTile(action.tx, action.ty);
+          void act({ action: "place-fence", tx: mx, ty: my });
+          return;
+        }
+        case "unfence": {
+          setArmedLift(null);
+          const { mx, my } = soilToMapTile(action.tx, action.ty);
+          void act({ action: "remove-fence", tx: mx, ty: my });
+          return;
+        }
       }
     },
-    [act, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
+    [act, fencedSquares, belt, feed, gold, liveUnits, nowMs, processing.inventory, onPlaceSoilTile, onSowTile, feedPen, seed, seedStock, onRemoveSoilTile, armedLift, queueSow, tapBatched, soilMapForTiles, triggerCascade, water],
   );
 
   const onMoveSoilTileGroup = useCallback(
@@ -4094,6 +4126,7 @@ export function StackAcresFarm() {
               stoneNodes={stoneNodes}
               forageNodes={forageNodes}
               landObstacles={landObstacles}
+              fences={fences}
               onUseSquare={onUseSquare}
               useKeyLabel={BELT_TOOL_DEFS[belt].label}
               tool={tool}

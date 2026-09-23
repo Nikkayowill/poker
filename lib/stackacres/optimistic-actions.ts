@@ -107,6 +107,7 @@ import {
   optimisticallyRestartedUnit,
   optimisticallyStockedUnit,
   optimisticallyWateredUnit,
+  withLocalClockUnit,
   withoutStackAcresUnit,
   type StackAcresUnitSnapshot,
 } from "./units";
@@ -259,6 +260,18 @@ function debited(ctx: FarmPredictContext, amount: number): PlayerProfile | null 
     ...ctx.profile,
     goldBalance: ctx.unlimitedGold ? ctx.profile.goldBalance : ctx.profile.goldBalance - amount,
   };
+}
+
+/**
+ * Whether a unit is in `state` right now, by the list's own word or by this
+ * device's clock (the reading the map draws). The list only moves when a
+ * response lands, so a crop that ripened since then still says "working" in
+ * it, and a harvest guessed off that alone removed nothing. Either reading
+ * counts, so a phone clock running a little behind never un-ripens a crop the
+ * server already called ready.
+ */
+function isNow(unit: StackAcresUnitSnapshot, state: StackAcresUnitSnapshot["state"], nowMs: number): boolean {
+  return unit.state === state || withLocalClockUnit(unit, nowMs).state === state;
 }
 
 /** Marks an id this browser invented rather than one the server issued.
@@ -421,7 +434,7 @@ export function predictStackAcresAction(
       // Same order the server feeds in: soonest-hungry first, as far as the
       // feed goes. Hens and cattle eat off the shelf first -- see ./feeding.ts.
       const hungry = ctx.units
-        .filter((u) => u.state === "hungry" && stockZone(u.stock) === body.zone)
+        .filter((u) => isNow(u, "hungry", ctx.nowMs) && stockZone(u.stock) === body.zone)
         .sort((a, b) => (a.hungryAt ?? "").localeCompare(b.hungryAt ?? ""));
       const plan = planServings(
         hungry.map((u) => u.stock),
@@ -468,7 +481,7 @@ export function predictStackAcresAction(
     }
     case "collect": {
       const targets = ctx.units.filter(
-        (u) => u.state === "ready" && (!body.unitIds || body.unitIds.includes(u.id)),
+        (u) => isNow(u, "ready", ctx.nowMs) && (!body.unitIds || body.unitIds.includes(u.id)),
       );
       if (targets.length === 0) return null;
       const targetIds = new Set(targets.map((u) => u.id));

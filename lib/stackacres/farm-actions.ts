@@ -179,6 +179,25 @@ export type Action =
   | { action: "contribute-blueprint"; structureId: BlueprintId; itemId: MachineItemId; amount: number };
 
 /**
+ * A harvest is keyed by the crops it names. Keyed on the bare action, a
+ * second crop tapped while the first harvest was still in the air was dropped
+ * as a duplicate after its pull had already played, so it stayed in the
+ * ground. A bare "collect" is still the Harvest-all press.
+ */
+const COLLECT_INTENT_PREFIX = "collect:";
+
+/** Every unit some in-flight harvest already names, read off the in-flight
+ *  intents, so a tap on one of them is not sent a second time. */
+export function unitsBeingCollected(intents: Iterable<string>): Set<string> {
+  const ids = new Set<string>();
+  for (const intent of intents) {
+    if (!intent.startsWith(COLLECT_INTENT_PREFIX)) continue;
+    for (const id of intent.slice(COLLECT_INTENT_PREFIX.length).split(",")) ids.add(id);
+  }
+  return ids;
+}
+
+/**
  * What the player asked for, as one string. Two presses that mean the same
  * thing share it; collecting two different hens does not.
  *
@@ -188,16 +207,26 @@ export type Action =
  */
 export function intentOf(body: Action): string {
   if ("unitId" in body) return `${body.action}:${body.unitId}`;
+  if (body.action === "collect" && body.unitIds && body.unitIds.length > 0) {
+    return `${COLLECT_INTENT_PREFIX}${[...body.unitIds].sort().join(",")}`;
+  }
   // One bed cell, not one stock kind: two presses planting hens in two
   // different cells are two intents, and the generic "stock" branch below
   // would collapse them onto one. Checked before it for that reason.
   if (body.action === "plant-crossbreed") return `${body.action}:${body.row},${body.col}`;
   if ("plotId" in body) return `${body.action}:${body.plotId}`;
-  // Distinguished from an outdoor sow of the same crop: the two are
-  // different intents (different slot cap, different growth clock), and
-  // treating them as one would let a request in flight for one silently
-  // swallow a press aimed at the other.
-  if (body.action === "stock") return `stock:${body.stock}${body.inGreenhouse ? ":greenhouse" : ""}`;
+  // Keyed by where it goes. A greenhouse sow and an outdoor sow of the same
+  // crop are different intents, and so are two beds of the same crop: keyed
+  // on the crop alone, walking a row with seed in hand dropped every sowing
+  // sent while the one before it was still in the air.
+  if (body.action === "stock") {
+    if (body.inGreenhouse) return `stock:${body.stock}:greenhouse`;
+    if (body.tiles && body.tiles.length > 0) {
+      return `stock:${body.stock}:${body.tiles.map((tile) => `${tile.tx},${tile.ty}`).join(";")}`;
+    }
+    if (body.tx !== undefined && body.ty !== undefined) return `stock:${body.stock}:${body.tx},${body.ty}`;
+    return `stock:${body.stock}`;
+  }
   if ("stock" in body) return `${body.action}:${body.stock}`;
   // A seed purchase for one crop must never dedupe against or block a
   // purchase of a different crop -- checked before the generic fallback,

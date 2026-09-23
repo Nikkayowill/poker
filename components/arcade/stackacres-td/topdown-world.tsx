@@ -92,14 +92,17 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
   const [castLocked, setCastLocked] = useState(false);
 
   // The scene calls back into whatever the shell currently is, not whatever it was at boot.
+  // A layout effect, like the pushes below: a Phaser frame can land between a
+  // commit and a passive effect, and a tap in it would reach the previous
+  // render's handlers with the previous render's crops.
   const propsRef = useRef(props);
-  useEffect(() => {
+  useLayoutEffect(() => {
     propsRef.current = props;
   });
 
   const sceneUnits = useMemo(() => toSceneUnits(units), [units]);
   const latest = useRef({ sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { sceneUnits, sectors, soilTiles, woodNodes, stoneNodes, forageNodes, landObstacles, fences };
   });
 

@@ -14,10 +14,8 @@ import {
 } from "react";
 import clsx from "clsx";
 import {
-  Coins,
   Dna,
   Lock,
-  MapPin,
   Sparkles,
   Wand2,
   X,
@@ -165,6 +163,7 @@ import { STACKACRES_TOUR_STEPS } from "@/lib/onboarding/tour-steps";
 import type { PainterName } from "./stackacres-art";
 import { StackAcresBuySection } from "./stackacres-district-panel";
 import { StackAcresIcon } from "./stackacres-icon";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 import { StackAcresGreenhousePanel } from "./stackacres-greenhouse-panel";
 import { TownContractsModal, type ContractActionResult } from "./TownContractsModal";
 import { WorkshopModal, type WorkshopActionResult } from "./WorkshopModal";
@@ -693,7 +692,7 @@ const STORE_TABS: { id: StoreTab; label: string; icon: PainterName }[] = [
 function StoreCost({ amount }: { amount: number }) {
   return (
     <span className="sa-store-cost">
-      <StackAcresIcon name="ico-gold" size={13} />
+      <StackAcresPixelIcon name="coin" />
       {amount.toLocaleString()}
     </span>
   );
@@ -3752,7 +3751,7 @@ export function StackAcresFarm() {
             farmer walking across it once it lands: the picture says it before the words do. */}
         <div className="sa-rotate-ground" aria-hidden="true" />
         <div className="sa-rotate-card" role="status" aria-live="polite">
-          <StackAcresLogo className="sa-rotate-logo" aria-hidden="true" />
+          <StackAcresLogo variant="stacked" className="sa-rotate-logo" alt="" aria-hidden="true" />
           <div className="sa-rotate-stage" aria-hidden="true">
             <span className="sa-rotate-phone">
               <span className="sa-rotate-screen" />
@@ -3790,7 +3789,7 @@ export function StackAcresFarm() {
   const secondaryHud = (
     <>
       <span className="sa-feed" title="Feed servings">
-        <StackAcresIcon name="ico-feed" size={16} />
+        <StackAcresPixelIcon name="sack" />
         <strong>{feed}</strong>
         <span className="sa-sr">feed servings</span>
       </span>
@@ -3798,7 +3797,7 @@ export function StackAcresFarm() {
         className={clsx("sa-feed sa-water", { "is-empty": water < 1 })}
         title="Water in your can. Fill it at the well."
       >
-        <StackAcresIcon name="ico-water" size={16} />
+        <StackAcresPixelIcon name="water" />
         <strong>{water}</strong>
         <span className="sa-sr">of {WATER_CAPACITY} water in your can</span>
       </span>
@@ -3854,7 +3853,7 @@ export function StackAcresFarm() {
         <div className="floor-bar-left">
           <FloorBackLink />
           <button type="button" className="htp-trigger" onClick={openMap}>
-            <MapPin size={13} aria-hidden="true" /> Map
+            <StackAcresPixelIcon name="map" /> Map
           </button>
           <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
         </div>
@@ -3886,7 +3885,7 @@ export function StackAcresFarm() {
               className="sa-upkeep"
               title={`Land maintenance on ${upkeep.plots} plots. Comes out of your next sale, contract or vat batch.`}
             >
-              <StackAcresIcon name="ico-gold" size={16} />
+              <StackAcresPixelIcon name="coin" />
               <strong>-{upkeep.due.toLocaleString()}</strong>
               <span className="sa-sr">Gold of land maintenance due</span>
             </span>
@@ -3895,7 +3894,8 @@ export function StackAcresFarm() {
             className="sa-energy"
             title="Energy. Fishing uses it. Eat at your house to fill it up."
           >
-            <span className="sa-energy-label">Energy</span>
+            <StackAcresPixelIcon name="energy" />
+            <span className="sa-sr">Energy</span>
             <span className="sa-energy-bar" aria-hidden="true">
               <span style={{ width: `${(energyAt(energy, new Date(nowMs)) / ENERGY_MAX) * 100}%` }} />
             </span>
@@ -3909,7 +3909,7 @@ export function StackAcresFarm() {
             </label>
           )}
           <span className="gold-balance floor-wallet" data-tour="sa-gold-balance" title="Gold">
-            <Coins size={13} aria-hidden="true" />
+            <StackAcresPixelIcon name="coin" />
             {/* A profile that never arrived (the paired land/unit fetch threw,
                 so the whole /api/stackacres response was discarded) is "we
                 don't know yet," not "zero" -- this once read as broke for a
@@ -3973,7 +3973,7 @@ export function StackAcresFarm() {
           )}
           {bootPhase !== "hidden" && (
             <div className={clsx("sa-loading", bootPhase === "hiding" && "sa-loading-hiding")}>
-              <StackAcresLogo className="sa-loading-logo" aria-hidden="true" />
+              <StackAcresLogo variant="stacked" className="sa-loading-logo" alt="" aria-hidden="true" />
             </div>
           )}
 

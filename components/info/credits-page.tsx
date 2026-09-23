@@ -97,6 +97,18 @@ export function CreditsPage() {
               layer, is in{" "}
               <a href="/stackacres-td/characters/CREDITS.md">CREDITS.md</a>.
             </li>
+            <li>
+              <strong>The land</strong> — the ground, water, paths and props on
+              the map use Liberated Pixel Cup terrain art by Lanea Zimmerman
+              (Sharm), Daniel Eddeland, Casper Nilsson, Johann Charlot, Skyler
+              Robert Colladay, Stephen Challener (Redshrike), Charles Sanchez
+              (CharlesGabriel), Manuel Riecke (MrBeast) and Daniel Armstrong
+              (HughSpectrum), under CC-BY-SA 3.0 and GPL 3.0.
+            </li>
+            <li>
+              <strong>Lettering</strong> — Pixelify Sans by Stefie Justprince
+              and Baloo 2 by Ek Type, both under the SIL Open Font License.
+            </li>
           </ul>
         </section>
 

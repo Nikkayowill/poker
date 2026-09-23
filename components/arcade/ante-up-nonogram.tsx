@@ -20,6 +20,7 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useActionQueue } from "@/components/shared/use-action-queue";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -40,6 +41,7 @@ import {
 } from "@/lib/arcade/puzzles/nonogram";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Ante Up: Nonogram, the solo half of Ante Up.
@@ -194,7 +196,6 @@ export function AnteUpNonogram() {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [now, setNow] = useState(() => Date.now());
   const [showHelp, setShowHelp] = useState(false);
-  const [pending, setPending] = useState<PendingStroke[]>([]);
   const [cursor, setCursor] = useState(0);
   const [beatBest, setBeatBest] = useState(false);
 
@@ -218,12 +219,11 @@ export function AnteUpNonogram() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // Same guard duel-shell.tsx keeps: true while the player's own action is in
-  // flight, so a background poll cannot paint the pre-action board back over
-  // what the action's own response is about to paint forward.
-  const sending = useRef(false);
+  // Read ordering, board versions and the stroke queue all go through
+  // `sequence`, so a poll can never paint an older board over a stroke.
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<AnteUpNonogramSnapshot>());
 
   /**
    * Takes a response, and is the only place the board on screen changes.
@@ -239,20 +239,17 @@ export function AnteUpNonogram() {
     if (data.attempt === undefined) return;
 
     const next = data.attempt ?? null;
-    if (next) {
-      versionRef.current = next.version;
-      mistakesRef.current = next.board.mistakes;
-      if (next.status === "won" && recordedWin.current !== next.id) {
-        recordedWin.current = next.id;
-        const previous = readBest(next.difficulty);
-        if (previous === null || next.elapsedMs < previous) {
-          writeBest(next.difficulty, next.elapsedMs);
-          setBeatBest(previous !== null);
-        }
+    if (!sequence.admit(next)) return;
+    if (next && next.status === "won" && recordedWin.current !== next.id) {
+      recordedWin.current = next.id;
+      const previous = readBest(next.difficulty);
+      if (previous === null || next.elapsedMs < previous) {
+        writeBest(next.difficulty, next.elapsedMs);
+        setBeatBest(previous !== null);
       }
     }
     setAttempt(next);
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   /**
    * The background poll: reads the live attempt, sets no busy flag.
@@ -261,7 +258,8 @@ export function AnteUpNonogram() {
    * when the server answered 429, or null for the ordinary POLL_MS cadence.
    */
   const refresh = useCallback(async (): Promise<number | null> => {
-    if (sending.current) return null;
+    const ticket = sequence.beginRead();
+    if (!ticket) return null;
     try {
       const response = await fetch("/api/ante-up-nonogram", { cache: "no-store" });
       if (response.status === 429) {
@@ -270,7 +268,7 @@ export function AnteUpNonogram() {
         return seconds * 1000;
       }
       const data = (await response.json()) as Partial<AnteUpNonogramResponse>;
-      if (!mounted.current || sending.current) return null;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is seconds away.
@@ -278,11 +276,11 @@ export function AnteUpNonogram() {
       if (mounted.current) setLoaded(true);
     }
     return null;
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
-  /** A player-initiated action: start, resign, or a queued stroke. */
+  /** A player-initiated action: start, undo, hint or resign. */
   const send = useCallback(async (url: string, body: unknown) => {
-    sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -299,7 +297,7 @@ export function AnteUpNonogram() {
       if (!response.ok) {
         // A refused action still carries the true board; paint it, and only
         // raise a banner when the refusal is something the player should see.
-        if (data.round) setAttempt(data.round);
+        if (data.round) applyResponse({ attempt: data.round });
         if (data.error && !data.round) setError(data.error);
         else if (data.error && response.status !== 409) setError(data.error);
         return;
@@ -308,10 +306,10 @@ export function AnteUpNonogram() {
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
-      sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   // Initial read, deferred a tick: the idiom every arcade table shares.
   useEffect(() => {
@@ -351,96 +349,57 @@ export function AnteUpNonogram() {
 
   /* ------------------------------------------------------------ strokes */
 
-  // The queue, and the drag being drawn right now. Refs rather than state:
-  // pointermove runs at screen rate and re-rendering the whole board on every
-  // frame to move a preview is exactly the lag this feature exists to remove.
-  const queue = useRef<PendingStroke[]>([]);
-  const strokeId = useRef(0);
-  const pumping = useRef(false);
-  // What the queue pins its next request to. Kept on refs rather than read
-  // from `attempt`, because the queue runs across awaits and would otherwise
-  // close over whatever the board was when the drag started. Written from
-  // every response the shell takes, which is `applyResponse` and nowhere else.
-  const versionRef = useRef(0);
-  const mistakesRef = useRef(0);
-
-  const clearPending = useCallback(() => {
-    queue.current = [];
-    setPending([]);
-  }, []);
-
   /**
-   * Sends queued strokes, one at a time, oldest first.
-   *
-   * Serial because each stroke is pinned to the board version before it: two
-   * in flight would send the same version and the second would be refused. A
-   * refusal drops the rest of the queue rather than replaying it, since the
-   * board those strokes were drawn against no longer exists.
+   * Sends one queued stroke, pinned to the newest board version. A refusal
+   * drops the rest of the queue rather than replaying it, since the board
+   * those strokes were drawn against no longer exists.
    */
-  const pump = useCallback(async () => {
-    if (pumping.current) return;
-    pumping.current = true;
-    // Held for the whole drain, not per request. Between two strokes it would
-    // otherwise fall false for a moment, which is exactly long enough for a
-    // poll that started before the first one to land and paint a board two
-    // strokes out of date.
-    sending.current = true;
+  const sendStroke = useCallback(async (stroke: PendingStroke): Promise<boolean> => {
+    if (!mounted.current) return false;
     try {
-      while (queue.current.length > 0) {
-        const stroke = queue.current[0];
-        let ok = false;
-        try {
-          const response = await fetch("/api/ante-up-nonogram/actions", {
-            method: "POST",
-            cache: "no-store",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "stroke",
-              version: versionRef.current,
-              indexes: stroke.indexes,
-              mark: stroke.mark,
-            }),
-          });
-          const data = (await response.json()) as Partial<AnteUpNonogramResponse> & {
-            round?: AnteUpNonogramSnapshot;
-          };
-          if (!mounted.current) return;
-          if (response.ok && data.attempt) {
-            const before = mistakesRef.current;
-            applyResponse(data);
-            // A buzz and nothing else. lib/audio/manifest.ts maps `lose` to
-            // null on purpose -- there is no loss cue in the set -- and
-            // play("lose") would be a silent no-op dressed up as feedback.
-            // The square turning into a cross is the visual half.
-            if (data.attempt.board.mistakes > before) buzz([28, 40, 28]);
-            ok = true;
-          } else if (data.round) {
-            setAttempt(data.round);
-          } else if (data.error) {
-            setError(data.error);
-          }
-        } catch {
-          if (mounted.current) setError("Could not reach the table. Check your connection.");
-        }
-
-        if (!ok) { clearPending(); return; }
-        queue.current = queue.current.filter((entry) => entry.id !== stroke.id);
-        if (mounted.current) setPending([...queue.current]);
+      const response = await fetch("/api/ante-up-nonogram/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "stroke",
+          version: sequence.version(),
+          indexes: stroke.indexes,
+          mark: stroke.mark,
+        }),
+      });
+      const data = (await response.json()) as Partial<AnteUpNonogramResponse> & {
+        round?: AnteUpNonogramSnapshot;
+      };
+      if (!mounted.current) return false;
+      if (response.ok && data.attempt) {
+        const before = sequence.latest()?.board.mistakes ?? 0;
+        applyResponse(data);
+        // A buzz and nothing else. lib/audio/manifest.ts maps `lose` to
+        // null on purpose -- there is no loss cue in the set -- and
+        // play("lose") would be a silent no-op dressed up as feedback.
+        // The square turning into a cross is the visual half.
+        if (data.attempt.board.mistakes > before) buzz([28, 40, 28]);
+        return true;
       }
-    } finally {
-      pumping.current = false;
-      sending.current = false;
+      if (data.round) applyResponse({ attempt: data.round });
+      else if (data.error) setError(data.error);
+      return false;
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
     }
-  }, [applyResponse, clearPending]);
+  }, [applyResponse, sequence]);
+
+  // Strokes go out one at a time through the shared queue; see lib/ui/request-sequence.ts.
+  const { pending, push: pushStroke, clear: clearPending } = useActionQueue<PendingStroke>(sequence, sendStroke);
+  const strokeId = useRef(0);
 
   const queueStroke = useCallback((indexes: number[], mark: NonogramMark) => {
     if (indexes.length === 0) return;
     strokeId.current += 1;
-    const stroke: PendingStroke = { id: strokeId.current, indexes, mark };
-    queue.current = [...queue.current, stroke];
-    setPending([...queue.current]);
-    void pump();
-  }, [pump]);
+    pushStroke({ id: strokeId.current, indexes, mark });
+  }, [pushStroke]);
 
   /* --------------------------------------------------------------- drag */
 

@@ -22,6 +22,7 @@ import {
 import { GRID_CELLS, GRID_SIDE, type BlockudokuShape } from "@/lib/arcade/puzzles/blockudoku";
 import { formatDuration } from "@/lib/arcade/puzzles/sudoku";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Ante Up: Blockudoku.
@@ -227,10 +228,11 @@ export function AnteUpBlockudoku() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // True while the player's own action is in flight, so a background poll
-  // cannot paint the pre-action board back over the action's own response.
+  // True while the player's own action is in flight, so a second tap waits.
   const sending = useRef(false);
   const mounted = useRef(true);
+  // Keeps a poll that left before an action from painting over the action's result.
+  const [sequence] = useState(() => createRequestSequence<AnteUpBlockudokuSnapshot>());
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -244,12 +246,13 @@ export function AnteUpBlockudoku() {
 
   const applyResponse = useCallback((data: Partial<AnteUpBlockudokuResponse>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   /** The background poll. Returns a pause in ms after a 429, or null for the normal cadence. */
   const refresh = useCallback(async (): Promise<number | null> => {
-    if (sending.current) return null;
+    const ticket = sequence.beginRead();
+    if (!ticket) return null;
     try {
       const response = await fetch("/api/ante-up-blockudoku", { cache: "no-store" });
       if (response.status === 429) {
@@ -258,7 +261,7 @@ export function AnteUpBlockudoku() {
         return seconds * 1000;
       }
       const data = (await response.json()) as Partial<AnteUpBlockudokuResponse>;
-      if (!mounted.current || sending.current) return null;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return null;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll is not worth a banner; the next one is seconds away.
@@ -266,7 +269,7 @@ export function AnteUpBlockudoku() {
       if (mounted.current) setLoaded(true);
     }
     return null;
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   /**
    * A player-initiated action. A refused move still carries the true board,
@@ -277,6 +280,7 @@ export function AnteUpBlockudoku() {
     body: unknown,
   ): Promise<AnteUpBlockudokuSnapshot | null> => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -291,7 +295,7 @@ export function AnteUpBlockudoku() {
       };
       if (!mounted.current) return null;
       if (!response.ok) {
-        if (data.round) setAttempt(data.round);
+        if (data.round) applyResponse({ attempt: data.round });
         else setError(data.error ?? "That did not go through.");
         return null;
       }
@@ -302,9 +306,10 @@ export function AnteUpBlockudoku() {
       return null;
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);

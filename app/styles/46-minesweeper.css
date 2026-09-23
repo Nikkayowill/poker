@@ -80,6 +80,8 @@
 }
 .ms-cell-hidden:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
 .ms-cell-hidden:active:not(:disabled) { transform: scale(.94); }
+/* Tapped, waiting on the server to say what is under it. */
+.ms-cell-hidden.ms-cell-pending { background: rgba(255, 255, 255, .2); transform: scale(.94); }
 
 .ms-cell-open {
   background: rgba(0, 0, 0, .42);

@@ -27,7 +27,9 @@ interface TopdownHandle {
 }
 
 /** The Old Fields' south gate, and a bare bed square just inside the fence above it. */
-const OLD_FIELDS_GATE = { x: 352, y: 596 };
+// Just inside the Crop Fields, which are the north half of the Homestead now
+// rather than a map of their own. BARE_BED is a field square a few tiles up.
+const CROP_FIELDS_GATE = { x: 352, y: 540 };
 const BARE_BED = { x: 352, y: 520 };
 
 const ADMIN_SECRET = "playwright-admin-secret";
@@ -302,10 +304,10 @@ test("the hoe breaks ground under the farmer's feet from the Use key", async ({ 
 
     const { page, errors } = await openFarm(farmerContext);
 
-    // Stand him on a bare bed square out in the Old Fields.
+    // Stand him on a bare bed square out in the Crop Fields.
     await page.evaluate(
-      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate),
-      OLD_FIELDS_GATE,
+      (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
+      CROP_FIELDS_GATE,
     );
     await page.waitForTimeout(300);
     const bedPoint = await page.evaluate(

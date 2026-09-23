@@ -28,7 +28,9 @@ interface TopdownHandle {
   };
 }
 
-const OLD_FIELDS_GATE = { x: 352, y: 596 };
+// Just inside the Crop Fields, which are the north half of the Homestead now
+// rather than a map of their own. BARE_BED is a field square a few tiles up.
+const CROP_FIELDS_GATE = { x: 352, y: 540 };
 const BARE_BED = { x: 352, y: 520 };
 /** The bed tile BARE_BED sits on. */
 const BED_TILE = { tx: 0, ty: 14 };
@@ -135,8 +137,8 @@ async function openSlowFarm(browser: Browser, before: (context: BrowserContext) 
   });
 
   await page.evaluate(
-    (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("oldfields", gate),
-    OLD_FIELDS_GATE,
+    (gate) => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", gate),
+    CROP_FIELDS_GATE,
   );
   await page.waitForTimeout(300);
   const bedPoint = await page.evaluate(

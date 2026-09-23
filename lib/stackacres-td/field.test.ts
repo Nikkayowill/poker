@@ -13,8 +13,8 @@ import {
   worldToMap,
 } from "./field";
 
-describe("the Old Fields map is the Crop Fields, tile for tile", () => {
-  it("puts the field's corners on the map where oldfields.py draws the field", () => {
+describe("the Crop Fields are the north half of the Homestead, tile for tile", () => {
+  it("puts the field's corners on the map where homestead.py draws the field", () => {
     expect(fieldWorldToMap({ x: CROP_FIELD_BEDS.x, y: CROP_FIELD_BEDS.y })).toEqual(FIELD_ORIGIN);
     expect(FIELD_ORIGIN).toEqual({ x: 96, y: 32 });
     expect(CROP_FIELD_BEDS.width).toBe(32 * 16);
@@ -40,7 +40,7 @@ describe("the Old Fields map is the Crop Fields, tile for tile", () => {
 
   it("knows where unmapped land is not", () => {
     expect(worldToMap({ x: 5000, y: 5000 })).toBeNull();
-    expect(worldToMap({ x: 0, y: 0 })?.area).toBe("oldfields");
+    expect(worldToMap({ x: 0, y: 0 })?.area).toBe("homestead");
   });
 });
 
@@ -51,11 +51,12 @@ describe("the Homestead's grass paddocks", () => {
   const zones = area.zones.filter((z) => z.tag === "homebeds");
 
   it("lands each paddock where the rig draws WEST_BED and EAST_BED", () => {
-    // homestead.py: WEST_BED (4,15)-(11,20), EAST_BED (19,15)-(26,19), in 16px map tiles.
-    expect(homePlotTileToMap(HOME_PLOTS[0].tx0, HOME_PLOTS[0].ty0)).toEqual({ x: 4 * 16, y: 15 * 16 });
-    expect(homePlotTileToMap(HOME_PLOTS[0].tx1, HOME_PLOTS[0].ty1)).toEqual({ x: 11 * 16, y: 20 * 16 });
-    expect(homePlotTileToMap(HOME_PLOTS[1].tx0, HOME_PLOTS[1].ty0)).toEqual({ x: 19 * 16, y: 15 * 16 });
-    expect(homePlotTileToMap(HOME_PLOTS[1].tx1, HOME_PLOTS[1].ty1)).toEqual({ x: 26 * 16, y: 19 * 16 });
+    // homestead.py: WEST_BED (4,15)-(11,20), EAST_BED (19,15)-(26,19) in farmyard
+    // tiles, and the farmyard starts HOME_SHIFT (38) rows down the merged map.
+    expect(homePlotTileToMap(HOME_PLOTS[0].tx0, HOME_PLOTS[0].ty0)).toEqual({ x: 4 * 16, y: (15 + 38) * 16 });
+    expect(homePlotTileToMap(HOME_PLOTS[0].tx1, HOME_PLOTS[0].ty1)).toEqual({ x: 11 * 16, y: (20 + 38) * 16 });
+    expect(homePlotTileToMap(HOME_PLOTS[1].tx0, HOME_PLOTS[1].ty0)).toEqual({ x: 19 * 16, y: (15 + 38) * 16 });
+    expect(homePlotTileToMap(HOME_PLOTS[1].tx1, HOME_PLOTS[1].ty1)).toEqual({ x: 26 * 16, y: (19 + 38) * 16 });
   });
 
   it("keeps every paddock square inside a homebeds zone, so a tap on it reaches the hoe", () => {
@@ -90,10 +91,24 @@ describe("the Homestead's grass paddocks", () => {
 
   it("says grass off the paddocks, and the path between them, is not workable", () => {
     // One pixel past each edge, and the lane between the two paddocks.
-    expect(homeBedsMapToWorld({ x: 4 * 16 - 1, y: 15 * 16 + 8 })).toBeNull();
-    expect(homeBedsMapToWorld({ x: 12 * 16, y: 15 * 16 + 8 })).toBeNull();
-    expect(homeBedsMapToWorld({ x: 14 * 16 + 8, y: 15 * 16 + 8 })).toBeNull();
-    expect(homeBedsMapToWorld({ x: 19 * 16 + 8, y: 20 * 16 })).toBeNull();
+    expect(homeBedsMapToWorld({ x: 4 * 16 - 1, y: (15 + 38) * 16 + 8 })).toBeNull();
+    expect(homeBedsMapToWorld({ x: 12 * 16, y: (15 + 38) * 16 + 8 })).toBeNull();
+    expect(homeBedsMapToWorld({ x: 14 * 16 + 8, y: (15 + 38) * 16 + 8 })).toBeNull();
+    expect(homeBedsMapToWorld({ x: 19 * 16 + 8, y: (20 + 38) * 16 })).toBeNull();
+  });
+
+  it("stands on the same map as the Crop Fields, with room for both", () => {
+    const map = JSON.parse(readFileSync("public/stackacres-td/areas/homestead/area.json", "utf8")) as {
+      width: number;
+      height: number;
+      exits: { to: string }[];
+    };
+    // The field's 32 rows, the farmyard's 32, and the margin between them.
+    expect(map.height).toBe(70);
+    // Nothing walks off to a Crop Fields scene, because there isn't one.
+    expect(map.exits.map((e) => e.to)).not.toContain("oldfields");
+    const field = area.zones.find((z) => z.tag === "field");
+    expect(field).toMatchObject({ x: 96, y: 32, w: 32 * 16, h: 32 * 16 });
   });
 
   it("never overlaps the Crop Fields' own tiles", () => {

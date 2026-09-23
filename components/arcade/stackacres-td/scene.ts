@@ -16,6 +16,7 @@ import {
   homeBedsMapToWorld,
   homeBedsWorldToMap,
   homePlotTileToMap,
+  inCropField,
   inHomePlots,
   soilTileToMap,
   worldToMap,
@@ -89,11 +90,15 @@ import type { WoodNodeSnapshot } from "@/lib/stackacres/wood";
  */
 
 const ASSETS = "/stackacres-td";
-const AREAS: TopdownArea[] = ["homestead", "oldfields", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
+/** Where the map sheet's "Crop Fields" button drops the farmer: just inside the
+ *  field's south gate, on the lane up from the yard. Inside `CROP_FIELD_BEDS`
+ *  on purpose, so `currentPlace` reads "you are here" off his feet. */
+const CROP_FIELDS_GATE = { x: 232, y: 520 } as const;
+
+const AREAS: TopdownArea[] = ["homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
 /** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
 const AREA_NAMES: Record<TopdownArea, string> = {
   homestead: "The Homestead",
-  oldfields: "Crop Fields",
   fold: "The Fold",
   pasture: "Cattle Pasture",
   coast: "Coastal Market",
@@ -937,7 +942,7 @@ export class TopdownScene extends Phaser.Scene {
       const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.enterable(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
       const down = kind === "land" && detail !== undefined && this.landDown.has(detail);
-      const visible = stump ? isSpent : !(spec.tag === "gate:oldfields" || cleared || isSpent || down);
+      const visible = stump ? isSpent : !(cleared || isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -990,43 +995,40 @@ export class TopdownScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ soil and units
 
-  /** Which map, if any, `this.areaName` draws soil on, and how a tile's
-   *  world corner lands there. The Old Fields hold every purchased Crop
-   *  Fields bed; the Homestead holds only the free starter lattice
-   *  (`homeStarterSoilTiles`) -- see lib/stackacres-td/field.ts's own header
-   *  on why the two never share an origin. */
-  private soilToMapFor(areaName: string): ((tx: number, ty: number) => { x: number; y: number }) | null {
-    if (areaName === "oldfields") return soilTileToMap;
-    if (areaName === "homestead") return homePlotTileToMap;
-    return null;
+  /** Where a soil tile is drawn, or null when it is on no lattice at all.
+   *
+   *  Both lattices are on the Homestead now that the Crop Fields are the north
+   *  half of it rather than a scene of their own, so which one a tile belongs
+   *  to is a question about the TILE: the paddocks hold the free starter beds
+   *  (`homeStarterSoilTiles`), the field holds everything dug up there. They
+   *  still keep separate origins -- see lib/stackacres-td/field.ts's header. */
+  private soilTilePoint(tx: number, ty: number): { x: number; y: number } | null {
+    if (this.areaName !== "homestead") return null;
+    const world = { x: tx * SOIL_TILE, y: ty * SOIL_TILE };
+    if (inHomePlots(world)) return homePlotTileToMap(tx, ty);
+    return inCropField(world) ? soilTileToMap(tx, ty) : null;
   }
 
-  /** The inverse of `soilToMapFor`, for a map pixel on the current area: which
-   *  soil world point (if any) it names. Null off both lattices, or in any
-   *  area that has no beds at all. */
+  /** The inverse, for a map pixel on the current area: which soil world point
+   *  (if any) it names. Null off both lattices, or in any area with no beds. */
   private mapToSoilWorld(map: { x: number; y: number }): WorldPoint | null {
-    if (this.areaName === "oldfields") return fieldMapToWorld(map);
-    if (this.areaName === "homestead") return homeBedsMapToWorld(map);
-    return null;
+    if (this.areaName !== "homestead") return null;
+    return fieldMapToWorld(map) ?? homeBedsMapToWorld(map);
   }
 
   private drawSoil(): void {
     for (const bed of this.soilImages) bed.image.destroy();
     this.soilImages = [];
-    const toMap = this.soilToMapFor(this.areaName);
-    if (!toMap) return;
-    // Both maps share one lattice key space (soil.ts's `soilTileKey`), so the
-    // neighbour mask below only ever lights up for a tile actually drawn on
-    // THIS map: a Crop Fields bed and a starter bed are never adjacent (see
-    // `HOME_STARTER_ORIGIN`'s own comment), so cross-map neighbours never
-    // exist to mask against in the first place.
+    if (this.areaName !== "homestead") return;
+    // Both lattices share one key space (soil.ts's `soilTileKey`) and are now
+    // on one map, but they are still far apart: a Crop Fields bed and a
+    // starter bed are never adjacent (see `HOME_STARTER_ORIGIN`'s own
+    // comment), so the neighbour mask never joins one to the other.
     const map = createSoilMap(this.soil);
-    const onThisMap = (tile: SoilTile) =>
-      this.areaName === "oldfields" ? !inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE }) : inHomePlots({ x: tile.tx * SOIL_TILE, y: tile.ty * SOIL_TILE });
     for (const tile of this.soil) {
-      if (!onThisMap(tile)) continue;
+      const at = this.soilTilePoint(tile.tx, tile.ty);
+      if (!at) continue;
       const mask = soilNeighborMask(map, tile.tx, tile.ty);
-      const at = toMap(tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
       const image = this.add.image(at.x, at.y, "common", `soil_${tier}_${mask}`).setOrigin(0, 0).setDepth(-5);
       this.soilImages.push({ key: soilTileKey(tile.tx, tile.ty), image: this.keep(image), enriched: isSoilTileEnriched(tile) });
@@ -1052,15 +1054,13 @@ export class TopdownScene extends Phaser.Scene {
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
       const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
-      // A slotted crop resolves to whichever bed its slot names -- the Old
-      // Fields' purchased lattice or the Homestead's own starter one -- and
-      // only draws on the map that bed actually stands on. The slot-less
-      // fallback inside `cropSpot` always lands inside `CROP_FIELD_BEDS`
-      // (see that function's own header), so it only ever draws in the Old
-      // Fields.
-      if (this.areaName === "oldfields" && !inHomePlots(world)) return fieldWorldToMap(world);
-      if (this.areaName === "homestead" && inHomePlots(world)) return homeBedsWorldToMap(world);
-      return null;
+      // A slotted crop resolves to whichever bed its slot names -- a paddock
+      // bed or one out in the field -- and both are on the Homestead. The
+      // slot-less fallback inside `cropSpot` always lands inside
+      // `CROP_FIELD_BEDS` (see that function's own header).
+      if (this.areaName !== "homestead") return null;
+      if (inHomePlots(world)) return homeBedsWorldToMap(world);
+      return inCropField(world) ? fieldWorldToMap(world) : null;
     }
     const pen = PENS[zone];
     if (pen && this.areaName === pen.area) {
@@ -1419,7 +1419,7 @@ export class TopdownScene extends Phaser.Scene {
     // On the Crop Fields he walks ONTO the bed, because the belt works the
     // square under his feet and there is no menu left for him to stand clear of.
     // An animal in a pen still gets approached from below rather than stood on.
-    const onField = this.areaName === "oldfields" && (target.kind === "unit" || target.kind === "field");
+    const onField = target.kind === "field" || (target.kind === "unit" && this.onCropField(map));
     const goal =
       target.kind === "nothing"
         ? map
@@ -2127,9 +2127,10 @@ export class TopdownScene extends Phaser.Scene {
   previewSoilAt(world: WorldPoint | null): void {
     this.preview?.destroy();
     this.preview = null;
-    if (!world || this.areaName !== "oldfields") return;
+    if (!world || this.areaName !== "homestead") return;
     const { tx, ty } = soilTileAt(world.x, world.y);
-    const at = soilTileToMap(tx, ty);
+    const at = this.soilTilePoint(tx, ty);
+    if (!at) return;
     this.preview = this.keep(this.add.graphics().setDepth(-4));
     this.preview.lineStyle(1, 0xdeeed6, 1).strokeRect(at.x + 0.5, at.y + 0.5, SOIL_TILE - 1, SOIL_TILE - 1);
   }
@@ -2187,7 +2188,7 @@ export class TopdownScene extends Phaser.Scene {
     if (zone === "cropfields") {
       this.path = [];
       this.pending = null;
-      this.enterArea("oldfields", this.specs.get("oldfields")!.spawn);
+      this.enterArea("homestead", CROP_FIELDS_GATE);
       this.callbacks.onViewMoved();
       return;
     }
@@ -2258,8 +2259,15 @@ export class TopdownScene extends Phaser.Scene {
 
   /** Which map place the farmer is standing in, for the map sheet's "you are here". */
   currentPlace(): MapPlaceId {
-    if (this.areaName === "oldfields") return "cropfields";
+    if (this.onCropField(this.pos)) return "cropfields";
     return AREA_SECTOR[this.areaName] ?? "farmstead";
+  }
+
+  /** Whether a Homestead map point is out on the Crop Fields rather than down
+   *  in the farmyard. The two are one map, so "where am I" is a rectangle
+   *  test now instead of an area name. */
+  private onCropField(at: { x: number; y: number }): boolean {
+    return this.areaName === "homestead" && fieldMapToWorld(at) !== null;
   }
 
   /**

@@ -47,7 +47,6 @@ import coast  # noqa: E402
 import townsquare  # noqa: E402
 import kit  # noqa: E402
 import lpc_ground  # noqa: E402
-import oldfields  # noqa: E402
 import pasture  # noqa: E402
 import portraits  # noqa: E402
 import props  # noqa: E402
@@ -58,7 +57,7 @@ import area as area_mod  # noqa: E402
 from area import T  # noqa: E402
 from pal import Canvas, hash2  # noqa: E402
 
-PLAYABLE = [homestead, oldfields, fold, pasture, coast, oak, mine, townsquare]
+PLAYABLE = [homestead, fold, pasture, coast, oak, mine, townsquare]
 # Rooms walked into through a Homestead door; drawn only by rich/, so they skip the DB16 sprite patching.
 INTERIORS = [SimpleNamespace(__name__="barn", build=interiors.barn),
              SimpleNamespace(__name__="workshop", build=interiors.workshop),

@@ -49,14 +49,10 @@ export function markEmbeddedFloorNav(): void {
  * passes `true` plus a `confirmMessage` describing what's actually at stake
  * there; every other caller omits it and gets the old, unguarded click.
  */
-export function FloorBackLink({
-  confirmLeave = false,
-  confirmMessage,
-}: { confirmLeave?: boolean; confirmMessage?: string } = {}) {
+/** Leaves a game the same way the back link does, for a game's own Leave button. */
+export function useFloorBack(): () => void {
   const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
-
-  const navigateBack = () => {
+  return () => {
     const store = browserSessionStorage();
     if (!store?.getItem(EMBEDDED_NAV_KEY)) {
       navigateWithOrb(() => router.push("/games"));
@@ -65,6 +61,15 @@ export function FloorBackLink({
     store.removeItem(EMBEDDED_NAV_KEY);
     navigateWithOrb(() => router.back());
   };
+}
+
+export function FloorBackLink({
+  confirmLeave = false,
+  confirmMessage,
+}: { confirmLeave?: boolean; confirmMessage?: string } = {}) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const navigateBack = useFloorBack();
 
   return (
     <>

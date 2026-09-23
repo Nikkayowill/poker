@@ -1,12 +1,5 @@
 /* The two headers and the shells the app hangs in. */
 
-/* Deliberately NOT corrected by --vp-short, unlike the two `bottom` rules
-   that are. In a standalone iOS app the viewport UNITS already resolve to the
-   whole screen (06-table.css says the same about 100dvh) -- it is only the
-   initial containing block, which is what `position: fixed` resolves `bottom`
-   against, that launches short. So this already reaches the real bottom edge,
-   and adding the shortfall to it made the box taller than the screen. On the
-   sign-in page, which scrolls, that was immediately visible. */
 .app-root { min-height: 100svh; overflow: hidden; }
 
 /* Keep the room's paint continuous beneath the transparent lobby chrome. The
@@ -104,12 +97,10 @@ body:has(.lobby-hub) { background: var(--brand-room); }
    and below the header boundary are from one uninterrupted background. */
 .lobby-header {
   background: transparent;
-  /* Installed on iOS this app is genuinely full-screen: app/layout.tsx asks
-     for `viewportFit: "cover"` and a black-translucent status bar, which means
-     the web view starts at y=0 -- underneath the clock, the notch and the
-     battery. The header was therefore drawing its wordmark and Gold badge
-     behind the status bar on an iPhone 14, which is what this pushes clear.
-     Zero on any display that reports no inset, so nothing else moves.
+  /* app/layout.tsx asks for `viewportFit: "cover"`, so the page can run
+     under the notch or status bar. This pushes the wordmark and Gold badge
+     clear of it. Zero on any display that reports no inset, so nothing else
+     moves.
 
      The height grows by the inset rather than absorbing it: with border-box
      sizing, padding-top alone would have taken the 47-59px out of the 82px

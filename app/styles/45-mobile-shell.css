@@ -36,53 +36,11 @@
    file only stopped ADDING its own float on top of the inset (see
    .mshell-nav's `bottom` below) -- that was the other half.
 
-   AND THE BAND UNDER THE PILL IS A SEPARATE BUG, OUTSIDE THIS DOCUMENT
-   (2026-09-07). Read this before writing any CSS for it, because it cannot
-   be fixed in CSS.
-
-   The report: on an installed iOS PWA's cold launch a flat violet band sits
-   across the bottom of the screen, under the tab pill on the lobby and under
-   the legal row on the sign-in page. Rotating to landscape clears it for the
-   rest of the session. It survived the --safe-bottom cap, the canvas repaint
-   in 02-app-shell.css and the fixed-wash overshoot below.
-
-   It survived them because none of them can reach it. Measured off a screen
-   recording (2026-09-07, iPhone at 390x844, sampled per row):
-
-     - The band is dead flat and full width, and IDENTICAL on the lobby and
-       the sign-in page even though those two screens paint completely
-       different room gradients. Nothing in the document is that indifferent
-       to which screen it is on.
-     - It reads #150a2b -- the manifest's own background_color -- and NOT the
-       #241530 the document paints its own canvas (02-app-shell.css). So the
-       canvas is not what is showing.
-     - It cuts in at exactly y=797 of 844 on both screens.
-     - The tab pill is CLIPPED mid-body at that same line, flat-bottomed with
-       its rounded corner gone. That is the tell. The pill is laid out where
-       a full 844px viewport puts it; something is cutting the last 47px off
-       afterwards.
-
-   So the web view's FRAME is about 47px shorter than the viewport the
-   document is given, and iOS fills the difference with the manifest colour.
-   The page is laid out correctly and the bottom of it is simply not on
-   screen. `--vp-short` (components/shell/viewport-fit.tsx) reads 0 here and
-   is right to: innerHeight already is 844. There is no API that reports
-   "my frame is smaller than my viewport", so there is nothing to measure and
-   nothing to correct.
-
-   What was done instead: app/manifest.ts's background_color now matches
-   --brand-room-floor, so the band is the same colour as the room's own
-   bottom edge and stops being visible. The 47px is still lost until a
-   rotation makes WebKit re-frame the view, and the pill's bottom edge is
-   still clipped during that window. If that clipping ever needs fixing it is
-   a native/manifest problem, not a stylesheet one -- do not spend a ninth
-   pass on `bottom`, `svh`, reflows or safe-area insets here.
-
-   `app/debug/viewport-launch` and components/debug/viewport-probe.tsx were
-   built for the short-viewport theory. They have now served their purpose --
-   the recording answered the question they were built to answer -- so delete
-   both along with the probe's mount in app/layout.tsx on the next pass
-   through this area.
+   THE BAND UNDER THE PILL (fixed 2026-09-22). The flat violet strip across
+   the bottom of the installed iOS app was WebKit bug 301108: with a
+   black-translucent status bar and viewportFit "cover", iOS 26 sizes the app
+   47px short of the screen until a rotation. No CSS reaches that strip, so
+   app/layout.tsx asks for the "default" status bar style instead.
    =========================================================================
    Turns on at max-width 600px, the same width every other mobile rule in this
    app already uses (`--lobby-header-h` drops to 68px there, `.hub-grid` goes
@@ -654,9 +612,6 @@
        reporting no inset, which is what keeps it reading as floating on
        Android and on a narrow desktop window. */
     bottom: max(var(--safe-bottom), 20px);
-    /* Same correction and the same reasoning as .entry-footer's in
-       04-lobby.css -- a transform, not a negative offset. */
-    transform: translateY(var(--vp-short));
     z-index: var(--z-status-overlay);
     padding: 0 4px;
     border-radius: var(--radius-pill);

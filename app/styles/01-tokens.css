@@ -278,21 +278,7 @@
      is unaffected. */
   --safe-bottom: min(env(safe-area-inset-bottom, 0px), 34px);
 
-  /* How far short of the real screen the INITIAL CONTAINING BLOCK is, written
-     by components/shell/viewport-fit.tsx and 0 everywhere except an installed
-     iOS PWA that has launched with the bug. Declared here so every calc() that
-     reads it resolves before the script runs.
-
-     Only ever subtract this from `bottom` on a `position: fixed` element.
-     It does NOT belong in a height: in a standalone iOS app the viewport units
-     already resolve to the whole screen (06-table.css says the same of
-     100dvh), so `100svh` is right as it stands and adding the shortfall makes
-     the box taller than the display -- which broke the sign-in page, a scroll
-     container, the first time this shipped. The ICB is the one thing that
-     launches short, and `bottom` is the one thing that resolves against it. */
-  --vp-short: 0px;
-
-  /* The mirror image of --vp-short above: how much of 100dvh a mobile
+  /* How much of 100dvh a mobile
      BROWSER's own toolbar is holding out, written by
      components/shell/browser-chrome-width.tsx and 0 everywhere except a
      landscape browser tab that has measured a real shortfall (0 on an

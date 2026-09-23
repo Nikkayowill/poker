@@ -26,12 +26,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { usePathname } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 
 import { useStoredPreference } from "@/components/use-stored-preference";
@@ -95,6 +97,9 @@ type AppShellValue = {
 };
 
 const AppShellContext = createContext<AppShellValue | null>(null);
+
+/** The least time between two background profile reads. */
+const PROFILE_REFRESH_MIN_GAP_MS = 5_000;
 
 export function useAppShell(): AppShellValue {
   const value = useContext(AppShellContext);
@@ -217,7 +222,14 @@ export function AppShell({ children }: { children: ReactNode }) {
    * `loadedProfile` is the answer even when the answer is null, so a player
    * whose session has expired doesn't keep seeing their old balance.
    */
-  const [loadedProfile, setProfile] = useState<PlayerProfile | null>(null);
+  const [loadedProfile, setLoadedProfile] = useState<PlayerProfile | null>(null);
+  // Counts every write to the profile. A fetch that started before some other
+  // write (a buy-in, a claim) must not land on top of it with an older balance.
+  const profileWritesRef = useRef(0);
+  const setProfile = useCallback<Dispatch<SetStateAction<PlayerProfile | null>>>((next) => {
+    profileWritesRef.current += 1;
+    setLoadedProfile(next);
+  }, []);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -240,9 +252,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loadedProfile]);
 
   const loadProfile = useCallback(async () => {
+    const writesAtStart = profileWritesRef.current;
     const response = await fetch("/api/profile", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "Could not load your profile.");
+    if (profileWritesRef.current !== writesAtStart) return;
     setProfile(data.profile);
     // A profile came back, so this browser holds a session cookie and has
     // cleared the entry gate before in some earlier tab -- entryComplete is
@@ -250,7 +264,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     // the other half: the session is gone, so this tab's cached copy is
     // stale and must not be shown to whoever arrives next.
     if (!data.profile) clearSessionContinuity(browserSessionStorage());
-  }, []);
+  }, [setProfile]);
 
   // Unconditional and mount-once: this is what makes a returning player's
   // session resolve even if the very first screen they land on is a deep
@@ -268,6 +282,40 @@ export function AppShell({ children }: { children: ReactNode }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadProfile]);
+
+  // Gold also changes on the server with nobody asking: mission and level
+  // rewards, Sit & Go and heads-up payouts. The badge only knew about the
+  // first load and whatever a screen wrote back, so it drifted. It is read
+  // again when the tab comes back and when the player returns to the lobby,
+  // no more than once per PROFILE_REFRESH_MIN_GAP_MS.
+  const lastBackgroundLoadRef = useRef(0);
+  const refreshProfileInBackground = useCallback(() => {
+    if (profileLoading) return;
+    const now = Date.now();
+    if (now - lastBackgroundLoadRef.current < PROFILE_REFRESH_MIN_GAP_MS) return;
+    lastBackgroundLoadRef.current = now;
+    void loadProfile().catch(() => {
+      // Quiet. The last known profile stays up and the next return tries again.
+    });
+  }, [loadProfile, profileLoading]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) refreshProfileInBackground();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshProfileInBackground]);
+
+  const pathname = usePathname();
+  const previousPathnameRef = useRef(pathname);
+  useEffect(() => {
+    const previous = previousPathnameRef.current;
+    previousPathnameRef.current = pathname;
+    if (pathname !== "/" || previous === "/") return;
+    const timer = window.setTimeout(refreshProfileInBackground, 0);
+    return () => window.clearTimeout(timer);
+  }, [pathname, refreshProfileInBackground]);
 
   const value: AppShellValue = {
     soundEnabled,

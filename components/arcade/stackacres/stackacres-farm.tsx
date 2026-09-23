@@ -228,6 +228,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
+import { AXE_SWING_ENERGY, TOO_TIRED_TO_CHOP, type AxeLevel, type AxePayment } from "@/lib/stackacres/axe";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
 import { isActiveStock } from "@/lib/stackacres/scope";
@@ -428,6 +429,8 @@ interface StackAcresResponse {
   /** The equipment rung held. Absent only from a response old enough to
    *  predate the ladder, which `toStackAcresToolTier` reads as the Trowel. */
   tool?: StackAcresToolTier;
+  /** The axe held (lib/stackacres/axe.ts). Absent from a response older than it. */
+  axe?: AxeLevel;
   /** Grass cutters owned, Scythe first. Absent from a response older than
    *  cutters, which leaves the Scythe alone in hand. */
   cutters?: StackAcresCutter[];
@@ -835,6 +838,7 @@ export function StackAcresFarm() {
   const fieldRef = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<Partial<Record<StackAcresStock, number>>>({});
   const [toolTier, setToolTier] = useState<StackAcresToolTier>(STACKACRES_STARTING_TIER);
+  const [axe, setAxe] = useState<AxeLevel>(1);
   // Grass cutters owned, and the one last picked on this device. `cutter` is
   // what is actually in hand: the pick while it is still owned, else the best.
   const [cutters, setCutters] = useState<StackAcresCutter[]>([STACKACRES_STARTING_CUTTER]);
@@ -1609,6 +1613,7 @@ export function StackAcresFarm() {
     const fields = farmFieldsOf(data);
     confirmedFarm.current = { ...confirmedFarm.current, ...fields };
     layFarm(fields, { base: "next", keys: heldGuesses.current.heldBesides(own) });
+    if (data.axe) setAxe(data.axe);
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
     // Fresh arrays on every answer; keeping the old one when nothing moved
@@ -1661,6 +1666,7 @@ export function StackAcresFarm() {
       capacity,
       seedStock,
       toolTier,
+      axe,
       cutters,
       sectors,
       upkeep,
@@ -1699,6 +1705,7 @@ export function StackAcresFarm() {
       landObstacles,
       fences,
       toolTier,
+      axe,
       cutters,
       sectors,
       upkeep,
@@ -2997,6 +3004,13 @@ export function StackAcresFarm() {
     [workshopAct],
   );
   const onWork = useCallback(() => workshopAct({ action: "work" }), [workshopAct]);
+  const onUpgradeAxe = useCallback(
+    (pay: AxePayment) => {
+      buySound();
+      return workshopAct({ action: "upgrade-axe", pay });
+    },
+    [workshopAct],
+  );
   const onSell = useCallback(
     (item: MachineItemId, quantity: number) => {
       sellSound();
@@ -3264,7 +3278,7 @@ export function StackAcresFarm() {
       const voice = !square.stroke || sowRun.current === null;
       switch (action.kind) {
         case "water":
-          if (voice) waterSound();
+          // The splash is the scene's, on the frame the can tips (farmerAction above).
           // `tapBatched` sends the first press straight away and folds anything
           // within the window behind it into one plural request, so a lone crop
           // never pays for a batch it is not part of.
@@ -3528,6 +3542,18 @@ export function StackAcresFarm() {
     [act, shopProgress],
   );
 
+  /** Checked before he swings the axe or clears land, so a tired farmer is
+   *  told so instead of swinging at nothing. The server checks again. */
+  const onWorldMaySwing = useCallback(
+    (at: TapPoint) => {
+      if (energyAt(energy, new Date()) >= AXE_SWING_ENERGY) return true;
+      refusedSound();
+      world.current?.floatAt(at, TOO_TIRED_TO_CHOP, "deny");
+      return false;
+    },
+    [energy],
+  );
+
   /**
    * The farmer has walked up to one of the Homestead's own trees and is
    * already swinging (the scene plays the swing, and refuses the tap itself
@@ -3746,7 +3772,7 @@ export function StackAcresFarm() {
           )}
           <span
             className="sa-energy"
-            title="Energy. Fishing uses it. Eat at your house to fill it up."
+            title="Energy. Fishing, chopping and clearing land use it. Eat at your house to fill it up."
           >
             <StackAcresPixelIcon name="energy" />
             <span className="sa-sr">Energy</span>
@@ -3808,6 +3834,7 @@ export function StackAcresFarm() {
               onDockTap={onWorldFishHooked}
               onThicketTap={onWorldThicketTap}
               onTreeTap={onWorldTreeTap}
+              maySwing={onWorldMaySwing}
               onStoneTap={onWorldStoneTap}
               onForageTap={onWorldForageTap}
               onLandTap={onWorldLandTap}
@@ -4501,6 +4528,8 @@ export function StackAcresFarm() {
           onWork={onWork}
           onSell={onSell}
           onOpenVat={() => { panelSound(); setShowVat(true); }}
+          axe={axe}
+          onUpgradeAxe={onUpgradeAxe}
           onClose={() => { panelSound(); setShowWorkshop(false); }}
         />
       )}

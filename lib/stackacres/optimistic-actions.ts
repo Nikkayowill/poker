@@ -62,6 +62,7 @@
  * response takes -- see stackacres-farm.tsx.
  */
 
+import { AXE_SWING_ENERGY, STARTING_AXE_LEVEL, type AxeLevel } from "./axe";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
   STACKACRES_CATALOGUE,
@@ -119,6 +120,7 @@ import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from 
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,
+  landSwingDamage,
   landClearingProgress,
   landObstacle,
   landObstacleStateOf,
@@ -170,6 +172,8 @@ export interface FarmPredictContext {
   capacity: Partial<Record<StackAcresStock, number>>;
   seedStock: SeedStock;
   toolTier: StackAcresToolTier;
+  /** The axe held. Missing reads as the starting axe. */
+  axe?: AxeLevel;
   cutters: readonly StackAcresCutter[];
   sectors: SectorId[];
   upkeep: StackAcresUpkeepState;
@@ -907,7 +911,8 @@ export function predictStackAcresAction(
       const obstacle = landObstacle(body.obstacleId);
       if (!obstacle) return null;
       const now = new Date(ctx.nowMs);
-      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now);
+      const damage = landSwingDamage(obstacle.kind, ctx.axe ?? STARTING_AXE_LEVEL);
+      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now, damage);
       if (!swing) return null;
       // Energy first, same order the server keeps -- a swing nobody has the
       // energy for never happened, so nothing else here is guessed either.
@@ -922,6 +927,13 @@ export function predictStackAcresAction(
         ...processingPatch(ctx, { inventory }),
         ...openedSectorPatch(ctx, obstacle.ground, landObstacles),
       };
+    }
+    case "chop-tree": {
+      // Only the energy is guessed, so the bar moves on the swing. Whether it
+      // fells the tree is the server's answer, and the scene holds the tree up
+      // until the blade lands either way.
+      const energy = applyEnergyDelta(ctx.energy, -AXE_SWING_ENERGY, new Date(ctx.nowMs));
+      return energy ? { energy } : null;
     }
     case "gather-forage": {
       // Fully predicted, which almost nothing that yields something else is.

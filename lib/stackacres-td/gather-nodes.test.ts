@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { REGROW_MS } from "@/lib/stackacres/stone-nodes";
 import { WOOD_RESPAWN_MS } from "@/lib/stackacres/wood";
 import { FORAGE_REGROW_MS } from "@/lib/stackacres/forage";
-import { NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees } from "./gather-nodes";
+import { CHUNK_ART, NODE_ART, gatherKindOfTag, spentForage, spentStones, spentTrees } from "./gather-nodes";
 
 const node = <Id extends string>(nodeId: Id, ready: boolean, respawnProgress: number | null) => ({
   nodeId,
@@ -82,7 +82,7 @@ describe("gatherKindOfTag", () => {
 });
 
 describe("node art", () => {
-  for (const [kind, art] of Object.entries(NODE_ART)) {
+  for (const [kind, art] of [...Object.entries(NODE_ART), ...Object.entries(CHUNK_ART)]) {
     it(`${kind}: is a clean rectangle that only uses colours it defines`, () => {
       const width = art.rows[0].length;
       for (const row of art.rows) {

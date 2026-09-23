@@ -113,6 +113,39 @@ export const PICKED_ART: NodeArt = {
   ],
 };
 
+/** A chunk of a felled tree lying on the ground (lib/stackacres-td/chunks.ts):
+ *  a short log, end grain to the left, in the stump's own colours. */
+export const WOOD_CHUNK_ART: NodeArt = {
+  texture: "chunk-wood",
+  colors: STUMP_ART.colors,
+  rows: [
+    ".OOOOOOO.",
+    "OccOllllO",
+    "OcrOlmmmO",
+    "OrcOmmmdO",
+    "OccOmdddO",
+    ".OOOOOOO.",
+  ],
+};
+
+/** A chunk of broken rock, in the rubble's own colours. */
+export const STONE_CHUNK_ART: NodeArt = {
+  texture: "chunk-stone",
+  colors: RUBBLE_ART.colors,
+  rows: [
+    "..OOO..",
+    ".OhhmO.",
+    "OhmmddO",
+    "OmmdddO",
+    ".OOOOO.",
+  ],
+};
+
+export const CHUNK_ART: Readonly<Record<"wood" | "stone", NodeArt>> = {
+  wood: WOOD_CHUNK_ART,
+  stone: STONE_CHUNK_ART,
+};
+
 export const NODE_ART: Readonly<Record<GatherKind, NodeArt>> = {
   tree: STUMP_ART,
   stone: RUBBLE_ART,

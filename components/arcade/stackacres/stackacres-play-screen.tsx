@@ -1,113 +1,107 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import clsx from "clsx";
-import { Music2, Settings2, User, Volume2, VolumeX, X } from "lucide-react";
 import { playStackAcresMusic } from "@/lib/audio/stackacres-music";
 import { tapSound, toggleSound } from "@/lib/audio/ui-sounds";
 import { useAppShell } from "@/components/shell/app-shell";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
+import { useFloorBack } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
-import { StackAcresCoverArt } from "./stackacres-cover-art";
 import { ProfileModal } from "@/components/profile/profile-modal";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 
 interface StackAcresPlayScreenProps {
   onStart: () => void;
-  /** Loaded in the background by StackAcresFarm's own fetch effect, which
-   * keeps running underneath this screen -- see that effect's comment. Null
-   * until it resolves, so the Profile entry stays disabled rather than
-   * opening on stale or missing data. */
+  /** Loads in the background under this screen; null until it arrives. */
   profile: PlayerProfile | null;
   onProfileSaved: (profile: PlayerProfile) => void;
 }
 
-type MenuView = "root" | "profile" | "settings";
+type MenuView = "root" | "settings" | "profile" | "credits";
 
 /**
- * StackAcres' entry screen: Play / Profile / Settings, replacing the old
- * single tap-to-play affordance. All three stay on this screen -- nothing
- * here navigates back to the main StackChips lobby.
- *
- * - Play does exactly what the old tap-through did: starts the music, fades
- *   this screen, and calls onStart.
- * - Profile reuses the same ProfileModal the main lobby uses
- *   (components/profile/profile-modal.tsx) rather than a second profile UI.
- * - Settings is new: there was no settings surface StackAcres could reuse in
- *   place (the closest, the lobby's mobile-shell Settings section, is wired
- *   directly into that shell's own big prop list, not an importable
- *   component). It exposes the two real, already-wired app-wide toggles
- *   StackAcres itself already reads -- useAppShell's soundEnabled and
- *   musicEnabled (see stackacres-farm.tsx's own setFarmSfxMuted(!soundEnabled)
- *   effect) -- rather than inventing settings that don't map to anything.
+ * The title screen: Play, Settings, Credits and Leave over the Homestead at
+ * golden hour. Settings and Credits open over this screen; Leave goes back to
+ * the arcade the same way the farm's back link does.
  */
 export function StackAcresPlayScreen({ onStart, profile, onProfileSaved }: StackAcresPlayScreenProps) {
   const [isActive, setIsActive] = useState(true);
   const [menu, setMenu] = useState<MenuView>("root");
-  const { soundEnabled, toggleSound, musicEnabled, toggleMenuMusic } = useAppShell();
+  const { soundEnabled, toggleSound: toggleAppSound, musicEnabled, toggleMenuMusic } = useAppShell();
+  const leave = useFloorBack();
 
   const handlePlay = async () => {
     tapSound();
     await playStackAcresMusic();
     setIsActive(false);
-    // Let the fade animation finish before calling onStart
+    // Let the fade finish before the farm takes over.
     setTimeout(onStart, 300);
+  };
+
+  const open = (view: MenuView) => {
+    tapSound();
+    setMenu(view);
   };
 
   return (
     <div className={clsx("sa-play-screen", { "is-fading": !isActive })}>
-      <StackAcresCoverArt />
       <div className="sa-play-content">
         <h1 className="sr-only">StackAcres</h1>
-        <StackAcresLogo className="sa-play-logo" aria-hidden="true" />
-        <p className="sa-play-subtitle">
-          After a long grind at the tables, put your gold to work. Build a
-          farm and watch it grow.
-        </p>
-
-        <div className="sa-play-menu">
-          <button
-            type="button"
-            className="sa-play-menu-item sa-play-menu-primary"
-            onClick={() => void handlePlay()}
-          >
+        <StackAcresLogo variant="stacked" className="sa-play-logo" aria-hidden="true" alt="" />
+        <nav className="sa-play-menu" aria-label="StackAcres">
+          <button type="button" className="sa-play-go" onClick={() => void handlePlay()}>
             Play
           </button>
-          <button
-            type="button"
-            className="sa-play-menu-item"
-            disabled={!profile}
-            onClick={() => { tapSound(); setMenu("profile"); }}
-          >
-            <User size={16} aria-hidden="true" /> Profile
-          </button>
-          <button
-            type="button"
-            className="sa-play-menu-item"
-            onClick={() => { tapSound(); setMenu("settings"); }}
-          >
-            <Settings2 size={16} aria-hidden="true" /> Settings
-          </button>
-        </div>
+          <div className="sa-play-row">
+            <button type="button" className="sa-play-item" onClick={() => open("settings")}>
+              Settings
+            </button>
+            <button type="button" className="sa-play-item" onClick={() => open("credits")}>
+              Credits
+            </button>
+            <button
+              type="button"
+              className="sa-play-item"
+              onClick={() => {
+                tapSound();
+                leave();
+              }}
+            >
+              <StackAcresPixelIcon name="back" />
+              Leave
+            </button>
+          </div>
+        </nav>
       </div>
-
-      {menu === "profile" && profile && (
-        <ProfileModal
-          profile={profile}
-          onClose={() => setMenu("root")}
-          onSaved={(saved) => { onProfileSaved(saved); setMenu("root"); }}
-        />
-      )}
+      <p className="sa-play-foot">A StackChips game</p>
 
       {menu === "settings" && (
         <StackAcresSettingsPanel
           soundEnabled={soundEnabled}
-          onToggleSound={toggleSound}
+          onToggleSound={toggleAppSound}
           musicEnabled={musicEnabled}
           onToggleMenuMusic={toggleMenuMusic}
+          profileReady={profile !== null}
+          onEditProfile={() => open("profile")}
           onClose={() => setMenu("root")}
         />
       )}
+
+      {menu === "profile" && profile && (
+        <ProfileModal
+          profile={profile}
+          onClose={() => setMenu("settings")}
+          onSaved={(saved) => {
+            onProfileSaved(saved);
+            setMenu("settings");
+          }}
+        />
+      )}
+
+      {menu === "credits" && <StackAcresCreditsPanel onClose={() => setMenu("root")} />}
     </div>
   );
 }
@@ -117,57 +111,130 @@ function StackAcresSettingsPanel({
   onToggleSound,
   musicEnabled,
   onToggleMenuMusic,
+  profileReady,
+  onEditProfile,
   onClose,
 }: {
   soundEnabled: boolean;
   onToggleSound: () => void;
   musicEnabled: boolean;
   onToggleMenuMusic: () => void;
+  profileReady: boolean;
+  onEditProfile: () => void;
   onClose: () => void;
 }) {
   const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
 
   return (
     <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
-      <section
-        className="profile-modal htp-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sa-settings-title"
-      >
+      <section className="profile-modal htp-modal" role="dialog" aria-modal="true" aria-labelledby="sa-settings-title">
         <header className="profile-modal-header">
           <div>
-            <span>STACKACRES</span>
             <h2 id="sa-settings-title">Settings</h2>
           </div>
           <button
             ref={closeButtonRef}
             className="modal-close"
-            onClick={() => { tapSound(); onClose(); }}
+            onClick={() => {
+              tapSound();
+              onClose();
+            }}
             aria-label="Close settings"
           >
-            <X size={18} />
+            <StackAcresPixelIcon name="close" />
           </button>
         </header>
         <div className="htp-body">
           <button
             type="button"
             className="sa-settings-row"
-            onClick={() => { toggleSound(); onToggleSound(); }}
+            onClick={() => {
+              toggleSound();
+              onToggleSound();
+            }}
           >
-            {soundEnabled ? <Volume2 size={19} aria-hidden="true" /> : <VolumeX size={19} aria-hidden="true" />}
+            <StackAcresPixelIcon name={soundEnabled ? "sound" : "mute"} />
             <span className="sa-settings-row-label">Sound</span>
             <span className="sa-settings-row-value">{soundEnabled ? "On" : "Off"}</span>
           </button>
           <button
             type="button"
             className="sa-settings-row"
-            onClick={() => { toggleSound(); onToggleMenuMusic(); }}
+            onClick={() => {
+              toggleSound();
+              onToggleMenuMusic();
+            }}
           >
-            <Music2 size={19} aria-hidden="true" />
+            <StackAcresPixelIcon name={musicEnabled ? "sound" : "mute"} />
             <span className="sa-settings-row-label">Menu music</span>
             <span className="sa-settings-row-value">{musicEnabled ? "On" : "Off"}</span>
           </button>
+          <button type="button" className="sa-settings-row" disabled={!profileReady} onClick={onEditProfile}>
+            <StackAcresPixelIcon name="journal" />
+            <span className="sa-settings-row-label">Player profile</span>
+            <span className="sa-settings-row-value">Edit</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const CAST_ARTISTS =
+  "Benjamin K. Smith (BenCreating), bluecarrot16, Durrani, Eliza Wyatt (ElizaWy), Evert, Inboxninja, " +
+  "JaidynReiman, Joe White, Johannes Sjölund (wulax), Manuel Riecke (MrBeast), Marcel van de Steeg (MadMarcel), " +
+  "Matthew Krohn (makrohn), Michael Whitlock (bigbeargames), MuffinElZangano, Napsio (Vitruvian Studio), " +
+  "Nila122, Pierre Vigier (pvigier), Stephen Challener (Redshrike), TheraHedwig and Tuomo Untinen (reemax)";
+
+const LAND_ARTISTS =
+  "Lanea Zimmerman (Sharm), Daniel Eddeland, Casper Nilsson, Johann Charlot, Skyler Robert Colladay, " +
+  "Stephen Challener (Redshrike), Charles Sanchez (CharlesGabriel), Manuel Riecke (MrBeast) and " +
+  "Daniel Armstrong (HughSpectrum)";
+
+function StackAcresCreditsPanel({ onClose }: { onClose: () => void }) {
+  const { closeButtonRef, onBackdropMouseDown } = useModalDismiss(onClose);
+
+  return (
+    <div className="profile-overlay" role="presentation" onMouseDown={onBackdropMouseDown}>
+      <section
+        className="profile-modal htp-modal sa-credits"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sa-credits-title"
+      >
+        <header className="profile-modal-header">
+          <div>
+            <h2 id="sa-credits-title">Credits</h2>
+          </div>
+          <button
+            ref={closeButtonRef}
+            className="modal-close"
+            onClick={() => {
+              tapSound();
+              onClose();
+            }}
+            aria-label="Close credits"
+          >
+            <StackAcresPixelIcon name="close" />
+          </button>
+        </header>
+        <div className="htp-body">
+          <h3>StackAcres</h3>
+          <p>Made for StackChips. The logo, menus and icons are drawn for the farm in its own pixel art.</p>
+          <h3>The people</h3>
+          <p>
+            Built from the Universal LPC Spritesheet Character Generator, art from the Liberated Pixel Cup on
+            OpenGameArt. Drawn by {CAST_ARTISTS}. CC0, OGA-BY 3.0, CC-BY 3.0 and CC-BY 4.0.
+          </p>
+          <h3>The land</h3>
+          <p>Ground, water, paths and props use Liberated Pixel Cup art by {LAND_ARTISTS}. CC-BY-SA 3.0 and GPL 3.0.</p>
+          <h3>Lettering</h3>
+          <p>Pixelify Sans by Stefie Justprince and Baloo 2 by Ek Type, both under the SIL Open Font License.</p>
+          <p>
+            <Link href="/credits" prefetch={false}>
+              Every credit, layer by layer
+            </Link>
+          </p>
         </div>
       </section>
     </div>

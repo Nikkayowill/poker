@@ -543,7 +543,7 @@ function PlayPane({
           and a default link would prefetch the heaviest route on that alone. */}
       {profile.stackacresAccess ? (
         <Link className="mshell-card mshell-row mshell-stackacres-row" href="/games/stackacres" onClick={tapSound} prefetch={false}>
-          <StackAcresLogo className="mshell-stackacres-logo" />
+          <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
           <span className="mshell-row-body">
             <strong>StackAcres</strong>
             <small>Raise crops and livestock, sell what they make</small>
@@ -553,7 +553,7 @@ function PlayPane({
       ) : (
         STACKACRES_TILE_ADVERTISED && (
           <div className="mshell-card mshell-row mshell-stackacres-row mshell-row-locked" aria-disabled="true">
-            <StackAcresLogo className="mshell-stackacres-logo" />
+            <StackAcresLogo variant="badge" className="mshell-stackacres-logo" alt="" />
             <span className="mshell-row-body">
               <strong>StackAcres</strong>
               <small className="mshell-stackacres-soon">Coming soon</small>

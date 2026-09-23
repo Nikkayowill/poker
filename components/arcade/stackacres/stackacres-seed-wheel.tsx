@@ -10,7 +10,7 @@ import { StackAcresIcon } from "./stackacres-icon";
  * The seed wheel: which crop the seed pouch sows.
  *
  * Tapping the pouch on the belt opens this beside it, and tapping a token picks
- * that crop. It is the gel dock's liquid glass row (`.sa-gel-token`,
+ * that crop. It is the gel dock's row (`.sa-gel-token`,
  * `.sa-gel-scroll` in 52-stackacres.css, kept) without the drag: the dock used
  * to make the player haul a token into a circle pinned on the tapped tile, and
  * that gesture is gone along with the tap-then-drag flow it belonged to. A tap

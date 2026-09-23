@@ -40,7 +40,10 @@ DURATIONS = {"harvest": [110, 170, 170, 350], "water": [160, 160, 160, 160],
              "chop": [180, 120, 60, 260], "fish": [220, 90, 150, 500],
              "shoot": [150, 250, 200, 250]}
 IDLE_MS = [700, 500, 700, 500]
-WALK_MS, STRIDE_MS = 150, 100
+WALK_MS = 150
+# The stride's frame hold. At 60ms he plants a foot every 240ms, about Stardew's pace for a farmer
+# who covers the same ground per second. At 100ms his feet slid.
+STRIDE_MS = 60
 
 # Which LPC animation and which of its frames each of the game's actions is cut from. `tools` are
 # added to the character for that action alone, so the hoe only exists while he is hoeing.
@@ -94,6 +97,62 @@ def place(frame, height, ground=GROUND):
     return pad.crop((SIZE, SIZE, SIZE * 2, SIZE * 2))
 
 
+# LPC's front and back walks barely move the legs, and shrunk to 31px the difference is gone. So
+# those two directions keep LPC's upper body (its arm swing and dip) and redraw the legs from the
+# standing pose: one leg lifts while the other presses down a pixel, half a cycle apart. Frames 0
+# and 4 are the contacts, which is where the scene plays a footstep.
+LIFT = ([0, 1, 2, 1, 0, 0, -1, 0], [0, 0, -1, 0, 0, 1, 2, 1])
+# A little hop on every step, the way Stardew's farmer bounces: the whole sprite rises as a leg
+# passes and lands on the contact frame. LPC's walk dips the body on those same frames instead,
+# which is cancelled first (see `hopped`).
+HOP = [0, -1, -2, -1, 0, -1, -2, -1]
+
+
+def hip(stand):
+    """The row the legs part at: the highest row from which the gap between them runs to the feet."""
+    row = FEET_Y
+    while row > 0 and stand.getpixel((FEET_X - 1, row - 1))[3] == 0 and stand.getpixel((FEET_X, row - 1))[3] == 0:
+        row -= 1
+    return row
+
+
+def shifted(img, dy):
+    out = Image.new("RGBA", img.size)
+    out.alpha_composite(img, (0, dy))
+    return out
+
+
+def undipped(walk):
+    """LPC's walk frames with its passing dip taken out, so every frame's head sits where frame 0's does."""
+    top = walk[0].getbbox()[1]
+    return [shifted(f, top - f.getbbox()[1]) for f in walk]
+
+
+def stepped(walk, stand):
+    """Eight 48px walk frames with the legs posed from `stand`, split down the middle at FEET_X."""
+    out = []
+    HIP = hip(stand)
+    # Two rows above the hip come along so a leg pressed down leaves no gap under the hem, but only
+    # over the legs themselves: his hands hang in those rows too, and would be drawn twice.
+    legs = stand.copy()
+    px = legs.load()
+    for y in (HIP - 2, HIP - 1):
+        for x in range(SIZE):
+            if stand.getpixel((x, HIP))[3] == 0:
+                px[x, y] = (0, 0, 0, 0)
+    for y in range(HIP - 2):
+        for x in range(SIZE):
+            px[x, y] = (0, 0, 0, 0)
+    for i, frame in enumerate(walk):
+        upper = frame.crop((0, 0, SIZE, HIP))
+        got = Image.new("RGBA", (SIZE, SIZE))
+        for (x0, x1), lift in zip(((0, FEET_X), (FEET_X, SIZE)), (LIFT[0][i], LIFT[1][i])):
+            got.alpha_composite(legs.crop((x0, HIP - 2, x1, SIZE)), (x0, HIP - 2 - lift))
+        got.alpha_composite(upper)
+        out.append(got)
+    return out
+
+
 # Only the player walks the map, and a sheet costs texture memory on a phone, so the eight frame
 # stride is his. Everyone else keeps the 112 frame sheet the game already loads.
 STRIDES = {"farmer"}
@@ -134,8 +193,11 @@ def frames_for(name, height):
         out.append(("idle", d, [place(idle[i % len(idle)], height) for i in (0, 1, 0, 1)], IDLE_MS))
     if name in STRIDES:
         for d in DIRS:
-            stride = dressed([]).frames("walk", d)
-            out.append(("stride", d, [place(f, height) for f in stride], [STRIDE_MS] * len(stride)))
+            stride = undipped([place(f, height) for f in dressed([]).frames("walk", d)])
+            if d in ("down", "up"):
+                stride = stepped(stride, place(dressed([]).frames("idle", d)[0], height))
+            stride = [shifted(f, dy) for f, dy in zip(stride, HOP)]
+            out.append(("stride", d, stride, [STRIDE_MS] * len(stride)))
     return out
 
 

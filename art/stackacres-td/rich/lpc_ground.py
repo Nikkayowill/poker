@@ -103,8 +103,30 @@ def _nine(material, north, east, south, west):
     return col + (0 if not west else 2 if not east else 1), row + (0 if not north else 2 if not south else 1)
 
 
-def paint(tiles, w, h):
-    """The whole ground as a float64 HxWx3 at SCALE * 16 px per map tile."""
+def _with_inner_corner(patch, material, inner):
+    """`patch` with one of the block's inner-corner tiles laid in.
+
+    Where two roads meet, a tile can have road on all four sides and grass only
+    at a diagonal. Picked by its sides alone it is a plain middle tile, and
+    shows as a flat square cut into the road's darker rim. The pack draws an
+    inner corner for this (the 2x2 above each 3x3 block, the grass showing in
+    one corner of each). Taking the lower alpha and the darker colour of the
+    two keeps both the corner's hole and its rim, and lets a tile with two
+    missing diagonals, or an edge and a missing diagonal, carry both."""
+    col, row = BLOCKS[material]
+    corner = _tile(col + inner[0], row + inner[1])
+    darker = corner[..., :3].sum(-1, keepdims=True) < patch[..., :3].sum(-1, keepdims=True)
+    rgb = np.where(darker, corner[..., :3], patch[..., :3])
+    return np.concatenate([rgb, np.minimum(patch[..., 3:4], corner[..., 3:4])], axis=-1)
+
+
+def paint(tiles, w, h, water=None):
+    """The whole ground as a float64 HxWx3 at SCALE * 16 px per map tile.
+
+    `water` is the per-pixel water mask at map resolution (the pond and the
+    stream, from rich/terrain.py's owner grid). Water is drawn from that shape
+    by `_paint_water` rather than stamped as tiles -- see its own header.
+    """
     img = np.zeros((h * TILE, w * TILE, 3), np.float64)
     base = _tile(*[c + 1 for c in BLOCKS["grass"]])[..., :3]
     for ty in range(h):
@@ -113,18 +135,170 @@ def paint(tiles, w, h):
     for ty in range(h):
         for tx in range(w):
             material = tiles[ty][tx]
-            if material == "grass" or material not in BLOCKS:
+            if material in ("grass", "water", "stream") or material not in BLOCKS:
                 continue
             same = lambda dx, dy: (
                 0 <= tx + dx < w and 0 <= ty + dy < h and tiles[ty + dy][tx + dx] == material
             )
-            col, row = _nine(material, same(0, -1), same(1, 0), same(0, 1), same(-1, 0))
-            patch = _tile(col, row)
+            n, e, so, wst = same(0, -1), same(1, 0), same(0, 1), same(-1, 0)
+            patch = _tile(*_nine(material, n, e, so, wst))
+            for dx, dy, inner in ((1, 1, (1, -2)), (-1, 1, (2, -2)), (1, -1, (1, -1)), (-1, -1, (2, -1))):
+                if same(dx, 0) and same(0, dy) and not same(dx, dy):
+                    patch = _with_inner_corner(patch, material, inner)
             a = patch[..., 3:4] / 255.0
             y0, x0 = ty * TILE, tx * TILE
             under = img[y0:y0 + TILE, x0:x0 + TILE]
             img[y0:y0 + TILE, x0:x0 + TILE] = under * (1 - a) + patch[..., :3] * a
+    _scatter(img, tiles, w, h)
+    if water is not None:
+        _paint_water(img, water)
     return img
+
+
+# Small things lying in the grass, from the pack. Pixel boxes in the terrain atlas. Stones come up
+# far more often than leaves or plants: pebbles are what makes open grass read as ground rather than
+# a green sheet, and thinning them was the first thing noticed.
+STONES = [(493, 3, 17, 9), (489, 41, 19, 9), (585, 41, 19, 9), (515, 480, 16, 9), (523, 491, 18, 15)]
+GREENERY = [
+    (419, 453, 11, 7), (424, 465, 8, 13), (433, 467, 10, 10), (416, 481, 11, 9), (419, 497, 8, 12),
+    (434, 497, 11, 13), (385, 577, 17, 15), (681, 42, 15, 13), (201, 810, 15, 13),
+]
+SCATTER_CHANCE = 0.5      # of a square with grass all round it getting something
+STONE_SHARE = 0.65        # of those, the share that are stones
+
+
+def _hash(x, y, salt):
+    """A steady 0..1 for a spot: works on plain ints and on whole numpy arrays of them alike."""
+    x = np.asarray(x, dtype=np.uint64)
+    y = np.asarray(y, dtype=np.uint64)
+    m = np.uint64(0xFFFFFFFF)
+    h = (x * np.uint64(374761393) + y * np.uint64(668265263) + np.uint64(salt * 1442695041)) & m
+    h = ((h ^ (h >> np.uint64(13))) * np.uint64(1274126177)) & m
+    return (h ^ (h >> np.uint64(16))).astype(np.float64) / float(0xFFFFFFFF)
+
+
+def _scatter(img, tiles, w, h):
+    """Stones, leaves and low plants lying in the grass, painted into the ground itself.
+
+    What gives open grass some life without adding a single thing for the
+    engine to draw: it is part of the ground picture. A bed dug on a square is
+    drawn over the ground, so it simply covers whatever was lying there.
+
+    Only on grass with grass all round it, so nothing lands half on a road or
+    at the water's edge, and never more than one to a square. Placed by a hash
+    of the square, so the same square always has the same pebble.
+    """
+    stones = [_tile_box(box) for box in STONES]
+    greenery = [_tile_box(box) for box in GREENERY]
+    for ty in range(1, h - 1):
+        for tx in range(1, w - 1):
+            if any(tiles[ty + dy][tx + dx] != "grass" for dy in (-1, 0, 1) for dx in (-1, 0, 1)):
+                continue
+            if _hash(tx, ty, 1) > SCATTER_CHANCE:
+                continue
+            pool = stones if _hash(tx, ty, 5) < STONE_SHARE else greenery
+            piece = pool[int(_hash(tx, ty, 2) * len(pool)) % len(pool)]
+            ph, pw = piece.shape[:2]
+            x0 = tx * TILE + int(_hash(tx, ty, 3) * max(1, TILE - pw))
+            y0 = ty * TILE + int(_hash(tx, ty, 4) * max(1, TILE - ph))
+            a = piece[..., 3:4] / 255.0
+            under = img[y0:y0 + ph, x0:x0 + pw]
+            img[y0:y0 + ph, x0:x0 + pw] = under * (1 - a) + piece[..., :3] * a
+
+
+def _tile_box(box):
+    x, y, bw, bh = box
+    return atlas()[y:y + bh, x:x + bw]
+
+
+# The pack's pond-in-grass set (terrain_atlas tiles 6..8 x 11..13). Its middle tile is open water;
+# the four around it are the shoreline, one per side the grass is on, with the row or column where
+# each turns from shore to water (measured off the tiles: where half of that row or column is water).
+WATER_FILL = (7, 12)
+SHORES = {
+    # side the grass is on: (tile, shoreline row/column, "row" or "col", +1 if water lies at larger indices)
+    "north": ((7, 11), 16, "row", +1),
+    "south": ((7, 13), 13, "row", -1),
+    "west": ((6, 12), 18, "col", +1),
+    "east": ((8, 12), 13, "col", -1),
+}
+SHORE_OUT, SHORE_IN = 10, 18     # how far either side of the waterline the pack's shoreline is laid, in px
+RIPPLE = np.array([0.0, 207.0, 223.0])
+
+
+def _classify_shore(tile):
+    """How much of each shoreline pixel to lay over the ground on the GRASS side of the waterline: the
+    fringe of dark grass hanging over the edge, the earth bank, the foam and ripples, all of it; the
+    plain grass of the pack's pond tile, none, so the farm's own grass shows there instead of a band of
+    a slightly different green round every pond."""
+    r, g, b = tile[..., 0], tile[..., 1], tile[..., 2]
+    watery = b > r + 30
+    bank = (r > 80) & (r > g - 10) & (b < 100)
+    fringe = (g < 115) & (r < 40)
+    return np.where(watery | bank | fringe, 1.0, 0.0)
+
+
+def _paint_water(img, water):
+    """The pond and the stream: their own smooth shape, the pack's water, and the pack's shoreline.
+
+    WHY NOT TILES. Water is the one thing a 3x3 tile set cannot draw: it has square corners and no
+    diagonal, so a round pond comes out as a staircase, and a stream one square wide is shore on both
+    sides with no water in it. So the SHAPE comes from rich/terrain.py's per-pixel owner grid, which
+    draws both as smooth, wandering curves.
+
+    WHY THE PACK'S SHORELINE ANYWAY. A curve filled with flat blue is a hole in the grass. What makes the
+    pack's pond read as water is its shoreline: dark grass hanging over the edge, an earth bank on the
+    far shore, bright ripples along the rim. So every pixel near the waterline is taken from the pack's
+    own shoreline tile for whichever side the grass is on, at the row that is the same distance from
+    that tile's waterline. Round a curve the side changes smoothly, so the samples are blended by how
+    much the shore faces each way. The bank shows on a north shore and not a south one because that is
+    how the pack drew it: from above, you see the far bank, not the near one.
+    """
+    from scipy.ndimage import distance_transform_edt, gaussian_filter
+
+    mask = np.repeat(np.repeat(water.astype(np.float64), SCALE, axis=0), SCALE, axis=1)
+    inside = gaussian_filter(mask, 1.2) > 0.5            # smooth the doubled steps off the outline
+    if not inside.any():
+        return
+    d = np.where(inside, distance_transform_edt(inside) - 0.5, -(distance_transform_edt(~inside) - 0.5))
+    field = gaussian_filter(inside.astype(np.float64), 3.0)
+    gy, gx = np.gradient(field)
+    norm = np.hypot(gx, gy) + 1e-9
+    nx, ny = gx / norm, gy / norm                          # points from the grass into the water
+
+    H, W = mask.shape
+    ys, xs = np.mgrid[0:H, 0:W]
+
+    # Open water: the pack's water, with the odd short ripple across it the way the pack draws them.
+    fill = _tile(*WATER_FILL)[..., :3]
+    tex = np.tile(fill, (H // TILE + 1, W // TILE + 1, 1))[:H, :W]
+    ripple = (_hash(xs // 7, ys // 3, 51) < 0.035) & (d > 4)
+    tex = np.where(ripple[..., None], tex * 0.35 + RIPPLE * 0.65, tex)
+    img[:] = np.where(inside[..., None], tex, img)
+
+    # The shoreline, sampled from the pack's four shore tiles and blended by which way the shore faces.
+    band = (d > -SHORE_OUT) & (d < SHORE_IN)
+    di = np.round(d).astype(int)
+    weights = {"north": np.maximum(ny, 0), "south": np.maximum(-ny, 0), "west": np.maximum(nx, 0), "east": np.maximum(-nx, 0)}
+    total = sum(weights.values()) + 1e-9
+    colour = np.zeros((H, W, 3))
+    cover = np.zeros((H, W))
+    for side, ((tc, tr), line, axis, sign) in SHORES.items():
+        tile = _tile(tc, tr)
+        keep = _classify_shore(tile)
+        across = np.clip(line + sign * di, 0, TILE - 1)
+        if axis == "row":
+            rows, cols = across, xs % TILE
+        else:
+            rows, cols = ys % TILE, across
+        sample = tile[rows, cols, :3]
+        # On the water side everything the pack drew is meant: blades over the water, foam, ripples.
+        a = np.where(d > 0, tile[rows, cols, 3] / 255.0, keep[rows, cols] * tile[rows, cols, 3] / 255.0)
+        w = weights[side] / total
+        colour += sample * w[..., None]
+        cover += a * w
+    cover = np.where(band, cover, 0.0)[..., None]
+    img[:] = img * (1 - cover) + colour * cover
 
 
 def bed_tile(mask, material="path"):

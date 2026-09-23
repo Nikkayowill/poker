@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildingCueDoors, buildingCues, type BuildingCueInput } from "./building-cues";
+import { buildingCues, type BuildingCueInput } from "./building-cues";
 import type { StackAcresMachineSnapshot } from "./machines";
 import type { VatContainer } from "./aging";
 
@@ -39,7 +39,6 @@ const farm = (patch: Partial<BuildingCueInput> = {}): BuildingCueInput => ({
 describe("building cues", () => {
   it("says nothing on a farm with no buildings", () => {
     expect(buildingCues(farm())).toEqual([]);
-    expect(buildingCueDoors(farm())).toEqual({});
   });
 
   it("puts a finished Mill run behind the Workshop door", () => {
@@ -95,11 +94,5 @@ describe("building cues", () => {
     expect(cues).toHaveLength(1);
     expect(cues[0].door).toBe("farmhouse");
     expect(cues[0].line).toMatch(/\d+ batches banked/);
-  });
-
-  it("flags both doors at once", () => {
-    expect(
-      buildingCueDoors(farm({ machines: [finished("mill")], cellar: container("collectible") })),
-    ).toEqual({ workshop: true, farmhouse: true });
   });
 });

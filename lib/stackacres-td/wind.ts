@@ -1,10 +1,15 @@
 /**
- * Wind over the top-down farm, in whole art pixels so the pixel art never blurs or crawls.
+ * Wind over the top-down farm.
  *
- * The wind blows east. Each swaying thing (a tree's canopy, a reed's tops) leans between upright and one
- * pixel east on its own slow rhythm, and a gust rolls across the map from the west every few seconds,
- * pushing everything it passes over. Grass and reeds also rustle when the farmer walks through them.
- * docs/stackacres-premium-life.md has the reasoning.
+ * The wind blows east. Each swaying thing (a tree's crown, a reed's tops) bends from its base: mostly
+ * downwind, with a little swing back past upright, on its own slow rhythm, and a gust rolls across the map
+ * from the west every few seconds, pushing everything it passes over. Grass and reeds also rustle when the
+ * farmer walks through them. docs/stackacres-premium-life.md has the reasoning.
+ *
+ * SMOOTH, not whole pixels. The first version snapped every lean to a whole art pixel so the old
+ * one-pixel-per-unit art would never blur, which left every tree flicking between two positions a pixel
+ * apart: it read as a tree standing still with a twitch, and as the world stuttering. The trees are the LPC
+ * pack's now, drawn at twice the map's resolution and scaled down, so a fractional bend stays sharp.
  */
 
 const TAU = Math.PI * 2;
@@ -28,13 +33,19 @@ export function gustAt(timeMs: number, x: number): number {
   return Math.pow(Math.max(0, Math.sin(p * TAU)), 6);
 }
 
-/** The lean of a swaying thing at (x, y), in whole art pixels east: 0..amp. */
+/** How far back past upright a swaying thing may go, as a share of its amplitude. */
+export const BACKSWING = 0.25;
+
+/**
+ * The lean of a swaying thing at (x, y): how far its top sits east of upright, in map px, from
+ * `-amp * BACKSWING` to `amp`. Continuous -- see the header on why it is no longer whole pixels.
+ */
 export function swayOffset(timeMs: number, x: number, y: number, amp = 1): number {
   const seed = hashPoint(x, y);
   const period = 3400 + seed * 2200;
   const own = Math.sin((timeMs / period) * TAU + seed * TAU);
-  const lean = 0.5 + 0.45 * own + 0.55 * gustAt(timeMs, x);
-  return Math.max(0, Math.min(amp, Math.round(lean * amp)));
+  const lean = 0.35 + 0.4 * own + 0.6 * gustAt(timeMs, x);
+  return Math.max(-BACKSWING, Math.min(1, lean)) * amp;
 }
 
 /** A rustle when the farmer brushes past: offsets played one step at a time. */

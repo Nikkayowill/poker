@@ -208,7 +208,7 @@ import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/s
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
 import { STORY_ITEM_CATALOGUE, isStoryItemId } from "@/lib/stackacres/story/items";
-import type { StackAcresWorldApi, StoryCues, TapPoint, TravelerUnlocks } from "./world-contract";
+import type { StackAcresWorldApi, TapPoint, TravelerUnlocks } from "./world-contract";
 import { StackAcresToolbelt } from "./stackacres-toolbelt";
 import { StackAcresSeedWheel, type SeedWheelItem } from "./stackacres-seed-wheel";
 import {
@@ -236,7 +236,6 @@ import { isSeedUnlocked, seedLockLine } from "@/lib/stackacres/seed-unlocks";
 import { chapterFinishedBy, chapterViews, currentChapter, type Chapter } from "@/lib/stackacres/chapters";
 import { StackAcresChapterCard } from "./stackacres-chapters";
 import { StackAcresJournalChip, StackAcresJournalSheet } from "./stackacres-journal";
-import { buildingCueDoors } from "@/lib/stackacres/building-cues";
 import {
   LAND_OBSTACLE_DEFS,
   isClearableSector,
@@ -2585,24 +2584,14 @@ export function StackAcresFarm() {
   });
 
   // Shows/hides each traveler as their own unlock is met (nobody stands on
-  // the farm before that -- see `paintTravelers`/`setTravelerUnlocks` in
-  // stackacres-scene.ts), then hangs a quest badge over every one who's
-  // unlocked and has one to show -- "!" to offer, "?" ready to hand in,
-  // nothing while mid-quest or done. "Push, never rebuild": an unchanged
-  // unlock set or cue set is a no-op on the scene's own side.
+  // the farm before that -- see `setTravelerUnlocks` in the scene). "Push,
+  // never rebuild": an unchanged unlock set is a no-op on the scene's side.
   // useLayoutEffect because `story.view` is server-confirmed.
   useLayoutEffect(() => {
     if (!story.view) return;
     const unlocked: Record<string, boolean> = {};
-    const cues: Record<string, "available" | "ready"> = {};
-    for (const [id, traveler] of Object.entries(story.view.travelers)) {
-      unlocked[id] = traveler.unlocked;
-      if (!traveler.unlocked || traveler.done) continue;
-      if (!traveler.met) cues[id] = "available";
-      else if (traveler.ready) cues[id] = "ready";
-    }
+    for (const [id, traveler] of Object.entries(story.view.travelers)) unlocked[id] = traveler.unlocked;
     world.current?.setTravelerUnlocks(unlocked as TravelerUnlocks);
-    world.current?.setStoryCues(cues as StoryCues);
   }, [story.view]);
 
   /**
@@ -2685,8 +2674,7 @@ export function StackAcresFarm() {
    * Ray carries two separate interactions: his own story line (he is one of
    * the eleven travelers, `TRAVELER_IDS` in travelers.ts) and the
    * gift-giving loop `friendship.ts` only ever wired to him. Before this, a
-   * tap always opened gifts, so his "!"/"?" badge (`setStoryCues`, driven by
-   * the exact same `met`/`ready` read below) lied -- his line could never
+   * tap always opened gifts, so his story line could never
    * start and Leo's finale, which needs all ten travelers plus Ray, could
    * never be reached. Story first when he actually has something to say,
    * same as every other traveler; gifts otherwise, so the everyday loop
@@ -3564,6 +3552,7 @@ export function StackAcresFarm() {
           return;
         case "collect": {
           const picked = liveUnits.find((candidate) => candidate.id === action.unitId);
+          world.current?.pullCrop(action.unitId);
           // NOT batched, even mid-stroke: the Critical Harvest Cascade chains off
           // THIS request's own settled result, and a batched send has no promise
           // to hand back to the press that joined it.
@@ -3726,27 +3715,6 @@ export function StackAcresFarm() {
     ],
   );
 
-  /**
-   * The badge over the Workshop and the farmhouse: the same thing the
-   * Journal's "collect" line is about, hung on the door it is behind
-   * (lib/stackacres/building-cues.ts).
-   *
-   * Pushed off two booleans rather than off the record itself, because
-   * `nowMs` ticks every second and a fresh object every tick would tear the
-   * badge down and rebuild it, losing its bob.
-   */
-  const waitingDoors = useMemo(
-    () => buildingCueDoors({ machines: processing.machines, vat, cellar, nowMs }),
-    [processing.machines, vat, cellar, nowMs],
-  );
-  const workshopWaiting = waitingDoors.workshop === true;
-  const houseWaiting = waitingDoors.farmhouse === true;
-  useEffect(() => {
-    world.current?.setBuildingCues({
-      ...(workshopWaiting ? { workshop: true as const } : {}),
-      ...(houseWaiting ? { farmhouse: true as const } : {}),
-    });
-  }, [workshopWaiting, houseWaiting]);
 
   /** The Supply Store's Livestock shelf: every livestock kind whose own
    *  district is unlocked, not just whichever one `place` happens to be --
@@ -3790,8 +3758,6 @@ export function StackAcresFarm() {
     [liveUnits],
   );
   const carrying = readyUnits.length;
-  // The Workshop's "something is ready" dot used to live on the deleted
-  // places list; it hangs over the building itself now (`waitingDoors` above).
 
   /**
    * A finger landed on the brush at the Ancestral Oak. From here it is a

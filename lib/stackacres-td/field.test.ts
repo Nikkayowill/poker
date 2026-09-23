@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isHoeableMapTile, isHoeableSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import { isHoeableMapTile, isWildMapTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "@/lib/stackacres/homestead-ground";
-import { SOIL_TILE, homeStarterSoilTiles, soilTileAt } from "@/lib/stackacres/soil";
+import { SOIL_TILE, soilTileAt } from "@/lib/stackacres/soil";
 import { CROP_FIELD_BEDS, soilTileInCropFieldBeds } from "@/lib/stackacres/world";
 import {
   FIELD_ORIGIN,
@@ -51,15 +51,13 @@ describe("one soil grid for the whole Homestead", () => {
   });
 });
 
-describe("the Crop Fields are the north half of the Homestead", () => {
-  it("sit where homestead.py draws them, so no bed dug out there moved", () => {
+describe("the Crop Fields are the wild land round the yard", () => {
+  it("keep the shared grid where the map is drawn", () => {
     expect(fieldWorldToMap({ x: CROP_FIELD_BEDS.x, y: CROP_FIELD_BEDS.y })).toEqual(FIELD_ORIGIN);
-    expect(FIELD_ORIGIN).toEqual({ x: 6 * SOIL_TILE, y: 2 * SOIL_TILE });
-    const field = area.zones.find((z) => z.tag === "field");
-    expect(field).toMatchObject({ x: FIELD_ORIGIN.x, y: FIELD_ORIGIN.y, w: CROP_FIELD_BEDS.width, h: CROP_FIELD_BEDS.height });
+    expect(FIELD_ORIGIN).toEqual({ x: 16 * SOIL_TILE, y: 6 * SOIL_TILE });
   });
 
-  it("round-trips every field square through the map", () => {
+  it("round-trips every old field square through the map", () => {
     for (let ty = -16; ty < 16; ty++) {
       for (let tx = -16; tx < 16; tx++) {
         const map = soilTileToMap(tx, ty);
@@ -71,15 +69,37 @@ describe("the Crop Fields are the north half of the Homestead", () => {
     }
   });
 
-  it("says a map pixel off the field is off the field", () => {
+  it("says a map pixel off the old field is off it", () => {
     expect(fieldMapToWorld({ x: FIELD_ORIGIN.x - 1, y: FIELD_ORIGIN.y + 8 })).toBeNull();
     expect(fieldMapToWorld({ x: FIELD_ORIGIN.x + CROP_FIELD_BEDS.width, y: FIELD_ORIGIN.y + 8 })).toBeNull();
   });
 
-  it("is ground the hoe works, all of it", () => {
-    for (let ty = -16; ty < 16; ty++) {
-      for (let tx = -16; tx < 16; tx++) expect(isHoeableSoilTile(tx, ty)).toBe(true);
+  it("is ground the hoe works, every wild square of it", () => {
+    let wild = 0;
+    for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
+      for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx++) {
+        if (!isWildMapTile(mx, my)) continue;
+        wild++;
+        expect(isHoeableMapTile(mx, my), `wild ${mx},${my}`).toBe(true);
+      }
     }
+    expect(wild).toBeGreaterThan(500);
+  });
+
+  it("rings the yard: wild land to the west, the east and the south", () => {
+    const some = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let my = y0; my <= y1; my++) for (let mx = x0; mx <= x1; mx++) if (isWildMapTile(mx, my)) return true;
+      return false;
+    };
+    expect(some(3, 10, 13, 40)).toBe(true);
+    expect(some(50, 10, 60, 40)).toBe(true);
+    expect(some(15, 32, 48, 40)).toBe(true);
+  });
+
+  it("leaves the yard out of it", () => {
+    expect(isWildMapTile(31, 21)).toBe(false);
+    expect(isWildMapTile(28, 24)).toBe(false);
+    expect(isWildSoilTile(mapToSoilTile(28, 24).tx, mapToSoilTile(28, 24).ty)).toBe(false);
   });
 
   it("leaves nothing walking off to a separate Crop Fields map", () => {
@@ -88,14 +108,6 @@ describe("the Crop Fields are the north half of the Homestead", () => {
 });
 
 describe("where a bed may go", () => {
-  it("stands the six free starter beds on real grass, not on the road", () => {
-    for (const tile of homeStarterSoilTiles()) {
-      const { mx, my } = soilToMapTile(tile.tx, tile.ty);
-      expect(isHoeableMapTile(mx, my), `starter bed at map ${mx},${my}`).toBe(true);
-      expect(isBedSquare(tile.tx, tile.ty)).toBe(true);
-    }
-  });
-
   it("covers a good share of the farm, and not all of it", () => {
     let grass = 0;
     for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my++) {
@@ -126,50 +138,14 @@ describe("where a bed may go", () => {
 
 describe("worldToMap", () => {
   it("puts any bed square on the Homestead", () => {
-    const [starter] = homeStarterSoilTiles();
-    const world = { x: starter.tx * SOIL_TILE + 8, y: starter.ty * SOIL_TILE + 8 };
+    const yard = mapToSoilTile(28, 24);
+    expect(isBedSquare(yard.tx, yard.ty)).toBe(true);
+    const world = { x: yard.tx * SOIL_TILE + 8, y: yard.ty * SOIL_TILE + 8 };
     expect(worldToMap(world)).toEqual({ area: "homestead", ...soilWorldToMap(world) });
     expect(worldToMap({ x: 0, y: 0 })?.area).toBe("homestead");
   });
 
   it("knows where unmapped land is not", () => {
     expect(worldToMap({ x: 5000, y: 5000 })).toBeNull();
-  });
-});
-
-describe("the beds already dug by the house (20260923120000_stackacres_one_soil_grid.sql)", () => {
-  // The two paddocks the hoe used to be confined to, on the grid they used to
-  // have, and the same shift the migration applies to every bed dug on them.
-  const OLD_PADDOCKS = [
-    { tx0: 100, ty0: 100, tx1: 107, ty1: 105 },
-    { tx0: 115, ty0: 100, tx1: 122, ty1: 104 },
-  ];
-  const moved = (tx: number, ty: number) => ({ tx: tx - 118, ty: ty - 65 });
-
-  it("land on grass, every square of both paddocks", () => {
-    for (const r of OLD_PADDOCKS) {
-      for (let ty = r.ty0; ty <= r.ty1; ty++) {
-        for (let tx = r.tx0; tx <= r.tx1; tx++) {
-          const to = moved(tx, ty);
-          expect(isBedSquare(to.tx, to.ty), `paddock ${tx},${ty} -> ${to.tx},${to.ty}`).toBe(true);
-        }
-      }
-    }
-  });
-
-  it("land where the starter beds now are, so the paddock is still one patch of grass", () => {
-    const [first] = homeStarterSoilTiles();
-    expect(moved(100, 100)).toEqual({ tx: first.tx, ty: first.ty });
-  });
-
-  it("never land on a Crop Fields square", () => {
-    for (const r of OLD_PADDOCKS) {
-      for (let ty = r.ty0; ty <= r.ty1; ty++) {
-        for (let tx = r.tx0; tx <= r.tx1; tx++) {
-          const to = moved(tx, ty);
-          expect(soilTileInCropFieldBeds(to.tx, to.ty)).toBe(false);
-        }
-      }
-    }
   });
 });

@@ -111,9 +111,9 @@ import {
 } from "./units";
 import type { Action } from "./farm-actions";
 import { WATER_CAPACITY } from "./water-can";
-import { soilTileInCropFieldBeds, stockZone } from "./world";
+import { stockZone } from "./world";
 import { addToInventory, removeFromInventory, type StackAcresInventory } from "./inventory";
-import { isHoeableSoilTile, mapToSoilTile } from "./hoeable";
+import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile } from "./hoeable";
 import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from "./fences";
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
@@ -727,13 +727,12 @@ export function predictStackAcresAction(
       if (result.kind !== "created") return null;
       return {
         soilTiles: [...ctx.soilTiles, result.tile],
-        // Breaking ground in the Crop Fields IS clearing them, and the server
-        // records the flag off this same placement -- so the browser predicts
-        // it rather than waiting a round trip to find out the land is his.
-        // `soilTileInCropFieldBeds` is the same rect the server confines a
-        // bed to, so a Homestead bed never claims the Crop Fields by mistake.
+        // Breaking ground out in the wild land IS clearing the Crop Fields, and
+        // the server records the flag off this same placement, so the browser
+        // predicts it rather than waiting a round trip. `isWildSoilTile` is the
+        // same check the server makes, so a bed in the yard never claims it.
         cropFieldsUnlocked:
-          ctx.cropFieldsUnlocked || soilTileInCropFieldBeds(body.tx, body.ty),
+          ctx.cropFieldsUnlocked || isWildSoilTile(body.tx, body.ty),
       };
     }
     case "remove-soil-tile": {
@@ -766,7 +765,7 @@ export function predictStackAcresAction(
         body.ty,
         body.toTx,
         body.toTy,
-        soilTileInCropFieldBeds,
+        isHoeableSoilTile,
       );
       if (plan.kind !== "ok") return null;
       const cleared = clearedLandIds(ctx.landObstacles);

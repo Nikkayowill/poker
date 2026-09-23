@@ -1,7 +1,7 @@
 /**
- * Where the Crop Fields' overgrowth stands.
+ * Where the Crop Fields' overgrowth stands: the wild land round the Homestead's yard.
  *
- * The Crop Fields start covered in trees, boulders and scrub
+ * The wild land starts covered in trees, boulders and scrub
  * (./land-clearing.ts's "cropfields" list), and a square with something
  * standing on it is a square the hoe cannot break. That makes this a rule the
  * SERVER has to hold too, unlike the Fold's and the Pasture's obstacles,
@@ -10,10 +10,10 @@
  * and the scene and the server both read the same answer.
  *
  * Dealt by lib/stackacres-td/land-obstacles.ts, the same deal the Fold uses:
- * seeded, so every farm has the same field, and it will not seat anything
- * that walls ground off. It is dealt inside the field only, from the gate at
- * the top of the lane, so what happens in the rest of the farm never moves a
- * tree out here.
+ * seeded, so every farm has the same wild land, and it will not seat anything
+ * that walls ground off. It is dealt only on the tiles the map marks wild
+ * (./homestead-ground.ts's HOMESTEAD_WILD_ROWS), reached from where the farmer
+ * starts, so what happens in the yard never moves a tree out here.
  *
  * A BED WINS. A few farms already dug beds out here before it was overgrown.
  * Nothing is treated as standing on a square that holds a bed: the scene does
@@ -24,36 +24,30 @@
 
 import { dealLandObstacles, type LandObstaclePlacement } from "@/lib/stackacres-td/land-obstacles";
 import { tileKey } from "@/lib/stackacres-td/movement";
-import { FIELD_MAP_TILE, isHoeableMapTile, soilToMapTile } from "./hoeable";
-import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH } from "./homestead-ground";
+import { isHoeableMapTile, isWildMapTile, soilToMapTile } from "./hoeable";
+import { HOMESTEAD_MAP_HEIGHT, HOMESTEAD_MAP_WIDTH, HOMESTEAD_WALKABLE_ROWS } from "./homestead-ground";
 import { LAND_OBSTACLES } from "./land-clearing";
-import { SOIL_TILE } from "./soil";
-import { CROP_FIELD_BEDS } from "./world";
 
 const MAP_TILE = 16;
-const FIELD_TILES = CROP_FIELD_BEDS.width / SOIL_TILE;
-/** Where the lane comes into the field: LANE_TX in art/stackacres-td/areas/rig/homestead.py, on the field's last row. */
-const GATE = { tx: 14, ty: FIELD_MAP_TILE.ty + FIELD_TILES - 1 } as const;
+/** Where the farmer starts, on the road in front of the house: SPAWN in art/stackacres-td/areas/rig/homestead.py. */
+const START = { tx: 31, ty: 21 } as const;
 const SEED = 0x5eed_f1e1d;
-
-function inField(mx: number, my: number): boolean {
-  return (
-    mx >= FIELD_MAP_TILE.tx &&
-    my >= FIELD_MAP_TILE.ty &&
-    mx < FIELD_MAP_TILE.tx + FIELD_TILES &&
-    my < FIELD_MAP_TILE.ty + FIELD_TILES
-  );
-}
 
 let dealt: readonly LandObstaclePlacement[] | null = null;
 
 /** Every Crop Fields obstacle and the map tile it stands on. */
 export function cropFieldObstaclePlacements(): readonly LandObstaclePlacement[] {
   if (dealt) return dealt;
+  // Reach is worked out over everywhere the farmer walks, roads included, so nothing is seated where it
+  // would wall a stretch of road or yard off. Only the wild tiles are dealt onto.
   const blocked = new Set<string>();
+  const keepClear: { x: number; y: number; width: number; height: number }[] = [];
   for (let my = 0; my < HOMESTEAD_MAP_HEIGHT; my += 1) {
     for (let mx = 0; mx < HOMESTEAD_MAP_WIDTH; mx += 1) {
-      if (!inField(mx, my) || !isHoeableMapTile(mx, my)) blocked.add(tileKey(mx, my));
+      if (HOMESTEAD_WALKABLE_ROWS[my]?.[mx] !== "1") blocked.add(tileKey(mx, my));
+      else if (!isWildMapTile(mx, my) || !isHoeableMapTile(mx, my)) {
+        keepClear.push({ x: mx * MAP_TILE, y: my * MAP_TILE, width: MAP_TILE, height: MAP_TILE });
+      }
     }
   }
   dealt = dealLandObstacles(
@@ -63,9 +57,8 @@ export function cropFieldObstaclePlacements(): readonly LandObstaclePlacement[] 
       height: HOMESTEAD_MAP_HEIGHT,
       tile: MAP_TILE,
       blocked,
-      // The way in from the lane stays open.
-      keepClear: [{ x: (GATE.tx - 1) * MAP_TILE, y: (GATE.ty - 2) * MAP_TILE, width: MAP_TILE * 3, height: MAP_TILE * 3 }],
-      from: GATE,
+      keepClear,
+      from: START,
     },
     SEED,
   );

@@ -13,20 +13,20 @@
  *   pinned far apart -- because a bed could only exist in those two places. The
  *   hoe works on any grass now, and two grids would give one square two names.
  *
- *   THE CROP FIELDS are the north half of the same map. `CROP_FIELD_BEDS` is
- *   still the rect that counts as the Crop Fields (breaking ground there is a
- *   milestone), and it sits at map pixel FIELD_ORIGIN on the shared grid, which
- *   is why no bed dug out there moved when the grids became one.
+ *   THE CROP FIELDS are the wild land round the yard (lib/stackacres/hoeable.ts's
+ *   `isWildSoilTile`): the first bed dug out there is the milestone.
+ *   `CROP_FIELD_BEDS` is only the old world rect now, kept so a world point the
+ *   shell asks about still lands somewhere on the map.
  *
  *   A FEW LANDMARKS the shell asks for by world point (the Hen Haven trough for
- *   the feed drag, the dock end for fishing) map to where those things are
- *   drawn in the Homestead.
+ *   the feed drag, the lake dock's end for fishing) map to where those things
+ *   are drawn in the Homestead.
  *
  * Anything else has no place on the playable maps yet and maps to null.
  */
 
 import { SOIL_TO_MAP, isHoeableSoilTile } from "@/lib/stackacres/hoeable";
-import { SOIL_TILE, isHomeStarterSoilTile } from "@/lib/stackacres/soil";
+import { SOIL_TILE } from "@/lib/stackacres/soil";
 import { FISHING_SPOT } from "@/lib/stackacres/water";
 import { CROP_FIELD_BEDS, penFeedSpot, type WorldPoint } from "@/lib/stackacres/world";
 
@@ -58,15 +58,10 @@ export const FIELD_ORIGIN = {
 } as const;
 export const FIELD_SIZE = CROP_FIELD_BEDS.width;
 
-/** Rows the farmyard starts down the merged map, in map pixels. The same
- *  number as `HOME_SHIFT` in art/stackacres-td/areas/rig/homestead.py (38
- *  tiles): every farmyard landmark below is the yard's own old coordinate plus
- *  this, which is why they can still be read against the map as it was drawn. */
-const HOME_SHIFT = 38 * 16;
-
-/** Homestead map pixels for the landmarks the shell anchors drags to. */
-export const HOMESTEAD_TROUGH = { x: 600, y: 312 + HOME_SHIFT } as const;
-export const HOMESTEAD_DOCK_END = { x: 226, y: 420 + HOME_SHIFT } as const;
+/** Homestead map pixels for the landmarks the shell anchors drags to: Hen Haven's trough and the
+ *  end of the lake dock (art/stackacres-td/areas/rig/homestead.py). */
+export const HOMESTEAD_TROUGH = { x: 640, y: 464 } as const;
+export const HOMESTEAD_DOCK_END = { x: 416, y: 34 } as const;
 /** The Fold's and the Cattle Pasture's pen troughs, where a feed drag lands. */
 export const FOLD_TROUGH = { x: 240, y: 300 } as const;
 export const PASTURE_TROUGH = { x: 470, y: 300 } as const;
@@ -96,10 +91,10 @@ export function soilTileToMap(tx: number, ty: number): { x: number; y: number } 
   return soilWorldToMap({ x: tx * SOIL_TILE, y: ty * SOIL_TILE });
 }
 
-/** Whether a bed can stand on this soil tile at all: grass the hoe may break, or
- *  one of the six free starter beds. Everywhere else is road, water or a roof. */
+/** Whether a bed can stand on this soil tile at all: grass the hoe may break.
+ *  Everywhere else is road, water or a roof. */
 export function isBedSquare(tx: number, ty: number): boolean {
-  return isHoeableSoilTile(tx, ty) || isHomeStarterSoilTile(tx, ty);
+  return isHoeableSoilTile(tx, ty);
 }
 
 /** A Crop Fields world point, in Homestead map pixels. */

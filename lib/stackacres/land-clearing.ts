@@ -74,12 +74,12 @@ export type ClearingGround = (typeof CLEARING_GROUNDS)[number];
 
 /** How much stands on each one, and in what mix. The Pasture is the bigger
  *  field and the later rung, so it is the longer job. The Crop Fields are the
- *  first job on the farm and meant to look properly overgrown, so theirs is the
- *  most to stand anywhere, heavy on scrub, the two-swing kind. */
+ *  whole wild ring round the Homestead's yard, meant to look properly overgrown,
+ *  so theirs is by far the most, heavy on scrub, the two-swing kind. */
 const GROUND_MIX: Readonly<Record<ClearingGround, Readonly<Record<LandObstacleKind, number>>>> = {
   wallow: { tree: 12, boulder: 6, scrub: 6 },
   oxfields: { tree: 16, boulder: 9, scrub: 5 },
-  cropfields: { tree: 24, boulder: 16, scrub: 40 },
+  cropfields: { tree: 44, boulder: 32, scrub: 84 },
 };
 
 /**

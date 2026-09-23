@@ -60,7 +60,6 @@ import { PEN_ZONE_IDS, ZONE_IDS, type ZoneId } from "@/lib/stackacres/zones";
 import {
   cropSpot,
   growAreaAt,
-  soilTileInCropFieldBeds,
   stockZone,
 } from "@/lib/stackacres/world";
 import {
@@ -88,8 +87,6 @@ import {
 import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
   createSoilMap,
-  homeStarterSoilTiles,
-  isHomeStarterSoilTile,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
   soilSlotForTile,
@@ -100,7 +97,7 @@ import {
   type SoilTile,
   type SoilTileCoord,
 } from "@/lib/stackacres/soil";
-import { isHoeableSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
+import { isHoeableSoilTile, isWildSoilTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/hoeable";
 import {
   FENCE_FULL,
   FENCE_NEEDS_WOOD,
@@ -904,14 +901,10 @@ async function waterIrrigatedCrops(profileId: string, now: Date): Promise<void> 
   await stampIrrigatedCrops(rows, await irrigatedUnitIdsFor(profileId, rows), now);
 }
 
-/** The full slot space for one farm: the free Homestead starter beds
- *  (`homeStarterSoilTiles`), never persisted, ahead of every tile it has
- *  bought. Both server callers that need to show the player their soil --
- *  the view's own `soilTiles` field and this function -- go through
- *  `mergedSoilTiles` so the two cannot disagree about what a farm can plant
- *  on. */
+/** The full slot space for one farm: every bed it has dug. Both server callers that show the
+ *  player their soil go through here so they cannot disagree about what a farm can plant on. */
 function mergedSoilTiles(purchased: readonly SoilTile[]): SoilTile[] {
-  return [...homeStarterSoilTiles(), ...purchased];
+  return [...purchased];
 }
 
 function soilMapFor(purchased: readonly SoilTile[]): SoilMap {
@@ -3541,7 +3534,7 @@ export async function placeStackAcresFencePiece(
   if (!isFenceableMapTile(tx, ty)) throw new StackAcresRequestError(FENCE_NOT_HERE, 400);
   const { tx: sx, ty: sy } = mapToSoilTile(tx, ty);
   const beds = await listStackAcresSoilTiles(profile.id);
-  if (isHomeStarterSoilTile(sx, sy) || beds.some((bed) => bed.tx === sx && bed.ty === sy)) {
+  if (beds.some((bed) => bed.tx === sx && bed.ty === sy)) {
     throw new StackAcresRequestError("There's a bed there.", 409, { round: await snapshots(profile.id, now) });
   }
   const outcome = await placeFenceRow(profile.id, tx, ty);
@@ -5558,9 +5551,6 @@ async function recomputeIrrigation(
  * so there is no unlock to refuse against:
  *
  * - Not grass, or something stands there: the road, the pond, a building.
- * - One of the six free starter beds already holds that square. Those are
- *   never stored, so the database's own one-bed-per-square rule cannot see
- *   them; without this a dug bed could land on top of one.
  *
  * Breaking the first bed inside the Crop Fields is what records that milestone.
  */
@@ -5576,18 +5566,13 @@ export async function placeStackAcresSoilTile(
   if (!isHoeableSoilTile(tx, ty)) {
     throw new StackAcresRequestError("The hoe only breaks grass.", 400);
   }
-  if (isHomeStarterSoilTile(tx, ty)) {
-    throw new StackAcresRequestError("There is already a bed there.", 409, {
-      round: await snapshots(profile.id, now),
-    });
-  }
   if (await fencedSoilTile(profile.id, tx, ty)) {
     throw new StackAcresRequestError(FENCE_IN_THE_WAY, 409, { round: await snapshots(profile.id, now) });
   }
   if (overgrownSoilTile(tx, ty, clearedObstacleIds(await listStackAcresLandObstacleStates(profile.id)))) {
     throw new StackAcresRequestError(OVERGROWN_SQUARE, 409, { round: await snapshots(profile.id, now) });
   }
-  const inMeadow = soilTileInCropFieldBeds(tx, ty);
+  const inMeadow = isWildSoilTile(tx, ty);
 
   // The slots the crops are holding, so the new bed's order clears them --
   // see `nextSoilOrder` in lib/stackacres/soil.ts. Passed unevaluated: the
@@ -5599,7 +5584,7 @@ export async function placeStackAcresSoilTile(
       .filter((slot): slot is number => slot !== null),
   );
   if (outcome.kind === "created") {
-    // Breaking ground in the Crop Fields IS clearing them -- there is no
+    // Breaking ground out in the wild land IS clearing the Crop Fields -- there is no
     // gate, no price and no modal any more, so the milestone the rest of the
     // game hangs off (travellers arriving, the tool tiers, the crossbreeding
     // shelf) is recorded off the first bed rather than off a purchase. Once
@@ -5658,7 +5643,7 @@ export async function moveStackAcresSoilTileGroup(
   // ground itself, which is what records the flag in the first place.
   const purchased = await listStackAcresSoilTiles(profile.id);
   const soil = soilMapFor(purchased);
-  const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, soilTileInCropFieldBeds);
+  const plan = planSoilGroupRelocation(soil, tx, ty, toTx, toTy, isHoeableSoilTile);
 
   if (plan.kind === "empty") {
     throw new StackAcresRequestError("There is no bed there to move.", 400);

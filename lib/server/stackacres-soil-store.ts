@@ -141,12 +141,15 @@ export async function placeStackAcresSoilTile(
 ): Promise<PlaceSoilSlotOutcome> {
   const supabase = adminClient();
   if (!supabase) {
+    const slots = await claimed();
+    // Everything from here to the set is synchronous, so two hoes at once
+    // cannot both read the same highest order across an await.
     const layout = memoryLayout(profileId);
     const key = soilTileKey(tx, ty);
     if (layout.has(key)) return { kind: "occupied" };
     let maxOrder = -1;
     for (const t of layout.values()) maxOrder = Math.max(maxOrder, t.order);
-    for (const slot of await claimed()) maxOrder = Math.max(maxOrder, slot);
+    for (const slot of slots) maxOrder = Math.max(maxOrder, slot);
     const tile: StoredSoilTile = { tx, ty, order: maxOrder + 1, origin: "purchased", tier, enriched: false };
     layout.set(key, tile);
     return { kind: "created", tile: { ...tile } };

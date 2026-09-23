@@ -384,7 +384,9 @@ export class TopdownScene extends Phaser.Scene {
   private areaName: TopdownArea = "homestead";
   private area!: AreaSpec;
   private grid!: Grid;
-  private layer: Phaser.GameObjects.GameObject[] = [];
+  /** Everything drawn for the current area, torn down when he leaves it.
+   *  Each object leaves this set when it is destroyed (see `keep`). */
+  private layer = new Set<Phaser.GameObjects.GameObject>();
   private ground!: Phaser.GameObjects.Image;
   private player!: Phaser.GameObjects.Sprite;
   /** Where the farmer really is. His sprite and the camera are both snapped from this to device pixels. */
@@ -401,7 +403,7 @@ export class TopdownScene extends Phaser.Scene {
   private npcSprites = new Map<string, { sprite: Phaser.GameObjects.Sprite; shadow: Phaser.GameObjects.Ellipse }>();
   /** The drawn beds, each with what its tint is made of: which tile it is (so
    *  the crop standing on it can be found again) and whether it is enriched. */
-  private soilImages: { key: string; image: Phaser.GameObjects.Image; enriched: boolean }[] = [];
+  private soilImages = new Map<string, { image: Phaser.GameObjects.Image; frame: string; enriched: boolean }>();
   /** The beds drawn last time, and on which map. A bed missing from here is
    *  one that has just been broken, and drops in; every other bed is only
    *  being redrawn (a neighbour joined it, or the soil list refreshed). */
@@ -477,6 +479,8 @@ export class TopdownScene extends Phaser.Scene {
   // What the shell last said, kept so an area rebuild can redraw it.
   private units: StackAcresSceneUnit[] = [];
   private soil: SoilTile[] = [];
+  /** `soil` keyed by tile, built once per soil change rather than once per crop per draw. */
+  private soilMap = createSoilMap([]);
   private sectors: SectorId[] = [];
   private travelerUnlocks: Partial<Record<TravelerId, boolean>> = {};
   /** Tag of a tree or boulder that is spent (`tree:homestead-1`) -> when it grows back. */
@@ -645,7 +649,8 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     // Pushed into a wall: stand facing it, so he reads as blocked rather than walking on the spot.
-    if (this.stickWalking || this.player.frame.name !== STANDING[this.facing]) this.stand();
+    // Not mid-swing or mid-job, which would cut it short; it stands him itself when it ends.
+    if (!this.acting && (this.stickWalking || this.player.frame.name !== STANDING[this.facing])) this.stand();
     this.stickWalking = false;
   }
 
@@ -827,8 +832,8 @@ export class TopdownScene extends Phaser.Scene {
       this.callbacks.onInputLocked(false);
     }
     this.acting = false;
-    for (const object of this.layer) object.destroy();
-    this.layer = [];
+    for (const object of [...this.layer]) object.destroy();
+    this.layer.clear();
     this.animated = [];
     this.falls = [];
     this.propImages = [];
@@ -840,7 +845,7 @@ export class TopdownScene extends Phaser.Scene {
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
-    this.soilImages = [];
+    this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
     this.wetTiles.clear();
@@ -963,7 +968,10 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   private keep<T extends Phaser.GameObjects.GameObject>(object: T): T {
-    this.layer.push(object);
+    this.layer.add(object);
+    // Beds, crop sprites, clods and pieces are destroyed all the time on one
+    // area; without this the set only ever grew until he walked out.
+    object.once(Phaser.GameObjects.Events.DESTROY, () => this.layer.delete(object));
     return object;
   }
 
@@ -1169,15 +1177,23 @@ export class TopdownScene extends Phaser.Scene {
     return this.hasBed(tx, ty) || isBedSquare(tx, ty) ? { tx, ty } : null;
   }
 
+  /**
+   * Beds are diffed against what is already drawn: a bed that stays keeps its
+   * image (its frame changes when a neighbour joins it), a new one is drawn
+   * and dropped in, a gone one is destroyed. Redrawing every bed on every
+   * change cut the last bed's drop-in short each time the next one was hoed.
+   */
   private drawSoil(): void {
-    for (const bed of this.soilImages) bed.image.destroy();
-    this.soilImages = [];
-    if (this.areaName !== "homestead") return;
+    if (this.areaName !== "homestead") {
+      for (const bed of this.soilImages.values()) bed.image.destroy();
+      this.soilImages.clear();
+      return;
+    }
     // On the first draw of a map every bed is "new", and none of them were
     // just broken -- they were already there when he walked in.
     const sameMap = this.drawnBedsArea === this.areaName;
     const drawn = new Set<string>();
-    const map = createSoilMap(this.soil);
+    const map = this.soilMap;
     for (const tile of this.soil) {
       const at = this.soilTilePoint(tile.tx, tile.ty);
       if (!at) continue;
@@ -1185,22 +1201,39 @@ export class TopdownScene extends Phaser.Scene {
       drawn.add(key);
       const mask = soilNeighborMask(map, tile.tx, tile.ty);
       const tier: SoilTier = tile.tier ?? "dirt";
+      const frame = `soil_${tier}_${mask}`;
+      const enriched = isSoilTileEnriched(tile);
+      const standing = this.soilImages.get(key);
+      if (standing) {
+        if (standing.frame !== frame) {
+          // Same 32px frame size, so the scale (and any drop-in still running
+          // on it) is left alone.
+          standing.image.setFrame(frame);
+          standing.frame = frame;
+        }
+        standing.enriched = enriched;
+        continue;
+      }
       // The pack's 32px dirt drawn into a 16-unit square, like the ground under
       // it, so a hoed square and the road beside it are the same texels.
       // Centred rather than cornered so a new one grows out of its own middle.
       const image = this.add
-        .image(at.x + SOIL_TILE / 2, at.y + SOIL_TILE / 2, "common", `soil_${tier}_${mask}`)
+        .image(at.x + SOIL_TILE / 2, at.y + SOIL_TILE / 2, "common", frame)
         .setDisplaySize(SOIL_TILE, SOIL_TILE)
         .setDepth(-5);
       if (sameMap && !this.drawnBeds.has(key)) this.dropBedIn(image);
-      this.soilImages.push({ key, image: this.keep(image), enriched: isSoilTileEnriched(tile) });
+      this.soilImages.set(key, { image: this.keep(image), frame, enriched });
+    }
+    for (const [key, bed] of this.soilImages) {
+      if (drawn.has(key)) continue;
+      bed.image.destroy();
+      this.soilImages.delete(key);
     }
     this.drawnBeds = drawn;
     this.drawnBedsArea = this.areaName;
-    // Beds are redrawn from scratch here, so they come out of this loop
-    // untinted; `wetTiles` is whatever the last unit draw worked out, and
-    // `drawUnits` (the caller's next line, every time soil changes) puts it
-    // right the moment a crop moves on or off one of them.
+    // New beds come out of this loop untinted; `wetTiles` is whatever the last
+    // unit draw worked out, and `drawUnits` (the caller's next line, every
+    // time soil changes) puts it right the moment a crop moves on or off one.
     this.applySoilMoisture();
   }
 
@@ -1208,8 +1241,8 @@ export class TopdownScene extends Phaser.Scene {
    *  watered one darker. Cheap enough to run on every unit draw -- it is a
    *  `setTint` per bed and touches nothing else. */
   private applySoilMoisture(): void {
-    for (const bed of this.soilImages) {
-      bed.image.setTint(soilTint({ enriched: bed.enriched, wet: this.wetTiles.has(bed.key) }));
+    for (const [key, bed] of this.soilImages) {
+      bed.image.setTint(soilTint({ enriched: bed.enriched, wet: this.wetTiles.has(key) }));
     }
   }
 
@@ -1217,7 +1250,7 @@ export class TopdownScene extends Phaser.Scene {
     if (unit.housedIn) return null;
     const zone = stockZone(unit.stock);
     if (zone === "farmstead") {
-      const world = cropSpot("farmstead", unit.id, { soil: createSoilMap(this.soil), slot: unit.soilSlot ?? null });
+      const world = cropSpot("farmstead", unit.id, { soil: this.soilMap, slot: unit.soilSlot ?? null });
       // A slotted crop stands on whichever bed its slot names, and every bed is
       // on the Homestead's one grid.
       return this.areaName === "homestead" ? soilWorldToMap(world) : null;
@@ -1700,11 +1733,20 @@ export class TopdownScene extends Phaser.Scene {
 
   private stand(): void {
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onActionDone);
+    // Stopping an animation never fires its "complete", so a swing cut short
+    // here has to be let go of here too. Left set, `tapAt` ignored every tap.
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onSwingDone);
+    this.swing = null;
     this.player.anims.stop();
     this.acting = false;
     this.player.setFrame(STANDING[this.facing]);
     this.people.stood(this.time.now);
   }
+
+  private onSwingDone = (): void => {
+    this.swing = null;
+    this.onActionDone();
+  };
 
   private onActionDone = (): void => {
     this.acting = false;
@@ -1780,10 +1822,7 @@ export class TopdownScene extends Phaser.Scene {
     this.acting = true;
     this.swing = { tag, strikeAt: this.time.now + SWING_STRIKE_MS };
     this.swungAt.set(tag, this.time.now);
-    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      this.swing = null;
-      this.onActionDone();
-    });
+    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, this.onSwingDone);
     this.player.play({ key: `${tool}_${this.facing}`, repeat: 0 });
     this.time.delayedCall(SWING_STRIKE_MS, () => this.strike(tag, tool));
     return true;
@@ -2023,7 +2062,7 @@ export class TopdownScene extends Phaser.Scene {
     if (push) this.homeCamera();
     if (push && !was) this.callbacks.onViewMoved();
     if (!push && was) {
-      if (this.stickWalking && this.path.length === 0) this.stand();
+      if (this.stickWalking && this.path.length === 0 && !this.acting) this.stand();
       this.stickWalking = false;
     }
   }
@@ -2222,6 +2261,7 @@ export class TopdownScene extends Phaser.Scene {
 
   setSoil(tiles: readonly SoilTile[]): void {
     this.soil = [...tiles];
+    this.soilMap = createSoilMap(this.soil);
     if (!this.booted) return;
     this.applyGates();
     this.drawSoil();

@@ -3070,6 +3070,35 @@ describe("revision guard", () => {
     const readB = await readStackAcres(token, T0);
     expect(readB.revision).toBe(readA.revision);
   });
+
+  it("never stamps a stale view with the higher revision when two actions overlap", async () => {
+    const { token } = await funded();
+    // A writes and reads the farm back, then stalls before finishing. B runs
+    // start to finish inside that stall, so A's view never saw B's crop.
+    let releaseA = () => {};
+    const stalled = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let aStalled = () => {};
+    const aRead = new Promise<void>((resolve) => {
+      aStalled = resolve;
+    });
+    const a = run(token, randomUUID(), "stock", async () => {
+      const result = await stockStackAcres(token, { stock: "carrot" }, T0);
+      aStalled();
+      await stalled;
+      return result;
+    });
+    await aRead;
+    const b = await run(token, randomUUID(), "stock", () => stockStackAcres(token, { stock: "carrot" }, T0));
+    releaseA();
+    const aResult = await a;
+
+    const [older, newer] = aResult.revision < b.revision ? [aResult, b] : [b, aResult];
+    expect(newer.revision).toBeGreaterThan(older.revision);
+    const newerIds = new Set(newer.units.map((unit) => unit.id));
+    for (const unit of older.units) expect(newerIds.has(unit.id)).toBe(true);
+  });
 });
 
 /**

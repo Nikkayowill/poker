@@ -648,9 +648,10 @@ function run(token: string, action: StackAcresAction, now: Date) {
 export async function POST(request: NextRequest) {
   const startedAt = performance.now();
   // Every action here moves one purse at most once and the guards make
-  // replays idempotent; 60/min covers a fast restocking ritual plus feeding
-  // and watering with a wide margin.
-  const limited = await enforceRateLimit(request, "stackacres:act", 60, 60 * 1000);
+  // replays idempotent. Hoeing and harvesting are one request per bed, and a
+  // held Use key walking a row works four or five beds a second, so 60/min ran
+  // out in about fifteen seconds of play and undid the beds just hoed.
+  const limited = await enforceRateLimit(request, "stackacres:act", 300, 60 * 1000);
   if (limited) return limited;
 
   // Access is granted to a PROFILE, so the session cookie is what says who is

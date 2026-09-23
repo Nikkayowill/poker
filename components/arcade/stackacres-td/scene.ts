@@ -36,10 +36,12 @@ import {
 } from "@/lib/stackacres-td/fishing-cast";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
-import { doorSound, floorStepSound } from "@/lib/audio/stackacres-sfx";
+import { axeSound, doorSound, floorStepSound, pickSound, piecesSound } from "@/lib/audio/stackacres-sfx";
 import { bedIsWet, showsSeeds, soilTint } from "@/lib/stackacres/soil-moisture";
 import { cropFrame } from "@/lib/stackacres-td/crop-frames";
 import { BED_DROP_FROM, BED_DROP_MS, HOE_STRIKE_MS } from "@/lib/stackacres-td/hoe";
+import { SWING_STRIKE_MS, swingToolFor, type SwingTool } from "@/lib/stackacres-td/swing";
+import { OrbBursts } from "./orb-burst";
 import {
   PULL_CATCH_MS,
   PULL_GRIP_MS,
@@ -220,15 +222,24 @@ const STANDING: Record<Dir, string> = { down: "1", up: "5", left: "9", right: "1
 
 /**
  * Which rig animation acts out each drop, and how many extra times it plays.
- * Hoeing and planting share the rig's `chop` motion, but remain separate
- * actions so the hoe can add a ground impact without making planting dusty.
+ * Hoeing is the overhead swing (lib/stackacres-td/swing.ts); planting keeps
+ * the short forward jab.
  */
 const ACTIONS: Record<FarmerAction, { anim: string; repeat: number }> = {
   water: { anim: "water", repeat: 1 },
   harvest: { anim: "harvest", repeat: 0 },
-  hoe: { anim: "chop", repeat: 0 },
+  hoe: { anim: "hoe", repeat: 0 },
   plant: { anim: "chop", repeat: 0 },
 };
+
+/** How many chips one swing knocks off. */
+const CHIP_PIECES = 12;
+/** A chip comes off the bottom of what is hit: the trunk, not the leaves. */
+const CHIP_BAND = { from: 0.6, to: 1 };
+/** How long after his swing the server's answer can come back and still break it apart on screen. */
+const RECENT_SWING_MS = 5000;
+/** Where on him the pieces go: about his chest, up from his feet. */
+const PIECES_LAND_ABOVE_FEET = 14;
 
 /** How far a walk may lean off his current facing before he turns, so a 45° diagonal doesn't flip him every frame. */
 const TURN_LEAN = 0.6;
@@ -301,12 +312,12 @@ export interface TopdownCallbacks {
    *  lib/stackacres/forage.ts's `FORAGE_NODE_IDS` and area.json's own
    *  `tag: "forage:<id>"` props). `nodeId` is that id, unvalidated here --
    *  the shell is what knows the real catalogue, same split `onTreeTap`
-   *  already takes. Unlike a chop or a mine this opens no popup: picking a
-   *  bush is one stoop, not a timed swing. */
+   *  already takes. */
   onForageTap: (nodeId: string, at: TapPoint) => void;
   /** A finger landed on something standing on land still being cleared
    *  (lib/stackacres/land-clearing.ts). `obstacleId` is that obstacle's
-   *  id; the shell opens the swing popup, same split `onTreeTap` takes. */
+   *  id; he swings at it and the shell sends the swing, same split
+   *  `onTreeTap` takes. */
   onLandTap: (obstacleId: string, at: TapPoint) => void;
   onGreenhouseTap: () => void;
   onMonkTap: (at: TapPoint) => void;
@@ -459,6 +470,17 @@ export class TopdownScene extends Phaser.Scene {
   /** Ids of the obstacles already cleared off unclaimed land. Unlike a
    *  chopped tree, nothing here comes back, so this only ever grows. */
   private landDown = new Set<string>();
+  /** What each obstacle on land being cleared is, so a tap knows to swing the axe or the pick. */
+  private landKinds = new Map<string, LandObstaclePlacement["kind"]>();
+  /** Whatever broke, as the arcade's particle orb, flying into him in coins. */
+  private orbs!: OrbBursts;
+  /** The swing in the air: what it is at, and when the blade lands. */
+  private swing: { tag: string; strikeAt: number } | null = null;
+  /** Things that have come down while the blade was still in the air. They stay drawn until it lands. */
+  private holding = new Set<string>();
+  /** Tag -> when he last swung at it. Only what he just swung at breaks apart; a stump
+   *  that was already down when the map loaded, or felled on another device, just is. */
+  private swungAt = new Map<string, number>();
   /** The fence pieces the farm has put up, and what draws them. */
   private fences: FencePiece[] = [];
   private fenceImages: Phaser.GameObjects.Image[] = [];
@@ -523,6 +545,10 @@ export class TopdownScene extends Phaser.Scene {
     this.smoke = new ChimneySmoke(this, (object) => this.keep(object));
     this.life = new AmbientLife(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
+    this.orbs = new OrbBursts(this, () => ({
+      x: this.player.x,
+      y: this.player.y - PIECES_LAND_ABOVE_FEET,
+    }));
     // The cast's beats are cut out of the rig's own fishing tag, so they are
     // animations the sheet does not carry and this scene registers itself.
     // Once, here: an animation is a shared keyed thing in Phaser, and building
@@ -554,6 +580,7 @@ export class TopdownScene extends Phaser.Scene {
     this.regrowNodes(time);
     if (!this.reducedMotion) for (const fall of this.falls) fall.tilePositionY -= (delta / 1000) * FALL_SPEED / fall.tileScaleY;
     this.smoke.update(time, this.reducedMotion);
+    this.orbs.update(time);
     this.daylight.update(time, this.reducedMotion);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.people.update(
@@ -784,6 +811,11 @@ export class TopdownScene extends Phaser.Scene {
     this.animated = [];
     this.falls = [];
     this.propImages = [];
+    this.landKinds.clear();
+    this.swing = null;
+    this.holding.clear();
+    this.swungAt.clear();
+    this.orbs.clear();
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
@@ -855,9 +887,11 @@ export class TopdownScene extends Phaser.Scene {
       this.propImages.push({ spec, image, canopy });
       const gather = gatherKindOfTag(spec.tag);
       if (gather) {
-        // The stump or rubble, hidden until the node is spent. It keeps the tag so a tap still opens the popup.
+        // The stump or rubble, hidden until the node is spent. It keeps the tag so a tap on it still answers.
         const stump = this.keep(this.add.image(spec.x, spec.y, NODE_ART[gather].texture).setOrigin(0.5, 1).setDepth(spec.y).setVisible(false));
-        const middle = gather === "tree" ? spec.blocks[Math.floor(spec.blocks.length / 2)] : undefined;
+        // A stump blocks only the tile it stands on: the one under the trunk's foot.
+        const foot: [number, number] = [Math.floor(spec.x / this.area.tile), Math.floor((spec.y - 1) / this.area.tile)];
+        const middle = gather === "tree" ? spec.blocks.find(([tx, ty]) => tx === foot[0] && ty === foot[1]) : undefined;
         this.propImages.push({
           spec: { ...spec, w: stump.width, h: stump.height, ax: stump.width / 2, ay: stump.height, blocks: middle ? [middle] : [], sway: undefined },
           image: stump,
@@ -963,6 +997,7 @@ export class TopdownScene extends Phaser.Scene {
    */
   private buildLandObstacle(placement: LandObstaclePlacement): void {
     const tag = `land:${placement.id}`;
+    this.landKinds.set(placement.id, placement.kind);
     const blocks: [number, number][] = [[placement.tx, placement.ty]];
     if (placement.kind !== "tree") {
       const texture = landTexture(placement.kind, placement.id);
@@ -1038,7 +1073,9 @@ export class TopdownScene extends Phaser.Scene {
       const cleared = kind === "locked" && detail !== undefined && SECTOR_AREAS[detail] !== undefined && this.enterable(detail);
       const isSpent = spec.tag !== undefined && gatherKindOfTag(spec.tag) !== null && this.spent.has(spec.tag);
       const down = kind === "land" && detail !== undefined && (this.landDown.has(detail) || this.bedOverObstacle(detail));
-      const visible = stump ? isSpent : !(cleared || isSpent || down);
+      // Something that came down mid-swing stands until the blade lands on it.
+      const held = spec.tag !== undefined && this.holding.has(spec.tag);
+      const visible = held ? !stump : stump ? isSpent : !(cleared || isSpent || down);
       image.setVisible(visible);
       canopy?.setVisible(visible);
       if (visible) for (const [tx, ty] of spec.blocks) blocked.add(tileKey(tx, ty));
@@ -1469,6 +1506,8 @@ export class TopdownScene extends Phaser.Scene {
   /** A tap at a viewport point: find what it landed on, walk there, and hand it to the shell on arrival. */
   tapAt(clientX: number, clientY: number): void {
     if (!this.booted || this.travelling) return;
+    // A swing plays out; a second tap would cut it off before the blade lands.
+    if (this.swing) return;
     // A cast owns the farmer until it resolves. Before the fish is on, a tap
     // anywhere reels the line back in; after it, the tap is swallowed and the
     // gauge has the screen.
@@ -1688,6 +1727,89 @@ export class TopdownScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * A tap on a tree, a rock, or something standing on land being cleared: he
+   * swings at it, and the request goes out as the swing starts. False when
+   * there is nothing to swing at yet (it is still growing back), and the shell
+   * then hears nothing. What the swing pays is the server's; this is only the
+   * swing, the chips off the strike, and the burst if it comes down.
+   */
+  private swingAt(tag: string): boolean {
+    const [kind, detail = ""] = tag.split(":");
+    const tool = swingToolFor(tag, kind === "land" ? this.landKinds.get(detail) : undefined);
+    if (!tool) return false;
+    const part = this.propImages.find(({ spec }) => spec.tag === tag);
+    if (this.spent.has(tag)) {
+      if (part) this.floatAt(this.mapToCss({ x: part.spec.x, y: part.spec.y - 16 }), kind === "stone" ? "Still re-forming" : "Still growing back", "deny");
+      return false;
+    }
+    this.stand();
+    this.acting = true;
+    this.swing = { tag, strikeAt: this.time.now + SWING_STRIKE_MS };
+    this.swungAt.set(tag, this.time.now);
+    this.player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      this.swing = null;
+      this.onActionDone();
+    });
+    this.player.play({ key: `${tool}_${this.facing}`, repeat: 0 });
+    this.time.delayedCall(SWING_STRIKE_MS, () => this.strike(tag, tool));
+    return true;
+  }
+
+  /** The blade lands: the thud, a shiver through what was hit, and a few chips off it into his hands. */
+  private strike(tag: string, tool: SwingTool): void {
+    if (tool === "pick") pickSound();
+    else axeSound();
+    const parts = this.propImages.filter(({ spec, stump }) => spec.tag === tag && !stump);
+    // Came down while the blade was in the air: it goes now, as the blade lands.
+    if (this.holding.delete(tag)) {
+      this.applyGates();
+      this.breakApart(tag);
+      return;
+    }
+    if (this.reducedMotion || parts.length === 0) return;
+    const images = parts.flatMap(({ image, canopy }) => (canopy ? [image, canopy] : [image]));
+    for (const image of images) {
+      const x = image.x;
+      this.tweens.add({ targets: image, x: { from: x + 1.5, to: x }, duration: 150, ease: "Sine.easeOut" });
+    }
+    this.orbs.chips(parts[0].image, CHIP_PIECES, CHIP_BAND);
+  }
+
+  /**
+   * What was just felled, cleared or broken, as the arcade's orb: its picture
+   * is already hidden (or a stump now stands there), and the orb is made of
+   * that picture's pixels where it stood.
+   */
+  private breakApart(tag: string): void {
+    if (this.reducedMotion) return;
+    const parts = this.propImages.filter(({ spec, stump }) => spec.tag === tag && !stump);
+    const images = parts.flatMap(({ image, canopy }) => (canopy ? [image, canopy] : [image]));
+    if (images.length === 0) return;
+    // Each coin that lands gives him a little bump, the way each one bumped the Gold pill.
+    this.orbs.burst(images, (index, last) => {
+      if (index === 0) piecesSound();
+      if (last) this.squashFarmer(1.07, 0.91, 90);
+      else this.squashFarmer(1.03, 0.97, 50);
+    });
+  }
+
+  /**
+   * Something has just come down. If his blade is still on its way to it, it
+   * stands until the blade lands (`strike`); otherwise it breaks apart now.
+   */
+  private cameDown(tag: string): void {
+    const swung = this.swungAt.get(tag);
+    if (swung === undefined || this.time.now - swung > RECENT_SWING_MS) return;
+    this.swungAt.delete(tag);
+    if (this.swing?.tag === tag && this.time.now < this.swing.strikeAt) {
+      this.holding.add(tag);
+      this.applyGates();
+      return;
+    }
+    this.breakApart(tag);
+  }
+
   /** A small, cheap ground response for the hoe stroke. It is local-only juice:
    * the server still decides whether the bed was actually created or lifted. */
   private hoeImpactAt(at: Point): void {
@@ -1756,12 +1878,15 @@ export class TopdownScene extends Phaser.Scene {
       case "thicket":
         return cb.onThicketTap(at);
       case "tree":
+        if (!this.swingAt(target.tag)) return;
         return cb.onTreeTap(detail ?? "", at);
       case "stone":
+        if (!this.swingAt(target.tag)) return;
         return cb.onStoneTap(target.tag, at);
       case "forage":
         return cb.onForageTap(detail ?? "", at);
       case "land":
+        if (!this.swingAt(target.tag)) return;
         return cb.onLandTap(detail ?? "", at);
       case "greenhouse":
         return cb.onGreenhouseTap();
@@ -2113,6 +2238,7 @@ export class TopdownScene extends Phaser.Scene {
     for (const { tag, regrowAt } of nodes) this.spent.set(tag, regrowAt);
     if (!this.booted) return;
     this.applyGates();
+    for (const tag of this.spent.keys()) if (tag.startsWith(prefix) && !before.has(tag) && prefix !== "forage:") this.cameDown(tag);
     if (this.reducedMotion) return;
     // Settle the stump or rubble that just appeared.
     for (const { spec, image, stump } of this.propImages) {
@@ -2174,22 +2300,7 @@ export class TopdownScene extends Phaser.Scene {
     if (!this.booted) return;
     this.applyGates();
     if (this.reducedMotion) return;
-    for (const id of fell) {
-      for (const { spec, image, canopy } of this.propImages) {
-        if (spec.tag !== `land:${id}`) continue;
-        for (const target of [image, canopy]) {
-          if (!target) continue;
-          target.setVisible(true).setAlpha(1);
-          this.tweens.add({
-            targets: target,
-            alpha: 0,
-            duration: 220,
-            ease: "Quad.easeIn",
-            onComplete: () => target.setVisible(false).setAlpha(1),
-          });
-        }
-      }
-    }
+    for (const id of fell) this.cameDown(`land:${id}`);
   }
 
   setSectors(sectors: SectorId[]): void {

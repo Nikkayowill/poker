@@ -18,6 +18,7 @@ import sys
 from PIL import Image, ImageChops
 
 import cast
+import hoe_head
 import lpc
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
@@ -81,9 +82,18 @@ def bent(frame, drop, lean, facing):
     return out
 
 
-# The axe swing LPC draws on its oversize sheet. Nothing calls a chopping tag yet (the game's chop
-# is the hoe going into the ground), so it is here for the wood chopping that is being built.
-AXE = dict(custom="tool_axe", cols=[0, 3, 5, 8], tools=[("tool_axe", None)])
+# The overhead swings, all off LPC's one oversize swing sheet: the axe for trees and scrub, the
+# pickaxe for rock, and the hoe for breaking ground (the pickaxe with one point cut off, see
+# hoe_head.py). Its frames here are the wind-up, the top of the lift, the blur coming down and the
+# strike, which is held. The scene times the hit to the fourth frame (lib/stackacres-td/hoe.ts).
+SWING_MS = [170, 110, 50, 250]
+SWINGS = {
+    "hoe": dict(custom="tool_axe", cols=[0, 2, 4, 5], tools=[("tool_pickaxe", None)], edit=hoe_head.cut),
+    "axe": dict(custom="tool_axe", cols=[0, 2, 4, 5], tools=[("tool_axe", None)]),
+    "pick": dict(custom="tool_axe", cols=[0, 2, 4, 5], tools=[("tool_pickaxe", None)]),
+}
+# Only the player swings, and each set is 16 more frames of texture on a phone.
+SWINGERS = {"farmer"}
 
 
 def place(frame, height, ground=GROUND):
@@ -198,6 +208,12 @@ def frames_for(name, height):
                 stride = stepped(stride, place(dressed([]).frames("idle", d)[0], height))
             stride = [shifted(f, dy) for f, dy in zip(stride, HOP)]
             out.append(("stride", d, stride, [STRIDE_MS] * len(stride)))
+    if name in SWINGERS:
+        for action, how in SWINGS.items():
+            for d in DIRS:
+                src = dressed(how["tools"]).custom_frames(how["custom"], d, how.get("edit"))
+                ground = (GROUND[0] + 32, GROUND[1] + 32)
+                out.append((action, d, [place(src[c], height, ground) for c in how["cols"]], SWING_MS))
     return out
 
 
@@ -246,7 +262,7 @@ def credits(names):
     rows, licences = {}, set()
     for name in names:
         spec = cast.CAST[name]
-        tools = [t for how in list(ACTIONS.values()) + [AXE] for t in how["tools"]]
+        tools = [t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]]
         who = lpc.Character(spec["items"] + tools, body=spec.get("body", "male"),
                             palette=spec.get("palette"))
         for row in who.credits():
@@ -293,7 +309,7 @@ def main(names):
     authors, licences = credits(names)
     print(f"\ncredits: {len(authors)} artists, licences {sorted(licences)}")
     strict = [n for n in names for p in [cast.build(n).license_problems()] if p]
-    tools = lpc.Character([t for how in list(ACTIONS.values()) + [AXE] for t in how["tools"]])
+    tools = lpc.Character([t for how in list(ACTIONS.values()) + list(SWINGS.values()) for t in how["tools"]])
     share_alike = tools.license_problems()
     if strict:
         print("share-alike only, in a wardrobe:", strict)

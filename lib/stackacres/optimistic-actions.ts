@@ -118,8 +118,6 @@ import { FENCE_CAP, FENCE_WOOD_COST, isFenceableMapTile, type FencePiece } from 
 import { overgrownSoilTile } from "./crop-field-obstacles";
 import {
   LAND_SWING_ENERGY,
-  demolitionPrice,
-  demolishLandObstacle,
   landClearingProgress,
   landObstacle,
   landObstacleStateOf,
@@ -896,7 +894,7 @@ export function predictStackAcresAction(
       const obstacle = landObstacle(body.obstacleId);
       if (!obstacle) return null;
       const now = new Date(ctx.nowMs);
-      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now, body.sweet);
+      const swing = swingAtLandObstacle(obstacle.kind, landObstacleStateOf(ctx.landObstacles, obstacle), now);
       if (!swing) return null;
       // Energy first, same order the server keeps -- a swing nobody has the
       // energy for never happened, so nothing else here is guessed either.
@@ -911,19 +909,6 @@ export function predictStackAcresAction(
         ...processingPatch(ctx, { inventory }),
         ...openedSectorPatch(ctx, obstacle.ground, landObstacles),
       };
-    }
-    case "demolish-land": {
-      // Gold's one way onto this road. Rule 1 all the same: the balance drops
-      // before the obstacle does, and a refusal rolls both back together.
-      const obstacle = landObstacle(body.obstacleId);
-      if (!obstacle) return null;
-      const state = landObstacleStateOf(ctx.landObstacles, obstacle);
-      const next = demolishLandObstacle(state, new Date(ctx.nowMs));
-      if (!next) return null;
-      const profile = debited(ctx, demolitionPrice(obstacle.kind, state));
-      if (!profile) return null;
-      const landObstacles = withLandObstacleState(ctx.landObstacles, obstacle, next);
-      return { profile, landObstacles, ...openedSectorPatch(ctx, obstacle.ground, landObstacles) };
     }
     case "gather-forage": {
       // Fully predicted, which almost nothing that yields something else is.

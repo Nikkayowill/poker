@@ -6,7 +6,6 @@ import {
   freshStoneNode,
   type StoneNodeId,
   type StoneNodeRow,
-  type SwingQuality,
 } from "@/lib/stackacres/stone-nodes";
 import { adminClient } from "./supabase-admin";
 
@@ -102,20 +101,18 @@ export interface MineStoneNodeOutcome {
 
 /**
  * The one write that matters: one accepted swing against `nodeId`, applied
- * under the row's own version guard. `quality` only ever changes `yield` --
- * see ./stackacres/stone-nodes.ts's `applyMiningSwing` for the rule this
- * store just persists.
+ * under the row's own version guard. See ./stackacres/stone-nodes.ts's
+ * `applyMiningSwing` for the rule this store just persists.
  */
 export async function mineStoneNode(
   nodeId: StoneNodeId,
-  quality: SwingQuality,
   now: Date,
 ): Promise<MineStoneNodeOutcome> {
   const supabase = adminClient();
   if (!supabase) {
     const current = memoryNodes.get(nodeId) ?? freshStoneNode(nodeId);
     const effective = effectiveNodeState(current, now);
-    const result = applyMiningSwing(effective, quality, now);
+    const result = applyMiningSwing(effective, now);
     if (result.yield === 0 && !result.broke) {
       // Persist the (possibly just-regrown-then-immediately-checked) state
       // even on a no-op swing, so a subsequent read sees the same effective
@@ -127,8 +124,10 @@ export async function mineStoneNode(
     return { landed: true, broke: result.broke, yield: result.yield, node: result.node };
   }
 
+  // The RPC still takes the old swing grade. "sweet" is the one that pays
+  // STONE_PER_SWING, and every swing pays that now.
   const { data, error } = await supabase
-    .rpc("mine_stackacres_stone_node", { p_node_id: nodeId, p_quality: quality, p_now: now.toISOString() })
+    .rpc("mine_stackacres_stone_node", { p_node_id: nodeId, p_quality: "sweet", p_now: now.toISOString() })
     .single();
   if (error) throw new Error(`Could not swing at that boulder: ${error.message}`);
   const result = data as {

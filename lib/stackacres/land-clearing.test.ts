@@ -3,8 +3,6 @@ import {
   CLEARABLE_SECTORS,
   LAND_OBSTACLES,
   LAND_OBSTACLE_DEFS,
-  demolishLandObstacle,
-  demolitionPrice,
   freshLandObstacleState,
   isClearableSector,
   landClearingProgress,
@@ -20,12 +18,12 @@ import { STACKACRES_SECTORS } from "./sectors";
 const NOW = new Date("2026-09-22T12:00:00.000Z");
 
 /** Every swing it takes to break one, and what they paid. */
-function workToClear(kind: LandObstacleKind, sweet = false) {
+function workToClear(kind: LandObstacleKind) {
   let state = freshLandObstacleState(kind);
   let gained = 0;
   let swings = 0;
   for (;;) {
-    const swing = swingAtLandObstacle(kind, state, NOW, sweet);
+    const swing = swingAtLandObstacle(kind, state, NOW);
     if (!swing) break;
     swings += 1;
     gained += swing.quantity;
@@ -69,57 +67,26 @@ describe("working an obstacle by hand", () => {
   it("pays materials all the way down, and more for the last swing", () => {
     const tree = workToClear("tree");
     expect(tree.swings).toBe(LAND_OBSTACLE_DEFS.tree.hits);
-    expect(tree.gained).toBe(LAND_OBSTACLE_DEFS.tree.hits + LAND_OBSTACLE_DEFS.tree.clearBonus);
+    expect(tree.gained).toBe(LAND_OBSTACLE_DEFS.tree.hits * LAND_OBSTACLE_DEFS.tree.perHit + LAND_OBSTACLE_DEFS.tree.clearBonus);
     expect(tree.state.clearedAt).toBe(NOW.toISOString());
   });
 
   it("pays Stone for a boulder and Wood for a tree", () => {
-    const boulder = swingAtLandObstacle("boulder", freshLandObstacleState("boulder"), NOW, false);
+    const boulder = swingAtLandObstacle("boulder", freshLandObstacleState("boulder"), NOW);
     expect(boulder?.item).toBe("stone");
-    const tree = swingAtLandObstacle("tree", freshLandObstacleState("tree"), NOW, false);
+    const tree = swingAtLandObstacle("tree", freshLandObstacleState("tree"), NOW);
     expect(tree?.item).toBe("wood");
   });
 
-  it("pays a timed swing more, the same way a chopped tree does", () => {
-    expect(workToClear("tree", true).gained).toBeGreaterThan(workToClear("tree").gained);
+  it("pays 2 per swing, what a well-timed swing used to pay", () => {
+    expect(workToClear("tree").gained).toBe(10);
+    expect(workToClear("boulder").gained).toBe(12);
+    expect(workToClear("scrub").gained).toBe(4);
   });
 
   it("refuses a swing at something already down, because nothing grows back", () => {
     const { state } = workToClear("scrub");
-    expect(swingAtLandObstacle("scrub", state, NOW, false)).toBeNull();
-  });
-});
-
-describe("demolition, which is where Gold leaves", () => {
-  it("prices what is left to do, so work already done is never wasted", () => {
-    const fresh = freshLandObstacleState("boulder");
-    const full = demolitionPrice("boulder", fresh);
-    const swung = swingAtLandObstacle("boulder", fresh, NOW, false)!.nextState;
-    expect(demolitionPrice("boulder", swung)).toBeLessThan(full);
-    expect(full).toBe(LAND_OBSTACLE_DEFS.boulder.hits * LAND_OBSTACLE_DEFS.boulder.goldPerHit);
-  });
-
-  /**
-   * The whole point of the price: clearing a field with Gold alone has to
-   * cost more than the field used to, or paying is just the old purchase
-   * with extra steps.
-   */
-  it("costs more to buy a field outright than the field used to be sold for", () => {
-    for (const sector of CLEARABLE_SECTORS) {
-      const total = LAND_OBSTACLES[sector].reduce(
-        (gold, o) => gold + demolitionPrice(o.kind, freshLandObstacleState(o.kind)),
-        0,
-      );
-      expect(total).toBeGreaterThan(STACKACRES_SECTORS[sector].clearCost);
-    }
-  });
-
-  it("pays nothing into the barn, and cannot be done twice", () => {
-    const state = freshLandObstacleState("tree");
-    const blown = demolishLandObstacle(state, NOW);
-    expect(blown).toEqual({ hitsRemaining: 0, clearedAt: NOW.toISOString() });
-    expect(demolishLandObstacle(blown!, NOW)).toBeNull();
-    expect(demolitionPrice("tree", blown!)).toBe(0);
+    expect(swingAtLandObstacle("scrub", state, NOW)).toBeNull();
   });
 });
 
@@ -177,7 +144,6 @@ describe("what the client holds between reads", () => {
     const next = withLandObstacleState(before, obstacle, { hitsRemaining: 0, clearedAt: NOW.toISOString() });
     expect(next).toHaveLength(2);
     expect(next[0].cleared).toBe(true);
-    expect(next[0].demolitionPrice).toBe(0);
     expect(next[1]).toEqual(before[1]);
   });
 });

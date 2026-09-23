@@ -39,7 +39,7 @@ async function chopWood(context: BrowserContext): Promise<number> {
   let wood = 0;
   for (const nodeId of ["homestead-1", "homestead-2"]) {
     for (let swing = 0; swing < 3; swing += 1) {
-      const response = await context.request.post("/api/stackacres/actions", { data: { action: "chop-tree", nodeId, sweet: false } });
+      const response = await context.request.post("/api/stackacres/actions", { data: { action: "chop-tree", nodeId } });
       expect(response.ok()).toBe(true);
       wood = ((await response.json()) as FarmView).inventory.wood ?? 0;
     }

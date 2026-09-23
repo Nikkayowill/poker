@@ -9,11 +9,6 @@
  * whole sector opens the moment its last obstacle goes down, for no Gold at
  * all.
  *
- * Gold's way in is demolition: any obstacle can be blown instead of worked,
- * at a price per swing it would have taken. Paying is always dearer than the
- * land used to cost outright, because what it buys is the afternoon, not the
- * field.
- *
  * Pure, same split as ./wood.ts: this knows one obstacle's stored state and
  * `now`. The guarded write in lib/server/stackacres-store.ts decides what
  * actually landed, and the scene decides where each obstacle stands.
@@ -40,16 +35,14 @@ interface LandObstacleDef {
   readonly perHit: number;
   /** Extra on the swing that finishes it. */
   readonly clearBonus: number;
-  /** Gold to demolish, per swing still owed. */
-  readonly goldPerHit: number;
   /** What the popup calls it. */
   readonly label: string;
 }
 
 export const LAND_OBSTACLE_DEFS: Readonly<Record<LandObstacleKind, LandObstacleDef>> = {
-  tree: { hits: 4, item: "wood", perHit: 1, clearBonus: 2, goldPerHit: 900, label: "Tree" },
-  boulder: { hits: 5, item: "stone", perHit: 1, clearBonus: 2, goldPerHit: 1_400, label: "Boulder" },
-  scrub: { hits: 2, item: "wood", perHit: 1, clearBonus: 0, goldPerHit: 500, label: "Scrub" },
+  tree: { hits: 4, item: "wood", perHit: 2, clearBonus: 2, label: "Tree" },
+  boulder: { hits: 5, item: "stone", perHit: 2, clearBonus: 2, label: "Boulder" },
+  scrub: { hits: 2, item: "wood", perHit: 2, clearBonus: 0, label: "Scrub" },
 };
 
 export interface LandObstacle {
@@ -156,32 +149,18 @@ export function swingAtLandObstacle(
   kind: LandObstacleKind,
   state: LandObstacleState,
   now: Date,
-  sweet: boolean,
 ): LandSwingResult | null {
   if (isLandObstacleCleared(state)) return null;
   const def = LAND_OBSTACLE_DEFS[kind];
   const hitsRemaining = state.hitsRemaining - 1;
   const cleared = hitsRemaining <= 0;
-  const quantity = def.item === null ? 0 : def.perHit + (sweet ? 1 : 0) + (cleared ? def.clearBonus : 0);
+  const quantity = def.item === null ? 0 : def.perHit + (cleared ? def.clearBonus : 0);
   return {
     nextState: cleared ? { hitsRemaining: 0, clearedAt: now.toISOString() } : { hitsRemaining, clearedAt: null },
     item: def.item,
     quantity,
     cleared,
   };
-}
-
-/** What blowing it up costs right now: the swings still owed, priced by kind.
- *  An obstacle already half worked is cheaper, so effort is never wasted. */
-export function demolitionPrice(kind: LandObstacleKind, state: LandObstacleState): number {
-  if (isLandObstacleCleared(state)) return 0;
-  return Math.max(0, state.hitsRemaining) * LAND_OBSTACLE_DEFS[kind].goldPerHit;
-}
-
-/** Demolition pays no materials: there is nothing left to pick up. */
-export function demolishLandObstacle(state: LandObstacleState, now: Date): LandObstacleState | null {
-  if (isLandObstacleCleared(state)) return null;
-  return { hitsRemaining: 0, clearedAt: now.toISOString() };
 }
 
 /** What one obstacle looks like to the client. */
@@ -191,8 +170,6 @@ export interface LandObstacleSnapshot {
   readonly kind: LandObstacleKind;
   readonly hitsRemaining: number;
   readonly cleared: boolean;
-  /** Gold to blow it now, for the popup's second button. */
-  readonly demolitionPrice: number;
 }
 
 export function landObstacleSnapshot(obstacle: LandObstacle, state: LandObstacleState): LandObstacleSnapshot {
@@ -202,7 +179,6 @@ export function landObstacleSnapshot(obstacle: LandObstacle, state: LandObstacle
     kind: obstacle.kind,
     hitsRemaining: state.hitsRemaining,
     cleared: isLandObstacleCleared(state),
-    demolitionPrice: demolitionPrice(obstacle.kind, state),
   };
 }
 

@@ -658,7 +658,7 @@ describe("the Crop Fields start overgrown", () => {
     const obstacle = landObstacle(first.id)!;
     let result = null;
     for (let swing = 0; swing < LAND_OBSTACLE_DEFS[obstacle.kind].hits; swing += 1) {
-      result = await workStackAcresLand(token, first.id, false, T0);
+      result = await workStackAcresLand(token, first.id, T0);
     }
     expect(result?.landCleared).toMatchObject({ ground: "cropfields", cleared: true, sectorOpened: false });
     const view = await placeStackAcresSoilTile(token, square, T0);

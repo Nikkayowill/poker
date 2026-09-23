@@ -61,27 +61,21 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
 
     // An unknown node id is refused cleanly, not accepted or crashed on.
     const bogus = await api.post("/api/stackacres/actions", {
-      data: { action: "mine-stone", nodeId: "stone:mine-99", quality: "hit" },
+      data: { action: "mine-stone", nodeId: "stone:mine-99" },
     });
     expect(bogus.status()).toBe(400);
 
-    // A bogus quality string is refused the same way.
-    const badQuality = await api.post("/api/stackacres/actions", {
-      data: { action: "mine-stone", nodeId: "stone:mine-1", quality: "critical" },
-    });
-    expect(badQuality.status()).toBe(400);
-
     // A landed swing credits Stone into the inventory the read route serves.
     const first = await api.post("/api/stackacres/actions", {
-      data: { action: "mine-stone", nodeId: "stone:mine-1", quality: "hit" },
+      data: { action: "mine-stone", nodeId: "stone:mine-1" },
     });
     expect(first.ok()).toBe(true);
     const firstBody = (await first.json()) as {
       inventory?: Record<string, number>;
       stoneMined?: { landed: boolean; broke: boolean; amount: number };
     };
-    expect(firstBody.stoneMined).toMatchObject({ landed: true, amount: 1 });
-    expect(firstBody.inventory?.stone).toBe(1);
+    expect(firstBody.stoneMined).toMatchObject({ landed: true, amount: 2 });
+    expect(firstBody.inventory?.stone).toBe(2);
 
     // Swing the same node until it breaks -- whatever HITS_TO_BREAK is, this
     // loop stops the moment the server itself says `broke: true`, so it never
@@ -93,7 +87,7 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
       guard += 1;
       expect(guard).toBeLessThan(20); // A real node breaks well inside 20 swings.
       const swing = await api.post("/api/stackacres/actions", {
-        data: { action: "mine-stone", nodeId: "stone:mine-1", quality: "hit" },
+        data: { action: "mine-stone", nodeId: "stone:mine-1" },
       });
       expect(swing.ok()).toBe(true);
       const body = (await swing.json()) as {
@@ -108,7 +102,7 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
     // Broken now: another swing at the same node does not land, and pays
     // nothing -- inventory stays exactly where it was.
     const refused = await api.post("/api/stackacres/actions", {
-      data: { action: "mine-stone", nodeId: "stone:mine-1", quality: "sweet" },
+      data: { action: "mine-stone", nodeId: "stone:mine-1" },
     });
     expect(refused.ok()).toBe(true);
     const refusedBody = (await refused.json()) as {
@@ -120,7 +114,7 @@ test("mining a Stone node credits inventory, breaks after its swing count, and r
 
     // A different node is unaffected by the first one breaking.
     const otherNode = await api.post("/api/stackacres/actions", {
-      data: { action: "mine-stone", nodeId: "stone:mine-2", quality: "hit" },
+      data: { action: "mine-stone", nodeId: "stone:mine-2" },
     });
     expect(otherNode.ok()).toBe(true);
     const otherBody = (await otherNode.json()) as { stoneMined?: { landed: boolean } };

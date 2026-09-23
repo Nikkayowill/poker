@@ -366,8 +366,6 @@ import {
   LAND_OBSTACLES,
   LAND_SWING_ENERGY,
   TOO_TIRED_TO_CLEAR,
-  demolishLandObstacle,
-  demolitionPrice,
   freshLandObstacleState,
   landClearingProgress,
   landObstacle,
@@ -394,7 +392,6 @@ import {
   stoneNodeSnapshot,
   type StoneNodeId,
   type StoneNodeSnapshot,
-  type SwingQuality,
 } from "@/lib/stackacres/stone-nodes";
 import { mineStoneNode, readAllStoneNodes } from "./stone-node-store";
 import { inventoryQuantity, type StackAcresInventory } from "@/lib/stackacres/inventory";
@@ -1513,7 +1510,7 @@ export type StackAcresActionResult = StackAcresView & {
     multiplier: number;
     gold: number;
   };
-  /** Set by `workStackAcresLand`/`demolishStackAcresLand` to what THIS blow
+  /** Set by `workStackAcresLand` to what THIS blow
    *  did: what it paid, whether the obstacle came down, and whether that was
    *  the last one standing on the sector. Null when the blow found nothing
    *  left to hit. */
@@ -3586,7 +3583,6 @@ function clearedObstacleIds(states: Readonly<Record<string, LandObstacleState>>)
 export async function workStackAcresLand(
   token: string,
   obstacleIdInput: string,
-  sweet: boolean,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   const obstacle = landObstacle(obstacleIdInput);
@@ -3598,7 +3594,7 @@ export async function workStackAcresLand(
   if (!spent) throw new StackAcresRequestError(TOO_TIRED_TO_CLEAR, 400, { round: await snapshots(profile.id, now) });
 
   const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
-  const swing = swingAtLandObstacle(obstacle.kind, current, now, sweet);
+  const swing = swingAtLandObstacle(obstacle.kind, current, now);
   const written = swing ? await writeStackAcresLandObstacle(current, swing.nextState) : null;
   if (!swing || !written) {
     // Already down, or another tap got there first. Nothing happened, so the
@@ -3619,59 +3615,6 @@ export async function workStackAcresLand(
       item: swing.item,
       quantity: swing.quantity,
       cleared: swing.cleared,
-      sectorOpened: opened,
-    },
-  };
-}
-
-/**
- * Blowing one obstacle instead of working it: the one place Gold leaves on
- * the way to owning land. It pays no materials -- there is nothing left to
- * pick up -- and it is priced per swing still owed, so work already done is
- * never wasted.
- *
- * Rule 1: the Gold leaves before the obstacle does, and comes back if the
- * guarded write finds the obstacle already gone.
- */
-export async function demolishStackAcresLand(
-  token: string,
-  obstacleIdInput: string,
-  now = new Date(),
-): Promise<StackAcresActionResult> {
-  const obstacle = landObstacle(obstacleIdInput);
-  if (!obstacle) throw new StackAcresRequestError("There is nothing there.", 400);
-  const profile = await ensureProfile(token);
-  await assertLandReachable(profile.id, obstacle.ground, now);
-
-  const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
-  const price = demolitionPrice(obstacle.kind, current);
-  const next = demolishLandObstacle(current, now);
-  if (!next || price <= 0) {
-    return { ...(await view(profile, now)), landCleared: null };
-  }
-
-  const debited = await spendGoldByProfile(profile.id, price);
-  if (!debited) {
-    throw new StackAcresRequestError(`Blowing that costs ${price.toLocaleString()} Gold.`, 400, {
-      round: await snapshots(profile.id, now),
-    });
-  }
-
-  const written = await writeStackAcresLandObstacle(current, next);
-  if (!written) {
-    await refundGold(profile.id, price);
-    return { ...(await view(profile, now)), landCleared: null };
-  }
-
-  const opened = await openIfCleared(profile.id, obstacle.ground, now);
-  return {
-    ...(await view(profile, now)),
-    landCleared: {
-      obstacleId: obstacle.id,
-      ground: obstacle.ground,
-      item: null,
-      quantity: 0,
-      cleared: true,
       sectorOpened: opened,
     },
   };
@@ -3715,11 +3658,6 @@ async function openIfCleared(profileId: string, ground: ClearingGround, now: Dat
  * One swing at a tree (lib/stackacres/wood.ts): fills the shelf with Wood,
  * same as a catch or a bagged stalk -- moves no Gold.
  *
- * `sweet` is the chop minigame's own verdict on the swing's timing (see
- * lib/stackacres/chop.ts) -- it never decides whether the swing lands, only
- * how much Wood it pays, the same "client picks a quality flag, server owns
- * the real state" shape `catch-fish`'s `bait` boolean already takes.
- *
  * VERSION-GUARDED, UNLIKE A STALK. A stalk has no persisted world object to
  * race over; a tree does (`StoredWoodNode`), so two rapid taps chopping the
  * same tree race on its row's own version -- see
@@ -3731,7 +3669,6 @@ async function openIfCleared(profileId: string, ground: ClearingGround, now: Dat
 export async function chopStackAcresWoodTree(
   token: string,
   nodeIdInput: string,
-  sweet: boolean,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   if (!isWoodNodeId(nodeIdInput)) throw new StackAcresRequestError("Not a real tree.", 400);
@@ -3739,7 +3676,7 @@ export async function chopStackAcresWoodTree(
   const profile = await ensureProfile(token);
 
   const current: StoredWoodNode = await getOrCreateStackAcresWoodNode(profile.id, nodeId);
-  const swing = swingAtWoodNode(current, now, sweet);
+  const swing = swingAtWoodNode(current, now);
   if (!swing) {
     // Standing but out of reach for this attempt only happens if the tree
     // was felled between the client's own tap and this request landing --
@@ -3771,13 +3708,9 @@ export async function chopStackAcresWoodTree(
  * own version-guarded update, so a lost race here reads back as a swing
  * that simply did not land, never a double-collection.
  *
- * `quality` is the client's own timing grade -- "sweet" for a tap inside the
- * shared chop/mine popup's sweet zone (lib/stackacres/chop.ts), "hit"
- * otherwise -- and it can ONLY ever change how much Stone a landed swing
- * pays out (see lib/stackacres/stone-nodes.ts's `SWING_YIELD`). It can never
- * make an already-broken node break again or skip a swing: `mineStoneNode`
- * reads the node's real hit count and regrow window off its own stored row,
- * never off anything this call passes.
+ * Every landed swing pays `STONE_PER_SWING` (lib/stackacres/stone-nodes.ts).
+ * `mineStoneNode` reads the node's real hit count and regrow window off its
+ * own stored row, never off anything this call passes.
  *
  * Free like `bagStackAcresQuarry`: a swing costs nothing to attempt, so
  * there is nothing to refund if the node turns out to be down.
@@ -3785,18 +3718,13 @@ export async function chopStackAcresWoodTree(
 export async function mineStackAcresStoneNode(
   token: string,
   nodeIdInput: string,
-  qualityInput: string,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   if (!isStoneNodeId(nodeIdInput)) throw new StackAcresRequestError("There is nothing to mine there.", 400);
-  if (qualityInput !== "hit" && qualityInput !== "sweet") {
-    throw new StackAcresRequestError("Not a real swing.", 400);
-  }
   const nodeId: StoneNodeId = nodeIdInput;
-  const quality: SwingQuality = qualityInput;
   const profile = await ensureProfile(token);
 
-  const outcome = await mineStoneNode(nodeId, quality, now);
+  const outcome = await mineStoneNode(nodeId, now);
   if (!outcome.landed) {
     return {
       ...(await view(profile, now)),

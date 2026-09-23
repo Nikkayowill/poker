@@ -444,6 +444,43 @@ export function toStackAcresUnitSnapshots(
 }
 
 /**
+ * A unit as this device's clock sees it at `nowMs`: readiness, hunger and dry
+ * soil re-derived from its timestamps, so a crop ripens on screen without a
+ * network trip. Both freeze conditions are checked before readiness and both
+ * stop the progress bar where it stood, mirroring the server's own reads
+ * above. If the two ever disagree the server wins, because it is the only one
+ * that can pay.
+ *
+ * The farm's optimistic guesses read units through this too. The unit list
+ * only moves when a response lands, so a crop that ripened since then is
+ * still "working" in it, and a harvest guessed off that list removed nothing.
+ */
+export function withLocalClockUnit(unit: StackAcresUnitSnapshot, nowMs: number): StackAcresUnitSnapshot {
+  if (unit.state === "mucked") return unit;
+  const ready = Date.parse(unit.readyAt);
+  const started = Date.parse(unit.startedAt);
+  const progressAt = (atMs: number) =>
+    ready > started ? Math.min(1, Math.max(0, (atMs - started) / (ready - started))) : 1;
+
+  const hungry = unit.hungryAt !== null && Date.parse(unit.hungryAt) <= nowMs;
+  if (hungry) return { ...unit, state: "hungry" };
+  const driedAt = unit.thirstyAt === null ? null : Date.parse(unit.thirstyAt);
+  // `ready > driedAt` mirrors isStackAcresUnitDry's own carve-out: a crop
+  // that finished growing before the ground dried is not dry, it is just
+  // waiting to be picked. Dropping this here would flip a ripe row to dry
+  // between refetches even though the server would still collect it.
+  const dry = driedAt !== null && Number.isFinite(driedAt) && driedAt <= nowMs && ready > driedAt;
+  // `ready > driedAt` is already false for an unparseable readyAt, so this
+  // branch always has real timestamps to read the frozen bar at: the moment
+  // the soil went dry rather than now, so a frozen crop's bar stops where it
+  // stopped instead of creeping on to a full bar it cannot cash.
+  if (dry) return { ...unit, state: "dry", isWatered: false, progress: progressAt(driedAt) };
+  if (!Number.isFinite(ready) || !Number.isFinite(started)) return unit;
+  if (ready <= nowMs) return { ...unit, state: "ready", progress: 1, isWatered: true };
+  return { ...unit, state: "working", progress: progressAt(nowMs), isWatered: true };
+}
+
+/**
  * The row this browser expects once a feed it just sent actually lands,
  * computed the same way `feedStackAcres` computes it server-side (see
  * lib/server/stackacres-service.ts): `readyAt` moves forward by however long

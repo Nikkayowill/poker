@@ -1,4 +1,5 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { NextResponse } from "next/server";
 import { adminClient } from "./supabase-admin";
 import {
@@ -928,11 +929,10 @@ interface StackAcresRoundSnapshot {
 }
 
 async function snapshots(profileId: string, now: Date): Promise<StackAcresRoundSnapshot> {
+  // Revision before rows, so the number never claims more than the rows show.
+  const revision = await readStackAcresRevision(profileId);
   const rows = await listStackAcresUnits(profileId);
-  const [irrigatedUnitIds, revision] = await Promise.all([
-    irrigatedUnitIdsFor(profileId, rows),
-    readStackAcresRevision(profileId),
-  ]);
+  const irrigatedUnitIds = await irrigatedUnitIdsFor(profileId, rows);
   return { units: toStackAcresUnitSnapshots(rows, now, irrigatedUnitIds), revision };
 }
 
@@ -963,18 +963,41 @@ function toContractView(contract: StoredContract): StackAcresContractRow {
 }
 
 /**
+ * The revision for the action running right now, bumped at most once.
+ *
+ * The bump has to land after the action's write and before `view()` reads
+ * the farm back. Bumping after the read (as this used to) let a response
+ * whose read missed a sibling's write carry a higher number than the
+ * sibling's own response, so the client painted the older farm over the
+ * newer one: a hoed bed flicked back to grass, a harvested crop came back.
+ * Stamped this way, a response numbered N was read after every write
+ * numbered N or lower.
+ */
+interface RevisionScope {
+  profileId: string;
+  /** null once a bump has failed. */
+  revision: Promise<number | null> | null;
+}
+const revisionScope = new AsyncLocalStorage<RevisionScope>();
+
+/** Never throws: the action's write has already landed by now, and a throw
+ *  would release its intent key and let a retry run it a second time. */
+function bumpRevisionOnce(scope: RevisionScope): Promise<number | null> {
+  scope.revision ??= bumpStackAcresRevision(scope.profileId).catch((error: unknown) => {
+    console.error("stackacres.revision_bump_failed", { profileId: scope.profileId, error });
+    return null;
+  });
+  return scope.revision;
+}
+
+/**
  * `revision` is deliberately NOT one more entry in this function's own
  * per-profile fan-out below (see lib/server/stackacres-read-budget.test.ts's
- * own header on why that count is a tripwire, not a style rule) -- almost
- * every call site is one of the ~50 action functions ending `return
- * view(profile, now)`, and `runStackAcresAction` always overwrites whatever
- * this puts here with the real post-write value once the action actually
- * completes (see its own `bumped` helper). Paying for a read here that gets
- * thrown away on every one of those calls would be pure waste. The handful
- * of callers that DO need the true number today (`readStackAcres`'s plain
- * read, and `runStackAcresAction`'s replay/in-flight branches) fetch it
- * themselves, once, alongside this call -- see each of those, and
- * stackacres-revision-store.ts's own header.
+ * own header on why that count is a tripwire, not a style rule). Inside an
+ * action (`runStackAcresAction`) it is bumped here, before the reads, see
+ * `revisionScope`. Outside one it stays the placeholder, and the callers
+ * that need the true number (`readStackAcres`, the replay/in-flight
+ * branches) read it themselves before calling this.
  */
 /**
  * The ~30-way per-profile fan-out below, batched into one Postgres round
@@ -989,7 +1012,10 @@ function toContractView(contract: StoredContract): StackAcresContractRow {
  * everything below this point reads identically regardless of which branch
  * ran.
  */
-async function view(profile: PlayerProfile, now: Date, revision = 0): Promise<StackAcresView> {
+async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0): Promise<StackAcresView> {
+  const scope = revisionScope.getStore();
+  const revision =
+    (scope && scope.profileId === profile.id ? await bumpRevisionOnce(scope) : null) ?? placeholderRevision;
   const day = stackacresExchangeDay(now);
   const supabase = adminClient();
 
@@ -1615,22 +1641,18 @@ export async function runStackAcresAction(
 ): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
 
-  // Bumped once the write is confirmed, overriding the placeholder `run()`'s
-  // own `view()` call left in `result.revision` (view() never reads the real
-  // number itself -- see its own header on why). Best-effort: a bump that
-  // fails falls back to that placeholder rather than fail an action that
-  // already landed -- see stackacres-revision-store.ts's own header. A
-  // failure here must never reach the catch below, which would release the
-  // intent and let a retry replay a mutation that already succeeded.
-  const bumped = async (result: StackAcresActionResult): Promise<StackAcresActionResult> => {
-    const revision = await bumpStackAcresRevision(profile.id).catch((error) => {
-      console.error("stackacres.revision_bump_failed", { profileId: profile.id, error });
-      return result.revision;
-    });
-    return { ...result, revision };
+  // `run()`'s own `view()` bumps the revision between the write and the read
+  // (see `revisionScope`). The bump here only covers an action that never
+  // read the farm back. Best-effort either way: a failed bump keeps the
+  // placeholder rather than fail an action that already landed.
+  const bumped = async (): Promise<StackAcresActionResult> => {
+    const scope: RevisionScope = { profileId: profile.id, revision: null };
+    const result = await revisionScope.run(scope, run);
+    const revision = await bumpRevisionOnce(scope);
+    return revision === null ? result : { ...result, revision };
   };
 
-  if (!key) return bumped(await run());
+  if (!key) return bumped();
 
   const claim = await claimStackAcresIntent(profile.id, key, action, now.getTime());
   if (claim.kind === "replay") {
@@ -1655,7 +1677,7 @@ export async function runStackAcresAction(
   }
 
   try {
-    const result = await bumped(await run());
+    const result = await bumped();
     await completeStackAcresIntent(profile.id, key, replayDelta(result));
     return result;
   } catch (error) {
@@ -1677,10 +1699,13 @@ export async function runStackAcresAction(
  */
 export async function readStackAcres(token: string, now = new Date()): Promise<StackAcresView> {
   const profile = await ensureProfile(token);
-  // Run alongside view()'s own fan-out rather than ahead of it -- one more
-  // parallel round trip on the one call site that genuinely needs the true
-  // number, not one more link in a chain.
-  const [result, revision] = await Promise.all([view(profile, now), readStackAcresRevision(profile.id)]);
+  // Revision first, then the view, for the same reason as the replay branch
+  // in `runStackAcresAction`. Read in parallel, an action could bump the
+  // number between the two reads, and this read would then claim a revision
+  // its view never saw. The client would paint it and then drop that
+  // action's own answer as not newer.
+  const revision = await readStackAcresRevision(profile.id);
+  const result = await view(profile, now);
   return { ...result, revision };
 }
 
@@ -4174,11 +4199,13 @@ export async function harvestStackAcres(
   const irrigated = await irrigatedUnitIdsFor(profile.id, rows);
 
   // A named set is the single-tap path; no set at all is "bring in everything
-  // that is ready". Naming a unit that is not ready is answered with the
+  // that is ready". Naming ONE unit that is not ready is answered with the
   // specific reason, because that tap was aimed at that unit and "nothing is
-  // ready" would be a lie about it.
+  // ready" would be a lie about it. A batch or a cascade brings in whatever it
+  // still can: a crop in it may already have been picked by a tap that landed
+  // first, and refusing the lot put every other crop in it back on screen.
   const named = input.unitIds && input.unitIds.length > 0 ? new Set(input.unitIds) : null;
-  if (named) {
+  if (named && named.size === 1) {
     for (const unitId of named) {
       const row = rows.find((candidate) => candidate.id === unitId);
       if (!row || row.status !== "working") {
@@ -4220,9 +4247,9 @@ export async function harvestStackAcres(
 
   const planned = settleHarvest(ready.map(candidateOf));
 
-  // Crit odds, read up front for the roll below. A crit pays bonus inventory
-  // now, not Gold, so there is no reservation to size ahead of it any more --
-  // see lib/stackacres/equipment.ts's own header.
+  // The tool, for the crit roll below. A crit pays bonus inventory now, not
+  // Gold, so there is no reservation to size ahead of it any more -- see
+  // lib/stackacres/equipment.ts's own header.
   const tool = await readStackAcresToolTier(profile.id);
   // The Sunlight Forge's own permanent enchantments (lib/stackacres/forge.ts)
   // -- computed BEFORE the Synergy Tree's session buffs below, per that
@@ -4230,26 +4257,6 @@ export async function harvestStackAcres(
   // from here on, and the Synergy layer composes on top of them, not
   // instead of them.
   const forgedStats = await forgedToolStatsFor(profile.id, stackacresToolTierDef(tool));
-  // A consumed Lucky Poker Dice (lib/stackacres/secrets.ts) arms a one-shot
-  // crit-CHANCE boost for the very next harvest -- it widens the odds, never
-  // the bonus itself.
-  const diceBoostArmed =
-    (await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY)) >= 1;
-  // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
-  // is the same shape of boost as the dice: it widens the odds, never the
-  // bonus, so it layers on top here -- same reasoning as the dice comment
-  // above, and additive with it for the same reason two flat bonuses always
-  // are.
-  const critChance = (
-    await applySynergyBuffs(
-      {
-        harvestCritChance: effectiveCritChance(forgedStats.critChance, diceBoostArmed),
-        farmhandSpeed: 1,
-        millDoubleOutputChance: 0,
-      },
-      profile.id,
-    )
-  ).harvestCritChance;
 
   // Step 2. Bought stock never mucks and never leaves: the animal stays and
   // starts its next cycle the moment you take what it made. Muck is the cost
@@ -4257,7 +4264,7 @@ export async function harvestStackAcres(
   // sowings here to charge for.
   const settled: StoredStackAcresUnit[] = [];
   let mucked = 0;
-  for (const row of ready) {
+  const settle = async (row: StoredStackAcresUnit): Promise<boolean> => {
     const muckFee = row.permanent ? null : rollMuck(row.stock);
     const restart = row.permanent
       ? {
@@ -4268,11 +4275,26 @@ export async function harvestStackAcres(
       : null;
     const done = await collectStackAcresUnit(row, now, muckFee, restart);
     // Rule 2: a lost race did not happen here; whoever won it was credited instead.
-    if (!done) continue;
+    if (!done) return false;
     settled.push(row);
     if (muckFee !== null) mucked += 1;
     if (row.soilSlot !== null && enrichesSoil(row.stock)) {
       await markSoilEnriched(profile.id, row.soilSlot);
+    }
+    return true;
+  };
+  const lost: StoredStackAcresUnit[] = [];
+  for (const row of ready) {
+    if (!(await settle(row))) lost.push(row);
+  }
+  // A row can lose its guard only because something else stamped it (the Feed
+  // Silo, a pipe watering it) and still be ready. Read those again and try
+  // once more; one another harvest took is no longer working and is skipped.
+  if (lost.length > 0) {
+    const fresh = await listStackAcresUnits(profile.id);
+    for (const was of lost) {
+      const row = fresh.find((candidate) => candidate.id === was.id);
+      if (row && isStackAcresUnitReady(row, now, irrigated.has(row.id))) await settle(row);
     }
   }
 
@@ -4282,30 +4304,41 @@ export async function harvestStackAcres(
     });
   }
 
+  // A consumed Lucky Poker Dice (lib/stackacres/secrets.ts) arms a one-shot
+  // crit-CHANCE boost for the very next harvest -- it widens the odds, never
+  // the bonus itself. It is spent by being LIVE for this harvest, not refunded
+  // on a miss, the same "you paid for a chance, not a guarantee" rule every
+  // other crit-chance rung on the tool ladder already lives by. Claimed with
+  // the atomic disarm before the roll, so two harvests in the air at once
+  // cannot both roll with one boost. A disarm that fails (lost to a sibling,
+  // or a hiccup) rolls without it and leaves the harvest standing.
+  const diceBoostArmed =
+    (await readStackAcresSecretLedgerQty(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY)) >= 1;
+  const diceBoost =
+    diceBoostArmed &&
+    (await adjustStackAcresSecretLedger(profile.id, STACKACRES_DICE_BOOST_ARMED_KEY, -1).catch(() => null)) !==
+      null;
+  // The Synergy Tree's `sunlight_harvester` perk (lib/stackacres/synergy-perks.ts)
+  // is the same shape of boost as the dice: it widens the odds, never the
+  // bonus, so it layers on top here, additive with the dice for the same
+  // reason two flat bonuses always are.
+  const critChance = (
+    await applySynergyBuffs(
+      {
+        harvestCritChance: effectiveCritChance(forgedStats.critChance, diceBoost),
+        farmhandSpeed: 1,
+        millDoubleOutputChance: 0,
+      },
+      profile.id,
+    )
+  ).harvestCritChance;
+
   // Step 3. The crit, rolled ONCE for the sweep and only now -- after the
   // guarded writes, beside the muck roll, for the identical reason: anything
   // reachable from a read can be re-rolled by pulling to refresh. Rolled at
-  // `critChance`, not the tool's own base chance, so an armed dice boost
+  // `critChance`, not the tool's own base chance, so a claimed dice boost
   // actually applies.
   const critical = rollHarvestCrit(tool, Math.random, critChance);
-
-  if (diceBoostArmed) {
-    // Disarmed unconditionally, whether or not the roll above actually
-    // crit -- the boost is spent by being LIVE for this harvest, not
-    // refunded on a miss, the same "you paid for a chance, not a guarantee"
-    // rule every other crit-chance rung on the tool ladder already lives by.
-    // Best-effort: the sweep is already durable by this point in the
-    // function, and a failure here must not turn a settled, credited harvest
-    // into an error response.
-    const disarmed = await adjustStackAcresSecretLedger(
-      profile.id,
-      STACKACRES_DICE_BOOST_ARMED_KEY,
-      -1,
-    ).catch(() => null);
-    if (disarmed === null) {
-      console.error("stackacres.dice_boost_disarm_failed", { profileId: profile.id });
-    }
-  }
 
   // Step 4. Re-tally against what actually settled.
   const actual: HarvestSettlement =

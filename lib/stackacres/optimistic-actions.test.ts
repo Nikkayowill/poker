@@ -706,6 +706,25 @@ describe("predictStackAcresAction: collect", () => {
     );
     expect(patch).toBeNull();
   });
+
+  it("removes a crop that ripened on this device's clock since the list last moved", () => {
+    // The last response said "working"; its readyAt has passed since.
+    const ripened = unit({ id: "c1", stock: "carrot", state: "working", progress: 0.9, hungryAt: null });
+    const stillGrowing = unit({
+      id: "c2",
+      stock: "carrot",
+      state: "working",
+      hungryAt: null,
+      readyAt: new Date(NOW.getTime() + 60_000).toISOString(),
+    });
+    const tapped = predictStackAcresAction(
+      { action: "collect", unitIds: [ripened.id] },
+      ctx({ units: [ripened, stillGrowing] }),
+    );
+    expect(tapped?.units).toEqual([stillGrowing]);
+    const sweep = predictStackAcresAction({ action: "collect" }, ctx({ units: [ripened, stillGrowing] }));
+    expect(sweep?.units).toEqual([stillGrowing]);
+  });
 });
 
 describe("predictStackAcresAction: the rest of the shop", () => {

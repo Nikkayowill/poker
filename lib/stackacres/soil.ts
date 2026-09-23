@@ -325,7 +325,7 @@ export function orderedSoilTiles(soil: SoilMap): SoilTile[] {
  */
 export function soilTilesEqual(a: readonly SoilTile[], b: readonly SoilTile[]): boolean {
   if (a.length !== b.length) return false;
-  const key = (t: SoilTile) => `${t.tx},${t.ty},${t.order},${t.origin},${t.enriched === true}`;
+  const key = (t: SoilTile) => `${t.tx},${t.ty},${t.order},${t.origin},${soilTileTier(t)},${t.enriched === true}`;
   const as = a.map(key).sort();
   const bs = b.map(key).sort();
   return as.every((k, i) => k === bs[i]);

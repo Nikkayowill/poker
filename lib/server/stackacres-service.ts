@@ -176,6 +176,7 @@ import {
 } from "@/lib/stackacres/friendship";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
 import type { StoryItemId } from "@/lib/stackacres/story/items";
+import { isQuestPlaceId } from "@/lib/stackacres/story/places";
 import {
   activeQuest,
   applyStoryEvent,
@@ -4072,6 +4073,28 @@ export async function tapStackAcresSecretZone(
   }
 
   return { ...(await view(profile, now)), discovery };
+}
+
+/**
+ * Records that the farmer reached a quest place -- a "go to X" objective's
+ * whole job. Unlike `tapStackAcresSecretZone`, there is no daily throttle and
+ * no roll: this moves no Gold and no item, only a `place-reached` story
+ * event, so it is safe to record every time the tap lands, including a
+ * repeat tap after the objective it feeds is already satisfied or the quest
+ * that asked for it has moved on.
+ */
+export async function reachStackAcresQuestPlace(
+  token: string,
+  placeIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isQuestPlaceId(placeIdInput)) {
+    throw new StackAcresRequestError("There is nothing to do there.", 400);
+  }
+  const placeId = placeIdInput;
+  const profile = await ensureProfile(token);
+  await recordStoryEvents(profile.id, [{ kind: "place-reached", placeId }]);
+  return view(profile, now);
 }
 
 /**

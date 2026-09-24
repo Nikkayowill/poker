@@ -23,6 +23,7 @@ import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS, type StackAcresToolTi
 import { machineItemLabel, type MachineItemId } from "../machine-items";
 import type { RecipeId } from "../recipes";
 import type { StoryEvent } from "./events";
+import { QUEST_PLACES, type QuestPlaceId } from "./places";
 import type { TravelerId } from "./travelers";
 
 export type StoryObjective =
@@ -41,7 +42,8 @@ export type StoryObjective =
   | { readonly kind: "forge"; readonly target: number }
   | { readonly kind: "crossbreed"; readonly target: number }
   | { readonly kind: "deliver"; readonly item: MachineItemId; readonly target: number }
-  | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 };
+  | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 }
+  | { readonly kind: "reach-place"; readonly place: QuestPlaceId; readonly target: 1 };
 
 export type StoryObjectiveKind = StoryObjective["kind"];
 
@@ -99,6 +101,8 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "enchantment-forged" ? 1 : 0;
     case "crossbreed":
       return event.kind === "crossbreed-harvested" ? 1 : 0;
+    case "reach-place":
+      return event.kind === "place-reached" && event.placeId === objective.place ? 1 : 0;
     case "deliver":
     case "hold-tool":
       return 0;
@@ -151,8 +155,14 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Bring ${machineItemLabel(objective.item, objective.target)}`;
     case "hold-tool":
       return `Own the ${STACKACRES_TOOL_TIER_DEFS[objective.tool].label}`;
+    case "reach-place":
+      return `Go to ${QUEST_PLACE_LABEL[objective.place]}`;
   }
 }
+
+const QUEST_PLACE_LABEL: Readonly<Record<QuestPlaceId, string>> = Object.fromEntries(
+  QUEST_PLACES.map((place) => [place.id, place.label]),
+) as Record<QuestPlaceId, string>;
 
 export interface StoryQuest {
   /** Stable, `<traveler>.q<n>`. Dialogue node ids hang off it. */

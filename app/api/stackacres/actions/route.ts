@@ -24,6 +24,7 @@ import { FORGE_ENCHANTMENT_IDS } from "@/lib/stackacres/forge";
 import { STACKACRES_BUYABLE_CUTTERS } from "@/lib/stackacres/cutters";
 import { CROSSBREED_GRID_COLS, CROSSBREED_GRID_ROWS } from "@/lib/stackacres/crossbreeding";
 import { FRIENDSHIP_NPCS, GIFTABLE_ITEMS } from "@/lib/stackacres/friendship";
+import { QUEST_PLACE_IDS } from "@/lib/stackacres/story/places";
 import { TRAVELER_IDS } from "@/lib/stackacres/story/travelers";
 import {
   activateStackAcresSynergyPerk,
@@ -87,6 +88,7 @@ import {
   sealStackAcresVat,
   collectStackAcresVat,
   meetStackAcresTraveler,
+  reachStackAcresQuestPlace,
   turnInStackAcresTravelerQuest,
 } from "@/lib/server/stackacres-service";
 import { stackAcresActionGate } from "@/lib/server/profile-store";
@@ -504,6 +506,14 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("story-turn-in"),
     traveler: z.enum(TRAVELER_IDS as unknown as [string, ...string[]]),
   }),
+  // A quest's own "go to this spot" objective. Moves no Gold and no items --
+  // the server records that the named place was reached and nothing more; see
+  // lib/stackacres/story/places.ts's own header on why this is a separate id
+  // space from the hidden-zone taps above.
+  z.object({
+    action: z.literal("reach-quest-place"),
+    placeId: z.enum(QUEST_PLACE_IDS as unknown as [string, ...string[]]),
+  }),
 ]);
 
 /**
@@ -662,6 +672,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return meetStackAcresTraveler(token, action.traveler, now);
     case "story-turn-in":
       return turnInStackAcresTravelerQuest(token, action.traveler, now);
+    case "reach-quest-place":
+      return reachStackAcresQuestPlace(token, action.placeId, now);
   }
 }
 

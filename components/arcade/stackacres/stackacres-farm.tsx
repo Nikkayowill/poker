@@ -24,7 +24,6 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { StackAcresLogo } from "@/components/brand/stackacres-logo";
 import { useMinHoldFade } from "@/components/loading/use-min-hold-fade";
 import { useLandscape } from "@/components/use-landscape";
@@ -3775,6 +3774,11 @@ export function StackAcresFarm() {
   // drawer (compactNav), never both.
   const secondaryHud = (
     <>
+      {/* The Journal's own entry point -- moved off the persistent left-hand
+          nav row (it used to be a chip with its own line of text and a
+          progress bar, always on screen) and folded into this same
+          standing-badge row as the Forge and Crossbreeding Bed below it. */}
+      <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
       <span className="sa-feed" title="Feed servings">
         <StackAcresPixelIcon name="sack" />
         <strong>{feed}</strong>
@@ -3838,11 +3842,21 @@ export function StackAcresFarm() {
       )}
       <header className="floor-bar">
         <div className="floor-bar-left">
-          <FloorBackLink />
+          {/* Not the shared FloorBackLink: that one leaves for the StackChips
+              games list, but StackAcres has its own front door now (Play /
+              Profile / Settings / Leave, stackacres-play-screen.tsx) -- this
+              returns there instead of bouncing a player all the way out of
+              the farm. */}
+          <button
+            type="button"
+            className="floor-back"
+            onClick={() => { panelSound(); setHasStarted(false); }}
+          >
+            <StackAcresPixelIcon name="back" /> Back
+          </button>
           <button type="button" className="htp-trigger" onClick={openMap}>
             <StackAcresPixelIcon name="map" /> Map
           </button>
-          <StackAcresJournalChip view={journal} onOpen={() => { journalSound(); setShowGoals(true); }} />
         </div>
         {/* One purse now. The farm's own currency is gone, so the Gold pill
             the rest of the app already shows is the whole story, and it keeps

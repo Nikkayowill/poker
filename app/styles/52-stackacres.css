@@ -835,7 +835,7 @@
 /* ---- the tool belt ----------------------------------------------------
    Four slots stacked down the left edge: hand, hoe, watering can, seed pouch
    (stackacres-toolbelt.tsx). A column keeps the belt out of the top row, which
-   is already full of the back link, Map and the goal chip on a short phone. */
+   is already full of the back link and Map on a short phone. */
 .sa-toolbelt {
   position: absolute;
   top: calc(var(--sa-header-h) + 10px);
@@ -4934,31 +4934,7 @@
   .sa-kitchen-card h3 { font-size: 14px; }
 }
 
-/* The goal chip beside the Map button, and the goals sheet it opens. */
-.sa-goal {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-height: 32px;
-  min-width: 130px;
-  max-width: 240px;
-  padding: 2px 9px;
-  border: 2px solid var(--sa-paint-line);
-  border-radius: var(--sa-r-chip);
-  background: var(--sa-paint-fill-open);
-  box-shadow: var(--sa-paint-rim-sm), var(--sa-drop);
-  color: var(--sa-ink);
-  font-family: var(--sa-font);
-  text-align: center;
-  cursor: pointer;
-}
-.sa-goal:active { box-shadow: var(--sa-paint-rim-press); }
-.sa-goal-top { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sa-ink-soft); }
-.sa-goal-line { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.sa-goal-bar { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.3); overflow: hidden; }
-.sa-goal-bar > span { display: block; height: 100%; background: var(--sa-tint-corn); }
+/* The Journal sheet the chip (now `.sa-prestige-badge`, stackacres-farm.tsx) opens. */
 
 .sa-place-tag {
   position: fixed;
@@ -5058,7 +5034,6 @@
 .sa-journal-foot { margin: 6px 0 0; font-size: 11px; color: var(--sa-ink-soft); }
 .sa-journal-callers { display: grid; gap: 3px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 12px; }
 .sa-journal-callers > li.is-ready { color: var(--sa-ink); font-weight: 700; }
-.sa-journal-chip .sa-goal-line { font-weight: 700; }
 .sa-journal-waiting { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
 .sa-journal-waiting > li {
   display: grid;
@@ -5116,8 +5091,7 @@
 .sa-upkeep,
 .sa-energy,
 .sa-prestige-badge,
-.sa-music-toggle,
-.sa-goal {
+.sa-music-toggle {
   min-height: 44px;
   border: 10px solid transparent;
   border-image: var(--sa-9-chip) 5 fill / 10px stretch;
@@ -5139,8 +5113,7 @@
 .sa-theme .htp-trigger:active,
 .sa-prestige-badge:active,
 .sa-music-toggle:active,
-.sa-hud-more-btn.is-open,
-.sa-goal:active {
+.sa-hud-more-btn.is-open {
   border-image-source: var(--sa-9-chip-down);
   box-shadow: none;
   transform: translateY(1px);
@@ -5159,12 +5132,6 @@
 /* Tags keep their own height rather than stretching to the journal chip's. */
 .sa-theme .floor-bar-left { align-items: flex-start; }
 
-/* The journal chip: the chapter in small type, the next job, and its bar. */
-.sa-goal { padding: 0 6px 3px; gap: 1px; }
-.sa-goal-top { font-size: 10px; line-height: 1.1; }
-.sa-goal-line { font-size: 13px; line-height: 1.2; }
-.sa-goal-top { color: var(--sa-barn-2); letter-spacing: .02em; }
-.sa-goal-bar,
 .sa-energy-bar {
   height: 10px;
   border: 3px solid transparent;
@@ -5173,8 +5140,6 @@
   background: none;
   box-sizing: content-box;
 }
-.sa-goal-bar { height: 4px; width: calc(100% - 6px); }
-.sa-goal-bar > span { background: linear-gradient(var(--sa-sprout-hi) 0 1px, var(--sa-sprout) 1px); }
 .sa-energy-bar > span { border-radius: 0; background: linear-gradient(#f7a877 0 2px, #eb8a55 2px 6px, var(--sa-ember) 6px); }
 
 /* The More popover: a small barn board. */
@@ -5432,10 +5397,21 @@
   .sa-feed,
   .sa-upkeep,
   .sa-energy,
-  .sa-prestige-badge,
-  .sa-goal { min-height: 40px; }
+  .sa-prestige-badge { min-height: 40px; }
   .sa-music-toggle { width: 40px; min-height: 40px; }
   .sa-toolbelt { gap: 3px; }
   .sa-belt-slot { width: 44px; height: 44px; }
   .sa-belt-slot .sa-px-lg { margin: -6px; }
+
+  /* The stick and the Use key are sized for a full-height phone; at 390-430px
+     tall they read as two oversized blobs eating the corners. Both are
+     background-image sprites at 100%/100%, so shrinking the box scales the
+     art with it -- nothing to resize separately. */
+  .sa-joystick { width: 84px; height: 84px; }
+  .sa-joystick-knob { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+  /* Pulled closer to the true bottom-left corner (less padding above the
+     safe-area inset) so it clears the belt's own column above it instead of
+     crowding its last slot on a short screen. */
+  .sa-use-key { width: 60px; height: 60px; bottom: max(10px, calc(var(--safe-bottom) + 4px)); }
+  .sa-use-key svg { width: 32px; height: 32px; }
 }

@@ -78,6 +78,7 @@ import { isWildMapTile, mapToSoilTile, soilToMapTile } from "@/lib/stackacres/ho
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
+import { STACKACRES_HOUR_MS } from "@/lib/stackacres/clock";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
@@ -614,6 +615,7 @@ export class TopdownScene extends Phaser.Scene {
     this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
+    this.walkers.setHourLength(STACKACRES_HOUR_MS);
     this.drops = new ChunkDrops(
       this,
       (object) => this.keep(object),

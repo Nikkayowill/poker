@@ -166,6 +166,7 @@ import {
   FRIENDSHIP_LADDER,
   FRIENDSHIP_NPCS,
   FRIENDSHIP_RUNG_THRESHOLDS,
+  GREET_POINTS,
   friendshipView,
   giftPoints,
   isNpcId,
@@ -262,6 +263,7 @@ import {
   prayAtStackAcresShrine as prayAtStackAcresShrine_store,
   readStackAcresFriendship,
   giveStackAcresGift as giveStackAcresGift_store,
+  greetStackAcresNpc as greetStackAcresNpc_store,
   readStackAcresStory,
   writeStackAcresStory,
   turnInStackAcresStory,
@@ -1219,6 +1221,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       npc: string;
       points: number | string;
       last_gifted_day: string | null;
+      last_greeted_day: string | null;
       claimed_rungs: number[] | null;
     }[];
     storedFriendships = FRIENDSHIP_NPCS.map((npc) => stackAcresFriendshipFromBatchRows(friendshipRows, npc));
@@ -1285,7 +1288,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   const irrigationGrid = irrigationGridFor(rows, pipeRows, soilMapFor(soilTiles));
   const friendship = {} as Record<NpcId, StackAcresFriendshipView>;
   FRIENDSHIP_NPCS.forEach((npc, index) => {
-    friendship[npc] = friendshipView(storedFriendships[index], now);
+    friendship[npc] = friendshipView(npc, storedFriendships[index], now);
   });
   const units = toStackAcresUnitSnapshots(rows, now, irrigationGrid.irrigatedUnitIds);
   const sectors = unlockedSectors(cleared, units);
@@ -1552,6 +1555,15 @@ export type StackAcresActionResult = StackAcresView & {
     npc: NpcId;
     points: number;
     outcome: "gifted" | "already-gifted-today" | "insufficient-item";
+    grantedKeepsake: KeepsakeId | null;
+  };
+  /** Set by `greetStackAcresNpc` to what THIS greet just did -- same
+   *  reasoning `gift` above gives for staying out of the always-present
+   *  `friendship` slice. */
+  greet?: {
+    npc: NpcId;
+    points: number;
+    outcome: "greeted" | "already-greeted-today";
     grantedKeepsake: KeepsakeId | null;
   };
   /** Set by `collectStackAcresVat` to what THIS collection just paid --
@@ -6032,10 +6044,32 @@ export async function giveStackAcresGift(
   const today = stackacresExchangeDay(now);
 
   const result = await giveStackAcresGift_store(profile.id, npc, item, giftPoints(npc, item), today, FRIENDSHIP_RUNG_THRESHOLDS);
-  const grantedKeepsake = result.grantedRung === null ? null : FRIENDSHIP_LADDER[result.grantedRung].keepsake;
+  const grantedKeepsake = result.grantedRung === null ? null : FRIENDSHIP_LADDER[npc][result.grantedRung].keepsake;
   return {
     ...(await view(profile, now)),
     gift: { npc, points: result.points, outcome: result.outcome, grantedKeepsake },
+  };
+}
+
+/**
+ * Says hi to an NPC, at no item cost, advancing friendship with them for the
+ * UTC day. Its own day gate, separate from a gift's -- see
+ * lib/stackacres/friendship.ts's own header for why greeting and gifting
+ * never share one gate. Same posture as `giveStackAcresGift` otherwise:
+ * re-validates `npc` independently of the route's own zod schema, and the
+ * store's own RPC (`greet_homestead_npc`) is the whole idempotency story.
+ */
+export async function greetStackAcresNpc(token: string, npcInput: string, now = new Date()): Promise<StackAcresActionResult> {
+  if (!isNpcId(npcInput)) throw new StackAcresRequestError("There is nobody there to say hi to.", 400);
+  const npc: NpcId = npcInput;
+  const profile = await ensureProfile(token);
+  const today = stackacresExchangeDay(now);
+
+  const result = await greetStackAcresNpc_store(profile.id, npc, GREET_POINTS, today, FRIENDSHIP_RUNG_THRESHOLDS);
+  const grantedKeepsake = result.grantedRung === null ? null : FRIENDSHIP_LADDER[npc][result.grantedRung].keepsake;
+  return {
+    ...(await view(profile, now)),
+    greet: { npc, points: result.points, outcome: result.outcome, grantedKeepsake },
   };
 }
 

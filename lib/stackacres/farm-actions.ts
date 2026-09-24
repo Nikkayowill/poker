@@ -148,6 +148,10 @@ export type Action =
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }
+  // NPC friendship: a plain "say hi", from the same dialogue's own greet
+  // button. No item -- see lib/stackacres/friendship.ts's own header for
+  // why greeting and gifting are two separate day gates on one record.
+  | { action: "greet-npc"; npc: NpcId }
   // The travelers' story (./story/). Both move no Gold: `story-meet` accepts
   // a traveler's first quest, `story-turn-in` hands the active one in --
   // debiting only the items it asked for, and paying a story keepsake,
@@ -239,8 +243,10 @@ export function intentOf(body: Action): string {
   if ("sector" in body) return `${body.action}:${body.sector}`;
   // Checked before the generic "item" branch below: a gift carries `item`
   // but no `quantity` (it is always exactly one unit), and gifting one NPC
-  // must never be conflated with gifting another over the same item.
-  if ("npc" in body) return `${body.action}:${body.npc}:${body.item}`;
+  // must never be conflated with gifting another over the same item. A
+  // greet carries no item at all, so it is keyed on the npc alone --
+  // there is only ever one greet in flight for a given NPC at a time.
+  if ("npc" in body) return "item" in body ? `${body.action}:${body.npc}:${body.item}` : `${body.action}:${body.npc}`;
   if (body.action === "eat") return `eat:${body.item}`;
   // One cellar, so storing either kind of jar is the same press.
   if (body.action === "seal-cellar") return "seal-cellar";

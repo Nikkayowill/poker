@@ -83,6 +83,7 @@ import {
   buyStackAcresSeed,
   prayAtStackAcresShrine,
   giveStackAcresGift,
+  greetStackAcresNpc,
   sealStackAcresVat,
   collectStackAcresVat,
   meetStackAcresTraveler,
@@ -483,6 +484,13 @@ const bodySchema = z.discriminatedUnion("action", [
     npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
     item: z.enum(GIFTABLE_ITEMS as unknown as [string, ...string[]]),
   }),
+  // NPC friendship: a plain "say hi", no item and its own day gate
+  // (lib/stackacres/friendship.ts's `applyGreet`) -- what a click on an NPC
+  // with nothing left to gift or nothing new to say still does.
+  z.object({
+    action: z.literal("greet-npc"),
+    npc: z.enum(FRIENDSHIP_NPCS as unknown as [string, ...string[]]),
+  }),
   // The travelers' story (lib/stackacres/story/). Neither moves Gold:
   // `story-meet` accepts a traveler's first quest, `story-turn-in` hands the
   // active one in, debiting only the items it asked for and paying a story
@@ -648,6 +656,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return prayAtStackAcresShrine(token, now);
     case "give-gift":
       return giveStackAcresGift(token, action.npc, action.item, now);
+    case "greet-npc":
+      return greetStackAcresNpc(token, action.npc, now);
     case "story-meet":
       return meetStackAcresTraveler(token, action.traveler, now);
     case "story-turn-in":

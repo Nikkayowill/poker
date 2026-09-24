@@ -128,6 +128,7 @@ import {
   freshFriendship,
   friendshipView,
   type GiftOutcome,
+  type GreetOutcome,
   type KeepsakeId,
   type NpcId,
   type StackAcresFriendshipView,
@@ -397,6 +398,34 @@ const RAY_GIFT_LINES: readonly string[] = [
   "Whatever you've got, I expect I'll find a use for it.",
 ];
 
+/** Chef Pierre's own rotating lines, once his own quest line is done and a
+ *  tap opens the plain greet/gift dialogue instead of a story bubble --
+ *  same convention RAY_GIFT_LINES sets, in his own four-colour-kitchen
+ *  voice (see TRAVELER_CATALOGUE.pierre's own origin line). */
+const PIERRE_GIFT_LINES: readonly string[] = [
+  "Every dish deserves a second look, and so does a second visit. Good to see you.",
+  "The pixel realm never had a farm this fresh. I still notice it every day.",
+  "You keep good company for a man who talks to his own pans.",
+  "Bring me something and I'll tell you exactly what I'd do with it. Free of charge.",
+];
+
+/** Botanist Ivy's own rotating lines, same convention as Pierre's above, in
+ *  her own greenhouse-sim voice. */
+const IVY_GIFT_LINES: readonly string[] = [
+  "Every plant on this farm is a little less tidy than my old lookup tables. I like it better this way.",
+  "You've got good instincts for the ground. Better than my simulation ever gave me credit for.",
+  "I keep meaning to chart everything you've grown here. One of these days.",
+  "Bring me something and I'll tell you exactly what cross I'd try with it.",
+];
+
+/** Which of the eleven story travelers also carry a greet/gift dialogue
+ *  once their quest line is done -- keyed off FRIENDSHIP_NPCS, restated
+ *  here as a lookup rather than iterated from it so each entry keeps its
+ *  own line array's type. Module scope, not component state: the lines
+ *  never change at runtime, so a fresh object every render would only
+ *  cost `onWorldTravelerTap` its memoization for nothing. */
+const TRAVELER_GIFT_LINES: Partial<Record<TravelerId, readonly string[]>> = { pierre: PIERRE_GIFT_LINES, ivy: IVY_GIFT_LINES };
+
 /** The processing track as this component holds it. The full machine
  *  snapshot (with the server's `canStart`), not the farmhand planner's
  *  narrower Pick: the Workshop sheet draws timers and ids off these rows. */
@@ -598,6 +627,13 @@ interface StackAcresResponse {
     npc: NpcId;
     points: number;
     outcome: GiftOutcome | "insufficient-item";
+    grantedKeepsake: KeepsakeId | null;
+  };
+  /** Set only by a `greet-npc` response; same posture `gift` above takes. */
+  greet?: {
+    npc: NpcId;
+    points: number;
+    outcome: GreetOutcome;
     grantedKeepsake: KeepsakeId | null;
   };
   /** The Prestige Reset Valve's own standing: how many times pulled, the
@@ -963,7 +999,7 @@ export function StackAcresFarm() {
   const [friendship, setFriendship] = useState<Record<NpcId, StackAcresFriendshipView>>(() => {
     const initial = {} as Record<NpcId, StackAcresFriendshipView>;
     FRIENDSHIP_NPCS.forEach((npc) => {
-      initial[npc] = friendshipView(freshFriendship(), new Date());
+      initial[npc] = friendshipView(npc, freshFriendship(), new Date());
     });
     return initial;
   });
@@ -981,7 +1017,7 @@ export function StackAcresFarm() {
         phase: "result";
         npc: NpcId;
         at: TapPoint;
-        outcome: GiftOutcome | "insufficient-item";
+        outcome: GiftOutcome | "insufficient-item" | GreetOutcome;
         points: number;
         grantedKeepsake: KeepsakeId | null;
       };
@@ -2164,7 +2200,28 @@ export function StackAcresFarm() {
             const keepsake = KEEPSAKE_CATALOGUE[data.gift.grantedKeepsake];
             goldSound();
             setLastCollect({
-              text: `${keepsake.icon} Ray gives you his ${keepsake.label}`,
+              text: `${keepsake.icon} ${NPC_GIFT_CATALOGUE[data.gift.npc].label} gives you their ${keepsake.label}`,
+              nonce: Date.now(),
+            });
+          }
+        }
+        // A plain "say hi" -- same shape as a gift's own result handling
+        // just above, minus the item and its refusal outcome. A tap that
+        // has nothing else to say (Ray's own line already spent, or a
+        // traveler whose quest is done) still moves this relationship
+        // forward.
+        if (body.action === "greet-npc" && data.greet) {
+          setGiftDialogue((prev) => (prev ? { phase: "result", at: prev.at, ...data.greet! } : null));
+          if (data.greet.outcome === "greeted") {
+            panelSound();
+            if (anchor) world.current?.floatAt(anchor, "👋", "gain");
+            world.current?.emote(body.npc, "exclaim");
+          }
+          if (data.greet.grantedKeepsake) {
+            const keepsake = KEEPSAKE_CATALOGUE[data.greet.grantedKeepsake];
+            goldSound();
+            setLastCollect({
+              text: `${keepsake.icon} ${NPC_GIFT_CATALOGUE[data.greet.npc].label} gives you their ${keepsake.label}`,
               nonce: Date.now(),
             });
           }
@@ -2453,12 +2510,29 @@ export function StackAcresFarm() {
   /**
    * A finger landed on one of the eleven story travelers. `at` is already
    * the point over their head (the scene computed it), not the finger --
-   * see stackacres-scene.ts's `travelerHeadPoint`. Nothing here calls the
-   * server; `story.open` only decides which node to show, and only a
-   * committing button inside the bubble ever reaches `storySubmit` below.
+   * see stackacres-scene.ts's `travelerHeadPoint`. `story.open` only decides
+   * which node to show; nothing here calls the server unless the fallback
+   * below fires, and only a committing button inside the bubble ever
+   * reaches `storySubmit`.
+   *
+   * Pierre and Ivy carry the same two-layer interaction Ray does
+   * (`onWorldRayTap`'s own header): story first when they have something to
+   * say, the greet/gift dialogue otherwise. Before this, once their quest
+   * line finished a tap only ever opened the same static "nothing new" story
+   * bubble forever -- see lib/stackacres/friendship.ts's own header for why
+   * they, and not the other eight travelers, are in FRIENDSHIP_NPCS.
    */
   const onWorldTravelerTap = useCallback(
     (traveler: TravelerId, at: TapPoint) => {
+      const lines = TRAVELER_GIFT_LINES[traveler];
+      if (lines) {
+        const view = story.view?.travelers[traveler];
+        const hasSomethingToSay = view && view.unlocked && !view.done && (!view.met || view.ready);
+        if (!hasSomethingToSay && view?.unlocked) {
+          setGiftDialogue({ npc: traveler as NpcId, phase: "greeting", at, line: lines[Math.floor(Math.random() * lines.length)] });
+          return;
+        }
+      }
       story.open(traveler, at);
     },
     [story],
@@ -2573,6 +2647,16 @@ export function StackAcresFarm() {
   const onGiveGift = useCallback(
     (npc: NpcId, item: MachineItemId) => {
       void act({ action: "give-gift", npc, item });
+    },
+    [act],
+  );
+
+  /** The only path that ever sends `greet-npc`. Same "no optimistic guess"
+   *  posture `onGiveGift` above takes -- a keepsake only ever shows once the
+   *  server confirms it. */
+  const onGreetNpc = useCallback(
+    (npc: NpcId) => {
+      void act({ action: "greet-npc", npc });
     },
     [act],
   );
@@ -4062,8 +4146,9 @@ export function StackAcresFarm() {
               inventory={processing.inventory}
               friendship={friendship[giftDialogue.npc]}
               result={giftDialogue}
-              busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`)}
+              busy={pendingByPrefix(`give-gift:${giftDialogue.npc}`) || pendingByPrefix(`greet-npc:${giftDialogue.npc}`)}
               onGift={(item) => onGiveGift(giftDialogue.npc, item)}
+              onGreet={() => onGreetNpc(giftDialogue.npc)}
               onClose={() => setGiftDialogue(null)}
             />
           )}

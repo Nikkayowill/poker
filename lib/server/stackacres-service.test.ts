@@ -43,6 +43,7 @@ import {
   prestigeResetStackAcres,
   prayAtStackAcresShrine,
   giveStackAcresGift,
+  greetStackAcresNpc,
   buyStackAcresSeed,
   gatherStackAcresForage,
   catchStackAcresFish,
@@ -2292,7 +2293,10 @@ describe("the currency wall", () => {
       "fulfill-contract",
       // Moves no Gold in either direction: a pick fills the seed shelf.
       "gather-forage",
+      // Moves no Gold either way: a gift spends a processing-track item, not a purse.
       "give-gift",
+      // Moves no Gold either way, and no item either -- a plain greet.
+      "greet-npc",
       "harvest-crossbreed",
       "mine-stone",
       "move-soil-tile-group",
@@ -3802,6 +3806,70 @@ describe("hidden secrets", () => {
       const before = (await readStackAcres(token, DAY(1))).profile?.goldBalance;
       expect(before).toBe(50_000);
       const result = await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      expect(result.profile?.goldBalance).toBe(before);
+    });
+  });
+
+  describe("greetStackAcresNpc", () => {
+    const DAY = (d: number) => new Date(`2026-09-${String(d).padStart(2, "0")}T12:00:00.000Z`);
+
+    it("a first greet awards a point with no item spent", async () => {
+      const { token } = await funded();
+      const result = await greetStackAcresNpc(token, "pierre", DAY(1));
+      expect(result.greet).toEqual({ npc: "pierre", points: 1, outcome: "greeted", grantedKeepsake: null });
+      expect(result.friendship.pierre.points).toBe(1);
+    });
+
+    it("a second greet the same UTC day is refused and awards nothing more", async () => {
+      const { token } = await funded();
+      const first = await greetStackAcresNpc(token, "pierre", DAY(1));
+      const second = await greetStackAcresNpc(token, "pierre", DAY(1));
+      expect(second.greet).toEqual({
+        npc: "pierre",
+        points: first.friendship.pierre.points,
+        outcome: "already-greeted-today",
+        grantedKeepsake: null,
+      });
+    });
+
+    it("greeting and gifting the same NPC the same day both count", async () => {
+      const { token, id } = await funded();
+      await adjustStackAcresInventory(id, "cheese", 1);
+      await giveStackAcresGift(token, "ray", "cheese", DAY(1));
+      const greeted = await greetStackAcresNpc(token, "ray", DAY(1));
+      expect(greeted.greet?.outcome).toBe("greeted");
+      expect(greeted.friendship.ray.points).toBeGreaterThan(0);
+    });
+
+    it("a greet the very next UTC day is counted again", async () => {
+      const { token } = await funded();
+      const day1 = await greetStackAcresNpc(token, "pierre", DAY(1));
+      const day2 = await greetStackAcresNpc(token, "pierre", DAY(2));
+      expect(day2.greet?.outcome).toBe("greeted");
+      expect(day2.friendship.pierre.points).toBe(day1.friendship.pierre.points + 1);
+    });
+
+    it("grants Pierre's own first keepsake, never Ray's", async () => {
+      const { token } = await funded();
+      let day = 1;
+      let granted: string | null = null;
+      for (let i = 0; i < 9; i++) {
+        const result = await greetStackAcresNpc(token, "pierre", DAY(day));
+        if (result.greet?.grantedKeepsake) granted = result.greet.grantedKeepsake;
+        day += 1;
+      }
+      expect(granted).toBe("chipped_ladle");
+    });
+
+    it("refuses an NPC not in FRIENDSHIP_NPCS", async () => {
+      const { token } = await funded();
+      await expect(greetStackAcresNpc(token, "pilgrim", DAY(1))).rejects.toThrow();
+    });
+
+    it("never credits or spends Gold either way", async () => {
+      const { token } = await funded(50_000);
+      const before = (await readStackAcres(token, DAY(1))).profile?.goldBalance;
+      const result = await greetStackAcresNpc(token, "pierre", DAY(1));
       expect(result.profile?.goldBalance).toBe(before);
     });
   });

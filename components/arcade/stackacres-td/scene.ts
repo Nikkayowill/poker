@@ -614,10 +614,6 @@ export class TopdownScene extends Phaser.Scene {
     this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
     this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
-    this.orbs = new OrbBursts(this, () => ({
-      x: this.player.x,
-      y: this.player.y - PIECES_LAND_ABOVE_FEET,
-    }));
     this.drops = new ChunkDrops(
       this,
       (object) => this.keep(object),

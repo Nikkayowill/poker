@@ -34,6 +34,11 @@ type Keep = <T extends Phaser.GameObjects.GameObject>(object: T) => T;
  */
 export class WaterFilm {
   private shader: Phaser.GameObjects.Shader | null = null;
+  /** The film mirrored above the map's top edge, over the ground's own mirror (see `mirror`). */
+  private reflection: Phaser.GameObjects.Shader | null = null;
+  private base: Phaser.Display.BaseShader | null = null;
+  private water: WaterSpec | null = null;
+  private maskKey = "";
   private readonly webgl: boolean;
 
   constructor(
@@ -46,6 +51,10 @@ export class WaterFilm {
   /** Called on entering an area, after the area's objects were cleared. No `water`, no film (see AreaSpec). */
   build(water: WaterSpec | null | undefined, maskKey: string): void {
     this.shader = null;
+    this.reflection = null;
+    this.base = null;
+    this.water = water ?? null;
+    this.maskKey = maskKey;
     if (!water || !this.webgl) return;
     const sheet = filmSheetSize();
     const base = new Phaser.Display.BaseShader(`water-film:${maskKey}`, FRAGMENT, undefined, {
@@ -56,25 +65,41 @@ export class WaterFilm {
       drift: { type: "1f", value: 0 },
       foamSet: { type: "1f", value: 1 },
     });
-    this.shader = this.keep(
-      this.scene.add
-        .shader(base, water.x, water.y, water.w, water.h, [maskKey, "water-film"], {
-          minFilter: "nearest",
-          magFilter: "nearest",
-          wrapS: "clamp_to_edge",
-          wrapT: "clamp_to_edge",
-        })
-        .setOrigin(0, 0)
-        .setDepth(WATER_FILM_DEPTH),
-    );
+    this.base = base;
+    this.shader = this.keep(this.quad(base, water, water.y).setDepth(WATER_FILM_DEPTH));
+  }
+
+  /**
+   * The film flipped upward over the map's top edge, to go with the ground
+   * the scene mirrors there while a cast lifts the camera past it. Without it
+   * the lake beyond the edge is the bare painted picture, a band darker than
+   * the water it joins.
+   */
+  mirror(): void {
+    if (this.reflection || !this.base || !this.water) return;
+    // Flipped about the top edge: the quad hangs from -y upward, drawn upside down.
+    this.reflection = this.keep(this.quad(this.base, this.water, -this.water.y).setScale(1, -1).setDepth(WATER_FILM_DEPTH));
+  }
+
+  private quad(base: Phaser.Display.BaseShader, water: WaterSpec, y: number): Phaser.GameObjects.Shader {
+    return this.scene.add
+      .shader(base, water.x, y, water.w, water.h, [this.maskKey, "water-film"], {
+        minFilter: "nearest",
+        magFilter: "nearest",
+        wrapS: "clamp_to_edge",
+        wrapT: "clamp_to_edge",
+      })
+      .setOrigin(0, 0);
   }
 
   update(timeMs: number, reducedMotion: boolean): void {
     if (!this.shader) return;
     const ms = reducedMotion ? 0 : timeMs;
-    this.shader.setUniform("frame.value", filmFrame(ms));
-    this.shader.setUniform("drift.value", filmDrift(ms));
-    this.shader.setUniform("foamSet.value", foamSet(ms));
+    for (const shader of this.reflection ? [this.shader, this.reflection] : [this.shader]) {
+      shader.setUniform("frame.value", filmFrame(ms));
+      shader.setUniform("drift.value", filmDrift(ms));
+      shader.setUniform("foamSet.value", foamSet(ms));
+    }
   }
 }
 

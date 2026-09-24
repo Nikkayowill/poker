@@ -117,6 +117,8 @@ CC-BY 3.0, CC-BY 4.0, CC-BY 4.0+, CC-BY-SA 3.0, CC-BY-SA 3.0+, CC0, GPL 2.0, GPL
   - https://opengameart.org/content/lpc-hand-tools
 - **tools/hoe** - bluecarrot16, JaidynReiman, Pierre Vigier (pvigier), Johannes Sjölund (wulax), Inboxninja - CC-BY-SA 3.0
   - https://opengameart.org/content/lpc-hand-tools
+- **tools/pickaxe** - bluecarrot16, JaidynReiman, Pierre Vigier (pvigier), Tuomo Untinen (reemax) - OGA-BY-3.0, CC-BY 4.0, CC-BY-SA 3.0+, GPL 2.0+
+  - https://opengameart.org/content/lpc-hand-tools
 - **tools/watering_can** - bluecarrot16 - OGA-BY 3.0+, CC-BY 4.0+, GPL 2.0+
   - https://opengameart.org/content/lpc-hand-tools
 - **torso/aprons/apron** - Nila122 - OGA-BY 3.0, CC-BY-SA 3.0, GPL 2.0, GPL 3.0

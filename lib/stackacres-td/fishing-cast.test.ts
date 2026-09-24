@@ -3,7 +3,9 @@ import farmerRig from "@/public/stackacres-td/characters/farmer.json";
 import {
   NIBBLE_MAX_MS,
   NIBBLE_MIN_MS,
+  CAST_SHOWN_ABOVE_FEET,
   bobberSpot,
+  castHeadroom,
   castAnimKey,
   castAnims,
   castSideFor,
@@ -45,17 +47,10 @@ describe("castAnims", () => {
     expect(tension.yoyo).toBe(true);
   });
 
-  it("lifts the catch on the rig's harvest tag", () => {
-    const tag = TAGS.get("harvest_left")!;
-    const lift = castAnims().find((a) => a.key === castAnimKey("lift", "left"))!;
-    expect(lift.frames).toEqual([tag.from, tag.from + 1, tag.from + 2, tag.to]);
-    expect(lift.repeat).toBe(0);
-  });
-
   it("registers both sides of every beat under a unique key", () => {
     const keys = castAnims().map((a) => a.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(8);
+    expect(keys).toHaveLength(6);
   });
 });
 
@@ -98,8 +93,22 @@ describe("bobberSpot", () => {
 describe("isCancellable", () => {
   it("lets a player back out before the fish is on, and not after", () => {
     const cancellable: CastPhase[] = ["cast", "nibble"];
-    const locked: CastPhase[] = ["tension", "reel", "snap"];
+    const locked: CastPhase[] = ["tension", "landing", "show", "reel", "snap"];
     for (const phase of cancellable) expect(isCancellable(phase)).toBe(true);
     for (const phase of locked) expect(isCancellable(phase)).toBe(false);
+  });
+});
+
+describe("castHeadroom", () => {
+  it("lifts the camera just far enough to clear the HUD at the end of the dock", () => {
+    const hud = 57;
+    const room = castHeadroom(44, hud);
+    // The view's top edge can now sit this far above the map, which leaves
+    // the caption over his fish exactly at the HUD's bottom edge.
+    expect(44 - CAST_SHOWN_ABOVE_FEET - -room).toBe(hud);
+  });
+
+  it("leaves the camera on the map when he is nowhere near its top", () => {
+    expect(castHeadroom(400, 57)).toBe(0);
   });
 });

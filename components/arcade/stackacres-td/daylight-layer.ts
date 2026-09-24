@@ -58,7 +58,8 @@ export class DaylightLayer {
   build(mapWidth: number, mapHeight: number, lights: readonly LightPoint[], indoor: boolean, propsKey: string): void {
     this.indoor = indoor;
     this.overlay = this.keep(
-      this.scene.add.rectangle(-32, -32, mapWidth + 64, mapHeight + 64, 0xffffff).setOrigin(0, 0).setDepth(DAYLIGHT_DEPTH),
+      // Well past the map's edges: a cast lifts the camera above its top (scene.ts `easeHeadroom`).
+      this.scene.add.rectangle(-160, -160, mapWidth + 320, mapHeight + 320, 0xffffff).setOrigin(0, 0).setDepth(DAYLIGHT_DEPTH),
     );
     if (this.webgl) this.overlay.setBlendMode(Phaser.BlendModes.MULTIPLY);
     this.glows = [];

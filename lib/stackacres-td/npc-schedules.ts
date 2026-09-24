@@ -52,9 +52,11 @@ export const NPC_STATIONS: Record<string, Station> = {
     spots: [spot(520, 330, "down", "idle", 14_000), spot(540, 374, "up", "idle", 5000)],
   },
 
+  // Partway down the dock, casting off the right side. The far end, casting left, is
+  // where the player fishes (scene.ts DOCK_CAST_SPOT), and he stood on top of them there.
   "pilgrim-dock": {
     area: "homestead",
-    spots: [spot(416, 44, "left", "fish", 16_000), spot(416, 110, "up", "idle", 5000)],
+    spots: [spot(416, 78, "right", "fish", 16_000), spot(416, 110, "up", "idle", 5000)],
   },
   // The grove of old trees by the workshop, on the yard's side of the wild land.
   "pilgrim-grove": {

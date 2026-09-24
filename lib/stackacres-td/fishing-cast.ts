@@ -17,12 +17,13 @@
  * body with six animations per direction (public/stackacres-td/characters/
  * farmer.json), and `fish_left`/`fish_right` are four frames each: wind up,
  * swing, release, rod out. The last two also draw the LINE, which is why the
- * scene draws none of its own -- see `LINE_END_DX`. The five beats below are
- * cut from those four --
+ * scene draws none of its own -- see `LINE_END_DX`. The beats below are cut
+ * from those four --
  * forward for the cast, the last frame held for the wait, the last two
- * ping-ponged for the fight, reversed for the reel. No new art, and the beats
- * stay separate states rather than one long animation, because the wait ends
- * on a roll and the fight ends on the gauge's answer.
+ * ping-ponged for the fight, reversed for the reel. The beats stay separate
+ * states rather than one long animation, because the wait ends on a roll and
+ * the fight ends on the gauge's answer. A landed fish is its own art and pose
+ * (./fish-catch.ts).
  *
  * The RNG is a parameter, same reason `pickCaughtFish` takes one: a test
  * hands it a fixed sequence instead of patching Math.random.
@@ -32,20 +33,14 @@
  *  camera or away from it reads as nothing at all at this sprite size. */
 export type CastSide = "left" | "right";
 
-export type CastPhase = "cast" | "nibble" | "tension" | "reel" | "snap";
+/** `landing` waits on the server to say which fish it was, and `show` is him
+ *  holding it up (./fish-catch.ts). */
+export type CastPhase = "cast" | "nibble" | "tension" | "landing" | "show" | "reel" | "snap";
 
 /** The rig's fishing tag, per direction, as first and last frame index. */
 const FISH_TAG: Readonly<Record<CastSide, readonly [number, number]>> = {
   left: [72, 75],
   right: [76, 79],
-};
-
-/** The rig's harvest tag, borrowed for the last beat of a landed cast: it
- *  pulls something up out of frame, which is what holding a fish up looks
- *  like on a body with no fish-holding pose of its own. */
-const HARVEST_TAG: Readonly<Record<CastSide, readonly [number, number]>> = {
-  left: [24, 27],
-  right: [28, 31],
 };
 
 /** How long the swing takes, start to rod-out. */
@@ -116,13 +111,11 @@ export function castAnims(): CastAnim[] {
     // those two rocking against each other.
     anims.push({ key: castAnimKey("tension", side), frames: [last - 1, last], frameMs: TENSION_FRAME_MS, repeat: -1, yoyo: true });
     anims.push({ key: castAnimKey("reel", side), frames: range(first, last).reverse(), frameMs: REEL_FRAME_MS, repeat: 0, yoyo: false });
-    const [hFirst, hLast] = HARVEST_TAG[side];
-    anims.push({ key: castAnimKey("lift", side), frames: range(hFirst, hLast), frameMs: REEL_FRAME_MS, repeat: 0, yoyo: false });
   }
   return anims;
 }
 
-export function castAnimKey(beat: "cast" | "tension" | "reel" | "lift", side: CastSide): string {
+export function castAnimKey(beat: "cast" | "tension" | "reel", side: CastSide): string {
   return `${beat}_${side}`;
 }
 
@@ -163,4 +156,22 @@ export function bobberSpot(stand: { x: number; y: number }, side: CastSide): { x
  */
 export function isCancellable(phase: CastPhase): boolean {
   return phase === "cast" || phase === "nibble";
+}
+
+/** How much of the top of the screen the HUD bar covers, in CSS pixels. */
+export const CAST_HUD_CSS = 76;
+
+/** From his feet up to the top of "+1 Trout" over a fish he holds up (./fish-catch.ts). */
+export const CAST_SHOWN_ABOVE_FEET = 64;
+
+/**
+ * How far above the map's top edge the camera may go while he fishes.
+ *
+ * The dock runs almost to the top of the Homestead, so a camera held to the
+ * map puts him, the fish over his head and its caption under the HUD bar, or
+ * off the screen altogether. This is just enough room for all three to sit
+ * below the bar; the scene fills it with a mirror of the lake.
+ */
+export function castHeadroom(feetY: number, hudArtPx: number): number {
+  return Math.max(0, hudArtPx + CAST_SHOWN_ABOVE_FEET - feetY);
 }

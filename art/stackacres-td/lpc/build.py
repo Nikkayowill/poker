@@ -94,6 +94,12 @@ SWINGS = {
 }
 # Only the player swings, and each set is 16 more frames of texture on a phone.
 SWINGERS = {"farmer"}
+# Showing off a catch, facing us, the way Stardew's farmer does: he takes the fish at his chest, then
+# lifts it over his head and holds it there (lib/stackacres-td/fish-catch.ts). Cut from LPC's
+# spellcast, whose hands meet at the chest and then rise. Only the player fishes.
+HOLD = dict(anim="spellcast", cols=[2, 4, 5, 5])
+HOLD_MS = [140, 90, 90, 600]
+HOLDERS = {"farmer"}
 
 
 def place(frame, height, ground=GROUND):
@@ -214,6 +220,9 @@ def frames_for(name, height):
                 src = dressed(how["tools"]).custom_frames(how["custom"], d, how.get("edit"))
                 ground = (GROUND[0] + 32, GROUND[1] + 32)
                 out.append((action, d, [place(src[c], height, ground) for c in how["cols"]], SWING_MS))
+    if name in HOLDERS:
+        src = dressed([]).frames(HOLD["anim"], "down")
+        out.append(("hold", "down", [place(src[c], height) for c in HOLD["cols"]], HOLD_MS))
     return out
 
 

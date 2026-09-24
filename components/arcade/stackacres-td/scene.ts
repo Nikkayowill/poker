@@ -23,10 +23,12 @@ import {
   BITE_SHAKE_PX,
   BOBBER_BOB_MS,
   BOBBER_BOB_PX,
+  CAST_HUD_CSS,
   SNAP_MS,
   bobberSpot,
   castAnimKey,
   castAnims,
+  castHeadroom,
   castSideFor,
   isCancellable,
   rodOutFrame,
@@ -34,6 +36,19 @@ import {
   type CastPhase,
   type CastSide,
 } from "@/lib/stackacres-td/fishing-cast";
+import {
+  DRIP_EVERY_MS,
+  DRIP_FALL_PX,
+  DRIP_MS,
+  FISH_AT_CHEST,
+  FISH_CELL,
+  FISH_TURN_MS,
+  LIFT_END_MS,
+  SHOW_MS,
+  fishFlight,
+  fishFrame,
+  heldOffset,
+} from "@/lib/stackacres-td/fish-catch";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -84,7 +99,7 @@ import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackac
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresSceneUnit, TapPoint, TravelerUnlocks, UseSquare } from "../stackacres/world-contract";
-import type { EmoteKind, EmoteTarget, FarmerAction } from "../stackacres/world-contract";
+import type { EmoteKind, EmoteTarget, FarmerAction, RevealedFish } from "../stackacres/world-contract";
 import { AmbientLife, type AmbientSpec } from "./ambient-life";
 import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
@@ -213,6 +228,11 @@ const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
  * one at the camera (see lib/stackacres-td/fishing-cast.ts).
  */
 const DOCK_CAST_SPOT: Point = { x: 416, y: 44 };
+/**
+ * The dock's planks, from the mooring post back to the shore. A tap anywhere on them fishes, not just
+ * on the post: the post is at the top of the map, under the HUD bar on a landscape phone.
+ */
+const DOCK_PLANKS = new Phaser.Geom.Rectangle(400, 16, 32, 96);
 /** Where to stand on the Homestead in front of a district's gate while it is still closed. */
 const GATE_APPROACH: Partial<Record<ZoneId, Point>> = {
   wallow: { x: 976, y: 480 },
@@ -412,6 +432,10 @@ interface CastRun {
   bobber: Phaser.GameObjects.Ellipse;
   /** The nibble's countdown, cancelled if the player backs out first. */
   timer: Phaser.Time.TimerEvent | null;
+  /** The landed fish, from the moment it leaves the water (see `revealCatch`). */
+  fish: Phaser.GameObjects.Image | null;
+  /** Water dripping off it while he holds it up. */
+  drips: Phaser.Time.TimerEvent | null;
 }
 
 export class TopdownScene extends Phaser.Scene {
@@ -485,6 +509,10 @@ export class TopdownScene extends Phaser.Scene {
    * moment he moves again.
    */
   private following = true;
+  /** How far above the map's top the camera may show, eased toward what a cast needs (fishing-cast.ts `castHeadroom`). */
+  private headroom = 0;
+  /** The ground mirrored upward, filling that room with more lake. Made the first time a cast needs it. */
+  private mirror: Phaser.GameObjects.Image | null = null;
   private returning = false;
   private centre: Point = { x: 0, y: 0 };
   /** The follow zoom topdown-world.tsx picked for this canvas, and the whole steps a pinch may rest at. */
@@ -570,6 +598,7 @@ export class TopdownScene extends Phaser.Scene {
     this.load.spritesheet("fence", `${ASSETS}/common/fence.png`, { frameWidth: FENCE_FRAME.width, frameHeight: FENCE_FRAME.height });
     this.load.image("waterfall", `${ASSETS}/common/waterfall.png`);
     this.load.image("water-film", `${ASSETS}/common/water-film.png`);
+    this.load.spritesheet("fish", `${ASSETS}/common/fish.png`, { frameWidth: FISH_CELL, frameHeight: FISH_CELL });
     for (const texture of LAND_TEXTURES) this.load.image(texture, `${ASSETS}/common/${texture}.png`);
     for (const name of CHARACTERS) {
       this.load.aseprite(name, `${ASSETS}/characters/${name}.png`, `${ASSETS}/characters/${name}.json`);
@@ -586,6 +615,7 @@ export class TopdownScene extends Phaser.Scene {
       callback: () => {
         this.waterFrame = (this.waterFrame + 1) % this.area.frames;
         this.ground.setTexture(`ground:${this.areaName}:${this.waterFrame}`);
+        this.mirror?.setTexture(`ground:${this.areaName}:${this.waterFrame}`);
         for (const { sprite, frames } of this.animated) sprite.setFrame(frames[this.waterFrame % frames.length]);
       },
     });
@@ -654,6 +684,7 @@ export class TopdownScene extends Phaser.Scene {
     if (this.useDown && this.isWalking()) this.useSquare(true);
     if (this.shake.ms > 0) this.shake.ms = Math.max(0, this.shake.ms - delta);
     this.easeCamera(delta);
+    this.easeHeadroom(delta);
     this.placeCamera();
     this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion, this.cameras.main.worldView);
     this.regrowNodes(time);
@@ -665,9 +696,11 @@ export class TopdownScene extends Phaser.Scene {
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.water.update(time, this.reducedMotion);
     this.walkers.update(delta, this.routineHour(), this.areaName, this.pos, this.npcSprites, (name) => this.npcVisible(name), this.reducedMotion);
+    // A cast holds its poses as still frames (the rod out, a fish held up), so
+    // it counts as busy: the idle fidget would otherwise take him over mid-cast.
     this.people.update(
       time,
-      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
+      { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() || this.cast !== null },
       this.daylight.hour(),
       this.reducedMotion,
     );
@@ -866,7 +899,10 @@ export class TopdownScene extends Phaser.Scene {
     const mapW = this.area.width * this.area.tile;
     const mapH = this.area.height * this.area.tile;
     const wanted = this.following ? this.pos : this.centre;
-    const at = clampCentre({ x: this.snap(wanted.x), y: this.snap(wanted.y) }, viewW, viewH, mapW, mapH);
+    // Above the top edge counts as map while a cast needs the room.
+    const room = this.snap(this.headroom);
+    const clamped = clampCentre({ x: this.snap(wanted.x), y: this.snap(wanted.y) + room }, viewW, viewH, mapW, mapH + room);
+    const at = { x: clamped.x, y: clamped.y - room };
     // Kept in step while following, so a pan starts from what is on screen rather than from a stale point.
     if (this.following) this.centre = at;
     // The bite's kick: a whole device pixel either way, alternating, so it
@@ -886,10 +922,13 @@ export class TopdownScene extends Phaser.Scene {
     // lock on forever. Dropping it here is the one place that cannot happen.
     if (this.cast) {
       this.cast.timer?.remove();
+      this.cast.drips?.remove();
       this.cast = null;
       this.callbacks.onInputLocked(false);
     }
     this.acting = false;
+    this.mirror = null;
+    this.headroom = 0;
     for (const object of [...this.layer]) object.destroy();
     this.layer.clear();
     this.animated = [];
@@ -1618,6 +1657,25 @@ export class TopdownScene extends Phaser.Scene {
     this.placeCamera();
   }
 
+  /** Eases the camera up past the map's top while a cast needs it, and back down after. */
+  private easeHeadroom(delta: number): void {
+    const target = this.cast ? castHeadroom(this.pos.y, CAST_HUD_CSS * this.scaleY()) : 0;
+    if (target > 0 && !this.mirror) {
+      this.mirror = this.keep(
+        this.add
+          .image(0, 0, this.ground.texture.key)
+          .setOrigin(0, 1)
+          .setFlipY(true)
+          .setDepth(-11)
+          .setDisplaySize(this.area.width * this.area.tile, this.area.height * this.area.tile),
+      );
+      this.water.mirror();
+    }
+    if (this.headroom === target) return;
+    const next = ease(this.headroom, target, CAMERA_RETURN_RATE, delta);
+    this.headroom = settled(next, target, CAMERA_HOME_EPSILON) ? target : next;
+  }
+
   /** One frame of the camera easing home and of a pinch settling onto its whole step. */
   private easeCamera(delta: number): void {
     if (this.returning) {
@@ -1645,9 +1703,9 @@ export class TopdownScene extends Phaser.Scene {
     if (this.swing) return;
     // A cast owns the farmer until it resolves. Before the fish is on, a tap
     // anywhere reels the line back in; after it, the tap is swallowed and the
-    // gauge has the screen.
+    // gauge has the screen. Once he is holding a catch up, it puts it away.
     if (this.cast) {
-      this.cancelCast();
+      this.castTapped();
       return;
     }
     // Whatever this tap turns out to be, it is the farmer's business, so the camera comes back off a pan.
@@ -1718,6 +1776,11 @@ export class TopdownScene extends Phaser.Scene {
     this.drawMarker(this.path[this.path.length - 1]);
   }
 
+  /** Out along the dock to cast. The face point is due west along the planks, which turns him toward the water. */
+  private dockTarget(spec: PropSpec): Target {
+    return { kind: "tag", tag: "dock", anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } };
+  }
+
   private targetAt(map: Point): Target {
     // Crops are small, so a finger gets a few pixels of grace around each one.
     const hitImage = (image: Phaser.GameObjects.Image, pad: number) =>
@@ -1745,15 +1808,16 @@ export class TopdownScene extends Phaser.Scene {
       if (this.seeThrough.passesTap(image, map)) continue;
       // The dock is walked to from its dry end and cast from side-on, so it
       // wants its own spot rather than the step-up-from-below every other prop
-      // is approached with. The face point is due west along the planks, which
-      // is what turns him toward the water.
+      // is approached with.
       if (spec.tag === "dock") {
-        consider({ kind: "tag", tag: spec.tag, anchor: DOCK_CAST_SPOT, face: { x: spec.x - spec.w, y: DOCK_CAST_SPOT.y } }, spec.y);
+        consider(this.dockTarget(spec), spec.y);
         continue;
       }
       consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 }, face: { x: spec.x, y: spec.y } }, spec.y);
     }
     if (best) return (best as { target: Target }).target;
+    const dock = this.propImages.find(({ spec }) => spec.tag === "dock");
+    if (dock?.image.visible && DOCK_PLANKS.contains(map.x, map.y)) return this.dockTarget(dock.spec);
 
     // Any grass on the Homestead is ground the hoe can break, and any bed is
     // ground a crop can stand on -- so a tap on either resolves to its square,
@@ -2317,9 +2381,10 @@ export class TopdownScene extends Phaser.Scene {
   setUseHeld(down: boolean): void {
     if (!this.booted || this.travelling) return;
     // Same as a tap during a cast: it backs out of a line that has not been
-    // taken yet, and does nothing once the fight has started.
+    // taken yet, does nothing once the fight has started, and puts a catch
+    // he is holding up away.
     if (this.cast) {
-      if (down) this.cancelCast();
+      if (down) this.castTapped();
       return;
     }
     this.useDown = down;
@@ -2436,7 +2501,7 @@ export class TopdownScene extends Phaser.Scene {
     const bobber = this.keep(
       this.add.ellipse(spot.x, spot.y, 3, 3, 0xd8564a).setStrokeStyle(1, 0x140c1c).setDepth(spot.y).setVisible(false),
     );
-    const run: CastRun = { phase: "cast", side, at: this.mapToCss(spot), bobber, timer: null };
+    const run: CastRun = { phase: "cast", side, at: this.mapToCss(spot), bobber, timer: null, fish: null, drips: null };
     this.cast = run;
     this.callbacks.onInputLocked(true);
 
@@ -2478,19 +2543,16 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /**
-   * The gauge is done. Landed pulls the catch up out of the water; escaped
-   * snaps the rod back with nothing on it. Either way the line comes in and
-   * he has himself back.
+   * The gauge is done. Landed keeps him fighting it on a bent rod until
+   * `revealCatch` says which fish it was; escaped snaps the rod back with
+   * nothing on it and gives him back.
    */
   endFishingCast(outcome: "landed" | "escaped"): void {
     const run = this.cast;
     if (!run || run.phase !== "tension") return;
     this.tweens.killTweensOf(run.bobber);
     if (outcome === "landed") {
-      run.phase = "reel";
-      this.splashAt(run.bobber.x, run.bobber.y);
-      run.bobber.setVisible(false);
-      this.playCastAnim("reel", () => this.playCastAnim("lift", () => this.finishCast()));
+      run.phase = "landing";
       return;
     }
     run.phase = "snap";
@@ -2507,6 +2569,151 @@ export class TopdownScene extends Phaser.Scene {
       ease: "Quad.easeOut",
       onComplete: () => this.finishCast(),
     });
+  }
+
+  /**
+   * The fish a landed cast gave, once the server has rolled it and the gauge
+   * is off the screen: it jumps out of the water at the float, and half a
+   * second in he turns to face us with his hands out for it
+   * (lib/stackacres-td/fish-catch.ts has Stardew's numbers). Null when there
+   * is no fish after all, because `catch-fish` failed: the line comes in empty.
+   */
+  revealCatch(caught: RevealedFish | null): void {
+    const run = this.cast;
+    if (!run || run.phase !== "landing" || run.fish) return;
+    run.bobber.setVisible(false);
+    if (!caught) {
+      run.phase = "reel";
+      this.playCastAnim("reel", () => this.finishCast());
+      return;
+    }
+    const from = { x: run.bobber.x, y: run.bobber.y };
+    this.splashAt(from.x, from.y);
+    waterSound();
+    const hands = { x: this.player.x + FISH_AT_CHEST.x, y: this.player.y + FISH_AT_CHEST.y };
+    const flight = fishFlight(from, hands);
+    const fish = this.keep(
+      this.add
+        .image(from.x, from.y, "fish", fishFrame(caught.species))
+        .setFlipX(flight.heading < 0)
+        .setDepth(this.player.depth + 0.5),
+    );
+    run.fish = fish;
+    if (this.reducedMotion) {
+      this.holdUp(run, caught.noun);
+      return;
+    }
+    // The rod yanks back as it comes out.
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
+    this.player.play({ key: castAnimKey("reel", run.side) });
+    this.time.delayedCall(Math.min(FISH_TURN_MS, flight.ms), () => {
+      if (this.cast !== run) return;
+      // Facing us, hands together at his chest, ready for it: the first frame of the hold, paused.
+      this.facing = "down";
+      this.player.play({ key: "hold_down" });
+      this.player.anims.pause();
+    });
+    this.tweens.addCounter({
+      from: 0,
+      to: flight.ms,
+      duration: flight.ms,
+      onUpdate: (tween) => {
+        if (this.cast !== run) return;
+        const at = flight.at(tween.getValue() ?? flight.ms);
+        fish.setPosition(at.x, at.y);
+      },
+      onComplete: () => this.holdUp(run, caught.noun),
+    });
+  }
+
+  /**
+   * It lands in his hands at his chest and he lifts it over his head, the
+   * sheet's `hold_down`, with the fish riding up on his hands. Then it drips
+   * while "+1 Trout" shows over it, until a tap or `SHOW_MS` puts it away.
+   */
+  private holdUp(run: CastRun, noun: string): void {
+    const fish = run.fish;
+    if (this.cast !== run || !fish) return;
+    this.facing = "down";
+    this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
+    this.player.play({ key: "hold_down" });
+    const place = (t: number): void => {
+      const off = heldOffset(t);
+      fish.setPosition(this.player.x + off.x, this.player.y + off.y).setDepth(this.player.depth + 0.5);
+    };
+    const shown = (): void => {
+      if (this.cast !== run) return;
+      place(LIFT_END_MS);
+      run.phase = "show";
+      this.floatAt(
+        this.mapToCss({ x: fish.x, y: fish.y - FISH_CELL / 2 }),
+        `+1 ${noun}`,
+        "gain",
+        SHOW_MS,
+      );
+      run.drips = this.time.addEvent({ delay: DRIP_EVERY_MS, loop: true, callback: () => this.drip(fish) });
+      run.timer = this.time.delayedCall(SHOW_MS, () => this.putAway(run));
+    };
+    if (this.reducedMotion) {
+      shown();
+      return;
+    }
+    piecesSound();
+    this.squashFarmer(1.04, 0.94, 70);
+    place(0);
+    this.tweens.addCounter({
+      from: 0,
+      to: LIFT_END_MS,
+      duration: LIFT_END_MS,
+      onUpdate: (tween) => {
+        if (this.cast === run) place(tween.getValue() ?? LIFT_END_MS);
+      },
+      onComplete: shown,
+    });
+  }
+
+  /** One drop of water falling off the fish he is holding. */
+  private drip(fish: Phaser.GameObjects.Image): void {
+    if (!fish.active || this.reducedMotion) return;
+    const x = fish.x + Phaser.Math.Between(-4, 4);
+    const y = fish.y + 2;
+    const drop = this.keep(this.add.rectangle(x, y, 1, 1, 0x9fd8f2).setDepth(fish.depth - 0.1));
+    this.tweens.add({
+      targets: drop,
+      y: y + DRIP_FALL_PX,
+      alpha: 0,
+      duration: DRIP_MS,
+      ease: "Quad.easeIn",
+      onComplete: () => drop.destroy(),
+    });
+  }
+
+  /** Into his bag: the fish drops to his chest and is gone, and he has himself back. */
+  private putAway(run: CastRun): void {
+    const fish = run.fish;
+    if (this.cast !== run || run.phase !== "show" || !fish) return;
+    run.phase = "reel";
+    run.timer?.remove();
+    run.timer = null;
+    run.drips?.remove();
+    run.drips = null;
+    this.tweens.add({
+      targets: fish,
+      y: this.player.y + FISH_AT_CHEST.y,
+      scale: 0.4,
+      alpha: 0,
+      duration: this.reducedMotion ? 0 : 180,
+      ease: "Quad.easeIn",
+      onComplete: () => this.finishCast(),
+    });
+  }
+
+  /** A tap or a Use press while the world has him for a cast. */
+  private castTapped(): void {
+    const run = this.cast;
+    if (!run) return;
+    if (run.phase === "show") this.putAway(run);
+    else this.cancelCast();
   }
 
   /** A tap or the Use key before the fish was on: reel in, say nothing. */
@@ -2527,15 +2734,18 @@ export class TopdownScene extends Phaser.Scene {
     this.cast = null;
     this.callbacks.onInputLocked(false);
     run.timer?.remove();
+    run.drips?.remove();
     this.tweens.killTweensOf(run.bobber);
     this.tweens.killTweensOf(this.player);
     run.bobber.destroy();
+    run.fish?.destroy();
+    this.player.setScale(1);
     this.setPlayerAt(this.pos);
     this.stand();
   }
 
   /** One beat of the cast, with its own completion handler and nobody else's. */
-  private playCastAnim(beat: "cast" | "tension" | "reel" | "lift", then: () => void): void {
+  private playCastAnim(beat: "cast" | "tension" | "reel", then: () => void): void {
     const run = this.cast;
     if (!run) return;
     this.player.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
@@ -2872,7 +3082,7 @@ export class TopdownScene extends Phaser.Scene {
   }
 
   /** Floating text over the map, as a DOM element in the host so it stays crisp at any zoom. */
-  floatAt(at: TapPoint, text: string, tone: "gain" | "deny"): void {
+  floatAt(at: TapPoint, text: string, tone: "gain" | "deny", ms = tone === "deny" ? 1600 : 1100): void {
     const el = document.createElement("div");
     el.textContent = text;
     Object.assign(el.style, {
@@ -2898,7 +3108,7 @@ export class TopdownScene extends Phaser.Scene {
         { opacity: 1, transform: "translate(-50%, -150%)", offset: 0.75 },
         { opacity: 0, transform: "translate(-50%, -170%)" },
       ],
-      { duration: tone === "deny" ? 1600 : 1100, easing: "ease-out" },
+      { duration: ms, easing: "ease-out" },
     );
     animation.onfinish = () => el.remove();
   }

@@ -19,8 +19,11 @@ const LANDSCAPE_PHONE = { width: 844, height: 390 };
 const GAUGE_SCENE_KEY = "stackacres-fishing";
 
 /** The dock on the Homestead, and dry ground a short walk south of it. */
-// Homestead map pixels: the mooring post at the end of the lake dock, and a spot on the lake path.
-const DOCK = { x: 405, y: 37 };
+// Homestead map pixels: the dock's planks near the shore, and a spot on the lake path. The dock's
+// far end is under the HUD bar on a landscape phone, so a tap there lands on the bar instead.
+const DOCK = { x: 416, y: 92 };
+/** The mooring post at the dock's far end; he casts from beside it, not on it. */
+const MOORING_POST_X = 405;
 const NEAR_DOCK = { x: 416, y: 120 };
 
 interface TopdownHandle {
@@ -29,11 +32,12 @@ interface TopdownHandle {
     placeFarmer: (area: string, at: { x: number; y: number }) => void;
     isWalking: () => boolean;
     endFishingCast: (outcome: "landed" | "escaped") => void;
+    revealCatch: (fish: { species: string; noun: string } | null) => void;
     setUseHeld: (down: boolean) => void;
     pos: { x: number; y: number };
     facing: string;
     /** Private to the scene; read here because the phase IS what this spec is about. */
-    cast: { phase: string; side: string } | null;
+    cast: { phase: string; side: string; fish: { frame: { name: string | number } } | null } | null;
     player: { anims: { currentAnim: { key: string } | null }; frame: { name: string } };
   };
   game: {
@@ -144,8 +148,8 @@ test("a tap on the dock casts side-on, waits for a bite, and opens the gauge", a
     expect(swinging.side).toBe("left");
     expect(swinging.facing).toBe("left");
     expect(swinging.anim).toBe("cast_left");
-    // He walked to the dock's dry end, not onto the planks.
-    expect(swinging.pos.x).toBeGreaterThan(DOCK.x);
+    // He walked out to the far end, beside the post rather than onto it.
+    expect(swinging.pos.x).toBeGreaterThan(MOORING_POST_X);
 
     // Rod out, line in the water, nothing on it yet.
     await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "nibble", null, {
@@ -183,7 +187,7 @@ test("a tap on the dock casts side-on, waits for a bite, and opens the gauge", a
   }
 });
 
-test("landing one lifts the catch, losing one snaps the rod back, and both give him his controls", async ({ browser }) => {
+test("a landed fish jumps into his hands and is held up, losing one snaps the rod back, and both give him his controls", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);
   try {
     // Losing one is driven through the real gauge: `giveUp` is the same
@@ -194,7 +198,8 @@ test("landing one lifts the catch, losing one snaps the rod back, and both give 
       timeout: 15_000,
     });
     await page.evaluate((key) => (window as unknown as Handle).__stackacres.game.scene.getScene(key)?.giveUp(), GAUGE_SCENE_KEY);
-    await expect.poll(() => page.evaluate(() => (window as unknown as Handle).__stackacres.scene.cast?.phase ?? null)).toBe("snap");
+    // The snap is a quarter of a second, so this watches every frame rather than polling past it.
+    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "snap", null, { timeout: 10_000 });
     await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 15_000 });
     // The gauge took itself down with it, so the map has its own taps back.
     await expect.poll(() => page.evaluate((key) => (window as unknown as Handle).__stackacres.game.scene.isActive(key), GAUGE_SCENE_KEY)).toBe(false);
@@ -217,12 +222,42 @@ test("landing one lifts the catch, losing one snaps the rod back, and both give 
       game.scene.getScene(key)?.giveUp();
       return { phase, anim };
     }, GAUGE_SCENE_KEY);
-    expect(landing.phase).toBe("reel");
-    expect(landing.anim).toBe("reel_left");
+    // He keeps fighting it on the bent rod until the shell says which fish it was.
+    expect(landing.phase).toBe("landing");
+    expect(landing.anim).toBe("tension_left");
 
-    // The reel runs on into the lift, then hands him back.
-    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 15_000 });
+    // The shell's reveal, as `onClosed` sends it once `catch-fish` answers.
+    await page.evaluate(() =>
+      (window as unknown as Handle).__stackacres.scene.revealCatch({ species: "trout", noun: "Trout" }),
+    );
+    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "show", null, {
+      timeout: 10_000,
+    });
+    const held = await read(page);
+    expect(held.facing).toBe("down");
+    expect(held.anim).toBe("hold_down");
+    expect(
+      await page.evaluate(() => String((window as unknown as Handle).__stackacres.scene.cast?.fish?.frame.name)),
+    ).toBe("1");
+
+    // A tap puts it away and hands him back.
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(true));
+    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 10_000 });
+    await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(false));
     expect((await read(page)).phase).toBeNull();
+
+    // A landed fight whose `catch-fish` failed brings the line in empty.
+    await castFromDock(page);
+    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "tension", null, {
+      timeout: 15_000,
+    });
+    await page.evaluate((key) => {
+      const { scene, game } = (window as unknown as Handle).__stackacres;
+      scene.endFishingCast("landed");
+      game.scene.getScene(key)?.giveUp();
+      scene.revealCatch(null);
+    }, GAUGE_SCENE_KEY);
+    await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 10_000 });
 
     expect(errors).toEqual([]);
   } finally {

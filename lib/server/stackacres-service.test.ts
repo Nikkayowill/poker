@@ -4556,7 +4556,7 @@ describe("Chapter 1: the bread basket", () => {
 
   it("spends 5 energy per landed cast and refuses a tired one with nothing credited", async () => {
     const { token, id } = await funded();
-    const caught = await catchStackAcresFish(token, false, T0);
+    const caught = await catchStackAcresFish(token, false, 0.5, T0);
     expect(caught.energy.level).toBe(ENERGY_MAX - FISHING_CAST_ENERGY);
 
     await writeStackAcresEnergy(id, (await readStackAcresEnergy(id))!.version, {
@@ -4564,7 +4564,7 @@ describe("Chapter 1: the bread basket", () => {
       updatedAt: T0.toISOString(),
     });
     const shelfBefore = await readStackAcresInventory(id);
-    await expect(catchStackAcresFish(token, false, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
+    await expect(catchStackAcresFish(token, false, 0.5, T0)).rejects.toThrow(TOO_TIRED_TO_FISH);
     expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
   });
 
@@ -4740,7 +4740,7 @@ describe("Chapter 3: greens for the table and the coop", () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
     let caught: Awaited<ReturnType<typeof catchStackAcresFish>>;
     try {
-      caught = await catchStackAcresFish(token, true, T0);
+      caught = await catchStackAcresFish(token, true, 0.5, T0);
     } finally {
       random.mockRestore();
     }
@@ -4752,7 +4752,7 @@ describe("Chapter 3: greens for the table and the coop", () => {
   it("refuses a baited cast with no Radish and hands the energy back", async () => {
     const { token, id } = await funded();
     const shelfBefore = await readStackAcresInventory(id);
-    await expect(catchStackAcresFish(token, true, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
+    await expect(catchStackAcresFish(token, true, 0.5, T0)).rejects.toBeInstanceOf(StackAcresRequestError);
     expect(await readStackAcresInventory(id)).toEqual(shelfBefore);
     expect(energyAt(await readStackAcresEnergy(id), T0)).toBe(ENERGY_MAX);
   });
@@ -4764,7 +4764,7 @@ describe("Chapter 3: greens for the table and the coop", () => {
       if (isFishSpecies(item)) throw new Error("shelf write failed");
       return REAL.adjustStackAcresInventory(profileId, item, delta);
     });
-    await expect(catchStackAcresFish(token, true, T0)).rejects.toThrow("shelf write failed");
+    await expect(catchStackAcresFish(token, true, 0.5, T0)).rejects.toThrow("shelf write failed");
     vi.mocked(adjustStackAcresInventory).mockImplementation(REAL.adjustStackAcresInventory);
     expect((await readStackAcresInventory(id)).radish).toBe(1);
     expect(energyAt(await readStackAcresEnergy(id), T0)).toBe(ENERGY_MAX);

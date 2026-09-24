@@ -314,9 +314,11 @@ export interface StackAcresWorldProps {
    * water, the swing, the wait for a bite -- and only calls this once there is
    * something to fight, so a cast the player backs out of never reaches the
    * shell at all. `at` is where the bobber is sitting, which is where the
-   * cast's own lines belong. See scene.ts's `beginCast`.
+   * cast's own lines belong. `castPower` is the power bar the cast was thrown
+   * on, 0 to 1: how far out it landed, which `catch-fish` rolls against.
+   * See scene.ts's `beginCast`.
    */
-  onDockTap: (at: TapPoint) => void;
+  onDockTap: (at: TapPoint, castPower: number) => void;
   /** A finger landed on the treeline at the Ancestral Oak -- the entryway to
    *  a stalk, the way the dock is the entryway to a cast. The shell decides
    *  whether one is on offer and with which weapon; the map only reports the

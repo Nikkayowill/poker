@@ -25,10 +25,19 @@ import {
   BOBBER_BOB_PX,
   CAST_HUD_CSS,
   SNAP_MS,
+  CAST_FRAME_MS,
+  CAST_GRAVITY,
+  CAST_RELEASE_FRAME,
+  REEL_IN_MS,
+  ROD_TIP,
+  aimFrame,
   bobberSpot,
   castAnimKey,
   castAnims,
+  castApex,
   castHeadroom,
+  castPowerAt,
+  castReach,
   castSideFor,
   isCancellable,
   rodOutFrame,
@@ -49,6 +58,17 @@ import {
   fishFrame,
   heldOffset,
 } from "@/lib/stackacres-td/fish-catch";
+import {
+  SLACK_SNAPPED,
+  SLACK_TAUT,
+  SLACK_WAITING,
+  createRope,
+  distance,
+  stepRope,
+  twitchRope,
+  type Rope,
+} from "@/lib/stackacres-td/fishing-line";
+import { PERFECT_CAST } from "@/lib/stackacres/fishing";
 import { SOIL_TILE, createSoilMap, soilNeighborMask, soilTileAt, soilTileKey, type SoilTile } from "@/lib/stackacres/soil";
 import { isSoilTileEnriched } from "@/lib/stackacres/soil-enrich";
 import {
@@ -56,8 +76,19 @@ import {
   doorSound,
   floorStepSound,
   grassStepSound,
+  castSwishSound,
+  chargePower,
+  chargeStart,
+  chargeStop,
+  floatPlopSound,
+  lineOutStart,
+  lineOutStop,
+  perfectCastSound,
   pickSound,
   piecesSound,
+  reelSpeed,
+  reelStart,
+  reelStop,
   treeFallSound,
   waterSound,
 } from "@/lib/audio/stackacres-sfx";
@@ -355,7 +386,8 @@ export interface TopdownCallbacks {
   onSignpostTap: () => void;
   onWorkshopTap: () => void;
   onWellTap: (at: TapPoint) => void;
-  onDockTap: (at: TapPoint) => void;
+  /** Something bit. `castPower` is the power bar the cast was thrown on, 0 to 1. */
+  onDockTap: (at: TapPoint, castPower: number) => void;
   onThicketTap: (at: TapPoint) => void;
   /** A finger landed on one of the Homestead's own choppable trees (see
    *  lib/stackacres/tree-nodes.ts's `WOOD_NODE_IDS` and area.json's own
@@ -419,17 +451,27 @@ interface UnitNode {
 }
 
 /**
- * One cast, from the swing to whatever the gauge answered. `at` is where the
- * bobber sits in host CSS pixels, which is where the shell floats the cast's
- * own lines and where it anchored the gauge.
+ * One cast, from the power bar to whatever the gauge answered. `at` is where
+ * the float sits in host CSS pixels, which is where the shell floats the
+ * cast's own lines and where it anchored the gauge.
  */
 interface CastRun {
   phase: CastPhase;
   side: CastSide;
   at: TapPoint;
-  /** The float, sitting at the end of the line the RIG draws (see
-   *  fishing-cast.ts's `LINE_END_DX`). The scene draws no line of its own. */
+  /** The power bar's reading when the cast was let go, 0 to 1 (fishing-cast.ts `castPowerAt`). */
+  power: number;
+  /** When the power bar started filling, while a press is held on it. */
+  chargeFrom: number | null;
+  /** The power bar over his head while he aims (see `showMeter`). */
+  meter: { root: HTMLDivElement; fill: HTMLDivElement; hint: HTMLDivElement } | null;
+  /** The float: thrown off the rod tip, then sitting on the water. */
   bobber: Phaser.GameObjects.Ellipse;
+  /** The line from the rod tip to the float, once the cast is thrown (./fishing-line.ts). */
+  line: Rope | null;
+  /** How much line is out against the gap between its ends: droop above 1, taut below. */
+  slack: number;
+  lineGfx: Phaser.GameObjects.Graphics;
   /** The nibble's countdown, cancelled if the player backs out first. */
   timer: Phaser.Time.TimerEvent | null;
   /** The landed fish, from the moment it leaves the water (see `revealCatch`). */
@@ -686,6 +728,7 @@ export class TopdownScene extends Phaser.Scene {
     this.easeCamera(delta);
     this.easeHeadroom(delta);
     this.placeCamera();
+    this.stepCast(delta);
     this.wind.update(time, this.pos, this.isWalking(), this.reducedMotion, this.cameras.main.worldView);
     this.regrowNodes(time);
     if (!this.reducedMotion) for (const fall of this.falls) fall.tilePositionY -= (delta / 1000) * FALL_SPEED / fall.tileScaleY;
@@ -923,7 +966,9 @@ export class TopdownScene extends Phaser.Scene {
     if (this.cast) {
       this.cast.timer?.remove();
       this.cast.drips?.remove();
+      this.cast.meter?.root.remove();
       this.cast = null;
+      this.stopCastSounds();
       this.callbacks.onInputLocked(false);
     }
     this.acting = false;
@@ -1463,6 +1508,11 @@ export class TopdownScene extends Phaser.Scene {
       // Some pointer ids cannot be captured (a mouse leaving the window mid-drag). The drag still works.
     }
     this.touches.set(event.pointerId, this.hostPoint(event));
+    // Aiming a cast: the press is the power bar, held anywhere on the map.
+    if (this.cast?.phase === "aim") {
+      this.startCharge();
+      return;
+    }
     if (this.touches.size === 1) {
       this.down = { x: event.clientX, y: event.clientY, t: event.timeStamp };
       return;
@@ -1497,6 +1547,10 @@ export class TopdownScene extends Phaser.Scene {
     const down = this.down;
     const gesture = this.gesture;
     this.releaseTouch(event.pointerId);
+    if (this.cast?.chargeFrom != null) {
+      if (this.touches.size === 0) this.releaseCharge();
+      return;
+    }
     if (this.touches.size > 0) return;
     if (gesture !== "none") return;
     if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > TAP_SLOP) return;
@@ -1505,6 +1559,7 @@ export class TopdownScene extends Phaser.Scene {
 
   private onPointerCancel = (event: PointerEvent): void => {
     this.releaseTouch(event.pointerId);
+    if (this.cast?.chargeFrom != null && this.touches.size === 0) this.releaseCharge();
   };
 
   /** A finger left the map: drop it, and settle whatever gesture it was part of once it was the last one. */
@@ -2384,7 +2439,10 @@ export class TopdownScene extends Phaser.Scene {
     // taken yet, does nothing once the fight has started, and puts a catch
     // he is holding up away.
     if (this.cast) {
-      if (down) this.castTapped();
+      if (this.cast.phase === "aim") {
+        if (down) this.startCharge();
+        else if (this.cast.chargeFrom != null) this.releaseCharge();
+      } else if (down) this.castTapped();
       return;
     }
     this.useDown = down;
@@ -2463,18 +2521,16 @@ export class TopdownScene extends Phaser.Scene {
   // ------------------------------------------------------------------ fishing
 
   /**
-   * A cast, from the swing to whatever the gauge answers.
+   * A cast, from the power bar to whatever the gauge answers.
    *
    * He has already walked to `DOCK_CAST_SPOT` and turned to the water by the
    * time this runs (see `targetAt`'s dock case and `arrive`). From here the
-   * world owns him: input is locked, the beats run on their own timers, and
-   * the shell hears nothing until the bite, when `onDockTap` puts the gauge
-   * up. The gauge's answer comes back through `endFishingCast`.
-   *
-   * Replaced the drag-the-rod-out-of-a-circle overlay, which asked for one
-   * gesture to cast and a second, opposite one to land a fish it had already
-   * decided was caught. A tap starts this; the only thing left to miss is the
-   * gauge.
+   * world owns him: input is locked and the power bar comes up over his head.
+   * Holding a press anywhere fills it (Stardew's charge, a second each way);
+   * letting go throws the float, farther the fuller the bar. Then the beats
+   * run on their own timers and the shell hears nothing until the bite, when
+   * `onDockTap` puts the gauge up. Its answer comes back through
+   * `endFishingCast`.
    */
   private beginCast(): void {
     if (this.cast) return;
@@ -2494,25 +2550,122 @@ export class TopdownScene extends Phaser.Scene {
     this.facing = side;
     this.stand();
 
-    const spot = bobberSpot(this.pos, side);
-    // Hidden through the swing, shown once the rod is out: the rig only draws
-    // the line on the last two frames, and a float sitting out on the water
-    // with nothing attached to it reads as a bug.
-    const bobber = this.keep(
-      this.add.ellipse(spot.x, spot.y, 3, 3, 0xd8564a).setStrokeStyle(1, 0x140c1c).setDepth(spot.y).setVisible(false),
-    );
-    const run: CastRun = { phase: "cast", side, at: this.mapToCss(spot), bobber, timer: null, fish: null, drips: null };
+    // Hidden until it leaves the rod on the throw.
+    const bobber = this.keep(this.add.ellipse(0, 0, 3, 3, 0xd8564a).setStrokeStyle(1, 0x140c1c).setVisible(false));
+    const lineGfx = this.keep(this.add.graphics());
+    const run: CastRun = {
+      phase: "aim",
+      side,
+      at: { x: 0, y: 0 },
+      power: 0,
+      chargeFrom: null,
+      meter: this.showMeter(),
+      bobber,
+      line: null,
+      slack: SLACK_WAITING,
+      lineGfx,
+      timer: null,
+      fish: null,
+      drips: null,
+    };
     this.cast = run;
     this.callbacks.onInputLocked(true);
-
     this.acting = true;
-    this.playCastAnim("cast", () => this.nibbleStance(run));
+    this.player.anims.stop();
+    this.player.setFrame(aimFrame(side));
+  }
+
+  /** The power bar: an empty gauge over his head and the one line of help a first cast needs. */
+  private showMeter(): CastRun["meter"] {
+    const root = document.createElement("div");
+    root.className = "sa-cast-meter";
+    const bar = document.createElement("div");
+    bar.className = "sa-cast-meter-bar";
+    const fill = document.createElement("div");
+    fill.className = "sa-cast-meter-fill";
+    bar.appendChild(fill);
+    const hint = document.createElement("div");
+    hint.className = "sa-cast-meter-hint";
+    hint.textContent = "Hold, then let go";
+    root.append(bar, hint);
+    this.host.appendChild(root);
+    return { root, fill, hint };
+  }
+
+  /** A press on the map (or the Use key) while he aims: the bar starts filling. */
+  private startCharge(): void {
+    const run = this.cast;
+    if (!run || run.phase !== "aim" || run.chargeFrom != null) return;
+    run.chargeFrom = this.time.now;
+    run.meter?.hint.classList.add("is-away");
+    chargeStart();
+  }
+
+  /** The press lets go: the cast is thrown on whatever the bar reads now. */
+  private releaseCharge(): void {
+    const run = this.cast;
+    if (!run || run.phase !== "aim" || run.chargeFrom == null) return;
+    run.power = castPowerAt(this.time.now - run.chargeFrom);
+    run.chargeFrom = null;
+    chargeStop();
+    const meter = run.meter;
+    run.meter = null;
+    if (meter) {
+      meter.fill.style.width = `${run.power * 100}%`;
+      meter.root.classList.add("is-thrown");
+      this.time.delayedCall(260, () => meter.root.remove());
+    }
+    this.setPlayerAt(this.pos);
+    if (run.power >= PERFECT_CAST) {
+      perfectCastSound();
+      this.floatAt(this.mapToCss({ x: this.player.x, y: this.player.y - 40 }), "Perfect cast!", "gain", 1300);
+    }
+    run.phase = "cast";
+    castSwishSound();
+    // The float leaves the rod as it comes forward, a few frames into the swing.
+    this.time.delayedCall(CAST_FRAME_MS * CAST_RELEASE_FRAME, () => this.throwFloat(run));
+    this.playCastAnim("cast", () => {
+      if (run.phase === "cast") this.player.setFrame(rodOutFrame(run.side));
+    });
+  }
+
+  /** The float flies off the rod tip on an arc and the line pays out behind it. */
+  private throwFloat(run: CastRun): void {
+    // Backed out of mid-swing: nothing leaves the rod.
+    if (this.cast !== run || run.phase !== "cast") return;
+    const tip = this.rodTip() ?? { x: this.player.x, y: this.player.y - 20 };
+    const reach = castReach(run.power);
+    const spot = bobberSpot(this.pos, run.side, reach);
+    const flight = fishFlight(tip, spot, castApex(reach), CAST_GRAVITY);
+    run.bobber.setPosition(tip.x, tip.y).setDepth(this.player.depth + 0.4).setVisible(true);
+    run.line = createRope(tip, tip, 0.5);
+    run.slack = 1.04;
+    lineOutStart();
+    this.tweens.addCounter({
+      from: 0,
+      to: flight.ms,
+      duration: flight.ms,
+      onUpdate: (tween) => {
+        if (this.cast !== run || run.phase !== "cast") return;
+        const at = flight.at(tween.getValue() ?? flight.ms);
+        run.bobber.setPosition(at.x, at.y);
+      },
+      onComplete: () => {
+        if (this.cast !== run || run.phase !== "cast") return;
+        lineOutStop();
+        run.bobber.setPosition(spot.x, spot.y).setDepth(spot.y);
+        floatPlopSound();
+        this.splashAt(spot.x, spot.y);
+        this.nibbleStance(run);
+      },
+    });
   }
 
   /** Rod out, line in the water, nothing on it yet. */
   private nibbleStance(run: CastRun): void {
     if (this.cast !== run) return;
     run.phase = "nibble";
+    run.slack = SLACK_WAITING;
     this.player.anims.stop();
     this.player.setFrame(rodOutFrame(run.side));
     run.bobber.setVisible(true);
@@ -2529,17 +2682,77 @@ export class TopdownScene extends Phaser.Scene {
     run.timer = this.time.delayedCall(rollNibbleMs(), () => this.bite(run));
   }
 
-  /** Something took it. The gauge is the shell's to open, so this only says so. */
+  /** Something took it: the float goes under, the line snaps tight, and the shell puts the gauge up. */
   private bite(run: CastRun): void {
     if (this.cast !== run) return;
     run.phase = "tension";
     run.timer = null;
+    run.slack = SLACK_TAUT;
     this.tweens.killTweensOf(run.bobber);
     this.splashAt(run.bobber.x, run.bobber.y);
-    if (!this.reducedMotion) this.shake = { left: BITE_SHAKE_PX, ms: BITE_SHAKE_MS };
+    if (run.line) twitchRope(run.line, 5);
+    if (!this.reducedMotion) {
+      this.shake = { left: BITE_SHAKE_PX, ms: BITE_SHAKE_MS };
+      this.tweens.add({ targets: run.bobber, y: run.bobber.y + 1.5, duration: 90, yoyo: true, ease: "Quad.easeOut" });
+    }
     this.emote("farmer", "exclaim");
     this.player.play({ key: castAnimKey("tension", run.side) });
-    this.callbacks.onDockTap(run.at);
+    reelStart(0.3);
+    run.at = this.mapToCss({ x: run.bobber.x, y: run.bobber.y });
+    this.callbacks.onDockTap(run.at, run.power);
+  }
+
+  /** Where the rod ends on the frame he is showing, or null on a frame with no rod out (fishing-cast.ts `ROD_TIP`). */
+  private rodTip(): Point | null {
+    const tip = ROD_TIP[String(this.player.frame.name)];
+    return tip ? { x: this.player.x + tip.x, y: this.player.y + tip.y } : null;
+  }
+
+  /**
+   * Every frame of a cast: the power bar while he charges, and the line. The
+   * line is stepped against wherever the rod tip is on this frame and wherever
+   * its far end is (the float, or the fish being pulled out), with as much
+   * line out as `slack` says.
+   */
+  private stepCast(delta: number): void {
+    const run = this.cast;
+    if (!run) return;
+    if (run.meter) {
+      const at = this.mapToCss({ x: this.player.x, y: this.player.y - 36 });
+      run.meter.root.style.transform = `translate(${at.x}px, ${at.y}px) translate(-50%, -100%)`;
+      if (run.chargeFrom != null) {
+        const power = castPowerAt(this.time.now - run.chargeFrom);
+        run.meter.fill.style.width = `${power * 100}%`;
+        run.meter.fill.style.background = `hsl(${Math.round(power * 120)} 75% 48%)`;
+        run.meter.root.classList.toggle("is-full", power >= PERFECT_CAST);
+        chargePower(power);
+        // Stardew's farmer shakes as the bar nears the top.
+        const jitter = !this.reducedMotion && power > 0.6 ? (Math.random() - 0.5) * 2 * (power - 0.6) * 2.5 : 0;
+        this.player.setX(this.snap(this.pos.x + jitter));
+      }
+    }
+    const gfx = run.lineGfx;
+    gfx.clear();
+    const line = run.line;
+    const tip = this.rodTip();
+    if (!line || !tip) return;
+    const end = run.fish ?? run.bobber;
+    const far = { x: end.x, y: end.y };
+    line.length = Math.max(0.5, distance(tip, far) * run.slack);
+    if ((run.phase === "tension" || run.phase === "landing") && !this.reducedMotion && Math.random() < 0.35) {
+      twitchRope(line, 1.2);
+    }
+    stepRope(line, tip, far, delta);
+    gfx.setDepth(this.player.depth + 0.3);
+    gfx.lineStyle(1.3 / this.zoom, 0xeef4ea, run.phase === "snap" ? 0.5 : 0.85);
+    gfx.strokePoints(line.points, false);
+  }
+
+  /** Every cast sound stopped, whatever beat the cast ended on. */
+  private stopCastSounds(): void {
+    chargeStop();
+    lineOutStop();
+    reelStop();
   }
 
   /**
@@ -2553,10 +2766,14 @@ export class TopdownScene extends Phaser.Scene {
     this.tweens.killTweensOf(run.bobber);
     if (outcome === "landed") {
       run.phase = "landing";
+      // Winding it in while the server says what it was.
+      reelSpeed(1);
       return;
     }
     run.phase = "snap";
-    run.bobber.setVisible(false);
+    run.slack = SLACK_SNAPPED;
+    reelStop();
+    this.tweens.add({ targets: run.bobber, alpha: 0, duration: SNAP_MS * 2 });
     this.player.anims.stop();
     this.player.setFrame(rodOutFrame(run.side));
     // The recoil of a line going slack: he rocks away from the water and back.
@@ -2581,12 +2798,14 @@ export class TopdownScene extends Phaser.Scene {
   revealCatch(caught: RevealedFish | null): void {
     const run = this.cast;
     if (!run || run.phase !== "landing" || run.fish) return;
-    run.bobber.setVisible(false);
     if (!caught) {
-      run.phase = "reel";
-      this.playCastAnim("reel", () => this.finishCast());
+      this.reelIn(run);
       return;
     }
+    run.bobber.setVisible(false);
+    reelStop();
+    // Taut on the fish as it comes up, until he turns from the rod to take it.
+    run.slack = 1;
     const from = { x: run.bobber.x, y: run.bobber.y };
     this.splashAt(from.x, from.y);
     waterSound();
@@ -2722,9 +2941,23 @@ export class TopdownScene extends Phaser.Scene {
     if (!run || !isCancellable(run.phase)) return;
     run.timer?.remove();
     run.timer = null;
-    this.tweens.killTweensOf(run.bobber);
-    run.bobber.setVisible(false);
+    lineOutStop();
+    this.reelIn(run);
+  }
+
+  /** The float wound back up to the rod on an empty line, the reel clicking, and he has himself back. */
+  private reelIn(run: CastRun): void {
     run.phase = "reel";
+    this.tweens.killTweensOf(run.bobber);
+    run.slack = 1.05;
+    reelStart(1);
+    const tip = this.rodTip() ?? { x: this.player.x, y: this.player.y - 18 };
+    if (run.bobber.visible) {
+      this.tweens.add({ targets: run.bobber, x: tip.x, y: tip.y, duration: REEL_IN_MS, ease: "Quad.easeIn" });
+    }
+    this.time.delayedCall(REEL_IN_MS, () => {
+      if (this.cast === run) run.bobber.setVisible(false);
+    });
     this.playCastAnim("reel", () => this.finishCast());
   }
 
@@ -2732,9 +2965,12 @@ export class TopdownScene extends Phaser.Scene {
     const run = this.cast;
     if (!run) return;
     this.cast = null;
+    this.stopCastSounds();
     this.callbacks.onInputLocked(false);
     run.timer?.remove();
     run.drips?.remove();
+    run.meter?.root.remove();
+    run.lineGfx.destroy();
     this.tweens.killTweensOf(run.bobber);
     this.tweens.killTweensOf(this.player);
     run.bobber.destroy();

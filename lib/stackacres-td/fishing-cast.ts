@@ -16,9 +16,9 @@
  * FRAMES COME OUT OF THE RIG'S ONE FISHING TAG. Every character shares one
  * body with six animations per direction (public/stackacres-td/characters/
  * farmer.json), and `fish_left`/`fish_right` are four frames each: wind up,
- * swing, release, rod out. The last two also draw the LINE, which is why the
- * scene draws none of its own -- see `LINE_END_DX`. The beats below are cut
- * from those four --
+ * swing, release, rod out. The art has no line; the scene draws it from the
+ * rod tip (`ROD_TIP`, ./fishing-line.ts). The beats below are cut from those
+ * four --
  * forward for the cast, the last frame held for the wait, the last two
  * ping-ponged for the fight, reversed for the reel. The beats stay separate
  * states rather than one long animation, because the wait ends on a roll and
@@ -35,7 +35,7 @@ export type CastSide = "left" | "right";
 
 /** `landing` waits on the server to say which fish it was, and `show` is him
  *  holding it up (./fish-catch.ts). */
-export type CastPhase = "cast" | "nibble" | "tension" | "landing" | "show" | "reel" | "snap";
+export type CastPhase = "aim" | "cast" | "nibble" | "tension" | "landing" | "show" | "reel" | "snap";
 
 /** The rig's fishing tag, per direction, as first and last frame index. */
 const FISH_TAG: Readonly<Record<CastSide, readonly [number, number]>> = {
@@ -58,19 +58,8 @@ export const SNAP_MS = 260;
 export const NIBBLE_MIN_MS = 1500;
 export const NIBBLE_MAX_MS = 3500;
 
-/**
- * Where the float sits, as an offset from the farmer's own feet.
- *
- * MEASURED OFF THE ART, not chosen. The PixelLab cast (art/stackacres-td/
- * pixellab) draws its float at (-17, -2) from where he stands in the rod-out
- * frame. The build takes that float out of the art, because it's only in the
- * last frame and the fight would blink it, and this one sits where it was.
- *
- * The scene draws no line. `DOCK_CAST_SPOT` moved 5px south when this moved
- * 5px north, so the float lands on the same open water as before.
- */
-export const LINE_END_DX = -17;
-export const LINE_END_DY = -2;
+/** How far north of his feet the float sits on the water, level with the dock's edge. */
+export const FLOAT_DY = -2;
 /** How far the bobber rides up and down while nothing is biting. */
 export const BOBBER_BOB_PX = 1.5;
 export const BOBBER_BOB_MS = 900;
@@ -139,9 +128,9 @@ export function castSideFor(standX: number, waterX: number): CastSide {
   return waterX <= standX ? "left" : "right";
 }
 
-/** Where the float lands: the end of the line the rig itself draws. */
-export function bobberSpot(stand: { x: number; y: number }, side: CastSide): { x: number; y: number } {
-  return { x: stand.x + (side === "left" ? LINE_END_DX : -LINE_END_DX), y: stand.y + LINE_END_DY };
+/** Where the float lands, `reach` map pixels out on the side he cast to (`castReach`). */
+export function bobberSpot(stand: { x: number; y: number }, side: CastSide, reach: number): { x: number; y: number } {
+  return { x: stand.x + (side === "left" ? -reach : reach), y: stand.y + FLOAT_DY };
 }
 
 /**
@@ -175,3 +164,54 @@ export const CAST_SHOWN_ABOVE_FEET = 64;
 export function castHeadroom(feetY: number, hudArtPx: number): number {
   return Math.max(0, hudArtPx + CAST_SHOWN_ABOVE_FEET - feetY);
 }
+
+/**
+ * Where the rod ends on each frame that draws it, from his feet, measured off
+ * the sheet (./fishing-cast.test.ts checks each is a drawn rod pixel). The
+ * rod runs past the 48px frame, so this is where the drawn rod stops, and the
+ * line picks up from there. The first frame of each swing has the rod behind
+ * him and no tip to hang a line from.
+ */
+export const ROD_TIP: Readonly<Record<string, { x: number; y: number }>> = {
+  "73": { x: -24, y: -20 },
+  "74": { x: -24, y: -16 },
+  "75": { x: -24, y: -19 },
+  "77": { x: 23, y: -21 },
+  "78": { x: 23, y: -17 },
+  "79": { x: 23, y: -19 },
+};
+
+/** The frame he holds while the power bar charges: rod up, ready to throw. */
+export function aimFrame(side: CastSide): string {
+  return String(FISH_TAG[side][0] + 1);
+}
+
+/** One sweep of the power bar, empty to full. Stardew's is 0.001 per ms, a second each way. */
+export const CAST_SWEEP_MS = 1000;
+
+/** The power bar `heldMs` into a charge: up to full, back down to empty, and round again. */
+export function castPowerAt(heldMs: number): number {
+  const t = Math.max(0, heldMs) / CAST_SWEEP_MS;
+  const phase = t % 2;
+  return phase <= 1 ? phase : 2 - phase;
+}
+
+/** How far out the float lands, in map pixels from where he stands: 1.5 tiles on the weakest cast to 5.5 on a full one. */
+export const CAST_MIN_REACH = 24;
+export const CAST_MAX_REACH = 88;
+
+export function castReach(power: number): number {
+  return CAST_MIN_REACH + (CAST_MAX_REACH - CAST_MIN_REACH) * Math.min(1, Math.max(0, power));
+}
+
+/** The frame of the swing the float leaves the rod on: the third, rod coming forward. */
+export const CAST_RELEASE_FRAME = 2;
+
+/** The float's throw: gravity (Stardew's 0.005 px/ms² over four for our tiles) and how high it arcs. */
+export const CAST_GRAVITY = 0.00125;
+export function castApex(reach: number): number {
+  return 10 + reach * 0.25;
+}
+
+/** How long a line takes to reel back in when he backs out, and how long a snapped one hangs before he has himself back. */
+export const REEL_IN_MS = 360;

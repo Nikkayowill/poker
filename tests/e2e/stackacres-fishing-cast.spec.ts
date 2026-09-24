@@ -37,7 +37,14 @@ interface TopdownHandle {
     pos: { x: number; y: number };
     facing: string;
     /** Private to the scene; read here because the phase IS what this spec is about. */
-    cast: { phase: string; side: string; fish: { frame: { name: string | number } } | null } | null;
+    cast: {
+      phase: string;
+      side: string;
+      power: number;
+      bobber: { x: number };
+      line: { points: { x: number; y: number }[] } | null;
+      fish: { frame: { name: string | number } } | null;
+    } | null;
     player: { anims: { currentAnim: { key: string } | null }; frame: { name: string } };
   };
   game: {
@@ -125,8 +132,12 @@ async function openFarm(browser: Browser): Promise<{ page: Page; errors: string[
   return { page, errors, close };
 }
 
-/** Stands him beside the pond and taps the dock, as a finger would. */
-async function castFromDock(page: Page) {
+/**
+ * Stands him beside the pond, taps the dock as a finger would, and throws the
+ * cast: holds the power bar for `holdMs` and lets go. The hold goes through
+ * the Use key's own entry point, the same press a finger on the map makes.
+ */
+async function castFromDock(page: Page, holdMs = 600) {
   await page.evaluate((at) => (window as unknown as Handle).__stackacres.scene.placeFarmer("homestead", at), NEAR_DOCK);
   await page.waitForTimeout(300);
   const target = await page.evaluate(
@@ -134,8 +145,43 @@ async function castFromDock(page: Page) {
     DOCK,
   );
   await page.touchscreen.tap(target.x, target.y);
-  await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast !== null, null, { timeout: 15_000 });
+  await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "aim", null, { timeout: 15_000 });
+  await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(true));
+  await page.waitForTimeout(holdMs);
+  await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(false));
 }
+
+test("a fuller power bar throws the float farther, on a line from the rod", async ({ browser }) => {
+  const { page, errors, close } = await openFarm(browser);
+  try {
+    const landed = async (holdMs: number) => {
+      await castFromDock(page, holdMs);
+      await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast?.phase === "nibble", null, {
+        timeout: 10_000,
+      });
+      const cast = await page.evaluate(() => {
+        const { scene } = (window as unknown as Handle).__stackacres;
+        return { power: scene.cast!.power, x: scene.cast!.bobber.x, stand: scene.pos.x, line: scene.cast!.line?.points.length ?? 0 };
+      });
+      // Reel it back in before the bite, the way a tap does.
+      await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(true));
+      await page.evaluate(() => (window as unknown as Handle).__stackacres.scene.setUseHeld(false));
+      await page.waitForFunction(() => (window as unknown as Handle).__stackacres.scene.cast === null, null, { timeout: 10_000 });
+      return cast;
+    };
+    const short = await landed(150);
+    const long = await landed(900);
+    expect(long.power).toBeGreaterThan(short.power);
+    // Cast left, so farther out is a smaller x.
+    expect(short.stand - short.x).toBeGreaterThan(0);
+    expect(long.stand - long.x).toBeGreaterThan(short.stand - short.x + 20);
+    // A line is out to it.
+    expect(long.line).toBeGreaterThan(2);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+});
 
 test("a tap on the dock casts side-on, waits for a bite, and opens the gauge", async ({ browser }) => {
   const { page, errors, close } = await openFarm(browser);

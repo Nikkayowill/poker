@@ -347,7 +347,7 @@ import {
   type MachineRawItem,
   type MaterialCost,
 } from "@/lib/stackacres/machine-items";
-import { FISHING_BAIT_ITEM, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
+import { FISHING_BAIT_ITEM, castTier, pickCaughtFish, type FishSpecies } from "@/lib/stackacres/fishing";
 import {
   ENERGY_MAX,
   FISHING_CAST_ENERGY,
@@ -3521,10 +3521,17 @@ async function moveStackAcresEnergy(
  * credited and handed back if that credit fails, the same order Gold keeps.
  * A baited cast spends one Radish the same way, right after the energy, and
  * lands from better odds (`BAIT_FISH_WEIGHTS` in lib/stackacres/fishing.ts).
+ *
+ * `cast` is the power bar the throw was let go on, 0 to 1. It sets how far out
+ * the float landed and so the odds (`castTier`); the route checks its range.
+ * Like the gauge's "landed", it is the player's own skill reported by the
+ * client, and the worst it can buy is a mid cast's better cousin, never a
+ * fish the energy was not spent on.
  */
 export async function catchStackAcresFish(
   token: string,
   bait: boolean,
+  cast: number,
   now = new Date(),
 ): Promise<StackAcresActionResult> {
   const profile = await ensureProfile(token);
@@ -3550,7 +3557,7 @@ export async function catchStackAcresFish(
       });
     }
   }
-  const species: FishSpecies = pickCaughtFish(Math.random, bait);
+  const species: FishSpecies = pickCaughtFish(Math.random, bait, castTier(cast));
   try {
     await adjustStackAcresInventory(profile.id, species, 1);
   } catch (error) {

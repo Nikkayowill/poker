@@ -96,7 +96,7 @@ describe("common/fish.png", () => {
 
 describe("fishFlight", () => {
   const stand = { x: 200, y: 100 };
-  const from = bobberSpot(stand, "left");
+  const from = bobberSpot(stand, "left", 40);
   const to = { x: stand.x + FISH_AT_CHEST.x, y: stand.y + FISH_AT_CHEST.y };
   const flight = fishFlight(from, to);
 
@@ -118,7 +118,7 @@ describe("fishFlight", () => {
     for (let t = 0; t <= flight.ms; t += 5) top = Math.min(top, flight.at(t).y);
     expect(top).toBeLessThan(to.y - 20);
     expect(flight.heading).toBe(1);
-    expect(fishFlight(bobberSpot(stand, "right"), to).heading).toBe(-1);
+    expect(fishFlight(bobberSpot(stand, "right", 40), to).heading).toBe(-1);
   });
 });
 

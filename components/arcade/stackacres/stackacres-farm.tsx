@@ -134,7 +134,7 @@ import {
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
 import { machineItemLabel, machineItemNoun, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
-import { FISHING_BAIT_ITEM, type FishSpecies } from "@/lib/stackacres/fishing";
+import { FISHING_BAIT_ITEM, castTier, type FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
 import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -2906,9 +2906,10 @@ export function StackAcresFarm() {
    * the map through `endFishingCast` so the farmer acts it out -- the gauge is
    * its own Phaser scene and cannot reach him itself.
    *
-   * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
-   * fight is; the fish this cast actually lands is the server's roll inside
-   * `catch-fish`, so the gauge's copy stays species-free.
+   * The species here is DIFFICULTY ONLY, rolled locally from the odds the
+   * cast's own distance gives, to pick how hard the fight is; the fish this
+   * cast actually lands is the server's roll inside `catch-fish`, so the
+   * gauge's copy stays species-free.
    *
    * A landed fish is shown once both the answer is in and the gauge has
    * closed, the way Stardew waits for its fishing bar to go before the fish
@@ -2916,7 +2917,7 @@ export function StackAcresFarm() {
    * up with "+1 Trout" over it (`revealCatch`).
    */
   const onWorldFishHooked = useCallback(
-    (at: TapPoint) => {
+    (at: TapPoint, castPower: number) => {
       tapAnchor.current = at;
       // Checked before the fight, so a tired player is never made to land a
       // fish the server would refuse. The server checks again on `catch-fish`.
@@ -2929,14 +2930,14 @@ export function StackAcresFarm() {
       panelSound();
       let landing: Promise<unknown> | null = null;
       world.current?.startFishingGauge({
-        species: rollGaugeDifficulty(),
+        species: rollGaugeDifficulty(castTier(castPower)),
         title: "Something's on the line!",
         landedHint: "Reeling it in...",
         onLanded: () => {
           world.current?.endFishingCast("landed");
           landedFish.current = null;
           // Read at the moment of landing so a toggle flipped mid-fight counts.
-          landing = act({ action: "catch-fish", bait: baitOnHook.current });
+          landing = act({ action: "catch-fish", bait: baitOnHook.current, cast: castPower });
         },
         onEscaped: () => {
           world.current?.endFishingCast("escaped");

@@ -155,9 +155,9 @@
   .app-loading-bar-fill { transition: none; }
 }
 
-/* The page-change orb (components/loading/orb-transition-layer.tsx). It sits
-   above the boot loading screen and swallows taps only while the orb is
-   forming, so nothing on the old page gets a second tap mid-change. */
+/* The page-change coin ring (components/loading/orb-transition-layer.tsx).
+   It sits above the boot loading screen and swallows taps only while the
+   ring is forming, so nothing on the old page gets a second tap mid-change. */
 .orb-transition {
   position: fixed;
   inset: 0;

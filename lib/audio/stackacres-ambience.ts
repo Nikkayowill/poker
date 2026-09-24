@@ -72,10 +72,12 @@ const SAMPLE_FILES = {
   "step-floor-2": "/audio/stackacres/sfx/step-floor-2.mp3",
   "step-floor-3": "/audio/stackacres/sfx/step-floor-3.mp3",
   "step-floor-4": "/audio/stackacres/sfx/step-floor-4.mp3",
-  "step-grass-1": "/audio/stackacres/sfx/step-grass-1.mp3",
-  "step-grass-2": "/audio/stackacres/sfx/step-grass-2.mp3",
-  "step-grass-3": "/audio/stackacres/sfx/step-grass-3.mp3",
-  "step-grass-4": "/audio/stackacres/sfx/step-grass-4.mp3",
+  // Real grass footfalls (right/left) from Yo Frankie!, CC-BY 3.0, credit
+  // Blender Foundation / Yo Frankie! team. Replaced the "digital_footstep_grass"
+  // take from the 400 Sounds Pack, which still read as a designed game SFX
+  // rather than a foot actually landing in grass.
+  "step-grass-l": "/audio/stackacres/sfx/step-grass-l.mp3",
+  "step-grass-r": "/audio/stackacres/sfx/step-grass-r.mp3",
   "door-open": "/audio/stackacres/sfx/door-open.mp3",
   "page-turn": "/audio/stackacres/sfx/page-turn.mp3",
   "map-rustle": "/audio/stackacres/sfx/map-rustle.mp3",

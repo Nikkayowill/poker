@@ -37,13 +37,13 @@ export const SOUND_FILES: Record<SoundEffect, string | null> = {
   // A fourth, `toggle`, is the sound and music switches. Turning a sound off
   // with a chime that says "you chose" felt wrong, so switches click instead.
   //
-  // `ui` and `toggle` come from the 400 Sounds Pack (UI/select_1 and
-  // UI/toggle_off), picked by ear against the old synthesized Ante_Tap.mp3.
-  // `select` (Ante_Select.mp3) is still the rising two-note chime (D6 then G6)
-  // built for the Ante Up redesign.
-  ui: "/sounds/Tap_Select1.mp3",
-  select: "/sounds/Ante_Select.mp3",
-  toggle: "/sounds/Toggle.mp3",
+  // `ui`, `select` and `toggle` come from Kenney's UI Audio pack (CC0, real
+  // recorded mechanical clicks/switches, not synthesized), replacing the
+  // 400 Sounds Pack take and the old synthesized Ante_Select.mp3 chime --
+  // both still read as generic/synthetic against everything else in the mix.
+  ui: "/sounds/UI_Click.mp3",
+  select: "/sounds/UI_Select.mp3",
+  toggle: "/sounds/UI_Toggle.mp3",
   // Built rather than sourced: every unused file in public/sounds turned out
   // to be a byte-identical rename of a cue the table already plays, so there
   // was nothing on disk that could sound like arriving somewhere. This is the
@@ -109,6 +109,9 @@ const FILE_LEVEL_DB: Record<string, number> = {
   "/sounds/Tap_Select1.mp3": -24.6,
   "/sounds/Toggle.mp3": -39.5,
   "/sounds/Ante_Select.mp3": -23.3,
+  "/sounds/UI_Click.mp3": -16.8,
+  "/sounds/UI_Select.mp3": -23.9,
+  "/sounds/UI_Toggle.mp3": -25.6,
   "/sounds/TimeBank.mp3": -20.4,
   "/sounds/Your_Turn.mp3": -20.8,
   "/sounds/bigsoundbank-poker-chips-4-0945.mp3": -21.4,
@@ -175,10 +178,9 @@ const EFFECT_TARGET_DB: Record<SoundEffect, number> = {
   // confirms the thing you pressed took, but it is still housekeeping and
   // still sits under every cue the hand itself makes.
   select: -34,
-  // The switch click has a long quiet tail, so its mean reads low. This takes
-  // it down by the same ~11dB `select` gets, which keeps the two at the
-  // balance they had when they were compared side by side.
-  toggle: -50,
+  // A flipped switch, not a chosen thing: quieter than `select` by the same
+  // logic that makes `ui` the quietest of the three.
+  toggle: -38,
   // Silent by design: no file, so the target is unused. Kept in the record
   // so adding an asset is one line and the compiler names the other.
   lose: -30,

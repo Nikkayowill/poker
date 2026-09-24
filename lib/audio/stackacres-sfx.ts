@@ -182,9 +182,9 @@ export function floorStepSound(step: number) {
   playFarmSample(names[step % names.length], step % 2 ? 0.38 : 0.45);
 }
 
-/** One footstep outdoors, on grass and dirt. */
+/** One footstep outdoors, on grass and dirt: real left/right foot recordings, alternating. */
 export function grassStepSound(step: number) {
-  const names = ["step-grass-1", "step-grass-2", "step-grass-3", "step-grass-4"] as const;
+  const names = ["step-grass-l", "step-grass-r"] as const;
   playFarmSample(names[step % names.length], step % 2 ? 0.4 : 0.5);
 }
 

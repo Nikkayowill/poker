@@ -14,6 +14,7 @@ import { MIN_DUEL_STAKE, type DuelSeat } from "@/lib/pvp/match-contract";
 import { PVP_STATE_CHANGED, pvpChannelName } from "@/lib/pvp/duel-channel";
 import { browserSupabase } from "@/lib/supabase/browser-client";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 import { StakePicker } from "./stake-picker";
 
 /** Round-number quick-picks above the floor. A custom field covers everything else. */
@@ -152,16 +153,13 @@ export function DuelShell<TSnapshot>({
   }, [match, setImmersive]);
 
   /**
-   * Whether a poll is allowed to overwrite what is on screen.
-   *
-   * A poll that lands while the player's own move is in flight would paint the
-   * pre-move state back over the board, and the move's own response would then
-   * paint it forward again: a visible flicker, and worse, a board briefly
-   * showing a piece back where it was. The flag is a ref rather than state
-   * because the poll reads it from a timer, where a stale closure over a state
-   * value would defeat the point.
+   * Whether a poll is allowed to overwrite what is on screen. A poll that left
+   * before the player's own move would paint the piece back where it was.
    */
-  const sending = useRef(false);
+  const [sequence] = useState(() => createRequestSequence<DuelMatch<TSnapshot>>());
+  // The result card the player closed with Play again. The server keeps
+  // listing a settled match for a short grace window, and it must not come back.
+  const dismissedMatch = useRef<string | null>(null);
   const mounted = useRef(true);
   /**
    * A timestamp (Date.now()-scale) refresh-driven sync must not fire before.
@@ -176,7 +174,9 @@ export function DuelShell<TSnapshot>({
   const applyResponse = useCallback((data: Partial<LobbyResponse>) => {
     if (data.profile) setProfile(data.profile);
     if (data.challenges) setChallenges(data.challenges);
-    if (data.match !== undefined) {
+    const next = (data.match as DuelMatch<TSnapshot> | null | undefined);
+    if (next?.status === "settled" && next.id === dismissedMatch.current) return;
+    if (data.match !== undefined && sequence.admit(next)) {
       setMatch((current) => {
         // The server stops listing a match once its settled-match grace
         // window passes, but the player still needs to see the result card
@@ -184,15 +184,16 @@ export function DuelShell<TSnapshot>({
         // landing after that window would return `null` and wipe the result
         // screen out from under someone still reading it. Same guard
         // cribbage-shell.tsx carries for its own match frame.
-        if (!data.match && current?.status === "settled") return current;
-        return (data.match as DuelMatch<TSnapshot>) ?? null;
+        if (!next && current?.status === "settled") return current;
+        return next ?? null;
       });
     }
-  }, [setProfile]);
+  }, [sequence, setProfile]);
 
   /** Reads the lobby: the live match if there is one, the open challenges if not. */
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch(`/api/pvp/${game}`, { cache: "no-store" });
       if (response.status === 429) {
@@ -202,7 +203,7 @@ export function DuelShell<TSnapshot>({
         return;
       }
       const data = (await response.json()) as Partial<LobbyResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped poll isn't worth a banner: the next one is two seconds
@@ -210,7 +211,7 @@ export function DuelShell<TSnapshot>({
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [game, applyResponse]);
+  }, [game, applyResponse, sequence]);
 
   /**
    * Sends an intent and takes whatever comes back as the new truth.
@@ -222,9 +223,10 @@ export function DuelShell<TSnapshot>({
    */
   const send = useCallback(
     async (url: string, body: unknown) => {
-      sending.current = true;
+      const done = sequence.beginWrite();
       setBusy(true);
       setError(null);
+      let reread = false;
       try {
         const response = await fetch(url, {
           method: "POST",
@@ -241,25 +243,30 @@ export function DuelShell<TSnapshot>({
           setError(data.error ?? "That did not go through.");
           // The service sends the true match under `round`, the field name
           // the shared arcade error shape already uses.
-          if (data.round) setMatch(data.round);
+          if (data.round && sequence.admit(data.round)) setMatch(data.round);
           return;
         }
         // A move/accept response carries the match under `match`; the lobby
         // read carries the whole shape. Both are applied the same way.
-        if (data.match !== undefined) setMatch((data.match as DuelMatch<TSnapshot>) ?? null);
+        if (data.match !== undefined) {
+          const next = (data.match as DuelMatch<TSnapshot>) ?? null;
+          if (sequence.admit(next)) setMatch(next);
+        }
         if (data.challenges) setChallenges(data.challenges);
         // A cancel returns only a profile, so the challenge list has to be
         // re-read rather than patched: the row that vanished wasn't the only
-        // thing that may have changed.
-        if (data.match === undefined && !data.challenges) void refresh();
+        // thing that may have changed. Done once this write settles, since a
+        // read started during it would be dropped.
+        reread = data.match === undefined && !data.challenges;
       } catch {
         if (mounted.current) setError("Could not reach the table. Check your connection.");
       } finally {
-        sending.current = false;
+        done();
         if (mounted.current) setBusy(false);
       }
+      if (reread && mounted.current) void refresh();
     },
-    [refresh, setProfile],
+    [refresh, sequence, setProfile],
   );
 
   useEffect(() => {
@@ -425,7 +432,10 @@ export function DuelShell<TSnapshot>({
           play={play}
           onMove={(move) => onMove(match, move)}
           onResign={() => void send(`/api/pvp/matches/${match.id}`, { action: "resign" })}
-          onLeave={() => setMatch(null)}
+          onLeave={() => {
+            dismissedMatch.current = match.id;
+            setMatch(null);
+          }}
         />
       ) : (
         <DuelLobby

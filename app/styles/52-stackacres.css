@@ -4585,6 +4585,48 @@
   transition: width 200ms ease-out;
 }
 
+/* The farm clock: a read-only glass pill under the right end of the top bar,
+   sun by day and moon by night. The bar itself has no room left on a narrow
+   landscape phone. Taps go through it to the map. Under the header (z-index
+   2) so the More drawer still opens over it. The minimum width keeps
+   "6:00 AM" and "12:50 PM" about the same size. */
+.sa-clock {
+  position: absolute;
+  top: calc(var(--sa-header-h) + 4px);
+  right: max(10px, var(--safe-right));
+  z-index: 1;
+  margin: 0;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 96px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--sa-glass-line);
+  border-radius: var(--sa-r-chip);
+  background: var(--sa-glass-fill-open);
+  -webkit-backdrop-filter: var(--sa-glass-blur-ctl);
+  backdrop-filter: var(--sa-glass-blur-ctl);
+  box-shadow: var(--sa-glass-rim-sm), var(--sa-drop);
+  color: var(--sa-ink);
+  font-family: var(--sa-font);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sa-clock svg { flex: none; }
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .sa-clock { min-width: 88px; min-height: 34px; padding: 0 8px; font-size: 13px; }
+}
+
+/* The bed's card borrows the Pixel Pilgrim's; only the pin turns night blue. */
+.sa-sleep-dialogue .sa-monk-dialogue-pin { background: #3d4a86; }
+
 /* Sits beside the energy chip, which fishing spends, so both read as the
    cast's own settings. */
 .sa-bait-toggle {

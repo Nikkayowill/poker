@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { Coins, HelpCircle } from "lucide-react";
 import { PlayingCard } from "@/components/table/playing-card";
@@ -11,6 +11,7 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useActionQueue } from "@/components/shared/use-action-queue";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
@@ -21,6 +22,7 @@ import {
   type AnteUpMemorySnapshot,
 } from "@/lib/arcade/ante-up-memory";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
 
 /**
  * Ante Up: Memory Match, the solo half of Ante Up, on the daily's own board.
@@ -67,35 +69,38 @@ export function AnteUpMemory() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // Same guard duel-shell.tsx (and ante-up-sudoku.tsx) keep: true while the
-  // player's own action is in flight, so nothing else can paint over it.
+  // Guards start and resign against a double click. Read ordering and board
+  // versions live in `sequence`, which also covers the queued flips.
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<AnteUpMemorySnapshot>());
 
   const applyResponse = useCallback((data: Partial<AnteUpMemoryResponse>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   /** The initial read: restores a live attempt after a refresh. */
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/ante-up-memory", { cache: "no-store" });
       const data = (await response.json()) as Partial<AnteUpMemoryResponse>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped read is not worth a banner; the player can just try an action.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
-  /** A player-initiated action: start, flip, resign. Sets busy; a 409 still applies its payload. */
+  /** A player-initiated action: start or resign. Sets busy; a 409 still applies its payload. */
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -108,7 +113,7 @@ export function AnteUpMemory() {
       const data = (await response.json()) as Partial<AnteUpMemoryResponse> & { round?: AnteUpMemorySnapshot };
       if (!mounted.current) return;
       if (!response.ok) {
-        if (data.round) setAttempt(data.round);
+        if (data.round) applyResponse({ attempt: data.round });
         setError(data.error ?? "That did not go through.");
         return;
       }
@@ -117,9 +122,46 @@ export function AnteUpMemory() {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
+
+  /** Sends one queued flip against the newest board. A refusal drops the rest of the queue. */
+  const sendFlip = useCallback(async (index: number): Promise<boolean> => {
+    if (!mounted.current) return false;
+    try {
+      const response = await fetch("/api/ante-up-memory/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "flip", version: sequence.version(), index }),
+      });
+      const data = (await response.json()) as Partial<AnteUpMemoryResponse> & { round?: AnteUpMemorySnapshot };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        return true;
+      }
+      if (data.round) applyResponse({ attempt: data.round });
+      else setError(data.error ?? "That did not go through.");
+      return false;
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const flips = useActionQueue<number>(sequence, sendFlip);
+
+  // Tiles still on the wire lift at once. Only the server knows their faces or
+  // whether they pair, but a finished unmatched pair always turns back on the
+  // next flip, so that part can be shown straight away.
+  const shown = useMemo(() => {
+    const pending = new Set(flips.pending);
+    const sweep = pending.size > 0 && (attempt?.revealed.length ?? 0) >= 2;
+    return { pending, revealed: sweep ? [] : attempt?.revealed ?? [] };
+  }, [attempt, flips.pending]);
 
   // Deferred a tick, the idiom every arcade table and the duel shell share: a
   // fetch fired straight from an effect body sets state during the same commit.
@@ -151,17 +193,17 @@ export function AnteUpMemory() {
     void send("/api/ante-up-memory", { wager });
   };
 
+  // Queued rather than refused while an earlier flip is on the wire, so a
+  // quick second card is not lost.
   const flip = (index: number) => {
-    // sending.current, not just busy: busy is React state and hasn't
-    // committed yet for a second click landing in the same tick as the
-    // first, which let two flips race to the server.
-    if (!attempt || sending.current || !active) return;
-    if (attempt.matched.includes(index) || attempt.revealed.includes(index)) return;
-    void send("/api/ante-up-memory/actions", { action: "flip", version: attempt.version, index });
+    if (!attempt || !active) return;
+    if (attempt.matched.includes(index) || shown.revealed.includes(index) || shown.pending.has(index)) return;
+    flips.push(index);
   };
 
   const resign = () => {
     if (sending.current) return;
+    flips.clear();
     void send("/api/ante-up-memory/actions", { action: "resign" });
   };
   const playAgain = () => setAttempt(null);
@@ -295,20 +337,21 @@ export function AnteUpMemory() {
           <div className="mm-grid" style={{ "--mm-columns": attempt.columns } as React.CSSProperties}>
             {attempt.board.map((card, index) => {
               const matched = attempt.matched.includes(index);
-              const up = matched || attempt.revealed.includes(index);
+              const up = matched || shown.revealed.includes(index);
+              const pending = shown.pending.has(index);
               return (
                 <button
                   key={index}
                   type="button"
-                  className={clsx("mm-tile", up && "mm-tile-up", matched && "mm-tile-matched")}
-                  disabled={busy || up || !active}
+                  className={clsx("mm-tile", up && "mm-tile-up", matched && "mm-tile-matched", pending && "mm-tile-pending")}
+                  disabled={busy || up || pending || !active}
                   aria-label={up && card ? `${card.rank} of ${card.suit}` : "Face-down card"}
                   onClick={() => { tapSound(); flip(index); }}
                 >
                   {/* Face-down draws the player's own equipped back. `card` really
                       is null until the server turns it over, same contract the
                       daily Memory board's tiles carry. */}
-                  <PlayingCard card={card} back={profile?.equipped.cardBack} />
+                  <PlayingCard card={up ? card : null} back={profile?.equipped.cardBack} />
                 </button>
               );
             })}

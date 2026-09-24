@@ -100,9 +100,8 @@ export function ActionBar({
    */
   onClaimBackstop: () => void;
   /**
-   * A decision queued ahead of your turn (poker-app.tsx owns the state,
-   * since this component remounts every game.version and would lose it
-   * otherwise). Null when nothing is armed.
+   * A decision queued ahead of your turn. poker-app.tsx owns the state so it
+   * can fire it the moment the turn arrives. Null when nothing is armed.
    */
   armedPreAction: PreActionType | null;
   onArmPreAction: (next: PreActionType | null) => void;
@@ -114,10 +113,18 @@ export function ActionBar({
   const [raiseTo, setRaiseTo] = useState(legal?.minRaiseTo ?? 0);
   const [pressedAction, setPressedAction] = useState<PlayerAction["type"] | null>(null);
 
-  // No reset effect: poker-table.tsx keys this component on game.version, so
-  // every turn already remounts it and both useState initialisers re-seed.
-  // Nobody else can act while it is your turn, so the drawer cannot be pulled
-  // out from under you mid-decision either.
+  // The raise drawer and slider belong to one turn, so they reset when the turn
+  // changes. This used to be a key={game.version} remount, which also closed
+  // the rebuy modal every time a bot acted.
+  const turnKey = legal
+    ? `${game.id}:${game.handNumber}:${game.street}:${game.turnStartedAt ?? ""}`
+    : null;
+  const [trackedTurnKey, setTrackedTurnKey] = useState(turnKey);
+  if (trackedTurnKey !== turnKey) {
+    setTrackedTurnKey(turnKey);
+    setRaiseOpen(false);
+    if (legal) setRaiseTo(legal.minRaiseTo);
+  }
 
   const potPreset = (fraction: number) => {
     if (!legal) return 0;
@@ -156,6 +163,9 @@ export function ActionBar({
   const rebuyEligible = !mySeat || isSeatRebuyEligible(game.status, mySeat.status);
   const busted = zeroStack && rebuyEligible;
   const bustedWaiting = zeroStack && !rebuyEligible;
+  // Once the rebuy lands the modal has nothing left to do. Without this it
+  // would still be open the next time this seat busts.
+  if (!busted && showRebuyModal) setShowRebuyModal(false);
 
   if (bustedWaiting) {
     return (

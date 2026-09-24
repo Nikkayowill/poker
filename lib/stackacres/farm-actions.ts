@@ -11,6 +11,7 @@
  * app/api/stackacres/actions/route.ts is the wire authority.
  */
 
+import type { AxePayment } from "./axe";
 import { isLivestock, STACKACRES_CATALOGUE, type StackAcresCrop, type StackAcresStock } from "./catalogue";
 import type { StackAcresBuyableCutter } from "./cutters";
 import type { HiddenZoneId, SecretItemId } from "./secrets";
@@ -88,6 +89,7 @@ export type Action =
   // harvest always credits inventory instead of Gold.
   | { action: "sell"; item: MachineItemId; quantity: number }
   | { action: "upgrade-tool" }
+  | { action: "upgrade-axe"; pay: AxePayment }
   | { action: "buy-cutter"; cutter: StackAcresBuyableCutter }
   // The processing track, all from the Workshop sheet (WorkshopModal.tsx).
   // `place-machine` spends Gold; the rest move inventory only.
@@ -140,6 +142,9 @@ export type Action =
   // "yes" -- see StackAcresMonkDialogue -- never from the tap that opens
   // it, so declining never reaches this at all.
   | { action: "pray" }
+  // The farmhouse bed: the farm clock jumps to 6 AM (./clock.ts). Only ever
+  // sent from the bed's own "Sleep" button, and by night.
+  | { action: "sleep" }
   // NPC friendship: a gift, from the friendship dialogue's own item picker.
   // See lib/stackacres/friendship.ts's own header.
   | { action: "give-gift"; npc: NpcId; item: MachineItemId }
@@ -310,6 +315,8 @@ export function purchaseCueText(body: Action): string | null {
       return "Seeds delivered!";
     case "upgrade-tool":
       return "Spade upgraded!";
+    case "upgrade-axe":
+      return "New axe in hand!";
     case "buy-cutter":
       return "New tool in hand!";
     case "unlock-synergy-perk":

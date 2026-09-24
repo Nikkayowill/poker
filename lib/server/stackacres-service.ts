@@ -87,6 +87,11 @@ import {
 } from "./stackacres-pipe-store";
 import { readStackAcresBatch } from "./stackacres-read-batch";
 import {
+  readStackAcresClockOffset,
+  stackAcresClockFromBatchRow,
+  writeStackAcresClockOffset,
+} from "./stackacres-clock-store";
+import {
   createSoilMap,
   nextFreeSoilSlot,
   planSoilGroupRelocation,
@@ -195,6 +200,8 @@ import {
   type StoredStackAcresEnergy,
   clearStackAcresMuck,
   readStackAcresToolTier,
+  readStackAcresAxeLevel,
+  upgradeStackAcresAxeLevel,
   upgradeStackAcresToolTier,
   readStackAcresCutters,
   recordStackAcresCutter,
@@ -353,6 +360,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
+import { NOT_SLEEPY, canSleepAt, gameHourAt, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { isActiveStock } from "@/lib/stackacres/scope";
 import { feedingToast, servingBonusEggs, shelfFeedOrder, type ServingSource } from "@/lib/stackacres/feeding";
 import { planSiloFeeding, siloFeedsLeft, siloFeedsUsed } from "@/lib/stackacres/feed-silo";
@@ -371,12 +379,22 @@ import {
   isClearableSector,
   landObstacleSnapshot,
   swingAtLandObstacle,
+  landSwingDamage,
   type ClearingGround,
   type LandObstacleSnapshot,
   type LandObstacleState,
 } from "@/lib/stackacres/land-clearing";
 import { OVERGROWN_SQUARE, overgrownSoilTile } from "@/lib/stackacres/crop-field-obstacles";
 import { freshWoodNodeState, swingAtWoodNode, woodNodeSnapshot, type WoodNodeSnapshot } from "@/lib/stackacres/wood";
+import {
+  AXE_DAMAGE,
+  AXE_LEVEL_DEFS,
+  AXE_SWING_ENERGY,
+  TOO_TIRED_TO_CHOP,
+  nextAxeLevel,
+  type AxeLevel,
+  type AxePayment,
+} from "@/lib/stackacres/axe";
 import {
   FORAGE_NODE_IDS,
   forageNodeSnapshot,
@@ -674,6 +692,8 @@ export interface StackAcresView {
   /** The equipment rung this player holds. Never null -- a player who has
    *  bought nothing holds the free starting Trowel. */
   tool: StackAcresToolTier;
+  /** The axe held (lib/stackacres/axe.ts). Sets how many swings a tree takes. */
+  axe: AxeLevel;
   /** Grass cutters owned, Scythe first. Which one is in hand is the client's
    *  choice; see lib/stackacres/cutters.ts. */
   cutters: StackAcresCutter[];
@@ -793,6 +813,10 @@ export interface StackAcresView {
   landObstacles: LandObstacleSnapshot[];
   /** Every fence piece this farm has put up (lib/stackacres/fences.ts), by Homestead map square. */
   fences: FencePiece[];
+  /** The farm clock (lib/stackacres/clock.ts): this farm's offset, and the
+   *  server's `now` for this read, so the client can correct for its own
+   *  clock being off. */
+  clock: { offsetMs: number; serverNowMs: number };
   /** How fresh this snapshot is, per lib/server/stackacres-revision-store.ts:
    *  strictly higher than any response for an action that finished earlier,
    *  regardless of which one this browser's fetch happens to see first. The
@@ -1038,6 +1062,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     forageNodeStates,
     landObstacleStates,
     fences,
+    axe,
     fallback,
   ] = await Promise.all([
     supabase ? readStackAcresBatch(profile.id, day) : Promise.resolve(null),
@@ -1063,6 +1088,8 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     listStackAcresLandObstacleStates(profile.id),
     // And the fences this farm has built: a small per-profile table read.
     listStackAcresFences(profile.id),
+    // And the axe: one small per-profile row, missing until the first upgrade.
+    readStackAcresAxeLevel(profile.id),
     supabase
       ? Promise.resolve(null)
       : Promise.all([
@@ -1106,6 +1133,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
           readStackAcresCutters(profile.id),
           readStackAcresStory(profile.id),
           readStackAcresEnergy(profile.id),
+          readStackAcresClockOffset(profile.id),
         ] as const),
   ]);
 
@@ -1141,6 +1169,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
   let cutters: StackAcresCutter[];
   let storedStory: StoredStoryRow;
   let storedEnergy: StoredStackAcresEnergy | null;
+  let clockOffset: number;
 
   if (batch) {
     rows = (batch.units as unknown as UnitDbRow[]).map(stackAcresUnitFromBatchRow);
@@ -1199,6 +1228,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     storedEnergy = stackAcresEnergyFromBatchRow(
       (batch.energy ?? null) as { level: number | string; updated_at: string; version: number | string } | null,
     );
+    clockOffset = stackAcresClockFromBatchRow((batch.clock ?? null) as { offset_ms: number | string } | null);
   } else {
     [
       rows,
@@ -1233,6 +1263,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       cutters,
       storedStory,
       storedEnergy,
+      clockOffset,
     ] = fallback as [
       StoredStackAcresUnit[], number, number, Partial<Record<StackAcresStock, number>>, SectorId[], number,
       string[], StackAcresToolTier, StoredWheatPlot[], StoredMachine[], StackAcresInventory, StoredContract | null,
@@ -1241,6 +1272,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       StoredPipe[], StoredSoilTile[], SeedStock, StoredDevotionRow, StoredFriendshipRow[],
       StoredVatManifest[], StackAcresCutter[], StoredStoryRow,
       StoredStackAcresEnergy | null,
+      number,
     ];
   }
 
@@ -1278,6 +1310,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     // charge happens inside a harvest, netted out of what it pays.
     upkeep: upkeepState(unlockedPlotCount(sectors, capacity, cropFieldsUnlocked), upkeepPaid),
     tool,
+    axe,
     cutters,
     wheatPlots: wheatRows.map((row) => toWheatPlotSnapshot(row, now)),
     machines: machineRows.map((row) => ({
@@ -1341,6 +1374,7 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
       ),
     ),
     fences,
+    clock: { offsetMs: clockOffset, serverNowMs: now.getTime() },
     revision,
   };
 }
@@ -2072,6 +2106,62 @@ export async function upgradeStackAcresTool(
   }
 
   return { ...(await view(debited, now)), upgraded: { from: current, to: settled } };
+}
+
+/**
+ * Makes or buys the next axe at the Workshop (lib/stackacres/axe.ts): from
+ * Wood and Stone, or for Gold instead, whichever the player picks. Walked one
+ * level at a time from what the server says is held, so a request never names
+ * a level. Rule 1: the materials or Gold leave first, then the level write,
+ * guarded on the level it was read at; a lost race or a failed write puts
+ * back exactly what was taken.
+ */
+export async function upgradeStackAcresAxe(
+  token: string,
+  pay: AxePayment,
+  now = new Date(),
+): Promise<StackAcresView & { axeUpgraded: { from: AxeLevel; to: AxeLevel; pay: AxePayment } }> {
+  const profile = await ensureProfile(token);
+  const current = await readStackAcresAxeLevel(profile.id);
+  const next = nextAxeLevel(current);
+  const def = next ? AXE_LEVEL_DEFS[next] : null;
+  if (!next || !def || def.materials === null || def.gold === null) {
+    throw new StackAcresRequestError("Your axe is already the best there is.", 409, {
+      round: await snapshots(profile.id, now),
+    });
+  }
+
+  let refund: () => Promise<void>;
+  if (pay === "materials") {
+    ({ refund } = await spendStackAcresMaterials(
+      profile.id,
+      def.materials,
+      now,
+      () => `The ${def.label} takes ${def.materials!.map((m) => `${m.quantity} ${m.item === "wood" ? "Wood" : "Stone"}`).join(" and ")}.`,
+    ));
+  } else {
+    const price = def.gold;
+    const debited = await spendGoldByProfile(profile.id, price);
+    if (!debited) {
+      throw new StackAcresRequestError(`The ${def.label} costs ${price.toLocaleString()} Gold.`, 400, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    refund = () => refundGold(profile.id, price);
+  }
+
+  let settled: AxeLevel | null;
+  try {
+    settled = await upgradeStackAcresAxeLevel(profile.id, current, next);
+  } catch (error) {
+    await refund();
+    throw error;
+  }
+  if (!settled) {
+    await refund();
+    throw new StackAcresRequestError("That axe was already made.", 409, { round: await snapshots(profile.id, now) });
+  }
+  return { ...(await view(profile, now)), axeUpgraded: { from: current, to: settled, pay } };
 }
 
 /**
@@ -3508,6 +3598,27 @@ export async function eatStackAcresFoodAction(
 }
 
 /**
+ * Sleeps in the farmhouse bed: this farm's clock jumps to the next 6 AM
+ * (lib/stackacres/clock.ts). Only from 6 PM to 6 AM. It moves the clock
+ * offset and nothing else, so crops, animals, machines, energy and Gold carry
+ * on exactly as they were. The write is a compare-and-set on the old offset;
+ * a second sleep that loses the race re-reads, finds it morning, and is
+ * refused.
+ */
+export async function sleepStackAcres(token: string, now = new Date()): Promise<StackAcresView> {
+  const profile = await ensureProfile(token);
+  const nowMs = now.getTime();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const offset = await readStackAcresClockOffset(profile.id);
+    if (!canSleepAt(gameHourAt(nowMs, offset))) throw new StackAcresRequestError(NOT_SLEEPY, 409);
+    if (await writeStackAcresClockOffset(profile.id, offset, offsetAfterSleep(nowMs, offset), now)) {
+      return view(profile, now);
+    }
+  }
+  throw new StackAcresRequestError("That moved on.", 409);
+}
+
+/**
  * A completed stalk in the Oak's brush. Which quarry it was is decided HERE,
  * never by the client -- the scope only reports that the player held a mark
  * steady and took it, exactly the separation `catchStackAcresFish` keeps
@@ -3612,8 +3723,11 @@ export async function workStackAcresLand(
   const spent = await moveStackAcresEnergy(profile.id, -LAND_SWING_ENERGY, now);
   if (!spent) throw new StackAcresRequestError(TOO_TIRED_TO_CLEAR, 400, { round: await snapshots(profile.id, now) });
 
-  const current = await getOrCreateStackAcresLandObstacle(profile.id, obstacle.id);
-  const swing = swingAtLandObstacle(obstacle.kind, current, now);
+  const [current, axe] = await Promise.all([
+    getOrCreateStackAcresLandObstacle(profile.id, obstacle.id),
+    readStackAcresAxeLevel(profile.id),
+  ]);
+  const swing = swingAtLandObstacle(obstacle.kind, current, now, landSwingDamage(obstacle.kind, axe));
   const written = swing ? await writeStackAcresLandObstacle(current, swing.nextState) : null;
   if (!swing || !written) {
     // Already down, or another tap got there first. Nothing happened, so the
@@ -3694,19 +3808,21 @@ export async function chopStackAcresWoodTree(
   const nodeId: WoodNodeId = nodeIdInput;
   const profile = await ensureProfile(token);
 
-  const current: StoredWoodNode = await getOrCreateStackAcresWoodNode(profile.id, nodeId);
-  const swing = swingAtWoodNode(current, now);
-  if (!swing) {
-    // Standing but out of reach for this attempt only happens if the tree
-    // was felled between the client's own tap and this request landing --
-    // a quiet no-op, same posture a lost machine-collect race takes.
-    return { ...(await view(profile, now)), woodChopped: null };
-  }
+  // Energy before the swing, back again if it does not land: the order
+  // workStackAcresLand keeps.
+  const spent = await moveStackAcresEnergy(profile.id, -AXE_SWING_ENERGY, now);
+  if (!spent) throw new StackAcresRequestError(TOO_TIRED_TO_CHOP, 400, { round: await snapshots(profile.id, now) });
 
-  const written = await writeStackAcresWoodNodeSwing(current, swing.nextState);
-  if (!written) {
-    // Lost the race: someone else's swing (or this same tap, retried) wrote
-    // first. No Wood for this request -- see this function's own header.
+  const [current, axe]: [StoredWoodNode, AxeLevel] = await Promise.all([
+    getOrCreateStackAcresWoodNode(profile.id, nodeId),
+    readStackAcresAxeLevel(profile.id),
+  ]);
+  const swing = swingAtWoodNode(current, now, AXE_DAMAGE[axe]);
+  // Not choppable (felled between the tap and this request) or a lost race
+  // (another swing wrote first): a quiet no-op, and the energy goes back.
+  const written = swing ? await writeStackAcresWoodNodeSwing(current, swing.nextState) : null;
+  if (!swing || !written) {
+    await moveStackAcresEnergy(profile.id, AXE_SWING_ENERGY, now);
     return { ...(await view(profile, now)), woodChopped: null };
   }
 

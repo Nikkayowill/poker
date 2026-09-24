@@ -38,6 +38,7 @@ import {
   feedStackAcres,
   feedStackAcresPen,
   eatStackAcresFoodAction,
+  sleepStackAcres,
   retireStackAcresStock,
   harvestStackAcres,
   runStackAcresAction,
@@ -48,6 +49,7 @@ import {
   tradeStackAcresSecretItemToRay,
   unlockStackAcresSynergyPerk,
   upgradeStackAcresTool,
+  upgradeStackAcresAxe,
   buyStackAcresCutter,
   waterStackAcres,
   waterStackAcresGroup,
@@ -195,6 +197,7 @@ const bodySchema = z.discriminatedUnion("action", [
   // No field: the ladder is walked one rung at a time from whatever the
   // SERVER says is held, so a request cannot name a rung and skip one.
   z.object({ action: z.literal("upgrade-tool") }),
+  z.object({ action: z.literal("upgrade-axe"), pay: z.enum(["materials", "gold"]) }),
   z.object({ action: z.literal("buy-cutter"), cutter: z.enum(STACKACRES_BUYABLE_CUTTERS) }),
   // Builds the Greenhouse once, spending processing-track goods, not Gold --
   // see buildStackAcresGreenhouse's own header.
@@ -303,6 +306,9 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("eat"),
     item: z.enum(FOOD_ITEMS as unknown as [string, ...string[]]),
   }),
+  // Sleeps in the farmhouse bed: the farm clock jumps to 6 AM. The server
+  // reads the hour itself and refuses by day. Moves nothing else.
+  z.object({ action: z.literal("sleep") }),
   // Processing: wheat, machines, Town Contracts. Move no Gold.
   z.object({
     action: z.literal("place-machine"),
@@ -522,6 +528,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return workStackAcresLand(token, action.obstacleId, now);
     case "upgrade-tool":
       return upgradeStackAcresTool(token, now);
+    case "upgrade-axe":
+      return upgradeStackAcresAxe(token, action.pay, now);
     case "buy-cutter":
       return buyStackAcresCutter(token, action.cutter, now);
     case "build-greenhouse":
@@ -558,6 +566,8 @@ function run(token: string, action: StackAcresAction, now: Date) {
       return catchStackAcresFish(token, action.bait, now);
     case "eat":
       return eatStackAcresFoodAction(token, action.item, now);
+    case "sleep":
+      return sleepStackAcres(token, now);
     case "bag-quarry":
       return bagStackAcresQuarry(token, now);
     case "chop-tree":

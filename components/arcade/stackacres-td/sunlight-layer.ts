@@ -178,7 +178,10 @@ export class SunlightLayer {
       this.sampledAt = timeMs;
       this.sun = sunlightAt(hour);
     }
-    for (const { lit, canopy } of this.canopies) lit.setAlpha(CANOPY_ALPHA * this.sun.canopy * canopy.alpha);
+    // Visibility too: a felled tree's canopy is hidden, and its light must go with it.
+    for (const { lit, canopy } of this.canopies) {
+      lit.setVisible(canopy.visible).setAlpha(CANOPY_ALPHA * this.sun.canopy * canopy.alpha);
+    }
     // A screen-fixed object is still scaled by the camera's zoom, about the middle of the canvas: so the
     // visible screen, in the units these objects are placed in, is the canvas size over the zoom, centred
     // on the canvas's own middle. Everything below is measured in that box.

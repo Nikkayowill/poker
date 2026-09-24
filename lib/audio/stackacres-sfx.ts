@@ -96,6 +96,12 @@ export function piecesSound() {
   playFarmSample("pieces-gather", 0.8, 0);
 }
 
+/** A felled tree hitting the ground: the trunk's thump and the leaves. */
+export function treeFallSound() {
+  playFarmSample("crate-drop", 1);
+  playFarmSample("leaf-rustle", 0.7);
+}
+
 /** Buying stock outright, or anything else that closes a purchase. */
 export function buySound() {
   playFarmVoice("buy-latch", 1);

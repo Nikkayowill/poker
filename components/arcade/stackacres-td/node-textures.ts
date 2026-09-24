@@ -1,10 +1,10 @@
 import type Phaser from "phaser";
-import { NODE_ART } from "@/lib/stackacres-td/gather-nodes";
+import { CHUNK_ART, NODE_ART } from "@/lib/stackacres-td/gather-nodes";
 
 /** Paints the hand-drawn pieces once: what a spent tree or boulder leaves
- *  behind (the `stump` and `rubble` textures). */
+ *  behind (the `stump` and `rubble` textures), and the chunks it breaks into. */
 export function drawNodeTextures(textures: Phaser.Textures.TextureManager): void {
-  for (const { texture, rows, colors } of Object.values(NODE_ART)) {
+  for (const { texture, rows, colors } of [...Object.values(NODE_ART), ...Object.values(CHUNK_ART)]) {
     if (textures.exists(texture)) continue;
     const canvas = textures.createCanvas(texture, rows[0].length, rows.length);
     if (!canvas) continue;

@@ -310,13 +310,16 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (nextGame: Game, nextScope: Scope) => {
+  // Aborted when the tab changes, so an older tab's answer can't land last
+  // and fill this one, and can't clear `loading` while this one is still out.
+  const load = useCallback(async (nextGame: Game, nextScope: Scope, signal: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
       const params = nextGame === "poker" ? `game=poker&scope=${nextScope}` : `game=${nextGame}`;
-      const response = await fetch(`/api/leaderboard?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/leaderboard?${params}`, { cache: "no-store", signal });
       const data = await response.json();
+      if (signal.aborted) return;
       if (!response.ok) throw new Error(data.error ?? "Could not load the leaderboard.");
 
       if (nextGame === "poker") {
@@ -337,15 +340,20 @@ export function Leaderboard({ embedded = false }: { embedded?: boolean } = {}) {
         setGenericMineProgress(data.mineProgress ?? null);
       }
     } catch (caught) {
+      if (signal.aborted) return;
       setError(caught instanceof Error ? caught.message : "Could not load the leaderboard.");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(game, scope), 0);
-    return () => window.clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void load(game, scope, controller.signal), 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [load, game, scope]);
 
   // Counted per board rather than off one shared `entries` array: the

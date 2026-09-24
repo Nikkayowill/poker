@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { AXE_LEVELS, STARTING_AXE_LEVEL, isAxeLevel, type AxeLevel } from "@/lib/stackacres/axe";
 import type { StackAcresUnitRow } from "@/lib/stackacres/units";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { SectorId } from "@/lib/stackacres/sectors";
@@ -104,6 +105,7 @@ declare global {
   var __riverRoomStackAcresCapacity: Map<string, number> | undefined;
   var __riverRoomStackAcresFeed: Map<string, number> | undefined;
   var __riverRoomStackAcresTool: Map<string, StackAcresToolTier> | undefined;
+  var __riverRoomStackAcresAxe: Map<string, AxeLevel> | undefined;
   var __riverRoomStackAcresCutters: Map<string, Set<StackAcresBuyableCutter>> | undefined;
   var __riverRoomStackAcresUpkeep: Map<string, number> | undefined;
   var __riverRoomStackAcresHarvests: StackAcresHarvestEntry[] | undefined;
@@ -153,6 +155,10 @@ globalThis.__riverRoomStackAcresEnergy = memoryEnergy;
  *  entry is zero extra slots. */
 const memoryTool = globalThis.__riverRoomStackAcresTool ?? new Map<string, StackAcresToolTier>();
 globalThis.__riverRoomStackAcresTool = memoryTool;
+
+/** Each player's axe level. A missing entry is the starting axe. */
+const memoryAxe = globalThis.__riverRoomStackAcresAxe ?? new Map<string, AxeLevel>();
+globalThis.__riverRoomStackAcresAxe = memoryAxe;
 
 /** Cutters each player has bought, keyed by profile id. A missing entry is
  *  only the free Scythe. */
@@ -1349,6 +1355,51 @@ export async function upgradeStackAcresToolTier(
   });
   if (error) throw new Error(`Could not update your equipment: ${error.message}`);
   return data === null ? null : toStackAcresToolTier(data);
+}
+
+/** The axe this player holds (lib/stackacres/axe.ts). No row is the starting
+ *  axe. A stored level this build does not know reads as the nearest real one,
+ *  so a farm always loads. */
+export async function readStackAcresAxeLevel(profileId: string): Promise<AxeLevel> {
+  const supabase = adminClient();
+  if (!supabase) return memoryAxe.get(profileId) ?? STARTING_AXE_LEVEL;
+
+  const { data, error } = await supabase.from("homestead_axe").select("level").eq("profile_id", profileId).maybeSingle();
+  if (error) throw new Error(`Could not read your axe: ${error.message}`);
+  const level = Number((data as { level?: unknown } | null)?.level ?? STARTING_AXE_LEVEL);
+  const top = AXE_LEVELS[AXE_LEVELS.length - 1];
+  const clamped = Math.min(top, Math.max(STARTING_AXE_LEVEL, Math.trunc(Number.isFinite(level) ? level : STARTING_AXE_LEVEL)));
+  return isAxeLevel(clamped) ? clamped : STARTING_AXE_LEVEL;
+}
+
+/**
+ * Raises a player's axe one level, GUARDED on the level they were last seen
+ * holding. Null on a lost race or a stale `from`, and null is never an
+ * upgrade: the caller has already been paid and refunds on null.
+ */
+export async function upgradeStackAcresAxeLevel(profileId: string, from: AxeLevel, to: AxeLevel): Promise<AxeLevel | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    if ((memoryAxe.get(profileId) ?? STARTING_AXE_LEVEL) !== from) return null;
+    memoryAxe.set(profileId, to);
+    return to;
+  }
+
+  if (from === STARTING_AXE_LEVEL) {
+    // No row yet is the starting axe. The primary key lets exactly one insert win.
+    const { error } = await supabase.from("homestead_axe").insert({ profile_id: profileId, level: to });
+    if (!error) return to;
+    if (error.code !== "23505") throw new Error(`Could not update your axe: ${error.message}`);
+  }
+  const { data, error } = await supabase
+    .from("homestead_axe")
+    .update({ level: to, updated_at: new Date().toISOString() })
+    .eq("profile_id", profileId)
+    .eq("level", from)
+    .select("level")
+    .maybeSingle();
+  if (error) throw new Error(`Could not update your axe: ${error.message}`);
+  return data ? to : null;
 }
 
 /** Every cutter this player owns, Scythe first. No rows means only the Scythe. */

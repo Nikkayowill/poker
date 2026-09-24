@@ -14,6 +14,7 @@
  * actually landed, and the scene decides where each obstacle stands.
  */
 
+import { AXE_DAMAGE, type AxeLevel } from "./axe";
 import type { MachineRawItem } from "./machine-items";
 import type { SectorId } from "./sectors";
 import { seededRandom } from "./world";
@@ -149,18 +150,27 @@ export function swingAtLandObstacle(
   kind: LandObstacleKind,
   state: LandObstacleState,
   now: Date,
+  damage = 1,
 ): LandSwingResult | null {
   if (isLandObstacleCleared(state)) return null;
   const def = LAND_OBSTACLE_DEFS[kind];
-  const hitsRemaining = state.hitsRemaining - 1;
+  // Paid per point taken off, so a better axe saves swings, never Wood.
+  const dealt = Math.min(Math.max(1, Math.trunc(damage)), Math.max(1, state.hitsRemaining));
+  const hitsRemaining = state.hitsRemaining - dealt;
   const cleared = hitsRemaining <= 0;
-  const quantity = def.item === null ? 0 : def.perHit + (cleared ? def.clearBonus : 0);
+  const quantity = def.item === null ? 0 : def.perHit * dealt + (cleared ? def.clearBonus : 0);
   return {
     nextState: cleared ? { hitsRemaining: 0, clearedAt: now.toISOString() } : { hitsRemaining, clearedAt: null },
     item: def.item,
     quantity,
     cleared,
   };
+}
+
+/** What one swing takes off an obstacle of this kind. Trees and scrub take the
+ *  axe (./axe.ts); a boulder takes the pick, which has no levels yet. */
+export function landSwingDamage(kind: LandObstacleKind, axeLevel: AxeLevel): number {
+  return kind === "boulder" ? 1 : AXE_DAMAGE[axeLevel];
 }
 
 /** What one obstacle looks like to the client. */

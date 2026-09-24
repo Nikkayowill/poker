@@ -73,6 +73,8 @@ import { DaylightLayer, type LightPoint } from "./daylight-layer";
 import { SunlightLayer } from "./sunlight-layer";
 import { WaterFilm } from "./water-film";
 import { PeopleLife } from "./people-life";
+import { NpcWalkers, keepsRoutine } from "./npc-walkers";
+import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
 import { SeeThrough } from "./see-through";
 import { drawNodeTextures } from "./node-textures";
@@ -469,6 +471,9 @@ export class TopdownScene extends Phaser.Scene {
   private life!: AmbientLife;
   private water!: WaterFilm;
   private people!: PeopleLife;
+  private walkers!: NpcWalkers;
+  /** A pinned clock (setClock) and when it was pinned: the people on their rounds keep walking from it. */
+  private pinnedClock: { hour: number; at: number } | null = null;
   /** prefers-reduced-motion: the wind, smoke and lamp flicker stop; the time of day and walking stay. */
   private reducedMotion = false;
   /** The give in his body when a picked crop lands in his hands (`squashFarmer`). */
@@ -567,6 +572,7 @@ export class TopdownScene extends Phaser.Scene {
     this.life = new AmbientLife(this, (object) => this.keep(object));
     this.water = new WaterFilm(this, (object) => this.keep(object));
     this.people = new PeopleLife(this, (object) => this.keep(object), STANDING);
+    this.walkers = new NpcWalkers(new Map<string, AreaSpecForRoutines>(this.specs), STANDING);
     this.orbs = new OrbBursts(this, () => ({
       x: this.player.x,
       y: this.player.y - PIECES_LAND_ABOVE_FEET,
@@ -607,6 +613,7 @@ export class TopdownScene extends Phaser.Scene {
     this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.water.update(time, this.reducedMotion);
+    this.walkers.update(delta, this.routineHour(), this.areaName, this.pos, this.npcSprites, (name) => this.npcVisible(name), this.reducedMotion);
     this.people.update(
       time,
       { sprite: this.player, x: this.pos.x, y: this.pos.y, facing: this.facing, walking: this.isWalking() },
@@ -845,6 +852,7 @@ export class TopdownScene extends Phaser.Scene {
     this.wind.clear();
     this.people.clear();
     this.npcSprites.clear();
+    this.walkers.clear();
     this.soilImages.clear();
     for (const image of this.fenceImages) image.destroy();
     this.fenceImages = [];
@@ -934,12 +942,20 @@ export class TopdownScene extends Phaser.Scene {
         ? []
         : this.propImages.filter(({ stump }) => !stump).map(({ spec, image, canopy }) => ({ images: canopy ? [image, canopy] : [image], baseY: spec.y })),
     );
-    for (const npc of this.area.npcs) {
-      const sprite = this.keep(this.add.sprite(npc.x, npc.y, npc.name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(npc.y));
-      this.anims.createFromAseprite(npc.name, undefined, sprite);
-      this.people.addNpc(npc.name, sprite);
-      const shadow = this.keep(this.add.ellipse(npc.x + 1, npc.y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
-      this.npcSprites.set(npc.name, { sprite, shadow });
+    // Someone who keeps a routine is placed by the clock wherever their day has taken them, so they are
+    // made in every area and shown only in the one they are in (npc-walkers.ts). Everyone else stands
+    // where area.json puts them.
+    const spawnNpc = (name: string, x: number, y: number, driven: boolean) => {
+      const sprite = this.keep(this.add.sprite(x, y, name, STANDING.down).setOrigin(0.5, 44 / 48).setDepth(y));
+      this.anims.createFromAseprite(name, undefined, sprite);
+      this.people.addNpc(name, sprite, driven);
+      const shadow = this.keep(this.add.ellipse(x + 1, y + 1, 13, 4, 0x140c1c, 0.28).setDepth(-1));
+      this.npcSprites.set(name, { sprite, shadow });
+    };
+    for (const npc of this.area.npcs) if (!keepsRoutine(npc.name)) spawnNpc(npc.name, npc.x, npc.y, false);
+    for (const name of this.walkers.names()) {
+      const pose = this.walkers.pose(name, this.routineHour(), this.reducedMotion);
+      if (pose) spawnNpc(name, pose.x, pose.y, true);
     }
 
     this.player = this.keep(this.add.sprite(spawn.x, spawn.y, "farmer", STANDING[this.facing]).setOrigin(0.5, 44 / 48).setDepth(spawn.y));
@@ -1122,6 +1138,7 @@ export class TopdownScene extends Phaser.Scene {
     // A fence piece stands on its square like anything else built there.
     if (this.areaName === "homestead") for (const piece of this.fences) blocked.add(tileKey(piece.tx, piece.ty));
     this.grid = { width: this.area.width, height: this.area.height, tile: this.area.tile, blocked };
+    this.walkers.setLiveGrid(this.areaName, this.grid);
   }
 
   private npcVisible(name: string): boolean {
@@ -1131,6 +1148,8 @@ export class TopdownScene extends Phaser.Scene {
 
   private applyNpcs(): void {
     for (const [name, node] of this.npcSprites) {
+      // Their routine decides, every frame, whether they are on this map at all.
+      if (keepsRoutine(name)) continue;
       const visible = this.npcVisible(name);
       node.sprite.setVisible(visible);
       node.shadow.setVisible(visible);
@@ -2772,6 +2791,14 @@ export class TopdownScene extends Phaser.Scene {
   /** Pins the time of day to an hour (0-24) to preview dusk and night, or null for the player's local clock. */
   setClock(hour: number | null): void {
     this.daylight.setOverride(hour);
+    this.pinnedClock = hour === null ? null : { hour, at: Date.now() };
+  }
+
+  /** The hour the people on their rounds keep. A pinned clock keeps ticking for them, so a preview of
+   *  dusk doesn't freeze everyone mid-stride. */
+  private routineHour(): number {
+    if (!this.pinnedClock) return this.daylight.hour();
+    return (this.pinnedClock.hour + (Date.now() - this.pinnedClock.at) / 3_600_000) % 24;
   }
 
   /** Cloud shadows drifting over the map. Off by default until Kayo has seen them. */

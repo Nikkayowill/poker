@@ -17,6 +17,7 @@ interface TopdownHandle {
     clientPointFor: (x: number, y: number) => { x: number; y: number };
     npcPoint: (name: string) => { x: number; y: number } | null;
     placeFarmer: (area: string, at: { x: number; y: number }) => void;
+    setClock: (hour: number | null) => void;
   };
 }
 
@@ -67,7 +68,10 @@ async function enter(page: Page, building: typeof HOUSE) {
 test("Ray never opens the kitchen, and the counter inside the house does", async ({ context, page }) => {
   await openStackAcres(context, page);
 
-  // Ray, out on the Homestead, opens his own bubble and nothing else.
+  // Ray, out on the Homestead, opens his own bubble and nothing else. Ray keeps a routine (lib/stackacres-td/npc-schedules.ts): at 8 he is tending the greenhouse, out on the Homestead.
+  await page.evaluate(() => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.setClock(8));
+  // A frame or two for him to be put where his day has got to.
+  await page.waitForTimeout(500);
   const ray = await page.evaluate(() =>
     (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.npcPoint("ray"),
   );
@@ -78,6 +82,11 @@ test("Ray never opens the kitchen, and the counter inside the house does", async
   await expect(page.getByRole("tab", { name: "Kitchen" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
+  // Ray keeps a routine and can be well out on the yard by the time the farmer reaches him
+  // (unlike his old fixed spot), which leaves `enter`'s fixed walk budgets too short for
+  // whatever ground he happens to have covered getting there. Back at the spawn, `enter`'s
+  // timings hold regardless of where the day has Ray standing.
+  await page.evaluate(() => (window as unknown as { __stackacres: TopdownHandle }).__stackacres.scene.placeFarmer("homestead", { x: 496, y: 344 }));
   await enter(page, HOUSE);
   const house = page.getByRole("dialog", { name: "Your House" });
   await expect(house).toBeVisible();

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findPath, tileKey } from "./movement";
-import { areaMapOf, areaRoute, planDay, poseAt, routineSpots, type AreaMap, type AreaSpecForRoutines } from "./npc-routine";
-import { NPC_ROUTINES, NPC_STATIONS } from "./npc-schedules";
+import { areaMapOf, areaRoute, daySeed, planDay, poseAt, poseOn, routineSpots, type AreaMap, type AreaSpecForRoutines, type DayPlan } from "./npc-routine";
+import { NPC_ROUTINES, NPC_STATIONS, NPC_TEMPERAMENTS } from "./npc-schedules";
 import { cropFieldObstaclePlacements } from "@/lib/stackacres/crop-field-obstacles";
 import { isWildMapTile } from "@/lib/stackacres/hoeable";
 
@@ -88,6 +88,77 @@ describe("the farm's routines", () => {
       }, 30_000);
     });
   }
+
+  it("gives everyone who keeps a routine a temperament", () => {
+    for (const name of Object.keys(NPC_ROUTINES)) expect(NPC_TEMPERAMENTS[name], name).toBeDefined();
+  });
+
+  describe("on a seeded day", () => {
+    const DAYS = [0, 1, 2, 17, 365];
+
+    for (const [name, routine] of Object.entries(NPC_ROUTINES)) {
+      it(`${name} still walks the whole day without stepping onto anything, or jumping`, () => {
+        for (const day of DAYS) {
+          const plan = planDay(routine, NPC_STATIONS, areas, 3_600_000, daySeed(name, day));
+          let previous = poseAt(plan, 0);
+          for (let s = 0; s < 24 * 3600; s += 2) {
+            const pose = poseAt(plan, s / 3600);
+            const inBarn = name === "ray" && pose.area === "barn";
+            if (pose.area === previous.area && !inBarn) {
+              expect(Math.hypot(pose.x - previous.x, pose.y - previous.y), `${name} day ${day} at ${(s / 3600).toFixed(3)}h`).toBeLessThanOrEqual(routine.speed * 1.08 * 2 + 0.5);
+            }
+            const onOpenGround = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => openAt(pose.area, pose.x + dx, pose.y + dy));
+            if (pose.doing !== "walk" || !inBarn) expect(onOpenGround, `${name} day ${day} in ${pose.area} at ${pose.x.toFixed(0)},${pose.y.toFixed(0)}`).toBe(true);
+            previous = pose;
+          }
+        }
+      }, 60_000);
+    }
+
+    for (const [name, routine] of Object.entries(NPC_ROUTINES)) {
+      it(`${name} goes from one day into the next without a jump, however the two days start`, () => {
+        const plans = new Map<number, DayPlan>();
+        const planFor = (day: number) => {
+          if (!plans.has(day)) plans.set(day, planDay(routine, NPC_STATIONS, areas, 3_600_000, daySeed(name, day)));
+          return plans.get(day)!;
+        };
+        for (let day = 1; day <= 40; day++) {
+          let previous = poseOn(planFor, day * 24 - 2);
+          for (let s = 1; s <= 10 * 3600; s += 2) {
+            const pose = poseOn(planFor, day * 24 - 2 + s / 3600);
+            const when = `${name} day ${day} at ${(s / 3600 - 2).toFixed(3)}h`;
+            if (pose.area === previous.area) {
+              expect(Math.hypot(pose.x - previous.x, pose.y - previous.y), when).toBeLessThanOrEqual(routine.speed * 1.08 * 2 + 0.5);
+            } else {
+              // Changing area is walking through a door, never popping up somewhere else.
+              expect([previous.doing, pose.doing], when).toEqual(["walk", "walk"]);
+            }
+            previous = pose;
+          }
+        }
+      }, 60_000);
+    }
+
+    it("is the same day on every device, and not the same as yesterday", () => {
+      const at = (day: number) => {
+        const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", day));
+        return [7.5, 8, 8.5, 11, 12.4, 16.2].map((hour) => poseAt(plan, hour));
+      };
+      expect(at(4)).toEqual(at(4));
+      expect(at(4)).not.toEqual(at(5));
+    });
+
+    it("keeps each part of the day at about its hour", () => {
+      for (let day = 0; day < 40; day++) {
+        const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000, daySeed("ray", day));
+        expect(poseAt(plan, 8).area, `day ${day}`).toBe("homestead");
+        expect(poseAt(plan, 10.5).area, `day ${day}`).toBe("barn");
+        expect(poseAt(plan, 23).area, `day ${day}`).toBe("townsquare");
+        const pilgrim = planDay(NPC_ROUTINES.pilgrim, NPC_STATIONS, areas, 3_600_000, daySeed("pilgrim", day));
+        expect(poseAt(pilgrim, 10).area, `day ${day}`).toBe("homestead");
+      }
+    });
+  });
 
   it("has Ray on the Homestead at mid-morning and gone to town at night", () => {
     const plan = planDay(NPC_ROUTINES.ray, NPC_STATIONS, areas, 3_600_000);

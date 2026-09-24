@@ -27,7 +27,7 @@ interface Npc {
 }
 
 /** What each person says with a bubble when the farmer walks up. At night everyone is sleepy. */
-function greeting(name: string, hour: number): EmoteKind {
+export function greeting(name: string, hour: number): EmoteKind {
   if (hour >= 22 || hour < 5) return "sleep";
   if (name === "ray") return "heart";
   if (name === "pilgrim") return "sparkle";
@@ -36,8 +36,9 @@ function greeting(name: string, hour: number): EmoteKind {
 
 /**
  * The people and hens on the map, alive while nobody is tapping them:
- * - everyone breathes and blinks on their own rhythm (the rig's `idle` tag), turns to face the farmer when he
- *   comes close and greets him with an emote bubble (not more than once a minute and a half per person);
+ * - everyone standing where area.json puts them breathes and blinks on their own rhythm (the rig's `idle` tag),
+ *   turns to face the farmer when he comes close and greets him with an emote bubble (not more than once a
+ *   minute and a half per person). People keeping a routine have a mind of their own (npc-walkers.ts);
  * - the farmer idles too once he has stood still a moment;
  * - hens peck and turn in place, and sheep and cattle turn now and then, never leaving their spot (they are tap targets);
  * - emote bubbles pop up over a head, hold, and fade in steps.
@@ -101,14 +102,13 @@ export class PeopleLife {
     reducedMotion: boolean,
   ): void {
     for (const [name, npc] of this.npcs) {
-      if (!npc.sprite.visible) continue;
+      // Someone keeping a routine is moved, turned, animated and greeted by their own mind (npc-walkers.ts).
+      if (!npc.sprite.visible || npc.driven) continue;
       const dx = farmer.x - npc.sprite.x;
       const dy = farmer.y - npc.sprite.y;
       const near = Math.hypot(dx, dy) < GREET_REACH;
       const facing: Dir = near ? (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up") : "down";
-      if (npc.driven) {
-        // Their routine turns them to the farmer and animates them.
-      } else if (reducedMotion) {
+      if (reducedMotion) {
         if (npc.sprite.anims.isPlaying) npc.sprite.anims.stop();
         if (npc.sprite.frame.name !== this.standing[facing]) npc.sprite.setFrame(this.standing[facing]);
       } else if (facing !== npc.facing || !npc.sprite.anims.isPlaying) {

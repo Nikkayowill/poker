@@ -32,6 +32,12 @@ export function gameHourAt(nowMs: number, offsetMs: number): number {
   return (msIntoDay(nowMs, offsetMs) / STACKACRES_DAY_MS) * 24;
 }
 
+/** Which game day it is at a real moment for a farm with this offset: counts up at every midnight,
+ *  and a sleep (which always passes midnight) moves it on by one. */
+export function gameDayAt(nowMs: number, offsetMs: number): number {
+  return Math.floor((nowMs + offsetMs) / STACKACRES_DAY_MS);
+}
+
 /** Evening and night: 6 PM up to 6 AM. */
 export function canSleepAt(hour: number): boolean {
   const h = mod(hour, 24);

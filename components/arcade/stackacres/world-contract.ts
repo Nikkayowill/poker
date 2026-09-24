@@ -362,6 +362,9 @@ export interface StackAcresWorldProps {
   /** The farm clock's game hour right now (lib/stackacres/clock.ts). The map
    *  reads it for its light, its critters and who is sleepy. */
   clockHour: () => number;
+  /** The farm clock's game day number (lib/stackacres/clock.ts): the people on
+   *  their rounds keep a slightly different day each day. */
+  clockDay: () => number;
   /** A finger landed on one of the eleven story travelers (see
    *  lib/stackacres/story/placement.ts). `at` is the point over their head,
    *  where the dialogue bubble hangs; see stackacres-farm.tsx's

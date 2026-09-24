@@ -11,6 +11,7 @@
  * that test says which spots need moving.
  */
 
+import type { Temperament } from "./npc-mind";
 import type { Routine, Spot, Station } from "./npc-routine";
 
 const spot = (x: number, y: number, facing: Spot["facing"], chore: Spot["chore"], ms: number): Spot => ({ x, y, facing, chore, ms });
@@ -124,4 +125,20 @@ export const NPC_ROUTINES: Record<string, Routine> = {
       { hour: 21, station: "ivy-rest" },
     ],
   },
+};
+
+/**
+ * How each person carries themselves (npc-mind.ts): how quick they are to react, how long they give the
+ * farmer their attention, how often a quiet moment turns into a look around, and how keen they are to
+ * stop for a word with someone. Nobody is instant: the fastest still takes a fifth of a second to notice.
+ */
+export const NPC_TEMPERAMENTS: Record<string, Temperament> = {
+  // Old, warm and unhurried: slow to look up, but once he has he's glad of the company.
+  ray: { react: [320, 620], attention: [6000, 10_000], fidget: [3500, 8000], chatty: 0.8, tempo: 0.88 },
+  // Calm and inward. Rarely fidgets, gives you a long, steady look.
+  pilgrim: { react: [380, 700], attention: [5000, 9000], fidget: [7000, 14_000], chatty: 0.35, tempo: 0.82 },
+  // Restless and curious: quick to notice, can't keep still.
+  pierre: { react: [200, 380], attention: [3500, 6500], fidget: [2200, 5000], chatty: 0.7, tempo: 1.08 },
+  // Shy: notices you quickly, looks away soon, then keeps sneaking glances.
+  ivy: { react: [220, 420], attention: [2000, 3800], fidget: [3000, 6500], chatty: 0.55, tempo: 1 },
 };

@@ -137,7 +137,7 @@ import { ChimneySmoke, type Emitter } from "./chimney-smoke";
 import { DaylightLayer, type LightPoint } from "./daylight-layer";
 import { SunlightLayer } from "./sunlight-layer";
 import { WaterFilm } from "./water-film";
-import { PeopleLife } from "./people-life";
+import { PeopleLife, greeting } from "./people-life";
 import { NpcWalkers, keepsRoutine } from "./npc-walkers";
 import type { AreaSpecForRoutines } from "@/lib/stackacres-td/npc-routine";
 import { WindSway } from "./wind-sway";
@@ -223,6 +223,13 @@ const SLEEP_FADE_REDUCED_MS = 150;
 const SLEEP_DARK_MS = 700;
 const CHARACTERS = ["farmer", "ray", "pilgrim", "pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
 const TRAVELERS_ON_MAP: readonly TravelerId[] = ["pierre", "ivy", "wes", "miles", "barnaby", "skye", "bea", "brayden", "arthur", "leo"];
+
+/** A pinned clock (setClock) keeps ticking for the people on their rounds, an hour an hour. */
+const PINNED_CLOCK_MS_PER_HOUR = 3_600_000;
+
+function isEmoteTarget(name: string): name is EmoteTarget {
+  return name === "ray" || name === "pilgrim" || (TRAVELERS_ON_MAP as readonly string[]).includes(name);
+}
 
 /** Every district with a scene of its own behind a gate on the Homestead (or the Fold). */
 const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
@@ -576,6 +583,7 @@ export class TopdownScene extends Phaser.Scene {
   private stickWalking = false;
   private daylight!: DaylightLayer;
   private clockSource: (() => number) | null = null;
+  private daySource: (() => number) | null = null;
   private sunlight!: SunlightLayer;
   private readonly wind = new WindSway();
   private smoke!: ChimneySmoke;
@@ -740,7 +748,22 @@ export class TopdownScene extends Phaser.Scene {
     this.sunlight.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     if (!this.area.indoor) this.life.update(time, this.daylight.hour(), this.reducedMotion, this.cameras.main.worldView);
     this.water.update(time, this.reducedMotion);
-    this.walkers.update(delta, this.routineHour(), this.areaName, this.pos, this.npcSprites, (name) => this.npcVisible(name), this.reducedMotion);
+    this.walkers.update(
+      time,
+      delta,
+      this.routineDay(),
+      this.routineHour(),
+      this.areaName,
+      { x: this.pos.x, y: this.pos.y, walking: this.isWalking() },
+      this.npcSprites,
+      (name) => this.npcVisible(name),
+      this.reducedMotion,
+      this.pending?.kind === "npc" ? this.pending.name : null,
+      (name, what) => {
+        if (!isEmoteTarget(name)) return;
+        this.people.emote(name, what === "greet" ? greeting(name, this.daylight.hour()) : "note", time, this.player);
+      },
+    );
     // A cast holds its poses as still frames (the rod out, a fish held up), so
     // it counts as busy: the idle fidget would otherwise take him over mid-cast.
     this.people.update(
@@ -1091,7 +1114,7 @@ export class TopdownScene extends Phaser.Scene {
     };
     for (const npc of this.area.npcs) if (!keepsRoutine(npc.name)) spawnNpc(npc.name, npc.x, npc.y, false);
     for (const name of this.walkers.names()) {
-      const pose = this.walkers.pose(name, this.routineHour(), this.reducedMotion);
+      const pose = this.walkers.pose(name, this.routineDay(), this.routineHour(), this.reducedMotion);
       if (pose) spawnNpc(name, pose.x, pose.y, true);
     }
 
@@ -2374,6 +2397,7 @@ export class TopdownScene extends Phaser.Scene {
       return;
     }
     if (target.kind === "npc") {
+      this.walkers.talkTo(target.name, this.pos, this.time.now);
       const node = this.npcSprites.get(target.name);
       const at = this.mapToCss(node ? { x: node.sprite.x, y: node.sprite.y - 20 } : target.anchor);
       if (target.name === "ray") cb.onRayTap(at);
@@ -3557,13 +3581,24 @@ export class TopdownScene extends Phaser.Scene {
   setClock(hour: number | null): void {
     this.daylight.setOverride(hour);
     this.pinnedClock = hour === null ? null : { hour, at: Date.now() };
+    this.walkers.setPinnedClock(hour === null ? null : PINNED_CLOCK_MS_PER_HOUR);
   }
 
   /** The hour the people on their rounds keep. A pinned clock keeps ticking for them, so a preview of
    *  dusk doesn't freeze everyone mid-stride. */
   private routineHour(): number {
     if (!this.pinnedClock) return this.daylight.hour();
-    return (this.pinnedClock.hour + (Date.now() - this.pinnedClock.at) / 3_600_000) % 24;
+    return (this.pinnedClock.hour + (Date.now() - this.pinnedClock.at) / PINNED_CLOCK_MS_PER_HOUR) % 24;
+  }
+
+  /** The farm's day number, which picks that day's variation on everyone's routine. */
+  private routineDay(): number {
+    return this.daySource?.() ?? 0;
+  }
+
+  /** Where the farm clock's day number is read from: the shell's `gameDayNow`. */
+  setDaySource(source: () => number): void {
+    this.daySource = source;
   }
 
   /** Where the farm clock's hour is read from: the shell's `gameHourNow`, which knows this farm's offset. */

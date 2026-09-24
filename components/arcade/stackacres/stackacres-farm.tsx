@@ -231,7 +231,7 @@ import {
   type FoodItem,
   type StackAcresEnergyAnchor,
 } from "@/lib/stackacres/energy";
-import { NOT_SLEEPY, canSleepAt, clockLabel, gameHourAt, isNightHour, offsetAfterSleep } from "@/lib/stackacres/clock";
+import { NOT_SLEEPY, canSleepAt, clockLabel, gameDayAt, gameHourAt, isNightHour, offsetAfterSleep } from "@/lib/stackacres/clock";
 import { AXE_SWING_ENERGY, TOO_TIRED_TO_CHOP, type AxeLevel, type AxePayment } from "@/lib/stackacres/axe";
 import { shelfFeedFor } from "@/lib/stackacres/feeding";
 import { StackAcresHouse } from "./stackacres-house";
@@ -889,6 +889,7 @@ export function StackAcresFarm() {
     () => gameHourAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs),
     [],
   );
+  const gameDayNow = useCallback(() => gameDayAt(Date.now() + clockRef.current.skewMs, clockRef.current.offsetMs), []);
   /** The hour the HUD clock shows, re-read every couple of seconds. */
   const [clockHour, setClockHour] = useState(() => gameHourAt(Date.now(), 0));
   useEffect(() => {
@@ -4049,6 +4050,7 @@ export function StackAcresFarm() {
               onHouseTap={onWorldHouseTap}
               onBedTap={onWorldBedTap}
               clockHour={gameHourNow}
+              clockDay={gameDayNow}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
               sectors={sectors}

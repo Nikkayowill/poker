@@ -191,6 +191,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
       scene.setLandObstacles(now.landObstacles);
       scene.setFences(now.fences);
       scene.setClockSource(() => p().clockHour());
+      scene.setDaySource(() => p().clockDay());
 
       const fit = () => {
         if (!instance.isBooted) return;

@@ -22,6 +22,8 @@ interface Npc {
   near: boolean;
   greetedAt: number;
   timeScale: number;
+  /** Keeps a routine (npc-walkers.ts), which moves and animates them; here they only greet. */
+  driven: boolean;
 }
 
 /** What each person says with a bubble when the farmer walks up. At night everyone is sleepy. */
@@ -60,8 +62,8 @@ export class PeopleLife {
     this.emotes.clear();
   }
 
-  addNpc(name: string, sprite: Phaser.GameObjects.Sprite): void {
-    this.npcs.set(name, { sprite, facing: "down", near: false, greetedAt: Number.NEGATIVE_INFINITY, timeScale: 0.85 + Math.random() * 0.3 });
+  addNpc(name: string, sprite: Phaser.GameObjects.Sprite, driven = false): void {
+    this.npcs.set(name, { sprite, facing: "down", near: false, greetedAt: Number.NEGATIVE_INFINITY, timeScale: 0.85 + Math.random() * 0.3, driven });
   }
 
   /** The farmer has just come to a stop (arrived, or finished acting something out). */
@@ -104,7 +106,9 @@ export class PeopleLife {
       const dy = farmer.y - npc.sprite.y;
       const near = Math.hypot(dx, dy) < GREET_REACH;
       const facing: Dir = near ? (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up") : "down";
-      if (reducedMotion) {
+      if (npc.driven) {
+        // Their routine turns them to the farmer and animates them.
+      } else if (reducedMotion) {
         if (npc.sprite.anims.isPlaying) npc.sprite.anims.stop();
         if (npc.sprite.frame.name !== this.standing[facing]) npc.sprite.setFrame(this.standing[facing]);
       } else if (facing !== npc.facing || !npc.sprite.anims.isPlaying) {

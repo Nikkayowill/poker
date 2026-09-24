@@ -140,9 +140,6 @@ export const FOOT = { halfWidth: 5, halfHeight: 3 };
 
 /** Under this share of the stick's reach, a resting thumb doesn't walk him. */
 export const STICK_DEAD_ZONE = 0.2;
-/** Past this share he walks at full speed; between the two he speeds up, and never starts slower than `STICK_MIN_SPEED`. */
-export const STICK_FULL = 0.75;
-export const STICK_MIN_SPEED = 0.45;
 
 /** How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch him on its post. */
 const CORNER_ASSIST = 7;
@@ -151,15 +148,19 @@ const SUBSTEP = 4;
 
 /**
  * A thumb `dx, dy` css px from the stick's centre, with `radius` the knob's full reach,
- * as a direction whose length is his share of full walking speed; null inside the dead zone.
+ * as a direction at full walking speed; null inside the dead zone.
+ *
+ * Digital, not analog: a real walk cycle has one cadence, so a stick that throttled speed
+ * continuously between "just past the dead zone" and "full push" left his legs moving at
+ * whatever fraction the thumb happened to land on, with no stride ever actually landing --
+ * he read as gliding rather than walking (Kayo, 2026-09-24). Past the dead zone he always
+ * walks at full speed; the stick only ever picks a direction.
  */
 export function stickVector(dx: number, dy: number, radius: number): Point | null {
   const reach = Math.hypot(dx, dy) / radius;
   if (reach < STICK_DEAD_ZONE) return null;
-  const ramp = Math.min(1, (reach - STICK_DEAD_ZONE) / (STICK_FULL - STICK_DEAD_ZONE));
-  const speed = STICK_MIN_SPEED + (1 - STICK_MIN_SPEED) * ramp;
   const length = Math.hypot(dx, dy);
-  return { x: (dx / length) * speed, y: (dy / length) * speed };
+  return { x: dx / length, y: dy / length };
 }
 
 /** Every tile under his feet at `p` is open. */
@@ -218,4 +219,34 @@ export function steer(grid: Grid, from: Point, dir: Point, distance: number): Po
   let at = from;
   for (let left = distance; left > 0; left -= SUBSTEP) at = stepOnce(grid, at, unit, Math.min(SUBSTEP, left));
   return at;
+}
+
+/**
+ * Where to stand to work a prop at `at` (a tree, a stone, a signpost): one of its four sides, picked
+ * as whichever is open ground and nearest wherever he already is (`from`), so he approaches -- and so
+ * faces it -- from whatever side he is already on, rather than always being walked round to the same
+ * fixed side. Falls back to the first candidate when his feet wouldn't fit on any of them (an object
+ * boxed in on three sides still gets stood next to on the one side that is open).
+ */
+export function approachSpot(grid: Grid, from: Point, at: Point, w: number, h: number): { anchor: Point; face: Point } {
+  const dx = w / 2 + 8;
+  const dy = Math.min(h / 4, 20) + 8;
+  const candidates: Point[] = [
+    { x: at.x, y: at.y + dy },
+    { x: at.x, y: at.y - dy },
+    { x: at.x - dx, y: at.y },
+    { x: at.x + dx, y: at.y },
+  ];
+  const open = candidates.filter((p) => footClear(grid, p));
+  const pool = open.length ? open : candidates;
+  let anchor = pool[0];
+  let nearest = Infinity;
+  for (const p of pool) {
+    const d = Math.hypot(p.x - from.x, p.y - from.y);
+    if (d < nearest) {
+      nearest = d;
+      anchor = p;
+    }
+  }
+  return { anchor, face: at };
 }

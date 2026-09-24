@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { useModalDismiss } from "@/components/use-modal-dismiss";
 import type { JournalCue, JournalStep, JournalView } from "@/lib/stackacres/journal";
 import { journalChapterLabel } from "@/lib/stackacres/journal";
+import { StackAcresPixelIcon } from "./stackacres-pixel-icon";
 
 /**
  * The Journal sheet, and the chip that opens it.
@@ -197,19 +198,26 @@ export function StackAcresJournalSheet({ view, onClose }: { view: JournalView; o
 }
 
 /**
- * The chip beside the Map button. It used to read "Mill · Gold 0 / 200"
- * forever; it now leads with the one line and keeps the chapter and the bar
- * underneath, so the thing the player glances at is the thing they should do.
+ * The Journal's own entry point. It used to read "Mill · Gold 0 / 200"
+ * forever, then "Chapter 1 · Bread / Water the wheat" forever -- either way, a
+ * permanent sentence of text sitting over the map. Same standing-badge
+ * posture as the Forge and Crossbreeding Bed entries next to it in the HUD
+ * (`.sa-prestige-badge`) now: worth a glance, not a paragraph. The current
+ * cue, the chapter and the readiness bar are all still one tap away, in the
+ * same Journal sheet this button already opened.
  */
 export function StackAcresJournalChip({ view, onOpen }: { view: JournalView; onOpen: () => void }) {
   const label = journalChapterLabel(view);
+  const chapter = view.currentChapter;
   return (
-    <button type="button" className="sa-goal sa-journal-chip" onClick={onOpen} title="The Journal">
-      <span className="sa-goal-top">{label ?? "The Journal"}</span>
-      <span className="sa-goal-line">{view.now.short}</span>
-      <span className="sa-goal-bar" aria-hidden="true">
-        <span style={{ width: `${view.readiness * 100}%` }} />
-      </span>
+    <button
+      type="button"
+      className="sa-prestige-badge"
+      onClick={onOpen}
+      title={label ? `${label}: ${view.now.short}` : "The Journal"}
+    >
+      <StackAcresPixelIcon name="journal" />
+      <strong>{chapter ? `${chapter.number}/${view.chapters.length}` : "done"}</strong>
     </button>
   );
 }

@@ -684,7 +684,11 @@ interface StackAcresResponse {
    *  dialogue's own "hello" -> "progress" or "done" -> "home" switch can
    *  fire off the same response that produced it rather than waiting for
    *  the next node derivation. */
-  storyResult?: { traveler: TravelerId; outcome: "met" | "already-met" | "advanced" | "completed"; granted: string | null };
+  storyResult?: {
+    traveler: TravelerId;
+    outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
+    granted: readonly string[];
+  };
 }
 
 /**
@@ -2241,10 +2245,15 @@ export function StackAcresFarm() {
           if (data.storyResult.outcome === "completed") {
             goldSound();
             world.current?.emote(data.storyResult.traveler, "sparkle");
-            if (typeof data.storyResult.granted === "string" && isStoryItemId(data.storyResult.granted)) {
-              const item = STORY_ITEM_CATALOGUE[data.storyResult.granted];
-              setLastCollect({ text: `${item.icon} ${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you the ${item.label}`, nonce: Date.now() });
-            }
+          }
+          // A quest's own reward can land on any turn-in, not only the
+          // line's last one; the line's keepsake only ever lands alongside a
+          // "completed" outcome. Both can be present at once on a line's
+          // final quest that also declares its own `rewards`.
+          const granted = data.storyResult.granted.filter(isStoryItemId).map((id) => STORY_ITEM_CATALOGUE[id]);
+          if (granted.length > 0) {
+            const text = granted.map((item) => `${item.icon} ${item.label}`).join(", ");
+            setLastCollect({ text: `${TRAVELER_CATALOGUE[data.storyResult.traveler].name} leaves you ${text}`, nonce: Date.now() });
           }
         }
         if (body.action === "unlock-synergy-perk" && data.synergyUnlock?.success) {

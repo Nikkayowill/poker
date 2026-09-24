@@ -8,7 +8,7 @@ import {
   dialogueNodeFor,
   storyNode,
 } from "./dialogue";
-import { TRAVELER_QUESTS } from "./quests";
+import { ALL_STORY_QUESTS, TRAVELER_QUESTS } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
@@ -45,6 +45,7 @@ describe("STORY_DIALOGUE", () => {
   });
 
   it("gives every node a speaker, a line, a haptic tick and a way out", () => {
+    const questById = new Map(ALL_STORY_QUESTS.map((quest) => [quest.id, quest]));
     for (const node of STORY_DIALOGUE.values()) {
       expect(node.speakerName.length).toBeGreaterThan(0);
       expect(node.dialogueText.trim().length).toBeGreaterThan(0);
@@ -55,7 +56,18 @@ describe("STORY_DIALOGUE", () => {
       }
       expect(node.choices.some((choice) => !choice.commits)).toBe(true);
       const committing = node.choices.filter((choice) => choice.commits);
-      expect(committing.length).toBe(node.onComplete === null ? 0 : 1);
+      // A `.done` node with 2+ rewards gets one committing choice per reward
+      // instead of the usual single one; every other node still commits at
+      // most once.
+      const questId = node.id.endsWith(".done") ? node.id.slice(0, -".done".length) : null;
+      const rewardCount = questId !== null ? (questById.get(questId)?.rewards?.length ?? 0) : 0;
+      const expectedCommitting = node.onComplete === null ? 0 : Math.max(1, rewardCount);
+      expect(committing.length).toBe(expectedCommitting);
+      if (rewardCount >= 2) {
+        expect(committing.map((choice) => choice.reward)).toEqual(questById.get(questId as string)?.rewards);
+      } else {
+        expect(committing.every((choice) => choice.reward === undefined)).toBe(true);
+      }
     }
   });
 
@@ -76,9 +88,23 @@ describe("STORY_DIALOGUE", () => {
     expect(storyNode("pierre.hello").onComplete).toEqual({ action: "story-meet", traveler: "pierre" });
     expect(storyNode("pierre.q1.done").onComplete).toEqual({ action: "story-turn-in", traveler: "pierre" });
     expect(storyNode("pierre.q1.done").choices[0].label).toBe(TRAVELER_QUESTS.pierre[0].turnInLabel);
+    expect(storyNode("pierre.q1.done").choices[0].reward).toBeUndefined();
     expect(storyNode("pierre.q1.progress").onComplete).toBeNull();
     expect(storyNode("pierre.locked").onComplete).toBeNull();
     expect(storyNode("pierre.home").onComplete).toBeNull();
+  });
+
+  it("turns a quest's 2+ rewards into one committing choice each, plus a decline", () => {
+    const node = storyNode("brayden.q1.done");
+    const [cubicPickaxe, ore, decline] = node.choices;
+    expect(node.choices).toHaveLength(3);
+    expect(cubicPickaxe).toMatchObject({ commits: true, reward: "cubic_pickaxe_head" });
+    expect(ore).toMatchObject({ commits: true, reward: "sample_bag_of_curved_ore" });
+    expect(decline).toMatchObject({ commits: false });
+    expect(decline.reward).toBeUndefined();
+    // Every reward button posts the same base intent; the caller merges in
+    // the chosen reward (see use-stackacres-story.ts's choose()).
+    expect(node.onComplete).toEqual({ action: "story-turn-in", traveler: "brayden" });
   });
 
   it("saves the fanfare for the last turn-in", () => {

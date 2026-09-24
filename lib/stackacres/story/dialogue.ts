@@ -22,6 +22,7 @@
  * than showing the wrong line later.
  */
 
+import { STORY_ITEM_CATALOGUE, type StoryItemId } from "./items";
 import { TRAVELER_QUESTS } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS, type PortraitExpression, type TravelerId } from "./travelers";
@@ -32,12 +33,16 @@ import { TRAVELER_CATALOGUE, TRAVELER_IDS, type PortraitExpression, type Travele
 
 export type StoryIntent =
   | { readonly action: "story-meet"; readonly traveler: TravelerId }
-  | { readonly action: "story-turn-in"; readonly traveler: TravelerId };
+  | { readonly action: "story-turn-in"; readonly traveler: TravelerId; readonly reward?: StoryItemId };
 
 export interface StoryChoice {
   readonly label: string;
   /** True for the button that posts `onComplete`. False only closes. */
   readonly commits: boolean;
+  /** Only set on a turn-in choice offering 2+ rewards -- the reward THIS
+   *  button commits, merged into `onComplete` when chosen. Absent on every
+   *  other choice, including a turn-in with 0 or 1 reward. */
+  readonly reward?: StoryItemId;
 }
 
 export interface StoryDialogueNode {
@@ -328,15 +333,26 @@ function buildNodes(): ReadonlyMap<string, StoryDialogueNode> {
         choices: CLOSE_ONLY("On it"),
         onComplete: null,
       });
+      const rewardChoices = quest.rewards ?? [];
       put({
         id: `${quest.id}.done`,
         speakerName,
         dialogueText: beats.done,
         vibratePattern: i === quests.length - 1 ? HAPTIC_FANFARE : HAPTIC_DOUBLE,
-        choices: [
-          { label: quest.turnInLabel, commits: true },
-          { label: "Not yet", commits: false },
-        ],
+        choices:
+          rewardChoices.length >= 2
+            ? [
+                ...rewardChoices.map((reward) => ({
+                  label: `${quest.turnInLabel} -- take the ${STORY_ITEM_CATALOGUE[reward].label}`,
+                  commits: true,
+                  reward,
+                })),
+                { label: "Not yet", commits: false },
+              ]
+            : [
+                { label: quest.turnInLabel, commits: true },
+                { label: "Not yet", commits: false },
+              ],
         onComplete: { action: "story-turn-in", traveler: id },
       });
     });

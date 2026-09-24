@@ -18,6 +18,8 @@ export const STORY_ITEM_IDS = [
   "oxen_speed_harness",
   "liquid_gold_honeycomb",
   "infinite_shard_matrix",
+  "cubic_pickaxe_head",
+  "sample_bag_of_curved_ore",
 ] as const;
 
 export type StoryItemId = (typeof STORY_ITEM_IDS)[number];
@@ -90,5 +92,15 @@ export const STORY_ITEM_CATALOGUE: Readonly<Record<StoryItemId, StoryItemDef>> =
     label: "Infinite Shard Matrix",
     blurb: "The beacon's spent core. Leo left it behind on purpose so the way home would stay open.",
     icon: "💠",
+  },
+  cubic_pickaxe_head: {
+    label: "Cubic Pickaxe Head",
+    blurb: "Brayden's spare head, still perfectly square. Swings a little stiff, bites twice as hard.",
+    icon: "⛏️",
+  },
+  sample_bag_of_curved_ore: {
+    label: "Sample Bag of Curved Ore",
+    blurb: "A few chunks Brayden couldn't stop staring at. Rock, back home, was never round.",
+    icon: "🪨",
   },
 };

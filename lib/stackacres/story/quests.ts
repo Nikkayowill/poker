@@ -23,6 +23,7 @@ import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS, type StackAcresToolTi
 import { machineItemLabel, type MachineItemId } from "../machine-items";
 import type { RecipeId } from "../recipes";
 import type { StoryEvent } from "./events";
+import type { StoryItemId } from "./items";
 import type { TravelerId } from "./travelers";
 
 export type StoryObjective =
@@ -161,6 +162,15 @@ export interface StoryQuest {
   readonly objectives: readonly StoryObjective[];
   /** The affirmative button on the turn-in bubble. */
   readonly turnInLabel: string;
+  /**
+   * What THIS quest grants on its own turn-in -- not only a line's last
+   * quest, which still separately grants the traveler's keepsake
+   * (TravelerDef.reward) on top of whatever this says. Absent or empty
+   * grants nothing. One entry is granted outright. Two or more means the
+   * player picks one; dialogue.ts turns each into its own turn-in button and
+   * state.ts refuses the turn-in until a valid choice is posted.
+   */
+  readonly rewards?: readonly StoryItemId[];
 }
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
@@ -277,6 +287,7 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "Iron Tools",
       objectives: [{ kind: "hold-tool", tool: "iron-shovel", target: 1 }],
       turnInLabel: "Show him the shovel",
+      rewards: ["cubic_pickaxe_head", "sample_bag_of_curved_ore"],
     },
     {
       id: "brayden.q2",

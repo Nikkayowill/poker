@@ -29,11 +29,15 @@ describe("TRAVELER_IDS", () => {
 });
 
 describe("TRAVELER_CATALOGUE", () => {
-  it("hands out every story item exactly once", () => {
-    const rewards = TRAVELER_IDS.map((id) => TRAVELER_CATALOGUE[id].reward);
-    expect(new Set(rewards).size).toBe(rewards.length);
-    expect([...rewards].sort()).toEqual([...STORY_ITEM_IDS].sort());
-    for (const reward of rewards) expect(isStoryItemId(reward)).toBe(true);
+  it("hands out every traveler keepsake exactly once, plus any per-quest rewards", () => {
+    const keepsakes = TRAVELER_IDS.map((id) => TRAVELER_CATALOGUE[id].reward);
+    expect(new Set(keepsakes).size).toBe(keepsakes.length);
+    for (const reward of keepsakes) expect(isStoryItemId(reward)).toBe(true);
+    // Every story item is either a traveler's line-final keepsake or a
+    // per-quest reward some quest offers (see StoryQuest.rewards) -- there is
+    // no unused item in the catalogue.
+    const questRewards = ALL_STORY_QUESTS.flatMap((quest) => quest.rewards ?? []);
+    expect([...keepsakes, ...questRewards].sort()).toEqual([...STORY_ITEM_IDS].sort());
   });
 
   it("stands every traveler in a real district", () => {

@@ -29,11 +29,15 @@ async function openStackAcres(context: BrowserContext, page: Page) {
   await page.waitForTimeout(1500);
 }
 
-test("the chip's line and the sheet's line are the same line", async ({ context, page }) => {
+test("the chip's title and the sheet's line are the same line", async ({ context, page }) => {
   await openStackAcres(context, page);
 
-  const chip = page.locator(".sa-goal");
-  const line = (await chip.locator(".sa-goal-line").innerText()).trim();
+  // The chip is a compact badge now (icon + "1/6"); the line it used to show
+  // in its own text lives in the title and in the sheet, not duplicated on
+  // screen. The title is "<chapter>: <now line>".
+  const chip = page.getByTitle(/^Chapter 1/);
+  const title = (await chip.getAttribute("title")) ?? "";
+  const line = title.split(": ").slice(1).join(": ");
   expect(line).toContain("Mill");
   expect(line).toContain("Wood");
 
@@ -45,7 +49,7 @@ test("the chip's line and the sheet's line are the same line", async ({ context,
 
 test("the sheet says what filled up while the player was away", async ({ context, page }) => {
   await openStackAcres(context, page);
-  await page.locator(".sa-goal").click();
+  await page.getByTitle(/^Chapter 1/).click();
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
 
@@ -59,7 +63,7 @@ test("the sheet says what filled up while the player was away", async ({ context
 
 test("the sheet shows both tracks: the buildings and the reach", async ({ context, page }) => {
   await openStackAcres(context, page);
-  await page.locator(".sa-goal").click();
+  await page.getByTitle(/^Chapter 1/).click();
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
 

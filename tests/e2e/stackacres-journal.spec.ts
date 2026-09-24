@@ -29,8 +29,15 @@ async function openStackAcres(context: BrowserContext, page: Page) {
   await page.waitForTimeout(1500);
 }
 
+/** At this viewport height the HUD is in its tight-landscape tier, so the
+ *  Journal chip lives behind the "More" drawer instead of sitting inline. */
+async function openMore(page: Page) {
+  await page.getByRole("button", { name: "More" }).click();
+}
+
 test("the chip's title and the sheet's line are the same line", async ({ context, page }) => {
   await openStackAcres(context, page);
+  await openMore(page);
 
   // The chip is a compact badge now (icon + "1/6"); the line it used to show
   // in its own text lives in the title and in the sheet, not duplicated on
@@ -49,6 +56,7 @@ test("the chip's title and the sheet's line are the same line", async ({ context
 
 test("the sheet says what filled up while the player was away", async ({ context, page }) => {
   await openStackAcres(context, page);
+  await openMore(page);
   await page.getByTitle(/^Chapter 1/).click();
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
@@ -63,6 +71,7 @@ test("the sheet says what filled up while the player was away", async ({ context
 
 test("the sheet shows both tracks: the buildings and the reach", async ({ context, page }) => {
   await openStackAcres(context, page);
+  await openMore(page);
   await page.getByTitle(/^Chapter 1/).click();
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();

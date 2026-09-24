@@ -13,7 +13,7 @@ interface Handle {
 /** The house is a walk-in interior: tap the building to go through the door,
  *  then tap the kitchen counter inside. See tests/e2e/stackacres-house.spec.ts. */
 const HOUSE_DOOR = { x: 481, y: 280 };
-const HOUSE_COUNTER = { x: 128, y: 75 };
+const HOUSE_COUNTER = { x: 56, y: 60 };
 const WALK_MS = 4_000;
 
 test.use({ viewport: { width: 932, height: 430 } });
@@ -52,8 +52,15 @@ async function openHouse(page: Page) {
   return house;
 }
 
+/** At this viewport height the HUD is in its tight-landscape tier, so the
+ *  Journal chip lives behind the "More" drawer instead of sitting inline. */
+async function openMore(page: Page) {
+  await page.getByRole("button", { name: "More" }).click();
+}
+
 test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", async ({ context, page }) => {
   await openStackAcres(context, page);
+  await openMore(page);
 
   // The chip is a compact badge now (icon + "1/6"), same standing-badge
   // posture as the Forge and Crossbreeding Bed -- the chapter/step detail
@@ -66,8 +73,9 @@ test("a new farm shows chapter 1 on the chip, with the Mill's own shortfall", as
   await chip.click();
   const sheet = page.getByRole("dialog", { name: "The Journal" });
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText("Chapter 1");
-  await expect(sheet).toContainText("Bread");
+  // The sheet numbers each chapter rather than spelling out "Chapter N" --
+  // the word itself only lives in the chip's title, already checked above.
+  await expect(sheet.getByRole("heading", { name: "Bread" })).toBeVisible();
   // 20,000 Gold and no Wood, so the line names the thing actually missing.
   await expect(sheet).toContainText("Mill");
   await expect(sheet).toContainText("Wood");
@@ -86,8 +94,10 @@ test("building the Stew Pot finishes chapter 2 with Ray's card, once", async ({ 
   await expect(card).toContainText("Next up, chapter 1: Bread");
   await card.getByRole("button", { name: "Thanks, Ray" }).click();
   await expect(card).toBeHidden();
+  await house.getByRole("button", { name: "Close" }).click();
 
   // Built out of order, so the goal is still the first unfinished chapter.
+  await openMore(page);
   await expect(page.getByTitle(/^Chapter 1/)).toContainText("1/6");
 
   await enterFarm(page);

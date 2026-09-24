@@ -82,6 +82,12 @@ const SAMPLE_FILES = {
   "leaf-rustle": "/audio/stackacres/sfx/leaf-rustle.mp3",
   "berry-pop": "/audio/stackacres/sfx/berry-pop.mp3",
   "quest-chime": "/audio/stackacres/sfx/quest-chime.mp3",
+  // The fishing reel and line, cut from CC0 recordings by art/stackacres-td/audio/reel.py. The
+  // loops are WAV so they come round without the click an MP3's padding makes.
+  "reel-slow": "/audio/stackacres/sfx/reel-slow.wav",
+  "reel-fast": "/audio/stackacres/sfx/reel-fast.wav",
+  "line-out": "/audio/stackacres/sfx/line-out.wav",
+  "rod-swish": "/audio/stackacres/sfx/rod-swish.mp3",
 } as const;
 
 type SampleName = keyof typeof SAMPLE_FILES;
@@ -354,6 +360,85 @@ class Ambience {
     source.connect(level);
     source.start(ctx.currentTime + 0.005);
     source.onended = () => level.disconnect();
+  }
+
+  /**
+   * A recording held on a loop for as long as an action lasts (the reel), with
+   * its level and speed steerable while it plays. Null when the context is not
+   * running or the file has not arrived yet; the caller just stays quiet that
+   * once, the same as a one-shot with no buffer.
+   */
+  startLoop(name: FarmSample, gain: number, rate: number): FarmLoop | null {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return null;
+    const buffer = this.buffers.get(name);
+    if (!buffer) {
+      this.ensureSample(name);
+      return null;
+    }
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    level.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.04);
+    level.connect(bus);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.playbackRate.value = rate;
+    source.connect(level);
+    // Started at a random point so two reels in a row never begin on the same click.
+    source.start(ctx.currentTime + 0.005, Math.random() * buffer.duration);
+    let stopped = false;
+    return {
+      set(nextGain: number, nextRate: number) {
+        if (stopped) return;
+        const at = ctx.currentTime;
+        level.gain.setTargetAtTime(nextGain, at, 0.03);
+        source.playbackRate.setTargetAtTime(nextRate, at, 0.05);
+      },
+      stop(fadeS = 0.06) {
+        if (stopped) return;
+        stopped = true;
+        const at = ctx.currentTime;
+        level.gain.cancelScheduledValues(at);
+        level.gain.setValueAtTime(level.gain.value, at);
+        level.gain.linearRampToValueAtTime(0, at + fadeS);
+        source.stop(at + fadeS + 0.02);
+        source.onended = () => level.disconnect();
+      },
+    };
+  }
+
+  /** A soft sine held while something charges, its pitch steered as it fills (the cast's power bar). */
+  startTone(gain: number, hz: number): FarmTone | null {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus || this.sfxMuted || ctx.state !== "running") return null;
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    level.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.05);
+    level.connect(bus);
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = hz;
+    osc.connect(level);
+    osc.start();
+    let stopped = false;
+    return {
+      pitch(next: number) {
+        if (!stopped) osc.frequency.setTargetAtTime(next, ctx.currentTime, 0.015);
+      },
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        const at = ctx.currentTime;
+        level.gain.cancelScheduledValues(at);
+        level.gain.setValueAtTime(level.gain.value, at);
+        level.gain.linearRampToValueAtTime(0, at + 0.05);
+        osc.stop(at + 0.07);
+        osc.onended = () => level.disconnect();
+      },
+    };
   }
 
   /** Suspends the whole graph while the tab is in the background. */
@@ -799,4 +884,26 @@ export function playFarmSample(name: FarmSample, gain?: number, spread?: number)
 /** Fires one animal recording in the foreground, as an answer to a press. */
 export function playFarmAnimal(kind: "hen" | "pig" | "cattle", gain?: number): void {
   ambience.playAnimal(kind, gain);
+}
+
+/** A running loop from `startFarmLoop`: steer it, then stop it. */
+export interface FarmLoop {
+  set(gain: number, rate: number): void;
+  stop(fadeS?: number): void;
+}
+
+/** A running tone from `startFarmTone`. */
+export interface FarmTone {
+  pitch(hz: number): void;
+  stop(): void;
+}
+
+/** Starts an action recording on a loop. See ./stackacres-sfx.ts for the intent-named callers. */
+export function startFarmLoop(name: FarmSample, gain: number, rate: number): FarmLoop | null {
+  return ambience.startLoop(name, gain, rate);
+}
+
+/** Starts a held tone. See ./stackacres-sfx.ts for the intent-named callers. */
+export function startFarmTone(gain: number, hz: number): FarmTone | null {
+  return ambience.startTone(gain, hz);
 }

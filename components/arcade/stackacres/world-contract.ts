@@ -121,6 +121,12 @@ export interface HuntScopeRequest {
 /** How a fight ended, as the map needs to act it out. */
 export type FishingCastOutcome = "landed" | "escaped";
 
+/** The fish a landed cast gave, as the server rolled it, and its name for "+1 Trout". */
+export interface RevealedFish {
+  readonly species: FishSpecies;
+  readonly noun: string;
+}
+
 
 /** One flag per traveler: has their unlock been met yet. Read straight off
  *  `StackAcresStoryView.travelers[id].unlocked`, so the scene never keeps
@@ -198,9 +204,8 @@ export interface StackAcresWorldApi {
   startHuntScope: (request: HuntScopeRequest) => void;
   /**
    * Hands the gauge's answer back to the map, so the farmer can act it out:
-   * landed pulls the catch up out of the water, escaped snaps the rod back on
-   * a slack line. Either way the line comes in and the input lock the cast put
-   * on comes off.
+   * landed keeps him on a bent rod until `revealCatch`, escaped snaps the rod
+   * back on a slack line and takes the input lock the cast put on off.
    *
    * The shell calls this from the same `onLanded`/`onEscaped` it already had
    * -- it has to be told, because the fight happens in a separate Phaser scene
@@ -208,6 +213,14 @@ export interface StackAcresWorldApi {
    * fishing-gauge-scene.ts's own header on why it is its own scene).
    */
   endFishingCast: (outcome: FishingCastOutcome) => void;
+  /**
+   * After a landed fight, once `catch-fish` has answered and the gauge is
+   * off the screen: the fish jumps out of the water into the farmer's hands
+   * and he holds it up with "+1 Trout" over it. Null when there is no fish
+   * after all (the request failed), and the line comes in empty. Either way
+   * this is what gives him back after a landed fight.
+   */
+  revealCatch: (fish: RevealedFish | null) => void;
   /** A line of text that lifts off the tap and fades -- the reward, or the
    *  reason there wasn't one. */
   floatAt: (at: TapPoint, text: string, tone: "gain" | "deny", icon?: PainterName) => void;
@@ -301,9 +314,11 @@ export interface StackAcresWorldProps {
    * water, the swing, the wait for a bite -- and only calls this once there is
    * something to fight, so a cast the player backs out of never reaches the
    * shell at all. `at` is where the bobber is sitting, which is where the
-   * cast's own lines belong. See scene.ts's `beginCast`.
+   * cast's own lines belong. `castPower` is the power bar the cast was thrown
+   * on, 0 to 1: how far out it landed, which `catch-fish` rolls against.
+   * See scene.ts's `beginCast`.
    */
-  onDockTap: (at: TapPoint) => void;
+  onDockTap: (at: TapPoint, castPower: number) => void;
   /** A finger landed on the treeline at the Ancestral Oak -- the entryway to
    *  a stalk, the way the dock is the entryway to a cast. The shell decides
    *  whether one is on offer and with which weapon; the map only reports the

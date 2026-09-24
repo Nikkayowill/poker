@@ -340,11 +340,11 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("spends a Radish on a baited cast and never guesses the fish", () => {
-    const patch = predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: { radish: 2 } }));
+    const patch = predictStackAcresAction({ action: "catch-fish", bait: true, cast: 0.5 }, ctx({ inventory: { radish: 2 } }));
     expect(patch?.inventory?.radish).toBe(1);
     expect(patch?.energy?.level).toBe(95);
     expect(patch?.inventory?.bluegill ?? 0).toBe(0);
-    expect(predictStackAcresAction({ action: "catch-fish", bait: true }, ctx({ inventory: {} }))).toBeNull();
+    expect(predictStackAcresAction({ action: "catch-fish", bait: true, cast: 0.5 }, ctx({ inventory: {} }))).toBeNull();
   });
 
   it("eats Bread for 20 energy and refuses when there is none or energy is full", () => {
@@ -357,9 +357,9 @@ describe("predictStackAcresAction: feed/water/clear", () => {
   });
 
   it("spends 5 energy on a landed cast and guesses nothing when too tired", () => {
-    expect(predictStackAcresAction({ action: "catch-fish", bait: false }, ctx())?.energy?.level).toBe(95);
+    expect(predictStackAcresAction({ action: "catch-fish", bait: false, cast: 0.5 }, ctx())?.energy?.level).toBe(95);
     expect(
-      predictStackAcresAction({ action: "catch-fish", bait: false }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
+      predictStackAcresAction({ action: "catch-fish", bait: false, cast: 0.5 }, ctx({ energy: { level: 4, updatedAt: NOW.toISOString() } })),
     ).toBeNull();
   });
 

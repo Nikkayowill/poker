@@ -22,7 +22,7 @@
  * before a gesture is a suspended one.
  */
 
-import { playFarmAnimal, playFarmSample, playFarmVoice } from "./stackacres-ambience";
+import { playFarmAnimal, playFarmSample, playFarmVoice, startFarmLoop, startFarmTone, type FarmLoop, type FarmTone } from "./stackacres-ambience";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 
 /**
@@ -212,4 +212,78 @@ export function forageSound() {
 /** A traveler's quest moving on a step. */
 export function questStepSound() {
   playFarmSample("quest-chime", 0.7, 0);
+}
+
+/**
+ * The reel, for as long as the line is coming in or being fought over. Two
+ * recordings of the same old reel, cranked slowly and cranked hard, crossfaded
+ * by `reelSpeed`: Stardew's slowReel and fastReel, played the way its fishing
+ * bar plays them (fast while you are reeling the fish in, slow while you are
+ * not).
+ */
+let reel: { slow: FarmLoop | null; fast: FarmLoop | null } | null = null;
+
+export function reelStart(speed: number) {
+  reelStop();
+  reel = { slow: startFarmLoop("reel-slow", 0, 1), fast: startFarmLoop("reel-fast", 0, 1) };
+  reelSpeed(speed);
+}
+
+/** 0 is the line going slack, 1 is winding in as hard as he can. */
+export function reelSpeed(speed: number) {
+  if (!reel) return;
+  const s = Math.min(1, Math.max(0, speed));
+  reel.slow?.set(0.5 * (1 - s), 0.9 + 0.2 * s);
+  reel.fast?.set(0.65 * s, 0.85 + 0.25 * s);
+}
+
+export function reelStop() {
+  reel?.slow?.stop();
+  reel?.fast?.stop();
+  reel = null;
+}
+
+/** Line whizzing off the reel while a cast is in the air. */
+let lineOut: FarmLoop | null = null;
+
+export function lineOutStart() {
+  lineOut?.stop();
+  lineOut = startFarmLoop("line-out", 0.55, 1);
+}
+
+export function lineOutStop() {
+  lineOut?.stop(0.08);
+  lineOut = null;
+}
+
+/** The rod coming over as the cast is let go. */
+export function castSwishSound() {
+  playFarmSample("rod-swish", 0.9, 0.08);
+}
+
+/** The float landing on the water. */
+export function floatPlopSound() {
+  playFarmSample("water-splash", 0.3, 0.25);
+}
+
+/** A cast let go at the very top of the bar. */
+export function perfectCastSound() {
+  playFarmSample("glass-ping", 0.7, 0);
+}
+
+/** A soft rising note while the cast's power bar fills, as Stardew's does. */
+let charge: FarmTone | null = null;
+
+export function chargeStart() {
+  charge?.stop();
+  charge = startFarmTone(0.03, 220);
+}
+
+export function chargePower(power: number) {
+  charge?.pitch(220 + 660 * power);
+}
+
+export function chargeStop() {
+  charge?.stop();
+  charge = null;
 }

@@ -254,7 +254,7 @@ const bodySchema = z.discriminatedUnion("action", [
   // The dock's cast, completed. Fills the shelf, same as a harvest -- moves
   // no Gold. Which fish is the server's own dice roll.
   // `bait` spends one Radish for better odds.
-  z.object({ action: z.literal("catch-fish"), bait: z.boolean() }),
+  z.object({ action: z.literal("catch-fish"), bait: z.boolean(), cast: z.number().min(0).max(1) }),
   // A completed stalk at the Oak's treeline. Fills the shelf with meat and a
   // pelt, same as a catch -- moves no Gold. Which quarry it was is the
   // server's own dice roll.
@@ -563,7 +563,7 @@ function run(token: string, action: StackAcresAction, now: Date) {
     case "draw-water":
       return drawStackAcresWater(token, now);
     case "catch-fish":
-      return catchStackAcresFish(token, action.bait, now);
+      return catchStackAcresFish(token, action.bait, action.cast, now);
     case "eat":
       return eatStackAcresFoodAction(token, action.item, now);
     case "sleep":

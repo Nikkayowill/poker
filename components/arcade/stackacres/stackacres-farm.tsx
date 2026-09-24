@@ -132,8 +132,8 @@ import {
   type NpcId,
   type StackAcresFriendshipView,
 } from "@/lib/stackacres/friendship";
-import { machineItemLabel, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
-import { FISHING_BAIT_ITEM, type FishSpecies } from "@/lib/stackacres/fishing";
+import { machineItemLabel, machineItemNoun, type MachineItemId, type MachineProcessedItem } from "@/lib/stackacres/machine-items";
+import { FISHING_BAIT_ITEM, castTier, type FishSpecies } from "@/lib/stackacres/fishing";
 import { rollGaugeDifficulty } from "@/lib/stackacres/fishing-gauge";
 import { rollQuarryDifficulty } from "@/lib/stackacres/hunt-proximity";
 import { QUARRY_CATALOGUE, bestWeapon, type QuarrySpecies } from "@/lib/stackacres/hunting";
@@ -1306,6 +1306,9 @@ export function StackAcresFarm() {
    *  Radish, and only sent as bait while they still do. */
   const [useBait, setUseBait] = useState(false);
   const baitOnHook = useRef(false);
+  /** The fish `catch-fish` just landed, kept until the gauge is off the
+   *  screen and the map can show it jumping out (see `onWorldFishHooked`). */
+  const landedFish = useRef<FishSpecies | null>(null);
   /**
    * Critical Harvest Cascade: what each SOLO collect's response said, keyed
    * by the crop it picked, for `triggerCascade` to read once `act`'s own
@@ -2086,20 +2089,14 @@ export function StackAcresFarm() {
             nonce: Date.now(),
           });
         }
-        // A cast pays no Gold -- it fills the shelf, same as a harvest. The
-        // farmer is already playing his reel-and-lift by the time this lands
-        // (the gauge's `onLanded` fired both at once); this is the actual
-        // catch, once the server's dice roll is in, so it is the first point
-        // anything can name the fish. Floats over the bobber, which is where
-        // the player has been looking for the whole fight.
         if ((body.action === "feed" || body.action === "feed-pen") && data.fed) {
           setLastCollect({ text: data.fed.toast, nonce: Date.now() });
         }
+        // A cast pays no Gold -- it fills the shelf, same as a harvest. This
+        // is the server's dice roll, the first point anything knows which fish
+        // it was. The map shows it once the gauge is gone (`onWorldFishHooked`).
         if (body.action === "catch-fish" && data.fishCaught) {
-          const label = machineItemLabel(data.fishCaught.species, 1);
-          waterSound();
-          setLastCollect({ text: `Caught ${label}!`, nonce: Date.now() });
-          if (anchor) world.current?.floatAt(anchor, `+1 ${label}`, "gain");
+          landedFish.current = data.fishCaught.species;
         }
         // A stalk pays no Gold either -- it fills the shelf with meat and a
         // pelt. The scope's own banner already played; this names what the
@@ -2908,13 +2905,18 @@ export function StackAcresFarm() {
    * the map through `endFishingCast` so the farmer acts it out -- the gauge is
    * its own Phaser scene and cannot reach him itself.
    *
-   * The species here is DIFFICULTY ONLY, rolled locally to pick how hard the
-   * fight is; the fish this cast actually lands is the server's roll inside
-   * `catch-fish`, so the gauge's copy stays species-free and the response's
-   * toast is what names the catch.
+   * The species here is DIFFICULTY ONLY, rolled locally from the odds the
+   * cast's own distance gives, to pick how hard the fight is; the fish this
+   * cast actually lands is the server's roll inside `catch-fish`, so the
+   * gauge's copy stays species-free.
+   *
+   * A landed fish is shown once both the answer is in and the gauge has
+   * closed, the way Stardew waits for its fishing bar to go before the fish
+   * comes out of the water: it jumps into the farmer's hands and he holds it
+   * up with "+1 Trout" over it (`revealCatch`).
    */
   const onWorldFishHooked = useCallback(
-    (at: TapPoint) => {
+    (at: TapPoint, castPower: number) => {
       tapAnchor.current = at;
       // Checked before the fight, so a tired player is never made to land a
       // fish the server would refuse. The server checks again on `catch-fish`.
@@ -2925,14 +2927,16 @@ export function StackAcresFarm() {
         return;
       }
       panelSound();
+      let landing: Promise<unknown> | null = null;
       world.current?.startFishingGauge({
-        species: rollGaugeDifficulty(),
+        species: rollGaugeDifficulty(castTier(castPower)),
         title: "Something's on the line!",
         landedHint: "Reeling it in...",
         onLanded: () => {
           world.current?.endFishingCast("landed");
+          landedFish.current = null;
           // Read at the moment of landing so a toggle flipped mid-fight counts.
-          void act({ action: "catch-fish", bait: baitOnHook.current });
+          landing = act({ action: "catch-fish", bait: baitOnHook.current, cast: castPower });
         },
         onEscaped: () => {
           world.current?.endFishingCast("escaped");
@@ -2940,11 +2944,30 @@ export function StackAcresFarm() {
           // bobber, where the player was already looking.
           world.current?.floatAt(at, "It got away.", "deny");
         },
-        // A no-op after either outcome above, and the thing that saves the
-        // player from a farmer stuck mid-fight when there was no gauge to
-        // fight on: `startFishingGauge` answers a missing map with `onClosed`
-        // alone, and the cast is still holding input at that point.
-        onClosed: () => world.current?.endFishingCast("escaped"),
+        // After a landed fight, the reveal. Otherwise a no-op after the
+        // escape above, and the thing that saves the player from a farmer
+        // stuck mid-fight when there was no gauge to fight on:
+        // `startFishingGauge` answers a missing map with `onClosed` alone,
+        // and the cast is still holding input at that point.
+        onClosed: () => {
+          if (!landing) {
+            world.current?.endFishingCast("escaped");
+            return;
+          }
+          // `act` never rejects. A refusal or a lost connection leaves no
+          // fish, and the line comes in empty.
+          void landing.then(() => {
+            const species = landedFish.current;
+            landedFish.current = null;
+            if (!mounted.current) return;
+            if (!species) {
+              world.current?.revealCatch(null);
+              return;
+            }
+            setLastCollect({ text: `Caught ${machineItemLabel(species, 1)}!`, nonce: Date.now() });
+            world.current?.revealCatch({ species, noun: machineItemNoun(species, 1) });
+          });
+        },
       });
     },
     [act, energy],

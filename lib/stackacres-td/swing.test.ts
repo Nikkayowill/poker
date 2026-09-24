@@ -25,7 +25,8 @@ describe("the swing lands on its strike frame", () => {
 
   it("keeps the old sheet in place: the swings come after everything the scene names by index", () => {
     const first = Math.min(...sheet.meta.frameTags.filter((t) => /^(hoe|axe|pick)_/.test(t.name)).map((t) => t.from));
-    const rest = sheet.meta.frameTags.filter((t) => !/^(hoe|axe|pick)_/.test(t.name));
+    // The fish hold (fish-catch.ts) is appended after the swings, so it moves nothing either.
+    const rest = sheet.meta.frameTags.filter((t) => !/^(hoe|axe|pick|hold)_/.test(t.name));
     expect(Math.max(...rest.map((t) => t.to))).toBeLessThan(first);
   });
 

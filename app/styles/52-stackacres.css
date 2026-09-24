@@ -645,6 +645,63 @@
   .sa-use-key.is-held { transform: none; }
 }
 
+/* ---- the cast's power bar --------------------------------------------
+ * Over the farmer's head while he aims at the dock (stackacres-td/scene.ts
+ * `showMeter`): hold anywhere to fill it, let go to throw. The scene moves it
+ * every frame with the camera; the fill's colour runs red to green with the
+ * power, as Stardew's does. */
+.sa-cast-meter {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.sa-cast-meter-bar {
+  width: 58px;
+  height: 12px;
+  padding: 2px;
+  border: 2px solid var(--sa-ink);
+  border-radius: 3px;
+  background: var(--sa-cream);
+  box-shadow: 0 2px 0 rgba(20, 12, 28, .45);
+}
+
+.sa-cast-meter-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 1px;
+  background: hsl(0 75% 48%);
+}
+
+.sa-cast-meter.is-full .sa-cast-meter-bar {
+  border-color: var(--sa-corn);
+  box-shadow: 0 0 0 2px var(--sa-ink), 0 0 10px 2px color-mix(in srgb, var(--sa-corn) 70%, transparent);
+}
+
+.sa-cast-meter-hint {
+  font: 700 12px/1 var(--sa-font);
+  color: var(--sa-cream);
+  white-space: nowrap;
+  text-shadow: 0 1px 0 #140c1c, 0 0 3px #140c1c;
+}
+
+.sa-cast-meter-hint.is-away { visibility: hidden; }
+
+.sa-cast-meter.is-thrown {
+  opacity: 0;
+  transition: opacity 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-cast-meter.is-thrown { transition: none; }
+}
+
 /* Every icon on this screen -- tool, HUD purse/feed, unit row, barn row -- is
    a <StackAcresIcon>: a vector painter drawn into a small DOM canvas rather
    than a pixel-art PNG. This is the fallback size; every context below sets

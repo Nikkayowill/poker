@@ -52,9 +52,12 @@ export const NPC_STATIONS: Record<string, Station> = {
     spots: [spot(520, 330, "down", "idle", 14_000), spot(540, 374, "up", "idle", 5000)],
   },
 
+  // On the bank west of the dock, clear of the oak, casting north into the lake. Not on the dock:
+  // it is the player's only way to their own cast spot (scene.ts DOCK_CAST_SPOT), and anyone
+  // stood on it took the tap that starts a cast.
   "pilgrim-dock": {
     area: "homestead",
-    spots: [spot(416, 44, "left", "fish", 16_000), spot(416, 110, "up", "idle", 5000)],
+    spots: [spot(328, 120, "up", "fish", 16_000), spot(320, 124, "right", "idle", 5000)],
   },
   // The grove of old trees by the workshop, on the yard's side of the wild land.
   "pilgrim-grove": {

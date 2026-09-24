@@ -3095,20 +3095,27 @@ export async function prayAtStackAcresShrine(
 export interface StoredFriendshipRow {
   points: number;
   lastGiftedDay: string | null;
+  lastGreetedDay: string | null;
   claimedRungs: readonly number[];
 }
 
-const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, claimedRungs: [] };
+const FRESH_FRIENDSHIP: StoredFriendshipRow = { points: 0, lastGiftedDay: null, lastGreetedDay: null, claimedRungs: [] };
 
 /** The stored friendship record for a profile/NPC pair, or a fresh one if
- *  no gift has ever landed. Read-only -- `giveStackAcresGift` is the only
- *  writer. */
+ *  no gift has ever landed. Read-only -- `giveStackAcresGift` and
+ *  `greetStackAcresNpc` are the only writers. */
 /** The single reader below filters `npc` server-side and reads one row; the
  *  batch RPC instead hands back every friendship row this profile has, so
  *  this does that same lookup client-side, then the identical "missing
  *  means fresh" parse `readStackAcresFriendship` runs. */
 export function stackAcresFriendshipFromBatchRows(
-  rows: { npc: string; points: number | string; last_gifted_day: string | null; claimed_rungs: number[] | null }[],
+  rows: {
+    npc: string;
+    points: number | string;
+    last_gifted_day: string | null;
+    last_greeted_day: string | null;
+    claimed_rungs: number[] | null;
+  }[],
   npc: NpcId,
 ): StoredFriendshipRow {
   const row = rows.find((entry) => entry.npc === npc);
@@ -3116,6 +3123,7 @@ export function stackAcresFriendshipFromBatchRows(
   return {
     points: Number(row.points),
     lastGiftedDay: row.last_gifted_day,
+    lastGreetedDay: row.last_greeted_day,
     claimedRungs: row.claimed_rungs ?? [],
   };
 }
@@ -3126,7 +3134,7 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
 
   const { data, error } = await supabase
     .from("homestead_friendship")
-    .select("points, last_gifted_day, claimed_rungs")
+    .select("points, last_gifted_day, last_greeted_day, claimed_rungs")
     .eq("profile_id", profileId)
     .eq("npc", npc)
     .maybeSingle();
@@ -3143,6 +3151,7 @@ export async function readStackAcresFriendship(profileId: string, npc: NpcId): P
             npc,
             points: (data as { points: number | string }).points,
             last_gifted_day: (data as { last_gifted_day: string | null }).last_gifted_day,
+            last_greeted_day: (data as { last_greeted_day: string | null }).last_greeted_day,
             claimed_rungs: (data as { claimed_rungs: number[] | null }).claimed_rungs,
           },
         ]
@@ -3207,7 +3216,7 @@ export async function giveStackAcresGift(
       }
     }
     const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
-    memoryFriendship.set(key, { points: newPoints, lastGiftedDay: today, claimedRungs });
+    memoryFriendship.set(key, { ...stored, points: newPoints, lastGiftedDay: today, claimedRungs });
     return { points: newPoints, outcome: "gifted", grantedRung };
   }
 
@@ -3226,6 +3235,67 @@ export async function giveStackAcresGift(
   return {
     points: Number(row.points),
     outcome: row.outcome as GiftAttemptResult["outcome"],
+    grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
+  };
+}
+
+/** What one call to `greet_homestead_npc` reports -- same shape as
+ *  `GiftAttemptResult` but there is no item to fail on, so "greeted" or
+ *  "already-greeted-today" are the only two outcomes. */
+export interface GreetAttemptResult {
+  points: number;
+  outcome: "greeted" | "already-greeted-today";
+  grantedRung: number | null;
+}
+
+/**
+ * Advances the caller's friendship with `npc` by a plain greet, for one UTC
+ * day, atomically. Its own day gate (`last_greeted_day`), separate from
+ * `giveStackAcresGift`'s -- see lib/stackacres/friendship.ts's own header for
+ * why greeting and gifting can never share one gate. No inventory touches
+ * either branch, unlike a gift.
+ */
+export async function greetStackAcresNpc(
+  profileId: string,
+  npc: NpcId,
+  points: number,
+  today: string,
+  rungThresholds: readonly number[],
+): Promise<GreetAttemptResult> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const key = `${profileId}:${npc}`;
+    const stored = memoryFriendship.get(key) ?? FRESH_FRIENDSHIP;
+    if (stored.lastGreetedDay === today) {
+      return { points: stored.points, outcome: "already-greeted-today", grantedRung: null };
+    }
+    const newPoints = stored.points + points;
+    let grantedRung: number | null = null;
+    for (let i = 0; i < rungThresholds.length; i++) {
+      if (newPoints >= rungThresholds[i] && !stored.claimedRungs.includes(i)) {
+        grantedRung = i;
+        break;
+      }
+    }
+    const claimedRungs = grantedRung === null ? stored.claimedRungs : [...stored.claimedRungs, grantedRung];
+    memoryFriendship.set(key, { ...stored, points: newPoints, lastGreetedDay: today, claimedRungs });
+    return { points: newPoints, outcome: "greeted", grantedRung };
+  }
+
+  const { data, error } = await supabase
+    .rpc("greet_homestead_npc", {
+      p_profile_id: profileId,
+      p_npc: npc,
+      p_points: points,
+      p_today: today,
+      p_rung_thresholds: rungThresholds,
+    })
+    .maybeSingle();
+  if (error) throw new Error(`Could not say hi to them: ${error.message}`);
+  const row = data as { points: number | string; outcome: string; granted_rung: number | string | null };
+  return {
+    points: Number(row.points),
+    outcome: row.outcome as GreetAttemptResult["outcome"],
     grantedRung: row.granted_rung === null ? null : Number(row.granted_rung),
   };
 }

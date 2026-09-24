@@ -6,8 +6,14 @@ import { NPC_ROUTINES, NPC_STATIONS } from "@/lib/stackacres-td/npc-schedules";
 /** How close the farmer comes before someone on their rounds, at a stationary chore, turns to face
  *  him instead of the chore's own facing. Only while stationary: someone mid-walk keeps walking,
  *  since freezing a moving body on the farmer's approach is what used to lock them in place for good
- *  when he never stepped away again -- their day must always keep moving underneath. */
-const GREET_REACH = 48;
+ *  when he never stepped away again -- their day must always keep moving underneath. Also never
+ *  overrides facing mid-walk for a subtler reason: the walk animation key IS the facing
+ *  (`walk_${facing}`), so swapping it to face the farmer while `walker.at` keeps moving in the
+ *  schedule's own direction would play someone walking sideways while sliding forward -- the exact
+ *  "awkward motion" a person's own day is supposed to never produce. Wider than a farmer's own
+ *  footprint (about half a tile) so the turn reads as "they noticed you" rather than only firing
+ *  once you are standing on top of them. */
+const GREET_REACH = 72;
 /** How fast someone catches back up with their day after stopping to talk, as a multiple of their pace. */
 const CATCH_UP = 2;
 /** Further behind than this (in map px), they are simply where their day says. */

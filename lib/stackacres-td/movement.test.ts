@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FOOT, advance, findPath, footClear, lineClear, steer, stickVector, tileKey, type Grid } from "./movement";
+import { FOOT, advance, approachSpot, findPath, footClear, lineClear, steer, stickVector, tileKey, type Grid } from "./movement";
 
 function grid(rows: string[]): Grid {
   const blocked = new Set<string>();
@@ -53,12 +53,32 @@ describe("stickVector", () => {
     expect(stickVector(5, 5, 50)).toBeNull();
   });
 
-  it("walks slowly just past the dead zone and at full speed near the edge", () => {
-    const slow = stickVector(0, -12, 50)!;
-    expect(slow.x).toBeCloseTo(0);
-    expect(Math.hypot(slow.x, slow.y)).toBeCloseTo(0.45 + 0.55 * ((0.24 - 0.2) / 0.55));
+  it("walks at full speed anywhere past the dead zone", () => {
+    const justPast = stickVector(0, -12, 50)!;
+    expect(justPast).toEqual({ x: 0, y: -1 });
     expect(stickVector(40, 0, 50)).toEqual({ x: 1, y: 0 });
     expect(stickVector(0, 500, 50)).toEqual({ x: 0, y: 1 });
+  });
+});
+
+describe("approachSpot", () => {
+  it("picks the open side nearest wherever he already is, not always the south side", () => {
+    const g = grid(["......", "......", "......", "......", "......"]);
+    const tree = { x: 48, y: 48 };
+    const fromNorth = approachSpot(g, { x: 48, y: 0 }, tree, 16, 32);
+    expect(fromNorth.anchor.y).toBeLessThan(tree.y);
+    expect(fromNorth.face).toEqual(tree);
+    const fromEast = approachSpot(g, { x: 96, y: 48 }, tree, 16, 32);
+    expect(fromEast.anchor.x).toBeGreaterThan(tree.x);
+  });
+
+  it("falls back to a boxed-in object's one open side", () => {
+    // Blocked north, south and west of (40, 40); only east is open.
+    const g = grid(["######", "######", "###..#", "######", "######"]);
+    const tree = { x: 40, y: 40 };
+    const { anchor } = approachSpot(g, { x: 0, y: 40 }, tree, 24, 24);
+    expect(footClear(g, anchor)).toBe(true);
+    expect(anchor.x).toBeGreaterThan(tree.x);
   });
 });
 

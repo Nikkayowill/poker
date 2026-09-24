@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { advance, findPath, steer, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
+import { advance, approachSpot, findPath, steer, tileKey, type Grid, type Point } from "@/lib/stackacres-td/movement";
 import {
   clampCentre,
   clampZoom,
@@ -1870,7 +1870,10 @@ export class TopdownScene extends Phaser.Scene {
         consider(this.dockTarget(spec), spec.y);
         continue;
       }
-      consider({ kind: "tag", tag: spec.tag, anchor: { x: spec.x, y: spec.y + 10 }, face: { x: spec.x, y: spec.y } }, spec.y);
+      // Whichever side of it he is already nearest -- not always the south side -- so he isn't
+      // walked round to the same spot and turned to face away from the camera every time.
+      const { anchor, face } = approachSpot(this.grid, this.pos, { x: spec.x, y: spec.y }, spec.w, spec.h);
+      consider({ kind: "tag", tag: spec.tag, anchor, face }, spec.y);
     }
     if (best) return (best as { target: Target }).target;
     const dock = this.propImages.find(({ spec }) => spec.tag === "dock");

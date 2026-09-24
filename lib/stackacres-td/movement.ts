@@ -141,8 +141,17 @@ export const FOOT = { halfWidth: 5, halfHeight: 3 };
 /** Under this share of the stick's reach, a resting thumb doesn't walk him. */
 export const STICK_DEAD_ZONE = 0.2;
 
-/** How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch him on its post. */
-const CORNER_ASSIST = 7;
+/**
+ * How far sideways he is nudged round a corner he is a few pixels off, so a gateway doesn't catch
+ * him on its post -- a full tile plus his own half-width, so the search always reaches past a
+ * single blocked tile beside him no matter where in it his feet happen to have landed. The old
+ * value (7px, under half a tile) could leave him permanently boxed against a one-tile obstacle:
+ * decorative props beside a building routinely sat him a few px into a blocked tile's neighbour,
+ * and 7px was never enough to slide him clear of it, while tap-to-move's tile-level pathfinding
+ * routed around the same obstacle with no trouble (Kayo, 2026-09-24: "hard to walk behind
+ * buildings" -- reproduced with the joystick specifically, not with tap-to-move).
+ */
+const CORNER_ASSIST = (grid: Grid) => grid.tile + FOOT.halfWidth;
 /** The longest single move before collision is checked again, well under a tile. */
 const SUBSTEP = 4;
 
@@ -200,7 +209,8 @@ function stepOnce(grid: Grid, from: Point, dir: Point, distance: number): Point 
   // Pushing mostly one way into a corner: find the nearest sideways offset that would let him through.
   const horizontal = Math.abs(dir.x) > Math.abs(dir.y);
   const forward = horizontal ? { x: Math.sign(dir.x) * distance, y: 0 } : { x: 0, y: Math.sign(dir.y) * distance };
-  for (let offset = 1; offset <= CORNER_ASSIST; offset++) {
+  const assist = CORNER_ASSIST(grid);
+  for (let offset = 1; offset <= assist; offset++) {
     for (const side of [-1, 1]) {
       const shifted = horizontal ? { x: from.x, y: from.y + side * offset } : { x: from.x + side * offset, y: from.y };
       if (!fits(shifted) || !fits({ x: shifted.x + forward.x, y: shifted.y + forward.y })) continue;

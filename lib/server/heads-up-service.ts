@@ -2,12 +2,12 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createHeadsUpGame } from "@/lib/game/engine";
-import type { GameState } from "@/lib/game/types";
+import type { GameState, PlayerAction } from "@/lib/game/types";
 import { isStakesTier, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
-import { createStoredGame } from "./game-store";
+import { createStoredGame, updateStoredGame } from "./game-store";
 import {
   cancelEmptyHeadsUpTable,
   claimHeadsUpSeat,
@@ -31,7 +31,6 @@ import { recordDuelResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import {
   confirmGoldDebitLedgered,
-  creditGoldByProfile,
   creditGoldByProfileLedgered,
   ensureProfile,
   getProfileById,
@@ -142,47 +141,131 @@ async function tableView(
 }
 
 /**
+ * The correlation id a seat's refund credits against: the stake's own id, so
+ * the reconcile cron and this app can never both refund it. Seats claimed
+ * before stake ids were stored get a fixed per-seat id instead.
+ */
+function seatRefundCorrelationId(tableId: string, seat: HeadsUpSeatRow): string {
+  return seat.stakeCorrelationId ?? `heads_up_seat_refund:${tableId}:${seat.playerId}:${seat.joinedAt}`;
+}
+
+const RETIRE_ACTION: PlayerAction = { type: "leave-seat" };
+
+/**
+ * Archives a game that was written but never linked to its table because the
+ * deal guard refused it. Stale sweeps only look at "playing" games, so the
+ * full starting stacks in it can never be credited out as cash.
+ */
+async function retireUnlinkedGame(state: GameState): Promise<void> {
+  const retired: GameState = {
+    ...state,
+    status: "archived",
+    version: state.version + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await updateStoredGame(retired, RETIRE_ACTION, state.hostToken);
+  } catch (error) {
+    console.error("heads_up.unlinked_game_retire_failed", { gameId: state.id, error });
+  }
+}
+
+/**
  * Deals the table the instant both seats are filled -- the one place
  * dealHeadsUpTable is called. Builds the real poker GameState from both
  * seated players' full profiles (createHeadsUpGame needs each seat's
- * cosmetics, not just an id) and persists it exactly like any other table
- * before linking heads_up_tables.game_id to it.
+ * cosmetics, not just an id) and persists it before linking
+ * heads_up_tables.game_id to it (that column is a foreign key, so the game
+ * row has to exist first).
+ *
+ * The deal guard checks that the seated players and tokens are exactly the
+ * ones the game was built from. If they changed in between (a leave and a
+ * rejoin), the unlinked game is archived and the deal is tried once more
+ * from fresh seats.
  *
  * Entrants are built from getHeadsUpSeats' own seat-ascending order, which is
  * what makes heads_up_table_players.seat and the dealt GameState's Seat.position
- * the same number for the same player -- settleHeadsUpIfFinished depends on
- * that correspondence to map a winning Seat.position back to a profile id.
+ * the same number for the same player.
+ *
+ * Never throws for a failed deal: every caller has already seated a paying
+ * player, and the table staying 'waiting' is an honest answer (either player
+ * can still leave for a refund).
  */
 async function dealHeadsUpTableIfReady(tableId: string): Promise<StoredHeadsUpTable | null> {
-  const [table, seats] = await Promise.all([getHeadsUpTableById(tableId), getHeadsUpSeats(tableId)]);
-  if (!table || seats.length < 2) return null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const [table, seats] = await Promise.all([getHeadsUpTableById(tableId), getHeadsUpSeats(tableId)]);
+    if (!table || table.status !== "waiting" || seats.length < 2) return null;
 
-  const profiles = await Promise.all(seats.map((seat) => getProfileById(seat.playerId)));
-  if (profiles.some((profile) => !profile)) {
-    // A seated player's profile row is gone (deleted account). Nothing to
-    // deal into -- the caller's own guard (dealt === null) surfaces as "try
-    // again", the same honest answer a seat-count race gets.
-    return null;
+    const profiles = await Promise.all(seats.map((seat) => getProfileById(seat.playerId)));
+    if (profiles.some((profile) => !profile)) {
+      // A seated player's profile row is gone (deleted account). Nothing to
+      // deal into -- the caller's own guard (dealt === null) surfaces as "try
+      // again", the same honest answer a seat-count race gets.
+      return null;
+    }
+
+    const entrants = seats.map((seat, index) => ({
+      token: seat.token,
+      profile: profiles[index] as PlayerProfile,
+    }));
+    const state: GameState = createHeadsUpGame(entrants, table.tier);
+    try {
+      await createStoredGame(state);
+    } catch (error) {
+      console.error("heads_up.deal_create_game_failed", { tableId, gameId: state.id, error });
+      return null;
+    }
+
+    let dealt: StoredHeadsUpTable | null;
+    try {
+      dealt = await dealHeadsUpTable({ tableId, seats, gameId: state.id });
+    } catch (error) {
+      // The answer was lost, not necessarily the write. Only the table row
+      // can say whether this game got linked, and if it can't be read the
+      // game is left alone rather than risk archiving a live match.
+      console.error("heads_up.deal_guard_failed", { tableId, gameId: state.id, error });
+      const current = await getHeadsUpTableById(tableId).catch(() => undefined);
+      if (current === undefined) return null;
+      dealt = current?.gameId === state.id ? current : null;
+    }
+
+    if (dealt) {
+      await afterHeadsUpDeal(dealt);
+      return dealt;
+    }
+    await retireUnlinkedGame(state);
   }
+  return null;
+}
 
-  const entrants = seats.map((seat, index) => ({
-    token: seat.token,
-    profile: profiles[index] as PlayerProfile,
-  }));
-  const state: GameState = createHeadsUpGame(entrants, table.tier);
-  await createStoredGame(state);
-
-  const dealt = await dealHeadsUpTable({ tableId, expectedSeats: seats.length, gameId: state.id });
-  if (!dealt) return null;
-
-  // Every seated player wagered, so every seated player earns XP at the
-  // ordinary rate -- same parity argument cribbage-service.ts's
-  // dealTableIfReady makes. `null` throughout: only the caller who triggered
-  // the deal has a live session token here, and awardWager's Gold-crediting
-  // path is keyed just as well by profile id.
-  await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake)));
-
-  return dealt;
+/**
+ * Bookkeeping once a table is durably dealt. Seats are re-read because the
+ * table is now 'active', so they can no longer change. Nothing here may fail
+ * the request: the match has started.
+ */
+async function afterHeadsUpDeal(dealt: StoredHeadsUpTable): Promise<void> {
+  try {
+    const seats = await getHeadsUpSeats(dealt.id);
+    // Confirming each stake again means a confirm that failed at join time
+    // can't let the reconcile cron refund a player who is now playing.
+    await Promise.all(
+      seats.map((seat) =>
+        seat.stakeCorrelationId
+          ? confirmGoldDebitLedgered(seat.stakeCorrelationId).catch((error) => {
+              console.error("heads_up.deal_confirm_failed", { tableId: dealt.id, playerId: seat.playerId, error });
+            })
+          : undefined,
+      ),
+    );
+    // Every seated player wagered, so every seated player earns XP at the
+    // ordinary rate -- same parity argument cribbage-service.ts's
+    // dealTableIfReady makes. `null` throughout: only the caller who
+    // triggered the deal has a live session token here, and awardWager's
+    // Gold-crediting path is keyed just as well by profile id.
+    await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.stake)));
+  } catch (error) {
+    console.error("heads_up.after_deal_failed", { tableId: dealt.id, error });
+  }
 }
 
 // ---- tables ------------------------------------------------------------
@@ -224,22 +307,17 @@ export async function openHeadsUpQuickPlay(
     });
 
   const open = await findOpenHeadsUpTable(tier, profile.id);
+  let seatedAt: StoredHeadsUpTable;
   let created: StoredHeadsUpTable | null = null;
   try {
     if (open) {
-      await claimHeadsUpSeat(open.id, profile.id, token);
-      await confirmDebit();
-      const dealt = await dealHeadsUpTableIfReady(open.id);
-      const current = dealt ?? (await getHeadsUpTableById(open.id)) ?? open;
-      const seats = await getHeadsUpSeats(open.id);
-      return { table: await tableView(current, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
+      await claimHeadsUpSeat(open.id, profile.id, token, stakeCorrelationId);
+      seatedAt = open;
+    } else {
+      created = await createHeadsUpTableRow(profile.id, tier, stake, null);
+      await claimHeadsUpSeat(created.id, profile.id, token, stakeCorrelationId);
+      seatedAt = created;
     }
-
-    created = await createHeadsUpTableRow(profile.id, tier, stake, null);
-    await claimHeadsUpSeat(created.id, profile.id, token);
-    await confirmDebit();
-    const seats = await getHeadsUpSeats(created.id);
-    return { table: await tableView(created, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
   } catch (error) {
     await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_quick_play_refund").catch(
       (refundError) => {
@@ -258,6 +336,14 @@ export async function openHeadsUpQuickPlay(
     if (error instanceof HeadsUpTableNotJoinable) throw new HeadsUpRequestError(error.message, 409);
     throw error;
   }
+
+  // The seat is real from here on, so nothing below may refund it. A deal
+  // that fails leaves the table waiting, and leaving it still refunds.
+  await confirmDebit();
+  const dealt = open ? await dealHeadsUpTableIfReady(seatedAt.id) : null;
+  const current = dealt ?? (await getHeadsUpTableById(seatedAt.id)) ?? seatedAt;
+  const seats = await getHeadsUpSeats(seatedAt.id);
+  return { table: await tableView(current, seats, profile.id), profile: { ...profile, goldBalance: debited.goldBalance } };
 }
 
 /**
@@ -291,7 +377,7 @@ export async function openHeadsUpInvite(
   let table: StoredHeadsUpTable | null = null;
   try {
     table = await createHeadsUpTableRow(profile.id, tier, stake, friendProfileId);
-    await claimHeadsUpSeat(table.id, profile.id, token);
+    await claimHeadsUpSeat(table.id, profile.id, token, stakeCorrelationId);
   } catch (error) {
     await creditGoldByProfileLedgered(profile.id, stake, stakeCorrelationId, "heads_up_invite_refund").catch(
       (refundError) => {
@@ -341,7 +427,7 @@ export async function joinHeadsUpTable(
   }
 
   try {
-    await claimHeadsUpSeat(tableId, profile.id, token);
+    await claimHeadsUpSeat(tableId, profile.id, token, stakeCorrelationId);
   } catch (error) {
     await creditGoldByProfileLedgered(profile.id, table.stake, stakeCorrelationId, "heads_up_join_refund").catch(
       (refundError) => {
@@ -396,8 +482,16 @@ export async function leaveHeadsUpTable(token: string, tableId: string): Promise
   const left = await leaveHeadsUpTableRow(tableId, profile.id);
   if (!left) throw new HeadsUpRequestError("You are not in that match, or it has already started.", 409);
 
-  const refunded = await creditGoldByProfile(profile.id, table.stake);
-  return { profile: refunded ?? profile };
+  // Credited against the stake's own ledger id: if the reconcile cron
+  // already refunded it (its confirm failed), this is a no-op, not a second
+  // refund.
+  const correlationId = seatRefundCorrelationId(tableId, left);
+  const refunded = await creditGoldByProfileLedgered(profile.id, table.stake, correlationId, "heads_up_leave_refund")
+    .catch((error: unknown) => {
+      console.error("heads_up.leave_refund_failed", { tableId, profileId: profile.id, correlationId, error });
+      throw error;
+    });
+  return { profile: refunded.success ? { ...profile, goldBalance: refunded.goldBalance } : profile };
 }
 
 /**
@@ -428,20 +522,18 @@ export async function settleHeadsUpIfFinished(state: GameState): Promise<PlayerP
 
   try {
     const table = await getHeadsUpTableByGameId(state.id);
-    if (!table || table.status !== "active") return null;
+    if (!table) return null;
+    // A completed table is never paid again here. Tables settled before the
+    // payout moved onto the ledger have no ledger row under its key, so a
+    // "retry" would land a second pot. Only the call that wins the settle pays.
+    if (table.status !== "active") return null;
 
     const settled = await settleHeadsUpTable(table, winnerId);
     // Rule 2: a lost race did not happen, so it does not pay. Whoever won
     // that race is settling and paying this same table right now.
     if (!settled) return null;
 
-    const pot = table.stake * 2;
-    let profile: PlayerProfile | null = null;
-    try {
-      profile = await creditGoldByProfile(winnerId, pot);
-    } catch (error) {
-      console.error("heads_up.payout_credit_failed", { tableId: table.id, winnerId, pot, error });
-    }
+    const profile = await payHeadsUpPot(settled, winnerId);
 
     // Awaited rather than fired-and-forgotten, same reasoning cribbage's own
     // payOutTable gives: a serverless invocation can be frozen right after
@@ -458,6 +550,23 @@ export async function settleHeadsUpIfFinished(state: GameState): Promise<PlayerP
     return profile;
   } catch (error) {
     console.error("heads_up.settle_failed", { gameId: state.id, error });
+    return null;
+  }
+}
+
+/**
+ * Credits the pot (rule 3: one credit of stake * 2) under a correlation id
+ * fixed to the table, so a retry can never pay it twice. Returns the
+ * winner's profile only when this call is the one that paid.
+ */
+async function payHeadsUpPot(table: StoredHeadsUpTable, winnerId: string): Promise<PlayerProfile | null> {
+  const pot = table.stake * 2;
+  try {
+    const paid = await creditGoldByProfileLedgered(winnerId, pot, `heads_up_payout:${table.id}`, "heads_up_payout");
+    if (!paid.success || paid.alreadyApplied) return null;
+    return await getProfileById(winnerId);
+  } catch (error) {
+    console.error("heads_up.payout_credit_failed", { tableId: table.id, winnerId, pot, error });
     return null;
   }
 }

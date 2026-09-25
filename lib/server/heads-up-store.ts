@@ -47,6 +47,13 @@ export interface HeadsUpSeatRow {
    */
   token: string;
   joinedAt: string;
+  /**
+   * The gold_ledger correlation id of the stake that paid for this seat.
+   * Refunds credit against it so the reconcile cron can never refund the
+   * same stake a second time. Null only for seats claimed before the
+   * column existed.
+   */
+  stakeCorrelationId: string | null;
 }
 
 /** A guard genuinely failed (table full, already started, reserved for someone else): an ordinary outcome, not a fault. */
@@ -105,6 +112,24 @@ interface TableRow {
   created_at: string;
   started_at: string | null;
   settled_at: string | null;
+}
+
+interface SeatRow {
+  seat: number;
+  player_id: string;
+  token: string;
+  joined_at: string;
+  stake_correlation_id: string | null;
+}
+
+function seatFromRow(row: SeatRow): HeadsUpSeatRow {
+  return {
+    seat: Number(row.seat) as 0 | 1,
+    playerId: String(row.player_id),
+    token: String(row.token),
+    joinedAt: String(row.joined_at),
+    stakeCorrelationId: row.stake_correlation_id ? String(row.stake_correlation_id) : null,
+  };
 }
 
 function fromRow(row: TableRow): StoredHeadsUpTable {
@@ -206,16 +231,11 @@ export async function getHeadsUpSeats(tableId: string): Promise<HeadsUpSeatRow[]
   }
   const { data, error } = await supabase
     .from("heads_up_table_players")
-    .select("seat, player_id, token, joined_at")
+    .select("seat, player_id, token, joined_at, stake_correlation_id")
     .eq("table_id", tableId)
     .order("seat", { ascending: true });
   if (error) throw new Error(`Could not load that table's seats: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    seat: Number(row.seat) as 0 | 1,
-    playerId: String(row.player_id),
-    token: String(row.token),
-    joinedAt: String(row.joined_at),
-  }));
+  return (data ?? []).map((row) => seatFromRow(row as SeatRow));
 }
 
 /** Waiting tables reserved for this specific player -- their own pending-invite poll. */
@@ -384,6 +404,7 @@ export async function claimHeadsUpSeat(
   tableId: string,
   playerId: string,
   token: string,
+  stakeCorrelationId: string,
 ): Promise<{ seat: 0 | 1; seatedCount: number; hostId: string }> {
   const supabase = adminClient();
 
@@ -400,13 +421,18 @@ export async function claimHeadsUpSeat(
     }
     if (seats.length >= 2) throw new HeadsUpTableNotJoinable("That table is full.");
     const seat: 0 | 1 = seats.some((s) => s.seat === 0) ? 1 : 0;
-    const next = [...seats, { seat, playerId, token, joinedAt: new Date().toISOString() }];
+    const next = [...seats, { seat, playerId, token, joinedAt: new Date().toISOString(), stakeCorrelationId }];
     memorySeats.set(tableId, next);
     return { seat, seatedCount: next.length, hostId: table.hostId };
   }
 
   const { data, error } = await supabase
-    .rpc("claim_heads_up_seat", { p_table_id: tableId, p_player_id: playerId, p_token: token })
+    .rpc("claim_heads_up_seat", {
+      p_table_id: tableId,
+      p_player_id: playerId,
+      p_token: token,
+      p_stake_correlation_id: stakeCorrelationId,
+    })
     .single();
   if (error) {
     if (error.code === "23505") throw new HeadsUpTableNotJoinable("You are already seated at that table.");
@@ -419,23 +445,31 @@ export async function claimHeadsUpSeat(
 
 /**
  * The one transition out of 'waiting', once both seats are filled. Returns
- * null when the guard failed (seated count changed, table already dealt)
- * rather than throwing -- an ordinary race outcome, same as
- * dealCribbageTable.
+ * null when the guard failed (table already dealt, or the seated players are
+ * no longer exactly the `seats` the game was built from) rather than
+ * throwing -- an ordinary race outcome, same as dealCribbageTable.
+ *
+ * `seats` must be in seat order. Checking the exact players and tokens, not
+ * just the count, is what stops a leave plus a rejoin between the caller's
+ * seat read and this lock from dealing a refunded player into the game.
  */
 export async function dealHeadsUpTable(input: {
   tableId: string;
-  expectedSeats: number;
+  seats: HeadsUpSeatRow[];
   gameId: string;
 }): Promise<StoredHeadsUpTable | null> {
   const supabase = adminClient();
   const now = new Date().toISOString();
+  const playerIds = input.seats.map((seat) => seat.playerId);
+  const tokens = input.seats.map((seat) => seat.token);
 
   if (!supabase) {
     const table = memoryTables.get(input.tableId);
     if (!table || table.status !== "waiting") return null;
-    const seatedCount = (memorySeats.get(input.tableId) ?? []).length;
-    if (seatedCount !== input.expectedSeats) return null;
+    const seated = [...(memorySeats.get(input.tableId) ?? [])].sort((a, b) => a.seat - b.seat);
+    const matches = seated.length === 2
+      && seated.every((seat, index) => seat.playerId === playerIds[index] && seat.token === tokens[index]);
+    if (!matches) return null;
     const dealt: StoredHeadsUpTable = {
       ...table,
       status: "active",
@@ -448,7 +482,12 @@ export async function dealHeadsUpTable(input: {
   }
 
   const { data, error } = await supabase
-    .rpc("deal_heads_up_table", { p_table_id: input.tableId, p_game_id: input.gameId })
+    .rpc("deal_heads_up_table", {
+      p_table_id: input.tableId,
+      p_game_id: input.gameId,
+      p_player_ids: playerIds,
+      p_tokens: tokens,
+    })
     .single();
   if (error) {
     if (error.code === "P0001") return null;
@@ -505,14 +544,9 @@ export async function leaveHeadsUpTable(
     .rpc("leave_heads_up_table", { p_table_id: tableId, p_player_id: playerId })
     .maybeSingle();
   if (error) throw new Error(`Could not leave that heads-up table: ${error.message}`);
-  if (!data) return null;
-  const row = data as { seat: number; player_id: string; token: string; joined_at: string };
-  return {
-    seat: row.seat as 0 | 1,
-    playerId: String(row.player_id),
-    token: String(row.token),
-    joinedAt: String(row.joined_at),
-  };
+  // A null composite can come back as a row of nulls rather than null.
+  if (!data || !(data as SeatRow).player_id) return null;
+  return seatFromRow(data as SeatRow);
 }
 
 /**

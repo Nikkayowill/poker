@@ -3,24 +3,25 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createTournamentGame, SEAT_COUNT } from "@/lib/game/engine";
 import { isStakesTier, TIER_CONFIG, type StakesTier } from "@/lib/game/tiers";
-import type { GameState } from "@/lib/game/types";
+import type { GameState, PlayerAction } from "@/lib/game/types";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
 import { ArcadeRequestError, toArcadeErrorResponse } from "./arcade-request";
-import { createStoredGame, getStoredGame } from "./game-store";
+import { createStoredGame, getStoredGame, updateStoredGame } from "./game-store";
 import { recordMultiWayResult } from "./leaderboard-store";
 import { applyMissionEvent } from "./mission-store";
 import {
   confirmGoldDebitLedgered,
-  creditGoldByProfile,
   creditGoldByProfileLedgered,
   ensureProfile,
+  getProfileById,
   getPublicProfilesByIds,
   spendStakeLedgered,
 } from "./profile-store";
 import { awardWager } from "./progression-store";
 import {
   cancelEmptySitAndGoTable,
+  cancelStaleSitAndGoTable,
   claimSitAndGoSeat,
   createSitAndGoTableRow,
   dealSitAndGoTable,
@@ -30,6 +31,7 @@ import {
   getSitAndGoSeats,
   getSitAndGoTableById,
   getSitAndGoTableByGameId,
+  getUndealtActiveSitAndGoTables,
   leaveSitAndGoTable as leaveSitAndGoTableRow,
   settleSitAndGoTable,
   setSitAndGoGameId,
@@ -67,7 +69,9 @@ import {
  * and /advance routes keep working unchanged. That state can't be written
  * speculatively before the deal guard succeeds (a lost race would orphan a
  * games row), so dealing is two steps -- dealSitAndGoTableIfReady below is
- * the only place either half is called.
+ * the only place either half is called. If the second step fails, the table
+ * is cancelled and every entry fee refunded once; a crash between the steps
+ * is caught later by sweepUndealtSitAndGoTables.
  *
  * There is no host-early-start path at all, unlike cribbage: a Sit & Go has
  * no bot fill to cover a short-handed table, so a 4-of-6 start would just be
@@ -164,20 +168,33 @@ async function activeRegistrationFor(profileId: string): Promise<StoredSitAndGoT
 }
 
 /**
- * Pays a completed table out. Never throws: the table is already durably
+ * The correlation id a seat's refund credits against: the entry fee's own
+ * id, so the reconcile cron and this app can never both refund it. Seats
+ * claimed before stake ids were stored get a fixed per-seat id instead.
+ */
+function seatRefundCorrelationId(tableId: string, seat: SitAndGoSeatRow): string {
+  return seat.stakeCorrelationId ?? `sit_and_go_seat_refund:${tableId}:${seat.playerId}:${seat.joinedAt}`;
+}
+
+/**
+ * Credits the prize pool under a correlation id fixed to the table, so a
+ * retry can never pay it twice. Never throws: the table is already durably
  * settled by the time this runs, and a credit failure here must not turn a
  * finished tournament into an error response for whichever poker action
- * request happened to trigger it. Logged loudly instead, same discipline as
- * cribbage-service.ts's payOutTable.
+ * request happened to trigger it. Returns the winner's profile only when
+ * this call is the one that paid.
  */
-async function payOutSitAndGo(
-  table: StoredSitAndGoTable,
-  seats: SitAndGoSeatRow[],
-): Promise<PlayerProfile | null> {
+async function payPrizePool(table: StoredSitAndGoTable): Promise<PlayerProfile | null> {
   if (!table.winnerId || !table.prizePool) return null;
-  let profile: PlayerProfile | null = null;
   try {
-    profile = await creditGoldByProfile(table.winnerId, table.prizePool);
+    const paid = await creditGoldByProfileLedgered(
+      table.winnerId,
+      table.prizePool,
+      `sit_and_go_payout:${table.id}`,
+      "sit_and_go_payout",
+    );
+    if (!paid.success || paid.alreadyApplied) return null;
+    return await getProfileById(table.winnerId);
   } catch (error) {
     console.error("sit_and_go.payout_credit_failed", {
       tableId: table.id,
@@ -185,7 +202,17 @@ async function payOutSitAndGo(
       prizePool: table.prizePool,
       error,
     });
+    return null;
   }
+}
+
+/** Pays a just-settled table out, then records the win. Never throws. */
+async function payOutSitAndGo(
+  table: StoredSitAndGoTable,
+  seats: SitAndGoSeatRow[],
+): Promise<PlayerProfile | null> {
+  if (!table.winnerId || !table.prizePool) return null;
+  const profile = await payPrizePool(table);
 
   // Awaited, not fired-and-forgotten: a serverless invocation can freeze
   // right after this function's caller (the poker route) responds, and an
@@ -196,60 +223,178 @@ async function payOutSitAndGo(
   return profile;
 }
 
+const RETIRE_ACTION: PlayerAction = { type: "leave-seat" };
+
+/**
+ * Archives a game that was written but could not be linked to its table.
+ * Stale sweeps only look at "playing" games, so the full starting stacks in
+ * it can never be credited out as cash.
+ */
+async function retireUnlinkedGame(state: GameState): Promise<void> {
+  const retired: GameState = {
+    ...state,
+    status: "archived",
+    version: state.version + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await updateStoredGame(retired, RETIRE_ACTION, state.hostToken);
+  } catch (error) {
+    console.error("sit_and_go.unlinked_game_retire_failed", { gameId: state.id, error });
+  }
+}
+
+/**
+ * Cancels a table that went 'active' but never got a playable game, and
+ * refunds every entry fee once. The version-guarded cancel is what makes it
+ * once: whoever loses that race (this path, the sweep, or a late link) pays
+ * nothing, and each refund is keyed to the seat's own stake besides.
+ */
+async function unwindUndealtSitAndGo(
+  table: StoredSitAndGoTable,
+  seats: SitAndGoSeatRow[],
+): Promise<StoredSitAndGoTable | null> {
+  const cancelled = await cancelStaleSitAndGoTable(table.id, table.version);
+  if (!cancelled) return getSitAndGoTableById(table.id);
+
+  for (const seat of seats) {
+    const correlationId = seatRefundCorrelationId(table.id, seat);
+    try {
+      await creditGoldByProfileLedgered(seat.playerId, table.entryFee, correlationId, "sit_and_go_deal_failed_refund");
+    } catch (error) {
+      console.error("sit_and_go.deal_failed_refund_failed", {
+        tableId: table.id,
+        playerId: seat.playerId,
+        correlationId,
+        error,
+      });
+    }
+  }
+  return cancelled;
+}
+
+/**
+ * Step 2 of the deal: builds the poker game from the locked seats, persists
+ * it, and links it to the table. Throws if the game ends up unlinked, after
+ * archiving any game it wrote.
+ */
+async function startSitAndGoGame(
+  dealt: StoredSitAndGoTable,
+  seats: SitAndGoSeatRow[],
+): Promise<StoredSitAndGoTable> {
+  // Each seat's profile is resolved fresh off its own registered token, the
+  // same way every other seat-construction path in this app resolves
+  // identity from a token rather than trusting a stale cached copy.
+  const profiles = await Promise.all(seats.map((seat) => ensureProfile(seat.token)));
+  const game = createTournamentGame(
+    seats.map((seat, index) => ({ token: seat.token, profile: profiles[index] })),
+    dealt.tier,
+  );
+  // games.id is a foreign key target, so the game has to exist before the link.
+  await createStoredGame(game);
+
+  let linked: StoredSitAndGoTable | null;
+  try {
+    linked = await setSitAndGoGameId(dealt.id, game.id);
+  } catch (error) {
+    // The answer was lost, not necessarily the write.
+    const current = await getSitAndGoTableById(dealt.id);
+    if (current?.gameId === game.id) return current;
+    await retireUnlinkedGame(game);
+    throw error;
+  }
+  if (linked) return linked;
+  await retireUnlinkedGame(game);
+  throw new Error("The dealt table no longer accepts a game.");
+}
+
 /**
  * Deals a table the instant its 6th seat fills. The only caller of
  * dealSitAndGoTable/setSitAndGoGameId -- see this module's own header for
  * why there is exactly one deal path here, unlike cribbage's two.
  */
 async function dealSitAndGoTableIfReady(tableId: string): Promise<StoredSitAndGoTable | null> {
-  const seats = await getSitAndGoSeats(tableId);
-  if (seats.length !== SEAT_COUNT) return null;
+  const seatCount = (await getSitAndGoSeats(tableId)).length;
+  if (seatCount !== SEAT_COUNT) return null;
 
   // Step 1: flip the table active under the exact-seat-count guard, with no
   // state payload yet -- see the migration's header for why building the
   // GameState before this guard succeeds would risk an orphaned games row.
-  const dealt = await dealSitAndGoTable(tableId, seats.length);
+  const dealt = await dealSitAndGoTable(tableId, seatCount);
   if (!dealt) return null;
 
-  // Step 2: only now build and persist the real poker game. Each seat's
-  // profile is resolved fresh off its own registered token, the same way
-  // every other seat-construction path in this app resolves identity from a
-  // token rather than trusting a stale, possibly-since-changed cached copy.
-  //
-  // Wrapped: step 1 already committed (the table is durably 'active', every
-  // seat's entry fee already correctly debited), so a failure here must not
-  // read as "your join failed" to whichever caller's request triggered this
-  // -- their money and their seat are both already real. Returning `dealt`
-  // (still active, gameId null -- a valid resting state; see the migration's
-  // own comment on why 'active' is unconstrained on game_id) instead of
-  // rethrowing lets that request succeed honestly: the table shows as still
-  // dealing rather than erroring. This is a real, accepted residual gap, not
-  // a full fix -- nothing here retries or self-heals a table stuck in this
-  // state, and if createStoredGame itself succeeded before the failure, the
-  // GameState it wrote is now orphaned (no sit_and_go_tables row points at
-  // it) until someone manually calls setSitAndGoGameId. Logged loudly so
-  // that's discoverable rather than silent.
-  try {
-    const profiles = await Promise.all(seats.map((seat) => ensureProfile(seat.token)));
-    const game = createTournamentGame(
-      seats.map((seat, index) => ({ token: seat.token, profile: profiles[index] })),
-      dealt.tier,
-    );
-    await createStoredGame(game);
-    const recorded = await setSitAndGoGameId(dealt.id, game.id);
+  // Read after the lock: an 'active' table takes no joins or leaves, so
+  // these are exactly the players the game is built for.
+  const seats = await getSitAndGoSeats(tableId);
 
+  let started: StoredSitAndGoTable;
+  try {
+    started = await startSitAndGoGame(dealt, seats);
+  } catch (error) {
+    // Every fee is already debited and the table is 'active', so it can't
+    // be left here: its players would read as registered forever. The
+    // caller's own request still succeeds and shows the cancelled table.
+    console.error("sit_and_go.deal_step_two_failed", { tableId: dealt.id, error });
+    return unwindUndealtSitAndGo(dealt, seats).catch((unwindError: unknown) => {
+      console.error("sit_and_go.deal_unwind_failed", { tableId: dealt.id, error: unwindError });
+      return dealt;
+    });
+  }
+
+  // Nothing below may fail the request: the tournament has started.
+  try {
+    // Confirming each fee again means a confirm that failed at join time
+    // can't let the reconcile cron refund a player who is now playing.
+    await Promise.all(
+      seats.map((seat) =>
+        seat.stakeCorrelationId
+          ? confirmGoldDebitLedgered(seat.stakeCorrelationId).catch((error) => {
+              console.error("sit_and_go.deal_confirm_failed", { tableId: dealt.id, playerId: seat.playerId, error });
+            })
+          : undefined,
+      ),
+    );
     // Every registered player wagered, so every registered player earns XP
     // at the ordinary rate -- same parity argument cribbage's
     // dealTableIfReady makes. `null` throughout: only the caller who
     // triggered the deal has a live session token here, and awardWager's
     // Gold-crediting path is keyed just as well by profile id.
     await Promise.all(seats.map((seat) => awardWager(seat.playerId, null, dealt.entryFee)));
-
-    return recorded ?? dealt;
   } catch (error) {
-    console.error("sit_and_go.deal_step_two_failed", { tableId: dealt.id, error });
-    return dealt;
+    console.error("sit_and_go.after_deal_failed", { tableId: dealt.id, error });
   }
+  return started;
+}
+
+/** How long a table may sit 'active' with no game before the sweep unwinds it. */
+const UNDEALT_TABLE_GRACE_MS = 5 * 60 * 1000;
+const UNDEALT_SWEEP_LIMIT = 10;
+
+/**
+ * Cancels and refunds tables left 'active' with no game, which only a crash
+ * between the two deal steps can produce. Their players otherwise read as
+ * registered forever and can't open or join anything else. Runs at the top
+ * of open and join; safe to call from anywhere else too, since each unwind
+ * is version guarded and each refund keyed to its seat's stake. Returns how
+ * many tables this call cancelled.
+ */
+export async function sweepUndealtSitAndGoTables(limit = UNDEALT_SWEEP_LIMIT): Promise<number> {
+  const cutoffIso = new Date(Date.now() - UNDEALT_TABLE_GRACE_MS).toISOString();
+  const stuck = await getUndealtActiveSitAndGoTables(cutoffIso, limit);
+  let cancelled = 0;
+  for (const table of stuck) {
+    const seats = await getSitAndGoSeats(table.id);
+    const after = await unwindUndealtSitAndGo(table, seats);
+    if (after?.status === "cancelled" && after.version === table.version + 1) cancelled += 1;
+  }
+  return cancelled;
+}
+
+/** The sweep as a best-effort step in front of open/join. */
+async function sweepUndealtQuietly(): Promise<void> {
+  await sweepUndealtSitAndGoTables().catch((error: unknown) => {
+    console.error("sit_and_go.undealt_sweep_failed", { error });
+  });
 }
 
 // ---- tables ------------------------------------------------------------
@@ -268,6 +413,7 @@ export async function openSitAndGoTable(
   if (!isStakesTier(tier)) {
     throw new SitAndGoRequestError("Choose a real stakes tier to open a table.", 400);
   }
+  await sweepUndealtQuietly();
   if (await activeRegistrationFor(profile.id)) {
     throw new SitAndGoRequestError("You are already registered for a Sit & Go.", 409);
   }
@@ -282,7 +428,7 @@ export async function openSitAndGoTable(
   let table: StoredSitAndGoTable | null = null;
   try {
     table = await createSitAndGoTableRow(profile.id, tier, entryFee);
-    await claimSitAndGoSeat(table.id, profile.id, token);
+    await claimSitAndGoSeat(table.id, profile.id, token, feeCorrelationId);
   } catch (error) {
     await creditGoldByProfileLedgered(profile.id, entryFee, feeCorrelationId, "sit_and_go_open_refund").catch(
       (refundError) => {
@@ -412,6 +558,7 @@ export async function joinSitAndGoTable(
   tableId: string,
 ): Promise<{ table: SitAndGoTableView; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
+  await sweepUndealtQuietly();
   const table = await getSitAndGoTableById(tableId);
   if (!table) throw new SitAndGoRequestError("No such table.", 404);
   if (await activeRegistrationFor(profile.id)) {
@@ -426,7 +573,7 @@ export async function joinSitAndGoTable(
   }
 
   try {
-    await claimSitAndGoSeat(tableId, profile.id, token);
+    await claimSitAndGoSeat(tableId, profile.id, token, feeCorrelationId);
   } catch (error) {
     await creditGoldByProfileLedgered(profile.id, table.entryFee, feeCorrelationId, "sit_and_go_join_refund").catch(
       (refundError) => {
@@ -470,8 +617,15 @@ export async function leaveSitAndGoTable(
   const left = await leaveSitAndGoTableRow(tableId, profile.id);
   if (!left) throw new SitAndGoRequestError("You are not registered at that table, or it has already started.", 409);
 
-  const refunded = await creditGoldByProfile(profile.id, table.entryFee);
-  return { profile: refunded ?? profile };
+  // Credited against the fee's own ledger id: if the reconcile cron already
+  // refunded it (its confirm failed), this is a no-op, not a second refund.
+  const correlationId = seatRefundCorrelationId(tableId, left);
+  const refunded = await creditGoldByProfileLedgered(profile.id, table.entryFee, correlationId, "sit_and_go_leave_refund")
+    .catch((error: unknown) => {
+      console.error("sit_and_go.leave_refund_failed", { tableId, profileId: profile.id, correlationId, error });
+      throw error;
+    });
+  return { profile: refunded.success ? { ...profile, goldBalance: refunded.goldBalance } : profile };
 }
 
 // ---- settlement, called from the ordinary poker routes ------------------
@@ -493,10 +647,12 @@ export async function settleSitAndGoIfFinished(state: GameState): Promise<Player
   if (!winnerId) return null;
 
   const table = await getSitAndGoTableByGameId(state.id);
-  // Already settled (or somehow never registered) -- nothing left to do.
-  // This also covers the ordinary case where a second request notices the
-  // same win a moment after the first one already paid it.
-  if (!table || table.status !== "active") return null;
+  if (!table) return null;
+  // A completed table is never paid again here. Tables settled before the
+  // payout moved onto the ledger have no ledger row under its key, so a
+  // "retry" would land a second pot. Only the call that wins the settle pays.
+  // Cancelled, or never dealt -- nothing to pay.
+  if (table.status !== "active") return null;
 
   const settled = await settleSitAndGoTable(table, winnerId);
   // Rule 2: a lost race did not happen, so it does not pay. Whoever won that

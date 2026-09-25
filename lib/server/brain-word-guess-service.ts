@@ -12,6 +12,7 @@ import {
   type BrainWordGuessAttempt,
   type BrainWordGuessSnapshot,
 } from "@/lib/arcade/brain-word-guess";
+import { pickWordGuessWord } from "@/lib/arcade/brain-word-guess-words";
 import { anteUpWagerCeilingProblem } from "@/lib/arcade/ante-up-stakes";
 import type { PlayerProfile } from "@/lib/profile/types";
 import {
@@ -51,16 +52,19 @@ function snapshot(stored: StoredAnteUpAttempt<BrainWordGuessAttempt>): BrainWord
   return toBrainWordGuessSnapshot(stored.state, { id: stored.id, version: stored.version });
 }
 
-async function payOutWin(profileId: string, attempt: Pick<BrainWordGuessAttempt, "wager" | "status" | "misses">): Promise<void> {
+/** Returns the credited profile, or null when nothing was paid, so the reply shows the new balance. */
+async function payOutWin(profileId: string, attempt: Pick<BrainWordGuessAttempt, "wager" | "status" | "misses">): Promise<PlayerProfile | null> {
   const payout = brainWordGuessPayout(attempt);
-  if (payout <= 0) return;
+  if (payout <= 0) return null;
+  let credited: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(profileId, payout);
+    credited = await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("brain-word-guess.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
   await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  return credited;
 }
 
 export async function readBrainWordGuess(
@@ -105,7 +109,7 @@ export async function openBrainWordGuess(
     throw new BrainWordGuessRequestError(`You need ${wagerInput.toLocaleString()} Gold to wager this.`, 400);
   }
 
-  const state = startBrainWordGuess((max) => randomInt(0, max), wagerInput, now);
+  const state = startBrainWordGuess(pickWordGuessWord((max) => randomInt(0, max)), wagerInput, now);
 
   let stored: StoredAnteUpAttempt<BrainWordGuessAttempt>;
   try {
@@ -173,9 +177,9 @@ export async function guessBrainWordGuessLetter(
     throw new BrainWordGuessRequestError("That word moved on.", 409, { round: snapshot(live) });
   }
 
-  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
-  return { attempt: snapshot(stored), profile };
+  return { attempt: snapshot(stored), profile: paid ?? profile };
 }
 
 export async function resignBrainWordGuessAttempt(

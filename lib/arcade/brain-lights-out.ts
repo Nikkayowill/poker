@@ -32,7 +32,8 @@ function neighbors(index: number): number[] {
   return result;
 }
 
-function toggle(lights: boolean[], index: number): boolean[] {
+/** Flips a tile and its neighbours. Exported so the board can show a tap before the server confirms it. */
+export function toggleLightsOut(lights: readonly boolean[], index: number): boolean[] {
   const next = [...lights];
   for (const i of neighbors(index)) next[i] = !next[i];
   return next;
@@ -46,7 +47,7 @@ function scrambleBoard(randomInt: RandomInt): boolean[] {
   // won board, so re-roll until at least one light is on.
   while (taps < 1 || lights.every((on) => !on)) {
     lights = Array<boolean>(CELLS).fill(false);
-    for (let i = 0; i < SCRAMBLE_TAPS; i++) lights = toggle(lights, randomInt(CELLS));
+    for (let i = 0; i < SCRAMBLE_TAPS; i++) lights = toggleLightsOut(lights, randomInt(CELLS));
     taps = SCRAMBLE_TAPS;
   }
   return lights;
@@ -87,7 +88,7 @@ export function startBrainLightsOut(randomInt: RandomInt, wager: number, now: Da
 export function tapBrainLightsOut(attempt: BrainLightsOutAttempt, index: number, now: Date): BrainLightsOutAttempt {
   if (attempt.status !== "active" || index < 0 || index >= CELLS) return attempt;
 
-  const lights = toggle(attempt.lights, index);
+  const lights = toggleLightsOut(attempt.lights, index);
   const moves = attempt.moves + 1;
   const cleared = lights.every((on) => !on);
   if (cleared) return { ...attempt, lights, moves, status: "won", finishedAt: now.toISOString() };

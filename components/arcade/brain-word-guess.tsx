@@ -20,6 +20,9 @@ import {
   type BrainWordGuessSnapshot,
 } from "@/lib/arcade/brain-word-guess";
 import type { PlayerProfile } from "@/lib/profile/types";
+import { useActionQueue } from "@/components/shared/use-action-queue";
+import { createRequestSequence } from "@/lib/ui/request-sequence";
+import { useAnswerKeys } from "./brain-streak";
 
 const STAKE_QUICK_PICKS = [MIN_ANTE_UP_WAGER, 1000, 5000, 10_000, 25_000] as const;
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz".split("");
@@ -33,7 +36,8 @@ interface Response {
 /**
  * Word Guess, the solo wager -- classic hangman on an everyday word. Same
  * shape as brain-lights-out.tsx: no server-driven clock, a guess response is
- * authoritative the instant it lands.
+ * authoritative the instant it lands. Letters typed or tapped while a guess is
+ * in flight queue behind it (useActionQueue) instead of being dropped.
  */
 export function BrainWordGuess() {
   const [wager, setWager] = useState<number>(MIN_ANTE_UP_WAGER);
@@ -55,28 +59,31 @@ export function BrainWordGuess() {
   const sending = useRef(false);
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
+  const [sequence] = useState(() => createRequestSequence<BrainWordGuessSnapshot>());
 
   const applyResponse = useCallback((data: Partial<Response>) => {
     if (data.profile) setProfile(data.profile);
-    if (data.attempt !== undefined) setAttempt(data.attempt ?? null);
-  }, [setProfile]);
+    if (data.attempt !== undefined && sequence.admit(data.attempt)) setAttempt(data.attempt ?? null);
+  }, [sequence, setProfile]);
 
   const refresh = useCallback(async () => {
-    if (sending.current) return;
+    const ticket = sequence.beginRead();
+    if (!ticket) return;
     try {
       const response = await fetch("/api/brain-word-guess", { cache: "no-store" });
       const data = (await response.json()) as Partial<Response>;
-      if (!mounted.current || sending.current) return;
+      if (!mounted.current || !sequence.acceptRead(ticket)) return;
       if (response.ok) applyResponse(data);
     } catch {
       // A dropped read is not worth a banner; the player can just try an action.
     } finally {
       if (mounted.current) setLoaded(true);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
 
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
+    const done = sequence.beginWrite();
     setBusy(true);
     setError(null);
     try {
@@ -86,14 +93,11 @@ export function BrainWordGuess() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await response.json()) as Partial<Response> & { round?: BrainWordGuessSnapshot };
+      const data = (await response.json().catch(() => ({}))) as Partial<Response> & { round?: BrainWordGuessSnapshot };
       if (!mounted.current) return;
       if (!response.ok) {
-        // A wrong or repeated letter that still carries a fresh round is
-        // ordinary play, same treatment Sudoku gives a wrong digit.
-        const ordinary = !!data.round && data.round.status === "active" && data.error !== "Already guessed that one.";
-        if (data.round) setAttempt(data.round);
-        if (!ordinary) setError(data.error ?? "That did not go through.");
+        if (data.round) applyResponse({ attempt: data.round });
+        setError(data.error ?? "That did not go through.");
         return;
       }
       applyResponse(data);
@@ -101,9 +105,39 @@ export function BrainWordGuess() {
       if (mounted.current) setError("Could not reach the word. Check your connection.");
     } finally {
       sending.current = false;
+      done();
       if (mounted.current) setBusy(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, sequence]);
+
+  /** Sends one queued move against the newest version. A refusal drops the rest of the queue. */
+  const sendMove = useCallback(async (move: string): Promise<boolean> => {
+    if (!mounted.current) return false;
+    try {
+      const response = await fetch("/api/brain-word-guess/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "guess", version: sequence.version(), letter: move }),
+      });
+      const data = (await response.json().catch(() => ({}))) as Partial<Response> & { round?: BrainWordGuessSnapshot };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        return data.attempt?.status === "active";
+      }
+      if (data.round) applyResponse({ attempt: data.round });
+      // A repeat, or a word that finished under a queued letter, already shows why.
+      const ordinary = !!data.round && (data.round.status !== "active" || data.error === "Already guessed that one.");
+      if (!ordinary) setError(data.error ?? "That guess did not go through.");
+      return false;
+    } catch {
+      if (mounted.current) setError("Could not reach the word. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const { pending, push: enqueue } = useActionQueue<string>(sequence, sendMove);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -127,13 +161,20 @@ export function BrainWordGuess() {
   };
 
   const guess = (letter: string) => {
-    if (!attempt || sending.current || !active) return;
-    if (attempt.guessed.includes(letter)) return;
-    void send("/api/brain-word-guess/actions", { action: "guess", version: attempt.version, letter });
+    if (!attempt || !active || busy) return;
+    if (attempt.guessed.includes(letter) || pending.includes(letter)) return;
+    tapSound();
+    enqueue(letter);
   };
 
+  useAnswerKeys((key) => {
+    if (!attempt || !active || !/^[a-z]$/i.test(key)) return false;
+    guess(key.toLowerCase());
+    return true;
+  });
+
   const resign = () => {
-    if (sending.current) return;
+    if (sending.current || pending.length > 0) return;
     void send("/api/brain-word-guess/actions", { action: "resign" });
   };
   const playAgain = () => setAttempt(null);
@@ -245,17 +286,26 @@ export function BrainWordGuess() {
 
           {!settled && (
             <div className="wg-keyboard">
-              {ALPHABET.map((letter) => (
-                <button
-                  key={letter}
-                  type="button"
-                  className="wg-key"
-                  disabled={busy || !active || attempt.guessed.includes(letter)}
-                  onClick={() => { tapSound(); guess(letter); }}
-                >
-                  {letter}
-                </button>
-              ))}
+              {ALPHABET.map((letter) => {
+                const tried = attempt.guessed.includes(letter);
+                const hit = tried && attempt.revealed.includes(letter);
+                return (
+                  <button
+                    key={letter}
+                    type="button"
+                    className={clsx(
+                      "wg-key",
+                      hit && "wg-key-hit",
+                      tried && !hit && "wg-key-miss",
+                      pending.includes(letter) && "wg-key-pending",
+                    )}
+                    disabled={!active || tried}
+                    onClick={() => guess(letter)}
+                  >
+                    {letter}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -269,7 +319,7 @@ export function BrainWordGuess() {
             </div>
           ) : (
             <div className="duel-controls">
-              <button type="button" className="duel-resign" disabled={busy} onClick={() => void resign()}>
+              <button type="button" className="duel-resign" disabled={busy || pending.length > 0} onClick={() => void resign()}>
                 Give up
               </button>
             </div>

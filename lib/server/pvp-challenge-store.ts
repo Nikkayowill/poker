@@ -1,5 +1,4 @@
 import "server-only";
-import { randomUUID } from "crypto";
 import { adminClient } from "./supabase-admin";
 
 /**
@@ -52,6 +51,8 @@ export interface StoredPvpChallenge {
   matchId: string | null;
   createdAt: string;
   expiresAt: string;
+  /** When the row last left `open`. On an accepted row, when it was claimed. */
+  respondedAt: string | null;
 }
 
 export class OpenChallengeExists extends Error {
@@ -75,7 +76,7 @@ export function __resetPvpChallengesForTest(): void {
 }
 
 const CHALLENGE_COLUMNS =
-  "id, game, challenger_id, opponent_id, tier, stake, status, match_id, created_at, expires_at";
+  "id, game, challenger_id, opponent_id, tier, stake, status, match_id, created_at, expires_at, responded_at";
 
 interface ChallengeRow {
   id: string;
@@ -88,6 +89,7 @@ interface ChallengeRow {
   match_id: string | null;
   created_at: string;
   expires_at: string;
+  responded_at: string | null;
 }
 
 function fromRow(row: ChallengeRow): StoredPvpChallenge {
@@ -102,6 +104,7 @@ function fromRow(row: ChallengeRow): StoredPvpChallenge {
     matchId: row.match_id ? String(row.match_id) : null,
     createdAt: String(row.created_at),
     expiresAt: String(row.expires_at),
+    respondedAt: row.responded_at ? String(row.responded_at) : null,
   };
 }
 
@@ -127,6 +130,7 @@ export async function expireStaleChallenges(now: Date = new Date()): Promise<Sto
     for (const challenge of memoryChallenges.values()) {
       if (challenge.status !== "open" || challenge.expiresAt > stamp) continue;
       challenge.status = "expired";
+      challenge.respondedAt = stamp;
       swept.push({ ...challenge });
     }
     return swept;
@@ -149,8 +153,18 @@ export async function expireStaleChallenges(now: Date = new Date()): Promise<Sto
  * game. Caught from the partial unique index rather than by a read-first
  * check: two concurrent creates both pass that check, and each has already
  * taken the challenger's Gold by the time it arrives here.
+ *
+ * The caller must sweep lapsed rows (expireStaleChallenges) and refund them
+ * first. A lapsed row still marked open holds the unique index's slot and
+ * would turn a legitimate new challenge into OpenChallengeExists. The sweep
+ * used to run in here and drop the rows it reclaimed, which kept their
+ * escrow forever.
+ *
+ * `id` is chosen by the caller so the stake's ledger key can name the row
+ * before it exists.
  */
 export async function createChallenge(input: {
+  id: string;
   game: string;
   challengerId: string;
   opponentId: string | null;
@@ -171,7 +185,7 @@ export async function createChallenge(input: {
     );
     if (live) throw new OpenChallengeExists(input.game);
     const challenge: StoredPvpChallenge = {
-      id: randomUUID(),
+      id: input.id,
       game: input.game,
       challengerId: input.challengerId,
       opponentId: input.opponentId,
@@ -181,20 +195,16 @@ export async function createChallenge(input: {
       matchId: null,
       createdAt,
       expiresAt,
+      respondedAt: null,
     };
     memoryChallenges.set(challenge.id, { ...challenge });
     return { ...challenge };
   }
 
-  // A lapsed row still marked open would hold the partial unique index's slot
-  // and turn a legitimate new challenge into OpenChallengeExists. Unconditional
-  // rather than throttled: this is the one path whose correctness depends on
-  // the sweep having run. Its refunds are the caller's; see the service.
-  await expireStaleChallenges(now);
-
   const { data, error } = await supabase
     .from("pvp_challenges")
     .insert({
+      id: input.id,
       game: input.game,
       challenger_id: input.challengerId,
       opponent_id: input.opponentId,
@@ -291,6 +301,7 @@ export async function claimChallenge(
       return null;
     }
     challenge.status = "accepted";
+    challenge.respondedAt = stamp;
     return { ...challenge };
   }
 
@@ -366,6 +377,7 @@ export async function releaseChallenge(
     if (!challenge || challenge.status !== "open") return null;
     if (challengerId !== null && challenge.challengerId !== challengerId) return null;
     challenge.status = reason;
+    challenge.respondedAt = stamp;
     return { ...challenge };
   }
 
@@ -394,22 +406,110 @@ export async function releaseChallenge(
  * stranded in an `accepted` row that never became a match. Guarded on
  * `status = 'accepted'` and a null match_id, so a challenge that did become a
  * match can never be reopened underneath it.
+ *
+ * Returns whether a row was reopened. Throws when the reopen itself fails,
+ * most often a unique violation because the challenger has since opened
+ * another challenge for this game. The caller then cancels and refunds
+ * instead (cancelClaimedChallenge).
  */
-export async function reopenClaimedChallenge(challengeId: string): Promise<void> {
+export async function reopenClaimedChallenge(challengeId: string): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) {
     const challenge = memoryChallenges.get(challengeId);
-    if (challenge && challenge.status === "accepted" && challenge.matchId === null) {
-      challenge.status = "open";
-    }
-    return;
+    if (!challenge || challenge.status !== "accepted" || challenge.matchId !== null) return false;
+    // Mirrors pvp_challenges_one_open_per_challenger, which the real reopen hits.
+    const clash = [...memoryChallenges.values()].some(
+      (other) =>
+        other.id !== challenge.id
+        && other.status === "open"
+        && other.game === challenge.game
+        && other.challengerId === challenge.challengerId,
+    );
+    if (clash) throw new Error(`Could not reopen that challenge: ${UNIQUE_VIOLATION}`);
+    challenge.status = "open";
+    challenge.respondedAt = null;
+    return true;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("pvp_challenges")
     .update({ status: "open", responded_at: null })
     .eq("id", challengeId)
     .eq("status", "accepted")
-    .is("match_id", null);
+    .is("match_id", null)
+    .select("id");
   if (error) throw new Error(`Could not reopen that challenge: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+/**
+ * Ends a claimed challenge that never became a match, and hands back its
+ * terms so the caller can refund the challenger.
+ *
+ * Used when a failed accept cannot reopen the row, and by the stranded-claim
+ * sweep. Same rule 4 shape as releaseChallenge: guarded on `accepted` with a
+ * null match_id, so the row comes back at most once and a challenge that did
+ * become a match is never touched.
+ */
+export async function cancelClaimedChallenge(challengeId: string): Promise<StoredPvpChallenge | null> {
+  const stamp = new Date().toISOString();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    const challenge = memoryChallenges.get(challengeId);
+    if (!challenge || challenge.status !== "accepted" || challenge.matchId !== null) return null;
+    challenge.status = "cancelled";
+    challenge.respondedAt = stamp;
+    return { ...challenge };
+  }
+
+  const { data, error } = await supabase
+    .from("pvp_challenges")
+    .update({ status: "cancelled", responded_at: stamp })
+    .eq("id", challengeId)
+    .eq("status", "accepted")
+    .is("match_id", null)
+    .select(CHALLENGE_COLUMNS);
+  if (error) throw new Error(`Could not cancel that challenge: ${error.message}`);
+
+  const row = (data ?? [])[0];
+  return row ? fromRow(row as ChallengeRow) : null;
+}
+
+/** How many stranded claims one sweep looks at. */
+const STRANDED_PAGE_SIZE = 100;
+
+/**
+ * Claimed challenges that never got a match id, claimed at or before `cutoff`.
+ *
+ * A read only. The sweep decides per row whether a match exists (link it) or
+ * not (cancel and refund), and the cancel is the guarded write.
+ */
+export async function listStrandedClaims(cutoff: Date): Promise<StoredPvpChallenge[]> {
+  const stamp = cutoff.toISOString();
+  const supabase = adminClient();
+
+  if (!supabase) {
+    return [...memoryChallenges.values()]
+      .filter(
+        (challenge) =>
+          challenge.status === "accepted"
+          && challenge.matchId === null
+          && challenge.respondedAt !== null
+          && challenge.respondedAt <= stamp,
+      )
+      .slice(0, STRANDED_PAGE_SIZE)
+      .map((challenge) => ({ ...challenge }));
+  }
+
+  const { data, error } = await supabase
+    .from("pvp_challenges")
+    .select(CHALLENGE_COLUMNS)
+    .eq("status", "accepted")
+    .is("match_id", null)
+    .lte("responded_at", stamp)
+    .order("responded_at", { ascending: true })
+    .limit(STRANDED_PAGE_SIZE);
+  if (error) throw new Error(`Could not load stranded challenges: ${error.message}`);
+  return (data ?? []).map((row) => fromRow(row as ChallengeRow));
 }

@@ -1,5 +1,4 @@
 import "server-only";
-import { randomUUID } from "crypto";
 import type { DuelSeat } from "@/lib/pvp/match-contract";
 import { adminClient } from "./supabase-admin";
 
@@ -40,14 +39,20 @@ export interface StoredPvpMatch<TState = unknown> {
 
 declare global {
   var __riverRoomPvpMatches: Map<string, StoredPvpMatch> | undefined;
+  var __riverRoomPvpMatchChallenges: Map<string, string> | undefined;
 }
 
 const memoryMatches = globalThis.__riverRoomPvpMatches ?? new Map<string, StoredPvpMatch>();
 globalThis.__riverRoomPvpMatches = memoryMatches;
 
+// Memory mirror of pvp_matches.challenge_id: challenge id to match id.
+const memoryMatchChallenges = globalThis.__riverRoomPvpMatchChallenges ?? new Map<string, string>();
+globalThis.__riverRoomPvpMatchChallenges = memoryMatchChallenges;
+
 /** Test seam only: the memory branch is process-global, so suites must not leak matches into each other. */
 export function __resetPvpMatchesForTest(): void {
   memoryMatches.clear();
+  memoryMatchChallenges.clear();
 }
 
 /** Thrown when one of the two players already has a live match of this game. */
@@ -213,14 +218,47 @@ export async function getPvpMatchById<TState>(id: string): Promise<StoredPvpMatc
 }
 
 /**
+ * The match a challenge became, found from the match side.
+ *
+ * pvp_challenges.match_id is written after the match exists, so a process
+ * that dies in between leaves a live match its challenge does not point at.
+ * This is how the stranded-claim sweep tells that case (link it) from a claim
+ * that never became a match (refund it).
+ */
+export async function getPvpMatchByChallengeId<TState>(
+  challengeId: string,
+): Promise<StoredPvpMatch<TState> | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    const matchId = memoryMatchChallenges.get(challengeId);
+    const found = matchId ? memoryMatches.get(matchId) : undefined;
+    return found ? (clone(found) as StoredPvpMatch<TState>) : null;
+  }
+
+  const { data, error } = await supabase
+    .from("pvp_matches")
+    .select(MATCH_COLUMNS)
+    .eq("challenge_id", challengeId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load that match: ${error.message}`);
+  return data ? fromRow<TState>(data as MatchRow) : null;
+}
+
+/**
  * Opens a match. Throws ActivePvpMatchExists when either player already has one.
  *
  * Caught from the two partial unique indexes (23505) rather than by reading
  * first and then inserting: two concurrent accepts of two different challenges
  * both pass a read-first check, and by the time they get here each has already
  * debited an ante.
+ *
+ * `id` is chosen by the caller so the acceptor's ledger key can name the
+ * match before it exists. `challengeId` records which challenge it came from;
+ * it is unique, so one challenge can never become two matches.
  */
 export async function createPvpMatch<TState>(input: {
+  id: string;
+  challengeId: string;
   game: string;
   players: [string, string];
   tier: string;
@@ -234,8 +272,9 @@ export async function createPvpMatch<TState>(input: {
     for (const player of input.players) {
       if (memoryActiveFor(player, input.game)) throw new ActivePvpMatchExists(input.game);
     }
+    if (memoryMatchChallenges.has(input.challengeId)) throw new ActivePvpMatchExists(input.game);
     const match: StoredPvpMatch<TState> = {
-      id: randomUUID(),
+      id: input.id,
       game: input.game,
       players: input.players,
       tier: input.tier,
@@ -248,12 +287,15 @@ export async function createPvpMatch<TState>(input: {
       settledAt: null,
     };
     memoryMatches.set(match.id, clone(match) as StoredPvpMatch);
+    memoryMatchChallenges.set(input.challengeId, match.id);
     return clone(match);
   }
 
   const { data, error } = await supabase
     .from("pvp_matches")
     .insert({
+      id: input.id,
+      challenge_id: input.challengeId,
       game: input.game,
       player0_id: input.players[0],
       player1_id: input.players[1],

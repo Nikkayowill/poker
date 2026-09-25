@@ -170,10 +170,14 @@ async function activeRegistrationFor(profileId: string): Promise<StoredSitAndGoT
  * request happened to trigger it. Logged loudly instead, same discipline as
  * cribbage-service.ts's payOutTable.
  */
-async function payOutSitAndGo(table: StoredSitAndGoTable, seats: SitAndGoSeatRow[]): Promise<void> {
-  if (!table.winnerId || !table.prizePool) return;
+async function payOutSitAndGo(
+  table: StoredSitAndGoTable,
+  seats: SitAndGoSeatRow[],
+): Promise<PlayerProfile | null> {
+  if (!table.winnerId || !table.prizePool) return null;
+  let profile: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(table.winnerId, table.prizePool);
+    profile = await creditGoldByProfile(table.winnerId, table.prizePool);
   } catch (error) {
     console.error("sit_and_go.payout_credit_failed", {
       tableId: table.id,
@@ -189,6 +193,7 @@ async function payOutSitAndGo(table: StoredSitAndGoTable, seats: SitAndGoSeatRow
   await applyMissionEvent(table.winnerId, { kind: "sit_and_go_won" });
   await applyAchievementEvent(table.winnerId, { kind: "sit_and_go_won" });
   await recordMultiWayResult("sit-and-go", seats.map((seat) => seat.playerId), table.winnerId);
+  return profile;
 }
 
 /**
@@ -477,24 +482,29 @@ export async function leaveSitAndGoTable(
  * game that hasn't just decided a winner. Never throws -- see payOutSitAndGo
  * -- so callers can fire this without it ever turning an ordinary poker
  * action response into an error.
+ *
+ * Returns the winner's just-credited profile (or null if nothing was paid
+ * here) so the calling route can hand it back to the browser that happens to
+ * be the winner -- without it, the header's Gold balance would not reflect
+ * the payout until some unrelated later request reloaded the profile.
  */
-export async function settleSitAndGoIfFinished(state: GameState): Promise<void> {
+export async function settleSitAndGoIfFinished(state: GameState): Promise<PlayerProfile | null> {
   const winnerId = state.tournament?.winnerProfileId;
-  if (!winnerId) return;
+  if (!winnerId) return null;
 
   const table = await getSitAndGoTableByGameId(state.id);
   // Already settled (or somehow never registered) -- nothing left to do.
   // This also covers the ordinary case where a second request notices the
   // same win a moment after the first one already paid it.
-  if (!table || table.status !== "active") return;
+  if (!table || table.status !== "active") return null;
 
   const settled = await settleSitAndGoTable(table, winnerId);
   // Rule 2: a lost race did not happen, so it does not pay. Whoever won that
   // race is settling and paying this same table right now.
-  if (!settled) return;
+  if (!settled) return null;
 
   const seats = await getSitAndGoSeats(table.id);
-  await payOutSitAndGo(settled, seats);
+  return payOutSitAndGo(settled, seats);
 }
 
 export function toSitAndGoErrorResponse(error: unknown): NextResponse {

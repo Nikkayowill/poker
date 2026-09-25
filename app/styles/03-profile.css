@@ -29,7 +29,12 @@
   50% { opacity: 1; }
 }
 
-.gold-badge-claimed .gold-balance strong {
+.gold-badge-claimed .gold-balance strong,
+/* components/celebration/win-celebration.tsx toggles this directly (not
+   React state) each time one of its flying coins actually reaches this
+   element, so the badge visibly catches every coin instead of only updating
+   once at the end. */
+.gold-badge-won .gold-balance strong {
   animation: gold-claim-pulse .9s ease;
 }
 @keyframes gold-claim-pulse {

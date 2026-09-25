@@ -71,8 +71,9 @@
 
   /* Sprite colours, not chrome: they exist to agree with artwork the palette
      knows nothing about. --sa-grass matches the grass painter's own fill, so
-     the DOM frame and the canvas background read as one continuous lawn. */
-  --sa-grass: #86c96e;
+     the DOM frame and the canvas background read as one continuous lawn.
+     2026-09-25: darkened/enriched to match grass-tile.webp's own repaint. */
+  --sa-grass: #6dbf50;
   --sa-hungry: var(--sa-carrot-side);
   --sa-muck: var(--sa-choc);
 

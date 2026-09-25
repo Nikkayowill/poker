@@ -11,6 +11,7 @@ import { backstopState } from "@/lib/profile/backstop";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { BuyInModal } from "@/components/lobby/buy-in-modal";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 
 /**
  * The bar under the controls, burning down on the same clock as the seat ring.
@@ -314,8 +315,16 @@ export function ActionBar({
     // exit is the header. Reading the deadline rather than counting stacks
     // keeps this agreeing with scheduleNextHand by construction.
     const tableIsDone = tournamentWon || (game.isSeated && !game.nextHandAt);
+    // The whole prize pool minus the entry fee this seat already staked to
+    // get in -- entryFee * seats.length would double-count the winner's own
+    // buy-in as something they "won." Seat count rather than a hardcoded 6
+    // covers heads-up (2 seats, entryFee * 1) with the same formula.
+    const tournamentNetWinnings = game.tournament
+      ? game.tournament.entryFee * (game.seats.length - 1)
+      : 0;
     return (
       <div className="action-bar">
+        <WinCelebration active={tournamentWon} amount={tournamentNetWinnings} />
         <div className="action-slot-status">
           <span className="action-kicker">
             {!game.isSeated ? "Seat closed" : tournamentWon ? "Match won" : tableIsDone ? "Table finished" : "Hand complete"}

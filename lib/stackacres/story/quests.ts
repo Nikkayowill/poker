@@ -154,13 +154,64 @@ export function objectiveLabel(objective: StoryObjective): string {
   }
 }
 
+/**
+ * One checkpoint of a segmented quest -- see `StoryQuest.segments`.
+ * `id` is `<quest.id>.s<n>`, the way dialogue node ids hang off quest ids.
+ */
+export interface StoryQuestSegment {
+  readonly id: string;
+  readonly objectives: readonly StoryObjective[];
+}
+
 export interface StoryQuest {
   /** Stable, `<traveler>.q<n>`. Dialogue node ids hang off it. */
   readonly id: string;
   readonly title: string;
-  readonly objectives: readonly StoryObjective[];
+  /**
+   * Exactly one of `objectives`/`segments` is set -- quests.test.ts holds
+   * that. `objectives` is every existing quest: a flat list, all due at
+   * once, one shared progress line. `segments` is new: an ORDERED list of
+   * checkpoints, each with its own objectives and its own progress line
+   * (dialogue.ts's `QuestBeats.segments`), advancing on its own the moment
+   * its objectives are satisfied -- only the LAST checkpoint needs an
+   * explicit turn-in tap. See `currentSegmentIndex` in ./state.ts for how
+   * "which checkpoint is active" is derived rather than stored.
+   */
+  readonly objectives?: readonly StoryObjective[];
+  readonly segments?: readonly StoryQuestSegment[];
   /** The affirmative button on the turn-in bubble. */
   readonly turnInLabel: string;
+}
+
+/** `quest.segments` for a segmented quest; `null` for a flat one. Every
+ *  caller that needs to tell the two shapes apart goes through this rather
+ *  than checking `!== undefined` directly, so there is one spelling of the
+ *  question. */
+export function questSegments(quest: StoryQuest): readonly StoryQuestSegment[] | null {
+  return quest.segments ?? null;
+}
+
+/** The objectives belonging to one segment index. For a flat quest, index 0
+ *  is the whole objectives list and every other index is empty -- a flat
+ *  quest is a segmented quest with one segment, as far as this is concerned. */
+export function segmentObjectives(quest: StoryQuest, segmentIndex: number): readonly StoryObjective[] {
+  const segments = quest.segments;
+  if (segments === undefined) return segmentIndex === 0 ? (quest.objectives ?? []) : [];
+  return segments[segmentIndex]?.objectives ?? [];
+}
+
+/**
+ * Every objective across every segment, concatenated in segment order. This
+ * is the order `StoredTravelerStory.counts` uses, so a flat quest's counts
+ * line up with `objectives` exactly as they always have, and a segmented
+ * quest's counts cover every checkpoint at once: a farm action can satisfy a
+ * later checkpoint's objective before the player reaches it, and that work
+ * still counts once they get there, the same "no order of play can strand a
+ * quest" posture LIVE_OBJECTIVE_KINDS already commits to.
+ */
+export function questFlatObjectives(quest: StoryQuest): readonly StoryObjective[] {
+  const segments = quest.segments;
+  return segments === undefined ? (quest.objectives ?? []) : segments.flatMap((segment) => segment.objectives);
 }
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {

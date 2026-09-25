@@ -3,14 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { StackAcresInventory } from "../inventory";
 import type { StackAcresShopProgress } from "../shop-locks";
 import type { StoryEvent } from "./events";
-import { TRAVELER_QUESTS } from "./quests";
+import { TRAVELER_QUESTS, questFlatObjectives, type StoryQuest } from "./quests";
 import {
   applyEventToView,
   applyStoryEvent,
+  currentSegmentIndex,
   freshStory,
   isTravelerDone,
   meetTraveler,
+  objectiveHave,
   applyTurnIn,
+  questReady,
   storyView,
   type StoredStory,
   type StoryFacts,
@@ -55,7 +58,7 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
     const feed: StoryEvent[] = [];
     const stock: StackAcresInventory = { ...inventory };
     const facts = { tool: "iron-shovel", ...BARE } as { -readonly [K in keyof StoryFacts]: StoryFacts[K] };
-    for (const objective of quest.objectives) {
+    for (const objective of questFlatObjectives(quest)) {
       switch (objective.kind) {
         case "harvest":
           feed.push({ kind: "harvested", stock: objective.crops[0], count: objective.target });
@@ -377,5 +380,51 @@ describe("applyEventToView", () => {
   it("returns the same object when nothing moved", () => {
     const view = storyView(freshStory(), FRESH_FARM, {}, TROWEL);
     expect(applyEventToView(view, { kind: "watered", count: 1 })).toBe(view);
+  });
+});
+
+/**
+ * A synthetic segmented quest, not wired into TRAVELER_QUESTS -- no real
+ * quest opts into segments yet (see StoryQuest's own header). These tests
+ * exercise the mechanism directly through the exported pure functions, which
+ * all take a `StoryQuest` as data rather than looking one up by traveler.
+ */
+describe("segmented quests", () => {
+  const SEGMENTED: StoryQuest = {
+    id: "test.segmented",
+    title: "Two Checkpoints",
+    turnInLabel: "Done",
+    segments: [
+      { id: "test.segmented.s0", objectives: [{ kind: "water", target: 3 }] },
+      { id: "test.segmented.s1", objectives: [{ kind: "harvest-any-crop", target: 2 }] },
+    ],
+  };
+
+  it("holds at checkpoint 0 until its own objective is satisfied", () => {
+    expect(currentSegmentIndex(SEGMENTED, [0, 0], {}, TROWEL)).toBe(0);
+    expect(currentSegmentIndex(SEGMENTED, [2, 0], {}, TROWEL)).toBe(0);
+  });
+
+  it("advances to checkpoint 1 the moment checkpoint 0 is satisfied, regardless of checkpoint 1's own count", () => {
+    expect(currentSegmentIndex(SEGMENTED, [3, 0], {}, TROWEL)).toBe(1);
+  });
+
+  it("reports past the last checkpoint once every checkpoint is satisfied", () => {
+    expect(currentSegmentIndex(SEGMENTED, [3, 2], {}, TROWEL)).toBe(2);
+  });
+
+  it("is only ready when every checkpoint's objective is satisfied, not just the first", () => {
+    expect(questReady(SEGMENTED, [3, 0], {}, TROWEL)).toBe(false);
+    expect(questReady(SEGMENTED, [3, 1], {}, TROWEL)).toBe(false);
+    expect(questReady(SEGMENTED, [3, 2], {}, TROWEL)).toBe(true);
+  });
+
+  it("counts flat, in segment order, across the whole quest's counts array", () => {
+    // counts[0] belongs to checkpoint 0's "water" objective, counts[1] to
+    // checkpoint 1's "harvest-any-crop" -- questFlatObjectives lines them up.
+    const objectives = questFlatObjectives(SEGMENTED);
+    expect(objectives.map((o) => o.kind)).toEqual(["water", "harvest-any-crop"]);
+    expect(objectiveHave(objectives[0], 3, {}, TROWEL)).toBe(3);
+    expect(objectiveHave(objectives[1], 2, {}, TROWEL)).toBe(2);
   });
 });

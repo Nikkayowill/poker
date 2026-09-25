@@ -7,7 +7,7 @@ import { RECIPE_IDS } from "../recipes";
 import { isStackAcresCrop } from "../catalogue";
 import { ZONE_IDS } from "../zones";
 import { STORY_ITEM_IDS, isStoryItemId } from "./items";
-import { ALL_STORY_QUESTS, TRAVELER_QUESTS, objectiveLabel } from "./quests";
+import { ALL_STORY_QUESTS, TRAVELER_QUESTS, objectiveLabel, questFlatObjectives } from "./quests";
 import { TRAVELERS_IN_FINALE, TRAVELER_CATALOGUE, TRAVELER_IDS, TRAVELER_PORTRAIT, isTravelerId } from "./travelers";
 
 const MACHINE_ITEM_IDS: readonly string[] = [...STACKACRES_ITEMS, ...MACHINE_RAW_ITEMS, ...MACHINE_PROCESSED_ITEMS];
@@ -70,7 +70,7 @@ describe("TRAVELER_QUESTS", () => {
         expect(quest.id).toBe(`${id}.q${i + 1}`);
         expect(quest.title.length).toBeGreaterThan(0);
         expect(quest.turnInLabel.length).toBeGreaterThan(0);
-        expect(quest.objectives.length).toBeGreaterThan(0);
+        expect(questFlatObjectives(quest).length).toBeGreaterThan(0);
       });
     }
     expect(new Set(ALL_STORY_QUESTS.map((quest) => quest.id)).size).toBe(ALL_STORY_QUESTS.length);
@@ -78,7 +78,7 @@ describe("TRAVELER_QUESTS", () => {
 
   it("only names catalogue ids and positive whole targets", () => {
     for (const quest of ALL_STORY_QUESTS) {
-      for (const objective of quest.objectives) {
+      for (const objective of questFlatObjectives(quest)) {
         expect(Number.isInteger(objective.target)).toBe(true);
         expect(objective.target).toBeGreaterThan(0);
         expect(objectiveLabel(objective).length).toBeGreaterThan(0);
@@ -113,7 +113,7 @@ describe("TRAVELER_QUESTS", () => {
     expect(TRAVELER_QUESTS.bea[0].objectives).toEqual([
       { kind: "harvest", crops: ["bell_pepper", "green_bean"], target: 16 },
     ]);
-    expect(TRAVELER_QUESTS.leo[1].objectives.map((objective) => objective.kind)).toEqual(["contracts", "forge"]);
+    expect(questFlatObjectives(TRAVELER_QUESTS.leo[1]).map((objective) => objective.kind)).toEqual(["contracts", "forge"]);
   });
 
   it("labels objectives as one imperative line", () => {

@@ -26,6 +26,9 @@ import {
   isCounterObjective,
   objectiveAdvance,
   objectiveLabel,
+  questFlatObjectives,
+  questSegments,
+  segmentObjectives,
   toolMeets,
   type StoryObjective,
   type StoryQuest,
@@ -103,7 +106,7 @@ export function meetTraveler(story: StoredStory, id: TravelerId, progress: Stack
   }
   const first = TRAVELER_QUESTS[id][0];
   return {
-    story: withTraveler(story, id, { met: true, questIndex: 0, counts: first.objectives.map(() => 0) }),
+    story: withTraveler(story, id, { met: true, questIndex: 0, counts: questFlatObjectives(first).map(() => 0) }),
     outcome: "met",
   };
 }
@@ -114,7 +117,7 @@ export function meetTraveler(story: StoredStory, id: TravelerId, progress: Stack
 
 function advanceCounts(quest: StoryQuest, counts: readonly number[], event: StoryEvent): readonly number[] {
   let changed = false;
-  const next = quest.objectives.map((objective, i) => {
+  const next = questFlatObjectives(quest).map((objective, i) => {
     // Live objectives are read off the farm at turn-in, so a count here would
     // be a second, weaker answer to the same question. Same skip
     // `applyEventToView` makes on the client's copy.
@@ -206,9 +209,44 @@ export function questReady(
   inventory: StackAcresInventory,
   facts: StoryFacts,
 ): boolean {
-  return quest.objectives.every(
+  return questFlatObjectives(quest).every(
     (objective, i) => objectiveHave(objective, counts[i], inventory, facts) >= objective.target,
   );
+}
+
+/**
+ * Index of the first segment not yet fully satisfied, or `quest.segments`'s
+ * own length once every segment is -- meaning the quest is ready to turn in.
+ * Only meaningful for a segmented quest; a flat quest has nothing that reads
+ * this (its dialogue and view never carry a segment index at all).
+ */
+export function currentSegmentIndex(
+  quest: StoryQuest,
+  counts: readonly number[],
+  inventory: StackAcresInventory,
+  facts: StoryFacts,
+): number {
+  const segments = quest.segments ?? [];
+  let offset = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    const objectives = segments[i].objectives;
+    const done = objectives.every(
+      (objective, j) => objectiveHave(objective, counts[offset + j], inventory, facts) >= objective.target,
+    );
+    if (!done) return i;
+    offset += objectives.length;
+  }
+  return segments.length;
+}
+
+/** Where segment `segmentIndex`'s slice starts in the flat `counts` array
+ *  `questFlatObjectives` lines up with. Index 0 for a flat quest. */
+function segmentOffset(quest: StoryQuest, segmentIndex: number): number {
+  const segments = quest.segments;
+  if (segments === undefined) return 0;
+  let offset = 0;
+  for (let i = 0; i < segmentIndex; i += 1) offset += segments[i].objectives.length;
+  return offset;
 }
 
 export type TurnInOutcome = "advanced" | "completed" | "not-ready" | "not-met" | "already-done";
@@ -244,7 +282,7 @@ export function applyTurnIn(
   if (!questReady(quest, entry.counts, inventory, facts)) return refused("not-ready");
 
   const debited: StackAcresInventory = { ...inventory };
-  for (const objective of quest.objectives) {
+  for (const objective of questFlatObjectives(quest)) {
     if (objective.kind !== "deliver") continue;
     debited[objective.item] = (inventory[objective.item] ?? 0) - objective.target;
   }
@@ -254,7 +292,7 @@ export function applyTurnIn(
   if (questIndex < line.length) {
     const nextQuest = line[questIndex];
     return {
-      story: withTraveler(story, id, { met: true, questIndex, counts: nextQuest.objectives.map(() => 0) }),
+      story: withTraveler(story, id, { met: true, questIndex, counts: questFlatObjectives(nextQuest).map(() => 0) }),
       inventory: debited,
       outcome: "advanced",
       granted: null,
@@ -289,7 +327,13 @@ export interface StoryQuestView {
   readonly index: number;
   readonly total: number;
   readonly title: string;
+  /** The active checkpoint's objectives for a segmented quest, or the whole
+   *  list for a flat one -- the same shape either way. */
   readonly objectives: readonly StoryObjectiveView[];
+  /** Present only for a segmented quest: which checkpoint is active (clamped
+   *  to the last once every checkpoint is satisfied) and how many there are. */
+  readonly segmentIndex?: number;
+  readonly segmentCount?: number;
 }
 
 export interface TravelerStoryView {
@@ -321,6 +365,32 @@ export interface StackAcresStoryView {
   readonly finale: StackAcresStoryFinale;
 }
 
+/** One traveler's active-quest view: the current checkpoint's objectives for
+ *  a segmented quest, or the whole list for a flat one. */
+function questView(
+  quest: StoryQuest,
+  entry: StoredTravelerStory,
+  total: number,
+  inventory: StackAcresInventory,
+  facts: StoryFacts,
+): StoryQuestView {
+  const segments = quest.segments;
+  const segmentIndex = segments === undefined ? 0 : Math.min(currentSegmentIndex(quest, entry.counts, inventory, facts), segments.length - 1);
+  const offset = segmentOffset(quest, segmentIndex);
+  const objectives = segmentObjectives(quest, segmentIndex);
+  return {
+    index: entry.questIndex,
+    total,
+    title: quest.title,
+    objectives: objectives.map((objective, i) => ({
+      label: objectiveLabel(objective),
+      have: objectiveHave(objective, entry.counts[offset + i], inventory, facts),
+      need: objective.target,
+    })),
+    ...(segments === undefined ? {} : { segmentIndex, segmentCount: segments.length }),
+  };
+}
+
 export function storyView(
   story: StoredStory,
   progress: StackAcresShopProgress,
@@ -341,19 +411,7 @@ export function storyView(
       hint: storyUnlockHint(unlock, full, TRAVELERS_IN_FINALE),
       met: entry.met,
       done,
-      quest:
-        quest === null
-          ? null
-          : {
-              index: entry.questIndex,
-              total: TRAVELER_QUESTS[id].length,
-              title: quest.title,
-              objectives: quest.objectives.map((objective, i) => ({
-                label: objectiveLabel(objective),
-                have: objectiveHave(objective, entry.counts[i], inventory, facts),
-                need: objective.target,
-              })),
-            },
+      quest: quest === null ? null : questView(quest, entry, TRAVELER_QUESTS[id].length, inventory, facts),
       ready: quest !== null && questReady(quest, entry.counts, inventory, facts),
     };
   }
@@ -376,11 +434,13 @@ export function applyEventToView(view: StackAcresStoryView, event: StoryEvent): 
   for (const id of TRAVELER_IDS) {
     const traveler = view.travelers[id];
     if (traveler.quest === null) continue;
-    const defs = TRAVELER_QUESTS[id][traveler.quest.index].objectives;
+    const quest = TRAVELER_QUESTS[id][traveler.quest.index];
+    const segmentIndex = traveler.quest.segmentIndex ?? 0;
+    const defs = segmentObjectives(quest, segmentIndex);
     let changed = false;
     const objectives = traveler.quest.objectives.map((objective, i) => {
       const def = defs[i];
-      if (!isCounterObjective(def)) return objective;
+      if (def === undefined || !isCounterObjective(def)) return objective;
       const step = objectiveAdvance(def, event);
       if (step === 0) return objective;
       const have = Math.min(objective.need, objective.have + step);
@@ -389,11 +449,34 @@ export function applyEventToView(view: StackAcresStoryView, event: StoryEvent): 
       return { ...objective, have };
     });
     if (!changed) continue;
+    const segments = questSegments(quest);
+    const segmentDone = objectives.every((objective) => objective.have >= objective.need);
     if (travelers === null) travelers = { ...view.travelers };
+    if (segmentDone && segments !== null && segmentIndex + 1 < segments.length) {
+      // A checkpoint cleared with more left: jump the bubble straight to the
+      // next one, starting from zero. The server's own view -- which already
+      // ticked every checkpoint's counters, see `advanceCounts` -- corrects
+      // this the moment it lands, same as every other optimistic guess here.
+      const nextIndex = segmentIndex + 1;
+      travelers[id] = {
+        ...traveler,
+        quest: {
+          ...traveler.quest,
+          segmentIndex: nextIndex,
+          objectives: segments[nextIndex].objectives.map((objective) => ({
+            label: objectiveLabel(objective),
+            have: 0,
+            need: objective.target,
+          })),
+        },
+        ready: false,
+      };
+      continue;
+    }
     travelers[id] = {
       ...traveler,
       quest: { ...traveler.quest, objectives },
-      ready: objectives.every((objective) => objective.have >= objective.need),
+      ready: segmentDone,
     };
   }
   return travelers === null ? view : { ...view, travelers };

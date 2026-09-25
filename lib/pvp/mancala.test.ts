@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  MANCALA_CLOCK_MS,
   MANCALA_DUEL,
+  MANCALA_INCREMENT_MS,
   PIT_COUNT,
   STORE_SEAT0,
   STORE_SEAT1,
   applyMancalaMove,
   createMancalaState,
   legalMancalaPits,
+  mancalaRemainingMs,
   mancalaResult,
   mancalaSnapshot,
   openingPits,
   oppositePit,
   resignMancala,
   seatPits,
+  tickMancala,
   type MancalaState,
 } from "./mancala";
 import type { DuelSeat } from "./match-contract";
@@ -338,5 +342,54 @@ describe("MANCALA_DUEL", () => {
     const state = MANCALA_DUEL.createState(0, T0) as MancalaState;
     const result = MANCALA_DUEL.applyMove(state, 0, { pit: 0 }, T0);
     expect("next" in result).toBe(true);
+  });
+});
+
+describe("the clock", () => {
+  it("only runs for the seat to move", () => {
+    const state = createMancalaState(0, T0);
+    expect(mancalaRemainingMs(state, 0, T0 + 10_000)).toBe(MANCALA_CLOCK_MS - 10_000);
+    expect(mancalaRemainingMs(state, 1, T0 + 10_000)).toBe(MANCALA_CLOCK_MS);
+  });
+
+  it("banks the mover's time plus the increment and starts the next turn", () => {
+    const next = play(createMancalaState(0, T0), 0, 0, T0 + 20_000);
+    expect(next.clocks[0]).toBe(MANCALA_CLOCK_MS - 20_000 + MANCALA_INCREMENT_MS);
+    expect(next.turnStartedAt).toBe(T0 + 20_000);
+  });
+
+  it("does nothing on a tick while time remains", () => {
+    expect(tickMancala(createMancalaState(0, T0), T0 + 60_000)).toBeNull();
+  });
+
+  it("forfeits a staller whose flag falls, with the board left as it was", () => {
+    const state = play(createMancalaState(0, T0), 0, 0, T0);
+    expect(state.turn).toBe(1);
+    const ticked = tickMancala(state, T0 + MANCALA_CLOCK_MS);
+    expect(ticked?.outcome).toEqual({ winner: 0, reason: "Timeout" });
+    expect(ticked?.pits).toEqual(state.pits);
+    expect(MANCALA_DUEL.tick?.(state, T0 + MANCALA_CLOCK_MS)).toEqual(ticked);
+  });
+
+  it("ends the match when a flagged player tries to move", () => {
+    const result = applyMancalaMove(createMancalaState(0, T0), 0, { pit: 0 }, T0 + MANCALA_CLOCK_MS + 1);
+    if (!("next" in result)) throw new Error("expected next");
+    expect(result.next.outcome).toEqual({ winner: 1, reason: "Timeout" });
+  });
+
+  it("gives a match stored before the clock a full clock once, then leaves it alone", () => {
+    const legacy = { pits: openingPits(), turn: 1, lastMove: null, outcome: null } as unknown as MancalaState;
+    const first = tickMancala(legacy, T0);
+    expect(first?.clocks).toEqual([MANCALA_CLOCK_MS, MANCALA_CLOCK_MS]);
+    expect(first && tickMancala(first, T0 + 1_000)).toBeNull();
+    expect(mancalaSnapshot(legacy, 1, T0).clocks).toEqual([MANCALA_CLOCK_MS, MANCALA_CLOCK_MS]);
+    expect(play(legacy, 1, 7).turn).toBe(0);
+  });
+
+  it("shows live clocks in the snapshot and freezes them on resign", () => {
+    const state = createMancalaState(0, T0);
+    expect(mancalaSnapshot(state, 1, T0 + 5_000).clocks).toEqual([MANCALA_CLOCK_MS - 5_000, MANCALA_CLOCK_MS]);
+    const resigned = resignMancala(state, 1, T0 + 5_000);
+    expect(mancalaSnapshot(resigned, 1, T0 + 60_000).clocks).toEqual([MANCALA_CLOCK_MS - 5_000, MANCALA_CLOCK_MS]);
   });
 });

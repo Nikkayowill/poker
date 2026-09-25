@@ -1,8 +1,8 @@
 import "server-only";
 import { randomInt, randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { CRIBBAGE_GAME } from "@/lib/cribbage/engine";
-import type { CribbageSeat, CribbageSnapshot } from "@/lib/cribbage/engine";
+import { CRIBBAGE_GAME, cribbagePayouts } from "@/lib/cribbage/engine";
+import type { CribbageSeat, CribbageSnapshot, CribbageState } from "@/lib/cribbage/engine";
 import { MIN_DUEL_STAKE } from "@/lib/pvp/match-contract";
 import type { PlayerProfile } from "@/lib/profile/types";
 import { applyAchievementEvent } from "./achievement-store";
@@ -55,9 +55,11 @@ import { awardWager } from "./progression-store";
  *   2. **The pot is credited only after the version-guarded write that
  *      settles the table is confirmed.** advanceCribbageTable returns null
  *      when it loses that race, and null must never pay.
- *   3. **Settlement is a single credit, never a second debit.** Every stake
- *      already left in rule 1; cribbage has no draw, so a win always
- *      credits `stake * seatedCount` to exactly one profile.
+ *   3. **Settlement is a single credit per seat, never a second debit.**
+ *      Every stake already left in rule 1. A win credits `stake *
+ *      seatedCount` to exactly one profile. A forfeit (a resign or a turn
+ *      timeout) credits nothing to the forfeiting seats and each other seat
+ *      its own stake plus an equal share of theirs, per cribbagePayouts.
  *   4. **A pre-start leave refunds exactly once**, via a status-guarded
  *      write (leave_cribbage_table) that returns the removed seat at most
  *      once.
@@ -103,7 +105,12 @@ export interface CribbageTableView {
   /** Whether the READER may start this table early right now. */
   canStart: boolean;
   players: CribbagePlayerView[];
+  /** Null while playing, and on a table that ended on a forfeit. */
   winnerId: string | null;
+  /** Who resigned or timed out, on a table that ended on a forfeit. */
+  forfeitedIds: string[];
+  /** What settling credited the READER, once completed. Null before then. */
+  yourPayout: number | null;
   /** The game's own redacted view, for this reader. Null before the table has dealt. */
   state: CribbageSnapshot | null;
 }
@@ -130,6 +137,29 @@ function seatOf(seats: CribbageSeatRow[], profileId: string): CribbageSeat | nul
   return seats.find((s) => s.playerId === profileId)?.seat ?? null;
 }
 
+function playerAt(seats: CribbageSeatRow[], seat: CribbageSeat): string | null {
+  return seats.find((s) => s.seat === seat)?.playerId ?? null;
+}
+
+/** Each seat's credit for a finished state, or null while it is still going. */
+function payoutsFor(state: CribbageState, stake: number): number[] | null {
+  const outcome = CRIBBAGE_GAME.result(state);
+  return outcome ? cribbagePayouts(outcome, state.playerCount, stake) : null;
+}
+
+/**
+ * The settle argument for the guarded write, or null while the table is
+ * still going. A forfeit settles with no winner.
+ */
+function settlementOf(state: CribbageState, seats: CribbageSeatRow[]): { winnerId: string | null } | null {
+  const outcome = CRIBBAGE_GAME.result(state);
+  if (!outcome) return null;
+  if (outcome.winner === null) return { winnerId: null };
+  const winnerId = playerAt(seats, outcome.winner);
+  // Unreachable: every seat in the game's state maps to a real seat row.
+  return winnerId ? { winnerId } : null;
+}
+
 async function tableView(
   table: StoredCribbageTable,
   seats: CribbageSeatRow[],
@@ -138,6 +168,8 @@ async function tableView(
 ): Promise<CribbageTableView> {
   const yourSeat = seatOf(seats, readerId);
   const players = await playerViews(seats);
+  const outcome = table.status === "completed" && table.state ? CRIBBAGE_GAME.result(table.state) : null;
+  const payouts = table.status === "completed" && table.state ? payoutsFor(table.state, table.stake) : null;
   return {
     id: table.id,
     status: table.status,
@@ -152,6 +184,8 @@ async function tableView(
     canStart: table.status === "waiting" && table.hostId === readerId && seats.length >= MIN_SEATS_TO_START,
     players,
     winnerId: table.winnerId,
+    forfeitedIds: (outcome?.forfeited ?? []).flatMap((seat) => playerAt(seats, seat) ?? []),
+    yourPayout: payouts && yourSeat !== null ? payouts[yourSeat] ?? 0 : null,
     state: table.state ? CRIBBAGE_GAME.snapshot(table.state, yourSeat, now) : null,
   };
 }
@@ -161,15 +195,27 @@ async function tableView(
  * durably settled by the time this runs and a credit failure here must
  * not turn a finished game into an error response. Logged loudly instead,
  * matching pvp-match-service.ts's payOutMatch.
+ *
+ * Rule 3: one credit per seat of exactly what cribbagePayouts says, so a
+ * win pays the pot to the winner and a forfeit refunds and splits.
  */
 async function payOutTable(table: StoredCribbageTable, seats: CribbageSeatRow[]): Promise<void> {
+  const payouts = table.state ? payoutsFor(table.state, table.stake) : null;
+  if (!payouts) return;
+
+  // Independent profiles, no ordering between them, so run concurrently.
+  await Promise.all(seats.map(async (seat) => {
+    const amount = payouts[seat.seat] ?? 0;
+    if (amount <= 0) return;
+    try {
+      await creditGoldByProfile(seat.playerId, amount);
+    } catch (error) {
+      console.error("cribbage.payout_credit_failed", { tableId: table.id, profileId: seat.playerId, amount, error });
+    }
+  }));
+
+  // A forfeit has no winner to record: nobody reached 121.
   if (!table.winnerId) return;
-  const pot = table.stake * seats.length;
-  try {
-    await creditGoldByProfile(table.winnerId, pot);
-  } catch (error) {
-    console.error("cribbage.payout_credit_failed", { tableId: table.id, winnerId: table.winnerId, pot, error });
-  }
 
   // Awaited rather than fired-and-forgotten: a serverless invocation can
   // be frozen right after this function's caller responds, and an
@@ -189,19 +235,42 @@ async function settleIfFinished(
   seats: CribbageSeatRow[],
 ): Promise<StoredCribbageTable> {
   if (table.status !== "active" || !table.state) return table;
-  const outcome = CRIBBAGE_GAME.result(table.state);
-  if (!outcome) return table;
+  const settle = settlementOf(table.state, seats);
+  if (!settle) return table;
 
-  const winnerId = seats.find((s) => s.seat === outcome.winner)?.playerId;
-  if (!winnerId) return table; // Unreachable: every seat in the game's state maps to a real seat row.
-
-  const settled = await advanceCribbageTable(table, table.state, { winnerId });
+  const settled = await advanceCribbageTable(table, table.state, settle);
   // Rule 2: a lost race did not happen, so it does not pay. Whoever won that
   // race is settling and paying this same table right now.
   if (!settled) return (await getCribbageTableById(table.id)) ?? table;
 
   await payOutTable(settled, seats);
   return settled;
+}
+
+/**
+ * Runs the turn clock, then settles the table if it is over, for a read.
+ * This is what makes a stalled seat forfeit without anyone having to move:
+ * every seated player's poll ticks it. A tick that ends the table settles
+ * and pays in the same guarded write.
+ */
+async function tickAndSettle(
+  table: StoredCribbageTable,
+  seats: CribbageSeatRow[],
+): Promise<StoredCribbageTable> {
+  if (table.status !== "active" || !table.state) return table;
+
+  const ticked = CRIBBAGE_GAME.tick?.(table.state, Date.now()) ?? null;
+  if (ticked === null) return settleIfFinished(table, seats);
+
+  const settle = settlementOf(ticked, seats);
+  const advanced = await advanceCribbageTable(table, ticked, settle);
+  // Rule 2: a lost race did not happen. Whoever won it wrote this same clock.
+  if (!advanced) return settleIfFinished((await getCribbageTableById(table.id)) ?? table, seats);
+  if (settle) {
+    await payOutTable(advanced, seats);
+    return advanced;
+  }
+  return settleIfFinished(advanced, seats);
 }
 
 /**
@@ -353,7 +422,7 @@ export async function readMyCribbageTable(
   }
 
   const seats = await getCribbageSeats(table.id);
-  const live = table.status === "active" ? await settleIfFinished(table, seats) : table;
+  const live = await tickAndSettle(table, seats);
 
   return { table: await tableView(live, seats, profile.id, Date.now()), profile };
 }
@@ -370,7 +439,7 @@ export async function readCribbageTableById(
   const seats = await getCribbageSeats(tableId);
   if (seatOf(seats, profile.id) === null) throw new CribbageRequestError("That is not your table.", 403);
 
-  const live = table.status === "active" ? await settleIfFinished(table, seats) : table;
+  const live = await tickAndSettle(table, seats);
   return { table: await tableView(live, seats, profile.id, Date.now()), profile };
 }
 
@@ -447,11 +516,15 @@ export async function startCribbageTableAsHost(
   return { table: await tableView(dealt, seats, profile.id, Date.now()), profile };
 }
 
-/** Leaving before the table has dealt. Refunds exactly the caller's own stake. */
+/**
+ * Leaving before the table has dealt. Refunds exactly the caller's own stake.
+ * Answers `table: null` so the client drops the waiting room straight away
+ * rather than showing it until a poll, where a second Leave would 409.
+ */
 export async function leaveCribbageTable(
   token: string,
   tableId: string,
-): Promise<{ profile: PlayerProfile }> {
+): Promise<{ table: null; profile: PlayerProfile }> {
   const profile = await ensureProfile(token);
   const table = await getCribbageTableById(tableId);
   if (!table) throw new CribbageRequestError("No such table.", 404);
@@ -461,7 +534,7 @@ export async function leaveCribbageTable(
   if (!left) throw new CribbageRequestError("You are not seated at that table, or it has already started.", 409);
 
   const refunded = await creditGoldByProfile(profile.id, table.stake);
-  return { profile: refunded ?? profile };
+  return { table: null, profile: refunded ?? profile };
 }
 
 /**
@@ -495,6 +568,8 @@ export async function playCribbageMove(
     });
   }
 
+  // The engine checks the turn clock itself: a move sent after it ran out
+  // comes back as the forfeited table, which settles below like any ending.
   const applied = CRIBBAGE_GAME.applyMove(current.state, seat, input.move, now);
   if ("reject" in applied) {
     throw new CribbageRequestError(applied.reject, 409, {
@@ -502,9 +577,8 @@ export async function playCribbageMove(
     });
   }
 
-  const outcome = CRIBBAGE_GAME.result(applied.next);
-  const winnerId = outcome ? seats.find((s) => s.seat === outcome.winner)?.playerId ?? null : null;
-  const stored = await advanceCribbageTable(current, applied.next, winnerId ? { winnerId } : null);
+  const settle = settlementOf(applied.next, seats);
+  const stored = await advanceCribbageTable(current, applied.next, settle);
   if (!stored) {
     const live = (await getCribbageTableById(current.id)) ?? current;
     throw new CribbageRequestError("That table moved on. Here is where it actually stands.", 409, {
@@ -512,14 +586,16 @@ export async function playCribbageMove(
     });
   }
 
-  if (outcome) await payOutTable(stored, seats);
+  // Rule 2: paid only after the guarded write is confirmed.
+  if (settle) await payOutTable(stored, seats);
   return { table: await tableView(stored, seats, profile.id, now), profile };
 }
 
 /**
  * Resigning ends the whole table, not just the resigning seat. See
  * lib/cribbage/engine.ts's resignCribbage for why cribbage has no partial
- * "the rest keep playing" continuation.
+ * "the rest keep playing" continuation. The resigner forfeits their stake
+ * and nobody wins: every other seat is refunded and splits it.
  */
 export async function resignCribbageTable(
   token: string,
@@ -539,16 +615,15 @@ export async function resignCribbageTable(
   }
 
   const next = CRIBBAGE_GAME.resign ? CRIBBAGE_GAME.resign(current.state, seat, now) : current.state;
-  const outcome = CRIBBAGE_GAME.result(next);
-  const winnerId = outcome ? seats.find((s) => s.seat === outcome.winner)?.playerId ?? null : null;
+  const settle = settlementOf(next, seats);
 
-  const stored = await advanceCribbageTable(current, next, winnerId ? { winnerId } : null);
+  const stored = await advanceCribbageTable(current, next, settle);
   if (!stored) {
     const live = (await getCribbageTableById(current.id)) ?? current;
     return { table: await tableView(live, seats, profile.id, now), profile };
   }
 
-  if (outcome) await payOutTable(stored, seats);
+  if (settle) await payOutTable(stored, seats);
   return { table: await tableView(stored, seats, profile.id, now), profile };
 }
 

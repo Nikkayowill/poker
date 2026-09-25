@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DuelGame, DuelSeat } from "./match-contract";
 import {
   WORD_RACE_DUEL,
+  createWordRaceState,
   WORD_RACE_LOCKOUT_MS,
   WORD_RACE_REVEAL_MS,
   WORD_RACE_ROUNDS,
@@ -13,6 +14,7 @@ import {
   type WordRaceSnapshot,
   type WordRaceState,
 } from "./word-race";
+import { seededRandomInt } from "./secure-random";
 import {
   WORD_RACE_MAX_LENGTH,
   WORD_RACE_MIN_LENGTH,
@@ -30,8 +32,9 @@ const game = WORD_RACE_DUEL as DuelGame<WordRaceState, WordRaceMove, WordRaceSna
 const T0 = 1_700_000_000_000;
 const SEED = 20260812;
 
+/** A pinned board: the seeded source stands in for the CSPRNG a real match uses. */
 function open(seed = SEED, now = T0): WordRaceState {
-  return game.createState(seed, now);
+  return createWordRaceState(seed, now, seededRandomInt(seed));
 }
 
 /** Applies a move that is expected to be accepted, and fails loudly if it was not. */
@@ -117,7 +120,14 @@ describe("the word bank", () => {
 });
 
 describe("setting a match up", () => {
-  it("draws the whole series from the seed and nothing else", () => {
+  it("draws a real match from the CSPRNG, not the seed", () => {
+    const words = (seed: number) => game.createState(seed, T0).rounds.map((round) => round.word).join();
+    // Five words from a 478-word bank: the same seed twice agreeing on all
+    // five by chance is vanishingly unlikely.
+    expect(words(4242)).not.toBe(words(4242));
+  });
+
+  it("draws the whole series from its random source and nothing else", () => {
     const a = open(4242);
     const b = open(4242);
     expect(b.rounds).toEqual(a.rounds);
@@ -155,7 +165,7 @@ describe("setting a match up", () => {
     expect(spelled).toEqual([]);
   });
 
-  it("scrambles the same way for the same seed", () => {
+  it("scrambles the same way for the same random source", () => {
     expect(open(777).rounds.map((r) => r.scramble)).toEqual(open(777).rounds.map((r) => r.scramble));
   });
 });

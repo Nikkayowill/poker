@@ -2,8 +2,15 @@
  * Mancala (standard Kalah), as a staked 1v1 duel.
  *
  * Pure and synchronous, like ./othello.ts: every function takes a state and
- * returns the next one, nothing here reads a clock or a request. There is no
- * clock on this game at all -- see the file's own note on that below.
+ * returns the next one, nothing here reads a clock or a request. `now` is
+ * always an argument.
+ *
+ * ## Clock
+ *
+ * Each seat has the same bank clock Othello uses, running only on its own
+ * turn. Without it a player who is behind could stop moving forever, and the
+ * other seat's only exit would be to resign and pay them. A flag falling
+ * loses the match.
  *
  * ## Layout
  *
@@ -40,6 +47,7 @@
 import {
   defineDuelGame,
   otherSeat,
+  remainingTime,
   type DuelMoveResult,
   type DuelOutcome,
   type DuelSeat,
@@ -74,6 +82,10 @@ export interface MancalaState {
   pits: number[];
   /** Whose turn it is. Meaningless once `outcome` is set. */
   turn: DuelSeat;
+  /** When the current turn's clock started running, in epoch ms. */
+  turnStartedAt: number;
+  /** Each seat's banked remaining ms as of `turnStartedAt`. Read through `mancalaRemainingMs`. */
+  clocks: [number, number];
   /** Null before the first move. */
   lastMove: MancalaLastMove | null;
   /** Set once, by whatever ended the match. `mancalaResult` is just this field. */
@@ -87,6 +99,8 @@ export interface MancalaSnapshot {
   legalPits: number[];
   /** [seat 0's store, seat 1's store]. The score, and the win condition. */
   stores: [number, number];
+  /** Live remaining ms for [seat 0, seat 1], computed against `now`. */
+  clocks: [number, number];
   lastMove: MancalaLastMove | null;
   outcome: DuelOutcome | null;
 }
@@ -104,7 +118,12 @@ const SEAT_PITS: Readonly<Record<DuelSeat, readonly number[]>> = {
   1: [7, 8, 9, 10, 11, 12],
 };
 
+/** Five minutes each plus three seconds a move, matching Othello and checkers. */
+export const MANCALA_CLOCK_MS = 5 * 60 * 1000;
+export const MANCALA_INCREMENT_MS = 3 * 1000;
+
 const REASON_RESIGNED = "Resigned";
+const REASON_TIMEOUT = "Timeout";
 
 /* ------------------------------------------------------------------ pits */
 
@@ -218,13 +237,60 @@ function finalOutcome(pits: readonly number[]): DuelOutcome {
  * it: Mancala has no random setup, and the contract hands every game the
  * same arguments regardless.
  */
-export function createMancalaState(_seed: number, _now: number): MancalaState {
+export function createMancalaState(_seed: number, now: number): MancalaState {
   return {
     pits: openingPits(),
     turn: 0,
+    turnStartedAt: now,
+    clocks: [MANCALA_CLOCK_MS, MANCALA_CLOCK_MS],
     lastMove: null,
     outcome: null,
   };
+}
+
+/* ------------------------------------------------------------------ clock */
+
+/**
+ * A stored state with its clock filled in. Matches stored before the clock
+ * existed have no `clocks`, and their current turn is treated as starting at
+ * `now` with a full bank each.
+ */
+function withClock(state: MancalaState, now: number): MancalaState {
+  const stored = state as Partial<MancalaState>;
+  if (Array.isArray(stored.clocks) && typeof stored.turnStartedAt === "number") return state;
+  return { ...state, clocks: [MANCALA_CLOCK_MS, MANCALA_CLOCK_MS], turnStartedAt: now };
+}
+
+/** What a seat has left at `now`. Frozen once the match is over. */
+export function mancalaRemainingMs(state: MancalaState, seat: DuelSeat, now: number): number {
+  const clocked = withClock(state, now);
+  return remainingTime(
+    clocked.clocks[seat],
+    seat,
+    clocked.turn,
+    clocked.turnStartedAt,
+    now,
+    clocked.outcome !== null,
+  );
+}
+
+function flagFallen(state: MancalaState, now: number): MancalaState {
+  const clocked = withClock(state, now);
+  const clocks: [number, number] = [clocked.clocks[0], clocked.clocks[1]];
+  clocks[clocked.turn] = 0;
+  return { ...clocked, clocks, outcome: { winner: otherSeat(clocked.turn), reason: REASON_TIMEOUT } };
+}
+
+/**
+ * A flag falling, the only thing that happens without a move. Null when
+ * nothing changed, which is nearly every poll. A legacy match with no clock
+ * gets one here, once.
+ */
+export function tickMancala(state: MancalaState, now: number): MancalaState | null {
+  if (state.outcome !== null) return null;
+  const clocked = withClock(state, now);
+  if (mancalaRemainingMs(clocked, clocked.turn, now) > 0) return clocked === state ? null : clocked;
+  return flagFallen(clocked, now);
 }
 
 /**
@@ -254,11 +320,12 @@ function isPitIndex(value: unknown): value is number {
  * an ended board has no "next turn" to hand anyone.
  */
 export function applyMancalaMove(
-  state: MancalaState,
+  stored: MancalaState,
   seat: DuelSeat,
   move: unknown,
-  _now: number,
+  now: number,
 ): DuelMoveResult<MancalaState> {
+  const state = withClock(stored, now);
   if (state.outcome !== null) return { reject: "This match is already over." };
 
   const claim = parseMove(move);
@@ -266,6 +333,11 @@ export function applyMancalaMove(
   if (seat !== state.turn) return { reject: "It is not your turn." };
   if (!SEAT_PITS[seat].includes(claim.pit)) return { reject: "That is not one of your pits." };
   if (state.pits[claim.pit] === 0) return { reject: "That pit is empty." };
+  // A player whose flag fell cannot then move; the match ends on the attempt.
+  if (mancalaRemainingMs(state, seat, now) <= 0) return { next: flagFallen(state, now) };
+
+  const clocks: [number, number] = [state.clocks[0], state.clocks[1]];
+  clocks[seat] = mancalaRemainingMs(state, seat, now) + MANCALA_INCREMENT_MS;
 
   const pits = [...state.pits];
   const { lastPit, lastPitValueBefore } = sowFrom(pits, seat, claim.pit);
@@ -291,11 +363,13 @@ export function applyMancalaMove(
     extraTurn: extraTurn && !ended,
   };
   if (ended) {
-    return { next: { pits, turn: state.turn, lastMove, outcome: finalOutcome(pits) } };
+    return {
+      next: { pits, turn: state.turn, turnStartedAt: now, clocks, lastMove, outcome: finalOutcome(pits) },
+    };
   }
 
   const turn = extraTurn ? seat : otherSeat(seat);
-  return { next: { pits, turn, lastMove, outcome: null } };
+  return { next: { pits, turn, turnStartedAt: now, clocks, lastMove, outcome: null } };
 }
 
 /** Whatever ended the match, or null while it is still being played. */
@@ -310,10 +384,14 @@ export function mancalaResult(state: MancalaState): DuelOutcome | null {
  * they stood: a resignation is a loss regardless of the store count, so
  * there is nothing to sweep or settle beyond recording who lost.
  */
-export function resignMancala(state: MancalaState, seat: DuelSeat, _now: number): MancalaState {
+export function resignMancala(state: MancalaState, seat: DuelSeat, now: number): MancalaState {
   if (state.outcome !== null) return state;
+  const clocked = withClock(state, now);
+  const clocks: [number, number] = [clocked.clocks[0], clocked.clocks[1]];
+  clocks[clocked.turn] = mancalaRemainingMs(clocked, clocked.turn, now);
   return {
-    ...state,
+    ...clocked,
+    clocks,
     outcome: { winner: otherSeat(seat), reason: REASON_RESIGNED },
   };
 }
@@ -328,7 +406,7 @@ export function resignMancala(state: MancalaState, seat: DuelSeat, _now: number)
 export function mancalaSnapshot(
   state: MancalaState,
   seat: DuelSeat | null,
-  _now: number,
+  now: number,
 ): MancalaSnapshot {
   const live = state.outcome === null;
   const yours = live && seat !== null && seat === state.turn;
@@ -338,6 +416,7 @@ export function mancalaSnapshot(
     turn: state.turn,
     legalPits: yours ? legalMancalaPits(state.pits, state.turn) : [],
     stores: [state.pits[STORE_SEAT0], state.pits[STORE_SEAT1]],
+    clocks: [mancalaRemainingMs(state, 0, now), mancalaRemainingMs(state, 1, now)],
     lastMove: state.lastMove,
     outcome: state.outcome,
   };
@@ -348,6 +427,7 @@ export const MANCALA_DUEL = defineDuelGame<MancalaState, unknown, MancalaSnapsho
   label: "Mancala",
   createState: createMancalaState,
   applyMove: applyMancalaMove,
+  tick: tickMancala,
   result: mancalaResult,
   snapshot: mancalaSnapshot,
   resign: resignMancala,

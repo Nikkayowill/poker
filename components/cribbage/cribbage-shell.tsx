@@ -68,6 +68,8 @@ interface CribbageTable {
   canStart: boolean;
   players: CribbagePlayer[];
   winnerId: string | null;
+  forfeitedIds: string[];
+  yourPayout: number | null;
   state: CribbageSnapshot | null;
 }
 
@@ -308,7 +310,7 @@ export function CribbageShell({ Board }: { Board: ComponentType<CribbageBoardPro
       <header className="floor-bar">
         <FloorBackLink
           confirmLeave={table?.status === "active"}
-          confirmMessage="You have Gold staked on this table. Leaving won't end it — come back to finish, or use Resign to settle the pot now."
+          confirmMessage="You have Gold staked on this table. Leaving won't end it, and if the table waits on you past your turn clock you forfeit your stake."
         />
         <span className="gold-balance floor-wallet">
           <Coins size={13} aria-hidden="true" />
@@ -529,9 +531,21 @@ function CribbageMatchFrame({
   onLeave: () => void;
 }) {
   const completed = table.status === "completed";
-  const won = completed && table.winnerId !== null
-    && table.players.find((p) => p.seat === table.yourSeat)?.profileId === table.winnerId;
+  const yourId = table.players.find((p) => p.seat === table.yourSeat)?.profileId ?? null;
+  const won = completed && table.winnerId !== null && yourId === table.winnerId;
   const winner = completed ? table.players.find((p) => p.profileId === table.winnerId) : null;
+  // A forfeit has no winner: whoever resigned or ran out of time loses their
+  // stake and everyone else is refunded plus a share of it.
+  const forfeit = completed && table.winnerId === null;
+  const youForfeited = forfeit && yourId !== null && table.forfeitedIds.includes(yourId);
+  const net = table.yourPayout === null ? (won ? table.pot - table.stake : -table.stake) : table.yourPayout - table.stake;
+  const headline = won
+    ? "You win"
+    : !forfeit
+      ? `${winner?.displayName ?? "Someone"} wins`
+      : youForfeited
+        ? table.state?.winReason === "Timeout" ? "You ran out of time" : "You resigned"
+        : "Table ended early";
 
   // Same edge-triggered announcement duel-shell.tsx's own match frame makes:
   // once per table, on the edge of it actually completing, not on every poll
@@ -541,8 +555,8 @@ function CribbageMatchFrame({
   useEffect(() => {
     if (!completed || announcedRef.current === table.id) return;
     announcedRef.current = table.id;
-    play(won ? "win-modest" : "lose");
-  }, [completed, won, table.id, play]);
+    play(net > 0 ? "win-modest" : "lose");
+  }, [completed, net, table.id, play]);
 
   return (
     <div className="duel-match crib-match">
@@ -579,10 +593,10 @@ function CribbageMatchFrame({
 
       {completed ? (
         <div className={clsx("duel-result", won && "duel-result-won")}>
-          <WinCelebration active={won} amount={table.pot - table.stake} />
-          <strong>{won ? "You win" : `${winner?.displayName ?? "Someone"} wins`}</strong>
+          <WinCelebration active={won} amount={net} />
+          <strong>{headline}</strong>
           <span className="duel-result-gold">
-            {won ? `+${(table.pot - table.stake).toLocaleString()} Gold` : `−${table.stake.toLocaleString()} Gold`}
+            {net > 0 ? `+${net.toLocaleString()} Gold` : net < 0 ? `−${(-net).toLocaleString()} Gold` : "Stake returned"}
           </span>
           <button type="button" className="floor-play" onClick={onLeave}>Play again</button>
         </div>

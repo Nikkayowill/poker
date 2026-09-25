@@ -40,6 +40,12 @@ function Seeds({ count }: { count: number }) {
   );
 }
 
+/** mm:ss, rounded up so "0:00" only ever means the flag fell. */
+function clockLabel(ms: number): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function seedWord(count: number): string {
   return `${count} seed${count === 1 ? "" : "s"}`;
 }
@@ -54,6 +60,9 @@ function statusLine(
     // The result card already says who won. This line says why the board
     // looks the way it does: a resign leaves seeds in the pits, and the
     // sweep at the end empties every pit at once.
+    if (outcome.reason === "Timeout") {
+      return outcome.winner === yourSeat ? "They ran out of time." : "You ran out of time.";
+    }
     // A played-out game always ends with every pit swept empty, so seeds
     // still on the board mean somebody resigned.
     const resigned = state.pits.some((count, pit) => pit !== storeOf(0) && pit !== storeOf(1) && count > 0);
@@ -162,7 +171,9 @@ export function MancalaBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<M
     <div className="mc">
       <div className={clsx("mc-side", theirTurn && "mc-side-active")}>
         <span>Opponent</span>
-        {theirTurn && <span className="mc-side-turn">to move</span>}
+        <span className="mc-side-turn">
+          {theirTurn ? "to move · " : ""}{clockLabel(state.clocks[theirSeat])}
+        </span>
       </div>
 
       <div className="mc-board" role="group" aria-label="Mancala board">
@@ -174,7 +185,9 @@ export function MancalaBoard({ state, yourSeat, busy, onMove }: DuelBoardProps<M
 
       <div className={clsx("mc-side", yourTurn && "mc-side-active")}>
         <span>You</span>
-        {yourTurn && <span className="mc-side-turn">to move</span>}
+        <span className="mc-side-turn">
+          {yourTurn ? "to move · " : ""}{clockLabel(state.clocks[yourSeat])}
+        </span>
       </div>
 
       <p

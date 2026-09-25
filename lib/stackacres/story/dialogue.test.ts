@@ -6,9 +6,10 @@ import {
   HAPTIC_TICK,
   STORY_DIALOGUE,
   dialogueNodeFor,
+  questProgressNodeId,
   storyNode,
 } from "./dialogue";
-import { ALL_STORY_QUESTS, TRAVELER_QUESTS } from "./quests";
+import { ALL_STORY_QUESTS, TRAVELER_QUESTS, type StoryQuest } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
@@ -147,5 +148,28 @@ describe("dialogueNodeFor", () => {
   it("never gives anyone but Ray the finale hint", () => {
     const oneShort: StackAcresStoryFinale = { travelersHome: 9, travelersNeeded: 10, leoUnlocked: false };
     expect(dialogueNodeFor("bea", DONE, oneShort).id).toBe("bea.home");
+  });
+});
+
+describe("questProgressNodeId", () => {
+  const FLAT: StoryQuest = { id: "test.flat", title: "Flat", objectives: [], turnInLabel: "Done" };
+  const SEGMENTED: StoryQuest = {
+    id: "test.segmented",
+    title: "Segmented",
+    turnInLabel: "Done",
+    segments: [
+      { id: "test.segmented.s0", objectives: [] },
+      { id: "test.segmented.s1", objectives: [] },
+    ],
+  };
+
+  it("is the flat node id for a flat quest, ignoring the segment index", () => {
+    expect(questProgressNodeId(FLAT, 0)).toBe("test.flat.progress");
+    expect(questProgressNodeId(FLAT, 5)).toBe("test.flat.progress");
+  });
+
+  it("names the checkpoint's own node for a segmented quest", () => {
+    expect(questProgressNodeId(SEGMENTED, 0)).toBe("test.segmented.s0.progress");
+    expect(questProgressNodeId(SEGMENTED, 1)).toBe("test.segmented.s1.progress");
   });
 });

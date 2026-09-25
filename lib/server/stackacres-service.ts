@@ -177,6 +177,7 @@ import {
 import type { StoryEvent } from "@/lib/stackacres/story/events";
 import { isStoryItemId, type StoryItemId } from "@/lib/stackacres/story/items";
 import { isQuestPlaceId } from "@/lib/stackacres/story/places";
+import { questFlatObjectives } from "@/lib/stackacres/story/quests";
 import {
   activeQuest,
   applyStoryEvent,
@@ -6257,7 +6258,7 @@ export async function turnInStackAcresTravelerQuest(
     const quest = result.quest;
     if (quest === null) throw new Error(`${traveler}: turn-in ${result.outcome} without a quest`);
 
-    const debits = quest.objectives.flatMap((objective) =>
+    const debits = questFlatObjectives(quest).flatMap((objective) =>
       objective.kind === "deliver" ? [{ item: objective.item, quantity: objective.target }] : [],
     );
     const written = await turnInStackAcresStory(profile.id, result.story, current.version, debits);

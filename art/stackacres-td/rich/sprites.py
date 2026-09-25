@@ -516,20 +516,20 @@ def fence(length, vertical=False):
         c = Canvas(7, length + 8)
         for y in range(2, length + 6):
             grain = noise1(3, y * 0.7, 3, 110)
-            c.put(2, y, "wood", 5.4 - (0.7 if grain < 0.3 else 0))
-            c.put(3, y, "wood", 4.2 - (0.6 if grain > 0.7 else 0))
-            c.put(4, y, "wood", 1.4)
+            c.put(2, y, "fencewood", 5.4 - (0.7 if grain < 0.3 else 0))
+            c.put(3, y, "fencewood", 4.2 - (0.6 if grain > 0.7 else 0))
+            c.put(4, y, "fencewood", 1.4)
             if hash2(y // 5, 0, 111) < 0.15 and y % 5 == 2:
-                c.put(3, y, "wood", 2.0)                          # a split in the rail
+                c.put(3, y, "fencewood", 2.0)                     # a split in the rail
         for y in range(0, length + 1, 16):
             for x in range(1, 6):
-                c.put(x, y + 1, "wood", 6.6 - (x - 1) * 0.5)      # the cut top, lit
-                c.put(x, y + 2, "wood", 5.6 - (x - 1) * 0.5)
+                c.put(x, y + 1, "fencewood", 6.6 - (x - 1) * 0.5)  # the cut top, lit
+                c.put(x, y + 2, "fencewood", 5.6 - (x - 1) * 0.5)
                 for yy in range(y + 3, y + 8):
                     level = 5.2 if x == 1 else 2.0 if x == 5 else 4.2
                     if x == 3 and noise1(x, yy, 2, y + 112) < 0.35:
                         level -= 1.0
-                    c.put(x, yy, "wood", level)
+                    c.put(x, yy, "fencewood", level)
             c.put(3, y + 4, "stone", 6.2)
             _post_foot_moss(c, (1, 2, 5), y + 7)
         return c.outline().image(), (3, length + 6)
@@ -538,12 +538,12 @@ def fence(length, vertical=False):
         for x in range(2, length + 6):
             grain = noise1(x * 0.4, ry, 3, 120 + ry)
             top = 5.4 + (0.6 if grain > 0.7 else -0.7 if grain < 0.28 else 0)
-            c.put(x, ry, "wood", top)
-            c.put(x, ry + 1, "wood", 3.8 - (0.8 if grain < 0.3 else 0))
-            c.put(x, ry + 2, "wood", 1.4)
+            c.put(x, ry, "fencewood", top)
+            c.put(x, ry + 1, "fencewood", 3.8 - (0.8 if grain < 0.3 else 0))
+            c.put(x, ry + 2, "fencewood", 1.4)
             if hash2(x // 6, ry, 121) < 0.12 and x % 6 == 3:
-                c.put(x, ry + 1, "wood", 1.8)
-                c.put(x + 1, ry + 1, "wood", 1.8)                 # a check in the rail
+                c.put(x, ry + 1, "fencewood", 1.8)
+                c.put(x + 1, ry + 1, "fencewood", 1.8)            # a check in the rail
     for px in range(0, length + 1, 16):
         for y in range(1, 11):
             for i, x in enumerate(range(px + 2, px + 5)):
@@ -552,7 +552,7 @@ def fence(length, vertical=False):
                     level -= 1.1
                 if y == 1:
                     level = (6.8, 6.0, 4.4)[i]
-                c.put(x, y, "wood", level)
+                c.put(x, y, "fencewood", level)
         for ry in (3, 7):
             c.put(px + 3, ry + 1, "stone", 6.2)                   # nails
             c.shift(px + 5, ry, -1.2)                             # the post shades the rail beside it

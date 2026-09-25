@@ -157,14 +157,21 @@ export async function POST(
       // Go's game_id will never match a heads-up table lookup or vice versa,
       // but there's no reason to pay for the wrong store's lookup either).
       if (updated.tournament?.winnerProfileId && !wasAlreadyFinished) {
-        if (updated.tournament.format === "sit_and_go") {
-          await settleSitAndGoIfFinished(updated).catch((error) => {
-            console.error("sit_and_go.settle_failed", { gameId: updated.id, error });
-          });
-        } else {
-          await settleHeadsUpIfFinished(updated).catch((error) => {
-            console.error("heads_up.settle_failed", { gameId: updated.id, error });
-          });
+        const settledProfile = updated.tournament.format === "sit_and_go"
+          ? await settleSitAndGoIfFinished(updated).catch((error) => {
+              console.error("sit_and_go.settle_failed", { gameId: updated.id, error });
+              return null;
+            })
+          : await settleHeadsUpIfFinished(updated).catch((error) => {
+              console.error("heads_up.settle_failed", { gameId: updated.id, error });
+              return null;
+            });
+        // Only when the requester is the winner: the pot was just credited to
+        // updated.tournament.winnerProfileId, and this request's own profile
+        // (if any) must not be silently swapped for someone else's balance.
+        const requesterProfileId = updated.seats.find((seat) => seat.ownerToken === ownerToken)?.profileId;
+        if (settledProfile && requesterProfileId === updated.tournament.winnerProfileId) {
+          profile = settledProfile;
         }
       }
       // A human action just closed the hand (e.g. the last call that ends

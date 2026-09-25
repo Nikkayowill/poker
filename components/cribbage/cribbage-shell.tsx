@@ -6,6 +6,7 @@ import { Coins } from "lucide-react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
+import { WinCelebration } from "@/components/celebration/win-celebration";
 import { useAppShell } from "@/components/shell/app-shell";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
@@ -578,6 +579,7 @@ function CribbageMatchFrame({
 
       {completed ? (
         <div className={clsx("duel-result", won && "duel-result-won")}>
+          <WinCelebration active={won} amount={table.pot - table.stake} />
           <strong>{won ? "You win" : `${winner?.displayName ?? "Someone"} wins`}</strong>
           <span className="duel-result-gold">
             {won ? `+${(table.pot - table.stake).toLocaleString()} Gold` : `−${table.stake.toLocaleString()} Gold`}

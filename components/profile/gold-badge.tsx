@@ -113,7 +113,7 @@ export function GoldBadge({
     : <strong>{displayedBalance.toLocaleString()}</strong>;
 
   return (
-    <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")}>
+    <div className={clsx("gold-badge", justClaimed && "gold-badge-claimed")} data-win-target="gold-badge">
       <span className="gold-balance">
         <Coins size={14} />
         {balance}

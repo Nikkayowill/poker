@@ -12,6 +12,7 @@ import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { settleSitAndGoIfFinished } from "@/lib/server/sit-and-go-service";
 import { readSessionToken } from "@/lib/server/session";
 import { publicErrorMessage } from "@/lib/server/public-error";
+import type { PlayerProfile } from "@/lib/profile/types";
 
 export const runtime = "nodejs";
 
@@ -54,15 +55,22 @@ export async function POST(
     // final hand can resolve through -- a human's expired clock, or the
     // auto-fold/auto-check that follows it. Neither settle function ever
     // throws. Format-dispatched the same way the actions route is.
+    let profile: PlayerProfile | undefined;
     if (advanced.tournament?.winnerProfileId && !wasAlreadyFinished) {
-      if (advanced.tournament.format === "sit_and_go") {
-        await settleSitAndGoIfFinished(advanced).catch((error) => {
-          console.error("sit_and_go.settle_failed", { gameId: advanced.id, error });
-        });
-      } else {
-        await settleHeadsUpIfFinished(advanced).catch((error) => {
-          console.error("heads_up.settle_failed", { gameId: advanced.id, error });
-        });
+      const settledProfile = advanced.tournament.format === "sit_and_go"
+        ? await settleSitAndGoIfFinished(advanced).catch((error) => {
+            console.error("sit_and_go.settle_failed", { gameId: advanced.id, error });
+            return null;
+          })
+        : await settleHeadsUpIfFinished(advanced).catch((error) => {
+            console.error("heads_up.settle_failed", { gameId: advanced.id, error });
+            return null;
+          });
+      // Only when the requester (whoever's clock just expired into this
+      // advance) is the winner -- see the actions route's identical guard.
+      const requesterProfileId = advanced.seats.find((seat) => seat.ownerToken === ownerToken)?.profileId;
+      if (settledProfile && requesterProfileId === advanced.tournament.winnerProfileId) {
+        profile = settledProfile;
       }
     }
     // Measured on this clock, so a browser whose own clock runs fast knows how
@@ -76,6 +84,7 @@ export async function POST(
       game: toSnapshot(advanced, ownerToken),
       persistence: persistenceMode(),
       retryAfterMs,
+      ...(profile ? { profile } : {}),
     });
   } catch (error) {
     const message = publicErrorMessage(error, "Could not advance the table.");

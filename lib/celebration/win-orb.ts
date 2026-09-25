@@ -68,14 +68,19 @@ export const SWARM_MS = 540;
 export const HOLD_MS = 400;
 /** The orb splitting into coins. */
 export const SPLIT_MS = 210;
-/** The coins hovering before the first one leaves. */
-export const HOVER_MS = 140;
-/** Between one coin leaving and the next. */
-export const COIN_STAGGER_MS = 70;
+/** The coins hovering before the first one leaves -- kept short on purpose:
+ * long enough that the split reads as a real beat, not so long that the
+ * coins visibly sit there with nothing happening before they move again.
+ * The old 140ms read as a stall. */
+export const HOVER_MS = 40;
+/** Between one coin leaving and the next -- tight enough that they read as
+ * one flowing stream into the balance rather than separate launches. */
+export const COIN_STAGGER_MS = 45;
 /** One coin's flight to the balance. */
 export const COIN_FLY_MS = 440;
-/** How many coins the orb splits into -- an accent, not a spectacle. */
-export const COINS = 5;
+/** How many coins the orb splits into. Fewer, but each one meaning more --
+ * five read as clutter for what is a small accent, not a spectacle. */
+export const COINS = 3;
 /** How many specks swarm into the orb -- dense enough to read as a solid,
  * liquid sphere rather than a scatter of dots. */
 export const SPECKS = 110;

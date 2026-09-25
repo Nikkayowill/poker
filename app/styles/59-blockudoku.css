@@ -168,6 +168,12 @@
 .bk-slot:focus-visible { outline: 2px solid var(--bk-gold); outline-offset: 2px; }
 .bk-slot-selected { box-shadow: inset 0 0 0 2px var(--bk-gold), 0 0 14px rgba(255, 210, 63, .25); }
 .bk-slot-stuck { opacity: .4; }
+/* All three pieces are still on the wire and only the server can deal the next three. */
+.bk-tray-dealing .bk-slot { animation: bk-dealing .9s ease-in-out infinite alternate; }
+@keyframes bk-dealing {
+  from { opacity: 1; }
+  to { opacity: .6; }
+}
 
 .bk-piece {
   display: grid;
@@ -230,6 +236,7 @@
 @media (prefers-reduced-motion: reduce) {
   .bk-cell-clearing,
   .bk-gain,
-  .bk-clock-low { animation: none; }
+  .bk-clock-low,
+  .bk-tray-dealing .bk-slot { animation: none; }
   .bk-progress span { transition: none; }
 }

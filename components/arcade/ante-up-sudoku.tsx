@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Coins, Eraser, HelpCircle, Pencil } from "lucide-react";
+import { Coins, Eraser, HelpCircle, Pencil, X } from "lucide-react";
 import { FloorBackLink } from "@/components/arcade/floor-back-link";
 import { HowToPlayModal } from "@/components/arcade/how-to-play-modal";
 import { useArcadeSound } from "@/components/arcade/use-arcade-sound";
@@ -231,7 +231,9 @@ export function AnteUpSudoku() {
         }
         return true;
       }
-      setError(data.error ?? "That did not go through.");
+      // A settled board (the clock ran out under this digit) already says so
+      // on the result card, so it doesn't also need a banner.
+      if (!data.round) setError(data.error ?? "That did not go through.");
       return false;
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
@@ -331,6 +333,66 @@ export function AnteUpSudoku() {
     });
   };
 
+  /**
+   * A physical keyboard does what the pad does: digits fill (or note, in notes
+   * mode), Backspace/Delete/0 erase, arrows move the selection, N flips notes.
+   * Returns true when it used the key.
+   */
+  const onKey = (event: KeyboardEvent): boolean => {
+    const moves: Record<string, [number, number]> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    };
+    const move = moves[event.key];
+    if (move) {
+      const clamp = (n: number) => Math.min(SUDOKU_SIZE - 1, Math.max(0, n));
+      setSelected((current) => {
+        if (current === null) return 0;
+        return clamp(rowOf(current) + move[0]) * SUDOKU_SIZE + clamp(columnOf(current) + move[1]);
+      });
+      return true;
+    }
+    // Held keys only repeat for movement; a held digit is not ten fills.
+    if (event.repeat || busy) return false;
+    if (event.key.toLowerCase() === "n") {
+      selectSound();
+      setNotesMode((mode) => !mode);
+      return true;
+    }
+    if (selected === null) return false;
+    if (/^[1-9]$/.test(event.key)) {
+      const digit = Number(event.key);
+      if (notesMode) toggleNote(digit); else fill(digit);
+      return true;
+    }
+    if (event.key === "Backspace" || event.key === "Delete" || event.key === "0") {
+      if (notesMode) clearNotes(); else fill(0);
+      return true;
+    }
+    return false;
+  };
+
+  // The newest onKey, so the listener below is added once per attempt
+  // rather than on every render.
+  const keyHandler = useRef(onKey);
+  useEffect(() => {
+    keyHandler.current = onKey;
+  });
+  useEffect(() => {
+    if (!active) return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (document.querySelector("[role='dialog']")) return;
+      if (keyHandler.current(event)) event.preventDefault();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [active]);
+
   const resign = () => {
     if (sending.current) return;
     fills.clear();
@@ -390,7 +452,7 @@ export function AnteUpSudoku() {
           <p>
             Pick a difficulty, then wager Gold or play free. Beat the grid before its clock runs
             out and you win; let the clock expire or give up and the wager is gone. A wrong digit
-            only costs a mistake, tracked but not fatal. Harder difficulties run a longer clock,
+            costs a mistake, and the third mistake ends the grid. Harder difficulties run a longer clock,
             pay more on a win, and let you stake more — your wager and its payout are locked in
             the moment you ante up.
           </p>
@@ -483,6 +545,15 @@ export function AnteUpSudoku() {
             <span className="ante-clock" aria-live="polite">
               {active ? formatDuration(msRemaining) : formatDuration(attempt.elapsedMs)}
             </span>
+            {active && (
+              <span
+                className={clsx("ng-mistakes", attempt.mistakes > 0 && "ng-mistakes-spent")}
+                aria-label={`${attempt.maxMistakes - attempt.mistakes} mistakes left`}
+              >
+                <X size={13} aria-hidden="true" />
+                <strong>{attempt.maxMistakes - attempt.mistakes}</strong>
+              </span>
+            )}
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
               <strong>{attempt.wager.toLocaleString()}</strong>
@@ -554,7 +625,13 @@ export function AnteUpSudoku() {
             >
               <WinCelebration active={attempt.status === "won" && result.profited} amount={result.net} />
               <strong>
-                {attempt.status === "won" ? "You beat it" : attempt.status === "timed-out" ? "Time's up" : "Gave up"}
+                {attempt.status === "won"
+                  ? "You beat it"
+                  : attempt.status === "timed-out"
+                    ? "Time's up"
+                    : attempt.mistakes >= attempt.maxMistakes
+                      ? "Too many mistakes"
+                      : "Gave up"}
               </strong>
               <span>
                 {formatDuration(attempt.elapsedMs)} · {attempt.mistakes} {attempt.mistakes === 1 ? "mistake" : "mistakes"}

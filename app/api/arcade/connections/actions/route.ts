@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { playConnectionsGuess, toConnectionsErrorResponse } from "@/lib/server/connections-service";
 import { CONNECTIONS_GROUP_SIZE } from "@/lib/arcade/puzzles/connections";
+import { isBanned } from "@/lib/server/profile-store";
 import { enforceRateLimit } from "@/lib/server/rate-limit";
 import { readOrCreateSessionToken, withRequestSessionCookie } from "@/lib/server/session";
 
@@ -36,6 +37,14 @@ export async function POST(request: NextRequest) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "Pick four words." }, { status: 400 }),
+        token,
+      );
+    }
+    // A guess can settle a wager or the daily bonus, both paid in Gold.
+    if (await isBanned(token)) {
+      return withRequestSessionCookie(
+        request,
+        NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),
         token,
       );
     }

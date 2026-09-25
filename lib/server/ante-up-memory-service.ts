@@ -60,17 +60,19 @@ function snapshot(stored: StoredAnteUpAttempt<AnteUpMemoryAttempt>): AnteUpMemor
   return toAnteUpMemorySnapshot(stored.state, { id: stored.id, version: stored.version });
 }
 
-/** Never throws; see ante-up-service.ts's payOutWin for why. */
-async function payOutWin(profileId: string, attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): Promise<void> {
+/** Never throws; see ante-up-service.ts's payOutWin for why. Returns the credited profile, or null when nothing was paid. */
+async function payOutWin(profileId: string, attempt: Pick<AnteUpMemoryAttempt, "wager" | "board">): Promise<PlayerProfile | null> {
   const payout = anteUpMemoryPayout(attempt);
-  if (payout <= 0) return;
+  if (payout <= 0) return null;
+  let credited: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(profileId, payout);
+    credited = await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("ante-up-memory.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
   await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  return credited;
 }
 
 /** The caller's live attempt, or null. */
@@ -203,15 +205,13 @@ export async function flipAnteUpMemory(
     throw new AnteUpMemoryRequestError("That board moved on.", 409, { round: snapshot(live) });
   }
 
-  if (stored.state.status === "won") {
-    // No leaderboard write here: solo Ante Up games don't get a board (see
-    // lib/leaderboard/contract.ts's header for the rule). A clear still feeds
-    // missions, achievements and the payout below; it just isn't ranked
-    // against anyone.
-    await payOutWin(profile.id, stored.state);
-  }
+  // No leaderboard write here: solo Ante Up games don't get a board (see
+  // lib/leaderboard/contract.ts's header for the rule). A clear still feeds
+  // missions, achievements and the payout below; it just isn't ranked
+  // against anyone.
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
-  return { attempt: snapshot(stored), profile };
+  return { attempt: snapshot(stored), profile: paid ?? profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */

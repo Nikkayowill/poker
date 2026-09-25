@@ -10,8 +10,10 @@ import { useAppShell } from "@/components/shell/app-shell";
 import { WinCelebration } from "@/components/celebration/win-celebration";
 import { StakePicker } from "@/components/pvp/stake-picker";
 import { GoldShortfallHint } from "@/components/shared/gold-shortfall-hint";
+import { useActionQueue } from "@/components/shared/use-action-queue";
 import { maxAnteUpWager } from "@/lib/arcade/ante-up-stakes";
 import { anteUpResultLine } from "@/lib/arcade/ante-up-result";
+import { clearedSlotGuesses, placedSlotGuesses } from "@/lib/arcade/puzzles/word-fill-in-grid";
 import { selectSound, tapSound } from "@/lib/audio/ui-sounds";
 import {
   ANTE_UP_WORD_FILL_IN_TIERS,
@@ -27,7 +29,8 @@ import { createRequestSequence } from "@/lib/ui/request-sequence";
  * Ante Up: Word Fill-In. A crossword grid with no clues, filled from a word
  * list. Same request shape as Minesweeper and Nonogram: every move is a
  * request, the server answers with the true board, and the solution never
- * crosses the wire while the attempt is live.
+ * crosses the wire while the attempt is live. Moves made while an earlier one
+ * is on the wire queue up and go out in order.
  *
  * Input is tap a slot, then tap a word. Tapping a crossing square a second
  * time flips between its across and down slots. Tapping a word first arms it,
@@ -61,6 +64,11 @@ function isAcross(cells: readonly number[]): boolean {
   return cells.length > 1 && cells[1] - cells[0] === 1;
 }
 
+/** A place or clear waiting its turn. */
+type PendingMove =
+  | { action: "place"; slot: number; word: string }
+  | { action: "clear"; slot: number };
+
 function spelled(guesses: string, cells: readonly number[]): string {
   return cells.map((cell) => guesses[cell]).join("");
 }
@@ -86,10 +94,11 @@ export function AnteUpWordFillIn() {
     setImmersive(Boolean(attempt));
   }, [attempt, setImmersive]);
 
-  // True while the player's own action is in flight, so a second tap waits.
+  // Guards start and resign against a double click, and stops moves once a
+  // resign is on the wire. Read ordering and board versions live in
+  // `sequence`, which also covers the queued moves.
   const sending = useRef(false);
   const mounted = useRef(true);
-  // Keeps a poll that left before an action from painting over the action's result.
   const [sequence] = useState(() => createRequestSequence<AnteUpWordFillInSnapshot>());
   // Set on every mount, not only at creation: a remount (StrictMode, Fast
   // Refresh) would otherwise leave it false and drop every response.
@@ -125,7 +134,7 @@ export function AnteUpWordFillIn() {
     return null;
   }, [applyResponse, sequence]);
 
-  /** A player action: start, place, clear, resign. A 409 still paints the true board it carries. */
+  /** A player action: start or resign. A 409 still paints the true board it carries. */
   const send = useCallback(async (url: string, body: unknown) => {
     sending.current = true;
     const done = sequence.beginWrite();
@@ -156,6 +165,41 @@ export function AnteUpWordFillIn() {
       if (mounted.current) setBusy(false);
     }
   }, [applyResponse, sequence]);
+
+  /**
+   * Sends one queued move against the newest board. A refusal on a live grid
+   * (a slot an earlier move already changed) is skipped, not fatal.
+   */
+  const sendMove = useCallback(async (move: PendingMove): Promise<boolean> => {
+    if (!mounted.current) return false;
+    try {
+      const response = await fetch("/api/ante-up-word-fill-in/actions", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...move, version: sequence.version() }),
+      });
+      const data = (await response.json()) as Partial<AnteUpWordFillInResponse> & {
+        round?: AnteUpWordFillInSnapshot;
+      };
+      if (!mounted.current) return false;
+      if (response.ok) {
+        applyResponse(data);
+        return true;
+      }
+      if (!data.round) {
+        setError(data.error ?? "That did not go through.");
+        return false;
+      }
+      applyResponse({ attempt: data.round });
+      return data.round.status === "active";
+    } catch {
+      if (mounted.current) setError("Could not reach the table. Check your connection.");
+      return false;
+    }
+  }, [applyResponse, sequence]);
+
+  const moves = useActionQueue<PendingMove>(sequence, sendMove);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -188,6 +232,18 @@ export function AnteUpWordFillIn() {
 
   const board = attempt?.board ?? null;
   const slots = useMemo(() => board?.slots ?? [], [board]);
+
+  // The server's letters with every queued move written on top. A place or
+  // clear follows fixed rules, so the grid can show it before it lands.
+  const guesses = useMemo(() => {
+    let next = board?.guesses ?? "";
+    for (const move of moves.pending) {
+      next = move.action === "place"
+        ? placedSlotGuesses(next, slots, move.slot, move.word)
+        : clearedSlotGuesses(next, slots, move.slot);
+    }
+    return next;
+  }, [board, slots, moves.pending]);
 
   /**
    * Where a word ends against another open square. The templates run short
@@ -222,11 +278,11 @@ export function AnteUpWordFillIn() {
     if (!board) return placed;
     const listed = new Set(board.words);
     for (const cells of slots) {
-      const word = spelled(board.guesses, cells);
+      const word = spelled(guesses, cells);
       if (listed.has(word)) placed.add(word);
     }
     return placed;
-  }, [board, slots]);
+  }, [board, slots, guesses]);
 
   /**
    * Squares in a full slot that spells no list word. Placing a word writes
@@ -237,11 +293,11 @@ export function AnteUpWordFillIn() {
     if (!board || board.status !== "active") return clash;
     const listed = new Set(board.words);
     for (const cells of slots) {
-      const word = spelled(board.guesses, cells);
+      const word = spelled(guesses, cells);
       if (/^[A-Z]+$/.test(word) && !listed.has(word)) cells.forEach((cell) => clash.add(cell));
     }
     return clash;
-  }, [board, slots]);
+  }, [board, slots, guesses]);
 
   const wordsByLength = useMemo(() => {
     const groups = new Map<number, string[]>();
@@ -261,31 +317,30 @@ export function AnteUpWordFillIn() {
     if (sending.current) return;
     setSelected(null);
     setArmedWord(null);
+    moves.clear();
     void send("/api/ante-up-word-fill-in", { tier, wager });
   };
 
+  // Queued rather than refused while an earlier move is on the wire, so quick
+  // taps all land in order.
   const place = (slot: number, word: string) => {
-    if (!attempt || !board || !active || sending.current) return;
+    if (!board || !active || sending.current) return;
     const cells = slots[slot];
     if (!cells || cells.length !== word.length) return;
     setArmedWord(null);
-    if (spelled(board.guesses, cells) === word) return;
+    if (spelled(guesses, cells) === word) return;
     play("ui");
     setSelected(null);
-    void send("/api/ante-up-word-fill-in/actions", {
-      action: "place",
-      version: attempt.version,
-      slot,
-      word,
-    });
+    moves.push({ action: "place", slot, word });
   };
 
   const clearSlot = () => {
-    if (!attempt || !active || selected === null || sending.current) return;
-    tapSound();
+    if (!board || !active || selected === null || sending.current) return;
     const slot = selected;
+    if (clearedSlotGuesses(guesses, slots, slot) === guesses) return;
+    tapSound();
     setSelected(null);
-    void send("/api/ante-up-word-fill-in/actions", { action: "clear", version: attempt.version, slot });
+    moves.push({ action: "clear", slot });
   };
 
   /** Tap a square: pick a slot through it, flipping across/down on a second tap. */
@@ -314,7 +369,7 @@ export function AnteUpWordFillIn() {
   };
 
   const tapWord = (word: string) => {
-    if (!active || sending.current) return;
+    if (!active) return;
     if (selected !== null && slots[selected]?.length === word.length) {
       place(selected, word);
       return;
@@ -325,7 +380,7 @@ export function AnteUpWordFillIn() {
   };
 
   const resign = () => {
-    if (sending.current) return;
+    if (sending.current || moves.queued().length > 0) return;
     void send("/api/ante-up-word-fill-in/actions", { action: "resign" });
   };
   const playAgain = () => {
@@ -364,7 +419,7 @@ export function AnteUpWordFillIn() {
         ? `${armedWord}: tap a ${armedWord.length}-letter slot to put it there.`
         : "Tap a slot in the grid, then tap a word to drop it in.";
     }
-    const pattern = spelled(board.guesses, selectedCells).replace(/_/g, "·");
+    const pattern = spelled(guesses, selectedCells).replace(/_/g, "·");
     const broken = /^[A-Z]+$/.test(pattern) && !board.words.includes(pattern);
     return `${isAcross(selectedCells) ? "Across" : "Down"}, ${selectedCells.length} letters: ${pattern}${broken ? ", not a list word" : ""}`;
   })();
@@ -498,7 +553,7 @@ export function AnteUpWordFillIn() {
             </span>
           </div>
 
-          <div className="wf-play" aria-busy={busy}>
+          <div className="wf-play" aria-busy={busy || moves.pending.length > 0}>
             <div
               className="wf-grid"
               role="group"
@@ -511,8 +566,10 @@ export function AnteUpWordFillIn() {
                 if (cell === "#") {
                   return <span key={index} className="wf-cell wf-cell-black" aria-hidden="true" />;
                 }
-                const guess = board.guesses[index];
+                const guess = guesses[index];
                 const letter = /[A-Z]/.test(guess) ? guess : "";
+                // Written by a move still on the wire; the server has not confirmed it yet.
+                const unconfirmed = guess !== board.guesses[index];
                 const answer = revealAnswer ? board.solution?.[index] ?? "" : "";
                 const wrong = Boolean(answer) && letter !== answer;
                 return (
@@ -526,6 +583,7 @@ export function AnteUpWordFillIn() {
                       bars.below.has(index) && "wf-bar-below",
                       wrong && "wf-cell-revealed",
                       clashCells.has(index) && "wf-cell-clash",
+                      unconfirmed && "wf-cell-pending",
                     )}
                     disabled={!active}
                     aria-label={`Row ${row}, column ${column}, ${letter || "empty"}`}
@@ -562,7 +620,7 @@ export function AnteUpWordFillIn() {
                   <button
                     type="button"
                     className="wf-clear"
-                    disabled={!selectedCells || selectedCells.every((cell) => !/[A-Z]/.test(board.guesses[cell]))}
+                    disabled={!selectedCells || selectedCells.every((cell) => !/[A-Z]/.test(guesses[cell]))}
                     onClick={clearSlot}
                   >
                     <Eraser size={14} aria-hidden="true" /> Clear
@@ -586,7 +644,7 @@ export function AnteUpWordFillIn() {
                           type="button"
                           className={clsx("wf-word", placed && "wf-word-placed", armed && "wf-word-armed")}
                           // Not disabled while a move is in flight: that dimmed the whole
-                          // list on every tap. tapWord already ignores taps until it lands.
+                          // list on every tap. A tap made then just queues behind it.
                           disabled={!active || !fits}
                           aria-pressed={armed}
                           aria-label={placed ? `${word}, placed` : word}
@@ -602,7 +660,12 @@ export function AnteUpWordFillIn() {
 
               {active && (
                 <div className="duel-controls wf-controls">
-                  <button type="button" className="duel-resign" onClick={() => void resign()}>
+                  <button
+                    type="button"
+                    className="duel-resign"
+                    disabled={busy || moves.pending.length > 0}
+                    onClick={() => void resign()}
+                  >
                     Give up
                   </button>
                 </div>

@@ -21,6 +21,12 @@
  *    the seed for every piece not yet drawn; a client holding it could predict
  *    its own next inventory. `blockudokuView` is the only shape that may cross
  *    the wire, same rule minesweeper's mine positions follow.
+ *
+ * 3. **A wagered refill mixes in fresh entropy.** The pieces already dealt say
+ *    enough about a 32-bit accumulator to recover it and read every later
+ *    deal. `placeBlockudokuPiece` takes an `entropy` the server draws from its
+ *    CSPRNG, XORed in before a refill, so nothing seen so far predicts the
+ *    next three. Left at 0 the stream is still fully reproducible for tests.
  */
 
 import { mulberry32Step } from "@/lib/seeded-random";
@@ -260,6 +266,7 @@ export function placeBlockudokuPiece(
   anchorRow: number,
   anchorCol: number,
   now: Date,
+  entropy = 0,
 ): BlockudokuRound {
   if (blockudokuPlacementProblem(round, slot, anchorRow, anchorCol)) return round;
 
@@ -277,7 +284,7 @@ export function placeBlockudokuPiece(
   let inventory = afterPlay;
   let rngState = round.rngState;
   if (inventory.every((entry) => entry === null)) {
-    const refill = drawInventory(rngState);
+    const refill = drawInventory((rngState ^ entropy) >>> 0);
     inventory = refill.inventory;
     rngState = refill.nextState;
   }

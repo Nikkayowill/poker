@@ -106,16 +106,18 @@ function snapshot(stored: StoredAnteUpAttempt<AnteUpAttempt>, now: Date): AnteUp
  * Gold. Logged loudly instead, same reasoning as pvp-match-service.ts's
  * payOutMatch.
  */
-async function payOutWin(profileId: string, attempt: Pick<AnteUpAttempt, "wager" | "multiplier">): Promise<void> {
+async function payOutWin(profileId: string, attempt: Pick<AnteUpAttempt, "wager" | "multiplier">): Promise<PlayerProfile | null> {
   const payout = anteUpPayout(attempt);
-  if (payout <= 0) return;
+  if (payout <= 0) return null;
+  let credited: PlayerProfile | null = null;
   try {
-    await creditGoldByProfile(profileId, payout);
+    credited = await creditGoldByProfile(profileId, payout);
   } catch (error) {
     console.error("ante-up.payout_credit_failed", { profileId, payout, error });
   }
   await applyMissionEvent(profileId, { kind: "puzzle_completed" });
   await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  return credited;
 }
 
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */
@@ -294,7 +296,7 @@ export async function fillAnteUpAttempt(
     throw new AnteUpRequestError("That board moved on.", 409, { round: snapshot(live, now) });
   }
 
-  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
   if (!correct) {
     // The mistake is persisted above; this rejects the digit, not the
@@ -302,7 +304,7 @@ export async function fillAnteUpAttempt(
     throw new AnteUpRequestError("Not that one.", 409, { round: snapshot(stored, now) });
   }
 
-  return { attempt: snapshot(stored, now), profile };
+  return { attempt: snapshot(stored, now), profile: paid ?? profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */

@@ -73,8 +73,17 @@ export const ANTE_UP_TIERS: Record<SudokuDifficulty, AnteUpTier> = {
 };
 
 /**
+ * Wrong digits a wagered grid survives. The server refuses a wrong digit and
+ * says so, so without a limit a player could try every digit in every empty
+ * cell and win any board. The third wrong digit ends the attempt as a loss,
+ * same idea as Nonogram's mistake budget.
+ */
+export const ANTE_UP_MAX_MISTAKES = 3;
+
+/**
  * `active` is still playing. `won` solved it in time. `lost` is an early
- * resignation, a player who gives up rather than let the clock run out.
+ * resignation, a player who gives up rather than let the clock run out, or
+ * the mistake limit running out.
  * `timed-out` is the clock itself ending it. Lost and timed-out are kept
  * distinct rather than collapsed into one "did not win" because they're
  * different player actions, the same reason a duel's outcome names "Resigned"
@@ -163,12 +172,13 @@ export function fillAnteUpCell(
 
   const { round, correct } = fillSudokuCell(attempt.sudoku, index, value, now);
   const won = round.status === "solved";
+  const outOfMistakes = !correct && round.mistakes >= ANTE_UP_MAX_MISTAKES;
   return {
     attempt: {
       ...attempt,
       sudoku: round,
-      status: won ? "won" : attempt.status,
-      finishedAt: won ? now.toISOString() : attempt.finishedAt,
+      status: won ? "won" : outOfMistakes ? "lost" : attempt.status,
+      finishedAt: won || outOfMistakes ? now.toISOString() : attempt.finishedAt,
     },
     correct,
   };
@@ -204,6 +214,7 @@ export interface AnteUpSnapshot {
   puzzle: number[];
   entries: number[];
   mistakes: number;
+  maxMistakes: number;
   startedAt: string;
   expiresAt: string;
   /** Milliseconds left on the clock, floored at 0. What the countdown reads. */
@@ -233,6 +244,7 @@ export function toAnteUpSnapshot(
     puzzle: [...attempt.sudoku.puzzle],
     entries: [...attempt.sudoku.entries],
     mistakes: attempt.sudoku.mistakes,
+    maxMistakes: ANTE_UP_MAX_MISTAKES,
     startedAt: attempt.startedAt,
     expiresAt: attempt.expiresAt,
     msRemaining: Math.max(0, Date.parse(attempt.expiresAt) - now.getTime()),

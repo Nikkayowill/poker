@@ -111,10 +111,17 @@ type NonogramTool = "fill" | "cross" | "pan";
 
 /** A stroke the player has made that the server has not confirmed yet. */
 interface PendingStroke {
+  kind: "stroke";
   id: number;
   indexes: number[];
   mark: NonogramMark;
 }
+
+/**
+ * Anything that moves the board goes through the one queue, so Undo and Hint
+ * wait for the strokes ahead of them instead of racing them for a version.
+ */
+type PendingAction = PendingStroke | { kind: "undo"; id: number } | { kind: "hint"; id: number };
 
 interface AnteUpNonogramResponse {
   attempt: AnteUpNonogramSnapshot | null;
@@ -278,7 +285,7 @@ export function AnteUpNonogram() {
     return null;
   }, [applyResponse, sequence]);
 
-  /** A player-initiated action: start, undo, hint or resign. */
+  /** A player-initiated action: start or resign. Undo and hint go through the action queue. */
   const send = useCallback(async (url: string, body: unknown) => {
     const done = sequence.beginWrite();
     setBusy(true);
@@ -350,23 +357,22 @@ export function AnteUpNonogram() {
   /* ------------------------------------------------------------ strokes */
 
   /**
-   * Sends one queued stroke, pinned to the newest board version. A refusal
+   * Sends one queued action, pinned to the newest board version. A refusal
    * drops the rest of the queue rather than replaying it, since the board
-   * those strokes were drawn against no longer exists.
+   * those actions were made against no longer exists.
    */
-  const sendStroke = useCallback(async (stroke: PendingStroke): Promise<boolean> => {
+  const sendAction = useCallback(async (item: PendingAction): Promise<boolean> => {
     if (!mounted.current) return false;
+    const body =
+      item.kind === "stroke"
+        ? { action: "stroke", version: sequence.version(), indexes: item.indexes, mark: item.mark }
+        : { action: item.kind, version: sequence.version() };
     try {
       const response = await fetch("/api/ante-up-nonogram/actions", {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "stroke",
-          version: sequence.version(),
-          indexes: stroke.indexes,
-          mark: stroke.mark,
-        }),
+        body: JSON.stringify(body),
       });
       const data = (await response.json()) as Partial<AnteUpNonogramResponse> & {
         round?: AnteUpNonogramSnapshot;
@@ -378,12 +384,17 @@ export function AnteUpNonogram() {
         // A buzz and nothing else. lib/audio/manifest.ts maps `lose` to
         // null on purpose -- there is no loss cue in the set -- and
         // play("lose") would be a silent no-op dressed up as feedback.
-        // The square turning into a cross is the visual half.
-        if (data.attempt.board.mistakes > before) buzz([28, 40, 28]);
+        // The square turning into a cross is the visual half. A hint's
+        // mistake was paid on purpose, so it doesn't buzz.
+        if (item.kind === "stroke" && data.attempt.board.mistakes > before) buzz([28, 40, 28]);
         return true;
       }
       if (data.round) applyResponse({ attempt: data.round });
-      else if (data.error) setError(data.error);
+      // A refused stroke's repaint says enough. An undo or hint refused for
+      // anything but a stale version (say, no mistakes left) gets a banner.
+      if (data.error && (!data.round || (item.kind !== "stroke" && response.status !== 409))) {
+        setError(data.error);
+      }
       return false;
     } catch {
       if (mounted.current) setError("Could not reach the table. Check your connection.");
@@ -391,20 +402,33 @@ export function AnteUpNonogram() {
     }
   }, [applyResponse, sequence]);
 
-  // Strokes go out one at a time through the shared queue; see lib/ui/request-sequence.ts.
-  const { pending, push: pushStroke, clear: clearPending } = useActionQueue<PendingStroke>(sequence, sendStroke);
-  const strokeId = useRef(0);
+  // Strokes, undos and hints go out one at a time through the shared queue;
+  // see lib/ui/request-sequence.ts.
+  const { pending, push: pushAction, clear: clearPending } = useActionQueue<PendingAction>(sequence, sendAction);
+  const actionId = useRef(0);
 
   const queueStroke = useCallback((indexes: number[], mark: NonogramMark) => {
     if (indexes.length === 0) return;
-    strokeId.current += 1;
-    pushStroke({ id: strokeId.current, indexes, mark });
-  }, [pushStroke]);
+    actionId.current += 1;
+    pushAction({ kind: "stroke", id: actionId.current, indexes, mark });
+  }, [pushAction]);
+
+  const queueAction = useCallback((kind: "undo" | "hint") => {
+    actionId.current += 1;
+    pushAction({ kind, id: actionId.current });
+  }, [pushAction]);
+
+  // A stroke still in the queue will leave something to undo once it lands.
+  const strokeQueued = pending.some((item) => item.kind === "stroke");
 
   /* --------------------------------------------------------------- drag */
 
   const board = attempt?.board ?? null;
   const size = board?.size ?? 0;
+
+  // The last press's pointer type, so a touch long-press's context menu
+  // doesn't mark the square a second time.
+  const lastPointerType = useRef<string | null>(null);
 
   // The drag in progress. `mark` is decided by the square the pointer landed
   // on and never changes mid-drag: a drag is one assertion, not a sequence of
@@ -530,18 +554,18 @@ export function AnteUpNonogram() {
     void send("/api/ante-up-nonogram", { difficulty, wager, autoCross });
   };
 
+  // Queued behind any strokes still in flight, so they run on the board those
+  // strokes leave rather than a version from before them.
   const undo = () => {
-    if (!attempt || !active || !board?.canUndo) return;
+    if (!attempt || !active || !(board?.canUndo || strokeQueued)) return;
     tapSound();
-    clearPending();
-    void send("/api/ante-up-nonogram/actions", { action: "undo", version: attempt.version });
+    queueAction("undo");
   };
 
   const hint = () => {
     if (!attempt || !active) return;
     selectSound();
-    clearPending();
-    void send("/api/ante-up-nonogram/actions", { action: "hint", version: attempt.version });
+    queueAction("hint");
   };
 
   const resign = () => void send("/api/ante-up-nonogram/actions", { action: "resign" });
@@ -572,7 +596,9 @@ export function AnteUpNonogram() {
         cells[index] = mark === "fill" ? MARK_FILLED : mark === "cross" ? MARK_CROSSED : MARK_UNKNOWN;
       }
     };
-    for (const stroke of pending) apply(stroke.indexes, stroke.mark);
+    // Only strokes are drawn ahead of time. What an undo or hint changes is
+    // the server's to say, so the board waits for its answer.
+    for (const item of pending) if (item.kind === "stroke") apply(item.indexes, item.mark);
     if (paint) apply(paint.cells, paint.mark);
     return cells.join("");
   }, [board, pending, paint]);
@@ -609,6 +635,9 @@ export function AnteUpNonogram() {
       ? Math.min(attempt.timeLimitMs, Math.max(0, deadline - now))
       : attempt?.timeLimitMs ?? 0;
   const running = deadline !== null && active;
+  // A timeout is settled by whichever read comes first after the deadline, so
+  // the stored elapsed time can run far past the limit. Show the limit.
+  const finalMs = attempt ? Math.min(attempt.elapsedMs, attempt.timeLimitMs) : 0;
 
   const zoom = ZOOM_STEPS[zoomIndex];
   const cellPx = Math.round((CELL_PX[size] ?? 24) * zoom);
@@ -823,7 +852,7 @@ export function AnteUpNonogram() {
               )}
               aria-live="polite"
             >
-              {active ? formatDuration(displayedMs) : formatDuration(attempt.elapsedMs)}
+              {active ? formatDuration(displayedMs) : formatDuration(finalMs)}
             </span>
             <span className="duel-pot">
               <Coins size={12} aria-hidden="true" />
@@ -941,11 +970,15 @@ export function AnteUpNonogram() {
                         onFocus={() => setCursor(index)}
                         onContextMenu={(event) => {
                           event.preventDefault();
+                          // A touch long-press fires this too, after the press
+                          // already started a drag here. Only a mouse crosses.
+                          if (lastPointerType.current === "touch") return;
                           if (!active || cell === MARK_FILLED) return;
                           tapSound();
                           queueStroke([index], cell === MARK_CROSSED ? "clear" : "cross");
                         }}
                         onPointerDown={(event) => {
+                          lastPointerType.current = event.pointerType;
                           setCursor(index);
                           if (event.button === 2) return; // the context menu handles it
                           beginDrag(index, cell);
@@ -1004,7 +1037,7 @@ export function AnteUpNonogram() {
                       : "Gave up"}
               </strong>
               <span>
-                {formatDuration(attempt.elapsedMs)} · {difficultyLabel(attempt.difficulty)} ·{" "}
+                {formatDuration(finalMs)} · {difficultyLabel(attempt.difficulty)} ·{" "}
                 {board.filled} of {board.filledTotal} squares
                 {board.hints > 0 && ` · ${board.hints} hint${board.hints === 1 ? "" : "s"}`}
               </span>
@@ -1068,7 +1101,7 @@ export function AnteUpNonogram() {
                   <button
                     type="button"
                     className="ng-icon-button"
-                    disabled={busy || !board.canUndo}
+                    disabled={busy || !(board.canUndo || strokeQueued)}
                     aria-label="Undo the last stroke"
                     onClick={undo}
                   >

@@ -102,17 +102,23 @@ function snapshot(
  * attempt is already settled, and throwing here would show the player a loss
  * on a board they won. Logged loudly instead, same reasoning as payOutMatch.
  */
-async function payOutWin(profileId: string, attempt: AnteUpMinesweeperAttempt): Promise<void> {
+async function payOutWin(profileId: string, attempt: AnteUpMinesweeperAttempt): Promise<PlayerProfile | null> {
   const payout = anteUpMinesweeperPayout(attempt);
+  let credited: PlayerProfile | null = null;
   if (payout > 0) {
     try {
-      await creditGoldByProfile(profileId, payout);
+      credited = await creditGoldByProfile(profileId, payout);
     } catch (error) {
       console.error("ante-up-minesweeper.payout_credit_failed", { profileId, payout, error });
     }
   }
-  await applyMissionEvent(profileId, { kind: "puzzle_completed" });
-  await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  // Free runs don't count: puzzles_completed pays Gold through achievements,
+  // and a free board costs nothing to farm.
+  if (attempt.wager > 0) {
+    await applyMissionEvent(profileId, { kind: "puzzle_completed" });
+    await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+  }
+  return credited;
 }
 
 /** Settles an attempt whose clock has run out, and reads back the truth either way. */
@@ -332,9 +338,9 @@ export async function playAnteUpMinesweeper(
     });
   }
 
-  if (stored.state.status === "won") await payOutWin(profile.id, stored.state);
+  const paid = stored.state.status === "won" ? await payOutWin(profile.id, stored.state) : null;
 
-  return { attempt: snapshot(stored, now), profile };
+  return { attempt: snapshot(stored, now), profile: paid ?? profile };
 }
 
 /** Gives up early. The wager is already spent; see the ordering rules above. */

@@ -30,6 +30,15 @@ export const ANTE_UP_GAMES = [
   "connections",
   "blockudoku",
   "word-fill-in",
+  // The Brain Games set: lib/arcade/brain-streak.ts (the first four, one
+  // shared engine) plus lib/arcade/brain-lights-out.ts and
+  // lib/arcade/brain-word-guess.ts.
+  "sequence-recall",
+  "quick-math",
+  "pattern-predictor",
+  "trivia-blitz",
+  "lights-out",
+  "word-guess",
 ] as const;
 
 export type AnteUpGame = (typeof ANTE_UP_GAMES)[number];

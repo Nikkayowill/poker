@@ -176,6 +176,8 @@ import {
 } from "@/lib/stackacres/friendship";
 import type { StoryEvent } from "@/lib/stackacres/story/events";
 import { isStoryItemId, type StoryItemId } from "@/lib/stackacres/story/items";
+import { isQuestPlaceId } from "@/lib/stackacres/story/places";
+import { questFlatObjectives } from "@/lib/stackacres/story/quests";
 import {
   activeQuest,
   applyStoryEvent,
@@ -1368,13 +1370,19 @@ async function view(profile: PlayerProfile, now: Date, placeholderRevision = 0):
     // Off the same derived `sectors`, influence and flags Ray's shop locks
     // read (see readShopProgress), so a traveler's "Requires: ..." and the
     // shelf's can never disagree.
-    story: storyView(storedStory.story, { sectors, influence, greenhouseBuilt, cropFieldsUnlocked }, inventory, {
-      tool,
-      sectorsCleared: cleared.length,
-      soilBeds: soilTiles.length,
-      enchantments: forgedEnchantments.length,
-      crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
-    }),
+    story: storyView(
+      storedStory.story,
+      { sectors, influence, greenhouseBuilt, cropFieldsUnlocked },
+      inventory,
+      {
+        tool,
+        sectorsCleared: cleared.length,
+        soilBeds: soilTiles.length,
+        enchantments: forgedEnchantments.length,
+        crossbreeds: Object.values(crossbreedInventory).reduce((sum, n) => sum + (n ?? 0), 0),
+      },
+      friendshipPointsByNpc(friendship),
+    ),
     woodNodes: WOOD_NODE_IDS.map((id) => woodNodeSnapshot(id, woodNodeStates[id] ?? freshWoodNodeState(), now)),
     stoneNodes: stoneNodeRows.map((row) => stoneNodeSnapshot(row, now)),
     forageNodes: FORAGE_NODE_IDS.map((id) =>
@@ -1633,7 +1641,7 @@ export type StackAcresActionResult = StackAcresView & {
    *  item is granted. */
   storyResult?: {
     traveler: TravelerId;
-    outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required";
+    outcome: "met" | "already-met" | "advanced" | "completed" | "reward-required" | "quest-locked";
     granted: readonly StoryItemId[];
   };
 };
@@ -4090,6 +4098,28 @@ export async function tapStackAcresSecretZone(
 }
 
 /**
+ * Records that the farmer reached a quest place -- a "go to X" objective's
+ * whole job. Unlike `tapStackAcresSecretZone`, there is no daily throttle and
+ * no roll: this moves no Gold and no item, only a `place-reached` story
+ * event, so it is safe to record every time the tap lands, including a
+ * repeat tap after the objective it feeds is already satisfied or the quest
+ * that asked for it has moved on.
+ */
+export async function reachStackAcresQuestPlace(
+  token: string,
+  placeIdInput: string,
+  now = new Date(),
+): Promise<StackAcresView> {
+  if (!isQuestPlaceId(placeIdInput)) {
+    throw new StackAcresRequestError("There is nothing to do there.", 400);
+  }
+  const placeId = placeIdInput;
+  const profile = await ensureProfile(token);
+  await recordStoryEvents(profile.id, [{ kind: "place-reached", placeId }]);
+  return view(profile, now);
+}
+
+/**
  * Donates a held secret item to Ray, exactly once per item -- writes through
  * `markStackAcresDonated` at the storage layer (see stackacres-store.ts's own
  * header on why that idempotency-guarded flag still exists). `lucky_poker_dice`
@@ -6124,6 +6154,17 @@ async function recordStoryEvents(profileId: string, events: readonly StoryEvent[
   }
 }
 
+/** The points half of a friendship view, per NPC -- what `questRequirementMet`
+ *  reads for a `{kind: "friendship"}` requirement. Built off the already-read
+ *  `friendship` view rather than a second friendship read. */
+function friendshipPointsByNpc(friendship: Record<NpcId, StackAcresFriendshipView>): Readonly<Partial<Record<NpcId, number>>> {
+  const points = {} as Record<NpcId, number>;
+  FRIENDSHIP_NPCS.forEach((npc) => {
+    points[npc] = friendship[npc].points;
+  });
+  return points;
+}
+
 /**
  * Accepts a traveler's first quest -- what the bubble's "I'll help" sends.
  * Moves no Gold and touches no inventory. The unlock is re-derived here off
@@ -6187,7 +6228,7 @@ export async function turnInStackAcresTravelerQuest(
     // The durable half of `StoryFacts`: work a player can only do once is
     // read off the farm here rather than counted, so doing it before the
     // quest was accepted still counts. See StoryFacts' own header.
-    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds] = await Promise.all([
+    const [current, inventory, tool, cleared, soilTiles, enchantments, crossbreeds, friendshipRows] = await Promise.all([
       readStackAcresStory(profile.id),
       readStackAcresInventory(profile.id),
       readStackAcresToolTier(profile.id),
@@ -6195,7 +6236,12 @@ export async function turnInStackAcresTravelerQuest(
       listStackAcresSoilTiles(profile.id),
       listOwnedForgeEnchantmentIds(profile.id),
       readStackAcresCrossbreedInventory(profile.id),
+      Promise.all(FRIENDSHIP_NPCS.map((npc) => readStackAcresFriendship(profile.id, npc))),
     ]);
+    const friendshipPoints = {} as Record<NpcId, number>;
+    FRIENDSHIP_NPCS.forEach((npc, index) => {
+      friendshipPoints[npc] = friendshipRows[index].points;
+    });
     const result = applyTurnIn(
       current.story,
       traveler,
@@ -6208,6 +6254,7 @@ export async function turnInStackAcresTravelerQuest(
         crossbreeds: Object.values(crossbreeds).reduce((sum, n) => sum + (n ?? 0), 0),
       },
       chosenReward,
+      friendshipPoints,
     );
     if (result.outcome === "not-met") {
       throw new StackAcresRequestError(`Say hello to ${name} first.`, 409, {
@@ -6216,6 +6263,13 @@ export async function turnInStackAcresTravelerQuest(
     }
     if (result.outcome === "already-done") {
       throw new StackAcresRequestError(`${name} has already gone home.`, 409, {
+        round: await snapshots(profile.id, now),
+      });
+    }
+    if (result.outcome === "quest-locked") {
+      const quest = activeQuest(current.story.travelers[traveler], traveler);
+      if (quest === null) throw new Error(`${traveler}: quest-locked with no active quest`);
+      throw new StackAcresRequestError(`${quest.title} isn't open to hand in yet.`, 409, {
         round: await snapshots(profile.id, now),
       });
     }
@@ -6234,7 +6288,7 @@ export async function turnInStackAcresTravelerQuest(
     const quest = result.quest;
     if (quest === null) throw new Error(`${traveler}: turn-in ${result.outcome} without a quest`);
 
-    const debits = quest.objectives.flatMap((objective) =>
+    const debits = questFlatObjectives(quest).flatMap((objective) =>
       objective.kind === "deliver" ? [{ item: objective.item, quantity: objective.target }] : [],
     );
     const written = await turnInStackAcresStory(profile.id, result.story, current.version, debits);

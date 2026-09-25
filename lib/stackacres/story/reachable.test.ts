@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TRAVELER_QUESTS } from "./quests";
 import { TRAVELER_IDS } from "./travelers";
-import { isCounterObjective, type StoryObjective } from "./quests";
+import { isCounterObjective, questFlatObjectives, type StoryObjective } from "./quests";
 
 /**
  * A quest may only ask for something the live farm can actually do.
@@ -35,6 +35,7 @@ const REACHABLE: readonly StoryObjective["kind"][] = [
   "crossbreed",
   "deliver",
   "hold-tool",
+  "reach-place",
 ];
 
 /**
@@ -54,7 +55,7 @@ describe("every quest asks for something reachable", () => {
   it("names only verbs the farm can perform", () => {
     for (const id of TRAVELER_IDS) {
       for (const quest of TRAVELER_QUESTS[id]) {
-        for (const objective of quest.objectives) {
+        for (const objective of questFlatObjectives(quest)) {
           expect(REACHABLE, `${quest.id} asks for "${objective.kind}"`).toContain(objective.kind);
         }
       }
@@ -63,7 +64,7 @@ describe("every quest asks for something reachable", () => {
 
   it("never asks for irrigation pipes, which nothing can place", () => {
     const kinds = TRAVELER_IDS.flatMap((id) =>
-      TRAVELER_QUESTS[id].flatMap((quest) => quest.objectives.map((objective) => objective.kind)),
+      TRAVELER_QUESTS[id].flatMap((quest) => questFlatObjectives(quest).map((objective) => objective.kind)),
     );
     expect(kinds).not.toContain("pipes");
   });
@@ -81,7 +82,7 @@ describe("every quest asks for something reachable", () => {
     // Free digging, forage seed, a watering can and 3 Gold wheat is the whole
     // of a new farm. Watering is the only verb all of that supports.
     const first = TRAVELER_QUESTS.ray[0];
-    expect(first.objectives).toHaveLength(1);
-    expect(first.objectives[0].kind).toBe("water");
+    expect(questFlatObjectives(first)).toHaveLength(1);
+    expect(questFlatObjectives(first)[0].kind).toBe("water");
   });
 });

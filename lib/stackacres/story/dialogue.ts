@@ -13,7 +13,9 @@
  *
  *   <traveler>.locked      tapped before their unlock is met
  *   <traveler>.hello       first contact; commits story-meet
- *   <traveler>.q<n>.progress   quest open, not yet satisfied
+ *   <traveler>.q<n>.progress      a flat quest, open, not yet satisfied
+ *   <traveler>.q<n>.s<i>.progress a segmented quest's checkpoint i, active
+ *   <traveler>.q<n>.blocked       quest open, but its own requires isn't met
  *   <traveler>.q<n>.done       quest satisfied; commits story-turn-in
  *   <traveler>.home        the whole line is finished
  *
@@ -23,7 +25,7 @@
  */
 
 import { STORY_ITEM_CATALOGUE, type StoryItemId } from "./items";
-import { TRAVELER_QUESTS } from "./quests";
+import { TRAVELER_QUESTS, questSegments, type StoryQuest } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS, type PortraitExpression, type TravelerId } from "./travelers";
 
@@ -69,13 +71,30 @@ export const HAPTIC_TICK: readonly number[] = [10];
 export const HAPTIC_DOUBLE: readonly number[] = [10, 30, 10];
 export const HAPTIC_FANFARE: readonly number[] = [20, 40, 20, 40, 40];
 
+/** The progress node id for a quest at a given checkpoint: `${quest.id}.s${i}.progress`
+ *  for a segmented quest, or the flat `${quest.id}.progress` otherwise.
+ *  `segmentIndex` is ignored for a flat quest. Pure, so a synthetic quest
+ *  fixture exercises this without touching TRAVELER_QUESTS or SCRIPTS. */
+export function questProgressNodeId(quest: StoryQuest, segmentIndex: number): string {
+  return questSegments(quest) === null ? `${quest.id}.progress` : `${quest.id}.s${segmentIndex}.progress`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Scripts                                                             */
 /* ------------------------------------------------------------------ */
 
 interface QuestBeats {
-  readonly progress: string;
+  /** A flat quest's one progress line. Exactly one of this and `segments`
+   *  is set, matching the quest's own shape -- buildNodes() throws otherwise. */
+  readonly progress?: string;
+  /** A segmented quest's progress line per checkpoint, same length and
+   *  order as `StoryQuest.segments`. */
+  readonly segments?: readonly string[];
   readonly done: string;
+  /** Required exactly when the quest declares `requires` -- what the
+   *  traveler says while its objectives may already be done but its own
+   *  gate (a friendship level, another traveler's line) isn't yet. */
+  readonly blocked?: string;
 }
 
 interface TravelerScript {
@@ -112,6 +131,8 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
         progress:
           "The town posts what it wants on the board by the road. Fill one of their orders. That's how they learn your name out here.",
         done: "Word travels. They'll ask for you by name now. Here, take my cap. It's kept the sun off this family for a long time.",
+        blocked:
+          "Slow down, kid. I don't hand a body my name until I know them a little. Come around more, we'll get there.",
       },
     ],
     home: "Go on and see to your guests. Strange folk, but lost is lost, and we've always kept a door open here.",
@@ -325,14 +346,48 @@ function buildNodes(): ReadonlyMap<string, StoryDialogueNode> {
     });
     quests.forEach((quest, i) => {
       const beats = script.quests[i];
-      put({
-        id: `${quest.id}.progress`,
-        speakerName,
-        dialogueText: beats.progress,
-        vibratePattern: HAPTIC_TICK,
-        choices: CLOSE_ONLY("On it"),
-        onComplete: null,
-      });
+      const gated = quest.requires !== undefined;
+      if (gated !== (beats.blocked !== undefined)) {
+        throw new Error(`${quest.id}: ${gated ? "needs" : "must not have"} a scripted "blocked" beat`);
+      }
+      if (beats.blocked !== undefined) {
+        put({
+          id: `${quest.id}.blocked`,
+          speakerName,
+          dialogueText: beats.blocked,
+          vibratePattern: HAPTIC_TICK,
+          choices: CLOSE_ONLY("Understood"),
+          onComplete: null,
+        });
+      }
+      const segments = questSegments(quest);
+      if (segments === null) {
+        if (beats.progress === undefined) {
+          throw new Error(`${quest.id}: flat quest needs a "progress" beat, not "segments"`);
+        }
+        put({
+          id: questProgressNodeId(quest, 0),
+          speakerName,
+          dialogueText: beats.progress,
+          vibratePattern: HAPTIC_TICK,
+          choices: CLOSE_ONLY("On it"),
+          onComplete: null,
+        });
+      } else {
+        if (beats.segments === undefined || beats.segments.length !== segments.length) {
+          throw new Error(`${quest.id}: ${segments.length} segments need that many scripted "segments" beats`);
+        }
+        segments.forEach((_segment, segmentIndex) => {
+          put({
+            id: questProgressNodeId(quest, segmentIndex),
+            speakerName,
+            dialogueText: (beats.segments as readonly string[])[segmentIndex],
+            vibratePattern: HAPTIC_TICK,
+            choices: CLOSE_ONLY("On it"),
+            onComplete: null,
+          });
+        });
+      }
       const rewardChoices = quest.rewards ?? [];
       put({
         id: `${quest.id}.done`,
@@ -411,5 +466,7 @@ export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView, fin
     return storyNode(`${id}.home`);
   }
   const quest = TRAVELER_QUESTS[id][traveler.quest.index];
-  return storyNode(`${quest.id}.${traveler.ready ? "done" : "progress"}`);
+  if (traveler.questBlocked) return storyNode(`${quest.id}.blocked`);
+  if (traveler.ready) return storyNode(`${quest.id}.done`);
+  return storyNode(questProgressNodeId(quest, traveler.quest.segmentIndex ?? 0));
 }

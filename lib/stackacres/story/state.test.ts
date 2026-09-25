@@ -4,14 +4,18 @@ import type { StackAcresInventory } from "../inventory";
 import type { StackAcresShopProgress } from "../shop-locks";
 import type { StoryEvent } from "./events";
 import type { StoryItemId } from "./items";
-import { TRAVELER_QUESTS } from "./quests";
+import { TRAVELER_QUESTS, questFlatObjectives, type StoryQuest } from "./quests";
 import {
   applyEventToView,
   applyStoryEvent,
+  currentSegmentIndex,
   freshStory,
   isTravelerDone,
   meetTraveler,
+  objectiveHave,
   applyTurnIn,
+  questReady,
+  questRequirementMet,
   storyView,
   type StoredStory,
   type StoryFacts,
@@ -37,6 +41,12 @@ const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 }
 const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
 const IRON: StoryFacts = { tool: "iron-shovel", ...BARE };
 
+/** Generous enough to clear any `requires` a real quest declares today
+ *  (ray.q4 asks for 9). Driving a line to completion in these tests is about
+ *  the objectives, not the friendship gate, unless a test says otherwise. */
+const FRIENDLY = { ray: 999, pierre: 999, ivy: 999 };
+const NO_FRIENDSHIP = {};
+
 function met(story: StoredStory, id: TravelerId, progress: StackAcresShopProgress = RUNNING_FARM): StoredStory {
   const result = meetTraveler(story, id, progress);
   expect(result.outcome).toBe("met");
@@ -56,7 +66,7 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
     const feed: StoryEvent[] = [];
     const stock: StackAcresInventory = { ...inventory };
     const facts = { tool: "iron-shovel", ...BARE } as { -readonly [K in keyof StoryFacts]: StoryFacts[K] };
-    for (const objective of quest.objectives) {
+    for (const objective of questFlatObjectives(quest)) {
       switch (objective.kind) {
         case "harvest":
           feed.push({ kind: "harvested", stock: objective.crops[0], count: objective.target });
@@ -105,12 +115,16 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
           break;
         case "hold-tool":
           break;
+        case "reach-place":
+          feed.push({ kind: "place-reached", placeId: objective.place });
+          break;
       }
     }
     next = events(next, feed);
     const chosenReward = (quest.rewards?.length ?? 0) >= 2 ? (quest.rewards as readonly StoryItemId[])[0] : null;
-    const result = applyTurnIn(next, id, stock, facts, chosenReward);
+    const result = applyTurnIn(next, id, stock, facts, chosenReward, FRIENDLY);
     expect(result.outcome, `${quest.id}`).not.toBe("not-ready");
+    expect(result.outcome, `${quest.id}`).not.toBe("quest-locked");
     next = result.story;
   }
   expect(isTravelerDone(next.travelers[id], id)).toBe(true);
@@ -307,7 +321,7 @@ describe("applyTurnIn", () => {
     story = applyStoryEvent(story, { kind: "harvested", stock: "carrot", count: 10 });
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
     story = applyStoryEvent(story, { kind: "contract-fulfilled" });
-    const last = applyTurnIn(story, "ray", {}, TROWEL);
+    const last = applyTurnIn(story, "ray", {}, TROWEL, null, FRIENDLY);
     expect(last.outcome).toBe("completed");
     expect(last.granted).toEqual([]);
     expect(last.story.items).toEqual(["rays_heritage_cap"]);
@@ -356,6 +370,7 @@ describe("storyView", () => {
         objectives: [{ label: "Water 3 crops", have: 2, need: 3 }],
       },
       ready: false,
+      questBlocked: false,
     });
     expect(view.travelers.pierre.unlocked).toBe(false);
     expect(view.travelers.pierre.hint).toBe("Break ground in the Crop Fields");
@@ -413,5 +428,135 @@ describe("applyEventToView", () => {
   it("returns the same object when nothing moved", () => {
     const view = storyView(freshStory(), FRESH_FARM, {}, TROWEL);
     expect(applyEventToView(view, { kind: "watered", count: 1 })).toBe(view);
+  });
+});
+
+/**
+ * A synthetic segmented quest, not wired into TRAVELER_QUESTS -- no real
+ * quest opts into segments yet (see StoryQuest's own header). These tests
+ * exercise the mechanism directly through the exported pure functions, which
+ * all take a `StoryQuest` as data rather than looking one up by traveler.
+ */
+describe("segmented quests", () => {
+  const SEGMENTED: StoryQuest = {
+    id: "test.segmented",
+    title: "Two Checkpoints",
+    turnInLabel: "Done",
+    segments: [
+      { id: "test.segmented.s0", objectives: [{ kind: "water", target: 3 }] },
+      { id: "test.segmented.s1", objectives: [{ kind: "harvest-any-crop", target: 2 }] },
+    ],
+  };
+
+  it("holds at checkpoint 0 until its own objective is satisfied", () => {
+    expect(currentSegmentIndex(SEGMENTED, [0, 0], {}, TROWEL)).toBe(0);
+    expect(currentSegmentIndex(SEGMENTED, [2, 0], {}, TROWEL)).toBe(0);
+  });
+
+  it("advances to checkpoint 1 the moment checkpoint 0 is satisfied, regardless of checkpoint 1's own count", () => {
+    expect(currentSegmentIndex(SEGMENTED, [3, 0], {}, TROWEL)).toBe(1);
+  });
+
+  it("reports past the last checkpoint once every checkpoint is satisfied", () => {
+    expect(currentSegmentIndex(SEGMENTED, [3, 2], {}, TROWEL)).toBe(2);
+  });
+
+  it("is only ready when every checkpoint's objective is satisfied, not just the first", () => {
+    expect(questReady(SEGMENTED, [3, 0], {}, TROWEL)).toBe(false);
+    expect(questReady(SEGMENTED, [3, 1], {}, TROWEL)).toBe(false);
+    expect(questReady(SEGMENTED, [3, 2], {}, TROWEL)).toBe(true);
+  });
+
+  it("counts flat, in segment order, across the whole quest's counts array", () => {
+    // counts[0] belongs to checkpoint 0's "water" objective, counts[1] to
+    // checkpoint 1's "harvest-any-crop" -- questFlatObjectives lines them up.
+    const objectives = questFlatObjectives(SEGMENTED);
+    expect(objectives.map((o) => o.kind)).toEqual(["water", "harvest-any-crop"]);
+    expect(objectiveHave(objectives[0], 3, {}, TROWEL)).toBe(3);
+    expect(objectiveHave(objectives[1], 2, {}, TROWEL)).toBe(2);
+  });
+});
+
+describe("questRequirementMet", () => {
+  const FRIENDSHIP_GATE: StoryQuest = {
+    id: "test.friendship",
+    title: "Friendship-gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [{ kind: "friendship", npc: "ray", points: 10 }],
+  };
+  const TRAVELER_GATE: StoryQuest = {
+    id: "test.traveler",
+    title: "Traveler-gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [{ kind: "traveler-done", traveler: "arthur" }],
+  };
+  const BOTH_GATES: StoryQuest = {
+    id: "test.both",
+    title: "Doubly gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [...FRIENDSHIP_GATE.requires!, ...TRAVELER_GATE.requires!],
+  };
+  const UNGATED: StoryQuest = { id: "test.plain", title: "Plain", objectives: [], turnInLabel: "Done" };
+
+  it("is always true for a quest with no requires", () => {
+    expect(questRequirementMet(UNGATED, NO_FRIENDSHIP, new Set())).toBe(true);
+  });
+
+  it("checks a friendship threshold against the named npc only", () => {
+    expect(questRequirementMet(FRIENDSHIP_GATE, { ray: 9 }, new Set())).toBe(false);
+    expect(questRequirementMet(FRIENDSHIP_GATE, { ray: 10 }, new Set())).toBe(true);
+    expect(questRequirementMet(FRIENDSHIP_GATE, { pierre: 999 }, new Set())).toBe(false);
+  });
+
+  it("checks a traveler-done requirement against the finished-lines set", () => {
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set())).toBe(false);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["arthur"]))).toBe(true);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["bea"]))).toBe(false);
+  });
+
+  it("needs every requirement met when a quest declares more than one", () => {
+    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set())).toBe(false);
+    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set(["arthur"]))).toBe(true);
+  });
+});
+
+describe("a quest's own requires", () => {
+  /** Drives Ray through q1-q3 with FRIENDLY points so only q4's gate is in
+   *  question, then hands q4's own objective (one town order) too. */
+  function readyForRayQ4(friendshipPoints: Readonly<Partial<Record<"ray" | "pierre" | "ivy", number>>>): StoredStory {
+    let story = met(freshStory(), "ray", FRESH_FARM);
+    story = events(story, [{ kind: "watered", count: 3 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "processed", recipe: "flour", count: 1 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "harvested", stock: "carrot", count: 10 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "contract-fulfilled" }]);
+    return story;
+  }
+
+  it("refuses the turn-in without touching the story, even with the objective done", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const result = applyTurnIn(story, "ray", {}, TROWEL, null, NO_FRIENDSHIP);
+    expect(result.outcome).toBe("quest-locked");
+    expect(result.story).toBe(story);
+  });
+
+  it("turns in cleanly once the gate opens", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const result = applyTurnIn(story, "ray", {}, TROWEL, null, { ray: 9 });
+    expect(result.outcome).toBe("completed");
+  });
+
+  it("shows questBlocked in the view while the gate is unmet, and clears it once it opens", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const blocked = storyView(story, RUNNING_FARM, {}, TROWEL, NO_FRIENDSHIP);
+    expect(blocked.travelers.ray.questBlocked).toBe(true);
+    expect(blocked.travelers.ray.ready).toBe(true);
+    const open = storyView(story, RUNNING_FARM, {}, TROWEL, { ray: 9 });
+    expect(open.travelers.ray.questBlocked).toBe(false);
   });
 });

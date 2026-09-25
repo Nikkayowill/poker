@@ -126,6 +126,7 @@ import type { SoilTier } from "@/lib/stackacres/soil-tiers";
 import { STACKACRES_SECTORS, type SectorId } from "@/lib/stackacres/sectors";
 import { STACKACRES_HOUR_MS } from "@/lib/stackacres/clock";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
+import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { cropSpot, penFeedSpot, stockZone, type WorldPoint } from "@/lib/stackacres/world";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
@@ -452,6 +453,7 @@ export interface TopdownCallbacks {
   onBedTap: (at: TapPoint) => void;
   onTravelerTap: (traveler: TravelerId, at: TapPoint) => void;
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
+  onQuestPlaceTap: (placeId: QuestPlaceId, at: TapPoint) => void;
   onLockedSectorTap: (zone: ZoneId, at: TapPoint) => void;
   onViewMoved: () => void;
   /** The farmer has just gone through a door or a gate: the shell shows where he has arrived. */
@@ -2463,6 +2465,8 @@ export class TopdownScene extends Phaser.Scene {
         return cb.onBedTap(at);
       case "secret":
         return cb.onSecretZoneTap(detail as HiddenZoneId, at);
+      case "place":
+        return cb.onQuestPlaceTap(detail as QuestPlaceId, at);
       case "pen":
         return cb.onGroundTap(detail as ZoneId, at, penFeedSpot(detail as ZoneId));
       case "locked":

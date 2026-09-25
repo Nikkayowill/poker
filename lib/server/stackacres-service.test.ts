@@ -2311,6 +2311,9 @@ describe("the currency wall", () => {
       "pray",
       "prestige-reset",
       "process",
+      // Moves no Gold either way: records that a quest's own named spot was
+      // reached, nothing more. See lib/stackacres/story/places.ts's header.
+      "reach-quest-place",
       "remove-fence",
       "remove-soil-tile",
       "request-contract",

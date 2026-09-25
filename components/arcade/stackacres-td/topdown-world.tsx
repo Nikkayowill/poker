@@ -147,6 +147,7 @@ export function StackAcresTopdownWorld(props: StackAcresWorldProps) {
           onBedTap: (at) => p().onBedTap(at),
           onTravelerTap: (traveler, at) => p().onTravelerTap(traveler, at),
           onSecretZoneTap: (zoneId, at) => p().onSecretZoneTap(zoneId, at),
+          onQuestPlaceTap: (placeId, at) => p().onQuestPlaceTap(placeId, at),
           onLockedSectorTap: (zone, at) => p().onLockedSectorTap(zone, at),
           onViewMoved: () => p().onViewMoved(),
           onPlaceEntered: (name) => p().onPlaceEntered(name),

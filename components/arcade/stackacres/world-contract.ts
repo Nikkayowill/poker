@@ -6,6 +6,7 @@ import type { SectorId } from "@/lib/stackacres/sectors";
 import type { StackAcresCutter } from "@/lib/stackacres/cutters";
 import type { HiddenZoneId } from "@/lib/stackacres/secrets";
 import type { MapPlaceId } from "@/lib/stackacres/map-places";
+import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import type { ZoneId } from "@/lib/stackacres/zones";
 import type { StackAcresStock } from "@/lib/stackacres/catalogue";
 import type { TravelerId } from "@/lib/stackacres/story/travelers";
@@ -374,6 +375,11 @@ export interface StackAcresWorldProps {
    *  lib/stackacres/secrets.ts's `HIDDEN_ZONES`). The scene has already fired
    *  its own local `secretDiscoveryPuff` by the time this callback runs. */
   onSecretZoneTap: (zoneId: HiddenZoneId, at: TapPoint) => void;
+  /** A finger landed on a quest's own named spot (see
+   *  lib/stackacres/story/places.ts's `QUEST_PLACES`) -- a "go to X" quest
+   *  objective's whole job. Unlike `onSecretZoneTap` there is nothing to
+   *  discover here, only a visit to record. */
+  onQuestPlaceTap: (placeId: QuestPlaceId, at: TapPoint) => void;
   /** Land the player may work (lib/stackacres/sectors.ts). Everything else
    *  is drawn as wild growth and has no farm on it to tap. */
   sectors: SectorId[];

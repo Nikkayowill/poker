@@ -24,6 +24,7 @@ import type { RecipeId } from "./recipes";
 import type { FoodItem } from "./energy";
 import type { BlueprintId } from "./blueprints";
 import type { ZoneId } from "./zones";
+import type { QuestPlaceId } from "./story/places";
 import type { TravelerId } from "./story/travelers";
 
 export type Action =
@@ -158,6 +159,9 @@ export type Action =
   // never a purse. Only ever sent from a bubble's own committing button.
   | { action: "story-meet"; traveler: TravelerId }
   | { action: "story-turn-in"; traveler: TravelerId }
+  // A quest's own "go to this spot" objective. Moves no Gold and no items --
+  // see lib/stackacres/story/places.ts's own header.
+  | { action: "reach-quest-place"; placeId: QuestPlaceId }
   // The Mechanical Forage Drone. `deploy-drone` spends the flat hangar fee,
   // once per drone; `collect-drone-forage` pays whatever the server rolled
   // for that one claim -- there is no fake patch for it in

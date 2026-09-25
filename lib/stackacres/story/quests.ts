@@ -20,10 +20,12 @@
 
 import { STACKACRES_CATALOGUE, isLivestock, isStackAcresCrop, type StackAcresCrop } from "../catalogue";
 import { STACKACRES_TOOL_TIERS, STACKACRES_TOOL_TIER_DEFS, type StackAcresToolTier } from "../equipment";
+import type { NpcId } from "../friendship";
 import { machineItemLabel, type MachineItemId } from "../machine-items";
 import type { RecipeId } from "../recipes";
 import type { StoryEvent } from "./events";
 import type { StoryItemId } from "./items";
+import { QUEST_PLACES, type QuestPlaceId } from "./places";
 import type { TravelerId } from "./travelers";
 
 export type StoryObjective =
@@ -42,7 +44,8 @@ export type StoryObjective =
   | { readonly kind: "forge"; readonly target: number }
   | { readonly kind: "crossbreed"; readonly target: number }
   | { readonly kind: "deliver"; readonly item: MachineItemId; readonly target: number }
-  | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 };
+  | { readonly kind: "hold-tool"; readonly tool: StackAcresToolTier; readonly target: 1 }
+  | { readonly kind: "reach-place"; readonly place: QuestPlaceId; readonly target: 1 };
 
 export type StoryObjectiveKind = StoryObjective["kind"];
 
@@ -100,6 +103,8 @@ export function objectiveAdvance(objective: StoryObjective, event: StoryEvent): 
       return event.kind === "enchantment-forged" ? 1 : 0;
     case "crossbreed":
       return event.kind === "crossbreed-harvested" ? 1 : 0;
+    case "reach-place":
+      return event.kind === "place-reached" && event.placeId === objective.place ? 1 : 0;
     case "deliver":
     case "hold-tool":
       return 0;
@@ -152,14 +157,54 @@ export function objectiveLabel(objective: StoryObjective): string {
       return `Bring ${machineItemLabel(objective.item, objective.target)}`;
     case "hold-tool":
       return `Own the ${STACKACRES_TOOL_TIER_DEFS[objective.tool].label}`;
+    case "reach-place":
+      return `Go to ${QUEST_PLACE_LABEL[objective.place]}`;
   }
 }
+
+const QUEST_PLACE_LABEL: Readonly<Record<QuestPlaceId, string>> = Object.fromEntries(
+  QUEST_PLACES.map((place) => [place.id, place.label]),
+) as Record<QuestPlaceId, string>;
+
+/**
+ * One checkpoint of a segmented quest -- see `StoryQuest.segments`.
+ * `id` is `<quest.id>.s<n>`, the way dialogue node ids hang off quest ids.
+ */
+export interface StoryQuestSegment {
+  readonly id: string;
+  readonly objectives: readonly StoryObjective[];
+}
+
+/**
+ * An extra gate on top of "the previous quest in this line is done" --
+ * checked continuously while the quest is active, not only once at accept
+ * time, so it can name something a player might not have yet when they
+ * reach this quest. `friendship` only names an NPC in `FRIENDSHIP_NPCS`
+ * (../friendship.ts) -- most travelers have no friendship track at all, so
+ * this cannot gate an arbitrary traveler's own quest on itself.
+ * `traveler-done` reads the same `travelersHome` set ./unlocks.ts's
+ * `finale` gate already reads, not a second one.
+ */
+export type QuestRequirement =
+  | { readonly kind: "friendship"; readonly npc: NpcId; readonly points: number }
+  | { readonly kind: "traveler-done"; readonly traveler: TravelerId };
 
 export interface StoryQuest {
   /** Stable, `<traveler>.q<n>`. Dialogue node ids hang off it. */
   readonly id: string;
   readonly title: string;
-  readonly objectives: readonly StoryObjective[];
+  /**
+   * Exactly one of `objectives`/`segments` is set -- quests.test.ts holds
+   * that. `objectives` is every existing quest: a flat list, all due at
+   * once, one shared progress line. `segments` is new: an ORDERED list of
+   * checkpoints, each with its own objectives and its own progress line
+   * (dialogue.ts's `QuestBeats.segments`), advancing on its own the moment
+   * its objectives are satisfied -- only the LAST checkpoint needs an
+   * explicit turn-in tap. See `currentSegmentIndex` in ./state.ts for how
+   * "which checkpoint is active" is derived rather than stored.
+   */
+  readonly objectives?: readonly StoryObjective[];
+  readonly segments?: readonly StoryQuestSegment[];
   /** The affirmative button on the turn-in bubble. */
   readonly turnInLabel: string;
   /**
@@ -171,6 +216,39 @@ export interface StoryQuest {
    * state.ts refuses the turn-in until a valid choice is posted.
    */
   readonly rewards?: readonly StoryItemId[];
+  /** Absent for almost every quest. See `QuestRequirement`. */
+  readonly requires?: readonly QuestRequirement[];
+}
+
+/** `quest.segments` for a segmented quest; `null` for a flat one. Every
+ *  caller that needs to tell the two shapes apart goes through this rather
+ *  than checking `!== undefined` directly, so there is one spelling of the
+ *  question. */
+export function questSegments(quest: StoryQuest): readonly StoryQuestSegment[] | null {
+  return quest.segments ?? null;
+}
+
+/** The objectives belonging to one segment index. For a flat quest, index 0
+ *  is the whole objectives list and every other index is empty -- a flat
+ *  quest is a segmented quest with one segment, as far as this is concerned. */
+export function segmentObjectives(quest: StoryQuest, segmentIndex: number): readonly StoryObjective[] {
+  const segments = quest.segments;
+  if (segments === undefined) return segmentIndex === 0 ? (quest.objectives ?? []) : [];
+  return segments[segmentIndex]?.objectives ?? [];
+}
+
+/**
+ * Every objective across every segment, concatenated in segment order. This
+ * is the order `StoredTravelerStory.counts` uses, so a flat quest's counts
+ * line up with `objectives` exactly as they always have, and a segmented
+ * quest's counts cover every checkpoint at once: a farm action can satisfy a
+ * later checkpoint's objective before the player reaches it, and that work
+ * still counts once they get there, the same "no order of play can strand a
+ * quest" posture LIVE_OBJECTIVE_KINDS already commits to.
+ */
+export function questFlatObjectives(quest: StoryQuest): readonly StoryObjective[] {
+  const segments = quest.segments;
+  return segments === undefined ? (quest.objectives ?? []) : segments.flatMap((segment) => segment.objectives);
 }
 
 export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>> = {
@@ -203,6 +281,12 @@ export const TRAVELER_QUESTS: Readonly<Record<TravelerId, readonly StoryQuest[]>
       title: "First Order",
       objectives: [{ kind: "contracts", target: 1 }],
       turnInLabel: "Tell him about the order",
+      // Nine points is his first ladder rung (FRIENDSHIP_LADDER.ray[0]) --
+      // gifting him along the way while working the earlier quests opens
+      // this the moment its own objective clears. A player who never gifts
+      // him still gets there eventually; nothing on the farm waits on his
+      // line finishing (see this file's own header), only his keepsake does.
+      requires: [{ kind: "friendship", npc: "ray", points: 9 }],
     },
   ],
   pierre: [

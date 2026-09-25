@@ -3,18 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { tapSound } from "@/lib/audio/ui-sounds";
-import { BrainStreak, useBrainStreakRound } from "./brain-streak";
+import { BrainStreak, useAnswerKeys, useBrainStreakRound } from "./brain-streak";
 
 /** One flash pad's color per index -- purely a CSS hook, not game state. */
 const PAD_TONES = ["pad-red", "pad-blue", "pad-green", "pad-yellow"] as const;
 /** How long each flash shows, and the gap before the next one. */
 const FLASH_MS = 550;
 const GAP_MS = 200;
+/** How long a pad stays lit after the player taps it. */
+const TAP_FLASH_MS = 180;
 
 function Prompt() {
   const { prompt } = useBrainStreakRound();
   const length = (prompt.sequence as number[]).length;
-  return <p className="brain-hint">Watch the pattern, then repeat it: sequence {length - 2}.</p>;
+  return <p className="brain-hint">Round {length - 2} · {length} flashes</p>;
 }
 
 /**
@@ -39,7 +41,12 @@ function Pads({
 }) {
   const [phase, setPhase] = useState<"watching" | "answering">("watching");
   const [flashing, setFlashing] = useState<number | null>(null);
+  const [tapped, setTapped] = useState(0);
   const givenRef = useRef<number[]>([]);
+  const tapFlash = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (tapFlash.current !== null) window.clearTimeout(tapFlash.current);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,27 +79,52 @@ function Pads({
   }, []);
 
   const tap = (pad: number) => {
-    if (phase !== "answering" || disabled) return;
+    if (phase !== "answering" || busy || disabled) return;
     tapSound();
+    setFlashing(pad);
+    if (tapFlash.current !== null) window.clearTimeout(tapFlash.current);
+    tapFlash.current = window.setTimeout(() => setFlashing(null), TAP_FLASH_MS);
     givenRef.current = [...givenRef.current, pad];
+    setTapped(givenRef.current.length);
     if (givenRef.current.length === sequence.length) {
       submit(givenRef.current.join(","));
+      // Only a failed request leaves this round on screen, and then the
+      // player starts the sequence over rather than being stuck.
       givenRef.current = [];
     }
   };
 
+  useAnswerKeys((key) => {
+    const pad = Number(key) - 1;
+    if (!Number.isInteger(pad) || pad < 0 || pad >= colors) return false;
+    tap(pad);
+    return true;
+  });
+
   return (
-    <div className="brain-pads" aria-label={phase === "watching" ? "Watch the pattern" : "Repeat the pattern"}>
-      {Array.from({ length: colors }, (_, pad) => (
-        <button
-          key={pad}
-          type="button"
-          className={clsx("brain-pad", PAD_TONES[pad], flashing === pad && "brain-pad-lit")}
-          disabled={phase !== "answering" || busy || disabled}
-          onClick={() => tap(pad)}
-          aria-label={`Pad ${pad + 1}`}
-        />
-      ))}
+    <div className="brain-sequence">
+      <p className={clsx("brain-turn", phase === "answering" && "brain-turn-yours")} aria-live="polite">
+        {phase === "watching" ? "Watch…" : busy ? "Checking…" : "Your turn"}
+      </p>
+      <div className="brain-pads" aria-label={phase === "watching" ? "Watch the pattern" : "Repeat the pattern"}>
+        {Array.from({ length: colors }, (_, pad) => (
+          <button
+            key={pad}
+            type="button"
+            className={clsx("brain-pad", PAD_TONES[pad], flashing === pad && "brain-pad-lit")}
+            disabled={phase !== "answering" || disabled}
+            onClick={() => tap(pad)}
+            aria-label={`Pad ${pad + 1}`}
+          >
+            <kbd aria-hidden="true">{pad + 1}</kbd>
+          </button>
+        ))}
+      </div>
+      <ol className="brain-sequence-dots" aria-label={`${tapped} of ${sequence.length} entered`}>
+        {sequence.map((_, i) => (
+          <li key={i} className={clsx(i < tapped && "brain-dot-done")} />
+        ))}
+      </ol>
     </div>
   );
 }

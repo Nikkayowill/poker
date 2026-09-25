@@ -31,7 +31,8 @@ export async function POST(request: NextRequest) {
       return withRequestSessionCookie(request, NextResponse.json({ error: "Send an answer." }, { status: 400 }), token);
     }
 
-    if (parsed.data.action === "answer" && (await isBanned(token))) {
+    // Cash out pays the ladder here, so it is gated the same as an answer.
+    if (await isBanned(token)) {
       return withRequestSessionCookie(
         request,
         NextResponse.json({ error: "Your account has been suspended." }, { status: 403 }),

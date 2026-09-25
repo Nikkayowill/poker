@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { BRAIN_STREAK_CONFIGS } from "./brain-streak-rounds";
 import {
-  BRAIN_STREAK_CONFIGS,
   answerBrainStreakRound,
   brainStreakPayout,
   resignBrainStreakAttempt,
@@ -41,7 +41,7 @@ describe("brain streak: survival mode (Sequence Recall)", () => {
     const attempt = startBrainStreakAttempt("sequence-recall", config, 1000, fixedRandom([1, 2, 0]), now);
     const { attempt: next, correct } = answerBrainStreakRound(attempt, config, "not-it", fixedRandom([0]), now);
     expect(correct).toBe(false);
-    expect(next.status).toBe("finished");
+    expect(next.status).toBe("lost");
     expect(next.score).toBe(0);
   });
 
@@ -68,7 +68,7 @@ describe("brain streak: sprint mode (Quick Math Sprint)", () => {
     const attempt = startBrainStreakAttempt("quick-math", config, 1000, fixedRandom([3]), now);
     expect(tickBrainStreakAttempt(attempt, now)).toBeNull();
     const after = tickBrainStreakAttempt(attempt, new Date(Date.parse(attempt.expiresAt!) + 1));
-    expect(after?.status).toBe("finished");
+    expect(after?.status).toBe("lost");
   });
 });
 
@@ -90,7 +90,7 @@ describe("brainStreakPayout / resign", () => {
     const now = new Date("2026-01-01T00:00:00Z");
     let attempt = startBrainStreakAttempt("pattern-predictor", config, 1000, fixedRandom([0, 1, 2]), now);
     expect(brainStreakPayout(attempt)).toBe(0);
-    attempt = { ...attempt, score: 6, status: "finished" };
+    attempt = { ...attempt, score: 6, status: "won" };
     expect(brainStreakPayout(attempt)).toBeGreaterThan(0);
   });
 
@@ -108,5 +108,34 @@ describe("brainStreakPayout / resign", () => {
     const attempt = startBrainStreakAttempt("quick-math", config, 0, fixedRandom([3]), now);
     const snapshot = toBrainStreakSnapshot(attempt, { id: "x", version: 1 }, now);
     expect(JSON.stringify(snapshot.prompt)).not.toContain(attempt.round.answer);
+  });
+});
+
+describe("finished statuses fit the ante_up_attempts.status CHECK", () => {
+  // The table only accepts these. "finished" used to be written here and every
+  // run's settlement write failed in production, leaving it active forever.
+  const allowed = new Set(["active", "won", "lost", "timed-out"]);
+  const now = new Date("2026-01-01T00:00:00Z");
+
+  it("covers a miss, an expired clock and a cash out, paying or not", () => {
+    const survival = BRAIN_STREAK_CONFIGS["sequence-recall"];
+    const sprint = BRAIN_STREAK_CONFIGS["quick-math"];
+    const missed = answerBrainStreakRound(
+      startBrainStreakAttempt("sequence-recall", survival, 1000, fixedRandom([1]), now),
+      survival,
+      "nope",
+      fixedRandom([0]),
+      now,
+    ).attempt;
+    const sprintRun = startBrainStreakAttempt("quick-math", sprint, 1000, fixedRandom([3]), now);
+    const expiredLow = tickBrainStreakAttempt(sprintRun, new Date(Date.parse(sprintRun.expiresAt!) + 1))!;
+    const expiredHigh = tickBrainStreakAttempt({ ...sprintRun, score: 12 }, new Date(Date.parse(sprintRun.expiresAt!) + 1))!;
+    const cashedOut = resignBrainStreakAttempt({ ...sprintRun, score: 20 }, now);
+
+    for (const attempt of [missed, expiredLow, expiredHigh, cashedOut]) expect(allowed.has(attempt.status)).toBe(true);
+    expect(expiredLow.status).toBe("lost");
+    expect(expiredHigh.status).toBe("won");
+    expect(brainStreakPayout(expiredHigh)).toBe(1300);
+    expect(brainStreakPayout(cashedOut)).toBe(3000);
   });
 });

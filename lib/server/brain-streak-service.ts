@@ -83,32 +83,39 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     return toBrainStreakSnapshot(stored.state, { id: stored.id, version: stored.version }, now);
   }
 
-  /** Never throws; see ante-up-service.ts's payOutWin for why. */
+  /**
+   * Never throws; see ante-up-service.ts's payOutWin for why. Returns the
+   * credited profile, or null when nothing was paid, so a reply can show the
+   * new balance instead of the one read before the payout.
+   */
   async function payOutWin(
     profileId: string,
     attempt: Pick<BrainStreakAttempt, "wager" | "score" | "ladder" | "status">,
-  ): Promise<void> {
+  ): Promise<PlayerProfile | null> {
     const payout = brainStreakPayout(attempt);
-    if (payout <= 0) return;
+    if (payout <= 0) return null;
+    let credited: PlayerProfile | null = null;
     try {
-      await creditGoldByProfile(profileId, payout);
+      credited = await creditGoldByProfile(profileId, payout);
     } catch (error) {
       console.error(`brain-streak.${game}.payout_credit_failed`, { profileId, payout, error });
     }
     await applyMissionEvent(profileId, { kind: "puzzle_completed" });
     await applyAchievementEvent(profileId, { kind: "puzzle_completed" });
+    return credited;
   }
 
+  /** Settles a sprint whose clock ran out. `paid` is the credited profile when this call paid it. */
   async function settleIfExpired(
     stored: StoredAnteUpAttempt<BrainStreakAttempt>,
     now: Date,
-  ): Promise<StoredAnteUpAttempt<BrainStreakAttempt>> {
+  ): Promise<{ settled: StoredAnteUpAttempt<BrainStreakAttempt>; paid: PlayerProfile | null }> {
     const ticked = tickBrainStreakAttempt(stored.state, now);
-    if (ticked === null) return stored;
+    if (ticked === null) return { settled: stored, paid: null };
     const advanced = await advanceAnteUpAttempt(stored, ticked);
     const settled = advanced ?? (await getAnteUpAttemptById<BrainStreakAttempt>(stored.id)) ?? stored;
-    if (advanced && settled.state.status === "finished") await payOutWin(settled.profileId, settled.state);
-    return settled;
+    const paid = advanced && settled.state.status !== "active" ? await payOutWin(settled.profileId, settled.state) : null;
+    return { settled, paid };
   }
 
   async function read(
@@ -118,8 +125,8 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     const profile = await ensureProfile(token);
     const stored = await getActiveAnteUpAttempt<BrainStreakAttempt>(profile.id, game);
     if (!stored) return { attempt: null, profile };
-    const settled = await settleIfExpired(stored, now);
-    return { attempt: snapshot(settled, now), profile };
+    const { settled, paid } = await settleIfExpired(stored, now);
+    return { attempt: snapshot(settled, now), profile: paid ?? profile };
   }
 
   async function open(
@@ -211,12 +218,11 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     const current = await getActiveAnteUpAttempt<BrainStreakAttempt>(profile.id, game);
     if (!current) throw new BrainStreakRequestError("Start a run first.", 404);
 
-    const ticked = tickBrainStreakAttempt(current.state, now);
-    if (ticked !== null) {
-      const advanced = await advanceAnteUpAttempt(current, ticked);
-      const settled = advanced ?? (await getAnteUpAttemptById<BrainStreakAttempt>(current.id)) ?? current;
-      if (advanced) await payOutWin(profile.id, settled.state);
-      throw new BrainStreakRequestError("Time's up.", 409, { round: snapshot(settled, now) });
+    // An answer that lands after the clock ran out isn't judged. The run
+    // settles here instead and the reply is the result, same as a poll's.
+    const { settled: expired, paid: expiredPaid } = await settleIfExpired(current, now);
+    if (expired.state.status !== "active") {
+      return { attempt: snapshot(expired, now), profile: expiredPaid ?? profile };
     }
 
     if (current.version !== input.version) {
@@ -226,20 +232,17 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
       throw new BrainStreakRequestError("This run is already over.", 409, { round: snapshot(current, now) });
     }
 
-    const { attempt: next, correct } = answerBrainStreakRound(current.state, config, input.given, randomInt, now);
+    const { attempt: next } = answerBrainStreakRound(current.state, config, input.given, randomInt, now);
     const stored = await advanceAnteUpAttempt(current, next);
     if (!stored) {
       const live = (await getAnteUpAttemptById<BrainStreakAttempt>(current.id)) ?? current;
       throw new BrainStreakRequestError("That run moved on.", 409, { round: snapshot(live, now) });
     }
 
-    if (stored.state.status === "finished") await payOutWin(profile.id, stored.state);
-
-    if (!correct && stored.state.status === "finished") {
-      throw new BrainStreakRequestError("That ended the run.", 409, { round: snapshot(stored, now) });
-    }
-
-    return { attempt: snapshot(stored, now), profile };
+    // A miss that ends a survival run is ordinary play, so it answers like
+    // any other round: the settled run and, if it paid, the new balance.
+    const paid = stored.state.status !== "active" ? await payOutWin(profile.id, stored.state) : null;
+    return { attempt: snapshot(stored, now), profile: paid ?? profile };
   }
 
   async function resign(
@@ -259,8 +262,8 @@ export function createBrainStreakService(game: BrainStreakGame, config: BrainStr
     // flag). Resigning is how a player cashes out a streak rather than
     // risking the next round on a survival-mode game, or a sprint run they
     // no longer want to keep playing out.
-    if (advanced && stored.state.status === "finished") await payOutWin(profile.id, stored.state);
-    return { attempt: snapshot(stored, now), profile };
+    const paid = advanced && stored.state.status !== "active" ? await payOutWin(profile.id, stored.state) : null;
+    return { attempt: snapshot(stored, now), profile: paid ?? profile };
   }
 
   function toErrorResponse(error: unknown): NextResponse {

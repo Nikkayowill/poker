@@ -34,6 +34,12 @@ describe("arcade catalogue", () => {
       "Nonogram",
       "Blockudoku",
       "Word Fill-In",
+      "Sequence Recall",
+      "Quick Math Sprint",
+      "Pattern Predictor",
+      "Trivia Blitz",
+      "Lights Out",
+      "Word Guess",
       "Chess",
       "Checkers",
       "Othello",
@@ -52,7 +58,9 @@ describe("arcade catalogue", () => {
     // Memory Match have no daily gate left at all. Both shapes are still
     // `kind: "wager"` -- see lib/arcade/games.ts's own note. Minesweeper
     // (2026-08-24), Nonogram (2026-08-31), Blockudoku and Word Fill-In
-    // (2026-09-18) join the second, unlimited shape.
+    // (2026-09-18) join the second, unlimited shape. Sequence Recall, Quick
+    // Math Sprint, Pattern Predictor, Trivia Blitz, Lights Out and Word Guess
+    // (2026-09-24, the Brain Games set) join the same unlimited shape too.
     const floor = splitArcadeFloor();
     expect(floor.free).toHaveLength(0);
     expect(floor.wagers.map((entry) => entry.id)).toEqual([
@@ -64,6 +72,12 @@ describe("arcade catalogue", () => {
       "nonogram",
       "blockudoku",
       "word-fill-in",
+      "sequence-recall",
+      "quick-math",
+      "pattern-predictor",
+      "trivia-blitz",
+      "lights-out",
+      "word-guess",
     ]);
   });
 

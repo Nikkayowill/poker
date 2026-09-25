@@ -1,0 +1,218 @@
+/* Brain Games: Sequence Recall, Quick Math Sprint, Pattern Predictor, Trivia
+ * Blitz, Lights Out, Word Guess.
+ *
+ * After 36-duels.css and 43-ante-up.css: the shell, wager step, scoreline and
+ * result block all come from those two. What's here is only what's unique to
+ * these six -- the flash pads, the answer box, the multiple-choice/true-false
+ * buttons, the Lights Out grid and the Word Guess keyboard.
+ */
+
+.brain-prompt {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.brain-hint {
+  color: var(--ink-dim, rgba(255, 255, 255, .7));
+  font-size: 13px;
+  text-align: center;
+}
+
+.brain-math-problem,
+.brain-trivia-statement {
+  font-size: clamp(22px, 6vw, 32px);
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.brain-trivia-statement {
+  font-size: clamp(17px, 4.5vw, 22px);
+  font-weight: 600;
+  max-width: 32em;
+  line-height: 1.4;
+}
+
+.brain-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---- Sequence Recall's flash pads ------------------------------------- */
+
+.brain-pads {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: min(240px, 70vw);
+  aspect-ratio: 1;
+}
+
+.brain-pad {
+  border: 0;
+  border-radius: 12px;
+  opacity: .45;
+  cursor: pointer;
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.brain-pad:disabled {
+  cursor: default;
+}
+
+.brain-pad-lit {
+  opacity: 1;
+  transform: scale(1.03);
+}
+
+.pad-red { background: #d64545; }
+.pad-blue { background: #3d6fd6; }
+.pad-green { background: #3fae5c; }
+.pad-yellow { background: #d6b83d; }
+
+/* ---- Quick Math Sprint's answer box ------------------------------------ */
+
+.brain-answer-form {
+  display: flex;
+  gap: 8px;
+}
+
+.brain-answer-input {
+  width: 8em;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  background: rgba(9, 6, 20, .6);
+  color: inherit;
+  font-size: 18px;
+  text-align: center;
+}
+
+.brain-answer-submit {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--gold, #d6b83d);
+  color: #1a1220;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.brain-answer-submit:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* ---- Pattern Predictor's options / Trivia Blitz's true-false ---------- */
+
+.brain-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.brain-option {
+  min-width: 64px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(9, 6, 20, .5);
+  color: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.brain-option:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.brain-truefalse .brain-option {
+  min-width: 100px;
+}
+
+/* ---- Lights Out's grid ------------------------------------------------- */
+
+.lo-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--lo-size, 5), 1fr);
+  aspect-ratio: 1;
+  width: min(100%, 380px);
+  margin: 0 auto;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(9, 6, 20, .6);
+  border-radius: 8px;
+}
+
+.lo-tile {
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .08);
+  cursor: pointer;
+  transition: background .1s ease;
+}
+
+.lo-tile:disabled {
+  cursor: default;
+}
+
+.lo-tile-on {
+  background: var(--gold, #d6b83d);
+  box-shadow: 0 0 10px rgba(214, 184, 61, .6);
+}
+
+/* ---- Word Guess's blanks and keyboard ---------------------------------- */
+
+.wg-word {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 16px 0;
+}
+
+.wg-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 36px;
+  border-bottom: 3px solid rgba(255, 255, 255, .3);
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.wg-slot-filled {
+  border-bottom-color: var(--gold, #d6b83d);
+}
+
+.wg-keyboard {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.wg-key {
+  padding: 8px 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, .15);
+  background: rgba(9, 6, 20, .5);
+  color: inherit;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wg-key:disabled {
+  opacity: .35;
+  cursor: default;
+}

@@ -43,6 +43,12 @@ export type ArcadeGameId =
   | "nonogram"
   | "blockudoku"
   | "word-fill-in"
+  | "sequence-recall"
+  | "quick-math"
+  | "pattern-predictor"
+  | "trivia-blitz"
+  | "lights-out"
+  | "word-guess"
   | "chess-duel"
   | "checkers-duel"
   | "othello-duel"
@@ -243,6 +249,64 @@ export const ARCADE_GAMES: readonly ArcadeGame[] = [
     entryCost: 0,
     status: "live",
     href: "/games/word-fill-in",
+  },
+  // ---- Brain Games: quick, sharp rounds that don't need any specialist
+  // background -- memory, speed, pattern recognition, logic, vocabulary.
+  // Same wager-or-free model as the boards above; see lib/arcade/brain-streak.ts,
+  // lib/arcade/brain-lights-out.ts and lib/arcade/brain-word-guess.ts.
+  {
+    id: "sequence-recall",
+    name: "Sequence Recall",
+    blurb: "Watch a growing flash pattern, repeat it back exactly",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/sequence-recall",
+  },
+  {
+    id: "quick-math",
+    name: "Quick Math Sprint",
+    blurb: "Sixty seconds, as many right answers as you can get",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/quick-math",
+  },
+  {
+    id: "pattern-predictor",
+    name: "Pattern Predictor",
+    blurb: "A number sequence hides a rule -- spot it before it spots you",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/pattern-predictor",
+  },
+  {
+    id: "trivia-blitz",
+    name: "Trivia Blitz",
+    blurb: "Rapid-fire true or false, forty-five seconds on the clock",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/trivia-blitz",
+  },
+  {
+    id: "lights-out",
+    name: "Lights Out",
+    blurb: "Turn every light off in as few moves as you can",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/lights-out",
+  },
+  {
+    id: "word-guess",
+    name: "Word Guess",
+    blurb: "Classic hangman -- guess the word before six misses",
+    kind: "wager",
+    entryCost: 0,
+    status: "live",
+    href: "/games/word-guess",
   },
   // ---- Duels: skill/social games staked against another player, not the
   // house. Winner takes the pot both players anted; see lib/pvp/. Priced at

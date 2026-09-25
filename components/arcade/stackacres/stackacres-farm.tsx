@@ -206,6 +206,7 @@ import { useStackAcresStory, type StackAcresStoryController } from "@/lib/stacka
 import { storyEventsForAction } from "@/lib/stackacres/story/predict";
 import type { StackAcresStoryView } from "@/lib/stackacres/story/state";
 import type { StoryIntent } from "@/lib/stackacres/story/dialogue";
+import type { QuestPlaceId } from "@/lib/stackacres/story/places";
 import { TRAVELER_CATALOGUE, WILD_AREA_TRAVELER, type TravelerId } from "@/lib/stackacres/story/travelers";
 import { type MapPlaceId } from "@/lib/stackacres/map-places";
 import { StackAcresMapSheet, mapPlaceStates } from "./stackacres-map-sheet";
@@ -3154,6 +3155,21 @@ export function StackAcresFarm() {
   );
 
   /**
+   * A finger landed on one of a quest's own named spots. Unlike a hidden
+   * zone there is nothing to discover here, so there is no local puff or
+   * `discovery` response to layer on -- the server's own `story` slice in
+   * the response is all that moves.
+   */
+  const onWorldQuestPlaceTap = useCallback(
+    (placeId: QuestPlaceId, at: TapPoint) => {
+      tapAnchor.current = at;
+      if (inFlight.current.has("reach-quest-place")) return;
+      void act({ action: "reach-quest-place", placeId });
+    },
+    [act],
+  );
+
+  /**
    * A finger landed on land nobody has cleared. There is nothing standing
    * there to act on, so this is a question rather than an action: what is
    * under the growth, what it costs, and what is still in the way.
@@ -4114,6 +4130,7 @@ export function StackAcresFarm() {
               clockDay={gameDayNow}
               onTravelerTap={onWorldTravelerTap}
               onSecretZoneTap={onWorldSecretZoneTap}
+              onQuestPlaceTap={onWorldQuestPlaceTap}
               sectors={sectors}
               onLockedSectorTap={onWorldLockedTap}
               onViewMoved={onViewMoved}

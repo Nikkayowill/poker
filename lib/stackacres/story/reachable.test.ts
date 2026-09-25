@@ -35,6 +35,7 @@ const REACHABLE: readonly StoryObjective["kind"][] = [
   "crossbreed",
   "deliver",
   "hold-tool",
+  "reach-place",
 ];
 
 /**

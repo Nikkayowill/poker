@@ -15,6 +15,7 @@
  *   <traveler>.hello       first contact; commits story-meet
  *   <traveler>.q<n>.progress      a flat quest, open, not yet satisfied
  *   <traveler>.q<n>.s<i>.progress a segmented quest's checkpoint i, active
+ *   <traveler>.q<n>.blocked       quest open, but its own requires isn't met
  *   <traveler>.q<n>.done       quest satisfied; commits story-turn-in
  *   <traveler>.home        the whole line is finished
  *
@@ -90,6 +91,10 @@ interface QuestBeats {
    *  order as `StoryQuest.segments`. */
   readonly segments?: readonly string[];
   readonly done: string;
+  /** Required exactly when the quest declares `requires` -- what the
+   *  traveler says while its objectives may already be done but its own
+   *  gate (a friendship level, another traveler's line) isn't yet. */
+  readonly blocked?: string;
 }
 
 interface TravelerScript {
@@ -126,6 +131,8 @@ const SCRIPTS: Readonly<Record<TravelerId, TravelerScript>> = {
         progress:
           "The town posts what it wants on the board by the road. Fill one of their orders. That's how they learn your name out here.",
         done: "Word travels. They'll ask for you by name now. Here, take my cap. It's kept the sun off this family for a long time.",
+        blocked:
+          "Slow down, kid. I don't hand a body my name until I know them a little. Come around more, we'll get there.",
       },
     ],
     home: "Go on and see to your guests. Strange folk, but lost is lost, and we've always kept a door open here.",
@@ -339,6 +346,20 @@ function buildNodes(): ReadonlyMap<string, StoryDialogueNode> {
     });
     quests.forEach((quest, i) => {
       const beats = script.quests[i];
+      const gated = quest.requires !== undefined;
+      if (gated !== (beats.blocked !== undefined)) {
+        throw new Error(`${quest.id}: ${gated ? "needs" : "must not have"} a scripted "blocked" beat`);
+      }
+      if (beats.blocked !== undefined) {
+        put({
+          id: `${quest.id}.blocked`,
+          speakerName,
+          dialogueText: beats.blocked,
+          vibratePattern: HAPTIC_TICK,
+          choices: CLOSE_ONLY("Understood"),
+          onComplete: null,
+        });
+      }
       const segments = questSegments(quest);
       if (segments === null) {
         if (beats.progress === undefined) {
@@ -445,6 +466,7 @@ export function dialogueNodeFor(id: TravelerId, traveler: TravelerStoryView, fin
     return storyNode(`${id}.home`);
   }
   const quest = TRAVELER_QUESTS[id][traveler.quest.index];
+  if (traveler.questBlocked) return storyNode(`${quest.id}.blocked`);
   if (traveler.ready) return storyNode(`${quest.id}.done`);
   return storyNode(questProgressNodeId(quest, traveler.quest.segmentIndex ?? 0));
 }

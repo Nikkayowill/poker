@@ -15,6 +15,7 @@ import {
   objectiveHave,
   applyTurnIn,
   questReady,
+  questRequirementMet,
   storyView,
   type StoredStory,
   type StoryFacts,
@@ -39,6 +40,12 @@ const RUNNING_FARM: StackAcresShopProgress = {
 const BARE = { sectorsCleared: 0, soilBeds: 0, enchantments: 0, crossbreeds: 0 } as const;
 const TROWEL: StoryFacts = { tool: "trowel", ...BARE };
 const IRON: StoryFacts = { tool: "iron-shovel", ...BARE };
+
+/** Generous enough to clear any `requires` a real quest declares today
+ *  (ray.q4 asks for 9). Driving a line to completion in these tests is about
+ *  the objectives, not the friendship gate, unless a test says otherwise. */
+const FRIENDLY = { ray: 999, pierre: 999, ivy: 999 };
+const NO_FRIENDSHIP = {};
 
 function met(story: StoredStory, id: TravelerId, progress: StackAcresShopProgress = RUNNING_FARM): StoredStory {
   const result = meetTraveler(story, id, progress);
@@ -108,12 +115,16 @@ function finish(story: StoredStory, id: TravelerId, inventory: StackAcresInvento
           break;
         case "hold-tool":
           break;
+        case "reach-place":
+          feed.push({ kind: "place-reached", placeId: objective.place });
+          break;
       }
     }
     next = events(next, feed);
     const chosenReward = (quest.rewards?.length ?? 0) >= 2 ? (quest.rewards as readonly StoryItemId[])[0] : null;
-    const result = applyTurnIn(next, id, stock, facts, chosenReward);
+    const result = applyTurnIn(next, id, stock, facts, chosenReward, FRIENDLY);
     expect(result.outcome, `${quest.id}`).not.toBe("not-ready");
+    expect(result.outcome, `${quest.id}`).not.toBe("quest-locked");
     next = result.story;
   }
   expect(isTravelerDone(next.travelers[id], id)).toBe(true);
@@ -310,7 +321,7 @@ describe("applyTurnIn", () => {
     story = applyStoryEvent(story, { kind: "harvested", stock: "carrot", count: 10 });
     story = applyTurnIn(story, "ray", {}, TROWEL).story;
     story = applyStoryEvent(story, { kind: "contract-fulfilled" });
-    const last = applyTurnIn(story, "ray", {}, TROWEL);
+    const last = applyTurnIn(story, "ray", {}, TROWEL, null, FRIENDLY);
     expect(last.outcome).toBe("completed");
     expect(last.granted).toEqual([]);
     expect(last.story.items).toEqual(["rays_heritage_cap"]);
@@ -359,6 +370,7 @@ describe("storyView", () => {
         objectives: [{ label: "Water 3 crops", have: 2, need: 3 }],
       },
       ready: false,
+      questBlocked: false,
     });
     expect(view.travelers.pierre.unlocked).toBe(false);
     expect(view.travelers.pierre.hint).toBe("Break ground in the Crop Fields");
@@ -462,5 +474,89 @@ describe("segmented quests", () => {
     expect(objectives.map((o) => o.kind)).toEqual(["water", "harvest-any-crop"]);
     expect(objectiveHave(objectives[0], 3, {}, TROWEL)).toBe(3);
     expect(objectiveHave(objectives[1], 2, {}, TROWEL)).toBe(2);
+  });
+});
+
+describe("questRequirementMet", () => {
+  const FRIENDSHIP_GATE: StoryQuest = {
+    id: "test.friendship",
+    title: "Friendship-gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [{ kind: "friendship", npc: "ray", points: 10 }],
+  };
+  const TRAVELER_GATE: StoryQuest = {
+    id: "test.traveler",
+    title: "Traveler-gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [{ kind: "traveler-done", traveler: "arthur" }],
+  };
+  const BOTH_GATES: StoryQuest = {
+    id: "test.both",
+    title: "Doubly gated",
+    objectives: [],
+    turnInLabel: "Done",
+    requires: [...FRIENDSHIP_GATE.requires!, ...TRAVELER_GATE.requires!],
+  };
+  const UNGATED: StoryQuest = { id: "test.plain", title: "Plain", objectives: [], turnInLabel: "Done" };
+
+  it("is always true for a quest with no requires", () => {
+    expect(questRequirementMet(UNGATED, NO_FRIENDSHIP, new Set())).toBe(true);
+  });
+
+  it("checks a friendship threshold against the named npc only", () => {
+    expect(questRequirementMet(FRIENDSHIP_GATE, { ray: 9 }, new Set())).toBe(false);
+    expect(questRequirementMet(FRIENDSHIP_GATE, { ray: 10 }, new Set())).toBe(true);
+    expect(questRequirementMet(FRIENDSHIP_GATE, { pierre: 999 }, new Set())).toBe(false);
+  });
+
+  it("checks a traveler-done requirement against the finished-lines set", () => {
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set())).toBe(false);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["arthur"]))).toBe(true);
+    expect(questRequirementMet(TRAVELER_GATE, NO_FRIENDSHIP, new Set(["bea"]))).toBe(false);
+  });
+
+  it("needs every requirement met when a quest declares more than one", () => {
+    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set())).toBe(false);
+    expect(questRequirementMet(BOTH_GATES, { ray: 10 }, new Set(["arthur"]))).toBe(true);
+  });
+});
+
+describe("a quest's own requires", () => {
+  /** Drives Ray through q1-q3 with FRIENDLY points so only q4's gate is in
+   *  question, then hands q4's own objective (one town order) too. */
+  function readyForRayQ4(friendshipPoints: Readonly<Partial<Record<"ray" | "pierre" | "ivy", number>>>): StoredStory {
+    let story = met(freshStory(), "ray", FRESH_FARM);
+    story = events(story, [{ kind: "watered", count: 3 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "processed", recipe: "flour", count: 1 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "harvested", stock: "carrot", count: 10 }]);
+    story = applyTurnIn(story, "ray", {}, TROWEL, null, friendshipPoints).story;
+    story = events(story, [{ kind: "contract-fulfilled" }]);
+    return story;
+  }
+
+  it("refuses the turn-in without touching the story, even with the objective done", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const result = applyTurnIn(story, "ray", {}, TROWEL, null, NO_FRIENDSHIP);
+    expect(result.outcome).toBe("quest-locked");
+    expect(result.story).toBe(story);
+  });
+
+  it("turns in cleanly once the gate opens", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const result = applyTurnIn(story, "ray", {}, TROWEL, null, { ray: 9 });
+    expect(result.outcome).toBe("completed");
+  });
+
+  it("shows questBlocked in the view while the gate is unmet, and clears it once it opens", () => {
+    const story = readyForRayQ4(NO_FRIENDSHIP);
+    const blocked = storyView(story, RUNNING_FARM, {}, TROWEL, NO_FRIENDSHIP);
+    expect(blocked.travelers.ray.questBlocked).toBe(true);
+    expect(blocked.travelers.ray.ready).toBe(true);
+    const open = storyView(story, RUNNING_FARM, {}, TROWEL, { ray: 9 });
+    expect(open.travelers.ray.questBlocked).toBe(false);
   });
 });

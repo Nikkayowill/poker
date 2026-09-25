@@ -13,7 +13,15 @@ import { ALL_STORY_QUESTS, TRAVELER_QUESTS, type StoryQuest } from "./quests";
 import type { StackAcresStoryFinale, TravelerStoryView } from "./state";
 import { TRAVELER_CATALOGUE, TRAVELER_IDS } from "./travelers";
 
-const LOCKED: TravelerStoryView = { unlocked: false, hint: "Break ground in the Crop Fields", met: false, done: false, quest: null, ready: false };
+const LOCKED: TravelerStoryView = {
+  unlocked: false,
+  hint: "Break ground in the Crop Fields",
+  met: false,
+  done: false,
+  quest: null,
+  ready: false,
+  questBlocked: false,
+};
 const UNMET: TravelerStoryView = { ...LOCKED, unlocked: true, hint: null };
 const DONE: TravelerStoryView = { ...UNMET, met: true, done: true };
 
@@ -21,8 +29,8 @@ const DONE: TravelerStoryView = { ...UNMET, met: true, done: true };
  *  except the finale test below. */
 const NOT_FINALE: StackAcresStoryFinale = { travelersHome: 0, travelersNeeded: 10, leoUnlocked: false };
 
-function onQuest(index: number, ready: boolean): TravelerStoryView {
-  return { ...UNMET, met: true, ready, quest: { index, total: 3, title: "", objectives: [] } };
+function onQuest(index: number, ready: boolean, questBlocked = false): TravelerStoryView {
+  return { ...UNMET, met: true, ready, questBlocked, quest: { index, total: 3, title: "", objectives: [] } };
 }
 
 describe("STORY_DIALOGUE", () => {
@@ -37,6 +45,11 @@ describe("STORY_DIALOGUE", () => {
         expect(STORY_DIALOGUE.has(`${quest.id}.progress`)).toBe(true);
         expect(STORY_DIALOGUE.has(`${quest.id}.done`)).toBe(true);
         expected += 2;
+        // A gated quest (StoryQuest.requires) also gets a `.blocked` node.
+        if (quest.requires !== undefined) {
+          expect(STORY_DIALOGUE.has(`${quest.id}.blocked`)).toBe(true);
+          expected += 1;
+        }
       }
     }
     // Ray alone also has the finale-hint variant of his `home` line.
@@ -133,6 +146,13 @@ describe("dialogueNodeFor", () => {
 
   it("returns the shared node object, so identity tracks the beat", () => {
     expect(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE)).toBe(dialogueNodeFor("bea", onQuest(1, false), NOT_FINALE));
+  });
+
+  it("shows the blocked line for a gated quest, even once its objective is ready", () => {
+    // Index 3 is ray.q4, the one real quest with a `requires` today.
+    expect(dialogueNodeFor("ray", onQuest(3, false, true), NOT_FINALE).id).toBe("ray.q4.blocked");
+    expect(dialogueNodeFor("ray", onQuest(3, true, true), NOT_FINALE).id).toBe("ray.q4.blocked");
+    expect(dialogueNodeFor("ray", onQuest(3, true, false), NOT_FINALE).id).toBe("ray.q4.done");
   });
 
   it("has Ray point at the hidden zones once he's the last one home and Leo hasn't turned up", () => {

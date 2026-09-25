@@ -63,21 +63,22 @@ export interface WinOrbFrame {
 }
 
 /** The swarm into the orb. */
-export const SWARM_MS = 460;
+export const SWARM_MS = 540;
 /** The orb holding, spinning. */
-export const HOLD_MS = 320;
+export const HOLD_MS = 400;
 /** The orb splitting into coins. */
-export const SPLIT_MS = 180;
+export const SPLIT_MS = 210;
 /** The coins hovering before the first one leaves. */
-export const HOVER_MS = 120;
+export const HOVER_MS = 140;
 /** Between one coin leaving and the next. */
-export const COIN_STAGGER_MS = 60;
+export const COIN_STAGGER_MS = 70;
 /** One coin's flight to the balance. */
-export const COIN_FLY_MS = 380;
+export const COIN_FLY_MS = 440;
 /** How many coins the orb splits into -- an accent, not a spectacle. */
 export const COINS = 5;
-/** How many specks swarm into the orb. */
-export const SPECKS = 70;
+/** How many specks swarm into the orb -- dense enough to read as a solid,
+ * liquid sphere rather than a scatter of dots. */
+export const SPECKS = 110;
 
 const SPLIT_AT = SWARM_MS + HOLD_MS;
 const FLY_AT = SPLIT_AT + SPLIT_MS + HOVER_MS;
@@ -203,6 +204,20 @@ export function winOrbCoinsLanded(burst: WinOrbBurst, ms: number): number {
   return landed;
 }
 
+/**
+ * How strong the orb's own glow is at `ms`: rises through the swarm, holds
+ * at full while it spins, fades away as it splits. The renderer draws one
+ * big soft light behind the points at this strength -- without it the orb
+ * reads as a scatter of dots rather than a single glowing thing, the same
+ * gap StackAcres' own halo closes on the farm.
+ */
+export function orbGlow(ms: number): number {
+  if (ms < SWARM_MS) return easeInOut(ms / SWARM_MS);
+  if (ms < SPLIT_AT) return 1;
+  if (ms < SPLIT_AT + SPLIT_MS) return Math.max(0, 1 - (ms - SPLIT_AT) / SPLIT_MS);
+  return 0;
+}
+
 /** A point in the orb: the sphere turning, with a liquid wobble and a drifting warm-to-bright band. */
 function orbPosition(burst: WinOrbBurst, point: WinOrbPoint, t: number): { x: number; y: number; depth: number; hue: number } {
   const spin = t * 1.9;
@@ -230,9 +245,12 @@ function coinFace(burst: WinOrbBurst, point: WinOrbPoint, ms: number, target: { 
   const leave = FLY_AT + burst.order[k] * COIN_STAGGER_MS;
   if (ms >= leave) {
     const u = clamp01((ms - leave) / COIN_FLY_MS);
-    const e = u * u;
+    // Ease-out, not ease-in: the coin leaves with the speed it already had
+    // hovering and settles into the badge rather than accelerating into it,
+    // which reads as a much softer, more deliberate landing.
+    const e = 1 - (1 - u) * (1 - u);
     cx += (target.x - cx) * e;
-    cy += (target.y - cy) * e - 36 * Math.sin(Math.PI * u);
+    cy += (target.y - cy) * e - 44 * Math.sin(Math.PI * u);
     scale = 1 - 0.85 * e;
     landed = u >= 1;
   }

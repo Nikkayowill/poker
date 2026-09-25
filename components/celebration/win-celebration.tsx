@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   goldSpecks,
   makeWinOrb,
+  orbGlow,
   winOrbCoinsLanded,
   winOrbPointAt,
   WIN_ORB_MS,
@@ -16,13 +17,23 @@ const BASE_ORB_RADIUS = 28;
 const MAX_ORB_RADIUS = 44;
 const MAX_DPR = 1.5;
 const DOT_PX = 28;
+const HALO_PX = 220;
 const HUE_BANDS = 10;
 /** Warm gold band -- these are coins, not the sign-in orb's full rainbow. */
 const HUE_MIN = 32;
 const HUE_MAX = 54;
 
-function goldSprites(): HTMLCanvasElement[] {
-  return Array.from({ length: HUE_BANDS }, (_, i) => {
+/**
+ * The gold dot and the orb's own halo, built once per session and reused by
+ * every celebration -- a canvas gradient is a real cost to construct, and a
+ * win can happen dozens of times in a sitting across every arcade game, duel
+ * and Sit & Go this component covers.
+ */
+let cachedSprites: { dots: HTMLCanvasElement[]; halo: HTMLCanvasElement } | null = null;
+
+function goldSprites(): { dots: HTMLCanvasElement[]; halo: HTMLCanvasElement } {
+  if (cachedSprites) return cachedSprites;
+  const dots = Array.from({ length: HUE_BANDS }, (_, i) => {
     const sprite = document.createElement("canvas");
     sprite.width = sprite.height = DOT_PX;
     const g = sprite.getContext("2d");
@@ -30,14 +41,33 @@ function goldSprites(): HTMLCanvasElement[] {
     const half = DOT_PX / 2;
     const hue = HUE_MIN + (i / (HUE_BANDS - 1)) * (HUE_MAX - HUE_MIN);
     const fill = g.createRadialGradient(half, half, 0, half, half, half);
-    fill.addColorStop(0, `hsla(${hue}, 100%, 92%, 1)`);
-    fill.addColorStop(0.3, `hsla(${hue}, 100%, 68%, 0.9)`);
-    fill.addColorStop(0.65, `hsla(${hue}, 100%, 55%, 0.25)`);
+    // A bright, near-white core before the hue takes over, and a crisper
+    // falloff than a plain three-stop gradient -- what actually reads as a
+    // polished coin catching light rather than a soft blob.
+    fill.addColorStop(0, "rgba(255, 255, 255, 1)");
+    fill.addColorStop(0.16, `hsla(${hue}, 100%, 94%, 0.98)`);
+    fill.addColorStop(0.42, `hsla(${hue}, 100%, 70%, 0.85)`);
+    fill.addColorStop(0.75, `hsla(${hue}, 100%, 55%, 0.22)`);
     fill.addColorStop(1, `hsla(${hue}, 100%, 50%, 0)`);
     g.fillStyle = fill;
     g.fillRect(0, 0, DOT_PX, DOT_PX);
     return sprite;
   });
+  const halo = document.createElement("canvas");
+  halo.width = halo.height = HALO_PX;
+  const hg = halo.getContext("2d");
+  if (hg) {
+    const half = HALO_PX / 2;
+    const fill = hg.createRadialGradient(half, half, 0, half, half, half);
+    fill.addColorStop(0, "rgba(255, 244, 214, 0.55)");
+    fill.addColorStop(0.35, "rgba(255, 210, 100, 0.28)");
+    fill.addColorStop(0.7, "rgba(255, 180, 60, 0.08)");
+    fill.addColorStop(1, "rgba(255, 180, 60, 0)");
+    hg.fillStyle = fill;
+    hg.fillRect(0, 0, HALO_PX, HALO_PX);
+  }
+  cachedSprites = { dots, halo };
+  return cachedSprites;
 }
 
 /**
@@ -90,7 +120,7 @@ export function WinCelebration({ active, amount }: { active: boolean; amount: nu
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 
-    const sprites = goldSprites();
+    const { dots: dotSprites, halo: haloSprite } = goldSprites();
     let width = window.innerWidth;
     let height = window.innerHeight;
     const resize = () => {
@@ -131,13 +161,23 @@ export function WinCelebration({ active, amount }: { active: boolean; amount: nu
       const target = liveTarget();
       ctx.clearRect(0, 0, width, height);
       ctx.globalCompositeOperation = "lighter";
+
+      // One soft light behind the swarm/hold/split, the single biggest
+      // difference between "a scatter of dots" and "a glowing orb."
+      const glow = orbGlow(ms);
+      if (glow > 0.01) {
+        const haloSize = burst.radius * 5.2;
+        ctx.globalAlpha = glow;
+        ctx.drawImage(haloSprite, burst.centre.x - haloSize / 2, burst.centre.y - haloSize / 2, haloSize, haloSize);
+      }
+
       for (const point of burst.points) {
         const at = winOrbPointAt(burst, point, ms, target);
         if (at.alpha <= 0.02) continue;
-        const size = DOT_PX * 0.32 * at.size;
+        const size = DOT_PX * 0.34 * at.size;
         const band = Math.min(HUE_BANDS - 1, Math.max(0, Math.round(((at.hue - HUE_MIN) / (HUE_MAX - HUE_MIN)) * (HUE_BANDS - 1))));
         ctx.globalAlpha = at.alpha;
-        ctx.drawImage(sprites[band], at.x - size / 2, at.y - size / 2, size, size);
+        ctx.drawImage(dotSprites[band], at.x - size / 2, at.y - size / 2, size, size);
       }
       ctx.globalAlpha = 1;
       const nowLanded = winOrbCoinsLanded(burst, ms);

@@ -189,9 +189,15 @@ const ASSETS = "/stackacres-td";
  *  leaves the yard for the wild land, which is what the Crop Fields are now. */
 const CROP_FIELDS_GATE = { x: 512, y: 520 } as const;
 
-const AREAS: TopdownArea[] = ["homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse"];
-/** What the place tag says on arriving somewhere: the map's own names, plus the two rooms. */
-const AREA_NAMES: Record<TopdownArea, string> = {
+const AREAS: TopdownArea[] = [
+  "homestead", "fold", "pasture", "coast", "oak", "mine", "townsquare", "barn", "workshop", "farmhouse",
+  "empire",
+];
+/** What the place tag says on arriving somewhere: the map's own names, plus the two rooms.
+ *  Exported so the shell (stackacres-farm.tsx) can key its own per-place UI (the empire
+ *  district's resource HUD) off the same name this scene hands `onPlaceEntered`, rather than
+ *  a second copy of the string. */
+export const AREA_NAMES: Record<TopdownArea, string> = {
   homestead: "The Homestead",
   fold: "The Fold",
   pasture: "Cattle Pasture",
@@ -202,6 +208,9 @@ const AREA_NAMES: Record<TopdownArea, string> = {
   barn: "Barn",
   workshop: "Workshop",
   farmhouse: "Your House",
+  // Provisional name -- docs/stackacres-second-map-direction.md section 6
+  // item 4 leaves the empire layer's own name an open question.
+  empire: "The Far Field",
 };
 /** Walking through a door or a gate: the old view pushes in (or pulls back on the way out) and dissolves. */
 const TRAVEL_MS = 320;
@@ -249,6 +258,17 @@ const SECTOR_AREAS: Partial<Record<ZoneId, TopdownArea>> = {
  * turning this off is the whole of bringing them back.
  */
 const HOMESTEAD_ONLY: boolean = true;
+
+/**
+ * Whether the bridge to the empire district is open (Kayo, 2026-09-24;
+ * docs/stackacres-second-map-direction.md section 6a authorizes this v1
+ * scaffold specifically). A separate flag from HOMESTEAD_ONLY on purpose:
+ * that one gates the six Gold-cleared/wild districts on the SAME map, none
+ * of which this authorizes reopening. This one gates a single, always-free
+ * walk onto a second, empty map -- flipping it off is the whole way to pull
+ * the bridge back if the scope authorization is ever revoked.
+ */
+const EMPIRE_ENABLED: boolean = true;
 
 const AREA_SECTOR: Partial<Record<TopdownArea, ZoneId>> = {
   fold: "wallow",
@@ -895,6 +915,7 @@ export class TopdownScene extends Phaser.Scene {
   /** Whichever path the farmer found to its edge, some land still cannot be
    *  walked into. */
   private canEnter(area: TopdownArea): boolean {
+    if (area === "empire") return EMPIRE_ENABLED;
     const sector = AREA_SECTOR[area];
     return sector === undefined || this.enterable(sector);
   }

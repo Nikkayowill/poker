@@ -40,7 +40,12 @@ export type TopdownArea =
   | "townsquare"
   | "barn"
   | "workshop"
-  | "farmhouse";
+  | "farmhouse"
+  // The second map's own district (docs/stackacres-second-map-direction.md
+  // section 6a): reached by crossing a bridge off the Homestead, gated by
+  // EMPIRE_ENABLED in scene.ts rather than the SectorId/ZoneId ladder --
+  // there is nothing to clear or buy here yet, just a bridge to walk.
+  | "empire";
 
 export interface MapPoint {
   area: TopdownArea;

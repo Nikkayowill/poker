@@ -5,7 +5,10 @@ import clsx from "clsx";
 export type PixelIconName =
   | "back" | "close" | "more" | "plus" | "minus"
   | "coin" | "energy" | "water" | "map" | "journal" | "sound" | "mute"
-  | "hand" | "hoe" | "can" | "pouch" | "fence" | "egg" | "sack";
+  | "hand" | "hoe" | "can" | "pouch" | "fence" | "egg" | "sack"
+  // The empire district's own resource HUD (Wood/Wheat/Workers). Placeholder
+  // glyphs -- see scripts/gen-empire-hud-icons.py -- not a real art pass.
+  | "wood" | "wheat" | "workers";
 
 /** Tools are drawn at 16 art pixels, the rest at 12. Both show at 2x. */
 const LARGE: ReadonlySet<PixelIconName> = new Set(["hand", "hoe", "can", "pouch", "fence", "egg", "sack"]);

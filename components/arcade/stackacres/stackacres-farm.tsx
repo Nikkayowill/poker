@@ -457,6 +457,10 @@ interface StackAcresResponse {
   /** The farm clock (lib/stackacres/clock.ts): this farm's offset and the
    *  server's own now for the read. */
   clock?: { offsetMs: number; serverNowMs: number };
+  /** The second map's own resource HUD -- see StackAcresView's own doc
+   *  comment. Absent from a response older than it, which the HUD reads as
+   *  all-zero, same posture as every other stub-until-built field here. */
+  empire?: { wood: number; wheat: number; workers: number };
   capacity: Partial<Record<StackAcresStock, number>>;
   /** Land the player may work. Everything else is drawn as wild growth. */
   sectors: SectorId[];
@@ -870,6 +874,13 @@ function farmFieldsOf(data: Partial<StackAcresResponse>): Partial<FarmFields> {
 export function StackAcresFarm() {
   const [units, setUnits] = useState<StackAcresUnitSnapshot[]>([]);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  /** The empire district's own resource HUD -- see StackAcresResponse's own
+   *  doc comment. Honest zeros until that map's economy exists. */
+  const [empire, setEmpire] = useState<{ wood: number; wheat: number; workers: number }>({
+    wood: 0,
+    wheat: 0,
+    workers: 0,
+  });
   const [feed, setFeed] = useState(0);
   const [water, setWater] = useState(WATER_CAPACITY);
   const [energy, setEnergy] = useState<StackAcresEnergyAnchor>(() => ({
@@ -1690,6 +1701,7 @@ export function StackAcresFarm() {
     if (data.axe) setAxe(data.axe);
     if (data.devotion) setDevotion(data.devotion);
     if (data.friendship) setFriendship(data.friendship);
+    if (data.empire) setEmpire(data.empire);
     // Fresh arrays on every answer; keeping the old one when nothing moved
     // saves the map a redraw.
     if (data.woodNodes) {
@@ -2767,7 +2779,20 @@ export function StackAcresFarm() {
   // Where the farmer just arrived, for a moment. The counter keys the tag, so going through two doors quickly
   // replays it rather than leaving the first one fading.
   const [placeTag, setPlaceTag] = useState<{ name: string; n: number } | null>(null);
-  const onPlaceEntered = useCallback((name: string) => setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 })), []);
+  /**
+   * Whether the farmer is standing on the empire district, so its own
+   * resource HUD (Gold/Wood/Wheat/Workers, top-left) can stay up rather than
+   * fading like `placeTag` -- unlike that banner, this has to persist for as
+   * long as the player is there. Keyed off the same display name the scene
+   * hands `onPlaceEntered` (scene.ts's AREA_NAMES.empire, "The Far Field")
+   * rather than a shared import, since scene.ts pulls in Phaser and this file
+   * must not force that into the shell's own bundle.
+   */
+  const [onEmpireMap, setOnEmpireMap] = useState(false);
+  const onPlaceEntered = useCallback((name: string) => {
+    setPlaceTag((was) => ({ name, n: (was?.n ?? 0) + 1 }));
+    setOnEmpireMap(name === "The Far Field");
+  }, []);
   useEffect(() => {
     if (!placeTag) return;
     const timer = window.setTimeout(() => setPlaceTag(null), 1900);
@@ -3923,6 +3948,33 @@ export function StackAcresFarm() {
       {placeTag && (
         <div key={placeTag.n} className="sa-place-tag" role="status">
           {placeTag.name}
+        </div>
+      )}
+      {/* The empire district's own persistent resource HUD -- v1 scaffold,
+          docs/stackacres-second-map-direction.md section 6a. Gold is the
+          same shared balance the header pill below shows; Wood/Wheat/Workers
+          are honest zeros (StackAcresResponse's own doc comment) until that
+          map's clearing/hiring economy exists. Only up while actually on
+          that map, top-left, over the canvas like every other pinned panel
+          in .sa-field. */}
+      {onEmpireMap && (
+        <div className="sa-empire-hud" role="status" aria-label="Empire district resources">
+          <span className="sa-empire-stat" title="Gold">
+            <StackAcresPixelIcon name="coin" />
+            <strong>{profile?.unlimitedGold ? "∞" : profile ? profile.goldBalance.toLocaleString() : "—"}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Wood">
+            <StackAcresPixelIcon name="wood" />
+            <strong>{empire.wood.toLocaleString()}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Wheat">
+            <StackAcresPixelIcon name="wheat" />
+            <strong>{empire.wheat.toLocaleString()}</strong>
+          </span>
+          <span className="sa-empire-stat" title="Workers">
+            <StackAcresPixelIcon name="workers" />
+            <strong>{empire.workers.toLocaleString()}</strong>
+          </span>
         </div>
       )}
       <header className="floor-bar">

@@ -11,6 +11,11 @@ import {
   type WinOrbBurst,
 } from "@/lib/celebration/win-orb";
 
+/** Where the orb forms, as a share of viewport height -- well above the
+ * vertical middle, where every caller's own "You win"/"You won the match!"
+ * copy sits. The orb used to spawn dead centre, right on top of that text;
+ * this keeps the two from ever sharing the same spot. */
+const ORB_CENTRE_Y_SHARE = 0.28;
 const BASE_ORB_RADIUS = 28;
 /** A bigger payout reads as a slightly bigger orb -- capped well short of
  * anything that would crowd the result panel around it. */
@@ -134,7 +139,7 @@ export function WinCelebration({ active, amount }: { active: boolean; amount: nu
     resize();
     window.addEventListener("resize", resize);
 
-    const centre = { x: width / 2, y: height / 2 };
+    const centre = { x: width / 2, y: height * ORB_CENTRE_Y_SHARE };
     // The header's own Gold balance, read live every frame so the coins
     // still land correctly through a resize or orientation change. Some
     // routes carry no visible balance at all (a phone's non-/ tab bar has no

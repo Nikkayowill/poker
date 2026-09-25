@@ -245,12 +245,15 @@ function coinFace(burst: WinOrbBurst, point: WinOrbPoint, ms: number, target: { 
   const leave = FLY_AT + burst.order[k] * COIN_STAGGER_MS;
   if (ms >= leave) {
     const u = clamp01((ms - leave) / COIN_FLY_MS);
-    // Ease-out, not ease-in: the coin leaves with the speed it already had
-    // hovering and settles into the badge rather than accelerating into it,
-    // which reads as a much softer, more deliberate landing.
-    const e = 1 - (1 - u) * (1 - u);
+    // Cubic ease-out: the coin leaves with the speed it already had
+    // hovering and glides into the badge rather than accelerating into it,
+    // a softer, more deliberate landing than a quadratic ease gives. The
+    // arc's lift rides the same eased value as the position, not raw time,
+    // so the whole flight reads as one continuous motion instead of two
+    // curves (a linear arc over an eased line) drifting out of step.
+    const e = 1 - (1 - u) ** 3;
     cx += (target.x - cx) * e;
-    cy += (target.y - cy) * e - 44 * Math.sin(Math.PI * u);
+    cy += (target.y - cy) * e - 44 * Math.sin(Math.PI * e);
     scale = 1 - 0.85 * e;
     landed = u >= 1;
   }
